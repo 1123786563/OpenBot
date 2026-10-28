@@ -54,7 +54,7 @@ const scopeA = resolveObservationScope({
 });
 const scopeB = resolveObservationScope({
   actorId: "user-b",
-  botId: "agent-1",
+  botId: "agent-2",
   ownership: "admin",
   epoch: 1,
 });

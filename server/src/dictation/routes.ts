@@ -14,7 +14,11 @@ export function createDictationRoutes(
   provider: TranscriptionProvider | undefined,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
+  /** One upload in flight per actor, held for the whole request. */
   const active = new Set<string>();
+  /** Global slots around the provider call only, so a slow upload cannot hold one. */
+  const transcribing = new Set<string>();
+  const MAX_CONCURRENT_TRANSCRIPTIONS = 8;
   app.use("*", requireUser);
   app.post(
     "/transcriptions",
@@ -26,7 +30,7 @@ export function createDictationRoutes(
       if (!provider)
         return context.json({ error: "Dictation is not configured." }, 503);
       const actorId = context.var.actor.id;
-      if (active.has(actorId) || active.size >= 8) {
+      if (active.has(actorId)) {
         return context.json(
           {
             error:
@@ -59,6 +63,7 @@ export function createDictationRoutes(
           413,
         );
       }
+      const actorId = context.var.actor.id;
       const mediaType = dictationMediaType(file.type);
       const extension = dictationExtension(mediaType);
       if (!extension) {
@@ -77,6 +82,15 @@ export function createDictationRoutes(
         AbortSignal.timeout(DICTATION_TIMEOUT_MS),
       ]);
       context.header("Cache-Control", "no-store");
+      // The global slots are taken only now — after the file is validated — so eight slow
+      // or abandoned uploads cannot shut transcriptions out for everybody else.
+      if (transcribing.size >= MAX_CONCURRENT_TRANSCRIPTIONS) {
+        return context.json(
+          { error: "The transcription service is busy. Please retry shortly." },
+          429,
+        );
+      }
+      transcribing.add(actorId);
       try {
         const text = await provider.transcribe(
           new File([file], `recording.${extension}`, { type: mediaType }),
@@ -106,6 +120,8 @@ export function createDictationRoutes(
           },
           502,
         );
+      } finally {
+        transcribing.delete(actorId);
       }
     },
   );

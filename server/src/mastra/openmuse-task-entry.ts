@@ -66,12 +66,24 @@ export function openMuseTaskSchedulingRecordFor(options: {
     if (row?.status !== "running") return null;
     let instruction = row.prompt ?? "";
     if (row.kind === "plan") {
-      const running = ((row.steps as unknown[]) ?? []).find(
-        (step) => (step as OpenMuseTaskStep | undefined)?.status === "running",
-      ) as OpenMuseTaskStep | undefined;
+      // The row is the authority, and a jsonb column can hold anything a hand-written fix or
+      // an older writer left there: a non-array must read as "no steps" (not runnable) rather
+      // than throwing `find is not a function` out of the entry.
+      const steps = Array.isArray(row.steps) ? (row.steps as unknown[]) : [];
+      const running = steps.find((step) => {
+        if (!step || typeof step !== "object") return false;
+        const candidate = step as Partial<OpenMuseTaskStep>;
+        return candidate.status === "running" &&
+          typeof candidate.title === "string" &&
+          candidate.title.trim().length > 0;
+      }) as OpenMuseTaskStep | undefined;
       if (!running) return null;
       instruction = running.title;
     }
+    // A row without words is not a runnable claim (the plan branch refuses
+    // the same way): finance rows legitimately carry no prompt, and handing
+    // the turn an empty instruction would run nothing.
+    if (instruction.trim().length === 0) return null;
     const threadId = await options.channelThreadIdFor({
       ownerUserId: row.ownerUserId,
       botId: row.botId,

@@ -6,9 +6,12 @@
  * is told — the same record-first order the gateway holds for runs, so an upload that was
  * refused still leaves a row saying who tried and why it was turned away.
  */
+import { getLogger } from "../../../shared/logger";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { SandboxClient } from "../codesandbox/client";
 import type { WorkshopStore } from "./store";
+
+const log = getLogger("server");
 
 /** At most this many files in one upload request. */
 export const MAX_UPLOAD_FILES = 20;
@@ -79,16 +82,43 @@ export async function listTree(
   const directories = new Map<string, WorkshopFileNode>();
   const nodes: WorkshopFileNode[] = [];
 
+  // Sizes go out together, not one sandbox round trip per top-level file: a large tree
+  // used to serialize into N awaits. A size the sandbox will not give stays 0 (the tree
+  // is best-effort), but the failure is said instead of reading as an empty file.
+  const topLevel = scoped.filter(
+    (file) => (prefix ? file.slice(prefix.length + 1) : file).split("/").length === 1,
+  );
+  const sizes = new Map(
+    (
+      await Promise.all(
+        topLevel.map(async (file) => [
+          file,
+          await client
+            .readFile(file, 1)
+            .then(
+              (detail) => detail?.size ?? 0,
+              (error: unknown) => {
+                log.warn(
+                  { err: error, path: file },
+                  "Could not read a workshop file's size.",
+                );
+                return 0;
+              },
+            ),
+        ] as const),
+      )
+    ).map(([file, size]) => [file, size] as const),
+  );
+
   for (const file of scoped) {
     const relative = prefix ? file.slice(prefix.length + 1) : file;
     const segments = relative.split("/");
     if (segments.length === 1) {
-      const detail = await client.readFile(file, 1).catch(() => undefined);
       nodes.push({
         name: segments[0],
         path: file,
         type: "file",
-        size: detail?.size ?? 0,
+        size: sizes.get(file) ?? 0,
       });
       continue;
     }
@@ -194,12 +224,43 @@ export async function upload(
   }
 
   const uploaded: Array<{ path: string; size: number }> = [];
-  for (let index = 0; index < files.length; index += 1) {
-    // A name from the wire never becomes a path: separators are flattened so one file cannot
-    // climb out of the workspace with ../ or plant into another Bot's tree with a slash.
-    const name = files[index]!.name.replace(/[/\\]/g, "_");
-    const written = await client!.writeFile(name, files[index]!.content);
-    uploaded.push(written);
+  // Two files whose names flatten to the same string would silently overwrite one another,
+  // and a name that flattens to nothing (or to a dot segment) is not a file at all: both
+  // are refusals with the batch's audit row, like every other limit here.
+  const seen = new Set<string>();
+  try {
+    for (let index = 0; index < files.length; index += 1) {
+      // A name from the wire never becomes a path: separators are flattened so one file cannot
+      // climb out of the workspace with ../ or plant into another Bot's tree with a slash.
+      const raw = files[index]!.name;
+      const name = raw.replace(/[/\\]/g, "_").trim();
+      if (!name || name === "." || name === ".." || seen.has(name)) {
+        await refuse(`The file name ${JSON.stringify(raw)} is not usable in this workspace.`, {
+          name: raw,
+        });
+      }
+      seen.add(name);
+      const written = await client!.writeFile(name, files[index]!.content);
+      uploaded.push(written);
+    }
+  } catch (error) {
+    // Record-first holds for a HALF-finished batch too: the files already written stay in the
+    // sandbox, and without this row nothing distinguishes a partial upload from one that never
+    // ran. The audit's own failure must not replace the write failure it is describing.
+    if (options.auditStore) {
+      await recordAuditEvent(options.auditStore, {
+        eventType: "workshop.file_upload_refused",
+        targetType: "workshop_session",
+        targetId: sessionId,
+        actorUserId: options.actorUserId,
+        payload: {
+          bot: session.botId,
+          reason: error instanceof Error ? error.message : String(error),
+          written: uploaded.map((file) => file.path),
+        },
+      }).catch(() => undefined);
+    }
+    throw error;
   }
 
   if (options.auditStore) {

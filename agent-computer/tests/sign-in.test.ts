@@ -1,3 +1,4 @@
+import type { Browser, Page } from "playwright";
 import {
   afterAll,
   beforeAll,
@@ -5,7 +6,6 @@ import {
   expect,
   test,
 } from "../../tests/support/e2e-compat";
-import type { Browser, Page } from "playwright";
 import { parseAriaSnapshot } from "../src/aria-snapshot";
 import {
   MASKED_VALUE,
@@ -129,6 +129,34 @@ beforeAll(async () => {
               <form method="post" action="/mfa-verify">
               <input name="otp" autocomplete="one-time-code"><button>Verify</button></form>`);
       }
+      // A site that signs in without leaving the page: the password is checked in place, the login
+      // form is hidden and the code panel drawn beside it. The login form's nodes stay in the
+      // document — which is how the fill can still see the code step at all — submit button and all.
+      if (url.pathname === "/login-spa-2fa")
+        return page(`<form id="login" method="post" action="/spa-session">
+          <label>Email <input name="email" type="email"></label>
+          <label>Password <input name="password" type="password"></label>
+          <button>Sign in</button></form>
+        <div id="code-panel" hidden>
+          <p>We sent a code to your phone.</p>
+          ${codeForm("/spa-check")}
+        </div>
+        <script>
+          const login = document.getElementById("login");
+          login.addEventListener("submit", (event) => {
+            event.preventDefault();
+            if (login.querySelector("input[name=password]").value !== ${JSON.stringify(PASSWORD)}) return;
+            login.hidden = true;
+            document.getElementById("code-panel").hidden = false;
+          });
+        </script>`);
+      // The code step of the same-document site: the right code finishes the sign-in.
+      if (url.pathname === "/spa-check" && request.method === "POST") {
+        const form = await request.formData();
+        return form.get("code") === CODE
+          ? Response.redirect(`${origin}/home`, 303)
+          : page(`<p>That code is not right.</p>${codeForm("/spa-check")}`);
+      }
       if (url.pathname === "/home") return page("<h1>Welcome back</h1>");
       // A login whose password is answered with a one-time-code page on this origin.
       if (url.pathname === "/login-2fa")
@@ -187,6 +215,97 @@ beforeAll(async () => {
           ? page("<h1>No code was needed</h1>")
           : new Response("denied", { status: 403 });
       }
+      // A login page strewn with business code fields — country, postal, promo and friends, each
+      // in a different spelling. None of them is a verification step: a refused password must stay
+      // a refusal, and the page a correct password lands on must not be read as the site asking
+      // for a code. One page carries the whole list, so any single field the fallback still
+      // matches turns the answer wrong and the test red.
+      if (url.pathname === "/login-codes")
+        return page(`<form method="post" action="/codes-session">
+          <label>Email <input name="email" type="email"></label>
+          <label>Password <input name="password" type="password"></label>
+          <label>Country <input name="countryCode"></label>
+          <label>Postal <input name="postal_code"></label>
+          <label>Promo <input name="promo-code"></label>
+          <label>ZIP <input name="zipCode"></label>
+          <label>Area <input name="area_code"></label>
+          <label>Dial <input name="dialCode" type="tel"></label>
+          <label>Referral <input name="referral-code"></label>
+          <label>Voucher <input name="voucherCode"></label>
+          <label>Coupon <input name="coupon_code"></label>
+          <label>Discount <input name="discountCode"></label>
+          <button>Sign in</button></form>`);
+      if (url.pathname === "/codes-session" && request.method === "POST") {
+        const form = await request.formData();
+        return form.get("password") === PASSWORD
+          ? page(`<h1>Welcome</h1><form>
+              <label>Promo <input name="promoCode"></label></form>`)
+          : page(`<p>Wrong password</p><form method="post" action="/codes-session">
+              <input name="email" type="email"><input name="password" type="password">
+              <input name="countryCode"><input name="postal_code">
+              <input name="promo-code"><input name="zipCode"><input name="area_code">
+              <input name="dialCode" type="tel"><input name="referral-code">
+              <input name="voucherCode"><input name="coupon_code">
+              <input name="discountCode"></form>`);
+      }
+      // A login whose extra field spells the postcode word — the one business code the exclusion
+      // list's postal entry does not cover, in each of the spellings sites use. A refused password
+      // must stay a refusal, and the page a correct password lands on must not be read as the site
+      // asking for a code: any single spelling the fallback still matches turns the answer wrong.
+      if (url.pathname === "/login-postcode")
+        return page(`<form method="post" action="/postcode-session">
+          <label>Email <input name="email" type="email"></label>
+          <label>Password <input name="password" type="password"></label>
+          <label>Postcode <input name="postcode"></label>
+          <label>Post code <input name="post_code"></label>
+          <label>PostCode <input name="postCode"></label>
+          <label>Post-code <input name="post-code"></label>
+          <button>Sign in</button></form>`);
+      if (url.pathname === "/postcode-session" && request.method === "POST") {
+        const form = await request.formData();
+        return form.get("password") === PASSWORD
+          ? page(`<h1>Welcome</h1><form>
+              <label>Postcode <input name="postcode"></label>
+              <label>Post code <input name="post_code"></label>
+              <label>PostCode <input name="postCode"></label>
+              <label>Post-code <input name="post-code"></label></form>`)
+          : page(`<p>Wrong password</p><form method="post" action="/postcode-session">
+              <input name="email" type="email"><input name="password" type="password">
+              <input name="postcode"><input name="post_code">
+              <input name="postCode"><input name="post-code"></form>`);
+      }
+      // A refusal that keeps a real one-time-code field beside the unchanged login form: the wrong
+      // password must be read as the refusal it is, not as the site having moved on to the code.
+      if (url.pathname === "/login-2fa-refuse")
+        return page(`<form method="post" action="/two-factor-refuse">
+          <label>Email <input name="email" type="email"></label>
+          <label>Password <input name="password" type="password"></label>
+          <button>Sign in</button></form>`);
+      if (url.pathname === "/two-factor-refuse" && request.method === "POST") {
+        const form = await request.formData();
+        return form.get("password") === PASSWORD
+          ? page(codeForm("/check-code"))
+          : page(`<p>Wrong password</p><form method="post" action="/two-factor-refuse">
+              <input name="email" type="email"><input name="password" type="password">
+              <label>Code <input name="code" autocomplete="one-time-code"></label>
+              <button>Sign in</button></form>`);
+      }
+      // A verification code asked for with no autocomplete at all — a tel-drawn numeric field
+      // named like a code. The name fallback, once narrowed, must still find it.
+      if (url.pathname === "/login-tel-code")
+        return page(`<form method="post" action="/tel-code">
+          <label>Email <input name="email" type="email"></label>
+          <label>Password <input name="password" type="password"></label>
+          <button>Sign in</button></form>`);
+      if (url.pathname === "/tel-code" && request.method === "POST") {
+        const form = await request.formData();
+        return form.get("password") === PASSWORD
+          ? page(`<p>Enter the code from your authenticator.</p>
+              <form method="post" action="/check-code">
+              <label>Verification code <input name="verification_code" type="tel" inputmode="numeric"></label>
+              <button>Verify</button></form>`)
+          : Response.redirect(`${origin}/login-tel-code`, 303);
+      }
       // The code field shows up only a moment after the password, the way a slow site draws one.
       if (url.pathname === "/login-late-code")
         return page(`<form method="post" action="/late-code">
@@ -202,6 +321,35 @@ beforeAll(async () => {
               \`${codeForm("/check-code")}\`);
           }, 2500);
         </script>`);
+      }
+      // A site that accepts the code but is slow to swap the code page for what comes next: the
+      // page it answers with still wears the code form, and replaces it only after the fill has
+      // looked — the way a slow SPA re-render lands later than the settle window.
+      if (url.pathname === "/login-slow-swap")
+        return page(`<form method="post" action="/slow-swap-session">
+          <label>Email <input name="email" type="email"></label>
+          <label>Password <input name="password" type="password"></label>
+          <button>Sign in</button></form>`);
+      if (url.pathname === "/slow-swap-session" && request.method === "POST") {
+        const form = await request.formData();
+        return form.get("password") === PASSWORD
+          ? page(codeForm("/slow-swap-check"))
+          : page(`<p>Wrong password</p><form method="post" action="/slow-swap-session">
+              <input name="email" type="email"><input name="password" type="password"></form>`);
+      }
+      if (url.pathname === "/slow-swap-check" && request.method === "POST") {
+        const form = await request.formData();
+        if (form.get("code") !== CODE)
+          return page(
+            `<p>That code is not right.</p>${codeForm("/slow-swap-check")}`,
+          );
+        return page(`<p>We sent a code to your phone.</p>
+          ${codeForm("/slow-swap-check")}
+          <script>
+            setTimeout(() => {
+              document.body.innerHTML = "<h1>All set</h1>";
+            }, 2500);
+          </script>`);
       }
       // A refusal the site draws late: the wrong password is answered with a transition state
       // first, and the login page comes back only after the fill has already looked and moved on.
@@ -223,11 +371,78 @@ beforeAll(async () => {
           }, 2500);
         </script>`);
       }
+      // The mirror of the slow refusal, one step deeper: the code is answered with a transition
+      // state too, and the login page comes back only after the fill has already looked and moved
+      // on — the site spent the code without signing the person in.
+      if (url.pathname === "/login-slow-back")
+        return page(`<form method="post" action="/slow-back">
+          <label>Email <input name="email" type="email"></label>
+          <label>Password <input name="password" type="password"></label>
+          <button>Sign in</button></form>`);
+      if (url.pathname === "/slow-back" && request.method === "POST") {
+        const form = await request.formData();
+        return form.get("password") === PASSWORD
+          ? page(codeForm("/slow-back-check"))
+          : page(`<p>Wrong password</p><form method="post" action="/slow-back">
+              <input name="email" type="email"><input name="password" type="password"></form>`);
+      }
+      if (url.pathname === "/slow-back-check" && request.method === "POST") {
+        const form = await request.formData();
+        if (form.get("code") !== CODE)
+          return page(`<p>Wrong code</p>${codeForm("/slow-back-check")}`);
+        return page(`<p>Checking your sign-in…</p><script>
+          setTimeout(() => {
+            document.body.insertAdjacentHTML("beforeend",
+              \`<form method="post" action="/slow-back">
+                <input name="email" type="email"><input name="password" type="password">
+                <button>Sign in</button></form>\`);
+          }, 2500);
+        </script>`);
+      }
       // A site that moves the code step to another origin entirely.
       if (url.pathname === "/login-cross")
         return page(`<form method="post" action="${otherOrigin}/cross-code">
           <label>Password <input name="password" type="password"></label>
           <button>Sign in</button></form>`);
+      // A site that hands the password step itself to another origin, which draws a password
+      // field of its own — an identity provider asking for the password again.
+      if (url.pathname === "/login-cross-password")
+        return page(`<form method="post" action="${otherOrigin}/cross-password">
+          <label>Password <input name="password" type="password"></label>
+          <button>Sign in</button></form>`);
+      // The same identity provider, one step deeper: the site asks for a code on this origin, and
+      // submitting it hands the sign-in to that other origin, which asks for the password again.
+      if (url.pathname === "/login-2fa-cross-password")
+        return page(`<form method="post" action="/two-factor-cross-password">
+          <label>Password <input name="password" type="password"></label>
+          <button>Sign in</button></form>`);
+      if (
+        url.pathname === "/two-factor-cross-password" &&
+        request.method === "POST"
+      ) {
+        const form = await request.formData();
+        return form.get("password") === PASSWORD
+          ? page(codeForm(`${otherOrigin}/cross-password`))
+          : page(`<p>Wrong password</p><form method="post" action="/two-factor-cross-password">
+              <input name="password" type="password"></form>`);
+      }
+      // The same identity provider, codes all the way: the site asks for a code on this origin,
+      // and submitting it hands the sign-in to that other origin, which asks for another code —
+      // the provider's second verification step.
+      if (url.pathname === "/login-2fa-cross-code")
+        return page(`<form method="post" action="/two-factor-cross-code">
+          <label>Password <input name="password" type="password"></label>
+          <button>Sign in</button></form>`);
+      if (
+        url.pathname === "/two-factor-cross-code" &&
+        request.method === "POST"
+      ) {
+        const form = await request.formData();
+        return form.get("password") === PASSWORD
+          ? page(codeForm(`${otherOrigin}/cross-code`))
+          : page(`<p>Wrong password</p><form method="post" action="/two-factor-cross-code">
+              <input name="password" type="password"></form>`);
+      }
       return new Response("not found", { status: 404 });
     },
   });
@@ -241,6 +456,11 @@ beforeAll(async () => {
         return page(
           `<p>Verify it is really you</p>${codeForm("/cross-check")}`,
         );
+      if (url.pathname === "/cross-password" && request.method === "POST")
+        return page(`<p>Sign in again to continue</p>
+          <form method="post" action="/cross-password">
+          <label>Password <input name="password" type="password"></label>
+          <button>Continue</button></form>`);
       return new Response("not found", { status: 404 });
     },
   });
@@ -457,6 +677,82 @@ describe.skipIf(!asked)("the code the site asks for after the password", () => {
     await tab.close();
   });
 
+  test("business code fields on a login are not a code step: a refused password stays refused", async () => {
+    const tab = await open("/login-codes");
+    const result = await fillSignIn(tab, {
+      origin,
+      username: "a@example.test",
+      password: "wrong-one",
+    });
+    expect(result.submitted).toBe(true);
+    expect(result.codeRequested).toBe(false);
+    expect(result.passwordFieldVisible).toBe(true);
+    await tab.close();
+  });
+
+  test("business code fields on the page after the password are not a code step", async () => {
+    const tab = await open("/login-codes");
+    const result = await fillSignIn(tab, {
+      origin,
+      username: "a@example.test",
+      password: PASSWORD,
+    });
+    expect(result.submitted).toBe(true);
+    expect(result.codeRequested).toBe(false);
+    expect(result.passwordFieldVisible).toBe(false);
+    expect(result.url).toBe(`${origin}/codes-session`);
+    await tab.close();
+  });
+
+  test("a postcode field on a refused login is not a code step: the refusal stays the refusal", async () => {
+    const tab = await open("/login-postcode");
+    const result = await fillSignIn(tab, {
+      origin,
+      username: "a@example.test",
+      password: "wrong-one",
+    });
+    expect(result.submitted).toBe(true);
+    expect(result.codeRequested).toBe(false);
+    expect(result.passwordFieldVisible).toBe(true);
+    await tab.close();
+  });
+
+  test("a postcode field on the page after the password is not a code step", async () => {
+    const tab = await open("/login-postcode");
+    const result = await fillSignIn(tab, {
+      origin,
+      username: "a@example.test",
+      password: PASSWORD,
+    });
+    expect(result.submitted).toBe(true);
+    expect(result.codeRequested).toBe(false);
+    expect(result.passwordFieldVisible).toBe(false);
+    expect(result.url).toBe(`${origin}/postcode-session`);
+    await tab.close();
+  });
+
+  test("a refused password beside a real one-time-code field is still a refusal", async () => {
+    const tab = await open("/login-2fa-refuse");
+    const result = await fillSignIn(tab, {
+      origin,
+      username: "a@example.test",
+      password: "wrong-one",
+    });
+    expect(result.submitted).toBe(true);
+    expect(result.codeRequested).toBe(false);
+    expect(result.passwordFieldVisible).toBe(true);
+    await tab.close();
+  });
+
+  test("a verification code drawn as a tel field, with no autocomplete, is still found", async () => {
+    const tab = await open("/login-tel-code");
+    const result = await fillSignIn(tab, { origin, password: PASSWORD });
+    expect(result.submitted).toBe(true);
+    expect(result.codeRequested).toBe(true);
+    expect(result.passwordFieldVisible).toBe(false);
+    await tab.close();
+  });
+
   test("a site that moved the code step to another origin is not followed", async () => {
     const tab = await open("/login-cross");
     const result = await fillSignIn(tab, { origin, password: PASSWORD });
@@ -468,6 +764,21 @@ describe.skipIf(!asked)("the code the site asks for after the password", () => {
     expect(
       await tab.locator("input[autocomplete=one-time-code]").inputValue(),
     ).toBe("");
+    await tab.close();
+  });
+
+  test("a site that moved the password step to another origin is not read as a refusal", async () => {
+    // The login hands the password step to another origin — an identity provider — and that page
+    // draws a password field of its own. The field is that page's, not this login's refusal: the
+    // person takes over, and the answer never tells the server the password was probably not
+    // accepted, which would reopen a request the retry cannot follow anyway.
+    const tab = await open("/login-cross-password");
+    const result = await fillSignIn(tab, { origin, password: PASSWORD });
+    expect(result.submitted).toBe(true);
+    expect(result.passwordFieldVisible).toBe(false);
+    expect(result.codeRequested).toBe(false);
+    expect(result.error).toContain(`moved to ${otherOrigin}`);
+    expect(result.url.startsWith(`${otherOrigin}/cross-password`)).toBe(true);
     await tab.close();
   });
 });
@@ -566,6 +877,49 @@ describe.skipIf(!asked)(
       await tab.close();
     });
 
+    test("a code that hands the sign-in to another origin's password page is not read as the login back", async () => {
+      // The mirror of the password step's move, one step deeper: the site takes the code and hands
+      // the sign-in to another origin — an identity provider — whose page draws a password field of
+      // its own and no code field. The field is that page's, not this login back at its beginning:
+      // the person takes over, and the answer never tells the server the password is wanted again,
+      // which would reopen a request no retry could follow — the next fill would be refused for
+      // sitting on the wrong origin.
+      const tab = await open("/login-2fa-cross-password");
+      const fill = await fillSignIn(tab, { origin, password: PASSWORD });
+      expect(fill.codeRequested).toBe(true);
+      const result = await fillSignInCode(tab, { origin, code: CODE });
+      expect(result.submitted).toBe(true);
+      expect(result.codeFieldVisible).toBe(false);
+      expect(result.passwordFieldVisible).toBe(false);
+      expect(result.error).toContain(`moved to ${otherOrigin}`);
+      expect(result.url.startsWith(`${otherOrigin}/cross-password`)).toBe(true);
+      await tab.close();
+    });
+
+    test("a code that hands the sign-in to another origin's code page is not read as signed in", async () => {
+      // The same move again, staying on codes: the site takes the code and hands the sign-in to
+      // another origin — a chained identity provider — whose page draws a verification code field
+      // of its own. That field is the provider's second step, not this login's verdict: the
+      // person takes over, and the answer never tells the server the sign-in went through while
+      // the browser sits on the other origin waiting for a code it was never given.
+      const tab = await open("/login-2fa-cross-code");
+      const fill = await fillSignIn(tab, { origin, password: PASSWORD });
+      expect(fill.codeRequested).toBe(true);
+      const result = await fillSignInCode(tab, { origin, code: CODE });
+      expect(result.submitted).toBe(true);
+      expect(result.codeFieldVisible).toBe(false);
+      expect(result.passwordFieldVisible).toBe(false);
+      expect(result.error).toContain(
+        `moved to ${otherOrigin} to ask for another verification code`,
+      );
+      expect(result.url.startsWith(`${otherOrigin}/cross-code`)).toBe(true);
+      // The code field on that other origin was not typed into either.
+      expect(
+        await tab.locator("input[autocomplete=one-time-code]").inputValue(),
+      ).toBe("");
+      await tab.close();
+    });
+
     test("a code field drawn as a password input is the code step, not a refused login", async () => {
       const tab = await open("/masked-login");
       const login = await fillSignIn(tab, {
@@ -580,6 +934,68 @@ describe.skipIf(!asked)(
       });
       const finished = await fillSignInCode(tab, { origin, code: CODE });
       expect(finished.url).toBe(`${origin}/home`);
+      await tab.close();
+    });
+
+    test("a code panel drawn in the same document as the hidden login form is submitted by its own button", async () => {
+      // The site signed in without leaving the page: the login form is hidden and the code panel
+      // drawn beside it, both still in the document. The login form's submit button keeps the mark
+      // the password step gave it, so marking the code form's button without clearing the older
+      // one first leaves two marked buttons, and the click does not know which one to press.
+      const tab = await open("/login-spa-2fa");
+      const fill = await fillSignIn(tab, {
+        origin,
+        username: "a@example.test",
+        password: PASSWORD,
+      });
+      expect(fill.codeRequested).toBe(true);
+      const result = await fillSignInCode(tab, { origin, code: CODE });
+      expect(result).toEqual({
+        submitted: true,
+        codeFieldVisible: false,
+        passwordFieldVisible: false,
+        url: `${origin}/home`,
+      });
+      await tab.close();
+    });
+
+    test("a login page the site is slow to bring back is not a finished sign-in", async () => {
+      // The mirror of the slow swap above, on the refusal side: the site took the code but sends
+      // the person back to the login page, and the checking page it shows first carries neither
+      // field. Reporting on the first look alone would tell the server the code went through while
+      // the person is back where they started.
+      const tab = await open("/login-slow-back");
+      const fill = await fillSignIn(tab, {
+        origin,
+        username: "a@example.test",
+        password: PASSWORD,
+      });
+      expect(fill.codeRequested).toBe(true);
+      const result = await fillSignInCode(tab, { origin, code: CODE });
+      expect(result.submitted).toBe(true);
+      expect(result.codeFieldVisible).toBe(false);
+      // The login page came back: the code was spent, the sign-in did not go through.
+      expect(result.passwordFieldVisible).toBe(true);
+      await tab.close();
+    });
+
+    test("a code page the site is slow to replace is not read as a refused code", async () => {
+      // The site accepted the code, but its success page is late: the old code form is still on
+      // the page when the fill first looks, and goes away only during the grace wait. Reading the
+      // first look alone would call the code refused, and the person would be told to re-enter a
+      // one-time code the site has already spent.
+      const tab = await open("/login-slow-swap");
+      const fill = await fillSignIn(tab, {
+        origin,
+        username: "a@example.test",
+        password: PASSWORD,
+      });
+      expect(fill.codeRequested).toBe(true);
+      const result = await fillSignInCode(tab, { origin, code: CODE });
+      expect(result.submitted).toBe(true);
+      expect(result.codeFieldVisible).toBe(false);
+      // The code was spent on the site that accepted it: the success page came up.
+      expect(await tab.locator("h1").textContent()).toBe("All set");
       await tab.close();
     });
   },

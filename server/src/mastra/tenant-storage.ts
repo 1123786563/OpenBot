@@ -145,7 +145,12 @@ export function createTenantMastraStorage(
       lockStore: PostgresStore;
     }
   >();
-  const pending = new Map<string, Promise<PostgresStore>>();
+  // The opening promise carries its tenantId: closeTenant then matches by equality
+  // instead of a key prefix, which a tenant id containing a colon would corrupt.
+  const pending = new Map<
+    string,
+    { tenantId: string; opening: Promise<PostgresStore> }
+  >();
   const pendingFingerprints = new Map<string, string>();
   const closingTenants = new Map<string, Promise<void>>();
   const failedClosures = new Set<string>();
@@ -185,7 +190,7 @@ export function createTenantMastraStorage(
         throw new Error("MASTRA_STORAGE_BINDING_STALE");
       return entry.store;
     }
-    let opening = pending.get(key);
+    let opening = pending.get(key)?.opening;
     if (opening && pendingFingerprints.get(key) !== fingerprint)
       throw new Error("MASTRA_STORAGE_BINDING_STALE");
     if (!opening) {
@@ -228,14 +233,15 @@ export function createTenantMastraStorage(
           });
           return store;
         } catch (error) {
-          await Promise.all([store.close(), lockStore.close()]);
+          // Cleanup that itself fails must not replace the error that caused it.
+          await Promise.allSettled([store.close(), lockStore.close()]);
           throw error;
         }
       })();
-      pending.set(key, opening);
+      pending.set(key, { tenantId: location.tenantId, opening });
       void opening
         .finally(() => {
-          if (pending.get(key) === opening) {
+          if (pending.get(key)?.opening === opening) {
             pending.delete(key);
             pendingFingerprints.delete(key);
           }
@@ -255,10 +261,20 @@ export function createTenantMastraStorage(
     if (!entry || entry.store !== store)
       throw new Error("MASTRA_STORAGE_BINDING_STALE");
     const client = await entry.lockStore.pool.connect();
+    // The pool may have been handed to a close while this connect waited: a client acquired
+    // from a store no longer registered would BEGIN under a pool the tenant already left.
+    if (stores.get(key) !== entry || closingTenants.has(binding.tenantId)) {
+      client.release();
+      throw new Error("MASTRA_STORAGE_CLOSING");
+    }
     try {
       await client.query("BEGIN");
       await client.query("SET LOCAL lock_timeout = '2s'");
       await client.query("SET LOCAL statement_timeout = '5s'");
+      // `statement_timeout` only bounds SQL; `operation()` runs plain JS between statements, and
+      // an idle-in-transaction hang would hold the advisory lock (and this single-connection
+      // lockStore) for ever. The floor is generous: the critical section is conversation writes.
+      await client.query("SET LOCAL idle_in_transaction_session_timeout = '30s'");
       await client.query(
         "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
         [
@@ -357,15 +373,17 @@ export function createTenantMastraStorage(
     async closeTenant(tenantId) {
       const existing = closingTenants.get(tenantId);
       if (existing) return existing;
-      if (failedClosures.has(tenantId))
-        throw new Error("MASTRA_STORAGE_CLOSE_FAILED");
+      // A previous close failing is not a verdict: retried, it either finishes this time or
+      // fails again with the same named error. Permanent death here cost a process restart for
+      // one transient close timeout.
+      failedClosures.delete(tenantId);
       tenantEpochs.set(tenantId, (tenantEpochs.get(tenantId) ?? 0) + 1);
       const closing = (async () => {
         let failed = false;
         try {
           const openings = [...pending.entries()]
-            .filter(([key]) => key.startsWith(`${tenantId}:`))
-            .map(([, value]) => value);
+            .filter(([, value]) => value.tenantId === tenantId)
+            .map(([, value]) => value.opening);
           await Promise.allSettled(openings);
           const entries = [...stores.entries()].filter(
             ([, entry]) => entry.tenantId === tenantId,
@@ -376,11 +394,13 @@ export function createTenantMastraStorage(
               entry.lockStore.close(),
             ]),
           );
-          for (const [key] of entries) stores.delete(key);
           const failures = results.filter(
             (result): result is PromiseRejectedResult =>
               result.status === "rejected",
           );
+          // The entries stay registered while a close failed: dropping them would leak the
+          // pools AND leave nothing for the retry above to close.
+          if (failures.length === 0) for (const [key] of entries) stores.delete(key);
           if (failures.length) {
             failed = true;
             throw new AggregateError(
@@ -399,8 +419,13 @@ export function createTenantMastraStorage(
     async close() {
       if (closed) return;
       closed = true;
-      await Promise.allSettled([...pending.values()]);
-      await Promise.all(
+      await Promise.allSettled(
+        [...pending.values()].map((value) => value.opening),
+      );
+      // allSettled plus an unconditional clear, the same shape closeTenant keeps: one
+      // pool refusing to close must not strand every other entry in the map on a path
+      // this flag makes impossible to retry.
+      await Promise.allSettled(
         [...stores.values()].flatMap(({ store, lockStore }) => [
           store.close(),
           lockStore.close(),

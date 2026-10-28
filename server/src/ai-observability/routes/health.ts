@@ -13,10 +13,18 @@
  * booleans, numbers and one enumerated reason. No endpoint, credential, upstream
  * body or exception text ever rides along — a snapshot that throws answers the
  * same enumerated `unreachable` shape instead of leaking its error.
+ *
+ * The status code is deliberately always 200: Opik is bypass observability, so its
+ * being unreachable must not read as this API being down. A load balancer or
+ * orchestrator that wants Opik's readiness must read `opik.ready` in the body, not
+ * the status code — do not wire this path into liveness/readiness probes.
  */
 import { Hono } from "hono";
+import { getLogger } from "../../../../shared/logger";
 import type { AppVariables } from "../../auth/public";
 import type { OpikHealthService, OpikHealthSnapshot } from "../health";
+
+const log = getLogger("server");
 
 export type AiObservabilityHealthDeps = Readonly<{
   service: OpikHealthService;
@@ -31,8 +39,14 @@ export function createAiObservabilityHealthRoutes(
     let snapshot: OpikHealthSnapshot;
     try {
       snapshot = await deps.service.snapshot();
-    } catch {
-      // Fail closed with the same safe shape; the counters are still readable.
+    } catch (error) {
+      // Fail closed with the same safe shape; the counters are still readable. The
+      // body never carries the error, but the server log says a probe crashed —
+      // reason=unreachable alone cannot distinguish an Opik outage from a bug here.
+      log.warn(
+        { type: "opik-health-route-snapshot-failed", error: String(error) },
+        "opik-health-route-snapshot-failed",
+      );
       snapshot = {
         readiness: { ready: false, reason: "unreachable" as const },
         writes: deps.service.writeStats(),

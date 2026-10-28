@@ -201,7 +201,10 @@ function validateRequest(input: unknown): RequestValidation {
       };
     }
   } else {
-    reservationId = reservationIdFromAttemptId(raw.attemptId as string);
+    reservationId =
+      typeof raw.attemptId === "string"
+        ? reservationIdFromAttemptId(raw.attemptId)
+        : null;
     if (reservationId === null) {
       return {
         ok: false,

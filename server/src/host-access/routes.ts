@@ -108,27 +108,38 @@ export function createHostAccessRoutes(options: {
     if (!(await canUseBot(actor, botId))) {
       return context.json({ error: "That Bot is not available to you." }, 404);
     }
+    let grant: Awaited<ReturnType<typeof broker.requestFolderGrant>>;
     try {
-      const grant = await broker.requestFolderGrant({
+      grant = await broker.requestFolderGrant({
         botId,
         botName: (await options.botName?.(botId, actor)) ?? botId,
         actorId: actor.id,
       });
+    } catch (error) {
+      // Only the owner's own refusal names a reason a caller can act on; anything else is
+      // an internal fault whose message is not for the client.
+      const message =
+        error instanceof HostAccessRefusedError
+          ? error.message
+          : "The folder was not granted.";
+      return context.json(
+        { error: message },
+        error instanceof HostAccessRefusedError ? 409 : 500,
+      );
+    }
+    // The grant is already made: an audit-write fault must not read back to the caller as a
+    // failed grant.
+    try {
       await audit(auditStore, {
         actorUserId: actor.id,
         targetId: grant.id,
         change: "host_folder_granted",
         botId,
       });
-      return context.json({ grant });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "The folder was not granted.";
-      return context.json(
-        { error: message },
-        error instanceof HostAccessRefusedError ? 409 : 500,
-      );
+    } catch {
+      /* The grant stands; the trail write failing changes nothing the caller can act on. */
     }
+    return context.json({ grant });
   });
 
   routes.delete("/grants/:id", requireUser, async (context) => {
@@ -141,12 +152,6 @@ export function createHostAccessRoutes(options: {
     }
     try {
       broker.revokeGrant(id, actor.id);
-      await audit(auditStore, {
-        actorUserId: actor.id,
-        targetId: id,
-        change: "host_folder_revoked",
-      });
-      return context.json({ ok: true });
     } catch (error) {
       return context.json(
         {
@@ -158,6 +163,17 @@ export function createHostAccessRoutes(options: {
         404,
       );
     }
+    // The revocation is done: an audit-write fault must not tell the caller it failed.
+    try {
+      await audit(auditStore, {
+        actorUserId: actor.id,
+        targetId: id,
+        change: "host_folder_revoked",
+      });
+    } catch {
+      /* The grant is revoked; nothing the caller can act on changes. */
+    }
+    return context.json({ ok: true });
   });
 
   routes.post("/stop", requireUser, async (context) => {

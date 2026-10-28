@@ -8,6 +8,8 @@
  * The alternative is guessing a refusal from its wording, which breaks the first time an
  * administrator rephrases a policy message, and fails silently by drawing a refusal as a result.
  */
+import { refusalBody as stripRefusal } from "@openbot/shared/connect-prompt";
+
 export const REFUSAL_MARKER = "Refused.";
 
 /**
@@ -37,6 +39,25 @@ export function asText(text: string): string {
 }
 
 /**
+ * A result's refusal and its answer, read from one decode of the envelope.
+ *
+ * Every reader of a completed result asks both questions of it — is this a refusal, and what is
+ * the text it carries — and asking them as two calls read the envelope twice: the strip decoded it
+ * once to answer null, and the caller decoded it again for the body that verdict left behind.
+ * During a streaming reply every fold re-runs this for every step on every frame, so the second
+ * read was the very parse-per-frame cost the fold's verdict cache exists to cap. One call now, one
+ * decode, both answers.
+ */
+export function refusalAndAnswer(result: string | undefined): {
+  refusal: string | null;
+  answer: string | undefined;
+} {
+  if (result === undefined) return { refusal: null, answer: undefined };
+  const answer = asText(result);
+  return { refusal: stripRefusal(answer, REFUSAL_MARKER), answer };
+}
+
+/**
  * The human-readable body of a server refusal, or null for any other result.
  *
  * ONE STRIP, EVERY READER. A refused tool result reaches the transcript wearing an envelope — the
@@ -50,12 +71,37 @@ export function asText(text: string): string {
  * Fail-closed the same way {@link readConnectPrompt} is: anything that does not start with the
  * marker once decoded — a plain result, or a vendor's sentence that merely contains it — answers
  * null, so only a refusal this deployment wrote is ever read as one.
+ *
+ * The strip sequence itself is the connect codec's own parameterised copy (`refusalBody` in
+ * `shared/connect-prompt.ts`, where each caller passes the marker its side of the wire declared):
+ * this is the app's entry point to it — `asText`, then the strip — so there is exactly one
+ * sequence in the codebase for a reader to drift from, not two.
  */
 export function refusalBody(result: string | undefined): string | null {
-  if (result === undefined) return null;
-  const answer = asText(result);
-  if (!answer.startsWith(REFUSAL_MARKER)) return null;
-  return answer.slice(REFUSAL_MARKER.length).trim();
+  return refusalAndAnswer(result).refusal;
+}
+
+/**
+ * Whether a result's first characters could open a refusal this server wrote.
+ *
+ * THE FOLD'S FAST PATH READS THIS before its cache or a parse is ever consulted, and the check
+ * lives here — beside the {@link refusalBody} strip it fronts for — so the gate and the strip
+ * answer from one declaration of the shapes a refusal arrives in, instead of the call site
+ * restating the rule and the two drifting apart. A refusal can only wear two shapes: the marker
+ * itself, or the quote in front of the marker that the runtime's JSON encoding opens with
+ * (`asText` rewrites a result only when it starts with a quote, and the encoding escapes nothing
+ * in the marker's letters).
+ *
+ * A SUPERSET ON PURPOSE: padding a vendor added, or an escaped spelling of the marker, passes
+ * here and the full strip then answers null — never the other way round, so nothing the
+ * one-sequence strip reads as a refusal can be folded away by this cheap look, which is the
+ * direction that would hide a question the person has to answer.
+ */
+export function mayBeRefusal(result: string): boolean {
+  const lead = result.trimStart();
+  return (
+    lead.startsWith(REFUSAL_MARKER) || lead.startsWith(`"${REFUSAL_MARKER}`)
+  );
 }
 
 /**
@@ -72,6 +118,30 @@ export function withoutUntrustedEnvelope(text: string): string {
     (_match, inner: string) =>
       inner.replace(/<\\\/untrusted_data/gi, "</untrusted_data"),
   );
+}
+
+/**
+ * A parsed JSON value drawn as a json fence, or null when the engine cannot redraw it.
+ *
+ * V8's JSON.stringify recurses once per nesting level and gives up (`RangeError: Maximum call
+ * stack size exceeded`) on legal documents far shallower than JSON.parse reads. When it does, the
+ * vendor's own text is what gets drawn — fenced as JSON, unchanged, exactly the bytes the server
+ * sent — but which text that may be is the caller's to decide, because a fallback that repeats
+ * content already drawn beside it shows the same words twice.
+ */
+function fence(parsed: unknown): string | null {
+  try {
+    return `\`\`\`json\n${JSON.stringify(parsed, null, 2)}\n\`\`\``;
+  } catch {
+    // The stringifier recursed past the engine's limit. What to draw instead depends on what has
+    // already been drawn beside it, so the failure answers null and the caller decides.
+    return null;
+  }
+}
+
+/** A text fenced as JSON — the bytes the server sent, unread and unchanged. */
+function fencedJson(text: string): string {
+  return `\`\`\`json\n${text}\n\`\`\``;
 }
 
 /**
@@ -109,15 +179,18 @@ export function forDisplay(text: string): string {
       const rest = entries.filter(([key]) => key !== markdown[0]);
       const body = String(markdown[1]);
       if (rest.length === 0) return body;
-      return `${body}\n\n\`\`\`json\n${JSON.stringify(
-        Object.fromEntries(rest),
-        null,
-        2,
-      )}\n\`\`\``;
+      /*
+       * When the rest cannot be redrawn, the envelope is drawn once, as the text it arrived in.
+       * Standing the body in front of that fence would show the same words twice — once as the
+       * markdown just drawn, once more inside the envelope — so the whole envelope stands alone;
+       * nothing is discarded either way.
+       */
+      const redrawn = fence(Object.fromEntries(rest));
+      return redrawn === null ? fencedJson(trimmed) : `${body}\n\n${redrawn}`;
     }
   }
 
-  return `\`\`\`json\n${JSON.stringify(parsed, null, 2)}\n\`\`\``;
+  return fence(parsed) ?? fencedJson(trimmed);
 }
 
 /**

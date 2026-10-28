@@ -46,9 +46,9 @@ type RequireAdmin = (
 ) => Response | undefined;
 
 /**
- * The channels' anonymous deliveries, at their own prefix. The provider path segment is matched
- * against the configured providers only — anything else (a probe, a mistyped channel name) is a
- * plain 404 with no body-parsing work done.
+ * The channels' anonymous deliveries, at their own prefix. The body is read once and capped
+ * first — the size limit holds for every delivery, configured provider or not — and a provider
+ * path segment matching nothing (a probe, a mistyped channel name) is then a plain 404.
  */
 export function createPaymentCallbackRoutes(deps: { service: PaymentService }) {
   const routes = new Hono<{ Variables: AppVariables }>();
@@ -106,14 +106,11 @@ async function callbackAnswer(
       return fail(409);
     case "unknown-provider":
       return context.json({ error: "Unknown payment provider." }, 404);
-    case "unverified":
-      return fail(
-        outcome.refusal === "stale"
-          ? 401
-          : outcome.refusal === "decryption"
-            ? 400
-            : 403,
-      );
+    case "unverified": {
+      if (outcome.refusal === "stale") return fail(401);
+      if (outcome.refusal === "decryption") return fail(400);
+      return fail(403);
+    }
     case "not-success":
       return fail(409);
     case "unknown-order":

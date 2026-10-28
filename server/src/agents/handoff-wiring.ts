@@ -77,7 +77,15 @@ export async function startHandoffDelivery(deps: {
        * agreed to, and the person was told it never answered.
        */
       agentFor: async ({ actorId, botId, fromBotId, initiator }) => {
-        const actor = await actorFor(actorId).catch(() => null);
+        // A resolution failure is logged apart from "not found": a transient store outage
+        // must not read, on retries, as an identity that never existed.
+        const actor = await actorFor(actorId).catch((error: unknown) => {
+          log.warn(
+            { err: error, actorId },
+            "Could not resolve the handoff addressee.",
+          );
+          return null;
+        });
         if (!actor) {
           throw new Error(
             "who this is for could not be confirmed, so the Bot was not run",
@@ -117,7 +125,15 @@ export async function startHandoffDelivery(deps: {
           await groupConversations.announceHandoff(input);
           return;
         }
-        const actor = await actorFor(input.actorId).catch(() => null);
+        const actor = await actorFor(input.actorId).catch((error: unknown) => {
+          // The answer has already been produced; losing it silently leaves the asker
+          // waiting for ever, so at least say the trail should have carried it.
+          log.warn(
+            { err: error, actorId: input.actorId, threadId: input.threadId },
+            "Could not resolve the actor to announce a handoff answer.",
+          );
+          return null;
+        });
         if (!actor) return;
         await channelStore.recordActivity(actor, mapped.channelId, {
           text: input.text,
@@ -187,7 +203,12 @@ export async function startHandoffDelivery(deps: {
   const listener = await startWorkOfferedListener(
     config.databaseUrl,
     (kind) => {
-      if (kind === HANDOFF_KIND) void kick();
+      if (kind === HANDOFF_KIND)
+        // Fire-and-forget, like every listener callback: an unhandled rejection here would
+        // take the process down, not just this sweep.
+        void kick().catch((error: unknown) =>
+          log.warn({ err: error }, "A handoff sweep failed."),
+        );
     },
   );
   return { listener, sweep: repeatAfterEach(kick, 2_000) };

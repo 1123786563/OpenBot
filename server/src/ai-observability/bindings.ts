@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
+import type { SafeText } from "../../../shared/ai-observability";
+import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import {
   type AiObservationBindingCapability,
@@ -7,8 +9,11 @@ import {
   aiObservationBindings,
 } from "../db/schema/ai-observability-bindings";
 import type { ObservationScope } from "./contracts";
+import { runUpstreamIdentity } from "./opik-http";
+import type { OpikOtlpSpan, OpikPort, OpikRunBindingRef } from "./opik-port";
 import { notPendingDeletion } from "./retention";
 import { assertObservationScope, resolveStorageLocator } from "./scope";
+import { nanos, nowNs, W3C_TRACE_ID } from "./span-support";
 
 /**
  * The trusted seam between T06's ObservationScope and the binding table.
@@ -19,6 +24,13 @@ import { assertObservationScope, resolveStorageLocator } from "./scope";
  * the database even once. Opik metadata is never read here and never could assign ownership:
  * reconciliation is keyed by the authoritative local (scope, run, attempt) triple, and the
  * upstream trace id is a value it records, not an identity it derives from.
+ *
+ * FREV-03: the scope key a row carries is the Bot's STABLE data identity (scope.ts
+ * `resourceScopeKey`), so every authorized holder of a scope for one Bot — its creator, a
+ * managing administrator, a post-transfer owner — reads and writes the SAME rows. Who may hold
+ * the scope at all is the live observation gate's answer upstream of this store (R4-02:
+ * `canObserveAgent`, never the manage gate); the row's own `actor_id` remains the provenance
+ * of who recorded it.
  */
 
 export type RunBindingErrorCode =
@@ -29,13 +41,27 @@ export type RunBindingErrorCode =
    * another live binding of this scope already recorded that upstream id. The
    * first claim stands; this attempt stays unreconciled and the caller hears a
    * deterministic 409, never the driver's bare constraint violation as a 500.
+   *
+   * FREV-02: also the observer gate's replay refusal — the authoritative
+   * (scope, run, attempt) row already exists and names a DIFFERENT W3C chain
+   * than the one being exported. The first claim stands there too: the gate
+   * refuses rather than exporting a run under a row that disagrees with it.
    */
-  | "BINDING_TRACE_CONFLICT";
+  | "BINDING_TRACE_CONFLICT"
+  /**
+   * F5E1-F3: the run's upstream objects could not be materialized (the create or the
+   * root-span write failed, or the verified read-back never observed the trace). A run
+   * without its upstream trace/root is a run whose spans would land where nobody could map
+   * them back to the binding, so the export fails closed instead — the write queue counts
+   * the failure, and the chain's next fact retries the whole materialization (the ids are
+   * derived, so the retry asks for the same objects).
+   */
+  | "BINDING_UPSTREAM_UNAVAILABLE";
 
 export class RunBindingError extends Error {
   constructor(
     public code: RunBindingErrorCode,
-    public status: 400 | 404 | 409,
+    public status: 400 | 404 | 409 | 503,
   ) {
     super(code);
   }
@@ -71,17 +97,15 @@ export type RunBindingStore = {
    * the first claim stands, this row stays unreconciled, and a retry hears the same answer —
    * never the driver's constraint violation surfacing as a 500.
    *
-   * RESERVED — NOT WIRED (OCR R4-25): no production caller exists (full-tree
-   * grep: only the test suites reach it; the run-report path stops at begin +
-   * finish, and finish never writes opikTraceId). This method is therefore the
-   * sole writer of ai_observation_bindings.opik_trace_id and every
-   * reconciliation-dependent read (unreconciled listings, countUnreconciled,
-   * the 409 conflict branch) answers its empty case until it is wired. Wiring
-   * precondition: a production call site on the run-report/acknowledgment path
-   * that can observe the upstream trace id after a lost local ack — do not
-   * fake one, and do not widen begin/finish to write the id (that would
-   * change begin/finish's recorded contract and the R2-51 pendingSync
-   * semantics) without re-approving the behavior through a Spec first.
+   * WIRED (F5E1-F3, closing OCR R4-25's reservation): the observer binding gate
+   * is the production caller — it materializes the run's upstream trace/root with
+   * the verified port and records the derived id here, so a run's spans only ever
+   * export under a binding that names the trace they attach to (the mapping is
+   * authoritative before, not after, the export). The lost-acknowledgment path
+   * the reservation described is the crash window between createTrace and this
+   * call; the deterministic id derivation is what makes its retry safe (the
+   * retry asks for the same objects). This remains the sole writer of
+   * ai_observation_bindings.opik_trace_id, and begin/finish still never write it.
    */
   reconcile(
     scope: ObservationScope,
@@ -150,6 +174,17 @@ export type RunBindingStore = {
     scope: ObservationScope,
     opikTraceId: string,
   ): Promise<RunBinding | null>;
+  /**
+   * The lifecycle states for a page of upstream traces (R3-03), joined on this
+   * scope's own binding rows — the list-side read of the same authority detail
+   * reads. The (scope, opik trace) unique index answers at most one state per id;
+   * a trace this scope never bound answers nothing, which the caller keeps as
+   * the upstream word rather than guessing.
+   */
+  statesByOpikTraceIds(
+    scope: ObservationScope,
+    opikTraceIds: readonly string[],
+  ): Promise<ReadonlyMap<string, AiObservationBindingState>>;
 };
 
 const capabilities: readonly AiObservationBindingCapability[] = [
@@ -265,13 +300,11 @@ export function createRunBindingStore(db: Database): RunBindingStore {
     },
 
     async reconcile(scope, runId, attemptId, opikTraceId) {
-      // OCR R4-25: RESERVED — NOT WIRED. This is opik_trace_id's only write site and
-      // has zero production callers (tests only): the production run path is begin +
-      // finish, and finish writes state only. Until a call site exists on the
-      // lost-acknowledgment path (see the interface note above), every
-      // reconciliation-dependent read answers its empty case by design. Deliberately
-      // left unwired here — wiring it is a behavior change needing its own approved
-      // Spec, not a defect fix.
+      // WIRED (F5E1-F3, closing OCR R4-25's reservation; supersedes the earlier
+      // "RESERVED — NOT WIRED" note, which contradicted the interface docblock above):
+      // the observer binding gate and the remote run recorder are the production
+      // callers — each run origin's materialization records the derived id here. This
+      // remains opik_trace_id's sole write site, and begin/finish still never write it.
       assertObservationScope(scope);
       reference(runId);
       reference(attemptId);
@@ -492,5 +525,740 @@ export function createRunBindingStore(db: Database): RunBindingStore {
         .limit(1);
       return rows[0] ?? null;
     },
+
+    async statesByOpikTraceIds(scope, opikTraceIds) {
+      assertObservationScope(scope);
+      // inArray with an empty list is not a query anyone can answer; it is no rows.
+      if (opikTraceIds.length === 0) return new Map();
+      const rows = await db
+        .select({
+          opikTraceId: aiObservationBindings.opikTraceId,
+          state: aiObservationBindings.state,
+        })
+        .from(aiObservationBindings)
+        .where(
+          and(
+            eq(aiObservationBindings.scopeKey, scope.key),
+            inArray(aiObservationBindings.opikTraceId, [
+              ...new Set(opikTraceIds),
+            ]),
+            // The M1a visibility rule, state-shaped: a run whose deletion is in
+            // flight is gone to readers, its lifecycle answer included — the
+            // same answer window every other join on this table keeps.
+            notPendingDeletion("run", aiObservationBindings.id),
+          ),
+        );
+      const states = new Map<string, AiObservationBindingState>();
+      for (const row of rows) {
+        if (row.opikTraceId !== null) states.set(row.opikTraceId, row.state);
+      }
+      return states;
+    },
+  };
+}
+
+/*
+ * ---------------------------------------------------------------------------
+ * The observer-path binding gate (FREV-02)
+ * ---------------------------------------------------------------------------
+ */
+
+/**
+ * The chain id when provable — a W3C 32-hex trace id — else null. This is the
+ * binding gate's identity test: the run's chain is the one identity every
+ * builtin fact already carries, and an observation whose chain cannot be
+ * proven has no local authority to export under.
+ */
+export function observerChainId(traceId: string | undefined): string | null {
+  return traceId !== undefined && W3C_TRACE_ID.test(traceId) ? traceId : null;
+}
+
+/**
+ * The observed ending a run's own lifecycle fact carries — the event face's
+ * words, one explicit table (the R2-33 discipline): `disconnected` is the one
+ * word that means "the window closed and nothing terminal was seen", and it is
+ * the ONLY word that settles the binding's honest `unknown`.
+ */
+export type ObserverRunEnding =
+  | "success"
+  | "error"
+  | "canceled"
+  | "interrupted"
+  | "disconnected";
+
+/** The observed ending onto the binding's terminal vocabulary. */
+export function observerTerminalState(
+  ending: ObserverRunEnding,
+): Exclude<AiObservationBindingState, "running"> {
+  switch (ending) {
+    case "success":
+      return "completed";
+    case "error":
+      return "failed";
+    case "canceled":
+      return "canceled";
+    case "interrupted":
+      return "interrupted";
+    case "disconnected":
+      return "unknown";
+  }
+}
+
+/** The run a builtin observation binds as, keyed by what the fact face carries. */
+export type ObserverRunChain = Readonly<{
+  /** The run's W3C trace id — the chain every span of the run joins. */
+  traceId: string;
+  /**
+   * The run/attempt identity, when the fact honestly carried one (the
+   * tool-step seam's run association, when that threading lands). Absent —
+   * every wiring today — binds the chain itself as the run: one attempt per
+   * chain, origin stated in the id.
+   */
+  runRef?: Readonly<{ runId: string; attemptId: string }>;
+}>;
+
+export type ObserverRunBindingGate = Readonly<{
+  /**
+   * The chain's local authoritative binding, established (begin, idempotent)
+   * or replayed, BEFORE any business span of the run is exported. A store or
+   * constraint failure rejects; the caller fails the write closed on it — the
+   * span is not exported, and the drop is counted where the write queue
+   * counts every failure, never silent, never a faked success.
+   *
+   * F5E1-F3: when the deployment has a verified port, this same call materializes
+   * the chain's upstream trace and run root and records the authoritative mapping
+   * (see `materialize`) — the ref it answers carries the upstream trace id, which is
+   * what the port completes the business spans with.
+   */
+  ensure(
+    scope: ObservationScope,
+    chain: ObserverRunChain,
+  ): Promise<OpikRunBindingRef>;
+  /**
+   * Record the run's observed start (R3-03): the moment the fact face saw the
+   * run begin, stored BEFORE the first business fact can materialize the chain —
+   * so the upstream trace and run root carry the run's real start, never the
+   * materialization clock. First observation wins; a later one for the same
+   * chain is the same run and changes nothing.
+   */
+  noteObservedRunStart(
+    scope: ObservationScope,
+    chain: ObserverRunChain,
+    startedAt: Date,
+  ): void;
+  /**
+   * Settle the chain's binding from the run's OWN observed ending (R3-03) — the
+   * one close signal that names the outcome, replacing the tool-step window as
+   * the run-close authority. `ending` carries the event face's own words
+   * (`success`/`error`/`canceled`/`interrupted`, and `disconnected` for a window
+   * that closed with nothing terminal); `observerTerminalState` maps them onto
+   * the binding vocabulary, and only a disconnected window settles the honest
+   * `unknown` — a named ending is never degraded into one. The settle persists
+   * the binding's terminal state FIRST (the local authority), then closes the
+   * run root upstream with the observed start and end (`span_state` carries the
+   * same word) — a root close that fails is logged and left, exactly like a
+   * reporter that died after the finish: the binding stands, the root stays open
+   * upstream, and the query face reports what it knows. First settle wins per
+   * chain, as ever.
+   */
+  settleObservedRun(
+    scope: ObservationScope,
+    chain: ObserverRunChain,
+    observed: Readonly<{
+      startedAt: Date;
+      ending: ObserverRunEnding;
+      endedAt: Date;
+    }>,
+  ): void;
+  /**
+   * Settle the chain's binding from an observed run close — the tool-step
+   * window, the fact face's PRE-run-observation close signal. Kept for callers
+   * with nothing better: an interrupted close settles `interrupted`; a terminal
+   * close without an outcome the fact could name settles the explicitly-
+   * unlearned `unknown`. The production wiring no longer calls this — the run's
+   * own lifecycle observation settles real endings — so a window settle answers
+   * for the window, never instead of a named outcome (R3-03: a tool window is
+   * not a run's lifetime). First settle wins per chain; a settle that fails
+   * leaves the row running and the lease sweeper's `unknown` is the net, exactly
+   * as for a reporter that died mid-run.
+   */
+  settleObservedWindow(
+    scope: ObservationScope,
+    chain: ObserverRunChain,
+    window: "interrupted" | "terminal",
+  ): void;
+}>;
+
+/** One binding row as the port's write guard reads it. */
+function observerBindingRef(row: RunBinding): OpikRunBindingRef {
+  return {
+    scopeKey: row.scopeKey,
+    runId: row.runId,
+    attemptId: row.attemptId,
+    locatorWorkspace: row.locatorWorkspace,
+    locatorProject: row.locatorProject,
+    opikTraceId: row.opikTraceId,
+  };
+}
+
+/**
+ * F5E1-F3's materialization, extracted as the ONE shape both run origins run (OCR R5-310:
+ * the observer gate's builtin path and the remote recorder carried near-identical copies).
+ * Ordering is the crash discipline both docblocks state: create, root, THEN reconcile — a
+ * crash between the create and the reconcile leaves upstream objects the deterministic
+ * derivation finds again on a retry; a reconcile written first could claim a tree nobody
+ * wrote. Answers the binding ref WITH the upstream id recorded (the authority the run's
+ * spans write under), the ref unchanged when an earlier pass already materialized this
+ * chain, or null when the deployment has no verified port. `refuse` names each failure in
+ * the caller's own error vocabulary (the gate's RunBindingError, the recorder's Error).
+ */
+export async function materializeRunUpstream(
+  scope: ObservationScope,
+  ref: OpikRunBindingRef,
+  traceId: string,
+  startedAt: Date,
+  deps: Readonly<{
+    port: () => OpikPort | null;
+    reconcile: RunBindingStore["reconcile"] | undefined;
+    refuse: (reason: "reconcile_unwired" | "upstream_unavailable") => Error;
+  }>,
+): Promise<OpikRunBindingRef | null> {
+  const port = deps.port();
+  if (port === null) return null;
+  if (ref.opikTraceId !== null) return ref; // an earlier pass materialized this chain
+  const reconcile = deps.reconcile;
+  if (reconcile === undefined) {
+    // A port without the authoritative store's mapping write is a wiring defect: fail
+    // loudly rather than export under an identity nobody records.
+    throw deps.refuse("reconcile_unwired");
+  }
+  const identity = runUpstreamIdentity(traceId);
+  const created = await port.createTrace(scope, {
+    traceId: identity.opikTraceId,
+    name: RUN_ROOT_SPAN_NAME,
+    startTime: startedAt,
+    binding: ref,
+  });
+  if (created.outcome !== "ok") {
+    throw deps.refuse("upstream_unavailable");
+  }
+  const rootSpan: OpikOtlpSpan = {
+    traceId,
+    spanId: identity.rootSpanId,
+    name: RUN_ROOT_SPAN_NAME,
+    startTimeUnixNano: nanos(startedAt) ?? nowNs(),
+    // The root's close is not observed here — an end time would be a duration nobody
+    // measured, so the row stays open and the query face reports what it knows. The
+    // run's own lifecycle observation closes it later (see settleObservedRun).
+    opik: {
+      traceId: identity.opikTraceId,
+      spanId: identity.rootOpikSpanId,
+    },
+  };
+  const rooted = await port.writeSpans(scope, {
+    spans: [rootSpan],
+    binding: { ...ref, opikTraceId: identity.opikTraceId },
+  });
+  if (rooted.outcome !== "ok") {
+    throw deps.refuse("upstream_unavailable");
+  }
+  // The authoritative mapping: the binding now names the trace its spans attach to.
+  const reconciled = await reconcile(
+    scope,
+    ref.runId,
+    ref.attemptId,
+    identity.opikTraceId,
+  );
+  return observerBindingRef(reconciled.binding);
+}
+
+/**
+ * The run root re-written closed (R3-03): the same deterministic identity the
+ * materialization wrote open, with the observed window — the start the fact face
+ * reported, the end the terminal named, the binding-state word the local row settled
+ * onto riding as structured data. Shared with the remote recorder's terminal close
+ * (OCR R5-297) so both origins write one root shape. An unmeasurable time degrades to
+ * the other end of the window, never an invented clock.
+ */
+export function runRootCloseSpan(
+  traceId: string,
+  timing: Readonly<{ startedAt: Date; endedAt: Date; state: string }>,
+): OpikOtlpSpan {
+  const identity = runUpstreamIdentity(traceId);
+  const startNs = nanos(timing.startedAt) ?? nanos(timing.endedAt) ?? nowNs();
+  return {
+    traceId,
+    spanId: identity.rootSpanId,
+    name: RUN_ROOT_SPAN_NAME,
+    startTimeUnixNano: startNs,
+    endTimeUnixNano: nanos(timing.endedAt) ?? startNs,
+    opik: {
+      traceId: identity.opikTraceId,
+      spanId: identity.rootOpikSpanId,
+    },
+    attributes: {
+      span_state: { state: "projected", value: timing.state },
+    },
+  };
+}
+
+/** A non-empty carried reference; `null` when the fact carried none usable. */
+function carriedRef(value: string | undefined): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+/**
+ * The shared usable-runRef verdict (OCR delta T-O #8): a carried association
+ * names a run only when BOTH halves are carried. One source for the gate's
+ * refusal below and the tool-steps precheck, so the two cannot drift;
+ * carriedRef's own typeof guard is the runtime check, so junk fields arrive
+ * here safely.
+ */
+export function isUsableRunRef(
+  runRef: Readonly<{ runId: string; attemptId: string }>,
+): boolean {
+  return (
+    carriedRef(runRef.runId) !== null && carriedRef(runRef.attemptId) !== null
+  );
+}
+
+/** The safe label a gate failure logs and nothing else — no ids, no content. */
+function gateReason(error: unknown): string {
+  return error instanceof RunBindingError ? error.code : "error";
+}
+
+/** The builtin path observes its own internal steps, so its capability is detailed. */
+const OBSERVER_CAPABILITY: AiObservationBindingCapability = "detailed";
+/**
+ * The binding lease both run origins write (the builtin gate and the remote recorder):
+ * the same seven-day window the HTTP report path (routes/basic-run.ts) uses. One exported
+ * constant because OCR R5-310 — the two copies had already drifted into "same value, three
+ * comments" territory.
+ */
+export const DEFAULT_RUN_BINDING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * The run root span's name — the tree's own word for the run, never projected text (the
+ * port refuses a withheld name because the read-back locates spans by name). MUST stay the
+ * literal every origin materializes: the query face locates a run's root by this name
+ * without asking which origin wrote it.
+ */
+export const RUN_ROOT_SPAN_NAME: SafeText = { state: "projected", text: "run" };
+/** Bounded memory: recent chains per scope, and scopes, before FIFO eviction. */
+const DEFAULT_MAX_CHAINS_PER_SCOPE = 2048;
+const DEFAULT_MAX_SCOPES = 4096;
+/**
+ * The starts map's own cap (OCR T-P#4): starts can outlive the FIFO that
+ * bounds `begun` — a refused establishment retires the chain but keeps its
+ * start, and a start noted for a run that never produces a business fact never
+ * enters `order` at all — so the chains cap does not bound the map. Same
+ * magnitude as the chains cap: one start per chain in healthy operation, so
+ * entries beyond it are exactly the lingering ones this bound retires.
+ */
+const DEFAULT_MAX_RUN_STARTS_PER_SCOPE = DEFAULT_MAX_CHAINS_PER_SCOPE;
+
+type ScopeChains = {
+  begun: Map<string, Promise<OpikRunBindingRef>>;
+  settled: Set<string>;
+  /**
+   * Chains whose `begun` promise has settled (success or failure) — the eviction
+   * roster: only entries here may be retired, an in-flight begun is deferred
+   * (OCR R5-725).
+   */
+  done: Set<string>;
+  /**
+   * The run's observed start per chain (R3-03), stored ahead of the first
+   * materialization so the upstream trace and root carry the run's real start.
+   */
+  starts: Map<string, Date>;
+  /** Insertion order of `begun`, the FIFO the bound evicts by. */
+  order: string[];
+};
+
+export function createObserverRunBindingGate(
+  store: Pick<RunBindingStore, "begin" | "finish"> &
+    Partial<Pick<RunBindingStore, "reconcile">>,
+  options: Readonly<{
+    now?: () => Date;
+    ttlMs?: number;
+    maxChainsPerScope?: number;
+    maxScopes?: number;
+    /** The starts map's own bound (OCR T-P#4); see DEFAULT_MAX_RUN_STARTS_PER_SCOPE. */
+    maxRunStartsPerScope?: number;
+    /**
+     * F5E1-F3: the verified port behind this deployment, asked for at the moment a
+     * chain's upstream objects are materialized. Absent (or answering null — an
+     * Opik-disabled or unverified deployment) keeps the gate's earlier shape: bindings
+     * only, no upstream identity, the write completing without it (the tests' seam).
+     */
+    port?: () => OpikPort | null;
+  }> = {},
+): ObserverRunBindingGate {
+  const log = getLogger("server");
+  const now = options.now ?? (() => new Date());
+  const ttlMs = options.ttlMs ?? DEFAULT_RUN_BINDING_TTL_MS;
+  const maxChains = options.maxChainsPerScope ?? DEFAULT_MAX_CHAINS_PER_SCOPE;
+  const maxScopes = options.maxScopes ?? DEFAULT_MAX_SCOPES;
+  const maxRunStarts =
+    options.maxRunStartsPerScope ?? DEFAULT_MAX_RUN_STARTS_PER_SCOPE;
+  const scopes = new Map<string, ScopeChains>();
+
+  /*
+   * F5E1-F3's first half: materialize the run's upstream objects at the one confirmed
+   * execution-lifecycle point this path has — the moment the chain's authoritative binding
+   * is established, which is before the run's first business span may be exported. The
+   * trace row is what makes the run listable upstream; the root span is the parent every
+   * business span of the chain names; the reconcile is what makes the mapping authoritative
+   * (and what the query face and retention read). A run whose upstream objects cannot be
+   * established exports nothing — the failure is closed, not degraded, because a span that
+   * lands where the binding cannot name it is exactly the unattributable write the port
+   * refuses elsewhere. The three steps themselves live in `materializeRunUpstream`, shared
+   * with the remote recorder (OCR R5-310), so the two run origins cannot drift apart.
+   *
+   * T09 QUEUE EXEMPTION, DELIBERATE (OCR R5-985): the create/root writes here are the port
+   * calls that ESTABLISH the identity the T09 bounded queue's business-span writes ride
+   * under — routing them through that queue would invert the dependency (a queued span
+   * needs the ref only this synchronous path can return) — so they go direct: at most once
+   * per chain, and a failure fails the export closed, counted where the caller counts
+   * every refused write. The settle-side root close below carries the same exemption:
+   * once per chain, guarded by the `settled` set, logged when it fails.
+   */
+  const materialize = (
+    scope: ObservationScope,
+    ref: OpikRunBindingRef,
+    traceId: string,
+    startedAt: Date,
+  ): Promise<OpikRunBindingRef> =>
+    materializeRunUpstream(scope, ref, traceId, startedAt, {
+      port: () => options.port?.() ?? null,
+      reconcile: store.reconcile,
+      refuse: () => new RunBindingError("BINDING_UPSTREAM_UNAVAILABLE", 503),
+    }).then((materialized) => materialized ?? ref);
+
+  const chainsOf = (scope: ObservationScope): ScopeChains => {
+    const existing = scopes.get(scope.key);
+    if (existing !== undefined) return existing;
+    // Bound the scope map itself the same way each scope's chains are bounded:
+    // an evicted scope re-begins on its next fact, idempotently.
+    if (scopes.size >= maxScopes) {
+      const oldest = scopes.keys().next().value;
+      if (oldest !== undefined) scopes.delete(oldest);
+    }
+    const fresh: ScopeChains = {
+      begun: new Map(),
+      settled: new Set(),
+      done: new Set(),
+      starts: new Map(),
+      order: [],
+    };
+    scopes.set(scope.key, fresh);
+    return fresh;
+  };
+
+  /*
+   * OCR T-P#4: `starts` is written ahead of (and without) the FIFO that bounds
+   * `begun`, so it needs its own bound. Retirement takes the oldest start
+   * whose chain is not registered in `begun` — a registered chain's start is
+   * live data: an in-flight materialization reads it, and a cached-but-
+   * settleable run's root close still does (R5-725's in-flight rule). A
+   * retired start degrades to the materialization clock / the settle's other
+   * window end, never an invented one; silent, like the chains and scopes
+   * bounds beside it — a dropped start is a timing fallback, not a lost write.
+   * If every entry is registered the bound is exceeded temporarily by exactly
+   * that set, which the begun cache's own FIFO cap bounds.
+   */
+  const boundStarts = (chains: ScopeChains): void => {
+    for (const key of chains.starts.keys()) {
+      if (chains.starts.size <= maxRunStarts) return;
+      if (chains.begun.has(key)) continue;
+      chains.starts.delete(key);
+    }
+  };
+
+  const ensure = async (
+    scope: ObservationScope,
+    chain: ObserverRunChain,
+  ): Promise<OpikRunBindingRef> => {
+    const traceId = observerChainId(chain.traceId);
+    if (traceId === null) {
+      throw new RunBindingError("BINDING_INPUT_INVALID", 400);
+    }
+    const carriedRunId = carriedRef(chain.runRef?.runId);
+    const carriedAttemptId = carriedRef(chain.runRef?.attemptId);
+    if (chain.runRef !== undefined && !isUsableRunRef(chain.runRef)) {
+      // A runRef was carried but unusable: an association that names the run
+      // half-honestly is worse than none — refuse rather than bind the chain
+      // under an id the caller thought it had overridden.
+      throw new RunBindingError("BINDING_INPUT_INVALID", 400);
+    }
+    // No carried runRef — the default — binds the chain itself as the run:
+    // one attempt per chain, origin stated in the id.
+    const runId = carriedRunId ?? `builtin:${traceId}`;
+    const attemptId = carriedAttemptId ?? `builtin:${traceId}`;
+    const chains = chainsOf(scope);
+    const pending = chains.begun.get(traceId);
+    if (pending !== undefined) return pending;
+
+    const attempt = (async () => {
+      const { binding } = await store.begin(scope, {
+        runId,
+        attemptId,
+        traceId,
+        capability: OBSERVER_CAPABILITY,
+        expiresAt: new Date(now().getTime() + ttlMs),
+      });
+      if (binding.traceId !== traceId) {
+        // The authoritative row exists and names a different chain: the first
+        // claim stands (the reconcile discipline), and a run whose spans would
+        // export under a row that disagrees with them exports nothing.
+        throw new RunBindingError("BINDING_TRACE_CONFLICT", 409);
+      }
+      // F5E1-F3: the binding is established, so the run's upstream trace/root and its
+      // authoritative mapping are established here too — before any business span of the
+      // chain may be exported under it. R3-03: the run's observed start, when the fact
+      // face reported one ahead of the first business fact, is the start both the trace
+      // row and the root carry — the materialization clock is only the fallback for a
+      // chain nobody reported a start for.
+      return materialize(
+        scope,
+        observerBindingRef(binding),
+        traceId,
+        chains.starts.get(traceId) ?? now(),
+      );
+    })();
+    chains.begun.set(traceId, attempt);
+    chains.order.push(traceId);
+    /*
+     * `catch` first: `.finally` alone would re-emit the rejection on a promise
+     * nobody awaits — an unhandled rejection that surfaces between tests/facts
+     * (the gate's own caller below handles `attempt` itself). The `begun` check
+     * is the R1-A-01 discipline: only the attempt still registered under this
+     * chain may mark it done. A FAILED attempt is unregistered by the catch
+     * below (which also drops the mark, covering the microtask order where this
+     * `then` ran first), so a failure leaves no done entry behind — a stale one
+     * would mark a retried chain as settled and let an eviction retire the
+     * in-flight retry, re-opening the duplicate-materialization door 725 closed.
+     */
+    void attempt
+      .catch(() => {})
+      .then(() => {
+        if (chains.begun.get(traceId) === attempt) {
+          chains.done.add(traceId);
+        }
+      });
+    if (chains.order.length > maxChains) {
+      /*
+       * OCR R5-725: evict the oldest chain that is no longer in flight, deferring
+       * pending ones (re-queued at the back) — dropping an in-flight begun would make
+       * the chain's concurrent facts re-run begin/materialize and amplify the upstream
+       * calls the idempotent derivation only happens to make safe. If every entry is
+       * in flight the bound is exceeded temporarily by exactly the in-flight set,
+       * which concurrency itself bounds; the next eviction pass retires them.
+       */
+      let rotations = chains.order.length;
+      while (chains.order.length > maxChains && rotations-- > 0) {
+        const oldest = chains.order.shift();
+        if (oldest === undefined) break;
+        if (!chains.done.has(oldest)) {
+          chains.order.push(oldest);
+          continue;
+        }
+        chains.begun.delete(oldest);
+        chains.settled.delete(oldest);
+        chains.starts.delete(oldest);
+        chains.done.delete(oldest);
+        break; // one retirement per insertion keeps the map at its cap
+      }
+    }
+    try {
+      return await attempt;
+    } catch (error) {
+      // A failed establishment is not cached: the database may come back, and
+      // the next fact of the run asks again — each failure fails only the
+      // facts whose write it gated. The done mark goes with it (R1-A-01): the
+      // settlement callback above may already have added it in the other
+      // microtask order, and a left-behind mark is stale by the time a retry
+      // re-registers the chain.
+      chains.begun.delete(traceId);
+      chains.done.delete(traceId);
+      const at = chains.order.indexOf(traceId);
+      if (at >= 0) chains.order.splice(at, 1);
+      log.warn(
+        {
+          type: "opik-observer-binding-begin-failed",
+          reason: gateReason(error),
+        },
+        "opik-observer-binding-begin-failed",
+      );
+      throw error;
+    }
+  };
+
+  /*
+   * The run root's close (R3-03): the same deterministic identity the materialization
+   * wrote open, re-written with the observed window — the start the fact face reported,
+   * the end the terminal named, and the same binding-state word the local row settled
+   * onto (the span itself is `runRootCloseSpan`, shared with the remote recorder's
+   * terminal close, OCR R5-297). Writing the root again with the identical ids is the
+   * upsert the derived identity exists for (a retry asks for the very same objects); a
+   * close that fails is logged and left, because the binding's terminal state — already
+   * written — is the authority and a root that stays open upstream is the honest absence
+   * the query face already knows how to report.
+   */
+  const closeRunRoot = async (
+    scope: ObservationScope,
+    ref: OpikRunBindingRef,
+    traceId: string,
+    timing: Readonly<{ startedAt: Date; endedAt: Date; state: string }>,
+  ): Promise<void> => {
+    const port = options.port?.() ?? null;
+    if (port === null) return; // binding-only deployment: nothing upstream to close
+    if (ref.opikTraceId === null) {
+      // Materialization never established the upstream objects (or failed again
+      // inside this settle's ensure retry): there is no root to close, and the
+      // next chain fact retries the whole materialization — this close is simply
+      // gone, never faked onto a tree that does not exist.
+      log.warn(
+        { type: "opik-observer-run-root-close-unmaterialized" },
+        "opik-observer-run-root-close-unmaterialized",
+      );
+      return;
+    }
+    const closed = await port.writeSpans(scope, {
+      spans: [runRootCloseSpan(traceId, timing)],
+      binding: ref,
+    });
+    if (closed.outcome !== "ok") {
+      log.warn(
+        { type: "opik-observer-run-root-close-failed" },
+        "opik-observer-run-root-close-failed",
+      );
+    }
+  };
+
+  return {
+    ensure,
+    noteObservedRunStart(scope, chain, startedAt) {
+      const traceId = observerChainId(chain.traceId);
+      if (traceId === null) return; // nothing provable to start
+      if (!(startedAt instanceof Date) || Number.isNaN(startedAt.getTime())) {
+        return; // a time nobody measured is not the run's start
+      }
+      const chains = chainsOf(scope);
+      // First observation wins: one chain is one run, and its start is the first
+      // moment this side saw it begin.
+      if (!chains.starts.has(traceId)) {
+        chains.starts.set(traceId, startedAt);
+        boundStarts(chains);
+      }
+    },
+    settleObservedRun(scope, chain, observed) {
+      const traceId = observerChainId(chain.traceId);
+      if (traceId === null) return; // nothing provable to settle
+      const state = observerTerminalState(observed.ending);
+      const chains = chainsOf(scope);
+      // A terminal fact carries the start too: a settle that materializes the
+      // chain itself (a run with no business fact at all) still writes the run's
+      // real start, never the settle clock.
+      if (
+        observed.startedAt instanceof Date &&
+        !Number.isNaN(observed.startedAt.getTime()) &&
+        !chains.starts.has(traceId)
+      ) {
+        chains.starts.set(traceId, observed.startedAt);
+        boundStarts(chains);
+      }
+      if (chains.settled.has(traceId)) return; // first settle wins
+      chains.settled.add(traceId);
+      void ensure(scope, chain)
+        .then(async (binding) => {
+          // The local authority first: the binding's terminal state is what the
+          // query face and the retention discovery read, and it must land even
+          // when the upstream root cannot be closed behind it.
+          await store.finish(scope, binding.runId, binding.attemptId, state);
+          await closeRunRoot(scope, binding, traceId, {
+            // OCR R5-1033: the settle validates its dates like noteObservedRunStart
+            // does — a carried non-date is evidence absence, and the close falls
+            // back to the validated starts value / the other end of the window,
+            // never to the close clock inventing a start.
+            startedAt:
+              observed.startedAt instanceof Date &&
+              !Number.isNaN(observed.startedAt.getTime())
+                ? observed.startedAt
+                : (chains.starts.get(traceId) ?? observed.endedAt),
+            endedAt: observed.endedAt,
+            state,
+          });
+        })
+        .catch((error) => {
+          // Undo the once-mark so a later observed close retries; until one
+          // lands, the row stays running and the lease sweeper is the net.
+          chains.settled.delete(traceId);
+          log.warn(
+            {
+              type: "opik-observer-binding-settle-failed",
+              reason: gateReason(error),
+            },
+            "opik-observer-binding-settle-failed",
+          );
+        });
+    },
+    settleObservedWindow(scope, chain, window) {
+      const traceId = observerChainId(chain.traceId);
+      if (traceId === null) return; // nothing provable to settle
+      const chains = chainsOf(scope);
+      if (chains.settled.has(traceId)) return; // first settle wins
+      chains.settled.add(traceId);
+      const state = window === "interrupted" ? "interrupted" : "unknown";
+      void ensure(scope, chain)
+        .then((binding) =>
+          store.finish(scope, binding.runId, binding.attemptId, state),
+        )
+        .catch((error) => {
+          // Undo the once-mark so a later observed close retries; until one
+          // lands, the row stays running and the lease sweeper is the net.
+          chains.settled.delete(traceId);
+          log.warn(
+            {
+              type: "opik-observer-binding-settle-failed",
+              reason: gateReason(error),
+            },
+            "opik-observer-binding-settle-failed",
+          );
+        });
+    },
+  };
+}
+
+/** A binding ref consistent with `scope`, for suites driving the recorders
+ * without a store (the meteredModelForTests pattern: a test seam, never wired
+ * in production). */
+export function observerBindingRefForTests(
+  scope: ObservationScope,
+  run: Readonly<{
+    runId?: string;
+    attemptId?: string;
+    opikTraceId?: string | null;
+  }> = {},
+): OpikRunBindingRef {
+  const locator = resolveStorageLocator(scope);
+  return {
+    scopeKey: scope.key,
+    runId: run.runId ?? "run-test",
+    attemptId: run.attemptId ?? "attempt-test",
+    locatorWorkspace: locator.workspace,
+    locatorProject: locator.project,
+    opikTraceId: run.opikTraceId ?? null,
+  };
+}
+
+/** Test-only: a gate over no store — ensure always answers the consistent ref
+ * for the scope it is asked about, settle is a no-op. The binding loop itself
+ * is proven against the real store in the bindings suites. */
+export function observerRunBindingGateForTests(): ObserverRunBindingGate {
+  return {
+    ensure: async (scope) => observerBindingRefForTests(scope),
+    noteObservedRunStart: () => {},
+    settleObservedRun: () => {},
+    settleObservedWindow: () => {},
   };
 }

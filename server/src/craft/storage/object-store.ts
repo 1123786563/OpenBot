@@ -16,8 +16,9 @@
  * degrade to "regenerate" instead of surfacing a phantom error.
  */
 
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { CraftStorageConfig } from "../config";
 
 export type ObjectStoreMetadata = Record<string, string>;
@@ -63,20 +64,37 @@ function localPath(root: string, key: string): string {
   return join(root, ...segments);
 }
 
+/** ENOENT is "absent". Everything else — EACCES, EIO, a key that collides with a
+ * directory — is a storage fault: answering it as a miss would silently downgrade the
+ * restore path to "regenerate the snapshot" and bury the real failure. */
+function isMissing(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException)?.code === "ENOENT";
+}
+
 class LocalObjectStore implements ObjectStore {
   constructor(private readonly root: string) {}
 
   async put(key: string, bytes: Uint8Array): Promise<void> {
     const target = localPath(this.root, key);
     await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, bytes);
+    // Write + rename in the same directory: a crash or concurrent read mid-write
+    // must never observe a truncated archive at the real key.
+    const tmp = `${target}.tmp-${randomUUID()}`;
+    try {
+      await writeFile(tmp, bytes);
+      await rename(tmp, target);
+    } catch (error) {
+      await rm(tmp, { force: true }).catch(() => undefined);
+      throw error;
+    }
   }
 
   async get(key: string): Promise<Uint8Array | null> {
     try {
       const buffer = await readFile(localPath(this.root, key));
       return new Uint8Array(buffer);
-    } catch {
+    } catch (error) {
+      if (!isMissing(error)) throw error;
       return null;
     }
   }
@@ -85,7 +103,8 @@ class LocalObjectStore implements ObjectStore {
     try {
       await stat(localPath(this.root, key));
       return true;
-    } catch {
+    } catch (error) {
+      if (!isMissing(error)) throw error;
       return false;
     }
   }

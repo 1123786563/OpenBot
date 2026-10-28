@@ -21,10 +21,20 @@ export class SandboxProvisioningError extends Error {
 }
 
 /** A live provisioning attempt already owns the sandbox; the caller should retry shortly. */
-export class SandboxProvisioningInProgressError extends SandboxProvisioningError {}
+export class SandboxProvisioningInProgressError extends SandboxProvisioningError {
+  constructor(message = "A sandbox provisioning attempt is already in progress.") {
+    super(message);
+    this.name = "SandboxProvisioningInProgressError";
+  }
+}
 
 /** This attempt was superseded before it could finalize; its work must not be recorded. */
-export class StaleProvisioningAttemptError extends SandboxProvisioningError {}
+export class StaleProvisioningAttemptError extends SandboxProvisioningError {
+  constructor(message = "This provisioning attempt was superseded.") {
+    super(message);
+    this.name = "StaleProvisioningAttemptError";
+  }
+}
 
 /**
  * #618: the sandbox gateway has no execution ownership to state. agent-sandbox's proxy
@@ -42,3 +52,15 @@ export class SandboxExecutionScopeUnavailableError extends Error {
     this.name = "SandboxExecutionScopeUnavailableError";
   }
 }
+
+/**
+ * #656 (D1): the rejector every outbound header assembly hands to
+ * shared/execution-scope's applyExecutionScopeHeaders — a fresh refusal per
+ * throw (never a shared singleton: an enhancer rewriting one instance's message
+ * must not corrupt the recognizer's needle, #618 OCR r2), so the helper stays
+ * free of this server-side class while "null scope fails closed" stays a fact
+ * of the helper, not a habit of each dial site.
+ */
+export const refuseExecutionScope = (): never => {
+  throw new SandboxExecutionScopeUnavailableError();
+};

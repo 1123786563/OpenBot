@@ -227,7 +227,11 @@ export function createWechatProvider(config: WechatConfig): PaymentProvider {
       rawBody: string,
     ): Promise<
       | { ok: true; fact: PaymentFact }
-      | { ok: false; refusal?: "stale" | "decryption" }
+      | {
+          ok: false;
+          refusal?: "stale" | "decryption";
+          referencedOutTradeNo?: string;
+        }
     > {
       const timestamp = headers.get(HEADER_TIMESTAMP);
       const nonce = headers.get(HEADER_NONCE);
@@ -247,7 +251,7 @@ export function createWechatProvider(config: WechatConfig): PaymentProvider {
       }
 
       const platform = platforms.find(
-        (candidate) => candidate.serial === serial,
+        (candidate) => candidate.serial === serial.toLowerCase(),
       );
       if (!platform) return { ok: false };
 

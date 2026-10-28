@@ -431,6 +431,35 @@ describe("scrubbing commands", () => {
       "sshpass -P authprompt -p glorbwibble ssh deploy@host.example.test",
       "sshpass -P authprompt -p [REDACTED] ssh deploy@host.example.test",
     ],
+    // An attached password that itself contains a `p` (F04-6): the cluster before the
+    // terminator's `p` must not read back into the password, or the password leaks whole and the
+    // word after it is redacted in its place. A password that is exactly `p` is the next word.
+    [
+      "sshpass -phunter2p ssh deploy@host.example.test",
+      "sshpass -p[REDACTED] ssh deploy@host.example.test",
+    ],
+    [
+      "sshpass -papple ssh host.example.test",
+      "sshpass -p[REDACTED] ssh host.example.test",
+    ],
+    [
+      "sshpass -pp ssh deploy@host.example.test",
+      "sshpass -p[REDACTED] ssh deploy@host.example.test",
+    ],
+    // Shapes that keep working through that fix: a getopt cluster folds `-v` into the password
+    // flag; `-P` takes a prompt and `-f` a file, each with the word after it; none is a password.
+    [
+      "sshpass -vp hunter2 ssh deploy@host.example.test",
+      "sshpass -vp [REDACTED] ssh deploy@host.example.test",
+    ],
+    [
+      "sshpass -Pprompt -p glorbwibble ssh deploy@host.example.test",
+      "sshpass -Pprompt -p [REDACTED] ssh deploy@host.example.test",
+    ],
+    [
+      "sshpass -f id_rsa -p glorbwibble ssh deploy@host.example.test",
+      "sshpass -f id_rsa -p [REDACTED] ssh deploy@host.example.test",
+    ],
     // The env form sshpass itself recommends over `-p`: the password is in the assignment, `-e`
     // carries no value of its own, and SSHPASS names no full word the NAME=value rules match.
     [
@@ -461,6 +490,138 @@ describe("scrubbing commands", () => {
     ["mysqldump -pglorbwibble appdb", "mysqldump -p[REDACTED] appdb"],
     // An uppercase -P is the attached port, not the password: only the lowercase flag reads as one.
     ["mysql -h db -P3306 -phunter2 app", "mysql -h db -P3306 -p[REDACTED] app"],
+    // A quoted word in the lead may itself hold an escaped quote (T14): the quoted arm used to close
+    // at the escape's `"`, and the dangling quote then left the scan unable to reach the flag, so
+    // the password survived whole. The double-quote arm consumes `\"` as a pair; shell single
+    // quotes have no escapes, so that arm is unchanged.
+    [
+      'docker login -u "dev\\"ops" -p hunter2 registry.example.test',
+      'docker login -u "dev\\"ops" -p [REDACTED] registry.example.test',
+    ],
+    [
+      'mysqldump -u "a\\"b" -pglorbwibble appdb',
+      'mysqldump -u "a\\"b" -p[REDACTED] appdb',
+    ],
+    [
+      'redis-cli -u "a\\"b" -a hunter2 ping',
+      'redis-cli -u "a\\"b" -a [REDACTED] ping',
+    ],
+    // sshpass's own option values sit inside the lead too (`-f`'s file, `-P`'s prompt): a quoted
+    // one with an escaped quote is the same arm with the same defect.
+    [
+      'sshpass -f "id\\"rsa" -p hunter2 ssh deploy@host.example.test',
+      'sshpass -f "id\\"rsa" -p [REDACTED] ssh deploy@host.example.test',
+    ],
+    // A quoted word in the lead may also hold a `;` outright, and may span a line the shell
+    // continues (`\` + line break keeps it one command). Both reach the flag through the same
+    // quoted arm (R10-C7 guards): the fallback for a quote with no pair must not fire while a
+    // closing quote is still reachable — through the continuation too — or these would lose their
+    // pairing and the scan its way to the flag.
+    [
+      'mysql -e "SELECT 1;" -phunter2 app',
+      'mysql -e "SELECT 1;" -p[REDACTED] app',
+    ],
+    ['mysql -u "a\\\nb" -phunter2 app', 'mysql -u "a\\\nb" -p[REDACTED] app'],
+    // An unclosed quote in the lead falls back to reading the quote as an ordinary character
+    // (R8-C5): a paired quote is still swallowed whole, but a lone apostrophe in a user's name
+    // must not leave the scan dead short of the flag — the password behind the stalled scan used
+    // to survive whole.
+    ["mysql -u o'brien -phunter2 app", "mysql -u o'brien -p[REDACTED] app"],
+    [
+      'docker login -u a"b -p hunter2 registry.example.test',
+      'docker login -u a"b -p [REDACTED] registry.example.test',
+    ],
+    [
+      "redis-cli -u o'brien -a hunter2 ping",
+      "redis-cli -u o'brien -a [REDACTED] ping",
+    ],
+    // A quote segment inside the value is part of the word (R8-C5): the value reads as a run of
+    // bare characters and paired quote segments, so `a"b;c"` — a single argv word in the shell —
+    // is redacted whole instead of ending at the `;` inside the quotes. The same arm sits in
+    // every positional rule: mysql's attached form, sshpass's own options, SSHPASS=, redis-cli.
+    [
+      'docker login -p a"b;c" registry.example.test',
+      "docker login -p [REDACTED] registry.example.test",
+    ],
+    ["mysql -h db -pa'b;c' app", "mysql -h db -p[REDACTED] app"],
+    [
+      'sshpass -p a"b;c" ssh deploy@host.example.test',
+      "sshpass -p [REDACTED] ssh deploy@host.example.test",
+    ],
+    [
+      'sshpass -f a"b;c" -p hunter2 ssh deploy@host.example.test',
+      'sshpass -f a"b;c" -p [REDACTED] ssh deploy@host.example.test',
+    ],
+    [
+      'SSHPASS=a"b;c" sshpass -e ssh deploy@host.example.test',
+      "SSHPASS=[REDACTED] sshpass -e ssh deploy@host.example.test",
+    ],
+    ['redis-cli -a a"b;c" ping', "redis-cli -a [REDACTED] ping"],
+    // An unclosed quote inside the value is read as an ordinary character too: the word keeps
+    // going past it and still ends at the next unquoted separator.
+    [
+      'docker login -p a"b;c registry.example.test',
+      "docker login -p [REDACTED];c registry.example.test",
+    ],
+    [
+      "docker login -p a'b registry.example.test",
+      "docker login -p [REDACTED] registry.example.test",
+    ],
+    // A bare value ends where its command does (F04-4): in the shell's reading `;`, `|` and `&`
+    // start another command, so the redaction must not swallow what follows them.
+    ["docker login -p glorbwibble;whoami", "docker login -p [REDACTED];whoami"],
+    ["mysql -ppw|tee log", "mysql -p[REDACTED]|tee log"],
+    ["redis-cli -a glorbwibble&&ls", "redis-cli -a [REDACTED]&&ls"],
+    [
+      "sshpass -p glorbwibble;whoami ssh host.example.test",
+      "sshpass -p [REDACTED];whoami ssh host.example.test",
+    ],
+    // The SSHPASS= env form's bare arm shares the root cause and gets the same fix.
+    [
+      "SSHPASS=glorbwibble;whoami sshpass -e ssh deploy@host.example.test",
+      "SSHPASS=[REDACTED];whoami sshpass -e ssh deploy@host.example.test",
+    ],
+    // An escaped separator belongs to the word, not the shell (R10-C7): in `pa\;ss` the backslash
+    // takes the `;` out of the shell's reading, so the whole word is the secret — ending the value
+    // at the backslash left the rest of the password in the record. The value arm consumes
+    // backslash pairs; the word still ends at an unescaped separator, so `&cmd` after `pa\;` is
+    // the next command and stays.
+    [
+      "docker login -p pa\\;ss registry.example.test",
+      "docker login -p [REDACTED] registry.example.test",
+    ],
+    ["mysql -h db -ppa\\|ss app", "mysql -h db -p[REDACTED] app"],
+    [
+      "sshpass -p pa\\&ss ssh deploy@host.example.test",
+      "sshpass -p [REDACTED] ssh deploy@host.example.test",
+    ],
+    [
+      "SSHPASS=pa\\;&cmd sshpass -e ssh deploy@host.example.test",
+      "SSHPASS=[REDACTED]&cmd sshpass -e ssh deploy@host.example.test",
+    ],
+    ["redis-cli -a pa\\;ss ping", "redis-cli -a [REDACTED] ping"],
+    // A value's quote stops at the line break like the lead's does (R10-C7): the shell would not
+    // keep a quote that spans a bare line break to one command, so the break ends the value and
+    // the next line's command stays in the record — it used to be swallowed whole into the
+    // redaction and deleted from the audit trail.
+    [
+      'docker login -p "oops\necho "hi"',
+      'docker login -p [REDACTED]\necho "hi"',
+    ],
+    // The same fix in the sshpass option loop: `-f`'s file stops at the separator, and the word
+    // after it belongs to another command — it is not a password to redact.
+    ["sshpass -f pass;ls -p x", "sshpass -f pass;ls -p x"],
+    // A separator with no value in front of it (R1-F1): a bare token does not begin with `;`, `|`
+    // or `&` — that position starts another command, and an empty value is nothing to redact —
+    // so the line survives whole instead of folding the next command into the redaction.
+    ["redis-cli -a;whoami", "redis-cli -a;whoami"],
+    ["SSHPASS=;cmd sshpass -e ssh h", "SSHPASS=;cmd sshpass -e ssh h"],
+    // A separated -p still means the password is prompted for, separators or not: the word after
+    // it is a database.
+    ["mysql -p pw|tee log", "mysql -p pw|tee log"],
+    // Separators inside a quoted password are part of the secret (T8a): the quote, not the `;`,
+    // ends the value.
+    ['mysql -h db -p"pa;ss" app', "mysql -h db -p[REDACTED] app"],
     [
       "open redis://:glorbwibble@cache:6379/0",
       "open redis://:[REDACTED]@cache:6379/0",
@@ -518,5 +679,73 @@ describe("scrubbing commands", () => {
     expect(scrubCommand("ls -la /workspace && git status")).toBe(
       "ls -la /workspace && git status",
     );
+  });
+  test("a run of empty quoted pairs cannot stall the scrubber", () => {
+    // Before R10-C7 the quote arms overlapped: a pair could be taken whole, split into lone
+    // quotes, or re-paired across pairs, so a non-matching tail walked ~2^n derivations — twenty
+    // pairs stalled the loop for 0.6-3.4s (the adjudication measured 602.87ms; forty pairs run to
+    // minutes). Each quote now has exactly one arm that can match it, so the same inputs stay flat
+    // at any count. None of these carries a `-p`, so the output is the input, unchanged.
+    const shapes = [
+      (n: number) => `mysql ${'"" '.repeat(n)}`,
+      (n: number) => `mysql ${"'' ".repeat(n)}`,
+      (n: number) => `sshpass ${'-f "" '.repeat(n)}-v`,
+    ];
+    const start = performance.now();
+    for (const build of shapes)
+      for (const n of [8, 12, 16, 20, 24, 40]) {
+        const input = build(n);
+        expect(scrubCommand(input)).toBe(input);
+      }
+    expect(performance.now() - start).toBeLessThan(1000);
+  });
+  test("a quote held open by a line continuation cannot stall the scrubber either", () => {
+    // Pairing must stay unambiguous when the closing quote sits past a `\` + line break: the
+    // fallback fires only while no closing quote is left to reach — through the continuation too
+    // — so one derivation remains per quote however many are stacked.
+    const input = `mysql ${'"\\\nx" '.repeat(40)}-q`;
+    const start = performance.now();
+    expect(scrubCommand(input)).toBe(input);
+    expect(performance.now() - start).toBeLessThan(1000);
+  });
+  test("an sshpass flag with its value glued on cannot stall the scrubber", () => {
+    // Before the cluster arm was guarded, a token like `-fa` read two ways over the same span —
+    // the `-[fdP]` arm, flag with attached value, or one long cluster — so the lazy lead loop
+    // walked 2^n derivations into a tail with no `-p`: twenty-four glued flags stalled node for a
+    // quarter of a second and bun for two thirds (T18 R1-F1). The cluster now refuses to start a
+    // glued value, leaving one derivation per token at any count — including with space-separated
+    // `-f a` tokens mixed in, whose own two readings end at different places and never chained.
+    // None of these carries a `-p`, so the output is the input, unchanged.
+    const shapes = [
+      (n: number) => `sshpass ${"-fa ".repeat(n)}-v`,
+      (n: number) => `sshpass ${"-Pa ".repeat(n)}-v`,
+      (n: number) => `sshpass ${"-da ".repeat(n)}-v`,
+      (n: number) => `sshpass ${"-fa -f a ".repeat(n)}-v`,
+    ];
+    const start = performance.now();
+    for (const build of shapes)
+      for (const n of [8, 12, 16, 20, 24, 40, 100]) {
+        const input = build(n);
+        expect(scrubCommand(input)).toBe(input);
+      }
+    expect(performance.now() - start).toBeLessThan(1000);
+  });
+  test("the guarded cluster still reads the flat sshpass shapes", () => {
+    // The guard refuses a cluster only where a value is glued straight onto the flag: a `-f` that
+    // stands apart from its value still clusters, and still carries a lead to the password flag,
+    // while `-v`-clusters never had a second reading to lose. These stay flat at any count — and
+    // the password behind a flat lead is still taken, so the guard narrowed nothing it shouldn't.
+    const start = performance.now();
+    for (const n of [8, 24, 100]) {
+      expect(scrubCommand(`sshpass ${"-f a ".repeat(n)}-v`)).toBe(
+        `sshpass ${"-f a ".repeat(n)}-v`,
+      );
+      expect(scrubCommand(`sshpass ${"-va ".repeat(n)}-v`)).toBe(
+        `sshpass ${"-va ".repeat(n)}-v`,
+      );
+      const lead = `sshpass ${"-f a ".repeat(n)}`;
+      expect(scrubCommand(`${lead}-p pw`)).toBe(`${lead}-p [REDACTED]`);
+    }
+    expect(performance.now() - start).toBeLessThan(1000);
   });
 });

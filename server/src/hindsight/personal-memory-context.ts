@@ -243,12 +243,18 @@ export function createPersonalMemoryContext(options: {
     ): Promise<{ memories: RecalledPersonalMemory[] }> {
       if (await usagePausedFor(options.pause, scope)) return { memories: [] };
       if (!(await recallOpenFor(options.recovery))) return { memories: [] };
+      // A blank id is "no asking Bot", the same normalization the recall path applies —
+      // otherwise an empty string would reach the authorization reader as a real agent id.
+      const askingAgentId = botId?.trim() ? botId : undefined;
+      // Three independent halves, read together (the order of the assembled block is kept
+      // by Promise.all); each half's internal read order is unchanged.
+      const [preference, sourceBound, judgment] = await Promise.all([
+        preferenceContext(scope),
+        sourceBoundContext(scope, askingAgentId),
+        judgmentContext(scope, askingAgentId),
+      ]);
       return {
-        memories: [
-          ...(await preferenceContext(scope)),
-          ...(await sourceBoundContext(scope, botId)),
-          ...(await judgmentContext(scope, botId)),
-        ],
+        memories: [...preference, ...sourceBound, ...judgment],
       };
     },
   };

@@ -48,7 +48,7 @@ export type OpenMuseOpsSignal = {
   source: string;
   detail: string;
   /** §10 stuck Task: the queue reason the operator reads. */
-  reason?: "queued-runnable" | "expired-lease";
+  reason?: "queued-runnable" | "claimed-no-lease" | "expired-lease";
   /** §10 uncertain Reviewed action: the reconciliation status. */
   reconciliation?:
     | "pending"
@@ -228,6 +228,11 @@ export function createOpenMuseOpsSignals(
                 if (row.attempts >= OPENMUSE_TASK_MAX_ATTEMPTS) return false;
                 if (row.claimedBy === null)
                   return at.getTime() - row.runAt.getTime() > queuedRunnableMs;
+                // Claimed but carrying no lease is the most suspicious wedge
+                // there is (a writer bug or migration leftover) — reported,
+                // never dropped: this module's contract is that a reader's
+                // own failure is itself a signal.
+                if (row.leaseUntil === null) return true;
                 return (
                   row.leaseUntil !== null &&
                   at.getTime() - row.leaseUntil.getTime() > leaseUnrecoveredMs
@@ -240,11 +245,15 @@ export function createOpenMuseOpsSignals(
                 detail:
                   row.claimedBy === null
                     ? `runnable in the queue for over ${Math.round(queuedRunnableMs / 60_000)} minutes without a worker claim`
-                    : `lease expired over ${Math.round(leaseUnrecoveredMs / 1000)} seconds ago without recovery`,
+                    : row.leaseUntil === null
+                      ? `claimed by a worker that never held a lease`
+                      : `lease expired over ${Math.round(leaseUnrecoveredMs / 1000)} seconds ago without recovery`,
                 reason:
                   row.claimedBy === null
                     ? ("queued-runnable" as const)
-                    : ("expired-lease" as const),
+                    : row.leaseUntil === null
+                      ? ("claimed-no-lease" as const)
+                      : ("expired-lease" as const),
                 at: null,
               }));
           }),
@@ -385,7 +394,13 @@ export function createOpenMuseOpsSignalReaders(deps: {
             actions.map((action) => action.id),
           ),
         )
-        .orderBy(desc(openmuseReviewedAttempts.startedAt));
+        // The attempt id is the tiebreak: two attempts sharing a startedAt
+        // instant must name the same "latest" across query plans and
+        // restarts, or the operator's answer drifts between reads.
+        .orderBy(
+          desc(openmuseReviewedAttempts.startedAt),
+          desc(openmuseReviewedAttempts.attemptId),
+        );
       const latest = new Map<string, (typeof attempts)[number]>();
       for (const attempt of attempts)
         if (!latest.has(attempt.actionId))

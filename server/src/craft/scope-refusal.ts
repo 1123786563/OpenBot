@@ -1,13 +1,15 @@
 /**
  * #618: recognize the fail-closed execution-scope refusal in whatever shape a route's
- * catch meets it — the error class itself, or (the archive walk's fold) a
- * WorkspaceListingError that carries the refusal structurally as its cause, with the
- * fixed sentence embedded in the text as the fallback for wraps built before the chain.
- * Born in file-routes.ts for the upload/archive/delete faces (R1-F2/r3) and hoisted here
- * when FR-F1 brought the session-lifecycle entrances (create/snapshot/restore) to the
- * same recognizer, so every craft face answers the one sentence the same way.
+ * catch meets it — the error class itself, or any wrap that carries the refusal
+ * structurally as a cause (#656 D3 generalized the original WorkspaceListingError
+ * arm to every wrap), with the fixed sentence embedded in the text as the fallback
+ * for wraps built before the chain. Born in file-routes.ts for the
+ * upload/archive/delete faces (R1-F2/r3) and hoisted here when FR-F1 brought the
+ * session-lifecycle entrances (create/snapshot/restore) to the same recognizer, so
+ * every craft face answers the one sentence the same way — through the guard below
+ * since #656 D2.
  */
-import type { Context } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { WorkspaceListingError } from "./directory-archive";
 import { SandboxExecutionScopeUnavailableError } from "./errors";
 
@@ -22,26 +24,49 @@ import { SandboxExecutionScopeUnavailableError } from "./errors";
  */
 const REFUSAL_MESSAGE = new SandboxExecutionScopeUnavailableError().message;
 
+/** How deep into a cause chain the recognizer will look — see the walk below. */
+const CAUSE_WALK_MAX_HOPS = 4;
+
 export function sandboxScopeRefusalOf(
   error: unknown,
 ): SandboxExecutionScopeUnavailableError | null {
   if (error instanceof SandboxExecutionScopeUnavailableError) return error;
-  if (error instanceof WorkspaceListingError) {
-    // Structural first (#618 OCR r2): the wrap keeps its original cause, so the
-    // refusal survives any rewrite of the wrap's text — a template change, a long-
-    // cause truncation, an error enhancer touching the embedded sentence.
-    if (error.cause instanceof SandboxExecutionScopeUnavailableError) {
-      // The original instance, not a rebuild (#618 OCR r4): the refusal keeps no
-      // log line, so the first throw's stack — minted inside scopeHeaders(),
-      // before the archive walk folded it — is the only trace an operator gets,
-      // and a rebuild discards it. Not the shared singleton OCR r2 barred: each
-      // throw site mints its own, so handing one back cannot let an enhancer
-      // corrupt the needle the two arms share.
-      return error.cause;
+  if (error instanceof Error) {
+    // Structural first (#618 OCR r2), on ANY wrap (#656 D3): the wrap's own
+    // type is not the contract — the archive walk's WorkspaceListingError fold
+    // was merely the first shape seen, and a probe wrap (the healthCheck chain)
+    // or a future enhancer layer must not re-open the mask. The walk is
+    // bounded at CAUSE_WALK_MAX_HOPS cause hops: deeper than any real fold
+    // (the walk is one hop, a probe wrap two), and the bound is also the
+    // cycle-proofing a looping chain (a wraps b wraps a) needs, so a crafted
+    // chain terminates here instead of hanging the route's catch.
+    let hop: unknown = error.cause;
+    for (
+      let depth = 0;
+      depth < CAUSE_WALK_MAX_HOPS && hop !== null && hop !== undefined;
+      depth += 1
+    ) {
+      if (hop instanceof SandboxExecutionScopeUnavailableError) {
+        // The original instance, not a rebuild (#618 OCR r4): the refusal
+        // keeps no log line, so the first throw's stack — minted inside the
+        // header assembly, before the wrap folded it — is the only trace an
+        // operator gets, and a rebuild discards it. Not the shared singleton
+        // OCR r2 barred: each throw site mints its own, so handing one back
+        // cannot let an enhancer corrupt the needle the two arms share.
+        return hop;
+      }
+      if (!(hop instanceof Error)) break;
+      hop = hop.cause;
     }
-    // Fallback: wraps that carry no cause chain still answer by the fixed sentence
-    // embedded in the text — the only shape every pre-chain wrap could produce.
-    if (error.message.includes(REFUSAL_MESSAGE)) {
+    // Fallback: wraps that carry no refusal on the chain still answer by the
+    // fixed sentence embedded in the text — the only shape every pre-chain
+    // wrap could produce. Kept scoped to the listing wrap: that family is the
+    // known pre-chain producer, and widening a text match to every Error
+    // would claim refusals nobody minted.
+    if (
+      error instanceof WorkspaceListingError &&
+      error.message.includes(REFUSAL_MESSAGE)
+    ) {
       return new SandboxExecutionScopeUnavailableError();
     }
   }
@@ -49,23 +74,31 @@ export function sandboxScopeRefusalOf(
 }
 
 /**
- * The one-line answer every catch-bearing route face gives the scope refusal — 503
- * with the fixed sentence, nothing else (no log line: the sentence IS the reason, and
- * it names no value to leak). A null return means "not a refusal": fall through to
- * the face's own masking branch. Folding the status code AND the
- * must-precede-the-masking-branch order into one helper is what keeps the next face
- * (skills/reload, #618 OCR#1) from mistyping or reordering the contract.
+ * The one guard shape every catch-bearing route face calls on its error (#656
+ * D2 collapsed the seven two-line snippets into this): a refusal answers ITSELF
+ * — the throw IS the 503, with the fixed sentence as the body and nothing else
+ * (no log line: the sentence IS the reason, and it names no value to leak).
+ *
+ * Because the answer is a throw, not a returned response, the refusal outranks
+ * every masking branch the catch carries BY CONSTRUCTION — hono's error chain
+ * hands the HTTPException straight to the wire — so "the refusal precedes the
+ * mask" is a property of this guard, not an ordering each call site has to
+ * remember. The restore entrance keeps its rethrow shape: after the guard
+ * passes, it rethrows the original error untouched.
  */
-export function scopeRefusalResponse(
-  context: Context,
-  error: unknown,
-): Response | null {
+export function assertNotScopeRefusal(error: unknown): void {
   const refusal = sandboxScopeRefusalOf(error);
+  if (refusal === null) return;
   // The body is the canonical sentence BY CONSTRUCTION (#618 OCR r4): the
   // recognizer hands back the original instance — the stack an operator needs —
   // and an enhancing layer may have rewritten that instance's message on the
   // way here. Answering REFUSAL_MESSAGE (never refusal.message) keeps the 503
   // body fixed through any rewrite, which is the r2 contract the fresh-instance
   // rebuild used to provide.
-  return refusal ? context.json({ error: REFUSAL_MESSAGE }, 503) : null;
+  throw new HTTPException(503, {
+    res: new Response(JSON.stringify({ error: REFUSAL_MESSAGE }), {
+      status: 503,
+      headers: { "content-type": "application/json" },
+    }),
+  });
 }

@@ -1,4 +1,5 @@
 import {
+  canonicalPriceAmount,
   PRICE_DIMENSIONS,
   type PriceDimension,
   type PriceDimensionUnknownReason,
@@ -294,7 +295,9 @@ export function assessVideoGenerationEnablement(input: {
     };
   }
 
-  const free = tier.amount === "0";
+  // The zero comparison runs on the canonical form, as generation's own verdict does.
+  const tierAmount = canonicalPriceAmount(tier.amount);
+  const free = tierAmount.ok && tierAmount.amount === "0";
 
   // The certified worst-case quantities: `seconds × outputCount` video seconds — every
   // clip is billed for its own seconds at the tier's rate. Every other dimension: 0 (a

@@ -367,6 +367,7 @@ describe("steps — acceptance 2: the projection is the record's own", () => {
         startedAt: "2026-10-16T09:30:08.000Z",
         endedAt: "2026-10-16T09:30:09.000Z",
         executionState: "executed",
+        toolCallId: "call-1",
         input: { state: "projected", value: "the projected call arguments" },
         output: { state: "projected", value: "the projected result text" },
       },
@@ -450,6 +451,31 @@ describe("steps — acceptance 2: the projection is the record's own", () => {
 });
 
 describe("steps — acceptance 3 (A3): a proposal never arrives as success", () => {
+  test("a tool step's call id is served with it — a business call stays locatable (R4-03)", async () => {
+    const { app } = appFor({
+      port: fakePort({
+        rows: [
+          spanRow({
+            input: {
+              step_kind: "tool",
+              tool_call_id: "call_202610251812245f354b474f604eae_0",
+              execution_state: "unobserved",
+              span_state: "unknown",
+            },
+          }),
+        ],
+      }),
+    });
+    const response = await steps(app);
+    const body = (await response.json()) as {
+      steps: Array<{ toolCallId?: string; executionState?: string }>;
+    };
+    expect(body.steps[0].toolCallId).toBe(
+      "call_202610251812245f354b474f604eae_0",
+    );
+    expect(body.steps[0].executionState).toBe("unobserved");
+  });
+
   test("a proposed step whose row claims completed is served unknown", async () => {
     const { app } = appFor({
       port: fakePort({

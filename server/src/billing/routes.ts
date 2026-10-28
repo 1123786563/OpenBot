@@ -118,6 +118,13 @@ export function createBillingRoutes(deps: {
 }) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", deps.requireUser);
+  routes.onError((error, context) => {
+    // Same contract as the sibling factories: an outage is a fixed sentence, never a stack.
+    if (error instanceof BillingError) {
+      return context.json({ error: error.message }, billingStatus(error));
+    }
+    return context.json({ error: "Billing is unavailable. Try again." }, 503);
+  });
   routes.get("/entitlements", async (context) => {
     const entitlements = await (
       deps.entitlementDelivery ?? deps.service
@@ -300,6 +307,13 @@ export function createBillingCreditRoutes(deps: {
     }
     if (error instanceof z.ZodError) {
       return context.json({ error: "Supply a valid request." }, 400);
+    }
+    if (error instanceof SyntaxError) {
+      // A body that is not JSON is the caller's mistake — the admin group's rule.
+      return context.json({ error: "Supply a valid request." }, 400);
+    }
+    if (error instanceof BillingError) {
+      return context.json({ error: error.message }, billingStatus(error));
     }
     return context.json({ error: "Billing is unavailable. Try again." }, 503);
   });

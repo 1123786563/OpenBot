@@ -153,8 +153,7 @@ export type PaymentCheckout =
   | { kind: "qrcode"; payload: string }
   | { kind: "redirect"; url: string };
 
-/** The signed-in actor whose own payment rows may be read.
- * The signed-in actor whose own payment rows may be read, carried as the PayerRef the
+/** The signed-in actor whose own payment rows may be read, carried as the PayerRef the
  * server resolved from the session — never from a request field. Reads filter on the
  * order's owner columns, so a scope can only ever surface orders owned by exactly this
  * ref: another person's order, and any quarantined or pre-attribution row, answers null.
@@ -351,7 +350,6 @@ export type PaymentStore = {
     amountCents: number;
     periodStart: Date;
     periodEnd: Date;
-    /** Whether the money state is allowed to move (blocked never is). Checked here, last. */
   }): Promise<{ claimed: boolean; alreadyKnown: boolean }>;
   /**
    * Move a pending order to blocked (amount/currency mismatch), writing the anomaly event in the

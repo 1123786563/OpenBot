@@ -209,9 +209,11 @@ const PREVIEW_TICKET_UNVERIFIABLE_ERROR =
  * drifting its fold would make the two mirrored surfaces disagree about
  * the SAME session's record. The mint's mirror now reads the same record
  * through readMountRecordExact (below, OCR R1 medium) because it needs
- * "never written" distinct from "no fileApi / thrown read"; this fold —
- * readFile's null comparing as the empty mount — stays the info face's,
- * where the ready gate already owns the never-written population.
+ * "never written" distinct from "no fileApi / thrown read" — and since #648
+ * this function owns the FOLD only: the readFile+trim+catch lives once, in
+ * readMountRecordExact, and this wrapper folds its three states back to two
+ * (undefined→null "cannot vouch", null→"") for the info face, where the
+ * ready gate already owns the never-written population.
  * null means ONLY "cannot vouch" — no fileApi (undefined) or a thrown
  * read (a gateway flake); readFile's null (the record was never written)
  * folds to "" and keeps comparing as the empty
@@ -228,12 +230,9 @@ async function readMountRecord(
   fileApi: AgentSandboxFileApi | null | undefined,
   directory: string,
 ): Promise<string | null> {
-  try {
-    const raw = await fileApi?.readFile(`${directory}/${WEBAPP_MOUNT_MARKER}`);
-    return raw === undefined ? null : (raw?.trim() ?? "");
-  } catch {
-    return null;
-  }
+  const exact = await readMountRecordExact(fileApi, directory);
+  if (exact === undefined) return null;
+  return exact ?? "";
 }
 
 /**

@@ -91,8 +91,11 @@ function isUniqueViolation(error: unknown): boolean {
   let current: unknown = error;
   for (let depth = 0; current && depth < 5; depth += 1) {
     if (current instanceof Error) {
-      const shaped = current as { code?: string; errno?: string };
-      if (shaped.code === "23505" || shaped.errno === "23505") return true;
+      const shaped = current as { code?: string; errno?: string | number };
+      // Some drivers report `errno` as a number; the SQLSTATE text is the one stable shape.
+      if (shaped.code === "23505" || String(shaped.errno) === "23505") {
+        return true;
+      }
     }
     current = (current as { cause?: unknown }).cause;
   }

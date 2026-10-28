@@ -61,6 +61,11 @@ export type SelectionReason =
   | "nothing-declared"
   /** Pass one could not answer: no key, a timeout, a malformed reply. Everything stays offered. */
   | "unavailable"
+  /**
+   * No turn text to select over at all (an attachment-only or empty message):
+   * pass one was never asked, so this is not pass one's "unavailable".
+   */
+  | "no-text"
   /** Pass one answered and named no skill. Everything stays offered; see the note below. */
   | "nothing-chosen"
   /** Pass one named skills, and the offer is their tools plus everything no skill claims. */
@@ -277,7 +282,9 @@ export async function selectTools<Tool extends SelectableTool>(input: {
   // Nothing to select over. A Bot with grants and no skills is every deployment on day one, and it
   // must behave exactly as it did before this existed.
   if (declared.size === 0) return everything("nothing-declared");
-  if (text.trim() === "") return everything("unavailable");
+  // An empty turn never reaches the model, so pass one was not "unavailable"
+  // — it was never asked. Same offer, a truthful reason.
+  if (text.trim() === "") return everything("no-text");
 
   let chosen: string[] | null = null;
   try {

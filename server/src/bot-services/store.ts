@@ -30,13 +30,17 @@ export {
  * stay independently readable.)
  */
 function uniqueViolationConstraint(error: unknown): string | null {
-  type Driver = { errno?: unknown; constraint?: unknown };
+  type Driver = { errno?: unknown; code?: unknown; constraint?: unknown };
   const candidates = [
     error as Driver | null | undefined,
     (error as { cause?: Driver } | null | undefined)?.cause,
   ];
   for (const candidate of candidates) {
-    if (candidate?.errno === "23505")
+    if (
+      candidate?.errno === "23505" ||
+      candidate?.errno === 23505 ||
+      candidate?.code === "23505"
+    )
       return typeof candidate.constraint === "string"
         ? candidate.constraint
         : "";
@@ -63,11 +67,12 @@ function normalizeBotId(value: unknown): string {
 }
 
 /** A display name is trimmed, non-blank, and capped at 200 code points without splitting pairs. */
+const DISPLAY_NAME_MAX = 200;
 function normalizeDisplayName(value: unknown): string {
   if (typeof value !== "string") throw new BotServiceInputError();
   const trimmed = value.trim();
   if (!trimmed) throw new BotServiceInputError();
-  return Array.from(trimmed).slice(0, 200).join("");
+  return Array.from(trimmed).slice(0, DISPLAY_NAME_MAX).join("");
 }
 
 function normalizeKind(value: unknown): BotServiceKind {
@@ -168,6 +173,17 @@ export function createBotServiceStore(database: Database) {
       patch: BotServicePatch,
     ): Promise<BotServiceRecord> {
       const id = normalizeBotId(botId);
+      // An empty patch declares nothing: return the current record instead of a
+      // no-field UPDATE that would still bump updatedAt.
+      if (patch.displayName === undefined && patch.capabilities === undefined) {
+        const [row] = await database
+          .select()
+          .from(botServices)
+          .where(eq(botServices.botId, id))
+          .limit(1);
+        if (!row) throw new BotServiceNotFoundError();
+        return toRecord(row);
+      }
       const set: { updatedAt: Date } & Partial<
         Pick<BotServicePatch, "displayName" | "capabilities">
       > = { updatedAt: new Date() };

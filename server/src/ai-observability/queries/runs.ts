@@ -14,10 +14,12 @@
  *
  * An unavailable upstream is an explainable error, never a disguised empty list;
  * only the port's verified 404 on the scope's project is a truthful empty page.
- * Pagination and the window cache are keyed by the scope (T06 `bindCursor` /
- * `cacheKey`), so a transfer, revocation or epoch bump makes outstanding cursors
- * and cached pages unreadable immediately — the old key space dies with the old
- * epoch. Producer credentials (T32) never appear here: reads carry the scope,
+ * Cursors bind the scope's AUTHORIZATION generation (T06 `bindCursor`), so a
+ * transfer, revocation or epoch bump makes outstanding cursors unreadable
+ * immediately; the window cache is keyed by the stable DATA key (FREV-03), so
+ * it follows the Bot's range — whoever the live gate authorizes next reads
+ * the same pages, and retention drops them by the row's stored key alone.
+ * Producer credentials (T32) never appear here: reads carry the scope,
  * not the write-path credential.
  */
 
@@ -48,6 +50,7 @@ import { OpikPortError } from "../opik-port";
 import { projectSafeMetadata, projectSafeText } from "../redaction";
 import type { AttemptRunState } from "../run-lifecycle";
 import { bindCursor, cacheKey, readCursor, scopeCacheKey } from "../scope";
+import { MAX_TOOL_CALL_ID_LENGTH } from "../tool-steps";
 
 /** The upstream window this deployment is willing to fetch per read. */
 export const DEFAULT_RUNS_WINDOW = 100;
@@ -106,7 +109,13 @@ export type RunsQueryServiceDeps = Readonly<{
      */
     Partial<
       Pick<RunBindingStore, "capabilitiesByOpikTraceIds" | "countUnreconciled">
-    >;
+    > &
+    /*
+     * R3-03's optional lifecycle join: the binding's terminal state per row, the
+     * list-side read of the authority detail already keeps. Optional for the same
+     * reason — a wiring without it keeps the upstream word, never a guess.
+     */
+    Partial<Pick<RunBindingStore, "statesByOpikTraceIds">>;
   config: () => OpikConfig;
   /** The verified port, or null when no verified contract backs this deployment. */
   port: OpikPort | null;
@@ -248,6 +257,23 @@ export function projectRow(
   };
 }
 
+/**
+ * The ONE local-state adoption rule, shared by the list page, the detail read and the
+ * export projection (the R3-03 / R5-26 discipline, OCR R5-550): the upstream word stands
+ * unless it is "unknown" — evidence absence, not an observation — and a locally observed
+ * lifecycle state exists, in which case the local answer is the actual answer. Exported
+ * so the export worker projects the same words the query face answers (m143's
+ * same-projection contract); every state-adopting read path calls this, none re-derives it.
+ */
+export function adoptLocalState<S extends { state: string }>(
+  summary: S,
+  localState: string | undefined,
+): S {
+  return localState !== undefined && summary.state === "unknown"
+    ? { ...summary, state: localState }
+    : summary;
+}
+
 /*
  * The step projection (Issue #24 / T18-server). The recorder families the tree renders are
  * named by the spans themselves: T14's model spans (`model:<id>`) and T15's steps (`tool:<name>`,
@@ -357,14 +383,34 @@ function projectStep(row: OpikSpanRow): RunStep | null {
   // upstream mapper lifts into its own field (row.output.output). A retrieval step
   // records a query only — its hit summary rides `retrieval`, never an output.
   const input = stepContent(attributes.input);
-  const output =
-    kind === "retrieval"
-      ? null
-      : typeof row.output === "object" && row.output !== null
-        ? stepContent((row.output as Record<string, unknown>).output)
-        : null;
+  let output: SafeValue | null = null;
+  if (
+    kind !== "retrieval" &&
+    typeof row.output === "object" &&
+    row.output !== null
+  ) {
+    output = stepContent((row.output as Record<string, unknown>).output);
+  }
   const retrieval =
     kind === "retrieval" ? stepRetrieval(attributes) : undefined;
+  // R4-03: the call id the protocol named the call by, when the recorded step
+  // carried one — the correspondence between a real business call and its
+  // governance step, fail closed to absent when the row says nothing. The same
+  // read-side ceiling the other projected fields answer to (OCR R5-379): the
+  // write-side allowlist binds this service's writers only, so an OTLP-ingested
+  // or hand-edited row of unbounded text would ride the wire whole — over-long
+  // ids are treated as never provided, like a withheld projection. The line
+  // itself is the shared MAX_TOOL_CALL_ID_LENGTH the write face clamps at
+  // (OCR final #59): this side clamps nothing, it only fails closed past the
+  // same line.
+  const rawCallId = attributes.tool_call_id;
+  const toolCallId =
+    kind === "tool" &&
+    typeof rawCallId === "string" &&
+    rawCallId.length > 0 &&
+    rawCallId.length <= MAX_TOOL_CALL_ID_LENGTH
+      ? rawCallId
+      : undefined;
   return {
     kind,
     spanId: row.id,
@@ -375,6 +421,7 @@ function projectStep(row: OpikSpanRow): RunStep | null {
     startedAt: row.start_time,
     endedAt: row.end_time,
     ...(executionState !== undefined ? { executionState } : {}),
+    ...(toolCallId !== undefined ? { toolCallId } : {}),
     ...(input !== null ? { input } : {}),
     ...(output !== null ? { output } : {}),
     ...(retrieval !== undefined ? { retrieval } : {}),
@@ -422,7 +469,14 @@ export function createRunsQueryService(
       case "unavailable":
         throw new RunsQueryError(result.code, 503);
       case "upstream_error":
-        throw new RunsQueryError(result.code, 502);
+        // The read faces never call deleteTraces, so the port's missing-project
+        // code cannot arise here; it folds into the generic upstream word.
+        throw new RunsQueryError(
+          result.code === "OPIK_PROJECT_MISSING"
+            ? "OPIK_UPSTREAM_ERROR"
+            : result.code,
+          502,
+        );
       case "malformed":
         throw new RunsQueryError(result.code, 502);
       case "ownership_drift":
@@ -432,8 +486,10 @@ export function createRunsQueryService(
 
   /**
    * The scope's servable window: the port's one verified listing operation over
-   * the scope-derived project, cached under the scope key so an epoch bump
-   * orphans it by construction.
+   * the scope-derived project. Cached under the Bot's stable data key — the
+   * window is a fact about the Bot's range, its readers are scopes the live
+   * gate freshly authorized, and retention invalidates it from the stored row
+   * key alone (the TTL bounds any staleness regardless).
    */
   const window = async (scope: ObservationScope): Promise<CachedWindow> => {
     const key = cacheKey(scope, "runs-window");
@@ -500,19 +556,31 @@ export function createRunsQueryService(
      * effective on the very next call: the capability verdicts joined from this scope's
      * own binding rows (an unbound trace is the honest "unavailable", never a guess), and
      * whether bindings exist that never reconciled upstream — the "still syncing" signal.
+     *
+     * R3-03's lifecycle join rides the same page: the binding's state for the rows this
+     * scope bound, applied under the SAME discipline detail keeps (R5-26) — the trace rows
+     * a real deployment answers carry no `status` word at all, so an unknown upstream is
+     * evidence absence, not an observation, and the local binding's state is the actual
+     * answer; a word the vocabulary table maps is an upstream observation and stands. An
+     * unbound trace keeps the upstream word, whatever it was.
+     *
+     * The three reads are independent and all keyed on these rows, so they go out in
+     * parallel — they were serial awaits, three sequential round trips per page (OCR
+     * R5-537).
      */
-    const verdicts = deps.bindings.capabilitiesByOpikTraceIds;
-    const joined = verdicts
-      ? await verdicts(
-          scope,
-          rows.map((row) => row.id),
-        )
-      : null;
-    const unreconciled = deps.bindings.countUnreconciled;
-    const syncing = unreconciled ? (await unreconciled(scope)) > 0 : false;
+    const ids = rows.map((row) => row.id);
+    const [joined, localStates, syncedCount] = await Promise.all([
+      deps.bindings.capabilitiesByOpikTraceIds?.(scope, ids) ?? null,
+      deps.bindings.statesByOpikTraceIds?.(scope, ids) ?? null,
+      deps.bindings.countUnreconciled?.(scope) ?? Promise.resolve(0),
+    ]);
+    const syncing = syncedCount > 0;
     return {
       runs: rows.map((row) =>
-        projectRow(row, joined?.get(row.id) ?? "unavailable"),
+        adoptLocalState(
+          projectRow(row, joined?.get(row.id) ?? "unavailable"),
+          localStates?.get(row.id),
+        ),
       ),
       pagination: {
         total: current.total,
@@ -572,7 +640,9 @@ export function createRunsQueryService(
     return {
       run: {
         ...run,
-        state: summary.state === "unknown" ? binding.state : summary.state,
+        // The same adoption rule the list page and the export projection run
+        // (adoptLocalState's docblock carries the discipline).
+        state: adoptLocalState(summary, binding.state).state,
       },
       upstream: { status: "present", ...summary },
     };

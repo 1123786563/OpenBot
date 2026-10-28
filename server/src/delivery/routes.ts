@@ -403,7 +403,10 @@ export function configuredDeliveryProviders(
   const webhookBase = env.DELIVERY_PUBLIC_URL?.trim() || publicBaseUrl;
   if (!/^https?:\/\//.test(webhookBase))
     throw new Error("DELIVERY_PUBLIC_URL must be an http(s) URL.");
-  const base = new URL(webhookBase).origin;
+  // Origin plus path: a deployment behind a reverse-proxy sub-path
+  // (https://example.com/openbot) must hand the provider the /openbot-prefixed
+  // webhook URL it actually answers, and sign over exactly that URL.
+  const base = new URL(webhookBase).origin + new URL(webhookBase).pathname.replace(/\/$/, "");
   function configured(names: string[]) {
     if (!names.some((name) => env[name]?.trim())) return null;
     const missing = names.filter((name) => !env[name]?.trim());

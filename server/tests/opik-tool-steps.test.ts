@@ -14,24 +14,28 @@
 //   4. the step typing reads event/callback semantics only — the classification
 //      module imports no framework, public or private.
 
-import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { readFileSync } from "node:fs";
 import type { BaseEvent } from "@ag-ui/client";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { context, trace } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { Observable, Subject } from "rxjs";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
+import { observerRunBindingGateForTests } from "../src/ai-observability/bindings";
 import type { OpikObservationWrite } from "../src/ai-observability/health";
 import type { OpikOtlpSpan, OpikPort } from "../src/ai-observability/opik-port";
 import { resolveObservationScope } from "../src/ai-observability/scope";
+import { approveSpanContent } from "../src/ai-observability/span-support";
 import {
   createToolStepRecorder,
+  MAX_TOOL_CALL_ID_LENGTH,
   type RetrievalStepObservation,
   type ToolStepObservation,
+  toolStepChainGateDrops,
   toolStepExecutionState,
   toolStepTerminalState,
 } from "../src/ai-observability/tool-steps";
-import { HeadlessToolSuspension } from "../src/computer/headless-tools";
 import {
   type BuiltinToolStepFact,
   setBuiltinToolStepObserver,
@@ -86,13 +90,25 @@ function aScope() {
   });
 }
 
-/** Records one tool-step observation and returns the spans the port would receive. */
+/** The run chain every exported step span binds since FREV-02. */
+const CHAIN = "c".repeat(32);
+
+/** Records one tool-step observation and returns the spans the port would
+ * receive. The binding gate is the test double (the real store's loop is proven
+ * in the bindings suites); a default W3C chain stands in for the run context the
+ * production path captures. */
 async function recordAndCapture(
   observation: ToolStepObservation,
 ): Promise<{ writes: ReturnType<typeof fakePort>["writes"] }> {
   const queue = fakeQueue();
-  const recorder = createToolStepRecorder({ healthService: queue.queue });
-  recorder.record(observation);
+  const recorder = createToolStepRecorder({
+    healthService: queue.queue,
+    bindings: observerRunBindingGateForTests(),
+  });
+  recorder.record({
+    ...observation,
+    trace: observation.trace ?? { traceId: CHAIN },
+  });
   const port = fakePort();
   for (const write of queue.submitted) await write.perform(port.port);
   return { writes: port.writes };
@@ -103,8 +119,14 @@ async function recordRetrievalAndCapture(
   observation: RetrievalStepObservation,
 ): Promise<{ writes: ReturnType<typeof fakePort>["writes"] }> {
   const queue = fakeQueue();
-  const recorder = createToolStepRecorder({ healthService: queue.queue });
-  recorder.recordRetrieval(observation);
+  const recorder = createToolStepRecorder({
+    healthService: queue.queue,
+    bindings: observerRunBindingGateForTests(),
+  });
+  recorder.recordRetrieval({
+    ...observation,
+    trace: observation.trace ?? { traceId: CHAIN },
+  });
   const port = fakePort();
   for (const write of queue.submitted) await write.perform(port.port);
   return { writes: port.writes };
@@ -335,6 +357,44 @@ describe("the tool step recorder", () => {
       state: "projected",
       value: "builtin",
     });
+    // f5a1 review F2 / FREV-01: the step bodies pass the same approval gate the
+    // model spans do — no proof rides this observation, so the bodies are
+    // omitted as unhandled free text and the step keeps its structural facts.
+    expect(span.attributes?.input).toEqual({
+      state: "omitted",
+      reason: "unhandled_free_text",
+    });
+    expect(span.attributes?.output).toEqual({
+      state: "omitted",
+      reason: "unhandled_free_text",
+    });
+    // A proof-less span carries no bodies, so it names no policy either.
+    expect(span.attributes?.content_policy_ref).toBeUndefined();
+  });
+
+  test("a minted approval projects the step bodies and names its policy (f5a1 review F2)", async () => {
+    const approval = approveSpanContent({
+      source: "bot_security_policy",
+      policyRef: "bot-1/security-policy/v3",
+      allowFreeText: true,
+    });
+    expect(approval).not.toBeNull();
+    const { writes } = await recordAndCapture({
+      toolCallId: "call-approve",
+      toolName: "host_read",
+      proposedAt: startedAt,
+      endedAt,
+      proposalObserved: true,
+      executionObserved: true,
+      receiptObserved: true,
+      execution: { kind: "succeeded", output: "42" },
+      window: "terminal",
+      input: '{"path":"/etc/hosts"}',
+      output: "42",
+      scope: aScope(),
+      contentApproval: approval,
+    });
+    const span = writes[0].spans[0];
     expect(span.attributes?.input).toEqual({
       state: "projected",
       value: '{"path":"/etc/hosts"}',
@@ -342,6 +402,43 @@ describe("the tool step recorder", () => {
     expect(span.attributes?.output).toEqual({
       state: "projected",
       value: "42",
+    });
+    // The audit chain, on the same footing as the model spans: an approved
+    // carry names the policy that approved it.
+    expect(span.attributes?.content_policy_ref).toEqual({
+      state: "projected",
+      value: "bot-1/security-policy/v3",
+    });
+  });
+
+  test("the deny patterns still win even over an approval on step bodies", async () => {
+    const approval = approveSpanContent({
+      source: "bot_security_policy",
+      policyRef: "bot-1/security-policy/v3",
+      allowFreeText: true,
+    });
+    expect(approval).not.toBeNull();
+    const { writes } = await recordAndCapture({
+      toolCallId: "call-approve-deny",
+      toolName: "host_read",
+      proposedAt: startedAt,
+      endedAt,
+      proposalObserved: true,
+      executionObserved: true,
+      receiptObserved: true,
+      execution: { kind: "succeeded" },
+      window: "terminal",
+      input: `{"q":"${CANARY_KEY}"}`,
+      scope: aScope(),
+      contentApproval: approval,
+    });
+    const span = writes[0].spans[0];
+    expect(JSON.stringify(span)).not.toContain(CANARY_KEY);
+    // Deny runs FIRST and always wins — approved or not, the canary dies as a
+    // credential, never as free text.
+    expect(span.attributes?.input).toEqual({
+      state: "omitted",
+      reason: "credential",
     });
   });
 
@@ -442,6 +539,9 @@ describe("the tool step recorder", () => {
     expect(serialized).not.toContain(CANARY_KEY);
     expect(serialized).not.toContain(CANARY_TOKEN);
     expect(serialized).not.toContain(CANARY_GH);
+    // The canary dies at the deny patterns — they run before the approval
+    // gate, so proof-less or approved the reason is the credential, never free
+    // text. The proof-less CLEAN body's omission is pinned above.
     expect(span.attributes?.input).toEqual({
       state: "omitted",
       reason: "credential",
@@ -454,7 +554,10 @@ describe("the tool step recorder", () => {
 
   test("the span enters ONLY through the T09 write queue, one write per observation", () => {
     const queue = fakeQueue();
-    const recorder = createToolStepRecorder({ healthService: queue.queue });
+    const recorder = createToolStepRecorder({
+      healthService: queue.queue,
+      bindings: observerRunBindingGateForTests(),
+    });
     recorder.record({
       toolCallId: "call-q",
       endedAt,
@@ -463,6 +566,7 @@ describe("the tool step recorder", () => {
       receiptObserved: false,
       window: "terminal",
       scope: aScope(),
+      trace: { traceId: CHAIN },
     });
     expect(queue.submitted).toHaveLength(1);
     expect(queue.submitted[0].operation).toBe("writeSpans");
@@ -471,7 +575,10 @@ describe("the tool step recorder", () => {
 
   test("an observation without a trusted scope writes nothing upstream", () => {
     const queue = fakeQueue();
-    const recorder = createToolStepRecorder({ healthService: queue.queue });
+    const recorder = createToolStepRecorder({
+      healthService: queue.queue,
+      bindings: observerRunBindingGateForTests(),
+    });
     recorder.record({
       toolCallId: "call-s",
       endedAt,
@@ -536,9 +643,11 @@ describe("the retrieval step recorder", () => {
       state: "projected",
       value: 2,
     });
+    // f5a1 review F2: the query is a body like any other — proof-less it is
+    // omitted, exactly like the tool bodies above.
     expect(span.attributes?.input).toEqual({
-      state: "projected",
-      value: "vacation policy",
+      state: "omitted",
+      reason: "unhandled_free_text",
     });
     // G3: the summary's id list lands as a BARE string array — the read contract
     // (T18) reads `kb_ids` as strings, and the port's serializer unwraps only the
@@ -667,6 +776,7 @@ describe("the retrieval step recorder", () => {
     });
     const span = writes[0].spans[0];
     expect(JSON.stringify(span)).not.toContain(CANARY_KEY);
+    // Deny precedes the approval gate: the canary dies as a credential.
     expect(span.attributes?.input).toEqual({
       state: "omitted",
       reason: "credential",
@@ -690,6 +800,49 @@ describe("the retrieval step recorder", () => {
     expect(span.attributes?.retrieval_outcome).toEqual({
       state: "projected",
       value: "hit",
+    });
+  });
+
+  test("a minted approval projects the query and names its policy; deny still wins over it", async () => {
+    const approval = approveSpanContent({
+      source: "bot_security_policy",
+      policyRef: "bot-1/security-policy/v3",
+      allowFreeText: true,
+    });
+    expect(approval).not.toBeNull();
+    const { writes } = await recordRetrievalAndCapture({
+      occurredAt: startedAt,
+      endedAt,
+      query: "vacation policy",
+      kbIds: ["kb-1"],
+      outcome: { kind: "hit", fragments: [] },
+      scope: aScope(),
+      contentApproval: approval,
+    });
+    const span = writes[0].spans[0];
+    expect(span.attributes?.input).toEqual({
+      state: "projected",
+      value: "vacation policy",
+    });
+    expect(span.attributes?.content_policy_ref).toEqual({
+      state: "projected",
+      value: "bot-1/security-policy/v3",
+    });
+
+    const denied = await recordRetrievalAndCapture({
+      occurredAt: startedAt,
+      endedAt,
+      query: `find ${CANARY_KEY}`,
+      kbIds: ["kb-1"],
+      outcome: { kind: "miss" },
+      scope: aScope(),
+      contentApproval: approval,
+    });
+    const deniedSpan = denied.writes[0].spans[0];
+    expect(JSON.stringify(deniedSpan)).not.toContain(CANARY_KEY);
+    expect(deniedSpan.attributes?.input).toEqual({
+      state: "omitted",
+      reason: "credential",
     });
   });
 });
@@ -759,7 +912,11 @@ describe("the built-in observation bypass", () => {
       );
       emit(ev({ type: "TOOL_CALL_ARGS", toolCallId: "c1", delta: '{"path":' }));
       emit(
-        ev({ type: "TOOL_CALL_ARGS", toolCallId: "c1", delta: '"/etc/hosts"}' }),
+        ev({
+          type: "TOOL_CALL_ARGS",
+          toolCallId: "c1",
+          delta: '"/etc/hosts"}',
+        }),
       );
       emit(ev({ type: "TOOL_CALL_END", toolCallId: "c1" }));
       const value = await toolStepObservationForTests.observeExecution(
@@ -1569,7 +1726,8 @@ describe("per-run tool-step cell isolation and execute-side discipline (OCR R5-4
     expect(b?.receiptObserved).toBe(false);
   });
 
-  test("an execute the run performs settles THAT run's cell, never a concurrent run's", async () => {    const facts: BuiltinToolStepFact[] = [];
+  test("an execute the run performs settles THAT run's cell, never a concurrent run's", async () => {
+    const facts: BuiltinToolStepFact[] = [];
     setBuiltinToolStepObserver((fact) => facts.push(fact));
     // Run A's source stands in for the runtime: it proposes the call, then
     // really executes it from inside the run (where the execute's ambient
@@ -1713,5 +1871,74 @@ describe("per-run tool-step cell isolation and execute-side discipline (OCR R5-4
     }
     expect(facts).toHaveLength(2);
     expect(facts[1].execution).toEqual({ kind: "succeeded", output: "ok" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The FREV-02 chain gate's counted half (#49) and the shared tool_call_id
+// bound both faces answer to (#59)
+// ---------------------------------------------------------------------------
+
+describe("the step chain gate is counted, never silent (OCR final #49)", () => {
+  test("a scoped step with no provable chain drops once per observation, record and recordRetrieval alike", () => {
+    const before = toolStepChainGateDrops().missingChain;
+    const queue = fakeQueue();
+    const recorder = createToolStepRecorder({
+      healthService: queue.queue,
+      bindings: observerRunBindingGateForTests(),
+    });
+    const toolStep: ToolStepObservation = {
+      toolCallId: "call-gate",
+      endedAt,
+      proposalObserved: true,
+      executionObserved: false,
+      receiptObserved: false,
+      window: "terminal",
+      scope: aScope(),
+    };
+    // No trace at all, and a malformed one: the same counted refusal.
+    recorder.record(toolStep);
+    recorder.record({ ...toolStep, trace: { traceId: "not-a-chain" } });
+    recorder.recordRetrieval({
+      occurredAt: startedAt,
+      endedAt,
+      query: "vacation policy",
+      outcome: { kind: "miss" },
+      scope: aScope(),
+    });
+    // The gate's fail-closed verdict is unchanged: nothing queued, nothing built.
+    expect(queue.submitted).toHaveLength(0);
+    // ...but each drop is an observable fact — one count per refused observation,
+    // shared by both recorders, on the model-span gate's footing (OCR R2 C1).
+    expect(toolStepChainGateDrops().missingChain).toBe(before + 3);
+    // The reader hands out a copy: tests and operators cannot reset the count.
+    (toolStepChainGateDrops() as { missingChain: number }).missingChain = 0;
+    expect(toolStepChainGateDrops().missingChain).toBe(before + 3);
+  });
+});
+
+describe("the tool_call_id bound is one line on both faces (OCR final #59)", () => {
+  test("a pathological over-long call id is clamped at the write face, so the read face no longer judges it never provided", async () => {
+    const longId = `call-${"x".repeat(MAX_TOOL_CALL_ID_LENGTH)}`;
+    expect(longId.length).toBe(MAX_TOOL_CALL_ID_LENGTH + 5);
+    const { writes } = await recordAndCapture({
+      toolCallId: longId,
+      toolName: "host_read",
+      proposedAt: startedAt,
+      endedAt,
+      proposalObserved: true,
+      executionObserved: false,
+      receiptObserved: false,
+      window: "terminal",
+      scope: aScope(),
+    });
+    const span = writes[0].spans[0];
+    // The span attribute carries the clamped id — exactly the length the read
+    // side's shared constant admits, and the true prefix of the raw call id:
+    // through the write face this id reads back as provided, not absent.
+    expect(span.attributes?.tool_call_id).toEqual({
+      state: "projected",
+      value: longId.slice(0, MAX_TOOL_CALL_ID_LENGTH),
+    });
   });
 });

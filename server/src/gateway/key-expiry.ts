@@ -111,7 +111,15 @@ export function gatewayKeyUsableForNewRequest(
   }
   if (row.expiresAt === null) return { usable: true };
   const expiresAtMs = expiryMs(row.expiresAt);
-  if (expiresAtMs === undefined) return { usable: true };
+  // Fail closed: past the null check above, an unreadable term is a damaged record, and a
+  // damaged term must not read as "never expires" — the expiry gate's one job is refusing.
+  if (expiresAtMs === undefined) {
+    return {
+      usable: false,
+      reason: "gateway_key_expired",
+      expiredAt: now.toISOString(),
+    };
+  }
   if (now.getTime() < expiresAtMs) return { usable: true };
   return {
     usable: false,

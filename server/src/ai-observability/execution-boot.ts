@@ -19,18 +19,25 @@
  *  - live authorization for the worker's per-case re-derivation, through the same
  *    resolveActor + manage-gate + live-epoch seam the export worker uses.
  *
- * The evaluation tool classifier answers fail-closed write for every name: nothing in
- * this assembly can attest that a frozen whitelist name is a read (the catalogue-
- * backed wiring stays the T24-named leftover), so the gate's second key refuses and
- * the governance counter records it — the whitelist may narrow, never widen.
+ * The evaluation tool surface answers from the catalogue (FREV-04): the whitelist's
+ * names are resolved once per execution against the deployment's own `mcp_tools` rows
+ * and classified with the same `classifyTool` the store's `callTool` classifies a real
+ * call with, so the model is offered production schemas and the gate's read/write
+ * answer matches production's for the same tool. What this deliberately does NOT do is
+ * execute anything: the schemas are declared, the effect decides, and every call still
+ * replays a frozen fixture or is refused. `evaluationToolClassifier` stays the
+ * fail-closed floor — a name the catalogue does not know is still a write.
  */
+import { inArray } from "drizzle-orm";
 import type { AgentActor } from "../agents/public";
 import type { AuditStore } from "../audit";
 import type { CreditWriter } from "../billing/credits-writer";
 import type { UsageOutbox } from "../billing/usage-outbox";
 import type { BillingModelCreditPolicyEntry } from "../config";
 import type { Database } from "../db/client";
-import { classifyTool } from "../plugins/catalogue";
+import { mcpTools } from "../db/schema/plugins";
+import { catalogueEntry, classifyTool } from "../plugins/catalogue";
+import { refFromToolName } from "../plugins/store";
 import type { BotManagementCheck } from "./context";
 import { createBilledEvaluationCaseRunner } from "./execution-billing";
 import {
@@ -38,9 +45,12 @@ import {
   type EvaluationModelCall,
   type EvaluationModelCallObserver,
 } from "./execution-runner";
+import { createPublicExecutionSeamModelCall } from "./execution-seam";
 import {
   createObservationExecutionWorker,
   type EvaluationToolClassifier,
+  type EvaluationToolSurface,
+  type EvaluationToolSurfaceResolver,
 } from "./executions";
 import {
   createEntranceModelCall,
@@ -131,12 +141,115 @@ export function judgeAdmissionFromEnv(env: EnvSource): {
 
 /**
  * The production tool classifier: fail-closed write for every name, through the
- * reviewed classifier itself — an unadvertised name is a write, and this assembly has
- * no catalogue to advertise with. See the module head for what this deliberately
- * leaves to the T24-named leftover.
+ * reviewed classifier itself — an unadvertised name is a write, and a name the
+ * catalogue resolver did not answer keeps this word (see
+ * {@link createCatalogueToolSurface} for the answer that precedes it). Kept exported
+ * as the floor every deployment has, even the one with no plugin catalogue at all.
  */
 export const evaluationToolClassifier: EvaluationToolClassifier = (toolName) =>
   classifyTool(null, toolName, false);
+
+/** One frozen name, resolved onto the deployment's tool rows (FREV-04). */
+type ResolvedName = Readonly<{
+  /** The frozen spelling, which is the key the answer is filed under. */
+  name: string;
+  /** The server half, when the spelling carried one; null for a bare tool name. */
+  serverId: string | null;
+  /** The tool half — what the `mcp_tools` row is keyed by. */
+  toolName: string;
+}>;
+
+/**
+ * A frozen tool name onto the two spellings the deployment uses: the model-facing
+ * `mcp__server__tool` (what `toolNameFor` mints, and what a submitter copying from a
+ * run's transcript would write) and the grant/ref `server/tool`. Anything else is a
+ * bare tool name, which only resolves when exactly one advertised tool carries it —
+ * ambiguity is a reason to answer nothing, never to pick a row.
+ */
+function resolveName(name: string): ResolvedName {
+  const ref = refFromToolName(name);
+  if (ref !== null) {
+    const separator = ref.indexOf("/");
+    return {
+      name,
+      serverId: ref.slice(0, separator),
+      toolName: ref.slice(separator + 1),
+    };
+  }
+  const separator = name.indexOf("/");
+  if (separator > 0) {
+    return {
+      name,
+      serverId: name.slice(0, separator),
+      toolName: name.slice(separator + 1),
+    };
+  }
+  return { name, serverId: null, toolName: name };
+}
+
+/**
+ * The deployment's answer for the frozen whitelist (FREV-04): description and JSON
+ * Schema from the `mcp_tools` row — the same columns the runtime's granted-tool
+ * listing hands a Bot — and the read/write effect from `classifyTool` over that row
+ * and its catalogue entry, exactly as `callTool` computes it. A name with no row, or
+ * one several servers share, is absent from the map: the fail-closed classifier then
+ * says "write" and the gate refuses, which is the assembly's existing word for a tool
+ * it cannot attest.
+ *
+ * Read-only and inert by construction: no credential, no network, no grant check — it
+ * describes tools, it never reaches one.
+ */
+export function createCatalogueToolSurface(
+  database: Database,
+): EvaluationToolSurfaceResolver {
+  return async (names) => {
+    const surfaces = new Map<string, EvaluationToolSurface>();
+    const candidates = names
+      .map(resolveName)
+      .filter((one) => one.toolName !== "");
+    const toolNames = [...new Set(candidates.map((one) => one.toolName))];
+    if (toolNames.length === 0) return surfaces;
+    const rows = await database
+      .select({
+        serverId: mcpTools.serverId,
+        name: mcpTools.name,
+        description: mcpTools.description,
+        inputSchema: mcpTools.inputSchema,
+        effect: mcpTools.effect,
+      })
+      .from(mcpTools)
+      .where(inArray(mcpTools.name, toolNames));
+    for (const candidate of candidates) {
+      const matches = rows.filter(
+        (row) =>
+          row.name === candidate.toolName &&
+          (candidate.serverId === null || row.serverId === candidate.serverId),
+      );
+      // One row or nothing: a bare name two servers advertise is not resolved, and a
+      // name the catalogue never listed stays absent rather than invented.
+      if (matches.length !== 1) continue;
+      const row = matches[0];
+      if (row === undefined) continue;
+      const schema: unknown = row.inputSchema;
+      surfaces.set(candidate.name, {
+        description: row.description,
+        parameters:
+          schema !== null &&
+          typeof schema === "object" &&
+          !Array.isArray(schema)
+            ? (schema as Record<string, unknown>)
+            : {},
+        effect: classifyTool(
+          catalogueEntry(row.serverId),
+          row.name,
+          true,
+          row.effect,
+        ),
+      });
+    }
+    return surfaces;
+  };
+}
 
 /**
  * The judge's controlled model call, wired from the approved entrances: the judge asks
@@ -195,8 +308,18 @@ export type ExperimentExecutionBootDeps = Readonly<{
   env: EnvSource;
   /** The evaluation call's model-span channel; absent means unobserved calls. */
   observe?: EvaluationModelCallObserver;
-  /** Override for tests; production dials the deployment gateway resolved from env. */
+  /**
+   * Override for tests; production runs each case through the public execution seam
+   * (`execution-seam.ts`, FREV-04) — the builtin assembly and engine production serves
+   * Bots through, with the case's own isolation and admission.
+   */
   callModel?: EvaluationModelCall;
+  /**
+   * Override for tests; production reads the deployment's own `mcp_tools` rows
+   * ({@link createCatalogueToolSurface}) so the evaluated model sees the schemas and
+   * read/write effects production would give the same tools.
+   */
+  resolveToolSurface?: EvaluationToolSurfaceResolver;
   concurrency?: number;
   owner?: string;
 }>;
@@ -222,7 +345,11 @@ export function createExperimentExecutionWorkerBoot(
   deps: ExperimentExecutionBootDeps,
 ) {
   const { entrances, approvedVersions } = judgeAdmissionFromEnv(deps.env);
-  const callModel = deps.callModel ?? createGatewayModelCall();
+  // FREV-04: the evaluation CASE runs through the Bot's own public execution entry —
+  // the production builtin assembly + engine, isolated per case (execution-seam.ts).
+  // The judge below keeps its own controlled entrance dispatch (T27's contract); its
+  // legacy fallback is the retained gateway dial, unchanged.
+  const callModel = deps.callModel ?? createPublicExecutionSeamModelCall();
   const billedRunner = createBilledEvaluationCaseRunner({
     callModel,
     ...(deps.observe === undefined ? {} : { observe: deps.observe }),
@@ -237,6 +364,11 @@ export function createExperimentExecutionWorkerBoot(
     database: deps.database,
     audit: deps.audit,
     classify: evaluationToolClassifier,
+    // FREV-04: the catalogue surface the runner declares and the gate classifies
+    // with, read once per execution. `evaluationToolClassifier` above stays the
+    // fail-closed word for every name this resolver does not answer.
+    resolveToolSurface:
+      deps.resolveToolSurface ?? createCatalogueToolSurface(deps.database),
     runCase: createJudgeScoringCaseRunner({ inner: billedRunner, judge }),
     reauthorize: createExportReauthorization({
       canManageBot: deps.canManageBot,

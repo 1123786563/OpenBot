@@ -28,11 +28,15 @@ import { resolveObservationScope } from "./scope";
 /**
  * The live ownership generation: the profile row's last write, in whole
  * seconds. Any write to the row — an ownership change first among them —
- * rotates the epoch, so scope keys, cursors and caches keyed on the old
- * generation stop answering immediately. A rename rotates it too; that is the
- * safe direction (an unnecessary invalidation, never a stale authorization).
- * A bot with no profile row has no generation: the manage gate has already
- * refused the caller by the time this could matter.
+ * rotates the epoch, so the AUTHORIZATION artifacts keyed on the old
+ * generation (cursors, job and export keys — scope.ts `authorizationKey`)
+ * stop answering immediately. FREV-03: the epoch never reaches a data
+ * address — the Bot's storage locator is derived from the stable resource
+ * key, so a rename or a transfer invalidates credentials without moving one
+ * record. A rename rotating the epoch is the safe direction (an unnecessary
+ * cursor invalidation, never a stale authorization). A bot with no profile
+ * row has no generation: the manage gate has already refused the caller by
+ * the time this could matter.
  */
 export function createAgentProfileScopeEpoch(
   database: Database,
@@ -44,7 +48,10 @@ export function createAgentProfileScopeEpoch(
       .where(eq(agentProfiles.agentId, botId))
       .limit(1);
     const row = rows[0];
-    return row ? Math.floor(row.updatedAt.getTime() / 1000) : 0;
+    // Milliseconds: a seconds-truncated epoch would hand two writes in the same
+    // second (an ownership change among them) the same generation, so the old
+    // scope would keep answering.
+    return row ? row.updatedAt.getTime() : 0;
   };
 }
 
@@ -57,9 +64,19 @@ export function createActorResolver(
   rolesForUser: (userId: string) => Promise<readonly OpenBotRole[]>,
 ): (actorId: string) => Promise<AgentActor | null> {
   return async (actorId) => {
-    const roles = await rolesForUser(actorId).catch(
-      (): readonly OpenBotRole[] => [],
-    );
+    const roles = await rolesForUser(actorId).catch((error: unknown) => {
+      // Fail closed (no roles), but never silently: a store outage must not be
+      // indistinguishable from a real revocation.
+      getLogger("server").warn(
+        {
+          type: "actor-role-read-error",
+          errorType: error instanceof Error ? error.name : "unknown",
+          timestamp: new Date().toISOString(),
+        },
+        "actor-role-read-error",
+      );
+      return [] as readonly OpenBotRole[];
+    });
     if (roles.includes("admin")) return { id: actorId, role: "admin" };
     if (roles.includes("user")) return { id: actorId, role: "user" };
     return null;
@@ -70,10 +87,11 @@ export function createActorResolver(
  * The export worker's reauthorization: the T11 route's authorization block
  * lifted for a background caller. The actor is resolved from live roles, the
  * bot from the manage gate, and the scope from the live epoch — so a revoked
- * user, a transferred bot or a bumped generation answers null (or a scope the
- * frozen locator no longer matches) and the job is cancelled before any
- * upstream byte is fetched. A scope the seam refuses to mint is also null:
- * for a worker, "no scope" and "refused" are the same answer.
+ * user or a transferred bot answers null (the old holder's job is cancelled
+ * before any upstream byte is fetched; FREV-03 note: the data stays at its
+ * stable address, so the NEW owner's own jobs read the whole history). A
+ * scope the seam refuses to mint is also null: for a worker, "no scope" and
+ * "refused" are the same answer.
  */
 export function createExportReauthorization(deps: {
   canManageBot: BotManagementCheck;
@@ -97,7 +115,18 @@ export function createExportReauthorization(deps: {
         ownership,
         epoch,
       });
-    } catch {
+    } catch (error) {
+      // The null stays the answer, but an infrastructure failure must stay
+      // distinguishable in the logs from a real revocation.
+      getLogger("server").warn(
+        {
+          type: "observation-scope-epoch-error",
+          errorType: error instanceof Error ? error.name : "unknown",
+          context: { botId: access.botId },
+          timestamp: new Date().toISOString(),
+        },
+        "observation-scope-epoch-error",
+      );
       return null;
     }
   };

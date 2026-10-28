@@ -321,8 +321,13 @@ export function computerCapacity(
               `computer idle sweep stopped ${computer.botId} after ${idleMinutes} quiet minutes.`,
             );
           }
-        } catch {
-          // One computer's unreadable state must not protect every other idler by ending the sweep.
+        } catch (error) {
+          // One computer's unreadable state must not protect every other idler by ending the
+          // sweep — but a stop that failed is a fact, not silence: the sweep is idle-stop's
+          // only trigger, so nothing else would ever record the failure.
+          log.warn(
+            `computer idle sweep could not read or stop ${computer.botId}: ${error instanceof Error ? error.message : String(error)}.`,
+          );
         }
       }
       return stopped;
@@ -332,6 +337,12 @@ export function computerCapacity(
   }
 
   function chargeWrite(botId: string, bytes: number): void {
+    // A NaN or negative charge (an upstream length that never was a number) would
+    // poison the map — NaN beats every comparison, so this Bot's cap would never trip
+    // again. Refuse the write instead.
+    if (!Number.isFinite(bytes) || bytes < 0) {
+      throw new WorkspaceQuotaError(diskGib, bytes, diskCapBytes);
+    }
     const used = charged.get(botId) ?? 0;
     if (used + bytes > diskCapBytes) {
       throw new WorkspaceQuotaError(diskGib, used + bytes, diskCapBytes);
@@ -354,7 +365,9 @@ export function computerCapacity(
   function refundWrite(botId: string, bytes: number) {
     // A write that never landed must not eat the budget either: without this, transient
     // post failures keep the charge and enough of them lock the Bot's write path shut
-    // (413) until a workspace wipe — with no bytes on disk to show for it.
+    // (413) until a workspace wipe — with no bytes on disk to show for it. A refund
+    // that is not a positive real number is a caller bug, never applied.
+    if (!Number.isFinite(bytes) || bytes <= 0) return;
     charged.set(botId, Math.max(0, (charged.get(botId) ?? 0) - bytes));
   }
 

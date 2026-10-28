@@ -307,10 +307,12 @@ export type TemplateRevisionApplyResult = {
 
 /** The stored revision is newer than the one an administrator tried to apply. */
 export class StaleTemplateRevisionError extends Error {
-  constructor(storedVersion: number, targetVersion: number) {
-    super(
-      `The stored template revision ${storedVersion} is newer than ${targetVersion}.`,
-    );
+  constructor(
+    storedVersion: number,
+    targetVersion: number,
+    message = `The stored template revision ${storedVersion} is newer than ${targetVersion}.`,
+  ) {
+    super(message);
     this.name = "STALE_TEMPLATE_REVISION";
   }
 }
@@ -456,8 +458,12 @@ export function createOpenMuseTemplateRevisionService(deps: {
         if (winner.templateVersion >= revision.version) {
           return { status: "noop", storedVersion: winner.templateVersion };
         }
-        throw new Error(
-          `Template Bot ${stored.agentId} holds revision ${winner.templateVersion} after a lost race for ${revision.version}.`,
+        // The row moved to a lower revision mid-flight: the route's 409 arm,
+        // not a bodyless 500, is the answer a concurrent apply deserves.
+        throw new StaleTemplateRevisionError(
+          winner.templateVersion,
+          revision.version,
+          `Another apply moved Template Bot ${stored.agentId} to revision ${winner.templateVersion} while ${revision.version} was being applied; try again.`,
         );
       }
       return { status: "updated", storedVersion: revision.version };

@@ -76,6 +76,42 @@ describe("the create-side quota bound (round 6 M35)", () => {
     });
     expect(other.created).toBe(true);
   });
+
+  test("a same-key duplicate arriving at a full quota answers the stored row, not 429", async () => {
+    const now = () => new Date();
+    const rows = fakeRows(now);
+    const store = createOpenMuseTaskStore({ rows });
+    // The winner's row is already there.
+    const winner = await store.create({
+      ownerUserId: "user-1",
+      botId: "bot-1",
+      kind: "agent",
+      prompt: "the winner",
+      idempotencyKey: "k-1",
+    });
+    expect(winner.created).toBe(true);
+    // The duplicate's pre-check read raced the winner and missed; the insert
+    // then hits a full quota (the winner took the last slot). The re-read
+    // must answer the stored row, not surface the quota refusal.
+    const innerFind = rows.findTaskByIdempotencyKey;
+    let reads = 0;
+    rows.findTaskByIdempotencyKey = async (ownerUserId, key) => {
+      reads += 1;
+      return reads === 1 ? null : innerFind(ownerUserId, key);
+    };
+    rows.insertTask = async () => {
+      throw new OpenMuseTaskQuotaError();
+    };
+    const replay = await store.create({
+      ownerUserId: "user-1",
+      botId: "bot-1",
+      kind: "agent",
+      prompt: "the duplicate",
+      idempotencyKey: "k-1",
+    });
+    expect(replay.created).toBe(false);
+    expect(replay.task.id).toBe(winner.task.id);
+  });
 });
 
 import { describe, expect, test } from "../../tests/support/e2e-compat";

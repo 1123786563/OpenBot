@@ -119,6 +119,32 @@ function providerAnswerOf(body: unknown): GCalendarProviderAnswer {
       "The Calendar answer came back in a shape this deployment could not read.",
     );
   }
+  /*
+   * The paging shape is the fake's contract, not a pinned vendor one (module
+   * header). A real dial that spells these fields differently would otherwise
+   * end the loop on page one with no trace; record the deviation rather than
+   * widening what is accepted.
+   */
+  if (record.truncated !== undefined && typeof record.truncated !== "boolean") {
+    log.warn(
+      {
+        type: "openmuse-calendar-answer-shape",
+        field: "truncated",
+        actual: typeof record.truncated,
+      },
+      "openmuse-calendar-answer-shape",
+    );
+  }
+  if (record.nextToken !== undefined && typeof record.nextToken !== "string") {
+    log.warn(
+      {
+        type: "openmuse-calendar-answer-shape",
+        field: "nextToken",
+        actual: typeof record.nextToken,
+      },
+      "openmuse-calendar-answer-shape",
+    );
+  }
   return {
     events: record.events,
     truncated: record.truncated === true,
@@ -235,7 +261,19 @@ export function buildOpenMuseCalendarClient(deps: {
       let body: unknown;
       try {
         body = await wire.json();
-      } catch {
+      } catch (error) {
+        // list() refuses an unreadable body outright; here the callers judge
+        // by `ok`, and a 2xx says nothing about whether the action itself
+        // landed — so the answer is passed on and the unreadable body is
+        // recorded instead of lost.
+        log.warn(
+          {
+            type: "openmuse-calendar-action-unreadable-body",
+            status: wire.status ?? null,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          "openmuse-calendar-action-unreadable-body",
+        );
         body = null;
       }
       return { ok: wire.ok, status: wire.status ?? null, body };

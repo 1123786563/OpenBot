@@ -37,6 +37,11 @@ function rows(turnId: string, seqs: number[]) {
   return new Map([[turnId, seqs.map((seq) => ({ seq }))]]);
 }
 
+/** Let a fire-and-forget deliver() finish its reads before asserting on callbacks. */
+function flush() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 describe("turn event bus", () => {
   test("redis mode: publish rings the subscriber, which reads the rows back", async () => {
     const redis = fakeRedisPort();
@@ -120,6 +125,61 @@ describe("turn event bus", () => {
     await Promise.resolve();
     expect(received).toHaveLength(1);
     expect(received[0].map((e) => e.seq)).toEqual([1]);
+    await bus.close();
+  });
+
+  test("a turn longer than one page delivers every event, not just the first page", async () => {
+    const redis = fakeRedisPort();
+    const seqs = Array.from({ length: 600 }, (_, index) => index + 1);
+    const stored = rows("t1", seqs);
+    // A reader that honours the requested LIMIT, like the production one.
+    const paged = {
+      async readEventsSince(turnId: string, seq: number, limit = 500) {
+        return (stored.get(turnId) ?? [])
+          .filter((row) => row.seq > seq)
+          .slice(0, limit);
+      },
+    };
+    const bus = createTurnEventBus(redis, { reader: paged });
+
+    const received: number[][] = [];
+    await bus.subscribe("t1", (events) =>
+      received.push(events.map((e) => e.seq)),
+    );
+    await bus.publish("t1", 600);
+    await flush();
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toEqual(seqs);
+    await bus.close();
+  });
+
+  test("a failed read leaves the watermark alone: the same ring re-reads, nothing is skipped", async () => {
+    const redis = fakeRedisPort();
+    const stored = rows("t1", [1, 2, 3]);
+    let fail = true;
+    const flaky = {
+      async readEventsSince(turnId: string, seq: number) {
+        if (fail) {
+          fail = false;
+          throw new Error("read failed");
+        }
+        return (stored.get(turnId) ?? []).filter((row) => row.seq > seq);
+      },
+    };
+    const bus = createTurnEventBus(redis, { reader: flaky });
+
+    const received: number[][] = [];
+    await bus.subscribe("t1", (events) =>
+      received.push(events.map((e) => e.seq)),
+    );
+    await bus.publish("t1", 3); // the read fails: nothing delivered, watermark still 0
+    await flush();
+    expect(received).toHaveLength(0);
+
+    await bus.publish("t1", 3); // the same ring re-reads the same rows
+    await flush();
+    expect(received).toEqual([[1, 2, 3]]);
     await bus.close();
   });
 

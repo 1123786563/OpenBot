@@ -425,13 +425,21 @@ export function createOpenMuseReviewedActionTenancyService(deps: {
     scope: PlatformScope,
     actionId: string,
     eventType: string,
-    delegate: () => Promise<ScopedReviewedActionRecord | null>,
+    delegate: (facts: {
+      readonly actionId: string;
+      readonly userId: string;
+    }) => Promise<ScopedReviewedActionRecord | null>,
   ): Promise<ScopedDecisionOutcome> => {
     assertTrustedScope(scope);
     const id = requireId(actionId, "actionId");
     const ownership = await authorizeAction(scope, id);
     if (!ownership) return notFoundVerdict();
-    const decided = await delegate();
+    // 委托一律用门内已归一的 (actionId, userId)：多用户同主体时与门按
+    // 同一行对齐，杜绝「门放行、决策缝折叠为 not-found」的口径分裂。
+    const decided = await delegate({
+      actionId: id,
+      userId: ownership.userId,
+    });
     if (!decided) return notFoundVerdict();
     // 状态变化留审计（AC2）：生效决策必写；审计失败原样上抛，绝不折叠成
     // 成功——调用方看到的异常就是交付事实。
@@ -603,7 +611,8 @@ export function createOpenMuseReviewedActionTenancyService(deps: {
         scope,
         actionId,
         "openmuse.reviewed_action.decided",
-        () => decisions.decide(scope.actorId, actionId, decision),
+        ({ actionId: id, userId }) =>
+          decisions.decide(userId, id, decision),
       );
     },
 
@@ -612,7 +621,7 @@ export function createOpenMuseReviewedActionTenancyService(deps: {
         scope,
         actionId,
         "openmuse.reviewed_action.cancelled",
-        () => decisions.cancel(scope.actorId, actionId),
+        ({ actionId: id, userId }) => decisions.cancel(userId, id),
       );
     },
   };

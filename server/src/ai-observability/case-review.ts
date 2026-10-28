@@ -283,10 +283,13 @@ export function createCaseReviewService(
 
     async saveReviewed(scope, input) {
       assertObservationScope(scope);
+      // The name is checked before anything is read: an empty one is a 400, not a paid
+      // assemble over the ownership lookup and all 200 case projections.
+      const datasetName = reference(input.datasetName);
       const assembled = await assemble(scope, input.runId, input.cases);
 
       const saved = await deps.datasets.saveVersion(scope, {
-        datasetName: reference(input.datasetName),
+        datasetName,
         cases: assembled.cases,
       });
 

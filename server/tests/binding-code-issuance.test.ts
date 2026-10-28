@@ -309,8 +309,9 @@ test("the deployment mounts issuance on the public bot-service surface, behind t
     api: { getSession: async () => null },
   };
   args[2] = { rolesForUser: async () => ["user"] };
-  // The registry sits in the last seat, the same one bot-service-auth.test.ts names.
-  args[createApp.length - 1] = registry;
+  // The registry rides the botServices seat, second from the end: workbenchPayer was appended
+  // after it (#287), so the last seat is the payer's, not the registry's.
+  args[createApp.length - 2] = registry;
   const deployment = createApp(...(args as never[]));
 
   // Without a credential the service guard answers before any route is reached.

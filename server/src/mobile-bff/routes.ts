@@ -12,6 +12,7 @@ import {
   OpenMuseVendorUnavailableError,
 } from "../openmuse-connectors/google-oauth";
 import { OpenMuseFileQuotaError } from "../openmuse-files/store";
+import { OpenMuseTaskQuotaError } from "../openmuse-tasks/store";
 import { OpenMuseMailVendorError } from "../openmuse-mail/client";
 import type { MobileBffActivityReader } from "./activity";
 import type { OpenMuseBotProvisioner } from "./openmuse-bot";
@@ -123,6 +124,20 @@ export function createMobileBffRoutes(deps: {
           error: `That upload would pass this owner's ${error.capBytes}-byte Files quota. Delete some files first.`,
           code: error.code,
         },
+        413,
+      );
+    }
+    /*
+     * The tasks sub-app's quota refusal, restated at the mount for the same reason as the files
+     * one above: a determinate "delete some tasks first" (413), never the retry-me 503 that
+     * would send the client straight back into the same refusal.
+     */
+    if (
+      error instanceof OpenMuseTaskQuotaError ||
+      error.name === "OpenMuseTaskQuotaError"
+    ) {
+      return context.json(
+        { error: error.message, code: "openmuse_task_quota_exceeded" },
         413,
       );
     }

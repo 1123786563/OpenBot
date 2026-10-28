@@ -1,5 +1,6 @@
 import {
   PRICE_DIMENSIONS,
+  canonicalPriceAmount,
   type PriceDimension,
   type PriceDimensionUnknownReason,
   type PriceSnapshotDims,
@@ -171,9 +172,16 @@ export function imageGenerationSpecOf(
 
   let inputImages = 0;
   if (body.image !== undefined && body.image !== null) {
-    if (typeof body.image === "string") inputImages = 1;
-    else if (Array.isArray(body.image)) inputImages = body.image.length;
-    else {
+    // Counted exactly means each entry is a real nameable image: a blank string or a
+    // blank/foreign element inside the array is a spec nobody can certify, refused —
+    // the same discipline size/quality already follow.
+    if (nonEmptyString(body.image)) inputImages = 1;
+    else if (
+      Array.isArray(body.image) &&
+      body.image.every((entry) => nonEmptyString(entry))
+    ) {
+      inputImages = body.image.length;
+    } else {
       return {
         ok: false,
         issue: { code: "image_spec_indeterminable", field: "image" },
@@ -293,8 +301,12 @@ export function assessImageGenerationEnablement(input: {
     }
   }
 
+  // The zero comparison runs on the canonical form: "0.00" and "0" are one price, and
+  // the free verdict must not depend on the table row's spelling.
+  const tierAmount = canonicalPriceAmount(tier.amount);
   const free =
-    tier.amount === "0" &&
+    tierAmount.ok &&
+    tierAmount.amount === "0" &&
     (spec.spec.inputImages === 0 ||
       (input.dims.image.status === "known" && input.dims.image.amount === "0"));
 

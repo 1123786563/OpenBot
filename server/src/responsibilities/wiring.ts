@@ -6,9 +6,12 @@ import {
   type RunnerLike,
 } from "@openbot/toolkit/run-turn";
 import { z } from "zod";
+import { getLogger } from "../../../shared/logger";
 import { canUseComputer } from "../agents/computer-access";
-import type { AgentProfileStore } from "../agents/public";
-import type { AgentActor } from "../agents/public";
+
+const log = getLogger("server");
+
+import type { AgentActor, AgentProfileStore } from "../agents/public";
 import { serverTurnAdmission } from "../agents/turn-admission";
 import {
   parseApprovalContinuation,
@@ -101,9 +104,21 @@ export function createServerResponsibilityEngine(deps: {
             const computer =
               computerGateway &&
               canUseComputer(
+                // Fail-closed on a read fault, but never silently: a Bot losing its computer
+                // tools for a turn with no trace is undiagnosable.
                 await agentProfileStore
                   .get(actor, context.agentId)
-                  .catch(() => null),
+                  .catch((error: unknown) => {
+                    log.warn(
+                      {
+                        type: "responsibility-agent-profile-read-failed",
+                        agentId: context.agentId,
+                        error,
+                      },
+                      "The agent profile could not be read; computer tools are withheld for this turn.",
+                    );
+                    return null;
+                  }),
                 actor,
               )
                 ? createHeadlessComputerTools({

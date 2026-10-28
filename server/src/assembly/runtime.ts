@@ -27,7 +27,10 @@ import {
 import { COMPUTER_GUIDANCE } from "@openbot/shared/bot-prompt";
 import { getLogger } from "@openbot/shared/logger";
 import { buildResponsibilityTurn } from "../../../shared/responsibility-turn";
-import { initProcessTracing } from "@openbot/shared/trace";
+import {
+  initProcessTracing,
+  SERVER_TRACING_SERVICE_NAME,
+} from "@openbot/shared/trace";
 import { workOwner } from "@openbot/shared/work-owner";
 import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { createTurnRunner } from "@openbot/toolkit/run-turn";
@@ -70,7 +73,7 @@ import {
   createOpenMuseTemplateRevisionStore,
   createOpenMuseTemplateStore,
 } from "../agents/openmuse-template-store";
-import { canManageAgent } from "../agents/profile-policy";
+import { canObserveAgent } from "../agents/profile-policy";
 import { createAgentProfileStore } from "../agents/profile-store";
 import type { AgentActor } from "../agents/profile-types";
 import { createBotCatalog } from "../agents/public";
@@ -83,9 +86,14 @@ import {
   wakeUpInstruction,
   wakeUpTools,
 } from "../agents/wake-up";
-import { createRunBindingStore } from "../ai-observability/bindings";
+import {
+  createObserverRunBindingGate,
+  createRunBindingStore,
+  observerChainId,
+} from "../ai-observability/bindings";
 import { opikConfigFromEnv } from "../ai-observability/config";
 import type { BotManagementCheck } from "../ai-observability/context";
+import type { ObservationScope } from "../ai-observability/contracts";
 import { createExecutionBudgetPrecheck } from "../ai-observability/execution-billing";
 import { createExperimentExecutionWorkerBoot } from "../ai-observability/execution-boot";
 import {
@@ -100,6 +108,11 @@ import {
 import { createOpikHealthService } from "../ai-observability/health";
 import { createIdLinkStore } from "../ai-observability/id-links";
 import { createModelSpanRecorder } from "../ai-observability/model-span";
+import {
+  createRemoteBudgetContractResolver,
+  createRemoteRunBudgetGate,
+  createRemoteRunRecorder,
+} from "../ai-observability/remote-run";
 import {
   modelSpanObserver,
   observationEnabled,
@@ -166,9 +179,12 @@ import {
   startUsageDeliverySweeps,
 } from "../billing/maintenance";
 import { checkOutboundUrl, createOutboundGuard } from "../billing/outbound";
+import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "../billing/types";
 import {
+  CreditInsufficientError,
   currentPayerBinding,
   ensureDeploymentPayerBinding,
+  resolveConsumptionPayerBinding,
 } from "../billing/payer-binding";
 import { createAlipayProvider } from "../billing/payments/alipay";
 import { startPaymentSweeps } from "../billing/payments/maintenance";
@@ -249,13 +265,18 @@ import {
   normalizeModelBaseUrls,
   runtimeModelForEnvironment,
   setBuiltinExecutionEngine,
+  CreditGateFailureError,
   setBuiltinModelSpanObserver,
+  setBuiltinRunLifecycleObserver,
   setBuiltinToolStepObserver,
   setMastraContinuations,
   setMastraConversationRuntime,
   setMastraPersonalMemoryContext,
   setModelBillingAudit,
   setModelUsageGate,
+  setRemoteBudgetContractResolver,
+  setRemoteRunBudgetGate,
+  setRemoteRunObserver,
   setWorkbenchGatewayModel,
   type ToolSelection,
 } from "../copilot";
@@ -757,6 +778,7 @@ import { createRuntimeLifecycle } from "./lifecycle";
 import {
   createModelBudgetArm,
   logUsageOutboxWriteFailure,
+  MODEL_RESERVATION_WINDOW_MS,
 } from "./model-budget";
 
 /**
@@ -1029,12 +1051,36 @@ learningAutoAssign.start();
  * where its await belongs.
  */
 const opikBootConfig = opikConfigFromEnv(process.env);
-const aiObservabilityCanManageBot: BotManagementCheck = async (
+/*
+ * R4-02: the observation domain's ONE gate is the observe-level policy, not the
+ * manage rule. `canManageAgent` refuses `systemOwned` for every role — right for
+ * editing, wrong for reading — so routing this seam through it left the default
+ * LangGraph Bot executing, billing and writing traces upstream while every
+ * observation face answered 404 and no binding ever existed. `canObserveAgent`
+ * keeps the manage answer for user-owned Bots and hands a creatorless system
+ * Bot's data to the administrator alone; the profile EDIT paths keep
+ * `canManageAgent`.
+ *
+ * CONSUMER AUDIT (OCR R5): this one guard is wired at four places, and the audit
+ * is the boundary statement. (1) The builtin run scope resolver mints observation
+ * scopes — reading. (2) The observation routes use it for every per-Bot answer,
+ * including the observation domain's OPERATIONAL faces — export queueing,
+ * case-review persistence, experiment submit/start — which write observation DATA
+ * (and a billed evaluation execution spends credits); none of them edits a Bot
+ * profile. (3) The export re-authorization reads data out — reading. (4) The
+ * evaluation execution worker runs billed evaluations over observed runs — an
+ * observation-data operation, the operator's own job on a Bot whose data the Spec
+ * assigns to administrators. The divergence therefore reaches the observation
+ * domain's own faces, including the spend, and never the profile edit paths; a
+ * face that must refuse admin on system Bots gets its own gate, it does not
+ * reroute this one.
+ */
+const aiObservabilityCanObserveBot: BotManagementCheck = async (
   actor,
   botId,
 ) => {
   const profile = await agentProfileStore.get(actor, botId).catch(() => null);
-  return profile && canManageAgent(actor, profile) ? profile : null;
+  return profile && canObserveAgent(actor, profile) ? profile : null;
 };
 const aiObservabilityScopeEpoch = createAgentProfileScopeEpoch(database);
 /*
@@ -1048,7 +1094,7 @@ const aiObservabilityScopeEpoch = createAgentProfileScopeEpoch(database);
  */
 const aiObservabilityRunScope = createBuiltinRunScopeResolver({
   enabled: () => opikBootConfig.enabled,
-  canManageBot: aiObservabilityCanManageBot,
+  canManageBot: aiObservabilityCanObserveBot,
   scopeEpoch: aiObservabilityScopeEpoch,
 });
 /*
@@ -5927,7 +5973,7 @@ repeatAfterEach(async () => {
  * Trace context propagation and, when a collector is configured, trace export. Installed
  * beside the audit exporter below so the first request already runs inside a trace.
  */
-initProcessTracing("server", process.env);
+initProcessTracing(SERVER_TRACING_SERVICE_NAME, process.env);
 
 /*
  * Enterprise controls (server/src/admin): capability switches, SSO-required, SCIM offboarding,
@@ -6253,8 +6299,88 @@ if (billing !== undefined && usageOutbox !== undefined) {
       },
     }).catch(() => undefined);
   });
+
+  /*
+   * The remote dial's budget seam (F5E1-F2, closed by R3-02). TWO things have to exist before a
+   * remote Bot dials, and the finding is precisely that only the first one did:
+   *
+   * 1. THE ADMISSION holds the run's worst case in credits — one writer, one ledger, the same
+   *    reservation machinery the built-in path uses, over the policy's `codeRun` ceiling. It
+   *    exists exactly when billing is composed AND the credit policy is configured, and it is
+   *    what makes the charge bounded. A hold bounds what is CHARGED.
+   *
+   * 2. THE CONTRACT bounds what the ENDPOINT SPENDS: caps derived from that same policy ceiling
+   *    ride out with the dial, the endpoint enforces them at its own model call, and its signed
+   *    receipt is checked against them before the run's ending is delivered. It exists only
+   *    where the operator has named the endpoint in `REMOTE_BUDGET_CONTRACT_ENDPOINTS` and the
+   *    endpoint presents this deployment's own token — see `createRemoteBudgetContractResolver`.
+   *
+   * A deployment with either missing keeps its remote Bots fail-closed (REMOTE_RUN_BUDGET_
+   * UNVERIFIED) at build time, before tools, roster or transport are touched. That is the
+   * deliberate tightening: the presence of a price list is not authorization for a third party
+   * to spend without limit, which is what the F6D hold alone amounted to.
+   *
+   * Settlement stays the unknown-cost doctrine the hold has always kept: AG-UI carries no
+   * usage receipt in credit units, so an admitted run's hold is MARKED UNKNOWN (06.8 — it
+   * outlives its own expiry for reconciliation) with the observed outcome as its reason, and
+   * nothing releases. The contract's receipt bounds what was spent; it does not price it, and
+   * pricing it here would be a second book beside the ledger.
+   */
+  const remoteRunCreditPolicy =
+    billingSettings?.creditPolicy.configured === true
+      ? billingSettings.creditPolicy
+      : undefined;
+  if (remoteRunCreditPolicy !== undefined) {
+    setRemoteRunBudgetGate(
+      createRemoteRunBudgetGate({
+        creditWriter: billing.creditWriter,
+        // The request's one payer (B5-219), resolved once, exactly as the model gate does:
+        // the request's own binding when the surface bound one, else the deployment's.
+        resolvePayer: () =>
+          resolveConsumptionPayerBinding({
+            requestBinding: currentPayerBinding(),
+            deploymentBinding: billing.deploymentPayerBinding,
+          }),
+        maximumCents: Number(
+          remoteRunCreditPolicy.codeRun.maximumReservationUnits,
+        ),
+        reservationWindowMs: MODEL_RESERVATION_WINDOW_MS,
+        idempotencyPrefix: USAGE_IDEMPOTENCY_KEY_PREFIX,
+        log,
+        refusals: {
+          gateFailure: () => new CreditGateFailureError(),
+          insufficient: (input) => new CreditInsufficientError(input),
+        },
+      }),
+    );
+
+    /*
+     * The contract, wired from three explicit facts and nothing inferred: the operator's list
+     * of contract-capable endpoints, the deployment token both ends hold, and the policy's own
+     * token ceiling. Absent either of the first two, no endpoint resolves and every remote Bot
+     * refuses — the same safe direction a deployment with no billing takes.
+     */
+    const sessionContract = config.remoteBudgetContract;
+    setRemoteBudgetContractResolver(
+      sessionContract === undefined
+        ? undefined
+        : createRemoteBudgetContractResolver({
+            endpoints: sessionContract.endpoints,
+            sharedSecret: config.managedAgent?.token,
+            maximumTokens: remoteRunCreditPolicy.codeRun.maximumTokens,
+            maxModelSteps: sessionContract.maxModelSteps,
+          }),
+    );
+  } else {
+    // No policy means no hold, and no hold means no dial: the contract alone would bound
+    // spending but nothing would bound the charge, so both seams go away together.
+    setRemoteRunBudgetGate(undefined);
+    setRemoteBudgetContractResolver(undefined);
+  }
 } else {
   setModelUsageGate(undefined);
+  setRemoteRunBudgetGate(undefined);
+  setRemoteBudgetContractResolver(undefined);
   setWorkbenchGatewayModel(undefined);
   setModelBillingAudit(undefined);
 }
@@ -7510,7 +7636,7 @@ const aiObservability = createAiObservabilityRoutes({
   // The shared guard, not a second construction (OCR m209): one deployment-level
   // requireUser per process, or two copies age separately and fork silently.
   requireUser: deploymentRequireUser,
-  canManageBot: aiObservabilityCanManageBot,
+  canManageBot: aiObservabilityCanObserveBot,
   healthService: opikHealthService,
   database,
   scopeEpoch: aiObservabilityScopeEpoch,
@@ -7553,7 +7679,7 @@ const aiObservability = createAiObservabilityRoutes({
  */
 const observationExportStore = createObservationExportStore(database);
 const opikExportReauthorize = createExportReauthorization({
-  canManageBot: aiObservabilityCanManageBot,
+  canManageBot: aiObservabilityCanObserveBot,
   scopeEpoch: aiObservabilityScopeEpoch,
   resolveActor: createActorResolver((userId) =>
     roleRepository.rolesForUser(userId),
@@ -7630,14 +7756,83 @@ const opikTicketReaper = repeatAfterEach(
  * writes its spans upstream through the queue; a null scope (disabled, non-manager,
  * failed read) submits nothing, exactly as before the thread existed.
  */
+/*
+ * The observer-path binding gate (FREV-02): every business span the builtin
+ * recorders export is gated on this run's LOCAL authoritative binding — begin
+ * (idempotent, T07's store at 7517) before the first export of a chain, and
+ * the observed run close settling the binding after it. A binding that cannot
+ * be established fails the write closed: counted by the write queue, logged by
+ * the gate, never an unattributed span upstream.
+ */
+const opikObserverBindings = createObserverRunBindingGate(
+  aiObservabilityBindings,
+  // F5E1-F3: with the verified port behind the gate, establishing a chain's binding also
+  // materializes the run's upstream trace/root and records the authoritative mapping, so a
+  // run is listable and its cleanup locatable from the moment its first span exports. A
+  // disabled or unverified deployment answers null and the gate keeps its binding-only
+  // shape — the port accessor is read at materialization time, never boot-time frozen.
+  { port: () => opikObservationPort },
+);
 const opikModelSpans = createModelSpanRecorder({
   healthService: opikHealthService,
+  bindings: opikObserverBindings,
 });
+/*
+ * The remote run's basic record (F5E1-F2): one recorder over the same T07 binding store the
+ * observer gate reads and the same verified port its materialization rides, keeping the
+ * remote origin's governed records on the machinery every other observed run uses — binding
+ * gate, deterministic upstream identity, authoritative reconcile — rather than a parallel
+ * path around it. Registered on the same inert-until-proven footing as the span observer
+ * above: an Opik-disabled deployment keeps the dial (the budget gate governs it) and simply
+ * keeps no basic record.
+ */
+const opikRemoteRuns = createRemoteRunRecorder({
+  bindings: aiObservabilityBindings,
+  port: () => opikObservationPort,
+});
+if (observationEnabled(opikBootConfig)) {
+  setRemoteRunObserver((fact) =>
+    opikRemoteRuns.record({
+      scope: fact.scope,
+      botId: fact.botId,
+      threadId: fact.threadId,
+      runId: fact.runId,
+      attemptId: fact.attemptId,
+      traceId: fact.traceId,
+      dial: fact.dial,
+      events: fact.events,
+      endedAt: fact.endedAt,
+    }),
+  );
+}
 if (observationEnabled(opikBootConfig)) {
   // MOD17: the fact→observation adaptation moved verbatim into the M11 public
   // facade — this seam now only binds the recorder (queue semantics stay in the
   // health service the recorder was built with) and registers the observer.
   setBuiltinModelSpanObserver(modelSpanObserver(opikModelSpans));
+}
+
+/*
+ * F5E1-F1's assembly fact, said once at boot: the observation face above is NOT billing's,
+ * and this line names which reason installed the model wrapper. With the billing machinery
+ * composed, `copilot.ts` builds the metered wrapper it always did (admission, settlement and
+ * the observation bypass on one wrapper); without it — a legal stock deployment — the
+ * observation-only wrapper does, producing governed facts with no gate and no meter. A run
+ * shape that still cannot be wrapped (a runtime-resolved string model, a subscription harness
+ * model) is counted and warned by `copilot.ts`; this line names the wiring, that warn names
+ * the gap, and together they keep an enabled deployment from looking observed when it is not.
+ */
+if (observationEnabled(opikBootConfig)) {
+  log.info(
+    {
+      type: "opik-observation-wiring",
+      modelWrapper:
+        billing !== undefined && usageOutbox !== undefined
+          ? "metered"
+          : "observation_only",
+    },
+    "opik-observation-wiring",
+  );
 }
 
 /*
@@ -7652,6 +7847,7 @@ if (observationEnabled(opikBootConfig)) {
  */
 const opikToolSteps = createToolStepRecorder({
   healthService: opikHealthService,
+  bindings: opikObserverBindings,
   /*
    * The id-mapping half (Issue #23/T17): a tool step whose span adopted an explicit
    * upstream id is linked after the write lands, chain-checked against the run
@@ -7666,7 +7862,45 @@ const opikToolSteps = createToolStepRecorder({
 if (observationEnabled(opikBootConfig)) {
   // MOD17: same move as the model spans above — the adaptation lives in the
   // M11 public facade; this seam binds the recorder and registers the observer.
+  // R3-03: the tool-step window no longer settles the run — a tool window is
+  // not a run's lifetime. The run's OWN lifecycle observation (the
+  // registration below) is the one settle authority now; the observer records
+  // steps and nothing else.
   setBuiltinToolStepObserver(toolStepObserver(opikToolSteps));
+}
+
+/*
+ * The run's own lifecycle (R3-03): the common builtin event entry observes the
+ * run's real start and terminal — RUN_FINISHED success/cancel/interrupt and
+ * RUN_ERROR are distinguished at the event face and persisted here, instead of
+ * being dropped at the tool-step fact boundary. The start observation rides
+ * ahead of the first business fact, so the materialized trace and root carry
+ * the run's real start; the terminal settles the binding (first terminal
+ * wins, the lease sweeper still the net for a reporter that died mid-run) and
+ * closes the run root upstream with the observed window. A disconnected
+ * window — nothing terminal was seen — settles the honest unknown and nothing
+ * else ever does.
+ */
+if (observationEnabled(opikBootConfig)) {
+  setBuiltinRunLifecycleObserver((fact) => {
+    const runScope = fact.scope as ObservationScope | undefined;
+    const runChainId = observerChainId(fact.trace?.traceId);
+    if (runScope === undefined || runChainId === null) return;
+    const chain = { traceId: runChainId };
+    if (fact.terminal === null) {
+      opikObserverBindings.noteObservedRunStart(
+        runScope,
+        chain,
+        fact.startedAt,
+      );
+      return;
+    }
+    opikObserverBindings.settleObservedRun(runScope, chain, {
+      startedAt: fact.startedAt,
+      ending: fact.terminal.ending,
+      endedAt: fact.terminal.endedAt,
+    });
+  });
 }
 
 /*
@@ -7702,7 +7936,7 @@ if (
         policy: opikEvaluationCreditPolicy.models,
         externalCustomerId: billing.externalCustomerKey,
       },
-      canManageBot: aiObservabilityCanManageBot,
+      canManageBot: aiObservabilityCanObserveBot,
       scopeEpoch: aiObservabilityScopeEpoch,
       resolveActor: createActorResolver((userId) =>
         roleRepository.rolesForUser(userId),

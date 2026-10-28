@@ -48,6 +48,7 @@ import {
   enterpriseRuntimeDatabaseUrlFrom,
   enterpriseSetupDatabaseVariable,
   enterpriseTestDatabaseUrlFrom,
+  ROLE_DATABASE_VARIABLES,
 } from "../../support/enterprise-database";
 
 /** 环境探针：调用方据此显式 skip（缺 env 绝不回退开发库）。 */
@@ -60,6 +61,18 @@ export function probeAuditDomainsEnvironment():
       ok: false,
       reason: `MT078 requires ${variable} (dedicated openbot_enterprise_* test database) — no dev-database fallback`,
     };
+  }
+  // The fixture depends on all three restricted channels, not just the setup URL:
+  // a missing channel env must skip up front instead of failing mid-provision.
+  for (const [role, channelVariable] of Object.entries(
+    ROLE_DATABASE_VARIABLES,
+  )) {
+    if (!process.env[channelVariable]?.trim()) {
+      return {
+        ok: false,
+        reason: `MT078 requires ${channelVariable} (the ${role} restricted channel) — no dev-database fallback`,
+      };
+    }
   }
   return { ok: true };
 }
@@ -253,7 +266,12 @@ export async function createAuditDomainsFixture(): Promise<AuditDomainsFixture> 
       const result = (await tx.execute(
         sql.join(parts, sql.raw("")),
       )) as unknown;
-      return Array.isArray(result) ? (result as Record<string, unknown>[]) : [];
+      // A shape drift must fail loudly: [] would let every RLS assertion pass
+      // against a probe that never actually returned rows.
+      if (!Array.isArray(result)) {
+        throw new Error("RESTRICTED_QUERY_SHAPE_DRIFT");
+      }
+      return result as Record<string, unknown>[];
     });
   };
 
@@ -280,50 +298,54 @@ export async function createAuditDomainsFixture(): Promise<AuditDomainsFixture> 
     },
     async dispose() {
       // 先事实后身份，前缀级联清扫；审计/授权/账面全在清扫面内。
-      await db.execute(
-        sql`delete from enterprise_audit_events where tenant_id like ${`${run}%`}`,
-      );
-      await db.execute(
-        sql`delete from billing_company_manage_grants where tenant_id like ${`${run}%`} or granted_by like ${`${run}%`}`,
-      );
-      await db.execute(
-        sql`delete from credit_reservations where external_customer_id like ${`${run}%`}`,
-      );
-      await db.execute(
-        sql`delete from credit_ledger where external_customer_id like ${`${run}%`}`,
-      );
-      await db.execute(
-        sql`delete from credit_grants where external_customer_id like ${`${run}%`}`,
-      );
-      await db.execute(
-        sql`delete from billing_account_audit where tenant_id like ${`${run}%`} or external_customer_id like ${`${run}%`}`,
-      );
-      await db.execute(
-        sql`delete from billing_credit_accounts where external_customer_id like ${`${run}%`}`,
-      );
-      await db.execute(
-        sql`delete from billing_customer_mappings where tenant_id like ${`${run}%`} or external_customer_id like ${`${run}%`}`,
-      );
-      await db
-        .delete(billingCustomers)
-        .where(like(billingCustomers.externalId, `${run}%`));
-      await db
-        .delete(enterpriseMemberships)
-        .where(like(enterpriseMemberships.tenantId, `${run}%`));
-      await db
-        .delete(enterpriseWorkspaces)
-        .where(like(enterpriseWorkspaces.tenantId, `${run}%`));
-      await db
-        .delete(enterpriseTenants)
-        .where(like(enterpriseTenants.id, `${run}%`));
-      await db
-        .delete(enterprisePrincipals)
-        .where(like(enterprisePrincipals.id, `${run}%`));
-      await db.delete(users).where(like(users.id, `${run}%`));
-      for (const connection of [operator, data, directory]) {
-        await connection.$client.close();
+      // 清扫放 try、关池放 finally：任一 delete 抛错也不漏关四个连接池。
+      try {
+        await db.execute(
+          sql`delete from enterprise_audit_events where tenant_id like ${`${run}%`}`,
+        );
+        await db.execute(
+          sql`delete from billing_company_manage_grants where tenant_id like ${`${run}%`} or granted_by like ${`${run}%`}`,
+        );
+        await db.execute(
+          sql`delete from credit_reservations where external_customer_id like ${`${run}%`}`,
+        );
+        await db.execute(
+          sql`delete from credit_ledger where external_customer_id like ${`${run}%`}`,
+        );
+        await db.execute(
+          sql`delete from credit_grants where external_customer_id like ${`${run}%`}`,
+        );
+        await db.execute(
+          sql`delete from billing_account_audit where tenant_id like ${`${run}%`} or external_customer_id like ${`${run}%`}`,
+        );
+        await db.execute(
+          sql`delete from billing_credit_accounts where external_customer_id like ${`${run}%`}`,
+        );
+        await db.execute(
+          sql`delete from billing_customer_mappings where tenant_id like ${`${run}%`} or external_customer_id like ${`${run}%`}`,
+        );
+        await db
+          .delete(billingCustomers)
+          .where(like(billingCustomers.externalId, `${run}%`));
+        await db
+          .delete(enterpriseMemberships)
+          .where(like(enterpriseMemberships.tenantId, `${run}%`));
+        await db
+          .delete(enterpriseWorkspaces)
+          .where(like(enterpriseWorkspaces.tenantId, `${run}%`));
+        await db
+          .delete(enterpriseTenants)
+          .where(like(enterpriseTenants.id, `${run}%`));
+        await db
+          .delete(enterprisePrincipals)
+          .where(like(enterprisePrincipals.id, `${run}%`));
+        await db.delete(users).where(like(users.id, `${run}%`));
+      } finally {
+        for (const connection of [operator, data, directory]) {
+          await connection.$client.close();
+        }
+        await db.$client.close();
       }
-      await db.$client.close();
     },
   };
 }

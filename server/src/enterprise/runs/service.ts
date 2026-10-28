@@ -319,6 +319,12 @@ export function createRunService(deps: RunServiceDependencies): RunService {
       assertTrustedScope(scope);
       if (
         !input ||
+        typeof input.runId !== "string" ||
+        !input.runId.trim() ||
+        input.runId.length > 200
+      )
+        throw new Error("INVALID_RUN_ID");
+      if (
         !["user_requested", "timeout", "superseded"].includes(input.reason)
       )
         throw new Error("INVALID_CANCEL_REASON");

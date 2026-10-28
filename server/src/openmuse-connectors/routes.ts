@@ -192,6 +192,9 @@ export function createOpenMuseGoogleRoutes(deps: {
     if (provider === null) {
       return context.json({ error: "Unknown provider." }, 404);
     }
+    // The body carries the account's email, so it is as uncacheable as the
+    // status routes beside it.
+    context.header("Cache-Control", "no-store");
     const connection = await deps.service.disconnect(
       context.var.actor.id,
       provider,
@@ -305,10 +308,18 @@ function allowedReturnUri(
     return false;
   }
   if (url.protocol === "openmuse:") return true;
+  // The configured origin is compared shape-for-shape: a deployment that
+  // wrote a trailing slash (or uppercase host) must not have every http(s)
+  // return refused — WHATWG already lowercases url.host.
+  const allowed = allowedHttpOrigin
+    ?.trim()
+    .replace(/\/+$/, "")
+    .toLowerCase();
   if (
     (url.protocol === "https:" || url.protocol === "http:") &&
-    allowedHttpOrigin !== undefined &&
-    `${url.protocol}//${url.host}` === allowedHttpOrigin
+    allowed !== undefined &&
+    allowed !== "" &&
+    `${url.protocol}//${url.host}` === allowed
   ) {
     return true;
   }

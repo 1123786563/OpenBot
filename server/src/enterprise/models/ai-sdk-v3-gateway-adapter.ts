@@ -333,17 +333,24 @@ function mappedContent(message: Record<string, any>) {
  */
 async function gatewayHttpError(response: Response): Promise<Error> {
   let code = "";
+  let message = "";
   try {
     const body: unknown = await response.json();
     const nested = object(body)
       ? (body as { error?: unknown }).error
       : undefined;
-    if (object(nested) && typeof nested.code === "string") code = nested.code;
+    if (object(nested)) {
+      if (typeof nested.code === "string") code = nested.code;
+      // F11-1 (#489): the direct-OpenAI tool-name guard names the offending
+      // tool in `message`; it rides the marker so the run failure says which
+      // mount to fix instead of only the family of refusal.
+      if (typeof nested.message === "string") message = nested.message;
+    }
   } catch {
     // Unreadable or non-JSON error bodies still fail closed with the status.
   }
   return new Error(
-    `MODEL_GATEWAY_HTTP_${response.status}${code ? ` ${code}` : ""}`,
+    `MODEL_GATEWAY_HTTP_${response.status}${code ? ` ${code}` : ""}${message ? `: ${message}` : ""}`,
   );
 }
 
@@ -491,7 +498,9 @@ export function createAiSdkV3GatewayAdapter(
                     .filter((line) => line.startsWith("data:"))
                     .map((line) => line.slice(5).trimStart())
                     .join("\n");
-                  if (!data) fail();
+                  // SSE 注释行（": keep-alive" 心跳等）天然无 data 字段，
+                  // 不是协议损坏：跳过该帧，只对携带 data 的帧继续解析。
+                  if (!data) continue;
                   if (data === "[DONE]") {
                     if (
                       terminalSeen ||

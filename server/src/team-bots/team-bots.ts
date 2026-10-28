@@ -246,6 +246,17 @@ export function createTeamBots(options: {
       );
       if (decision === "skip") {
         await database.delete(teamBotConsents).where(scope);
+        // "Skip clears any earlier answer" reaches the standing server-wide answer too: an
+        // allow_all_team_bots row would otherwise keep lending this person's account after
+        // they explicitly declined.
+        await database
+          .delete(teamBotConsentDefaults)
+          .where(
+            and(
+              eq(teamBotConsentDefaults.userId, actor.id),
+              eq(teamBotConsentDefaults.serverId, serverId),
+            ),
+          );
         return;
       }
       if (!(await publication(botId))) throw new TeamBotNotFoundError();
@@ -254,6 +265,9 @@ export function createTeamBots(options: {
           .insert(teamBotConsentDefaults)
           .values({ userId: actor.id, serverId })
           .onConflictDoNothing();
+        // The standing answer supersedes this Bot's earlier card answer; leaving a stale
+        // per-Bot row behind would resurface once the defaults row is cleared.
+        await database.delete(teamBotConsents).where(scope);
         return;
       }
       const value = decision === "allow_always" ? "always" : "once";
@@ -393,12 +407,15 @@ export function createTeamBots(options: {
         throw new TeamBotRefusedError(
           "Only an administrator can assign Team Bots.",
         );
+      // The same trim assign() applied on the way in, or a padded name deletes zero rows
+      // silently and the assignment survives.
+      const group = groupName.trim();
       await database
         .delete(teamBotAssignments)
         .where(
           and(
             eq(teamBotAssignments.agentId, botId),
-            eq(teamBotAssignments.groupName, groupName),
+            eq(teamBotAssignments.groupName, group),
           ),
         );
     },

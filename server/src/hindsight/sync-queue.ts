@@ -125,7 +125,12 @@ export function isUniqueViolation(error: unknown): boolean {
   for (let depth = 0; depth < 5 && candidate; depth++) {
     if (typeof candidate === "object" && candidate !== null) {
       const record = candidate as { code?: unknown; errno?: unknown };
-      if (record.code === "23505" || record.errno === "23505") return true;
+      if (
+        record.code === "23505" ||
+        record.errno === "23505" ||
+        record.errno === 23505
+      )
+        return true;
     }
     candidate =
       typeof candidate === "object" &&
@@ -211,11 +216,10 @@ export function createHindsightSyncQueue(
       principalId: string;
       contentDigest: string;
     }): Promise<void> {
-      const id = randomUUID();
-      try {
-        await database.insert(hindsightSyncWork).values({
+      const insertFresh = () =>
+        database.insert(hindsightSyncWork).values({
           tenantId: input.tenantId,
-          id,
+          id: randomUUID(),
           subjectType: input.subjectType,
           subjectId: input.subjectId,
           principalId: input.principalId,
@@ -223,11 +227,16 @@ export function createHindsightSyncQueue(
           state: "pending",
           attempts: 0,
         });
+      try {
+        await insertFresh();
       } catch (error) {
         // One pending row per subject: a re-enqueue refreshes what the work stands for
         // (the newest content digest) instead of piling up a second task.
         if (isUniqueViolation(error)) {
-          await database
+          // The refresh must be seen to land: a drain that flipped the row between our
+          // conflict and this update leaves no pending row, and dropping the work here
+          // would silently lose the sync intent — so a 0-row refresh re-inserts.
+          const refreshed = await database
             .update(hindsightSyncWork)
             .set({
               expectedDigest: input.contentDigest,
@@ -241,7 +250,15 @@ export function createHindsightSyncQueue(
                 eq(hindsightSyncWork.subjectId, input.subjectId),
                 eq(hindsightSyncWork.state, "pending"),
               ),
-            );
+            )
+            .returning({ id: hindsightSyncWork.id });
+          if (refreshed.length > 0) return;
+          try {
+            await insertFresh();
+          } catch (retryError) {
+            // A concurrent re-enqueue won the fresh insert; its digest is as current.
+            if (!isUniqueViolation(retryError)) throw retryError;
+          }
           return;
         }
         throw error;
@@ -294,6 +311,8 @@ export function createHindsightSyncQueue(
       if (!row) return { state: "unknown-subject" };
       if (principalId !== undefined && row.principalId !== principalId)
         return { state: "unknown-subject" };
+      // Pending work only: a finished (done/superseded) row is history, and reporting its
+      // attempt count as the current wait would misstate the subject's status.
       const [work] = await database
         .select()
         .from(hindsightSyncWork)
@@ -302,6 +321,7 @@ export function createHindsightSyncQueue(
             eq(hindsightSyncWork.tenantId, tenantId),
             eq(hindsightSyncWork.subjectType, subjectType),
             eq(hindsightSyncWork.subjectId, subjectId),
+            eq(hindsightSyncWork.state, "pending"),
           ),
         )
         .orderBy(desc(hindsightSyncWork.createdAt))
@@ -641,6 +661,18 @@ export function createHindsightSyncQueue(
     }
     if (options.budget && reservationId !== undefined) {
       await options.budget.settleBackgroundWork(reservationId);
+    }
+    // Stale-overwrite guard: an edit that landed while the retain was in flight must not
+    // be stamped with THIS task's older digest (the status surface would call the newer
+    // content indexed). The edit's own work row owns the truth — supersede this one.
+    const landed = await loadSubject(
+      work.tenantId,
+      work.subjectType,
+      work.subjectId,
+    );
+    if (!landed || digestOf(landed.content) !== currentDigest) {
+      await finishWork(work, "superseded", null);
+      return "superseded";
     }
     await markRowSynced(
       work.subjectType,

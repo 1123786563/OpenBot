@@ -28,7 +28,7 @@ const log = getLogger("server");
 export function createPersonResponseTick(deps: {
   approvalQueue: WorkQueue;
   personResponseOwner: string;
-  authoriseQuestion: (question: PersonQuestion) => Promise<unknown>;
+  authoriseQuestion: (question: PersonQuestion) => Promise<void>;
   approvalContinuationRunner: TurnRunner;
   responsibilityStore: ResponsibilityStore;
   responsibilityAnswerTurn: NonNullable<
@@ -93,7 +93,19 @@ export function createPersonResponseTick(deps: {
           botId: questionConversationBot(payload.question),
           depth: 0,
         });
-        if (source && outcome.replyText)
+        if (!source || !outcome.replyText) {
+          // The answer was consumed but has nowhere to land (the conversation's
+          // channel vanished, or the resumed turn replied nothing): leave a trace
+          // instead of dropping it silently.
+          log.warn(
+            {
+              type: "person-response-undelivered",
+              context: { key: item.key, hasSource: source !== null },
+              timestamp: new Date().toISOString(),
+            },
+            "person-response-undelivered",
+          );
+        } else {
           await channelStore.recordActivity(
             await actorFor(payload.ownerUserId),
             source.channelId,
@@ -104,7 +116,6 @@ export function createPersonResponseTick(deps: {
             },
             { id: `person-response:${item.key}` },
           );
-        if (source && outcome.replyText)
           await deps.notify(
             {
               ownerUserId: payload.ownerUserId,
@@ -118,6 +129,7 @@ export function createPersonResponseTick(deps: {
               kind: "reply",
             },
           );
+        }
         if (
           !(await approvalQueue.finish({
             kind: item.kind,

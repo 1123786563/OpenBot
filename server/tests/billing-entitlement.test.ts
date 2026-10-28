@@ -153,4 +153,13 @@ describe("createBillingEntitlementReader", () => {
     await cached.active();
     expect(reader.calls).toEqual(["customer-a", undefined]);
   });
+
+  test("an explicit empty-string key never shares the default customer's bucket", async () => {
+    const reader = countedRead();
+    const cached = createBillingEntitlementReader({ read: reader.read });
+    await cached.active(); // the default customer: read(undefined)
+    // "" is a DIFFERENT read argument — it must not reuse the default's cached answer.
+    await cached.active("");
+    expect(reader.calls).toEqual([undefined, ""]);
+  });
 });

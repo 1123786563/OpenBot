@@ -11,7 +11,9 @@ service DocReader {
   // error), then emits one message per image. This keeps every gRPC message
   // small so large scanned PDFs (hundreds of page images, far exceeding the
   // unary message-size cap) can be returned without RESOURCE_EXHAUSTED and
-  // with bounded memory on both ends.
+  // with bounded memory on both ends. The request itself still carries the
+  // whole file in file_content, so requests near the receive cap must ride on
+  // the unary Read's configured limits or a future chunked-upload contract.
   rpc ReadStream(ReadRequest) returns (stream ReadStreamResponse) {}
   rpc ListEngines(ListEnginesRequest) returns (ListEnginesResponse) {}
 }
@@ -20,11 +22,17 @@ message ReadConfig {
   string parser_engine = 1;
   map<string, string> parser_engine_overrides = 2;
   // image_storage removed: image persistence is now handled entirely by the Go App.
-  // Field number 3 is reserved for backward compatibility.
+  // Field number and name are both reserved so the name can never be reused
+  // with a different number or type.
   reserved 3;
+  reserved "image_storage";
 }
 
 // Unified read request: set file_content for file mode, url for URL mode.
+// Validation contract, enforced server-side (proto cannot express it): url
+// must be http(s) only and must not target private/loopback/link-local
+// hosts; file_name is sanitized to a base name (no path separators, no
+// "..") before it is used for storage paths.
 message ReadRequest {
   bytes  file_content = 1;
   string file_name = 2;
@@ -40,7 +48,11 @@ message ImageRef {
   string original_ref = 2;
   string mime_type = 3;
   string storage_key = 4;    // download URL from shared storage
-  bytes  image_data = 5;     // inline bytes fallback
+  // Inline fallback for small images (unary Read responses, or stream frames
+  // under the inline cap). Stream frames that exceed it must carry
+  // storage_key instead: a big inline frame would re-inflate a stream message
+  // toward the unary size cap and break ReadStream's bounded-memory promise.
+  bytes  image_data = 5;
 }
 
 // SourceBlock ties a range of markdown_content to the place in the original

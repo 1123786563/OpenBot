@@ -111,8 +111,14 @@ export function createCraftPermissionGate(
               ? record.decision
               : "deny"; // deny | handled both mean "don't run it"
         }
-      } catch {
-        // Row vanished (FK cascade, store failure): let the window expire it.
+      } catch (error) {
+        // Row vanished (FK cascade) and store failure look alike here; a vanished row
+        // should wait out the window, but a transient read failure after a consumed
+        // wake would otherwise wait it out silently. Log the difference.
+        logger.warn(
+          { err: error instanceof Error ? error.message : String(error) },
+          "[craft] approval poll read failed after wake",
+        );
       }
       if (decision !== null) return decision;
       return aged ? "expired" : null; // spurious wake, row still pending → keep waiting

@@ -78,7 +78,7 @@ export function createThreadRoutes(
       try {
         const status = await readThread(threadId, context.var.actor.id);
         return context.json({ known: status === "known" });
-      } catch {
+      } catch (error) {
         // The reader throws for everything short of a clean known/unknown answer, and what it threw
         // may name an upstream host or otherwise be unfit for a browser to see, so only its kind is
         // logged, not its content. The browser gets "the check failed", which is exactly as much as
@@ -87,6 +87,7 @@ export function createThreadRoutes(
         log.error(
           {
             type: "thread-status-check-failed",
+            errorType: error instanceof Error ? error.name : "unknown",
             note: "Could not determine whether Intelligence still has this thread.",
           },
           "thread-status-check-failed",

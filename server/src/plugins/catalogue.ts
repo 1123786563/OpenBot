@@ -478,21 +478,6 @@ export function serverCredentialKind(entry: CatalogueEntry): "mcp" | null {
   return entry.auth.kind === "deployment-bearer" ? "mcp" : null;
 }
 
-/**
- * The header this entry's deployment token is sent in.
- *
- * Exa names `x-api-key` because that is the header Exa reads; every other answer is the default
- * `Authorization`, which is what every deployment-bearer server did before the field existed. A
- * `user-oauth` vendor sends no deployment token, a keyless endpoint has nothing to send, and a
- * server an administrator added by URL has no entry — all three fall to the default rather than to
- * a guess, because the question only matters where a token actually goes out.
- */
-export function tokenHeaderFor(entry: CatalogueEntry | null): string {
-  return entry?.auth.kind === "deployment-bearer" && entry.auth.header
-    ? entry.auth.header
-    : "Authorization";
-}
-
 export function catalogueEntry(key: string): CatalogueEntry | null {
   return BY_KEY.get(key) ?? null;
 }

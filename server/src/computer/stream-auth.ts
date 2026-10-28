@@ -68,7 +68,14 @@ export function createStreamAuthorizer(deps: {
     }
     // The session guard, applied by hand because middleware does not run on an upgrade. An
     // unauthenticated socket here would be the whole point of the proxy defeated.
-    const actor = await deps.resolveRequestActor(request).catch(() => null);
+    const actor = await deps.resolveRequestActor(request).catch(
+      (error: unknown) => {
+        // A session-store outage must be visible as itself: folding it into "not signed
+        // in" tells the caller to log in again and hides the incident.
+        log.warn({ err: error }, "Could not resolve the computer stream actor.");
+        return null;
+      },
+    );
     if (!actor) {
       return { kind: "refuse", status: 401, message: "Sign in first." };
     }
@@ -106,8 +113,9 @@ export function createStreamAuthorizer(deps: {
     /*
      * Through the gateway, not the provider.
      *
-     * `gateway.locate` runs checkComputerAddress; `provider.locate` does not, and the URL built
-     * below carries COMPUTER_TOKEN in its query string. A provider that answered with a foreign
+     * `gateway.locate` runs checkComputerAddress; `provider.locate` does not. (The computer
+     * token now rides a request header, not the URL's query string — but the rule is the same:)
+     * A provider that answered with a foreign
      * host was handed the deployment's computer token, which is the case that check was written
      * for. Every acting path already went through the gateway; this one did not.
      */
@@ -147,10 +155,21 @@ export function createStreamAuthorizer(deps: {
         message: "That Bot's computer could not be reached.",
       };
     }
+    // A deployment with no COMPUTER_TOKEN configured has no credential to present, and
+    // config.ts states the intended failure for that: every call to a computer is refused.
+    // Forwarding an empty token would let the computer side decide whether "" counts as one.
+    const token = deps.config.computer.token;
+    if (!token) {
+      return {
+        kind: "refuse",
+        status: 503,
+        message: "That Bot's computer is not configured on this deployment.",
+      };
+    }
     return {
       kind: "proxy",
       upstream,
-      token: deps.config.computer.token ?? "",
+      token,
       botId: streamBotId,
       actorId: actor.id,
     };

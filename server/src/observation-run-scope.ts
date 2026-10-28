@@ -12,8 +12,9 @@
  * Deliberately STRUCTURAL: the stored value is `unknown` here because the
  * modules that establish and the modules that read it must not import the
  * observability module a deployment may not have. `copilot.ts` establishes it
- * with whatever the boot wiring handed it; `index.ts`'s adapters cast it back,
- * and the cast is safe because the ONLY writer is the boot wiring's own
+ * with whatever the boot wiring handed it; the readers cast it back
+ * (`assembly/runtime.ts` and copilot.ts's own emission paths), and the cast is
+ * safe because the ONLY writer is the boot wiring's own
  * `resolveObservationScope` call — a scope this process actually issued (T06's
  * WeakSet trust), never a wire value.
  *
@@ -27,6 +28,9 @@ const store = new AsyncLocalStorage<Readonly<{ scope: unknown }>>();
 
 /** Establish the executing run's observation scope for the duration of `fn`. */
 export function withRunObservationScope<T>(scope: unknown, fn: () => T): T {
+  // No scope is no threading: an undefined scope short-circuits instead of pushing a store
+  // that would shadow an enclosing one and silently drop every fact emitted inside.
+  if (scope === undefined) return fn();
   return store.run({ scope }, fn);
 }
 

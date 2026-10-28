@@ -198,24 +198,28 @@ export function createRestoreRecoveryService(
       finishedAt: now().toISOString(),
     };
     const at = now();
-    for (const marker of open) {
-      await database
-        .update(hindsightBackupRestores)
-        .set({
-          state: "replayed",
-          replayedAt: at,
-          replayEvidence: evidence,
-          updatedAt: at,
-        })
-        .where(
-          and(
-            eq(hindsightBackupRestores.id, marker.id),
-            // Only still-open rows flip: a concurrent note racing this pass keeps its own
-            // gate open rather than being swept into a replay it postdates.
-            eq(hindsightBackupRestores.state, "open"),
-          ),
-        );
-    }
+    // The flips are one write, the way the comment above promises: a pass that crashes
+    // between rows must leave every marker open for the next pass, not half closed.
+    await database.transaction(async (tx) => {
+      for (const marker of open) {
+        await tx
+          .update(hindsightBackupRestores)
+          .set({
+            state: "replayed",
+            replayedAt: at,
+            replayEvidence: evidence,
+            updatedAt: at,
+          })
+          .where(
+            and(
+              eq(hindsightBackupRestores.id, marker.id),
+              // Only still-open rows flip: a concurrent note racing this pass keeps its own
+              // gate open rather than being swept into a replay it postdates.
+              eq(hindsightBackupRestores.state, "open"),
+            ),
+          );
+      }
+    });
     return { replayed: true, evidence };
   }
 

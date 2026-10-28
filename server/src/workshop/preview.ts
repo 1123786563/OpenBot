@@ -19,9 +19,9 @@ import type { AppVariables } from "../auth/public";
  * cannot run its own dev tools is useless, and a preview that ships dev tools to the world
  * is worse.
  *
- * The WS upgrade (101) is deliberately NOT here: it is the B15 dev-road completion, and this
- * batch ships the HTTP shape (the lifecycle and the proxying) with the upgrade refused —
- * honestly, with a 426, rather than half-upgraded.
+ * The WS upgrade (B15b) IS here: a websocket request on the dev road is forwarded whole to
+ * the sandbox's passthrough layer (forwardPreviewWebSocket), which owns the accept/refuse
+ * decision. Nothing here half-handles an upgrade.
  */
 
 export type PreviewMode = "auto" | "static" | "devserver" | "off";
@@ -134,10 +134,12 @@ export function createPreviewRoutes(input: PreviewRoutesInput): Hono<{
       );
     }
 
-    const path = context.req.path.replace(
-      /^\/api\/workshop\/[^/]+\/preview\//,
-      "",
-    );
+    // Mount-relative, like public-routes: whatever follows this route's own
+    // /:channelId/preview/ segment, whatever prefix the mount above it uses.
+    const marker = "/preview/";
+    const markerAt = context.req.path.lastIndexOf(marker);
+    const path =
+      markerAt === -1 ? "" : context.req.path.slice(markerAt + marker.length);
 
     // The dev road: pinned in devserver mode; in auto, when the sandbox answers. The probe's
     // answer is kept — it decides between the dev road and the fallback below.
@@ -154,7 +156,15 @@ export function createPreviewRoutes(input: PreviewRoutesInput): Hono<{
         );
       }
       const origin = context.req.header("origin") ?? "";
-      const allowed = allowedDevOrigins.includes(origin);
+      // Browsers omit `Origin` on same-origin navigations and address-bar loads — the owner's
+      // own preview, the commonest path. Fetch Metadata names those (`same-origin`/`none`), and
+      // every cross-origin context (iframe, cross-site fetch) still sends an Origin and is
+      // judged by the allow-list exactly as before.
+      const fetchSite = context.req.header("sec-fetch-site");
+      const sameOriginNavigation =
+        origin === "" && (fetchSite === "same-origin" || fetchSite === "none");
+      const allowed =
+        allowedDevOrigins.includes(origin) || sameOriginNavigation;
       if (!allowed) {
         return context.json(
           { error: "Origin is not allowed for the dev preview." },
@@ -172,17 +182,40 @@ export function createPreviewRoutes(input: PreviewRoutesInput): Hono<{
       // here. The origin allow-list above already judged this caller; the forward carries
       // the sandbox token and bot id the passthrough re-checks.
       if (context.req.header("upgrade")?.toLowerCase() === "websocket") {
+        // Only what a WS handshake needs. The raw header set carries the owner's cookies
+        // and authorization — application session credentials that must not cross into
+        // the sandbox gateway's trust boundary.
+        const upgradeHeaders = new Headers();
+        for (const name of [
+          "sec-websocket-protocol",
+          "sec-websocket-version",
+          "sec-websocket-key",
+          "sec-websocket-extensions",
+          "upgrade",
+          "connection",
+          "host",
+          "origin",
+        ]) {
+          const value = context.req.header(name);
+          if (value !== undefined) upgradeHeaders.set(name, value);
+        }
         return input.forwardPreviewWebSocket({
           botId,
           path,
           subprotocol: context.req.header("sec-websocket-protocol") ?? null,
-          upgradeHeaders: context.req.raw.headers,
+          upgradeHeaders,
         });
       }
-      const upstream = await fetch(`http://127.0.0.1:${target.port}/${path}`, {
-        signal: context.req.raw.signal,
-        redirect: "manual",
-      }).catch(() => null);
+      // The query string is part of the request: Vite's dev server keys module invalidation
+      // and HMR on `?t=`/`?import`, and `req.path` alone drops all of it.
+      const search = new URL(context.req.url).search;
+      const upstream = await fetch(
+        `http://127.0.0.1:${target.port}/${path}${search}`,
+        {
+          signal: context.req.raw.signal,
+          redirect: "manual",
+        },
+      ).catch(() => null);
       if (!upstream) {
         return context.json({ error: "The dev server did not answer." }, 502);
       }
@@ -192,17 +225,18 @@ export function createPreviewRoutes(input: PreviewRoutesInput): Hono<{
         upstream.headers.get("content-type") ?? "text/html",
       );
       headers.set("content-security-policy", DEV_CSP_ALLOW_LISTED);
+      // This is the owner's private preview: no shared layer may keep a byte of it.
+      headers.set("cache-control", "no-store");
+      // Under redirect:"manual" a 3xx reaches this proxy with its Location intact only
+      // if the proxy repeats it — dev-server slash normalization and entry redirects
+      // are dead links without it.
+      const location = upstream.headers.get("location");
+      if (location !== null) headers.set("location", location);
       return new Response(upstream.body, { status: upstream.status, headers });
     }
 
-    // Pinned to the dev road and it is not there: honest 503, never a silent static fallback
-    // the deployment did not ask for. (The narrowed literal is widened on purpose: this arm
-    // is the not-wantsDev remainder, which for a devserver mode is exactly "the road is gone".)
-    const modeNow: string = mode;
-    if (modeNow === "devserver") {
-      return context.json({ error: "The dev preview is not available." }, 503);
-    }
-
+    // A devserver-pinned preview always took the dev road above (wantsDev is unconditional
+    // for that mode), so the remainder here is auto/static/off only.
     // The static road, two sources: auto prefers the workspace's built webapp (S3) when one
     // exists — it is the artifact the session was building — and falls back to the artifact
     // snapshot; pinned static mode serves the snapshot only, per the deployment's ask.
@@ -215,6 +249,8 @@ export function createPreviewRoutes(input: PreviewRoutesInput): Hono<{
     const headers = new Headers();
     headers.set("content-type", file.contentType);
     headers.set("content-security-policy", STATIC_CSP);
+    // Owner-private preview bytes: no shared proxy or browser cache may retain them.
+    headers.set("cache-control", "no-store");
     return new Response(file.bytes as BodyInit, { status: 200, headers });
   });
 

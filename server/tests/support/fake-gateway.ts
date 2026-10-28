@@ -85,6 +85,8 @@ export async function startFakeGateway(
 
   const server = Bun.serve({
     port: 0,
+    // Loopback only: served bodies can carry marker secrets and must not be reachable off-host.
+    hostname: "127.0.0.1",
     fetch: async (request) => {
       const authorization = request.headers.get("authorization") ?? undefined;
       const path = new URL(request.url).pathname;

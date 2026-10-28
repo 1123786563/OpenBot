@@ -1,4 +1,3 @@
-import { describe, expect, test } from "../../tests/support/e2e-compat";
 import {
   type AbstractAgent,
   type BaseEvent,
@@ -6,8 +5,11 @@ import {
   HttpAgent,
   type RunAgentInput,
 } from "@ag-ui/client";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
+import { createTurnRunner, type RunnerLike } from "@openbot/toolkit/run-turn";
 import { Hono } from "hono";
 import { Observable } from "rxjs";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { serverTurnAdmission } from "../src/agents/turn-admission";
 import { parseApprovalContinuation } from "../src/approvals/types";
 import type { AuditEventInput, AuditStore } from "../src/audit";
@@ -18,7 +20,6 @@ import {
 } from "../src/computer/client";
 import type { ComputerGateway } from "../src/computer/gateway";
 import { createHeadlessComputerTools } from "../src/computer/headless-tools";
-import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type {
   SignInCodeInput,
   SignInCodeResult,
@@ -36,7 +37,6 @@ import {
 } from "../src/passwords/service";
 import { createMemoryPasswordStore } from "../src/passwords/store";
 import { originOf, type SignInRequestRecord } from "../src/passwords/types";
-import { createTurnRunner, type RunnerLike } from "@openbot/toolkit/run-turn";
 
 /**
  * The private sign-in request and the Passwords vault, as properties:
@@ -853,6 +853,63 @@ describe("a sign-in that is being entered", () => {
     ).toMatchObject({ request: request.id, step: "login", superseded: true });
   });
 
+  test("the lease-expired close leaves its own audit row, apart from the attempt's", async () => {
+    const context = setup({ fill: { passwordFieldVisible: true } });
+    const request = await context.service.request({
+      ownerUserId: "owner",
+      botId: "bot",
+      site: "example.com",
+      actor,
+    });
+    const inner = context.computer.gateway.signIn.bind(
+      context.computer.gateway,
+    );
+    // The attempt holds at the computer while its lease runs out, and a concurrent load() closes
+    // the row under it — backdating the lease is how the close an expired lease lands arrives
+    // mid-attempt, through the close path itself.
+    context.computer.gateway.signIn = async (botId, input) => {
+      await context.store.transition("owner", request.id, ["filling"], {
+        fillingUntil: new Date(Date.now() - 1_000),
+      });
+      const closed = await context.service.get("owner", request.id);
+      if (closed.status !== "failed")
+        throw new Error("the lease-expired close did not land");
+      return inner(botId, input);
+    };
+    await expect(
+      context.service.submit("owner", request.id, actor, {
+        username: USERNAME,
+        password: PASSWORD,
+      }),
+    ).rejects.toThrow(/password field/);
+    // The close keeps the row: this attempt's failure did not reopen it.
+    expect((await context.store.request("owner", request.id))?.status).toBe(
+      "failed",
+    );
+    // And the trail keeps both endings, neither swallowing the other. The close is the server's
+    // own act — the row's own ending, written by whoever closed it and marked neither superseded
+    // nor typed to a step nobody here knows — while the attempt's refusal stays superseded under
+    // it, exactly as T8a left it.
+    const failures = context.trail.rows.filter(
+      (row) => row.eventType === "computer.sign_in_failed",
+    );
+    const close = failures.find((row) => row.payload.superseded === undefined);
+    expect(close?.payload).toMatchObject({
+      actor: "server",
+      request: request.id,
+      failure: expect.stringMatching(/not known whether/),
+    });
+    expect(close?.initiator).toEqual({ kind: "deployment" });
+    expect(close?.actorUserId).toBeUndefined();
+    const attempt = failures.find((row) => row.payload.superseded === true);
+    expect(attempt?.payload).toMatchObject({
+      request: request.id,
+      step: "login",
+      superseded: true,
+    });
+    expect(attempt?.initiator).toEqual({ kind: "person" });
+  });
+
   test("claiming the lease clears the previous attempt's failure sentence", async () => {
     const fill = { passwordFieldVisible: true };
     const context = setup({ fill });
@@ -1001,6 +1058,227 @@ describe("a verification code the site asks for after the password", () => {
     expectNoCredential(everything(trail.rows, [...store.requests.values()]));
   });
 
+  test("the fifth refused code closes the request, and a sixth code is typed nowhere", async () => {
+    const code = { codeFieldVisible: true, passwordFieldVisible: false };
+    const { service, request, store, trail, resolved, computer } =
+      await withCodeStep({ fill: { codeRequested: true }, code });
+    // Five wrong codes, five real submissions to the site. The first four are refused and leave
+    // the request at the code step; the fifth is refused too, and closes the request for good.
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      const last = attempt === 5;
+      await expect(
+        service.submitCode("owner", request.id, actor, { code: CODE }),
+      ).rejects.toThrow(
+        last
+          ? /too many incorrect verification codes/
+          : /did not accept that code/,
+      );
+      if (!last) {
+        const row = await store.request("owner", request.id);
+        expect(row?.status).toBe("code_required");
+      }
+    }
+    // The close is terminal: failed, its own sentence, the waiting turn resumed.
+    const [row] = [...store.requests.values()];
+    expect(row?.status).toBe("failed");
+    expect(row?.outcome).toMatch(/too many incorrect verification codes/);
+    expect(row?.resolvedAt).not.toBeNull();
+    expect(resolved.map((row) => row.status)).toEqual(["failed"]);
+    // The close is the server's own act: its own trail row, no step named, not superseded — the
+    // shape the lease-expired close takes. The four earlier refusals stay the attempt's own rows.
+    const failures = trail.rows.filter(
+      (row) => row.eventType === "computer.sign_in_failed",
+    );
+    expect(failures).toHaveLength(5);
+    const closes = failures.filter(
+      (row) =>
+        row.payload.superseded === undefined && row.payload.step === undefined,
+    );
+    expect(closes).toHaveLength(1);
+    expect(closes[0]?.payload).toMatchObject({
+      actor: "server",
+      request: request.id,
+      failure: expect.stringMatching(/too many incorrect verification codes/),
+    });
+    expect(closes[0]?.initiator).toEqual({ kind: "deployment" });
+    expect(closes[0]?.actorUserId).toBeUndefined();
+    expect(
+      failures.filter(
+        (row) =>
+          row.payload.step === "code" && row.payload.superseded === undefined,
+      ),
+    ).toHaveLength(4);
+    // A correct code changes nothing now: the request is closed, and the computer is not called
+    // again — the sixth submission drives no browser anywhere.
+    code.codeFieldVisible = false;
+    await expect(
+      service.submitCode("owner", request.id, actor, { code: CODE }),
+    ).rejects.toThrow(/no longer open/);
+    expect(computer.codes).toHaveLength(5);
+  });
+
+  test("four refused codes still leave the correct one working inside the cap", async () => {
+    const code = { codeFieldVisible: true, passwordFieldVisible: false };
+    const { service, request, computer, resolved, store } = await withCodeStep({
+      fill: { codeRequested: true },
+      code,
+    });
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await expect(
+        service.submitCode("owner", request.id, actor, { code: CODE }),
+      ).rejects.toThrow(/did not accept that code/);
+    }
+    // Four wrong codes: the request is still open at the code step, and the correct fifth
+    // submission signs in — the cap counts refusals, never a code the site accepted.
+    expect((await store.request("owner", request.id))?.status).toBe(
+      "code_required",
+    );
+    code.codeFieldVisible = false;
+    const done = await service.submitCode("owner", request.id, actor, {
+      code: CODE,
+    });
+    expect(done.status).toBe("signed_in");
+    expect(computer.codes).toHaveLength(5);
+    expect(resolved.map((row) => row.status)).toEqual(["signed_in"]);
+  });
+
+  /*
+   * What the refusal cap counts (#489 F09): only a submission the site's page really received —
+   * the computer's `submitted: true` is the site taking the code and turning it away. The three
+   * answers that completed no submission (the browser had left the origin, the page had lost its
+   * code field, the typing itself failed) never showed the site a code, so no number of them
+   * spends the cap: a site that was never given a code was never guessed at.
+   */
+  test("five refusals from a browser no longer on the site count nothing toward the cap", async () => {
+    const code: Partial<SignInCodeResult> = {
+      submitted: false,
+      error:
+        "The Bot's browser is not on https://example.com any more. Take over the browser to finish signing in.",
+    };
+    const { service, request, store, resolved, computer } = await withCodeStep({
+      fill: { codeRequested: true },
+      code,
+    });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(
+        service.submitCode("owner", request.id, actor, { code: CODE }),
+      ).rejects.toThrow(/not on https:\/\/example\.com any more/);
+    }
+    // Five failures, zero submissions: the site was never shown a code, so nothing was guessed
+    // at it, and the request stays open at the code step instead of closing on the cap's
+    // sentence — which would claim the site had been shown five codes it never saw.
+    expect((await store.request("owner", request.id))?.status).toBe(
+      "code_required",
+    );
+    expect(service.codeRefusalTally(request.id)).toBe(0);
+    expect(computer.codes).toHaveLength(5);
+    expect(resolved).toEqual([]);
+  });
+
+  test("five refusals from a page that lost its code field count nothing toward the cap", async () => {
+    const code: Partial<SignInCodeResult> = {
+      submitted: false,
+      error: "The site is not asking for a verification code any more.",
+    };
+    const { service, request, store, resolved, computer } = await withCodeStep({
+      fill: { codeRequested: true },
+      code,
+    });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(
+        service.submitCode("owner", request.id, actor, { code: CODE }),
+      ).rejects.toThrow(/not asking for a verification code any more/);
+    }
+    expect((await store.request("owner", request.id))?.status).toBe(
+      "code_required",
+    );
+    expect(service.codeRefusalTally(request.id)).toBe(0);
+    expect(computer.codes).toHaveLength(5);
+    expect(resolved).toEqual([]);
+  });
+
+  test("five refusals from a typing that failed mid-way count nothing toward the cap", async () => {
+    const code: Partial<SignInCodeResult> = {
+      submitted: false,
+      error: "The verification code could not be typed into the page.",
+    };
+    const { service, request, store, resolved, computer } = await withCodeStep({
+      fill: { codeRequested: true },
+      code,
+    });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(
+        service.submitCode("owner", request.id, actor, { code: CODE }),
+      ).rejects.toThrow(/could not be typed into the page/);
+    }
+    expect((await store.request("owner", request.id))?.status).toBe(
+      "code_required",
+    );
+    expect(service.codeRefusalTally(request.id)).toBe(0);
+    // A refusal the site really received still counts: the five that reached nothing did not
+    // spend any of the cap this one now begins to spend.
+    code.submitted = true;
+    code.error = undefined;
+    code.codeFieldVisible = true;
+    await expect(
+      service.submitCode("owner", request.id, actor, { code: CODE }),
+    ).rejects.toThrow(/did not accept that code/);
+    expect((await store.request("owner", request.id))?.status).toBe(
+      "code_required",
+    );
+    expect(service.codeRefusalTally(request.id)).toBe(1);
+    expect(computer.codes).toHaveLength(6);
+    expect(resolved).toEqual([]);
+  });
+
+  /*
+   * A submission the computer carried through but this site never judged (#489 F20): fillSignInCode
+   * answers a code step that landed on another origin — a chained identity provider — with
+   * `submitted: true` and an `error` together, for the person to take over there. The code was
+   * handed to a page, and what that page did with it belongs to whoever finishes the sign-in
+   * there: as far as this request knows the code may have been accepted, so counting these as
+   * wrong codes would let the cap close with TOO_MANY — the site "shown too many incorrect
+   * verification codes" — a site that never judged a single one of them.
+   */
+  test("five takeover answers with a submitted code count nothing toward the cap", async () => {
+    const code: Partial<SignInCodeResult> = {
+      submitted: true,
+      error:
+        "The sign-in moved to https://id.example.org to ask for another verification code. Take over the browser to finish signing in there.",
+    };
+    const { service, request, store, resolved, computer } = await withCodeStep({
+      fill: { codeRequested: true },
+      code,
+    });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(
+        service.submitCode("owner", request.id, actor, { code: CODE }),
+      ).rejects.toThrow(
+        /moved to https:\/\/id\.example\.org to ask for another verification code/,
+      );
+    }
+    // Five submissions, zero verdicts from this site: none spent the cap, so the request stays
+    // open at the code step instead of closing on a sentence that would misname every one of
+    // them a wrong code.
+    expect((await store.request("owner", request.id))?.status).toBe(
+      "code_required",
+    );
+    expect(service.codeRefusalTally(request.id)).toBe(0);
+    // A refusal this site really turned away still counts, spending the cap the takeovers never
+    // touched — the migration answers leave the person's full five of their own.
+    code.error = undefined;
+    code.codeFieldVisible = true;
+    await expect(
+      service.submitCode("owner", request.id, actor, { code: CODE }),
+    ).rejects.toThrow(/did not accept that code/);
+    expect((await store.request("owner", request.id))?.status).toBe(
+      "code_required",
+    );
+    expect(service.codeRefusalTally(request.id)).toBe(1);
+    expect(computer.codes).toHaveLength(6);
+    expect(resolved).toEqual([]);
+  });
+
   test("a site that goes back to its login page asks for the whole login again", async () => {
     const fill = { codeRequested: true };
     const code = { codeFieldVisible: false, passwordFieldVisible: true };
@@ -1052,6 +1330,82 @@ describe("a verification code the site asks for after the password", () => {
       trail.rows.find((row) => row.eventType === "computer.sign_in_failed")
         ?.payload,
     ).toMatchObject({ request: request.id, step: "code", superseded: true });
+  });
+
+  /*
+   * The tally dies with the request it counted for (#489 F09): a refusal that arrives after the
+   * row closed under its attempt is still real — the site did see the code — but the request is
+   * final, so the count it wrote back has nothing left to guard and is removed again; no path
+   * will ever touch that request id's entry, and it must not linger.
+   */
+  test("a refusal that lands after the row closed leaves no tally behind it", async () => {
+    const { service, request, store, trail, computer } = await withCodeStep({
+      fill: { codeRequested: true },
+      code: { codeFieldVisible: true },
+    });
+    const inner = computer.gateway.signInCode.bind(computer.gateway);
+    // Another writer closes the row under the attempt, while the site's refusal is on its way
+    // back — the same interleaving the superseded-row test drives.
+    computer.gateway.signInCode = async (botId, input) => {
+      await store.transition("owner", request.id, ["filling"], {
+        status: "cancelled",
+        resolvedAt: new Date(),
+      });
+      return inner(botId, input);
+    };
+    await expect(
+      service.submitCode("owner", request.id, actor, { code: CODE }),
+    ).rejects.toThrow(/did not accept that code/);
+    expect((await store.request("owner", request.id))?.status).toBe(
+      "cancelled",
+    );
+    expect(
+      trail.rows.find((row) => row.eventType === "computer.sign_in_failed")
+        ?.payload,
+    ).toMatchObject({ request: request.id, step: "code", superseded: true });
+    expect(service.codeRefusalTally(request.id)).toBe(0);
+  });
+
+  test("a fifth refusal that lands after the row closed caps nothing and leaves no tally", async () => {
+    const code = { codeFieldVisible: true, passwordFieldVisible: false };
+    const { service, request, store, trail, computer } = await withCodeStep({
+      fill: { codeRequested: true },
+      code,
+    });
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await expect(
+        service.submitCode("owner", request.id, actor, { code: CODE }),
+      ).rejects.toThrow(/did not accept that code/);
+    }
+    expect(service.codeRefusalTally(request.id)).toBe(4);
+    const inner = computer.gateway.signInCode.bind(computer.gateway);
+    // The fifth refusal is a real submission the site turned away — it would close the request
+    // on the cap — but the row closes under the attempt first, so the cap's close has no row to
+    // take and the tally dies with the request instead of lingering on it.
+    computer.gateway.signInCode = async (botId, input) => {
+      await store.transition("owner", request.id, ["filling"], {
+        status: "cancelled",
+        resolvedAt: new Date(),
+      });
+      return inner(botId, input);
+    };
+    await expect(
+      service.submitCode("owner", request.id, actor, { code: CODE }),
+    ).rejects.toThrow(/did not accept that code/);
+    expect((await store.request("owner", request.id))?.status).toBe(
+      "cancelled",
+    );
+    // The refusal is recorded superseded, never as the request's ending: no cap close, no
+    // "too many" row, and the tally is gone.
+    expect(service.codeRefusalTally(request.id)).toBe(0);
+    expect(
+      trail.rows.some(
+        (row) =>
+          row.eventType === "computer.sign_in_failed" &&
+          typeof row.payload.failure === "string" &&
+          row.payload.failure.includes("too many incorrect verification codes"),
+      ),
+    ).toBe(false);
   });
 
   test("claiming the code step clears the previous attempt's failure sentence", async () => {

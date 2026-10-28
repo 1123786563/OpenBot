@@ -85,5 +85,7 @@ try {
     }),
   );
 } finally {
-  await database.$client.end({ timeout: 5 });
+  // Same rent the other sweeper scripts pay: a rejecting end() must not turn
+  // a finished cull (or a known failure) into a confusing second error.
+  await database.$client.end({ timeout: 5 }).catch(() => undefined);
 }

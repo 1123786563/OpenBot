@@ -1,7 +1,7 @@
 import { toStandardSchema } from "@mastra/core/schema";
 import { createTool, type Tool } from "@mastra/core/tools";
 import type { FrontendToolDefinition } from "./execution-contracts";
-import { isReservedToolName, VALID_TOOL_NAME } from "./tools";
+import { isReservedToolName, VALID_BRIDGE_TOOL_NAME, wireName } from "./tools";
 
 /*
  * ME06 (#478): the frontend (client-participation) tool bridge.
@@ -51,34 +51,76 @@ export interface CreateFrontendBridgeToolsOptions {
    * declaration colliding with one is DROPPED — the granted tool is the
    * server's authority and must never be shadowed by what the wire declared
    * (the mirror image of the granted wrapper's mount-time collision refusal,
-   * which guards two server claims).
+   * which guards two server claims). Matching is in the engine's WIRE
+   * spelling (wireName): the underscore twin of a dotted grant collides too
+   * (F18-4), because that is the pair the engine collapses to one name
+   * before any provider dial.
    */
   readonly grantedNames?: readonly string[];
   /** Test/diagnostic probe: observes the execute context the engine hands the bridge. */
   readonly onExecuteContext?: (context: unknown) => void;
 }
 
+/** A declared argument schema: absent, or a plain JSON object — never an array or a class instance. */
+function isPlainParameters(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
 /**
  * Mount the client-declared tools as inert bridges. Names are validated with
- * the SAME model-name rule the granted wrapper enforces (an invalid or
- * reserved client declaration is dropped, not mounted — each drop emits one
- * structured diagnostic naming the tool and the reason, never the args); a
- * repeated client name keeps its FIRST declaration (the AG-UI tool list is a
- * set — a duplicate is a wire artifact, not a second tool).
+ * the client-facing charset (VALID_BRIDGE_TOOL_NAME — `[A-Za-z0-9_-]`, no
+ * dot): the AG-UI tool list is third-party input the client controls per
+ * request, so a name outside the wire-safe charset degrades THAT tool —
+ * dropped at mount with one structured diagnostic, the chat continues —
+ * rather than being mounted and costing the whole run. The fail-hard shape
+ * is the pinned engine's own: `@mastra/core` 1.64.0 `formatTools` rewrites
+ * every invalid character to `_`, so a declared `computer.navigate` beside
+ * the legal `computer_navigate` reaches the model as the same name and
+ * throws AGENT_TOOL_NAME_COLLISION before any provider dial. Brokered /
+ * granted names keep the looser VALID_TOOL_NAME (dot admitted) in tools.ts;
+ * the division is recorded there. A repeated client name keeps its FIRST
+ * declaration (the AG-UI tool list is a set — a duplicate is a wire artifact,
+ * not a second tool).
  */
 export function createFrontendBridgeTools(
   definitions: readonly FrontendToolDefinition[],
   options: CreateFrontendBridgeToolsOptions = {},
 ): Record<string, Tool> {
   const record: Record<string, Tool> = Object.create(null);
-  const granted = new Set(options.grantedNames ?? []);
+  // F18-4 (T35): granted names enter the collision set in their WIRE
+  // spelling. The engine rewrites every `.` to `_` before the wire (the
+  // pinned formatTools behavior), so a client declaration of the underscore
+  // twin of a dotted grant — `github_get_current_user` beside the granted
+  // `github.get_current_user` — used to pass the exact-match set, mount, and
+  // collapse the run at the engine's AGENT_TOOL_NAME_COLLISION; normalized
+  // here, that declaration is dropped at mount instead (fail-soft, one
+  // structured diagnostic). Client names carry no dot
+  // (VALID_BRIDGE_TOOL_NAME), so the normalized spelling is lossless: an
+  // exact-match collision and a wire-twin collision both land in this set.
+  const granted = new Set((options.grantedNames ?? []).map(wireName));
   const mounted = new Set<string>();
   for (const definition of definitions) {
     const name = definition?.name;
+    // A declared argument schema reaches the engine as a schema object: only a plain JSON
+    // object (or an absent one, which defaults to `{ type: "object" }`) qualifies, so a
+    // malformed declaration degrades THIS tool — the bridge's own contract — instead of
+    // throwing inside the engine and taking the whole run down with it.
+    if (!isPlainParameters(definition?.parameters)) {
+      // biome-ignore lint/suspicious/noConsole: stable-code operational log
+      console.warn({
+        event: "mastra_frontend_tool_declaration_dropped",
+        toolName: typeof name === "string" ? name : undefined,
+        reason: "invalid parameters schema (not a plain object)",
+      });
+      continue;
+    }
     const dropReason =
       !definition || typeof name !== "string"
         ? "invalid declaration (no string name)"
-        : !VALID_TOOL_NAME.test(name)
+        : !VALID_BRIDGE_TOOL_NAME.test(name)
           ? "invalid tool name"
           : isReservedToolName(name)
             ? "reserved tool name"
@@ -131,7 +173,26 @@ export function createFrontendBridgeTools(
         if (resumeData !== undefined) {
           // The authenticated client result, as the client returned it — the
           // one value the model may read as this call's outcome. Never
-          // re-worded, never synthesized.
+          // re-worded, never synthesized. Bound when it names a call: an
+          // envelope carrying a DIFFERENT call's id belongs to another pause
+          // point, and handing it over here would feed the model someone
+          // else's answer as this tool's result — refused, the same fail-closed
+          // way a missing suspend is.
+          const resumedId = (resumeData as { toolCallId?: unknown } | null)
+            ?.toolCallId;
+          const expectedId =
+            typeof ctx?.agent?.toolCallId === "string"
+              ? ctx.agent.toolCallId
+              : undefined;
+          if (
+            typeof resumedId === "string" &&
+            expectedId !== undefined &&
+            resumedId !== expectedId
+          ) {
+            throw new FrontendBridgeRefusal(
+              "MASTRA_FRONTEND_TOOL_RESULT_MISMATCH: the resumed result names a different tool call, so it is not this call's outcome; the bridge refuses rather than hand the model a foreign answer.",
+            );
+          }
           return resumeData;
         }
         const suspend = ctx?.agent?.suspend;
@@ -142,14 +203,23 @@ export function createFrontendBridgeTools(
             "MASTRA_FRONTEND_TOOL_SUSPEND_UNAVAILABLE: the bridge can only wait inside an engine run; there is no participation surface to suspend on here.",
           );
         }
+        // The call id is the route a resumed client result takes back to THIS call; writing an
+        // empty one would make the suspension unrouteable, so an engine that names no call is
+        // refused here rather than parked with an address nothing can answer.
+        const toolCallId =
+          typeof ctx?.agent?.toolCallId === "string"
+            ? ctx.agent.toolCallId
+            : typeof ctx?.toolCallId === "string"
+              ? ctx.toolCallId
+              : undefined;
+        if (toolCallId === undefined) {
+          throw new FrontendBridgeRefusal(
+            "MASTRA_FRONTEND_TOOL_CALL_ID_MISSING: the engine did not name the suspended call, so a client result could never be routed back to it; the bridge refuses instead of parking an unanswerable wait.",
+          );
+        }
         const payload: FrontendSuspendPayload = {
           kind: "frontend_tool",
-          toolCallId:
-            typeof ctx?.agent?.toolCallId === "string"
-              ? ctx.agent.toolCallId
-              : typeof ctx?.toolCallId === "string"
-                ? ctx.toolCallId
-                : "",
+          toolCallId,
           toolName: definition.name,
           args: input,
         };

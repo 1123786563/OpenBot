@@ -17,9 +17,11 @@
 | 配置或运行已关闭 Issue 的每日审计与修复定时任务 | [每日审计与修复](.agents/rules/closed-issue-daily-run.md) |
 | 使用或修改领域术语、进入子模块 | [领域上下文](.agents/rules/domain.md) |
 | 设计、Spec、ADR、任务拆分或需求冲突 | [设计与事实源](.agents/rules/design.md) |
-| 新增 Module、调整 Interface、跨 Module 调用、迁移目录或更换 Adapter | [模块架构](.agents/rules/architecture.md) |
-| 用户要求实现单个、父级或一组 Issues | [Issue 摄取与 DAG](.agents/rules/issue-delivery.md)，随后读执行、测试和审查规范 |
+| 新增 Module、调整 Interface、跨 Module 调用、迁移目录、更换 Adapter，或改变事实所有权、持久化写入、事务与关键运行链路语义 | [模块架构](.agents/rules/architecture.md) |
+| 分析、计划、审查或实现单个、父级或一组 Issues | [Issue 摄取与 DAG](.agents/rules/issue-delivery.md)；仅实施授权启动后续执行、测试和审查流水线 |
 | 编写实施计划、派发、实现、修复或恢复任务 | [执行与上下文](.agents/rules/execution.md) |
+| 固定、审查或转移交付检查点，或修改子模块 | [检查点与内容转移](.agents/rules/checkpoints.md) |
+| 跨 Run 占用 Issue、工作区或测试资源，或恢复每日任务 | [共享协调状态](.agents/rules/coordination-state.md) |
 | 使用 Orca 协调多个 Agent，或规划、审查、恢复编排 Run | [Orca 多 Agent 编排](.agents/rules/orchestration.md) |
 | 创建、复用、收尾 Orca Worktree 或分支 | [Worktree](.agents/rules/worktrees.md) |
 | 运行测试、类型检查、Lint、构建或验收验证 | [验证与测试资源](.agents/rules/testing.md)，再读该文件指定的测试 ADR |

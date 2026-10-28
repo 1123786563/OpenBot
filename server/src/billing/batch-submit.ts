@@ -518,6 +518,18 @@ export function createBatchSubmitService(
         .where(eq(batchJobs.submitIdempotencyKey, request.submitIdempotencyKey))
         .limit(1);
       if (existing) {
+        // The replay answers only the batch THIS grant created. The submit key is a caller-
+        // supplied string; a foreign key must never read (or hijack) another grant's batch.
+        if (existing.grantId !== request.grantId) {
+          return {
+            status: "refused",
+            reasonCode: "request_invalid",
+            detail: {
+              field: "submitIdempotencyKey",
+              reason: "idempotency_key_owned_by_another_grant",
+            },
+          };
+        }
         const items = await database
           .select({ itemId: batchItems.itemId, customId: batchItems.customId })
           .from(batchItems)
@@ -722,6 +734,18 @@ export function createBatchSubmitService(
           )
           .limit(1);
         if (winner) {
+          // Same ownership rule as the replay read above: the conflicting row may belong to
+          // another grant, and its reservation/items are not this caller's to read.
+          if (winner.grantId !== request.grantId) {
+            return {
+              status: "refused",
+              reasonCode: "request_invalid",
+              detail: {
+                field: "submitIdempotencyKey",
+                reason: "idempotency_key_owned_by_another_grant",
+              },
+            };
+          }
           const items = await database
             .select({
               itemId: batchItems.itemId,

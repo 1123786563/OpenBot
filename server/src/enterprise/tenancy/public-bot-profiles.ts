@@ -507,11 +507,17 @@ export function createPublicBotProfileService(deps: {
         )
         .limit(1);
       if (!ownership) return null;
-      const dependencyRows = (await tx.execute(
+      const dependencyResult = await tx.execute(
         sql`select count(*)::int as n from enterprise_resource_dependencies where tenant_id = ${scope.tenantId} and resource_id = ${botId} and dependency_kind = 'credential' and status = 'active'`,
-      )) as unknown as { n: number | string }[];
+      );
+      // execute() 结果归一：bun-sql 返回数组、node postgres 返回 {rows}（同 public-bot-usage.ts）。
+      const dependencyRows = (
+        Array.isArray(dependencyResult)
+          ? dependencyResult
+          : ((dependencyResult as { rows?: unknown[] })?.rows ?? [])
+      ) as { n: number | string }[];
       const credentialDependencyCount =
-        Number(dependencyRows?.[0]?.n ?? 0) || 0;
+        Number(dependencyRows[0]?.n ?? 0) || 0;
       return { credentialDependencyCount, requiresLoginState: false };
     });
 

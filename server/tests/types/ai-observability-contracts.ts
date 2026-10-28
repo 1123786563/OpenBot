@@ -223,6 +223,15 @@ export type InProgressStateIsPinned = Same<
   SharedInProgressState
 >;
 
+// Same<never, never> is true, so this pin would stay green if BOTH sides dropped
+// the `class: "in_progress"` variant at once and both Extracts degraded to never.
+// Prove the variant still exists on each side independently.
+const inProgressVariantExistsOnBothSides: [
+  [ServerInProgressState] extends [never] ? never : true,
+  [SharedInProgressState] extends [never] ? never : true,
+] = [true, true];
+void inProgressVariantExistsOnBothSides;
+
 // ---------------------------------------------------------------------------
 // R4-39: the experiments mirror, whole. results.ts (the T28 producer),
 // scoring/rules.ts (the T26 vocabulary) and comparison.ts (the T29 ledger) each

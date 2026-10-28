@@ -70,7 +70,9 @@ export function createModelCompleter(deps: {
           .map((block) => block.text)
           .join("") || undefined
       : body.choices?.[0]?.message?.content;
-    if (typeof content !== "string")
+    // An empty string is "no text" too — a max_tokens cut before any text block must be
+    // attributable here, not passed down as a valid (blank) answer.
+    if (typeof content !== "string" || content === "")
       throw new Error("router model returned no text");
     return content;
   };

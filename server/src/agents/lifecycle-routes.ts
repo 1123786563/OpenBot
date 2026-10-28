@@ -53,6 +53,17 @@ export function createBotLifecycleRoutes(
   const routes = new Hono<{ Variables: AppVariables }>();
   type C = Context<{ Variables: AppVariables }>;
 
+  // The destructive paths here (pause, reset, stop, cancel) must answer in the same
+  // `{ error }` shape as every other response in this module, never as a bare 500 — the
+  // same contract the sibling routers keep.
+  routes.onError((error, context) => {
+    log.error({ err: error }, "A Bot lifecycle route failed.");
+    return context.json(
+      { error: "That Bot request could not be completed. Try again." },
+      500,
+    );
+  });
+
   const record = async (
     context: C,
     eventType: Extract<AuditEventType, `bot.${string}`>,
@@ -111,9 +122,13 @@ export function createBotLifecycleRoutes(
     const notify = await lifecycle.notifyFor(ownerUserId, ids);
     const byId = new Map(counts.map((row) => [row.agentId, row]));
     // Only Bots the caller can still reach: a count about a Bot they lost access to names it.
+    // The profile reads are independent, so they go out together rather than one round trip each.
+    const agents = await Promise.all(
+      ids.map((agentId) => profiles.get(context.var.actor, agentId)),
+    );
     const bots = [];
-    for (const agentId of ids) {
-      const agent = await profiles.get(context.var.actor, agentId);
+    for (const [index, agentId] of ids.entries()) {
+      const agent = agents[index];
       if (!agent) continue;
       const row = byId.get(agentId);
       bots.push({
@@ -139,18 +154,26 @@ export function createBotLifecycleRoutes(
     if (!UPDATE_KINDS.includes(kind))
       return context.json({ error: "Unknown kind of update." }, 400);
     const { transports } = await body(context);
-    const value =
-      transports === "all"
-        ? "all"
-        : Array.isArray(transports) &&
-            transports.every((transport) =>
-              UPDATE_TRANSPORTS.includes(transport as UpdateTransport),
-            )
-          ? (transports as UpdateTransport[])
-          : null;
+    // An EMPTY array is not a choice: `every` is vacuously true on it, and a kind persisted with
+    // `transports: []` would silently deliver to no channel at all. Refused like any other junk.
+    let value: UpdateTransport[] | "all" | null = null;
+    if (transports === "all") {
+      value = "all";
+    } else if (
+      Array.isArray(transports) &&
+      transports.length > 0 &&
+      transports.every((transport) =>
+        UPDATE_TRANSPORTS.includes(transport as UpdateTransport),
+      )
+    ) {
+      value = transports as UpdateTransport[];
+    }
     if (value === null)
       return context.json(
-        { error: "Choose slack, sms and push, or all of them." },
+        {
+          error:
+            "Choose at least one of slack, teams, sms and push, or all of them.",
+        },
         400,
       );
     await lifecycle.setRouting(context.var.actor.id, kind, value);

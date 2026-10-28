@@ -15,7 +15,7 @@
  * Bot are bound when the tools are built.
  */
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getLogger } from "../../../shared/logger";
 import type { AuditInitiator, AuditStore } from "../audit";
@@ -227,7 +227,10 @@ export function createWakeUpStore(
         .select()
         .from(workItems)
         .where(owned(ownerUserId, agentId))
-        .orderBy(asc(workItems.runAt))
+        // Unfinished rows first (Postgres DESC puts NULLS first, and a waiting row has no
+        // finishedAt), or a week of done ones would fill the limit and hide the waiting ones.
+        // Done rows then read newest-finished-first, as the docblock promises.
+        .orderBy(desc(workItems.finishedAt), asc(workItems.runAt))
         .limit(100);
       return rows.map(toRecord);
     },
@@ -265,6 +268,11 @@ export function createWakeUpStore(
             owned(ownerUserId, agentId),
             eq(workItems.key, id),
             isNull(workItems.finishedAt),
+            // "Has not started" means no LIVE lease: a claimed row is a run in progress, and
+            // clearing its claim would cancel the row while the Bot still wakes and replies —
+            // the surprise the docblock refuses. An expired lease is fair game: that claimant
+            // is gone, and nobody is answering it.
+            sql`(${workItems.claimedBy} is null or ${workItems.leaseUntil} is null or ${workItems.leaseUntil} <= now())`,
           ),
         )
         .returning({ key: workItems.key });
@@ -282,6 +290,10 @@ export function createWakeUpStore(
           claimedBy: null,
           leaseUntil: null,
           lastError: "Cancelled by reset",
+          // Same outcome the single cancel writes, so records from both paths read the same.
+          payload: sql`${workItems.payload} || ${JSON.stringify({
+            outcome: { status: "cancelled", at: now().toISOString() },
+          })}::text::jsonb`,
           updatedAt: sql`now()`,
         })
         .where(and(owned(ownerUserId, agentId), isNull(workItems.finishedAt)))
@@ -302,7 +314,15 @@ export function createWakeUpStore(
           payload: sql`${workItems.payload} || ${JSON.stringify({ outcome })}::text::jsonb`,
           updatedAt: sql`now()`,
         })
-        .where(and(eq(workItems.kind, WAKE_UP_KIND), eq(workItems.key, id)));
+        // A row that was already finished — cancelled mid-run, or settled by an earlier
+        // delivery — keeps its first outcome; a late settle must not rewrite history.
+        .where(
+          and(
+            eq(workItems.kind, WAKE_UP_KIND),
+            eq(workItems.key, id),
+            isNull(workItems.finishedAt),
+          ),
+        );
     },
   };
 }
@@ -467,15 +487,21 @@ export function createWakeUpRunner(options: {
       for (const item of claimed) {
         const payload = item.payload as unknown as WakeUpPayload;
         const at = () => new Date().toISOString();
+        // Recorded once: a finish that throws after a settled outcome must not let the
+        // fallback path below rewrite a succeeded row into a failed one.
+        let settled = false;
         const done = async (
           outcome: NonNullable<WakeUpPayload["outcome"]>["status"],
           detail?: string,
         ) => {
-          await store.settle(item.key, {
-            status: outcome,
-            at: at(),
-            ...(detail ? { detail: detail.slice(0, 500) } : {}),
-          });
+          if (!settled) {
+            await store.settle(item.key, {
+              status: outcome,
+              at: at(),
+              ...(detail ? { detail: detail.slice(0, 500) } : {}),
+            });
+            settled = true;
+          }
           await queue.finish({ kind: WAKE_UP_KIND, key: item.key, owner });
         };
         try {
@@ -547,7 +573,12 @@ export function createWakeUpRunner(options: {
                   },
                   { id: `follow-up:${item.key}` },
                 )
-                .catch(() => {});
+                .catch((error: unknown) =>
+                  log.warn(
+                    { err: error },
+                    "Could not record follow-up suspension.",
+                  ),
+                );
               await done("waiting", error.message);
               report.ran.push(item.key);
             } else {
@@ -563,7 +594,9 @@ export function createWakeUpRunner(options: {
           await done(
             "failed",
             error instanceof Error ? error.message : String(error),
-          ).catch(() => {});
+          ).catch((failure: unknown) =>
+            log.warn({ err: failure }, "Could not settle a failed follow-up."),
+          );
           report.skipped.push(item.key);
         }
       }

@@ -198,6 +198,9 @@ export async function recordRevocationAuditEvent(
     !String(input.operatorPrincipalId ?? "").trim() ||
     !String(input.operatorUserId ?? "").trim() ||
     !String(input.targetPrincipalId ?? "").trim() ||
+    // workspaceId 可省略（公司级事件），但给了就必须是非空白——空串会让
+    // 「团队级带 workspace_id」的下游分流失效。
+    (input.workspaceId != null && !String(input.workspaceId).trim()) ||
     !Number.isSafeInteger(input.epoch) ||
     input.epoch <= 0
   ) {

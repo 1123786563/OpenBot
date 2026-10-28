@@ -49,6 +49,8 @@ export type BuiltInAgentHooks = {
   inline?: (messages: Message[], threadId: string) => Promise<Message[]>;
   /** Watch the model connection, for a host that reports when it fails. */
   observe: (run: Observable<BaseEvent>) => Observable<BaseEvent>;
+  /** Bind the run's chain around the subscribed pipeline, including run-built agents. */
+  wrapChain?: (input: RunAgentInput, run: Observable<BaseEvent>) => Observable<BaseEvent>;
   /**
    * Wrap the whole run pipeline (approvals included) in a host scope. Absent, the run is the
    * pipeline itself. The host's observation threading runs here rather than inside `observe`
@@ -157,8 +159,9 @@ export class BuiltInAgentWithSaneHistory extends BuiltInAgent {
       (input.resume ?? []).map((entry) => entry.interruptId),
     );
     const history = sanitizeSeededHistory(input.messages, answeredByResume);
-    const { inline, observe, wrapRun } = this.hooks;
-    const wrap = (run: Observable<BaseEvent>) => wrapRun?.(run) ?? run;
+    const { inline, observe, wrapChain, wrapRun } = this.hooks;
+    const wrap = (run: Observable<BaseEvent>) =>
+      wrapChain?.(input, wrapRun?.(run) ?? run) ?? wrapRun?.(run) ?? run;
     /*
      * ALONGSIDE THE GUARD ABOVE, NOT INSTEAD OF IT. One drops a conversation the model provider is
      * going to refuse; this replaces the stored reference a person's attachment arrives as with the

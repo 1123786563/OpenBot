@@ -3,10 +3,11 @@ import { useTranslation } from "react-i18next";
 import { Streamdown } from "streamdown";
 import { PendingApprovals } from "@/components/approvals/inline-approval";
 import { markdownComponents } from "@/lib/markdown";
-import { readToolName, type ResearchLabelKey } from "@/lib/plugins/tool-name";
+import { type ResearchLabelKey, readToolName } from "@/lib/plugins/tool-name";
 import {
-  asText,
   forDisplay,
+  mayBeRefusal,
+  refusalAndAnswer,
   refusalBody,
   toolResultFailed,
 } from "@/lib/plugins/tool-result";
@@ -19,6 +20,7 @@ import {
   type StepLabelKey,
 } from "./browser-activity";
 import type { VisibleChatItem } from "./chat-messages";
+import { ToolRenderBoundary } from "./tool-boundary";
 import { ToolLine } from "./tool-line";
 
 type ToolItem = Extract<VisibleChatItem, { kind: "tool" }>;
@@ -93,6 +95,20 @@ function foldable(item: ToolItem): boolean {
  * cap-evicted verdict is merely computed once more.
  */
 const ASK_VERDICTS_LIMIT = 512;
+
+/**
+ * The largest result worth a cache entry, in characters.
+ *
+ * The FIFO bounds how many verdicts are held, not how much text: the key is the result itself, and
+ * a result reaches the cache merely by opening with `Refused.` — which a vendor's or MCP result
+ * can do at any length, since only the refusals this server writes wear a body it has already
+ * bounded (the connect payload is capped at 8KiB in `connect-prompt`). 512 entries of unbounded
+ * text would sit in the page's memory for its lifetime, released by neither a channel nor a
+ * session switch. Past this size a verdict is still answered, just never stored — the result is
+ * re-judged each frame, exactly what every frame did before the cache existed.
+ */
+const ASK_VERDICTS_CACHEABLE_MAX = 16_384;
+
 const askVerdicts = new Map<string, boolean>();
 
 /**
@@ -107,12 +123,25 @@ const askVerdicts = new Map<string, boolean>();
  */
 function asksThePerson(result: string | undefined): boolean {
   if (result === undefined) return false;
+  /*
+   * A refusal can only wear two shapes, and each is recognisable from the result's first
+   * characters — `mayBeRefusal` in `tool-result`, kept beside the `refusalBody` strip it fronts
+   * for, so the gate and the strip answer from one declaration and cannot drift apart. Anything
+   * else is false before the cache or a parse is ever consulted — which is what keeps a long
+   * research session, more distinct results than the FIFO holds so every frame re-judges history
+   * it has already judged, from re-parsing all of it.
+   */
+  if (!mayBeRefusal(result)) return false;
   const cached = askVerdicts.get(result);
   if (cached !== undefined) return cached;
   const body = refusalBody(result);
   const verdict =
     body !== null &&
     (readTeamBotConsent(body) !== null || readConnectPrompt(body) !== null);
+  // An oversized result is judged and answered in one motion: storing it would put unbounded
+  // vendor text in the page's memory for its lifetime, and what it saves — one parse per frame —
+  // is what every frame paid before the cache existed.
+  if (result.length > ASK_VERDICTS_CACHEABLE_MAX) return verdict;
   if (askVerdicts.size >= ASK_VERDICTS_LIMIT) {
     const oldest = askVerdicts.keys().next();
     if (!oldest.done) askVerdicts.delete(oldest.value);
@@ -240,16 +269,16 @@ export function stepDetails(step: ToolItem): StepDetails {
   const name = step.toolCall.function.name;
   const { label, detail, labelKey } = readToolName(name);
   /*
-   * The same reading `ServerToolLine` does: the result arrives JSON-encoded, a refusal carries the
-   * server's marker rather than a guessed wording, and everything else is the vendor's answer —
-   * which the group shows through `forDisplay` when it is drawn, untrusted envelope and all. The
-   * marker strip is `refusalBody`, the one sequence every reader shares; the decoded answer is
-   * asked for only when no refusal is carrying the text.
+   * The same reading `ServerToolLine` does, from one decode of the envelope: `refusalAndAnswer`
+   * strips the marker when the result is a refusal and hands back the decoded answer either way,
+   * so a completed step's result is read once however many frames the fold re-renders it. The
+   * result arrives JSON-encoded, a refusal carries the server's marker rather than a guessed
+   * wording, and everything else is the vendor's answer — which the group shows through
+   * `forDisplay` when it is drawn, untrusted envelope and all.
    */
-  const refusal = refusalBody(step.result);
+  const { refusal, answer } = refusalAndAnswer(step.result);
   const refused = refusal !== null;
-  const body =
-    refusal ?? (step.result === undefined ? undefined : asText(step.result));
+  const body = refusal ?? answer;
   const [, server = ""] = name.split("__");
   /*
    * A research step is its role first: the label is the role's, the detail is what it acted on,
@@ -402,6 +431,32 @@ function StepStatus({ step, active }: { step: StepDetails; active: boolean }) {
   return null;
 }
 
+/*
+ * A step's decoded answer, a component the boundary renders on purpose.
+ *
+ * `forDisplay` is evaluated in THIS component's render, not in `StepRow`'s: `StepRow` puts the
+ * boundary around this component, and React reaches a child's render only inside that boundary,
+ * so a decoding that throws is caught exactly where a drawing that throws already is. Run in
+ * `StepRow`'s own render it would throw while the elements were being built, before any boundary
+ * existed, and unwind the whole conversation — the single-tool path keeps the same shape, its
+ * `ServerToolLine` decoding inside the boundary that wraps it.
+ */
+function StepOutput({ output }: { output: string }) {
+  return (
+    <div className="max-h-60 overflow-auto border-l pl-3 text-xs [&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs [&_h4]:text-xs [&_h1]:font-medium [&_h2]:font-medium [&_h3]:font-medium">
+      {/*
+       * The same drawing `ServerToolLine` gives a single call: `forDisplay` takes the model's
+       * untrusted-content notice back off and unwraps a vendor's JSON envelope, and what a server
+       * wrote for a model reads as prose. Nothing here treats that content as instruction or
+       * authorization — it is drawn, never obeyed.
+       */}
+      <Streamdown components={markdownComponents}>
+        {forDisplay(output)}
+      </Streamdown>
+    </div>
+  );
+}
+
 function StepRow({ step, active }: { step: StepDetails; active: boolean }) {
   const { t } = useTranslation("channels");
   const line = (
@@ -461,17 +516,16 @@ function StepRow({ step, active }: { step: StepDetails; active: boolean }) {
             </dl>
           ) : null}
           {step.output ? (
-            <div className="max-h-60 overflow-auto border-l pl-3 text-xs [&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs [&_h4]:text-xs [&_h1]:font-medium [&_h2]:font-medium [&_h3]:font-medium">
-              {/*
-               * The same drawing `ServerToolLine` gives a single call: `forDisplay` takes the
-               * model's untrusted-content notice back off and unwraps a vendor's JSON envelope,
-               * and what a server wrote for a model reads as prose. Nothing here treats that
-               * content as instruction or authorization — it is drawn, never obeyed.
-               */}
-              <Streamdown components={markdownComponents}>
-                {forDisplay(step.output)}
-              </Streamdown>
-            </div>
+            /*
+             * The fold draws a vendor's answer with the same markdown machinery the transcript
+             * gives a Bot's prose, but the text arrives from the MCP server, not from the app, and
+             * no app-authored component card sits around it. A step that throws while decoding or
+             * drawing its answer must cost it that result alone — the single-tool path decodes and
+             * draws behind the same boundary — never the whole conversation it sits inside.
+             */
+            <ToolRenderBoundary name={step.label}>
+              <StepOutput output={step.output} />
+            </ToolRenderBoundary>
           ) : null}
         </div>
       </details>

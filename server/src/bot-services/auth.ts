@@ -99,6 +99,8 @@ export type FailureLimiter = {
   record: (hint: string) => void;
 };
 
+const failureLimiterWindows = new WeakMap<FailureLimiter, number>();
+
 export function createFailureLimiter(
   options: {
     windowMs?: number;
@@ -114,7 +116,7 @@ export function createFailureLimiter(
   /** Hard cap, so even per-hint counting cannot grow without bound under a flood. */
   const maxHints = 10_000;
 
-  return {
+  const limiter: FailureLimiter = {
     blocked(hint) {
       const attempts = failures.get(hint);
       if (!attempts) return false;
@@ -124,20 +126,31 @@ export function createFailureLimiter(
         failures.delete(hint);
         return false;
       }
+      // Re-inserted so an actively attacked hint reads as recent: a Map.set on an existing
+      // key keeps its old insertion position, and the eviction below would otherwise evict
+      // exactly the hint under attack once the map fills.
+      failures.delete(hint);
       failures.set(hint, recent);
       return recent.length >= maxFailures;
     },
     record(hint) {
+      // Stale attempts are dropped here too: record must not grow a hint's window past the
+      // failure cap just because a caller skipped the blocked() probe first.
+      const cutoff = now() - windowMs;
+      const attempts = (failures.get(hint) ?? []).filter((at) => at > cutoff);
       if (!failures.has(hint) && failures.size >= maxHints) {
-        // Evict the oldest hint (Map iterates in insertion order) rather than grow forever.
+        // Evict the least-recently-seen hint (Map iterates in insertion order, refreshed
+        // by blocked/record above) rather than grow forever.
         const oldest = failures.keys().next().value;
         if (oldest !== undefined) failures.delete(oldest);
       }
-      const attempts = failures.get(hint) ?? [];
       attempts.push(now());
+      failures.delete(hint);
       failures.set(hint, attempts);
     },
   };
+  failureLimiterWindows.set(limiter, windowMs);
+  return limiter;
 }
 
 function sha256(value: string): string {
@@ -157,13 +170,18 @@ export type BotServiceAuthenticator = (
   presentedSecret: string,
 ) => Promise<BotServiceIdentity>;
 
+const authenticatorRetryAfterSeconds = new WeakMap<
+  BotServiceAuthenticator,
+  number
+>();
+
 export function createBotServiceAuthenticator(
   dependencies: BotServiceAuthenticatorDependencies,
 ): BotServiceAuthenticator {
   const limiter = dependencies.limiter ?? createFailureLimiter();
   const { credentialStore } = dependencies;
 
-  return async (presentedSecret) => {
+  const authenticate: BotServiceAuthenticator = async (presentedSecret) => {
     const parsed = parseBotServiceSecret(presentedSecret);
     const hint = parsed ? parsed.botId : sha256(String(presentedSecret));
     if (limiter.blocked(hint)) throw new BotServiceRateLimitedError();
@@ -206,6 +224,16 @@ export function createBotServiceAuthenticator(
     }
     return { botId: record.botId, status: record.status };
   };
+  authenticatorRetryAfterSeconds.set(
+    authenticate,
+    Math.max(
+      1,
+      Math.ceil(
+        (failureLimiterWindows.get(limiter) ?? FAILURE_WINDOW_MS) / 1000,
+      ),
+    ),
+  );
+  return authenticate;
 }
 
 /** The Variables the bot-facing routes read after the middleware has answered. */
@@ -248,13 +276,21 @@ export function requireBotService(
       context.set("botService", await dependencies.authenticate(presented));
     } catch (error) {
       if (error instanceof BotServiceRateLimitedError) {
-        context.header("retry-after", "60");
+        context.header(
+          "retry-after",
+          String(
+            authenticatorRetryAfterSeconds.get(dependencies.authenticate) ?? 60,
+          ),
+        );
         return context.json(
           { error: error.message, code: "bot_service_auth_rate_limited" },
           429,
         );
       }
-      return uniformAuthFailure(context);
+      if (error instanceof BotServiceAuthFailureError) {
+        return uniformAuthFailure(context);
+      }
+      throw error;
     }
     await next();
   };

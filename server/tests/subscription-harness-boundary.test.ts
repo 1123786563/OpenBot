@@ -58,6 +58,21 @@ const CHATGPT_SUBSCRIPTION_ENV = {
 };
 
 /**
+ * Compile-time guard for the positional calls below. `builtInAgentConfiguration`
+ * takes twelve positional parameters and this file passes them by position, so a
+ * signature change silently shifts every argument after the change point — which
+ * is exactly how this file went red when the knowledge-base parameter was
+ * removed. Routing the calls through `Parameters<...>` makes such a drift a
+ * compile error instead of a mis-slotted argument. It is silent today because
+ * `server/tsconfig.json` deliberately excludes `tests/`; it bites the moment
+ * that scope is widened.
+ */
+const buildBuiltInAgentConfiguration = (
+  ...args: Parameters<typeof builtInAgentConfiguration>
+): ReturnType<typeof builtInAgentConfiguration> =>
+  builtInAgentConfiguration(...args);
+
+/**
  * 09.4 — the subscription harness boundary. The plan-model path (Claude Code /
  * Codex subscriptions riding the deployment's own harness) is billed by that
  * subscription, not by Bifrost credits: its billing method is marked and
@@ -118,7 +133,7 @@ describe("the subscription harness billing boundary", () => {
       throw new Error("The subscription path must not be metered as credits.");
     });
     try {
-      const config = builtInAgentConfiguration(
+      const config = buildBuiltInAgentConfiguration(
         AGENT,
         model,
         null,
@@ -163,12 +178,11 @@ describe("the subscription harness billing boundary", () => {
       });
     });
     try {
-      const config = builtInAgentConfiguration(
+      const config = buildBuiltInAgentConfiguration(
         AGENT,
         model,
         STUB_MODEL_KEY,
         [],
-        undefined,
         undefined,
         undefined,
         undefined,
@@ -225,7 +239,7 @@ describe("the subscription harness billing boundary", () => {
     const audit: ModelBillingAuditEvent[] = [];
     setModelBillingAudit((event) => audit.push(event));
     try {
-      builtInAgentConfiguration(
+      buildBuiltInAgentConfiguration(
         AGENT,
         model,
         null,
@@ -234,7 +248,6 @@ describe("the subscription harness billing boundary", () => {
         undefined,
         undefined,
         planModel,
-        undefined,
         undefined,
         undefined,
         { userId: "person-1" },

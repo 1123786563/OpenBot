@@ -10,11 +10,14 @@ Rules:
 - Only merges if truly adjacent (only whitespace between them)
 """
 
-import xml.etree.ElementTree as ET
+import sys
 import zipfile
 from pathlib import Path
+from xml.parsers.expat import ExpatError
 
+import defusedxml.ElementTree as ET
 import defusedxml.minidom
+from defusedxml.common import DefusedXmlException
 
 WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
@@ -40,7 +43,10 @@ def simplify_redlines(input_dir: str) -> tuple[int, str]:
         doc_xml.write_bytes(dom.toxml(encoding="UTF-8"))
         return merge_count, f"Simplified {merge_count} tracked changes"
 
-    except Exception as e:
+    except (DefusedXmlException, ExpatError, OSError) as e:
+        # Expected failure shapes only (malformed / unreadable XML); a bug in
+        # the merge logic itself must surface as a real traceback, not a
+        # silently-empty "0 simplified" tuple.
         return 0, f"Error: {e}"
 
 
@@ -128,11 +134,9 @@ def get_tracked_change_authors(doc_xml_path: Path) -> dict[str, int]:
         return {}
 
     try:
-        # TODO(security): switch to defusedxml.ElementTree to harden against
-        # XXE / billion-laughs in user-supplied .docx files.
-        tree = ET.parse(doc_xml_path)  # noqa: S314
+        tree = ET.parse(doc_xml_path)
         root = tree.getroot()
-    except ET.ParseError:
+    except (ET.ParseError, DefusedXmlException):
         return {}
 
     namespaces = {"w": WORD_NS}
@@ -154,9 +158,7 @@ def _get_authors_from_docx(docx_path: Path) -> dict[str, int]:
             if "word/document.xml" not in zf.namelist():
                 return {}
             with zf.open("word/document.xml") as f:
-                # TODO(security): switch to defusedxml.ElementTree to harden
-                # against XXE / billion-laughs in user-supplied .docx files.
-                tree = ET.parse(f)  # noqa: S314
+                tree = ET.parse(f)
                 root = tree.getroot()
 
                 namespaces = {"w": WORD_NS}
@@ -169,7 +171,14 @@ def _get_authors_from_docx(docx_path: Path) -> dict[str, int]:
                         if author:
                             authors[author] = authors.get(author, 0) + 1
                 return authors
-    except (zipfile.BadZipFile, ET.ParseError):
+    except (zipfile.BadZipFile, ET.ParseError, DefusedXmlException) as e:
+        # An unreadable original must not silently read as "no authors in the
+        # original": infer_author would blame every tracked change on the
+        # modifiers. Warn so the misattribution is diagnosable.
+        print(
+            f"Warning: could not read tracked-change authors from {docx_path}: {e}",
+            file=sys.stderr,
+        )
         return {}
 
 

@@ -1,0 +1,427 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openbot.invalid/agent-rules/fingerprints-v3.schema.json",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/requirements"
+    },
+    {
+      "$ref": "#/$defs/daily"
+    }
+  ],
+  "$defs": {
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "reference",
+        "scope",
+        "content_sha256"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "current-user",
+            "delegated"
+          ]
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "content_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "actor",
+        "scope",
+        "version_sha256",
+        "at",
+        "approval_ref",
+        "authority"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "actor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "approval_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authority": {
+          "$ref": "#/$defs/authority"
+        }
+      }
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "title",
+        "body",
+        "acceptance",
+        "decisions",
+        "contains",
+        "depends_on"
+      ],
+      "properties": {
+        "identity": {
+          "type": "string",
+          "pattern": "^[^/#]+/[^/#]+/[^/#]+#[1-9][0-9]*$"
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "acceptance": {
+          "type": "string"
+        },
+        "decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/decision"
+          }
+        },
+        "contains": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[^/#]+/[^/#]+/[^/#]+#[1-9][0-9]*$"
+          }
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[^/#]+/[^/#]+/[^/#]+#[1-9][0-9]*$"
+          }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "sha256",
+        "approval_ref",
+        "authority",
+        "supersedes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "spec",
+            "adr",
+            "context",
+            "approval"
+          ]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "approval_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "authority": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/authority"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "supersedes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "state",
+        "interface_sha256"
+      ],
+      "properties": {
+        "identity": {
+          "type": "string",
+          "pattern": "^[^/#]+/[^/#]+/[^/#]+#[1-9][0-9]*$"
+        },
+        "state": {
+          "enum": [
+            "open",
+            "closed"
+          ]
+        },
+        "interface_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "subject",
+        "expected",
+        "observed",
+        "source_ref"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "authorization",
+            "dependency",
+            "environment",
+            "target",
+            "api_retry",
+            "evidence"
+          ]
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected": {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
+        },
+        "observed": {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
+        },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "root",
+        "issues",
+        "sources",
+        "dependencies",
+        "policy_sha256"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "requirements-v3"
+        },
+        "root": {
+          "type": "string",
+          "pattern": "^[^/#]+/[^/#]+/[^/#]+#[1-9][0-9]*$"
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/issue"
+          },
+          "minItems": 1
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source"
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/dependency"
+          }
+        },
+        "policy_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "daily": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "issue",
+        "requirements_sha256",
+        "policy_sha256",
+        "authorization",
+        "target",
+        "dependencies",
+        "environment_sha256",
+        "evidence",
+        "conditions"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "daily-input-v3"
+        },
+        "issue": {
+          "type": "string",
+          "pattern": "^[^/#]+/[^/#]+/[^/#]+#[1-9][0-9]*$"
+        },
+        "requirements_sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "policy_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "authorization": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/authority"
+          }
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repository",
+            "ref",
+            "sha"
+          ],
+          "properties": {
+            "repository": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sha": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            }
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/dependency"
+          }
+        },
+        "environment_sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "accessible",
+              "sha256"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "accessible": {
+                "type": "boolean"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/condition"
+          }
+        }
+      }
+    }
+  }
+}

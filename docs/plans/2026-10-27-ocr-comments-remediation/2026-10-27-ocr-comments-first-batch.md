@@ -1,0 +1,39 @@
+# OCR remediation — verified safe batch
+
+> **Goal:** Fix source-confirmed OCR findings without changing public contracts or unrelated workspace state; the user separately approved the one-time derived-column backfill exception for entry 704.
+
+## Scope
+
+- Leave `ocr-comments.json` unchanged and do not run a full-repository OCR scan.
+- Preserve existing user changes and make no commit.
+- Add focused regressions for destructive cleanup, XML packing, CLI validation, and the LibreOffice shim.
+- Defer findings that still need a product, migration, or compatibility decision; record every report entry in the run ruling ledger.
+
+## Completed source fixes
+
+1. `server/src/craft/builtin-skills/pptx/scripts/clean.py`: report entries 150, 151, 152 — fail before deletion when reference XML is absent or invalid, parse slide IDs by namespace, and pre-validate every `.rels` file plus the presentation and content-type XML before cleanup.
+2. `server/src/craft/builtin-skills/pptx/scripts/office/pack.py`: entries 121 (explicit missing source path only), 122, 123, 124, 125 — preserve optional CLI behavior when no source is provided; reject a missing explicitly supplied source; preserve default-namespace text; return XML processing errors; classify CLI errors by the error prefix; reject invalid boolean values.
+3. `server/src/craft/builtin-skills/pptx/scripts/office/soffice.py`: entry 128 — put the preload library in a private temporary directory and atomically publish compiled output.
+4. `server/src/bot-services/auth.ts`: entry 1926 (partial) — return only typed credential failures as 401 and rethrow infrastructure errors. The `Retry-After` value remains fixed at the production default; custom limiter windows need an API-compatible design.
+5. `server/src/craft/builtin-skills/index.ts`: entry 2238 — propagate traversal and rendering failures; only a missing skills root is treated as an empty deployment. A focused test covers both EACCES propagation and root ENOENT.
+6. `server/src/billing/batch-partial.ts`: entry 1441 (implementation pending database verification) — settle from persisted outcome rows, so sparse recovery reports still include previously recorded billable usage. Added an integration regression for staged outcomes.
+7. `server/drizzle/0134_price_status_classification.sql` and `server/drizzle/0218_price_status_backfill_repair.sql`: entry 704 — per user decision, revise 0134 and append 0218. Within each migration transaction, temporarily disable the append-only UPDATE trigger, derive and backfill status/reason/missing dimensions from `dims`, then re-enable the trigger. Static migration regressions pass; database migration verification is blocked by missing shared-resource coordination and the repository's missing migration snapshots from 0161 onward.
+
+## Verification
+
+- Focused regression file: `server/tests/craft-pptx-scripts.test.ts` through the repository e2e runner.
+- Final server e2e regressions: 27 tests passed across price-status migration/classification and built-in skill loading; server TypeScript typecheck passed.
+- Preserve red/green evidence and skipped collection notices in `.archive/runs/2026-10-27-ocrfix-1a68e8d2/verification/`.
+- Perform a final scoped diff and report-integrity check; no commit.
+
+## Deferred decisions
+
+- Entry 704 (critical, implementation pending DB verification): the user approved editing 0134 and appending 0218 for already-applied environments; the backfills are implemented, but no isolated database migration run was possible.
+- Entry 1441 (critical, implementation pending DB verification): regression added for sparse settlement recovery; DB integration is not run until the shared database test resource can be registered and verified.
+- Entry 705 (medium): strengthen DB checks to compare missing-dimension details with `dims`; this changes persisted write rules.
+- Entry 924 (critical): the schedule sweep hands off to an orchestrator with a refusing gateway; an effective fix needs a server-owned execution handoff.
+- Entry 937 (critical): staging rollback cannot construct the source through the current CLI state gate; requires a deliberate rollback-path adjustment and regression coverage.
+- Entry 121 (high): an explicit nonexistent `--original` is now rejected; whether validation should also require `--original` when omitted remains a product behavior decision.
+- Entry 129 (high): the shim's intentional `_exit(0)` behavior can hide conversion failures; the correct status contract needs investigation.
+- Entry 153 (high): relationship retention across non-slide parts needs a representative Office package fixture before changing cleanup behavior.
+- Entry 1926 (high, partial): infrastructure errors now reach the server error handler; the report's custom-window `Retry-After` mismatch remains and changing the limiter/error contract needs a compatible design.

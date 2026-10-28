@@ -31,6 +31,15 @@ export type HeadlessSignInRequester = {
 export const SIGN_IN_TOOL_DESCRIPTION =
   "Ask the person you work for to sign you in to a website. They get a private sign-in form outside this conversation (or take over the browser), and their login is typed straight into your browser by the computer. You never see the username, password or code, and must never ask for them any other way. Open the site's sign-in page first, then call this with the site's address. This turn pauses until they answer; you are then told only whether it worked.";
 
+/** A model-chosen label reaches the person's screen; capped so it cannot carry an essay. */
+const PERSON_LABEL_MAX_CHARS = 80;
+export function clipPersonLabel(label: string): string {
+  const chars = Array.from(label);
+  return chars.length > PERSON_LABEL_MAX_CHARS
+    ? `${chars.slice(0, PERSON_LABEL_MAX_CHARS).join("")}…`
+    : label;
+}
+
 /** Shipped browser/file/command tools, with identity bound before the model supplies arguments. */
 export function createHeadlessComputerTools(options: {
   gateway: ComputerGateway;
@@ -230,7 +239,9 @@ export function createHeadlessComputerTools(options: {
       async (input) =>
         waiting(
           await gateway.requestSecret(botId, actor, input),
-          `The person must enter ${input.label} directly into the page.`,
+          // The label is model-chosen text shown to the person in a secret-entry
+          // suspension: capped so it cannot carry an unbounded injected instruction.
+          `The person must enter ${clipPersonLabel(input.label)} directly into the page.`,
           "computer_secret",
         ),
     ),

@@ -673,7 +673,8 @@ export function createOpenMuseFileTenancyService(deps: {
           !existing ||
           existing.tenantId !== scope.tenantId ||
           existing.workspaceId !== scope.workspaceId ||
-          existing.principalId !== scope.principalId
+          existing.principalId !== scope.principalId ||
+          existing.userId !== scope.actorId
         ) {
           throw new Error(
             `${OPENMUSE_FILE_SCOPE_MISMATCH}: document action is already owned by a different scope`,

@@ -37,6 +37,7 @@ export function createResponsibilityRoutes(
       {
         type: "responsibility-route-error",
         errorType: error.name,
+        errorMessage: error instanceof Error ? error.message : String(error),
         timestamp: new Date().toISOString(),
       },
       "responsibility-route-error",

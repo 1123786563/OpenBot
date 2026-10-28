@@ -317,13 +317,12 @@ function basisUnknownDimensions(
   record: AudioCapabilityEvidenceRecord,
   dims: PriceSnapshotDims,
 ): { dimension: PriceDimension; reason: string }[] {
-  return record.billedDimensions
-    .filter((dimension) => dims[dimension].status === "unknown")
-    .map((dimension) => ({
-      dimension,
-      reason:
-        dims[dimension].status === "unknown" ? dims[dimension].reason : "",
-    }));
+  return record.billedDimensions.flatMap((dimension) => {
+    const state = dims[dimension];
+    return state.status === "unknown"
+      ? [{ dimension, reason: state.reason }]
+      : [];
+  });
 }
 
 /**
@@ -343,8 +342,10 @@ export function enableableAudioPaths(
       // The tier table is the synthesis path's own price basis: empty by construction
       // until the wire grows audio fields, and an empty table enables nothing (13.1).
       if (speechTierPriceTableFromSnapshot(dims).length === 0) return false;
-      if (dims.surcharge_per_request.status === "unknown") return false;
-      return true;
+      // A fillable table prices the characters, not the record's other billed dimensions:
+      // every one of them must still be KNOWN (an explicit "0" included) — unknown never
+      // degrades to a zero cost, here either.
+      return basisUnknownDimensions(record, dims).length === 0;
     }
     return basisUnknownDimensions(record, dims).length === 0;
   });
@@ -367,7 +368,10 @@ export function audioPathsWithEvidenceGaps(
       if (speechTierPriceTableFromSnapshot(dims).length === 0) {
         return {
           path: record.path,
+          // The record's own structural gaps stand beside the basis gap — replacing
+          // them here would drop the meter/admission evidence from the report.
           missingItems: [
+            ...structural,
             {
               code: "no_wire_price_source" as const,
               detail:

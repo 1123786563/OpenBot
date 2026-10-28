@@ -344,9 +344,13 @@ export function createHarnessControl(
       fixturePromise = undefined;
       try {
         await (await pending)?.dispose();
-      } catch {
-        // createIsolationFixture already cleans up its own partial state;
-        // dispose failures here cannot invalidate the produced evidence.
+      } catch (error) {
+        // createIsolationFixture already cleans up its own partial state, but
+        // leftovers on the shared test database or restricted roles must stay
+        // visible: the next run may otherwise reuse a poisoned run state.
+        process.stderr.write(
+          `HARNESS_DISPOSE_FAILED:${messageOf(error)}\n`,
+        );
       }
     },
   };
@@ -996,7 +1000,19 @@ async function main(): Promise<void> {
 }
 
 function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  // Walk the cause chain: runIsolationScenario wraps adapter errors in
+  // ISOLATION_SCENARIO_FAILED:<domain>:<scenario>, and the adapter's real
+  // failure only survives as `cause`.
+  const parts: string[] = [];
+  let current: unknown = error;
+  let depth = 0;
+  while (current instanceof Error && depth < 5) {
+    parts.push(current.message);
+    current = current.cause;
+    depth += 1;
+  }
+  if (typeof current === "string" && current) parts.push(current);
+  return parts.length > 0 ? parts.join(" <- ") : String(error);
 }
 
 if (import.meta.main) {

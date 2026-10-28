@@ -1,5 +1,6 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { HTTPException } from "hono/http-exception";
 import { getLogger } from "../../../shared/logger";
 import type { AppVariables } from "../auth/public";
 import type { ProactiveEngine } from "./engine";
@@ -17,6 +18,9 @@ export function createProactiveRoutes(
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", requireUser, bodyLimit({ maxSize: 8_192 }));
   routes.onError((error, context) => {
+    // The body limit's 413 is its own answer, not a deployment outage: swallowing it into
+    // the 503 below would tell the client to retry a request that can never fit.
+    if (error instanceof HTTPException) return error.getResponse();
     if (error instanceof ProactiveNotFoundError)
       return context.json({ error: error.message }, 404);
     if (error instanceof ProactiveRefusedError)

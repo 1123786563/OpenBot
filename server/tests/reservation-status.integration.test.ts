@@ -589,6 +589,19 @@ test("the status surface refuses malformed and tampered shapes with 422 and no w
       { grantId: world.grantId, reservationId: "cr-nothex" },
       "request_invalid",
     ],
+    // A non-string attemptId is a malformed request, not a crash: the reservationId
+    // branch has always type-guarded its id, and the attemptId branch must answer the
+    // same closed-vocabulary refusal instead of reaching `.startsWith` with a number.
+    [
+      "non-string attempt id",
+      { grantId: world.grantId, attemptId: 123 },
+      "request_invalid",
+    ],
+    [
+      "null attempt id",
+      { grantId: world.grantId, attemptId: null },
+      "request_invalid",
+    ],
     [
       "self-reported account key",
       {

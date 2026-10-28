@@ -21,15 +21,11 @@ const logger = getLogger("server");
 import type { CraftConfig } from "./config";
 import type { SessionFlowLocks } from "./locks";
 import type { CraftSessionManager } from "./manager";
-import { generateSessionName } from "./naming";
+import { generateSessionName, MAX_NAME_LENGTH } from "./naming";
 import type { SandboxGateway } from "./sandbox-gateway";
-import { sandboxScopeRefusalOf, scopeRefusalResponse } from "./scope-refusal";
+import { assertNotScopeRefusal, sandboxScopeRefusalOf } from "./scope-refusal";
 import { sessionRuntimeStale } from "./skills";
-import {
-  deleteSnapshots,
-  restoreLatestSnapshot,
-  takeSnapshot,
-} from "./snapshot";
+import { restoreLatestSnapshot, takeSnapshot } from "./snapshot";
 import type { ObjectStore } from "./storage/object-store";
 import type { CraftSessionRow, CraftStore } from "./store";
 import type { TurnStateStore } from "./turn-state";
@@ -205,7 +201,13 @@ export function createSessionRoutes(
     const body = (await context.req.json().catch(() => ({}))) as {
       name?: unknown;
     };
-    const name = typeof body.name === "string" ? body.name : null;
+    // Same cap the auto-namer enforces: an unbounded name lands in every list
+    // response, every load.
+    let name = typeof body.name === "string" ? body.name.trim() : null;
+    if (name !== null && name.length === 0) name = null;
+    if (name !== null && name.length > MAX_NAME_LENGTH) {
+      name = `${name.slice(0, MAX_NAME_LENGTH - 3)}...`;
+    }
     try {
       const session = await deps.locks.withSessionCreationLock(
         actor.id,
@@ -226,8 +228,9 @@ export function createSessionRoutes(
       // #618 (FR-F1): a scopeless deployment is an answerable, admin-fixable condition —
       // the fixed sentence as 503, not the generic 500 T2 saw swallow it. Like the file
       // face, no log line and no echoed value: the sentence IS the reason and names none.
-      const refusalResponse = scopeRefusalResponse(context, error);
-      if (refusalResponse) return refusalResponse;
+      // The guard's throw is the answer itself (#656 D2) — it outranks the 500 mask
+      // by construction.
+      assertNotScopeRefusal(error);
       logger.error(
         { error: error instanceof Error ? error.stack : String(error) },
         "[craft] session creation failed",
@@ -270,11 +273,13 @@ export function createSessionRoutes(
     const body = (await context.req.json().catch(() => ({}))) as {
       name?: unknown;
     };
-    if (typeof body.name !== "string" || body.name.length === 0) {
+    if (typeof body.name !== "string" || body.name.trim().length === 0) {
       return context.json({ error: "name is required" }, 400);
     }
     const updated = await deps.store.updateSession(sessionId, {
-      name: body.name,
+      // Same cap and normalization as create; blank control characters never
+      // belong in a roster row.
+      name: body.name.replace(/\s+/g, " ").trim().slice(0, MAX_NAME_LENGTH),
     });
     const row = updated ?? session;
     return context.json(sessionResponse(row, await skillsStaleFor(row)));
@@ -329,13 +334,32 @@ export function createSessionRoutes(
   app.delete("/sessions/:sessionId", async (context) => {
     const actor = context.var.actor;
     const sessionId = context.req.param("sessionId");
-    const deleted = await deps.store.deleteSession(sessionId, actor.id);
+    const { deleted, snapshots } = await deps.store.deleteSession(
+      sessionId,
+      actor.id,
+    );
     if (!deleted) {
       return context.json({ error: "Session not found" }, 404);
     }
-    // Force-free the snapshot blobs before the row cascade drops their rows — the object store
-    // has no FK, so an orphaned archive is otherwise permanent.
-    await deleteSnapshots(snapshotCtx(), sessionId).catch(() => undefined);
+    // The rows came back from the delete itself: the object store has no FK, so each
+    // archive must be freed from a row we still hold — one the cascade had dropped
+    // first would be an orphan for good.
+    // The rows are gone; a blob that refuses to die here is an orphan no later
+    // code can reach — it must at least be findable in the logs.
+    await Promise.all(
+      snapshots.map((snapshot) =>
+        deps.objectStore.delete(snapshot.storagePath).catch((error) => {
+          getLogger("server").warn(
+            {
+              type: "craft-session-snapshot-orphan",
+              storagePath: snapshot.storagePath,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            "craft-session-snapshot-orphan",
+          );
+        }),
+      ),
+    );
     return context.body(null, 204);
   });
 
@@ -393,8 +417,9 @@ export function createSessionRoutes(
     } catch (error) {
       // #618 (FR-F1): same recognizer, same 503, before the generic 502 — the snapshot
       // dial is an outbound request like any other and must not wear "Snapshot failed".
-      const refusalResponse = scopeRefusalResponse(context, error);
-      if (refusalResponse) return refusalResponse;
+      // The guard's throw is the 503 itself (#656 D2), so the ordering below is
+      // structural rather than remembered.
+      assertNotScopeRefusal(error);
       logger.error({ error }, "[craft] snapshot failed");
       return context.json({ error: "Snapshot failed" }, 502);
     }
@@ -421,8 +446,11 @@ export function createSessionRoutes(
         }),
       );
     } catch (error) {
-      const refusalResponse = scopeRefusalResponse(context, error);
-      if (refusalResponse) return refusalResponse;
+      // The rethrow entrance keeps its shape (#656 D2 hard constraint): the
+      // guard answers a refusal as its own 503; everything else — including the
+      // wrap shapes the wake meets — passes through to the global error face,
+      // untouched, exactly as before.
+      assertNotScopeRefusal(error);
       throw error;
     }
   });
@@ -467,8 +495,8 @@ export function createSessionRoutes(
       // through the gateway — a scopeless deployment answers the fixed 503 sentence
       // BEFORE the generic 502, the same contract create/snapshot/restore already
       // carry (the turn face carries the refusal when the person actually acts).
-      const refusalResponse = scopeRefusalResponse(context, error);
-      if (refusalResponse) return refusalResponse;
+      // The guard's throw makes the precedence structural (#656 D2).
+      assertNotScopeRefusal(error);
       logger.error({ error }, "[craft] skills reload failed");
       return context.json({ error: "Failed to reload session." }, 502);
     }

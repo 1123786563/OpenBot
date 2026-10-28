@@ -86,6 +86,17 @@ export type GatewayProbeReasonCode =
   | "gateway_probe_invalid_body"
   | "gateway_probe_response_too_large";
 
+/** The closed reason-code vocabulary, so a stored row can be validated against the set. */
+const GATEWAY_PROBE_REASON_CODES = [
+  "gateway_probe_ok",
+  "gateway_probe_unauthorized",
+  "gateway_probe_connection_failed",
+  "gateway_probe_timeout",
+  "gateway_probe_unexpected_status",
+  "gateway_probe_invalid_body",
+  "gateway_probe_response_too_large",
+] as const satisfies readonly GatewayProbeReasonCode[];
+
 /** Why no probe ran at all. These name this deployment's gaps, not the gateway's answers. */
 export type GatewayProbeNotReadyReasonCode =
   | "gateway_probe_endpoint_not_configured"
@@ -132,9 +143,13 @@ function isTimeoutError(error: unknown): boolean {
 
 /** Drop the response's body without reading it into memory. */
 function discardBody(response: Response): Promise<void> {
-  return response.body
-    ? response.body.cancel().then(() => undefined)
-    : Promise.resolve();
+  if (!response.body) return Promise.resolve();
+  // Cancelling only releases the connection; its failure must never reshape an
+  // already-classified answer.
+  return response.body.cancel().then(
+    () => undefined,
+    () => undefined,
+  );
 }
 
 /**
@@ -157,13 +172,15 @@ async function readBodyCapped(
       if (done) break;
       total += value.byteLength;
       if (total > cap) {
-        await reader.cancel();
+        await reader.cancel().catch(() => {});
         return { ok: false, reason: "too_large" };
       }
       chunks.push(value);
     }
   } catch {
-    // The headers promised a body the connection never finished delivering.
+    // The headers promised a body the connection never finished delivering. Release the
+    // reader so the connection can be reclaimed instead of left hanging.
+    await reader.cancel().catch(() => {});
     return { ok: false, reason: "unreadable" };
   }
   const merged = new Uint8Array(total);
@@ -238,16 +255,26 @@ export async function probeGatewayManagementEndpoint(options: {
   // stalls forever is a timeout, not a hung probe. The signal bound to the fetch does not
   // reach every stream read on every runtime, so the budget is enforced here as well.
   const remainingMs = config.requestTimeoutMs - (now().getTime() - startedAt);
+  // The losing timer of the race must be cleared, or one stale handle per probe lingers
+  // until it fires, holding the event loop in scripts and tests.
+  let budgetTimer: ReturnType<typeof setTimeout> | undefined;
   const body = await Promise.race([
     readBodyCapped(response, GATEWAY_PROBE_MAX_BODY_BYTES),
     new Promise<never>((_, reject) => {
-      setTimeout(() => reject(timeoutError()), Math.max(1, remainingMs));
+      budgetTimer = setTimeout(
+        () => reject(timeoutError()),
+        Math.max(1, remainingMs),
+      );
     }),
-  ]).catch((error: unknown) => {
-    if (isTimeoutError(error)) return "timeout" as const;
-    void response.body?.cancel().catch(() => {});
-    return "invalid_body" as const;
-  });
+  ])
+    .catch((error: unknown) => {
+      if (isTimeoutError(error)) return "timeout" as const;
+      void response.body?.cancel().catch(() => {});
+      return "invalid_body" as const;
+    })
+    .finally(() => {
+      if (budgetTimer !== undefined) clearTimeout(budgetTimer);
+    });
 
   if (body === "timeout") {
     return finish("timeout", "gateway_probe_timeout");
@@ -308,8 +335,14 @@ export function gatewayProbeRecordFromStored(
     typeof record.status !== "string" ||
     !statuses.includes(record.status) ||
     typeof record.reasonCode !== "string" ||
-    !record.reasonCode.startsWith("gateway_probe_") ||
+    !GATEWAY_PROBE_REASON_CODES.includes(
+      record.reasonCode as GatewayProbeReasonCode,
+    ) ||
+    // The store's anti-overwrite ordering compares these strings textually, so only the
+    // canonical `toISOString()` Z form is accepted — a parseable but non-canonical stamp
+    // would silently lose the ordering guarantee.
     typeof record.checkedAt !== "string" ||
+    !record.checkedAt.endsWith("Z") ||
     Number.isNaN(Date.parse(record.checkedAt)) ||
     typeof record.configVersion !== "number" ||
     !Number.isInteger(record.configVersion) ||

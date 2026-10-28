@@ -378,6 +378,9 @@ export function createJobControlService(
           claimedByKind: null,
           claimedBy: null,
           leaseUntil: null,
+          // 重试是显式重开：清掉完结标记，让下一次 claimJobLease 能接管
+          // （claim 侧已禁止对完结租约的静默复活）。
+          finishedAt: null,
           lastError: null,
           updatedAt: sql`now()`,
         })

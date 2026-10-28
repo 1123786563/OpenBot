@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq, gt, isNull, lt, notInArray, sql } from "drizzle-orm";
+import { getLogger } from "../../../shared/logger";
 import { CredentialRefusedError, type CredentialStore } from "../credentials";
 import type { Database } from "../db/client";
 import {
@@ -23,6 +24,8 @@ import {
   type LinkMethod,
   type LinkStatus,
 } from "./types";
+
+const log = getLogger("server");
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Revoke = Pick<CredentialStore, "revoke">;
@@ -498,18 +501,23 @@ export function createIdentityStore(database: Database, credentials: Revoke) {
           "This provider does not accept that kind of proof.",
         );
       const code = randomUUID();
+      // The stale-code sweep touches nobody's live code and holds no per-user lock, so it
+      // runs outside the advisory-lock transaction: inside one it makes every concurrent
+      // issue queue behind a whole-table delete. A sweep that fails only leaves the sweep
+      // for the next issue — the insert below never depends on it.
+      await database
+        .delete(identityLinkChallenges)
+        .where(
+          lt(
+            identityLinkChallenges.expiresAt,
+            sql`clock_timestamp() - interval '1 day'`,
+          ),
+        )
+        .catch((error: unknown) =>
+          log.warn({ err: error }, "Could not sweep stale link codes."),
+        );
       return database.transaction(async (transaction) => {
         await identityUserLock(transaction, userId);
-        // Nothing else deletes an expired code (a person has at most one per provider, but one
-        // never redeemed stays forever), so each issue clears those over a day stale.
-        await transaction
-          .delete(identityLinkChallenges)
-          .where(
-            lt(
-              identityLinkChallenges.expiresAt,
-              sql`clock_timestamp() - interval '1 day'`,
-            ),
-          );
         const [challenge] = await transaction
           .insert(identityLinkChallenges)
           .values({

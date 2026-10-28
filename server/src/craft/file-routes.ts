@@ -22,7 +22,7 @@ import { safeJoin } from "./artifact-routes";
 import type { CraftConfig } from "./config";
 import { packDirectoryZip, WorkspaceListingError } from "./directory-archive";
 import type { SandboxGateway } from "./sandbox-gateway";
-import { scopeRefusalResponse } from "./scope-refusal";
+import { assertNotScopeRefusal } from "./scope-refusal";
 import type { CraftStore } from "./store";
 import {
   collisionFreeName,
@@ -88,15 +88,31 @@ export function createFileRoutes(
     // its own ceiling; here the ceiling is ours to state. The verdict is onyx's own — an
     // oversize file is 400 with validate_file's sentence (413 stays reserved for the
     // sandbox transfer ceiling that refuses mid-write below).
-    const declaredLength = Number(
-      context.req.raw.headers.get("content-length") ?? "0",
-    );
-    if (declaredLength > deps.config.maxUploadFileSizeBytes + 65_536) {
+    // shortcut: a missing Content-Length (this repo's own test client omits it, and a
+    // chunked request can too) reads as no declared size and rides the post-buffer
+    // validateFileSize ceiling; a streamed byte cap needs framework support, not this handler.
+    const declaredHeader = context.req.raw.headers.get("content-length");
+    const declaredLength = declaredHeader === null ? 0 : Number(declaredHeader);
+    if (
+      Number.isFinite(declaredLength) &&
+      declaredLength > deps.config.maxUploadFileSizeBytes + 65_536
+    ) {
       return context.json(
         {
           error: `File size exceeds maximum allowed size of ${deps.config.maxUploadFileSizeBytes} bytes`,
         },
         400,
+      );
+    }
+
+    // The session belongs to this actor and has a sandbox BEFORE the body buffers:
+    // a request at a nonexistent session must 404 before its bytes are read into memory.
+    const { session, fileApi } = await resolve(sessionId, actor.id);
+    if (!session) return context.json({ error: "Session not found" }, 404);
+    if (!fileApi) {
+      return context.json(
+        { error: "The session's sandbox is not available." },
+        503,
       );
     }
 
@@ -124,15 +140,6 @@ export function createFileRoutes(
 
     // Sanitize BEFORE any filesystem decision (onyx api.py:774).
     const safeName = sanitizeFilename(entry.name);
-
-    const { session, fileApi } = await resolve(sessionId, actor.id);
-    if (!session) return context.json({ error: "Session not found" }, 404);
-    if (!fileApi) {
-      return context.json(
-        { error: "The session's sandbox is not available." },
-        503,
-      );
-    }
 
     const directory = sessionDirectory(
       sessionId,
@@ -177,10 +184,10 @@ export function createFileRoutes(
       await fileApi.writeFileBytes(target, bytes);
     } catch (error) {
       // #618: the scope refusal answers as its own 503 before the write failure's
-      // generic 502 can wear it (R1-F2); like the turn face, no log line — the fixed
-      // sentence IS the reason, and it names no value to leak.
-      const refusalResponse = scopeRefusalResponse(context, error);
-      if (refusalResponse) return refusalResponse;
+      // generic 502 can wear it (R1-F2); the guard's throw is that answer (#656
+      // D2) — like the turn face, no log line, the fixed sentence IS the reason,
+      // and it names no value to leak.
+      assertNotScopeRefusal(error);
       const message = error instanceof Error ? error.message : String(error);
       if (/answered 413/.test(message)) {
         return context.json(
@@ -286,9 +293,9 @@ export function createFileRoutes(
       // #618 (r3): r2 disclosed this face as the same masking shape R1-F2 fixed for
       // upload and archive — the refusal must not wear this face's "could not be
       // deleted" 502. Same no-log contract: the fixed sentence IS the reason, and
-      // it names no value to leak.
-      const refusalResponse = scopeRefusalResponse(context, error);
-      if (refusalResponse) return refusalResponse;
+      // it names no value to leak; the guard's throw outranks the 502 by
+      // construction (#656 D2).
+      assertNotScopeRefusal(error);
       return context.json({ error: "The file could not be deleted." }, 502);
     }
     if (!deleted) {
@@ -351,9 +358,9 @@ export function createFileRoutes(
         // #618: the refusal outranks BOTH masks below (R1-F2) — a fail-closed
         // deployment must read as "finish the setup" (503), not as "could not be
         // read" (502), and least of all as onyx's "does not exist" 404 the walk's
-        // listing wrap would otherwise answer for it.
-        const refusalResponse = scopeRefusalResponse(context, error);
-        if (refusalResponse) return refusalResponse;
+        // listing wrap would otherwise answer for it. The guard's throw makes
+        // that ordering structural, not remembered (#656 D2).
+        assertNotScopeRefusal(error);
         // ONLY the root listing's failure is onyx's None → 404; anything past it
         // (the writer's ceiling, an unexpected walk failure) is a real error that
         // must not wear the "does not exist" mask — the 502 says the directory

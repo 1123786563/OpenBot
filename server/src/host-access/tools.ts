@@ -90,27 +90,36 @@ async function answer(
   });
   try {
     const result = await run();
-    await auditHostAccess(audit, {
-      operation: audit.operation,
-      grantId: audit.grantId,
-      outcome: "succeeded",
-    });
+    try {
+      await auditHostAccess(audit, {
+        operation: audit.operation,
+        grantId: audit.grantId,
+        outcome: "succeeded",
+      });
+    } catch {
+      // The operation already happened; a broken audit trail must not turn a success into a
+      // reported failure.
+    }
     return resultText(result);
   } catch (error) {
     if (error instanceof HeadlessToolSuspension) throw error;
     const reason =
       error instanceof Error ? error.message : "That host operation failed.";
-    await auditHostAccess(audit, {
-      operation: audit.operation,
-      grantId: audit.grantId,
-      outcome:
-        error instanceof HostAccessRefusedError
-          ? reason.toLowerCase().includes("stop")
-            ? "stopped"
-            : "refused"
-          : "failed",
-      reason,
-    });
+    try {
+      await auditHostAccess(audit, {
+        operation: audit.operation,
+        grantId: audit.grantId,
+        outcome:
+          error instanceof HostAccessRefusedError
+            ? reason.toLowerCase().includes("stop")
+              ? "stopped"
+              : "refused"
+            : "failed",
+        reason,
+      });
+    } catch {
+      // The verdict below names the real outcome; an audit-write fault must not mask it.
+    }
     if (error instanceof HostAccessRefusedError) {
       return `${REFUSAL_MARKER} ${error.message}`;
     }
@@ -130,6 +139,13 @@ export function hostAccessTools(options: {
   const grants = status.grants.filter(
     (grant) => grant.botId === botId && !grant.revoked,
   );
+  // Re-read per execute: a grant revoked (or the desktop disconnecting) while the tools sat
+  // assembled must not keep answering from the construction-time snapshot. The per-call
+  // broker re-validation stays callHost's job; this keeps what we hand out live.
+  const liveGrants = () =>
+    broker
+      .statusFor(actorId)
+      .grants.filter((grant) => grant.botId === botId && !grant.revoked);
   const audit = (operation: string, grantId?: string) => ({
     auditStore: options.auditStore,
     initiator: options.initiator,
@@ -147,7 +163,8 @@ export function hostAccessTools(options: {
         "List the host folders this person has explicitly granted to this Bot, including the grantId to use with host file and command tools.",
       parameters: empty,
       execute: async () => {
-        if (grants.length === 0) {
+        const current = liveGrants();
+        if (current.length === 0) {
           await auditHostAccess(audit("list_folders"), {
             operation: "list_folders",
             outcome: "refused",
@@ -160,8 +177,8 @@ export function hostAccessTools(options: {
           outcome: "succeeded",
         });
         return JSON.stringify({
-          connected: status.connected,
-          folders: grants.map((grant) => ({
+          connected: broker.statusFor(actorId).connected,
+          folders: current.map((grant) => ({
             grantId: grant.id,
             displayName: grant.displayName,
           })),
@@ -180,14 +197,20 @@ export function hostAccessTools(options: {
         "List files in a host folder this person granted to this Bot. First call host_list_folders for grantId values.",
       parameters: grantPath,
       execute: async (args) => {
-        const parsed = grantPath.parse(args ?? {});
-        return answer(audit("list_files", parsed.grantId), () =>
+        const parsed = grantPath.safeParse(args ?? {});
+        if (!parsed.success)
+          return answer(audit("list_files"), async () => {
+            throw new HostAccessRefusedError(
+              "Supply a grant id (from host_list_folders) and a folder path.",
+            );
+          });
+        return answer(audit("list_files", parsed.data.grantId), () =>
           broker.callHost({
             kind: "list_files",
             botId,
             actorId,
-            grantId: parsed.grantId,
-            relativePath: parsed.path ?? ".",
+            grantId: parsed.data.grantId,
+            relativePath: parsed.data.path ?? ".",
           }),
         );
       },
@@ -199,14 +222,20 @@ export function hostAccessTools(options: {
         "Read one file from a granted host folder. Use only paths relative to that folder.",
       parameters: readFile,
       execute: async (args) => {
-        const parsed = readFile.parse(args ?? {});
-        return answer(audit("read_file", parsed.grantId), () =>
+        const parsed = readFile.safeParse(args ?? {});
+        if (!parsed.success)
+          return answer(audit("read_file"), async () => {
+            throw new HostAccessRefusedError(
+              "Supply a grant id (from host_list_folders) and a file path.",
+            );
+          });
+        return answer(audit("read_file", parsed.data.grantId), () =>
           broker.callHost({
             kind: "read_file",
             botId,
             actorId,
-            grantId: parsed.grantId,
-            relativePath: parsed.path,
+            grantId: parsed.data.grantId,
+            relativePath: parsed.data.path,
           }),
         );
       },
@@ -218,15 +247,21 @@ export function hostAccessTools(options: {
         "Request an exact native-owner-confirmed file write in a granted host folder. The native app backs up the original and refuses unless the owner approves this operation.",
       parameters: writeFile,
       execute: async (args) => {
-        const parsed = writeFile.parse(args ?? {});
-        return answer(audit("write_file", parsed.grantId), () =>
+        const parsed = writeFile.safeParse(args ?? {});
+        if (!parsed.success)
+          return answer(audit("write_file"), async () => {
+            throw new HostAccessRefusedError(
+              "Supply a grant id, a file path and the exact content to write.",
+            );
+          });
+        return answer(audit("write_file", parsed.data.grantId), () =>
           broker.callHost({
             kind: "write_file",
             botId,
             actorId,
-            grantId: parsed.grantId,
-            relativePath: parsed.path,
-            content: parsed.content,
+            grantId: parsed.data.grantId,
+            relativePath: parsed.data.path,
+            content: parsed.data.content,
           }),
         );
       },
@@ -238,16 +273,22 @@ export function hostAccessTools(options: {
         "Request an exact native-owner-confirmed shell command in the offline sandbox for a granted host folder. Set writable true only if the command needs write access; native still prompts before running.",
       parameters: runCommand,
       execute: async (args) => {
-        const parsed = runCommand.parse(args ?? {});
-        return answer(audit("run_command", parsed.grantId), () =>
+        const parsed = runCommand.safeParse(args ?? {});
+        if (!parsed.success)
+          return answer(audit("run_command"), async () => {
+            throw new HostAccessRefusedError(
+              "Supply a grant id and the command to run.",
+            );
+          });
+        return answer(audit("run_command", parsed.data.grantId), () =>
           broker.callHost({
             kind: "run_command",
             botId,
             actorId,
-            grantId: parsed.grantId,
-            relativePath: parsed.path,
-            command: parsed.command,
-            writable: parsed.writable === true,
+            grantId: parsed.data.grantId,
+            relativePath: parsed.data.path,
+            command: parsed.data.command,
+            writable: parsed.data.writable === true,
           }),
         );
       },

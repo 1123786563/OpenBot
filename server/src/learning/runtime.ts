@@ -26,21 +26,24 @@ export type AcquireLearnedSkills = (
   signal?: AbortSignal,
 ) => Promise<LearnedSkillInvocation | undefined>;
 
+const LOAD_SKILL_TOOL = "copilotkit_load_skill";
+const READ_SKILL_FILE_TOOL = "copilotkit_read_skill_file";
+/** The contract surface the framework filters on; the two names above are its only source. */
 export const LEARNED_SKILL_TOOL_NAMES = new Set([
-  "copilotkit_load_skill",
-  "copilotkit_read_skill_file",
+  LOAD_SKILL_TOOL,
+  READ_SKILL_FILE_TOOL,
 ]);
 const skillArgs = z.object({ skill_name: z.string().min(1) }).strict();
 const fileArgs = skillArgs.extend({ path: z.string().min(1) }).strict();
 const skillTools: readonly Tool[] = [
   {
-    name: "copilotkit_load_skill",
+    name: LOAD_SKILL_TOOL,
     description:
       "Load a published learned Skill's instructions and supporting file names.",
     parameters: z.toJSONSchema(skillArgs),
   },
   {
-    name: "copilotkit_read_skill_file",
+    name: READ_SKILL_FILE_TOOL,
     description:
       "Read one supporting text file from a published learned Skill.",
     parameters: z.toJSONSchema(fileArgs),
@@ -108,7 +111,7 @@ export function createLearningRuntime(options: {
     typeof clientOption === "function" ? clientOption() : clientOption;
   const registries = new Map<string, SkillRegistry>();
   const registryKey = (target: LearningTarget) =>
-    JSON.stringify([target.containerId, target.revision]);
+    `${target.containerId}\n${target.revision ?? ""}`;
   const registryFor = (target: LearningTarget) => {
     const key = registryKey(target);
     let registry = registries.get(key);
@@ -122,6 +125,15 @@ export function createLearningRuntime(options: {
           : { freshnessWindowMs: options.freshnessWindowMs }),
       });
       registries.set(key, registry);
+      // One live registry per container: a registry pinned to an older revision is
+      // unreachable once the target moves on, so it is dropped instead of accumulating.
+      for (const existingKey of registries.keys()) {
+        if (
+          existingKey !== key &&
+          existingKey.split("\n")[0] === target.containerId
+        )
+          registries.delete(existingKey);
+      }
     }
     return registry;
   };
@@ -140,12 +152,22 @@ export function createLearningRuntime(options: {
       catalog: snapshot.skills.length > 0 ? formatSkillCatalog(snapshot) : "",
       tools: snapshot.skills.length > 0 ? skillTools : [],
       execute: async (name, args) => {
-        if (name === "copilotkit_load_skill") {
+        if (name === LOAD_SKILL_TOOL) {
           return loadSkill(snapshot, skillArgs.parse(args).skill_name);
         }
-        if (name === "copilotkit_read_skill_file") {
+        if (name === READ_SKILL_FILE_TOOL) {
           const parsed = fileArgs.parse(args);
-          return readSkillFile(snapshot, parsed.skill_name, parsed.path);
+          // Local containment check beside the SDK's own: the model supplies this path, so
+          // absolute paths and upward segments never reach the snapshot reader.
+          const path = parsed.path;
+          if (
+            path.startsWith("/") ||
+            /^[a-zA-Z]:/.test(path) ||
+            path.split(/[\\/]/).includes("..")
+          ) {
+            throw new Error("That path is outside the Skill's files.");
+          }
+          return readSkillFile(snapshot, parsed.skill_name, path);
         }
         throw new Error("That is not a learned Skill tool.");
       },
@@ -173,21 +195,19 @@ export function createLearningRuntime(options: {
         });
         exists = true;
       } catch (error) {
-        if (
-          !(
-            error instanceof Error &&
-            error.name === "PlatformRequestError" &&
-            "status" in error &&
-            error.status === 404
-          )
-        )
-          throw error;
+        // 404 is judged by the structured status field alone: pinning the error class name
+        // too would read "thread exists" as a real fault when the SDK reshapes its errors.
+        const status =
+          typeof error === "object" && error !== null && "status" in error
+            ? (error as { status?: unknown }).status
+            : undefined;
+        if (status !== 404) throw error;
       }
       const containerId = await store.bindThread({
         userId: input.userId,
         threadId: input.threadId,
         agentId: input.agentId,
-        containerId: exists ? null : (target?.containerId ?? null),
+        containerId: exists ? null : target.containerId,
       });
       return containerId ?? undefined;
     },

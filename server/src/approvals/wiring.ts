@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import { getLogger } from "@openbot/shared/logger";
 import type { HeadlessTool } from "@openbot/toolkit/headless-tools";
 import type { IntelligenceLike } from "@openbot/toolkit/run-turn";
 import { type RunAssertion, readRunAssertion } from "../agents/callback-token";
@@ -54,6 +55,7 @@ export function createServerApprovalService(deps: {
     routineIntelligence,
     approvalComputerTools,
   } = deps;
+  const log = getLogger("server");
   return createApprovalService(
     {
       ...storedApprovals,
@@ -67,6 +69,24 @@ export function createServerApprovalService(deps: {
             "openbotRun" in forwarded
               ? readRunAssertion(forwarded.openbotRun, config.keyEncryptionKey)
               : null;
+          if (
+            forwarded &&
+            typeof forwarded === "object" &&
+            "openbotRun" in forwarded &&
+            (!signed ||
+              signed.actorId !== action.actorId ||
+              signed.botId !== action.botId)
+          )
+            // The fallback below is by design, but it must stay tellable apart
+            // from a real verification in the logs.
+            log.warn(
+              {
+                type: "approval-run-assertion-unverified",
+                context: { requestId: request.id, botId: action.botId },
+                timestamp: new Date().toISOString(),
+              },
+              "approval-run-assertion-unverified",
+            );
           const run =
             signed &&
             signed.actorId === action.actorId &&
@@ -102,6 +122,21 @@ export function createServerApprovalService(deps: {
                 text: `${botName} asks for approval to use ${action.toolRef}. Open the Bot's page in OpenBot to review this action.`,
               },
             );
+          else
+            // The approval still pends, but the person is never told; leave a
+            // trace instead of a silent gap.
+            log.warn(
+              {
+                type: "approval-notice-unsent",
+                context: {
+                  requestId: request.id,
+                  botId: action.botId,
+                  hasSource: source !== null,
+                },
+                timestamp: new Date().toISOString(),
+              },
+              "approval-notice-unsent",
+            );
         }
         return request;
       },
@@ -124,19 +159,33 @@ export function createServerApprovalService(deps: {
       // the tool as soon as the call arrives. A call that is not saved yet is waited for briefly; one
       // that never appears is refused below.
       if (!routineIntelligence)
-      throw new ApprovalRefusedError(
-        "Resuming a computer tool needs an Intelligence deployment.",
-      );
-    let history = await routineIntelligence.getThreadMessages({
+        throw new ApprovalRefusedError(
+          "Resuming a computer tool needs an Intelligence deployment.",
+        );
+      const SAVE_LAG_ATTEMPTS = 10;
+      const SAVE_LAG_INTERVAL_MS = 500;
+      let history = await routineIntelligence.getThreadMessages({
         threadId: snapshot.threadId,
         userId: ownerUserId,
       });
+      /** A corrupt or truncated save parses to nothing, and the check below refuses it. */
+      const savedArgsOf = (call: { args: string }): unknown => {
+        try {
+          return JSON.parse(call.args) as unknown;
+        } catch {
+          return undefined;
+        }
+      };
       const findCall = () =>
         history.messages
           .flatMap((message) => message.toolCalls ?? [])
           .find((call) => call.id === snapshot.toolCallId);
-      for (let attempt = 0; !findCall() && attempt < 10; attempt++) {
-        await Bun.sleep(500);
+      for (
+        let attempt = 0;
+        !findCall() && attempt < SAVE_LAG_ATTEMPTS;
+        attempt++
+      ) {
+        await Bun.sleep(SAVE_LAG_INTERVAL_MS);
         history = await routineIntelligence.getThreadMessages({
           threadId: snapshot.threadId,
           userId: ownerUserId,
@@ -146,7 +195,7 @@ export function createServerApprovalService(deps: {
       if (
         !canonicalCall ||
         canonicalCall.name !== snapshot.toolName ||
-        !isDeepStrictEqual(JSON.parse(canonicalCall.args), snapshot.args) ||
+        !isDeepStrictEqual(savedArgsOf(canonicalCall), snapshot.args) ||
         history.messages.some(
           (message) =>
             message.role === "tool" &&

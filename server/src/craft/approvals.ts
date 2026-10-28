@@ -172,7 +172,7 @@ export function createCraftApprovalRoutes(
   app.post("/approvals/:approvalId/decision", async (context) => {
     const actor = context.var.actor;
     const approvalId = context.req.param("approvalId");
-    const body = (await context.req.json().catch(() => ({}))) as {
+    const body = ((await context.req.json().catch(() => ({}))) ?? {}) as {
       decision?: unknown;
     };
     if (
@@ -192,7 +192,7 @@ export function createCraftApprovalRoutes(
       // `openCraftApproval` mints never do. A policy row must go through the generic decide
       // — whose hand_off guard ("handled"/"deny" only, never an allow) and always-rule write
       // this quiet path skips — so it is not found here, whatever its status.
-      if (current.action.policy) {
+      if (current.action?.policy) {
         return context.json(
           { error: "This endpoint only decides craft approvals." },
           404,
@@ -200,6 +200,14 @@ export function createCraftApprovalRoutes(
       }
       if (current.status !== "pending") {
         if (current.decision === body.decision) {
+          // Idempotent replay still re-fires the wake: the first one may have been
+          // lost (it is best-effort) or the process may have died between the row
+          // write and the wake, and the parked waiter is the reason this exists.
+          await deps.signals
+            ?.sendWake(approvalId, body.decision)
+            .catch((error: unknown) => {
+              logger.warn({ error }, "[craft] approval decision wake failed");
+            });
           return context.json({ ok: true });
         }
         return context.json(
