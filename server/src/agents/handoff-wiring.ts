@@ -5,7 +5,7 @@ import { workOwner } from "@openbot/shared/work-owner";
 import { eq } from "drizzle-orm";
 import { type AuditStore, handoffInitiator } from "../audit";
 import type { GroupConversations } from "../channels/group";
-import type { ChannelStore } from "../channels/routes";
+import type { ChannelStore } from "../channels/public";
 import type { ThreadIdentity } from "../channels/thread-identity";
 import type { DeploymentConfig } from "../config";
 import type { mountCopilotRuntime } from "../copilot";

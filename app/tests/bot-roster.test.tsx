@@ -19,6 +19,7 @@ import {
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { BotRoster } from "@/components/bots/bot-roster";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
+import { selectionKeys } from "@/lib/enterprise/tenant/selection";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -59,6 +60,12 @@ function bot(overrides: Partial<AgentProfile> & { id: string }): AgentProfile {
   };
 }
 
+// MOD19 / #639: the roster reads the scoped key under the personal-context prefix, and the scope
+// seam needs the signed-in user before any of it opens — every stub answers /api/me first.
+const USER = "user-1";
+const visibleKey = [...selectionKeys.personalScope(USER), ...agentKeys.list(false)];
+const hiddenKey = [...selectionKeys.personalScope(USER), ...agentKeys.list(true)];
+
 /** Serves the visible roster, the hidden roster, and an empty attention list. */
 function serving(
   visible: AgentProfile[],
@@ -67,6 +74,7 @@ function serving(
 ) {
   global.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
+    if (url === "/api/me") return Response.json({ user: { id: USER } });
     if (url.includes("/api/bots/attention"))
       return Response.json({ bots: attention });
     return Response.json({
@@ -157,7 +165,7 @@ test("with nothing hidden there is no Hidden section", async () => {
   const view = draw();
   expect(await view.findByText("Mine")).toBeTruthy();
   await waitFor(() =>
-    expect(queryClient.getQueryState(agentKeys.list(true))?.status).toBe(
+    expect(queryClient.getQueryState(hiddenKey)?.status).toBe(
       "success",
     ),
   );
@@ -165,22 +173,28 @@ test("with nothing hidden there is no Hidden section", async () => {
 });
 
 test("a roster that never loaded says so, not that you have no Bots", async () => {
-  global.fetch = (async () =>
-    new Response(null, { status: 500 })) as unknown as typeof fetch;
+  global.fetch = (async (input: RequestInfo | URL) => {
+    if (String(input) === "/api/me")
+      return Response.json({ user: { id: USER } });
+    return new Response(null, { status: 500 });
+  }) as unknown as typeof fetch;
   const view = draw();
   expect(await view.findByRole("alert")).toBeTruthy();
   expect(view.queryByText("You have no Bots of your own yet.")).toBeNull();
 });
 
 test("a failed refetch keeps the roster it already had, not the error", async () => {
-  queryClient.setQueryData(agentKeys.list(false), [
+  queryClient.setQueryData(visibleKey, [
     bot({ id: "mine", name: "Mine" }),
   ]);
-  global.fetch = (async () =>
-    new Response(null, { status: 500 })) as unknown as typeof fetch;
+  global.fetch = (async (input: RequestInfo | URL) => {
+    if (String(input) === "/api/me")
+      return Response.json({ user: { id: USER } });
+    return new Response(null, { status: 500 });
+  }) as unknown as typeof fetch;
   const view = draw();
   await waitFor(() =>
-    expect(queryClient.getQueryState(agentKeys.list(false))?.status).toBe(
+    expect(queryClient.getQueryState(visibleKey)?.status).toBe(
       "error",
     ),
   );

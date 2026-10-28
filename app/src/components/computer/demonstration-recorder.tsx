@@ -12,7 +12,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { channelListQueryOptions } from "@/lib/channels/queries";
+import { scopedChannelListQueryOptions } from "@/lib/channels/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   type Demonstration,
   type DemonstrationDraft,
@@ -80,7 +81,11 @@ function ScheduleSkill({
   const [channelId, setChannelId] = useState(ONLY_CONVERSATION);
   const [inputs, setInputs] = useState("");
   const [scheduled, setScheduled] = useState<DemonstrationRoutine | null>(null);
-  const channels = useInfiniteQuery(channelListQueryOptions());
+  // The roster read rides the scope the screen holds (MOD19 / Issue #639, T1b).
+  const scope = useScopedCache();
+  const channels = useInfiniteQuery(
+    scopedChannelListQueryOptions(queryClient, scope),
+  );
   const botChannels = (channels.data ?? []).filter(
     (channel) => channel.active && channel.agentIds.includes(recording.botId),
   );

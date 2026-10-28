@@ -17,13 +17,15 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
+import { selectionKeys } from "@/lib/enterprise/tenant/selection";
 import { Route as HomeRoute } from "@/routes/_authed/_app/index";
 
 /**
- * The home screen reads `agentListQueryOptions()` and drew its empty state on a FAILED query, not
- * just an empty one: `isPending` goes false on failure exactly as it does on success, so a broken
- * fetch fell through to "you have nothing" and told somebody who may own twenty coworkers that they
- * own none. The Bots roster's own failure handling is pinned in `bot-roster.test.tsx`.
+ * The home screen reads the scoped agent list (MOD19 / #639: `scopedAgentListQueryOptions`) and
+ * drew its empty state on a FAILED query, not just an empty one: `isPending` goes false on failure
+ * exactly as it does on success, so a broken fetch fell through to "you have nothing" and told
+ * somebody who may own twenty coworkers that they own none. The Bots roster's own failure handling
+ * is pinned in `bot-roster.test.tsx`.
  *
  * THE HARNESS IS THIS REPOSITORY'S. `GlobalRegistrator` in `beforeAll`/`afterAll`, `cleanup` in
  * `afterEach`, and queries off `render()`'s own return, matching `proposed-bot-card.test.tsx` for
@@ -35,6 +37,10 @@ import { Route as HomeRoute } from "@/routes/_authed/_app/index";
  * down for no assertion it needs.
  */
 
+const USER = "user-1";
+/** The personal-context prefix the scoped roster key sits under once `/api/me` answers. */
+const rosterKey = [...selectionKeys.personalScope(USER), ...agentKeys.list(false)];
+
 beforeAll(() => GlobalRegistrator.register());
 afterEach(cleanup);
 afterAll(() => GlobalRegistrator.unregister());
@@ -44,9 +50,14 @@ const originalFetch = global.fetch;
 beforeEach(() => {
   // Every read in this app goes through `client()` in `lib/client.ts`, which throws once the
   // response is not `ok`. A 500 with no body is the shape a broken server actually sends, and is
-  // exactly what `client()`'s fallback message path exists for.
-  global.fetch = (async () =>
-    new Response(null, { status: 500 })) as unknown as typeof fetch;
+  // exactly what `client()`'s fallback message path exists for. The scope seam's own read
+  // (`/api/me`) must answer, or the roster query stays disabled-pending and no failure state can
+  // exist to assert.
+  global.fetch = (async (input: RequestInfo | URL) => {
+    if (String(input) === "/api/me")
+      return Response.json({ user: { id: USER } });
+    return new Response(null, { status: 500 });
+  }) as unknown as typeof fetch;
 });
 
 afterEach(() => {
@@ -62,9 +73,9 @@ function failingQueryClient() {
 
 /**
  * A client that already holds a successful `agents` list under the exact key
- * `agentListQueryOptions()` reads (`agentKeys.list(false)`, the default `hidden` param both
- * screens call it with), built on `failingQueryClient()` so the one refetch it triggers on mount
- * settles without a retry.
+ * `scopedAgentListQueryOptions()` reads (`[...personal prefix, agentKeys.list(false)]`, the default
+ * `hidden` param both screens call it with), built on `failingQueryClient()` so the one refetch it
+ * triggers on mount settles without a retry.
  *
  * Combined with the always-failing `global.fetch` this file's `beforeEach` installs, mounting a
  * screen against this client reproduces a failed BACKGROUND refetch: TanStack Query's default
@@ -76,7 +87,7 @@ function failingQueryClient() {
  */
 function staleQueryClient(agents: AgentProfile[]) {
   const queryClient = failingQueryClient();
-  queryClient.setQueryData(agentKeys.list(false), agents);
+  queryClient.setQueryData(rosterKey, agents);
   return queryClient;
 }
 
@@ -107,7 +118,7 @@ function agent(
  *  that the seeded data alone (which would render identically before any fetch ran) proves it. */
 async function waitForFailedRefetch(queryClient: QueryClient) {
   await waitFor(() => {
-    expect(queryClient.getQueryState(agentKeys.list(false))?.status).toBe(
+    expect(queryClient.getQueryState(rosterKey)?.status).toBe(
       "error",
     );
   });

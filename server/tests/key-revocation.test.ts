@@ -371,7 +371,8 @@ test("a repeated revocation neither re-disables remote keys nor rewrites history
   expect(second.status).toBe(200);
   expect(((await second.json()) as { revoked: boolean }).revoked).toBe(false);
 
-  // The idempotent no-op goes nowhere near the gateway seam and writes no second audit event.
+  // The idempotent no-op goes nowhere near the gateway seam; the audit trail appends
+  // the no-op as its own event (`revoked: false`) rather than rewriting the first one.
   expect(remoteDisableCalls.length).toBe(callsAfterFirst);
   const events = await database
     .select()
@@ -382,7 +383,12 @@ test("a repeated revocation neither re-disables remote keys nor rewrites history
         eq(auditEvents.targetId, grant.grantId),
       ),
     );
-  expect(events).toHaveLength(1);
+  expect(events).toHaveLength(2);
+  expect(
+    events
+      .map((event) => (event.payload as { revoked: boolean }).revoked)
+      .sort(),
+  ).toEqual([false, true]);
 });
 
 test("revocation leaves settled consumption and pending holds exactly as they were", async () => {
@@ -456,4 +462,45 @@ test("a grant that never held a key revokes without touching the gateway seam", 
   expect(response.status).toBe(200);
   expect(((await response.json()) as { revoked: boolean }).revoked).toBe(true);
   expect(remoteDisableCalls.length).toBe(callsBefore);
+});
+
+test("a revocation whose audit write fails still asks the gateway to disable every retired key", async () => {
+  // F1 (run5 audit): the audit row is fail-closed, but it sits AFTER the commit. If the
+  // only way to reach the gateway seam is through that write, a transient audit failure
+  // leaves the remote key alive with nothing recording it. The seam must run regardless.
+  const userId = `${prefix}-auditfail`;
+  const { grant, botId } = await confirmedGrant(userId, "auditfail");
+  await activeKeyVersion(grant, botId, 1);
+
+  const seamCalls: string[][] = [];
+  const failingAuditStore = {
+    insert: async (event: { eventType: string }) => {
+      if (event.eventType === "model_access.revoked") {
+        throw new Error("audit_events insert failed");
+      }
+      return auditStore.insert(event as never);
+    },
+  } as unknown as typeof auditStore;
+  const svc = createAccessGrantService({
+    database,
+    botServices: botStore,
+    auditStore: failingAuditStore,
+    revokeGatewayKeys: async ({ gatewayVirtualKeyIds }) => {
+      seamCalls.push([...gatewayVirtualKeyIds]);
+    },
+  });
+
+  await expect(svc.revokeForUser(grant.grantId, userId)).rejects.toThrow(
+    "audit_events insert failed",
+  );
+
+  // The commit stands (the person's answer is true), the trail refused to name it,
+  // and the remote disable was still attempted exactly once for the retired key.
+  const [row] = await database
+    .select()
+    .from(accessGrants)
+    .where(eq(accessGrants.grantId, grant.grantId));
+  expect(row?.status).toBe("revoked");
+  expect(seamCalls).toHaveLength(1);
+  expect(seamCalls[0]).toHaveLength(1);
 });

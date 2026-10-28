@@ -26,6 +26,8 @@ import {
   within,
 } from "@testing-library/react";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
+import { selectionKeys } from "@/lib/enterprise/tenant/selection";
+import { authKeys } from "@/lib/auth/queries";
 import { Route as BotRoute } from "@/routes/_authed/_app/bot";
 
 let originalRect: typeof HTMLElement.prototype.getBoundingClientRect;
@@ -66,6 +68,12 @@ function agent(
   };
 }
 
+// MOD19 / #639: /bot reads the roster through the scoped key, and its explicit-detail fallback
+// the scoped detail key, both under the personal-context prefix — and the scope seam needs
+// /api/me answered before any of it opens. Every stub here serves that one read first.
+const USER = "user-1";
+const rosterKey = [...selectionKeys.personalScope(USER), ...agentKeys.list(false)];
+
 function queryClientWithAgents(agents: AgentProfile[]) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -75,7 +83,13 @@ function queryClientWithAgents(agents: AgentProfile[]) {
       },
     },
   });
-  queryClient.setQueryData(agentKeys.list(false), agents);
+  queryClient.setQueryData(rosterKey, agents);
+  // Seed the scope source too, so the seam opens without a fetch: these tests install no stub,
+  // and a pending scope would keep the scoped roster read disabled forever.
+  queryClient.setQueryData(authKeys.currentUser(), {
+    id: USER,
+    singleUser: false,
+  } as never);
   return queryClient;
 }
 
@@ -87,6 +101,7 @@ function queryClientWithAgentsAndFetchedAgent(
   global.fetch = Object.assign(
     async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
+      if (url === "/api/me") return Response.json({ user: { id: USER } });
       if (url === `/api/agents/${agentId}`) return response.clone();
       throw new Error(`Unexpected fetch: ${url}`);
     },
@@ -97,7 +112,10 @@ function queryClientWithAgentsAndFetchedAgent(
 
 function queryClientWithFailingAgents() {
   global.fetch = Object.assign(
-    async () => new Response(null, { status: 500 }),
+    async (input: RequestInfo | URL) =>
+      String(input) === "/api/me"
+        ? Response.json({ user: { id: USER } })
+        : new Response(null, { status: 500 }),
     { preconnect: originalFetch.preconnect },
   );
   return new QueryClient({
@@ -265,7 +283,10 @@ test("/bot hidden lookup does not collide with the shared agent detail cache", a
     "hidden-bot",
     Response.json({ agent: hiddenBot }),
   );
-  queryClient.setQueryData(agentKeys.detail("hidden-bot"), hiddenBot);
+  queryClient.setQueryData(
+    [...selectionKeys.personalScope(USER), ...agentKeys.detail("hidden-bot")],
+    hiddenBot,
+  );
   const view = renderBot(queryClient, "/bot?agent=hidden-bot");
 
   expect(await view.findByRole("heading", { name: "Hidden Bot" })).toBeTruthy();
@@ -311,6 +332,7 @@ test("/bot opens a live Computer sidebar with ownership controls and preserves t
   global.fetch = Object.assign(
     async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url === "/api/me") return Response.json({ user: { id: USER } });
       if (url.endsWith("/control"))
         return Response.json({
           holder: "bot",
@@ -375,8 +397,10 @@ test("/bot?watch=true restores the live Computer panel on reload", async () => {
   HTMLElement.prototype.getBoundingClientRect = () =>
     new DOMRect(0, 0, 1200, 800);
   global.fetch = Object.assign(
-    async () =>
-      Response.json({
+    async (input: RequestInfo | URL) =>
+      String(input) === "/api/me"
+        ? Response.json({ user: { id: USER } })
+        : Response.json({
         holder: "bot",
         since: "2026-09-26",
         requested: false,

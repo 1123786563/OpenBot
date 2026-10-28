@@ -4,14 +4,60 @@ import {
   useFrontendTool as useSDKFrontendTool,
 } from "@copilotkit/react-core/v2";
 import { useQueryClient } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { InlineApproval } from "@/components/approvals/inline-approval";
 import { tryClient } from "@/lib/client";
+import {
+  type ScopedCache,
+  useScopedCache,
+} from "@/lib/enterprise/tenant/scoped-cache";
 import { useActiveBotHolder } from "./active-bot";
 import { frontendApprovalSnapshot } from "./approval-context";
 import { answerMastraParticipation } from "./mastra-participation";
 
 type RenderProps = { toolCallId: string; [key: string]: unknown };
+
+/** The selection pair a scoped call rides, spread into the client options (MT086). */
+type ScopePair = { tenantId?: string; workspaceId?: string };
+
+/**
+ * The live scope, readable from a handler the SDK registered once.
+ *
+ * `active-bot.tsx` owns the rule this follows: a tool handler outlives the render that registered
+ * it, so anything it sends must be read from a holder updated on every render, never from a closed
+ * over render value. The holder wraps `useScopedCache()` — the one reactive scope source (MT083),
+ * so what a handler carries is the scope in force at the moment the call runs: the selection pair
+ * for the request, the subtree prefix for the cache settle. A pending scope or the personal
+ * context yields no pair: the request rides nothing, exactly as before this wiring.
+ */
+export function useCallTimeScope(): { current: ScopedCache } {
+  const scope = useScopedCache();
+  const holder = useRef<ScopedCache>(scope);
+  holder.current = scope;
+  return holder;
+}
+
+/** The pair an open scope's request rides; nothing for a pending one or the personal context. */
+export function pairOf(scope: ScopedCache): ScopePair {
+  return scope.status === "open" ? (scope.selection ?? {}) : {};
+}
+
+/**
+ * Both homes the approvals inbox lives in, invalidated together (the settle shape approvals.ts
+ * MT086 already writes): the unscoped entry a legacy surface may still read, and — when a scope
+ * is open — this scope's own subtree, where the scoped read now lives.
+ */
+function invalidateInbox(
+  queryClient: ReturnType<typeof useQueryClient>,
+  scope: ScopedCache,
+) {
+  void queryClient.invalidateQueries({ queryKey: ["approvals"] });
+  if (scope.status === "open") {
+    void queryClient.invalidateQueries({
+      queryKey: [...scope.prefix, "approvals"],
+    });
+  }
+}
 
 const writes = new Set([
   "computer_click",
@@ -40,6 +86,9 @@ export function useFrontendTool<T extends Record<string, unknown>>(
   // Stable for the provider's life, so the SDK's once-registered handler may keep it.
   const queryClient = useQueryClient();
   const bot = useActiveBotHolder();
+  // Same discipline as the bot holder (active-bot.tsx): the handler outlives the render that
+  // registered it, so the selection pair is read at the moment the call runs, never frozen.
+  const scopeHolder = useCallTimeScope();
   const render = tool.render;
   useSDKFrontendTool({
     ...tool,
@@ -85,6 +134,7 @@ export function useFrontendTool<T extends Record<string, unknown>>(
                 toolCallId: context.toolCall?.id,
                 result,
                 signal: context.signal,
+                pair: pairOf(scopeHolder.current),
               });
             }
             return result;
@@ -102,7 +152,12 @@ export function useFrontendTool<T extends Record<string, unknown>>(
           }
           const response = await tryClient(
             `/api/approvals/computer/${encodeURIComponent(bot.current)}`,
-            { method: "POST", body: snapshot, signal: context.signal },
+            {
+              method: "POST",
+              body: snapshot,
+              signal: context.signal,
+              ...pairOf(scopeHolder.current),
+            },
           );
           const payload: unknown = await response.json();
           if (response.status === 202) {
@@ -111,8 +166,8 @@ export function useFrontendTool<T extends Record<string, unknown>>(
             // Stop signals the SDK to discard this handler's unfinished result. The server owns
             // resume: the decision executes the action once and continues this conversation.
             copilotkit.stopAgent({ agent: context.agent });
-            // Draw the card now rather than on the inbox's next poll.
-            void queryClient.invalidateQueries({ queryKey: ["approvals"] });
+            // Draw the card now rather than on the inbox's next poll, in both cache homes.
+            invalidateInbox(queryClient, scopeHolder.current);
             // `answer` skips the waiting sentinel itself: a parked approval
             // decision resumes the engine, a tool result never does.
             return answer({ waiting: true });

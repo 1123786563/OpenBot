@@ -1,7 +1,7 @@
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { getLogger } from "../../../shared/logger";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import {
   OPENMUSE_GOOGLE_PROVIDERS,
   OpenConnectorOAuthError,

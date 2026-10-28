@@ -19,13 +19,14 @@
  * ones createApp carried; they moved with their code.
  */
 
+import type { CopilotKitIntelligence } from "@copilotkit/runtime/v2";
+import { MAX_IMAGE_BYTES } from "@openbot/shared/attachments";
+import { getLogger } from "@openbot/shared/logger";
 import type { Hono as HonoApp, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { serveStatic } from "hono/bun";
-import { MAX_IMAGE_BYTES } from "@openbot/shared/attachments";
 import { cors } from "hono/cors";
-import { getLogger } from "@openbot/shared/logger";
 import { enterpriseControls } from "../admin/controls";
 import { createEnterpriseGate } from "../admin/gate";
 import { createOpenMuseTemplateAdminRoutes } from "../admin/openmuse-template-routes";
@@ -36,20 +37,18 @@ import {
   sameToken,
 } from "../agents/callback-token";
 import { computerAccessCheck } from "../agents/computer-access";
-import {
-  type BotLifecycleServices,
-  createBotLifecycleRoutes,
-} from "../agents/lifecycle-routes";
-import type {
-  OpenMuseTemplateMethods,
-  OpenMuseTemplateRevisionService,
-} from "../agents/openmuse-template-store";
+import { createBotLifecycleRoutes } from "../agents/lifecycle-routes";
 import type { BotAccessCheck } from "../agents/profile-policy";
 import type { AgentProfileStore } from "../agents/profile-store";
-import type { BotCatalog } from "../agents/public";
 import { createAgentRoutes } from "../agents/routes";
+// Type-only: no runtime edge back into app.ts (the values above arrive as deps).
+import type {
+  CoworkerSeams,
+  createDeploymentRequireUser,
+  DeploymentToolCaller,
+  OpenMuseSeams,
+} from "../app";
 import { createApprovalRoutes } from "../approvals/routes";
-import type { ApprovalService } from "../approvals/service";
 import {
   type AuditEventType,
   AuditQueryError,
@@ -101,7 +100,7 @@ import {
   createChannelAttachmentRoutes,
 } from "../channels/attachments";
 import type { ChannelEventHub } from "../channels/events";
-import { createGroupRoutes, type GroupConversations } from "../channels/group";
+import { createGroupRoutes } from "../channels/group";
 import { type ChannelStore, createChannelRoutes } from "../channels/routes";
 import type { ThreadIdentity } from "../channels/thread-identity";
 import { createThreadRoutes } from "../channels/thread-routes";
@@ -135,19 +134,13 @@ import {
   createDeliveryRoutes,
   createDeliveryWebhookRoutes,
 } from "../delivery/routes";
-import type { DemonstrationRecorder } from "../demonstrations/recording";
 import { createDemonstrationRoutes } from "../demonstrations/routes";
-import type { DemonstrationStore } from "../demonstrations/store";
 import { mountDesktopConnectionFailure } from "../desktop-connection-failure";
 import { createTranscriptionProvider } from "../dictation/provider";
 import { createDictationRoutes } from "../dictation/routes";
-import type { PlatformScope } from "../enterprise/contracts";
 import { withRunnerRequestContext } from "../enterprise/runs/request-context";
 import { createLegacyEntryGuard } from "../enterprise/tenancy/assembly-legacy";
-import {
-  createDeploymentEntryContextMiddleware,
-  type DeploymentEntryContextFactory,
-} from "../enterprise/tenancy/entry-context";
+import { createDeploymentEntryContextMiddleware } from "../enterprise/tenancy/entry-context";
 import {
   GatewayAdminCredentialNotConfiguredError,
   gatewayAdminCredentialControls,
@@ -168,14 +161,8 @@ import {
   createGatewayReadinessService,
   installGatewayReadinessService,
 } from "../gateway/readiness";
-import {
-  createHindsightMemoryRoutes,
-  type HindsightMemoryRoutesDeps,
-} from "../hindsight/routes";
-import {
-  createHindsightRoutes,
-  type HindsightRouteServices,
-} from "../hindsight/ops-routes";
+import { createHindsightRoutes } from "../hindsight/ops-routes";
+import { createHindsightMemoryRoutes } from "../hindsight/routes";
 import type { HostAccessBroker } from "../host-access/broker";
 import { createHostAccessRoutes } from "../host-access/routes";
 import { identityRoutes } from "../identity/routes";
@@ -185,16 +172,8 @@ import {
   type LearningAdminDependencies,
 } from "../learning/routes";
 import { createMarketplaceRoutes } from "../marketplace/routes";
-import type { MarketplaceStore } from "../marketplace/store";
-import type { MastraContinuationInstall } from "../mastra/approvals";
 import { createMastraContinuationRoutes } from "../mastra/continuation-routes";
-import type { MastraContinuationStore } from "../mastra/continuation-store";
-import type { MemoryIngestion } from "../memory/ingestion";
-import {
-  createMemoryRoutes,
-  type MemoryPauseControlAccess,
-} from "../memory/routes";
-import type { MemoryStore } from "../memory/store";
+import { createMemoryRoutes } from "../memory/routes";
 import { createMobileBffActivity } from "../mobile-bff/activity";
 import {
   createOpenMuseBotProvisioner,
@@ -203,48 +182,31 @@ import {
 import { createMobileBffRoutes } from "../mobile-bff/routes";
 import { createMobileBffWorkspace } from "../mobile-bff/workspace";
 import { openMuseAccountFence } from "../openmuse-deletion/fence";
-import type { OpenMuseDeletionManifest } from "../openmuse-deletion/manifest";
-import type { OpenMuseFileBytePurgeReport } from "../openmuse-deletion/purge";
-import type { OpenMuseRelationalPurgeOutcome } from "../openmuse-deletion/purge-relational";
-import type { OpenMuseDeletionRestore } from "../openmuse-deletion/restore";
 import { createOpenMuseDeletionAdminRoutes } from "../openmuse-deletion/restore";
-import type { OpenMuseDeletionCleanupView } from "../openmuse-deletion/retention";
 import { createOpenMuseAccountDeletionRoutes } from "../openmuse-deletion/routes";
-import type { OpenMuseAccountDeletionStore } from "../openmuse-deletion/store";
 import { createOpenMuseFilesRoutes } from "../openmuse-files/routes";
-import type { OpenMuseFileStore } from "../openmuse-files/store";
 import { createOpenMuseTasksRoutes } from "../openmuse-tasks/routes";
-import type { OpenMuseTaskStore } from "../openmuse-tasks/store";
 import { parsePageLimit } from "../paging";
 import { createPasswordRoutes, createSignInRoutes } from "../passwords/routes";
-import type { SignInService } from "../passwords/service";
 import type { OnboardingStore } from "../people/onboarding";
 import { MAX_PAGE, type PeopleStore } from "../people/store";
-import type { AccountModeSwitch } from "../plugins/account-mode";
 import type { ComposioBroker, ConnectedAppBroker } from "../plugins/broker";
 import { createToolAccess } from "../plugins/public";
 import { createPluginRoutes } from "../plugins/routes";
 import { createSharedUseRoutes } from "../plugins/shared-use-routes";
-import type { SharedUseStore } from "../plugins/shared-use-store";
 import {
   isDeploymentFault,
   PluginRefusedError,
   type PluginStore,
 } from "../plugins/store";
 import { REFUSAL_MARKER, vendorAnswer } from "../plugins/tools";
-import type { ProactiveEngine } from "../proactive/engine";
 import { createProactiveRoutes } from "../proactive/routes";
-import type { ProactiveStore } from "../proactive/store";
 import {
   type ModelProviderProxy,
   mountProviderOAuthProxy,
 } from "../provider-oauth";
-import type { ResponsibilityBindingStore } from "../responsibilities/bindings";
-import type { ResponsibilityEngine } from "../responsibilities/engine";
 import { createGithubResponsibilityRoutes } from "../responsibilities/github";
 import { createResponsibilityRoutes } from "../responsibilities/routes";
-import type { TriggerStore } from "../responsibilities/triggers";
-import type { ResponsibilityStore } from "../responsibilities/types";
 import { createRoutineRoutes, type RoutineStore } from "../routines/routes";
 import type { RoutineRunner } from "../routines/runner";
 import type { IntentRouter } from "../routing/classify";
@@ -252,7 +214,6 @@ import { createRoutingRoutes } from "../routing/routes";
 import { createCoworkerRoutingService } from "../routing/service";
 import type { SelfHostBanner } from "../self-host-banner";
 import { createTeamBotRoutes } from "../team-bots/routes";
-import type { TeamBots } from "../team-bots/team-bots";
 import { createRequestTracking } from "../telemetry/request-tracking";
 import { createTraceMiddleware } from "../telemetry/trace-middleware";
 import type { PackageStatusReader } from "../tenant-package";
@@ -273,10 +234,6 @@ import {
 } from "../web-bot-auth";
 import type { createWorkshopPublicRoutes } from "../workshop/public-routes";
 import type { WorkshopRoutesFactory } from "../workshop/routes";
-
-import type { CopilotKitIntelligence } from "@copilotkit/runtime/v2";
-// Type-only: no runtime edge back into app.ts (the values above arrive as deps).
-import type { createDeploymentRequireUser, DeploymentToolCaller } from "../app";
 
 const log = getLogger("server");
 
@@ -462,130 +419,7 @@ export interface HttpAssemblyDependencies {
   userPreferences?: UserPreferencesStore;
   voiceSessions?: VoiceSessionServices;
   learning?: LearningAdminDependencies;
-  coworker?: {
-    demonstrations?: {
-      store: DemonstrationStore;
-      recorder: DemonstrationRecorder;
-    };
-    approvals?: ApprovalService;
-    /**
-     * Shared apps: who may use an app's one team account, and the switch that makes an app Shared.
-     *
-     * A field here rather than another positional parameter. Everything from `auditReader` on is
-     * optional and positional, so a 37th argument is one an caller can misplace silently — the trap
-     * `composio` and `connect` are both commented for. One object carries both halves because every
-     * surface that needs one needs the other: the plugin routes switch modes and record approvals,
-     * the approvals inbox answers requests, and publishing or assigning a Bot re-checks what it was
-     * approved for. Absent, none of those surfaces exists — and nothing can turn an app Shared.
-     */
-    shared?: { modes: AccountModeSwitch; use: SharedUseStore };
-    /** The private sign-in form and the Passwords vault. See passwords/service.ts. */
-    passwords?: SignInService;
-    delivery?: {
-      authenticated: Omit<
-        Parameters<typeof createDeliveryRoutes>[0],
-        "requireUser"
-      >;
-      webhooks: Parameters<typeof createDeliveryWebhookRoutes>[0];
-    };
-    memory?: {
-      store: MemoryStore;
-      ingestion: MemoryIngestion;
-      /**
-       * Hindsight 14 (#392, F-G1-1): the person's own two pause switches behind the
-       * deployment's trusted scope. Present only where a deployment can resolve one;
-       * absent, `/api/memory/pause-controls` is not mounted (no face that guesses identity).
-       */
-      pauseControls?: MemoryPauseControlAccess;
-      /**
-       * FIX-F1 (#376, FR-1): the whole old face's company pin, behind the same trusted
-       * scope resolver. Present only where a deployment can resolve one; absent, the
-       * family keeps the single-user behaviour unchanged.
-       */
-      companyScope?: {
-        resolveScope: (request: Request) => Promise<PlatformScope>;
-      };
-      /**
-       * The Hindsight chain's person-scoped confirm/edit/forget/status operations
-       * (#384/#385). Present only where both the chain is wired and a trusted-scope
-       * resolver exists; absent mounts no such routes.
-       */
-      hindsight?: HindsightMemoryRoutesDeps;
-    };
-    /**
-     * The Hindsight memory surfaces (#387–#391): evidence, judgment review, revocation,
-     * cleanup progress and the operator restore/backup-registration routes. Present only
-     * where the assembly built the seams AND a trusted scope resolver exists; absent mounts
-     * nothing, the same "not configured, not broken" answer every optional neighbour gives.
-     */
-    hindsight?: HindsightRouteServices;
-    proactive?: { store: ProactiveStore; engine: ProactiveEngine };
-    responsibilities?: {
-      store: ResponsibilityStore;
-      engine: ResponsibilityEngine;
-      bindings: ResponsibilityBindingStore;
-      /** Event triggers: owner management, public signed ingress and optional SES/SNS email. */
-      triggers?: {
-        store: TriggerStore;
-        emailDomain: string | null;
-        ingressRoutes: Hono;
-        emailRoutes: Hono | null;
-      };
-    };
-    groups?: GroupConversations;
-    enterpriseConversations?: Hono;
-    /** MT006 (issue #49): workspace scope listing + team administration routes. */
-    enterpriseWorkspaceScope?: Hono;
-    /** Plugin packages marketplace routes (#459); mounted only where a deployment wires them. */
-    pluginPackages?: Hono;
-    /**
-     * ME06 (#478): the durable frontend_tool participation routes' deps —
-     * the real continuation ledger and this deployment's scope resolver.
-     * The `requireUser` middleware is created here (mount time), so the deps
-     * arrive and the route builds where the auth middleware lives.
-     */
-    mastraContinuations?: {
-      install: MastraContinuationInstall;
-      store: MastraContinuationStore;
-      resolveScope: (request: Request) => Promise<PlatformScope>;
-    };
-    /**
-     * MT122 (issue #165): the deployment main entry's request-context seam.
-     * Present, the business API mounts the entry middleware after the
-     * usage-origin floor (multitenancy mode only); each request that carries
-     * the ruling #1 selection headers gets its context established here and
-     * its business dependencies built from the scope factory — never from a
-     * startup-wide single config, and never from a default scope. Absent
-     * (enterprise capabilities unwired or the switch off) the assembly is
-     * byte-for-byte what it was.
-     */
-    entryContext?: DeploymentEntryContextFactory;
-    /**
-     * MT125 (Issue #168): the mobile aggregation's unified assembly
-     * (GET /api/mobile/openmuse-aggregate over the MT066 scope service).
-     * Mounted beside the mobile BFF; absent mounts nothing.
-     */
-    enterpriseMobileAggregate?: Hono;
-    /** MT126 (Issue #169): the stream entry's unified assembly (/api/enterprise/streams). */
-    enterpriseStreamEntry?: Hono;
-    teamBots?: TeamBots;
-    /**
-     * MOD05（Issue #625，根 #620）：M03 BotCatalog 门面——发布/撤回两 handler 经它
-     * 委托（见 agents/public.ts）。字段式而非又一个位置参数：与 teamBots 同源装配，
-     * 缺席则 publication 两 handler 保持 teamBots 直用旧路径（行为逐字节等价）。
-     */
-    botCatalog?: BotCatalog;
-    /** Pause, reset, Activity and attention for a person's own Bots. See agents/lifecycle.ts. */
-    lifecycle?: BotLifecycleServices;
-    /**
-     * The marketplace's own receipts: which expert each person installed, and the Bot the install
-     * created. A field here rather than another positional parameter, for the same reason every
-     * sibling above is: a misplaced positional argument is silent, and this one only matters
-     * beside the agent store it writes through. Absent leaves the catalogue readable but nothing
-     * installable — a deployment that cannot remember what a person installed must not guess.
-     */
-    marketplace?: { installs: MarketplaceStore };
-  };
+  coworker?: CoworkerSeams;
   /**
    * Whether to offer help self-hosting, which also hides it from a deployment that pays for
    * Intelligence. Absent falls back to the operator's switch alone, so a test or a build without the
@@ -707,80 +541,7 @@ export interface HttpAssemblyDependencies {
    * runtime error to notice. Named fields cannot be transposed; the older
    * positional parameters above this one stay as they were.
    */
-  openMuseSeams?: {
-    /** The OpenMuse template seam (see the docblock this object replaced). */
-    templateStore?: OpenMuseTemplateMethods;
-    /** The /ready probe; absent defaults to a real SELECT 1 on the database. */
-    readinessProbe?: () => Promise<void>;
-    /** The template revision admin seam (preview/apply). */
-    templateRevisions?: OpenMuseTemplateRevisionService;
-    /** The OpenMuse personal-files store. */
-    files?: OpenMuseFileStore;
-    /** The OpenMuse Task store (T01). */
-    tasks?: OpenMuseTaskStore;
-    /** The OpenMuse Google OAuth pair: the guarded app and the public callback. */
-    googleOAuth?: { app: Hono<{ Variables: AppVariables }>; callback: Hono };
-    mail?: Hono<{ Variables: AppVariables }>;
-    reviewedActions?: Hono<{ Variables: AppVariables }>;
-    goals?: Hono<{ Variables: AppVariables }>;
-    calendar?: Hono<{ Variables: AppVariables }>;
-    ideas?: Hono<{ Variables: AppVariables }>;
-    memories?: Hono<{ Variables: AppVariables }>;
-    documents?: Hono<{ Variables: AppVariables }>;
-    notifications?: Hono<{ Variables: AppVariables }>;
-    /** D01 (§9): the marker store behind the delete route and the fence. */
-    accountDeletion?: OpenMuseAccountDeletionStore;
-    /**
-     * D02 (§9): the work shutdown the delete route runs behind the marker —
-     * cancels Tasks/Monitors and awaiting Reviewed actions, records the
-     * transitions on the marker.
-     */
-    deletionShutdown?: (userId: string) => Promise<unknown>;
-    /**
-     * D03 (§9): the external access revocation — Google seats withdrawn at
-     * the vendor best-effort, rows landing revoked.
-     */
-    deletionRevoke?: (userId: string) => Promise<unknown>;
-    /** D04 (§9): the resource manifest built before any metadata removal. */
-    deletionManifest?: (userId: string) => Promise<OpenMuseDeletionManifest>;
-    /**
-     * §9 hardening (the fence's tracked exposure): the delete route revokes
-     * the deleting owner's auth sessions with the marker, so a still-valid
-     * session cannot keep reaching the seams the /api/mobile fence does not
-     * cover (channels, the computer stream, copilot).
-     */
-    deletionRevokeSessions?: (userId: string) => Promise<unknown>;
-    /**
-     * D09 (§9): the backup-retention bookkeeping — notes on the marker that
-     * the deployment's backup window covers this deletion.
-     */
-    deletionNoteBackupRetention?: (userId: string) => Promise<string | null>;
-    /**
-     * D05/D06/D08/D09 (§9): the admin surface at /api/admin/openmuse-deletion
-     * — restore, the file byte purge, the final relational purge and the
-     * cleanup view. Absent leaves the admin surface unmounted.
-     */
-    deletionAdmin?: {
-      restore: OpenMuseDeletionRestore;
-      purge?: (userId: string) => Promise<OpenMuseFileBytePurgeReport>;
-      purgeRelational?: (
-        userId: string,
-      ) => Promise<OpenMuseRelationalPurgeOutcome>;
-      cleanupView?: () => Promise<OpenMuseDeletionCleanupView>;
-    };
-    activity?: Hono<{ Variables: AppVariables }>;
-    opsSignals?: Hono<{ Variables: AppVariables }>;
-    /** Observation surfaces (ticket #7). Absent = the integration is not mounted at all. */
-    aiObservability?: Hono<{ Variables: AppVariables }>;
-    /**
-     * T33 (T34 §6): what a user-disable/revocation path does about queued
-     * observation export work — the store's cancelForActor seam. Best-effort
-     * beside the revoke it accompanies: the export worker re-authorizes on
-     * every execution, so a cancelled-call miss is caught at the next run,
-     * never by shipping an artifact. Absent cancels nothing here.
-     */
-    aiObservabilityCancelForActor?: (actorId: string) => Promise<unknown>;
-  };
+  openMuseSeams?: OpenMuseSeams;
   /** A person's own linked accounts. Absent answers 503 on /api/identity. */
   identity?: IdentityStore;
   /** The GitHub sign-in callback, built by the caller; mounted behind requireUser ahead of /api/identity. */
@@ -2336,15 +2097,21 @@ export function assembleHttpApp(
      * profile store, and the receipt store arrives on the coworker object beside it.
      */
     if (coworker?.marketplace) {
+      /*
+       * MOD16 (#636): the marketplace's writes go through the owner facades —
+       * coworker.botCatalog wraps the same profile store this layer guards on (one
+       * instance, identity delegation), and the ToolAccess here is built on the same
+       * plugin store, so every write path is byte-for-byte the store call it was.
+       */
       app.route(
         "/api/marketplace",
         createMarketplaceRoutes({
           installs: coworker.marketplace.installs,
-          agents: agentProfileStore,
+          agents: coworker.botCatalog,
           ...(pluginStore
             ? {
-                grants: pluginStore,
-                skillWrites: pluginStore,
+                grants: createToolAccess({ store: pluginStore }),
+                skillWrites: createToolAccess({ store: pluginStore }),
               }
             : {}),
           auditStore,

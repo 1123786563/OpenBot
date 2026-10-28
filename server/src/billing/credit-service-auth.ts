@@ -6,7 +6,7 @@ import {
   DEPLOYMENT_INITIATOR,
   recordAuditEvent,
 } from "../audit";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import {
   type CredentialSecretReader,
   type CredentialStore,

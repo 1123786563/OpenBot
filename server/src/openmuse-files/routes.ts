@@ -4,7 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { classifyAttachment } from "../../../shared/attachments";
 import { getLogger } from "../../../shared/logger";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import { sniffMimeType } from "../channels/attachment-mime";
 import {
   OpenMuseConnectionRefusedError,

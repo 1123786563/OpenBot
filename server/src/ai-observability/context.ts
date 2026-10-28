@@ -20,7 +20,7 @@
  * refused by the scope seam (ticket #12), not here; this file must not grow a
  * tenant header, a tenant table, or a fallback that widens access.
  */
-import type { AgentActor, AgentProfile } from "../agents/profile-types";
+import type { AgentActor, AgentProfile } from "../agents/public";
 
 /**
  * Resolves a Bot for observation. Returns the profile rather than a boolean because

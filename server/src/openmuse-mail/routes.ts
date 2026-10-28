@@ -1,6 +1,6 @@
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { getLogger } from "../../../shared/logger";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { OpenMuseGoogleOAuth } from "../openmuse-connectors/google-oauth";
 import {
   OpenMuseConnectionRefusedError,

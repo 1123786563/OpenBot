@@ -14,6 +14,7 @@ import {
 } from "../src/craft/managed-content";
 import type { CraftLLMProviderConfig } from "../src/craft/opencode-config";
 import { createCraftRoutes } from "../src/craft/routes";
+import { createSandboxGateway } from "../src/craft/sandbox-gateway";
 import type { CraftSessionRow, CraftStore } from "../src/craft/store";
 import { sessionDirectory } from "../src/craft/workspace";
 
@@ -179,6 +180,9 @@ describe("createCraftRoutes assembly: resolver-only wiring converges", () => {
         botIdFor: async () => "craft-bot",
         llmConfigFor: async () => llm,
         sandboxConnectionFor: () => ({ baseUrl: stub.baseUrl, token: null }),
+        // MOD22 (#642): the gateway arrives bound (production: the MOD11 door's
+        // instance); the routes tree no longer builds its own.
+        gateway: createSandboxGateway({ config, connectionFor: () => null }),
         userNameFor: async () => "Ada",
         managedContentFor: resolver,
         store,

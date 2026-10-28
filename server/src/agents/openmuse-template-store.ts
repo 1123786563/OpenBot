@@ -14,7 +14,7 @@ import {
   type OpenMuseTemplateV1,
   openMuseTemplateV1,
   type StoredTemplateProfile,
-} from "../mobile-bff/openmuse-bot";
+} from "../mobile-bff/public";
 import { authFromConfiguration } from "./auth-header";
 import { joinedProjection } from "./profile-store";
 import type { AgentProfile } from "./profile-types";

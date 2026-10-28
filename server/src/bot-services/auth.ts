@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import {
   type CredentialSecretReader,
   type CredentialStore,

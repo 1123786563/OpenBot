@@ -63,6 +63,8 @@ const THREAD_MESSAGES_DEADLINE_MS = 1500;
 type ReadThreadMessagesOptions = {
   /** Shorter only in tests; production uses the mount/send ordering deadline. */
   deadlineMs?: number;
+  /** The selection pair the answer-basis re-export rides (MOD19 / Issue #639). */
+  pair?: { tenantId?: string; workspaceId?: string };
 };
 
 /**
@@ -186,11 +188,13 @@ function argumentsOf(args: unknown): string {
 async function withAnswerBasis(
   threadId: string,
   messages: Message[],
+  pair?: { tenantId?: string; workspaceId?: string },
 ): Promise<Message[]> {
   let map: Record<string, unknown> | undefined;
   try {
     const response = await tryClient(
       `/api/enterprise/conversations/${encodeURIComponent(threadId)}/answer-basis`,
+      { ...(pair ?? {}) },
     );
     if (!response.ok) return messages;
     const body: unknown = await response.json();
@@ -256,7 +260,7 @@ export async function readThreadMessages(
       const turns = readableTurns(stored);
       return {
         ...turns,
-        messages: await withAnswerBasis(threadId, turns.messages),
+        messages: await withAnswerBasis(threadId, turns.messages, options.pair),
       };
     };
 

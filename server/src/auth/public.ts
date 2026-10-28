@@ -115,6 +115,12 @@ export interface IdentityDirectory {
 }
 
 /**
+ * 守卫类型面（MOD21 #641）：mobile-bff 路由与 provisioner 消费的会话形状，
+ * 恒等 re-export（类型面，零逻辑）；IdentityDirectory 能力面不动。
+ */
+export type { AppVariables, AuthenticatedActor } from "./guards";
+
+/**
  * 构造 M01 门面。零策略、零缓存、零写入：每个方法逐项委托 deps 中的现有读取，
  * 不新增任何判定。deps 全部构造注入——跨组（企业目录）事实不经过本模块静态
  * import（见文件头硬边界）。

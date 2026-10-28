@@ -992,56 +992,61 @@ describe("webappHmrSocketHandlers — the client↔upstream bridge", () => {
 });
 
 // ── fix-ocr18 #3: the preview origin's HMR half must not share the main site's gate ──
-// src/index.ts gates `craftWebappHmrDeps` on `enabled && webappProxyEnabled`, but
-// the preview origin's HTTP half lives on `enabled` alone — so with
+// The assembly gates the main site's webapp HMR deps on `enabled && webappProxyEnabled`,
+// but the preview origin's HTTP half lives on `enabled` alone — so with
 // `enabled && !webappProxyEnabled` the preview origin serves HTTP while its HMR
 // upgrade check short-circuits on the undefined deps and falls through to
 // handlePreviewRequest, which forwards the upgrade as an ORDINARY HTTP request
 // (upgrade headers stripped): live reload dies silently on a deployment whose
-// only webapp surface IS the preview origin. The boot file must build the
-// preview branch its own deps, gated on `enabled` ONLY; the main-site path
-// keeps the conjunction (its half is the same gate the HTTP webapp proxy
-// answers to). The boot file is not importable (it starts a listener), so the
-// wiring is pinned at the source level — the same shape the qa-batch1 pins use.
-describe("the boot file's preview HMR wiring (fix-ocr18 #3 — source pin)", () => {
+// only webapp surface IS the preview origin. The preview branch must carry its
+// own deps, gated on `enabled` ONLY; the main-site path keeps the conjunction
+// (its half is the same gate the HTTP webapp proxy answers to). The wiring
+// lives in the craft group's preview seam since MOD22 (#642) — the boot file's
+// dispatch moved into `craft/preview.ts`, whose module-level `enabled` gate is
+// the seam's single entry condition — and the seam file is pinned at the
+// source level, the same shape the qa-batch1 pins use.
+describe("the preview seam's HMR wiring (fix-ocr18 #3 — source pin)", () => {
   const source = readFileSync(
-    join(hereDir, "../src/assembly/runtime.ts"),
+    join(hereDir, "../src/craft/preview.ts"),
     "utf8",
   );
 
-  test("the preview-origin branch dispatches upgrades through its OWN deps const", () => {
-    // The preview branch (inside `craftPreviewOrigin?.handlesRequest`) must
-    // gate on the preview-specific deps, not the main-site's.
-    expect(source).toMatch(/craftPreviewWebappHmrDeps !== undefined/);
-    // …and the preview branch must no longer consult the main-site deps.
+  test("the preview-origin branch dispatches upgrades through its OWN deps", () => {
+    // The preview branch (the front door's `dispatch`, gated on the origin's
+    // handlesRequest) must gate on the preview-specific deps, not the
+    // main-site's.
+    expect(source).toMatch(/deps\.previewHmr !== undefined/);
+    // …and the preview branch must not consult the main-site deps.
     const previewBranch = source.slice(
-      source.indexOf("craftPreviewOrigin?.handlesRequest"),
-      source.indexOf('url.pathname === "/api/audio/transcriptions"'),
+      source.indexOf("async dispatch("),
+      source.indexOf("async dispatchWebappHmr("),
     );
-    expect(previewBranch).toContain("craftPreviewWebappHmrDeps !== undefined");
-    expect(previewBranch).not.toContain("craftWebappHmrDeps !== undefined");
+    expect(previewBranch).toContain("deps.previewHmr !== undefined");
+    expect(previewBranch).not.toContain("deps.webappHmr !== undefined");
   });
 
   test("the preview deps are gated on craft being enabled — NOT on webappProxyEnabled", () => {
     // The whole point: the preview origin's HTTP half lives on `enabled`
     // alone, so its upgrade half must too — or the combination above dies.
-    // (#358 repair adds the fix-ocr20 #1 narrowing conjunct — the deps exist
-    // exactly when the origin they borrow verifyPass from exists — but the
-    // gate must still not widen to webappProxyEnabled.)
+    // In the seam the deps are built unconditionally once the single
+    // `enabled` gate passed (#358 repair's narrowing: the deps exist exactly
+    // when the origin they borrow verifyPass from exists), and the
+    // declaration must not widen to webappProxyEnabled.
     const declaration = source.match(
-      /const craftPreviewWebappHmrDeps =[\S\s]*?:\s*undefined;/,
+      /const previewHmr: PreviewWebappHmrDeps = \{[\S\s]*?\};/,
     );
     expect(declaration).not.toBeNull();
-    expect(declaration?.[0]).toContain("craftEffectiveConfig.enabled");
-    expect(declaration?.[0]).toContain("craftPreviewOrigin !== undefined");
+    expect(declaration?.[0]).toContain("verifyPass: origin.verifyPass");
     expect(declaration?.[0]).not.toContain("webappProxyEnabled");
   });
 
   test("the main-site HMR path keeps its enabled && webappProxyEnabled gate", () => {
     // The conjunction is CORRECT for the main site (its half is the same
     // gate the HTTP webapp proxy answers to) — the fix must not widen it.
+    // The seam module itself sits under the single `enabled` early return,
+    // so the member's own conjunct is `webappProxyEnabled`.
     const mainGate = source.match(
-      /const craftWebappHmrDeps =\s*\n\s*craftEffectiveConfig\.enabled && craftEffectiveConfig\.webappProxyEnabled/,
+      /const webappHmr: WebappHmrDeps \| undefined = config\.webappProxyEnabled/,
     );
     expect(mainGate).not.toBeNull();
   });
@@ -1178,14 +1183,14 @@ describe("the preview HMR upgrade's Origin gate (fix-ocr28 #1 — CSWSH)", () =>
     ).toBe(false);
   });
 
-  test("the boot file gates the upgrade on Origin inside the preview HMR branch, BEFORE the resolver (source pin)", () => {
+  test("the preview seam gates the upgrade on Origin inside the preview HMR branch, BEFORE the resolver (source pin)", () => {
     const source = readFileSync(
-      join(hereDir, "../src/assembly/runtime.ts"),
+      join(hereDir, "../src/craft/preview.ts"),
       "utf8",
     );
     const branch = source.slice(
-      source.indexOf("craftPreviewOrigin?.handlesRequest"),
-      source.indexOf('url.pathname === "/api/audio/transcriptions"'),
+      source.indexOf("async dispatch("),
+      source.indexOf("async dispatchWebappHmr("),
     );
     // The gate reads the Origin header and consults the session's own
     // origin, and its 403 lands before the resolver can commit anything.

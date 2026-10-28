@@ -77,18 +77,6 @@ export type ApprovalInboxData = {
     createdAt: string;
   }[];
 };
-export const approvalInboxOptions = () =>
-  queryOptions({
-    queryKey: ["approvals"],
-    queryFn: async (): Promise<ApprovalInboxData> => {
-      const response = await client("/api/approvals", {
-        fallbackKey: "approvals.load",
-      });
-      return response.json();
-    },
-    refetchInterval: 10_000,
-  });
-
 // ---------------------------------------------------------------------------
 // The scoped half (MT086 / Issue #129): the approvals page reads and decides through here
 // ---------------------------------------------------------------------------

@@ -50,7 +50,7 @@
 
 import type { MiddlewareHandler } from "hono";
 import { getLogger } from "../../../shared/logger";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import { normalizedOriginOf } from "./preview-origin";
 
 const logger = getLogger("server");

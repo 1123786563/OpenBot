@@ -1,5 +1,8 @@
 import { tryClient } from "@/lib/client";
 
+/** The selection pair a scoped call rides, spread into the client options (MT086). */
+type ScopePair = { tenantId?: string; workspaceId?: string };
+
 /*
  * ME16 (#488): the browser half of a Mastra frontend_tool suspension.
  *
@@ -41,12 +44,13 @@ const LOOKUP_INTERVAL_MS = 250;
 async function findWaitingSuspension(
   toolCallId: string,
   signal?: AbortSignal,
+  pair?: ScopePair,
 ): Promise<WaitingSuspension | undefined> {
   for (let attempt = 0; attempt < LOOKUP_ATTEMPTS; attempt += 1) {
     if (signal?.aborted) return undefined;
     const response = await tryClient(
       "/api/mastra-continuations?status=waiting",
-      { signal },
+      { signal, ...(pair ?? {}) },
     );
     // A 404 is a deployment without the participation route at all — the
     // legacy engine's assembly, where every result went back in-band. One
@@ -97,11 +101,14 @@ export async function answerMastraParticipation(input: {
   toolCallId: string | undefined;
   result: unknown;
   signal?: AbortSignal;
+  /** The selection pair the lookup and the answer ride (MOD19 / Issue #639). */
+  pair?: ScopePair;
 }): Promise<boolean> {
   if (!input.toolCallId) return false;
   const suspension = await findWaitingSuspension(
     input.toolCallId,
     input.signal,
+    input.pair,
   );
   if (!suspension) return false;
   // The status is read here rather than thrown through `client` because 409
@@ -114,6 +121,7 @@ export async function answerMastraParticipation(input: {
       method: "POST",
       body: { toolCallId: input.toolCallId, result: input.result ?? null },
       signal: input.signal,
+      ...(input.pair ?? {}),
     },
   );
   if (!response.ok && response.status !== 409) {

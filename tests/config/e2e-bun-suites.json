@@ -1,7 +1,7 @@
 {
-  "generatedBy": "scripts/e2e-bun-manifest.mjs",
+ "generatedBy": "scripts/e2e-bun-manifest.mjs",
   "audit": "archive/verification/e2e-file-audit.json",
-  "groups": [
+"groups": [
     {
       "name": "--help",
       "files": [
@@ -61,6 +61,7 @@
         "app/tests/audit-export-truncated.test.tsx",
         "app/tests/authoring-tool-cards.test.tsx",
         "app/tests/auto-watch-screen.test.tsx",
+        "app/tests/billing-consumption-speech-ui.test.tsx",
         "app/tests/billing-payments.test.ts",
         "app/tests/bot-access-skills.test.tsx",
         "app/tests/bot-app-grants-screen.test.tsx",
@@ -70,13 +71,13 @@
         "app/tests/bot-profile-active.test.tsx",
         "app/tests/bot-profile-notice.test.tsx",
         "app/tests/bot-reaching-you.test.tsx",
-        "app/tests/bot-responsibilities.test.tsx",
-        "app/tests/bot-roster.test.tsx"
+        "app/tests/bot-responsibilities.test.tsx"
       ]
     },
     {
       "name": "app/tests part 2",
       "files": [
+        "app/tests/bot-roster.test.tsx",
         "app/tests/bot-route-default-agent.test.tsx",
         "app/tests/bot-settings-rows.test.tsx",
         "app/tests/bot-setup.test.tsx",
@@ -100,14 +101,14 @@
         "app/tests/composer-dropped-attachments.test.tsx",
         "app/tests/composer-inflight-removal.test.tsx",
         "app/tests/composer-insecure-context.test.tsx",
-        "app/tests/composer-paste.test.tsx"
-      ]
+       "app/tests/composer-paste.test.tsx"
+    ]
     },
     {
       "name": "app/tests part 3",
       "files": [
-        "app/tests/composer-queue-attachments.test.tsx",
-        "app/tests/composer-send-failure.test.tsx",
+       "app/tests/composer-queue-attachments.test.tsx",
+      "app/tests/composer-send-failure.test.tsx",
         "app/tests/composer-unnamed-mime.test.tsx",
         "app/tests/composer-upload-group.test.tsx",
         "app/tests/composing-enter.test.tsx",
@@ -129,15 +130,15 @@
         "app/tests/home-fallback-routing.test.tsx",
         "app/tests/learning-admin.test.tsx",
         "app/tests/live-screen-app-shortcuts.test.tsx",
-        "app/tests/live-screen-keyboard.test.tsx"
-      ]
+       "app/tests/live-screen-keyboard.test.tsx"
+    ]
     },
     {
       "name": "app/tests part 4",
       "files": [
-        "app/tests/mastra-runtime-compat.test.tsx",
+       "app/tests/mastra-runtime-compat.test.tsx",
         "app/tests/memory-answer-basis.test.tsx",
-        "app/tests/memory-hindsight.test.tsx",
+      "app/tests/memory-hindsight.test.tsx",
         "app/tests/memory-settings.test.tsx",
         "app/tests/model-picker-ui.test.tsx",
         "app/tests/observability-i18n-namespaces.test.ts",
@@ -962,6 +963,7 @@
     "app/tests/audit-export-truncated.test.tsx",
     "app/tests/authoring-tool-cards.test.tsx",
     "app/tests/auto-watch-screen.test.tsx",
+    "app/tests/billing-consumption-speech-ui.test.tsx",
     "app/tests/billing-payments.test.ts",
     "app/tests/bot-access-skills.test.tsx",
     "app/tests/bot-app-grants-screen.test.tsx",
@@ -1768,7 +1770,7 @@
     "app/tests/memory-answer-basis.test.tsx": "runner named it: 2026-10-25-hindsight-376 FR4-1/FR5-1 补执行组（FR4-1 只入 files 未入 group/causes，统一入口漏跑）——bun-test-compat happy-dom 回答依据 UI 套件，e2e 原生收集 COLLECTION_ERROR: Received protocol 'bun:'；独立成组 app/tests/memory-answer-basis（与 memory-hindsight 同模式）。",
     "server/tests/scrub-command.test.ts": "runner named it: T30 (#489 F16) scrubCommand 对抗钉子套件，与 otel-export-scrubbing.test.ts 同置 Bun 层（bun test 直跑；brief t30-scrubtests）",
     "server/tests/async-jobs-view.test.ts": "runner named it: b5r-fix1 F-A1 登记（bifrost-5 #5 收口核验修复批）——async-jobs-view 经 bun-test-compat 依赖 Bun 运行时（db client），e2e 原生收集 COLLECTION_ERROR: Received protocol 'bun:'，test:ci 必红；入 server/tests part 1 组（重生成 e2e-bun-manifest 需全量重扫，代价过高，按 FIX-W15 先例手工登记 files+group+causes）",
-    "agent-computer/tests/web-bot-auth-browser.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth-browser.test.ts: Cannot find package 'web-bot-auth' imported from ci-baseline-repair/agent-computer/tests/web-bot-auth-browser.te",
+   "agent-computer/tests/web-bot-auth-browser.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth-browser.test.ts: Cannot find package 'web-bot-auth' imported from ci-baseline-repair/agent-computer/tests/web-bot-auth-browser.te",
     "agent-computer/tests/web-bot-auth.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth.test.ts: Cannot find package 'web-bot-auth' imported from ci-baseline-repair/agent-computer/tests/web-bot-auth.test.ts; web-bot-a",
     "agent-langgraph/tests/google-oauth-proxy.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/google-oauth-proxy.test.ts: Cannot find package '@ag-ui/core' imported from ci-baseline-repair/agent-langgraph/tests/google-oauth-proxy.test.",
     "agent-langgraph/tests/governed-tracing.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/governed-tracing.test.ts: Cannot find package '@langchain/core' imported from ci-baseline-repair/agent-langgraph/tests/governed-tracing.test.",
@@ -1780,7 +1782,8 @@
     "desktop/src/OrgSwitchCleanup.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/OrgSwitchCleanup.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ci-baseline-repair/desktop/src/OrgSwitchCleanup.test.tsx; ",
     "desktop/src/Problem.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/Problem.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ci-baseline-repair/desktop/src/Problem.test.tsx; @happy-dom/global-",
     "desktop/src/ProviderPicker.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/ProviderPicker.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ci-baseline-repair/desktop/src/ProviderPicker.test.tsx; @hap",
-    "worker/tests/env.test.ts": "COLLECTION_ERROR: failed to collect worker/tests/env.test.ts: Cannot find package '@openbot/shared' imported from ci-baseline-repair/worker/src/env.ts; @openbot/shared is declared in <user>"
+    "worker/tests/env.test.ts": "COLLECTION_ERROR: failed to collect worker/tests/env.test.ts: Cannot find package '@openbot/shared' imported from ci-baseline-repair/worker/src/env.ts; @openbot/shared is declared in <user>",
+    "app/tests/billing-consumption-speech-ui.test.tsx": "runner named it: b5r-speech-307 consumption UI suite (bun-test-compat layer, sibling of realtime-usage-ui)"
   },
   "directoryIslands": [
     "server/tests/multitenancy",

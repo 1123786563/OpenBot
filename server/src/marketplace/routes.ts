@@ -1,9 +1,9 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import type { AgentProfileStore } from "../agents/profile-store";
+import type { BotCatalog } from "../agents/public";
 import { type AuditStore, recordAuditEvent } from "../audit";
-import type { AppVariables } from "../auth/guards";
-import type { PluginStore } from "../plugins/store";
+import type { AppVariables } from "../auth/public";
+import type { ToolAccess } from "../plugins/public";
 import {
   CATALOGUE_EXPERTS,
   CATALOGUE_SKILLS,
@@ -75,12 +75,12 @@ export type MarketplacePayload = {
 export type MarketplaceDeps = {
   installs: MarketplaceStore;
   /** Creates and soft-deletes the Bot an expert install instantiates. */
-  agents?: Pick<AgentProfileStore, "create" | "softDelete">;
+  agents?: Pick<BotCatalog, "createBot" | "softDeleteBot">;
   /** Grants the expert's skills to the Bot it created. */
-  grants?: Pick<PluginStore, "grant">;
+  grants?: Pick<ToolAccess, "grant">;
   /** Writes and uninstalls catalogue skills, and answers who holds a slug. */
   skillWrites?: Pick<
-    PluginStore,
+    ToolAccess,
     "installSkill" | "uninstallSkill" | "skillOwner"
   >;
   auditStore?: AuditStore;
@@ -202,7 +202,7 @@ export function createMarketplaceRoutes(deps: MarketplaceDeps) {
      * the standing role message, and as the built-in system prompt when there is no managed Bot to
      * run on (where the create store keeps it as the only instruction the Bot gets).
      */
-    const agent = await deps.agents.create(agentActor, {
+    const agent = await deps.agents.createBot(agentActor, {
       name: expert.name,
       title: expert.name,
       roleDescription: expert.roleDescription,
@@ -261,7 +261,9 @@ export function createMarketplaceRoutes(deps: MarketplaceDeps) {
       // The Bot exists but the receipt never landed: retire the twin here, so a failed
       // grant or skill write cannot leave an unaccounted Bot on the roster. The person's
       // retry starts clean.
-      await deps.agents.softDelete(agentActor, agent.id).catch(() => undefined);
+      await deps.agents
+        .softDeleteBot(agentActor, agent.id)
+        .catch(() => undefined);
       throw error;
     }
 
@@ -273,7 +275,7 @@ export function createMarketplaceRoutes(deps: MarketplaceDeps) {
     if (!inserted) {
       // A concurrent second press holds the receipt. Its Bot is the answer; this twin has none and
       // would sit on the roster forever unaccounted, so it is retired here.
-      await deps.agents.softDelete(agentActor, agent.id);
+      await deps.agents.softDeleteBot(agentActor, agent.id);
       const winner = await deps.installs.installFor(actor.id, slug);
       // The trail row the winner's answer already wrote covers the install; this records
       // that a concurrent twin was created and retired, so the Bot audit is not orphaned.
@@ -306,7 +308,7 @@ export function createMarketplaceRoutes(deps: MarketplaceDeps) {
     }
     // The Bot first: its receipt is the thing that says it exists, and the card flips on the row.
     if (deps.agents) {
-      await deps.agents.softDelete(
+      await deps.agents.softDeleteBot(
         { id: actor.id, role: actor.role },
         existing.agentId,
       );

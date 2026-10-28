@@ -2,7 +2,6 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
@@ -75,7 +74,8 @@ static ACTIVE: OnceLock<Mutex<Option<Arc<Flow>>>> = OnceLock::new();
 fn active() -> &'static Mutex<Option<Arc<Flow>>> {
     ACTIVE.get_or_init(|| Mutex::new(None))
 }
-fn random() -> String {
+// pub(crate): sign_in mints the PKCE pair both OAuth flows share from this generator.
+pub(crate) fn random() -> String {
     let mut bytes = [0; 32];
     rand::rng().fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
@@ -162,9 +162,7 @@ pub fn begin(root: &Path, provider: &str) -> Result<Authorization, String> {
                 "http://127.0.0.1:{}/oauth/callback",
                 listener.local_addr().map_err(|e| e.to_string())?.port()
             );
-            let verifier = random();
-            let state = random();
-            let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+            let (verifier, state, challenge) = crate::sign_in::pkce_pair();
             let mut url =
                 reqwest::Url::parse("https://accounts.google.com/o/oauth2/v2/auth").unwrap();
             url.query_pairs_mut().extend_pairs([

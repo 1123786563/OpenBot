@@ -9,7 +9,7 @@ import {
   IconSettings,
   IconUsersGroup,
 } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
@@ -32,9 +32,10 @@ import {
   sharingSummary,
 } from "@/lib/agents/bot-summaries";
 import type { AgentProfile } from "@/lib/agents/queries";
-import { approvalInboxOptions, ruleCoversBot } from "@/lib/approvals";
+import { ruleCoversBot, scopedApprovalInboxOptions } from "@/lib/approvals";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { deliveryQueryOptions } from "@/lib/delivery";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { memorySourcesQueryOptions } from "@/lib/memory";
 import { proactiveSettingsQueryOptions } from "@/lib/proactive";
 import { responsibilitiesQueryOptions } from "@/lib/responsibilities";
@@ -77,7 +78,10 @@ export function BotSettingsRows({ agent }: { agent: AgentProfile }) {
   const reach = useQuery(deliveryQueryOptions());
   const sources = useQuery(memorySourcesQueryOptions());
   const research = useQuery(proactiveSettingsQueryOptions());
-  const approvals = useQuery(approvalInboxOptions());
+  // The inbox count rides the scope the screen holds (MOD19 / Issue #639, T1b).
+  const cache = useQueryClient();
+  const scope = useScopedCache();
+  const approvals = useQuery(scopedApprovalInboxOptions(cache, scope));
 
   const rows: Row[] = [
     {

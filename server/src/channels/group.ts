@@ -33,7 +33,7 @@ import {
   PERSON_INITIATOR,
   recordAuditEvent,
 } from "../audit";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { Database } from "../db/client";
 import {
   channelMemberships,

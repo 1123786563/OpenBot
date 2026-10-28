@@ -843,6 +843,11 @@ describe("MOD13 C1: 委托等价——门面成员与直调内件同输入同答
       sharedConnections: async () => [],
       listForAgent: async () => ({ tools: [], skills: [] }),
       callTool: async () => ({ text: "", isError: false }),
+      // MOD16（#636）：Pick 扩面后本套件不驱动的四个成员，只满足合同。
+      installSkill: async () => {},
+      uninstallSkill: async () => {},
+      skillOwner: async () => null,
+      grant: async () => {},
     };
     const toolAccess = createToolAccess({
       store: pluginStore,

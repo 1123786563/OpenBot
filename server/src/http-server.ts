@@ -4,15 +4,9 @@ import { serve } from "bun";
 import type { OpenBotRole } from "./auth/roles";
 import { websocket as channelSocket } from "./channels/socket";
 import type { StreamDecision } from "./computer/stream-auth";
-import { type PreviewOrigin, samePreviewOrigin } from "./craft/preview-origin";
+import type { CraftPreviewFrontDoor } from "./craft/preview";
 import {
-  type PreviewWebappHmrDeps,
-  resolvePreviewWebappHmrUpgrade,
-  resolveWebappHmrUpgrade,
-  type WebappHmrDeps,
   type WebappHmrSocketData,
-  webappHmrIsAppPath,
-  webappHmrSessionIdFromPath,
   webappHmrSocketHandlers,
 } from "./craft/webapp-proxy";
 import type { DemonstrationRecorder } from "./demonstrations/recording";
@@ -73,9 +67,13 @@ export function startHttpServer(deps: {
   ) => Promise<{ id: string; name: string; role: OpenBotRole }>;
   demonstrationStore: DemonstrationStore;
   demonstrationRecorder: DemonstrationRecorder;
-  craftPreviewOrigin: PreviewOrigin | undefined;
-  craftWebappHmrDeps: WebappHmrDeps | undefined;
-  craftPreviewWebappHmrDeps: PreviewWebappHmrDeps | undefined;
+  /**
+   * MOD22 (#642): the ONE craft preview dep — the seam (craft/preview.ts) owns
+   * every preview/HMR judgment (host dispatch, CSWSH Origin gate, both upgrade
+   * resolvers); this file keeps only the Bun plumbing: the upgrade commit it
+   * hands the seam as a callback, and the socket pump below.
+   */
+  craftPreviewFrontDoor: CraftPreviewFrontDoor | undefined;
 }): void {
   const {
     port,
@@ -84,9 +82,7 @@ export function startHttpServer(deps: {
     resolveRequestActor,
     demonstrationStore,
     demonstrationRecorder,
-    craftPreviewOrigin,
-    craftWebappHmrDeps,
-    craftPreviewWebappHmrDeps,
+    craftPreviewFrontDoor,
   } = deps;
   const log = getLogger("server");
 
@@ -94,92 +90,18 @@ export function startHttpServer(deps: {
     port,
     async fetch(request, server) {
       const url = new URL(request.url);
-      // The craft preview origin (#361/#362): claimed hosts NEVER fall through to
-      // the main-site branches below — unknown preview hosts 404 right here, closed
-      // admission answers 503 with its displayable reason, and a resolved session
-      // lands on the preview entry: a `?ticket=` hop redeems and plants the D9
-      // cookie, every further request is gated on that cookie and proxied to the
-      // session's dev server (no platform session is ever in scope on these
-      // hosts — AC1). Bun derives request.url's host from the Host header on this
-      // listener for plain HTTP and websocket upgrades alike (verified against a
-      // live listener).
-      if (craftPreviewOrigin?.handlesRequest(request)) {
-        const resolved = craftPreviewOrigin.resolvePreviewRequest(request);
-        if ("sessionId" in resolved) {
-          // #363: the HMR websocket upgrade on a preview host. An upgrade is not a
-          // request/response, so the HTTP entry below cannot carry it — the session
-          // comes from the Host (never the path: host routing moved identity out of
-          // the URL), and the authorization is the preview pass the redemption hop
-          // planted, the SAME judgment the HTTP entry's cookie gate makes. Every
-          // refusal lands BEFORE `server.upgrade` commits the socket, in the
-          // proxy's own 401/404/503 shapes; the upstream path is the pathname
-          // VERBATIM (the dev form's leading label INCLUDED — the basePath-mounted
-          // dev server serves under it), exactly what the HTTP entry requests —
-          // see appPathFor and webappHmrUpstreamUrl for why forwarding the
-          // app's own path verbatim is load-bearing.
-          // fix-ocr28 #2: the app path is derived ONCE here — the branch gate and
-          // the resolver's path argument used to call appPathFor twice for one
-          // request (two URL parses for one pathname, and a silent seam if either
-          // call ever grew a judgment of its own).
-          const appPath = craftPreviewOrigin.appPathFor(request);
-          if (
-            craftPreviewWebappHmrDeps !== undefined &&
-            request.headers.get("upgrade")?.toLowerCase() === "websocket" &&
-            webappHmrIsAppPath(appPath)
-          ) {
-            // fix-ocr28 #1 (CSWSH): the Origin gate. A WS handshake is not
-            // CORS-gated and the preview pass is SameSite=None, so a malicious
-            // page's `new WebSocket("wss://<preview-host>/…")` would otherwise
-            // ride the pass cookie into the live HMR channel. Origin present →
-            // it must be the session's own preview origin; absent (a
-            // non-browser client) → the pre-existing behavior. originFor is
-            // safe here: "sessionId" in resolved means admission already
-            // answered open (resolvePreviewRequest refuses 503 when closed),
-            // and originFor throws on a closed origin.
-            const origin = request.headers.get("origin");
-            if (
-              !samePreviewOrigin(
-                origin,
-                craftPreviewOrigin.originFor(resolved.sessionId),
-              )
-            ) {
-              return new Response(
-                "Cross-origin WebSocket upgrades are refused.",
-                { status: 403 },
-              );
-            }
-            const decision = await resolvePreviewWebappHmrUpgrade(
-              craftPreviewWebappHmrDeps satisfies PreviewWebappHmrDeps,
-              {
-                sessionId: resolved.sessionId,
-                request,
-                path: appPath,
-                query: url.search,
-              },
-            );
-            if (!decision.ok) {
-              return new Response(decision.error, { status: decision.status });
-            }
-            if (
-              server.upgrade(request, {
-                data: { upstream: decision.upstreamUrl, hmr: true as const },
-              })
-            ) {
-              return undefined as unknown as Response;
-            }
-            return new Response("Expected a WebSocket upgrade.", {
-              status: 400,
-            });
-          }
-          return craftPreviewOrigin.handlePreviewRequest(
-            resolved.sessionId,
-            request,
-          );
-        }
-        return Response.json(
-          { error: resolved.refuse.reason },
-          { status: resolved.refuse.status },
-        );
+      // The craft preview namespace (#361/#362/#363): claimed preview hosts NEVER
+      // fall through to the main-site branches below. The seam (craft/preview.ts)
+      // owns the whole judgment — host claim, session resolution, the CSWSH
+      // Origin gate, the HMR upgrade's authorization and target; the only thing
+      // left here is the Bun upgrade commit it is handed as a callback.
+      const previewVerdict = await craftPreviewFrontDoor?.dispatch(
+        request,
+        url,
+        (data) => server.upgrade(request, { data }),
+      );
+      if (previewVerdict?.claimed) {
+        return previewVerdict.response as Response;
       }
       if (url.pathname === "/api/audio/transcriptions") {
         server.timeout(request, DICTATION_HTTP_IDLE_SECONDS);
@@ -227,39 +149,18 @@ export function startHttpServer(deps: {
         }
         return new Response("Expected a WebSocket upgrade.", { status: 400 });
       }
-      const hmrSessionId =
-        craftWebappHmrDeps !== undefined
-          ? webappHmrSessionIdFromPath(url.pathname)
-          : null;
-      if (
-        hmrSessionId !== null &&
-        craftWebappHmrDeps !== undefined &&
-        request.headers.get("upgrade")?.toLowerCase() === "websocket"
-      ) {
-        // The webapp proxy's own auth, applied by hand because middleware does not run on an
-        // upgrade (the stream branch above sets the precedent). Every refusal lands BEFORE the
-        // upgrade commits — onyx's `_check_webapp_access` → WebSocketException(1008), answered
-        // here as plain HTTP statuses while the request is still a request.
-        const actor = await resolveRequestActor(request).catch(() => null);
-        const decision = await resolveWebappHmrUpgrade(craftWebappHmrDeps, {
-          sessionId: hmrSessionId,
-          actor,
-          // Verbatim, not a rebuilt "/_next/webpack-hmr": the scaffold's basePath IS
-          // this mount, so the dev server serves HMR under it. See webappHmrUpstreamUrl.
-          path: url.pathname,
-          query: url.search,
-        });
-        if (!decision.ok) {
-          return new Response(decision.error, { status: decision.status });
-        }
-        if (
-          server.upgrade(request, {
-            data: { upstream: decision.upstreamUrl, hmr: true as const },
-          })
-        ) {
-          return undefined as unknown as Response;
-        }
-        return new Response("Expected a WebSocket upgrade.", { status: 400 });
+      // The craft webapp's main-site HMR upgrade (onyx webapp_proxy.py:387-398),
+      // judged by the same seam — this branch keeps its old slot behind the
+      // computer-stream authorizeStream branch; the seam answers claimed:false
+      // for anything that is not the HMR endpoint upgrade.
+      const hmrVerdict = await craftPreviewFrontDoor?.dispatchWebappHmr(
+        request,
+        url,
+        resolveRequestActor,
+        (data) => server.upgrade(request, { data }),
+      );
+      if (hmrVerdict?.claimed) {
+        return hmrVerdict.response as Response;
       }
       return app.fetch(request, { server });
     },
