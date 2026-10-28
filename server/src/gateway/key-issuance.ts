@@ -39,7 +39,11 @@ import {
   resolveVirtualKeyTtlMinutes,
   virtualKeyTtlMinutesProblem,
 } from "./key-expiry";
-import { GatewayKeyRenewalError, type RenewedGatewayKey } from "./key-renewal";
+import {
+  createGatewayVirtualKeyDeactivationClient,
+  GatewayKeyRenewalError,
+  type RenewedGatewayKey,
+} from "./key-renewal";
 import { GatewayNotReadyError } from "./readiness";
 
 /*
@@ -193,6 +197,22 @@ export type GatewayKeyIssuerDeps = {
    */
   resolveForBot: AccessGrantService["resolveForBot"];
   /**
+   * T05.11's final-verdict door: the locked re-verification (User/Principal/status/generation/
+   * Bot/Grant, principal→grant→key lock order) the issuance transaction runs as its last local
+   * act. Optional so the unwired composition keeps the inline grant-row check this module always
+   * made — a deployment that has not composed the seam issues exactly as it did before.
+   */
+  reverifyForIssuance?: AccessGrantService["reverifyForIssuance"];
+  /**
+   * The compensating deactivation transport (05.6's `PUT is_active:false`, a 404 reading as
+   * "already gone"): what reclaims a remotely minted key whose final verdict refused its
+   * birth. Absent, a refused mint leaves the inert orphan the existing drift story reconciles.
+   */
+  deactivationClient?: Pick<
+    import("./key-renewal").GatewayVirtualKeyDeactivationClient,
+    "deactivateVirtualKey"
+  >;
+  /**
    * 05.1's idempotent provisioning seam: confirms the user's gateway Customer (the 01.7 gate
    * runs inside it), answering the customerId every key of this user bills.
    */
@@ -215,9 +235,12 @@ export type GatewayKeyIssuer = {
   /**
    * The one entry point: mint an independent virtual key for this (user × Bot) authorization.
    *
-   * The flow is resolve → provision → (lock, re-verify, version) → create → record: the grant
-   * is re-verified inside the insert transaction under a row lock, so a revocation that
-   * commits mid-issuance still wins — no key is born for a dead authorization. The remote
+   * The flow is resolve → provision → create → (lock, re-verify, version, record) — the
+   * remote create runs outside every lock (T05.11), and the grant — with its user's
+   * principal, status, generation and Bot — is re-verified inside the final transaction
+   * under the principal→grant→key lock order, so a revocation or disable that commits
+   * mid-issuance still wins: no key is born for a dead authorization, and a minted key the
+   * final verdict refuses is deactivated at the gateway, never disclosed. The remote
    * create carries the customerId and nothing else; the local insert is one row, plaintext-
    * free, versioned per grant. The audit event goes out after the commit, fail-closed like
    * 04.5's: an issuance the trail cannot name is an issuance that failed — the key already
@@ -229,6 +252,32 @@ export type GatewayKeyIssuer = {
     identity: BotServiceIdentity,
   ) => Promise<IssuedGatewayKey>;
 };
+
+/** The caller's own transaction, the type the issuance and renewal seams take. */
+export type IssuanceTx = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+/**
+ * The unwired composition's final check (T05.11): exactly the grant-row verification the
+ * issuance transaction always made, kept as the fallback a composition that never wired the
+ * grant service's locked seam runs instead — the M0/M1 arm stays byte-exact, and the row's
+ * saved generation (null on every row a registry-less assembly writes) is what a new key
+ * pins, so nothing is ever stamped from a live state nobody verified.
+ */
+export async function legacyGrantRowReverify(
+  tx: IssuanceTx,
+  grantId: string,
+  identity: BotServiceIdentity,
+): Promise<{ identityGeneration: number | null }> {
+  const [row] = await tx
+    .select()
+    .from(accessGrants)
+    .where(eq(accessGrants.grantId, grantId))
+    .for("update");
+  if (row?.status !== "active" || row.botId !== identity.botId) {
+    throw new AccessGrantUseError();
+  }
+  return { identityGeneration: row.identityGeneration };
+}
 
 export function createGatewayKeyIssuer(
   deps: GatewayKeyIssuerDeps,
@@ -278,71 +327,120 @@ export function createGatewayKeyIssuer(
       id: grant.userId,
     });
 
-    // 3. The issuance transaction: the grant row is locked and re-verified here, so a
-    // revocation that committed while the customer was being provisioned still wins — the
-    // key is never born for a dead authorization. The row lock also serializes the version
-    // counter per grant; the unique index is the backstop. The term (05.5) is measured from
-    // one clock reading taken before the create, so the remote key, the local record, the
-    // answer and the audit all name the same instant.
+    // 3. The term (05.5) is measured from one clock reading taken before the create, so the
+    // remote key, the local record, the answer and the audit all name the same instant.
     const issuedAt = (deps.now ?? defaultNow)();
     const expiresAt = new Date(
       issuedAt.getTime() + deps.keyTtlMinutes * 60_000,
     );
-    const issued = await deps.database.transaction(async (tx) => {
-      const [row] = await tx
-        .select()
-        .from(accessGrants)
-        .where(eq(accessGrants.grantId, grant.grantId))
-        .for("update");
-      if (row?.status !== "active" || row.botId !== identity.botId) {
-        throw new AccessGrantUseError();
-      }
-      const [counter] = await tx
-        .select({
-          maxVersion: sql<number>`coalesce(max(${gatewayVirtualKeys.credentialVersion}), 0)`,
-        })
-        .from(gatewayVirtualKeys)
-        .where(eq(gatewayVirtualKeys.grantId, grant.grantId));
-      const credentialVersion = Number(counter?.maxVersion ?? 0) + 1;
 
-      // 4. The remote create: ownership and the term — customerId, a name, the expiry, and
-      // nothing else governed here (no budgets, no rate limits, no provider configs; the
-      // customer owns those). `delete_after_expire: false` keeps the gateway's cleanup job
-      // from deleting the record once the term passes: the expired key is the settlement
-      // and state-sync side's name for what happened here, not litter (05.5/06.8/08.x).
-      const created = await deps.client.createVirtualKey({
-        name: gatewayVirtualKeyName(grant.grantId, credentialVersion),
-        customerId,
-        expiresAt: expiresAt.toISOString(),
-      });
-      onMinted?.(created.value);
+    // 4. The advisory version for the remote NAME only (T05.11: the create runs outside every
+    // lock, so the authoritative counter is computed under the grant row lock below). A
+    // concurrent issuance can make the name's version diverge from the record's — cosmetic,
+    // the random suffix keeps names unique and the drift story reconciles by owner/scope/term.
+    const [nameCounter] = await deps.database
+      .select({
+        maxVersion: sql<number>`coalesce(max(${gatewayVirtualKeys.credentialVersion}), 0)`,
+      })
+      .from(gatewayVirtualKeys)
+      .where(eq(gatewayVirtualKeys.grantId, grant.grantId));
+    const nameVersion = Number(nameCounter?.maxVersion ?? 0) + 1;
 
-      // 5. The local record: no plaintext column exists; the sha256 identifies, never redeems.
-      // `expires_at` records the term the key was minted under — the same instant the remote
-      // key was given — so every local reader (bundle, status views, the expiry verdict) and
-      // the gateway agree on when the key stops starting new requests.
-      const [inserted] = await tx
-        .insert(gatewayVirtualKeys)
-        .values({
-          id: generateKeyId(),
-          grantId: grant.grantId,
-          botId: grant.botId,
-          gatewayCustomerId: customerId,
-          gatewayVirtualKeyId: created.virtualKeyId,
-          valueHash: sha256(created.value),
-          credentialVersion,
-          status: "active",
-          expiresAt,
-        })
-        .returning();
-      if (!inserted) {
-        throw new GatewayVirtualKeyError(
-          "gateway_vk_invalid_response",
-          "The virtual key record could not be stored, so the issuance is refused.",
-        );
-      }
-      return { record: inserted, secret: created.value };
+    // 5. The remote create — OUTSIDE every lock (T05.11): no transaction waits on the
+    // gateway. Ownership and the term only — customerId, a name, the expiry, and nothing
+    // else governed here (no budgets, no rate limits, no provider configs; the customer owns
+    // those). `delete_after_expire: false` keeps the gateway's cleanup job from deleting the
+    // record once the term passes: the expired key is the settlement and state-sync side's
+    // name for what happened here, not litter (05.5/06.8/08.x). This window is the fault
+    // barrier's: a disable that commits while the gateway mints is judged by the final
+    // re-verification below, never by this create's success.
+    const created = await deps.client.createVirtualKey({
+      name: gatewayVirtualKeyName(grant.grantId, nameVersion),
+      customerId,
+      expiresAt: expiresAt.toISOString(),
     });
+    onMinted?.(created.value);
+
+    // 6. The final local transaction, principal→grant→key: the seam (or, unwired, the inline
+    // grant-row check this module always made) locks and re-verifies
+    // User/Principal/status/generation/Bot/Grant — a revocation, a disable or a generation
+    // change that committed while the key was being minted still wins, and the key is never
+    // born for a dead authorization. The grant row lock serializes the version counter per
+    // grant; the unique index is the backstop. The new record PINS the grant's verified
+    // source generation (T05.11): the key answers for the authorization it was minted
+    // against, never for whatever the identity becomes later.
+    let issued: {
+      record: typeof gatewayVirtualKeys.$inferSelect;
+      secret: string;
+    };
+    try {
+      issued = await deps.database.transaction(async (tx) => {
+        const verdict = deps.reverifyForIssuance
+          ? await deps.reverifyForIssuance(tx, grant.grantId, identity)
+          : await legacyGrantRowReverify(tx, grant.grantId, identity);
+        const [counter] = await tx
+          .select({
+            maxVersion: sql<number>`coalesce(max(${gatewayVirtualKeys.credentialVersion}), 0)`,
+          })
+          .from(gatewayVirtualKeys)
+          .where(eq(gatewayVirtualKeys.grantId, grant.grantId));
+        const credentialVersion = Number(counter?.maxVersion ?? 0) + 1;
+
+        // The local record: no plaintext column exists; the sha256 identifies, never redeems.
+        // `expires_at` records the term the key was minted under — the same instant the remote
+        // key was given — so every local reader (bundle, status views, the expiry verdict) and
+        // the gateway agree on when the key stops starting new requests.
+        const [inserted] = await tx
+          .insert(gatewayVirtualKeys)
+          .values({
+            id: generateKeyId(),
+            grantId: grant.grantId,
+            botId: grant.botId,
+            gatewayCustomerId: customerId,
+            gatewayVirtualKeyId: created.virtualKeyId,
+            valueHash: sha256(created.value),
+            credentialVersion,
+            status: "active",
+            sourceIdentityGeneration: verdict.identityGeneration,
+            expiresAt,
+          })
+          .returning();
+        if (!inserted) {
+          throw new GatewayVirtualKeyError(
+            "gateway_vk_invalid_response",
+            "The virtual key record could not be stored, so the issuance is refused.",
+          );
+        }
+        return { record: inserted, secret: created.value };
+      });
+    } catch (error) {
+      // T05.11's compensating reclaim: the key exists at the gateway but the final verdict
+      // refused its birth — deactivate it (idempotent; a 404 is the goal met), never
+      // disclose it, and let the uniform refusal fly scrubbed of the secret. Best-effort by
+      // design: a gateway that cannot be asked keeps an inert orphan — its plaintext was
+      // never delivered — for the drift story to reconcile, never a disclosed key.
+      if (deps.deactivationClient) {
+        await deps.deactivationClient
+          .deactivateVirtualKey({
+            gatewayVirtualKeyId: created.virtualKeyId,
+          })
+          .catch((deactivationError) => {
+            log.warn(
+              {
+                type: "gateway-key-issuance-compensation-failed",
+                grantId: grant.grantId,
+                gatewayVirtualKeyId: created.virtualKeyId,
+                error:
+                  deactivationError instanceof Error
+                    ? deactivationError.message
+                    : String(deactivationError),
+              },
+              "The minted virtual key could not be reclaimed at the gateway after the issuance was refused; the orphan is inert (its plaintext was never delivered) and the state sync reconciles it.",
+            );
+          });
+      }
+      throw error;
+    }
 
     // 6. After the commit, fail-closed like every other issuance of a capability: an
     // issuance the trail cannot name is an issuance that failed. The payload names the act —
@@ -651,6 +749,22 @@ export function createDeploymentKeyIssuer(options: {
   return createGatewayKeyIssuer({
     database: options.database,
     resolveForBot: options.modelAccess.resolveForBot,
+    // T05.11: the same grant service's locked final-verdict door, and the
+    // compensating deactivation a refused mint reclaims through — the same
+    // installed controls the create transport reads.
+    reverifyForIssuance: options.modelAccess.reverifyForIssuance,
+    deactivationClient: createGatewayVirtualKeyDeactivationClient({
+      readGatewayEndpoint: async () =>
+        endpointControls ? endpointControls.readGatewayEndpoint() : undefined,
+      resolveGatewayAdminCredential: async () => {
+        if (!credentialControls) {
+          throw new GatewayAdminCredentialNotConfiguredError(
+            "The gateway admin credential is not configured.",
+          );
+        }
+        return credentialControls.resolveGatewayAdminCredential();
+      },
+    }),
     provisionCustomer: (ref) =>
       provisionCustomerForDeployment(options.database, ref),
     keyTtlMinutes,

@@ -3,13 +3,10 @@ import { and, eq, sql } from "drizzle-orm";
 import { getLogger, type Logger } from "../../../shared/logger";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { PayerRef } from "../billing/payer";
-import {
-  type AccessGrantService,
-  AccessGrantUseError,
-} from "../bot-services/access-grants";
+import type { AccessGrantService } from "../bot-services/access-grants";
 import type { BotServiceIdentity } from "../bot-services/types";
 import type { Database } from "../db/client";
-import { accessGrants, gatewayVirtualKeys } from "../db/schema";
+import { gatewayVirtualKeys } from "../db/schema";
 import {
   GatewayAdminCredentialNotConfiguredError,
   gatewayAdminCredentialControls,
@@ -35,6 +32,7 @@ import {
   type GatewayKeyRecord,
   type GatewayVirtualKeyClient,
   gatewayVirtualKeyName,
+  legacyGrantRowReverify,
 } from "./key-issuance";
 
 /*
@@ -158,6 +156,14 @@ export type GatewayKeyRenewalDeps = {
    */
   resolveForBot: AccessGrantService["resolveForBot"];
   /**
+   * T05.11's final-verdict door: the locked re-verification (User/Principal/status/
+   * generation/Bot/Grant, principal→grant→key lock order) the rotation's final local
+   * transaction runs. Optional so the unwired composition keeps the inline grant-row check
+   * this module always made — a deployment that has not composed the seam renews exactly as
+   * it did before.
+   */
+  reverifyForIssuance?: AccessGrantService["reverifyForIssuance"];
+  /**
    * 05.1's idempotent provisioning seam: confirms the user's gateway Customer (the 01.7
    * gate runs inside it), answering the customerId the renewed key bills — the account
    * re-verification and the gate in one seam.
@@ -280,113 +286,159 @@ export function createGatewayKeyRenewalService(
       );
     }
 
-    // 5. The rotation transaction: the grant row is locked and re-verified here, so a
-    // revocation that committed while the verdicts ran still wins — nothing is rotated for
-    // a dead authorization. The lock also serializes two renewals of one grant; the
-    // version counter's unique index is the backstop. The term is measured from ONE clock
-    // reading, shared by the remote key, the local record, the answer and the audit.
+    // 5. The versions this renewal retires, read for the remote deactivation (T05.11: the
+    // remote operations run OUTSIDE every lock — no transaction waits on the gateway). The
+    // authoritative flip below runs under the grant row lock and covers every active
+    // version, including one a concurrent issuance minted after this read.
+    const actives = await deps.database
+      .select({
+        gatewayVirtualKeyId: gatewayVirtualKeys.gatewayVirtualKeyId,
+        credentialVersion: gatewayVirtualKeys.credentialVersion,
+      })
+      .from(gatewayVirtualKeys)
+      .where(
+        and(
+          eq(gatewayVirtualKeys.grantId, grant.grantId),
+          eq(gatewayVirtualKeys.status, "active"),
+        ),
+      );
+
+    // 05.7's rule, gateway side first: a version is retired at the gateway before anything
+    // local moves, so the refusal paths leave the previous state exactly as it was. A 404 is
+    // the gateway answering "already unavailable" — the goal met. If the final verdict
+    // below refuses, these deactivations stand: retiring a dead authorization's keys is the
+    // safe direction, and the local rows the state sync reconciles name the drift.
+    for (const active of actives) {
+      await deps.deactivationClient.deactivateVirtualKey({
+        gatewayVirtualKeyId: active.gatewayVirtualKeyId,
+      });
+    }
+
+    // 6. The term is measured from ONE clock reading, shared by the remote key, the local
+    // record, the answer and the audit. The advisory version names the mint only — the
+    // authoritative counter is computed under the grant row lock below.
     const renewedAt = deps.now?.() ?? defaultNow();
     const expiresAt = new Date(
       renewedAt.getTime() + deps.keyTtlMinutes * 60_000,
     );
-    const renewed = await deps.database.transaction(async (tx) => {
-      const [row] = await tx
-        .select()
-        .from(accessGrants)
-        .where(eq(accessGrants.grantId, grant.grantId))
-        .for("update");
-      if (row?.status !== "active" || row.botId !== identity.botId) {
-        throw new AccessGrantUseError();
-      }
+    const [nameCounter] = await deps.database
+      .select({
+        maxVersion: sql<number>`coalesce(max(${gatewayVirtualKeys.credentialVersion}), 0)`,
+      })
+      .from(gatewayVirtualKeys)
+      .where(eq(gatewayVirtualKeys.grantId, grant.grantId));
+    const nameVersion = Number(nameCounter?.maxVersion ?? 0) + 1;
 
-      // The versions this renewal retires, read under the grant's lock.
-      const actives = await tx
-        .select({
-          id: gatewayVirtualKeys.id,
-          gatewayVirtualKeyId: gatewayVirtualKeys.gatewayVirtualKeyId,
-          credentialVersion: gatewayVirtualKeys.credentialVersion,
-        })
-        .from(gatewayVirtualKeys)
-        .where(
-          and(
-            eq(gatewayVirtualKeys.grantId, grant.grantId),
-            eq(gatewayVirtualKeys.status, "active"),
-          ),
-        );
+    // The mint — outside the locks, ownership and the term only (no budgets, no rate
+    // limits, no provider configs; the customer owns those; the ledger is untouched by
+    // construction). `delete_after_expire: false` keeps the retired versions nameable for
+    // the settlement side. This window is the fault barrier's: a disable that commits while
+    // the gateway mints is judged by the final re-verification below, never by the mint.
+    const created = await deps.createClient.createVirtualKey({
+      name: gatewayVirtualKeyName(grant.grantId, nameVersion),
+      customerId,
+      expiresAt: expiresAt.toISOString(),
+    });
+    onMinted?.(created.value);
 
-      // 05.7's rule, gateway side first: a version is retired at the gateway before
-      // anything local moves, so the refusal paths leave the previous state exactly as it
-      // was. A 404 is the gateway answering "already unavailable" — the goal met.
-      for (const active of actives) {
-        await deps.deactivationClient.deactivateVirtualKey({
-          gatewayVirtualKeyId: active.gatewayVirtualKeyId,
-        });
-      }
+    // 7. The final local transaction, principal→grant→key: the seam (or, unwired, the
+    // inline grant-row check this module always made) locks and re-verifies
+    // User/Principal/status/generation/Bot/Grant, so a revocation, a disable or a
+    // generation change that committed while the rotation ran still wins — nothing is
+    // rotated for a dead authorization. The lock also serializes two renewals of one
+    // grant; the version counter's unique index is the backstop. The new record PINS the
+    // grant's verified source generation (T05.11), and bills the SAME customer the
+    // provisioner's idempotent mapping answered — the original payer, never a new one.
+    let renewed: {
+      record: typeof gatewayVirtualKeys.$inferSelect;
+      secret: string;
+      supersededVersions: number[];
+    };
+    try {
+      renewed = await deps.database.transaction(async (tx) => {
+        const verdict = deps.reverifyForIssuance
+          ? await deps.reverifyForIssuance(tx, grant.grantId, identity)
+          : await legacyGrantRowReverify(tx, grant.grantId, identity);
 
-      const [counter] = await tx
-        .select({
-          maxVersion: sql<number>`coalesce(max(${gatewayVirtualKeys.credentialVersion}), 0)`,
-        })
-        .from(gatewayVirtualKeys)
-        .where(eq(gatewayVirtualKeys.grantId, grant.grantId));
-      const credentialVersion = Number(counter?.maxVersion ?? 0) + 1;
-
-      // The mint: ownership and the term — customerId, a name, the expiry, and nothing
-      // else governed here (no budgets, no rate limits, no provider configs; the customer
-      // owns those; the ledger is untouched by construction). `delete_after_expire: false`
-      // keeps the retired versions nameable for the settlement side.
-      const created = await deps.createClient.createVirtualKey({
-        name: gatewayVirtualKeyName(grant.grantId, credentialVersion),
-        customerId,
-        expiresAt: expiresAt.toISOString(),
-      });
-      onMinted?.(created.value);
-
-      // The local retirement: every previously active version flips to `revoked`, each
-      // update guarded on the status it was decided against. The sync never reads a
-      // revoked row, so no remote answer can undo OpenBot's own retirement.
-      const supersededVersions: number[] = [];
-      for (const active of actives) {
-        const [flipped] = await tx
+        // The local retirement: EVERY other active version flips to `revoked`, each update
+        // guarded on the status it was decided against. A version minted after the
+        // pre-lock read is flipped too — locally the one-active-version invariant holds,
+        // and its remote key (deactivated by nobody) is the drift the state sync and its
+        // own short term retire. The sync never reads a revoked row, so no remote answer
+        // can undo OpenBot's own retirement.
+        const supersededVersions: number[] = [];
+        const flipped = await tx
           .update(gatewayVirtualKeys)
           .set({ status: "revoked" })
           .where(
             and(
-              eq(gatewayVirtualKeys.id, active.id),
+              eq(gatewayVirtualKeys.grantId, grant.grantId),
               eq(gatewayVirtualKeys.status, "active"),
             ),
           )
           .returning({ version: gatewayVirtualKeys.credentialVersion });
-        if (flipped) supersededVersions.push(flipped.version);
-      }
+        for (const row of flipped) supersededVersions.push(row.version);
 
-      // The new record: no plaintext column exists; the sha256 identifies, never redeems.
-      const [inserted] = await tx
-        .insert(gatewayVirtualKeys)
-        .values({
-          id: generateKeyId(),
-          grantId: grant.grantId,
-          botId: grant.botId,
-          gatewayCustomerId: customerId,
-          gatewayVirtualKeyId: created.virtualKeyId,
-          valueHash: sha256(created.value),
-          credentialVersion,
-          status: "active",
-          expiresAt,
-        })
-        .returning();
-      if (!inserted) {
-        throw new GatewayKeyRenewalError(
-          "renewal_vk_invalid_response",
-          "The renewed virtual key record could not be stored, so the renewal is refused.",
-        );
-      }
-      return {
-        record: inserted,
-        secret: created.value,
-        supersededVersions,
-      };
-    });
+        const [counter] = await tx
+          .select({
+            maxVersion: sql<number>`coalesce(max(${gatewayVirtualKeys.credentialVersion}), 0)`,
+          })
+          .from(gatewayVirtualKeys)
+          .where(eq(gatewayVirtualKeys.grantId, grant.grantId));
+        const credentialVersion = Number(counter?.maxVersion ?? 0) + 1;
+
+        // The new record: no plaintext column exists; the sha256 identifies, never redeems.
+        const [inserted] = await tx
+          .insert(gatewayVirtualKeys)
+          .values({
+            id: generateKeyId(),
+            grantId: grant.grantId,
+            botId: grant.botId,
+            gatewayCustomerId: customerId,
+            gatewayVirtualKeyId: created.virtualKeyId,
+            valueHash: sha256(created.value),
+            credentialVersion,
+            status: "active",
+            sourceIdentityGeneration: verdict.identityGeneration,
+            expiresAt,
+          })
+          .returning();
+        if (!inserted) {
+          throw new GatewayKeyRenewalError(
+            "renewal_vk_invalid_response",
+            "The renewed virtual key record could not be stored, so the renewal is refused.",
+          );
+        }
+        return {
+          record: inserted,
+          secret: created.value,
+          supersededVersions,
+        };
+      });
+    } catch (error) {
+      // T05.11's compensating reclaim: the new key exists at the gateway but the final
+      // verdict refused the rotation — deactivate it (idempotent; a 404 is the goal met),
+      // never disclose it, and let the uniform refusal fly scrubbed of the secret.
+      // Best-effort by design: the orphan is inert (its plaintext was never delivered) and
+      // the state sync reconciles it, never a disclosed key.
+      await deps.deactivationClient
+        .deactivateVirtualKey({ gatewayVirtualKeyId: created.virtualKeyId })
+        .catch((deactivationError) => {
+          log.warn(
+            {
+              type: "gateway-key-renewal-compensation-failed",
+              grantId: grant.grantId,
+              gatewayVirtualKeyId: created.virtualKeyId,
+              error:
+                deactivationError instanceof Error
+                  ? deactivationError.message
+                  : String(deactivationError),
+            },
+            "The newly minted virtual key could not be reclaimed at the gateway after the renewal was refused; the orphan is inert (its plaintext was never delivered) and the state sync reconciles it.",
+          );
+        });
+      throw error;
+    }
 
     // 6. After the commit, fail-closed like every other capability act: a renewal the
     // trail cannot name is a renewal that failed. The payload names the act — never the
@@ -687,6 +739,8 @@ export function createDeploymentKeyRenewalService(options: {
   return createGatewayKeyRenewalService({
     database: options.database,
     resolveForBot: options.modelAccess.resolveForBot,
+    // T05.11: the same grant service's locked final-verdict door the claim runs.
+    reverifyForIssuance: options.modelAccess.reverifyForIssuance,
     provisionCustomer: (ref) =>
       provisionCustomerForDeployment(options.database, ref),
     listSelectableModels: options.listSelectableModels,

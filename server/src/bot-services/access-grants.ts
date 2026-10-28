@@ -407,6 +407,82 @@ export function createAccessGrantService(
     },
 
     /**
+     * T05.11's final-verdict door: the locked re-verification the key issuance and renewal
+     * transactions run as their last local act, on the caller's own transaction, in the
+     * principal→grant→key lock order. The principal row is locked first (the row the identity
+     * commands' finalizer takes, so a disable that committed while the key was being minted
+     * remotely is the verdict THIS transaction commits against), then the grant row, then the
+     * live Bot registry read — User/Principal/status/generation/Bot/Grant, re-verified at the
+     * moment a key would be born. The BA arm (a registry is wired) compares the row's saved
+     * pair against the locked principal exactly as {@link requireCurrentSource} does; the
+     * legacy arm asks nothing of the principal and keeps the grant-row check the issuance
+     * transaction always made. Every failure is the one uniform silence of
+     * {@link AccessGrantUseError}. Answers the locked row's saved generation — what a new key
+     * pins as its `sourceIdentityGeneration` (null exactly when the row carries no pair).
+     */
+    async reverifyForIssuance(
+      tx: DirectoryTx,
+      grantId: string,
+      identity: BotServiceIdentity,
+    ): Promise<{ identityGeneration: number | null }> {
+      if (typeof grantId !== "string" || grantId.length === 0)
+        throw new AccessGrantUseError();
+      if (identity.status !== "active") throw new AccessGrantUseError();
+      // The unlocked locate: the row's user names the principal the locked pass re-reads —
+      // the pair is written once at confirmation and never rewritten, so this read only
+      // routes the lock, it never decides anything.
+      const [located] = await tx
+        .select({ userId: accessGrants.userId })
+        .from(accessGrants)
+        .where(eq(accessGrants.grantId, grantId))
+        .limit(1);
+      if (!located || located.userId.trim() === "")
+        throw new AccessGrantUseError();
+
+      const baArm = dependencies.principalRegistry !== undefined;
+      let principal:
+        | { id: string; status: string; identityGeneration: number | null }
+        | undefined;
+      if (baArm) {
+        [principal] = await tx
+          .select({
+            id: enterprisePrincipals.id,
+            status: enterprisePrincipals.status,
+            identityGeneration: enterprisePrincipals.identityGeneration,
+          })
+          .from(enterprisePrincipals)
+          .where(eq(enterprisePrincipals.userId, located.userId))
+          .limit(1)
+          .for("update");
+      }
+
+      const [row] = await tx
+        .select()
+        .from(accessGrants)
+        .where(eq(accessGrants.grantId, grantId))
+        .for("update");
+      if (row?.status !== "active" || row.botId !== identity.botId)
+        throw new AccessGrantUseError();
+
+      if (
+        baArm &&
+        (principal?.status !== "active" ||
+          row.principalId === null ||
+          row.identityGeneration === null ||
+          principal?.id !== row.principalId ||
+          principal?.identityGeneration !== row.identityGeneration)
+      )
+        throw new AccessGrantUseError();
+
+      // The Bot verdict is live here too (Q15): a Bot disabled after the pre-checks read it
+      // refuses at the moment the key would be born, not at the next claim.
+      const bot = await dependencies.botServices.getBotService(identity.botId);
+      if (bot?.status !== "active") throw new AccessGrantUseError();
+
+      return { identityGeneration: row.identityGeneration };
+    },
+
+    /**
      * The caller's own authorizations (Bifrost #240, 04.7), newest first, revoked ones included —
      * revocation is a status, not a deletion, and the page shows the state a grant is actually in.
      * The user comes from the session at the route, never from a request field, so the query's
