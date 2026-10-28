@@ -15,7 +15,6 @@ import { buildCleanupDryRun } from "../src/billing/cleanup-dry-run";
 import { executeAuthorizedCleanup } from "../src/billing/cleanup-execution";
 import { guardCleanupDeletion } from "../src/billing/cleanup-guards";
 import {
-  type CandidateRelationEvaluation,
   type CleanupRelationsManifest,
   EXTERNAL_LIVE_SUBSCRIPTION_STATUSES,
   evaluateCleanupRelations,
