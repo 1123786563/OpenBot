@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -12,6 +12,7 @@ import {
   providerName,
   signInWith,
   signInWithEmailDomain,
+  signInWithEmailPassword,
 } from "@/lib/auth/client";
 import { appConfig } from "@/lib/generated/application-config";
 import {
@@ -45,11 +46,15 @@ function SignScreen() {
   const { t } = useTranslation("common");
   // Which provider is being opened, rather than whether one is: with three buttons, a single
   // boolean would put "Opening…" on all of them.
-  const [opening, setOpening] = useState<AuthProviderId | "sso" | null>(null);
+  const [opening, setOpening] = useState<
+    AuthProviderId | "sso" | "password" | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
   const { data: options } = useQuery(authProvidersQueryOptions());
   const providers = options?.providers ?? [];
   const [email, setEmail] = useState("");
+  const [passwordEmail, setPasswordEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   /*
    * A deployment with exactly one way in goes straight there.
@@ -57,7 +62,8 @@ function SignScreen() {
    * The buttons exist to choose between ways in; with one provider and no registered company
    * IdP there is no choice to make, and a screen that only asks somebody to press the one
    * button it has is a step that does nothing. Skipped when SSO is registered (the email box
-   * is also a way in, so the choice is real) and when SSO is required (the buttons are the
+   * is also a way in, so the choice is real), when password accounts are enabled (the form
+   * below is one too, for the same reason), and when SSO is required (the buttons are the
    * administrators' break-glass, which must stay deliberate).
    *
    * Once only: a sign-in that fails lands back here with a reason, and sending somebody
@@ -66,7 +72,14 @@ function SignScreen() {
   const autoEntered = useRef(false);
   useEffect(() => {
     if (autoEntered.current || !options) return;
-    if (providers.length !== 1 || options.sso || options.ssoRequired) return;
+    if (
+      providers.length !== 1 ||
+      options.sso ||
+      options.ssoRequired ||
+      options.emailPassword
+    ) {
+      return;
+    }
     const provider = providers[0];
     if (!provider) return;
     autoEntered.current = true;
@@ -99,6 +112,29 @@ function SignScreen() {
         caughtError instanceof Error
           ? caughtError.message
           : t("signIn.noProviderForAddress"),
+      );
+      setOpening(null);
+    }
+  }
+
+  /**
+   * The way in for the deployment's own password accounts. The address and the password are both
+   * credentials here, unlike the domain box above, where the address only picks a provider;
+   * success lands on the app's origin, the same full-page arrival a provider callback ends with.
+   */
+  async function handlePasswordSignIn(submission: React.FormEvent) {
+    submission.preventDefault();
+    setError(null);
+    setOpening("password");
+
+    try {
+      await signInWithEmailPassword(passwordEmail, password);
+      window.location.assign(window.location.origin);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : t("signIn.passwordFailed"),
       );
       setOpening(null);
     }
@@ -202,7 +238,9 @@ function SignScreen() {
           ) : null}
           {providers.length > 0 && !options?.ssoRequired ? (
             providerButtons
-          ) : options?.sso || options?.ssoRequired ? null : (
+          ) : options?.sso ||
+            options?.ssoRequired ||
+            options?.emailPassword ? null : (
             <p className="text-center text-sm text-muted-foreground">
               {t("signIn.noProvider")}
             </p>
@@ -245,7 +283,69 @@ function SignScreen() {
               </Button>
             </form>
           ) : null}
+          {/*
+           * The deployment's own password accounts: the way back in after a reset, and on a
+           * deployment with no providers at all, the only way in. Hidden on pure SSO, where no
+           * password exists to check.
+           */}
+          {options?.emailPassword ? (
+            <form className="mt-3" onSubmit={handlePasswordSignIn}>
+              {providers.length > 0 || options.sso ? (
+                <div className="mb-3 flex items-center gap-3">
+                  <Separator className="flex-1" />
+                  <span className="text-muted-foreground text-xs">
+                    {t("signIn.or")}
+                  </span>
+                  <Separator className="flex-1" />
+                </div>
+              ) : null}
+              <label className="sr-only" htmlFor="sign-in-email">
+                {t("signIn.emailLabel")}
+              </label>
+              <Input
+                autoComplete="email"
+                id="sign-in-email"
+                onChange={(event) => setPasswordEmail(event.target.value)}
+                placeholder={t("signIn.emailPlaceholder")}
+                required
+                type="email"
+                value={passwordEmail}
+              />
+              <label className="sr-only" htmlFor="sign-in-password">
+                {t("signIn.passwordLabel")}
+              </label>
+              <Input
+                autoComplete="current-password"
+                className="mt-2"
+                id="sign-in-password"
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder={t("signIn.passwordLabel")}
+                required
+                type="password"
+                value={password}
+              />
+              <Button
+                className="mt-2 h-10 w-full tracking-tight"
+                disabled={opening !== null}
+                size="lg"
+                type="submit"
+                variant="outline"
+              >
+                {opening === "password"
+                  ? t("signIn.signingIn")
+                  : t("signIn.continuePassword")}
+              </Button>
+            </form>
+          ) : null}
           {/* The administrators' audited break-glass while SSO is required; everybody else is refused. */}
+          {options?.emailPassword ? (
+            <Link
+              className="mt-4 block text-center text-sm text-muted-foreground underline-offset-4 hover:underline"
+              to="/forgot-password"
+            >
+              {t("signIn.forgotIxdaxjzz")}
+            </Link>
+          ) : null}
           {options?.ssoRequired && providers.length > 0 ? (
             <details className="mt-4 text-sm">
               <summary className="cursor-pointer text-center text-muted-foreground">

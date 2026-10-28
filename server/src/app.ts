@@ -658,6 +658,7 @@ export function createApp(
        */
       directory?: Directory;
       identity?: Pick<IdentityExecutor, "execute">;
+      passwordRecovery?: { handle(request: Request): Promise<Response | null> };
       /**
        * The SCIM surface transcription (T05.05 / #561): answers one SCIM
        * request through the fixed build's own handler with the directory
@@ -1113,6 +1114,7 @@ export function createApp(
        */
       ssoRequired:
         enterpriseControls()?.snapshot()?.settings.ssoRequired === true,
+      emailPassword: config.auth?.emailPassword === true,
       /*
        * Whether this deployment has a paid-plan provider behind it, and whether it currently pays.
        *
@@ -1242,13 +1244,6 @@ export function createApp(
             database: attachmentDatabase,
             clients: config.mobileSession
               .clients as ReadonlyArray<MobileHandoffClient>,
-            assurance: {
-              require: companyAssurance.require,
-              challenge:
-                coworker?.directory?.companyAuth?.challenge ??
-                companyAssurance.challenge,
-              complete: companyAssurance.complete,
-            },
           }),
         }),
       );
@@ -1296,6 +1291,9 @@ export function createApp(
             : {}),
           ...(coworker?.directory?.identity
             ? { identity: coworker.directory.identity }
+            : {}),
+          ...(coworker?.directory?.passwordRecovery
+            ? { passwordRecovery: coworker.directory.passwordRecovery }
             : {}),
         })
       : null;

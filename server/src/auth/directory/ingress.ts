@@ -806,7 +806,8 @@ export function classifyNativeAuthPath(
   if (
     (normalized === "POST" && path === "/request-password-reset") ||
     (normalized === "POST" && path === "/reset-password") ||
-    (normalized === "GET" && path.startsWith("/reset-password/"))
+    (normalized === "GET" && path.startsWith("/reset-password/")) ||
+    (normalized === "POST" && path === "/send-verification-email")
   ) {
     return { kind: "recovery" };
   }

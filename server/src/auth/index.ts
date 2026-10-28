@@ -50,6 +50,7 @@ import {
 import { DOMAIN_REFUSAL_MESSAGE, emailDomainAllowed } from "./email-domain";
 import { encryptSsoConfig } from "./encrypt-sso-config";
 import { assertAuthMailTakeover, createAuthMail } from "./mail";
+import { createPasswordRecoveryIngress } from "./password-recovery";
 import { isConfiguredAdmin, type RoleDatabase, seedRole } from "./roles";
 import {
   createScimTransactionCapture,
@@ -433,6 +434,7 @@ const BA_ADAPTER_SCHEMA = Object.freeze({
  * nothing assembles none and keeps the honest 503 it answers today.
  */
 export type DirectoryIdentityAuth = ReturnType<typeof betterAuth> & {
+  passwordRecovery?: { handle(request: Request): Promise<Response | null> };
   /** Assigned once by the factory below; never written afterwards. */
   directoryIdentity?: Pick<IdentityExecutor, "execute">;
 };
@@ -663,9 +665,10 @@ export function createAuth(
    * and the sign-in hooks' writerOf below reads it either way. A legacy
    * deployment's database object is passed to the adapter untouched.
    */
-  const scimCapture = scimWiring
-    ? createScimTransactionCapture(database)
-    : null;
+  const scimCapture =
+    scimWiring || (authConfig.emailPassword && authConfig.authSmtp)
+      ? createScimTransactionCapture(database)
+      : null;
   /*
    * The resolved options the fixed build hands its database factory once
    * $context initializes; the identity executor's transaction-bound adapter
@@ -1254,6 +1257,43 @@ export function createAuth(
       commitmentKey: createHash("sha256").update(authConfig.secret).digest(),
     });
     (auth as DirectoryIdentityAuth).directoryIdentity = executor;
+    if (authConfig.emailPassword && authMail) {
+      const recoveryBound = createTransactionBoundBa({
+        createTxAdapter: (tx) =>
+          drizzleAdapter(tx as never, {
+            provider: "pg",
+            usePlural: true,
+            schema: BA_ADAPTER_SCHEMA,
+            transaction: false,
+          })(resolvedBaOptions as never),
+      });
+      /*
+       * T05.14 (coordinator-authorized assembly): the RecoveryIngress owns
+       * the reset surface (T04.05's three URLs) and the verification resend
+       * (its fourth). `outbox` is null until the post-commit delivery
+       * worker is wired, which keeps both entrances honestly refused: a
+       * token or a link that could never be delivered must not be created,
+       * and the refusal names the missing worker rather than half-issuing.
+       */
+      (auth as DirectoryIdentityAuth).passwordRecovery =
+        createPasswordRecoveryIngress({
+          database: scimCapture.database,
+          auth: auth as never,
+          getSession: (
+            auth as unknown as {
+              api: {
+                getSession(input: { headers: Headers }): Promise<{
+                  user?: { id?: unknown; email?: unknown } | null;
+                } | null>;
+              };
+            }
+          ).api.getSession,
+          bound: recoveryBound,
+          outbox: null,
+          identity: executor,
+          passwordEnabled: true,
+        });
+    }
   }
   return auth;
 }

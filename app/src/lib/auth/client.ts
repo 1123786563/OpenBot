@@ -8,6 +8,24 @@ import type { AuthProviderId } from "./queries";
  */
 export const authClient = createAuthClient({ plugins: openBotClientPlugins() });
 
+/** The pinned server enables these native endpoints, while their shapes are not part of the plugins. */
+export type RecoveryAuthClient = {
+  requestPasswordReset(input: {
+    email: string;
+    redirectTo: string;
+  }): Promise<{ data: unknown; error: { code?: string } | null }>;
+  resetPassword(input: {
+    newPassword: string;
+    token: string;
+  }): Promise<{ data: unknown; error: { code?: string } | null }>;
+  sendVerificationEmail(input: {
+    email: string;
+    callbackURL: string;
+  }): Promise<{ data: unknown; error: { code?: string } | null }>;
+};
+
+export const recoveryAuthClient = authClient as unknown as RecoveryAuthClient;
+
 /** What each provider is called on the button, since none of them are called by their id. */
 const PROVIDER_NAMES: Record<AuthProviderId, string> = {
   google: "Google",
@@ -84,6 +102,32 @@ export async function signInWithEmailDomain(
     throw new Error(
       result.error.message ||
         "No identity provider is registered for that address.",
+    );
+  }
+}
+
+/**
+ * Sign in with the deployment's own password accounts.
+ *
+ * The other two ways in hand the browser to an identity provider; this one answers locally, so on
+ * success the caller takes the same full-page load into the app that a provider callback ends with.
+ *
+ * Injectable for the same reason as `signInWith`: the Better Auth client is a proxy.
+ */
+export async function signInWithEmailPassword(
+  email: string,
+  password: string,
+  start: (input: {
+    email: string;
+    password: string;
+  }) => Promise<SocialResult> = (input) =>
+    authClient.signIn.email(input as never) as Promise<SocialResult>,
+) {
+  const result = await start({ email, password });
+
+  if (result.error) {
+    throw new Error(
+      result.error.message || "Could not sign in with email and password.",
     );
   }
 }

@@ -1400,7 +1400,15 @@
     },
     {
       "name": "server/tests/better-auth:T05.13.01",
-      "files": ["server/tests/better-auth/mobile-authority-contract.test.ts"]
+      "files": [
+        "server/tests/better-auth/mobile-authority-contract.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests/better-auth:T05.14.01",
+      "files": [
+        "server/tests/better-auth/password-recovery-not-wired.test.ts"
+      ]
     }
   ],
   "directoryIslands": [
@@ -2110,7 +2118,8 @@
     "server/tests/workshop-preview.test.ts",
     "server/tests/workshop-schedule-executor.integration.test.ts",
     "server/tests/workshop-store.test.ts",
-    "shared/harnesses.test.ts"
+    "shared/harnesses.test.ts",
+    "server/tests/better-auth/password-recovery-not-wired.test.ts"
   ],
   "artifacts": [
     "deliverables/mobile-e2e-qa/tests/e2e/specs/auth.spec.ts",
@@ -2274,6 +2283,7 @@
     "server/tests/better-auth/remote-identity-binding.test.ts": "T05.09 (#565) remote-identity-binding suite: needs the five BA_TEST_* role URLs and real Bun-served organization authorities for the cross-deployment handoff — Bun-only",
     "server/tests/better-auth/personal-model-identity.test.ts": "T05.11 (#567) personal-model-identity suite: needs the five BA_TEST_* role URLs, the 0209-0220 BA tag replay, the real PrincipalRegistry behind the grant seam and a fake Bifrost management surface behind the mounted claim/renew routes — Bun-only",
     "server/tests/better-auth/mobile-session-handoff.test.ts": "T05.12 (#568) mobile-session-handoff suite: needs the five BA_TEST_* role URLs and its own 0222 handoff-tables migration replayed on the isolated BA island — Bun-only",
-    "server/tests/better-auth/mobile-authority-contract.test.ts": "T05.13 (#569) mobile-authority-contract suite: needs the five BA_TEST_* role URLs and its own 0223 admission-fence migration replayed on the isolated BA island — Bun-only"
+    "server/tests/better-auth/mobile-authority-contract.test.ts": "T05.13 (#569) mobile-authority-contract suite: needs the five BA_TEST_* role URLs and its own 0223 admission-fence migration replayed on the isolated BA island — Bun-only",
+    "server/tests/better-auth/password-recovery-not-wired.test.ts": "T05.14 r1 F2 (#570): pins the outbox:null fail-closed refusal (503 PASSWORD_RECOVERY_NOT_WIRED before any command transaction); imports password-recovery.ts whose chain loads the Bun runtime — Bun-only"
   }
 }

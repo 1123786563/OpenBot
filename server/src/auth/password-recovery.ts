@@ -2,11 +2,12 @@
  * createPasswordRecoveryIngress — §5.1's private recovery surface
  * (T04.05 / #549, original task P08).
  *
- * Three URLs, one owner. The directory ingress classifies
- * POST /api/auth/request-password-reset, GET /api/auth/reset-password/:token
- * and POST /api/auth/reset-password and hands every one of them to this
- * ingress; the pinned build's own handler never serves them (F-01), and no
- * other mount opens a second entrance.
+ * Four URLs, one owner. The directory ingress classifies
+ * POST /api/auth/request-password-reset, GET /api/auth/reset-password/:token,
+ * POST /api/auth/reset-password and POST /api/auth/send-verification-email
+ * (the fourth is T05.14's resend, coordinator-authorized) and hands every one
+ * of them to this ingress; the pinned build's own handler never serves them
+ * (F-01), and no other mount opens a second entrance.
  *
  * 1. The request POST wraps the fixed build's own request route in one
  *    command transaction on the recovery database connection: the
@@ -63,6 +64,10 @@ export const PASSWORD_RECOVERY_REDIRECT_UNTRUSTED =
   "PASSWORD_RECOVERY_REDIRECT_UNTRUSTED";
 export const PASSWORD_RECOVERY_NOT_WIRED = "PASSWORD_RECOVERY_NOT_WIRED";
 export const RESET_TOKEN_WITHOUT_RECEIPT = "RESET_TOKEN_WITHOUT_RECEIPT";
+export const PASSWORD_RECOVERY_SESSION_REQUIRED =
+  "PASSWORD_RECOVERY_SESSION_REQUIRED";
+export const VERIFICATION_CALLBACK_UNTRUSTED =
+  "VERIFICATION_CALLBACK_UNTRUSTED";
 
 /** The only local surface a reset mail may redirect into (P13's page). */
 export const RESET_REDIRECT_PREFIX = "/reset-password";
@@ -74,6 +79,32 @@ export const RESET_REDIRECT_PREFIX = "/reset-password";
  */
 export function isTrustedResetRedirect(value: string): boolean {
   return value.startsWith(RESET_REDIRECT_PREFIX) && !value.startsWith("//");
+}
+
+/** The only local surface a verification mail may redirect into (T05.14). */
+export const VERIFY_CALLBACK_PREFIX = "/verify-email";
+
+/**
+ * Whether a callbackURL is the trusted local verification surface: relative
+ * to this app, and never another origin (no scheme, no protocol-relative
+ * //host). An absolute URL whose path is /verify-email still names another
+ * origin and stays refused; the fixed build resolves relative paths against
+ * its own base URL, so the frontend always sends the path alone.
+ */
+export function isTrustedVerifyCallback(value: string): boolean {
+  if (value.startsWith("//")) return false;
+  if (value.includes("://")) {
+    // An absolute URL names one origin; only the path is ours to check here,
+    // because the fixed build's own originCheck (trustedOrigins) is the
+    // gatekeeper for which origin may be named at all.
+    try {
+      return new URL(value).pathname.startsWith(VERIFY_CALLBACK_PREFIX);
+    } catch {
+      return false;
+    }
+  }
+  const path = value.startsWith("/") ? value : `/${value}`;
+  return path.startsWith(VERIFY_CALLBACK_PREFIX);
 }
 
 /**
@@ -95,6 +126,11 @@ export interface PasswordRecoveryAuthPort {
       readonly query: Readonly<{ callbackURL: string }>;
       readonly asResponse: true;
     }): Promise<Response>;
+    sendVerificationEmail(input: {
+      readonly headers?: Headers;
+      readonly body: Readonly<Record<string, unknown>>;
+      readonly asResponse: true;
+    }): Promise<Response>;
   };
 }
 
@@ -102,6 +138,13 @@ export interface PasswordRecoveryIngressDeps {
   /** The recovery database: every command transaction opens here. */
   readonly database: Pick<Database, "transaction">;
   readonly auth: PasswordRecoveryAuthPort;
+  /**
+   * The session read the resend branch authorizes with. Kept separate from
+   * `auth` so the port stays the fixed-build calls alone.
+   */
+  readonly getSession: (input: {
+    readonly headers: Headers;
+  }) => Promise<{ user?: { id?: unknown; email?: unknown } | null } | null>;
   /** The executor's TransactionBoundBa — the native route runs through it. */
   readonly bound: TransactionBoundBa;
   /**
@@ -452,6 +495,125 @@ export function createPasswordRecoveryIngress(
     return Response.json({ status: true }, { status: 200 });
   }
 
+  /**
+   * T05.14's fourth surface: the verification resend. The fixed build's own
+   * session branch (sendVerificationEmailFn) runs in ONE identity.notify
+   * command over the signed-in unverified address, inside
+   * TransactionBoundBa with the mail conversion context installed — the
+   * same shape T04.04 proved for its in-command dispatches. The commit
+   * fence holds the intent to the receipt, so a swallowed conversion error
+   * rolls the whole command back rather than committing a mail nobody will
+   * deliver. The callbackURL is constrained to the trusted local
+   * verify-email surface, exactly as the reset mail's redirectTo is.
+   */
+  async function resendVerification(request: Request): Promise<Response> {
+    requirePasswordSurface();
+    if (!deps.outbox) {
+      throw new NativeAuthRefusal(
+        PASSWORD_RECOVERY_NOT_WIRED,
+        "the deployment configured password accounts without the mail outbox: a verification link that could never reach its owner must not be created, so the request is refused rather than half-issued",
+        503,
+      );
+    }
+    const body = await readJson(request);
+    const email = text(body.email);
+    const callbackURL = text(body.callbackURL);
+    if (!email) {
+      throw new NativeAuthRefusal(
+        PASSWORD_RECOVERY_INPUT_REQUIRED,
+        "the resend names its target by email; an empty address is refused before anything is read",
+        400,
+      );
+    }
+    if (callbackURL !== undefined && !isTrustedVerifyCallback(callbackURL)) {
+      throw new NativeAuthRefusal(
+        VERIFICATION_CALLBACK_UNTRUSTED,
+        `the callbackURL must be the local ${VERIFY_CALLBACK_PREFIX} surface; "${callbackURL}" names somewhere else and the verification mail never carries an off-site or foreign destination`,
+        400,
+      );
+    }
+    const session = await deps.getSession({
+      headers: forwarded(request.headers),
+    });
+    const userId =
+      typeof session?.user?.id === "string" ? session.user.id : null;
+    const sessionEmail =
+      typeof session?.user?.email === "string"
+        ? session.user.email.toLowerCase()
+        : null;
+    if (!userId || sessionEmail !== email.toLowerCase()) {
+      // One answer for signed-out, mismatched and unknown alike: the branch
+      // is the session's own, and never confirms which it was.
+      throw new NativeAuthRefusal(
+        PASSWORD_RECOVERY_SESSION_REQUIRED,
+        "the verification resend is the signed-in address's own command; a request that does not name the signed-in address is refused before anything is tokenized",
+        401,
+      );
+    }
+
+    let fence: MailCallbackFence | undefined;
+    try {
+      return await deps.database.transaction(async (trx) => {
+        const tx = trx as never as DirectoryTx;
+        const commandId = `verification-resend-${randomUUID()}`;
+        const payloadHash = createHash("sha256")
+          .update(
+            JSON.stringify({
+              operation: "identity.notify",
+              email: sessionEmail,
+              targetUserId: userId,
+            }),
+          )
+          .digest("hex");
+        await tx.execute(
+          sql`SELECT set_config('auth.current_command',
+            public.auth_directory_begin_command(
+              ${commandId}, 'identity', 'identity.notify', null, ${userId}, ${userId},
+              'platform', ${`verification-resend:${randomUUID()}`}, ${payloadHash}),
+            true)`,
+        );
+        fence = createMailCallbackFence(tx, commandId);
+        const native = await runWithAuthMailCommand(
+          { tx, fence, outbox: deps.outbox },
+          () =>
+            deps.bound
+              .run(tx, () =>
+                deps.auth.api.sendVerificationEmail({
+                  headers: forwarded(request.headers),
+                  body: { email, ...(callbackURL ? { callbackURL } : {}) },
+                  asResponse: true,
+                }),
+              )
+              .then((outcome: { value: Response }) => outcome.value),
+        );
+        // The same §5.1 commit fence the request POST holds itself to: the
+        // fixed build swallows a failed conversion, so the native 200 is
+        // never the commit answer.
+        await assertMailCallbackCompletion(tx, fence);
+        if ((fence?.facts ?? []).some((fact) => fact.state !== "completed")) {
+          throw new NativeAuthRefusal(
+            RESET_TOKEN_WITHOUT_RECEIPT,
+            "this command's verification notification did not convert into a completed durable intent; nothing commits",
+            500,
+          );
+        }
+        await tx.execute(
+          sql`SELECT public.auth_directory_finalize_command(${commandId})`,
+        );
+        await tx.execute(
+          sql`SELECT set_config('auth.current_command', '', true)`,
+        );
+        return native;
+      });
+    } catch (error) {
+      const failedFact = fence?.facts.find((fact) => fact.state === "failed");
+      if (fence && fence.settledAs() === undefined) {
+        settleMailCallbackFence(fence, "rolled-back");
+      }
+      return toResponse(failedFact?.error ?? error);
+    }
+  }
+
   /*
    * The route boundary: a refusal of any named kind becomes its response
    * here, so the mounted app never sees a raw exception from the recovery
@@ -488,6 +650,9 @@ export function createPasswordRecoveryIngress(
       }
       if (request.method === "POST" && path === "/reset-password") {
         return guarded(resetPassword, request);
+      }
+      if (request.method === "POST" && path === "/send-verification-email") {
+        return guarded(resendVerification, request);
       }
       return null;
     },

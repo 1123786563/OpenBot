@@ -11,7 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SignRouteImport } from './routes/sign'
+import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AuthedAppRouteImport } from './routes/_authed/_app'
 import { Route as AuthedAdminRouteRouteImport } from './routes/_authed/admin/route'
 import { Route as AuthedOnboardingRouteImport } from './routes/_authed/onboarding'
@@ -115,9 +118,24 @@ const AcceptInvitationRoute = AcceptInvitationRouteImport.update({
   path: '/accept-invitation',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SignRoute = SignRouteImport.update({
   id: '/sign',
   path: '/sign',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VerifyEmailRoute = VerifyEmailRouteImport.update({
+  id: '/verify-email',
+  path: '/verify-email',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthedAppRoute = AuthedAppRouteImport.update({
@@ -627,7 +645,10 @@ const AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutionIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof AuthedAppIndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
+  '/forgot-password': typeof ForgotPasswordRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/sign': typeof SignRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/admin': typeof AuthedAdminRouteRouteWithChildren
   '/settings': typeof AuthedSettingsRouteRouteWithChildren
   '/onboarding': typeof AuthedOnboardingRoute
@@ -723,7 +744,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof AuthedAppIndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
+  '/forgot-password': typeof ForgotPasswordRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/sign': typeof SignRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/onboarding': typeof AuthedOnboardingRoute
   '/share/$token': typeof ShareTokenRoute
   '/approvals': typeof AuthedAppApprovalsRoute
@@ -817,7 +841,10 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authed': typeof AuthedRouteWithChildren
   '/accept-invitation': typeof AcceptInvitationRoute
+  '/forgot-password': typeof ForgotPasswordRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/sign': typeof SignRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/_authed/admin': typeof AuthedAdminRouteRouteWithChildren
   '/_authed/settings': typeof AuthedSettingsRouteRouteWithChildren
   '/_authed/_app': typeof AuthedAppRouteWithChildren
@@ -917,7 +944,10 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/accept-invitation'
+    | '/forgot-password'
+    | '/reset-password'
     | '/sign'
+    | '/verify-email'
     | '/admin'
     | '/settings'
     | '/onboarding'
@@ -1013,7 +1043,10 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/accept-invitation'
+    | '/forgot-password'
+    | '/reset-password'
     | '/sign'
+    | '/verify-email'
     | '/onboarding'
     | '/share/$token'
     | '/approvals'
@@ -1106,7 +1139,10 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_authed'
     | '/accept-invitation'
+    | '/forgot-password'
+    | '/reset-password'
     | '/sign'
+    | '/verify-email'
     | '/_authed/admin'
     | '/_authed/settings'
     | '/_authed/_app'
@@ -1205,7 +1241,10 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
   AcceptInvitationRoute: typeof AcceptInvitationRoute
+  ForgotPasswordRoute: typeof ForgotPasswordRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   SignRoute: typeof SignRoute
+  VerifyEmailRoute: typeof VerifyEmailRoute
   ShareTokenRoute: typeof ShareTokenRoute
 }
 
@@ -1225,11 +1264,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AcceptInvitationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sign': {
       id: '/sign'
       path: '/sign'
       fullPath: '/sign'
       preLoaderRoute: typeof SignRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/verify-email': {
+      id: '/verify-email'
+      path: '/verify-email'
+      fullPath: '/verify-email'
+      preLoaderRoute: typeof VerifyEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authed/_app': {
@@ -2156,7 +2216,10 @@ const AuthedRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
   AcceptInvitationRoute: AcceptInvitationRoute,
+  ForgotPasswordRoute: ForgotPasswordRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   SignRoute: SignRoute,
+  VerifyEmailRoute: VerifyEmailRoute,
   ShareTokenRoute: ShareTokenRoute,
 }
 export const routeTree = rootRouteImport

@@ -28,7 +28,10 @@
       "tests": ["tests/e2e/better-auth/web/*.e2e.ts"],
       "target": "better-auth-web — BA_E2E_APP_ORIGIN / BA_E2E_API_ORIGIN, preflight-gated (T04.12)",
       "preflight": "tests/support/better-auth-preflight.ts",
-      "files": ["tests/e2e/better-auth/web/directory.e2e.ts"]
+      "files": [
+        "tests/e2e/better-auth/web/directory.e2e.ts",
+        "tests/e2e/better-auth/web/session.e2e.ts"
+      ]
     }
   ]
 }

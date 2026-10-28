@@ -15,9 +15,15 @@
     "or": "or",
     "emailPlaceholder": "you@company.com",
     "continueCompany": "Continue with your company account",
+    "forgotIxdaxjzz": "Forgot your password?",
     "adminSignIn": "Administrator sign-in",
     "noProviderForAddress": "No identity provider is registered for that address.",
-    "couldNotStart": "Could not start {{provider}} sign-in."
+    "couldNotStart": "Could not start {{provider}} sign-in.",
+    "emailLabel": "Email",
+    "passwordLabel": "Password",
+    "continuePassword": "Continue with email and password",
+    "signingIn": "Signing in…",
+    "passwordFailed": "Sign-in failed. Check your email and password."
   },
   "signInPage": {
     "title": "Sign in",
@@ -124,5 +130,40 @@
     "refused": "OpenBot couldn't do that. Try again, or ask the company for help.",
     "invalid": "That didn't work. Reload the page and try again.",
     "failed": "Couldn't reach OpenBot. Try again."
+  },
+  "forgotIxdaxjzz": {
+    "title": "Reset your password",
+    "description": "Enter your email address. If you have an account, we’ll send a reset link.",
+    "email": "Email",
+    "send": "Send reset link",
+    "sending": "Sending…",
+    "sent": "If an account exists, an email is on its way.",
+    "closed": "Password sign-in isn’t available here. Continue with your identity provider.",
+    "failed": "Couldn’t send the reset link. Try again.",
+    "back": "Back to sign in"
+  },
+  "resetIxdaxjzz": {
+    "title": "Choose a new password",
+    "description": "Use a new password to secure your account.",
+    "newIxdaxjzz": "New password",
+    "reset": "Reset password",
+    "resetting": "Resetting…",
+    "done": "Your password has been reset. Sign in with your new password.",
+    "invalid": "This link has expired or was already used. Request a new one.",
+    "requestNew": "Request a new reset link",
+    "failed": "Couldn’t reset your password. Try again.",
+    "signIn": "Sign in"
+  },
+  "verifyEmail": {
+    "title": "Check your email",
+    "description": "Open the link in your email to verify your address.",
+    "verified": "Your email is verified. You can sign in now.",
+    "expired": "This verification link has expired. Sign in to request another.",
+    "resend": "Resend verification email",
+    "resending": "Sending…",
+    "resent": "A new verification email is on its way.",
+    "alreadyVerified": "Your email is already verified. You can sign in now.",
+    "failed": "Couldn’t send the verification email. Try again.",
+    "signIn": "Sign in"
   }
 }
