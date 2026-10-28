@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { users } from "../db/schema";
 
@@ -45,22 +45,34 @@ export function createOnboardingStore(database: Database): OnboardingStore {
     },
 
     async setStep(userId, step) {
+      // Completed is frozen: a step write after completion would disturb "when did they
+      // onboard" and the audit order of the two stamps.
       await database
         .update(users)
-        .set({ onboardingStep: step, updatedAt: new Date() })
-        .where(eq(users.id, userId));
+        .set({ onboardingStep: step, updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(users.id, userId),
+            isNull(users.onboardingCompletedAt),
+          ),
+        );
     },
 
     async complete(userId) {
-      await database
+      const updated = await database
         .update(users)
         .set({
           // Idempotent: finishing again keeps the first timestamp, so "when did they onboard"
-          // stays one answer.
+          // stays one answer. Both stamps come from the database clock, so they cannot disagree.
           onboardingCompletedAt: sql`coalesce(${users.onboardingCompletedAt}, now())`,
-          updatedAt: new Date(),
+          updatedAt: sql`now()`,
         })
-        .where(eq(users.id, userId));
+        .where(eq(users.id, userId))
+        .returning({ id: users.id });
+      // A users row that is not there must not read as success: the person would be bounced
+      // back into /onboarding forever with nothing on any log.
+      if (updated.length === 0)
+        throw new Error(`The users row ${userId} is missing; cannot complete onboarding.`);
     },
   };
 }

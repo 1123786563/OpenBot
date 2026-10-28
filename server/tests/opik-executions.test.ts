@@ -1,7 +1,8 @@
-import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { REDACTION_POLICY_VERSION } from "../../shared/ai-observability";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { ObservationScopeError } from "../src/ai-observability/contracts";
 import {
   createEvaluationToolGate,
@@ -18,8 +19,6 @@ import {
 } from "../src/ai-observability/experiments";
 import { resolveObservationScope } from "../src/ai-observability/scope";
 
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 const herePath = fileURLToPath(import.meta.url);
 const hereDir = dirname(herePath);
 
@@ -296,7 +295,7 @@ describe("the revocation seam composition (R5-25)", () => {
     // precedent); the export half stays first so the T34 §6 behavior and its
     // ordering are unchanged.
     const source = readFileSync(
-      join(hereDir, "..", "src", "index.ts"),
+      join(hereDir, "..", "src", "assembly", "runtime.ts"),
       "utf8",
     );
     expect(source).toMatch(

@@ -54,7 +54,9 @@ function Carousel({
   const [carouselRef, api] = useEmblaCarousel(
     {
       ...opts,
-      axis: orientation === "horizontal" ? "x" : "y",
+      // An explicit opts.axis wins over the orientation prop; the fallback
+      // derives it so the two options cannot silently disagree.
+      axis: opts?.axis ?? (orientation === "horizontal" ? "x" : "y"),
     },
     plugins
   );
@@ -100,6 +102,7 @@ function Carousel({
     api.on("select", onSelect);
 
     return () => {
+      api?.off("reInit", onSelect);
       api?.off("select", onSelect);
     };
   }, [api, onSelect]);

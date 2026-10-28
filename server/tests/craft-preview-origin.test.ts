@@ -183,6 +183,20 @@ describe("#411: the TLS renewal-status gate in admission (host form)", () => {
     }
   });
 
+  test("skipped is a recorded band, not malformed data: it closes with its own sentence", () => {
+    // The sidecar writes health=skipped when the certificate pipeline is configured off;
+    // the gate must not file it under "cannot be judged".
+    const { origin, statusFile } = hostOriginWithStatus();
+    writeFileSync(statusFile, statusRecord("skipped"));
+    const gate = origin.admission();
+    expect(gate.ok).toBe(false);
+    if (!gate.ok) {
+      expect(gate.reason).toContain("skipped");
+      expect(gate.reason).toContain("no certificate pipeline");
+      expect(gate.reason).not.toContain("cannot be judged");
+    }
+  });
+
   test("an ok band with the certificate already expired closes (daysLeft is the fact)", () => {
     const { origin, statusFile } = hostOriginWithStatus();
     writeFileSync(statusFile, statusRecord("ok", { daysLeft: 0 }));

@@ -122,9 +122,16 @@ export class ProactiveNotFoundError extends Error {
 
 export function parseWith<T>(schema: z.ZodType<T>, input: unknown): T {
   const result = schema.safeParse(input);
-  if (!result.success)
+  if (!result.success) {
+    const issue = result.error.issues[0];
+    // A Zod default message ("String must contain at least 1 character") names no field, so
+    // the path rides along when there is one.
+    const where = issue && issue.path.length > 0 ? issue.path.join(".") : null;
     throw new ProactiveRefusedError(
-      result.error.issues[0]?.message ?? "Invalid settings.",
+      where && issue
+        ? `${where}: ${issue.message}`
+        : (issue?.message ?? "Invalid settings."),
     );
+  }
   return result.data;
 }

@@ -8,6 +8,9 @@ import type {
   RoutingCandidate,
   RoutingUndecided,
 } from "./classify";
+import { getLogger } from "../../../shared/logger";
+
+const log = getLogger("server");
 
 const PICKED_HARNESS_AGENT_ID = "picked-harness";
 
@@ -84,8 +87,17 @@ export function normalizeCoworkerName(value: string): string {
 }
 
 function hasTokenBoundaries(text: string, start: number, end: number): boolean {
-  const before = [...text.slice(0, start)].at(-1);
-  const after = [...text.slice(end)][0];
+  // codePointAt reads, not slice-spreads: building two whole code-point arrays per hit made
+  // every occurrence scan O(text) twice, which compounds badly on max-length inputs.
+  const beforeCodeUnit = start > 0 ? text.codePointAt(start - 1) : undefined;
+  const before =
+    beforeCodeUnit === undefined
+      ? undefined
+      : String.fromCodePoint(beforeCodeUnit);
+  const afterCodeUnit =
+    end < text.length ? text.codePointAt(end) : undefined;
+  const after =
+    afterCodeUnit === undefined ? undefined : String.fromCodePoint(afterCodeUnit);
   return !before || !WORD_CHARACTER.test(before)
     ? !after || !WORD_CHARACTER.test(after)
     : false;
@@ -183,7 +195,9 @@ function buildAliasIndex(roster: readonly AgentProfile[]): AliasIndex {
     const base = normalizeCoworkerName(
       `${displayName(profile.name)} (id ${utf8Hex(profile.id)})`,
     );
-    for (const alias of aliases.keys()) {
+    // Snapshot first: addAlias writes into the map this loop iterates, and ECMAScript visits
+    // keys inserted during iteration — a newly matching alias would be processed twice.
+    for (const alias of [...aliases.keys()]) {
       if (
         alias.startsWith(base) &&
         /^ \((?:[2-9]|[1-9]\d+)\)$/u.test(alias.slice(base.length))
@@ -377,7 +391,10 @@ export function createCoworkerRoutingService(
     undecided: RoutingUndecided | null,
   ): Promise<void> {
     if (!options.auditStore) return;
-    await recordAuditEvent(options.auditStore, {
+    // "Never allowed to break routing" covers the audit row too: a trail-write fault must not
+    // turn an answered route into a failed request.
+    try {
+      await recordAuditEvent(options.auditStore, {
       eventType: "channel.routed",
       targetType: "agent",
       targetId: selected.agentId,
@@ -390,8 +407,14 @@ export function createCoworkerRoutingService(
         viaNameMatch: selected.viaNameMatch === true,
         candidates,
         undecided,
-      },
-    });
+        },
+      });
+    } catch (error) {
+      log.error(
+        { type: "coworker-routing-audit-failed", error },
+        "The routing audit row could not be written; the routing answer stands.",
+      );
+    }
   }
 
   async function routeDetailed(

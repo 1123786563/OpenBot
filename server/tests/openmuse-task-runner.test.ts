@@ -658,6 +658,15 @@ describe("sweep", () => {
     const step = task?.steps[0] as { status: string; result: string };
     expect(step.status).toBe("failed");
     expect(step.result).toContain("timed out");
+    // F-TASK-2: the losing turn keeps running behind the race, so the
+    // deadline is an ambiguous outcome, not a clean failure — the row says
+    // so instead of inviting the retry that would double the effects.
+    expect(
+      task?.evidence.some(
+        (entry) =>
+          (entry as { title?: string }).title === "Possible external effect",
+      ),
+    ).toBe(true);
     expect(fixture.turns[0]?.signal?.aborted).toBe(true);
     expect(fixture.queue.finished).toEqual([created.id]);
   });

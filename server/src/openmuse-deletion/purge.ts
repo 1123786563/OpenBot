@@ -66,6 +66,19 @@ export function createOpenMuseFileBytePurger(deps: {
   files: Pick<OpenMuseFileStore, "hardDelete">;
 }) {
   /**
+   * §9's phase gate, re-asked as the walk proceeds: D05's restore rides the
+   * same admin route face with nothing serializing the two, and the walk can
+   * take real time on a large manifest. Re-reading before each irreversible
+   * step is what keeps this module's own promise — restore can never be
+   * undone by a stray purge — true mid-walk, not only at its start.
+   */
+  const assertFenced = async (userId: string): Promise<void> => {
+    const marker = await deps.marker.get(userId);
+    if (!marker || marker.phase === "restored")
+      throw new OpenMusePurgeRefusedError(userId);
+  };
+
+  /**
    * One walk. `attempt` picks which not-yet-deleted rows this pass touches;
    * the metadata phase always surveys every file row, so a completed retry
    * still collects its file's rows, and a pass interrupted between the two
@@ -75,9 +88,7 @@ export function createOpenMuseFileBytePurger(deps: {
     userId: string,
     attempt: (state: StoredOpenMuseDeletionResource["state"]) => boolean,
   ): Promise<OpenMuseFileBytePurgeReport> {
-    const marker = await deps.marker.get(userId);
-    if (!marker || marker.phase === "restored")
-      throw new OpenMusePurgeRefusedError(userId);
+    await assertFenced(userId);
     const resources = (await deps.rows.listResources(userId)).filter(
       (row) => row.kind === "openmuse-file",
     );
@@ -95,10 +106,14 @@ export function createOpenMuseFileBytePurger(deps: {
     const purgedKeys = new Set<string>();
     for (const row of resources) {
       if (row.state === "deleted" || !attempt(row.state)) continue;
+      await assertFenced(userId);
       // A gap row's externalKey is "" — deleting it would aim the byte
       // store at its root. A gap names no resource: it stays retryable and
       // operator-visible until a manifest rebuild re-enumerates the kind.
-      if (row.id === MODULE_GAP) {
+      // The empty key itself is the dangerous condition (any row that
+      // carries one aims the byte store at the root), so it widens the
+      // guard beyond the reserved gap id.
+      if (row.id === MODULE_GAP || row.externalKey === "") {
         await deps.rows.markRetryable(
           userId,
           row.kind,
@@ -148,6 +163,7 @@ export function createOpenMuseFileBytePurger(deps: {
           (row) => row.state === "deleted" || purgedKeys.has(row.externalKey),
         )
       ) {
+        await assertFenced(userId);
         try {
           await deps.files.hardDelete(userId, fileId);
           // A previous pass's metadata debt closes with the delete it owed
@@ -183,20 +199,6 @@ export function createOpenMuseFileBytePurger(deps: {
             fileId,
             lastError,
           );
-          for (const row of fileRows) {
-            await deps.rows.markRetryable(
-              userId,
-              row.kind,
-              row.id,
-              lastError,
-              row.externalKey,
-            );
-            report.retryable.push({
-              id: row.id,
-              externalKey: row.externalKey,
-              lastError,
-            });
-          }
         }
       }
     }

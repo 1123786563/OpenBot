@@ -11,16 +11,18 @@
  * GET /api/ai-observability/bots/:botId/runs/:runId (detail) behind the root
  * requireUser — coexisting with T10's POST-only reporting route on the same path.
  *
- * Authorization is the management question (resolveObservationBot) and the scope
- * is derived from the authenticated context plus the injected ownership epoch,
- * exactly like the T10 seam: the query string contributes a page size, a cursor
- * and nothing else, so no forged actor, bot, scope, locator or upstream filter
- * can steer a read. Ownership is answered per request — a transfer or revocation
- * is effective on the very next call — and the T07 binding table, never an
- * owner snapshot captured at collection time, decides which runs this scope may
- * see. Errors keep the house convention: the code is the contract.
+ * Authorization is the observation question (resolveObservationBot, backed by
+ * `canObserveAgent` in the wiring) and the scope is derived from the authenticated
+ * context plus the injected ownership epoch, exactly like the T10 seam: the query
+ * string contributes a page size, a cursor and nothing else, so no forged actor,
+ * bot, scope, locator or upstream filter can steer a read. Ownership is answered
+ * per request — a transfer or revocation is effective on the very next call — and
+ * the T07 binding table, never an owner snapshot captured at collection time,
+ * decides which runs this scope may see. Errors keep the house convention: the code
+ * is the contract.
  */
 import { Hono } from "hono";
+import { getLogger } from "../../../../shared/logger";
 import type { AgentActor } from "../../agents/profile-types";
 import type { AppVariables } from "../../auth/guards";
 import type { RunBindingStore } from "../bindings";
@@ -65,6 +67,8 @@ export type RunsQueryRouteDeps = Readonly<{
 
 const BAD_LIMIT = new RunsQueryError("RUNS_QUERY_INPUT_INVALID", 400);
 
+const log = getLogger("server");
+
 /*
  * Issue #18: the list's filter vocabulary — state, timeFrom, timeTo — is named in the
  * contract so the browser and this seam agree on one spelling. The verified port supports
@@ -77,8 +81,13 @@ const FILTER_UNSUPPORTED = new RunsQueryError(
   422,
 );
 
+/** Issue #18's filter vocabulary, named once so the refusal stays in sync by construction. */
+const RUNS_FILTER_KEYS = ["state", "timeFrom", "timeTo"] as const;
+
 function parseLimit(raw: string | undefined): number {
   if (raw === undefined) return 20;
+  // Digits only: parseInt alone silently accepts trailing junk ("20abc").
+  if (!/^\d+$/.test(raw)) throw BAD_LIMIT;
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_RUNS_LIMIT) {
     throw BAD_LIMIT;
@@ -107,6 +116,20 @@ export function createRunsQueryRoutes(
   deps: RunsQueryRouteDeps,
 ): Hono<{ Variables: AppVariables }> {
   const routes = new Hono<{ Variables: AppVariables }>();
+  // classify rethrows unknown errors by design; this boundary answers them as
+  // JSON with a server log instead of a bare framework 500.
+  routes.onError((error, context) => {
+    log.error(
+      {
+        type: "runs-query-route-error",
+        errorType: error.name,
+        context: { route: context.req.path },
+        timestamp: new Date().toISOString(),
+      },
+      "runs-query-route-error",
+    );
+    return context.json({ error: "RUNS_QUERY_INTERNAL" }, 500);
+  });
   const query =
     deps.query ??
     createRunsQueryService({
@@ -134,8 +157,15 @@ export function createRunsQueryRoutes(
       return Response.json({ error: access.error }, { status: access.status });
     }
     const actor = context.var.actor;
-    // Explicit, never inferred (OCR h10/m182): a caller the seam refuses to mint
-    // for is answered with the same unified not-found the manage gate uses.
+    /*
+     * Ownership comes off the seam's explicit answer, not this route's own guess —
+     * the inline `owner ? "owner" : "admin"` this block kept was the omission
+     * datasets.ts and admin-summary.ts already shed (R5-33/R4-35): it would mint an
+     * "admin" scope for whoever a future widened gate lets through. R4-02 makes the
+     * seam matter here for real: a system Bot's profile has no owner, so the
+     * administrator the observe policy admits reaches the "admin" arm of this very
+     * answer. A null is refused with the same unified not-found the gate uses.
+     */
     const ownership = explicitObservationOwnership(actor, access.profile);
     if (ownership === null) {
       return Response.json(
@@ -143,7 +173,6 @@ export function createRunsQueryRoutes(
         { status: 404 },
       );
     }
-    // The epoch is injected wiring, never a query value.
     const epoch = await deps.scopeEpoch(actor, access.botId);
     return {
       scope: resolveObservationScope({
@@ -159,7 +188,7 @@ export function createRunsQueryRoutes(
     try {
       const resolved = await scopeFor(context);
       if (resolved instanceof Response) return resolved;
-      for (const filter of ["state", "timeFrom", "timeTo"]) {
+      for (const filter of RUNS_FILTER_KEYS) {
         if (context.req.query(filter) !== undefined) throw FILTER_UNSUPPORTED;
       }
       const body = await query.list(resolved.scope, {

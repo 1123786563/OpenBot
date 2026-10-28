@@ -1,5 +1,8 @@
+import { getLogger } from "../../../shared/logger";
 import type { MiddlewareHandler } from "hono";
 import type { AppVariables } from "../auth/guards";
+
+const log = getLogger("server");
 
 /**
  * The stable code every fenced answer carries, so a client can tell "this
@@ -38,19 +41,43 @@ export function openMuseAccountFence(deps: {
 }): MiddlewareHandler<{ Variables: AppVariables }> {
   return async (context, next) => {
     let fenced: Response | undefined;
+    let fenceFailed = false;
     const authenticated = await deps.requireUser(context, async () => {
-      if (await deps.isDisabled(context.var.actor.id)) {
-        fenced = context.json(
+      try {
+        if (await deps.isDisabled(context.var.actor.id)) {
+          fenced = context.json(
+            {
+              error: "This OpenMuse account has been deleted.",
+              code: OPENMUSE_ACCOUNT_DISABLED_CODE,
+            },
+            403,
+          );
+        }
+      } catch (error) {
+        // A marker read that fails must fail closed as its own sentence, not
+        // as a bodyless 500 — the fence is what stands between /api/mobile
+        // and a deleted owner's data.
+        fenceFailed = true;
+        log.error(
           {
-            error: "This OpenMuse account has been deleted.",
-            code: OPENMUSE_ACCOUNT_DISABLED_CODE,
+            type: "openmuse-account-fence-failed",
+            error: error instanceof Error ? error.message : String(error),
           },
-          403,
+          "openmuse-account-fence-failed",
         );
       }
     });
     // requireUser answered on its own: not signed in, or no identity provider.
     if (authenticated instanceof Response) return authenticated;
+    if (fenceFailed) {
+      return context.json(
+        {
+          error: "This account check is unavailable right now. Try again.",
+          code: OPENMUSE_ACCOUNT_DISABLED_CODE,
+        },
+        503,
+      );
+    }
     if (fenced) return fenced;
     return next();
   };

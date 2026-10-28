@@ -22,10 +22,11 @@
 import type { RunBindingStore } from "../bindings";
 import type { ObservationScope } from "../contracts";
 import type { ObservationDatasetStore } from "../datasets";
-import type {
-  IdLinkLocalKind,
-  IdLinkStore,
-  IdLinkUpstreamKind,
+import {
+  type IdLinkLocalKind,
+  type IdLinkStore,
+  IdLinkError,
+  type IdLinkUpstreamKind,
 } from "../id-links";
 import { validateLinkId } from "../id-links";
 
@@ -61,7 +62,10 @@ export type IdLinkQueryService = {
    * home: a run attempt is its binding row, a dataset is its dataset row (a
    * pending/failed sync answers null), and a step is its id-link row — a step
    * without a link row was never bound here, so it is SUBJECT_NOT_FOUND, and a
-   * linked step's upstream copy is guaranteed to have landed.
+   * linked step's upstream copy is guaranteed to have landed. `recordedAt` is the
+   * subject's own last-touch on its home table (bindings and datasets refresh
+   * `updatedAt`; a link row keeps `createdAt`) — when the mapping became what it
+   * is, never a separate mapping ledger's stamp.
    */
   resolveByLocal(
     scope: ObservationScope,
@@ -95,7 +99,10 @@ export function createIdLinkQueryService(
   const localId = (value: string): string => {
     try {
       return validateLinkId(value);
-    } catch {
+    } catch (error) {
+      // Only the validator's own refusals are a client input problem; anything else
+      // (a bug, a config failure) must surface as the failure it is, not a 400.
+      if (!(error instanceof IdLinkError)) throw error;
       throw new IdLinkQueryError("ID_LINK_QUERY_INPUT_INVALID", 400);
     }
   };
@@ -161,6 +168,11 @@ export function createIdLinkQueryService(
                 },
         };
       }
+      default: {
+        // A kind the type system does not know (raw deserialized input) must not
+        // fall off the switch into an implicit undefined answer.
+        throw new IdLinkQueryError("ID_LINK_QUERY_INPUT_INVALID", 400);
+      }
     }
   };
 
@@ -209,6 +221,11 @@ export function createIdLinkQueryService(
                   recordedAt: dataset.updatedAt.toISOString(),
                 },
         };
+      }
+      default: {
+        // A kind the type system does not know (raw deserialized input) must not
+        // fall off the switch into an implicit undefined answer.
+        throw new IdLinkQueryError("ID_LINK_QUERY_INPUT_INVALID", 400);
       }
     }
   };

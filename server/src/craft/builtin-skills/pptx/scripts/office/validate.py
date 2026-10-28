@@ -8,6 +8,8 @@ The first argument can be either:
 - An unpacked directory containing the Office document XML files
 - A packed Office file (.docx/.pptx/.xlsx) which will be unpacked to a temp directory
 
+Validation covers .docx and .pptx; a .xlsx is unpacked but reported as unsupported.
+
 Auto-repair fixes:
 - paraId/durableId values that exceed OOXML limits
 - Missing xml:space="preserve" on w:t elements with whitespace
@@ -20,6 +22,10 @@ import zipfile
 from pathlib import Path
 
 from validators import DOCXSchemaValidator, PPTXSchemaValidator, RedliningValidator
+
+# Refuse to expand a (possibly untrusted) Office file past this size: a crafted
+# zip bomb would otherwise fill the disk before any validator sees the content.
+MAX_UNPACKED_BYTES = 2 * 1024**3
 
 
 def main():
@@ -94,9 +100,21 @@ def main():
         )
 
     if is_packed_file:
-        temp_dir = tempfile.mkdtemp()
-        with zipfile.ZipFile(path, "r") as zf:
-            zf.extractall(temp_dir)
+        # TemporaryDirectory, not mkdtemp: the finalizer removes the unpacked
+        # copy on every exit path, including parser.error and the final sys.exit.
+        temp_holder = tempfile.TemporaryDirectory(prefix="openbot-validate-")
+        temp_dir = temp_holder.name
+        try:
+            with zipfile.ZipFile(path, "r") as zf:
+                unpacked_bytes = sum(info.file_size for info in zf.infolist())
+                if unpacked_bytes > MAX_UNPACKED_BYTES:
+                    parser.error(
+                        f"Error: {path} expands to {unpacked_bytes} bytes, "
+                        f"over the {MAX_UNPACKED_BYTES} byte limit"
+                    )
+                zf.extractall(temp_dir)
+        except zipfile.BadZipFile:
+            parser.error(f"Error: {path} is not a valid Office (zip) file")
         unpacked_dir = Path(temp_dir)
     else:
         if not path.is_dir():
@@ -122,8 +140,10 @@ def main():
                 PPTXSchemaValidator(unpacked_dir, original_file, verbose=args.verbose),
             ]
         case _:
-            print(f"Error: Validation not supported for file type {file_extension}")
-            sys.exit(1)
+            parser.error(
+                f"Error: validation is not supported for {file_extension} "
+                "documents (only .docx and .pptx can be validated)"
+            )
 
     if args.auto_repair:
         total_repairs = sum(v.repair() for v in validators)

@@ -2,6 +2,14 @@
 
 跨 Run 占用 Issue、工作区、分支、数据库、端口、Docker project、缓存或报告目录，以及恢复每日任务时读取。本规范定义共享位置和互斥协议；编码、版本化 schema、唯一公共事务入口及验收样例见 [coordination-format.md](coordination-format.md)，取得写入声明前必须读取并核实适配器。不宣称 Orca 已提供不存在的锁命令。
 
+## 部署状态与启用入口
+
+仓库当前提供协议、schema 和验收样例，未随仓库提供协调事务适配器或安全恢复工具的安装实现。本节是部署边界，不表示服务已部署；规则修订、空配置或新建 Run 都不能使能力自动就绪。
+
+部署作为单独授权任务执行：先指定维护责任人及可访问的实现/版本、安装说明和验收入口，再登记到主机统一的 config.json。默认入口是下节 coordination_root/config.json；覆盖入口必须由主机配置提供可核实的绝对路径，Run 回执保存该配置来源及实际解析路径。找不到默认或覆盖入口时报告缺失路径和受阻能力，不自行搜索秘密配置、创建私有协调根或编造适配器命令。
+
+启用前按 [协调格式](coordination-format.md)完成协议验收并保存带工具哈希的回执；安全恢复工具还须通过 [checkpoints.md](checkpoints.md)的路径、文件类型及资源上限验收。随后按 [每日规则](closed-issue-daily-run.md)人工试运行，确认恢复、清理与证据读取后才能启用自动化。没有已验证实现或配置时，仅允许不依赖这些能力的只读准备；需登记的副作用、受控恢复、跨 Run 接管及自动化启用仍 capability_blocked，不因当前只有一个 Run 而豁免。
+
 ## 位置与身份
 
 - 同一执行主机使用一个持久的绝对 `coordination_root`。默认将 `~/.local/state/openbot/coordination/v1/` 展开为实际路径；覆盖位置须由该主机配置统一指定，所有协调器启动时核对相同值。它不位于可清理的 Run/Worktree 中；不得为新 Run、clone 或 new-per-run 另起资源登记根。

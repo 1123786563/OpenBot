@@ -17,8 +17,8 @@ import type {
 /**
  * Every tool the computer exposes.
  *
- * Ordered read-only first, then acting. `COMPUTER_ACTING_TOOLS` below is what the gateway uses to
- * decide which calls need a policy decision, so add acting tools to both lists.
+ * Ordered read-only first, then acting. Which calls need a policy decision is decided
+ * per method in the gateway and the boundary, not by a tool list.
  */
 export const COMPUTER_TOOLS = [
   "computer_navigate",
@@ -33,41 +33,10 @@ export const COMPUTER_TOOLS = [
   "computer_download_file",
   "computer_write_file",
   "computer_list_files",
+  "computer_run_command",
+  "computer_request_help",
+  "computer_request_secret",
 ] as const;
-
-/**
- * The tools that change something, or reach something that needs deciding on.
- *
- * These are the calls the gateway must decide on. Reading a PAGE a Bot has already been allowed to
- * open is not a new decision; clicking "Confirm payment" on it is.
- *
- * Every workspace file tool is here, including the read and the download. That differs from
- * `computer_read`, which is ungoverned, and it is deliberate: a page was already permitted when it
- * was opened, whereas the workspace accumulates whatever a Bot has put in it across every task it
- * has ever run, so "which files may this Bot read, list, download or write" is a question a
- * deployment genuinely needs to be able to answer.
- */
-export const COMPUTER_ACTING_TOOLS = [
-  // Navigation is governed too, and not only guarded. The client's target guard refuses a forbidden
-  // address on its own, which stops the request and writes nothing. That leaves the trail silent
-  // about an attempt to reach the cloud metadata endpoint, the single most security-relevant thing a
-  // Bot can try, while ticking a radio button is recorded. Governing it puts both in the trail.
-  "computer_navigate",
-  "computer_click",
-  "computer_type",
-  "computer_key",
-  "computer_scroll",
-  "computer_read_file",
-  "computer_download_file",
-  "computer_write_file",
-  "computer_list_files",
-] as const;
-
-export type ComputerActingToolName = (typeof COMPUTER_ACTING_TOOLS)[number];
-
-export function isActingTool(name: string): name is ComputerActingToolName {
-  return (COMPUTER_ACTING_TOOLS as readonly string[]).includes(name);
-}
 
 export type ComputerToolName = (typeof COMPUTER_TOOLS)[number];
 
@@ -292,12 +261,6 @@ export type ControlState = ComputerControlState;
 export type SecretRequest = { label: string; ref: string; snapshotId: number };
 
 /**
- * What supplying a secret reports back.
- *
- * `characters` and nothing else. The value is not returned, not logged and not audited: the point of
- * the whole mechanism is that it exists in one place, the page it was typed into.
- */
-/**
  * One Bot's computer, as the admin surface lists it.
  *
  * A Bot that has a profile has a computer, whether or not a browser is running for it this second.
@@ -374,6 +337,12 @@ export type SignInCodeResult = {
   error?: string;
 };
 
+/**
+ * What supplying a secret reports back.
+ *
+ * `characters` and nothing else. The value is not returned, not logged and not audited: the point of
+ * the whole mechanism is that it exists in one place, the page it was typed into.
+ */
 export type SecretResult = {
   supplied: boolean;
   characters: number;

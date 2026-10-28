@@ -567,6 +567,9 @@ class DurableProductionRunner extends AgentRunner {
             Math.max(1_000, Math.floor(leaseMilliseconds / 2)),
             Math.max(leaseMilliseconds, 1_001),
           );
+    // 单飞护栏：一次续租未返回前不再发起下一次，避免慢续租后完成时把
+    // state.lease 覆盖回一份更旧的租约（乱序写回 → 后续以陈旧租约被拒）。
+    let renewInFlight = false;
     const timer = setInterval(() => {
       void (async () => {
         if (
@@ -578,6 +581,8 @@ class DurableProductionRunner extends AgentRunner {
           if (state.renewalTimer) clearInterval(state.renewalTimer);
           return;
         }
+        if (renewInFlight) return;
+        renewInFlight = true;
         try {
           const renewed = await this.deps.runs.renewRequestLease(
             state.scope,
@@ -588,6 +593,8 @@ class DurableProductionRunner extends AgentRunner {
         } catch {
           state.leaseLost = true;
           if (state.renewalTimer) clearInterval(state.renewalTimer);
+        } finally {
+          renewInFlight = false;
         }
       })();
     }, interval);
@@ -600,11 +607,11 @@ class DurableProductionRunner extends AgentRunner {
     state: RelayedRunState,
     startedEvent: BaseEvent,
   ): Promise<Observable<BaseEvent>> {
-    const errorEvent: BaseEvent = {
+    const errorEvent: BaseEvent = this.withServerRunIdentity(state, {
       type: EventType.RUN_ERROR,
       message: "Model execution is not available for this Bot yet.",
       code: MODEL_EXECUTION_UNAVAILABLE,
-    };
+    });
     await this.appendEvent(state, errorEvent);
     state.settlementAttempted = true;
     const settled = await this.deps.runs.fail(state.scope, {
@@ -680,7 +687,10 @@ class DurableProductionRunner extends AgentRunner {
 
     if (type === EventType.RUN_ERROR) {
       const code = classifyGovernedRunFailure(state.carrier, event);
-      const relayed = { ...event, code } as BaseEvent;
+      const relayed = this.withServerRunIdentity(
+        state,
+        { ...event, code } as BaseEvent,
+      );
       await this.appendEvent(state, relayed);
       state.settlementAttempted = true;
       const settled = await this.deps.runs.fail(state.scope, {
@@ -774,11 +784,11 @@ class DurableProductionRunner extends AgentRunner {
     const code = classifyGovernedRunFailure(state.carrier, error);
     const message =
       error instanceof Error ? error.message : String(error ?? "unknown");
-    const relayed: BaseEvent = {
+    const relayed: BaseEvent = this.withServerRunIdentity(state, {
       type: EventType.RUN_ERROR,
       message,
       code,
-    };
+    });
     await this.appendEvent(state, relayed);
     state.settlementAttempted = true;
     const settled = await this.deps.runs.fail(state.scope, {

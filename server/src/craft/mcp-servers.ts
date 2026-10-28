@@ -34,7 +34,16 @@ export function craftMcpSlug(name: string): string {
  */
 export function craftMcpServerKey(name: string, id: string): string {
   const slug = craftMcpSlug(name) || "mcp";
-  return `${slug}-${id}`;
+  // The id half gets the same fold: catalogue ids are not guaranteed to be
+  // identifier-safe (uppercase, dots, underscores all occur), and the key must
+  // satisfy opencode's `[^a-z0-9]` rule on BOTH halves. The full id is folded to
+  // one run (not truncated), so distinct ids stay distinct after the fold lands
+  // on the same rule as onyx's own key shape.
+  const safeId = id
+    .toLowerCase()
+    .replace(NON_IDENTIFIER, "-")
+    .replace(/^-+|-+$/g, "");
+  return `${slug}-${safeId || "server"}`;
 }
 
 /** The relay route for one server, relative to the craft tree's mount root. */
@@ -52,9 +61,17 @@ export function craftMcpRelayUrl(base: string, serverId: string): string {
  * (the relay membership check reads this — a vendor url never matches).
  */
 export function craftMcpServerIdOfRelayUrl(url: string): string | null {
-  const index = url.indexOf("/api/craft/mcp/");
-  if (index < 0) return null;
-  const tail = url.slice(index + "/api/craft/mcp/".length);
+  // Parsed, not substring-matched: a vendor url carrying `/api/craft/mcp/…` in a
+  // query or deeper path must not be mistaken for this deployment's relay route.
+  let pathname: string;
+  try {
+    pathname = new URL(url).pathname;
+  } catch {
+    return null;
+  }
+  const prefix = "/api/craft/mcp/";
+  if (!pathname.startsWith(prefix)) return null;
+  const tail = pathname.slice(prefix.length);
   if (tail === "" || tail.includes("/")) return null;
   try {
     return decodeURIComponent(tail);

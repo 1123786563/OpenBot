@@ -721,6 +721,8 @@ export function createWorkshopScopeService(deps: {
       if (!session) return DENY_VERDICT;
       const instance = await instances.findInstanceById({ instanceId });
       if (!instance) return DENY_VERDICT;
+      // 已回收实例的容器/工作目录已被物理清理：不得把绑定行翻回 bound。
+      if (instance.status === "recycled") return DENY_VERDICT;
       // 执行面同位：实例的 Bot 就是会话的 Bot（不同 Bot 的实例不是本
       // 会话的执行面——拒绝且不泄露细节）。
       if (instance.botId !== session.botId) return DENY_VERDICT;
@@ -800,7 +802,10 @@ export function createWorkshopScopeService(deps: {
           .where(eq(enterpriseWorkshopSandboxBindings.instanceId, instanceId))
           .limit(1);
         if (!row) return null;
+        // 幂等：已回收（status='recycled'）的实例在这里就 deny，物理回收
+        // 端口零调用——不重复产生停止容器/清目录的副作用。
         if (
+          row.status !== "bound" ||
           row.tenantId !== scope.tenantId ||
           row.workspaceId !== scope.workspaceId ||
           row.principalId !== scope.principalId
@@ -817,6 +822,12 @@ export function createWorkshopScopeService(deps: {
       await recyclePort.recycle({ instanceId, botId: instance.botId });
       return operator.transaction(async (tx) => {
         await beginContext(tx, scope);
+        // 持久半边翻转前在写事务内重验成员事实（与 bind 同款）：授权读
+        // 与本事务之间发生的公司/团队撤权在此收口。
+        const facts = await readMembershipFacts(tx, scope);
+        if (!facts.companyActive || !facts.teamActive) {
+          return DENY_VERDICT;
+        }
         await tx.execute(
           sql`select pg_advisory_xact_lock(hashtextextended(${instanceControlLockKey(
             instanceId,
@@ -920,6 +931,11 @@ export function createWorkshopScopeService(deps: {
       // cross-team 对受众团队放行——门与会话属主三元组比对放开的
       // 是「同公司可见」半边，受众半边由 MT058 端口判定。
       if (!shareResolution) return DENY_VERDICT;
+      // 会话归属门先行（AC1 唯一判定入口，同 listSchedules 等面）：跨范围
+      // 频道 = canonical deny，不进入受众判定，零存在泄露。
+      if ((await authorizeByChannel(scope, channelId)) === null) {
+        return DENY_VERDICT;
+      }
       const resolved = await shareResolution.resolveShareAccess(scope, {
         token: input.token,
       });

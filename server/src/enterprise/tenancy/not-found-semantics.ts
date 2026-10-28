@@ -236,6 +236,11 @@ function decodeCursor(token: string): CursorPayload {
   ) {
     throw new Error("INVENTORY_CURSOR_INVALID");
   }
+  // `at` 必须是 ::timestamptz 可解析的时间戳文本：结构合法但非时间戳的
+  // 令牌在此落入既定拒绝码，绝不把裸驱动错误（PG 22007）泄漏给调用方。
+  if (Number.isNaN(Date.parse((parsed as CursorPayload).at))) {
+    throw new Error("INVENTORY_CURSOR_INVALID");
+  }
   return parsed as CursorPayload;
 }
 

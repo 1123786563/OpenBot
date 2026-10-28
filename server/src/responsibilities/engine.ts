@@ -58,6 +58,22 @@ export function createResponsibilityEngine(options: {
         maxAttempts: 2,
       });
       for (const item of items) {
+        // One bad item costs its own entry, not the batch: a throw here would abandon the
+        // remaining claimed items and the report accumulated so far.
+        try {
+          await dispatchOne(item);
+        } catch (error) {
+          const candidate: unknown = item.payload?.runId;
+          report.failed.push({
+            runId: typeof candidate === "string" ? candidate : "",
+            error: errorText(error),
+          });
+        }
+      }
+      return report;
+      async function dispatchOne(item: Awaited<
+        ReturnType<typeof queue.claim>
+      >[number]): Promise<void> {
         const runId = item.payload.runId;
         if (typeof runId !== "string" || !runId)
           throw new Error("Responsibility work item has no run ID.");
@@ -76,7 +92,7 @@ export function createResponsibilityEngine(options: {
         if (!context) {
           await finish(item.key);
           report.skipped.push(runId);
-          continue;
+          return;
         }
         // A paused Bot's run is skipped, not failed. See agents/lifecycle.ts.
         if (await isBotPaused(context.ownerUserId, context.agentId)) {
@@ -86,7 +102,7 @@ export function createResponsibilityEngine(options: {
           });
           await finish(item.key);
           report.skipped.push(runId);
-          continue;
+          return;
         }
         const controller = new AbortController();
         let stopped = false;
@@ -161,7 +177,20 @@ export function createResponsibilityEngine(options: {
             report.skipped.push(runId);
           } else {
             const reason = errorText(error);
-            await store.settleRun(runId, { status: "failed", error: reason });
+            try {
+              await store.settleRun(runId, {
+                status: "failed",
+                error: reason,
+              });
+            } catch (settleError) {
+              // The run's own error and the settlement fault both belong in the report: the
+              // item keeps its lease and retries by redelivery, but this pass says why.
+              report.failed.push({
+                runId,
+                error: `${reason} (settlement failed: ${errorText(settleError)})`,
+              });
+              return;
+            }
             report.failed.push({ runId, error: reason });
           }
         } finally {
@@ -171,7 +200,6 @@ export function createResponsibilityEngine(options: {
           await finish(item.key);
         }
       }
-      return report;
       async function finish(key: string) {
         const finished = await queue.finish({
           kind: RESPONSIBILITY_RUN_KIND,

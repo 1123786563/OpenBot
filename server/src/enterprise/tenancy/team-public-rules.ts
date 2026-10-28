@@ -400,8 +400,11 @@ async function firstInvalidDependency(
     from enterprise_resource_dependencies
     where tenant_id = ${tenantId} and resource_id = ${resourceId}
     order by dependency_kind asc, dependency_ref asc
-  `)) as unknown as DependencyRow[];
-  for (const row of result ?? []) {
+  `)) as unknown as DependencyRow[] | { rows?: DependencyRow[] };
+  // 驱动结果归一（bun-sql/node-postgres 两形状，public-bot-profiles 同款）：
+  // 直接 for...of {rows} 包装对象会 TypeError，判定入口直接 500。
+  const dependencyRows = Array.isArray(result) ? result : (result?.rows ?? []);
+  for (const row of dependencyRows) {
     if (row.status !== "active") {
       return {
         kind: row.dependency_kind as ResourceDependencyKind,

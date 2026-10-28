@@ -162,7 +162,9 @@ class RedliningValidator:
                             content_lines.append(line)
                     return "\n".join(content_lines)
 
-        except (subprocess.CalledProcessError, FileNotFoundError, Exception):
+        except (subprocess.SubprocessError, OSError):
+            # Best-effort decoration only: returning None makes the FAILED
+            # message above fall back to the undecorated text diff.
             pass
 
         return None
@@ -201,6 +203,12 @@ class RedliningValidator:
                 parent.remove(del_elem)
 
     def _extract_text_content(self, root):
+        """Non-empty w:t text per paragraph, newline-joined.
+
+        Known blind spot: edits touching only empty paragraphs, tabs/breaks,
+        images or run structure compare equal here — this is a text-level
+        backstop, not a full structural diff.
+        """
         p_tag = f"{{{self.namespaces['w']}}}p"
         t_tag = f"{{{self.namespaces['w']}}}t"
 

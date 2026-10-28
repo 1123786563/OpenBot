@@ -111,29 +111,49 @@ async function finish(
     let summary: string | undefined;
     try {
       summary = await services.summarize(session.transcript);
-    } catch {
+    } catch (error) {
       // The transcript is already durable. The explicit status makes this recoverable by retry.
       log.warn(
-        { type: "voice-summary-failed", sessionId: session.id },
+        { type: "voice-summary-failed", sessionId: session.id, error },
         "voice-summary-failed",
       );
     }
-    if (summary)
-      session = await services.store.summarize(actor, session.id, summary);
+    if (summary) {
+      try {
+        session = await services.store.summarize(actor, session.id, summary);
+      } catch (error) {
+        // The transcript is durable and the activity below still matters: a summary the
+        // store refuses (blank or oversized) keeps its failed status for a later retry
+        // instead of failing the whole turn.
+        log.warn(
+          { type: "voice-summary-save-failed", sessionId: session.id, error },
+          "voice-summary-save-failed",
+        );
+      }
+    }
   }
-  await services.channels.recordActivity(
-    actor,
-    session.channelId,
-    {
-      text: `Voice chat${session.summary ? `: ${session.summary}` : ""}`,
-      agentId: null,
-      at: new Date(session.endedAt),
-    },
-    {
-      id: `voice:${session.id}`,
-      enrichFrom: session.summary ? "Voice chat" : undefined,
-    },
-  );
+  try {
+    await services.channels.recordActivity(
+      actor,
+      session.channelId,
+      {
+        text: `Voice chat${session.summary ? `: ${session.summary}` : ""}`,
+        agentId: null,
+        at: new Date(session.endedAt),
+      },
+      {
+        id: `voice:${session.id}`,
+        enrichFrom: session.summary ? "Voice chat" : undefined,
+      },
+    );
+  } catch (error) {
+    // The channel may have gone between save and record; the transcript itself is safe
+    // and must not read back as a failed save.
+    log.warn(
+      { type: "voice-activity-record-failed", sessionId: session.id, error },
+      "voice-activity-record-failed",
+    );
+  }
   return session;
 }
 

@@ -34,6 +34,9 @@ export function createTranscriptionProvider(
             },
           );
           if (!response.ok) {
+            // Release the unread body so the connection returns to the pool instead of
+            // waiting for GC under a failing upstream.
+            await response.body?.cancel().catch(() => {});
             throw new TranscriptionError(
               response.status === 429
                 ? "The transcription service is busy. Please retry shortly."

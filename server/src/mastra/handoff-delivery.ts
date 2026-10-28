@@ -38,7 +38,7 @@
  * resolves them per Bot), never the asking Bot's.
  */
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { RunAssertion } from "../agents/callback-token";
 import { HANDOFF_KIND } from "../agents/handoff";
@@ -147,11 +147,15 @@ export function handoffWorkReader(database: Database) {
       .where(and(eq(workItems.kind, HANDOFF_KIND), eq(workItems.key, hopKey)))
       .limit(1);
     if (!row) return null;
+    // An UNCLAIMED row (never claimed, or a reaper released the lease) mounts nothing: the
+    // empty owner would be signed into the delivery run's assertion, where it matches no real
+    // lease holder. The delivery refuses — the same answer a gone row gets.
+    if (!row.claimedBy) return null;
     const parsed = handoffDeliveryPayload.safeParse(row.payload);
     if (!parsed.success) return null;
     return {
       work: parsed.data as HandoffWork,
-      claimedBy: row.claimedBy ?? "",
+      claimedBy: row.claimedBy,
       finishedAt: row.finishedAt,
       payload: row.payload,
     };
@@ -229,12 +233,38 @@ export function createGovernedHandoffRecordResolver(deps: {
       threadId: work.threadId,
     });
     const conversation = await deps.conversations.getOrCreate(scope, {});
-    await deps.database
+    // Condition on the mapping being ABSENT: two concurrent redeliveries both pass the
+    // advance-intent check above, both mint a scratch conversation, and an unconditional write
+    // lets the loser overwrite the winner's mapping — orphaning the conversation the row will
+    // never point at again. The loser re-reads the row and converges on the winner's thread.
+    const claimed = await deps.database
       .update(workItems)
       .set({
         payload: { ...hop.payload, scratchThreadId: conversation.thread_id },
       })
-      .where(and(eq(workItems.kind, HANDOFF_KIND), eq(workItems.key, hopKey)));
+      .where(
+        and(
+          eq(workItems.kind, HANDOFF_KIND),
+          eq(workItems.key, hopKey),
+          sql`coalesce(${workItems.payload}->>'scratchThreadId', '') = ''`,
+        ),
+      )
+      .returning({ key: workItems.key });
+    if (claimed.length === 0) {
+      const [row] = await deps.database
+        .select({ payload: workItems.payload })
+        .from(workItems)
+        .where(and(eq(workItems.kind, HANDOFF_KIND), eq(workItems.key, hopKey)))
+        .limit(1);
+      const winner = (
+        row?.payload as { scratchThreadId?: string } | undefined
+      )?.scratchThreadId;
+      if (!winner) throw new Error("HANDOFF_SCRATCH_MAPPING_LOST");
+      return {
+        work: { ...work, scratchThreadId: winner },
+        threadId: winner,
+      };
+    }
     return {
       work: { ...work, scratchThreadId: conversation.thread_id },
       threadId: conversation.thread_id,
@@ -252,9 +282,11 @@ export function handoffSchedulingRecordFor(
   resolver: HandoffHopResolver,
 ): (routineId: string) => Promise<GovernedSchedulingRecord | null> {
   return async (routineId) => {
-    const hopKey = routineId.startsWith(HANDOFF_ENTRY_PREFIX)
-      ? routineId.slice(HANDOFF_ENTRY_PREFIX.length)
-      : routineId;
+    // A routine id without the entry prefix is not this entry's firing at all. Treating it
+    // as a bare hop key could match an unrelated handoff row that happens to share the key,
+    // so it resolves to nothing instead.
+    if (!routineId.startsWith(HANDOFF_ENTRY_PREFIX)) return null;
+    const hopKey = routineId.slice(HANDOFF_ENTRY_PREFIX.length);
     const hop = await resolver(hopKey);
     if (!hop) return null;
     return {

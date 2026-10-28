@@ -88,15 +88,31 @@ export function createFileRoutes(
     // its own ceiling; here the ceiling is ours to state. The verdict is onyx's own — an
     // oversize file is 400 with validate_file's sentence (413 stays reserved for the
     // sandbox transfer ceiling that refuses mid-write below).
-    const declaredLength = Number(
-      context.req.raw.headers.get("content-length") ?? "0",
-    );
-    if (declaredLength > deps.config.maxUploadFileSizeBytes + 65_536) {
+    // shortcut: a missing Content-Length (this repo's own test client omits it, and a
+    // chunked request can too) reads as no declared size and rides the post-buffer
+    // validateFileSize ceiling; a streamed byte cap needs framework support, not this handler.
+    const declaredHeader = context.req.raw.headers.get("content-length");
+    const declaredLength = declaredHeader === null ? 0 : Number(declaredHeader);
+    if (
+      Number.isFinite(declaredLength) &&
+      declaredLength > deps.config.maxUploadFileSizeBytes + 65_536
+    ) {
       return context.json(
         {
           error: `File size exceeds maximum allowed size of ${deps.config.maxUploadFileSizeBytes} bytes`,
         },
         400,
+      );
+    }
+
+    // The session belongs to this actor and has a sandbox BEFORE the body buffers:
+    // a request at a nonexistent session must 404 before its bytes are read into memory.
+    const { session, fileApi } = await resolve(sessionId, actor.id);
+    if (!session) return context.json({ error: "Session not found" }, 404);
+    if (!fileApi) {
+      return context.json(
+        { error: "The session's sandbox is not available." },
+        503,
       );
     }
 
@@ -124,15 +140,6 @@ export function createFileRoutes(
 
     // Sanitize BEFORE any filesystem decision (onyx api.py:774).
     const safeName = sanitizeFilename(entry.name);
-
-    const { session, fileApi } = await resolve(sessionId, actor.id);
-    if (!session) return context.json({ error: "Session not found" }, 404);
-    if (!fileApi) {
-      return context.json(
-        { error: "The session's sandbox is not available." },
-        503,
-      );
-    }
 
     const directory = sessionDirectory(
       sessionId,

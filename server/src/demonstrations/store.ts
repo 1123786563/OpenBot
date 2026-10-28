@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, getTableColumns, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, notInArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { demonstrations } from "../db/schema/demonstrations";
 import { draftDemonstration } from "./draft";
@@ -151,7 +151,9 @@ export function createDemonstrationStore(database: Database) {
         if (row.actions.length >= 200) {
           await transaction
             .update(demonstrations)
-            .set({ status: "stopped", finishedAt: new Date() })
+            // The database clock, like the expiry branch: both stop reasons must stay
+            // comparable by reachedDemonstrationTimeLimit whatever the app clock drifts to.
+            .set({ status: "stopped", finishedAt: sql`now()` })
             .where(eq(demonstrations.id, id));
           return "full";
         }
@@ -174,7 +176,7 @@ export function createDemonstrationStore(database: Database) {
       await get(ownerUserId, id);
       await database
         .update(demonstrations)
-        .set({ status: "stopped", finishedAt: new Date() })
+        .set({ status: "stopped", finishedAt: sql`now()` })
         .where(
           and(
             eq(demonstrations.id, id),
@@ -195,32 +197,61 @@ export function createDemonstrationStore(database: Database) {
           "This demonstration already has a saved skill. Edit it from Skills.",
         );
       const draft = draftDemonstration(row);
-      await database
+      const updated = await database
         .update(demonstrations)
         .set({ draft, status: "drafted" })
         .where(
           and(
             eq(demonstrations.id, id),
             eq(demonstrations.ownerUserId, ownerUserId),
+            // The verdict is re-checked against the row the UPDATE sees: an append that
+            // raced in (or a concurrent publish) must not be raced back over.
+            notInArray(demonstrations.status, ["recording", "published"]),
           ),
+        )
+        .returning({ id: demonstrations.id });
+      if (updated.length === 0) {
+        // Answer the same sentences a sequential caller would have read.
+        const current = await get(ownerUserId, id);
+        if (current.status === "recording")
+          throw new DemonstrationRefusedError(
+            "Stop recording before drafting the skill.",
+          );
+        if (current.status === "published")
+          throw new DemonstrationRefusedError(
+            "This demonstration already has a saved skill. Edit it from Skills.",
+          );
+        throw new DemonstrationRefusedError(
+          "This demonstration cannot be drafted right now.",
         );
+      }
       return draft;
     },
     async markPublished(ownerUserId: string, id: string, skillSlug: string) {
-      const row = await get(ownerUserId, id);
-      if (row.status === "recording")
-        throw new DemonstrationRefusedError(
-          "Stop recording before saving a skill.",
-        );
-      await database
+      const rows = await database
         .update(demonstrations)
         .set({ status: "published", skillSlug })
         .where(
           and(
             eq(demonstrations.id, id),
             eq(demonstrations.ownerUserId, ownerUserId),
+            // Only a drafted demonstration has a saved skill to publish: a `stopped`
+            // row carries no draft, and publishing it would read back a skill that
+            // does not exist. The conditional write also cannot be raced over.
+            eq(demonstrations.status, "drafted"),
           ),
+        )
+        .returning({ id: demonstrations.id });
+      if (rows.length === 0) {
+        const current = await get(ownerUserId, id);
+        if (current.status === "recording")
+          throw new DemonstrationRefusedError(
+            "Stop recording before saving a skill.",
+          );
+        throw new DemonstrationRefusedError(
+          "Draft the skill before saving it.",
         );
+      }
       return get(ownerUserId, id);
     },
     async remove(ownerUserId: string, id: string) {

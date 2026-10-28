@@ -116,6 +116,11 @@ function httpsOrigin(url: string | undefined): string | undefined {
     host === "localhost" ||
     host.endsWith(".localhost") ||
     host === "::1" ||
+    host === "::" ||
+    host === "0.0.0.0" ||
+    // IPv4-mapped and shorthand spellings of the loopback block read the same to a
+    // verifier as the dotted form: none of them is an address a verifier could fetch.
+    host.startsWith("::ffff:127.") ||
     /^127(\.\d{1,3}){3}$/.test(host)
   ) {
     return undefined;

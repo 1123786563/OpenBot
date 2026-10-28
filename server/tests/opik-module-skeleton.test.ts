@@ -1,7 +1,7 @@
 import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import { canManageAgent } from "../src/agents/profile-policy";
+import { canManageAgent, canObserveAgent } from "../src/agents/profile-policy";
 import type { AgentProfile } from "../src/agents/profile-types";
 import {
   type BotManagementCheck,
@@ -36,15 +36,15 @@ function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
   } as AgentProfile;
 }
 
-/** 管理级 check：与 canManageAgent 同语义，测试里用它替代真实 store。 */
+/**
+ * 观测级 check：与生产接缝同语义（store 读取 + canObserveAgent，R4-02），测试里
+ * 用它替代真实 store。用户 Bot 上与 canManageAgent 答案一致；系统 Bot 上只放行
+ * 管理员——这正是本套件要守住的新边界。
+ */
 function managementCheck(rows: AgentProfile[]): BotManagementCheck {
   return async (actor, botId) => {
     const found = rows.find((row) => row.id === botId) ?? null;
-    if (!found) return null;
-    if (found.systemOwned || found.deletedAt !== null) return null;
-    return found.ownerUserId === actor.id || actor.role === "admin"
-      ? found
-      : null;
+    return found && canObserveAgent(actor, found) ? found : null;
   };
 }
 
@@ -136,6 +136,20 @@ describe("resolveObservationBot", () => {
     ).toBe(false);
     expect(
       (await resolveObservationBot(managementCheck(rows), owner, "agent-2")).ok,
+    ).toBe(false);
+  });
+
+  // R4-02: a creatorless system Bot answers its administrator — the user above
+  // keeps the unified not-found, so the two stay distinguishable by role alone.
+  test("a system-owned Bot resolves for the administrator and nobody else", async () => {
+    const rows = [
+      profile({ systemOwned: true, ownerUserId: null, visibility: "public" }),
+    ];
+    expect(
+      (await resolveObservationBot(managementCheck(rows), admin, "agent-1")).ok,
+    ).toBe(true);
+    expect(
+      (await resolveObservationBot(managementCheck(rows), stranger, "agent-1")).ok,
     ).toBe(false);
   });
 });
@@ -306,14 +320,22 @@ describe("mount seam", () => {
     });
   });
 
-  test("canManageBot refuses a public Bot the caller does not own", async () => {
-    // The assembly index.ts performs: store read + canManageAgent, as one injected check.
-    const rows = [profile({ visibility: "public" })];
+  test("the wiring's check observes a public Bot's owner, refuses a stranger, and never edits", async () => {
+    // The assembly index.ts performs (R4-02): store read + canObserveAgent, as one
+    // injected check — the observation domain's own question, not the manage gate.
+    const rows = [
+      profile({ visibility: "public" }),
+      profile({ id: "agent-sys", systemOwned: true, ownerUserId: null }),
+    ];
     const check: BotManagementCheck = async (actor, botId) => {
       const found = rows.find((row) => row.id === botId);
-      return found && canManageAgent(actor, found) ? found : null;
+      return found && canObserveAgent(actor, found) ? found : null;
     };
     expect(await check(stranger, "agent-1")).toBeNull();
     expect(await check(owner, "agent-1")).not.toBeNull();
+    // The system Bot: observed by the administrator, still un-editable by anyone.
+    expect((await check(admin, "agent-sys"))?.id).toBe("agent-sys");
+    expect(await check(owner, "agent-sys")).toBeNull();
+    expect(canManageAgent(admin, rows[1])).toBe(false);
   });
 });

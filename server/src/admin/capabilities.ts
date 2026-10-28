@@ -11,6 +11,9 @@
  * - A role row replaces the baseline for everybody holding that role (OpenAI custom roles).
  * - A group row can only widen (Grok Bot: "Group settings only widen: a group can grant its members
  *   more than the team allows, never less"). `true` grants; `false` is recorded and changes nothing.
+ *   Widen means against the baseline, not against a role row: a group grant also overrides an
+ *   explicit `false` on the member's role, so a role-level denial is not enforceable on group
+ *   members by design.
  * - No row anywhere means the built-in default below, which keeps every deployment that has never
  *   opened this screen working exactly as it did.
  */
@@ -140,7 +143,9 @@ export function resolveCapability(
   }
 
   const organization = forCapability.find(
-    (row) => row.scopeKind === "organization",
+    // The schema pins an organization row's scope_id to "", so a row with anything else is dirty
+    // data and must not be adopted as the baseline.
+    (row) => row.scopeKind === "organization" && row.scopeId === "",
   );
   if (organization) {
     return {

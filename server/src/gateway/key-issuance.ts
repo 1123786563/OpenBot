@@ -432,6 +432,7 @@ type CappedBody =
 async function readBodyCapped(
   response: Response,
   capBytes: number,
+  signal?: AbortSignal,
 ): Promise<CappedBody> {
   const declared = Number(response.headers.get("content-length") ?? "");
   if (Number.isFinite(declared) && declared > capBytes) {
@@ -442,6 +443,10 @@ async function readBodyCapped(
   const chunks: Uint8Array[] = [];
   let total = 0;
   for (;;) {
+    if (signal?.aborted) {
+      void reader.cancel().catch(() => {});
+      return { ok: false, reason: "unreadable" };
+    }
     const { done, value } = await reader.read();
     if (done) break;
     total += value.byteLength;
@@ -568,18 +573,32 @@ export function createGatewayVirtualKeyClient(
       }
 
       const remainingMs = config.requestTimeoutMs - (Date.now() - startedAt);
+      // The read races the same overall deadline: a lost race aborts the reader (so a slow
+      // gateway cannot hold the connection open in the background) and the timer is cleared
+      // (so a finished read never leaves a pending timeout holding the event loop).
+      const readAbort = new AbortController();
+      let readTimer: ReturnType<typeof setTimeout> | undefined;
       const capped = await Promise.race([
-        readBodyCapped(response, GATEWAY_VIRTUAL_KEY_MAX_BODY_BYTES),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(timeoutError()), Math.max(1, remainingMs)),
+        readBodyCapped(
+          response,
+          GATEWAY_VIRTUAL_KEY_MAX_BODY_BYTES,
+          readAbort.signal,
         ),
-      ]).catch((error: unknown) => {
-        if (isTimeoutError(error)) return null;
-        throw new GatewayVirtualKeyError(
-          "gateway_vk_invalid_response",
-          "The gateway's virtual key response could not be read, so issuance is refused.",
-        );
-      });
+        new Promise<never>((_, reject) => {
+          readTimer = setTimeout(() => {
+            readAbort.abort();
+            reject(timeoutError());
+          }, Math.max(1, remainingMs));
+        }),
+      ])
+        .catch((error: unknown) => {
+          if (isTimeoutError(error)) return null;
+          throw new GatewayVirtualKeyError(
+            "gateway_vk_invalid_response",
+            "The gateway's virtual key response could not be read, so issuance is refused.",
+          );
+        })
+        .finally(() => clearTimeout(readTimer));
 
       if (capped === null) {
         throw new GatewayVirtualKeyError(

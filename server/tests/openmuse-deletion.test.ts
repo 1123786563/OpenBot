@@ -1926,6 +1926,36 @@ describe("deletion resource manifest (D04)", () => {
     expect(manifestStore.insertSnapshots).toEqual([]);
   });
 
+  test("a fence lifted during the enumeration is answered, never asserted", async () => {
+    markers.clear();
+    restoredUntil.clear();
+    markers.add(actorOne.id);
+    const window = new Date(clock.now.getTime() + 30 * 86_400_000);
+    // The marker is fenced when buildManifest checks on entry, and D05's
+    // restore lands before the manifest re-reads it to answer: the answer
+    // must name the lifted phase, never an asserted "fenced" over a live
+    // account.
+    let reads = 0;
+    const liftingMarker = {
+      get: async (userId: string) => {
+        reads += 1;
+        if (reads >= 2) await store.restore(userId, window);
+        return store.get(userId);
+      },
+      enumerateOwner: store.enumerateOwner,
+    };
+    const manifestStore = manifestRows();
+    const manifest = createOpenMuseDeletionManifest({
+      rows: manifestStore.rows,
+      marker: liftingMarker,
+      files: { enumerateOwner: async () => [] },
+    });
+    const answered = await manifest.buildManifest(actorOne.id);
+    expect(answered.phase).toBe("restored");
+    expect(answered.restoreUntil).toBe(window.toISOString());
+    expect(answered.resources).toEqual([]);
+  });
+
   test("another user's resources never land in the manifest", async () => {
     markers.clear();
     session = actorOne;
@@ -3027,7 +3057,7 @@ describe("file byte purge (D06)", () => {
     ).toBe("retryable_error");
   });
 
-  test("a phase-2 hardDelete failure lands that file's rows retryable in the report and the walk continues", async () => {
+  test("a phase-2 hardDelete failure keeps its rows out of report.retryable and the walk continues", async () => {
     const world = purgeWorld();
     const refused = await upload(world, actorOne.id, "lease.pdf");
     const survivor = await upload(world, actorOne.id, "photo.png");
@@ -3050,20 +3080,12 @@ describe("file byte purge (D06)", () => {
     });
     const report = await purger.purgeFileBytes(actorOne.id);
     expect(report.hardDeleted).toEqual([survivor.file.id]);
-    // The failed file's rows carry the reason in the report — their bytes
-    // are gone, so the row itself stays terminal `deleted`; the metadata
-    // debt is what the next pass re-surveys and completes.
-    expect(report.retryable).toEqual([
-      {
-        id: refused.file.id,
-        externalKey: openMuseFileByteKey(
-          actorOne.id,
-          refused.file.id,
-          refused.file.versionId,
-        ),
-        lastError: "metadata delete refused",
-      },
-    ]);
+    // The failed file's byte rows stay OUT of report.retryable: their bytes
+    // are gone, so every row is terminal `deleted` and markRetryable's
+    // ne(deleted) guard makes the marks no-ops — claiming they "stayed
+    // retryable" would misstate the manifest. The debt lives on the manifest
+    // (the next test), and the next pass re-surveys and completes it.
+    expect(report.retryable).toEqual([]);
     expect(world.fileRows.files.map((file) => file.id)).toEqual([
       refused.file.id,
     ]);
@@ -3274,6 +3296,43 @@ describe("file byte purge (D06)", () => {
     expect(response.status).toBe(409);
     const body = (await response.json()) as { error: string };
     expect(body.error).toContain("not fenced");
+  });
+
+  test("a restore landing mid-walk stops the pass: later bytes and the metadata phase are never touched", async () => {
+    const world = purgeWorld();
+    const first = await upload(world, actorOne.id, "lease.pdf");
+    const second = await upload(world, actorOne.id, "photo.png");
+    markers.add(actorOne.id);
+    await world.manifest.buildManifest(actorOne.id);
+    // D05's restore lands the moment the first byte leaves — the two admin
+    // routes share a face and nothing serializes them. The next gate read
+    // must refuse the walk, so the still-fenced file keeps its bytes and
+    // its metadata rows. (The manifest walks newest first: which file goes
+    // first is read off the walk, not assumed.)
+    const innerDelete = world.byteStore.delete.bind(world.byteStore);
+    let firstGone = "";
+    world.byteStore.delete = async (key: string) => {
+      await innerDelete(key);
+      firstGone = key;
+      await store.restore(
+        actorOne.id,
+        new Date(clock.now.getTime() + 30 * DAY_MS),
+      );
+    };
+    await expect(
+      world.purger.purgeFileBytes(actorOne.id),
+    ).rejects.toBeInstanceOf(OpenMusePurgeRefusedError);
+    expect(firstGone).not.toBe("");
+    const keys = [first, second].map((file) =>
+      openMuseFileByteKey(actorOne.id, file.file.id, file.file.versionId),
+    );
+    const survivorKey = keys.find((key) => key !== firstGone)!;
+    const survivorId = survivorKey === keys[0] ? first.file.id : second.file.id;
+    // Exactly one byte left before the refusal: the survivor's bytes stand.
+    expect(world.byteStore.calls).toEqual([firstGone]);
+    expect(world.byteStore.data.has(survivorKey)).toBe(true);
+    // And the metadata phase never ran: the survivor's rows are intact.
+    expect(world.fileRows.files.map((row) => row.id)).toContain(survivorId);
   });
 
   test("G06 on the report's exit: a token-shaped lastError is redacted before the admin route answers it", async () => {
@@ -4092,6 +4151,30 @@ describe("relational purge (D08)", () => {
       [],
     );
     expect((await store.get(actorOne.id))?.phase).toBe("completed");
+  });
+
+  test("a markDeleted failure does not put already-settled rows in the retryable report", async () => {
+    const world = relationalPurgeWorld();
+    world.seedBothUsers();
+    markers.add(actorOne.id);
+    await world.manifest.buildManifest(actorOne.id);
+    // The marker write dies on the second row: the first is already deleted,
+    // and re-marking it retryable would name one id in BOTH report arrays
+    // with a "delete failed" reason on a row that is gone.
+    const innerMarkDeleted = world.manifestStore.rows.markDeleted;
+    let calls = 0;
+    world.manifestStore.rows.markDeleted = async (...args) => {
+      calls += 1;
+      if (calls === 2) throw new Error("marker write refused");
+      return innerMarkDeleted(...args);
+    };
+    const outcome = await world.purger.purgeRelationalData(actorOne.id);
+    expect(outcome.status).toBe(200);
+    if (outcome.status !== 200) return;
+    const purgedIds = new Set(outcome.report.purged.map((row) => row.id));
+    expect(
+      outcome.report.retryable.filter((row) => purgedIds.has(row.id)),
+    ).toEqual([]);
   });
 
   test("an unresolved marker gap row blocks finalize: kind alone exempts nothing and the manifest survives", async () => {

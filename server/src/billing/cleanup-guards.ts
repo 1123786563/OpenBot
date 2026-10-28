@@ -214,10 +214,27 @@ export async function guardCleanupDeletion(
     const identity = await tx.execute<{ database: string; schema: string }>(
       sql`SELECT current_database() AS database, current_schema() AS schema`,
     );
+    if (identity[0] === undefined) {
+      throw new Error(
+        "cleanup guards: the database identity query returned no row",
+      );
+    }
 
     // --- The live FK graph among estate tables: every CASCADE or SET NULL edge is a way a
     // deletion can reach an in-flight row. RESTRICT/NO ACTION edges do not endanger the
     // child (they block the deletion instead), so they are not endangerment paths.
+    // sql.raw interpolates these constants verbatim; the shape check keeps that safe even
+    // if a future constant pickup smuggles in quoting.
+    for (const word of [
+      ...CLEANUP_ESTATE_TABLES,
+      ...IN_FLIGHT_RESERVATION_STATUSES,
+    ]) {
+      if (!/^[a-z_][a-z0-9_]*$/.test(word)) {
+        throw new Error(
+          `cleanup guards: constant ${word} is not a bare identifier`,
+        );
+      }
+    }
     const estateArray = sql.raw(
       `ARRAY[${CLEANUP_ESTATE_TABLES.map((table) => `'${table}'`).join(",")}]`,
     );

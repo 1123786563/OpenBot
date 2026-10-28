@@ -896,12 +896,15 @@ export function createDrizzleDerivedJudgmentRecords(
         );
     },
     async expireUnreviewedBefore(cutoff) {
+      // One decision instant: updatedAt and reviewedAt name the same moment, so the
+      // row never reads "expired at X, updated at Y".
+      const decidedAt = new Date();
       const expired = await database
         .update(candidates)
         .set({
           reviewState: "expired",
-          updatedAt: new Date(),
-          reviewedAt: new Date(),
+          updatedAt: decidedAt,
+          reviewedAt: decidedAt,
         })
         .where(
           and(

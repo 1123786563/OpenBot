@@ -23,8 +23,15 @@ export function opikTestDatabase(pool = TEST_POOL): Database {
 export async function assertBindingsSchemaPresent(
   database: Database,
 ): Promise<void> {
+  // Names come from drizzle/0149_opik_observation_bindings.sql — keep the two
+  // files in step when that migration renames an index. The UNIQUE predicate is
+  // the point: a same-named non-unique index would let every idempotency case
+  // below pass while proving nothing.
   const indexes = await database.$client`
-    SELECT indexname FROM pg_indexes WHERE tablename = 'ai_observation_bindings'
+    SELECT indexname FROM pg_indexes
+    WHERE schemaname = current_schema()
+      AND tablename = 'ai_observation_bindings'
+      AND indexdef LIKE 'CREATE UNIQUE%'
   `;
   const present = new Set(indexes.map((row) => row.indexname));
   for (const required of [

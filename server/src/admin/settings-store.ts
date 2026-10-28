@@ -8,6 +8,7 @@
  */
 import { and, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
+
 import {
   actionRecords,
   capabilitySettings,
@@ -28,6 +29,10 @@ import {
 import type { CapabilityRow, Member } from "./capabilities";
 
 export const ENTERPRISE_TOPIC = "enterprise_settings_changed";
+
+/** Admin list pages share one ceiling (actions / recentModelUsage). */
+const ADMIN_LIST_LIMIT = 500;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * The advisory lock key serializing gateway endpoint saves; see `writeGatewayEndpointRow`.
@@ -282,15 +287,17 @@ export function createEnterpriseStore(database: Database) {
 
     /** One person as the capability rules see them. Unknown means a plain user in no group. */
     async member(userId: string): Promise<Member> {
-      const roles = await database
-        .select({ role: userRoles.role })
-        .from(userRoles)
-        .where(eq(userRoles.userId, userId));
-      const person = await database
-        .select({ groups: users.groups })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
+      const [roles, person] = await Promise.all([
+        database
+          .select({ role: userRoles.role })
+          .from(userRoles)
+          .where(eq(userRoles.userId, userId)),
+        database
+          .select({ groups: users.groups })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1),
+      ]);
       return {
         role: roles.some((row) => row.role === "admin") ? "admin" : "user",
         groups: person[0]?.groups ?? [],
@@ -420,7 +427,7 @@ export function createEnterpriseStore(database: Database) {
         .select()
         .from(actionRecords)
         .orderBy(desc(actionRecords.createdAt))
-        .limit(Math.min(Math.max(limit, 1), 500));
+        .limit(Math.min(Math.max(limit, 1), ADMIN_LIST_LIMIT));
       return rows.map((row) => ({
         ...row,
         createdAt: row.createdAt.toISOString(),
@@ -428,11 +435,18 @@ export function createEnterpriseStore(database: Database) {
     },
 
     async purgeActions(olderThan: Date): Promise<number> {
-      const removed = await database
-        .delete(actionRecords)
-        .where(lt(actionRecords.createdAt, olderThan))
-        .returning({ id: actionRecords.id });
-      return removed.length;
+      // Count server-side: RETURNING every id would materialize a whole 90-day
+      // purge batch in memory just to read its length.
+      const rows = await database.execute(sql`
+        with gone as (
+          delete from ${actionRecords}
+          where ${lt(actionRecords.createdAt, olderThan)}
+          returning 1
+        )
+        select count(*)::int as removed from gone
+      `);
+      const [row] = rows as { removed?: number }[];
+      return row?.removed ?? 0;
     },
 
     async recordModelUsage(input: {
@@ -456,7 +470,7 @@ export function createEnterpriseStore(database: Database) {
     },
 
     async modelUsageSummary(sinceDays: number): Promise<ModelUsageSummary[]> {
-      const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+      const since = new Date(Date.now() - sinceDays * DAY_MS);
       const rows = await database
         .select({
           model: modelUsage.model,
@@ -481,7 +495,7 @@ export function createEnterpriseStore(database: Database) {
         .select()
         .from(modelUsage)
         .orderBy(desc(modelUsage.createdAt))
-        .limit(Math.min(Math.max(limit, 1), 500));
+        .limit(Math.min(Math.max(limit, 1), ADMIN_LIST_LIMIT));
       return rows.map((row) => ({
         ...row,
         createdAt: row.createdAt.toISOString(),

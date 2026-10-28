@@ -380,7 +380,7 @@ export async function createTeamPublicRulesFixture(): Promise<TeamPublicRulesFix
             team.principalId,
           ])}, 0))`,
         );
-        await tx.execute(sql`
+        const updated = (await tx.execute(sql`
           update enterprise_workspace_memberships
           set status = ${status},
             epoch = (select coalesce(max(epoch), 0) + 1
@@ -391,7 +391,18 @@ export async function createTeamPublicRulesFixture(): Promise<TeamPublicRulesFix
           where tenant_id = ${team.tenantId}
             and workspace_id = ${team.workspaceId}
             and principal_id = ${team.principalId}
-        `);
+          returning 1
+        `)) as unknown;
+        // Mirror softDeleteResource: 0 affected rows means the membership row is
+        // gone, and downstream suspension refusals would pass for the wrong reason.
+        const updatedRows = Array.isArray(updated)
+          ? updated
+          : ((updated as { rows?: unknown[] })?.rows ?? []);
+        if (updatedRows.length !== 1) {
+          throw new Error(
+            `MEMBERSHIP_STATUS_FAILED:${team.tenantId}:${team.workspaceId}:${team.principalId}:${updatedRows.length}`,
+          );
+        }
       });
     },
 
@@ -399,7 +410,15 @@ export async function createTeamPublicRulesFixture(): Promise<TeamPublicRulesFix
       const rows = (await data.execute(
         sql`select current_user as current_user`,
       )) as unknown as Record<string, unknown>[];
-      return String(rows[0]?.current_user ?? "");
+      const row = rows[0];
+      // This probe pins the data connection's identity: a missing answer is a
+      // probe failure, not an empty role to assert against.
+      if (!row || typeof row.current_user !== "string") {
+        throw new Error(
+          `DATA_CURRENT_USER_PROBE_FAILED:${JSON.stringify(rows[0])}`,
+        );
+      }
+      return row.current_user;
     },
 
     async dispose() {
@@ -407,11 +426,19 @@ export async function createTeamPublicRulesFixture(): Promise<TeamPublicRulesFix
       disposed = true;
       // Dependency rows cascade with their resource rows (MT009 FK ON DELETE
       // cascade) — nothing extra to clean beyond the isolation fixture.
-      await setup.$client.close().catch(() => {});
-      await operator.$client.close().catch(() => {});
-      await data.$client.close().catch(() => {});
-      await directory.$client.close().catch(() => {});
-      await isolation.dispose();
+      const failures: unknown[] = [];
+      await setup.$client.close().catch((error) => failures.push(error));
+      await operator.$client.close().catch((error) => failures.push(error));
+      await data.$client.close().catch((error) => failures.push(error));
+      await directory.$client.close().catch((error) => failures.push(error));
+      try {
+        await isolation.dispose();
+      } catch (error) {
+        failures.push(error);
+      }
+      if (failures.length > 0) {
+        throw new AggregateError(failures, "team-public-rules fixture dispose failed");
+      }
     },
   };
   return fixture;

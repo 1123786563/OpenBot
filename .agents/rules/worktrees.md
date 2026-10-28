@@ -13,7 +13,7 @@
 - 使用可追溯且简短的名称，如 `issue-410-write-origin` 或 `review-410`；Orca 新建 Worktree 会同时产生新分支，一个任务只保留一个主执行分支。临时审查或验证优先在主执行工作区只读进行，需要隔离时才创建有用途标识的临时 Worktree。只需要新 Agent 时复用现有分支和 Worktree。
 - 明确仓库与基线。本仓库默认目标为 `1123786563/OpenBot` 的 `origin/main`，核对实际 remote 身份、目标 ref 的完整 SHA 和读取时间，不用 `upstream/main` 或当前功能分支冒充。用户明确指定其他基线时记录该依据。普通独立任务使用 `--no-parent`；只有已核实 Orca 默认基线与目标 ref/SHA 一致时才可省略 `--base-branch`，否则显式指定并核对新 HEAD。Orca 任务以集成 HEAD 加[完整前置检查点](checkpoints.md)派生，记录父工作区；`--no-parent` 只决定 Orca 关系。
 - 有 Issue/PR 时创建时附上引用；记录 Orca 返回的完整 Worktree ID、路径、分支、BASE、拥有的任务和 Agent 到 Ledger。监督式阶段统一用 `worker-start`；非监督式的独立会话/完整 ownership handoff 才使用 `agent launch` 或 `worktree create --agent`，不得将其当成 Task/Dispatch 回执。只换 Agent 不另建工作区；结果不明先对账，不重复创建或启动。
-- 默认串行，明确获用户并行实现授权后，才在接口稳定、文件/共享资源不冲突且集成次序明确时使用多个 Worktree。任务容量按[编排规范](orchestration.md)，资源登记按[共享协调状态](coordination-state.md)。审核通过的成果串行进入集成工作树，组合验证后记录检查点并释放下游。
+- 实现默认串行；每日批次只读审计/验证可按 [每日规则](closed-issue-daily-run.md)的 P 与资源隔离并行。明确获用户并行实现授权后，才在接口稳定、文件/共享资源不冲突且集成次序明确时使用多个 Worktree。任务容量按[编排规范](orchestration.md)，资源登记按[共享协调状态](coordination-state.md)。审核通过的成果串行进入集成工作树，组合验证后记录检查点并释放下游。
 
 ## 收尾：核验后关闭
 

@@ -400,67 +400,80 @@ export function createChannelStore(
     },
 
     async direct(actor, agentId) {
-      const found = await database.transaction(
-        async (transaction) => {
-          /*
-           * ONE AT A TIME PER PERSON AND BOT, across every replica.
-           *
-           * Looking and then making is not find-or-create: two hops delivered at the same moment
-           * each saw nothing and each made a conversation, and that person ended up with two
-           * Knowledge channels holding two threads, with the answers split between them. A Bot
-           * asking for several things in one turn produces exactly that, so it needs no cluster and
-           * no unusual timing.
-           *
-           * An advisory lock rather than a unique constraint, because what has to be unique is not a
-           * column: it is "this person's channel whose whole roster is this one Bot", which is a
-           * count over another table. The lock is held for the transaction and taken on the pair, so
-           * nothing else on the channel table waits behind it.
-           */
-          await transaction.execute(
-            sql`select pg_advisory_xact_lock(hashtext(${`channel:direct:${actor.id}:${agentId}`}))`,
-          );
-          const [existing] = await transaction
-            .select({ id: channels.id })
-            .from(channels)
-            .innerJoin(
-              channelMemberships,
-              and(
-                eq(channelMemberships.channelId, channels.id),
-                eq(channelMemberships.userId, actor.id),
-              ),
-            )
-            .innerJoin(
-              channelAgents,
-              and(
-                eq(channelAgents.channelId, channels.id),
-                eq(channelAgents.agentId, agentId),
-              ),
-            )
+      const findOrCreate = () =>
+        database.transaction(
+          async (transaction) => {
             /*
-             * A channel of this person's whose whole roster is this one Bot. The count is what makes
-             * it "alone": a channel holding this Bot and another one would match an agent test on
-             * its own, and delivering into it would put the answer in front of a Bot nobody asked.
+             * ONE AT A TIME PER PERSON AND BOT, across every replica.
+             *
+             * Looking and then making is not find-or-create: two hops delivered at the same moment
+             * each saw nothing and each made a conversation, and that person ended up with two
+             * Knowledge channels holding two threads, with the answers split between them. A Bot
+             * asking for several things in one turn produces exactly that, so it needs no cluster and
+             * no unusual timing.
+             *
+             * An advisory lock rather than a unique constraint, because what has to be unique is not a
+             * column: it is "this person's channel whose whole roster is this one Bot", which is a
+             * count over another table. The lock is held for the transaction and taken on the pair, so
+             * nothing else on the channel table waits behind it.
              */
-            .where(
-              and(
-                isNull(channels.deletedAt),
-                sql`(select count(*) from ${channelAgents} where ${channelAgents.channelId} = ${channels.id}) = 1`,
-              ),
-            )
-            .orderBy(...ROSTER_ORDER)
-            .limit(1);
+            await transaction.execute(
+              sql`select pg_advisory_xact_lock(hashtext(${`channel:direct:${actor.id}:${agentId}`}))`,
+            );
+            const [existing] = await transaction
+              .select({ id: channels.id })
+              .from(channels)
+              .innerJoin(
+                channelMemberships,
+                and(
+                  eq(channelMemberships.channelId, channels.id),
+                  eq(channelMemberships.userId, actor.id),
+                ),
+              )
+              .innerJoin(
+                channelAgents,
+                and(
+                  eq(channelAgents.channelId, channels.id),
+                  eq(channelAgents.agentId, agentId),
+                ),
+              )
+              /*
+               * A channel of this person's whose whole roster is this one Bot. The count is what makes
+               * it "alone": a channel holding this Bot and another one would match an agent test on
+               * its own, and delivering into it would put the answer in front of a Bot nobody asked.
+               */
+              .where(
+                and(
+                  isNull(channels.deletedAt),
+                  // Archived is not deleted, but it is not "the conversation this person is in"
+                  // either: reusing it would deliver a reply into a thread the default list
+                  // never shows, which reads as the Bot not answering. Touch the Bot again and
+                  // a new, visible channel is what answers.
+                  isNull(channels.archivedAt),
+                  sql`(select count(*) from ${channelAgents} where ${channelAgents.channelId} = ${channels.id}) = 1`,
+                ),
+              )
+              .orderBy(...ROSTER_ORDER)
+              .limit(1);
 
-          return existing
-            ? existing.id
-            : await makeChannel(transaction, actor, [agentId]);
-        },
-        { isolationLevel: "read committed" },
-      );
+            return existing
+              ? existing.id
+              : await makeChannel(transaction, actor, [agentId]);
+          },
+          { isolationLevel: "read committed" },
+        );
 
+      let found = await findOrCreate();
       if (typeof found !== "string") return found;
-      const channel = await store.get(actor, found);
-      // Null only if it was deleted between the two reads, which is a reason to make a new one
-      // rather than to fail: the caller asked for a conversation, not for that row.
+      let channel = await store.get(actor, found);
+      // Null only if it was deleted between the two reads, which is a reason to re-enter the
+      // LOCKED find-or-create rather than create here: an unlocked create is exactly the
+      // duplicate-channel race the advisory lock above exists to prevent.
+      if (!channel) {
+        found = await findOrCreate();
+        if (typeof found !== "string") return found;
+        channel = await store.get(actor, found);
+      }
       return channel ?? store.create(actor, [agentId]);
     },
 
@@ -1331,7 +1344,13 @@ export function parseActivityInput(
   if (typeof object.text !== "string" || object.text.trim().length === 0) {
     return { ok: false, error: "Text is required." };
   }
-  if (object.agentId !== null && typeof object.agentId !== "string") {
+  // An omitted agentId is a person speaking, the same as an explicit null: the commonest
+  // report must not 400 on the field's absence.
+  if (
+    object.agentId !== null &&
+    object.agentId !== undefined &&
+    typeof object.agentId !== "string"
+  ) {
     return { ok: false, error: "Agent ID must be a string or null." };
   }
   if (

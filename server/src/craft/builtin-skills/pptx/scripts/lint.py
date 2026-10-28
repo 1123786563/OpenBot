@@ -18,11 +18,13 @@ backgrounds) are allowlisted. Rotated shapes and group internals are skipped
 for geometric checks.
 
 Output protocol (stdout):
-    Line 1: status — LINT_CLEAN, LINT_ISSUES <n_errors> <n_warnings>, or ERROR_NOT_FOUND
+    Line 1: status — LINT_CLEAN, LINT_ISSUES <n_errors> <n_warnings>,
+            LINT_UNREADABLE <error>, or ERROR_NOT_FOUND
     Lines 2+: one finding per line:
         slide N | shape "Name" (id=K) | SEVERITY CHECK | detail | text: "snippet"
 
-Exit code: 1 if any ERROR finding, 0 otherwise (2 on usage error).
+Exit code: 1 if any ERROR finding, 0 otherwise (2 on usage error or an
+unreadable file).
 
 Usage:
     python lint.py /path/to/file.pptx [--profile {standard,dense}]
@@ -695,14 +697,18 @@ def check_overlap(
 
 
 def check_contrast(
-    slide_no: int, slide, shapes: list[tuple[BaseShape, Box]]
+    slide_no: int,
+    slide,
+    shapes: list[tuple[BaseShape, Box]],
+    z_order: list[tuple[BaseShape, Box | None]],
 ) -> tuple[list[Finding], int]:
     """Returns (findings, skipped_run_count)."""
     findings: list[Finding] = []
     skipped = 0
     slide_bg = _slide_background_rgb(slide)
+    z_index = {id(shape): i for i, (shape, _) in enumerate(z_order)}
 
-    for idx, (shape, box) in enumerate(shapes):
+    for shape, box in shapes:
         if not getattr(shape, "has_text_frame", False):  # ods: ignore[getattr]
             continue
         if not shape.text_frame.text.strip():
@@ -716,10 +722,17 @@ def check_contrast(
         unresolvable = False
         cx = box.left + box.width / 2
         cy = box.top + box.height / 2
-        for j in range(idx, -1, -1):  # include the shape's own fill first
-            other, obox = shapes[j]
-            if other is not shape and not obox.contains_point(cx, cy):
-                continue
+        for j in range(z_index[id(shape)], -1, -1):
+            other, obox = z_order[j]
+            if other is not shape:
+                if obox is None:
+                    # Geometry-skipped shape (rotated / no coordinates) between
+                    # the text and its background: unresolvable, never guess
+                    # past it.
+                    unresolvable = True
+                    break
+                if not obox.contains_point(cx, cy):
+                    continue
             if _is_picture(other):
                 unresolvable = True
                 break
@@ -821,8 +834,13 @@ def lint_presentation(prs, profile: str = DEFAULT_PROFILE) -> tuple[list[Finding
     total_skipped = 0
     for slide_no, slide in enumerate(prs.slides, start=1):
         shapes: list[tuple[BaseShape, Box]] = []
+        # Full z-order, geometry-skipped shapes included, for contrast background
+        # resolution: a skipped shape between text and its background must block
+        # the walk instead of silently reading as transparent.
+        z_order: list[tuple[BaseShape, Box | None]] = []
         for shape in slide.shapes:
             box = _shape_box(shape)
+            z_order.append((shape, box))
             if box is None or _is_rotated(shape):
                 continue
             shapes.append((shape, box))
@@ -835,7 +853,9 @@ def lint_presentation(prs, profile: str = DEFAULT_PROFILE) -> tuple[list[Finding
         )
         findings.extend(check_overflow(slide_no, shapes))
         findings.extend(check_overlap(slide_no, shapes, slide_w, slide_h))
-        contrast_findings, skipped = check_contrast(slide_no, slide, shapes)
+        contrast_findings, skipped = check_contrast(
+            slide_no, slide, shapes, z_order
+        )
         findings.extend(contrast_findings)
         total_skipped += skipped
 
@@ -868,7 +888,13 @@ def main() -> None:
         print("ERROR_NOT_FOUND")
         sys.exit(1)
 
-    findings, contrast_skipped = lint_file(pptx_path, profile=args.profile)
+    try:
+        findings, contrast_skipped = lint_file(pptx_path, profile=args.profile)
+    except Exception as e:
+        # A corrupt/encrypted/non-pptx file must not masquerade as "1 = has
+        # ERROR findings"; exit 2 keeps the documented code meanings apart.
+        print(f"LINT_UNREADABLE {type(e).__name__}: {e}")
+        sys.exit(2)
     errors = sum(1 for f in findings if f.severity == "ERROR")
     warnings = sum(1 for f in findings if f.severity == "WARN")
 

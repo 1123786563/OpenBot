@@ -132,7 +132,10 @@ export function buildWebappBootstrapScript(input: {
 export ONYX_WEBAPP_BASE_PATH='${basePath}'
 export NEXT_PUBLIC_BASE_PATH='${basePath}'`;
   return `#!/bin/bash
-SESSION_PATH=${sessionDirectory}
+# Single-quoted: the directory reaches here unescaped, and bash word-splits an
+# unquoted assignment whose value carries a space (bot-relative dirs are the
+# supported spelling, so the value is whatever the deployment's ids are).
+SESSION_PATH='${sessionDirectory}'
 # Normalize so bot-relative session dirs survive the script's own cd. The
 # invocation contract (the plugin, and \`bash start-webapp.sh\` from the root)
 # always runs with the session dir as cwd, so the cwd fallback is safe.

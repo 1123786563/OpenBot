@@ -10,7 +10,7 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { and, asc, desc, eq, gt, isNotNull, lt, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   workshopArtifacts,
@@ -195,6 +195,9 @@ export type WorkshopStore = {
   ): Promise<WorkshopTurnEventRow[]>;
 };
 
+/** Postgres's unique-violation: the (session_id, turn_index) race this store retries. */
+const UNIQUE_VIOLATION = "23505";
+
 export function createWorkshopStore(db: Database): WorkshopStore {
   return {
     async getOrCreateSession(input) {
@@ -275,17 +278,33 @@ export function createWorkshopStore(db: Database): WorkshopStore {
       // nextval by max+1 inside the insert's own expression: concurrent enqueues on one
       // session each take a distinct index without a round trip, and the session's unique
       // (session_id, turn_index) turns a lost race into a retryable error rather than a gap.
-      const rows = await db
-        .insert(workshopTurns)
-        .values({
-          id: newWorkshopId("wt"),
-          sessionId: input.sessionId,
-          prompt: input.prompt,
-          initiator: input.initiator ?? "person",
-          turnIndex: sql`(select coalesce(max(${workshopTurns.turnIndex}), -1) + 1 from ${workshopTurns} where ${workshopTurns.sessionId} = ${input.sessionId})`,
-        })
-        .returning();
-      return rows[0];
+      // The retry is real, not the comment's intention: two people submitting on one channel
+      // is a normal minute, and the loser's subquery sees the winner's row on the second try.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const rows = await db
+            .insert(workshopTurns)
+            .values({
+              id: newWorkshopId("wt"),
+              sessionId: input.sessionId,
+              prompt: input.prompt,
+              initiator: input.initiator ?? "person",
+              turnIndex: sql`(select coalesce(max(${workshopTurns.turnIndex}), -1) + 1 from ${workshopTurns} where ${workshopTurns.sessionId} = ${input.sessionId})`,
+            })
+            .returning();
+          return rows[0];
+        } catch (error) {
+          const candidate = error as { code?: string; errno?: string };
+          if (
+            candidate?.code !== UNIQUE_VIOLATION &&
+            candidate?.errno !== UNIQUE_VIOLATION
+          ) {
+            throw error;
+          }
+          if (attempt === 2) throw error;
+        }
+      }
+      throw new Error("unreachable");
     },
 
     async markRunning(turnId, at) {
@@ -399,19 +418,34 @@ export function createWorkshopStore(db: Database): WorkshopStore {
     },
 
     async appendEvent(input) {
-      // Same max+1 shape as enqueueTurn's index: seq is per-turn, dense, and the unique
-      // (turn_id, seq) keeps two appenders from inventing the same position.
-      const rows = await db
-        .insert(workshopTurnEvents)
-        .values({
-          id: newWorkshopId("we"),
-          turnId: input.turnId,
-          type: input.type,
-          payload: input.payload,
-          seq: sql`(select coalesce(max(${workshopTurnEvents.seq}), 0) + 1 from ${workshopTurnEvents} where ${workshopTurnEvents.turnId} = ${input.turnId})`,
-        })
-        .returning();
-      return rows[0];
+      // Same max+1 shape — and the same bounded retry — as enqueueTurn's index: the unique
+      // (turn_id, seq) turns a lost race (a runner and a cancel/recover path appending at
+      // once) into a retry whose subquery sees the winner's row, not a missing event.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const rows = await db
+            .insert(workshopTurnEvents)
+            .values({
+              id: newWorkshopId("we"),
+              turnId: input.turnId,
+              type: input.type,
+              payload: input.payload,
+              seq: sql`(select coalesce(max(${workshopTurnEvents.seq}), 0) + 1 from ${workshopTurnEvents} where ${workshopTurnEvents.turnId} = ${input.turnId})`,
+            })
+            .returning();
+          return rows[0];
+        } catch (error) {
+          const candidate = error as { code?: string; errno?: string };
+          if (
+            candidate?.code !== UNIQUE_VIOLATION &&
+            candidate?.errno !== UNIQUE_VIOLATION
+          ) {
+            throw error;
+          }
+          if (attempt === 2) throw error;
+        }
+      }
+      throw new Error("unreachable");
     },
 
     async readEventsSince(turnId, seq, limit = 500) {
@@ -465,7 +499,19 @@ export function createWorkshopStore(db: Database): WorkshopStore {
           revokedAt: workshopSessions.shareRevokedAt,
         })
         .from(workshopSessions)
-        .where(eq(workshopSessions.shareTokenHash, tokenHash))
+        // LIVE means live here: a revoked or expired share is not found by its token at
+        // all, so a future caller that skips its own revokedAt check cannot be leaked a
+        // withdrawn link. resolveShareActor re-checks anyway; both gates agree.
+        .where(
+          and(
+            eq(workshopSessions.shareTokenHash, tokenHash),
+            isNull(workshopSessions.shareRevokedAt),
+            or(
+              isNull(workshopSessions.shareExpiresAt),
+              gt(workshopSessions.shareExpiresAt, sql`now()`),
+            ),
+          ),
+        )
         .limit(1);
       return rows[0];
     },
@@ -542,7 +588,12 @@ export function createWorkshopStore(db: Database): WorkshopStore {
         .set(
           // The patch is route-validated (B17's compiler and clamps); the column's $type is
           // the same shape spelled for drizzle, and this is the one place the two meet.
-          patch as Partial<typeof workshopSchedules.$inferInsert>,
+          // updatedAt rides along (the column has no trigger; deleteSchedule writes its own),
+          // so a pause/resume or rule change is visible on the row.
+          {
+            ...(patch as Partial<typeof workshopSchedules.$inferInsert>),
+            updatedAt: new Date(),
+          },
         )
         .where(eq(workshopSchedules.id, id));
     },

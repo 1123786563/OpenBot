@@ -96,12 +96,16 @@ export async function providerJson(
   provider: string,
   response: Response,
 ): Promise<Record<string, unknown>> {
-  if (!response.ok)
+  if (!response.ok) {
+    // Cancel the unread body: undici holds the connection until GC otherwise,
+    // and a run of 4xx/5xx from the provider would drain the pool.
+    await response.body?.cancel().catch(() => undefined);
     throw new DeliveryProviderError(
       provider,
       `HTTP_${response.status}`,
       response.status >= 500,
     );
+  }
   let body: unknown;
   try {
     body = await response.json();

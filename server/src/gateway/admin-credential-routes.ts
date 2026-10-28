@@ -16,17 +16,36 @@
  * 503, the way the bot service registry's routes do.
  */
 import { type Context, Hono, type MiddlewareHandler } from "hono";
+import { getLogger } from "../../../shared/logger";
 import { type AppVariables, requireAdmin } from "../auth/guards";
 import {
   type GatewayAdminCredentialService,
   validateGatewayAdminCredentialInput,
 } from "./admin-credential";
 
+const log = getLogger("server");
+
 export function gatewayAdminCredentialRoutes(
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
   service: GatewayAdminCredentialService | undefined,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
+  // The sibling admin surfaces answer `{ error }`, never Hono's plain-text fallback: a service
+  // write or read that throws is an outage, logged here and shaped like every other refusal.
+  app.onError((error, context) => {
+    log.error(
+      {
+        type: "gateway-admin-credential-route-error",
+        errorType: error.name,
+        timestamp: new Date().toISOString(),
+      },
+      "gateway-admin-credential-route-error",
+    );
+    return context.json(
+      { error: "The gateway admin credential is unavailable. Try again." },
+      503,
+    );
+  });
   app.use("*", async (context, next) => {
     context.header("cache-control", "no-store");
     await next();

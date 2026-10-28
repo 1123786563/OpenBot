@@ -63,9 +63,16 @@ def pack(
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for f in temp_content_dir.rglob("*"):
-                if f.is_file():
-                    zf.write(f, f.relative_to(temp_content_dir))
+            files = sorted(f for f in temp_content_dir.rglob("*") if f.is_file())
+            # Deterministic entry order, with the package manifest first: rglob's
+            # order is filesystem-dependent and some OPC readers expect
+            # [Content_Types].xml before anything it describes.
+            files.sort(
+                key=lambda f: f.relative_to(temp_content_dir).as_posix()
+                != "[Content_Types].xml"
+            )
+            for f in files:
+                zf.write(f, f.relative_to(temp_content_dir))
 
     return None, f"Successfully packed {input_dir} to {output_file}"
 

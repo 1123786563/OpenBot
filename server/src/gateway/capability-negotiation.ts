@@ -319,18 +319,23 @@ export async function fetchGatewayExtensionManifest(options: {
     };
   }
 
-  // The deadline covers the body read too, the way the probe's does.
+  // The deadline covers the body read too, the way the probe's does. The losing
+  // timer is cleared once the race settles, so it cannot fire into an already-
+  // settled result or spin for the rest of the budget.
   const remainingMs = config.requestTimeoutMs - (now().getTime() - startedAt);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   const body = await Promise.race([
     readBodyCapped(response, GATEWAY_PROBE_MAX_BODY_BYTES),
     new Promise<never>((_, reject) => {
-      setTimeout(() => reject(timeoutError()), Math.max(1, remainingMs));
+      timeout = setTimeout(() => reject(timeoutError()), Math.max(1, remainingMs));
     }),
-  ]).catch((error: unknown) => {
-    if (isTimeoutError(error)) return "timeout" as const;
-    void response.body?.cancel().catch(() => {});
-    return "unreadable" as const;
-  });
+  ])
+    .catch((error: unknown) => {
+      if (isTimeoutError(error)) return "timeout" as const;
+      void response.body?.cancel().catch(() => {});
+      return "unreadable" as const;
+    })
+    .finally(() => clearTimeout(timeout));
 
   if (body === "timeout") {
     return { ok: false, reasonCode: "gateway_negotiation_manifest_timeout" };

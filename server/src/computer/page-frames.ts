@@ -80,7 +80,18 @@ export type PageFrameStore = {
 export function createPageFrameStore(database: Database): PageFrameStore {
   return {
     async save(input) {
-      if (!input.toolCallId || !input.url) return;
+      if (!input.toolCallId || !input.url) {
+        // Said out loud for the same reason tooLarge is: a turn with no picture must
+        // be tellable apart from a turn nobody photographed.
+        log.warn(
+          {
+            hasToolCallId: Boolean(input.toolCallId),
+            hasUrl: Boolean(input.url),
+          },
+          "computer-page-frame-dropped",
+        );
+        return;
+      }
       if (tooLarge(input.frame)) {
         /*
          * Said out loud rather than dropped in silence. A turn with no picture falls back to naming
@@ -158,6 +169,13 @@ export function createPageFrameStore(database: Database): PageFrameStore {
         const count = result?.count ?? 0;
         removed += count;
         if (count < PURGE_BATCH) break;
+        // Ran out of batches with rows still owed: say so, or the backlog grows in silence.
+        if (batch === MAX_PURGE_BATCHES - 1) {
+          log.warn(
+            { removed, batches: MAX_PURGE_BATCHES, batch: PURGE_BATCH },
+            "computer-page-frame-purge-capped",
+          );
+        }
       }
       return removed;
     },

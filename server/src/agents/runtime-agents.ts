@@ -1,3 +1,4 @@
+import { getLogger } from "../../../shared/logger";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import type { ManagedAgentConfig } from "../config";
 import { type RegisteredAgent, registeredAgentFromRow } from "../copilot";
@@ -22,6 +23,8 @@ import type { AgentActor } from "./profile-types";
  * read into the process for an actor who cannot see it, and "we fetched it but did not show it" is
  * the shape most accidental disclosures take.
  */
+const log = getLogger("server");
+
 export function createRuntimeAgentLoader(
   database: Database,
   /** Resolves a customer agent's key at load time. Absent means no agent can carry one. */
@@ -50,11 +53,16 @@ export function createRuntimeAgentLoader(
           });
         } catch (cause) {
           // Existing runtime resolution remains available, while the Expert bridge fails closed.
-          console.error({
-            error: "EXPERT_SOURCE_CLASSIFICATION_FAILED",
-            context: { agentId: agent.id },
-            cause: cause instanceof Error ? cause.message : String(cause),
-          });
+          log.error(
+            {
+              type: "expert-source-classification-failed",
+              error: "EXPERT_SOURCE_CLASSIFICATION_FAILED",
+              context: { agentId: agent.id },
+              cause: cause instanceof Error ? cause.message : String(cause),
+              timestamp: new Date().toISOString(),
+            },
+            "expert-source-classification-failed",
+          );
           // registeredAgentFromRow never presets expertSource: a failed
           // classification leaves it undefined, which IS the fail-closed
           // state (R8-L11) — no delete needed.
@@ -65,12 +73,29 @@ export function createRuntimeAgentLoader(
       // The key is resolved per load, rather than being cached on the row: revoking a
       // credential then takes effect on the next run rather than on the next restart.
       if (isRemoteAgent && vault) {
-        const headers = await agentAuthHeaders({
-          reader: vault.reader,
-          encryptionKey: vault.encryptionKey,
-          auth: authFromConfiguration(row.configuration),
-        });
-        if (headers) agent.headers = headers;
+        try {
+          const headers = await agentAuthHeaders({
+            reader: vault.reader,
+            encryptionKey: vault.encryptionKey,
+            auth: authFromConfiguration(row.configuration),
+          });
+          if (headers) agent.headers = headers;
+        } catch (error) {
+          /*
+           * One unreadable credential row is THIS agent's failure, not the roster's: the read is
+           * a database query and the decrypt can hit a corrupt envelope, and letting either throw
+           * would refuse every coworker this person has, built-in ones included. The agent loads
+           * without its key and fails at its own endpoint, where the failure belongs.
+           */
+          log.warn(
+            {
+              type: "agent-credential-resolution-failed",
+              agentId: agent.id,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            "agent-credential-resolution-failed",
+          );
+        }
       }
       /*
        * Every endpoint this deployment runs gets the token, not just the first one.
@@ -126,6 +151,10 @@ export function classifyExpertSource(
     if (facts.ownerUserId !== null) throw new Error("EXPERT_SOURCE_AMBIGUOUS");
     return "tenant_package";
   }
+  // A row that is both a tenant package and published carries two origins at once, the same
+  // overlap that fails closed above.
+  if (facts.packageId !== null && facts.published)
+    throw new Error("EXPERT_SOURCE_AMBIGUOUS");
   if (facts.packageId === null && facts.published) return "team_bot";
   if (
     facts.packageId === null &&

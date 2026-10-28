@@ -599,14 +599,31 @@ if (import.meta.main) {
     );
   }
   const registryPath = process.argv[2];
-  const registryInput: TestEvidenceInput = registryPath
-    ? await Bun.file(registryPath).json()
-    : { testOrderIds: [], testUserIds: [] };
+  let registryInput: TestEvidenceInput;
+  try {
+    registryInput = registryPath
+      ? await Bun.file(registryPath).json()
+      : { testOrderIds: [], testUserIds: [] };
+  } catch (error) {
+    throw new Error(
+      `could not read the test-evidence registries from ${registryPath}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
   const { createDatabase } = await import("../db/client");
   const databaseInstance = createDatabase(databaseUrl);
   try {
     const dryRun = await buildCleanupDryRun(databaseInstance, registryInput);
     process.stdout.write(`${JSON.stringify(dryRun, null, 2)}\n`);
+  } catch (error) {
+    // biome-ignore lint/suspicious/noConsole: stable-code operational log
+    console.error(
+      `cleanup dry-run failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    process.exitCode = 1;
   } finally {
     await databaseInstance.$client.end();
   }

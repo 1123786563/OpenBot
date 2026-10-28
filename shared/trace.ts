@@ -96,6 +96,29 @@ let provider: NodeTracerProvider | undefined;
 let globalsRegistered = false;
 
 /**
+ * The service name the server process registers its tracer under. Exported so the raw
+ * OTLP posts that process makes outside the SDK (the remote dial chain's anchors) carry
+ * the same name the SDK's own spans do — two names for one process splits its trace tree
+ * across services in the receiving backend.
+ */
+export const SERVER_TRACING_SERVICE_NAME = "server";
+
+/**
+ * The traces endpoint this environment exports to: the signal-level
+ * `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` verbatim (it may carry the full path), else the
+ * generic endpoint with the trace path appended, undefined when nothing is configured.
+ * The one derivation every traces writer in this deployment uses — the SDK exporter at
+ * init and the raw anchor posts alike — so the two can never address different targets.
+ */
+export function deriveTracesTarget(env: TraceProcessEnv): string | undefined {
+  return (
+    env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT?.trim() ||
+    (env.OTEL_EXPORTER_OTLP_ENDPOINT
+      ? `${env.OTEL_EXPORTER_OTLP_ENDPOINT.trim().replace(/\/$/, "")}/v1/traces`
+      : undefined)
+  );
+}
+/**
  * Register this process's tracer provider, once. `OPENBOT_TRACES=off` leaves tracing
  * entirely unregistered; otherwise the provider records spans under `service.name`,
  * exporting them through the OTLP/HTTP batch processor when an endpoint is configured:
@@ -112,11 +135,7 @@ export function initProcessTracing(name: string, env: TraceProcessEnv): void {
   // off, where there is nothing to diagnose.
   diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.ERROR);
 
-  const tracesEndpoint =
-    env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT?.trim() ||
-    (env.OTEL_EXPORTER_OTLP_ENDPOINT
-      ? `${env.OTEL_EXPORTER_OTLP_ENDPOINT.trim().replace(/\/$/, "")}/v1/traces`
-      : undefined);
+  const tracesEndpoint = deriveTracesTarget(env);
   const instance = new NodeTracerProvider({
     resource: resourceFromAttributes({ "service.name": name }),
     spanProcessors: tracesEndpoint

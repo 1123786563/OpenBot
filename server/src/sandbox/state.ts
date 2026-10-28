@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   type SandboxInstanceStatus,
@@ -112,6 +112,9 @@ export function createSandboxInstanceStateStore(
             sql`${sandboxInstances.status} IN ('provisioning', 'ready', 'sleeping')`,
           ),
         )
+        // Newest live attempt wins: two live rows can briefly coexist (beginAttempt's
+        // concurrent inserts), and which one a caller sees must not depend on storage order.
+        .orderBy(desc(sandboxInstances.createdAt), desc(sandboxInstances.id))
         .limit(1);
       return rows[0];
     },
@@ -168,9 +171,10 @@ export function createSandboxInstanceStateStore(
         .update(sandboxInstances)
         .set({
           status: to,
-          ...(to === "ready" || to === "terminated"
-            ? { provisionedAt: new Date() }
-            : {}),
+          // `provisionedAt` is the moment provisioning COMPLETED: only the move into ready
+          // writes it. A terminated row keeps the time it actually provisioned — or none, if
+          // it never got that far.
+          ...(to === "ready" ? { provisionedAt: new Date() } : {}),
           ...(to === "terminated" ? { terminatedAt: new Date() } : {}),
           ...(patch?.address !== undefined ? { address: patch.address } : {}),
           ...(patch?.ports !== undefined ? { ports: patch.ports } : {}),
@@ -252,42 +256,49 @@ export async function reconcileSandboxInstances(
   const runtimeBots = new Set(await runtime.listBotIds());
   const cutoff = options.nowMs - options.idleAfterMs;
 
-  for (const row of rows) {
-    const hasContainer = runtimeBots.has(row.botId);
+  // Every transition here is per-row and independent, so the scan goes out in parallel
+  // instead of one round trip per bot.
+  await Promise.all(
+    rows.map(async (row) => {
+      const hasContainer = runtimeBots.has(row.botId);
 
-    if (!hasContainer && row.status !== "provisioning") {
-      // The row claims a live container and the runtime disagrees: the container is gone, so
-      // the row fails. Nothing to reap — there is no container.
-      if (await store.transition(row.id, row.status, "failed")) {
-        report.reaped.push(row.botId);
+      if (!hasContainer && row.status !== "provisioning") {
+        // The row claims a live container and the runtime disagrees: the container is gone, so
+        // the row fails. Nothing to reap — there is no container.
+        if (await store.transition(row.id, row.status, "failed")) {
+          report.reaped.push(row.botId);
+        }
+        return;
       }
-      continue;
-    }
 
-    if (!hasContainer && row.status === "provisioning") {
-      // In flight: another replica may be mid-create. Reconcile does not guess here; the
-      // provisioner's own timeout moves the row to failed, and the next pass rebuilds.
-      continue;
-    }
+      if (!hasContainer && row.status === "provisioning") {
+        // In flight: another replica may be mid-create. Reconcile does not guess here; the
+        // provisioner's own timeout moves the row to failed, and the next pass rebuilds.
+        return;
+      }
 
-    if (row.status === "ready" && row.lastHeartbeatAt) {
-      if (row.lastHeartbeatAt.getTime() < cutoff) {
-        if (await store.transition(row.id, "ready", "sleeping")) {
-          report.slept.push(row.botId);
+      if (row.status === "ready" && row.lastHeartbeatAt) {
+        if (row.lastHeartbeatAt.getTime() < cutoff) {
+          if (await store.transition(row.id, "ready", "sleeping")) {
+            report.slept.push(row.botId);
+          }
         }
       }
-    }
-  }
+    }),
+  );
 
   // Lost containers: the runtime holds a bot whose rows are all failed — the row failed (crash,
   // timeout) but the container outlived it. Ask for a rebuild so the next provision finds one.
-  for (const botId of runtimeBots) {
-    const live = await store.liveOf(botId);
-    if (!live) {
-      await runtime.recreate(botId);
-      report.rebuilt.push(botId);
-    }
-  }
+  // Independent per bot, so parallel.
+  await Promise.all(
+    [...runtimeBots].map(async (botId) => {
+      const live = await store.liveOf(botId);
+      if (!live) {
+        await runtime.recreate(botId);
+        report.rebuilt.push(botId);
+      }
+    }),
+  );
 
   return report;
 }

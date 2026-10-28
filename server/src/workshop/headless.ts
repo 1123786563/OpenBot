@@ -24,7 +24,8 @@ export type RunWorkshopTurnInput = {
 
 export type RunWorkshopTurnResult = {
   turnId: string;
-  status: "succeeded" | "failed" | "cancelled" | "timeout";
+  /** `timeout` is deliberately absent: a wait that runs out THROWS {@link WorkshopTurnTimeoutError} (carrying the turnId), pinned by workshop-headless.test.ts. */
+  status: "succeeded" | "failed" | "cancelled";
   error: string | null;
   artifacts: Array<{ id: string; name: string; type: string }>;
 };
@@ -64,7 +65,13 @@ export function createHeadlessWorkshopTools(options: {
 
   return {
     async runWorkshopTurn(input) {
-      if (!input.botId || !input.channelId || !input.prompt) {
+      // Whitespace-only prompts are the same as absent ones: an empty turn helps nobody.
+      if (
+        !input.botId ||
+        !input.channelId ||
+        !input.prompt ||
+        input.prompt.trim().length === 0
+      ) {
         return "run_workshop_turn needs botId, channelId and prompt.";
       }
 
@@ -73,6 +80,15 @@ export function createHeadlessWorkshopTools(options: {
         botId: input.botId,
         ownerUserId: options.actorUserId,
       });
+      // The channel may already have a session row owned by somebody else, or bound to
+      // another Bot: this actor's run would be attributed, run and billed against that
+      // owner, so it is refused rather than silently riding a foreign session.
+      if (
+        session.botId !== input.botId ||
+        session.ownerUserId !== options.actorUserId
+      ) {
+        return "run_workshop_turn could not use that channel: it already belongs to another owner or Bot.";
+      }
 
       const { turnId } = await orchestrator.enqueue({
         sessionId: session.id,

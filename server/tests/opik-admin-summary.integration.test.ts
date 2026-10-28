@@ -46,6 +46,20 @@ const actorB = `t33-b-${randomUUID()}`;
 const stranger = `t33-s-${randomUUID()}`;
 const botId = `t33-bot-${randomUUID()}`;
 
+/** The Bot's current authoritative owner — the transfer test mutates it. */
+let botOwner = actorA;
+/**
+ * Bots the ad-hoc R2-51 / R3-29 suites mint for themselves. FREV-03: a scope
+ * key no longer separates actors, so a suite that needs an aggregate of its
+ * own gets a Bot of its own instead of relying on the old per-actor key space.
+ */
+const adHocBots = new Set<string>();
+function botFor(label: string): string {
+  const id = `${botId}-${label}-${randomUUID()}`;
+  adHocBots.add(id);
+  return id;
+}
+
 function authAs(
   id: string,
   role: "user" | "admin" = "user",
@@ -57,33 +71,29 @@ function authAs(
   };
 }
 
-/** Both actors may manage the one bot; the stranger may not. */
+/**
+ * The live manage gate: the owner of record plus global admins, and nothing
+ * else. Both actors manage the one bot while it belongs to A; the stranger
+ * never does. The R2-51/R2fix F-2 suites authenticate their own admins against
+ * the dedicated Bots they minted for themselves.
+ */
 function canManageBot(
   actor: AgentActor,
   id: string,
 ): Promise<AgentProfile | null> {
-  if (id !== botId) return Promise.resolve(null);
-  // The R2-51/R2fix F-2 suite seeds its own scopes under a dedicated actor,
-  // admitted here so the manage gate derives that actor's own scope.
-  if (actor.id.startsWith(`t33-r51`)) {
-    return Promise.resolve({
-      id,
-      ownerUserId: actorA,
-      visibility: "private",
-      systemOwned: false,
-      deletedAt: null,
-    } as AgentProfile);
-  }
-  if (actor.id === actorA || actor.id === actorB || actor.role === "admin") {
-    return Promise.resolve({
-      id,
-      ownerUserId: actorA,
-      visibility: "private",
-      systemOwned: false,
-      deletedAt: null,
-    } as AgentProfile);
-  }
-  return Promise.resolve(null);
+  const owner = id === botId ? botOwner : actorA;
+  const admitted =
+    id === botId
+      ? actor.id === owner || actor.role === "admin"
+      : adHocBots.has(id) && (actor.role === "admin" || actor.id === owner);
+  if (!admitted) return Promise.resolve(null);
+  return Promise.resolve({
+    id,
+    ownerUserId: owner,
+    visibility: "private",
+    systemOwned: false,
+    deletedAt: null,
+  } as AgentProfile);
 }
 
 const enabledConfig: OpikConfig = {
@@ -197,7 +207,10 @@ async function seedScope(
       scopeKey: key,
       actorId,
       botId,
-      runId: `${run}-run-1`,
+      // FREV-03: both seeds live under ONE data key now, so the authoritative
+      // (scope, run, attempt) and (scope, name) uniques span the whole file's
+      // actors — each actor's subjects are its own runs and names.
+      runId: `${run}-${actorId}-run-1`,
       attemptId: "attempt-1",
       traceId: `otel-${actorId}-1`,
       opikTraceId: `opik-${actorId}-1`,
@@ -212,7 +225,7 @@ async function seedScope(
       scopeKey: key,
       actorId,
       botId,
-      runId: `${run}-run-2`,
+      runId: `${run}-${actorId}-run-2`,
       attemptId: "attempt-1",
       traceId: `otel-${actorId}-2`,
       opikTraceId: null,
@@ -228,7 +241,7 @@ async function seedScope(
       scopeKey: key,
       actorId,
       botId,
-      runId: `${run}-run-old`,
+      runId: `${run}-${actorId}-run-old`,
       attemptId: "attempt-1",
       traceId: `otel-${actorId}-old`,
       opikTraceId: `opik-${actorId}-old`,
@@ -266,7 +279,7 @@ async function seedScope(
     scopeKey: key,
     actorId,
     botId,
-    name: "draft-one",
+    name: `draft-${actorId}`,
     datasetVersionId: `${run}-${actorId}-dv`,
     datasetContentHash: "no-hash",
     config: {},
@@ -325,7 +338,7 @@ afterAll(async () => {
     .where(inArray(aiObservationExportJobs.scopeKey, [scopeKeyA, scopeKeyB]));
 });
 
-test("the two scopes over the SAME bot id never see each other's rows", async () => {
+test("one Bot is one range: the summary aggregates every actor's rows (FREV-03 a)", async () => {
   const boundA = `opik-${actorA}-1`;
   const unboundForBoth = `opik-unbound-${randomUUID()}`;
   const port = fakePort([
@@ -346,58 +359,57 @@ test("the two scopes over the SAME bot id never see each other's rows", async ()
   expect(body.bots.length).toBe(1);
   const bot = body.bots[0];
   expect(bot.botId).toBe(botId);
-  // Only scope A's two in-window bindings: the old row is filtered by time,
-  // and scope B's rows are invisible under the same bot id.
-  expect(bot.runs.total).toBe(2);
+  // FREV-03: every seed of this Bot shares one stable data key, so the creator's
+  // view aggregates its own two in-window bindings AND the administrator's two —
+  // the old row is filtered by time, and nothing else is hidden behind a
+  // per-actor key space.
+  expect(bot.runs.total).toBe(4);
   expect(bot.runs.byState).toEqual({
     running: 0,
-    completed: 1,
-    failed: 1,
+    completed: 2,
+    failed: 2,
     canceled: 0,
     interrupted: 0,
     unknown: 0,
   });
-  expect(bot.runs.pendingSync).toBe(1);
+  expect(bot.runs.pendingSync).toBe(2);
   expect(bot.runs.capabilities).toEqual({
-    basic: 1,
-    detailed: 1,
+    basic: 2,
+    detailed: 2,
     unavailable: 0,
   });
-  // The window holds one trace bound under scope A, one unbound trace, and
-  // one trace that belongs to scope B — which under A's key is simply another
-  // record this scope never bound. The windowed summary cannot claim those
-  // all-time counts under its filter (OCR R3-29), so the isolation semantics
-  // are read under the open window below.
+  // The windowed summary cannot claim the upstream half under its filter
+  // (OCR R3-29); it is read under the open window below.
   expect(bot.runs.unboundUpstream).toBe(null);
   expect(bot.runs.usage).toBe(null);
   expect(bot.runs.upstreamTruncated).toBe(false);
-  expect(bot.experiments).toEqual({ draft: 1, frozen: 0 });
-  expect(bot.exports.byState.completed).toBe(1);
+  expect(bot.experiments).toEqual({ draft: 2, frozen: 0 });
+  expect(bot.exports.byState.completed).toBe(2);
   expect(bot.collection.lastCollectedAt).not.toBe(null);
   expect(body.collection.readiness).toEqual({ ready: true, reason: null });
   // No business content rides along: run ids and trace ids stay behind.
   expect(JSON.stringify(body)).not.toContain("run-1");
   expect(JSON.stringify(body)).not.toContain(boundA);
 
-  // The open window answers the upstream half exactly: scope B's trace is an
-  // unbound record under A's key, and missing usage is counted, never zeroed.
+  // The open window answers the upstream half exactly. Both recorded traces
+  // (A's and B's) are bound bindings of this ONE range; only the unbound trace
+  // is unbound, and missing usage is counted, never zeroed.
   const open = await app.request(
     `http://openbot.test/admin/summary?botId=${botId}`,
   );
   expect(open.status).toBe(200);
   const openBot = (await open.json()).bots[0];
-  expect(openBot.runs.unboundUpstream).toBe(2);
+  expect(openBot.runs.unboundUpstream).toBe(1);
   expect(openBot.runs.usage).toEqual({ providerReported: 1, unavailable: 2 });
 });
 
-test("the same bot id under scope B answers B's own aggregate", async () => {
+test("an administrator's summary sees the creator's data of the same Bot (FREV-03 a)", async () => {
   const app = appFor({
     port: fakePort([]),
     config: () => enabledConfig,
-    // Scope B is the ADMIN scope this file seeds (seedScope(actorB, "admin")),
-    // so the actor authenticates as the global admin whose ownership the seam
-    // answers "admin" (OCR R4-35: a plain-role non-owner earns no scope here
-    // anymore — the widened-gate refusal has its own pin in the unit suite).
+    // The actor authenticates as a global admin; the manage gate admits it over
+    // actor A's bot, and its scope names the SAME data key — the creator's
+    // bindings, experiments and jobs answer in the aggregate.
     auth: authAs(actorB, "admin"),
   });
   const response = await app.request(
@@ -405,8 +417,8 @@ test("the same bot id under scope B answers B's own aggregate", async () => {
   );
   expect(response.status).toBe(200);
   const bot = (await response.json()).bots[0];
-  expect(bot.runs.total).toBe(2);
-  expect(bot.runs.byState.completed).toBe(1);
+  expect(bot.runs.total).toBe(4);
+  expect(bot.runs.byState.completed).toBe(2);
   // The windowed summary cannot claim the upstream half under its filter
   // (OCR R3-29); the open window answers it, and an empty project is a
   // truthful zero, not a disguise.
@@ -418,6 +430,38 @@ test("the same bot id under scope B answers B's own aggregate", async () => {
   const openBot = (await open.json()).bots[0];
   expect(openBot.runs.unboundUpstream).toBe(0);
   expect(openBot.runs.usage).toEqual({ providerReported: 0, unavailable: 0 });
+});
+
+test("after a handover the new owner reads the whole history; the old holder is refused (FREV-03 c)", async () => {
+  const newOwner = `t33-new-${randomUUID()}`;
+  botOwner = newOwner;
+  try {
+    // The new owner's scope is minted from the live gate; the data address is
+    // the Bot's, so every binding recorded before the transfer still answers.
+    const asNewOwner = appFor({
+      port: fakePort([]),
+      config: () => enabledConfig,
+      auth: authAs(newOwner),
+    });
+    const response = await asNewOwner.request(
+      `http://openbot.test/admin/summary?botId=${botId}&timeFrom=2026-01-01T00:00:00.000Z`,
+    );
+    expect(response.status).toBe(200);
+    expect((await response.json()).bots[0].runs.total).toBe(4);
+
+    // The old holder no longer manages the Bot: no scope, unified not-found.
+    const asOldHolder = appFor({
+      port: fakePort([]),
+      config: () => enabledConfig,
+      auth: authAs(actorA),
+    });
+    const refused = await asOldHolder.request(
+      `http://openbot.test/admin/summary?botId=${botId}`,
+    );
+    expect(refused.status).toBe(404);
+  } finally {
+    botOwner = actorA;
+  }
 });
 
 test("a stranger gets the unified not-found and no aggregate", async () => {
@@ -475,26 +519,27 @@ test("a deletion-in-flight row is gone to every local aggregate (OCR R4-30)", as
   );
   expect(response.status).toBe(200);
   const bot = (await response.json()).bots[0];
-  // The deleted binding (the scope's only completed one) is not counted; the
-  // surviving failed row is.
-  expect(bot.runs.total).toBe(1);
+  // The deletion-in-flight binding is gone to readers; the range still holds
+  // actor B's two bindings (FREV-03: one Bot, one data key) beside A's
+  // surviving failed row.
+  expect(bot.runs.total).toBe(3);
   expect(bot.runs.byState).toEqual({
     running: 0,
-    completed: 0,
-    failed: 1,
+    completed: 1,
+    failed: 2,
     canceled: 0,
     interrupted: 0,
     unknown: 0,
   });
   expect(bot.runs.capabilities).toEqual({
-    basic: 0,
-    detailed: 1,
+    basic: 1,
+    detailed: 2,
     unavailable: 0,
   });
   // The deleted draft experiment and the deleted completed export job are not
-  // counted either.
-  expect(bot.experiments).toEqual({ draft: 0, frozen: 0 });
-  expect(bot.exports.byState.completed).toBe(0);
+  // counted; B's counterparts in the same range still are.
+  expect(bot.experiments).toEqual({ draft: 1, frozen: 0 });
+  expect(bot.exports.byState.completed).toBe(1);
 
   // The open window's bound-trace subquery obeys the same filter: A's only
   // binding row is deletion-in-flight, so its trace reads as unbound upstream.
@@ -536,9 +581,12 @@ test("a pre-window binding that just reconciled still answers lastCollectedAt (R
   // asked for what is window-invariant — the R2-51 collection freshness".
   // The window keeps filtering the aggregates; freshness is window-invariant.
   const actor = `t33-r51-r522-${randomUUID()}`;
+  // FREV-03: the scope key is the Bot's, so this suite owns a dedicated Bot —
+  // its aggregate must not merge with the file's main seeds.
+  const r522Bot = botFor("r522");
   const scope = resolveObservationScope({
     actorId: actor,
-    botId,
+    botId: r522Bot,
     ownership: "owner",
     epoch: 1,
   });
@@ -547,7 +595,7 @@ test("a pre-window binding that just reconciled still answers lastCollectedAt (R
     id: `${run}-${actor}-old`,
     scopeKey: scope.key,
     actorId: actor,
-    botId,
+    botId: r522Bot,
     runId: `${run}-${actor}-run-old`,
     attemptId: "attempt-1",
     traceId: `otel-${actor}-old`,
@@ -567,7 +615,7 @@ test("a pre-window binding that just reconciled still answers lastCollectedAt (R
       auth: authAs(actor, "admin"),
     });
     const response = await app.request(
-      `http://openbot.test/admin/summary?botId=${botId}&timeFrom=2026-01-01T00:00:00.000Z`,
+      `http://openbot.test/admin/summary?botId=${r522Bot}&timeFrom=2026-01-01T00:00:00.000Z`,
     );
     expect(response.status).toBe(200);
     const bot = (await response.json()).bots[0];
@@ -595,8 +643,8 @@ test("an unhealthy Opik keeps the true collection state and fails nobody", async
   expect(response.status).toBe(200);
   const body = await response.json();
   const bot = body.bots[0];
-  // The local authoritative counts still answer…
-  expect(bot.runs.total).toBe(2);
+  // The local authoritative counts still answer (both actors' in-window rows)…
+  expect(bot.runs.total).toBe(4);
   // …the upstream-derived facts are explicitly unknown, never zero…
   expect(bot.runs.unboundUpstream).toBe(null);
   expect(bot.runs.usage).toBe(null);
@@ -622,8 +670,8 @@ test("an upstream that cannot answer lends no freshness to lastCollectedAt (R2-5
   );
   expect(response.status).toBe(200);
   const bot = (await response.json()).bots[0];
-  expect(bot.runs.total).toBe(2);
-  expect(bot.runs.pendingSync).toBe(1);
+  expect(bot.runs.total).toBe(4);
+  expect(bot.runs.pendingSync).toBe(2);
   expect(bot.collection.lastCollectedAt).toBe(null);
 });
 
@@ -632,13 +680,13 @@ test("rows that never reconciled claim no collection time (R2-51 / R2fix F-2)", 
   // fresh (begin/finish bumped it), but no write ever landed upstream — the
   // pendingSync count says so, and lastCollectedAt must agree with it.
   const actor = `t33-r51b-${run}`;
-  // The seeded scope is the ADMIN scope (the route seam answers "admin" for a
-  // global admin — OCR R4-35: a plain-role non-owner earns no scope anymore),
-  // so the actor authenticates as that admin and the scope key matches what
-  // the route derives.
+  // FREV-03: a dedicated Bot keeps this suite's aggregate its own now that the
+  // key names the Bot rather than the actor. The actor authenticates as a
+  // global admin, whose scope the route derives against this Bot.
+  const r51bBot = botFor("r51b");
   const scope = resolveObservationScope({
     actorId: actor,
-    botId,
+    botId: r51bBot,
     ownership: "admin",
     epoch: 1,
   });
@@ -646,7 +694,7 @@ test("rows that never reconciled claim no collection time (R2-51 / R2fix F-2)", 
     id: `${run}-${actor}-b1`,
     scopeKey: scope.key,
     actorId: actor,
-    botId,
+    botId: r51bBot,
     runId: `${run}-${actor}-run-1`,
     attemptId: "attempt-1",
     traceId: `otel-${actor}-1`,
@@ -664,7 +712,7 @@ test("rows that never reconciled claim no collection time (R2-51 / R2fix F-2)", 
       auth: authAs(actor, "admin"),
     });
     const response = await app.request(
-      `http://openbot.test/admin/summary?botId=${botId}&timeFrom=2026-01-01T00:00:00.000Z`,
+      `http://openbot.test/admin/summary?botId=${r51bBot}&timeFrom=2026-01-01T00:00:00.000Z`,
     );
     expect(response.status).toBe(200);
     const bot = (await response.json()).bots[0];
@@ -698,7 +746,8 @@ test("a scope whose project is gone upstream claims no collection time (R2-51 / 
   expect(response.status).toBe(200);
   const bot = (await response.json()).bots[0];
   expect(bot.runs.unboundUpstream).toBe(0);
-  expect(bot.runs.pendingSync).toBe(1);
+  // One unreconciled binding per actor in the one range (FREV-03).
+  expect(bot.runs.pendingSync).toBe(2);
   expect(bot.collection.lastCollectedAt).toBe(null);
 });
 
@@ -718,7 +767,7 @@ test("a disabled deployment answers capability-level honesty, not an empty page"
     reason: "disabled",
   });
   expect(body.bots[0].runs.unboundUpstream).toBe(null);
-  expect(body.bots[0].runs.total).toBe(2);
+  expect(body.bots[0].runs.total).toBe(4);
 });
 
 test("the mounted runs query serves the wired scope (T12 leftover)", async () => {
@@ -761,7 +810,8 @@ test("the mounted export route enqueues a real job row (T34 wiring)", async () =
   expect(stored[0].scopeKey).toBe(scopeKeyA);
   const listed = await app.request(`http://openbot.test/bots/${botId}/exports`);
   expect(listed.status).toBe(200);
-  expect((await listed.json()).jobs.length).toBe(2);
+  // The range holds both actors' seeded jobs plus the one just enqueued.
+  expect((await listed.json()).jobs.length).toBe(3);
 });
 
 test("the epoch source reads the live profile generation", async () => {
@@ -865,9 +915,10 @@ test("a time window the upstream half cannot honor leaves its counts unknown (OC
   // would silently ignore the filter the response's `window` field announces;
   // they stay null beside the flag false (unknown), while the listing still
   // answers what is window-invariant: the collection freshness.
+  const r329Bot = botFor("r329");
   const scope = resolveObservationScope({
     actorId: `t33-r329-${run}`,
-    botId,
+    botId: r329Bot,
     ownership: "owner",
     epoch: 1,
   });
@@ -875,7 +926,7 @@ test("a time window the upstream half cannot honor leaves its counts unknown (OC
     id: `t33-r329-${run}-b1`,
     scopeKey: scope.key,
     actorId: scope.actorId,
-    botId,
+    botId: r329Bot,
     runId: `t33-r329-${run}-run-1`,
     attemptId: "attempt-1",
     traceId: `otel-r329-${run}-1`,

@@ -146,10 +146,20 @@ export function handoffTool(options: {
             continuation: currentApprovalContext(),
           });
           // A decided hand-off or a replayed result: the work was dealt with, so it is not sent again.
-          if (approval && "replay" in approval)
-            return typeof approval.replay === "string"
-              ? approval.replay
-              : JSON.stringify(approval.replay);
+          if (approval && "replay" in approval) {
+            /*
+             * A replayed answer is a DECIDED one: the person handled the call, or an earlier
+             * attempt did. It answers under the accepted-hop marker for the same reason every
+             * accepted hop does — the transcript and the relay's `call` read that marker
+             * (shared/handoff-markers) as "the work was dealt with", and a replay without it
+             * reads to both as a refusal.
+             */
+            const replayed =
+              typeof approval.replay === "string"
+                ? approval.replay
+                : JSON.stringify(approval.replay);
+            return `${HANDED_OVER}${parsed.data.bot}. ${replayed}`;
+          }
         } catch (error) {
           if (error instanceof ApprovalRefusedError)
             return `That handoff was not sent: ${error.message}`;
@@ -343,6 +353,12 @@ export async function authoriseCoordinationRun(
   const work = claim.work;
   const workInitiator = work.initiator ?? PERSON_INITIATOR;
   const runInitiator = run.initiator ?? PERSON_INITIATOR;
+  // The root a hop traces back to is part of the claim's identity too: a hop must not be
+  // checked as a continuation of a run that started somewhere else.
+  const sameRoot = (
+    a: { kind: string; id?: string } | undefined,
+    b: { kind: string; id?: string } | undefined,
+  ) => a?.kind === b?.kind && a?.id === b?.id;
   return (
     work.toBotId === run.botId &&
     work.actorId === run.actorId &&
@@ -350,7 +366,11 @@ export async function authoriseCoordinationRun(
     work.depth === (run.depth ?? 0) &&
     workInitiator.kind === runInitiator.kind &&
     ("id" in workInitiator ? workInitiator.id : undefined) ===
-      ("id" in runInitiator ? runInitiator.id : undefined)
+      ("id" in runInitiator ? runInitiator.id : undefined) &&
+    sameRoot(
+      "origin" in workInitiator ? workInitiator.origin : undefined,
+      "origin" in runInitiator ? runInitiator.origin : undefined,
+    )
   );
 }
 

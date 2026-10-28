@@ -13,7 +13,9 @@
 ## 推送/合并前的新鲜度
 
 1. 持有 [共享协调声明](coordination-state.md)，核对目标远程 ref 当前 SHA 等于本轮预期值。在最新目标上构造实际待写入结果（含子模块），固定最终 tree、manifest 和可预知的写入标识，完成该 tree 的组合验证、完整终审、完整 OCR 和适用 CI。写后检查不能替代这些写前门禁。
-2. 使用可核实的条件写机制，保证实际写入的 base、最终 tree 和交付内容与已审结果一致。merge queue 或批量合入若会产生另一棵未审 tree，必须在目标写入前对队列实际生成的最终 tree 完成同等验证、终审和 OCR；无法做到时保持 `integration_pending`，不得先入队再补审。普通 PR merge 的 head SHA 检查只保护 PR head，不证明 base 未前移；本地锁不约束其他写入者。没有等价条件写保证时不能用一次 fetch 后直接 merge/push 冒充门禁，也不得擅自强推或修改分支保护。
+2. 使用可核实的条件写机制，保证实际写入的 base、最终 tree 和交付内容与已审结果一致。普通 PR merge 的 head SHA 检查只保护 PR head，不证明 base 未前移；本地锁不约束其他写入者。没有等价条件写保证时不能用一次 fetch 后直接 merge/push 冒充门禁，也不得擅自强推或修改分支保护。
+
+   merge queue 的入队与目标分支写入分开处理：已有入队授权时，允许先入队生成候选 merge group，再固定其 base、完整 SHA/tree 和 manifest，完成该候选的组合验证、完整终审、完整 OCR 及适用 CI。启用前须核实这些门禁能作为合入前的必需检查执行，并按 [testing.md](testing.md)核实 `merge_group` 调度；缺少门禁不得入队触发可能的自动合入。队列重建、成员/base 或候选 SHA/tree 变化时旧放行失效，重新审核实际候选。只有同一候选的全部门禁通过，队列才可写入目标；入队回执不表示 delivered，不授权关闭或贴标。其他批量合入机制也须在目标写入前审核其实际最终树；无法保证时保持 `integration_pending`。写前意图绑定实际候选，自动关闭仍须另满足下节要求。
 3. 写后回读目标 ref、合并提交/树和检查状态，核对实际交付结果与写前意图。交付动作的 delivery_intent/delivery_action 和回执按 [协调格式](coordination-format.md)保存；写前 delivery_pending，意图匹配后 applied_valid，结果不明保持 pending。实际 tree 偏离已审 tree 属于交付门禁失效，动作记 stale：保存证据、将当前验证置为 `revalidating` 并禁止关闭/贴标；若代码已进入目标，delivery 可如实记 `delivered`，但不得伪装成尚未交付或验证通过。后续修复或回退仍须另有授权，不能把写后重验描述成原门禁已满足。
 
 ## 关闭/标签的写入意图与对账

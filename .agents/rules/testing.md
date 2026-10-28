@@ -16,6 +16,8 @@
 
 关闭/贴标/交付前登记目标 SHA 的必需检查集合：读取目标分支保护/ruleset 的 Required Checks，并核对该 SHA 中标准 CI 工作流及其 event/path 条件（当前 CI 入口为 `.github/workflows/ci.yml`，聚合 job 为 verify）。保存查询时间、配置版本、check 名称/应用身份、run URL、head SHA、结论及被跳过原因。Required Checks 与适用标准 CI 均须 completed/success，必要 live 验收另补；pending、failure、cancelled、未运行、无法读取均保持 blocked。skipped/neutral 只有经工作流条件和改动范围证明不适用、独立审核确认时可排除；仅聚合绿灯不能掩盖必要 job 被跳过。没有配置 Required Checks 不等于无需标准 CI。只有目标交付契约从未配置适用标准 CI 时，才可按有权批准的交付契约采用等价完整验证和独立批准依据；CI 故障、权限不足、暂时不可读、pending 或结果缺失不属于该例外，始终 blocked。此远端交付门禁不阻止无远端 SHA 的本地草稿修订，后者不宣称完成目标交付。
 
+使用 merge queue 前，核对目标 SHA 的 CI 工作流支持 `merge_group` 的 `checks_requested`，且必需 job 的 event/path 条件实际覆盖该候选；当前 `.github/workflows/ci.yml` 尚未声明该触发器，不能假定队列检查已接入。队列实际启用须另完成 CI 接入及候选 SHA 的门禁验收；本规则修订不启用队列或修改工作流。终审/OCR 也须有能在合入前约束该候选的必需检查，不能只靠普通 PR 绿灯。候选失效或重建时按 [交付门禁](delivery-gates.md)重新绑定验证与审查结果。
+
 ## 被测版本与数据边界
 
 真实 API/UI/服务验收在测试前后核对：本轮源码 manifest、子模块 SHA/脏检查点，以及每个被测服务的实际版本。记录进程入口/cwd 与启动来源，或镜像 ID/digest、构建来源和 bind mount 路径，并关联到冻结检查点；同时记录脱敏配置身份、数据库迁移状态和测试输入。镜像标签、容器仍运行、端口可连或旧日志均不能单独证明版本一致。没有版本端点时，从冻结工作区重建/启动并保存构建和进程证据；无法证明一致则为 blocked，不能拿旧服务的绿灯验收新代码。代码、服务或配置漂移后重定检查点并重验受影响行为。

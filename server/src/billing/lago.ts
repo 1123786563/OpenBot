@@ -325,6 +325,8 @@ function eventRecordOf(item: unknown): LagoEventRecord {
 async function readCapped(response: Response): Promise<string> {
   const declared = Number(response.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) {
+    // Release the unread body so the connection goes back to the pool instead of leaking.
+    await response.body?.cancel().catch(() => {});
     throw new BillingError("invalid_response");
   }
   if (!response.body) return "";
@@ -361,7 +363,15 @@ export function createLagoClient(config: LagoClientConfig): LagoClient {
       method: "GET",
     },
   ): Promise<{ status: number; body: unknown }> {
-    const url = new URL(`${base}${path}`);
+    // A misconfigured base URL is a deployment error, answered in the same sentinel shape
+    // as every other failure here — never as a raw TypeError quoting the URL. The guard's
+    // own refusal passes through untouched.
+    let url: URL;
+    try {
+      url = new URL(`${base}${path}`);
+    } catch {
+      throw new BillingError("unconfigured");
+    }
     await config.assertTarget(url);
 
     let response: Response;

@@ -27,7 +27,10 @@ export function createGithubResponsibilityRoutes(options: {
   ingest: (event: ResponsibilityEvent) => Promise<ResponsibilityEventResult>;
 }) {
   const routes = new Hono();
-  routes.use("*", bodyLimit({ maxSize: 32 * 1024 }));
+  // GitHub caps a delivery at 25 MB, and a push or a pull_request with a large diff routinely
+  // exceeds a few kilobytes; anything below that ceiling would 413 legitimate events and make
+  // GitHub redeliver them. The signature check below is what guards the payload's origin.
+  routes.use("*", bodyLimit({ maxSize: 25 * 1024 * 1024 }));
   routes.onError((error, context) => {
     log.error(
       {

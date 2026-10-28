@@ -8,6 +8,7 @@ import {
 } from "../src/openmuse-connectors/google-oauth";
 import type { StoredOpenMuseGoogleConnection } from "../src/openmuse-connectors/store";
 import type { FileByteStore } from "../src/openmuse-files/bytes";
+import { createLocalFileByteStore } from "../src/openmuse-files/bytes";
 import { createOpenMuseFilesRoutes } from "../src/openmuse-files/routes";
 import {
   createOpenMuseFileStore,
@@ -435,6 +436,26 @@ describe("POST / (upload)", () => {
     }
     expect(fixture.bytes.writes.size).toBe(0);
     expect(fixture.rows.files).toHaveLength(0);
+  });
+});
+
+describe("the local byte store's key gate (F01)", () => {
+  const store = createLocalFileByteStore("/tmp/openmuse-files-key-gate");
+  test("refuses absolute, traversal, backslash and NUL keys before any write", async () => {
+    // Backslash is the Windows-shaped traversal the "/"-split alone misses
+    // (`..\x` never produces a ".." segment there), and NUL truncates paths
+    // on some filesystems. Every verb gates before the disk is touched.
+    for (const key of [
+      "/etc/passwd",
+      "../escape",
+      "openmuse-files/a/../../escape",
+      "openmuse-files\\..\\escape",
+      "bad\0key",
+    ]) {
+      await expect(store.put(key, new Uint8Array([1]))).rejects.toThrow();
+      await expect(store.get(key)).rejects.toThrow();
+      await expect(store.delete(key)).rejects.toThrow();
+    }
   });
 });
 

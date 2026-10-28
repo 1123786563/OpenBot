@@ -49,6 +49,7 @@ import {
   type Capability,
   type CapabilityRow,
   capabilityRefusal,
+  isCapability,
   type Member,
   resolveAllCapabilities,
   resolveCapability,
@@ -65,6 +66,9 @@ const log = getLogger("server");
 
 /** Action Recording keeps 90 days, as Grok Bot's does. */
 export const ACTION_RECORD_RETENTION_DAYS = 90;
+
+/** Advisory-lock key for the one-replica inactive-computer sweep; shared by lock and unlock. */
+const CONTROLS_SWEEP_LOCK_ID = 4192011;
 
 type Snapshot = {
   rows: CapabilityRow[];
@@ -228,13 +232,34 @@ function portOf(url: string): number {
   }
 }
 
+/**
+ * Drop rows whose capability name is not one of the switches, and say so. The column is free text,
+ * so a typo (or an old migration) would otherwise make an intended restriction silently fall back
+ * to the permissive default instead of surfacing as a configuration error.
+ */
+function knownCapabilityRows(rows: readonly CapabilityRow[]): CapabilityRow[] {
+  const known = rows.filter((row) => isCapability(row.capability));
+  if (known.length !== rows.length)
+    log.error(
+      {
+        type: "unknown-capability-rows",
+        dropped: rows.length - known.length,
+        names: [
+          ...new Set(rows.filter((row) => !isCapability(row.capability)).map((row) => row.capability)),
+        ],
+      },
+      "unknown-capability-rows",
+    );
+  return known;
+}
+
 async function loadSnapshot(store: EnterpriseStore): Promise<Snapshot> {
   /*
    * One after another, not Promise.all. Concurrent statements on one Bun SQL connection were seen to
    * swap prepared-statement result shapes ("bind message has 7 result formats but query has 1
    * columns"), and a snapshot is four small reads.
    */
-  const rows = await store.capabilityRows();
+  const rows = knownCapabilityRows(await store.capabilityRows());
   const admins = await store.adminIds();
   const settings = await store.settings();
   const network = await store.networkPolicies();
@@ -265,7 +290,20 @@ function commandOf(payload: Record<string, unknown>): string | undefined {
   return typeof command === "string" && command.trim() ? command : undefined;
 }
 
-export async function installEnterpriseControls(
+let installing: Promise<EnterpriseControls> | undefined;
+
+export function installEnterpriseControls(
+  deps: EnterpriseDeps,
+): Promise<EnterpriseControls> {
+  // One install even under concurrent first calls: racing callers would each open a LISTEN
+  // connection, a timer set and an audit tap, and the losers could never be stopped.
+  installing ??= installEnterpriseControlsOnce(deps).finally(() => {
+    installing = undefined;
+  });
+  return installing;
+}
+
+async function installEnterpriseControlsOnce(
   deps: EnterpriseDeps,
 ): Promise<EnterpriseControls> {
   if (installed) return installed;
@@ -485,7 +523,7 @@ export async function installEnterpriseControls(
     try {
       const [lock] = await lockConnection<
         { held: boolean }[]
-      >`select pg_try_advisory_lock(4192011) as held`;
+      >`select pg_try_advisory_lock(${CONTROLS_SWEEP_LOCK_ID}) as held`;
       if (!lock?.held) return null;
       const tx = deps.database;
       const running = (await (deps.provider as ComputerProvider).list()).filter(
@@ -542,9 +580,11 @@ export async function installEnterpriseControls(
           );
         }
       }
-      await lockConnection`select pg_advisory_unlock(4192011)`;
       return { stopped };
     } finally {
+      // Released here rather than mid-body so a throw in the sweep cannot skip it; unlocking a
+      // lock this call never held answers false and changes nothing.
+      await lockConnection`select pg_advisory_unlock(${CONTROLS_SWEEP_LOCK_ID})`;
       await lockConnection.end({ timeout: 5 });
     }
   };
@@ -575,7 +615,19 @@ export async function installEnterpriseControls(
   // Every server hears a change, including the one that made it.
   const connection = postgres(deps.databaseUrl, { max: 1 });
   const onChange = () => {
-    void refresh().then(() => pushNetworkPolicies());
+    // Both steps swallow their own errors today; the catch keeps a future change of either one
+    // from becoming an unhandled rejection on a fire-and-forget chain.
+    refresh()
+      .then(() => pushNetworkPolicies())
+      .catch((error) =>
+        log.error(
+          {
+            type: "enterprise-onchange-failed",
+            error: String(error),
+          },
+          "enterprise-onchange-failed",
+        ),
+      );
   };
   await connection
     .listen(ENTERPRISE_TOPIC, onChange, onChange)
@@ -631,13 +683,13 @@ export async function installEnterpriseControls(
     refresh,
     capabilityFor: async (userId, capability) =>
       resolveCapability(
-        await store.capabilityRows(),
+        knownCapabilityRows(await store.capabilityRows()),
         await store.member(userId),
         capability,
       ).allowed,
     capabilitiesFor: async (userId) =>
       resolveAllCapabilities(
-        await store.capabilityRows(),
+        knownCapabilityRows(await store.capabilityRows()),
         await store.member(userId),
       ),
     terminateMemberComputers,
@@ -757,10 +809,10 @@ export function guardHostAccess<T extends HostAccessLike>(
     const controls = enterpriseControls();
     if (!controls) return true;
     try {
-      return (
-        (await controls.capabilityFor(actorId, "useBots")) &&
-        (await controls.capabilityFor(actorId, "localComputer"))
-      );
+      // One read of both switches: two capabilityFor calls would run four queries against two
+      // possibly different reads of the rows.
+      const caps = await controls.capabilitiesFor(actorId);
+      return caps.useBots && caps.localComputer;
     } catch {
       return false;
     }
@@ -913,7 +965,17 @@ export async function headlessTurnRefusal(input: {
   try {
     if (!(await controls.capabilityFor(input.ownerUserId, "useBots")))
       return capabilityRefusal("useBots");
-    const allowlist = controls.snapshot()?.settings.modelAllowlist;
+    // No snapshot means the settings were never read (and the re-read keeps failing): the
+    // allowlist cannot be consulted, so this fails closed like the catch below.
+    const snapshot = controls.snapshot();
+    if (!snapshot) {
+      log.error(
+        { type: "headless-allowlist-snapshot-missing", agentId: input.agentId },
+        "headless-allowlist-snapshot-missing",
+      );
+      return "This deployment's enterprise controls could not be checked, so the Bot did not run.";
+    }
+    const allowlist = snapshot.settings.modelAllowlist;
     if (!allowlist?.enabled) return null;
     const [row] = await controls.deps.database
       .select({ type: agents.type })

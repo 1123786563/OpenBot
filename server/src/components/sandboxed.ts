@@ -144,7 +144,12 @@ export function createSandboxedStore(
       row.published &&
       (row.draftHtml !== row.publishedHtml ||
         row.draftCss !== row.publishedCss ||
-        row.draftJsFunctions !== row.publishedJsFunctions),
+        row.draftJsFunctions !== row.publishedJsFunctions ||
+        // The publish gate ships the description and the argument schema too, so the
+        // flag has to count them: a description-only edit used to read as "nothing to
+        // publish" while publish itself would have shipped a new revision.
+        row.draftDescription !== row.publishedDescription ||
+        !sameJson(row.draftArgumentSchema, row.publishedArgumentSchema)),
   });
 
   return {
@@ -181,9 +186,12 @@ export function createSandboxedStore(
       }
       const name = sandboxedNameFor(input.slug);
 
-      await database
-        .insert(sandboxedComponents)
-        .values({
+      // Both rows, one transaction: a source row without its governance row (or the reverse)
+      // is a component `publish` refuses for ever and only a hand-written fix can recover.
+      await database.transaction(async (transaction) => {
+        await transaction
+          .insert(sandboxedComponents)
+          .values({
           name,
           title: input.title,
           draftDescription: input.description,
@@ -209,28 +217,41 @@ export function createSandboxedStore(
           },
         });
 
-      // The governance row. `published` is left alone on conflict: an administrator publishing a
-      // description is their decision, and a save must not quietly undo or advance it.
-      await database
-        .insert(components)
-        .values({
-          name,
-          title: input.title,
-          kind: "sandboxed",
-          draftDescription: input.description,
-          publishedDescription: null,
-          published: false,
-          updatedBy: input.by,
-        })
-        .onConflictDoUpdate({
-          target: components.name,
-          set: {
+        // The governance row. `published` is left alone on conflict: an administrator publishing a
+        // description is their decision, and a save must not quietly undo or advance it. The
+        // existing row's kind is checked first, the way publish and remove check theirs: a name
+        // the compiled tree already owns must never be rewritten by a draft save.
+        const [existing] = await transaction
+          .select({ kind: components.kind })
+          .from(components)
+          .where(eq(components.name, name))
+          .limit(1);
+        if (existing && existing.kind !== "sandboxed") {
+          throw new SandboxedNameRefusedError(
+            `${name} is already a component of another kind and cannot be replaced by a draft.`,
+          );
+        }
+        await transaction
+          .insert(components)
+          .values({
+            name,
             title: input.title,
+            kind: "sandboxed",
             draftDescription: input.description,
+            publishedDescription: null,
+            published: false,
             updatedBy: input.by,
-            updatedAt: new Date(),
-          },
-        });
+          })
+          .onConflictDoUpdate({
+            target: components.name,
+            set: {
+              title: input.title,
+              draftDescription: input.description,
+              updatedBy: input.by,
+              updatedAt: new Date(),
+            },
+          });
+      });
 
       await recordAuditEvent(auditStore, {
         eventType: "component.draft_saved",

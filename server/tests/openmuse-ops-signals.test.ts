@@ -288,6 +288,18 @@ describe("§10 stuck-Task thresholds (injected clock)", () => {
     expect(signal.reason).toBe("expired-lease");
   });
 
+  test("a claimed row with no lease is stuck on its own reason, never dropped", async () => {
+    const stuck = (rows: OpenMuseOpsTaskQueueRow[]) =>
+      signalsOf({ now: () => T0, taskQueue: async () => rows }).then((all) =>
+        all.filter((signal) => signal.kind === "stuck_task"),
+      );
+    const claimed = { ...leased(0, 30), leaseUntil: null };
+    const [signal] = await stuck([claimed]);
+    expect(signal.kind).toBe("stuck_task");
+    expect(signal.reason).toBe("claimed-no-lease");
+    expect(signal.detail).toContain("never held a lease");
+  });
+
   test("healthy queue shapes stay silent: live lease, not yet due, finished", async () => {
     // Only the task seam is wired here, so the unwired three answer their
     // own gap rows; the assertion is that the TASK seam contributes none.

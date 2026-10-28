@@ -134,6 +134,7 @@ export async function readWebappGeneration(
     return "unknown";
   }
   if (appBody === null) return "current";
+  if (typeof appBody !== "string") return "unknown";
   // A CONTENTLESS read is the same absent answer under this deployment's
   // gateway wording: a missing path returns 200 {"content":""}, not 404, so
   // a brand-new session's probe surfaces "" and the null-only check above

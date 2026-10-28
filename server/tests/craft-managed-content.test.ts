@@ -531,7 +531,14 @@ function readyHarness(input: {
   const gateway = {
     fileApiFor: () => ({
       async listFiles(path: string) {
-        if (input.workspaceExists && path.endsWith("/outputs")) return [];
+        // The ready marker under .opencode is the completion sentinel; an intact
+        // workspace answers with it (the /outputs listing is not the gate anymore).
+        if (
+          input.workspaceExists &&
+          path.endsWith("/.opencode")
+        ) {
+          return [`${path}/craft-workspace-ready`];
+        }
         // The real gateway's answer for an absent directory — the 404 shape the
         // materializer normalizes to a fresh workspace (finding F-C's family).
         throw new Error(`Sandbox /file?path=${path} answered 404.`);

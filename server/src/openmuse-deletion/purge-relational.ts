@@ -221,6 +221,11 @@ export function createOpenMuseRelationalPurger(deps: {
         .filter((row) => row.id !== MODULE_GAP)
         .map((row) => row.id);
       if (ids.length === 0) continue;
+      // Rows already marked deleted this pass are remembered so a later
+      // failure (the mark itself, or the seam call) cannot re-mark them
+      // retryable: that would name one row in both report arrays and put a
+      // "delete failed" reason on bytes that are already gone.
+      const marked = new Set<string>();
       try {
         await remove(userId, ids);
         for (const row of owing) {
@@ -231,13 +236,14 @@ export function createOpenMuseRelationalPurger(deps: {
             row.id,
             row.externalKey,
           );
+          marked.add(row.id);
           report.purged.push({ kind, id: row.id });
         }
       } catch (error) {
         const lastError =
           error instanceof Error ? error.message : String(error);
         for (const row of owing) {
-          if (row.id === MODULE_GAP) continue;
+          if (row.id === MODULE_GAP || marked.has(row.id)) continue;
           await deps.rows.markRetryable(
             userId,
             row.kind,

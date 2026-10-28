@@ -293,6 +293,13 @@ async function main() {
     return;
   }
   if (!opts.iconName) fail(USAGE);
+  // Icon names are kebab-case file names; anything else ("../x", "a/b") must
+  // not reach path building for either the icon lookup or the output path.
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(opts.iconName)) {
+    fail(
+      `Error: icon name must be kebab-case (lowercase letters, digits, dashes); got "${opts.iconName}".`
+    );
+  }
   opts.color = normalizeColor(opts.color);
   opts.size = Number(String(opts.size).trim());
   if (!Number.isInteger(opts.size) || opts.size < 16 || opts.size > 2048) {

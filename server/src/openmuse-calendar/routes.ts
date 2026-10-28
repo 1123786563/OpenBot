@@ -1,4 +1,5 @@
 import { Hono, type MiddlewareHandler } from "hono";
+import { getLogger } from "../../../shared/logger";
 import { z } from "zod";
 import type { AppVariables } from "../auth/guards";
 import type { OpenMuseGoogleOAuth } from "../openmuse-connectors/google-oauth";
@@ -20,6 +21,8 @@ import {
 } from "./calendar";
 import type { OpenMuseCalendarClient } from "./client";
 import { OpenMuseCalendarVendorError } from "./client";
+
+const log = getLogger("server");
 
 /** The §4 list defaults: 50 per page, at most 100. */
 const DEFAULT_LIMIT = 50;
@@ -155,6 +158,16 @@ export function createOpenMuseCalendarRoutes(deps: {
     if (error instanceof OpenMuseCalendarVendorError) {
       return context.json({ error: error.message }, 502);
     }
+    // The unrecognized remainder is not a vendor answer: log it, or an
+    // ownerDisabled-store outage or a code defect hides behind the 503.
+    log.error(
+      {
+        type: "openmuse-calendar-route-error",
+        error: error instanceof Error ? error.message : String(error),
+        route: context.req.path,
+      },
+      "openmuse-calendar-route-error",
+    );
     return context.json(
       { error: "Calendar is unavailable right now. Try again." },
       503,
