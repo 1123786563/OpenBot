@@ -264,6 +264,10 @@
     "loadFailed": "Your model selection could not be loaded.",
     "writeFailed": "Your model selection could not be saved."
   },
+  "companyAdmin": {
+    "saveCompanyProfile": "Couldn't save the company profile.",
+    "changeTeamMembers": "Couldn't change the team's members."
+  },
   "hindsight": {
     "loadCandidates": "Could not load judgments",
     "loadEvidence": "Could not load the basis",

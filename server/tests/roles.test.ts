@@ -1,6 +1,5 @@
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import {
-  applyConfiguredAdmin,
   isConfiguredAdmin,
   roleForEmail,
   seedRole,
@@ -117,143 +116,30 @@ describe("setRole", () => {
   });
 });
 
-/**
- * The configured floor, applied at every sign-in.
- *
- * This is the half that has to coexist with an admin screen. `INITIAL_ADMIN_EMAILS` guarantees a way
- * back in, so an address it names is promoted whenever they sign in; everybody else's role belongs
- * to whoever administers the deployment, and a sign-in that rewrote it would make that screen lie
- * the moment they came back.
- */
-function databaseWithUser(
-  email: string | null,
-  /**
-   * Whether this person is already an administrator.
-   *
-   * `applyConfiguredAdmin` reads it so it can answer whether this sign-in is what granted the role.
-   * The caller writes an audit row when it did, and a returning administrator must not produce one
-   * on every sign-in.
-   */
-  alreadyAdmin = false,
-): {
-  database: Database;
-  written: string[];
-} {
-  const written: string[] = [];
-  const database = {
-    // Two different reads go through here: the user's address, and whether they already hold the
-    // role. Told apart by the projection, because that is the only thing the double can see.
-    select: (projection?: Record<string, unknown>) => ({
-      from: () => ({
-        where: () => ({
-          limit: async () => {
-            if (projection && "role" in projection) {
-              return alreadyAdmin ? [{ role: "admin" }] : [];
-            }
-            return email === null ? [] : [{ email }];
-          },
-        }),
-      }),
-    }),
-    transaction: async (run: (t: unknown) => Promise<void>) => {
-      await run({
-        delete: () => ({ where: () => Promise.resolve() }),
-        insert: () => ({
-          values: (row: { role: string }) => ({
-            onConflictDoNothing: () => {
-              written.push(row.role);
-              return Promise.resolve();
-            },
-          }),
-        }),
-      });
-    },
-  } as unknown as Database;
-
-  return { database, written };
-}
-
-describe("applyConfiguredAdmin", () => {
-  test("promotes an address the deployment names", async () => {
-    const { database, written } = databaseWithUser("admin@openbot.test");
-
-    await applyConfiguredAdmin(database, "u1", ["admin@openbot.test"]);
-
-    expect(written).toEqual(["admin"]);
-  });
-
-  /*
-   * Whether this sign-in is what granted the role.
-   *
-   * The floor is re-applied silently on every sign-in, which meant anybody who could edit
-   * `INITIAL_ADMIN_EMAILS` made themselves an administrator with nothing anywhere recording it. The
-   * caller writes the audit row, and it needs to know which sign-in did it, or every sign-in by
-   * every administrator would produce one and the row would say nothing.
-   */
-  test("says so when this sign-in is what granted the role", async () => {
-    const { database } = databaseWithUser("admin@openbot.test");
-
-    expect(
-      await applyConfiguredAdmin(database, "u1", ["admin@openbot.test"]),
-    ).toBe(true);
-  });
-
-  test("says nothing when they were already an administrator", async () => {
-    const { database } = databaseWithUser("admin@openbot.test", true);
-
-    expect(
-      await applyConfiguredAdmin(database, "u1", ["admin@openbot.test"]),
-    ).toBe(false);
-  });
-
-  test("says nothing for somebody the configuration does not name", async () => {
-    const { database } = databaseWithUser("member@openbot.test");
-
-    expect(
-      await applyConfiguredAdmin(database, "u1", ["admin@openbot.test"]),
-    ).toBe(false);
-  });
-
-  test("says nothing when nothing is configured", async () => {
-    const { database } = databaseWithUser("admin@openbot.test");
-
-    expect(await applyConfiguredAdmin(database, "u1", [])).toBe(false);
-  });
-
-  /**
-   * The reason this is a floor and not the whole answer.
-   *
-   * Somebody promoted from the admin screen is not on the list, and rewriting their role here would
-   * silently undo that promotion the next time they signed in.
-   */
-  test("leaves everybody else exactly as the admin screen set them", async () => {
-    const { database, written } = databaseWithUser("member@openbot.test");
-
-    await applyConfiguredAdmin(database, "u1", ["admin@openbot.test"]);
-
-    expect(written).toEqual([]);
-  });
-
-  test("writes nothing when the deployment names nobody", async () => {
-    const { database, written } = databaseWithUser("admin@openbot.test");
-
-    await applyConfiguredAdmin(database, "u1", []);
-
-    expect(written).toEqual([]);
-  });
-
-  test("does nothing for a session whose user is not there", async () => {
-    const { database, written } = databaseWithUser(null);
-
-    await applyConfiguredAdmin(database, "u1", ["admin@openbot.test"]);
-
-    expect(written).toEqual([]);
-  });
-});
-
 describe("seedRole", () => {
+  /** A write-through double: the one-time bootstrap never reads the user back. */
+  function writeThroughDatabase(): { database: Database; written: string[] } {
+    const written: string[] = [];
+    const database = {
+      transaction: async (run: (t: unknown) => Promise<void>) => {
+        await run({
+          delete: () => ({ where: () => Promise.resolve() }),
+          insert: () => ({
+            values: (row: { role: string }) => ({
+              onConflictDoNothing: () => {
+                written.push(row.role);
+                return Promise.resolve();
+              },
+            }),
+          }),
+        });
+      },
+    } as unknown as Database;
+    return { database, written };
+  }
+
   test("starts an address on the list as an administrator", async () => {
-    const { database, written } = databaseWithUser("admin@openbot.test");
+    const { database, written } = writeThroughDatabase();
 
     await seedRole(database, "u1", "admin@openbot.test", [
       "admin@openbot.test",
@@ -263,7 +149,7 @@ describe("seedRole", () => {
   });
 
   test("starts everybody else as a user", async () => {
-    const { database, written } = databaseWithUser("member@openbot.test");
+    const { database, written } = writeThroughDatabase();
 
     await seedRole(database, "u1", "member@openbot.test", [
       "admin@openbot.test",

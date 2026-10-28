@@ -10,7 +10,11 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthedRouteImport } from './routes/_authed'
+import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SignRouteImport } from './routes/sign'
+import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AuthedAppRouteImport } from './routes/_authed/_app'
 import { Route as AuthedAdminRouteRouteImport } from './routes/_authed/admin/route'
 import { Route as AuthedOnboardingRouteImport } from './routes/_authed/onboarding'
@@ -45,6 +49,7 @@ import { Route as AuthedAdminObservabilityRouteImport } from './routes/_authed/a
 import { Route as AuthedAdminPeopleRouteImport } from './routes/_authed/admin/people'
 import { Route as AuthedAdminPlaygroundRouteImport } from './routes/_authed/admin/playground'
 import { Route as AuthedAdminSkillsRouteImport } from './routes/_authed/admin/skills'
+import { Route as AuthedOrganizationViewRouteImport } from './routes/_authed/organization/$view'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
 import { Route as AuthedSettingsApprovalsRouteImport } from './routes/_authed/settings/approvals'
 import { Route as AuthedSettingsAsyncJobsRouteImport } from './routes/_authed/settings/async-jobs'
@@ -108,9 +113,29 @@ const AuthedRoute = AuthedRouteImport.update({
   id: '/_authed',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AcceptInvitationRoute = AcceptInvitationRouteImport.update({
+  id: '/accept-invitation',
+  path: '/accept-invitation',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SignRoute = SignRouteImport.update({
   id: '/sign',
   path: '/sign',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VerifyEmailRoute = VerifyEmailRouteImport.update({
+  id: '/verify-email',
+  path: '/verify-email',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthedAppRoute = AuthedAppRouteImport.update({
@@ -285,6 +310,11 @@ const AuthedAdminSkillsRoute = AuthedAdminSkillsRouteImport.update({
   id: '/skills',
   path: '/skills',
   getParentRoute: () => AuthedAdminRouteRoute,
+} as any)
+const AuthedOrganizationViewRoute = AuthedOrganizationViewRouteImport.update({
+  id: '/organization/$view',
+  path: '/organization/$view',
+  getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
   id: '/',
@@ -614,7 +644,11 @@ const AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutionIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedAppIndexRoute
+  '/accept-invitation': typeof AcceptInvitationRoute
+  '/forgot-password': typeof ForgotPasswordRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/sign': typeof SignRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/admin': typeof AuthedAdminRouteRouteWithChildren
   '/settings': typeof AuthedSettingsRouteRouteWithChildren
   '/onboarding': typeof AuthedOnboardingRoute
@@ -647,6 +681,7 @@ export interface FileRoutesByFullPath {
   '/admin/people': typeof AuthedAdminPeopleRoute
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/skills': typeof AuthedAdminSkillsRoute
+  '/organization/$view': typeof AuthedOrganizationViewRoute
   '/settings/approvals': typeof AuthedSettingsApprovalsRoute
   '/settings/async-jobs': typeof AuthedSettingsAsyncJobsRoute
   '/settings/invoices': typeof AuthedSettingsInvoicesRoute
@@ -708,7 +743,11 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof AuthedAppIndexRoute
+  '/accept-invitation': typeof AcceptInvitationRoute
+  '/forgot-password': typeof ForgotPasswordRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/sign': typeof SignRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/onboarding': typeof AuthedOnboardingRoute
   '/share/$token': typeof ShareTokenRoute
   '/approvals': typeof AuthedAppApprovalsRoute
@@ -738,6 +777,7 @@ export interface FileRoutesByTo {
   '/admin/people': typeof AuthedAdminPeopleRoute
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/skills': typeof AuthedAdminSkillsRoute
+  '/organization/$view': typeof AuthedOrganizationViewRoute
   '/settings/approvals': typeof AuthedSettingsApprovalsRoute
   '/settings/async-jobs': typeof AuthedSettingsAsyncJobsRoute
   '/settings/invoices': typeof AuthedSettingsInvoicesRoute
@@ -800,7 +840,11 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authed': typeof AuthedRouteWithChildren
+  '/accept-invitation': typeof AcceptInvitationRoute
+  '/forgot-password': typeof ForgotPasswordRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/sign': typeof SignRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/_authed/admin': typeof AuthedAdminRouteRouteWithChildren
   '/_authed/settings': typeof AuthedSettingsRouteRouteWithChildren
   '/_authed/_app': typeof AuthedAppRouteWithChildren
@@ -834,6 +878,7 @@ export interface FileRoutesById {
   '/_authed/admin/people': typeof AuthedAdminPeopleRoute
   '/_authed/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/_authed/admin/skills': typeof AuthedAdminSkillsRoute
+  '/_authed/organization/$view': typeof AuthedOrganizationViewRoute
   '/_authed/settings/approvals': typeof AuthedSettingsApprovalsRoute
   '/_authed/settings/async-jobs': typeof AuthedSettingsAsyncJobsRoute
   '/_authed/settings/invoices': typeof AuthedSettingsInvoicesRoute
@@ -898,7 +943,11 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/accept-invitation'
+    | '/forgot-password'
+    | '/reset-password'
     | '/sign'
+    | '/verify-email'
     | '/admin'
     | '/settings'
     | '/onboarding'
@@ -931,6 +980,7 @@ export interface FileRouteTypes {
     | '/admin/people'
     | '/admin/playground'
     | '/admin/skills'
+    | '/organization/$view'
     | '/settings/approvals'
     | '/settings/async-jobs'
     | '/settings/invoices'
@@ -992,7 +1042,11 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/accept-invitation'
+    | '/forgot-password'
+    | '/reset-password'
     | '/sign'
+    | '/verify-email'
     | '/onboarding'
     | '/share/$token'
     | '/approvals'
@@ -1022,6 +1076,7 @@ export interface FileRouteTypes {
     | '/admin/people'
     | '/admin/playground'
     | '/admin/skills'
+    | '/organization/$view'
     | '/settings/approvals'
     | '/settings/async-jobs'
     | '/settings/invoices'
@@ -1083,7 +1138,11 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_authed'
+    | '/accept-invitation'
+    | '/forgot-password'
+    | '/reset-password'
     | '/sign'
+    | '/verify-email'
     | '/_authed/admin'
     | '/_authed/settings'
     | '/_authed/_app'
@@ -1117,6 +1176,7 @@ export interface FileRouteTypes {
     | '/_authed/admin/people'
     | '/_authed/admin/playground'
     | '/_authed/admin/skills'
+    | '/_authed/organization/$view'
     | '/_authed/settings/approvals'
     | '/_authed/settings/async-jobs'
     | '/_authed/settings/invoices'
@@ -1180,7 +1240,11 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
+  AcceptInvitationRoute: typeof AcceptInvitationRoute
+  ForgotPasswordRoute: typeof ForgotPasswordRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   SignRoute: typeof SignRoute
+  VerifyEmailRoute: typeof VerifyEmailRoute
   ShareTokenRoute: typeof ShareTokenRoute
 }
 
@@ -1193,11 +1257,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/accept-invitation': {
+      id: '/accept-invitation'
+      path: '/accept-invitation'
+      fullPath: '/accept-invitation'
+      preLoaderRoute: typeof AcceptInvitationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sign': {
       id: '/sign'
       path: '/sign'
       fullPath: '/sign'
       preLoaderRoute: typeof SignRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/verify-email': {
+      id: '/verify-email'
+      path: '/verify-email'
+      fullPath: '/verify-email'
+      preLoaderRoute: typeof VerifyEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authed/_app': {
@@ -1437,6 +1529,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/skills'
       preLoaderRoute: typeof AuthedAdminSkillsRouteImport
       parentRoute: typeof AuthedAdminRouteRoute
+    }
+    '/_authed/organization/$view': {
+      id: '/_authed/organization/$view'
+      path: '/organization/$view'
+      fullPath: '/organization/$view'
+      preLoaderRoute: typeof AuthedOrganizationViewRouteImport
+      parentRoute: typeof AuthedRoute
     }
     '/_authed/settings/': {
       id: '/_authed/settings/'
@@ -2093,6 +2192,7 @@ interface AuthedRouteChildren {
   AuthedAppRoute: typeof AuthedAppRouteWithChildren
   AuthedOnboardingRoute: typeof AuthedOnboardingRoute
   AuthedTenantAdminRouteRoute: typeof AuthedTenantAdminRouteRouteWithChildren
+  AuthedOrganizationViewRoute: typeof AuthedOrganizationViewRoute
   AuthedSignInRequestIdRoute: typeof AuthedSignInRequestIdRoute
   AuthedTenantChannelsRoute: typeof AuthedTenantChannelsRoute
   AuthedTenantSelectionRoute: typeof AuthedTenantSelectionRoute
@@ -2104,6 +2204,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedAppRoute: AuthedAppRouteWithChildren,
   AuthedOnboardingRoute: AuthedOnboardingRoute,
   AuthedTenantAdminRouteRoute: AuthedTenantAdminRouteRouteWithChildren,
+  AuthedOrganizationViewRoute: AuthedOrganizationViewRoute,
   AuthedSignInRequestIdRoute: AuthedSignInRequestIdRoute,
   AuthedTenantChannelsRoute: AuthedTenantChannelsRoute,
   AuthedTenantSelectionRoute: AuthedTenantSelectionRoute,
@@ -2114,7 +2215,11 @@ const AuthedRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
+  AcceptInvitationRoute: AcceptInvitationRoute,
+  ForgotPasswordRoute: ForgotPasswordRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   SignRoute: SignRoute,
+  VerifyEmailRoute: VerifyEmailRoute,
   ShareTokenRoute: ShareTokenRoute,
 }
 export const routeTree = rootRouteImport

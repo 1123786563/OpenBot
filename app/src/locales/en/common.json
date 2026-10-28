@@ -15,9 +15,15 @@
     "or": "or",
     "emailPlaceholder": "you@company.com",
     "continueCompany": "Continue with your company account",
+    "forgotIxdaxjzz": "Forgot your password?",
     "adminSignIn": "Administrator sign-in",
     "noProviderForAddress": "No identity provider is registered for that address.",
-    "couldNotStart": "Could not start {{provider}} sign-in."
+    "couldNotStart": "Could not start {{provider}} sign-in.",
+    "emailLabel": "Email",
+    "passwordLabel": "Password",
+    "continuePassword": "Continue with email and password",
+    "signingIn": "Signing in…",
+    "passwordFailed": "Sign-in failed. Check your email and password."
   },
   "signInPage": {
     "title": "Sign in",
@@ -84,5 +90,89 @@
   "messageScroller": {
     "scrollToEnd": "Scroll to end",
     "scrollToStart": "Scroll to start"
+  },
+  "acceptInvitation": {
+    "loading": "Loading your invitation…",
+    "linkMissing": "This invitation link is incomplete. Open it from your email.",
+    "unavailable": "This invitation isn't available. Ask the company to send it again.",
+    "signInTitle": "You've been invited to join a company.",
+    "signInHint": "Sign in with the invited email address to see it.",
+    "invitedTo": "{{company}} has invited you to join.",
+    "company": "Company",
+    "role": "Role",
+    "expires": "Expires",
+    "roleOf": {
+      "owner": "Owner",
+      "admin": "Admin",
+      "member": "Member",
+      "auditor": "Auditor"
+    },
+    "accept": "Accept invitation",
+    "decline": "Decline",
+    "switchAccount": "Switch account",
+    "goToApp": "Go to OpenBot",
+    "joined": "You've joined {{company}}.",
+    "joinedHint": "Your company and teams are there the next time you sign in.",
+    "declinedNow": "You declined the invitation.",
+    "declined": "This invitation was already declined.",
+    "cancelled": "This invitation was cancelled.",
+    "accepted": "This invitation was already accepted.",
+    "expired": "This invitation has expired.",
+    "settled": "This invitation was already answered.",
+    "unverified": "Verify your email first. Open the email sent to {{email}}, then come back here.",
+    "wrongAccount": "You're signed in as {{email}}. This invitation is for another email address.",
+    "wrongAccountHint": "Switch accounts to accept it.",
+    "actionUnverified": "Verify your email first, then accept the invitation.",
+    "actionMismatch": "This invitation is for another email address. Switch accounts to answer it.",
+    "seats": "The company has no seats left. Ask an admin to free one.",
+    "closed": "The company isn't accepting members right now.",
+    "paused": "The company can't be reached right now. Try again later.",
+    "refused": "OpenBot couldn't do that. Try again, or ask the company for help.",
+    "invalid": "That didn't work. Reload the page and try again.",
+    "failed": "Couldn't reach OpenBot. Try again."
+  },
+  "forgotIxdaxjzz": {
+    "title": "Reset your password",
+    "description": "Enter your email address. If you have an account, we’ll send a reset link.",
+    "email": "Email",
+    "send": "Send reset link",
+    "sending": "Sending…",
+    "sent": "If an account exists, an email is on its way.",
+    "closed": "Password sign-in isn’t available here. Continue with your identity provider.",
+    "failed": "Couldn’t send the reset link. Try again.",
+    "back": "Back to sign in"
+  },
+  "resetIxdaxjzz": {
+    "title": "Choose a new password",
+    "description": "Use a new password to secure your account.",
+    "newIxdaxjzz": "New password",
+    "reset": "Reset password",
+    "resetting": "Resetting…",
+    "done": "Your password has been reset. Sign in with your new password.",
+    "invalid": "This link has expired or was already used. Request a new one.",
+    "requestNew": "Request a new reset link",
+    "failed": "Couldn’t reset your password. Try again.",
+    "signIn": "Sign in"
+  },
+  "verifyEmail": {
+    "title": "Check your email",
+    "description": "Open the link in your email to verify your address.",
+    "verified": "Your email is verified. You can sign in now.",
+    "expired": "This verification link has expired. Sign in to request another.",
+    "resend": "Resend verification email",
+    "resending": "Sending…",
+    "resent": "A new verification email is on its way.",
+    "alreadyVerified": "Your email is already verified. You can sign in now.",
+    "failed": "Couldn’t send the verification email. Try again.",
+    "signIn": "Sign in"
+  },
+  "companyReauth": {
+    "pausedTitle": "This company asks for an extra sign-in.",
+    "pausedBody": "Finish it to keep working in that company. Your company and team stay as they are.",
+    "failedTitle": "That extra sign-in didn't work.",
+    "failedBody": "It may have finished with a different account, or the company changed. Try again, or choose another company.",
+    "start": "Sign in again",
+    "escape": "Choose another company",
+    "startError": "Couldn't start the extra sign-in. Try again."
   }
 }

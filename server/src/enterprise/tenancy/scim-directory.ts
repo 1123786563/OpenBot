@@ -563,3 +563,327 @@ export function createCompanyScopedDirectoryReconciler(
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// T05.05（#561 / P12）：SCIM 目录反应 → 原子目录命令
+//
+// 上面的 MT026 reconciler 保留为 legacy/enterprise 岛的原路径（M0/M1 原
+// 读写保留）；本节是 BA 权威分支的转译半区：固定 build 的 SCIM 插件在它
+// 自己的请求事务里调用应用 hooks（identity.reconcileUser），hooks 在【同一
+// 事务】上把每个事件翻译成 Directory 命令——首次供应 member.provision
+// （无需邀请，Principal 由 envelope 的 registry.ensure 建立）、停用
+// member.suspend、恢复 member.restore、删除 member.remove。命令的授权在
+// handler 的锁内重验（scim.ts 的 createScimProvisioningHandlers），本节只
+// 负责"哪个事件 → 哪条命令 + 事件证据从已批准规则行铸造"。
+//
+// 归属纪律（票面钉死）：公司只能来自插件经 bearer 认证解析出的
+// connection 的 provisioningDomainId——服务端已验证事实，绝不来自请求
+// 载荷；规则行（auth_provisioning_rules 的宽规则，external_group IS
+// NULL）把 binding 钉到唯一公司，未批准/已撤销 = 停用的目录，零成员变
+// 更（响亮拒绝）。幂等键携带固定 binding 维度（scim:{connection}:…），
+// 恢复/停用/删除键再带当前投影 epoch：一次 HTTP 事务内的每一步失败，
+// 外层事务整体回滚（BA08）。
+// ---------------------------------------------------------------------------
+
+import type {
+  Directory,
+  DirectoryActor,
+  DirectoryOperation,
+  DirectoryTx,
+} from "../../auth/directory/contracts";
+import {
+  authCommandReceipts,
+  authProvisioningRules,
+} from "../../db/schema/auth-directory";
+
+export const SCIM_REACTION_TRANSACTION_REQUIRED =
+  "SCIM_REACTION_TRANSACTION_REQUIRED";
+export const SCIM_REACTION_DIRECTORY_UNWIRED =
+  "SCIM_REACTION_DIRECTORY_UNWIRED";
+export const SCIM_REACTION_RULE_NOT_APPROVED =
+  "SCIM_REACTION_RULE_NOT_APPROVED";
+export const SCIM_REACTION_RULE_FOREIGN = "SCIM_REACTION_RULE_FOREIGN";
+
+/** The per-event identity state the plugin's identity.reconcileUser hands over. */
+export interface ScimIdentitySourceFact {
+  readonly id: string;
+  readonly connectionId: string;
+  /** The server-fixed company this connection provisions into. */
+  readonly provisioningDomainId: string;
+  readonly active: boolean;
+}
+
+export interface ScimDirectoryReactionOptions {
+  /** The transaction the fixed build's SCIM write currently runs in. */
+  readonly currentTransaction: () => DirectoryTx | null;
+  /** The directory executor bound to that same transaction. */
+  readonly executor: (tx: DirectoryTx) => Pick<Directory, "execute"> | null;
+}
+
+export interface ScimDirectoryReaction {
+  /**
+   * Translates one aggregate identity state into per-company directory
+   * commands, on the caller's transaction. Any refusal aborts the whole SCIM
+   * HTTP write (the plugin wraps the failure and rolls back).
+   */
+  reconcileIdentity(state: {
+    readonly userId: string;
+    readonly active: boolean;
+    readonly sources: readonly ScimIdentitySourceFact[];
+  }): Promise<void>;
+}
+
+/** One approved wide provisioning rule (the binding's admission condition). */
+export interface ScimWideRuleFact {
+  readonly ruleId: string;
+  readonly revision: number;
+  readonly minimumRole: string;
+  readonly workspaceIds: readonly string[];
+}
+
+/**
+ * The binding's approved wide rule, read inside the caller's transaction.
+ * Missing or revoked means a deactivated directory: the named refusal, never
+ * a quieter reaction.
+ */
+export async function readScimWideRule(
+  tx: DirectoryTx,
+  connectionId: string,
+  tenantId: string,
+): Promise<ScimWideRuleFact> {
+  const [row] = await tx
+    .select({
+      ruleId: authProvisioningRules.ruleId,
+      revision: authProvisioningRules.revision,
+      workspaceIds: authProvisioningRules.workspaceIds,
+      status: authProvisioningRules.status,
+      minimumRole: authProvisioningRules.minimumRole,
+      tenantId: authProvisioningRules.tenantId,
+    })
+    .from(authProvisioningRules)
+    .where(
+      and(
+        eq(authProvisioningRules.bindingId, connectionId),
+        sql`${authProvisioningRules.externalGroup} is null`,
+      ),
+    )
+    .limit(1);
+  if (row?.status !== "approved") {
+    throw new Error(
+      `${SCIM_REACTION_RULE_NOT_APPROVED}: connection ${connectionId} has no approved company-admission provisioning rule; a deactivated directory makes zero member changes`,
+    );
+  }
+  if (row.tenantId !== tenantId) {
+    throw new Error(
+      `${SCIM_REACTION_RULE_FOREIGN}: connection ${connectionId}'s approved rule belongs to company ${row.tenantId}, not ${tenantId}; the connection's fixed company and its rule disagree and no write may proceed`,
+    );
+  }
+  return {
+    ruleId: row.ruleId,
+    revision: Number(row.revision),
+    minimumRole: String(row.minimumRole),
+    workspaceIds: [...row.workspaceIds],
+  };
+}
+
+/** The company projection state of one user, or null when absent. */
+async function readMembershipProjection(
+  tx: DirectoryTx,
+  tenantId: string,
+  userId: string,
+): Promise<{ status: string; epoch: number } | null> {
+  const [row] = await tx
+    .select({
+      status: enterpriseMemberships.status,
+      epoch: enterpriseMemberships.epoch,
+    })
+    .from(enterpriseMemberships)
+    .innerJoin(
+      enterprisePrincipals,
+      eq(enterprisePrincipals.id, enterpriseMemberships.principalId),
+    )
+    .where(
+      and(
+        eq(enterpriseMemberships.tenantId, tenantId),
+        eq(enterprisePrincipals.userId, userId),
+      ),
+    )
+    .limit(1);
+  return row ? { status: String(row.status), epoch: Number(row.epoch) } : null;
+}
+
+/**
+ * The scim actor for one event, its provisioning evidence minted from the
+ * rule row this transaction just read (the handler re-verifies it in-lock:
+ * the evidence is a claim, the rule is the fact).
+ */
+function scimActorOf(
+  connectionId: string,
+  rule: ScimWideRuleFact,
+  userId: string,
+  sourceId: string | null,
+): DirectoryActor {
+  return Object.freeze({
+    userId,
+    principalId: null,
+    sessionId: null,
+    kind: "scim" as const,
+    bindingId: connectionId,
+    provisioning: Object.freeze({
+      eventId: `scim:${connectionId}:${sourceId ?? `user:${userId}`}`,
+      ruleId: rule.ruleId,
+      ruleRevision: rule.revision,
+      sourceSubject: sourceId ?? `scim:${connectionId}:user:${userId}`,
+    }),
+  });
+}
+
+/** The provision receipt key: the durable "this directory created them" tie. */
+export function scimProvisionKey(connectionId: string, userId: string): string {
+  return `scim:${connectionId}:provision:${userId}`;
+}
+
+export function createScimDirectoryReaction(
+  options: ScimDirectoryReactionOptions,
+): ScimDirectoryReaction {
+  const execute = async (
+    actor: DirectoryActor,
+    operation: DirectoryOperation,
+    tenantId: string,
+    idempotencyKey: string,
+    payload: Readonly<Record<string, unknown>>,
+  ) => {
+    const tx = options.currentTransaction();
+    if (!tx) {
+      throw new Error(
+        `${SCIM_REACTION_TRANSACTION_REQUIRED}: the SCIM identity hook fired outside the fixed build's request transaction; a directory reaction without its transaction owner is refused, never executed on the pool`,
+      );
+    }
+    const directory = options.executor(tx);
+    if (!directory) {
+      throw new Error(
+        `${SCIM_REACTION_DIRECTORY_UNWIRED}: this deployment has no directory executor assembled for the SCIM transaction; the write is refused rather than reacted by a stand-in`,
+      );
+    }
+    return directory.execute(actor, {
+      operation,
+      tenantId,
+      idempotencyKey,
+      payload,
+    });
+  };
+
+  return Object.freeze({
+    async reconcileIdentity(state: {
+      readonly userId: string;
+      readonly active: boolean;
+      readonly sources: readonly ScimIdentitySourceFact[];
+    }) {
+      const tx = options.currentTransaction();
+      if (!tx) {
+        throw new Error(
+          `${SCIM_REACTION_TRANSACTION_REQUIRED}: the SCIM identity hook fired outside the fixed build's request transaction; a directory reaction without its transaction owner is refused, never executed on the pool`,
+        );
+      }
+      const sourcesByConnection = new Map(
+        state.sources.map((source) => [source.connectionId, source]),
+      );
+      // 1) Present sources: first supply, suspension, or reactivation.
+      for (const source of state.sources) {
+        const rule = await readScimWideRule(
+          tx,
+          source.connectionId,
+          source.provisioningDomainId,
+        );
+        const membership = await readMembershipProjection(
+          tx,
+          source.provisioningDomainId,
+          state.userId,
+        );
+        const actor = scimActorOf(
+          source.connectionId,
+          rule,
+          state.userId,
+          source.id,
+        );
+        if (!membership && source.active) {
+          await execute(
+            actor,
+            "member.provision",
+            source.provisioningDomainId,
+            scimProvisionKey(source.connectionId, state.userId),
+            { userId: state.userId },
+          );
+        } else if (membership?.status === "active" && !source.active) {
+          await execute(
+            actor,
+            "member.suspend",
+            source.provisioningDomainId,
+            `scim:${source.connectionId}:suspend:${state.userId}:e${membership.epoch}`,
+            {
+              userId: state.userId,
+              reason: "SCIM directory deactivation",
+            },
+          );
+        } else if (membership?.status === "suspended" && source.active) {
+          await execute(
+            actor,
+            "member.restore",
+            source.provisioningDomainId,
+            `scim:${source.connectionId}:restore:${state.userId}:e${membership.epoch}`,
+            {
+              userId: state.userId,
+              reason: "SCIM directory reactivation",
+            },
+          );
+        }
+      }
+      // 2) Removed sources: this directory provisioned the person and its
+      // source is gone (DELETE) — the provision receipt is the tie, so an
+      // invited membership this directory never created is never removed.
+      const receipts = await tx
+        .select({ key: authCommandReceipts.idempotencyKey })
+        .from(authCommandReceipts)
+        .where(
+          and(
+            eq(authCommandReceipts.operation, "member.provision"),
+            eq(authCommandReceipts.domain, "company"),
+            sql`${authCommandReceipts.idempotencyKey} like ${`scim:%:provision:${state.userId}`}`,
+          ),
+        );
+      for (const receipt of receipts) {
+        const connectionId = receipt.key.slice(
+          "scim:".length,
+          receipt.key.length - `:provision:${state.userId}`.length,
+        );
+        if (sourcesByConnection.has(connectionId)) continue;
+        const [tenantRow] = await tx
+          .select({ tenantId: authCommandReceipts.tenantId })
+          .from(authCommandReceipts)
+          .where(
+            and(
+              eq(authCommandReceipts.idempotencyKey, receipt.key),
+              eq(authCommandReceipts.operation, "member.provision"),
+            ),
+          )
+          .limit(1);
+        const tenantId = tenantRow?.tenantId;
+        if (!tenantId) continue;
+        const membership = await readMembershipProjection(
+          tx,
+          tenantId,
+          state.userId,
+        );
+        if (!membership) continue;
+        const rule = await readScimWideRule(tx, connectionId, tenantId);
+        await execute(
+          scimActorOf(connectionId, rule, state.userId, null),
+          "member.remove",
+          tenantId,
+          `scim:${connectionId}:remove:${state.userId}:e${membership.epoch}`,
+          { userId: state.userId, reason: "SCIM directory removal" },
+        );
+      }
+    },
+  });
+}

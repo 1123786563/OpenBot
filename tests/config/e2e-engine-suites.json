@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "audit": "node scripts/e2e-coverage-audit.mjs --engine-list",
+  "suites": [
+    {
+      "name": "default",
+      "config": "e2e.config.ts",
+      "script": "test:ui",
+      "tests": ["tests/e2e/*.e2e.ts", "!tests/e2e/better-auth/**"],
+      "target": "web — the legacy local stack (app :3010, API :3001, Casdoor :8000); predates the engine-suite contract, so it carries no preflight",
+      "preflight": null,
+      "files": [
+        "tests/e2e/admin.e2e.ts",
+        "tests/e2e/auth.e2e.ts",
+        "tests/e2e/auth.setup.e2e.ts",
+        "tests/e2e/billing.e2e.ts",
+        "tests/e2e/bot-chat.e2e.ts",
+        "tests/e2e/bot-lifecycle.e2e.ts",
+        "tests/e2e/channels.e2e.ts",
+        "tests/e2e/plugins.e2e.ts",
+        "tests/e2e/routines-approvals.e2e.ts"
+      ]
+    },
+    {
+      "name": "better-auth-web",
+      "config": "e2e.better-auth.config.ts",
+      "script": "test:ui:better-auth",
+      "tests": ["tests/e2e/better-auth/web/*.e2e.ts"],
+      "target": "better-auth-web — BA_E2E_APP_ORIGIN / BA_E2E_API_ORIGIN, preflight-gated (T04.12)",
+      "preflight": "tests/support/better-auth-preflight.ts",
+      "files": [
+        "tests/e2e/better-auth/web/directory.e2e.ts",
+        "tests/e2e/better-auth/web/session.e2e.ts"
+      ]
+    }
+  ]
+}

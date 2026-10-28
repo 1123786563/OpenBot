@@ -15,9 +15,16 @@ const provider = createOpenAI({
   baseURL: process.env.OPENAI_BASE_URL || undefined,
 });
 
+// 默认套件的引擎套件令牌（T04.12）：BA 套件守卫凭它识别“运行的不是 better-auth 配置”。
+process.env.E2E_ENGINE_SUITE = "default";
+
 export default {
   projectId: "openbot",
-  tests: ["tests/e2e/*.e2e.ts"],
+  // 默认引擎套件只收 tests/e2e/*.e2e.ts，显式拒绝 better-auth 子树（T04.12）：BA Web 浏览器
+  // 套件有自己的配置 e2e.better-auth.config.ts（bun run test:ui:better-auth），互斥关系由
+  // tests/config/e2e-engine-suites.json 登记并经 coverage audit --engine-list 审计；文件被显式
+  // 传给本配置时 runner 以 NO_TESTS 非零拒绝，被误收集时套件守卫再拦一次。
+  tests: ["tests/e2e/*.e2e.ts", "!tests/e2e/better-auth/**"],
   // 全部测试共享同一个本地栈（单 Postgres、默认 Bot 的单运行锁），保持串行。
   workers: 1,
   agents: {

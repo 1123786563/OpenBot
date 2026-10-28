@@ -15,9 +15,15 @@
     "or": "或",
     "emailPlaceholder": "you@company.com",
     "continueCompany": "使用公司账号继续",
+    "forgotIxdaxjzz": "忘记密码？",
     "adminSignIn": "管理员登录",
     "noProviderForAddress": "没有为该邮箱地址注册身份提供商。",
-    "couldNotStart": "无法启动 {{provider}} 登录。"
+    "couldNotStart": "无法启动 {{provider}} 登录。",
+    "emailLabel": "邮箱",
+    "passwordLabel": "密码",
+    "continuePassword": "使用邮箱密码继续",
+    "signingIn": "正在登录…",
+    "passwordFailed": "登录失败，请检查邮箱和密码。"
   },
   "signInPage": {
     "title": "登录",
@@ -84,5 +90,89 @@
   "messageScroller": {
     "scrollToEnd": "滚动到末尾",
     "scrollToStart": "滚动到开头"
+  },
+  "acceptInvitation": {
+    "loading": "正在加载你的邀请…",
+    "linkMissing": "邀请链接不完整。请从邮件里重新打开。",
+    "unavailable": "此邀请不可用。请联系公司重新发送。",
+    "signInTitle": "你被邀请加入一家公司。",
+    "signInHint": "使用受邀邮箱登录后即可查看邀请。",
+    "invitedTo": "{{company}} 邀请你加入。",
+    "company": "公司",
+    "role": "角色",
+    "expires": "有效期至",
+    "roleOf": {
+      "owner": "所有者",
+      "admin": "管理员",
+      "member": "成员",
+      "auditor": "审计员"
+    },
+    "accept": "接受邀请",
+    "decline": "拒绝",
+    "switchAccount": "切换账号",
+    "goToApp": "进入 OpenBot",
+    "joined": "你已加入 {{company}}。",
+    "joinedHint": "下次登录即可看到你的公司与团队。",
+    "declinedNow": "你已拒绝此邀请。",
+    "declined": "此邀请已被拒绝。",
+    "cancelled": "此邀请已被撤销。",
+    "accepted": "此邀请已被接受。",
+    "expired": "此邀请已过期。",
+    "settled": "此邀请已被处理。",
+    "unverified": "请先验证邮箱。打开发送到 {{email}} 的验证邮件后，再回到这里。",
+    "wrongAccount": "你当前登录的是 {{email}}。此邀请发给另一个邮箱。",
+    "wrongAccountHint": "切换账号后即可接受。",
+    "actionUnverified": "请先验证邮箱，再接受邀请。",
+    "actionMismatch": "此邀请发给另一个邮箱地址。切换账号后即可处理。",
+    "seats": "公司席位已满。请联系管理员释放席位。",
+    "closed": "公司暂不接受新成员。",
+    "paused": "暂时无法访问公司，请稍后再试。",
+    "refused": "OpenBot 无法完成该操作。请重试，或联系公司处理。",
+    "invalid": "操作未生效。请刷新页面后重试。",
+    "failed": "无法连接 OpenBot，请重试。"
+  },
+  "forgotIxdaxjzz": {
+    "title": "重置密码",
+    "description": "输入你的电子邮箱。如果账号存在，我们会发送重置链接。",
+    "email": "电子邮箱",
+    "send": "发送重置链接",
+    "sending": "正在发送…",
+    "sent": "如果账号存在，重置邮件即将送达。",
+    "closed": "此处未开放密码登录。请使用你的身份提供方登录。",
+    "failed": "无法发送重置链接，请重试。",
+    "back": "返回登录"
+  },
+  "resetIxdaxjzz": {
+    "title": "设置新密码",
+    "description": "使用新密码保护你的账号。",
+    "newIxdaxjzz": "新密码",
+    "reset": "重置密码",
+    "resetting": "正在重置…",
+    "done": "密码已重置。请使用新密码登录。",
+    "invalid": "此链接已过期或已使用，请申请新链接。",
+    "requestNew": "申请新的重置链接",
+    "failed": "无法重置密码，请重试。",
+    "signIn": "登录"
+  },
+  "verifyEmail": {
+    "title": "查看你的邮箱",
+    "description": "打开邮件中的链接以验证你的邮箱地址。",
+    "verified": "邮箱已验证，现在可以登录。",
+    "expired": "此验证链接已过期。登录后可以重新申请。",
+    "resend": "重新发送验证邮件",
+    "resending": "正在发送…",
+    "resent": "新的验证邮件即将送达。",
+    "alreadyVerified": "邮箱已验证，现在可以登录。",
+    "failed": "无法发送验证邮件，请重试。",
+    "signIn": "登录"
+  },
+  "companyReauth": {
+    "pausedTitle": "这家公司需要先完成一次额外登录。",
+    "pausedBody": "完成后才能继续在这家公司工作。你的公司和团队选择保持不变。",
+    "failedTitle": "这次额外登录没有完成。",
+    "failedBody": "可能登录到了其他账号，或公司信息已变更。请重试，或选择其他公司。",
+    "start": "重新登录",
+    "escape": "选择其他公司",
+    "startError": "无法开始额外登录。请重试。"
   }
 }

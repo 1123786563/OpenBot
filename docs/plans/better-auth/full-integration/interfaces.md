@@ -164,7 +164,7 @@ interface PrincipalRegistry {
 
 平台 actor 由服务器核验当前有效 session、BA Admin role 和部署认证规则后签发，不信任客户端 kind/platform 标志；公司 owner/admin 和 provisioning binding 都不能签发。migration 仅离线停写工具可用；首次管理员初始化需封存的一次性 bootstrap 记录，普通登录不再调用 seedRole/applyConfiguredAdmin/setRole 提权。查询用实时 platform-read gate，不伪造变更命令。recovery actor 无 session；仅恢复 ingress 在身份 executor 内、锁定重验固定 BA reset-token 后签发，内部登记绑定 transactionId/目标 user/token 的 HMAC 承诺，不能由 HTTP kind 字段创建、跨事务转移或借 receipt 绕过已消费 token。签发 actor 不消费 token，只准本事务目标 password.reset；原生恢复 route 的 consumeVerificationValue 是唯一消费者，顺序见 §5.1。secrets 不持久化，幂等冲突比较使用服务器密钥 HMAC 承诺，禁止可离线猜密码的明文/普通摘要。原生 Admin/Organization 读写按 §3.2 逐项处置，未知端点拒绝。
 
-receipt 唯一域为 identity/actor/targetUserId/operation/key，校验 payload hash；重放先重验当前身份和管理权限，不重复增版、不返回 token/cookie。复用同连接事务、DML guard、终结标志、平台域审计及提交后 outbox；身份终结器核对 User/Principal/代际/session/proof 完整结果，故障或漏终结整体失败。按 userId/principal 稳定序取锁，不在持 principal 后等 tenant；身份命令不逐公司更新目录。普通注册/登录的 BA 合同独立于公司命令，但不能写受保护管理字段。
+receipt 唯一域为 identity 域 + targetUserId + idempotency key（幂等围栏不并入 actor/operation；设计 §5.6 裁决 2026-10-25），校验 payload hash；重放先重验当前身份和管理权限，不重复增版、不返回 token/cookie。复用同连接事务、DML guard、终结标志、平台域审计及提交后 outbox；身份终结器核对 User/Principal/代际/session/proof 完整结果，故障或漏终结整体失败。按 userId/principal 稳定序取锁，不在持 principal 后等 tenant；身份命令不逐公司更新目录。普通注册/登录的 BA 合同独立于公司命令，但不能写受保护管理字段。
 
 PrincipalRegistry 在命令的 principal 锁层执行：公司命令已取 tenant 锁，之后才能取 member/team/resource 锁。仅真实新 user 无主体历史时创建服务器 ID、identityGeneration=1，user_id 唯一约束使并发只产生一行；沿用已有 ID/状态/代际，ensure 不恢复 suspended 身份。已知历史映射/代际缺失阻断恢复，不补新主体。P04 实现，P06/P08/P12 在同一外层事务消费，finalizer 校验；用户接受邀请前可有合法 session 而 principalId 为 null，不能因此要求先有公司资格。
 
@@ -204,7 +204,7 @@ interface ScopedTeamExtension {
 
 团队能力构造器在锁内按 actor 选择唯一 authority 分支：company-role 重验当前 owner/admin；team-grant 重验主体身份/公司/团队资格代际和 Grant 状态/generation；provisioning-rule 重验绑定、来源事件、当前批准规则/revision、固定 team 和目标成员。DB 命令记录/DML guard 保留相同判别依据，审计记录真实来源；不得制造占位 Grant、伪管理员或无依据的 provisioning 豁免。P03 的规则行至少含 bindingId/tenantId、externalGroup 或公司准入条件、固定 workspaceIds、最低 member 角色、approved/revoked 与 revision；规则批准/撤销通过 Directory 的 provisioning.rule.approve/revoke，由现有公司管理配置入口调用；actor 必须是当前公司 owner/admin，binding 必须固定此公司，scim/jit 无批准权，首发不新增客户自助 IdP 配置。相同 binding/externalGroup 的规则保留稳定 ID，变更固定目标或批准状态推进 revision，最低 role 固定 member；规则更新在 tenant 排他锁内推进 revision，旧能力不可复用，幂等重放也重验规则。规则撤销不偷偷改变其他来源成员，移除关系须明确命令。
 
-P09 的公司管理接口固定为 `GET|POST /api/enterprise/workspace-scope/admin/teams/:workspaceId/management-grants` 和 `DELETE /api/enterprise/workspace-scope/admin/teams/:workspaceId/management-grants/:grantId`。GET 返回 `{grants: TeamManagementGrantView[]}`，POST 接 `{userId,actions}` + 幂等头，DELETE 从 path 取 grantId、body 只接 reason；写返回 DirectoryResult.grantId/grantGeneration，其余非 Grant 动作为 null。path Grant 必须属于明确 company/team；GET 也需当前公司管理授权。
+P09 的公司管理接口固定为 `GET|POST /api/enterprise/workspace-scope/admin/teams/:workspaceId/management-grants` 和 `DELETE /api/enterprise/workspace-scope/admin/teams/:workspaceId/management-grants/:grantId`。GET 返回 `{grants: TeamManagementGrantView[]}`，POST 接 `{userId,actions}` + 幂等头，DELETE 从 path 取 grantId、body 只接 reason；写返回 DirectoryResult.grantId/grantGeneration，其余非 Grant 动作为 null。path Grant 必须属于明确 company/team；GET 也需当前公司管理授权。DELETE 的幂等键由服务端按行当前 generation 派生（`revoke-${grantId}-${generation}`，整改裁决 2026-10-27）：同 generation 的相同输入重放是真实重放；重授推进 generation 后的再撤销是新命令，永不与旧收据碰撞成 no-op。
 
 团队成员增删不新增与既有 `DELETE /api/enterprise/workspace-scope/admin/teams/:workspaceId/members/:principalId`（workspace-scope-routes.ts）同形的路由——Hono 将 `:userId` 与 `:principalId` 视为同一模式，同形注册造成 ID 语义冲突。P09 扩展转译既有 `POST .../members` 与 `DELETE .../members/:principalId`：path 参数类型固定为 OpenBot 稳定业务 principalId，服务端经 PrincipalRegistry/binding 解析为 BA userId 后构造 team.member.add/remove，不接受客户端直接给 BA member.id/userId；授权分支按上表 company-role/team-grant/provisioning-rule 判别，不改 BA member 默认角色。
 
@@ -222,7 +222,7 @@ type TeamManagementGrantView = Readonly<{
 
 命令上下文不是任意 `set_config` 字符串即可信：数据库只允许受限 directory-writer 调用受控函数建立命令记录，DML guard 验证记录、事务、允许动作与目标；data/directory-reader 不获调用权。禁止将完整数据库泄露防护声称为插件能力。SQL 函数固定 `search_path`、限定列、撤销 PUBLIC EXECUTE，函数所有者无通用业务读旁路。
 
-幂等键唯一域为 actor/binding、tenant、operation、key；记录 payload hash。重放也先完成当前认证及目标可见性/管理权限检查，撤权后的请求不能借 receipt 读取或重做原动作。相同输入重放返回同一非敏感结果，不推进版本；同键不同内容返回 409 `IDEMPOTENCY_CONFLICT`。邀请邮件重发是新的受控命令，不复活取消/过期记录；receipt 不保存可重放的 Cookie、token 或秘密。
+幂等键唯一域按命令域拆分：身份命令为 identity 域 + 目标 user，公司命令为 tenant；配对 idempotency key，记录 payload hash（actor/operation 不入唯一域；设计 §5.6 裁决 2026-10-25，同键不同内容仍 409）。重放也先完成当前认证及目标可见性/管理权限检查，撤权后的请求不能借 receipt 读取或重做原动作。相同输入重放返回同一非敏感结果，不推进版本；同键不同内容返回 409 `IDEMPOTENCY_CONFLICT`。邀请邮件重发是新的受控命令，不复活取消/过期记录；receipt 不保存可重放的 Cookie、token 或秘密。
 
 ### 3.1 延迟 hook 与错误归属（P01 证明，P04/P12 接线）
 

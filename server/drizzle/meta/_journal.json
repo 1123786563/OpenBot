@@ -1548,6 +1548,111 @@
       "when": 1793167861000,
       "tag": "0220_bifrost_speech_reservation_spec",
       "breakpoints": true
+    },
+    {
+      "idx": 221,
+      "version": "7",
+      "when": 1793171461000,
+      "tag": "0221_better_auth_directory",
+      "breakpoints": true
+    },
+    {
+      "idx": 222,
+      "version": "7",
+      "when": 1793175061000,
+      "tag": "0222_better_auth_clocks",
+      "breakpoints": true
+    },
+    {
+      "idx": 223,
+      "version": "7",
+      "when": 1793178661000,
+      "tag": "0223_better_auth_command_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 224,
+      "version": "7",
+      "when": 1793182261000,
+      "tag": "0224_better_auth_authority_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 225,
+      "version": "7",
+      "when": 1793185861000,
+      "tag": "0225_better_auth_assurance",
+      "breakpoints": true
+    },
+    {
+      "idx": 226,
+      "version": "7",
+      "when": 1793189461000,
+      "tag": "0226_better_auth_schema_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 227,
+      "version": "7",
+      "when": 1793193061000,
+      "tag": "0227_better_auth_company_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 228,
+      "version": "7",
+      "when": 1793196661000,
+      "tag": "0228_better_auth_invitation_resend",
+      "breakpoints": true
+    },
+    {
+      "idx": 229,
+      "version": "7",
+      "when": 1793200261000,
+      "tag": "0229_better_auth_team_management_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 230,
+      "version": "7",
+      "when": 1793203861000,
+      "tag": "0230_better_auth_company_auth_challenge",
+      "breakpoints": true
+    },
+    {
+      "idx": 231,
+      "version": "7",
+      "when": 1793251200000,
+      "tag": "0231_better_auth_company_auth_complete",
+      "breakpoints": true
+    },
+    {
+      "idx": 232,
+      "version": "7",
+      "when": 1793254800000,
+      "tag": "0232_better_auth_company_auth_policy_read",
+      "breakpoints": true
+    },
+    {
+      "idx": 233,
+      "version": "7",
+      "when": 1793341200000,
+      "tag": "0233_better_auth_provisioning_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 234,
+      "version": "7",
+      "when": 1793344800000,
+      "tag": "0234_better_auth_mobile_session_handoff",
+      "breakpoints": true
+    },
+    {
+      "idx": 235,
+      "version": "7",
+      "when": 1793344800001,
+      "tag": "0235_better_auth_mobile_session_admission",
+      "breakpoints": true
     }
   ]
 }

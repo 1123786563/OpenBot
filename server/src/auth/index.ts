@@ -1,3 +1,9 @@
+import { createHash } from "node:crypto";
+import {
+  getCurrentDBAdapterAsyncLocalStorage,
+  runWithAdapter,
+  runWithEndpointContext,
+} from "@better-auth/core/context";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { electron } from "@better-auth/electron";
 import { expo } from "@better-auth/expo";
@@ -27,10 +33,31 @@ import {
   users,
   verifications,
 } from "../db/schema";
+import type { Directory, DirectoryTx } from "./directory/contracts";
+import { createIdentityFinalizer } from "./directory/finalizer";
+import {
+  createIdentityExecutor,
+  type IdentityBaAccess,
+  type IdentityExecutor,
+} from "./directory/identity";
+import { createAuthMailOutbox } from "./directory/outbox";
+import { principalRegistry } from "./directory/principal-registry";
+import {
+  assertBaAuthorityPreconditions,
+  BA_AUTHORITY_CONFIG_VIOLATION,
+  createTransactionBoundBa,
+} from "./directory/transaction-adapter";
 import { DOMAIN_REFUSAL_MESSAGE, emailDomainAllowed } from "./email-domain";
 import { encryptSsoConfig } from "./encrypt-sso-config";
-import { applyConfiguredAdmin, isConfiguredAdmin, seedRole } from "./roles";
-import { recordProvisioned, scimOptions } from "./scim";
+import { assertAuthMailTakeover, createAuthMail } from "./mail";
+import { createPasswordRecoveryIngress } from "./password-recovery";
+import { isConfiguredAdmin, type RoleDatabase, seedRole } from "./roles";
+import {
+  createScimTransactionCapture,
+  recordProvisioned,
+  type ScimConnectionSpec,
+  scimOptions,
+} from "./scim";
 
 /**
  * Bun fetch 代理豁免（本机/内网上游）：Bun 在进程启动时锁定 HTTP_PROXY 且
@@ -271,7 +298,7 @@ async function record(
 }
 
 export async function stampSignIn(
-  database: Database,
+  database: RoleDatabase,
   userId: string,
   at: Date,
 ): Promise<void> {
@@ -379,6 +406,204 @@ export type AuthBootstrapConfig = Pick<
   "auth" | "keyEncryptionKey"
 >;
 
+/**
+ * The frozen organization-plugin options of interfaces §3.2 (T02.11 / P04).
+ *
+ * The plugin itself is not mounted yet: the pinned schema it needs on
+ * `sessions` (activeOrganizationId/activeTeamId) and on `users` (the Admin
+ * plugin's ban/role columns) is a schema task's, and mounting it before those
+ * columns exist would make every session write fail. These options are
+ * exported now so the task that mounts it cannot drift from the decision:
+ *
+ * - `allowUserToCreateOrganization: false` — opening a company is the private
+ *   platform command (P06), never a self-service native call;
+ * - `disableOrganizationDeletion: true` — removal is a reviewed request that
+ *   archives assets, never a physical delete;
+ * - `dynamicAccessControl` is deliberately absent — the first phase has fixed
+ *   roles only, and the native create/update/delete-role endpoints are closed
+ *   in the ingress table.
+ *
+ * The Admin plugin's impersonate permission is removed the same way: it is not
+ * part of the access control this deployment assembles, and the ingress
+ * refuses /admin/impersonate-user and /admin/stop-impersonating outright.
+ */
+export const DIRECTORY_ORGANIZATION_PLUGIN_OPTIONS = Object.freeze({
+  allowUserToCreateOrganization: false,
+  disableOrganizationDeletion: true,
+  teams: Object.freeze({ enabled: true }),
+});
+
+/*
+ * The fixed build's table mapping, shared by the main adapter and the
+ * identity executor's transaction-bound twin so the two can never disagree
+ * about which physical table a model lands in (T05.08).
+ */
+const BA_ADAPTER_SCHEMA = Object.freeze({
+  users,
+  sessions,
+  accounts,
+  verifications,
+  ssoProviders,
+  scimConnectionBindings,
+  scimIdentityTombstones,
+  scimSubjects,
+  scimUsers,
+  scimProjectionGrants,
+  scimGroups,
+  scimGroupMembers,
+});
+
+/**
+ * T05.08 (#564): the auth instance a directory-wired deployment assembles
+ * carries its identity executor — the object the assembly mounts behind
+ * createApp's `coworker.directory.identity` seam, where the native admin
+ * account writes (create-user, update-user, set-user-password) translate
+ * into identity commands. Optional because a legacy deployment that wires
+ * nothing assembles none and keeps the honest 503 it answers today.
+ */
+export type DirectoryIdentityAuth = ReturnType<typeof betterAuth> & {
+  passwordRecovery?: { handle(request: Request): Promise<Response | null> };
+  /** Assigned once by the factory below; never written afterwards. */
+  directoryIdentity?: Pick<IdentityExecutor, "execute">;
+};
+
+/**
+ * The fixed-build calls the identity executor's BA half needs (§2.1/§5.1):
+ * the pinned build's own createUser/password paths, reached only from
+ * inside a command's TransactionBoundBa run so every row they write rides
+ * the command's transaction. Outside one there is nothing to ride, so the
+ * calls refuse rather than orphan a user or a credential.
+ */
+function createDirectoryIdentityBaAccess(
+  auth: ReturnType<typeof betterAuth>,
+): IdentityBaAccess {
+  return {
+    createUser: async (input) => {
+      const context = await auth.$context;
+      /*
+       * The current TransactionBoundBa store: the identity command is
+       * running, and its adapter is bound to the command's open
+       * transaction. The nested runWithAdapter declares that this createUser
+       * is not its own transaction — which is exactly true — so the fixed
+       * build's user-create database hooks (the domain/revocation gate
+       * before, the role bootstrap after) execute inline inside the command
+       * instead of queueing as post-commit work the hook fence refuses.
+       */
+      const store = (await getCurrentDBAdapterAsyncLocalStorage()).getStore() as
+        | { adapter?: unknown }
+        | undefined;
+      if (!store?.adapter) {
+        throw new Error(
+          "DIRECTORY_IDENTITY_BA_STORE_MISSING: the fixed build's createUser may only run inside the identity command's TransactionBoundBa — a user row written outside the command transaction is the orphan the receipt exists to prevent",
+        );
+      }
+      /*
+       * validateUserInfo demands an endpoint context; an identity command is
+       * not a fixed-build endpoint, so the deployment's own context view is
+       * supplied and the source names how this user really arrived — a
+       * platform command, never a sign-in. The gate itself (SSO-required,
+       * admitted domains, revoked addresses) runs unchanged: an SSO-mandated
+       * deployment still refuses an admin-created account except for its
+       * break-glass administrators.
+       */
+      await runWithEndpointContext(
+        /*
+         * The pinned build's createUser reads only context.options (the
+         * validateUserInfo gate) and context.logger off this view; the cast
+         * stands for that narrow contract rather than forging a full
+         * endpoint context.
+         */
+        {
+          context: { options: context.options, logger: context.logger },
+        } as never,
+        () =>
+          runWithAdapter(store.adapter as never, async () => {
+            const user = await context.internalAdapter.createUser(
+              {
+                id: input.userId,
+                email: input.email,
+                name: input.name,
+                ...(input.image !== null ? { image: input.image } : {}),
+              },
+              { method: "platform" },
+            );
+            if (!user) {
+              throw new Error(
+                "DIRECTORY_IDENTITY_BA_CREATE_REFUSED: the fixed build's createUser returned no user; the command is refused rather than binding the pre-allocated id to nothing",
+              );
+            }
+            if (input.password !== null) {
+              const hashed = await context.password.hash(input.password);
+              await context.internalAdapter.linkAccount({
+                providerId: "credential",
+                // The pinned build's synthetic issuer for local credentials.
+                issuer: "local:credential",
+                accountId: user.id,
+                password: hashed,
+                userId: user.id,
+              });
+            }
+          }),
+      );
+    },
+    writePassword: async (input) => {
+      const context = await auth.$context;
+      const hashed = await context.password.hash(input.newPassword);
+      const existing = await context.internalAdapter.findCredentialAccount(
+        input.userId,
+      );
+      if (existing) {
+        await context.internalAdapter.updatePassword(input.userId, hashed);
+      } else {
+        await context.internalAdapter.createAccount({
+          userId: input.userId,
+          providerId: "credential",
+          issuer: "local:credential",
+          accountId: input.userId,
+          password: hashed,
+        });
+      }
+    },
+    consumeResetToken: async (input) => {
+      await (
+        auth.api as unknown as {
+          resetPassword: (args: {
+            body: { token: string; newPassword: string };
+          }) => Promise<unknown>;
+        }
+      ).resetPassword({
+        body: { token: input.resetToken, newPassword: input.newPassword },
+      });
+    },
+  };
+}
+
+/**
+ * The SSO factory hard precondition (T05.05's named startup gate, extracted
+ * from createAuth so the missing/false variants are pinnable at unit level):
+ * the sso plugin must run with organizationProvisioning:{disabled:true} — a
+ * provider-carried organizationId may never provision a member (interfaces
+ * §3.2's callback contract). A missing flag or disabled:false is a startup
+ * refusal before any route runs.
+ */
+export function assertSsoOrganizationProvisioningDisabled(
+  plugins: readonly unknown[] | undefined,
+): void {
+  const ssoPlugin = (plugins ?? []).find(
+    (
+      plugin,
+    ): plugin is {
+      id: string;
+      options?: { organizationProvisioning?: { disabled?: boolean } };
+    } => Boolean(plugin) && (plugin as { id?: string }).id === "sso",
+  );
+  if (ssoPlugin?.options?.organizationProvisioning?.disabled !== true) {
+    throw new Error(
+      `${BA_AUTHORITY_CONFIG_VIOLATION}: the SSO plugin must run with organizationProvisioning:{disabled:true} — a provider-carried organizationId may never provision a member (interfaces §3.2's callback contract); refusing before any route runs`,
+    );
+  }
+}
+
 export function createAuth(
   config: AuthBootstrapConfig,
   database: Database,
@@ -402,11 +627,39 @@ export function createAuth(
    * write below is guarded and its failure is logged rather than raised.
    */
   auditStore?: AuditStore,
+  /**
+   * T05.05 (#561 / P12): the SCIM transcription wiring — the per-company
+   * connections and the directory executor seam. Absent keeps the legacy
+   * SCIM reactions exactly as they were (a deployment must not change
+   * behaviour because a new optional parameter exists).
+   */
+  scimWiring?: {
+    readonly connections?: readonly ScimConnectionSpec[];
+    readonly directory?: (tx: DirectoryTx) => Pick<Directory, "execute"> | null;
+  },
 ) {
   const authConfig = config.auth;
   if (!authConfig) {
     throw new Error("No identity provider is configured.");
   }
+
+  /*
+   * The mail seam (T04.04 / P08, interfaces §5.1): when the deployment
+   * names an SMTP receiver, the fixed build's verification and reset
+   * callbacks become createAuthMail's converters over the T02.12
+   * transactional outbox — the URL and token are sealed into the stored
+   * intent with the deployment's existing key material, and only the
+   * post-commit worker delivers through standard SMTP. No SMTP
+   * configuration keeps every mail notification off, exactly as before.
+   */
+  const authMail = authConfig.authSmtp
+    ? createAuthMail({
+        smtp: authConfig.authSmtp,
+        outbox: createAuthMailOutbox({
+          payloadSecret: config.keyEncryptionKey,
+        }),
+      })
+    : null;
 
   /*
    * Okta and Casdoor go through the generic OAuth plugin, the other two do not.
@@ -431,10 +684,128 @@ export function createAuth(
       : []),
     ...(authConfig.casdoor ? [casdoor(authConfig.casdoor)] : []),
   ];
+  /*
+   * The transaction capture (T05.05): every transaction the fixed build opens
+   * on this database records its open tx, so the SCIM hooks can execute their
+   * directory commands on exactly the transaction the plugin owns. Installed
+   * whenever the deployment wires the directory surface at all — the SCIM
+   * transcription (T05.05) and the identity executor (T05.08) both need it,
+   * and the sign-in hooks' writerOf below reads it either way. A legacy
+   * deployment's database object is passed to the adapter untouched.
+   */
+  const scimCapture =
+    scimWiring || (authConfig.emailPassword && authConfig.authSmtp)
+      ? createScimTransactionCapture(database)
+      : null;
+  /*
+   * The resolved options the fixed build hands its database factory once
+   * $context initializes; the identity executor's transaction-bound adapter
+   * twin is built from the same pair (T05.08).
+   */
+  let resolvedBaOptions: unknown;
+  /*
+   * The writer the sign-in hooks run on (T05.06): the fixed build's open
+   * transaction when the capture seam is assembled — the same commit that
+   * owns the user or session row — and the pool on a legacy deployment,
+   * which keeps its own shape.
+   */
+  const writerOf = (): RoleDatabase =>
+    (scimCapture?.currentTransaction() ?? database) as RoleDatabase;
+
+  /**
+   * The JIT half of an SSO arrival (T05.06 / P12, design §9): eligibility
+   * comes only from the verified issuer+subject/binding. The provider row is
+   * the server's fixed provider↔company binding; an approved wide rule for
+   * that binding is the company's explicit opt-in, and the member it supplies
+   * is the minimum role with the rule's fixed teams, on the callback's own
+   * transaction. No rule, no binding or no subject supplies nothing — the
+   * sign-in itself never depends on company eligibility, and the address a
+   * provider reports is never an authority.
+   */
+  const jitProvisionMember = async (input: {
+    readonly user: { readonly id: string };
+    readonly userInfo: Record<string, unknown> | undefined;
+    readonly provider:
+      | {
+          readonly providerId?: string;
+          readonly organizationId?: string | null;
+        }
+      | undefined;
+  }): Promise<void> => {
+    const bindingId = input.provider?.providerId?.trim();
+    const tenantId = input.provider?.organizationId?.trim();
+    if (!bindingId || !tenantId) return;
+    const subject =
+      typeof input.userInfo?.sub === "string" &&
+      input.userInfo.sub.trim() !== ""
+        ? input.userInfo.sub.trim()
+        : null;
+    if (!subject) return;
+    const tx = scimCapture?.currentTransaction();
+    const directory = tx ? scimWiring?.directory?.(tx) : null;
+    if (!tx || !directory) return;
+    const [rule] =
+      (
+        (await tx.execute(
+          sql`SELECT rule_id, revision::int AS revision FROM auth_provisioning_rules
+             WHERE binding_id = ${bindingId} AND external_group IS NULL
+               AND tenant_id = ${tenantId} AND status = 'approved'
+               AND minimum_role = 'member' LIMIT 1`,
+        )) as unknown as { rows?: { rule_id: string; revision: number }[] }
+      ).rows ?? [];
+    if (!rule) return;
+    try {
+      await directory.execute(
+        {
+          userId: input.user.id,
+          principalId: null,
+          sessionId: null,
+          kind: "jit",
+          bindingId,
+          provisioning: {
+            eventId: `jit:${bindingId}:${subject}`,
+            ruleId: String(rule.rule_id),
+            ruleRevision: Number(rule.revision),
+            sourceSubject: subject,
+          },
+        },
+        {
+          operation: "member.provision",
+          tenantId,
+          idempotencyKey: `jit:${bindingId}:provision:${input.user.id}`,
+          payload: { userId: input.user.id },
+        },
+      );
+    } catch (error) {
+      /*
+       * The identity the SSO callback proved is not the company eligibility:
+       * a rule revoked between the read and the command's own lock, a closed
+       * company or a refused supply leaves the sign-in standing with no
+       * member row. The command's own audit trail keeps the refusal.
+       */
+      log.error(
+        {
+          type: "jit-provision-refused",
+          bindingId,
+          tenantId,
+          error: String(error),
+        },
+        "jit-provision-refused",
+      );
+    }
+  };
+
   const scimDeps = {
     database,
     initialAdminEmails: authConfig.initialAdminEmails,
     ...(auditStore ? { auditStore } : {}),
+    ...(scimWiring?.connections ? { connections: scimWiring.connections } : {}),
+    ...(scimCapture
+      ? {
+          currentTransaction: scimCapture.currentTransaction,
+          directory: scimWiring?.directory ?? null,
+        }
+      : {}),
   };
   const scimPluginOptions = scimOptions(scimDeps);
   const enterpriseStore = createEnterpriseStore(database);
@@ -479,20 +850,40 @@ export function createAuth(
      * `provisionUser` runs when somebody arrives through one of them. Their role has to be written
      * here or they land with no role at all and the request guard refuses them with a 403, which
      * reads as a broken deployment rather than a first sign-in.
+     *
+     * T05.06 (#562 / P12): the write runs on the fixed build's own open
+     * transaction (the same commit that owns the user row), and the JIT half
+     * derives the person's company eligibility ONLY from the verified
+     * issuer+subject/binding of the provider row — never from the address.
+     * A provider the server fixed to a company, with an approved wide
+     * provisioning rule, supplies the minimum member role and the rule's
+     * fixed teams through the directory command on that same transaction; a
+     * provider without a rule supplies nothing, and the address a provider
+     * reports never grants a role by itself.
      */
     sso({
-      provisionUser: async ({ user }) => {
+      resolveUser: async () => ({ action: "continue" as const }),
+      provisionUser: async ({ user, userInfo, provider }) => {
         await seedRole(
-          database,
+          writerOf(),
           user.id,
           user.email,
           authConfig.initialAdminEmails,
         );
+        await jitProvisionMember({ user, userInfo, provider });
       },
+      /*
+       * §3.2's SSO callback contract: an organizationId a provider carries
+       * creates no member (T02.11 / P04). Off is the fixed decision, and the
+       * factory asserts below that the assembled plugin still says so — a
+       * future edit that flips it would provision companies from a login
+       * claim, which is exactly what the directory command exists to prevent.
+       */
+      organizationProvisioning: { disabled: true },
     }),
   ];
 
-  return betterAuth({
+  const options: Parameters<typeof betterAuth>[0] = {
     user: {
       additionalFields: {
         preferences: {
@@ -563,29 +954,25 @@ export function createAuth(
      * for a customer's directory is inside them. Every other secret this deployment keeps goes
      * through `KEY_ENCRYPTION_KEY`; these two were the exception. See encrypt-sso-config.ts.
      */
-    database: encryptSsoConfig(
-      drizzleAdapter(database, {
-        provider: "pg",
-        usePlural: true,
-        schema: {
-          users,
-          sessions,
-          accounts,
-          verifications,
-          ssoProviders,
-          scimConnectionBindings,
-          scimIdentityTombstones,
-          scimSubjects,
-          scimUsers,
-          scimProjectionGrants,
-          scimGroups,
-          scimGroupMembers,
-        },
-        // The SCIM plugin needs interactive transactions; nothing else here asked for them.
-        transaction: Boolean(scimPluginOptions),
-      }),
-      config.keyEncryptionKey,
-    ),
+    database: (baOptions: unknown) => {
+      resolvedBaOptions = baOptions;
+      return encryptSsoConfig(
+        drizzleAdapter(scimCapture?.database ?? database, {
+          provider: "pg",
+          usePlural: true,
+          schema: BA_ADAPTER_SCHEMA,
+          /*
+           * Interactive transactions: the SCIM plugin's transcription needs
+           * them, and so does the SSO user resolution (T05.06: resolveUser is
+           * what makes the fixed build defer its link-account dispatch inside
+           * a native transaction — the pinned package refuses the callback
+           * without one), so the adapter always offers them.
+           */
+          transaction: true,
+        }),
+        config.keyEncryptionKey,
+      )(baOptions as never);
+    },
     account: {
       /*
        * The provider's access and refresh tokens, encrypted at rest.
@@ -604,6 +991,9 @@ export function createAuth(
      * OPENBOT_EMAIL_PASSWORD=true: deployments that authenticate through
      * Casdoor/SSO keep this surface closed, and `decideSignInMethod` above
      * still refuses these requests when a deployment mandates SSO.
+     *
+     * With mail configured, the reset callback is the same outbox converter
+     * (§5.1); the recovery HTTP translation around it is T04.05's.
      */
     ...(authConfig.emailPassword
       ? {
@@ -611,9 +1001,51 @@ export function createAuth(
             enabled: true,
             minPasswordLength: 8,
             requireEmailVerification: false,
+            // The fixed recovery constants (T04.05 / §5.1): the token lives
+            // one hour, and a reset revokes the fixed build's own sessions.
+            // The revocation is deliberately defensive only — the real
+            // security finalization (generation bump, every session and
+            // proof, audit) is the Identity finalizer's, in the same
+            // transaction the RecoveryIngress runs.
+            resetPasswordTokenExpiresIn: 3600,
+            revokeSessionsOnPasswordReset: true,
+            ...(authMail
+              ? { sendResetPassword: authMail.sendResetPassword }
+              : {}),
           },
         }
       : {}),
+    /*
+     * Verification mail (T04.04): signup and every later sign-in of an
+     * unverified address dispatch through the converter, so the intent is
+     * registered in the signing transaction and delivered only after its
+     * commit. The deferred link-account dispatch is taken over the same way
+     * (the hook fence converts it inside the command), which is the
+     * condition interfaces §3.1 sets for enabling these at all.
+     */
+    ...(authMail
+      ? {
+          emailVerification: {
+            sendVerificationEmail: authMail.sendVerificationEmail,
+            sendOnSignUp: true,
+            sendOnSignIn: true,
+          },
+        }
+      : {}),
+    /*
+     * §3.1's storage preconditions, stated explicitly (T02.11 / P04): session
+     * and verification rows are the transaction database's, so the executor's
+     * adapter and the identity finalizer read exactly what they wrote. These
+     * are the pinned build's defaults; spelling them out is what makes the
+     * boot assertion below a fact about the assembled object rather than a
+     * hope about a default that a future version could change.
+     */
+    session: {
+      storeSessionInDatabase: true,
+    },
+    verification: {
+      storeInDatabase: true,
+    },
     plugins,
     socialProviders: {
       ...(authConfig.google ? { google: authConfig.google } : {}),
@@ -681,8 +1113,10 @@ export function createAuth(
              * deployment mid-migration has the same person arriving through Entra one week and
              * Okta the next, and they are the same person to this list.
              */
+            // On the fixed build's own transaction (T05.06): the one-time
+            // bootstrap shares the commit that owns the user row.
             await seedRole(
-              database,
+              writerOf(),
               user.id,
               user.email,
               authConfig.initialAdminEmails,
@@ -746,19 +1180,11 @@ export function createAuth(
             return { data: session };
           },
           after: async (session) => {
-            await stampSignIn(database, session.userId, session.createdAt);
-
             /*
-             * The configured floor, re-applied on every sign-in. Editing the list has to mean
-             * something for people already in the table, or adding yourself after you first signed
-             * in silently does nothing. Only promotes, and only addresses the list names: everybody
-             * else's role belongs to the admin screen.
+             * On the fixed build's own transaction (T05.06): the stamp shares
+             * the commit that owns the session row.
              */
-            const promoted = await applyConfiguredAdmin(
-              database,
-              session.userId,
-              authConfig.initialAdminEmails,
-            );
+            await stampSignIn(writerOf(), session.userId, session.createdAt);
 
             const [user] = await database
               .select({ email: users.email })
@@ -767,26 +1193,12 @@ export function createAuth(
               .limit(1);
 
             /*
-             * The promotion, on the trail.
-             *
-             * The floor is applied silently by design, which meant anybody who could edit
-             * `INITIAL_ADMIN_EMAILS` made themselves an administrator and nothing anywhere said so.
-             * Written only when the role actually changed, so a returning administrator does not
-             * produce one of these on every sign-in.
+             * The configured floor is NOT re-applied here (T05.06 sealed the
+             * bootstrap): it ran once, at the account's creation, so from the
+             * first sign-in on the role belongs to whoever administers the
+             * deployment and a later ordinary login leaves it exactly where
+             * the admin screen put it.
              */
-            if (promoted) {
-              await record(auditStore, {
-                eventType: "person.admin_by_configuration",
-                targetType: "person",
-                targetId: session.userId,
-                actorUserId: session.userId,
-                payload: {
-                  email: user?.email,
-                  reason:
-                    "this address is named in INITIAL_ADMIN_EMAILS, so the configuration granted it",
-                },
-              });
-            }
 
             await record(auditStore, {
               eventType: "session.signed_in",
@@ -799,5 +1211,117 @@ export function createAuth(
         },
       },
     },
+  };
+
+  /*
+   * The §3.1 factory preconditions, asserted on the object this factory is
+   * about to hand to the pinned build (T02.11 / P04):
+   *
+   * - session and verification rows live in the transaction database, so the
+   *   executor's transaction-bound adapter can read and write them and no
+   *   second storage is silently consulted;
+   * - no secondaryStorage and no cookie cache — the internal cache sources
+   *   those configurations enable register cache-writing post-commit hooks the
+   *   hook fence must never drain (T01.04);
+   * - no backgroundTasks.handler: the pinned build would run the work outside
+   *   the command transaction, after the commit semantics the executor owns.
+   *
+   * A contrary option is a startup refusal, never a warning: a deployment that
+   * boots with these violated would take directory writes whose side effects
+   * left the transaction.
+   */
+  assertBaAuthorityPreconditions(options);
+  assertSsoOrganizationProvisioningDisabled(options.plugins);
+  /*
+   * §3.1's takeover condition (T04.04): mail may only be enabled with the
+   * outbox conversion installed — the converter callbacks and the hook
+   * fence's notification-outbox disposition. A configuration that enables
+   * mail without either never starts.
+   */
+  assertAuthMailTakeover({
+    emailVerification: options.emailVerification as
+      | {
+          sendOnSignUp?: boolean;
+          sendOnSignIn?: boolean;
+          sendVerificationEmail?: unknown;
+        }
+      | undefined,
+    emailAndPassword: options.emailAndPassword as
+      | { sendResetPassword?: unknown }
+      | undefined,
+    authMail,
   });
+  if (options.advanced?.backgroundTasks !== undefined) {
+    throw new Error(
+      `${BA_AUTHORITY_CONFIG_VIOLATION}: backgroundTasks is configured; the pinned build would run that work outside the directory command transaction, which is the boundary interfaces §3.1 fixes — remove it before booting`,
+    );
+  }
+
+  const auth = betterAuth(options);
+  if (scimCapture) {
+    /*
+     * T05.08 (#564): the deployment's identity executor, on the SAME
+     * captured database the sign-in hooks write through, so a command's
+     * transaction is the one the fixed build's user-create hooks, the BA
+     * sync and the finalizer all share — and a fault anywhere in it refuses
+     * the whole command. The commitment key is the deployment's auth secret
+     * under SHA-256: server-held, never persisted, the same derivation the
+     * recovery boundary uses for its actor commitments.
+     */
+    const executor = createIdentityExecutor({
+      database: scimCapture.database,
+      bound: createTransactionBoundBa({
+        createTxAdapter: (tx) =>
+          drizzleAdapter(tx as never, {
+            provider: "pg",
+            usePlural: true,
+            schema: BA_ADAPTER_SCHEMA,
+            transaction: false,
+          })(resolvedBaOptions as never),
+      }),
+      registry: principalRegistry,
+      finalizer: createIdentityFinalizer(),
+      ba: createDirectoryIdentityBaAccess(auth),
+      commitmentKey: createHash("sha256").update(authConfig.secret).digest(),
+    });
+    (auth as DirectoryIdentityAuth).directoryIdentity = executor;
+    if (authConfig.emailPassword && authMail) {
+      const recoveryBound = createTransactionBoundBa({
+        createTxAdapter: (tx) =>
+          drizzleAdapter(tx as never, {
+            provider: "pg",
+            usePlural: true,
+            schema: BA_ADAPTER_SCHEMA,
+            transaction: false,
+          })(resolvedBaOptions as never),
+      });
+      /*
+       * T05.14 (coordinator-authorized assembly): the RecoveryIngress owns
+       * the reset surface (T04.05's three URLs) and the verification resend
+       * (its fourth). `outbox` is null until the post-commit delivery
+       * worker is wired, which keeps both entrances honestly refused: a
+       * token or a link that could never be delivered must not be created,
+       * and the refusal names the missing worker rather than half-issuing.
+       */
+      (auth as DirectoryIdentityAuth).passwordRecovery =
+        createPasswordRecoveryIngress({
+          database: scimCapture.database,
+          auth: auth as never,
+          getSession: (
+            auth as unknown as {
+              api: {
+                getSession(input: { headers: Headers }): Promise<{
+                  user?: { id?: unknown; email?: unknown } | null;
+                } | null>;
+              };
+            }
+          ).api.getSession,
+          bound: recoveryBound,
+          outbox: null,
+          identity: executor,
+          passwordEnabled: true,
+        });
+    }
+  }
+  return auth;
 }

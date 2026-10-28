@@ -6,7 +6,8 @@
     "audit": "审计",
     "enterprise": "企业设置",
     "learning": "学习",
-    "billing": "计费与用量"
+    "billing": "计费与用量",
+    "organization": "组织"
   },
   "gate": {
     "pending": "正在读取你的公司…",
@@ -36,7 +37,9 @@
     "role": {
       "tenant_admin": "管理员",
       "member": "成员",
-      "auditor": "审计员"
+      "auditor": "审计员",
+      "owner": "所有者",
+      "admin": "管理员"
     },
     "status": {
       "active": "在职",
@@ -49,7 +52,75 @@
       "offboard": "离职处理"
     },
     "refused": "本公司人员由公司管理员管理，你不是其中之一。",
-    "failed": "名册读取失败。"
+    "failed": "名册读取失败。",
+    "directory": {
+      "description": "公司目录名册与邀请——固定角色，动作由服务器授权并留审计。",
+      "column": {
+        "member": "成员",
+        "role": "角色",
+        "joined": "加入时间",
+        "actions": "操作"
+      },
+      "roleOf": "{{id}} 的角色",
+      "setRole": "设置角色",
+      "remove": "移除成员",
+      "removeReason": "移除原因",
+      "removeConfirm": "确认移除",
+      "cancel": "取消",
+      "inviteTitle": "邀请成员",
+      "email": "邮箱",
+      "inviteAs": "邀请为",
+      "invite": "邀请",
+      "invitationsTitle": "邀请",
+      "invitationsColumn": {
+        "email": "邮箱",
+        "role": "角色",
+        "status": "状态",
+        "expires": "到期时间",
+        "actions": "操作"
+      },
+      "invitationStatus": {
+        "pending": "待处理",
+        "accepted": "已接受",
+        "rejected": "已拒绝",
+        "canceled": "已撤销",
+        "expired": "已过期"
+      },
+      "cancelInvitation": "撤销邀请",
+      "noInvitations": "没有待处理的邀请。",
+      "refused": "你不能管理本公司人员。请联系公司所有者或管理员。",
+      "invalid": "请检查表单后重试。",
+      "paused": "公司变更暂时停用，请稍后再试。",
+      "failed": "无法连接 OpenBot，请重试。",
+      "lastOwner": "这是公司最后一位所有者。请先把所有权转移给另一位成员，再更改此角色。",
+      "seats": "公司席位已满。请先释放席位后再邀请。",
+      "invitation": "这个邮箱已有待处理邀请或已是成员。请先处理现有邀请。"
+    },
+    "grants": {
+      "title": "团队管理授权",
+      "description": "所选团队的成员增删授权。资源读取授权不属于这里。",
+      "column": {
+        "user": "用户",
+        "actions": "已授动作",
+        "status": "状态",
+        "generation": "代",
+        "operations": "操作"
+      },
+      "userId": "用户 ID",
+      "actionAdd": "添加成员",
+      "actionRemove": "移除成员",
+      "grant": "授予",
+      "revoke": "撤销",
+      "revokeReason": "撤销原因",
+      "revokeConfirm": "确认撤销",
+      "none": "此团队暂无管理授权。",
+      "statusActive": "生效中",
+      "statusRevoked": "已撤销",
+      "refused": "团队管理授权仅对公司所有者与管理员开放。",
+      "invalid": "请检查授权表单后重试。",
+      "paused": "授权变更暂时停用，请稍后再试。",
+      "failed": "无法连接 OpenBot，请重试。"
+    }
   },
   "credentials": {
     "title": "凭据",
@@ -184,6 +255,68 @@
         "fulfillment": "履约",
         "paidAt": "支付时间"
       }
+    }
+  },
+  "shell": {
+    "noCompany": {
+      "title": "你还不属于任何公司",
+      "description": "需要管理员邀请你加入。加入后，你的公司与团队会显示在这里。"
+    },
+    "noTeam": {
+      "title": "还没有团队",
+      "description": "需要管理员把你加入一个团队。公司设置仍可打开。"
+    },
+    "revoked": {
+      "title": "你对这家公司的访问已结束",
+      "description": "请选择其他公司，或请管理员重新把你加入。"
+    },
+    "companySettings": "公司设置",
+    "chooseScope": "选择公司或团队",
+    "reauth": "这家公司需要先完成一次额外登录。OpenBot 暂未提供这个步骤。"
+  },
+  "organization": {
+    "title": "组织",
+    "description": "公司资料与团队成员。",
+    "view": {
+      "settings": "设置",
+      "members": "成员"
+    },
+    "noSelection": {
+      "title": "尚未选择公司",
+      "description": "请先在选择页选择公司与团队。"
+    },
+    "failed": {
+      "title": "无法加载你的公司",
+      "description": "请重试；若持续失败，请联系管理员。"
+    },
+    "profile": {
+      "title": "公司资料",
+      "description": "这里只能更改名称、slug 和标志图片。",
+      "name": "名称",
+      "slug": "Slug",
+      "logo": "标志图片地址",
+      "status": "状态",
+      "statusReadOnly": "公司状态为只读。",
+      "statusUnavailable": "你看不到公司状态。",
+      "deletion": "关闭公司需要走评审申请。请联系 OpenBot 管理员发起。",
+      "save": "保存更改",
+      "readOnly": "你可以查看这份资料，但不能更改。",
+      "refused": "你不能更改这家公司的资料。请联系公司管理员。",
+      "invalid": "请检查资料字段后重试。",
+      "paused": "公司变更暂时停用，请稍后再试。",
+      "failed": "无法连接 OpenBot，请重试。"
+    },
+    "team": {
+      "title": "团队成员",
+      "description": "添加或移除所选团队的成员。",
+      "rolesNote": "角色与团队管理员由公司管理员设置。",
+      "principalId": "成员 ID",
+      "add": "添加成员",
+      "remove": "移除成员",
+      "refused": "你不能管理这个团队的成员。请联系公司管理员。",
+      "invalid": "请检查成员 ID 后重试。",
+      "paused": "团队变更暂时停用，请稍后再试。",
+      "failed": "无法连接 OpenBot，请重试。"
     }
   }
 }

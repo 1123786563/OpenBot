@@ -9,6 +9,7 @@ import type {
   RuntimeInvocation,
   ToolReceiptDTO,
 } from "../../../shared/enterprise/contracts";
+import type { Version } from "../auth/directory/contracts";
 import type { ExpertVersionRef } from "./experts/version-catalog";
 
 export {
@@ -45,6 +46,25 @@ export interface PlatformScope {
   readonly memberEpoch: number;
   readonly aclEpoch: number;
   readonly entrypoint: "web" | "desktop" | "mobile" | "schedule";
+  /**
+   * T03.01 (#538, interfaces §4): the persistent identity and two-layer
+   * eligibility versions the scope gate compares live at use time. They are
+   * carried only by scopes the BA resolver issued under `ba` authority: the
+   * legacy and paused branches keep the original issuance unchanged, so these
+   * stay absent there — an absent version is "cannot compare", never a
+   * default, and the ba-branch gate refuses such a scope instead of
+   * validating it against guessed versions.
+   *
+   * `memberEpoch` (above) stays the company-layer epoch; `companyGeneration`
+   * is the company clock's revocation generation, `workspaceMemberEpoch` /
+   * `teamGeneration` the team clock's epoch and generation, and
+   * `identityGeneration` the principal's verified identity generation
+   * (`enterprise_principals.identity_generation`, never backfilled).
+   */
+  readonly identityGeneration?: Version;
+  readonly companyGeneration?: Version;
+  readonly workspaceMemberEpoch?: Version;
+  readonly teamGeneration?: Version;
 }
 
 export interface ResourceView {

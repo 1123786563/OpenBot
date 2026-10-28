@@ -1,51 +1,83 @@
 {
-  "generatedBy": "docs/plans/2026-10-18-e2e-tester-army-migration-status.md \u7684\u8fb9\u754c\u4e00\u8282",
-  "purpose": "Every test corpus that tester-army e2e cannot execute, named with the command that runs it. The coverage audit fails if a workflow invokes one of these runners that is not listed here, or lists a runner nothing invokes any more \u2014 silence is not an exclusion.",
-  "entries": [
-    {
-      "runner": "cargo test",
-      "pattern": "^cargo test --locked --lib( .*)?$",
-      "suites": ["desktop (Tauri Rust)"],
-      "files": 40,
-      "executedBy": ".github/workflows/desktop.yml",
-      "status": "runs, but not through e2e",
-      "reason": "Rust unit tests compiled into the desktop binary. e2e can drive the desktop app through its web engine, but it cannot execute `#[test]` functions inside a Rust crate.",
-      "invoked": true,
-      "note": "invoked by a CI job, so the corpus runs \u2014 it just does not run through e2e"
-    },
-    {
-      "runner": "go test",
-      "pattern": "^go test .*$",
-      "suites": ["runtime-go", "agent-trpc"],
-      "files": 18,
-      "executedBy": "nothing in CI \u2014 `runtime-go/dependency-review.json` only hashes go.mod/go.sum",
-      "status": "not executed by any entry, and not migrated",
-      "reason": "Go suites exist in the tree and no job runs them. Named here because the plan document previously asserted a separate CI job for them, which does not exist: `grep -rn 'go test' .github/workflows/` returns nothing. This is a real hole in 'every test runs under e2e', not an exclusion.",
-      "invoked": false,
-      "note": "named as a hole, not as an exclusion: `invoked: false` exempts this entry from the 'must still be invoked' check, because the point of listing it is that nothing invokes it"
-    },
-    {
-      "runner": "python -m pytest",
-      "pattern": "^python -m pytest (agent-[a-z0-9-]+)/tests -q$",
-      "suites": [
-        "agent-adk",
-        "agent-ag2",
-        "agent-agno",
-        "agent-claude-sdk",
-        "agent-crewai",
-        "agent-langgraph-agui",
-        "agent-langroid",
-        "agent-llamaindex",
-        "agent-microsoft",
-        "agent-pydantic-ai",
-        "agent-strands"
-      ],
-      "files": 38,
-      "executedBy": ".github/workflows/ci.yml \u00b7 job `python harness regressions`",
-      "status": "runs, but not through e2e",
-      "reason": "Provider-boundary regressions for the Python agent harnesses. tester-army e2e ships a Node/TypeScript engine plus web/mobile drivers; there is no Python engine, and these suites assert on the Python packages' own imports and mock providers. Migrating them means porting the harness, not re-scheduling it.",
-      "invoked": true,
-      "note": "invoked by a CI job, so the corpus runs \u2014 it just does not run through e2e"
-    }
-  ]
+ "generatedBy": "docs/plans/2026-10-18-e2e-tester-army-migration-status.md \u7684\u8fb9\u754c\u4e00\u8282",
+ "purpose": "Every test corpus that tester-army e2e cannot execute, named with the command that runs it. The coverage audit fails if a workflow invokes one of these runners that is not listed here, or lists a runner nothing invokes any more \u2014 silence is not an exclusion.",
+ "entries": [
+  {
+   "runner": "cargo test",
+   "pattern": "^cargo test --locked --lib( .*)?$",
+   "suites": [
+    "desktop (Tauri Rust)"
+   ],
+   "files": 40,
+   "executedBy": ".github/workflows/desktop.yml",
+   "status": "runs, but not through e2e",
+   "reason": "Rust unit tests compiled into the desktop binary. e2e can drive the desktop app through its web engine, but it cannot execute `#[test]` functions inside a Rust crate.",
+   "invoked": true,
+   "note": "invoked by a CI job, so the corpus runs \u2014 it just does not run through e2e"
+  },
+  {
+   "runner": "go test",
+   "pattern": "^go test .*$",
+   "suites": [
+    "runtime-go",
+    "agent-trpc"
+   ],
+   "files": 18,
+   "executedBy": "nothing in CI \u2014 `runtime-go/dependency-review.json` only hashes go.mod/go.sum",
+   "status": "not executed by any entry, and not migrated",
+   "reason": "Go suites exist in the tree and no job runs them. Named here because the plan document previously asserted a separate CI job for them, which does not exist: `grep -rn 'go test' .github/workflows/` returns nothing. This is a real hole in 'every test runs under e2e', not an exclusion.",
+   "invoked": false,
+   "note": "named as a hole, not as an exclusion: `invoked: false` exempts this entry from the 'must still be invoked' check, because the point of listing it is that nothing invokes it"
+  },
+  {
+   "runner": "python -m pytest",
+   "pattern": "^python -m pytest (agent-[a-z0-9-]+)/tests -q$",
+   "suites": [
+    "agent-adk",
+    "agent-ag2",
+    "agent-agno",
+    "agent-claude-sdk",
+    "agent-crewai",
+    "agent-langgraph-agui",
+    "agent-langroid",
+    "agent-llamaindex",
+    "agent-microsoft",
+    "agent-pydantic-ai",
+    "agent-strands"
+   ],
+   "files": 38,
+   "executedBy": ".github/workflows/ci.yml \u00b7 job `python harness regressions`",
+   "status": "runs, but not through e2e",
+   "reason": "Provider-boundary regressions for the Python agent harnesses. tester-army e2e ships a Node/TypeScript engine plus web/mobile drivers; there is no Python engine, and these suites assert on the Python packages' own imports and mock providers. Migrating them means porting the harness, not re-scheduling it.",
+   "invoked": true,
+   "note": "invoked by a CI job, so the corpus runs \u2014 it just does not run through e2e"
+  },
+  {
+   "runner": "bun test (apps/openmuse submodule)",
+   "pattern": "^BA_FOREIGN_SUITE=\\S+ .*$",
+   "suites": [
+    "openmuse server",
+    "openmuse mobile"
+   ],
+   "files": 0,
+   "executedBy": "tests/better-auth-foreign.test.ts via tests/config/better-auth-foreign-suites.json \u2014 scheduled and reported by root e2e; no workflow invokes the channel yet",
+   "status": "channel exists (T01.10), no target registered yet",
+   "reason": "The openmuse suites run on Bun inside a submodule checkout, which root e2e cannot collect natively. T01.10 (#522) makes that boundary executable under accounting instead of silent: BA_FOREIGN_SUITE=TaskId selects only fixed cwd/runner/argv targets the whitelist registers per task, and the driver refuses unknown tasks, missing targets, zero tests, skips and failures rather than passing them.",
+   "invoked": false,
+   "note": "invoked: false is the shape of a named channel with no CI entry and no registered target yet: leaf tasks register targets they already own (never pre-registered), and node scripts/e2e-coverage-audit.mjs pins the runner types and names this executor on every run"
+  },
+  {
+   "runner": "go test (bifrost submodule, governance)",
+   "pattern": "^BA_FOREIGN_SUITE=\\S+ .*$",
+   "suites": [
+    "bifrost governance"
+   ],
+   "files": 0,
+   "executedBy": "tests/better-auth-foreign.test.ts via tests/config/better-auth-foreign-suites.json \u2014 scheduled and reported by root e2e; no workflow invokes the channel yet",
+   "status": "channel exists (T01.10), no target registered yet",
+   "reason": "The bifrost governance suites are Go tests inside the bifrost submodule, driven by root e2e through `go test -json`: the driver parses the child's own report and accepts only verdicts with a positive test count, no skips and no failures. In a checkout where the submodule is not initialized a registered target blocks explicitly (non-zero) instead of passing.",
+   "invoked": false,
+   "note": "the runtime-go/agent-trpc entry above is a different corpus (in-tree Go dirs no job runs); the bifrost corpora reach e2e only through the fixed whitelist this entry names"
+  }
+ ]
 }

@@ -1,8 +1,8 @@
-import { Link, Outlet } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslation } from "react-i18next";
+import { Link, Outlet } from "@tanstack/react-router";
 import type { TFunction } from "i18next";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageSection,
@@ -17,8 +17,8 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import {
-  companyCapabilitiesQueryOptions,
   type CompanyCapabilities,
+  companyCapabilitiesQueryOptions,
 } from "@/lib/enterprise/tenant/company-admin";
 import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
@@ -55,6 +55,15 @@ export function companyAdminSections(
     sections.push({
       to: "/tenant/admin/people",
       label: t("nav.people"),
+      enabled: true,
+    });
+  }
+  if (capabilities.peopleAdmin) {
+    // The fixed registry's organization pages (T04.09): the company profile and team members
+    // surfaces ride the same capability bit as the people section.
+    sections.push({
+      to: "/organization/settings",
+      label: t("nav.organization"),
       enabled: true,
     });
   }

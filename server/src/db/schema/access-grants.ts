@@ -17,7 +17,9 @@
  */
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   check,
+  foreignKey,
   index,
   pgTable,
   text,
@@ -25,6 +27,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { botServices } from "./bot-services";
+import { enterprisePrincipals } from "./enterprise-tenancy";
 
 const at = (name: string) =>
   timestamp(name, { withTimezone: true }).notNull().defaultNow();
@@ -59,6 +62,23 @@ export const accessGrants = pgTable(
     grantId: text("grant_id").primaryKey(),
     /** The OpenBot user who confirmed (auth/guards.ts `AuthenticatedActor["id"]`). */
     userId: text("user_id").notNull(),
+    /**
+     * The principal the authorization is bound to (T02.04 / #526, design §4.2/§5.3,
+     * interfaces §5.3: Model Access Grant 固定授权 user/principal/identityGeneration).
+     * A personal grant is not company membership: PrincipalRegistry.ensure establishes
+     * the principal in the principal lock layer for a user who has none, without joining
+     * a company (design §5.3).
+     *
+     * Nullable at expand and deliberately NOT backfilled: a pre-T02.04 grant has no
+     * verified source generation, and a missing version is "cannot compare" — M2/M3
+     * re-verify and re-sign or revoke, never stamp from the current active state
+     * (design §5.3: 旧 Grant/Key 无代际不自动补有效). Re-authorization revokes the
+     * stale-active row and creates a NEW grantId with the current generation; the old
+     * row keeps its (null) history and its references.
+     */
+    principalId: text("principal_id"),
+    /** The source identity generation the grant was confirmed against; present exactly when principalId is. */
+    identityGeneration: bigint("identity_generation", { mode: "number" }),
     /** The Bot this authorization is for. A disabled Bot (04.1) is refused downstream, not deleted here. */
     botId: text("bot_id")
       .notNull()
@@ -112,5 +132,24 @@ export const accessGrants = pgTable(
       "access_grants_revoked_at_check",
       sql`(${table.status} = 'active' AND ${table.revokedAt} IS NULL) OR (${table.status} = 'revoked' AND ${table.revokedAt} IS NOT NULL)`,
     ),
+    // The source principal and its generation are written together by a confirmation
+    // or not at all: a grant carries a comparable source exactly when it carries the
+    // principal to compare against.
+    check(
+      "access_grants_principal_generation_pair",
+      sql`(${table.principalId} IS NULL) = (${table.identityGeneration} IS NULL)`,
+    ),
+    check(
+      "access_grants_identity_generation_safe_integer",
+      sql`${table.identityGeneration} IS NULL OR (${table.identityGeneration} >= 0 AND ${table.identityGeneration} <= 9007199254740991)`,
+    ),
+    // NO ACTION on purpose: user deletion is not an open path (users cascade to
+    // principals, design §4.3 "不能直接开放通用 DeleteUser"), and a revoked grant
+    // must outlive its principal as history rather than vanish with it.
+    foreignKey({
+      name: "access_grants_principal_fk",
+      columns: [table.principalId],
+      foreignColumns: [enterprisePrincipals.id],
+    }),
   ],
 );

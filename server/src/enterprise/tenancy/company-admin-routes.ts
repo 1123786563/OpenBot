@@ -20,11 +20,22 @@
 //   GET    /admin/audit-events/export         导出（同判定门 + 导出留审计）
 //   GET    /admin/learning                    本范围学习记录（范围 pin，他范围空页）
 //   GET    /admin/billing/company-books       公司账簿 + 团队用量 + 用量证据行（财务读取授权）
+//   POST   /admin/provisioning-rules          批准供应规则（T05.06，owner/admin，绑定/固定目标受控命令）
+//   DELETE /admin/provisioning-rules/:ruleId  撤销供应规则（T05.06，owner/admin，状态化撤销）
 //
 // 装配契约：管理服务依赖 operator 通道；通道未装配时这些路由整体 503
 // （createUnavailableCompanyAdminRoutes），绝不以宽松替身放行。
 
 import { Hono } from "hono";
+import { isDirectoryMembershipRefusal } from "../../auth/directory/membership";
+import {
+  type CompanyProvisioningRulePort,
+  isProvisioningRuleRefusal,
+} from "../../auth/directory/team-extension";
+import {
+  type CompanyTeamGrantPort,
+  isTeamGrantRefusal,
+} from "../../auth/directory/team-grants";
 import type {
   CompanyBooks,
   CompanyFinanceVisibilityService,
@@ -85,6 +96,17 @@ export interface CompanyAuditPort {
   ): Promise<void>;
 }
 
+/**
+ * The team-management-grant surface (T04.07 / #551, P09): the company admin
+ * grants and revokes the fixed team-member-management actions of one team to
+ * an existing active team member, and lists the stable grant rows. The port
+ * type lives beside the directory handlers (`team-grants.ts`); the concrete
+ * port runs the management-grant commands inside the company admin's
+ * trusted server-issued platform actor, and the company-role authorization
+ * and the team/target eligibility re-verification live in the directory
+ * command the handlers execute (the same lock the executor replays).
+ */
+
 export interface CompanyAdminRouteDeps {
   /** The authorizer both faces share: admin contexts for gated routes, member contexts otherwise. */
   authorizer: CompanyAdminAuthorizer & {
@@ -108,6 +130,22 @@ export interface CompanyAdminRouteDeps {
   };
   /** Resolves the full selection pair (tenant + workspace) against membership facts (MT005). */
   resolveScope(request: Request): Promise<PlatformScope>;
+  /**
+   * The team-management-grant surface (T04.07 / #551, P09). Optional at the
+   * type level on purpose: the concrete port needs a production Directory
+   * executor whose assembly arrives with the full-surface wiring task (the
+   * same deferral the T04.03 membership translation port made), so the dep is
+   * fail-closed — absent, the three routes answer 503, never a permissive
+   * stand-in.
+   */
+  teamGrants?: CompanyTeamGrantPort;
+  /**
+   * The provisioning-rule surface (T05.06 / #562, P12). Optional at the type
+   * level for the same reason teamGrants is: the concrete port needs a
+   * production Directory executor, so the dep is fail-closed — absent, the
+   * two routes answer 503, never a permissive stand-in.
+   */
+  provisioningRules?: CompanyProvisioningRulePort;
   audit: CompanyAuditPort;
   finance: Pick<
     CompanyFinanceVisibilityService,
@@ -139,6 +177,14 @@ const STATUS_BY_CODE: Readonly<
   SCIM_BINDING_NOT_FOUND: 404,
   COMPANY_ROLE_CHANGE_CONFLICT: 409,
   COMPANY_OFFBOARD_CONFLICT: 409,
+  // T04.03: the paused answer every translated member entrance shares.
+  MEMBERSHIP_LIFECYCLE_PAUSED: 503,
+  // T04.07: the management-grant face before its production Directory wiring
+  // exists — fail-closed, never a permissive stand-in.
+  MANAGEMENT_GRANTS_UNAVAILABLE: 503,
+  // T05.06: the provisioning-rule face before its production Directory
+  // wiring exists — fail-closed, never a permissive stand-in.
+  PROVISIONING_RULES_UNAVAILABLE: 503,
   DATA_DATABASE_UNAVAILABLE: 503,
   WORKSPACE_ADMIN_UNAVAILABLE: 503,
   MANAGEMENT_ENTRANCE_UNCLASSIFIED: 500,
@@ -149,6 +195,50 @@ function errorResponse(error: unknown): {
   code: string;
   body: { error: { code: string; message: string } };
 } {
+  // T04.03: the translated ba branch surfaces the membership module's own
+  // refusals (message "CODE: detail" plus the refusal's status); they land
+  // here with their real HTTP projection instead of folding into a 500.
+  if (isDirectoryMembershipRefusal(error)) {
+    return {
+      status: error.status,
+      code: error.code,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
+  if (isTeamGrantRefusal(error)) {
+    return {
+      status: error.status,
+      code: error.code,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
+  // T05.06: the provisioning-rule commands surface their own refusals (a
+  // foreign binding, a missing rule, an already-revoked one) with their real
+  // HTTP projection, never folded into a 500.
+  if (isProvisioningRuleRefusal(error)) {
+    return {
+      status: error.status,
+      code: error.code,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
+  // T04.07: the management-grant commands run through the directory executor,
+  // so its refusals (e.g. DIRECTORY_IDEMPOTENCY_CONFLICT) and the authority
+  // gate's (legacy/paused → 503) project with their own status, never a 500.
+  if (isDirectoryCommandRefusal(error)) {
+    return {
+      status: error.status,
+      code: error.code,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
+  if (isAuthorityRefusal(error)) {
+    return {
+      status: 503,
+      code: error.code,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
   const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
   const status = STATUS_BY_CODE[code] ?? 500;
   if (status === 500) {
@@ -224,6 +314,8 @@ async function readJsonObject(
 
 export function createCompanyAdminRoutes(deps: CompanyAdminRouteDeps): Hono {
   const routes = new Hono();
+  const teamGrants = deps.teamGrants;
+  const provisioningRules = deps.provisioningRules;
 
   routes.get("/admin/capabilities", async (context) => {
     try {
@@ -474,7 +566,239 @@ export function createCompanyAdminRoutes(deps: CompanyAdminRouteDeps): Hono {
     }
   });
 
+  // T04.07 (#551, P09): team-management grants of this workspace. Read the
+  // stable rows; the writer commands carry the company-role authorization and
+  // the team/target eligibility re-verification inside the directory command.
+  routes.get("/admin/teams/:workspaceId/management-grants", async (context) => {
+    try {
+      requireClassifiedCompanyEntrance(
+        "GET",
+        "/admin/teams/:workspaceId/management-grants",
+      );
+      const adminContext = await deps.authorizer.resolveAdminContext(
+        context.req.raw,
+      );
+      if (!teamGrants) throw new Error("MANAGEMENT_GRANTS_UNAVAILABLE");
+      const workspaceId = workspaceParam(context.req.param("workspaceId"));
+      const grants = await teamGrants.listGrants({
+        tenantId: adminContext.tenantId,
+        workspaceId,
+      });
+      return context.json({ grants });
+    } catch (error) {
+      const response = errorResponse(error);
+      return context.json(response.body, response.status);
+    }
+  });
+
+  routes.post(
+    "/admin/teams/:workspaceId/management-grants",
+    async (context) => {
+      try {
+        requireClassifiedCompanyEntrance(
+          "POST",
+          "/admin/teams/:workspaceId/management-grants",
+        );
+        const adminContext = await deps.authorizer.resolveAdminContext(
+          context.req.raw,
+        );
+        if (!teamGrants) throw new Error("MANAGEMENT_GRANTS_UNAVAILABLE");
+        const workspaceId = workspaceParam(context.req.param("workspaceId"));
+        const idempotencyKey = context.req.header(IDEMPOTENCY_HEADER);
+        if (
+          idempotencyKey === undefined ||
+          idempotencyKey.trim() === "" ||
+          idempotencyKey.length > IDEMPOTENCY_KEY_MAX ||
+          !isPrintableText(idempotencyKey)
+        ) {
+          throw new Error("INVALID_REQUEST");
+        }
+        const body = await readJsonObject(context.req.raw);
+        if (
+          typeof body.userId !== "string" ||
+          body.userId.trim() === "" ||
+          !Array.isArray(body.actions) ||
+          body.actions.length === 0 ||
+          !body.actions.every(
+            (action: unknown) =>
+              action === "team.member.add" || action === "team.member.remove",
+          ) ||
+          new Set(body.actions).size !== body.actions.length
+        ) {
+          throw new Error("INVALID_REQUEST");
+        }
+        const outcome = await teamGrants.grant({
+          tenantId: adminContext.tenantId,
+          workspaceId,
+          actorUserId: adminContext.actorId,
+          actorPrincipalId: adminContext.principalId,
+          userId: body.userId,
+          actions: body.actions,
+          idempotencyKey,
+        });
+        return context.json({ grant: outcome }, outcome.replayed ? 200 : 201);
+      } catch (error) {
+        const response = errorResponse(error);
+        return context.json(response.body, response.status);
+      }
+    },
+  );
+
+  // T05.06 (#562, P12): the company admin approves and revokes the
+  // provisioning rules of this company. The owner/admin authorization, the
+  // fixed-binding ownership and the workspace re-verification live in the
+  // directory command the port runs.
+  routes.post("/admin/provisioning-rules", async (context) => {
+    try {
+      requireClassifiedCompanyEntrance("POST", "/admin/provisioning-rules");
+      const adminContext = await deps.authorizer.resolveAdminContext(
+        context.req.raw,
+      );
+      if (!provisioningRules) throw new Error("PROVISIONING_RULES_UNAVAILABLE");
+      const idempotencyKey = context.req.header(IDEMPOTENCY_HEADER);
+      if (
+        idempotencyKey === undefined ||
+        idempotencyKey.trim() === "" ||
+        idempotencyKey.length > IDEMPOTENCY_KEY_MAX ||
+        !isPrintableText(idempotencyKey)
+      ) {
+        throw new Error("INVALID_REQUEST");
+      }
+      const body = await readJsonObject(context.req.raw);
+      const { bindingId, externalGroup, workspaceIds } = body as {
+        bindingId?: unknown;
+        externalGroup?: unknown;
+        workspaceIds?: unknown;
+      };
+      if (
+        typeof bindingId !== "string" ||
+        bindingId.trim() === "" ||
+        !Array.isArray(workspaceIds) ||
+        workspaceIds.length === 0 ||
+        !workspaceIds.every(
+          (id) => typeof id === "string" && id.trim() !== "",
+        ) ||
+        new Set(workspaceIds).size !== workspaceIds.length ||
+        (externalGroup !== undefined &&
+          externalGroup !== null &&
+          (typeof externalGroup !== "string" || externalGroup.trim() === ""))
+      ) {
+        throw new Error("INVALID_REQUEST");
+      }
+      const rule = await provisioningRules.approve({
+        tenantId: adminContext.tenantId,
+        actorUserId: adminContext.actorId,
+        actorPrincipalId: adminContext.principalId,
+        bindingId,
+        ...(externalGroup === undefined
+          ? {}
+          : { externalGroup: externalGroup as string | null }),
+        workspaceIds: workspaceIds as string[],
+        idempotencyKey,
+      });
+      return context.json({ rule }, 201);
+    } catch (error) {
+      const response = errorResponse(error);
+      return context.json(response.body, response.status);
+    }
+  });
+
+  routes.delete("/admin/provisioning-rules/:ruleId", async (context) => {
+    try {
+      requireClassifiedCompanyEntrance(
+        "DELETE",
+        "/admin/provisioning-rules/:ruleId",
+      );
+      const adminContext = await deps.authorizer.resolveAdminContext(
+        context.req.raw,
+      );
+      if (!provisioningRules) throw new Error("PROVISIONING_RULES_UNAVAILABLE");
+      const ruleId = context.req.param("ruleId");
+      if (!ruleId || !GRANT_ID_PATTERN.test(ruleId)) {
+        throw new Error("INVALID_REQUEST");
+      }
+      const body = await readJsonObject(context.req.raw);
+      const { reason } = body as { reason?: unknown };
+      if (
+        typeof reason !== "string" ||
+        reason.trim() === "" ||
+        reason.length > LIFECYCLE_REASON_MAX ||
+        !isPrintableText(reason)
+      ) {
+        throw new Error("INVALID_REQUEST");
+      }
+      const rule = await provisioningRules.revoke({
+        tenantId: adminContext.tenantId,
+        actorUserId: adminContext.actorId,
+        actorPrincipalId: adminContext.principalId,
+        ruleId,
+        reason,
+      });
+      return context.json({ rule });
+    } catch (error) {
+      const response = errorResponse(error);
+      return context.json(response.body, response.status);
+    }
+  });
+
+  routes.delete(
+    "/admin/teams/:workspaceId/management-grants/:grantId",
+    async (context) => {
+      try {
+        requireClassifiedCompanyEntrance(
+          "DELETE",
+          "/admin/teams/:workspaceId/management-grants/:grantId",
+        );
+        const adminContext = await deps.authorizer.resolveAdminContext(
+          context.req.raw,
+        );
+        if (!teamGrants) throw new Error("MANAGEMENT_GRANTS_UNAVAILABLE");
+        const workspaceId = workspaceParam(context.req.param("workspaceId"));
+        const grantId = context.req.param("grantId");
+        if (!grantId || !GRANT_ID_PATTERN.test(grantId)) {
+          throw new Error("INVALID_REQUEST");
+        }
+        const body = await readJsonObject(context.req.raw);
+        if (
+          typeof body.reason !== "string" ||
+          body.reason.trim() === "" ||
+          body.reason.length > LIFECYCLE_REASON_MAX ||
+          !isPrintableText(body.reason)
+        ) {
+          throw new Error("INVALID_REQUEST");
+        }
+        // interfaces §3 (r1 remediation 2026-10-27): the port derives DELETE's
+        // idempotency key per grant generation (revoke-${grantId}-${generation}
+        // from its pre-read row) — a revoke after a re-grant is a fresh
+        // command, never a no-op replay of the earlier receipt.
+        const outcome = await teamGrants.revoke({
+          tenantId: adminContext.tenantId,
+          workspaceId,
+          actorUserId: adminContext.actorId,
+          actorPrincipalId: adminContext.principalId,
+          grantId,
+          reason: body.reason,
+        });
+        return context.json({ grant: outcome });
+      } catch (error) {
+        const response = errorResponse(error);
+        return context.json(response.body, response.status);
+      }
+    },
+  );
+
   return routes;
+}
+
+const WORKSPACE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
+const GRANT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
+
+/** A Hono path workspace id: one stable business id, server-checked shape. */
+function workspaceParam(value: string | undefined): string {
+  if (value === undefined || !WORKSPACE_ID_PATTERN.test(value)) {
+    throw new Error("INVALID_REQUEST");
+  }
+  return value;
 }
 
 /**
@@ -523,5 +847,233 @@ export function createUnavailableCompanyAdminRoutes(): Hono {
       503,
     ),
   );
+  return routes;
+}
+
+// ---------------------------------------------------------------------------
+// T03.03（#540，P06）：平台公司开通入口（platform 面，非 company 面）
+// ---------------------------------------------------------------------------
+
+import { isAuthorityRefusal } from "../../auth/directory/authority";
+import { isDirectoryCommandRefusal } from "../../auth/directory/executor";
+import { isCompanyLifecycleRefusal } from "../../auth/directory/lifecycle";
+import type {
+  PlatformCompanyProvisionInput,
+  PlatformCompanyProvisionOutcome,
+  PlatformCompanyProvisionService,
+} from "./provision";
+import type { AuthenticatedRequestIdentity } from "./store";
+
+/** The platform face's dependencies: authentication plus the provision service. */
+export interface PlatformCompanyRouteDeps {
+  authenticate(request: Request): Promise<AuthenticatedRequestIdentity | null>;
+  provisioner: PlatformCompanyProvisionService;
+}
+
+const IDEMPOTENCY_HEADER = "idempotency-key";
+const IDEMPOTENCY_KEY_MAX = 512;
+
+function isPrintableText(value: string): boolean {
+  return value
+    .split("")
+    .every((character) => character >= " " && character !== "\u007f");
+}
+
+/**
+ * The platform company-provision surface, mounted at
+ * `/api/enterprise/companies`. Exactly one route: `POST /` with
+ * {name,slug,ownerUserId,defaultTeamName} and the idempotency-key header.
+ * The plane is the platform's, not a company's — the admin gate lives in the
+ * provision service (and is re-verified inside the locked command), so no
+ * company role ever reaches this surface and the route never mounts under
+ * the workspace-scope company entrance.
+ */
+export function createPlatformCompanyRoutes(
+  deps: PlatformCompanyRouteDeps,
+): Hono {
+  const routes = new Hono();
+
+  routes.post("/", async (context) => {
+    try {
+      const identity = await deps.authenticate(context.req.raw);
+      if (!identity?.actorId) throw new Error("AUTH_REQUIRED");
+      const idempotencyKey = context.req.header(IDEMPOTENCY_HEADER);
+      if (
+        idempotencyKey === undefined ||
+        idempotencyKey.trim() === "" ||
+        idempotencyKey.length > IDEMPOTENCY_KEY_MAX ||
+        !isPrintableText(idempotencyKey)
+      ) {
+        throw new Error("INVALID_REQUEST");
+      }
+      const body = await readJsonObject(context.req.raw);
+      const text = (field: string): string => {
+        const value = body[field];
+        if (typeof value !== "string" || value.trim() === "") {
+          throw new Error("INVALID_REQUEST");
+        }
+        return value;
+      };
+      const input: PlatformCompanyProvisionInput = {
+        actorUserId: identity.actorId,
+        name: text("name"),
+        slug: text("slug"),
+        ownerUserId: text("ownerUserId"),
+        defaultTeamName: text("defaultTeamName"),
+        idempotencyKey,
+      };
+      const outcome: PlatformCompanyProvisionOutcome =
+        await deps.provisioner.provision(input);
+      return context.json({ company: outcome }, outcome.replayed ? 200 : 201);
+    } catch (error) {
+      const response = platformErrorResponse(error);
+      return context.json(response.body, response.status);
+    }
+  });
+
+  return routes;
+}
+
+/** The platform face's own refusal projection (no company-plane codes leak in). */
+function platformErrorResponse(error: unknown): {
+  status: 400 | 401 | 403 | 404 | 409 | 500 | 503;
+  body: { error: { code: string; message: string } };
+} {
+  if (isCompanyLifecycleRefusal(error)) {
+    return {
+      status: error.status,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
+  if (isDirectoryCommandRefusal(error)) {
+    return {
+      status: error.status,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
+  if (isAuthorityRefusal(error)) {
+    // The refusal's stable code, never its message: the message carries the
+    // detail text (T03.03 review R1-F1, low), and the platform face's error
+    // DTO is a closed vocabulary, not a diagnostic channel.
+    return {
+      status: 503,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
+  if (error instanceof Error && error.message === "AUTH_REQUIRED") {
+    return {
+      status: 401,
+      body: { error: { code: "AUTH_REQUIRED", message: "Request refused." } },
+    };
+  }
+  if (error instanceof Error && error.message === "INVALID_REQUEST") {
+    return {
+      status: 400,
+      body: {
+        error: { code: "INVALID_REQUEST", message: "Request refused." },
+      },
+    };
+  }
+  return {
+    status: 500,
+    body: { error: { code: "internal", message: "Request failed." } },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// T03.04（#541，P06）：平台公司生命周期入口（suspend / restore / deletion-request）
+// ---------------------------------------------------------------------------
+
+import type {
+  PlatformCompanyLifecycleInput,
+  PlatformCompanyLifecycleService,
+} from "../../auth/directory/lifecycle";
+
+/** The platform lifecycle face's dependencies: authentication plus the service. */
+export interface PlatformCompanyLifecycleRouteDeps {
+  authenticate(request: Request): Promise<AuthenticatedRequestIdentity | null>;
+  lifecycle: PlatformCompanyLifecycleService;
+}
+
+const COMPANY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
+const LIFECYCLE_REASON_MAX = 512;
+
+/**
+ * The platform company-lifecycle surface, mounted beside the provision face at
+ * `/api/enterprise/companies`: `POST /:companyId/suspend`, `POST /:companyId/
+ * restore` and `POST /:companyId/deletion-request`, each with a {reason} body
+ * and the idempotency-key header. The plane is the platform's — the admin gate
+ * lives in the lifecycle service (and is re-verified inside the locked
+ * command), so no company role ever reaches this surface.
+ */
+export function createPlatformCompanyLifecycleRoutes(
+  deps: PlatformCompanyLifecycleRouteDeps,
+): Hono {
+  const routes = new Hono();
+
+  /** One lifecycle route's shared shape: auth → key → body → service call. */
+  const lifecycleRoute = (
+    path: string,
+    createdStatus: 200 | 201,
+    call: (
+      input: PlatformCompanyLifecycleInput,
+    ) => Promise<{ readonly replayed: boolean }>,
+  ) => {
+    routes.post(path, async (context) => {
+      try {
+        const identity = await deps.authenticate(context.req.raw);
+        if (!identity?.actorId) throw new Error("AUTH_REQUIRED");
+        const idempotencyKey = context.req.header(IDEMPOTENCY_HEADER);
+        if (
+          idempotencyKey === undefined ||
+          idempotencyKey.trim() === "" ||
+          idempotencyKey.length > IDEMPOTENCY_KEY_MAX ||
+          !isPrintableText(idempotencyKey)
+        ) {
+          throw new Error("INVALID_REQUEST");
+        }
+        const companyId = context.req.param("companyId");
+        if (!companyId || !COMPANY_ID_PATTERN.test(companyId)) {
+          throw new Error("INVALID_REQUEST");
+        }
+        const body = await readJsonObject(context.req.raw);
+        const reason = body.reason;
+        if (
+          typeof reason !== "string" ||
+          reason.trim() === "" ||
+          reason.length > LIFECYCLE_REASON_MAX ||
+          !isPrintableText(reason)
+        ) {
+          throw new Error("INVALID_REQUEST");
+        }
+        const outcome = await call({
+          actorUserId: identity.actorId,
+          tenantId: companyId,
+          reason,
+          idempotencyKey,
+        });
+        return context.json(
+          path.endsWith("/deletion-request")
+            ? { deletionRequest: outcome }
+            : { company: outcome },
+          outcome.replayed ? 200 : createdStatus,
+        );
+      } catch (error) {
+        const response = platformErrorResponse(error);
+        return context.json(response.body, response.status);
+      }
+    });
+  };
+
+  lifecycleRoute("/:companyId/suspend", 200, (input) =>
+    deps.lifecycle.suspend(input),
+  );
+  lifecycleRoute("/:companyId/restore", 200, (input) =>
+    deps.lifecycle.restore(input),
+  );
+  lifecycleRoute("/:companyId/deletion-request", 201, (input) =>
+    deps.lifecycle.requestDeletion(input),
+  );
+
   return routes;
 }

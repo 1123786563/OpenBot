@@ -34,6 +34,12 @@
 
 import { and, eq, sql } from "drizzle-orm";
 import {
+  type DirectoryTransitionReport,
+  MEMBERSHIP_LIFECYCLE_PAUSED,
+  type MembershipAdminTranslationPort,
+  translateMembershipLifecycle,
+} from "../../auth/directory/membership";
+import {
   enterpriseMemberships,
   enterprisePrincipals,
   enterpriseResourceGrants,
@@ -148,6 +154,16 @@ export interface CompanyOffboardReport {
   readonly auditEventId: string;
 }
 
+/**
+ * The ba-branch shapes (T04.03 ticket step 5): the legacy report fields are
+ * the committed projection facts and the command's own audit id; the
+ * directory provenance extension names the command that produced them.
+ */
+export type CompanyTranslatedRoleChangeReport = CompanyRoleChangeReport &
+  DirectoryTransitionReport;
+export type CompanyTranslatedOffboardReport = CompanyOffboardReport &
+  DirectoryTransitionReport;
+
 export interface CompanyPeopleLifecycleService {
   /** member/auditor → tenant_admin，only ever inside the context's company. */
   promoteCompanyMember(
@@ -210,6 +226,7 @@ async function beginTransaction(tx: OperatorTransaction): Promise<void> {
  */
 export function createCompanyPeopleLifecycleService(
   operator: OperatorDatabase,
+  membership?: MembershipAdminTranslationPort,
 ): CompanyPeopleLifecycleService {
   assertOperatorDatabase(operator);
 
@@ -287,6 +304,45 @@ export function createCompanyPeopleLifecycleService(
   };
 
   /**
+   * The T04.03 authority branch (ticket step 5): legacy keeps this service's
+   * original path below untouched; paused answers the one 503
+   * (MEMBERSHIP_LIFECYCLE_PAUSED); ba translates the write into ONE directory
+   * command (role.set/suspend) and shapes the legacy report from the
+   * committed projection facts, extended with the directory provenance.
+   * Returns null for the legacy branch; the caller's `stateGate` replaces
+   * the shared default (only an active member moves), so it must include
+   * the active check when the entrance's legacy rule also demands one.
+   */
+  const translatedOrNull = async <T>(
+    context: CompanyAdminContext,
+    principalId: string,
+    operation: "member.role.set" | "member.suspend",
+    payloadOf: (userId: string) => Readonly<Record<string, unknown>>,
+    stateGate:
+      | ((member: {
+          readonly role: string;
+          readonly status: string;
+        }) => boolean)
+      | undefined,
+    map: (facts: Awaited<ReturnType<typeof translateMembershipLifecycle>>) => T,
+  ): Promise<T | null> => {
+    if (!membership) return null;
+    const mode = await membership.modeOf();
+    if (mode === "legacy") return null;
+    if (mode === "paused") throw new Error(MEMBERSHIP_LIFECYCLE_PAUSED);
+    return map(
+      await translateMembershipLifecycle(membership, {
+        actorUserId: context.actorId,
+        tenantId: context.tenantId,
+        principalId,
+        operation,
+        payloadOf,
+        stateGate,
+      }),
+    );
+  };
+
+  /**
    * Shared skeleton: trust → settings → locks → admin revalidation → target
    * pin → live membership row. Missing row or a non-active row is refused
    * with the invisible NOT_FOUND (the acting admin cannot distinguish a
@@ -341,6 +397,29 @@ export function createCompanyPeopleLifecycleService(
     async promoteCompanyMember(context, input) {
       assertTrustedAdminContext(context);
       const principalId = principalIdOf(input?.principalId);
+      const translated = await translatedOrNull(
+        context,
+        principalId,
+        "member.role.set",
+        (userId) => ({ userId, role: "admin" }),
+        // The legacy closed promotion rule: an already-managed member is the
+        // invisible not-found, exactly as the original path refuses it.
+        (member) =>
+          member.status === "active" && member.role !== "tenant_admin",
+        ({ before, after, commandId, replayed, auditEventId }) => ({
+          outcome: "role_changed" as const,
+          tenantId: context.tenantId,
+          principalId,
+          membership: { role: after.role as CompanyRole, epoch: after.epoch },
+          previousRole: before.role as CompanyRole,
+          auditEventId,
+          via: "directory" as const,
+          operation: "member.role.set" as const,
+          commandId,
+          replayed,
+        }),
+      );
+      if (translated) return translated;
       return withTargetMember(context, principalId, async (tx, membership) => {
         // Closed promotion rule: only member/auditor rise, and only while
         // active (withTargetMember already refused non-active rows).
@@ -392,6 +471,28 @@ export function createCompanyPeopleLifecycleService(
       if (to !== "member" && to !== "auditor") {
         throw new Error("INVALID_REQUEST");
       }
+      const translated = await translatedOrNull(
+        context,
+        principalId,
+        "member.role.set",
+        (userId) => ({ userId, role: to }),
+        // The legacy closed demotion rule: only a managed member descends.
+        (member) =>
+          member.status === "active" && member.role === "tenant_admin",
+        ({ before, after, commandId, replayed, auditEventId }) => ({
+          outcome: "role_changed" as const,
+          tenantId: context.tenantId,
+          principalId,
+          membership: { role: after.role as CompanyRole, epoch: after.epoch },
+          previousRole: before.role as CompanyRole,
+          auditEventId,
+          via: "directory" as const,
+          operation: "member.role.set" as const,
+          commandId,
+          replayed,
+        }),
+      );
+      if (translated) return translated;
       return withTargetMember(context, principalId, async (tx, membership) => {
         // Closed demotion rule: only a tenant_admin descends, and the target
         // role is explicit — a demotion never invents an intermediate role.
@@ -436,6 +537,32 @@ export function createCompanyPeopleLifecycleService(
     async offboardCompanyMember(context, input) {
       assertTrustedAdminContext(context);
       const principalId = principalIdOf(input?.principalId);
+      const translated = await translatedOrNull(
+        context,
+        principalId,
+        "member.suspend",
+        (userId) => ({ userId, reason: "company_admin_offboard" }),
+        undefined,
+        ({ after, commandId, replayed, auditEventId }) => ({
+          outcome: "offboarded" as const,
+          tenantId: context.tenantId,
+          principalId,
+          membership: {
+            status: after.status as "suspended",
+            epoch: after.epoch,
+          },
+          // The directory transition deletes no legacy grant rows: the
+          // authorities die by the clock advance the command commits, and
+          // the grant store is not the ba branch's authorization source.
+          grantsDeleted: 0,
+          auditEventId,
+          via: "directory" as const,
+          operation: "member.suspend" as const,
+          commandId,
+          replayed,
+        }),
+      );
+      if (translated) return translated;
       return withTargetMember(context, principalId, async (tx, membership) => {
         const epoch = membership.epoch + 1;
         const updated = await tx

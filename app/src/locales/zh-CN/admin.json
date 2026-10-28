@@ -601,7 +601,48 @@
     "remove": "移除",
     "adminAria": "管理员：{{email}}",
     "loading": "加载中…",
-    "showMore": "显示更多"
+    "showMore": "显示更多",
+    "add": {
+      "button": "添加人员",
+      "title": "添加人员",
+      "description": "账号会立即创建。初始密码可选。",
+      "email": "邮箱地址",
+      "name": "姓名",
+      "password": "初始密码（可选）",
+      "submit": "创建账号",
+      "pending": "创建中…"
+    },
+    "manage": "管理账户",
+    "manageAria": "管理账户：{{email}}",
+    "manageTitle": "管理账户",
+    "manageDescription": "{{email}} 的姓名、密码和在线会话。",
+    "accessAria": "{{action}}访问权限：{{email}}",
+    "stopAria": "停止计算机：{{email}}",
+    "restoreNoGrants": "恢复登录不会带回他们之前拥有的权限。",
+    "name": {
+      "title": "姓名",
+      "description": "邮箱即身份，不能在此更改。",
+      "save": "保存姓名"
+    },
+    "password": {
+      "title": "密码",
+      "description": "设置后他们所有在线会话都会退出。",
+      "new": "新密码",
+      "why": "原因（记入审计日志）",
+      "set": "设置密码",
+      "done": "密码已设置。他们的所有会话已退出。"
+    },
+    "sessions": {
+      "title": "会话",
+      "description": "他们当前打开的会话。撤销一个即让该设备退出。",
+      "why": "原因（记入审计日志）",
+      "loading": "正在加载他们的会话…",
+      "none": "他们没有在线会话。",
+      "unknownDevice": "未知设备",
+      "until": "至 {{date}}",
+      "revoke": "撤销",
+      "revokeAll": "撤销所有会话"
+    }
   },
   "playground": {
     "title": "试验场",

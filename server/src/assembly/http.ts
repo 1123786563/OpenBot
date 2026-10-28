@@ -19,10 +19,11 @@
  * ones createApp carried; they moved with their code.
  */
 
+import { randomUUID } from "node:crypto";
 import type { CopilotKitIntelligence } from "@copilotkit/runtime/v2";
 import { MAX_IMAGE_BYTES } from "@openbot/shared/attachments";
 import { getLogger } from "@openbot/shared/logger";
-import type { Hono as HonoApp, MiddlewareHandler } from "hono";
+import type { Context, Hono as HonoApp, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { serveStatic } from "hono/bun";
@@ -60,6 +61,25 @@ import {
   readAuditExportRows,
   recordAuditEvent,
 } from "../audit";
+import { createClosedCompanyAssurance } from "../auth/company-assurance";
+import { createCompanyAuthRoutes } from "../auth/company-auth-routes";
+import { createDirectoryAuthority } from "../auth/directory/authority";
+import type {
+  IdentityActor,
+  IdentityOperation,
+} from "../auth/directory/contracts";
+import {
+  type IdentityExecutor,
+  isIdentityCommandRefusal,
+} from "../auth/directory/identity";
+import {
+  createDirectoryIngress,
+  type NativeAuthPort,
+} from "../auth/directory/ingress";
+import {
+  createDirectoryReadGate,
+  createPlatformReadGate,
+} from "../auth/directory/read-gate";
 import {
   type AppVariables,
   type AuthService,
@@ -67,6 +87,11 @@ import {
   requireAdmin,
 } from "../auth/guards";
 import type { IdentityProviderStore } from "../auth/identity-provider-store";
+import {
+  createMobileSessionHandoff,
+  type MobileHandoffClient,
+} from "../auth/mobile-session";
+import { createMobileSessionRoutes } from "../auth/mobile-session-routes";
 import { desktopAuthPage } from "../auth/native-browser";
 import { createAsyncJobsViewService } from "../billing/async-jobs-view";
 import type { Credits } from "../billing/credits";
@@ -141,6 +166,8 @@ import { createDictationRoutes } from "../dictation/routes";
 import { withRunnerRequestContext } from "../enterprise/runs/request-context";
 import { createLegacyEntryGuard } from "../enterprise/tenancy/assembly-legacy";
 import { createDeploymentEntryContextMiddleware } from "../enterprise/tenancy/entry-context";
+import { createBaScopeSelectionService } from "../enterprise/tenancy/workspace-admin";
+import { createBaSelectionScopeMount } from "../enterprise/tenancy/workspace-scope-routes";
 import {
   GatewayAdminCredentialNotConfiguredError,
   gatewayAdminCredentialControls,
@@ -624,6 +651,65 @@ export interface HttpAssemblyDependencies {
  * middleware chain and route mount, in the order createApp registered them.
  * Returns the app; callers (createApp) return it unchanged.
  */
+/**
+ * One admin-screen security write as an identity command (T05.07): the
+ * deployment's own people screen is the administrator's usual surface, and
+ * when the assembly built the identity executor its role and access changes
+ * are the same five operations the native Admin endpoints translate — one
+ * command, one receipt, the platform actor the executor re-verifies in its
+ * own lock. Absent keeps the legacy write exactly as it was (M0/M1 keep
+ * their DTO and capability; the matrix is the caller's).
+ *
+ * Returns the refusal answer to return, or undefined when the command
+ * committed and the caller's own adjuncts (blocklist row, retirement, audit
+ * event, response) follow as before.
+ */
+async function runIdentityCommand(
+  identity: Pick<IdentityExecutor, "execute">,
+  context: Context<{ Variables: AppVariables }>,
+  action: {
+    operation: IdentityOperation;
+    targetUserId: string;
+    payload: Readonly<Record<string, unknown>>;
+  },
+): Promise<Response | undefined> {
+  /*
+   * The platform actor is the administrator's operator identity, not their
+   * session — the same shape the native ingress issues, with nothing a
+   * session actor carries that the frozen assert would refuse.
+   */
+  const actor: IdentityActor = Object.freeze({
+    userId: context.var.actor.id,
+    principalId: null,
+    sessionId: null,
+    kind: "platform",
+    bindingId: null,
+    provisioning: null,
+  });
+  try {
+    await identity.execute(actor, {
+      operation: action.operation,
+      targetUserId: action.targetUserId,
+      /*
+       * Every screen action is its own command: the receipt is the audit
+       * trail of THIS click, and a screen retry never borrows an earlier
+       * command's committed result.
+       */
+      idempotencyKey: randomUUID(),
+      payload: action.payload,
+    });
+    return undefined;
+  } catch (error) {
+    if (isIdentityCommandRefusal(error)) {
+      return context.json(
+        { error: error.message, code: error.code },
+        error.status,
+      );
+    }
+    throw error;
+  }
+}
+
 export function assembleHttpApp(
   deps: HttpAssemblyDependencies,
 ): Hono<{ Variables: AppVariables }> {
@@ -818,6 +904,7 @@ export function assembleHttpApp(
        */
       ssoRequired:
         enterpriseControls()?.snapshot()?.settings.ssoRequired === true,
+      emailPassword: config.auth?.emailPassword === true,
       /*
        * Whether this deployment has a paid-plan provider behind it, and whether it currently pays.
        *
@@ -836,6 +923,12 @@ export function assembleHttpApp(
     }),
   );
 
+  const companyAssurance = createClosedCompanyAssurance({
+    policy: coworker?.directory?.proofPolicy ?? {
+      requiresProof: async () => false,
+    },
+  });
+
   if (coworker?.enterpriseConversations) {
     app.route(
       "/api/enterprise/conversations",
@@ -848,17 +941,152 @@ export function assembleHttpApp(
   if (coworker?.enterpriseStreamEntry) {
     app.route("/api/enterprise/streams", coworker.enterpriseStreamEntry);
   }
-  // MT006 (issue #49): scope listing is the login-time discovery surface; the
-  // admin half inside answers 503 itself when the operator channel is unwired.
+  // MT006 (issue #49) + T03.02 (#539): the existing scope app remains the
+  // legacy/admin surface; when this process has both its authenticated session
+  // source and database, wrap it with the authority-aware ba-v1 listing and
+  // selection validation. The wrapper delegates every other route unchanged,
+  // and legacy/paused GETs preserve the base DTO byte-for-byte. Missing auth or
+  // database keeps the pre-T03.02 mount exactly as it was — no half-built BA
+  // route and no guessed authority.
   if (coworker?.enterpriseWorkspaceScope) {
-    app.route(
-      "/api/enterprise/workspace-scope",
-      coworker.enterpriseWorkspaceScope,
-    );
+    const workspaceScope =
+      auth && attachmentDatabase
+        ? createBaSelectionScopeMount(coworker.enterpriseWorkspaceScope, {
+            authenticate: async (request) => {
+              const session = await auth.api
+                .getSession({
+                  headers: request.headers,
+                  query: { disableCookieCache: true },
+                })
+                .catch(() => null);
+              return session?.user.id
+                ? { actorId: session.user.id, entrypoint: "web" }
+                : null;
+            },
+            selection: createBaScopeSelectionService(attachmentDatabase, {
+              // This application-owned database is the same verified target
+              // every store behind the prebuilt enterprise scope app uses. The
+              // service itself still reads clocks through the controlled
+              // auth_read_eligibility_clocks function and authority in its own
+              // short transaction; callers never receive a database handle.
+              data: attachmentDatabase,
+              authority: createDirectoryAuthority(),
+              assurance: companyAssurance,
+            }),
+          })
+        : coworker.enterpriseWorkspaceScope;
+    app.route("/api/enterprise/workspace-scope", workspaceScope);
   }
   if (coworker?.pluginPackages) {
     app.route("/api/enterprise/plugin-packages", coworker.pluginPackages);
   }
+  /*
+   * The company-auth challenge route (T05.01 / #557). Mounted whenever this
+   * process has a session source: unauthenticated callers get 401, and the
+   * challenge itself refuses per its own authority/policy gates. The live
+   * seam is `coworker.directory.companyAuth` when the assembly built one;
+   * absent, the closed adapter answers its controlled 503 — the route exists,
+   * issuance honestly reports not-ready, and no deployment silently grows a
+   * half-wired challenge.
+   */
+  if (auth) {
+    // The real BA session reader both enterprise auth surfaces share: the
+    // company-auth challenge and the mobile handoff bind to the live
+    // session, never to a caller's claim about one.
+    const readBaSession = async (request: Request) => {
+      const session = await auth.api
+        .getSession({
+          headers: request.headers,
+          query: { disableCookieCache: true },
+        })
+        .catch(() => null);
+      // The declared type names {user}; the real BA session also carries
+      // its id, which the challenge binds to — narrowed here, not
+      // re-declared in the vendor's types.
+      const sessionId = (session as { session?: { id?: string } } | null)
+        ?.session?.id;
+      return session?.user.id && sessionId
+        ? { userId: session.user.id, sessionId }
+        : null;
+    };
+    app.route(
+      "/api/enterprise/company-auth",
+      createCompanyAuthRoutes({
+        authenticate: readBaSession,
+        assurance: coworker?.directory?.companyAuth ?? companyAssurance,
+      }),
+    );
+    /*
+     * The mobile session handoff (T05.12 / #568, interfaces §5.2): the
+     * system-browser authorize and the registered BFF's exchange, on the
+     * application database where the handoff rows and the BA sessions they
+     * re-verify live. Mounted only when a session source, a database and
+     * at least one registered mobile client all exist — a deployment without
+     * MOBILE_SESSION_CLIENTS grows no half-registered surface, exactly as it
+     * booted before.
+     */
+    if (attachmentDatabase && config.mobileSession) {
+      app.route(
+        "/api/enterprise/mobile",
+        createMobileSessionRoutes({
+          authenticate: readBaSession,
+          handoff: createMobileSessionHandoff({
+            database: attachmentDatabase,
+            clients: config.mobileSession
+              .clients as ReadonlyArray<MobileHandoffClient>,
+          }),
+        }),
+      );
+    }
+  }
+  /*
+   * The native directory ingress (T02.11 / P04; interfaces §3.2).
+   *
+   * Mounted when the deployment has both a session store (auth) and its own
+   * database, because the read gate opens a real transaction per native
+   * directory read. It answers:
+   *
+   * - refused endpoints of the frozen table (X): a backend 403, never the
+   *   pinned build's handler;
+   * - unknown methods/paths under /admin, /organization, /sso, /scim: 404;
+   * - directory/identity writes: translated into Directory/Identity commands.
+   *   No executor is assembled here yet — the P08/P09/P12 tasks register the
+   *   operations and the assembly — so every such write refuses with 503
+   *   before anything is written, rather than reaching a handler that would
+   *   open its own transaction (F-01);
+   * - native directory reads: gated in this deployment's transaction and then
+   *   forwarded to the pinned build, which answers;
+   * - everything outside the table (sign-in, sessions, desktop, SCIM/SSO paths
+   *   the table defers to P12): null, so the existing mount below behaves
+   *   exactly as before.
+   *
+   * The company proof port answers "this company demands an additional proof".
+   * Until the stored policy model arrives (P11), no company demands one, and
+   * the port says so; demanding proof with no evidence bridge would refuse
+   * every company read, which is why P11 replaces this port rather than the
+   * gate.
+   */
+  const nativeDirectoryIngress =
+    auth && attachmentDatabase
+      ? createDirectoryIngress({
+          database: attachmentDatabase,
+          auth: auth as unknown as NativeAuthPort,
+          readGate: createDirectoryReadGate({
+            authority: createDirectoryAuthority(),
+            assurance: companyAssurance,
+          }),
+          platformReadGate: createPlatformReadGate(),
+          ...(coworker?.directory?.directory
+            ? { directory: coworker.directory.directory }
+            : {}),
+          ...(coworker?.directory?.identity
+            ? { identity: coworker.directory.identity }
+            : {}),
+          ...(coworker?.directory?.passwordRecovery
+            ? { passwordRecovery: coworker.directory.passwordRecovery }
+            : {}),
+        })
+      : null;
   /*
    * Registering an identity provider is an administrator's decision, not a signed-in one.
    *
@@ -878,6 +1106,38 @@ export function assembleHttpApp(
     "/api/auth/sso/delete-provider": "identity_provider.removed",
   };
 
+  /*
+   * The SCIM 2.0 surface (T05.05 / #561), mounted before the generic auth
+   * handler so it decides for every SCIM method: with the assembly's
+   * transcription, a write runs inside its directory-command transaction
+   * (the plugin's own handler, the hooks bound to the same transaction) and
+   * a discovery/read returns null to the native contract below. Without the
+   * transcription the request keeps today's classification — the closed
+   * ingress rows answer their named 501 before anything is written.
+   */
+  app.on(
+    ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    "/api/auth/scim/*",
+    async (context) => {
+      if (!auth) {
+        return context.json(
+          { error: "No identity provider is configured." },
+          503,
+        );
+      }
+      const transcription = coworker?.directory?.scim;
+      if (transcription) {
+        const answer = await transcription.handle(context.req.raw);
+        if (answer) return answer;
+        return auth.handler(context.req.raw);
+      }
+      const answer = nativeDirectoryIngress
+        ? await nativeDirectoryIngress.handle(context.req.raw)
+        : null;
+      return answer ?? auth.handler(context.req.raw);
+    },
+  );
+
   app.on(["GET", "POST"], "/api/auth/*", async (context) => {
     if (
       context.req.method === "GET" &&
@@ -895,6 +1155,16 @@ export function assembleHttpApp(
         503,
       );
     }
+
+    /*
+     * The closed native directory table decides before the pinned build's
+     * handler runs; `null` means "not a directory endpoint" and the mount
+     * continues unchanged.
+     */
+    const nativeDirectoryAnswer = nativeDirectoryIngress
+      ? await nativeDirectoryIngress.handle(context.req.raw)
+      : null;
+    if (nativeDirectoryAnswer) return nativeDirectoryAnswer;
 
     if (ADMIN_ONLY_AUTH_ROUTES.has(new URL(context.req.url).pathname)) {
       const session = await auth.api.getSession({
@@ -1009,11 +1279,6 @@ export function assembleHttpApp(
       }),
     );
   }
-  app.on(["PUT", "PATCH", "DELETE"], "/api/auth/scim/*", (context) =>
-    auth
-      ? auth.handler(context.req.raw)
-      : context.json({ error: "No identity provider is configured." }, 503),
-  );
 
   app.route(
     "/api/audio",
@@ -1604,7 +1869,22 @@ export function assembleHttpApp(
     }
 
     if (person.role !== role) {
-      await peopleStore.setRole(userId, role);
+      const identity = coworker?.directory?.identity;
+      if (identity) {
+        // T05.07: the screen's role change is the identity command; without
+        // the executor the legacy write and DTO answer exactly as before.
+        const refusal = await runIdentityCommand(identity, context, {
+          operation: "identity.role.set",
+          targetUserId: userId,
+          payload: {
+            role,
+            reason: `admin screen: role ${person.role} -> ${role}`,
+          },
+        });
+        if (refusal) return refusal;
+      } else {
+        await peopleStore.setRole(userId, role);
+      }
       await recordPersonEvent(
         auditStore,
         context,
@@ -1660,6 +1940,28 @@ export function assembleHttpApp(
     }
 
     if (person.revoked !== revoked) {
+      const identity = coworker?.directory?.identity;
+      /*
+       * The identity command first (T05.07): the disable/restore is the
+       * disciplined write — one transaction owns the principal's suspension
+       * or revival, the generation advance and every session's death — and
+       * the blocklist half below is the screen's own sign-in block, which
+       * the command adds to rather than replaces. A refused command writes
+       * nothing at all, refusal included. Without the executor the legacy
+       * writes answer exactly as before.
+       */
+      const identityCommand = identity
+        ? await runIdentityCommand(identity, context, {
+            operation: revoked ? "identity.disable" : "identity.restore",
+            targetUserId: userId,
+            payload: {
+              reason: revoked
+                ? "admin screen: access revoked"
+                : "admin screen: access restored",
+            },
+          })
+        : undefined;
+      if (identityCommand) return identityCommand;
       if (revoked) {
         await peopleStore.revoke(userId, context.var.actor.id);
       } else {

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   check,
   foreignKey,
   integer,
@@ -28,7 +29,15 @@ export const enterpriseTenants = pgTable(
   (table) => [
     check(
       "enterprise_tenant_status",
-      sql`${table.status} in ('active','suspended')`,
+      /*
+       * 'provisioning' (T02.02, #524; original P03 Step 3 "Tenant status 加
+       * provisioning", consumed by T03.03's company.provision): a company
+       * created locally whose external initialization (billing customer, payer
+       * binding) has not completed yet. It is a platform-only state — business
+       * and directory traffic stay closed exactly as under suspended — and the
+       * domain stays closed: anything else is still refused.
+       */
+      sql`${table.status} in ('active','suspended','provisioning')`,
     ),
     pgPolicy("enterprise_tenant_member_read", {
       for: "select",
@@ -61,6 +70,24 @@ export const enterprisePrincipals = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     status: text("status").notNull().default("active"),
+    /**
+     * The Principal's server-controlled security generation (T02.02 / #524;
+     * design §4.2/§4.2.1, interfaces §2.1). Advanced by global identity
+     * disable, global role change and safe password reset inside the principal
+     * lock; never reset — restoring an identity does not revive the abilities
+     * issued against an older generation.
+     *
+     * bigint rather than integer because a Version is a safe integer
+     * (0..9007199254740991), bounded by CHECK; the application compares with
+     * Number.isSafeInteger.
+     *
+     * Nullable on purpose at expand, and deliberately NOT backfilled: a
+     * principal that predates this column has no verified generation, and an
+     * unverified version must stay missing rather than be guessed as 1. Only
+     * PrincipalRegistry.ensure (T02.07) writes 1, for a genuinely new user;
+     * readers treat NULL as "cannot compare", never as valid.
+     */
+    identityGeneration: bigint("identity_generation", { mode: "number" }),
     createdAt: createdAt(),
   },
   (table) => [
@@ -68,6 +95,10 @@ export const enterprisePrincipals = pgTable(
     check(
       "enterprise_principal_status",
       sql`${table.status} in ('active','suspended')`,
+    ),
+    check(
+      "enterprise_principal_identity_generation_safe_integer",
+      sql`(${table.identityGeneration} is null or (${table.identityGeneration} >= 0 and ${table.identityGeneration} <= 9007199254740991))`,
     ),
     pgPolicy("enterprise_principal_self_read", {
       for: "select",

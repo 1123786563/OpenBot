@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   check,
   customType,
   foreignKey,
@@ -86,6 +87,22 @@ export const enterpriseCredentials = pgTable(
     envelope: text("envelope").notNull(),
     /** 'active' | 'revoked'（撤销后对所有人生效，含属主）。 */
     status: text("status").notNull().default("active"),
+    /**
+     * The personal credential's owner source generations (T02.04 / #526,
+     * design §4.2/§5.4: 个人凭据保存 owner 的 identity/company generation).
+     * Nullable on purpose at expand and deliberately NOT backfilled: an owner
+     * whose predates this column has no verified generation, and an
+     * unverified version stays missing rather than being stamped from the
+     * current active membership — authorizeUse/disclosePlaintext compare them
+     * live and a missing version is "cannot compare", never valid. The two
+     * columns are written together (re-verification) or not at all.
+     */
+    ownerIdentityGeneration: bigint("owner_identity_generation", {
+      mode: "number",
+    }),
+    ownerCompanyGeneration: bigint("owner_company_generation", {
+      mode: "number",
+    }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -129,6 +146,19 @@ export const enterpriseCredentials = pgTable(
       "enterprise_credential_display_shape",
       sql`${table.display} ? 'label' and not ${table.display} ?| array['envelope','plaintext','secret','value','password','token']`,
     ),
+    check(
+      "enterprise_credential_owner_identity_generation_safe_integer",
+      sql`${table.ownerIdentityGeneration} is null or (${table.ownerIdentityGeneration} >= 0 and ${table.ownerIdentityGeneration} <= 9007199254740991)`,
+    ),
+    check(
+      "enterprise_credential_owner_company_generation_safe_integer",
+      sql`${table.ownerCompanyGeneration} is null or (${table.ownerCompanyGeneration} >= 0 and ${table.ownerCompanyGeneration} <= 9007199254740991)`,
+    ),
+    // 两个来源版本同时写或同时缺失：一次重新核验是一个原子事实。
+    check(
+      "enterprise_credential_owner_generation_pair",
+      sql`(${table.ownerIdentityGeneration} is null) = (${table.ownerCompanyGeneration} is null)`,
+    ),
     index("enterprise_credential_tenant_created_idx").on(
       table.tenantId,
       table.createdAt,
@@ -169,6 +199,21 @@ export const enterpriseCredentialActions = pgTable(
     action: text("action").notNull(),
     /** 授权人（复合外键证明本公司成员资格）。 */
     grantedBy: text("granted_by").notNull(),
+    /**
+     * The action's source generations (T02.04 / #526, design §4.2/§5.4:
+     * use/disclose 行保存被授权人的 identity/company generation，团队凭据另存
+     * 来源团队 generation). Nullable at expand, never backfilled from the
+     * current active state: a use/disclose row that predates this column keeps
+     * "cannot compare", and authorizeUse/disclosePlaintext refuse on a missing
+     * or mismatched version instead of stamping the current one (design F01:
+     * 旧来源不能签发新 lease、披露明文或随恢复复活).
+     */
+    identityGeneration: bigint("identity_generation", { mode: "number" }),
+    companyGeneration: bigint("company_generation", { mode: "number" }),
+    /** The source team's generation when the credential is team-classified; the pairing with the credential row is command-side. */
+    sourceTeamGeneration: bigint("source_team_generation", {
+      mode: "number",
+    }),
     createdAt: createdAt(),
   },
   (table) => [
@@ -204,6 +249,24 @@ export const enterpriseCredentialActions = pgTable(
     check(
       "enterprise_credential_action_kind",
       sql`${table.action} in ('use', 'disclose')`,
+    ),
+    check(
+      "enterprise_credential_action_identity_generation_safe_integer",
+      sql`${table.identityGeneration} is null or (${table.identityGeneration} >= 0 and ${table.identityGeneration} <= 9007199254740991)`,
+    ),
+    check(
+      "enterprise_credential_action_company_generation_safe_integer",
+      sql`${table.companyGeneration} is null or (${table.companyGeneration} >= 0 and ${table.companyGeneration} <= 9007199254740991)`,
+    ),
+    check(
+      "enterprise_credential_action_source_team_generation_safe_integer",
+      sql`${table.sourceTeamGeneration} is null or (${table.sourceTeamGeneration} >= 0 and ${table.sourceTeamGeneration} <= 9007199254740991)`,
+    ),
+    // 被授权人的身份/公司版本同时写或同时缺失（团队来源版本独立：只对团队
+    // 归属凭据由命令层写入）。
+    check(
+      "enterprise_credential_action_generation_pair",
+      sql`(${table.identityGeneration} is null) = (${table.companyGeneration} is null)`,
     ),
     pgPolicy("enterprise_credential_action_data_read", {
       for: "select",

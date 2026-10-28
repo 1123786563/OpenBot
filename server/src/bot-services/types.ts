@@ -127,3 +127,17 @@ export class BotServiceCredentialMissingError extends Error {
     this.name = "BotServiceCredentialMissingError";
   }
 }
+
+/**
+ * The confirming user's global identity is not active (T05.10 / #566, design §5.3): a personal
+ * model grant binds the principal of an *active* user, so a suspended identity is refused whole —
+ * before the confirmation consumes its code. Restoring the identity never revives the grants an
+ * older generation issued; only an explicit re-authorization does.
+ */
+export class AccessGrantIdentityInactiveError extends Error {
+  readonly code = "model_access_identity_inactive";
+  constructor(message = "Your account is disabled and cannot authorize bots.") {
+    super(message);
+    this.name = "AccessGrantIdentityInactiveError";
+  }
+}

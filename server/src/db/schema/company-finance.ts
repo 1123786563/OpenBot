@@ -1,4 +1,7 @@
+import { sql } from "drizzle-orm";
 import {
+  bigint,
+  check,
   foreignKey,
   index,
   pgTable,
@@ -44,12 +47,36 @@ export const billingCompanyFinanceGrants = pgTable(
     principalId: text("principal_id").notNull(),
     /** 授权管理动作的发出主体（trail；FK 证明同为该公司成员）。 */
     grantedBy: text("granted_by").notNull(),
+    /**
+     * The grant's source generations (T02.04 / #526, design §4.4: 财务授权
+     * 保存适用的 company/team generation；公司财务授权无团队维度，故为被授权
+     * 人的身份/公司代际). Nullable at expand, never backfilled from the
+     * current active membership: a grant that predates this column keeps
+     * "cannot compare" and the live read gate refuses on a missing version
+     * rather than treating the grant as current (design §4.4: 既有授权无法比较
+     * 版本时不默认有效，须迁移核验或显式撤销).
+     */
+    identityGeneration: bigint("identity_generation", { mode: "number" }),
+    companyGeneration: bigint("company_generation", { mode: "number" }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (table) => [
     primaryKey({ columns: [table.tenantId, table.principalId] }),
+    check(
+      "billing_company_finance_grant_identity_generation_safe_integer",
+      sql`${table.identityGeneration} is null or (${table.identityGeneration} >= 0 and ${table.identityGeneration} <= 9007199254740991)`,
+    ),
+    check(
+      "billing_company_finance_grant_company_generation_safe_integer",
+      sql`${table.companyGeneration} is null or (${table.companyGeneration} >= 0 and ${table.companyGeneration} <= 9007199254740991)`,
+    ),
+    // 两个来源版本同时写或同时缺失：一次授权是一个原子事实。
+    check(
+      "billing_company_finance_grant_generation_pair",
+      sql`(${table.identityGeneration} is null) = (${table.companyGeneration} is null)`,
+    ),
     // 被授权人必须是该公司的成员（跨公司授权行结构上不可能）。
     foreignKey({
       columns: [table.tenantId, table.principalId],

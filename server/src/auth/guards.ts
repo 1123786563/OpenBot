@@ -86,9 +86,14 @@ export function createRequireUser(
 
     let roles: OpenBotRole[];
     try {
-      roles = session.user.role
-        ? [session.user.role]
-        : await roleRepository.rolesForUser(session.user.id);
+      /*
+       * The platform role is read from the deployment's own table, never taken
+       * from the session (T05.07): a session-carried role is a company
+       * (organization) authority's word about a membership, and the platform
+       * gate takes no company's word for who administers the deployment. The
+       * read is per request, so a role changed a moment ago applies now.
+       */
+      roles = await roleRepository.rolesForUser(session.user.id);
     } catch (error) {
       log.error({ err: error }, "Could not read roles in the auth guard.");
       return context.json(

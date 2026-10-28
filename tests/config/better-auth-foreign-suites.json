@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "generatedBy": "T01.10 (#522): the fixed whitelist BA_FOREIGN_SUITE selects from",
+  "executedBy": "tests/better-auth-foreign.test.ts",
+  "purpose": "BA_FOREIGN_SUITE=TaskId may select only the targets listed here. A task entry names a declared runner type and a target that already exists in its submodule; the type alone fixes the runner, the cwd and the argv template, so no entry can carry a command. The driver (tests/support/better-auth-foreign.ts) refuses any task this file does not name and any target missing from disk, and accepts a child verdict only from the child's own report (Bun JUnit or go test -json): tests > 0, none skipped, none failed, non-zero exits preserved. tests/better-auth-foreign-driver.test.ts proves the contract on fixtures; node scripts/e2e-coverage-audit.mjs pins the two runner types and names the executor on every run. Targets are registered by the task that owns the files, as they come to exist — never pre-registered.",
+  "runnerTypes": {
+    "openmuse-bun": {
+      "runner": "bun",
+      "cwd": "apps/openmuse",
+      "argv": [
+        "test",
+        "{{target}}",
+        "--reporter=junit",
+        "--reporter-outfile={{reportPath}}"
+      ],
+      "report": "bun-junit"
+    },
+    "bifrost-go-governance": {
+      "runner": "go",
+      "cwd": "bifrost",
+      "argv": ["test", "-json", "{{target}}"],
+      "report": "go-json"
+    }
+  },
+  "tasks": []
+}

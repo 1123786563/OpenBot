@@ -1,7 +1,11 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { tenantKeys } from "./queries";
-import { type ScopeSelection, selectionKeys } from "./selection";
+import {
+  type ScopeSelection,
+  scopeAbortSignal,
+  selectionKeys,
+} from "./selection";
 import { streamWriteStillCurrent, useStreamScope } from "./stream-scope";
 
 /*
@@ -29,6 +33,14 @@ import { streamWriteStillCurrent, useStreamScope } from "./stream-scope";
  * `selectWorkspaceScope`), which moves the generation this module's guard reads and removes the
  * prefix this module hands out.
  */
+
+/*
+ * The business-request half of the same epoch (T03.06): one re-export beside the write gate, so a
+ * business face's whole binding — prefix, generation check and abort signal — imports from this
+ * module alone. A request opened against `scopeAbortSignal` is torn down when the switch ends its
+ * epoch, the same moment `cacheWriteGate` starts refusing its writes.
+ */
+export { scopeAbortSignal };
 
 /** The scoped cache's answer while the scope source (the signed-in user) is unresolved. */
 export type ScopedCachePending = { status: "pending" };

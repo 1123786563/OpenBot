@@ -13,16 +13,23 @@
 // unavailable 模式一致），绝不以宽松替身放行。
 
 import { Hono } from "hono";
+import { isCompanyAssuranceRefusal } from "../../auth/company-assurance";
+import { isAuthorityRefusal } from "../../auth/directory/authority";
+import { isDirectoryCommandRefusal } from "../../auth/directory/executor";
+import { MEMBERSHIP_LIFECYCLE_PAUSED } from "../../auth/directory/membership";
+import { isTeamMemberRefusal } from "../../auth/directory/team-extension";
 import {
   assertClassifiedCompanyEntrance,
   WORKSPACE_SCOPE_MOUNT_PREFIX,
 } from "./admin-separation";
 import type { AuthenticatedRequestIdentity } from "./store";
 import type {
+  BaScopeSelectionService,
   CompanyAdminAuthorizer,
   WorkspaceAdminService,
   WorkspaceScopeLister,
 } from "./workspace-admin";
+import { isBaSelectionRefusal } from "./workspace-admin";
 
 export interface WorkspaceScopeRouteDeps {
   authenticate(request: Request): Promise<AuthenticatedRequestIdentity | null>;
@@ -63,6 +70,24 @@ function errorResponse(error: unknown): {
   status: number;
   body: { error: { code: string; message: string } };
 } {
+  // T04.08 (#552): the ba branch of the team-member entrances surfaces the
+  // directory refusal family — the command envelope's own codes plus the
+  // team-member handler's — with the refusal's own status, exactly the
+  // projection company-admin-routes already applies; the paused authority
+  // mode answers its one named 503, and a live authority failure projects
+  // as the 503 it is. None of these may collapse into the 500 fall-through.
+  if (isDirectoryCommandRefusal(error) || isTeamMemberRefusal(error)) {
+    return {
+      status: error.status,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
+  if (isAuthorityRefusal(error)) {
+    return {
+      status: 503,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
   const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
   const mapped: Record<string, number> = {
     AUTH_REQUIRED: 401,
@@ -81,6 +106,7 @@ function errorResponse(error: unknown): {
     TEAM_MEMBER_ALREADY_EXISTS: 409,
     DATA_DATABASE_UNAVAILABLE: 503,
     WORKSPACE_ADMIN_UNAVAILABLE: 503,
+    [MEMBERSHIP_LIFECYCLE_PAUSED]: 503,
     // MT075：管理面分类漂移是服务端装配错误，不是请求方的错。
     MANAGEMENT_ENTRANCE_UNCLASSIFIED: 500,
   };
@@ -303,5 +329,173 @@ export function createUnavailableWorkspaceScopeRoutes(): Hono {
       503,
     ),
   );
+  return routes;
+}
+
+// ---------------------------------------------------------------------------
+// BA 选择面（T03.02 / #539，interfaces §4）：同一入口上的 ba-v1 半边
+// ---------------------------------------------------------------------------
+
+/*
+ * The mount wrapper that adds the §4 selection surface to an already-built
+ * workspace-scope app. The base keeps every route it had — admin, company
+ * admin, the unavailable face — byte-identical: the wrapper owns exactly the
+ * two §4 routes and delegates everything else to the base with the original
+ * method, headers and body, so a deployment that wired the BA selection
+ * service changes nothing about the requests it served before.
+ *
+ *   GET  /                      authority-branched: ba → the §4 ScopeListing,
+ *                               advertised `ba-v1`; legacy/paused → the base's
+ *                               own legacy answer, re-advertised `legacy` on
+ *                               the response (the legacy BODY stays untouched)
+ *   POST /validate-selection    the §4 validation, or its named refusals
+ *
+ * The advertisement header (`x-openbot-directory-authority`) is the DTO
+ * contract the surface serves — `legacy` or `ba-v1` — never the migration
+ * phase; a response that cannot prove its authority answers 503 instead of
+ * guessing a branch (fail-closed, no silent legacy fallback).
+ */
+
+/** The DTO contract the listing response advertises (interfaces §4). */
+export const DIRECTORY_AUTHORITY_ADVERTISEMENT_HEADER =
+  "x-openbot-directory-authority";
+
+const refusedBody = (code: string) => ({
+  error: { code, message: "Request refused." },
+});
+
+/*
+ * The BA directory surfaces' shared refusal→status projection (T03.02, and
+ * since T04.01 a module-level export the sibling own-read surface consumes,
+ * so the two adapters cannot drift apart on which refusal answers which
+ * status). Same closed mapping the mount below has always applied.
+ */
+export function directorySurfaceErrorResponse(error: unknown): {
+  status: number;
+  body: { error: { code: string; message: string } };
+} {
+  if (isBaSelectionRefusal(error)) {
+    return { status: error.status, body: refusedBody(error.code) };
+  }
+  if (isAuthorityRefusal(error)) {
+    return { status: 503, body: refusedBody(error.code) };
+  }
+  if (isCompanyAssuranceRefusal(error)) {
+    return { status: 403, body: refusedBody(error.code) };
+  }
+  if (error instanceof Error) {
+    if (error.message === "AUTH_REQUIRED") {
+      return { status: 401, body: refusedBody("AUTH_REQUIRED") };
+    }
+    if (error.message === "INVALID_REQUEST") {
+      return { status: 400, body: refusedBody("INVALID_REQUEST") };
+    }
+  }
+  return {
+    status: 500,
+    body: { error: { code: "internal", message: "Request failed." } },
+  };
+}
+
+export interface BaSelectionRouteDeps {
+  authenticate(request: Request): Promise<AuthenticatedRequestIdentity | null>;
+  /** The BA selection service; the wrapper exists only where the assembly built one. */
+  selection: Pick<BaScopeSelectionService, "list" | "validate">;
+}
+
+export function createBaSelectionScopeMount(
+  base: Hono,
+  deps: BaSelectionRouteDeps,
+): Hono {
+  const routes = new Hono();
+
+  /**
+   * Rewrites a request into the inner path space the base app owns, keeping
+   * method, headers, body and query untouched — the base answers exactly as
+   * it would when mounted directly.
+   */
+  const innerRequestOf = (request: Request, path: string | null): Request => {
+    const url = new URL(request.url);
+    const inner =
+      path ?? (url.pathname.slice(WORKSPACE_SCOPE_MOUNT_PREFIX.length) || "/");
+    return new Request(new URL(`${inner}${url.search}`, url.origin), request);
+  };
+
+  /** Re-serves a delegated answer with the DTO contract it carries. */
+  const withAdvertisement = (
+    response: Response,
+    value: "legacy" | "ba-v1",
+  ): Response => {
+    const advertised = new Response(response.body, response);
+    advertised.headers.set(DIRECTORY_AUTHORITY_ADVERTISEMENT_HEADER, value);
+    return advertised;
+  };
+
+  routes.get("/", async (context) => {
+    try {
+      const identity = await deps.authenticate(context.req.raw);
+      if (!identity?.actorId) throw new Error("AUTH_REQUIRED");
+      const listing = await deps.selection.list(identity);
+      if (listing !== null) {
+        return context.json(listing, 200, {
+          [DIRECTORY_AUTHORITY_ADVERTISEMENT_HEADER]: "ba-v1",
+        });
+      }
+      // legacy/paused: the base's own answer, re-advertised — the body is the
+      // legacy DTO exactly as the legacy routes serve it.
+      const delegated = await base.fetch(innerRequestOf(context.req.raw, "/"));
+      return withAdvertisement(delegated, "legacy");
+    } catch (error) {
+      const response = directorySurfaceErrorResponse(error);
+      return context.json(
+        response.body,
+        response.status as 400 | 401 | 403 | 404 | 500 | 503,
+      );
+    }
+  });
+
+  routes.post("/validate-selection", async (context) => {
+    try {
+      const identity = await deps.authenticate(context.req.raw);
+      if (!identity?.actorId) throw new Error("AUTH_REQUIRED");
+      const body = await jsonObject(context.req.raw);
+      if (
+        typeof body.tenantId !== "string" ||
+        typeof body.workspaceId !== "string"
+      ) {
+        throw new Error("INVALID_REQUEST");
+      }
+      const validated = await deps.selection.validate(
+        identity,
+        { tenantId: body.tenantId, workspaceId: body.workspaceId },
+        {
+          tenantId: context.req.header("x-openbot-tenant") ?? undefined,
+          workspaceId: context.req.header("x-openbot-workspace") ?? undefined,
+        },
+      );
+      return context.json(validated);
+    } catch (error) {
+      const response = directorySurfaceErrorResponse(error);
+      return context.json(
+        response.body,
+        response.status as 400 | 401 | 403 | 404 | 500 | 503,
+      );
+    }
+  });
+
+  // Every other route is the base's own: delegated with the original request.
+  // The one deliberate non-delegation: the inner root "/" of the catch-all —
+  // a trailing-slash mount root never existed on the legacy surface (its GET
+  // answers only the bare prefix), so the wrapper keeps that 404 instead of
+  // inventing a second root.
+  routes.all("*", (context) => {
+    const inner =
+      new URL(context.req.url).pathname.slice(
+        WORKSPACE_SCOPE_MOUNT_PREFIX.length,
+      ) || "/";
+    if (inner === "/") return context.notFound();
+    return base.fetch(innerRequestOf(context.req.raw, null));
+  });
+
   return routes;
 }

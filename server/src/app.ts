@@ -1,15 +1,14 @@
-import { sql } from "drizzle-orm";
-import type { Hono as HonoApp, MiddlewareHandler } from "hono";
-import type { Hono } from "hono";
 import { MAX_IMAGE_BYTES } from "@openbot/shared/attachments";
+import { sql } from "drizzle-orm";
+import type { Hono, Hono as HonoApp, MiddlewareHandler } from "hono";
 import type { RunAssertion } from "./agents/callback-token";
 import type { BotLifecycleServices } from "./agents/lifecycle-routes";
-import type { BotCatalog } from "./agents/public";
 import type {
   OpenMuseTemplateMethods,
   OpenMuseTemplateRevisionService,
 } from "./agents/openmuse-template-store";
 import type { AgentProfileStore } from "./agents/profile-store";
+import type { BotCatalog } from "./agents/public";
 import type { ApprovalService } from "./approvals/service";
 import { assembleHttpApp } from "./assembly/http";
 import {
@@ -18,7 +17,13 @@ import {
   type AuditStore,
   recordAuditEvent,
 } from "./audit";
+import type {
+  CompanyAssurance,
+  CompanyProofPolicyView,
+} from "./auth/company-assurance";
 import { createDevRequireUser } from "./auth/dev-actor";
+import type { Directory } from "./auth/directory/contracts";
+import type { IdentityExecutor } from "./auth/directory/identity";
 import {
   type AppVariables,
   type AuthService,
@@ -55,6 +60,8 @@ import type { DemonstrationRecorder } from "./demonstrations/recording";
 import type { DemonstrationStore } from "./demonstrations/store";
 import type { PlatformScope } from "./enterprise/contracts";
 import type { DeploymentEntryContextFactory } from "./enterprise/tenancy/entry-context";
+import type { HindsightRouteServices } from "./hindsight/ops-routes";
+import type { HindsightMemoryRoutesDeps } from "./hindsight/routes";
 import type { HostAccessBroker } from "./host-access/broker";
 import type { IdentityStore } from "./identity/store";
 import { lazyIntelligenceClient } from "./intelligence-optional";
@@ -65,8 +72,6 @@ import type { MastraContinuationStore } from "./mastra/continuation-store";
 import type { MemoryIngestion } from "./memory/ingestion";
 import type { MemoryPauseControlAccess } from "./memory/routes";
 import type { MemoryStore } from "./memory/store";
-import type { HindsightMemoryRoutesDeps } from "./hindsight/routes";
-import type { HindsightRouteServices } from "./hindsight/ops-routes";
 import type { OpenMuseDeletionManifest } from "./openmuse-deletion/manifest";
 import type { OpenMuseFileBytePurgeReport } from "./openmuse-deletion/purge";
 import type { OpenMuseRelationalPurgeOutcome } from "./openmuse-deletion/purge-relational";
@@ -217,6 +222,29 @@ export function createDeploymentRequireUser(
 }
 
 export interface CoworkerSeams {
+  /**
+   * The native directory seams the assembly may build (T02.11/T05): the
+   * company-proof answer the directory read gate asks (interfaces §5), the
+   * live company-auth challenge (T05.01 / #557), the production
+   * directory/identity executors (P08/P09/P12), password recovery (T04.05)
+   * and the SCIM surface transcription (T05.05 / #561). A field here rather
+   * than another positional parameter: the proof port must be injectable (a
+   * proof-demanding company is a real deployment state), and an appended
+   * positional would shift every createApp call site's tail offsets. Absent
+   * keeps each mounted route on its closed adapter — the honest 503, never a
+   * half-wired write. One type shared with
+   * HttpAssemblyDependencies.coworker in assembly/http.ts.
+   */
+  directory?: {
+    proofPolicy?: CompanyProofPolicyView;
+    companyAuth?: Pick<CompanyAssurance, "challenge">;
+    directory?: Directory;
+    identity?: Pick<IdentityExecutor, "execute">;
+    passwordRecovery?: { handle(request: Request): Promise<Response | null> };
+    scim?: {
+      handle(request: Request): Promise<Response | null>;
+    };
+  };
   demonstrations?: {
     store: DemonstrationStore;
     recorder: DemonstrationRecorder;

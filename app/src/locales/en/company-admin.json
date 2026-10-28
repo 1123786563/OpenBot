@@ -6,7 +6,8 @@
     "audit": "Audit",
     "enterprise": "Enterprise settings",
     "learning": "Learning",
-    "billing": "Billing & usage"
+    "billing": "Billing & usage",
+    "organization": "Organization"
   },
   "gate": {
     "pending": "Reading your company…",
@@ -36,7 +37,9 @@
     "role": {
       "tenant_admin": "Administrator",
       "member": "Member",
-      "auditor": "Auditor"
+      "auditor": "Auditor",
+      "owner": "Owner",
+      "admin": "Administrator"
     },
     "status": {
       "active": "Active",
@@ -49,7 +52,75 @@
       "offboard": "Offboard"
     },
     "refused": "This company's people are managed by its administrators. You are not one of them.",
-    "failed": "The roster could not be read."
+    "failed": "The roster could not be read.",
+    "directory": {
+      "description": "The company's directory roster and invitations — fixed roles, every action server-authorized and audited.",
+      "column": {
+        "member": "Member",
+        "role": "Role",
+        "joined": "Joined",
+        "actions": "Actions"
+      },
+      "roleOf": "Role of {{id}}",
+      "setRole": "Set role",
+      "remove": "Remove member",
+      "removeReason": "Removal reason",
+      "removeConfirm": "Confirm removal",
+      "cancel": "Cancel",
+      "inviteTitle": "Invite a member",
+      "email": "Email",
+      "inviteAs": "Invite as",
+      "invite": "Invite",
+      "invitationsTitle": "Invitations",
+      "invitationsColumn": {
+        "email": "Email",
+        "role": "Role",
+        "status": "Status",
+        "expires": "Expires",
+        "actions": "Actions"
+      },
+      "invitationStatus": {
+        "pending": "Pending",
+        "accepted": "Accepted",
+        "rejected": "Rejected",
+        "canceled": "Canceled",
+        "expired": "Expired"
+      },
+      "cancelInvitation": "Cancel invitation",
+      "noInvitations": "No pending invitations.",
+      "refused": "You can't manage this company's people. Ask an owner or administrator.",
+      "invalid": "Check the form and try again.",
+      "paused": "Company changes are paused right now. Try again later.",
+      "failed": "Couldn't reach OpenBot. Try again.",
+      "lastOwner": "This is the company's last owner. Transfer ownership to another member first, then change this role.",
+      "seats": "The company's seats are full. Free a seat before inviting another member.",
+      "invitation": "That email already holds a pending invitation or is already a member. Handle the existing invitation first."
+    },
+    "grants": {
+      "title": "Team management grants",
+      "description": "Who may add and remove this team's members. Resource read grants never appear here.",
+      "column": {
+        "user": "User",
+        "actions": "Granted actions",
+        "status": "Status",
+        "generation": "Generation",
+        "operations": "Actions"
+      },
+      "userId": "User id",
+      "actionAdd": "Add members",
+      "actionRemove": "Remove members",
+      "grant": "Grant",
+      "revoke": "Revoke",
+      "revokeReason": "Revocation reason",
+      "revokeConfirm": "Confirm revocation",
+      "none": "No team management grants.",
+      "statusActive": "Active",
+      "statusRevoked": "Revoked",
+      "refused": "Team management grants belong to the company's owners and administrators.",
+      "invalid": "Check the grant form and try again.",
+      "paused": "Grant changes are paused right now. Try again later.",
+      "failed": "Couldn't reach OpenBot. Try again."
+    }
   },
   "credentials": {
     "title": "Credentials",
@@ -184,6 +255,68 @@
         "fulfillment": "Fulfillment",
         "paidAt": "Paid at"
       }
+    }
+  },
+  "shell": {
+    "noCompany": {
+      "title": "You're not in a company yet",
+      "description": "An admin has to invite you. Your company and its teams show up here after you join."
+    },
+    "noTeam": {
+      "title": "No team yet",
+      "description": "An admin has to add you to a team. You can still open company settings."
+    },
+    "revoked": {
+      "title": "Your access to that company ended",
+      "description": "Choose another company, or ask an admin to add you back."
+    },
+    "companySettings": "Company settings",
+    "chooseScope": "Choose a company or team",
+    "reauth": "This company asks for an extra sign-in first. That isn't available in OpenBot yet."
+  },
+  "organization": {
+    "title": "Organization",
+    "description": "Your company's profile and your team's members.",
+    "view": {
+      "settings": "Settings",
+      "members": "Members"
+    },
+    "noSelection": {
+      "title": "No company selected",
+      "description": "Choose a company and a team on the selection page first."
+    },
+    "failed": {
+      "title": "Couldn't load your companies",
+      "description": "Retry, or ask an admin if it keeps happening."
+    },
+    "profile": {
+      "title": "Company profile",
+      "description": "Only the name, the slug and the logo can change here.",
+      "name": "Name",
+      "slug": "Slug",
+      "logo": "Logo image address",
+      "status": "Status",
+      "statusReadOnly": "The company's status is read-only.",
+      "statusUnavailable": "You can't see the company's status.",
+      "deletion": "Closing a company is a reviewed request. Ask the OpenBot admin to start it.",
+      "save": "Save changes",
+      "readOnly": "You can view this profile, not change it.",
+      "refused": "You can't change this company's profile. Ask a company admin.",
+      "invalid": "Check the profile fields and try again.",
+      "paused": "Company changes are paused right now. Try again later.",
+      "failed": "Couldn't reach OpenBot. Try again."
+    },
+    "team": {
+      "title": "Team members",
+      "description": "Add or remove members of your selected team.",
+      "rolesNote": "Roles and team managers are set by a company admin.",
+      "principalId": "Member id",
+      "add": "Add member",
+      "remove": "Remove member",
+      "refused": "You can't manage this team's members. Ask a company admin.",
+      "invalid": "Check the member id and try again.",
+      "paused": "Team changes are paused right now. Try again later.",
+      "failed": "Couldn't reach OpenBot. Try again."
     }
   }
 }

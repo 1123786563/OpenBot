@@ -5,10 +5,10 @@ function spreadOptional<K extends string, V>(
   return value === undefined ? {} : ({ [key]: value } as { [_ in K]?: V });
 }
 
+import { createRequire } from "node:module";
 // Bun gives an ESM module a global `require`, which is how `pemOrFile` below reaches `node:fs`
 // without putting it in this module's eager import graph. Node has no such global, so the same
 // laziness needs a handle.
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 /**
  * What the runtime can do. There is exactly one answer because CopilotKit Intelligence is required
@@ -22,6 +22,7 @@ import {
 import { getLogger } from "@openbot/shared/logger";
 import { singleUserEnabled } from "./auth/dev-actor";
 import { normalizeDomain } from "./auth/email-domain";
+import type { AuthMailSmtpSettings } from "./auth/mail";
 import { organizationAuthority } from "./auth/organization";
 import type {
   BillingEntitlementEntry,
@@ -178,6 +179,15 @@ export type AuthConfig = {
    * deployments even when this is on.
    */
   emailPassword?: boolean;
+  /**
+   * Standard SMTP settings for the auth mail seam (T04.04 / P08): what the
+   * transactional outbox's post-commit worker delivers through. Absent keeps
+   * the mail callbacks unwired — no verification or reset notification is
+   * enabled and a deployment that never named a receiver changes nothing.
+   * Named entirely by the OPENBOT_AUTH_SMTP_* environment; never defaulted,
+   * because a wrong default would send real mail to the wrong place.
+   */
+  authSmtp?: AuthMailSmtpSettings;
 };
 
 /**
@@ -286,6 +296,14 @@ export type DeploymentConfig = {
   enterpriseDataDatabaseUrl?: string;
   /** Restricted operator-channel database; unwired → workspace admin routes answer 503. */
   enterpriseOperatorDatabaseUrl?: string;
+  /**
+   * The Better Auth directory-writer database (T02.06): current_user is exactly
+   * ob_ent_auth_writer, verified by tenancy/connections.ts beside the
+   * schema-roles probe the BA boot path runs. Optional while directory
+   * authority is legacy (M0/M1): its absence must never stop a legacy boot —
+   * the BA phases that require it gate it themselves, so nothing here throws.
+   */
+  enterpriseAuthWriterDatabaseUrl?: string;
   tenantStorageRuntimeDatabaseUrl?: string;
   /**
    * Content-addressed root of trusted plugin-package artifacts
@@ -414,6 +432,15 @@ export type DeploymentConfig = {
    * under. Undefined when Web Bot Auth is off; see `web-bot-auth.ts` for when that is.
    */
   webBotAuth?: WebBotAuth;
+  /**
+   * The registered mobile clients that may start a one-time PKCE session handoff
+   * (T05.12, interfaces §5.2): clientId, its one registered redirect, the OpenBot
+   * authority origin handles name, and the registered BFF service credential the
+   * exchange authenticates with (stored as a SHA-256 digest). Undefined when
+   * `MOBILE_SESSION_CLIENTS` is unset — no client is registered, so no handoff
+   * surface is mounted and nothing about the legacy boot changes.
+   */
+  mobileSession?: MobileSessionConfig;
   /**
    * Where the browser app is served from, with no trailing slash.
    *
@@ -622,6 +649,87 @@ function required(environment: Environment, name: string): string {
 
 function optional(environment: Environment, name: string): string | undefined {
   return environment[name]?.trim() || undefined;
+}
+
+/** One registered mobile client (T05.12); see DeploymentConfig.mobileSession. */
+export interface MobileSessionClientConfig {
+  clientId: string;
+  redirectUri: string;
+  authorityOrigin: string;
+  bffServiceId: string;
+  /** SHA-256 hex of the BFF service secret; the secret itself never reaches the config. */
+  bffCredentialDigest: string;
+}
+
+export interface MobileSessionConfig {
+  clients: ReadonlyArray<MobileSessionClientConfig>;
+}
+
+/**
+ * MOBILE_SESSION_CLIENTS, deployment-controlled: a JSON array of registered
+ * mobile clients. Unset means the handoff surface stays unmounted. Malformed
+ * is a boot refusal, not a silent skip — a half-registered client is exactly
+ * the kind of deployment state this config refuses to guess about.
+ */
+function mobileSessionFromEnv(
+  environment: Environment,
+): MobileSessionConfig | undefined {
+  const raw = optional(environment, "MOBILE_SESSION_CLIENTS");
+  if (!raw) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("MOBILE_SESSION_CLIENTS must be a JSON array.");
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error(
+      "MOBILE_SESSION_CLIENTS must list at least one registered client.",
+    );
+  }
+  const clients = parsed.map((entry, index) => {
+    const entryRecord = entry as Record<string, unknown>;
+    const label = `MOBILE_SESSION_CLIENTS[${index}]`;
+    const read = (field: string): string => {
+      const value = entryRecord[field];
+      if (typeof value !== "string" || !value) {
+        throw new Error(`${label}.${field} must be a non-empty string.`);
+      }
+      return value;
+    };
+    const client: MobileSessionClientConfig = {
+      clientId: read("clientId"),
+      redirectUri: read("redirectUri"),
+      authorityOrigin: read("authorityOrigin"),
+      bffServiceId: read("bffServiceId"),
+      bffCredentialDigest: read("bffCredentialDigest"),
+    };
+    for (const field of ["redirectUri", "authorityOrigin"] as const) {
+      let origin: URL;
+      try {
+        origin = new URL(client[field]);
+      } catch {
+        throw new Error(`${label}.${field} must be an absolute URL.`);
+      }
+      const loopback =
+        origin.hostname === "127.0.0.1" || origin.hostname === "localhost";
+      if (
+        origin.protocol !== "https:" &&
+        !(loopback && origin.protocol === "http:")
+      ) {
+        throw new Error(
+          `${label}.${field} must be https (loopback http allowed for development).`,
+        );
+      }
+    }
+    if (!/^[0-9a-f]{64}$/.test(client.bffCredentialDigest)) {
+      throw new Error(
+        `${label}.bffCredentialDigest must be the sha256 hex digest of the service secret.`,
+      );
+    }
+    return client;
+  });
+  return { clients };
 }
 
 /**
@@ -1067,6 +1175,7 @@ function authConfig(
 
   const secret = optional(environment, "BETTER_AUTH_SECRET");
   const baseUrl = url(environment, "BETTER_AUTH_URL");
+  const authSmtp = authSmtpSettings(environment);
 
   if (!google && !microsoft && !okta && !casdoor) {
     if (secret || baseUrl) {
@@ -1184,6 +1293,63 @@ function authConfig(
     ...(okta ? { okta } : {}),
     ...(casdoor ? { casdoor } : {}),
     emailPassword: optional(environment, "OPENBOT_EMAIL_PASSWORD") === "true",
+    ...(authSmtp ? { authSmtp } : {}),
+  };
+}
+
+/**
+ * The auth mail SMTP settings (T04.04 / P08). One variable — the host —
+ * turns the surface on, and then the rest must be a complete, sane set:
+ * half-configured mail is a deployment that believes it notifies and
+ * quietly does not. Errors name the variable, never its value: a DSN or a
+ * credential never reaches a message.
+ */
+function authSmtpSettings(
+  environment: Environment,
+): AuthMailSmtpSettings | undefined {
+  const host = optional(environment, "OPENBOT_AUTH_SMTP_HOST")?.trim();
+  if (!host) {
+    for (const stray of [
+      "OPENBOT_AUTH_SMTP_PORT",
+      "OPENBOT_AUTH_SMTP_SECURE",
+      "OPENBOT_AUTH_SMTP_USER",
+      "OPENBOT_AUTH_SMTP_PASSWORD",
+      "OPENBOT_AUTH_SMTP_FROM",
+    ]) {
+      if (optional(environment, stray) !== undefined) {
+        throw new Error(
+          `${stray} is set but OPENBOT_AUTH_SMTP_HOST is not. Configure the full OPENBOT_AUTH_SMTP_* set or unset all of it`,
+        );
+      }
+    }
+    return undefined;
+  }
+  const portText = optional(environment, "OPENBOT_AUTH_SMTP_PORT");
+  const port = portText === undefined ? 587 : Number(portText);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error(
+      "OPENBOT_AUTH_SMTP_PORT must be an integer between 1 and 65535",
+    );
+  }
+  const user = optional(environment, "OPENBOT_AUTH_SMTP_USER");
+  const password = optional(environment, "OPENBOT_AUTH_SMTP_PASSWORD");
+  if ((user === undefined) !== (password === undefined)) {
+    throw new Error(
+      "OPENBOT_AUTH_SMTP_USER and OPENBOT_AUTH_SMTP_PASSWORD must be set together: an authenticated relay needs both, an open relay needs neither",
+    );
+  }
+  const from = optional(environment, "OPENBOT_AUTH_SMTP_FROM")?.trim();
+  if (!from?.includes("@")) {
+    throw new Error(
+      "OPENBOT_AUTH_SMTP_FROM must name the sender address the mail goes out as (name@domain)",
+    );
+  }
+  return {
+    host,
+    port,
+    secure: optional(environment, "OPENBOT_AUTH_SMTP_SECURE") === "true",
+    ...(user !== undefined ? { user, password } : {}),
+    from,
   };
 }
 
@@ -3151,6 +3317,7 @@ export function loadConfig(
     publicUrl,
     keyEncryptionKey: deploymentKey,
   });
+  const mobileSession = mobileSessionFromEnv(environment);
 
   return {
     port: serverPort(environment),
@@ -3168,6 +3335,10 @@ export function loadConfig(
     ...spreadOptional(
       "enterpriseOperatorDatabaseUrl",
       optional(environment, "ENTERPRISE_OPERATOR_DATABASE_URL"),
+    ),
+    ...spreadOptional(
+      "enterpriseAuthWriterDatabaseUrl",
+      optional(environment, "ENTERPRISE_AUTH_WRITER_DATABASE_URL"),
     ),
     ...spreadOptional(
       "tenantStorageRuntimeDatabaseUrl",
@@ -3188,6 +3359,7 @@ export function loadConfig(
     ),
     keyEncryptionKey: deploymentKey,
     ...(webBotAuth ? { webBotAuth } : {}),
+    ...(mobileSession ? { mobileSession } : {}),
     ...(managedAgent ? { managedAgent } : {}),
     ...(remoteBudgetContract ? { remoteBudgetContract } : {}),
     ...(githubApp ? { githubApp } : {}),
