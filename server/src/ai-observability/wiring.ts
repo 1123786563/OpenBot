@@ -44,7 +44,10 @@ export function createAgentProfileScopeEpoch(
       .where(eq(agentProfiles.agentId, botId))
       .limit(1);
     const row = rows[0];
-    return row ? Math.floor(row.updatedAt.getTime() / 1000) : 0;
+    // Milliseconds: a seconds-truncated epoch would hand two writes in the same
+    // second (an ownership change among them) the same generation, so the old
+    // scope would keep answering.
+    return row ? row.updatedAt.getTime() : 0;
   };
 }
 
@@ -57,9 +60,19 @@ export function createActorResolver(
   rolesForUser: (userId: string) => Promise<readonly OpenBotRole[]>,
 ): (actorId: string) => Promise<AgentActor | null> {
   return async (actorId) => {
-    const roles = await rolesForUser(actorId).catch(
-      (): readonly OpenBotRole[] => [],
-    );
+    const roles = await rolesForUser(actorId).catch((error: unknown) => {
+      // Fail closed (no roles), but never silently: a store outage must not be
+      // indistinguishable from a real revocation.
+      getLogger("server").warn(
+        {
+          type: "actor-role-read-error",
+          errorType: error instanceof Error ? error.name : "unknown",
+          timestamp: new Date().toISOString(),
+        },
+        "actor-role-read-error",
+      );
+      return [] as readonly OpenBotRole[];
+    });
     if (roles.includes("admin")) return { id: actorId, role: "admin" };
     if (roles.includes("user")) return { id: actorId, role: "user" };
     return null;
@@ -97,7 +110,18 @@ export function createExportReauthorization(deps: {
         ownership,
         epoch,
       });
-    } catch {
+    } catch (error) {
+      // The null stays the answer, but an infrastructure failure must stay
+      // distinguishable in the logs from a real revocation.
+      getLogger("server").warn(
+        {
+          type: "observation-scope-epoch-error",
+          errorType: error instanceof Error ? error.name : "unknown",
+          context: { botId: access.botId },
+          timestamp: new Date().toISOString(),
+        },
+        "observation-scope-epoch-error",
+      );
       return null;
     }
   };

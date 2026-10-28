@@ -661,6 +661,9 @@ export function createAgentProfileStore(
 
     duplicate(actor, id) {
       return database.transaction(async (transaction) => {
+        // The same discipline update and softDelete keep: the source row is locked so a
+        // concurrent edit cannot slip between the access check, the stored read and the copy.
+        await lockProfileMutationRows(transaction, id);
         const source = await findAccessibleProfile(transaction, actor, id);
         if (!source) throw new AgentNotFoundError(id);
 
@@ -822,6 +825,10 @@ export function createAgentProfileStore(
     async hardDelete(ownerUserId, agentIds) {
       if (agentIds.length === 0) return;
       await database.transaction(async (transaction) => {
+        // The same mutation locks the write paths take, so a concurrent update or softDelete
+        // cannot rotate a key in between this read of the configuration and the purge.
+        for (const agentId of agentIds)
+          await lockProfileMutationRows(transaction, agentId);
         const owned = await transaction
           .select({ id: agents.id, configuration: agents.configuration })
           .from(agents)

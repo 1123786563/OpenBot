@@ -403,6 +403,17 @@ function reference(value: string): string {
   return value;
 }
 
+/**
+ * One case output's projection (the T05 doctrine): model free text rides
+ * `projectSafeText` with `allowFreeText`, anything else is a fixture shape.
+ */
+function projectCaseOutput(output: unknown): SafeText | SafeValue | undefined {
+  if (output === undefined) return undefined;
+  if (typeof output === "string")
+    return projectSafeText(output, { allowFreeText: true });
+  return projectSafeFixture(output);
+}
+
 /** The statuses `recordCaseOutcome` accepts: every case outcome is final, never `in_flight`. */
 const CASE_OUTCOME_STATUSES: ReadonlySet<string> = new Set([
   "completed",
@@ -607,12 +618,7 @@ export function createObservationExecutionStore(
           cases: cases.map((one) => ({
             index: one.index,
             status: one.status,
-            output:
-              one.output === undefined
-                ? undefined
-                : typeof one.output === "string"
-                  ? projectSafeText(one.output, { allowFreeText: true })
-                  : projectSafeFixture(one.output),
+            output: projectCaseOutput(one.output),
             ...(one.usage === undefined
               ? {}
               : { usage: projectSafeFixture(one.usage) }),
@@ -762,12 +768,7 @@ export function createObservationExecutionStore(
                   // row and a direct settle land the same contract.
                   ...(output === undefined
                     ? {}
-                    : {
-                        output:
-                          typeof output === "string"
-                            ? projectSafeText(output, { allowFreeText: true })
-                            : projectSafeFixture(output),
-                      }),
+                    : { output: projectCaseOutput(output) }),
                   ...(usage === undefined
                     ? {}
                     : { usage: projectSafeFixture(usage) }),
@@ -1277,14 +1278,34 @@ export function createObservationExecutionWorker(
         const tally = gate.tally();
         const delta = tally.rejections - lastTally;
         if (delta > 0) {
-          await store.bumpToolRejections(execution.id, delta);
-          lastTally = tally.rejections;
+          try {
+            await store.bumpToolRejections(execution.id, delta);
+            lastTally = tally.rejections;
+          } catch (error) {
+            // A transient counter write must not terminalize a healthy execution (the
+            // R3-27 rule for renew): lastTally stays put, so the delta rides the next
+            // case's bump, and the settle audit reads the row, not this segment.
+            log.warn(
+              {
+                type: "opik-execution-rejection-bump-failed",
+                executionId: execution.id,
+                error: String(error),
+              },
+              "opik-execution-rejection-bump-failed",
+            );
+          }
         }
       }
       // Settled from the durable rows, not from memory: what ran is what the rows
       // say, whatever process started them.
       const settled = await store.settleCompletedFromOutcomes(execution.id);
-      if (settled) await auditSettle(execution, settled, gate.tally());
+      if (settled)
+        await auditSettle(execution, settled, {
+          // The row's counter is the truth across resumes and takeovers — the same
+          // rule the cancel seams audit by; the gate's names describe this segment.
+          rejections: settled.toolRejections,
+          rejectedTools: gate.tally().rejectedTools,
+        });
     } catch (error) {
       if (error instanceof ExecutionLeaseLost) {
         // Another owner holds the ticket; the truth is theirs to write.

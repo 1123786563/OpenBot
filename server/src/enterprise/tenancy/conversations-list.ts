@@ -200,6 +200,11 @@ function decodeCursor(token: string): CursorPayload {
   if (!CURSOR_TIMESTAMP_PATTERN.test((parsed as CursorPayload).at)) {
     throw new Error("CONVERSATIONS_CURSOR_INVALID");
   }
+  // `id` 同理必须是会话 UUID：伪令牌的非法 id 进入 keyset 谓词会触发裸
+  // 驱动错误（uuid 类型列的 22P02），同样不得泄漏给调用方。
+  if (!UUID_PATTERN.test((parsed as CursorPayload).id)) {
+    throw new Error("CONVERSATIONS_CURSOR_INVALID");
+  }
   return parsed as CursorPayload;
 }
 

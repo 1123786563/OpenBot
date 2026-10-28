@@ -1,4 +1,5 @@
 import { PERSON_INITIATOR } from "../audit";
+import { getLogger } from "@openbot/shared/logger";
 import type {
   Responsibility,
   ResponsibilityStore,
@@ -51,6 +52,20 @@ export async function resumePersonQuestion(input: {
     input.messageId,
   );
   const initiator = question.initiator ?? PERSON_INITIATOR;
+  if (
+    initiator.kind === "responsibility" &&
+    (!input.responsibilities || !input.responsibilityTurn)
+  )
+    // The answer would lose the responsibility's turn (its progress tools and
+    // initiator) and fall to the generic runner; that degradation must be visible.
+    getLogger("server").warn(
+      {
+        type: "responsibility-answer-without-turn",
+        context: { responsibilityId: initiator.id },
+        timestamp: new Date().toISOString(),
+      },
+      "responsibility-answer-without-turn",
+    );
   if (
     initiator.kind === "responsibility" &&
     input.responsibilities &&

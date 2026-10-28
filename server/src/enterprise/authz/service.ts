@@ -31,9 +31,20 @@ export function createAuthz(): Authz {
   return {
     async check({ scope, resource, action }) {
       if (
+        // action 在类型层是字面量 "read"；运行时复查为纵深防御。
         action !== "read" ||
         resource.active !== true ||
         resource.locallyAllowed !== true ||
+        // Isolation boundary must fail closed on empty identity values.
+        !scope.tenantId ||
+        !scope.workspaceId ||
+        !scope.principalId ||
+        !resource.tenantId ||
+        !resource.workspaceId ||
+        !resource.principalId ||
+        // principalId equality is defense-in-depth: the only facts producer
+        // (tenancy/store.ts) copies it from scope. Keep in sync with
+        // tenancy/resource-policy.ts tenancy-v1.
         scope.tenantId !== resource.tenantId ||
         scope.workspaceId !== resource.workspaceId ||
         scope.principalId !== resource.principalId

@@ -251,35 +251,39 @@ export async function createAssemblyFixture(): Promise<AssemblyFixture> {
       });
     },
     async dispose() {
-      // 先事实后身份，按前缀清扫；本夹具只种 platform 会话行。
-      await setup.execute(
-        sql`delete from enterprise_message_parts where tenant_id like ${`${run}%`}`,
-      );
-      await setup.execute(
-        sql`delete from enterprise_messages where tenant_id like ${`${run}%`}`,
-      );
-      await setup
-        .delete(conversationsTable)
-        .where(like(conversationsTable.tenantId, `${run}%`));
-      await setup
-        .delete(enterpriseWorkspaceMemberships)
-        .where(like(enterpriseWorkspaceMemberships.tenantId, `${run}%`));
-      await setup
-        .delete(enterpriseMemberships)
-        .where(like(enterpriseMemberships.tenantId, `${run}%`));
-      await setup
-        .delete(enterpriseWorkspaces)
-        .where(like(enterpriseWorkspaces.tenantId, `${run}%`));
-      await setup
-        .delete(enterpriseTenants)
-        .where(like(enterpriseTenants.id, `${run}%`));
-      await setup
-        .delete(enterprisePrincipals)
-        .where(like(enterprisePrincipals.id, `${run}%`));
-      await setup.delete(users).where(like(users.id, `${run}%`));
-      await data.$client.close();
-      await directory.$client.close();
-      await setup.$client.close();
+      // 先事实后身份，按前缀清扫；本夹具只种 platform 会话行。清扫放 try、
+      // 关池放 finally：任一 delete 抛错也不漏关三个连接池。
+      try {
+        await setup.execute(
+          sql`delete from enterprise_message_parts where tenant_id like ${`${run}%`}`,
+        );
+        await setup.execute(
+          sql`delete from enterprise_messages where tenant_id like ${`${run}%`}`,
+        );
+        await setup
+          .delete(conversationsTable)
+          .where(like(conversationsTable.tenantId, `${run}%`));
+        await setup
+          .delete(enterpriseWorkspaceMemberships)
+          .where(like(enterpriseWorkspaceMemberships.tenantId, `${run}%`));
+        await setup
+          .delete(enterpriseMemberships)
+          .where(like(enterpriseMemberships.tenantId, `${run}%`));
+        await setup
+          .delete(enterpriseWorkspaces)
+          .where(like(enterpriseWorkspaces.tenantId, `${run}%`));
+        await setup
+          .delete(enterpriseTenants)
+          .where(like(enterpriseTenants.id, `${run}%`));
+        await setup
+          .delete(enterprisePrincipals)
+          .where(like(enterprisePrincipals.id, `${run}%`));
+        await setup.delete(users).where(like(users.id, `${run}%`));
+      } finally {
+        await data.$client.close();
+        await directory.$client.close();
+        await setup.$client.close();
+      }
     },
   };
 }

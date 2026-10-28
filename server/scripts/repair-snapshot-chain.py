@@ -1,22 +1,20 @@
 #!/usr/bin/env python3
 """
-Rebuild the lying migration snapshots (0073..0138) so each one describes the
-schema state its migration's SQL actually produces.
+Rebuild the migration snapshots 0140..0144 so each one describes the schema
+state its migration's SQL actually produces.
 
-The 522eff8a merge ("delivery lineage wins enterprise stack") kept the delivery
-lineage's SQL chain but took the losing lineage's snapshots, so snapshots
-0073..0138 describe an enterprise-stack v2 world no database ever reached, and
-tests/migration-journal.test.ts ("has a snapshot that describes what its
-migration actually does") fails on 14 pairs.
-
-Method (same spirit as 7378dbb1's 0139 rebuild, applied historically):
-  - snapshots 0000..0072 are trusted (the journal test verifies every pair up
-    through 0072 clean),
-  - walk forward from 0072, applying each migration's DDL statements to the
+Earlier windows of lying snapshots were already rebuilt the same way (0139 by
+7378dbb1, 0073..0138 by the 522eff8a cleanup this script grew out of), so this
+run starts from the trusted 0139 snapshot:
+  - snapshot 0139 is trusted (the journal test verifies every pair up through
+    0139 clean),
+  - walk forward from 0139, applying each migration's DDL statements to the
     working state, and write the result as that migration's snapshot,
   - each snapshot's id/prevId and every non-tables key are preserved, so the
     journal chain drizzle-kit checks stays untouched,
-  - SQL files are never modified.
+  - SQL files are never modified,
+  - nothing is written until every migration in FIRST..LAST has been applied,
+    so a mid-window failure leaves the existing snapshots untouched.
 
 The reconstructed state tracks exactly what the journal test reads: table
 names, column names/types/notNull, index names. Statement shapes in range:
@@ -99,18 +97,36 @@ def parse_create_table(stmt: str):
 
 
 def split_top_level(body: str):
-    """Split a CREATE TABLE body on commas that are not nested in parens."""
+    """Split a CREATE TABLE body on commas that are not nested in parens or
+    inside a quoted literal (a DEFAULT 'a,b' must stay one column)."""
     depth, cur, out = 0, "", []
-    for ch in body:
-        if ch == "(":
+    in_quote = False
+    i = 0
+    while i < len(body):
+        ch = body[i]
+        if in_quote:
+            cur += ch
+            if ch == "'":
+                if i + 1 < len(body) and body[i + 1] == "'":
+                    cur += body[i + 1]  # escaped '' stays inside the literal
+                    i += 2
+                    continue
+                in_quote = False
+        elif ch == "'":
+            in_quote = True
+            cur += ch
+        elif ch == "(":
             depth += 1
+            cur += ch
         elif ch == ")":
             depth -= 1
-        if ch == "," and depth == 0:
+            cur += ch
+        elif ch == "," and depth == 0:
             out.append(cur)
             cur = ""
         else:
             cur += ch
+        i += 1
     if cur.strip():
         out.append(cur)
     return out
@@ -133,8 +149,16 @@ def apply_sql(state: dict, sql: str):
         if created:
             name, columns, inline_uniques = created
             key = tkey(name)
-            if key not in tables:
-                tables[key] = {
+            if key in tables:
+                # The window rebuilds each table exactly once from the trusted
+                # baseline; "IF NOT EXISTS" on an already-present table would
+                # silently drop this statement's columns/indexes from the
+                # rebuilt snapshot.
+                sys.exit(
+                    f"CREATE TABLE on already-present table {key}; "
+                    "snapshot rebuild would silently drop its DDL"
+                )
+            tables[key] = {
                     "name": name,
                     "schema": "",
                     "columns": columns,
@@ -164,7 +188,10 @@ def apply_sql(state: dict, sql: str):
         )
         if m:
             table, col, tail = m.group(1), m.group(2), m.group(3)
-            tables[tkey(table)]["columns"][col] = column_entry(col, tail)
+            table_def = tables.get(tkey(table))
+            if table_def is None:
+                sys.exit(f"ADD COLUMN on unknown table {table}")
+            table_def["columns"][col] = column_entry(col, tail)
             continue
 
         m = re.search(
@@ -174,7 +201,10 @@ def apply_sql(state: dict, sql: str):
         )
         if m:
             unique, iname, table = m.group(1), m.group(2), m.group(3)
-            tables[tkey(table)]["indexes"][iname] = {
+            table_def = tables.get(tkey(table))
+            if table_def is None:
+                sys.exit(f"CREATE INDEX on unknown table {table}")
+            table_def["indexes"][iname] = {
                 "name": iname,
                 "columns": [],
                 "isUnique": bool(unique),
@@ -207,34 +237,26 @@ def apply_sql(state: dict, sql: str):
         sys.exit(f"unhandled SQL statement in migration; aborting snapshot rebuild: {s[:200]}")
 
 
-def names_of(state):
-    tables = {}
-    for t in state["tables"].values():
-        tables[t["name"]] = {
-            "columns": {c["name"] for c in t.get("columns", {}).values()},
-            "indexes": set(t.get("indexes", {}).keys()),
-        }
-    return tables
-
-
 def main():
     journal = json.loads((ROOT / "meta" / "_journal.json").read_text())
     entries = {e["idx"]: e for e in journal["entries"]}
 
     state = json.loads((ROOT / "meta" / "0139_snapshot.json").read_text())
+    # Compute the whole window first, write nothing until every migration has
+    # been applied: a mid-window failure must not leave a half-rebuilt chain.
+    outputs = []
     for idx in range(FIRST, LAST + 1):
         entry = entries[idx]
         tag = entry["tag"]
         sql = (ROOT / f"{tag}.sql").read_text()
-        # Each snapshot is the state AFTER its migration: apply, then write.
+        # Each snapshot is the state AFTER its migration: apply, then capture.
         apply_sql(state, sql)
-        out = {
-            "id": None,
-            "prevId": None,
-        }
         original = json.loads((ROOT / "meta" / f"{idx:04d}_snapshot.json").read_text())
         out = copy.deepcopy(original)  # preserves id/prevId/enums/... as they stand
         out["tables"] = copy.deepcopy(state["tables"])
+        outputs.append((idx, tag, out))
+
+    for idx, tag, out in outputs:
         (ROOT / "meta" / f"{idx:04d}_snapshot.json").write_text(
             json.dumps(out, indent=2) + "\n"
         )

@@ -197,18 +197,20 @@ export async function buildBackfillConsistencyReport(
   const findings: ConsistencyFinding[] = [];
   const kinds: BackfillConsistencyReport["kinds"][number][] = [];
 
-  // 已知批次闭集之外出现任何进度行 = 未知回填面（不可静默吞）。
-  const knownBatches = new Set(BATCH_TARGETS.map((b) => b.batchId));
+  // 已知批次闭集之外出现任何 (batch_id, kind) 进度行 = 未知回填面（不可静默吞）。
+  const knownPairs = new Set(
+    BATCH_TARGETS.flatMap((b) => b.kinds.map((k) => `${b.batchId}\u0000${k}`)),
+  );
   const unknownRows = (await database.execute(sql`
-    select distinct batch_id from enterprise_backfill_batches
-  `)) as unknown as { batch_id: string }[];
+    select distinct batch_id, kind from enterprise_backfill_batches
+  `)) as unknown as { batch_id: string; kind: string }[];
   for (const row of unknownRows) {
-    if (!knownBatches.has(row.batch_id)) {
+    if (!knownPairs.has(`${row.batch_id}\u0000${row.kind}`)) {
       findings.push({
         kind: "unknown-batch-rows",
         batchId: row.batch_id,
-        kindLabel: "*",
-        detail: `进度表出现未知批次 ${row.batch_id} 的行——已知批次闭集之外不允许存在`,
+        kindLabel: row.kind,
+        detail: `进度表出现未知批次/类别 ${row.batch_id}/${row.kind} 的行——已知批次闭集之外不允许存在`,
       });
     }
   }

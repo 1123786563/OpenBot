@@ -51,6 +51,7 @@ export const NON_RETRYABLE_CODES: ReadonlySet<string> = new Set([
   "provider_refused",
   "reservation_conflict",
   "usage_outbox_conflict",
+  "no_active_subscription",
 ]);
 
 /** Only a short snake_case code survives; anything else could carry payload or credentials. */

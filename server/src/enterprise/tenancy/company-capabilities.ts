@@ -57,6 +57,13 @@ export function createCompanyCapabilitiesService({
   billing: BillingManagementService;
 }): CompanyCapabilitiesService {
   return {
+    /**
+     * 前置条件：member 必须出自 workspace-admin resolveMemberContext 的
+     * 冻结签发（tenant/principal/member 三态 active 活查后构造）。
+     * peopleAdmin 只读 member.role 快照、不做活查——手造
+     * CompanyMemberContext 字面量或复用过期上下文的调用方会绕过成员
+     * 活性判定（管理面路由是唯一授权消费面）。
+     */
     async capabilitiesOf(member) {
       const [auditReader, financeReader, billingManager] = await Promise.all([
         canReadBusinessAudit(

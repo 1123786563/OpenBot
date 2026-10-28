@@ -242,13 +242,24 @@ export async function createEntryContextFixture(
         status,
       ) {
         // 精确条件更新（setup 披露 stand-in；判定侧从不使用，同 MT011 口径）。
-        await setupDatabase.execute(sql`
+        // 返回行数必须为 1：0 行说明夹具行未按预期落库，依赖该状态翻转的
+        // 用例不能在未生效的数据上通过。
+        const updated = (await setupDatabase.execute(sql`
           update enterprise_workspace_memberships
              set status = ${status}
            where tenant_id = ${tenantId}
              and workspace_id = ${workspaceId}
              and principal_id = ${principalId}
-        `);
+          returning 1
+        `)) as unknown;
+        const rows = Array.isArray(updated)
+          ? updated
+          : ((updated as { rows?: unknown[] })?.rows ?? []);
+        if (rows.length !== 1) {
+          throw new Error(
+            `MEMBERSHIP_STATUS_FAILED:${tenantId}:${workspaceId}:${principalId}:${rows.length}`,
+          );
+        }
       },
 
       async probeIdentity() {

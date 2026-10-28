@@ -163,10 +163,14 @@ export async function createRoutingPolicyFixture(
       ? result
       : ((result as { rows?: unknown[] })?.rows ?? []);
     const first = (rows as Readonly<{ current_user?: unknown }>[])[0];
+    // current_user always answers exactly one row: a miss means the probe
+    // itself broke, and an empty role must not silently pass the RLS proofs.
+    if (typeof first?.current_user !== "string") {
+      throw new Error(`RESTRICTED_ROLE_PROBE_FAILED:${role}`);
+    }
     restricted.push({
       role,
-      currentUser:
-        typeof first?.current_user === "string" ? first.current_user : "",
+      currentUser: first.current_user,
     });
   };
 
@@ -321,10 +325,13 @@ export async function createRoutingPolicyFixture(
             sql`update enterprise_template_installs set document = '{"tampered":true}'::jsonb, revision = revision + 1 where tenant_id = ${input.targetTenantId} and workspace_id = ${input.workspaceId} and template_ref = ${input.templateRef}`,
           );
         })) as unknown;
+        // An UPDATE without RETURNING yields no rows; the affected-row count is
+        // the only signal that the RLS did (0) or did not (≥1) block the write.
         const rows = Array.isArray(result)
           ? result
           : ((result as { rows?: unknown[] })?.rows ?? []);
-        return rows.length;
+        const count = (result as { count?: unknown }).count;
+        return typeof count === "number" ? count : rows.length;
       },
 
       restrictedCalls() {

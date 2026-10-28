@@ -307,34 +307,49 @@ export function createToolAdmissionService(
       const forbidden = new Set(
         RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS.map((key) => key.toLowerCase()),
       );
-      for (const key of Object.keys(input as Record<string, unknown>)) {
-        if (
-          forbidden.has(key.toLowerCase()) ||
-          findCompanyScopeIdentityField({ [key]: true })
-        ) {
-          const refusal: ToolAdmissionRefusal = {
-            status: "refused",
-            stage: "isolation",
-            reasonCode: "company_scope_refused",
-            detail: { field: key },
-          };
-          await recordToolCallCharge(database, {
-            idempotencyKey: request.toolCallIdempotencyKey,
-            entry: request.entry,
-            tool: request.tool,
-            dimension: dimensionOf(request.entry),
-            grantId: request.grantId,
-            outcome: { kind: "refused", reason: refusal.reasonCode },
-          });
-          await auditRefusal(
-            dependencies,
-            "billing.tool_overreach_refused",
-            request,
-            refusal.reasonCode,
-            { field: key },
-          );
-          return refusal;
-        }
+      // Presence is the attempt — top level OR inside payer, exactly as the comment above
+      // declares. The inner scan matters even though the validated request keeps only
+      // payer.{kind,id}: the attempt itself is refused (and audited), never quietly trimmed.
+      const overreaches = (key: string) =>
+        forbidden.has(key.toLowerCase()) ||
+        Boolean(findCompanyScopeIdentityField({ [key]: true }));
+      const rawInput = input as Record<string, unknown>;
+      let overreach: string | undefined = Object.keys(rawInput).find(overreaches);
+      const rawPayer = rawInput.payer;
+      if (
+        overreach === undefined &&
+        rawPayer !== null &&
+        typeof rawPayer === "object" &&
+        !Array.isArray(rawPayer)
+      ) {
+        const innerKey = Object.keys(
+          rawPayer as Record<string, unknown>,
+        ).find(overreaches);
+        if (innerKey !== undefined) overreach = `payer.${innerKey}`;
+      }
+      if (overreach !== undefined) {
+        const refusal: ToolAdmissionRefusal = {
+          status: "refused",
+          stage: "isolation",
+          reasonCode: "company_scope_refused",
+          detail: { field: overreach },
+        };
+        await recordToolCallCharge(database, {
+          idempotencyKey: request.toolCallIdempotencyKey,
+          entry: request.entry,
+          tool: request.tool,
+          dimension: dimensionOf(request.entry),
+          grantId: request.grantId,
+          outcome: { kind: "refused", reason: refusal.reasonCode },
+        });
+        await auditRefusal(
+          dependencies,
+          "billing.tool_overreach_refused",
+          request,
+          refusal.reasonCode,
+          { field: overreach },
+        );
+        return refusal;
       }
 
       // ---- Stage 1: the company-tool policy. A tool behind server-issued trusted

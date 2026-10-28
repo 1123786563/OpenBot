@@ -11,6 +11,7 @@
  * the store, live through the bus.
  */
 import { Hono, type MiddlewareHandler } from "hono";
+import { getLogger } from "../../../shared/logger";
 import type { BotAccessCheck } from "../agents/profile-policy";
 import { recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
@@ -18,6 +19,8 @@ import type { SandboxClient } from "../codesandbox/client";
 import type { TurnEventBus } from "./bus";
 import { eventsStreamBody, SSE_HEADERS, translate } from "./events";
 import { listTree, UploadLimitError, upload } from "./files";
+
+const log = getLogger("server");
 import type { TurnOrchestrator } from "./orchestrator";
 import {
   draftForCreate,
@@ -108,6 +111,18 @@ export function createWorkshopRoutes(input: {
         response: context.json(
           { error: "You may not use this Bot's workshop." },
           403,
+        ),
+      };
+    }
+    // The session is a PERSON's workspace, not the Bot's: a teammate who may use the same Bot
+    // must not reach somebody else's turns, files and events by naming their channel. Answered
+    // as the same 404 an unknown channel gets, so the surface does not confirm it exists.
+    if (session.ownerUserId !== actor.id) {
+      return {
+        ok: false,
+        response: context.json(
+          { error: "No workshop session for this channel." },
+          404,
         ),
       };
     }
@@ -216,7 +231,11 @@ export function createWorkshopRoutes(input: {
         // The plaintext token never enters the trail (sharing.ts's rule); the handle is gone
         // the moment this response is written, so the row says a link was minted, not what it is.
         payload: { channel: session.channelId, scope },
-      });
+      }).catch((error: unknown) =>
+        // The link exists; a trail write that fails must not read as a failed create and
+        // goad a retry into minting a second link.
+        log.warn({ err: error, eventType: "workshop.share_created" }, "Could not write the share audit row."),
+      );
     }
     return context.json(
       {
@@ -257,15 +276,13 @@ export function createWorkshopRoutes(input: {
     if (!gateResult.ok) return gateResult.response;
     const { session } = gateResult;
     const turnId = context.req.param("id");
-    // The turn must belong to THIS session — a turn id from another channel is a 404, not a
-    // cross-session read.
-    const rows = await store.readEventsSince(turnId, 0, 5_000);
-    if (rows.length === 0) {
-      const turns = await store.listTurns(session.id);
-      if (!turns.some((t) => t.id === turnId)) {
-        return context.json({ error: "No such turn." }, 404);
-      }
+    // The turn must belong to THIS session, checked BEFORE anything is read — a turn id from
+    // another channel is a 404, not a cross-session read of its events.
+    const turns = await store.listTurns(session.id);
+    if (!turns.some((t) => t.id === turnId)) {
+      return context.json({ error: "No such turn." }, 404);
     }
+    const rows = await store.readEventsSince(turnId, 0, 5_000);
     const events = rows.map((row) =>
       translate(row.seq, row.type, row.payload ?? {}),
     );
@@ -320,6 +337,12 @@ export function createWorkshopRoutes(input: {
     const gateResult = await gate(context);
     if (!gateResult.ok) return gateResult.response;
     const turnId = context.req.param("id");
+    // Ownership before action: a turn id from another session must not let one user stop
+    // somebody else's running turn through this Bot's gate.
+    const turns = await store.listTurns(gateResult.session.id);
+    if (!turns.some((t) => t.id === turnId)) {
+      return context.json({ error: "No such turn." }, 404);
+    }
     const cancelled = await orchestrator.cancel(turnId);
     return context.json({ cancelled }, 200);
   });
@@ -403,6 +426,9 @@ export function createWorkshopRoutes(input: {
     return context.body(file.content, 200, {
       "content-type": "application/octet-stream",
       "content-disposition": `attachment; filename="${encodeURIComponent(artifact.name)}"`,
+      // Bytes are already in memory: declare the length, so clients show progress and
+      // keep-alive survives instead of degrading to chunked.
+      "content-length": String(file.content.length),
     });
   });
 
@@ -500,7 +526,11 @@ export function createWorkshopRoutes(input: {
           targetId: id,
           actorUserId: gateResult.actor.id,
           payload: { session: gateResult.session.id, rrule: draft.rrule },
-        });
+        }).catch((error: unknown) =>
+          // The schedule exists; the trail failing must not fail the create (a retry
+          // would make a second schedule).
+          log.warn({ err: error, eventType: "workshop.schedule_created" }, "Could not write the schedule audit row."),
+        );
       }
       return context.json(
         { id, rrule: draft.rrule, status: draft.status },
@@ -595,7 +625,10 @@ export function createWorkshopRoutes(input: {
           targetId: id,
           actorUserId: gateResult.actor.id,
           payload: { rrule },
-        });
+        }).catch((error: unknown) =>
+          // Same as create: the update is committed, so its trail row failing is a log, not a 5xx.
+          log.warn({ err: error, eventType: "workshop.schedule_updated" }, "Could not write the schedule audit row."),
+        );
       }
       return context.json({ id, rrule, nextRunAt: next.toISOString() });
     } catch (error) {

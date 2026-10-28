@@ -91,8 +91,11 @@ export function createSelfHostBanner(options: {
 
   function refresh(): Promise<boolean> {
     if (inFlight) return inFlight;
-    const request = options
-      .entitlements()
+    // Promise.resolve().then defers the call, so an entitlements implementation that throws
+    // synchronously lands in the .catch below too — the "never throws" contract holds for
+    // every caller, not only ones that wrap us in async.
+    const request = Promise.resolve()
+      .then(() => options.entitlements())
       .then((response) => {
         const shown = !paysForIntelligence(response);
         answer = { shown, expiresAt: now() + ttlMs };

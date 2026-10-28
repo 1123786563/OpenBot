@@ -74,9 +74,10 @@ export type RunBindingStore = {
    * RESERVED — NOT WIRED (OCR R4-25): no production caller exists (full-tree
    * grep: only the test suites reach it; the run-report path stops at begin +
    * finish, and finish never writes opikTraceId). This method is therefore the
-   * sole writer of ai_observation_bindings.opik_trace_id and every
-   * reconciliation-dependent read (unreconciled listings, countUnreconciled,
-   * the 409 conflict branch) answers its empty case until it is wired. Wiring
+   * sole writer of ai_observation_bindings.opik_trace_id, so until it is wired
+   * every reconciliation-dependent read is trivial rather than informative: the
+   * unreconciled listing holds every binding, countUnreconciled counts them all,
+   * and the 409 conflict branch is unreachable. Wiring
    * precondition: a production call site on the run-report/acknowledgment path
    * that can observe the upstream trace id after a lost local ack — do not
    * fake one, and do not widen begin/finish to write the id (that would
@@ -172,17 +173,22 @@ function reference(value: string): string {
 
 /**
  * The violated constraint's name when `error` is a Postgres unique_violation (SQLSTATE 23505),
- * else null. Bun's driver puts the SQLSTATE in `errno` and the constraint name in `constraint`;
- * drizzle wraps the driver error as `cause` (the same shape identity/store.ts classifies).
+ * else null. Bun's driver puts the SQLSTATE in `errno` (some wrappers surface it as `code`)
+ * and the constraint name in `constraint`; drizzle wraps the driver error as `cause`
+ * (the same shape identity/store.ts classifies — every level of the cause chain is probed).
  */
 function uniqueViolationConstraint(error: unknown): string | null {
-  type Driver = { errno?: unknown; constraint?: unknown };
-  const candidates = [
-    error as Driver | null | undefined,
-    (error as { cause?: Driver } | null | undefined)?.cause,
-  ];
+  type Driver = { errno?: unknown; code?: unknown; constraint?: unknown };
+  const candidates: Driver[] = [];
+  for (
+    let current: unknown = error;
+    current !== null && typeof current === "object";
+    current = (current as { cause?: unknown }).cause
+  ) {
+    candidates.push(current as Driver);
+  }
   for (const candidate of candidates) {
-    if (candidate?.errno === "23505") {
+    if (candidate?.errno === "23505" || candidate?.code === "23505") {
       return typeof candidate.constraint === "string"
         ? candidate.constraint
         : "";

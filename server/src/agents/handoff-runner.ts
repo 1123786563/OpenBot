@@ -315,6 +315,16 @@ export function createHandoffRunner(options: {
         }
       }, renewEveryMs);
 
+      // Trail rows are recorded, never fatal: one audit-store outage must not throw out of the
+      // sweep and strand the rest of the batch under this replica's lease until it expires.
+      const audit = async (event: Parameters<typeof recordAuditEvent>[1]) =>
+        recordAuditEvent(auditStore, event).catch((failure) => {
+          log.warn(
+            { err: failure, eventType: event.eventType },
+            "Could not write a handoff audit row.",
+          );
+        });
+
       try {
         for (const item of claimed) {
           const work = item.payload as unknown as HandoffWork;
@@ -343,7 +353,7 @@ export function createHandoffRunner(options: {
            * tell a duplicate answer from a mystery.
            */
           if (item.attempts > 1) {
-            await recordAuditEvent(auditStore, {
+            await audit({
               eventType: "agent.handoff_retried",
               targetType: "agent",
               targetId: work.toBotId,
@@ -422,7 +432,7 @@ export function createHandoffRunner(options: {
                 key: item.key,
                 reason: "delivered, but the lease had gone elsewhere",
               });
-              await recordAuditEvent(auditStore, {
+              await audit({
                 eventType: "agent.handoff_retried",
                 targetType: "agent",
                 targetId: work.toBotId,
@@ -457,7 +467,7 @@ export function createHandoffRunner(options: {
                 );
               });
             }
-            await recordAuditEvent(auditStore, {
+            await audit({
               eventType: "agent.handoff_delivered",
               targetType: "agent",
               targetId: work.toBotId,
@@ -475,8 +485,11 @@ export function createHandoffRunner(options: {
               },
             });
           } catch (error) {
-            const reason =
-              error instanceof Error ? error.message : "could not be delivered";
+            const reason = (
+              error instanceof Error ? error.message : "could not be delivered"
+              // Capped like every other model-supplied or error-supplied text in this family:
+              // it reaches the asker's prompt, the row's lastError and the audit payload.
+            ).slice(0, 500);
             /*
              * The last try, so the person is told rather than left waiting.
              *
@@ -534,7 +547,7 @@ export function createHandoffRunner(options: {
               });
             ours.delete(item.key);
             report.skipped.push({ key: item.key, reason });
-            await recordAuditEvent(auditStore, {
+            await audit({
               eventType: "agent.handoff_failed",
               targetType: "agent",
               targetId: work.toBotId,

@@ -367,17 +367,16 @@ export function createManagementCrossGrantRegistry(
     const separator = entrance.indexOf(" ");
     if (separator <= 0)
       throw invalid(`entrance "${entrance}" is not "METHOD path"`);
-    if (
-      classifyManagementPlane({
-        method: entrance.slice(0, separator),
-        path: entrance.slice(separator + 1),
-      }) !== "company"
-    ) {
+    const method = entrance.slice(0, separator);
+    const path = entrance.slice(separator + 1);
+    if (classifyManagementPlane({ method, path }) !== "company") {
       throw invalid(
         `entrance "${entrance}" is not a classified company management entrance`,
       );
     }
-    return grant;
+    // 运行时查找键是 entranceIdOf 的大写 METHOD 形；登记期归一到同一键形，
+    // 否则小写方法的授权能过装配校验却永远匹配不上判定。
+    return { ...grant, entrance: entranceIdOf({ method, path }) };
   });
   return {
     find(subject, tenantId, entrance) {
@@ -467,7 +466,7 @@ export async function recordManagementAuditEvent(
     throw new Error("MANAGEMENT_AUDIT_EVENT_INVALID");
   }
   await tx.execute(
-    sql`select set_config('app.operation_id', ${event.eventId}, true)`,
+    sql`select set_config('app.tenant_id', ${event.tenantId}, true), set_config('app.operation_id', ${event.eventId}, true)`,
   );
   await tx.insert(enterpriseSecurityEvents).values({
     tenantId: event.tenantId,

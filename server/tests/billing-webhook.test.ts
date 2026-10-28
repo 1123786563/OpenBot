@@ -436,8 +436,12 @@ describe("createBillingService.handleWebhook", () => {
     ]);
   });
 
-  test("an unknown store error is not classified as retryable", async () => {
-    const { stub, store, service } = webhookFixture();
+  test("an unknown store error answers 500 and is logged, so the delivery can retry", async () => {
+    const logged: string[] = [];
+    const { stub, store, service } = webhookFixture(
+      memoryBillingStore(),
+      (message) => logged.push(message),
+    );
     stub.state.list = [
       {
         externalCustomerId: "deployment-1",
@@ -455,10 +459,13 @@ describe("createBillingService.handleWebhook", () => {
         external_customer_id: "deployment-1",
       }),
     );
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(500);
     expect(await response.json()).toEqual({
       error: "Billing webhook could not be applied.",
     });
+    expect(logged).toEqual([
+      "billing: webhook failed unexpectedly name=Error",
+    ]);
     expect(store.inbox.size).toBe(0);
   });
 

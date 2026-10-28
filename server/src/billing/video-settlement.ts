@@ -154,12 +154,22 @@ export function videoTerminalUsageOf(report: unknown): VideoTerminalUsage {
     };
   }
 
+  // The two factors are each safe integers, but their product need not be: a lost-precision
+  // `video` unit would settle a guess, so the multiply is checked too — never truncated.
+  const videoUnits = (body.seconds as number) * (body.outputCount as number);
+  if (!Number.isSafeInteger(videoUnits)) {
+    return {
+      ok: false,
+      issue: { code: "video_usage_indeterminable", field: "outputCount" },
+    };
+  }
+
   const usage = zeroed();
   return {
     ok: true,
     usage: {
       ...usage,
-      video: (body.seconds as number) * (body.outputCount as number),
+      video: videoUnits,
       video_input: body.inputSeconds as number,
     },
   };

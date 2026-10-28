@@ -1,4 +1,5 @@
 import { type Context, Hono, type MiddlewareHandler } from "hono";
+import { getLogger } from "@openbot/shared/logger";
 import { z } from "zod";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import { type AppVariables, requireAdmin } from "../auth/guards";
@@ -99,6 +100,25 @@ export function botServiceAdminRoutes(
     },
   });
 
+  /** The store change is already committed when the audit runs; an audit failure must
+   * not turn a succeeded mutation into a 500 the administrator will only retry. */
+  const auditSoftly = async (event: Parameters<typeof recordAuditEvent>[1]) => {
+    if (!auditStore) return;
+    try {
+      await recordAuditEvent(auditStore, event);
+    } catch (error) {
+      getLogger("server").warn(
+        {
+          type: "bot-service-audit-error",
+          errorType: error instanceof Error ? error.name : "unknown",
+          context: { eventType: event.eventType, targetId: event.targetId },
+          timestamp: new Date().toISOString(),
+        },
+        "bot-service-audit-error",
+      );
+    }
+  };
+
   const notFound = (context: Context<{ Variables: AppVariables }>) =>
     context.json(
       {
@@ -114,7 +134,12 @@ export function botServiceAdminRoutes(
   ) => context.json({ error: message, code: "bot_service_invalid" }, 400);
 
   app.get("/", async (context) =>
-    context.json({ botServices: await live.listBotServices() }),
+    // The same whitelist projection as the single-resource routes, never raw rows.
+    context.json({
+      botServices: (await live.listBotServices()).map(
+        (record) => view(record).botService,
+      ),
+    }),
   );
 
   app.post("/", async (context) => {
@@ -137,19 +162,17 @@ export function botServiceAdminRoutes(
         return invalid(context, error.message);
       throw error;
     }
-    if (auditStore) {
-      await recordAuditEvent(auditStore, {
-        eventType: "bot_service.registered",
-        targetType: "bot_service",
-        targetId: record.botId,
-        actorUserId: actorId,
-        payload: {
-          actor: actorId,
-          kind: record.kind,
-          capabilities: record.capabilities,
-        },
-      });
-    }
+    await auditSoftly({
+      eventType: "bot_service.registered",
+      targetType: "bot_service",
+      targetId: record.botId,
+      actorUserId: actorId,
+      payload: {
+        actor: actorId,
+        kind: record.kind,
+        capabilities: record.capabilities,
+      },
+    });
     return context.json(view(record), 201);
   });
 
@@ -169,20 +192,18 @@ export function botServiceAdminRoutes(
         return invalid(context, error.message);
       throw error;
     }
-    if (auditStore) {
-      await recordAuditEvent(auditStore, {
-        eventType: "bot_service.updated",
-        targetType: "bot_service",
-        targetId: record.botId,
-        actorUserId: actorId,
-        payload: {
-          actor: actorId,
-          // What changed, not the new values: the registry holds the current answer, and the
-          // trail's job is to say who moved it and when.
-          changed: Object.keys(parsed.data),
-        },
-      });
-    }
+    await auditSoftly({
+      eventType: "bot_service.updated",
+      targetType: "bot_service",
+      targetId: record.botId,
+      actorUserId: actorId,
+      payload: {
+        actor: actorId,
+        // What changed, not the new values: the registry holds the current answer, and the
+        // trail's job is to say who moved it and when.
+        changed: Object.keys(parsed.data),
+      },
+    });
     return context.json(view(record));
   });
 
@@ -205,15 +226,13 @@ export function botServiceAdminRoutes(
           return invalid(context, error.message);
         throw error;
       }
-      if (auditStore) {
-        await recordAuditEvent(auditStore, {
-          eventType,
-          targetType: "bot_service",
-          targetId: record.botId,
-          actorUserId: actorId,
-          payload: { actor: actorId, status: record.status },
-        });
-      }
+      await auditSoftly({
+        eventType,
+        targetType: "bot_service",
+        targetId: record.botId,
+        actorUserId: actorId,
+        payload: { actor: actorId, status: record.status },
+      });
       return context.json(view(record));
     });
   }

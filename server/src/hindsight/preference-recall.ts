@@ -871,6 +871,11 @@ export function createPreferenceRecallService(
       input: { query: unknown; askingAgentId?: unknown; asOf?: unknown },
     ): Promise<RecalledGenericPreference[]> {
       const grant = resolveHindsightBankScope(scope);
+      // Pause-usage (#392) and the backup-restore gate (#391) run FIRST, before any input is
+      // parsed: a paused or restore-closed person gets the promised empty answer even for a
+      // malformed query, and the refusal path never discloses whether the gate was shut.
+      if (await usagePausedFor(options.pause, scope)) return [];
+      if (!(await recallOpenFor(options.recovery))) return [];
       const query = plainString(input.query, "a query", QUERY_MAX).trim();
       if (input.askingAgentId !== undefined) {
         plainString(input.askingAgentId, "an asking agent id", 128);
@@ -891,13 +896,6 @@ export function createPreferenceRecallService(
       }
       const mode: "current" | "historical" =
         asOf === undefined ? "current" : "historical";
-      // Pause-usage (#392): the person's own switch, checked BEFORE the service is asked —
-      // so the answer is empty here, and the SQL degradation path (reached only through the
-      // unavailability signal this call would raise) never runs either. Nothing is deleted.
-      if (await usagePausedFor(options.pause, scope)) return [];
-      // Backup-restore gate (#391): a restore that has not been replayed keeps recall closed;
-      // the empty answer here precedes the service call, so the degradation path never opens.
-      if (!(await recallOpenFor(options.recovery))) return [];
       let response: Response;
       try {
         response = await hindsight(

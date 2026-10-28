@@ -162,11 +162,22 @@ const SERVER_ACTOR: ActionActor = {
  * Belt and braces: nothing on the fill path is supposed to echo a value, but an error message from a
  * page or a browser is not something this module wrote, and it is about to be stored and shown.
  */
+/** How much of a scrubbed page or error text is kept — diagnostics, not a transcript. */
+const SCRUBBED_LENGTH = 500;
+
 function scrub(text: string, secrets: (string | undefined)[]): string {
   let out = text;
-  for (const secret of secrets)
-    if (secret && secret.length >= 3) out = out.split(secret).join("[hidden]");
-  return out.slice(0, 500);
+  for (const secret of secrets) {
+    if (!secret || secret.length < 3) continue;
+    // The value and its percent-encoded form: a credential echoed back in a URL query
+    // (`?p%40ss=…` style) is the same secret, and only the raw form would be caught.
+    out = out
+      .split(secret)
+      .join("[hidden]")
+      .split(encodeURIComponent(secret))
+      .join("[hidden]");
+  }
+  return out.slice(0, SCRUBBED_LENGTH);
 }
 
 export function createSignInService(deps: SignInServiceDependencies) {
@@ -203,14 +214,23 @@ export function createSignInService(deps: SignInServiceDependencies) {
     payload: Record<string, unknown>,
   ) {
     if (!auditStore) return;
-    await recordAuditEvent(auditStore, {
-      eventType,
-      targetType,
-      targetId,
-      initiator: actor.initiator,
-      ...(actor.userId ? { actorUserId: actor.userId } : {}),
-      payload: { actor: actor.id, ...payload },
-    });
+    // An audit row is a bypass, never a gate: its failure must not fail the operation it
+    // describes — a failed audit after `signed_in` would otherwise strand the waiting turn.
+    try {
+      await recordAuditEvent(auditStore, {
+        eventType,
+        targetType,
+        targetId,
+        initiator: actor.initiator,
+        ...(actor.userId ? { actorUserId: actor.userId } : {}),
+        payload: { actor: actor.id, ...payload },
+      });
+    } catch (error) {
+      log.error(
+        { type: "sign-in-audit-failed", eventType, error },
+        "The sign-in audit row could not be written.",
+      );
+    }
   }
 
   /** The request, with an expired one closed on the way past. */
@@ -407,15 +427,14 @@ export function createSignInService(deps: SignInServiceDependencies) {
     code: string,
   ): Promise<SignInRequestRecord> {
     const request = await load(owner, id);
-    if (request.status !== "code_required")
-      throw new SignInRefusedError(
-        request.status === "filling"
-          ? "This sign-in is already being entered."
-          : request.status === "pending" || request.status === "taken_over"
-            ? "The site is not asking for a verification code."
-            : "This sign-in request is no longer open.",
-        409,
-      );
+    if (request.status !== "code_required") {
+      let why = "This sign-in request is no longer open.";
+      if (request.status === "filling")
+        why = "This sign-in is already being entered.";
+      else if (request.status === "pending" || request.status === "taken_over")
+        why = "The site is not asking for a verification code.";
+      throw new SignInRefusedError(why, 409);
+    }
     const claimed = await store.transition(owner, id, ["code_required"], {
       status: "filling",
       fillingUntil: new Date(Date.now() + FILLING_LEASE_MS),
@@ -557,8 +576,11 @@ export function createSignInService(deps: SignInServiceDependencies) {
       resolvedAt: new Date(),
     });
     if (!done)
-      throw new Error(
+      // The site already accepted the step: a concurrent close is a conflict, not a
+      // generic 500 — the same classification every other refusal in this module carries.
+      throw new SignInRefusedError(
         "The sign-in request changed while it was being entered.",
+        409,
       );
     await audit("computer.sign_in_completed", actor, "computer", done.botId, {
       bot: done.botId,
@@ -695,8 +717,9 @@ export function createSignInService(deps: SignInServiceDependencies) {
         outcome: null,
       });
       if (!waiting)
-        throw new Error(
+        throw new SignInRefusedError(
           "The sign-in request changed while it was being entered.",
+          409,
         );
       await audit(
         "computer.sign_in_code_requested",
@@ -737,8 +760,11 @@ export function createSignInService(deps: SignInServiceDependencies) {
       resolvedAt: new Date(),
     });
     if (!done)
-      throw new Error(
+      // The site already accepted the step: a concurrent close is a conflict, not a
+      // generic 500 — the same classification every other refusal in this module carries.
+      throw new SignInRefusedError(
         "The sign-in request changed while it was being entered.",
+        409,
       );
     await audit("computer.sign_in_completed", actor, "computer", done.botId, {
       bot: done.botId,
@@ -883,6 +909,13 @@ export function createSignInService(deps: SignInServiceDependencies) {
           403,
         );
       const request = await load(owner, id);
+      // Only an open request is fillable; checked BEFORE the decrypt, so a finished or
+      // filling request never holds plaintext it would just throw away.
+      if (request.status !== "pending")
+        throw new SignInRefusedError(
+          "This sign-in request is no longer open.",
+          409,
+        );
       const login = await store.login(owner, input.loginId);
       // Exactly this origin. A login saved for one site is never offered to, or typed into, another.
       if (!login || login.origin !== request.origin)

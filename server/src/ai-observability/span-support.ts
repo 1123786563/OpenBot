@@ -38,9 +38,10 @@ export function nowNs(): string {
   return (BigInt(Date.now()) * 1_000_000n).toString();
 }
 
-/** The W3C id shapes the OTLP wire format admits. */
-export const W3C_TRACE_ID = /^[0-9a-f]{32}$/;
-export const W3C_SPAN_ID = /^[0-9a-f]{16}$/;
+/** The W3C id shapes the OTLP wire format admits. All-zero ids are invalid — W3C
+ * Trace Context rejects them, so a zero id answers false like a malformed one. */
+export const W3C_TRACE_ID = /^(?!0{32}$)[0-9a-f]{32}$/;
+export const W3C_SPAN_ID = /^(?!0{16}$)[0-9a-f]{16}$/;
 
 /** Span content: the recorder's own assertion that this IS the span's product — the
  * deny patterns still run first and always win. */

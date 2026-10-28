@@ -839,19 +839,29 @@ export function parseEntryInventory(input: unknown): EntryInventoryVerdict {
     };
   }
   const seen = new Map<string, { disposition: unknown; note: unknown }>();
-  for (const item of raw) {
+  const invalid: string[] = [];
+  raw.forEach((item, index) => {
     const id = (item as { id?: unknown } | null)?.id;
-    if (typeof id !== "string") continue;
+    // "Exactly once" is enforced, not assumed: a duplicate id must fail the gate rather than
+    // silently win last-wins, and an item without a usable string id is invalid outright —
+    // skipping it would let a malformed entry ride the ok:true reconstruction below.
+    if (typeof id !== "string" || id.length === 0) {
+      invalid.push(`entries[${index}]:id-not-a-string`);
+      return;
+    }
+    if (seen.has(id)) {
+      invalid.push(`${id}:duplicate-entry`);
+      return;
+    }
     seen.set(id, {
       disposition: (item as { disposition?: unknown }).disposition,
       note: (item as { note?: unknown }).note,
     });
-  }
+  });
   const missing = CUTOVER_ENTRY_IDS.filter((id) => !seen.has(id));
   const unknown = [...seen.keys()].filter(
     (id) => !(CUTOVER_ENTRY_IDS as readonly string[]).includes(id),
   );
-  const invalid: string[] = [];
   const dispositions: readonly string[] = [
     "governed",
     "legacy-kept",
@@ -1587,11 +1597,25 @@ export async function runCutoverRollback(
         `rollback-unsafe: ${thread.threadId} backend_version drifted (recorded ${thread.toBackendVersion}, found ${row?.backendVersion ?? "missing row"})`,
       );
     }
-    const bumped = await deps.switchPorts.bumpBackendVersion(
-      fence.scope.tenantId,
-      thread.threadId,
-      row.backendVersion,
-    );
+    let bumped: Awaited<
+      ReturnType<typeof deps.switchPorts.bumpBackendVersion>
+    >;
+    try {
+      bumped = await deps.switchPorts.bumpBackendVersion(
+        fence.scope.tenantId,
+        thread.threadId,
+        row.backendVersion,
+      );
+    } catch (error) {
+      // The version check above and this CAS are two statements: a version that moves between
+      // them strands threads on both generations with nothing recorded — exactly the shape this
+      // file's own F2 note says only maintenance can answer honestly.
+      return goMaintenance(
+        `rollback-unsafe: ${thread.threadId} backend version moved between read and bump (${
+          error instanceof Error ? error.message : String(error)
+        })`,
+      );
+    }
     toBackendVersion = bumped.toVersion;
   }
   // Preservation re-check: the same inventory, after the bump.

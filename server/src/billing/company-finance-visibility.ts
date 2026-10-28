@@ -70,71 +70,6 @@ export interface CompanyUsageLine {
   readonly occurredAt: Date;
 }
 
-/** 一条公司用量证据行（usage_outbox 的只读投影；×100 缩放整数与 token 数原样）。 */
-export interface CompanyUsageLine {
-  readonly eventId: string;
-  readonly source: "llm" | "code_run";
-  readonly model: string;
-  /** 公司工作台调用的团队维度；null = 无团队维度的公司行（与表同形）。 */
-  readonly workspaceId: string | null;
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-  readonly reservationId: string | null;
-  readonly occurredAt: Date;
-}
-
-/** 一条公司用量证据行（usage_outbox 的只读投影；×100 缩放整数与 token 数原样）。 */
-export interface CompanyUsageLine {
-  readonly eventId: string;
-  readonly source: "llm" | "code_run";
-  readonly model: string;
-  /** 公司工作台调用的团队维度；null = 无团队维度的公司行（与表同形）。 */
-  readonly workspaceId: string | null;
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-  readonly reservationId: string | null;
-  readonly occurredAt: Date;
-}
-
-/** 一条公司用量证据行（usage_outbox 的只读投影；×100 缩放整数与 token 数原样）。 */
-export interface CompanyUsageLine {
-  readonly eventId: string;
-  readonly source: "llm" | "code_run";
-  readonly model: string;
-  /** 公司工作台调用的团队维度；null = 无团队维度的公司行（与表同形）。 */
-  readonly workspaceId: string | null;
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-  readonly reservationId: string | null;
-  readonly occurredAt: Date;
-}
-
-/** 一条公司用量证据行（usage_outbox 的只读投影；×100 缩放整数与 token 数原样）。 */
-export interface CompanyUsageLine {
-  readonly eventId: string;
-  readonly source: "llm" | "code_run";
-  readonly model: string;
-  /** 公司工作台调用的团队维度；null = 无团队维度的公司行（与表同形）。 */
-  readonly workspaceId: string | null;
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-  readonly reservationId: string | null;
-  readonly occurredAt: Date;
-}
-
-/** 一条公司用量证据行（usage_outbox 的只读投影；×100 缩放整数与 token 数原样）。 */
-export interface CompanyUsageLine {
-  readonly eventId: string;
-  readonly source: "llm" | "code_run";
-  readonly model: string;
-  /** 公司工作台调用的团队维度；null = 无团队维度的公司行（与表同形）。 */
-  readonly workspaceId: string | null;
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-  readonly reservationId: string | null;
-  readonly occurredAt: Date;
-}
-
 /** 一条公司财务读取授权（按存储行回答）。 */
 export interface CompanyFinanceGrant {
   readonly tenantId: string;
@@ -264,6 +199,20 @@ function grantOfRow(
   };
 }
 
+/** 查重与 INSERT 非同一原子步骤：并发重复授权由主键唯一冲突兜底，沿 cause 链
+ * 有限深度识别 23505（payer-accounts / company-reservation 同款读法），翻成哨兵。 */
+function isUniqueViolation(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; current && depth < 5; depth += 1) {
+    if (current instanceof Error) {
+      const shaped = current as { code?: string; errno?: string };
+      if (shaped.code === "23505" || shaped.errno === "23505") return true;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 export function createCompanyFinanceVisibilityService({
   database,
   writer,
@@ -339,14 +288,33 @@ export function createCompanyFinanceVisibilityService({
           `FINANCE_GRANT_EXISTS: principal ${input.principalId} already holds the company finance read grant of company ${input.tenantId}`,
         );
       }
-      const [row] = await database
-        .insert(billingCompanyFinanceGrants)
-        .values({
-          tenantId: input.tenantId,
-          principalId: input.principalId,
-          grantedBy: input.grantedBy,
-        })
-        .returning();
+      let row: typeof billingCompanyFinanceGrants.$inferSelect;
+      try {
+        const inserted = await database
+          .insert(billingCompanyFinanceGrants)
+          .values({
+            tenantId: input.tenantId,
+            principalId: input.principalId,
+            grantedBy: input.grantedBy,
+          })
+          .returning();
+        // 一行必有：主键 (tenant_id, principal_id) 命中且插入成功。空数组只可能是
+        // 并发唯一冲突的残余，不可能是静默成功——不允许 undefined 流向投影。
+        if (inserted.length === 0) {
+          throw new Error(
+            `FINANCE_GRANT_EXISTS: principal ${input.principalId} already holds the company finance read grant of company ${input.tenantId}`,
+          );
+        }
+        row = inserted[0];
+      } catch (error) {
+        // 查重与插入之间的竞态窗口：撞上唯一索引的并发重复授予，同样按显式事实拒绝。
+        if (isUniqueViolation(error)) {
+          throw new Error(
+            `FINANCE_GRANT_EXISTS: principal ${input.principalId} already holds the company finance read grant of company ${input.tenantId}`,
+          );
+        }
+        throw error;
+      }
       return grantOfRow(row);
     },
 

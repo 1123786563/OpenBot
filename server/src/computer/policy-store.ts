@@ -85,7 +85,9 @@ export function createPolicyStore(
   let current = clone(initial);
 
   return {
-    get: () => current,
+    // A copy, like everywhere else in this file: a caller mutating the answer
+    // must not rewrite the live boundary.
+    get: () => clone(current),
 
     set: async (policy, by) => {
       const next = clone(policy);
@@ -94,9 +96,9 @@ export function createPolicyStore(
         // failure, which is the honest outcome: an administrator who is told a rule was saved must
         // not be enforcing a rule that will disappear at the next restart.
         //
-        // The announcement goes in the same transaction, so it is delivered on commit: a write that
-        // rolls back announces nothing, and there is no window where the row has changed and the
-        // other servers have not been told. Same shape as `channels/routes.ts`.
+        // The announcement fires after the commit: it can only say "a committed row exists", and
+        // a failed pg_notify degrades to the logged until-restart lag the announce docblock
+        // promises instead of aborting the save it once rode inside.
         await database.transaction(async (transaction) => {
           await transaction
             .insert(actionPolicy)
@@ -118,11 +120,11 @@ export function createPolicyStore(
                 updatedAt: new Date(),
               },
             });
-
-          // Every server hears it, including this one, which re-reads and arrives at what it
-          // already has.
-          await announce(transaction);
         });
+        // After the commit, so the announcement cannot poison the transaction it once rode in:
+        // any error inside a Postgres transaction aborts it, so swallowing pg_notify's failure
+        // there would report a save that silently rolled back.
+        await announce(database);
       }
       current = next;
     },
@@ -136,8 +138,8 @@ export function createPolicyStore(
           await transaction
             .delete(actionPolicy)
             .where(eq(actionPolicy.id, CURRENT));
-          await announce(transaction);
         });
+        await announce(database);
       }
       current = clone(configured);
     },
@@ -244,7 +246,8 @@ export function parseActionPolicy(
     if (!Array.isArray(value) || value.some((v) => typeof v !== "string")) {
       return { ok: false, error: `${key} must be a list of expressions.` };
     }
-    lists[key] = value as string[];
+    // Copied: the returned policy must not alias the caller's request arrays.
+    lists[key] = [...(value as string[])];
   }
 
   return { ok: true, policy: { mode, deny: lists.deny, allow: lists.allow } };

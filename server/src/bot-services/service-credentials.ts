@@ -1,4 +1,5 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
+import { getLogger } from "@openbot/shared/logger";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import {
   CredentialRefusedError,
@@ -118,6 +119,18 @@ export function createBotServiceCredentialService(
   }
 
   /**
+   * A rotate or revoke refused because the row it named was retired a moment ago (a concurrent
+   * issue/rotate/revoke won the vault first) is the same race arriving by the other door: it
+   * answers as "no live credential" — the contract both endpoints already document — and never
+   * leaks the vault's internal refusal wording.
+   */
+  function retireRace(error: unknown): never {
+    if (error instanceof CredentialRefusedError)
+      throw new BotServiceCredentialMissingError();
+    throw error;
+  }
+
+  /**
    * Make a freshly minted secret the Bot's one live credential.
    *
    * Two racers can both arrive believing nothing is live; the vault's partial index then rejects
@@ -136,6 +149,7 @@ export function createBotServiceCredentialService(
       metadata: {},
       actorUserId,
     };
+    let lastRaceError: unknown;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const secret = mintBotServiceSecret(botId);
       const previous = await store.findLiveByKey(vaultKey(botId));
@@ -154,18 +168,39 @@ export function createBotServiceCredentialService(
         const refused =
           error instanceof CredentialRefusedError && error.status === 409;
         if (!refused && !isUniqueViolation(error)) throw error;
+        lastRaceError = error;
       }
     }
     throw new Error(
       "The bot service credential could not be written after repeated races.",
+      { cause: lastRaceError },
     );
   }
+
+  /** The vault mutation is already committed (and for issue, the one-time secret is
+   * already in the response path); an audit failure must not report a live credential
+   * as failed. */
+  const auditSoftly = async (event: Parameters<typeof recordAuditEvent>[1]) => {
+    try {
+      await recordAuditEvent(dependencies.auditStore, event);
+    } catch (error) {
+      getLogger("server").warn(
+        {
+          type: "bot-service-credential-audit-error",
+          errorType: error instanceof Error ? error.name : "unknown",
+          context: { eventType: event.eventType, targetId: event.targetId },
+          timestamp: new Date().toISOString(),
+        },
+        "bot-service-credential-audit-error",
+      );
+    }
+  };
 
   return {
     async issue(botId, actorUserId) {
       const record = await requireRecord(botId);
       const { rotated, secret } = await mintLive(botId, actorUserId);
-      await recordAuditEvent(dependencies.auditStore, {
+      await auditSoftly({
         eventType: "bot_service.credential_issued",
         targetType: "bot_service",
         targetId: record.botId,
@@ -185,14 +220,16 @@ export function createBotServiceCredentialService(
       const previous = await store.findLiveByKey(vaultKey(botId));
       if (!previous) throw new BotServiceCredentialMissingError();
       const secret = mintBotServiceSecret(botId);
-      await vault.rotate({
-        ...vaultKey(botId),
-        metadata: {},
-        plaintext: secret,
-        actorUserId,
-        previousCredentialId: previous.id,
-      });
-      await recordAuditEvent(dependencies.auditStore, {
+      await vault
+        .rotate({
+          ...vaultKey(botId),
+          metadata: {},
+          plaintext: secret,
+          actorUserId,
+          previousCredentialId: previous.id,
+        })
+        .catch(retireRace);
+      await auditSoftly({
         eventType: "bot_service.credential_rotated",
         targetType: "bot_service",
         targetId: record.botId,
@@ -211,8 +248,10 @@ export function createBotServiceCredentialService(
       const record = await requireRecord(botId);
       const live = await store.findLiveByKey(vaultKey(botId));
       if (!live) throw new BotServiceCredentialMissingError();
-      const { revokedAt } = await vault.revoke(live.id, actorUserId);
-      await recordAuditEvent(dependencies.auditStore, {
+      const { revokedAt } = await vault
+        .revoke(live.id, actorUserId)
+        .catch(retireRace);
+      await auditSoftly({
         eventType: "bot_service.credential_revoked",
         targetType: "bot_service",
         targetId: record.botId,
@@ -254,10 +293,17 @@ export function createBotServiceCredentialService(
 
 /** The vault's verdict on a lost insert race: Postgres unique_violation, however wrapped. */
 function isUniqueViolation(error: unknown): boolean {
-  type Driver = { errno?: unknown };
-  const candidates = [
-    error as Driver | null | undefined,
-    (error as { cause?: Driver } | null | undefined)?.cause,
-  ];
-  return candidates.some((candidate) => candidate?.errno === "23505");
+  const visited = new Set<unknown>();
+  for (
+    let node: unknown = error;
+    node !== null && node !== undefined && !visited.has(node);
+    node = (node as { cause?: unknown }).cause
+  ) {
+    visited.add(node);
+    const driver = node as { code?: unknown; errno?: unknown };
+    // The drivers put the SQLSTATE on `code` (node-postgres, postgres-js); `errno`
+    // is kept for a wrapper that repackages the driver error under that name.
+    if (driver.code === "23505" || driver.errno === "23505") return true;
+  }
+  return false;
 }

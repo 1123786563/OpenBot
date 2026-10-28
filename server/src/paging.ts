@@ -17,11 +17,17 @@ export function parsePageLimit(
   raw: string | null,
   max: number,
 ): { ok: true; limit?: number } | { ok: false; error: string } {
-  if (raw === null || raw.trim() === "") return { ok: true };
-  const trimmed = raw.trim();
+  // The bound itself is clamped too: a broken inline constant or a bad configured value
+  // must not turn this guard into a 0/NaN limit that reaches the database.
+  const bound = Math.max(1, Math.floor(max));
+  if (raw === null || (typeof raw === "string" && raw.trim() === ""))
+    return { ok: true };
+  // A non-string raw (a framework handing back repeated params as an array) is a caller
+  // error, answered 400 — not a TypeError.
+  const trimmed = typeof raw === "string" ? raw.trim() : String(raw);
   if (!/^\d+$/.test(trimmed)) return { ok: false, error: PAGE_LIMIT_ERROR };
   return {
     ok: true,
-    limit: Math.min(Math.max(Number.parseInt(trimmed, 10), 1), max),
+    limit: Math.min(Math.max(Number.parseInt(trimmed, 10), 1), bound),
   };
 }

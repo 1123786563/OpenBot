@@ -1,5 +1,6 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import { workItems } from "../db/schema/work";
 import { ApprovalNotFoundError, ApprovalRefusedError } from "./types";
@@ -86,7 +87,23 @@ export function createApprovalQuestions(
         .where(and(owned(owner), isNull(workItems.finishedAt)))
         .orderBy(desc(workItems.createdAt))
         .limit(100);
-      return rows.map(listedQuestion).filter((row) => row !== null);
+      return rows
+        .map((row) => {
+          const listed = listedQuestion(row);
+          // An unparsable payload is storage damage: leave a trace instead of
+          // letting the question vanish from the inbox without explanation.
+          if (listed === null)
+            getLogger("server").warn(
+              {
+                type: "approval-question-unparsable",
+                context: { key: row.key },
+                timestamp: new Date().toISOString(),
+              },
+              "approval-question-unparsable",
+            );
+          return listed;
+        })
+        .filter((row) => row !== null);
     },
     async respond(owner: string, id: string, response: string) {
       const answer = z.string().trim().min(1).max(6000).parse(response);
@@ -96,6 +113,11 @@ export function createApprovalQuestions(
         .where(owned(owner, id))
         .limit(1);
       if (!current) throw new ApprovalNotFoundError();
+      // finishedAt only ever goes null → set, so this unlocked read already refuses
+      // an answered question before any external authorisation side effect; the
+      // transaction below re-checks under FOR UPDATE for the real decision.
+      if (current.finishedAt)
+        throw new ApprovalRefusedError("You already answered this question.");
       const parsed = questionSchema.safeParse(current.payload);
       if (!parsed.success)
         throw new ApprovalRefusedError(
@@ -112,7 +134,7 @@ export function createApprovalQuestions(
         if (!row) throw new ApprovalNotFoundError();
         if (row.finishedAt)
           throw new ApprovalRefusedError("You already answered this question.");
-        await tx
+        const [queued] = await tx
           .insert(workItems)
           .values({
             kind: "person.response",
@@ -123,7 +145,15 @@ export function createApprovalQuestions(
               response: answer,
             },
           })
-          .onConflictDoNothing();
+          .onConflictDoNothing()
+          .returning({ key: workItems.key });
+        // A conflicting person.response row (a stale one from a purged-and-reasked
+        // question) would otherwise swallow this answer while the caller reads
+        // queued: true.
+        if (!queued)
+          throw new ApprovalRefusedError(
+            "This response was already recorded.",
+          );
         await tx
           .update(workItems)
           .set({ finishedAt: sql`now()`, updatedAt: sql`now()` })

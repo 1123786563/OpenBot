@@ -206,9 +206,14 @@ async function connectWithCancellation(
 ): Promise<VoiceConnection> {
   const { signal } = input;
   let abort: () => void = () => {};
+  // The adapter's promise can reject after the race has already answered (a cancellation
+  // loses the race by design); its rejection gets a handler here so a cancelled call can
+  // never surface as an unhandled rejection.
+  const connecting = provider.connect(input);
+  connecting.catch(() => {});
   try {
     return await Promise.race([
-      provider.connect(input),
+      connecting,
       new Promise<never>((_resolve, reject) => {
         abort = () => reject(signal.reason);
         signal.addEventListener("abort", abort, { once: true });

@@ -48,10 +48,31 @@ if (!workerSharedSecret) {
  * describes. A CronJob in another namespace and a developer's shell want different values for the
  * same deployment, so it belongs to the process's environment.
  */
-const serverInternalUrl = process.env.SERVER_INTERNAL_URL;
+/*
+ * Normalised exactly like worker/src/env.ts parses it: whitespace-only counts
+ * as unset, a trailing slash would build the double-slash //internal/... a 404
+ * comes from, and a non-http(s) value would fail obscurely at the first fetch.
+ */
+const rawServerInternalUrl = process.env.SERVER_INTERNAL_URL?.trim();
+if (!rawServerInternalUrl) {
+  throw new Error(
+    "SERVER_INTERNAL_URL is not set, so this sweep does not know where to hand a routine run.",
+  );
+}
+const serverInternalUrl = rawServerInternalUrl.replace(/\/+$/, "");
 if (!serverInternalUrl) {
   throw new Error(
     "SERVER_INTERNAL_URL is not set, so this sweep does not know where to hand a routine run.",
+  );
+}
+try {
+  const parsed = new URL(serverInternalUrl);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("not http(s)");
+  }
+} catch {
+  throw new Error(
+    "SERVER_INTERNAL_URL must be a valid http(s) URL, so this sweep knows where to hand a routine run.",
   );
 }
 
@@ -70,7 +91,10 @@ const owner = workOwner("routines");
  * finished — the run row carries the outcome — and anything else throws, which is what puts the work
  * item back on the queue for another go.
  */
-async function dispatch(routineRunId: string): Promise<void> {
+async function dispatch(
+  routineRunId: string,
+  firing?: { key: string },
+): Promise<void> {
   const response = await fetch(`${serverInternalUrl}/internal/routines/run`, {
     method: "POST",
     headers: {
@@ -79,7 +103,14 @@ async function dispatch(routineRunId: string): Promise<void> {
       authorization: `Bearer ${workerSharedSecret}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ routineRunId }),
+    body: JSON.stringify({
+      routineRunId,
+      // ME09: the firing's durable identity (the offer key) rides along so the
+      // server can converge a redelivery on the same advance intent. Same body
+      // worker/src/index.ts's dispatch sends; servers predating the field
+      // ignore it.
+      ...(firing?.key ? { firingKey: firing.key } : {}),
+    }),
     // Mirrors worker/src/index.ts's dispatch: a wedged server must not stall the sweep, even under
     // the CronJob's own activeDeadlineSeconds.
     signal: AbortSignal.timeout(30_000),
@@ -128,5 +159,14 @@ try {
     }),
   );
 } finally {
-  await database.$client.end({ timeout: 5 });
+  // A failed end() must not replace the sweep's own failure (or success) as
+  // the process's exit cause; it is only a diagnostic.
+  await database.$client.end({ timeout: 5 }).catch((error: unknown) => {
+    console.warn(
+      JSON.stringify({
+        type: "routine-sweep-cleanup-warning",
+        error: String(error),
+      }),
+    );
+  });
 }

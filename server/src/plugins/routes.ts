@@ -656,8 +656,26 @@ export function createPluginRoutes(
       );
       return context.json({ error: refusal.error }, refusal.status);
     }
-    if (wasShared)
-      await shared?.modes.forgetRule(serverId, context.var.actor.id);
+    if (wasShared) {
+      try {
+        await shared?.modes.forgetRule(serverId, context.var.actor.id);
+      } catch (error) {
+        /*
+         * The server row is already gone, so the removal it self IS done — a
+         * thrown answer here would read as a failed delete and a retry could
+         * not even find the row again. Logged instead: the stale shared-mode
+         * rule is what an operator has to finish by hand.
+         */
+        log.error(
+          {
+            type: "mcp-server-forget-rule-failed",
+            server: serverId,
+            error: reasonWithoutStatement(error),
+          },
+          "mcp-server-forget-rule-failed",
+        );
+      }
+    }
     return context.json({ ok: true });
   });
 
@@ -1998,11 +2016,10 @@ export function createPluginRoutes(
        * app's row, and it is where this consent began.
        */
       const returnTo: ConnectOrigin =
-        account.holder === "deployment"
+        account.holder === "deployment" ||
+        context.req.query("returnTo") === "admin"
           ? "admin"
-          : context.req.query("returnTo") === "admin"
-            ? "admin"
-            : "settings";
+          : "settings";
 
       /*
        * THE URL IS A BEARER CAPABILITY. Whoever opens it attaches an account to the connection
@@ -3204,9 +3221,12 @@ export function createPluginRoutes(
       // decided against it, the other means somebody else's software did not answer.
       return context.json(
         {
+          // Reason-read, never spread: this route is requireUser, so what
+          // leaves here can be read by any signed-in person — a raw
+          // error.message can carry a query's statement and its bound values.
           error:
             error instanceof Error
-              ? error.message
+              ? reasonWithoutStatement(error)
               : "The server did not answer.",
           failed: true,
         },

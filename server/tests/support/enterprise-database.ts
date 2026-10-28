@@ -93,7 +93,11 @@ export function enterpriseRuntimeDatabaseUrlFrom(
     }
     // searchParams decodes "+" as a space, so the comparison above passes for
     // a "+":spelled option that libpq would read literally and reject late.
-    const rawOptions = url.search.match(/[?&]options=([^&]*)/)?.[1] ?? "";
+    // Every repeated options segment is scanned: a "+" in a later segment must
+    // refuse the URL exactly like one in the first.
+    const rawOptions = [...url.search.matchAll(/[?&]options=([^&]*)/g)]
+      .map((match) => match[1])
+      .join("&");
     if (rawOptions.includes("+")) {
       throw new Error(
         `${variable} spells its options with a literal "+", which libpq reads literally; percent-encode the space as %20.`,

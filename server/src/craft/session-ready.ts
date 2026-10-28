@@ -10,6 +10,7 @@
  * session row ACTIVE; the sleep/snapshot/restore legs are the deferred phase.
  */
 
+import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import { generateAgentInstructions } from "./agent-instructions";
 import type { CraftConfig } from "./config";
@@ -45,8 +46,18 @@ async function agentsTemplate(): Promise<string> {
   // Lazy read so the module stays importable without a filesystem hit.
   const { readFile } = await import("node:fs/promises");
   const path = new URL("./AGENTS.template.md", import.meta.url);
-  agentsTemplateCache = await readFile(path, "utf8").catch(() => "");
-  return agentsTemplateCache;
+  const template = await readFile(path, "utf8").catch((error) => {
+    // Not cached: a read that failed once (cold mount, deploy race) must retry on
+    // the next session instead of writing template-less AGENTS.md forever.
+    getLogger("server").warn(
+      { error, path: String(path) },
+      "[craft] failed to read AGENTS template",
+    );
+    return null;
+  });
+  if (template === null) return "";
+  agentsTemplateCache = template;
+  return template;
 }
 
 /** Whether the recorded state says this session can be prompted right now (DB-only fast path). */
@@ -205,16 +216,26 @@ export async function ensureSessionReady(
         // provisioning attempt keeps serving the pre-rewrite config while
         // every later reconcile/reload sees "not stale" and never corrects it
         // (manager.regenerateSessionConfig's contract; OCR r2's medium).
+        // A dispose failure that is not one of disposeInstance's own tolerated
+        // shapes throws through; acking the hashes then would pin the row to a
+        // config no instance ever picked up, so the ack rides success only.
+        let disposed = true;
         if (session.opencodeSessionId) {
-          await gateway
+          disposed = await gateway
             .serveClientFor({ botId, directory })
             ?.disposeInstance({ directory })
-            .catch(() => undefined);
+            .then(() => true)
+            .catch(() => false) ?? !session.opencodeSessionId;
         }
         await store.updateSession(session.id, {
+          // Pinned by craft-managed-content.test.ts: the light path flips the row
+          // active even where no opencode id was minted yet — the runtime is minted
+          // lazily on first prompt, so "active" here means workspace-ready.
           ...(session.status !== "active" ? { status: "active" } : {}),
-          mcpConfigHash: managedContent.mcpConfigHash,
-          ...(hydrated ? { skillsHash: managedContent.skillsHash } : {}),
+          ...(disposed ? { mcpConfigHash: managedContent.mcpConfigHash } : {}),
+          ...(disposed && hydrated
+            ? { skillsHash: managedContent.skillsHash }
+            : {}),
         });
       } else if (session.status !== "active") {
         await store.updateSession(session.id, { status: "active" });

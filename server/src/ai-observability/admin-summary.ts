@@ -36,6 +36,7 @@ import {
   isNull,
   lte,
 } from "drizzle-orm";
+import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import {
   type AiObservationBindingCapability,
@@ -55,6 +56,8 @@ import type {
 import type { OpikPort } from "./opik-port";
 import { DEFAULT_RUNS_WINDOW, projectRow } from "./queries/runs";
 import { notPendingDeletion } from "./retention";
+
+const log = getLogger("server");
 
 /**
  * The time filter every aggregate honors: inclusive bounds, null for open. The
@@ -177,15 +180,25 @@ async function mapWithConcurrency<T, R>(
 ): Promise<R[]> {
   const results = new Array<R>(items.length);
   let next = 0;
+  let failed = false;
   const runners = Array.from(
     { length: Math.min(limit, items.length) },
     async () => {
       for (;;) {
+        if (failed) return;
         // The claim is synchronous between awaits, so no two runners take one index.
         const index = next;
         if (index >= items.length) return;
         next += 1;
-        results[index] = await worker(items[index]);
+        try {
+          results[index] = await worker(items[index]);
+        } catch (error) {
+          // The failure semantics stand (any scope failing fails the whole summary), but
+          // the surviving runners stop claiming work instead of running every remaining
+          // scope's ~400 queries for an answer that is already lost.
+          failed = true;
+          throw error;
+        }
       }
     },
   );
@@ -411,6 +424,10 @@ export function createAdminSummaryService(deps: {
                       .where(
                         and(
                           eq(aiObservationBindings.scopeKey, scope.key),
+                          // Soft-deleted rows are not evidence, like the aggregates
+                          // above: a binding whose deletion already landed must not
+                          // answer for its trace.
+                          isNull(aiObservationBindings.deletedAt),
                           // The bound/unbound split obeys the same reader
                           // contract: a deletion-in-flight binding no longer
                           // answers for its trace (OCR R4-30).
@@ -433,7 +450,13 @@ export function createAdminSummaryService(deps: {
             }
           }
         }
-      } catch {
+      } catch (error) {
+        // The nulls are the honest answer (R3-24 below); the log keeps an upstream
+        // outage, a failed local read-back and a bug here distinguishable.
+        log.error(
+          { type: "opik-unbound-upstream-failed", error: String(error) },
+          "opik-unbound-upstream-failed",
+        );
         unboundUpstream = null;
         usage = null;
         // R3-24: the flag belongs to the same answer as the counts. A listing
@@ -476,6 +499,13 @@ export function createAdminSummaryService(deps: {
       try {
         snapshot = await deps.healthService.snapshot();
       } catch {
+        // The probe itself crashed (not just unreachable): say so, or an operator
+        // debugging "unreachable" has nothing to distinguish an Opik outage from a
+        // bug in this module.
+        log.error(
+          { type: "opik-health-snapshot-failed" },
+          "opik-health-snapshot-failed",
+        );
         snapshot = {
           readiness: { ready: false, reason: "unreachable" } as const,
           writes: deps.healthService.writeStats(),

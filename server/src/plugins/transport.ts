@@ -187,5 +187,17 @@ const TRANSPORTS: Record<TransportKind, VendorTransport> = {
  * every row shape; this is the lookup that follows.
  */
 export function transportFor(kind: TransportKind): VendorTransport {
-  return TRANSPORTS[kind];
+  const transport = TRANSPORTS[kind];
+  /*
+   * The registry's completeness is a type-level fact; a kind arriving over
+   * the boundary (a corrupted row, a restored backup, an `as` cast) can name
+   * a transport this build does not ship. Undefined would reach the caller
+   * and crash at the dial; refusing here says what is actually wrong.
+   */
+  if (transport === undefined) {
+    throw new Error(
+      `No transport is registered for "${String(kind)}", so this server cannot be reached: the row names a transport this build does not ship. Upgrade this deployment, or correct the row.`,
+    );
+  }
+  return transport;
 }

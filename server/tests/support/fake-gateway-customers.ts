@@ -62,13 +62,13 @@ export type FakeCustomerGateway = {
   stop(): Promise<void>;
 };
 
-let fakeCounter = 0;
-
 export async function startFakeCustomerGateway(options: {
   /** The bearer token the fake requires on every request. */
   token: string;
 }): Promise<FakeCustomerGateway> {
   const { token } = options;
+  // Per-instance, so ids do not depend on how many fakes the process started before.
+  let fakeCounter = 0;
   const customers: FakeRemoteCustomer[] = [];
   const requests: FakeCustomerGatewayRequest[] = [];
   let dropNextCreate = false;
@@ -98,6 +98,10 @@ export async function startFakeCustomerGateway(options: {
 
       // 05.1's create: one customer per unique deterministic name.
       if (request.method === "POST" && url.pathname === "/api/governance/customers") {
+        // Consume the armed fault on arrival, whatever this create's outcome:
+        // a fault outrun by a 409/422 must not leak into a later case.
+        const dropThisCreate = dropNextCreate;
+        dropNextCreate = false;
         const body = (await request.json()) as { name?: unknown };
         const name = typeof body.name === "string" ? body.name : "";
         if (name.length === 0) {
@@ -124,8 +128,7 @@ export async function startFakeCustomerGateway(options: {
           name,
         };
         customers.push(customer);
-        if (dropNextCreate) {
-          dropNextCreate = false;
+        if (dropThisCreate) {
           await stopped; // the response is lost, exactly as armed
         }
         return Response.json(
@@ -151,8 +154,10 @@ export async function startFakeCustomerGateway(options: {
       // 05.2's recovery lookup: the subject a reference names, or a definitive
       // 404 when the remote holds none.
       if (request.method === "GET" && url.pathname === "/api/customers") {
-        if (dropNextLookup) {
-          dropNextLookup = false;
+        // Same consume-on-arrival contract as the create fault above.
+        const dropThisLookup = dropNextLookup;
+        dropNextLookup = false;
+        if (dropThisLookup) {
           await stopped;
         }
         const reference = url.searchParams.get("external_reference") ?? "";
@@ -228,11 +233,21 @@ export function createFakeGatewayCustomerClient(
           `The gateway customer lookup failed: HTTP ${response.status}.`,
         );
       }
-      const body = (await response.json()) as { customer_id?: unknown };
-      return {
-        customerId:
-          typeof body.customer_id === "string" ? body.customer_id : "",
-      };
+      let body: { customer_id?: unknown };
+      try {
+        body = (await response.json()) as { customer_id?: unknown };
+      } catch (error) {
+        throw new Error(
+          `The gateway customer lookup answered with a non-JSON body: ${String(error)}`,
+        );
+      }
+      if (typeof body.customer_id !== "string") {
+        // "" would masquerade as a found customer; the contract is string | null.
+        throw new Error(
+          "The gateway customer lookup answered without a customer_id string.",
+        );
+      }
+      return { customerId: body.customer_id };
     },
   };
 }

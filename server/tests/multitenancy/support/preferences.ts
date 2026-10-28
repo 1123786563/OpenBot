@@ -14,7 +14,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { like, sql } from "drizzle-orm";
+import { eq, like, sql } from "drizzle-orm";
 import { createDatabase, type Database } from "../../../src/db/client";
 import { users } from "../../../src/db/schema/core";
 import { createUserPreferencesStore } from "../../../src/user-preferences";
@@ -103,7 +103,7 @@ export async function createPreferencesFixture(): Promise<PreferencesFixture> {
         const [row] = await setupDatabase
           .select({ preferences: users.preferences })
           .from(users)
-          .where(like(users.id, userId))
+          .where(eq(users.id, userId))
           .limit(1);
         return row?.preferences ?? null;
       },

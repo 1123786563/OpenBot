@@ -151,12 +151,9 @@ export function exactTokensOf(usage: unknown): {
     usage !== null && typeof usage === "object" && !Array.isArray(usage)
       ? (usage as { state?: unknown; value?: unknown })
       : null;
-  const record =
-    seen?.state === "projected"
-      ? seen.value
-      : seen && !("state" in seen)
-        ? seen
-        : null;
+  let record: unknown = null;
+  if (seen?.state === "projected") record = seen.value;
+  else if (seen && !("state" in seen)) record = seen;
   if (record === null || typeof record !== "object" || Array.isArray(record)) {
     return null;
   }
@@ -304,12 +301,14 @@ export function createBilledEvaluationCaseRunner(
 
     // A failed case is an unknown outcome, not a confirmed no-cost — see the module
     // head. Evidence row, hold retained; the runner's own failed detail stands.
+    // "outcome_unknown" deliberately: "provider_error" sits in the release vocabulary
+    // (usage-evidence's CONFIRMED_NO_COST_REASONS), and this runner cannot know the
+    // provider refused before the first token.
     await evidence({
       ...base,
       inputTokens: 0,
       outputTokens: 0,
-      reason:
-        outcome.status === "failed" ? "provider_error" : "outcome_unknown",
+      reason: "outcome_unknown",
     });
     return outcome;
   };

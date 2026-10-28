@@ -137,6 +137,16 @@ describe("imageGenerationSpecOf", () => {
       ok: false,
       issue: { field: "image" },
     });
+    // Blank entries are not nameable images: counted exactly refuses the spec, the same
+    // discipline size/quality follow — never a count of entries nobody can read.
+    expect(imageGenerationSpecOf({ n: 1, image: "" })).toMatchObject({
+      ok: false,
+      issue: { field: "image" },
+    });
+    expect(imageGenerationSpecOf({ n: 1, image: ["a.png", "  "] })).toMatchObject({
+      ok: false,
+      issue: { field: "image" },
+    });
   });
 });
 

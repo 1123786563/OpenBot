@@ -27,7 +27,9 @@ function Alert({
   return (
     <div
       data-slot="alert"
-      role="alert"
+      // assertive interruption only for the destructive case: an ordinary
+      // notice must not cut off a screen reader mid-read.
+      role={variant === "destructive" ? "alert" : "status"}
       className={cn(alertVariants({ variant }), className)}
       {...props}
     />

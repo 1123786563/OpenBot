@@ -1,6 +1,13 @@
 import { z } from "zod";
 
 const text = (max: number) => z.string().trim().min(1).max(max);
+/** The one review-state vocabulary, shared by the patch schema and the record type. */
+export const MEMORY_REVIEW_STATES = [
+  "unreviewed",
+  "confirmed",
+  "edited",
+] as const;
+export type MemoryReviewState = (typeof MEMORY_REVIEW_STATES)[number];
 export const memoryInputSchema = z
   .object({
     content: text(6000),
@@ -20,7 +27,7 @@ export const memoryPatchSchema = z
   .object({
     content: text(6000).optional(),
     enabled: z.boolean().optional(),
-    reviewState: z.enum(["unreviewed", "confirmed", "edited"]).optional(),
+    reviewState: z.enum(MEMORY_REVIEW_STATES).optional(),
   })
   .strict();
 export const memorySourceInputSchema = z
@@ -32,7 +39,14 @@ export const memorySourceInputSchema = z
   })
   .strict()
   .refine(
-    (input) => JSON.stringify(input.args).length <= 8192,
+    (input) => {
+      // An unserializable args object (circular, BigInt) is invalid input, not a crash.
+      try {
+        return JSON.stringify(input.args).length <= 8192;
+      } catch {
+        return false;
+      }
+    },
     "Source settings are too large.",
   );
 export class MemoryRefusedError extends Error {
@@ -105,7 +119,7 @@ export type MemoryRecord = MemoryInput & {
   sourceId: string | null;
   externalId: string | null;
   importDigest: string | null;
-  reviewState: "unreviewed" | "confirmed" | "edited";
+  reviewState: MemoryReviewState;
   /** Who formed it: the person, a source import, or a Bot that observed it. */
   formedBy: "person" | "import" | "bot";
   formedByAgentId: string | null;

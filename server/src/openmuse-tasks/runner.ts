@@ -1971,10 +1971,15 @@ export function createOpenMuseTaskRunner(options: {
             turn,
             new Promise<never>((_, reject) =>
               signal.addEventListener("abort", () =>
+                // F-TASK-2: losing this race does not stop the turn — it
+                // keeps running behind the discarded promise, so its outside
+                // effects are unknowable. The ambiguous shape (not a plain
+                // failure) is what keeps the row off the retry path and puts
+                // the possible effect on the evidence.
                 reject(
-                  new Error(`Task timed out after ${deadlineMs}ms`, {
-                    cause: signal.reason,
-                  }),
+                  new AmbiguousTurnError(
+                    `Task timed out after ${deadlineMs}ms`,
+                  ),
                 ),
               ),
             ),

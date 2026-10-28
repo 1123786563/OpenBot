@@ -22,6 +22,7 @@
  * never an error body.
  */
 
+import { getLogger } from "../../../shared/logger";
 import { randomBytes } from "node:crypto";
 // fix-ocr19 #11 retired the hand-synced default-port constant by importing
 // config.ts's DEFAULT_PORT; fix-ocr23 #8 goes one step further — the ENTIRE
@@ -98,6 +99,8 @@ export function createPreviewTickets(deps: {
       // login burns nothing reusable.
       const entry = entries.get(ticket);
       if (!entry) return { reason: "unknown" };
+      // The take is the atomic half (two concurrent redemptions: one winner) —
+      // every check below judges the ticket it already holds.
       entries.delete(ticket);
 
       if (now().getTime() >= entry.expiresAt) return { reason: "expired" };
@@ -106,10 +109,23 @@ export function createPreviewTickets(deps: {
       }
       // The root alone is not authority: the session must still exist and
       // still belong to the issuing user (deletion / reassignment refusal).
-      const session = await deps.store.findSession(
-        entry.sessionId,
-        entry.userId,
-      );
+      let session;
+      try {
+        session = await deps.store.findSession(entry.sessionId, entry.userId);
+      } catch (error) {
+        // A store hiccup must not consume a one-time credential the user can
+        // never present again: put the ticket back unless a racing redemption
+        // already re-took it (same expiresAt, so the re-arm cannot extend life).
+        if (!entries.has(ticket)) entries.set(ticket, entry);
+        getLogger("server").warn(
+          {
+            type: "preview-ticket-redeem-store-error",
+            error: error instanceof Error ? error.message : String(error),
+          },
+          "preview-ticket-redeem-store-error",
+        );
+        return { reason: "unknown" };
+      }
       if (!session) return { reason: "session" };
       return { userId: entry.userId };
     },

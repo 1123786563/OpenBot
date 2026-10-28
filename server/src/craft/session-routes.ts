@@ -21,15 +21,11 @@ const logger = getLogger("server");
 import type { CraftConfig } from "./config";
 import type { SessionFlowLocks } from "./locks";
 import type { CraftSessionManager } from "./manager";
-import { generateSessionName } from "./naming";
+import { generateSessionName, MAX_NAME_LENGTH } from "./naming";
 import type { SandboxGateway } from "./sandbox-gateway";
 import { assertNotScopeRefusal, sandboxScopeRefusalOf } from "./scope-refusal";
 import { sessionRuntimeStale } from "./skills";
-import {
-  deleteSnapshots,
-  restoreLatestSnapshot,
-  takeSnapshot,
-} from "./snapshot";
+import { restoreLatestSnapshot, takeSnapshot } from "./snapshot";
 import type { ObjectStore } from "./storage/object-store";
 import type { CraftSessionRow, CraftStore } from "./store";
 import type { TurnStateStore } from "./turn-state";
@@ -205,7 +201,13 @@ export function createSessionRoutes(
     const body = (await context.req.json().catch(() => ({}))) as {
       name?: unknown;
     };
-    const name = typeof body.name === "string" ? body.name : null;
+    // Same cap the auto-namer enforces: an unbounded name lands in every list
+    // response, every load.
+    let name = typeof body.name === "string" ? body.name.trim() : null;
+    if (name !== null && name.length === 0) name = null;
+    if (name !== null && name.length > MAX_NAME_LENGTH) {
+      name = `${name.slice(0, MAX_NAME_LENGTH - 3)}...`;
+    }
     try {
       const session = await deps.locks.withSessionCreationLock(
         actor.id,
@@ -271,11 +273,13 @@ export function createSessionRoutes(
     const body = (await context.req.json().catch(() => ({}))) as {
       name?: unknown;
     };
-    if (typeof body.name !== "string" || body.name.length === 0) {
+    if (typeof body.name !== "string" || body.name.trim().length === 0) {
       return context.json({ error: "name is required" }, 400);
     }
     const updated = await deps.store.updateSession(sessionId, {
-      name: body.name,
+      // Same cap and normalization as create; blank control characters never
+      // belong in a roster row.
+      name: body.name.replace(/\s+/g, " ").trim().slice(0, MAX_NAME_LENGTH),
     });
     const row = updated ?? session;
     return context.json(sessionResponse(row, await skillsStaleFor(row)));
@@ -330,13 +334,32 @@ export function createSessionRoutes(
   app.delete("/sessions/:sessionId", async (context) => {
     const actor = context.var.actor;
     const sessionId = context.req.param("sessionId");
-    const deleted = await deps.store.deleteSession(sessionId, actor.id);
+    const { deleted, snapshots } = await deps.store.deleteSession(
+      sessionId,
+      actor.id,
+    );
     if (!deleted) {
       return context.json({ error: "Session not found" }, 404);
     }
-    // Force-free the snapshot blobs before the row cascade drops their rows — the object store
-    // has no FK, so an orphaned archive is otherwise permanent.
-    await deleteSnapshots(snapshotCtx(), sessionId).catch(() => undefined);
+    // The rows came back from the delete itself: the object store has no FK, so each
+    // archive must be freed from a row we still hold — one the cascade had dropped
+    // first would be an orphan for good.
+    // The rows are gone; a blob that refuses to die here is an orphan no later
+    // code can reach — it must at least be findable in the logs.
+    await Promise.all(
+      snapshots.map((snapshot) =>
+        deps.objectStore.delete(snapshot.storagePath).catch((error) => {
+          getLogger("server").warn(
+            {
+              type: "craft-session-snapshot-orphan",
+              storagePath: snapshot.storagePath,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            "craft-session-snapshot-orphan",
+          );
+        }),
+      ),
+    );
     return context.body(null, 204);
   });
 

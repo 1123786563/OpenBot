@@ -98,7 +98,9 @@ export function scopedComputerGateway(
             }); the call was refused before the gateway executed.`,
           );
         }
-        return (value as (...rest: unknown[]) => unknown)(...args);
+        // Called on the gateway it was read from, not as a bare function: a gateway that is a
+        // class instance (the interface allows it) must still see its own `this`.
+        return (value as (...rest: unknown[]) => unknown).apply(target, args);
       }) as never;
     },
   });
@@ -135,9 +137,13 @@ export function createMastraComputerTools(
   );
   const actor: ActionActor = {
     // The binding's actor IS the run's control identity; the audit row names
-    // it through the caller-supplied users-table id, never a guess.
+    // it through the caller-supplied users-table id, never a guess. An empty
+    // string is a misconfiguration, not "no users row": it is refused by name
+    // instead of silently recorded as a null foreign key.
     id: requireSegment(binding.scope.actorId, "actorId"),
-    ...(options.auditUserId ? { userId: options.auditUserId } : {}),
+    ...(options.auditUserId !== undefined
+      ? { userId: requireSegment(options.auditUserId, "auditUserId") }
+      : {}),
     ...(options.initiator ? { initiator: options.initiator } : {}),
   };
   return createHeadlessComputerTools({

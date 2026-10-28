@@ -14,6 +14,17 @@ export function handoffDeliveryRunAssertion(
   runId: string,
   claim?: RunAssertion["handoff"],
 ): RunAssertion {
+  // The signature is what makes this context trusted downstream, so an incomplete one is
+  // refused here rather than signed into a claim nothing can be checked against.
+  if (
+    !work?.actorId ||
+    !work.threadId ||
+    typeof work.depth !== "number" ||
+    work.depth < 0
+  )
+    throw new Error(
+      "A handoff delivery needs an actor, a thread and a depth to be signed.",
+    );
   return {
     botId: work.toBotId,
     actorId: work.actorId,

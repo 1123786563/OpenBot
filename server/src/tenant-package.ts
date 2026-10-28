@@ -399,7 +399,7 @@ function parseAgents(
           "agent.role_description",
         ),
         avatarSeed:
-          agent.avatar_seed === undefined
+          agent.avatar_seed === undefined || agent.avatar_seed === null
             ? undefined
             : requiredString(agent.avatar_seed, "agent.avatar_seed"),
         type,
@@ -754,6 +754,9 @@ export async function loadTenantPackage(
           ...contents,
           skills,
           ...agentFiles.map((file) => `${file.filename}\n${file.contents}`),
+          // theme.css is read, validated and able to refuse the boot like everything else
+          // above: an edit to it is a package change and must move the checksum with it.
+          themeCss,
         ].join("\n"),
       )
       .digest("hex"),

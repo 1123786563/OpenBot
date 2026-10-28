@@ -62,9 +62,16 @@ export function createChannelTitler(options: TitlerOptions) {
       );
     }
 
-    const body = (await response.json()) as {
-      choices?: { message?: { content?: unknown } }[];
-    };
+    let body: { choices?: { message?: { content?: unknown } }[] };
+    try {
+      body = (await response.json()) as typeof body;
+    } catch {
+      // A 200 with a non-JSON body (a proxy page, an empty reply) is the same
+      // unreadable answer as any other refusal, not a bare SyntaxError.
+      throw new Error(
+        `The model refused to name a conversation: ${response.status} unreadable response`,
+      );
+    }
     const content = body.choices?.[0]?.message?.content;
     if (typeof content !== "string") return null;
     const answer = content.trim();

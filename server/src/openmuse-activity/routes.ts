@@ -101,7 +101,9 @@ export function createOpenMuseActivityRoutes(deps: {
     if (error instanceof ApprovalNotFoundError) {
       return context.json({ error: error.message }, 404);
     }
-    if (error instanceof z.ZodError || error instanceof SyntaxError) {
+    // Zod only: a malformed JSON body is answered at the decision route
+    // itself, so a SyntaxError here is deep code failing — a logged 500.
+    if (error instanceof z.ZodError) {
       return context.json({ error: "Supply a valid request." }, 400);
     }
     log.error(
@@ -145,7 +147,14 @@ export function createOpenMuseActivityRoutes(deps: {
   });
 
   routes.post("/:id/decision", async (context) => {
-    const body = decisionSchema.parse(await context.req.json());
+    // A malformed body is a client mistake, caught right here: a SyntaxError
+    // from deeper code must keep falling through to the 500 arm below, not
+    // masquerade as this 400.
+    const raw = await context.req.json().catch(() => null);
+    if (raw === null) {
+      return context.json({ error: "Supply a valid request." }, 400);
+    }
+    const body = decisionSchema.parse(raw);
     const outcome = await deps.feed.decide(
       context.var.actor.id,
       context.req.param("id"),

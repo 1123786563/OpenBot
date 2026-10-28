@@ -118,6 +118,20 @@ export type ComponentStore = {
 const iso = (value: Date | string | null): string | null =>
   value === null ? null : value instanceof Date ? value.toISOString() : value;
 
+/** A component row deleted between the existence check and a grant write (sandboxed.ts
+ * deletes governance rows outside the source delete): the foreign key rejects the insert. */
+function isForeignKeyViolation(error: unknown): boolean {
+  const cause = (error as { cause?: unknown } | null | undefined)?.cause;
+  return [error, cause].some((candidate) => {
+    const driver = candidate as { errno?: unknown; code?: unknown } | null;
+    return (
+      driver?.errno === "23503" ||
+      driver?.errno === 23503 ||
+      driver?.code === "23503"
+    );
+  });
+}
+
 export function createComponentStore(database: Database): ComponentStore {
   async function requireComponent(name: string) {
     const [row] = await database
@@ -175,31 +189,23 @@ export function createComponentStore(database: Database): ComponentStore {
         .orderBy(asc(components.kind), asc(components.title));
       if (rows.length === 0) return [];
 
-      const functionRows = await database
-        .select()
-        .from(componentFunctions)
-        .where(
-          inArray(
-            componentFunctions.componentName,
-            rows.map((row) => row.name),
-          ),
-        );
+      const names = rows.map((row) => row.name);
+      const [functionRows, exclusionRows] = await Promise.all([
+        database
+          .select()
+          .from(componentFunctions)
+          .where(inArray(componentFunctions.componentName, names)),
+        database
+          .select()
+          .from(componentExclusions)
+          .where(inArray(componentExclusions.componentName, names)),
+      ]);
       const functionsByComponent = new Map<string, string[]>();
       for (const row of functionRows) {
         const list = functionsByComponent.get(row.componentName) ?? [];
         list.push(row.functionName);
         functionsByComponent.set(row.componentName, list);
       }
-
-      const exclusionRows = await database
-        .select()
-        .from(componentExclusions)
-        .where(
-          inArray(
-            componentExclusions.componentName,
-            rows.map((row) => row.name),
-          ),
-        );
 
       const byComponent = new Map<string, string[]>();
       for (const exclusion of exclusionRows) {
@@ -321,21 +327,31 @@ export function createComponentStore(database: Database): ComponentStore {
     },
 
     async publish(name, by) {
-      const row = await requireComponent(name);
-      if (row.kind === "sandboxed") {
-        throw new SandboxedPublicationRequiredError(name);
-      }
-      await database
-        .update(components)
-        .set({
-          // Promotes the draft, which is the whole of what publishing means here.
-          publishedDescription: row.draftDescription,
-          published: true,
-          publishedAt: new Date(),
-          updatedBy: by,
-          updatedAt: new Date(),
-        })
-        .where(eq(components.name, name));
+      // The draft this promotes is read under the same row lock the write takes:
+      // a saveDraft landing in between would otherwise be promoted stale.
+      await database.transaction(async (tx) => {
+        const [row] = await tx
+          .select()
+          .from(components)
+          .where(eq(components.name, name))
+          .for("update")
+          .limit(1);
+        if (!row) throw new ComponentNotFoundError(name);
+        if (row.kind === "sandboxed") {
+          throw new SandboxedPublicationRequiredError(name);
+        }
+        await tx
+          .update(components)
+          .set({
+            // Promotes the draft, which is the whole of what publishing means here.
+            publishedDescription: row.draftDescription,
+            published: true,
+            publishedAt: new Date(),
+            updatedBy: by,
+            updatedAt: new Date(),
+          })
+          .where(eq(components.name, name));
+      });
     },
 
     async unpublish(name, by) {
@@ -354,10 +370,18 @@ export function createComponentStore(database: Database): ComponentStore {
 
     async grantFunction(name, functionName, by) {
       await requireComponent(name);
-      await database
-        .insert(componentFunctions)
-        .values({ componentName: name, functionName, grantedBy: by })
-        .onConflictDoNothing();
+      try {
+        await database
+          .insert(componentFunctions)
+          .values({ componentName: name, functionName, grantedBy: by })
+          .onConflictDoNothing();
+      } catch (error) {
+        // The row can vanish between the check above and this insert; answer the
+        // same 404 as a name nobody has, not a raw foreign-key 500.
+        if (isForeignKeyViolation(error))
+          throw new ComponentNotFoundError(name);
+        throw error;
+      }
     },
 
     async revokeFunction(name, functionName) {

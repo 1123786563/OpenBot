@@ -104,7 +104,9 @@ export class TurnWatchdog {
   constructor(options: TurnWatchdogOptions) {
     this.stallMs = options.stallMs;
     this.onStall = options.onStall;
-    this.now = options.now ?? (() => Date.now());
+    // Monotonic: only differences are read, and a wall-clock step would misjudge
+    // both directions (a healthy stream culled, a wedged one never caught).
+    this.now = options.now ?? (() => performance.now());
   }
 
   /** Whether this deployment asked for a watchdog at all. */
@@ -224,6 +226,9 @@ export class TurnWatchdog {
           chunks: stream.chunks,
         });
       } catch (error) {
+        // Put the stream back: with the entry gone the caller's relay would sit in
+        // `finished: false` forever, and the stall would never be raised again.
+        this.streams.set(id, stream);
         // One Bot's failure must not stop the others being closed. This is the same blast-radius
         // argument the process-level rejection handler in index.ts makes: a wedged Bot is somebody
         // else's infrastructure, and the sweep it happens to be in is holding every other person's
