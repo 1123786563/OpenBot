@@ -1,0 +1,41 @@
+{
+  "status": 200,
+  "body": {
+    "packageKey": "openbot/demo-skill",
+    "version": "1.1.0",
+    "artifactDigest": "be9ea9557fd26fe0e3141223391e2c35b9ff89a35e743e3f16d173d155701bd4",
+    "displayName": "Demo Skill",
+    "summary": "Summarize a long note into a short, ordered brief.",
+    "category": "productivity",
+    "publisher": "openbot",
+    "name": "demo-skill",
+    "resources": [
+      {
+        "id": "summarize",
+        "kind": "skill",
+        "available": true
+      },
+      {
+        "id": "note-assistant",
+        "kind": "expertTemplate",
+        "available": true
+      }
+    ],
+    "installable": true,
+    "blockers": [],
+    "versions": [
+      {
+        "version": "1.1.0",
+        "artifactDigest": "be9ea9557fd26fe0e3141223391e2c35b9ff89a35e743e3f16d173d155701bd4",
+        "verified": true,
+        "listed": true
+      },
+      {
+        "version": "1.0.0",
+        "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+        "verified": true,
+        "listed": true
+      }
+    ]
+  }
+}

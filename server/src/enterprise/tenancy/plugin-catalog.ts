@@ -397,6 +397,18 @@ export function createPluginCatalogAdminService(
         await tx.execute(
           sql`select set_config('app.tenant_id', ${tenantId}, true)`,
         );
+        // 重绑收敛（OCR R5-H-B）：同 (install, boundBy) 作用域旧行——含
+        // 历史残留的重复行——先删再插，一个作用域恒一行，派发的「最近
+        // 绑定」选取因此总有唯一答案；旧 proposal 钉扎的连接随之失效。
+        await tx
+          .delete(connectionRows)
+          .where(
+            and(
+              eq(connectionRows.tenantId, tenantId),
+              eq(connectionRows.installId, installId),
+              eq(connectionRows.boundBy, boundBy),
+            ),
+          );
         await tx.insert(connectionRows).values({
           tenantId,
           id: connectionId,

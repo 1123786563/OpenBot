@@ -1,3 +1,24 @@
+/**
+ * MOD03 (#623): the deployment runtime assembly.
+ *
+ * Everything from `const log = getLogger("server")` (old index.ts :744) to
+ * the file's end moved here VERBATIM — same order, same judgments, same
+ * comments — into {@link assembleRuntime}'s body (the three top-level awaits
+ * are absorbed by the async function; evaluation order is unchanged). The
+ * only deviations are the MOD03 adaptation whitelist (plan W1–W4, each
+ * enumerated in reports/MOD03-report.md): the inline signal handler became
+ * the lifecycle registration + installSignalShutdown call, the two tail
+ * services are returned instead of exported, and the body is wrapped in a
+ * rollback try/catch that stops only what this run registered. index.ts is
+ * now the thin entry; production-entry.ts is untouched.
+ *
+ * Assembly composes, it does not decide (A03): business rules stay with
+ * their owning modules.
+ */
+
+import { createHash, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { isDeepStrictEqual } from "node:util";
 import type { AbstractAgent } from "@ag-ui/client";
 import {
   CopilotKitIntelligence,
@@ -5,6 +26,7 @@ import {
 } from "@copilotkit/runtime/v2";
 import { COMPUTER_GUIDANCE } from "@openbot/shared/bot-prompt";
 import { getLogger } from "@openbot/shared/logger";
+import { buildResponsibilityTurn } from "../../../shared/responsibility-turn";
 import {
   initProcessTracing,
   SERVER_TRACING_SERVICE_NAME,
@@ -12,9 +34,10 @@ import {
 import { workOwner } from "@openbot/shared/work-owner";
 import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { createTurnRunner } from "@openbot/toolkit/run-turn";
+import { serve } from "bun";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import { buildResponsibilityTurn } from "../../../shared/responsibility-turn";
+import { packageToolRefFor } from "../../../shared/enterprise/plugin-package-contracts";
 import { createActivityStore } from "../activity/activity";
 import {
   auditRoutineStore,
@@ -87,16 +110,16 @@ import { createOpikHealthService } from "../ai-observability/health";
 import { createIdLinkStore } from "../ai-observability/id-links";
 import { createModelSpanRecorder } from "../ai-observability/model-span";
 import {
+  createRemoteBudgetContractResolver,
+  createRemoteRunBudgetGate,
+  createRemoteRunRecorder,
+} from "../ai-observability/remote-run";
+import {
   modelSpanObserver,
   observationEnabled,
   toolStepObserver,
 } from "../ai-observability/public";
 import { createRunsQueryService } from "../ai-observability/queries/runs";
-import {
-  createRemoteBudgetContractResolver,
-  createRemoteRunBudgetGate,
-  createRemoteRunRecorder,
-} from "../ai-observability/remote-run";
 import {
   createObservationRetentionWorker,
   RETENTION_WORK_KIND,
@@ -112,9 +135,12 @@ import {
   loadVerifiedOpikPort,
 } from "../ai-observability/wiring";
 import { createApp, createDeploymentRequireUser } from "../app";
-import { createApprovedActionExecutor } from "../approvals/execute";
-import { createApprovalsAccess } from "../approvals/public";
+import {
+  createApprovedActionExecutor,
+  proposalAttemptOf,
+} from "../approvals/execute";
 import { resumePersonQuestion } from "../approvals/question-resume";
+import { createApprovalsAccess } from "../approvals/public";
 import {
   type PersonQuestion,
   personQuestionSchema,
@@ -123,6 +149,7 @@ import {
 import type { ApprovalResumeDependencies } from "../approvals/service";
 import { createApprovalStore } from "../approvals/store";
 import {
+  type ApprovalAction,
   ApprovalRefusedError,
   parseApprovalContinuation,
   parseApprovalResult,
@@ -157,6 +184,7 @@ import {
   startUsageDeliverySweeps,
 } from "../billing/maintenance";
 import { checkOutboundUrl, createOutboundGuard } from "../billing/outbound";
+import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "../billing/types";
 import {
   CreditInsufficientError,
   currentPayerBinding,
@@ -178,7 +206,6 @@ import {
 } from "../billing/service";
 import { createBillingStatements } from "../billing/statements";
 import { createBillingStore } from "../billing/store";
-import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "../billing/types";
 import {
   createCreditUsageTarget,
   createLagoUsageTarget,
@@ -236,7 +263,6 @@ import { createStreamAuthorizer } from "../computer/stream-auth";
 import { loadConfig, trustedBrowserOrigins } from "../config";
 import {
   billingMethodForModel,
-  CreditGateFailureError,
   type IdentifyActor,
   type IdentifyUser,
   type ModelBillingAuditEvent,
@@ -244,6 +270,7 @@ import {
   normalizeModelBaseUrls,
   runtimeModelForEnvironment,
   setBuiltinExecutionEngine,
+  CreditGateFailureError,
   setBuiltinModelSpanObserver,
   setBuiltinRunLifecycleObserver,
   setBuiltinToolStepObserver,
@@ -276,8 +303,8 @@ import {
   createCraftRoutes,
   stopCraftIdleReaper,
 } from "../craft/routes";
-import { createCraftStore } from "../craft/store";
 import { createCraftSandboxPublic } from "../craft/public";
+import { createCraftStore } from "../craft/store";
 import {
   createCredentialAdminService,
   createCredentialStore,
@@ -315,10 +342,23 @@ import type {
   RunnerRequestLease,
   RunService,
 } from "../enterprise/contracts";
+import { createUnavailableConversationRoutes } from "../enterprise/conversations/routes";
 import { createMastraStorageArm } from "../enterprise/conversations/integration";
 import { createConversationPublic } from "../enterprise/conversations/public";
-import { createUnavailableConversationRoutes } from "../enterprise/conversations/routes";
+import { createPackageDispatchService } from "../enterprise/plugin-packages/dispatch";
+import {
+  createPackageEntrypoints,
+  packageRunForBinding,
+} from "../enterprise/plugin-packages/entrypoints";
+import { createPackageService } from "../enterprise/plugin-packages/install-service";
+import { createMarketplaceGate } from "../enterprise/plugin-packages/marketplace-gate";
+import { createPackageMutationStore } from "../enterprise/plugin-packages/mutation-context";
 import { createPackageRuntime } from "../enterprise/plugin-packages/runtime";
+import {
+  createPluginPackageRoutes,
+  createUnavailablePluginPackageRoutes,
+} from "../enterprise/plugin-packages/routes";
+import { createPackageReadStore } from "../enterprise/plugin-packages/store";
 import { createRunContinuations } from "../enterprise/runs/continuations";
 import type { GovernedModelExecution } from "../enterprise/runs/governed-execution";
 import { createGovernedExecutionArm } from "../enterprise/runs/integration";
@@ -344,6 +384,7 @@ import {
 import { createCompanyCapabilitiesService } from "../enterprise/tenancy/company-capabilities";
 import { createCompanyConfigReader } from "../enterprise/tenancy/company-config";
 import {
+  type OperatorDatabase,
   verifyDataDatabase,
   verifyDirectoryDatabase,
   verifyOperatorDatabase,
@@ -378,14 +419,18 @@ import {
   createPluginCatalogDecisionService,
 } from "../enterprise/tenancy/plugin-catalog";
 import {
-  applyReadinessEnforcementVerdict,
-  runReadinessEnforcement,
-} from "../enterprise/tenancy/readiness-enforcement";
-import {
   createSharedApprovalAdminService,
   createSharedApprovalService,
 } from "../enterprise/tenancy/shared-approvals";
 import { createCompanySsoScimConfigService } from "../enterprise/tenancy/sso-scim-config";
+import {
+  applyReadinessEnforcementVerdict,
+  runReadinessEnforcement,
+} from "../enterprise/tenancy/readiness-enforcement";
+import {
+  applyStartupVerdict,
+  runMultitenancyStartupChecks,
+} from "../enterprise/tenancy/startup-checks";
 import {
   applyStartupDefaultsVerdict,
   buildStartupDefaultsRecord,
@@ -402,6 +447,7 @@ import {
   createTeamResourceActionService,
   type TeamResourceActionService,
 } from "../enterprise/tenancy/team-public-rules";
+import { createToolInvocationService } from "../enterprise/tenancy/tool-invocation";
 import {
   createCompanyAdminAuthorizer,
   createWorkspaceAdminService,
@@ -443,6 +489,12 @@ import {
   createDrizzlePauseControls,
   createUserPauseGate,
 } from "../hindsight/pause-controls";
+// MOD15 (#635)：个人记忆语境的降级召回装配经 M10 具名臂（memory/integration.ts），
+// 个人记忆语境组合与渲染装载器收拢在臂内；此前内联于此的组合逐参数等价。
+import {
+  createHindsightRecallArm,
+  createHindsightSyncArm,
+} from "../memory/integration";
 import {
   createDrizzlePreferenceRecords,
   createPreferenceRecallService,
@@ -517,6 +569,8 @@ import {
   assertResumeBindingCurrent,
   createGenerationCurrentGate,
   createGovernedTurnRunner,
+  GOVERNED_HEADLESS_REFUSALS,
+  GovernedHeadlessRefusal,
   settleResumedRun,
 } from "../mastra/headless";
 import { openMuseTaskSchedulingRecordFor } from "../mastra/openmuse-task-entry";
@@ -532,16 +586,11 @@ import { createMastraTools } from "../mastra/tools";
 import { resolveMemoryCompany } from "../memory/company";
 import { createMemoryDefaults } from "../memory/defaults";
 import { createMemoryIngestion } from "../memory/ingestion";
-// MOD15 (#635)：个人记忆语境的降级召回装配经 M10 具名臂（memory/integration.ts），
-// 个人记忆语境组合与渲染装载器收拢在臂内；此前内联于此的组合逐参数等价。
-import {
-  createHindsightRecallArm,
-  createHindsightSyncArm,
-} from "../memory/integration";
 import { createMemoryStore } from "../memory/store";
 import { memoryTools } from "../memory/tools";
 import { OPENMUSE_TEMPLATE_KEY } from "../mobile-bff/openmuse-bot";
 import { officialModelMetadataLookup } from "../model-availability-check";
+import { currentRunObservationScope } from "../observation-run-scope";
 import { createActivityFeed } from "../openmuse-activity/feed";
 import { createOpenMuseActivityRoutes } from "../openmuse-activity/routes";
 import { createOpenMuseCalendarClient } from "../openmuse-calendar/client";
@@ -637,6 +686,8 @@ import { createSignInService } from "../passwords/service";
 import { createPasswordStore } from "../passwords/store";
 import { createOnboardingStore } from "../people/onboarding";
 import { createPeopleStore } from "../people/store";
+import { loadPackageCatalogue } from "../plugin-packages/catalogue";
+import { createDeployedReleaseFactsGate } from "../plugin-packages/deployment-facts";
 import { createAccountModeSwitch } from "../plugins/account-mode";
 import { useRoutineTools } from "../plugins/builtin-routines";
 import { useComposioClient } from "../plugins/composio";
@@ -645,6 +696,10 @@ import { backfillComposioLogos } from "../plugins/logos";
 import { redirectUriFor } from "../plugins/oauth";
 import { useOpenConnectorClient } from "../plugins/openconnector";
 import { createOpenConnectorClient } from "../plugins/openconnector-adapter";
+import type {
+  PackageToolRunContext,
+  PackageToolSeam,
+} from "../plugins/package-tools";
 import {
   createToolAccess,
   grantedSkills,
@@ -694,6 +749,7 @@ import { createTriggerIngressRoutes } from "../responsibilities/trigger-routes";
 import { useTriggerTools } from "../responsibilities/trigger-tools";
 import { createTriggerStore } from "../responsibilities/triggers";
 import type { Responsibility } from "../responsibilities/types";
+import { createServerResponsibilityEngine } from "../responsibilities/wiring";
 import { createRoutineRunner } from "../routines/runner";
 import { createRoutineStore } from "../routines/store";
 import { createIntentRouter } from "../routing/classify";
@@ -1285,12 +1341,13 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
           const companyBooksPayments = createPaymentStore(database);
           // OCR r2 M-9：visibility 两实例提顶部构造一次复用——同 database、同 writer、同
           // payments 源，与 companyBooksPayments「一实例答两消费面」同一先例，杜绝两套口径漂移。
-          const companyFinanceVisibility = createCompanyFinanceVisibilityService({
-            database,
-            writer: createCreditWriter(database),
-            orders: companyBooksPayments,
-            events: companyBooksPayments,
-          });
+          const companyFinanceVisibility =
+            createCompanyFinanceVisibilityService({
+              database,
+              writer: createCreditWriter(database),
+              orders: companyBooksPayments,
+              events: companyBooksPayments,
+            });
           const companyAdminRoutes =
             operator && companyAdminAuthorizer !== null
               ? createCompanyAdminRoutes({
@@ -1357,6 +1414,156 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
           });
         })()
       : createUnavailableWorkspaceScopeRoutes();
+    // PKG01 (#460) / PKG02 (#461): the plugin-package marketplace. The marketplace
+    // index and the content-addressed artifacts are deployment build outputs,
+    // verified once at startup. A missing or invalid index leaves the routes
+    // answering 503 — browsing is unavailable, never an empty or partly fabricated
+    // catalogue. R6-7 (OCR round 6): a missing artifact root is deliberately NOT a
+    // 503 — the catalogue still loads and each affected entry stays listed as
+    // unavailable under an ARTIFACT_MISSING blocker (see loadPackageCatalogue), so
+    // browsing degrades instead of disappearing. Reads reuse the enterprise
+    // entry's trusted Scope resolver (`scopes` above) instead of standing up a
+    // second one.
+    //
+    // PKG02 adds install facts to reads (restricted data channel) and plan/apply
+    // (restricted operator channel). Without a verified operator channel the
+    // service still serves reads but every plan/apply answers 503
+    // ADMIN_CHANNEL_UNAVAILABLE — never an owner-database fallback. Plan/apply also
+    // require a verified CompanyAdminContext issued by the same authorizer the
+    // workspace-scope admin routes use, so a platform administrator gains no
+    // implicit company authority.
+    /**
+     * PKG05 (#464): the loaded, verified catalogue, hoisted so the dispatch chain
+     * shares ONE catalogue instance with the routes (withdrawal facts, manifest
+     * digests) instead of a second boot-time load. Null when the routes degraded.
+     */
+    let packageCatalogue: Awaited<
+      ReturnType<typeof loadPackageCatalogue>
+    > | null = null;
+    const pluginPackageRoutes = await (async () => {
+      if (!enterpriseCapabilities)
+        return createUnavailablePluginPackageRoutes();
+      try {
+        // R4-5: the index path is deployment configuration
+        // (`OPENBOT_PLUGIN_MARKETPLACE_INDEX`); the default is the same
+        // repository-root `plugins/marketplace.json` this path always read.
+        const indexSource = await readFile(
+          config.pluginMarketplaceIndexPath,
+          "utf8",
+        );
+        const catalogue = await loadPackageCatalogue({
+          index: JSON.parse(indexSource),
+          artifactRoot: config.pluginArtifactRoot,
+        });
+        packageCatalogue = catalogue;
+        const operatorUrl = config.enterpriseOperatorDatabaseUrl;
+        // R6-2 (OCR round 6): the degradation itself is unchanged — plan/apply
+        // answer 503 and read-only browsing stays up — but it is no longer
+        // silent. The structured records (same shape as the catalogue-unavailable
+        // log.error beside the catch below) let operations tell "not configured"
+        // apart from "configured but broken" when every plan/apply 503s.
+        let operator: OperatorDatabase | null = null;
+        if (!operatorUrl) {
+          log.info(
+            {
+              type: "plugin-package-operator-unavailable",
+              reason: "OPERATOR_DATABASE_NOT_CONFIGURED",
+            },
+            "plugin-package-operator-unavailable",
+          );
+        } else {
+          let database: ReturnType<typeof createDatabase> | undefined;
+          try {
+            // createDatabase itself can reject on a malformed connection
+            // string; that failure degrades exactly like a failed capability
+            // check — plan/apply answer 503, read-only browsing stays up —
+            // instead of taking the whole catalogue route down.
+            database = createDatabase(operatorUrl);
+            operator = await verifyOperatorDatabase(database);
+          } catch (error) {
+            await database?.$client.close().catch(() => {});
+            log.error(
+              {
+                type: "plugin-package-operator-unavailable",
+                reason: "OPERATOR_DATABASE_UNUSABLE",
+                cause: error instanceof Error ? error.message : String(error),
+              },
+              "plugin-package-operator-unavailable",
+            );
+          }
+        }
+        const adminAuthorizer = createCompanyAdminAuthorizer(
+          enterpriseCapabilities.directory,
+          {
+            authenticate: authenticateWorkspaceScopeRequest,
+            selectTenant: (request) => request.headers.get("x-openbot-tenant"),
+          },
+        );
+        /*
+         * PKG11 (#470, Spec §12.4): the deployment entry switch, built from the
+         * strictly-parsed config (an illegal pilot list refused startup earlier).
+         * Default off; the log line makes "why do plan/apply 503?" answerable
+         * from the boot record — enabled, and exactly which teams are pilots.
+         */
+        const packageGate = createMarketplaceGate({
+          enabled: config.packageMarketplaceEnabled,
+          pilotWorkspaces: config.packagePilotWorkspaces,
+        });
+        if (packageGate.enabled) {
+          log.info(
+            {
+              type: "plugin-package-marketplace-entry",
+              enabled: true,
+              pilotWorkspaces: packageGate.pilotWorkspaces,
+            },
+            "plugin-package-marketplace-entry",
+          );
+        }
+        return createPluginPackageRoutes({
+          gate: packageGate,
+          catalogue,
+          service: createPackageService({
+            catalogue,
+            readStore: createPackageReadStore(enterpriseCapabilities.data),
+            mutation: operator ? createPackageMutationStore(operator) : null,
+            // PKG04A: expert templates are read from the same verified,
+            // content-addressed artifacts the catalogue resolves.
+            artifactRoot: config.pluginArtifactRoot,
+            /*
+             * OCR-fix-B (B2): plan/apply re-read the CURRENT deployment facts at
+             * their write decisions — the same gate/lock the deploy commands and
+             * dispatch already share, so a CLI withdrawal blocks installs on a
+             * live process without a restart.
+             */
+            releaseFacts: createDeployedReleaseFactsGate({
+              indexPath: config.pluginMarketplaceIndexPath,
+            }),
+          }),
+          resolveScope: (request) =>
+            enterpriseCapabilities.scopes.resolve(request),
+          /*
+           * PKG10 (#469): the dispatch ledger surface, resolved lazily because
+           * the dispatch service (packageTooling below) assembles after this
+           * factory runs. Requests only arrive once startup completed, so the
+           * late-bound getter is safe; a degraded tooling chain keeps these
+           * paths 503 rather than answering an empty ledger.
+           */
+          dispatches: () => packageTooling?.dispatch ?? null,
+          resolveAdmin: operator
+            ? (request) => adminAuthorizer.resolveAdminContext(request)
+            : undefined,
+        });
+      } catch (error) {
+        log.error(
+          {
+            type: "plugin-package-catalogue-unavailable",
+            cause: error instanceof Error ? error.message : String(error),
+          },
+          "plugin-package-catalogue-unavailable",
+        );
+        return createUnavailablePluginPackageRoutes();
+      }
+    })();
     // MT125 (Issue #168) / MT126 (Issue #169): the legacy-family and stream-entry
     // unified assemblies. Both ride the SAME entry-context factory the enterprise
     // conversation entry uses — one session resolution, one issuance WeakSet, one
@@ -1379,7 +1586,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
             () => null,
           )
         : null;
-    if (!operator) return null;
+      if (!operator) return null;
       const voiceMobileRows: OpenMuseVoiceMobileTenancyRows = {
         async findOwnedSession(ownerUserId, sessionId) {
           const [row] = await database
@@ -1467,7 +1674,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     // no share can ever be created or revoked — when that channel is not wired.
     // Held here for the share-token and share-page entrypoints that land in
     // MT058 and MT092; nothing in this assembly serves traffic with it yet.
-    const _personalShareRules = await (async () => {
+    const personalShareRules = await (async () => {
       if (!enterpriseCapabilities) return null;
       const operatorUrl = config.enterpriseOperatorDatabaseUrl;
       const operator = operatorUrl
@@ -1493,7 +1700,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     // the deployment's existing AES-GCM envelope (credentials.ts): plaintext is
     // sealed on registration and only ever opened inside an authorized disclosure,
     // which writes the append-only audit row in the same data transaction.
-    const _credentialOwnership = await (async () => {
+    const credentialOwnership = await (async () => {
       if (!enterpriseCapabilities) return null;
       const credentialOwnershipVault: SecretVault = {
         seal: (plaintext) => encryptSecret(config.keyEncryptionKey, plaintext),
@@ -1531,7 +1738,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     // AES-GCM envelope (same as credentialOwnership): an install secret is sealed
     // on install and never returned by any view; invocation hands the sealed
     // envelope only to the allow branch of the trusted execution plane.
-    const _pluginCatalog = await (async () => {
+    const pluginCatalog = await (async () => {
       if (!enterpriseCapabilities) return null;
       const pluginCatalogVault: SecretVault = {
         seal: (plaintext) => encryptSecret(config.keyEncryptionKey, plaintext),
@@ -1556,6 +1763,114 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
           : null,
       };
     })();
+    // PKG05 (#464): the package execution chain — the runtime (pin writes + the
+    // pinned Skill/TOOL reads), the per-call tool-invocation gate (MT032/#75: this
+    // composition is its FIRST production consumer) and the dispatch service whose
+    // `prepared → dispatched` CAS is the only point a package tool call may reach
+    // a vendor. Everything here degrades fail-closed: no catalogue, no enterprise
+    // capabilities or no verified plugin-catalog decision service means package
+    // tools are refused (PACKAGE_RUN_REQUIRED-shaped refusal), never resolved as
+    // legacy grants, while every legacy surface is untouched. The vault is the
+    // same AES-GCM envelope seam the credential ownership service rides.
+    const packageTooling = await (async () => {
+      if (!enterpriseCapabilities || !packageCatalogue || !pluginCatalog) {
+        return null;
+      }
+      const vault: SecretVault = {
+        seal: (plaintext) => encryptSecret(config.keyEncryptionKey, plaintext),
+        open: (envelope) => decryptSecret(config.keyEncryptionKey, envelope),
+      };
+      const runtime = createPackageRuntime({
+        data: enterpriseCapabilities.data,
+        artifactRoot: config.pluginArtifactRoot,
+      });
+      const toolInvocation = createToolInvocationService({
+        data: enterpriseCapabilities.data,
+      });
+      const dispatch = createPackageDispatchService({
+        data: enterpriseCapabilities.data,
+        catalogue: packageCatalogue,
+        /*
+         * T13-fix-1 (Codex FC-01): the withdrawal-facts gate. The boot catalogue
+         * above stays the manifest/verification snapshot, but every dispatch now
+         * re-reads the CURRENT deployment index under the deploy commands' own
+         * cross-process release lock before its CAS — so a CLI withdrawal blocks
+         * live processes immediately, and a dispatch that committed first keeps
+         * its preserved/unknown outcome. Same index path, same lock, one fact.
+         */
+        releaseFacts: createDeployedReleaseFactsGate({
+          indexPath: config.pluginMarketplaceIndexPath,
+        }),
+        artifactRoot: config.pluginArtifactRoot,
+        vault,
+        toolInvocation,
+        catalogDecisions: pluginCatalog.decisions,
+        pinnedTools: runtime.readPinnedTools,
+        /*
+         * PKG10 (#469) — explicit record: this deployment registers NO vendor
+         * query protocol. The repository's mcp transport exposes only callTool;
+         * the brokered transports expose no idempotent query interface either.
+         * Consequence, by design: an unknown-effect dispatch can be listed and
+         * inspected but never auto-verified, and the verify endpoint answers its
+         * closed 422 refusal. A protocol is only wired here after it has been
+         * verified against a real vendor contract.
+         */
+      });
+      /*
+       * The adapter that turns the dispatch service into the store seam. The
+       * scope rides the SERVER-ISSUED run context (the runner's admission), so
+       * the cast re-claims a type the seam deliberately does not know, never a
+       * client value; a context without one is a wiring error, refused closed.
+       */
+      const scopeOf = (context: {
+        runId: string;
+        attemptGeneration: number;
+      }) => {
+        const scope = (context as { scope?: unknown }).scope;
+        if (!scope) throw new Error("PACKAGE_RUN_SCOPE_MISSING");
+        return scope as Parameters<typeof dispatch.beginDispatch>[0];
+      };
+      const toolNameOf = (toolRef: string, resourceId: string) =>
+        toolRef.slice(resourceId.length + 1);
+      const packageToolSeam: PackageToolSeam = {
+        async list({ context, botId }) {
+          const tools = await dispatch.listPinnedTools(scopeOf(context), {
+            botId,
+            runId: context.runId,
+            attemptGeneration: context.attemptGeneration,
+          });
+          return tools.map((tool) => {
+            const toolName = toolNameOf(tool.toolRef, tool.resourceId);
+            return {
+              ref: packageToolRefFor(tool.installId, tool.resourceId, toolName),
+              installId: tool.installId,
+              resourceId: tool.resourceId,
+              toolName,
+              effect: tool.effect,
+            };
+          });
+        },
+        prepare: ({ context, botId, toolCallId, ref, args }) =>
+          dispatch.preparePackageTool(scopeOf(context), {
+            runId: context.runId,
+            attemptGeneration: context.attemptGeneration,
+            toolCallId,
+            ref,
+            args,
+            botId,
+          }),
+        dispatch: (ticket, args, { context }) =>
+          dispatch.dispatchPackageTool(scopeOf(context), ticket, args),
+        cancel: (ticket, { context }) =>
+          dispatch.cancelDispatch(scopeOf(context), {
+            runId: ticket.runId,
+            attemptGeneration: ticket.attemptGeneration,
+            toolCallId: ticket.toolCallId,
+          }),
+      };
+      return { runtime, dispatch, seam: packageToolSeam };
+    })();
+
     // MT028 (Issue #71): OAuth callback binding by server-held state. The whole
     // service (initiate/consume/fail) rides the verified restricted operator
     // channel: initiation happens inside a company/team session, but the callback
@@ -1565,7 +1880,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     // unaffected), never a flow that could not be consumed or audited. Held here
     // for the connector callback wiring that lands in the downstream ticket;
     // nothing in this assembly serves traffic with it yet.
-    const _oauthState = await (async () => {
+    const oauthState = await (async () => {
       if (!enterpriseCapabilities) return null;
       const operatorUrl = config.enterpriseOperatorDatabaseUrl;
       const operator = operatorUrl
@@ -1613,7 +1928,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     // execution-chain wiring (plugin/shared-account gates compose this at their
     // checkpoints downstream); nothing in this assembly serves traffic with it
     // yet.
-    const _sharedApprovals = await (async () => {
+    const sharedApprovals = await (async () => {
       if (!enterpriseCapabilities) return null;
       const operatorUrl = config.enterpriseOperatorDatabaseUrl;
       const operator = operatorUrl
@@ -2199,6 +2514,9 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     const sharedUseStore = createSharedUseStore(database);
 
     const pluginStore = createPluginStore({
+      // PKG05: the package dispatch seam (absent without the fail-closed
+      // composition above — package calls then refuse, legacy calls are intact).
+      ...(packageTooling ? { packageTool: packageTooling.seam } : {}),
       database,
       deploymentId: config.deploymentId ?? tenantPackage.tenantId,
       auditStore: bootAuditStore,
@@ -2718,7 +3036,15 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
 
     const loadToolsForActor =
       (actorId: string, initiator: AuditInitiator = PERSON_INITIATOR) =>
-      async (botId: string) => [
+      async (
+        botId: string,
+        /*
+         * PKG05: the admitted run's package context, handed in ONLY by the
+         * enterprise Runner's re-resolution. A legacy build calls this with one
+         * argument and is served exactly what it always was.
+         */
+        packageRun?: PackageToolRunContext,
+      ) => [
         ...wakeUpTools({
           store: wakeUpStore,
           ownerUserId: actorId,
@@ -2751,6 +3077,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
           initiator,
           // A Team Bot reaches its owner's accounts, and a teammate's own only with their consent.
           credentialActorFor: teamBots.credentialActorFor(actorId, botId),
+          ...(packageRun ? { packageRun } : {}),
         })),
         ...hostAccessTools({
           broker: hostAccessBroker,
@@ -3186,29 +3513,57 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
           : process.env.OPENAI_BASE_URL,
     });
 
-    const enterpriseRunner = enterpriseCapabilities
-      ? createProductionRunnerComposition({
+    /**
+     * PKG03B (Spec §9): ONE package runtime instance serves both seams — the pin
+     * write that commits with the run row, and the pinned Skill read the Runner
+     * serves for every admitted run (T03-fix wiring). Shared with the package
+     * routes' catalogue root; absent artifacts fail the READ closed per install,
+     * never the pin write.
+     */
+    const packageRuntime = enterpriseCapabilities
+      ? (packageTooling?.runtime ??
+        createPackageRuntime({
           data: enterpriseCapabilities.data,
-          scopeResolver: enterpriseCapabilities.scopes,
-          conversations: enterpriseCapabilities.conversations,
-          identifyActor,
-          resolver: actorAgentResolver,
-          modelSelection: productionModelSelection,
-          modelCapabilitySecret: config.keyEncryptionKey,
-          // The governed gateway dial resolves the admitted route's api key
-          // through the same encrypted credential store every other surface uses.
-          credentialEncryptionKey: config.keyEncryptionKey,
-          credentialReader: credentialStore,
-          // PKG03B (Spec §9): package pins commit with the run row, and the
-          // pinned Skill read serves package skills from those pins. Shared with
-          // the package routes' catalogue root; absent artifacts fail the READ
-          // closed per install, never the pin write.
-          preparePackageRun: createPackageRuntime({
-            data: enterpriseCapabilities.data,
-            artifactRoot: config.pluginArtifactRoot,
-          }).prepareWithin,
+          artifactRoot: config.pluginArtifactRoot,
+        }))
+      : undefined;
+
+    /**
+     * PKG09 (Spec §9): the background-entry scope rebuild. An approved package
+     * tool resumed outside its run re-enters the package branch with the context
+     * this service re-derives from the persistent run row — run tenant/workspace/
+     * principal from `enterprise_runs`, the admitted Bot from the run's expert
+     * version, and a scope issued NOW (membership re-verified) by the real scope
+     * resolver. Nothing from the deserialized proposal reaches it.
+     */
+    const packageEntrypoints = enterpriseCapabilities
+      ? createPackageEntrypoints({
+          directory: enterpriseCapabilities.directory,
+          data: enterpriseCapabilities.data,
         })
       : undefined;
+
+    const enterpriseRunner =
+      enterpriseCapabilities && packageRuntime
+        ? createProductionRunnerComposition({
+            data: enterpriseCapabilities.data,
+            scopeResolver: enterpriseCapabilities.scopes,
+            conversations: enterpriseCapabilities.conversations,
+            identifyActor,
+            resolver: actorAgentResolver,
+            modelSelection: productionModelSelection,
+            modelCapabilitySecret: config.keyEncryptionKey,
+            // The governed gateway dial resolves the admitted route's api key
+            // through the same encrypted credential store every other surface uses.
+            credentialEncryptionKey: config.keyEncryptionKey,
+            credentialReader: credentialStore,
+            preparePackageRun: packageRuntime.prepareWithin,
+            readPinnedSkills: packageRuntime.readPinnedSkills,
+            // PKG05: the pinned TOOL read — a run with dispatchable package tools
+            // re-resolves its agent with the run's package context.
+            readPinnedTools: packageRuntime.readPinnedTools,
+          })
+        : undefined;
 
     /*
      * MOD05（#625，根 #620）：M03 BotCatalog 门面装配。三内件全部复用既有实例：
@@ -3369,12 +3724,30 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         // is the evidence the run's terminal settlement answers to (the gate the
         // governed headless turn and the browser relay both apply at finish).
         state.carrier = carrier;
+        /*
+         * PKG09 (Spec §9): the resumed loop is re-offered the tools the PARKED
+         * ATTEMPT may dispatch — including the run's pinned package tools, under
+         * the same server-issued context the original turn mounted them with. The
+         * identity is the continuation's own binding (re-verified field-wise by
+         * the claim; `reactivateSuspensionLease` re-armed exactly this attempt)
+         * and the scope is the caller's freshly-signed one. Without this context
+         * a `pkg:` tool is not offered at all, so the resume could not execute
+         * the very call it was resumed for.
+         */
+        const packageRun = packageRunForBinding({
+          scope,
+          binding: {
+            runId: claim.binding.runId,
+            attemptGeneration: claim.binding.generation,
+          },
+        });
         const tools = await grantedTools({
           store: pluginStore,
           botId,
           actorId: scope.actorId,
           initiator: PERSON_INITIATOR,
           credentialActorFor: teamBots.credentialActorFor(scope.actorId, botId),
+          packageRun,
         });
         const actor = await actorFor(scope.actorId);
         const registered = await loadAgentsForActor(actor);
@@ -3513,7 +3886,20 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         // unpaused (the actor's membership itself is re-verified field-wise by
         // the store before this gate runs), so a revoked or paused participant
         // cannot resume a waiting participation call.
-        toolGrantCurrent: async ({ scope, botId, toolName, kind }) => {
+        //
+        // PKG09 (Spec §9): the ledger a PACKAGE tool was granted on is its run's
+        // pin set, and the seam offers those tools only under a server-issued run
+        // context. The continuation's own binding is passed through, so a parked
+        // `pkg:` call is re-checked against the pins of the attempt that parked it
+        // — and a pin or grant revoked while it waited removes the name, which is
+        // the refusal this gate exists for.
+        toolGrantCurrent: async ({
+          scope,
+          botId,
+          toolName,
+          kind,
+          boundRun,
+        }) => {
           if (kind === "frontend_tool") {
             try {
               await guardBotTurn({
@@ -3534,6 +3920,14 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
               scope.actorId,
               botId,
             ),
+            ...(boundRun
+              ? {
+                  packageRun: packageRunForBinding({
+                    scope,
+                    binding: boundRun,
+                  }),
+                }
+              : {}),
           });
           return tools.some((tool) => tool.name === toolName);
         },
@@ -3704,6 +4098,33 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         // The granted connector tools, resolved for this owner exactly as the
         // browser run resolves them (grant → policy → credential → audit stay
         // inside the granted path).
+        /*
+         * PKG09 (Spec §9): the entry runs as a MANAGED run — `runs.start` pinned
+         * this turn's package grants in the same transaction that wrote the run
+         * row — so the surface offers exactly the tools that attempt may
+         * dispatch. The context is the server's own (scope from this entry's
+         * re-issued scope, run/attempt from the admitted binding), never a queue
+         * field; a run with no pins offers nothing extra and the legacy offer is
+         * untouched. Every dispatch revalidates pin ∩ current grant ∩ membership
+         * at its CAS.
+         *
+         * WHICH ENTRIES GET PACKAGE TOOLS. This is the ONE shared headless
+         * surface (see the block comment above): schedule/routine firings,
+         * responsibility advance, delivery and wake-up all assemble through it,
+         * so all of them are offered the run's pinned package tools — each under
+         * its OWN admitted run and the scope re-signed for that entry, and each
+         * call revalidated at the dispatch CAS. That is the Spec §9 rule for a
+         * managed background run, not an accident of sharing; the approval
+         * continuation resuming such a turn re-offers the same set under the
+         * embedded approval binding.
+         */
+        const packageRun = packageRunForBinding({
+          scope,
+          binding: {
+            runId: binding.runId,
+            attemptGeneration: binding.generation,
+          },
+        });
         const tools = await restrictToolsForRun(
           initiator,
           () =>
@@ -3716,6 +4137,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
                 scope.actorId,
                 agentId,
               ),
+              packageRun,
             }),
           proactiveReadOnlyRefs,
         )();
@@ -4476,7 +4898,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
       );
     }
 
-    const _mastraContinuationRouteDeps =
+    const mastraContinuationRouteDeps =
       mastraContinuationStore &&
       enterpriseCapabilities &&
       mastraContinuationInstall
@@ -4752,6 +5174,57 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
       callTool: (input) => toolAccess.callTool(input),
       credentialActorFor: (actorId, botId, ref) =>
         teamBots.credentialActorFor(actorId, botId)(ref),
+      /*
+       * PKG09 (Spec §9): the resume of an approved PACKAGE tool re-enters
+       * callTool with the run context rebuilt from the persistent run row —
+       * the run's own tenant/workspace/principal and the admitted Bot, with
+       * membership re-verified at issue time. The deserialized proposal's
+       * scope/target fields are never consulted for authority; the dispatch CAS
+       * revalidates args digest, connection generation, grant and lease anyway
+       * (A07). An unwired deployment answers the typed refusal instead — no run
+       * is fabricated for compatibility.
+       *
+       * WHICH ARM A PACKAGE APPROVAL TAKES. In a deployment that can carry a
+       * package tool at all (enterprise capabilities, hence the Mastra engine),
+       * the parked call is driven by the governed continuation orchestrator —
+       * six gates, the continuation's own attempt re-armed, and the resumed loop
+       * re-offered the run's pinned tools (see `toolGrantCurrent` and
+       * `governedResumeSurface`). THIS executor is the fallback for parkings the
+       * governed drive does not recognise; a package proposal can only exist in a
+       * managed run, so in practice it is not reached with one. It stays wired
+       * and truthful rather than describing itself as the production path.
+       */
+      ...(packageEntrypoints
+        ? {
+            packageRunFor: async (action: ApprovalAction) => {
+              /*
+               * L2: the proposal's OWN attempt (recorded in its `target` when the
+               * call was prepared) is handed to the restore, so an approved
+               * proposal cannot ride a run that was cancelled/retried while it
+               * waited. The attempt is a dispatch fact of the proposal, not an
+               * authority claim: the run row still decides who/where, and the
+               * dispatch CAS re-verifies lease/pins.
+               */
+              const expectedAttempt = proposalAttemptOf(action);
+              const restored = await packageEntrypoints.restoreRunContext({
+                ownerUserId: action.actorId,
+                runId: action.runId,
+                botId: action.botId,
+                ...(expectedAttempt !== undefined
+                  ? { expectedAttemptGeneration: expectedAttempt }
+                  : {}),
+              });
+              return restored.outcome === "context"
+                ? {
+                    outcome: "context" as const,
+                    runId: restored.run.runId,
+                    attemptGeneration: restored.run.attemptGeneration,
+                    scope: restored.run.scope,
+                  }
+                : { outcome: "refused" as const, code: restored.code };
+            },
+          }
+        : {}),
       coordinationCall: (input) => coordination.call(input),
       readRun: (value) =>
         readApprovedRunAssertion(value, config.keyEncryptionKey),
@@ -6910,7 +7383,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         await indexArtifacts(workshopStore, sessionId, artifacts);
       },
     });
-  /**
+    /**
      * The ONE share service: the owner routes (mint/revoke behind canUseBot) and the anonymous
      * public routes (resolve/preview by token) are the same service's two faces, so they share one
      * instance — one limiter budget, one signing key, one place the token mint lives. The limiter
@@ -6989,7 +7462,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         },
       });
 
-  /*
+    /*
      * Craft: the autonomous-build surface, assembled beside the workshop for the same reason —
      * its wiring is one boot decision. The config answers the deployment's three questions in
      * one place (enabled, which Bot's sandbox, and the opencode-serve topology: native onyx
@@ -7329,7 +7802,9 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         (anthropic
           ? process.env.ANTHROPIC_BASE_URL?.trim()
           : process.env.OPENAI_BASE_URL?.trim()) ||
-        (anthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1");
+        (anthropic
+          ? "https://api.anthropic.com/v1"
+          : "https://api.openai.com/v1");
       return {
         provider: "openbot",
         modelName: runtimeModel.defaultModel,
@@ -8457,6 +8932,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         botCatalog,
         enterpriseConversations: enterpriseConversationRoutes,
         enterpriseWorkspaceScope: enterpriseWorkspaceScopeRoutes,
+        pluginPackages: pluginPackageRoutes,
         ...(enterpriseMobileAggregateAndStreamEntry
           ? {
               enterpriseMobileAggregate:
@@ -8626,7 +9102,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
       auditStore: bootAuditStore,
     });
 
-  /**
+    /**
      * The live screen, proxied.
      *
      * Proxied rather than connected directly. `agent-computer` authenticates its callers with a

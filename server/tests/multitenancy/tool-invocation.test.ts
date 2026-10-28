@@ -17,6 +17,9 @@
 // DATABASE_URL）加三个受限角色 URL；缺配置时整套显式 skip（跳过原因
 // 写在用例名里，skipped 不计为通过），绝不回退开发库。
 
+// runner 层：本套件与全部 multitenancy 套件同属 Bun 运行时面 —— 判定链经过
+// server/src/db/client（Bun SQL），Node 收集直接报 'bun:' 协议错（T00 B-3）。
+// 因此与兄弟套件一样 import bun-test-compat，由 e2e 驱动到 Bun 执行（ADR 0008）。
 import {
   afterAll,
   beforeAll,
@@ -34,9 +37,9 @@ import {
   enterpriseTestDatabaseUrlFrom,
 } from "../support/enterprise-database";
 import {
+  createToolFixture,
   type ToolFixture,
   type ToolIdentity,
-  createToolFixture,
 } from "./support/tool-invocation";
 
 // ---------------------------------------------------------------------------
@@ -95,8 +98,14 @@ describeDb("MT032 / Issue #75 — 工具调用重校验", () => {
     let agentN = 0;
     let credN = 0;
     return {
-      agentId: () => `mt032-agent-${String((agentN += 1)).padStart(3, "0")}`,
-      credentialId: () => `mt032-cred-${String((credN += 1)).padStart(3, "0")}`,
+      agentId: () => {
+        agentN += 1;
+        return `mt032-agent-${String(agentN).padStart(3, "0")}`;
+      },
+      credentialId: () => {
+        credN += 1;
+        return `mt032-cred-${String(credN).padStart(3, "0")}`;
+      },
     };
   })();
 

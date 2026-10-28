@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
+  enterprisePackageDispatches as dispatchRows,
   enterprisePackageGrants as grantRows,
   enterprisePackageInstalls as installRows,
   enterprisePackageResourceLinks as linkRows,
@@ -47,6 +48,14 @@ interface InstallRowFacts {
   readonly membershipStatus: string | null;
   readonly membershipEpoch: number | null;
   readonly workspaceMembershipStatus: string | null;
+  /**
+   * PKG06 (#465): the CALLING principal's company role on the same joined
+   * membership row that decides eligibility — the fact `allowedActions` is
+   * computed from. Only tenant_admin manages an install; members and auditors
+   * browse. Null is unreachable for facts (eligibility requires an active
+   * membership) but stays in the row shape for the left join.
+   */
+  readonly callerRole: string | null;
 }
 
 async function readTransaction<T>(
@@ -145,6 +154,8 @@ async function loadGrants(
       installId: grantRows.installId,
       botId: grantRows.botId,
       resourceId: grantRows.resourceId,
+      resourceKind: grantRows.resourceKind,
+      toolRef: grantRows.toolRef,
       generation: grantRows.generation,
       revokedAt: grantRows.revokedAt,
     })
@@ -159,33 +170,51 @@ async function loadGrants(
     .orderBy(asc(grantRows.installId), asc(grantRows.botId));
   interface Accumulator {
     readonly generations: Set<number>;
-    readonly resources: string[];
+    readonly skills: Set<string>;
+    readonly tools: Map<string, Set<string>>;
   }
   const byBot = new Map<string, Accumulator>();
   for (const row of rows) {
     const key = `${row.installId}\u0000${row.botId}`;
     const accumulator = byBot.get(key) ?? {
       generations: new Set<number>(),
-      resources: [],
+      skills: new Set<string>(),
+      tools: new Map<string, Set<string>>(),
     };
     accumulator.generations.add(row.generation);
-    if (row.revokedAt === null) accumulator.resources.push(row.resourceId);
+    if (row.revokedAt === null) {
+      if (row.resourceKind === "connectorTool") {
+        const set = accumulator.tools.get(row.resourceId) ?? new Set<string>();
+        set.add(row.toolRef);
+        accumulator.tools.set(row.resourceId, set);
+      } else {
+        accumulator.skills.add(row.resourceId);
+      }
+    }
     byBot.set(key, accumulator);
   }
   for (const [key, accumulator] of byBot) {
     // A Bot with no active rows has no grant to surface (its generations are
     // history); only bots with at least one live resource appear.
-    if (accumulator.resources.length === 0) continue;
+    if (accumulator.skills.size === 0 && accumulator.tools.size === 0) continue;
     const installId = key.split("\u0000")[0] as string;
     const botId = key.split("\u0000")[1] as string;
     const list = byInstall.get(installId) ?? [];
     list.push({
       botId,
       revision: accumulator.generations.size,
-      resources: accumulator.resources.sort().map((resourceId) => ({
-        resourceId,
-        kind: "skill" as const,
-      })),
+      resources: [
+        ...[...accumulator.skills]
+          .sort()
+          .map((resourceId) => ({ resourceId, kind: "skill" as const })),
+        ...[...accumulator.tools.entries()]
+          .sort(([left], [right]) => (left < right ? -1 : 1))
+          .map(([resourceId, toolRefs]) => ({
+            resourceId,
+            kind: "managedConnector" as const,
+            toolRefs: [...toolRefs].sort(),
+          })),
+      ],
     });
     byInstall.set(installId, list);
   }
@@ -205,6 +234,7 @@ const INSTALL_COLUMNS = {
   membershipStatus: enterpriseMemberships.status,
   membershipEpoch: enterpriseMemberships.epoch,
   workspaceMembershipStatus: enterpriseWorkspaceMemberships.status,
+  callerRole: enterpriseMemberships.role,
 } as const;
 
 function joinEligibility(
@@ -259,6 +289,9 @@ function toFacts(
     status: row.status as PackageInstallFacts["status"],
     links: Object.freeze([...links]),
     grants: Object.freeze([...grants]),
+    // Eligibility already required an active membership row; an unreachable
+    // null (defensive) reads as a non-managing caller.
+    callerCompanyRole: row.callerRole ?? "",
   });
 }
 
@@ -314,6 +347,31 @@ export function createPackageReadStore(data: DataDatabase): PackageReadStore {
         const links = await loadLinks(tx, scope, [row.id]);
         const grants = await loadGrants(tx, scope, [row.id]);
         return toFacts(row, links.get(row.id) ?? [], grants.get(row.id) ?? []);
+      });
+    },
+
+    /**
+     * PKG10 (#469): the install's dispatches still in `unknown` — the redacted
+     * "effect undetermined" badge. Read-only under the same data-role arm;
+     * an unknown/cross-scope install counts zero (its rows are invisible to
+     * this scope's RLS anyway), so the badge never leaks existence.
+     */
+    async countUnknownDispatches(scope, installId) {
+      assertTrustedScope(scope);
+      if (typeof installId !== "string" || !installId.trim()) return 0;
+      return readTransaction(data, scope, async (tx) => {
+        const rows = await tx
+          .select({ operationId: dispatchRows.operationId })
+          .from(dispatchRows)
+          .where(
+            and(
+              eq(dispatchRows.tenantId, scope.tenantId),
+              eq(dispatchRows.workspaceId, scope.workspaceId),
+              eq(dispatchRows.installId, installId),
+              eq(dispatchRows.state, "unknown"),
+            ),
+          );
+        return rows.length;
       });
     },
   };

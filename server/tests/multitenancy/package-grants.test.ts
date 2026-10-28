@@ -179,6 +179,7 @@ function probeCatalogue(): PackageCatalogue {
     artifactDigest: DIGEST,
     category: "productivity",
     listed: true,
+    state: "published",
     verified: true,
     displayName: "PKG03 probe package",
     summary: "The PKG03 probe package.",
@@ -400,6 +401,25 @@ describeDb("PKG03 package Bot grants (real restricted roles)", () => {
         workspaceId: teamA1,
         ownerPrincipalId: adminPrincipal,
       });
+      /*
+       * PKG05 (#464): connector-tool rows now also carry the reviewed tool
+       * contract (schema digest, effect) and their MT031 connector install, so
+       * this probe writes a CONTRACT-VALID row and lets the tool_ref CHECK be
+       * the only thing a lie can violate — which is what this test is about.
+       */
+      const probeConnector = `pkg03-check-connector-${crypto.randomUUID()}`;
+      const probeCatalog = `pkg03-check-catalog-${crypto.randomUUID().slice(0, 8)}`;
+      await setup.$client.unsafe(
+        `insert into enterprise_plugin_catalog (id, kind, title, vendor, source, metadata)
+         values ($1, 'mcp', 'PKG03 check probe', 'openbot', 'first-party', '{"summary":"probe"}'::jsonb)`,
+        [probeCatalog],
+      );
+      await setup.$client.unsafe(
+        `insert into enterprise_plugin_installs
+           (tenant_id, id, catalog_id, workspace_id, installed_by, config, status)
+         values ($1, $2, $3, $4, $5, '{}'::jsonb, 'active')`,
+        [companyA, probeConnector, probeCatalog, teamA1, adminPrincipal],
+      );
       const insert = (
         generation: number,
         resourceKind: string,
@@ -408,8 +428,8 @@ describeDb("PKG03 package Bot grants (real restricted roles)", () => {
         setup.$client.unsafe(
           `insert into enterprise_package_grants
            (tenant_id, install_id, generation, bot_id, resource_id, workspace_id,
-            resource_kind, tool_ref, granted_by)
-           values ($1, $2, $3, $4, 'probe-resource', $5, $6, $7, $8)`,
+            resource_kind, tool_ref, schema_digest, effect, connector_install_id, granted_by)
+           values ($1, $2, $3, $4, 'probe-resource', $5, $6, $7, $8, $9, $10, $11)`,
           [
             companyA,
             installA1.installId,
@@ -418,6 +438,10 @@ describeDb("PKG03 package Bot grants (real restricted roles)", () => {
             teamA1,
             resourceKind,
             toolRef,
+            // Skill rows must carry NULLs; connector rows a valid contract.
+            resourceKind === "skill" ? null : "a".repeat(64),
+            resourceKind === "skill" ? null : "read",
+            resourceKind === "skill" ? null : probeConnector,
             adminPrincipal,
           ],
         );
@@ -451,9 +475,19 @@ describeDb("PKG03 package Bot grants (real restricted roles)", () => {
       await setup.$client.unsafe(
         `insert into enterprise_package_grants
          (tenant_id, install_id, generation, bot_id, resource_id, workspace_id,
-          resource_kind, tool_ref, granted_by, revoked_at)
-         values ($1, $2, 901, $3, 'probe-resource', $4, 'connectorTool', 'probe:run', $5, now())`,
-        [companyA, installA1.installId, probeBot, teamA1, adminPrincipal],
+          resource_kind, tool_ref, schema_digest, effect, connector_install_id,
+          granted_by, revoked_at)
+         values ($1, $2, 901, $3, 'probe-resource', $4, 'connectorTool', 'probe:run',
+                 $6, 'read', $7, $5, now())`,
+        [
+          companyA,
+          installA1.installId,
+          probeBot,
+          teamA1,
+          adminPrincipal,
+          "a".repeat(64),
+          probeConnector,
+        ],
       );
     },
   );
@@ -730,7 +764,7 @@ describeDb("PKG03 package Bot grants (real restricted roles)", () => {
   );
 
   itDb(
-    "unknown resources and connector-kind resources are refused",
+    "unknown resources are refused and connector grants require an explicit tool set",
     async () => {
       const scope = await fixture.scopeFor("company-admin", "team-a1");
       const admin = await fixture.adminContextOf("company-admin", "company-a");
@@ -754,7 +788,16 @@ describeDb("PKG03 package Bot grants (real restricted roles)", () => {
         ),
       );
       expect(unknownResource).toContain("RESOURCE_NOT_FOUND");
-      const connector = await thrownMessage(
+      /*
+       * PKG05 (#464): connector-tool grants are DELIVERED, so the slice-A
+       * "connector is unsupported" expectation is superseded. What stays
+       * refused: a connector request that names no tool (the grant must be
+       * exact — INPUT_INVALID), and one naming a resource this install has no
+       * managed-connector link for (RESOURCE_NOT_FOUND). The positive path
+       * (manifest-derived digest/effect written to the row) is PKG05's own
+       * driven suite.
+       */
+      const connectorWithoutTools = await thrownMessage(
         grants.setBotGrant(
           scope,
           admin,
@@ -767,7 +810,27 @@ describeDb("PKG03 package Bot grants (real restricted roles)", () => {
           nextKey("connector-kind"),
         ),
       );
-      expect(connector).toContain("RESOURCE_KIND_UNSUPPORTED");
+      expect(connectorWithoutTools).toContain("INPUT_INVALID");
+      const connectorUnlinked = await thrownMessage(
+        grants.setBotGrant(
+          scope,
+          admin,
+          {
+            installId: installA1.installId,
+            botId: botA1,
+            expectedGrantRevision: null,
+            resources: [
+              {
+                resourceId: "tracker",
+                kind: "managedConnector",
+                toolRefs: ["tracker:list"],
+              },
+            ],
+          },
+          nextKey("connector-unlinked"),
+        ),
+      );
+      expect(connectorUnlinked).toContain("RESOURCE_NOT_FOUND");
     },
   );
 
@@ -914,12 +977,35 @@ describeDb("PKG03 package Bot grants (real restricted roles)", () => {
         workspaceId: teamA1,
         ownerPrincipalId: adminPrincipal,
       });
+      /*
+       * PKG05 (#464): a connector-tool grant row now carries its reviewed
+       * contract (schema digest and effect) and the MT031 connector install it
+       * reaches — the table's CHECK and FK say so. This test is about the ROW
+       * SEMANTICS (the six-column PK / active uniqueness per tool_ref), so the
+       * arrangement seeds one managed connector install for the FK and writes
+       * a well-formed contract on each row; nothing about the uniqueness
+       * assertion changes.
+       */
+      const toolRefConnector = `pkg03-toolref-connector-${crypto.randomUUID()}`;
+      const catalogId = `pkg03-toolref-catalog-${crypto.randomUUID().slice(0, 8)}`;
+      await setup.$client.unsafe(
+        `insert into enterprise_plugin_catalog (id, kind, title, vendor, source, metadata)
+         values ($1, 'mcp', 'PKG03 tool grant probe', 'openbot', 'first-party', '{"summary":"probe"}'::jsonb)`,
+        [catalogId],
+      );
+      await setup.$client.unsafe(
+        `insert into enterprise_plugin_installs
+           (tenant_id, id, catalog_id, workspace_id, installed_by, config, status)
+         values ($1, $2, $3, $4, $5, '{}'::jsonb, 'active')`,
+        [companyA, toolRefConnector, catalogId, teamA1, adminPrincipal],
+      );
       const insertGrant = (toolRef: string) =>
         setup.$client.unsafe(
           `insert into enterprise_package_grants
            (tenant_id, install_id, generation, bot_id, resource_id, workspace_id,
-            resource_kind, tool_ref, granted_by)
-           values ($1, $2, 910, $3, 'tracker', $4, 'connectorTool', $5, $6)`,
+            resource_kind, tool_ref, schema_digest, effect, connector_install_id, granted_by)
+           values ($1, $2, 910, $3, 'tracker', $4, 'connectorTool', $5,
+                   repeat('a', 64), 'read', $7, $6)`,
           [
             companyA,
             toolRefInstall.installId,
@@ -927,6 +1013,7 @@ describeDb("PKG03 package Bot grants (real restricted roles)", () => {
             teamA1,
             toolRef,
             adminPrincipal,
+            toolRefConnector,
           ],
         );
       // The PKG03 `package_grant_pk_tool_ref` six-column PK: one connector
@@ -952,14 +1039,17 @@ describeDb("PKG03 package Bot grants (real restricted roles)", () => {
         setup.$client.unsafe(
           `insert into enterprise_package_grants
            (tenant_id, install_id, generation, bot_id, resource_id, workspace_id,
-            resource_kind, tool_ref, granted_by, revoked_at)
-           values ($1, $2, 910, $3, 'tracker', $4, 'connectorTool', 'tracker:list', $5, now())`,
+            resource_kind, tool_ref, schema_digest, effect, connector_install_id,
+            granted_by, revoked_at)
+           values ($1, $2, 910, $3, 'tracker', $4, 'connectorTool', 'tracker:list',
+                   repeat('a', 64), 'read', $6, $5, now())`,
           [
             companyA,
             toolRefInstall.installId,
             toolRefBot,
             teamA1,
             adminPrincipal,
+            toolRefConnector,
           ],
         ),
       );
@@ -999,6 +1089,88 @@ describeDb("PKG03 package Bot grants (real restricted roles)", () => {
       );
       expect(skillDuplicate).toContain("23505");
       expect(skillDuplicate).toContain("enterprise_package_grant_pk");
+    },
+  );
+
+  itDb(
+    "a logically-private Bot is refused with PACKAGE_BOT_SCOPE_UNAVAILABLE",
+    async () => {
+      const scope = await fixture.scopeFor("company-admin", "team-a1");
+      const admin = await fixture.adminContextOf("company-admin", "company-a");
+      const { createPackageGrantService } = await import(
+        "../../src/enterprise/plugin-packages/grants"
+      );
+      const grants = createPackageGrantService({
+        mutation: fixture.mutation,
+      });
+      // The `pbot-` namespace (MT059) is the logical-private Bot identity
+      // (ADR 0006): its actual execution-scope resolution is not wired in this
+      // version, so binding refuses loudly (422) — even before any ownership
+      // lookup, the identity is never copied and no default environment is
+      // fallen back to.
+      const state = await thrownMessage(
+        grants.setBotGrant(
+          scope,
+          admin,
+          {
+            installId: installA1.installId,
+            botId: `pbot-${crypto.randomUUID()}`,
+            expectedGrantRevision: null,
+            resources: [{ resourceId: SKILL_A, kind: "skill" }],
+          },
+          nextKey("pbot-bind"),
+        ),
+      );
+      expect(state).toContain("PACKAGE_BOT_SCOPE_UNAVAILABLE");
+    },
+  );
+
+  itDb(
+    "revoking a grant that never existed answers not-found, not a fabricated revision",
+    async () => {
+      const scope = await fixture.scopeFor("company-admin", "team-a1");
+      const admin = await fixture.adminContextOf("company-admin", "company-a");
+      const { createPackageGrantService } = await import(
+        "../../src/enterprise/plugin-packages/grants"
+      );
+      const grants = createPackageGrantService({
+        mutation: fixture.mutation,
+      });
+      // L-1: a (install, bot) pair with zero grant generations has the CAS
+      // count 0 — the old answer fabricated revision 1, which poisoned the
+      // caller's next expectedGrantRevision with a REVISION_CONFLICT. It is
+      // the same not-found face as any other absent grant.
+      const neverBot = await seedBot({
+        tenantId: installA1.tenantId,
+        workspaceId: installA1.workspaceId,
+        ownerPrincipalId: installA1.principalId,
+      });
+      const state = await thrownMessage(
+        grants.revokeBotGrant(
+          scope,
+          admin,
+          {
+            installId: installA1.installId,
+            botId: neverBot,
+            expectedGrantRevision: null,
+          },
+          nextKey("never-revoke"),
+        ),
+      );
+      expect(state).toContain("RESOURCE_NOT_FOUND");
+      // Round-trip sanity on a pair WITH generations: revoking a fully
+      // revoked pair stays the honest no-op whose revision IS the CAS count.
+      const first = await grants.revokeBotGrant(
+        scope,
+        admin,
+        {
+          installId: installA1.installId,
+          botId: botA1,
+          expectedGrantRevision: null,
+        },
+        nextKey("noop-revoke"),
+      );
+      expect(first.grant.revision).toBeGreaterThan(0);
     },
   );
 });

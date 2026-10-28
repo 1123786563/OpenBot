@@ -30,6 +30,11 @@ const SKIP = new Set([
 const dirs = SUITE_DIRS;
 const files = [];
 function walk(dir) {
+  // SUITE_DIRS is shared with the runner config, where a not-yet-checked-out directory
+  // (`deliverables/`) simply has no suites; a missing directory contributes zero files instead of
+  // crashing the whole audit with ENOENT before it can report anything (bun run test:ci ran it
+  // before execution).
+  if (!existsSync(dir)) return;
   for (const entry of readdirSync(dir)) {
     if (SKIP.has(entry)) continue;
     const full = join(dir, entry);

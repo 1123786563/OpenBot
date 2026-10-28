@@ -1,0 +1,41 @@
+{
+  "first": {
+    "status": 201,
+    "body": {
+      "agentId": "pkg-expert-cb5be50b-ddfd-4936-9598-375b8027e7c6",
+      "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+      "packageKey": "openbot/demo-skill",
+      "version": "1.1.0",
+      "resourceId": "note-assistant",
+      "expertTemplateRef": "openbot/demo-skill/note-assistant",
+      "displayName": "T12 Note Assistant",
+      "grantRevision": 1,
+      "resources": [
+        {
+          "resourceId": "summarize",
+          "kind": "skill"
+        }
+      ]
+    }
+  },
+  "replay": {
+    "status": 200,
+    "body": {
+      "agentId": "pkg-expert-cb5be50b-ddfd-4936-9598-375b8027e7c6",
+      "version": "1.1.0",
+      "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+      "resources": [
+        {
+          "kind": "skill",
+          "resourceId": "summarize"
+        }
+      ],
+      "packageKey": "openbot/demo-skill",
+      "resourceId": "note-assistant",
+      "displayName": "T12 Note Assistant",
+      "grantRevision": 1,
+      "expertTemplateRef": "openbot/demo-skill/note-assistant"
+    }
+  },
+  "sameAgent": true
+}

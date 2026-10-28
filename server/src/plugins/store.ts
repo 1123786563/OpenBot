@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { connectAppRefusal } from "../../../shared/connect-prompt";
+import { PACKAGE_TOOL_REF_PREFIX } from "../../../shared/enterprise/plugin-package-contracts";
 import { researchRoleOf } from "../../../shared/research";
 import {
   type BrokeredProvenance,
@@ -89,6 +91,11 @@ import { inspectToolArguments } from "./content-governance";
 import { type ListedTool, McpServerError } from "./mcp";
 import { registerDynamicClient } from "./oauth";
 import { deploymentAlias, personalAlias } from "./openconnector";
+import type {
+  PackageToolRunContext,
+  PackageToolSeam,
+  PackageToolTicket,
+} from "./package-tools";
 import { shareTargetOf } from "./share-target";
 import {
   type AccountAnswer,
@@ -1166,6 +1173,14 @@ export type AccessToken = {
 };
 
 export type PluginStoreOptions = {
+  /**
+   * PKG05 (Issue #464): the package dispatch seam. Present, a call carrying a
+   * server-issued package run context and a `pkg:` tool ref is authorized by
+   * the package chain (pin → grant → install → connection → CAS) — never by
+   * the legacy grant. Absent, such a call is refused rather than resolved as
+   * legacy; every legacy call is unaffected.
+   */
+  packageTool?: PackageToolSeam;
   approvalGate?: ApprovalGate;
   /**
    * The owner's permission before a connector call sends content to other people.
@@ -1317,6 +1332,26 @@ const BROKER_ROW: Record<
     screenName: "open-connector",
     vendor: "OpenConnector",
   },
+};
+
+/** One `callTool` invocation, legacy or package-tagged. */
+export type PluginCallToolInput = {
+  ref: string;
+  args: Record<string, unknown>;
+  botId: string;
+  actorId: string;
+  initiator?: AuditInitiator;
+  /**
+   * Whose connected account the call goes out on, when that is not the asker's: a Team Bot
+   * reaching its owner's account (team-bots/team-bots.ts). Every gate is still the asker's.
+   */
+  credentialActorId?: string;
+  /**
+   * PKG05 (Spec §9): the server-issued package execution context. Issued by an
+   * admitted run (never from a request field); its presence is what tags this
+   * call as a PACKAGE call. Absent on every legacy call.
+   */
+  packageRun?: PackageToolRunContext & { readonly toolCallId?: string };
 };
 
 export function createPluginStore(options: PluginStoreOptions) {
@@ -2967,8 +3002,271 @@ export function createPluginStore(options: PluginStoreOptions) {
     return schemeKind(await brokeredAppScheme(provider, toolkit));
   }
 
+  /*
+   * The package branch of `callTool` (Spec §9). Every step below is the SAME
+   * gate the legacy path applies — policy, content inspection, approval — over
+   * an authorization chain that is wholly different: the package grant, the
+   * run's pin, the install's lifecycle, the connector's connection generation
+   * and the managed account, revalidated per call and linearized by the
+   * `prepared → dispatched` CAS inside `packageTool.dispatch`.
+   *
+   * NOTHING HERE DECIDES AUTHORIZATION. `prepare` answers a ticket from the
+   * package chain's own revalidation; a refusal is written to the trail and
+   * thrown before any secret is read. The approval gate runs between prepare
+   * and dispatch, so an approval obtained against one argument set, one
+   * connection generation or one grant cannot be replayed against another:
+   * dispatch revalidates everything and compares the argument digest (A07).
+   */
+  async function callPackageTool(
+    input: PluginCallToolInput,
+  ): Promise<{ text: string; isError: boolean }> {
+    const auditActor = input.actorId || UNATTRIBUTED_ACTOR;
+    const [packageServerId] = input.ref.split("/");
+    const writeRefusal = async (
+      refusal: string,
+      reason: string,
+    ): Promise<never> => {
+      await recordAuditEvent(auditStore, {
+        eventType: "mcp.call_rejected",
+        targetType: "mcp_tool",
+        targetId: input.ref,
+        ...(input.initiator ? { initiator: input.initiator } : {}),
+        payload: {
+          actor: auditActor,
+          bot: input.botId,
+          server: packageServerId ?? input.ref,
+          refusal,
+          reason,
+        },
+      });
+      throw new PluginRefusedError(reason, null);
+    };
+
+    const seam: PackageToolSeam | undefined = options.packageTool;
+    const context = input.packageRun;
+    if (!seam || !context) {
+      return writeRefusal(
+        "package_run_required",
+        "Package tools run only inside a managed run, and this call has no run context.",
+      );
+    }
+    const wired: PackageToolSeam = seam;
+    const run: PackageToolRunContext = context;
+    const reject = async (
+      refusal: string,
+      reason: string,
+      ticket?: PackageToolTicket,
+    ): Promise<never> => {
+      if (ticket) {
+        // The prepared row becomes `cancelled`; it never becomes dispatched.
+        await wired.cancel(ticket, { context: run }).catch(() => undefined);
+      }
+      return writeRefusal(refusal, reason);
+    };
+    const toolCallId =
+      typeof context.toolCallId === "string" && context.toolCallId.trim()
+        ? context.toolCallId
+        : randomUUID();
+    const toolArgs =
+      input.args && typeof input.args === "object" && !Array.isArray(input.args)
+        ? input.args
+        : {};
+
+    const prepared = await wired.prepare({
+      context: run,
+      botId: input.botId,
+      actorId: input.actorId,
+      toolCallId,
+      ref: input.ref,
+      args: toolArgs,
+    });
+    if (prepared.outcome === "refused") {
+      return reject(
+        `package_${prepared.code.toLowerCase()}`,
+        packageRefusalSentence(prepared.code),
+      );
+    }
+    const ticket = prepared.ticket;
+
+    /*
+     * The same policy the computer actions and legacy tool calls are judged
+     * by, with the package facts in the `mcp` slot. Neutral values for the
+     * browser fields, for the reason the legacy path gives: this engine treats
+     * an expression it cannot evaluate as a match, so an unbound browser field
+     * would refuse every package call once a deployment wrote a browser rule.
+     */
+    const policyContext: PolicyContext = {
+      tool: { name: toolNameFor(input.ref) },
+      bot: { id: input.botId },
+      actor: { id: input.actorId },
+      page: { url: "", host: "" },
+      element: { ref: "", role: "", name: "", type: "" },
+      key: "",
+      file: { path: "", name: "", extension: "" },
+      command: "",
+      intent: ticket.effect === "write" ? "write_tool" : "read_tool",
+      mcp: {
+        server: `${ticket.installId}:${ticket.resourceId}`,
+        tool: ticket.toolName,
+        effect: ticket.effect,
+      },
+      initiator: policyInitiator(input.initiator),
+    };
+    const verdict = evaluateActionPolicy(options.policy(), policyContext);
+    if (!verdict.allowed) {
+      await recordAuditEvent(auditStore, {
+        eventType: "mcp.call_rejected",
+        targetType: "mcp_tool",
+        targetId: input.ref,
+        ...(input.initiator ? { initiator: input.initiator } : {}),
+        payload: {
+          actor: auditActor,
+          bot: input.botId,
+          server: packageServerId ?? input.ref,
+          refusal: "policy",
+          decision: {
+            allowed: false,
+            mode: verdict.mode,
+            rule: verdict.matched,
+            source: verdict.source,
+            carriedOut: verdict.forward,
+          },
+        },
+      });
+      if (!verdict.forward) {
+        await wired.cancel(ticket, { context: run }).catch(() => undefined);
+        throw new PluginRefusedError(verdict.reason, verdict.matched);
+      }
+    }
+
+    // Content inspection: arguments must never carry credential material out.
+    const contentDecision = inspectToolArguments(toolArgs);
+    if (!contentDecision.safe) {
+      return reject(
+        "sensitive_tool_arguments",
+        contentDecision.reason === "sensitive_content"
+          ? "The tool call was refused because its arguments contain credential material."
+          : "The tool call was refused because its arguments could not be inspected safely.",
+        ticket,
+      );
+    }
+
+    /*
+     * Package V1 deliberately does not consult the private-share check: that
+     * gate keys off curated legacy share targets, and a package tool has no
+     * such target to name. A write the deployment wants a person to approve
+     * still reaches the approval gate below.
+     */
+
+    const approval = await options.approvalGate?.({
+      actorId: input.actorId,
+      botId: input.botId,
+      toolRef: ticket.ref,
+      effect: ticket.effect,
+      scope: `pkg:${ticket.installId}`,
+      args: toolArgs,
+      /*
+       * The approval is bound to the exact dispatch facts: the run and the
+       * attempt it was prepared against, install/resource, the tool contract,
+       * and the connection generation. A proposal whose connection was
+       * re-bound while it waited therefore is a different action at the
+       * approval digest, and the dispatch revalidation below refuses it even
+       * if some store replays it anyway (A07). The attempt is what lets a
+       * resume refuse a proposal approved before a cancel/retry instead of
+       * executing it against the replacement attempt's pins (PKG09 L2).
+       */
+      target: {
+        runId: run.runId,
+        attemptGeneration: run.attemptGeneration,
+        installId: ticket.installId,
+        resourceId: ticket.resourceId,
+        toolName: ticket.toolName,
+        schemaDigest: ticket.schemaDigest,
+        connectorInstallId: ticket.connectorInstallId,
+        connectionId: ticket.connectionId,
+        connectionGeneration: ticket.connectionGeneration,
+        argsDigest: ticket.argsDigest,
+      },
+      continuation: currentApprovalContext(),
+    });
+    if (approval && "replay" in approval) {
+      await wired.cancel(ticket, { context: run }).catch(() => undefined);
+      return approval.replay as { text: string; isError: boolean };
+    }
+
+    const dispatched = await seam.dispatch(ticket, toolArgs, {
+      context: run,
+      botId: input.botId,
+      actorId: input.actorId,
+    });
+    if (dispatched.outcome === "refused") {
+      return reject(
+        `package_${dispatched.code.toLowerCase()}`,
+        packageRefusalSentence(dispatched.code),
+        ticket,
+      );
+    }
+
+    // The trail records the SAME facts the legacy path records, plus the
+    // package's own identities. No arguments and no vendor text on success.
+    await recordAuditEvent(auditStore, {
+      eventType: dispatched.isError ? "mcp.call_failed" : "mcp.call_succeeded",
+      targetType: "mcp_tool",
+      targetId: input.ref,
+      ...(input.initiator ? { initiator: input.initiator } : {}),
+      payload: {
+        actor: auditActor,
+        bot: input.botId,
+        server: packageServerId ?? input.ref,
+        source: "package",
+        package: {
+          installId: ticket.installId,
+          resourceId: ticket.resourceId,
+          toolRef: `${ticket.resourceId}:${ticket.toolName}`,
+          effect: ticket.effect,
+        },
+        ...(dispatched.isError
+          ? { failure: "the tool reported an error" }
+          : {}),
+      },
+    });
+    // A vendor answer is outside content either way, exactly like the legacy
+    // door: an issue title or an error string can be written to look like an
+    // instruction.
+    const answer = {
+      text: dispatched.text,
+      isError: dispatched.isError,
+    };
+    await approval?.complete(answer);
+    return answer;
+  }
+
+  /** The closed refusal vocabulary's sentences — no value ever interpolated. */
+  function packageRefusalSentence(code: string): string {
+    switch (code) {
+      case "RUN_LEASE_INVALID":
+        return "This run is no longer active, so its package tools are not called.";
+      case "PACKAGE_WITHDRAWN":
+        return "This package version was withdrawn; its tools are not called.";
+      case "CONNECTION_UNAVAILABLE":
+        return "This package tool runs in your own connected account for this team. Connect your account and try again.";
+      case "BOT_NOT_USABLE":
+        return "This Bot is not usable for this call.";
+      case "CONNECTION_CHANGED":
+        return "This connection changed while the call was waiting, so the approval no longer applies.";
+      case "DUPLICATE_DISPATCH":
+        return "This tool call was already dispatched in this run.";
+      case "ARGS_CHANGED":
+        return "The arguments changed while the call was waiting, so the approval no longer applies.";
+      default:
+        return "This package tool is not available for this run.";
+    }
+  }
+
   return {
     accountRefFor,
+    /** The package dispatch seam this store was assembled with (PKG05). */
+    packageTool: options.packageTool,
     /**
      * Add a server from the catalogue.
      *
@@ -8102,22 +8400,27 @@ export function createPluginStore(options: PluginStoreOptions) {
      * see, and a trail written only on success cannot show it. The grant is checked first because a
      * tool this Bot was never given should not reach the policy engine, the vault or the network.
      */
-    async callTool(input: {
-      ref: string;
-      args: Record<string, unknown>;
-      botId: string;
-      actorId: string;
-      initiator?: AuditInitiator;
-      /**
-       * Whose connected account the call goes out on, when that is not the asker's: a Team Bot
-       * reaching its owner's account (team-bots/team-bots.ts). Every gate is still the asker's.
-       */
-      credentialActorId?: string;
-    }): Promise<{ text: string; isError: boolean }> {
+    async callTool(
+      input: PluginCallToolInput,
+    ): Promise<{ text: string; isError: boolean }> {
       const [serverId, ...rest] = input.ref.split("/");
       const toolName = rest.join("/");
       if (!serverId || !toolName) {
         throw new PluginRefusedError(`${input.ref} is not a tool.`, null);
+      }
+
+      /*
+       * PKG05 (Spec §9): a `pkg:` ref is a PACKAGE tool and is decided by the
+       * package chain only. Anything else keeps the legacy contract exactly.
+       *
+       * THE TEST IS THE REF PREFIX, NOT THE CONTEXT, because the refusal this
+       * must produce is about the ref: a package tool called from an entry
+       * point with no managed run (ingestion, a background sweep, an internal
+       * call) answers PACKAGE_RUN_REQUIRED — it does NOT fall back to the
+       * legacy grant, and it does not fabricate a run to look compatible.
+       */
+      if (input.ref.startsWith(PACKAGE_TOOL_REF_PREFIX)) {
+        return callPackageTool(input);
       }
 
       /*

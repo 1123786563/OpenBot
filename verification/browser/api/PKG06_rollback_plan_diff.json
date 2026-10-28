@@ -1,0 +1,35 @@
+{
+  "status": 200,
+  "body": {
+    "planId": "f736bbb1-2b6f-46aa-b271-d6dfb7f6bdb3",
+    "operation": "rollback",
+    "packageKey": "openbot/demo-skill",
+    "version": "1.0.0",
+    "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+    "expectedRevision": 2,
+    "expiresAt": "2026-10-25T03:04:21.919Z",
+    "resources": [
+      {
+        "id": "summarize",
+        "kind": "skill"
+      }
+    ],
+    "addedTools": [],
+    "removedTools": [],
+    "blockers": [],
+    "diff": {
+      "currentVersion": "1.1.0",
+      "currentRevision": 2,
+      "addedResources": [],
+      "removedResources": [
+        {
+          "id": "note-assistant",
+          "kind": "expertTemplate"
+        }
+      ],
+      "changedTools": [],
+      "configChanges": [],
+      "connectionChanges": []
+    }
+  }
+}

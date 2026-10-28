@@ -140,7 +140,6 @@ COPY toolkit toolkit
 COPY examples examples
 COPY agent-computer/src agent-computer/src
 COPY agent-computer/package.json agent-computer/package.json
-
 # `bun run composio:smoke`, because the manifest copied above carries that entry and the question it
 # answers belongs here rather than on a laptop: it asks what THIS deployment's Composio key can see,
 # and that key is the one in this container's environment. It reads `server/src/plugins/composio*`,
@@ -153,6 +152,14 @@ COPY agent-computer/package.json agent-computer/package.json
 # `app/dist`. Copying the directory ships three more entries with nothing to do here, to fix one that
 # has something to do.
 COPY scripts/composio-smoke.ts scripts/composio-smoke.ts
+
+# The one scripts subtree the SERVER resolves at boot (not a laptop convenience):
+# `server/src/plugin-packages/deployment-facts.ts` imports
+# `scripts/plugin-packages/index-file` as a value, so without these sources the
+# production entry's static import chain fails module resolution and the image
+# crashes at startup. Its only other import is `shared/enterprise/`, already
+# copied above; nothing else under `scripts/` is reached from server code.
+COPY scripts/plugin-packages scripts/plugin-packages
 
 # The built app, served by the API on the same origin. There is no CORS in this server, so this is
 # not a convenience: two origins would simply fail.
@@ -241,6 +248,30 @@ ENV AGENT_COMPUTER_URL=http://127.0.0.1:4100
 # the root of the filesystem and the failure surfaces as EACCES on the first navigation.
 RUN mkdir -p /workspace /profiles \
   && chown -R pwuser:pwuser /workspace /profiles /app
+
+# PKG11 (#470, Spec §12): the plugin-package marketplace ships WITH the image.
+# `plugins/marketplace.json` is the release registry the server reads at boot,
+# and `plugins/.artifacts/sha256/<digest>/` are the immutable, content-addressed
+# package bytes every install pins. The dot-directory matters: COPY carries
+# hidden entries unless ignored, and `.dockerignore` does not exclude it. The
+# two ENVs below point the server at this copy (config.ts reads them); a
+# deployment that mounts or overrides the index replaces the ENV instead.
+#
+# NOT UNDER /app, AND NOT RENAMABLE BY THE BOT'S USER. What POSIX protects a
+# directory with is write on the PARENT, not ownership of the directory or its
+# files: under /app — `chown -R pwuser` above — a Bot's shell could rename the
+# whole plugins/ tree aside and put a forged one in its place (withdrawal flag
+# flipped back to published, fake `.artifacts` beside it), which no amount of
+# apiuser ownership inside the subtree can prevent. `/marketplace` sits under
+# `/`, which is root-owned and unwritable to pwuser, so the facts root cannot
+# be renamed, moved, deleted, or shadowed by a lookalike. The subtree itself
+# belongs to `apiuser` — the API process runs as apiuser and must create its
+# `<index>.lock` directory beside the index and rewrite the index when a
+# release is published or withdrawn; pwuser only ever reads it through the
+# gateway.
+COPY --chown=apiuser:apiuser plugins /marketplace
+ENV OPENBOT_PLUGIN_MARKETPLACE_INDEX=/marketplace/marketplace.json
+ENV OPENBOT_PLUGIN_ARTIFACT_ROOT=/marketplace/.artifacts
 
 # Where the embedded database answers, when there is one. Overridden by whatever you set, so an
 # external database needs no special case: set DATABASE_URL and EMBEDDED_POSTGRES stays off.

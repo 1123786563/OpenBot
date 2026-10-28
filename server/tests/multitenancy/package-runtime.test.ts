@@ -15,6 +15,14 @@
 //       operator 读+插（无改/删）、directory 零授权，ENABLE+FORCE RLS。
 //   (8) 无授权 Bot 的 run 不写任何 pin（快照为空，run 正常创建）。
 //
+// T03-fix 增补（缺口修复）：
+//   (9) AC5 准入臂：授权 Bot 的归属行漂移后，下一次 run 绑定显式拒绝
+//       PACKAGE_BOT_SCOPE_UNAVAILABLE，整个 run 事务回滚、零 pin 落库。
+//   (10) AC4 成员臂：发起人的团队成员关系被暂停后，下一次 pin 读取为空；
+//       恢复后立即恢复（每次读取重验，零缓存）。
+//   (11) L-3 绑定：(runId, attempt) → admitted bot——同团队另一 Bot 报他人
+//       run 的 pin 读取 = INPUT_INVALID。
+//
 // 排列方式：每个用例自建 install/bot/grant/run（互不共享状态），避免
 // PKG02/PKG03A 教训里的共享进程与长事务模式；无任何 10 分钟等待。
 
@@ -46,6 +54,7 @@ import {
   applyPackageTasks,
   createPackageInstallFixture,
   type PackageInstallFixture,
+  thrownMessage,
 } from "./support/package-install";
 
 function probeEnvironment(): { ok: true } | { ok: false; reason: string } {
@@ -201,21 +210,31 @@ async function seedBot(): Promise<string> {
 }
 
 /**
- * Arrangement stand-in (superuser, disclosed): the run row itself. The
- * production path writes runs through the data channel; the pins DECISION
- * paths under test (prepareWithin + pinned read) all run through real roles.
+ * Arrangement stand-in (superuser, disclosed): the run row itself plus the
+ * expert-version row that names the run's admitted Bot. The production path
+ * writes runs through the data channel; the pins DECISION paths under test
+ * (prepareWithin + pinned read) all run through real roles. The expert row is
+ * what the pinned read binds (runId, attempt) → admitted bot (L-3).
  */
 async function seedRun(input: {
+  readonly botId: string;
   readonly workspaceId?: string;
   readonly principalId?: string;
 }): Promise<string> {
   const runId = crypto.randomUUID();
+  const expertVersionRef = `pkg03b-expert-${randomUUID()}`;
+  await setup.$client.unsafe(
+    `insert into enterprise_expert_versions
+       (tenant_id, expert_version_ref, schema_version, agent_id, snapshot)
+     values ($1, $2, 1, $3, '{}'::jsonb)`,
+    [companyA, expertVersionRef, input.botId],
+  );
   await setup.$client.unsafe(
     `insert into enterprise_runs
        (id, tenant_id, workspace_id, principal_id, thread_id, client_message_key,
         expert_version_ref, model_route_ref, model_route_maximum_tokens, status,
         attempt_generation, lease_expires_at)
-     values ($1, $2, $3, $4, $5, $6, 'pkg03b', 'pkg03b-route', 1000, 'queued', 1, now() + interval '1 hour')`,
+     values ($1, $2, $3, $4, $5, $6, $7, 'pkg03b-route', 1000, 'queued', 1, now() + interval '1 hour')`,
     [
       runId,
       companyA,
@@ -223,6 +242,7 @@ async function seedRun(input: {
       input.principalId ?? adminPrincipal,
       `pkg03b-thread-${randomUUID()}`,
       `pkg03b-msg-${randomUUID()}`,
+      expertVersionRef,
     ],
   );
   return runId;
@@ -388,7 +408,7 @@ describeDb("PKG03B run package pins + pinned runtime read (real roles)", () => {
         skills: [SKILL_A],
         botId,
       });
-      const runId = await seedRun({});
+      const runId = await seedRun({ botId });
       const first = await withinRunTx(scopeA1, (tx) =>
         runtime.prepareWithin(tx, scopeA1, {
           botId,
@@ -420,7 +440,7 @@ describeDb("PKG03B run package pins + pinned runtime read (real roles)", () => {
 
   itDb("a bot without grants pins nothing and the run stands", async () => {
     const botId = await seedBot();
-    const runId = await seedRun({});
+    const runId = await seedRun({ botId });
     const snapshot = await withinRunTx(scopeA1, (tx) =>
       runtime.prepareWithin(tx, scopeA1, {
         botId,
@@ -446,7 +466,7 @@ describeDb("PKG03B run package pins + pinned runtime read (real roles)", () => {
         skills: [SKILL_A],
         botId,
       });
-      const runId = await seedRun({});
+      const runId = await seedRun({ botId });
       await withinRunTx(scopeA1, (tx) =>
         runtime.prepareWithin(tx, scopeA1, {
           botId,
@@ -509,7 +529,7 @@ describeDb("PKG03B run package pins + pinned runtime read (real roles)", () => {
         skills: [SKILL_A, SKILL_B],
         botId,
       });
-      const runId = await seedRun({});
+      const runId = await seedRun({ botId });
       await withinRunTx(scopeA1, (tx) =>
         runtime.prepareWithin(tx, scopeA1, {
           botId,
@@ -559,7 +579,7 @@ describeDb("PKG03B run package pins + pinned runtime read (real roles)", () => {
         skills: [SKILL_A],
         botId,
       });
-      const oldRunId = await seedRun({});
+      const oldRunId = await seedRun({ botId });
       await withinRunTx(scopeA1, (tx) =>
         runtime.prepareWithin(tx, scopeA1, {
           botId,
@@ -622,7 +642,7 @@ describeDb("PKG03B run package pins + pinned runtime read (real roles)", () => {
       expect(oldRead[0]?.summary).toBe("PKG03B v1 name summary");
 
       // A run created AFTER the upgrade pins the NEW revision.
-      const newRunId = await seedRun({});
+      const newRunId = await seedRun({ botId });
       const newSnapshot = await withinRunTx(scopeA1, (tx) =>
         runtime.prepareWithin(tx, scopeA1, {
           botId,
@@ -656,7 +676,7 @@ describeDb("PKG03B run package pins + pinned runtime read (real roles)", () => {
   itDb("another tenant's scope reads nothing from a pinned run", async () => {
     const botId = await seedBot();
     await seedInstall({ digest: digestV1, skills: [SKILL_A], botId });
-    const runId = await seedRun({});
+    const runId = await seedRun({ botId });
     await withinRunTx(scopeA1, (tx) =>
       runtime.prepareWithin(tx, scopeA1, {
         botId,
@@ -682,6 +702,146 @@ describeDb("PKG03B run package pins + pinned runtime read (real roles)", () => {
         attemptGeneration: 1,
       }),
     ).toEqual([]);
+  });
+
+  itDb(
+    "run admission refuses a granted Bot whose business ownership no longer resolves (AC5)",
+    async () => {
+      const botId = await seedBot();
+      const installId = await seedInstall({
+        digest: digestV1,
+        skills: [SKILL_A],
+        botId,
+      });
+      // Positive control: the owned expert Bot binds and pins normally.
+      const boundRun = await seedRun({ botId });
+      const bound = await withinRunTx(scopeA1, (tx) =>
+        runtime.prepareWithin(tx, scopeA1, {
+          botId,
+          runId: boundRun,
+          attemptGeneration: 1,
+        }),
+      );
+      expect(bound.pins.length).toBe(1);
+
+      // The ownership row drifts away (soft delete): the NEXT run start for
+      // the still-granted Bot refuses loudly. Grants without a resolvable
+      // execution scope (ADR 0006) never start a run — the refusal throws
+      // inside the caller's transaction, so nothing pins.
+      await fixture.operator.transaction(async (tx) => {
+        await tx.execute(
+          sql`select set_config('app.tenant_id', ${companyA}, true), set_config('app.workspace_id', ${teamA1}, true)`,
+        );
+        await tx.execute(
+          sql`update enterprise_bot_ownership set status = 'deleted'
+              where tenant_id = ${companyA} and agent_id = ${botId}`,
+        );
+      });
+      const driftedRun = await seedRun({ botId });
+      const state = await thrownMessage(
+        withinRunTx(scopeA1, (tx) =>
+          runtime.prepareWithin(tx, scopeA1, {
+            botId,
+            runId: driftedRun,
+            attemptGeneration: 1,
+          }),
+        ),
+      );
+      expect(state).toContain("PACKAGE_BOT_SCOPE_UNAVAILABLE");
+      expect(await pinCount(installId)).toBe(1);
+    },
+  );
+
+  itDb(
+    "revoking the initiator's membership refuses the next pinned read (AC4)",
+    async () => {
+      // a1-member is the fixture's own team-a1 member; the scope below is a
+      // real trusted scope for that principal.
+      const memberScope = await fixture.scopeFor("a1-member", "team-a1");
+      const botId = await seedBot();
+      const installId = await seedInstall({
+        digest: digestV1,
+        skills: [SKILL_A],
+        botId,
+      });
+      const runId = await seedRun({
+        botId,
+        principalId: memberScope.principalId,
+      });
+      await withinRunTx(memberScope, (tx) =>
+        runtime.prepareWithin(tx, memberScope, {
+          botId,
+          runId,
+          attemptGeneration: 1,
+        }),
+      );
+      // Positive control: the active member's read serves the pinned skill.
+      expect(
+        (
+          await runtime.readPinnedSkills(memberScope, {
+            botId,
+            runId,
+            attemptGeneration: 1,
+          })
+        ).map((skill) => skill.slug),
+      ).toEqual([`pkg:${installId}:${SKILL_A}`]);
+
+      // The team membership is suspended. Arrangement stand-in (superuser,
+      // disclosed): the membership lifecycle writer is the identity domain's
+      // own surface — the arm under test is the READ-side revalidation, which
+      // runs through the real restricted data role.
+      const suspend = (status: "suspended" | "active") =>
+        setup.$client.unsafe(
+          `update enterprise_workspace_memberships set status = $4
+           where tenant_id = $1 and workspace_id = $2 and principal_id = $3`,
+          [companyA, teamA1, memberScope.principalId, status],
+        );
+      await suspend("suspended");
+      expect(
+        await runtime.readPinnedSkills(memberScope, {
+          botId,
+          runId,
+          attemptGeneration: 1,
+        }),
+      ).toEqual([]);
+      // Restored, the very next read serves again — every read revalidates,
+      // zero cache in either direction.
+      await suspend("active");
+      expect(
+        (
+          await runtime.readPinnedSkills(memberScope, {
+            botId,
+            runId,
+            attemptGeneration: 1,
+          })
+        ).map((skill) => skill.slug),
+      ).toEqual([`pkg:${installId}:${SKILL_A}`]);
+    },
+  );
+
+  itDb("the pinned read is bound to the run's admitted Bot (L-3)", async () => {
+    const botId = await seedBot();
+    await seedInstall({ digest: digestV1, skills: [SKILL_A], botId });
+    const runId = await seedRun({ botId });
+    await withinRunTx(scopeA1, (tx) =>
+      runtime.prepareWithin(tx, scopeA1, {
+        botId,
+        runId,
+        attemptGeneration: 1,
+      }),
+    );
+    // A second, owned Bot of the SAME workspace naming the first Bot's run
+    // is a contract violation: the pins belong to the admitted Bot only,
+    // and the (runId, attempt) → admitted bot binding refuses loudly.
+    const otherBot = await seedBot();
+    const state = await thrownMessage(
+      runtime.readPinnedSkills(scopeA1, {
+        botId: otherBot,
+        runId,
+        attemptGeneration: 1,
+      }),
+    );
+    expect(state).toContain("INPUT_INVALID");
   });
 
   itDb(
@@ -757,6 +917,154 @@ describeDb("PKG03B run package pins + pinned runtime read (real roles)", () => {
          where conname = 'enterprise_run_package_pin_run_fk'`,
       )) as unknown as Array<{ cols: number[] }>;
       expect(runPk[0]?.cols?.length).toBe(2);
+    },
+  );
+
+  itDb(
+    "OCR-fix-B4: another workspace's or another initiator's run id reads nothing (runs RLS is tenant-level)",
+    async () => {
+      const memberScope = await fixture.scopeFor("a1-member", "team-a1");
+      const botId = await seedBot();
+      await seedInstall({ digest: digestV1, skills: [SKILL_A], botId });
+      // The member's own run pins and serves normally (positive control).
+      const memberRun = await seedRun({
+        botId,
+        principalId: memberScope.principalId,
+      });
+      await withinRunTx(memberScope, (tx) =>
+        runtime.prepareWithin(tx, memberScope, {
+          botId,
+          runId: memberRun,
+          attemptGeneration: 1,
+        }),
+      );
+      expect(
+        (
+          await runtime.readPinnedSkills(memberScope, {
+            botId,
+            runId: memberRun,
+            attemptGeneration: 1,
+          })
+        ).length,
+      ).toBe(1);
+
+      // Same workspace, DIFFERENT initiator: the runs table's data RLS is
+      // tenant-level only, so the run read itself must bind the principal —
+      // the admin's scope never serves the member's run pins.
+      expect(
+        await runtime.readPinnedSkills(scopeA1, {
+          botId,
+          runId: memberRun,
+          attemptGeneration: 1,
+        }),
+      ).toEqual([]);
+      expect(
+        await runtime.readPinnedTools(scopeA1, {
+          botId,
+          runId: memberRun,
+          attemptGeneration: 1,
+        }),
+      ).toEqual([]);
+
+      // Another workspace's run id in the same tenant: the same empty set.
+      const otherTeamRun = await seedRun({
+        botId,
+        workspaceId: fixture.teamOf("company-a", "team-a2"),
+      });
+      await withinRunTx(scopeA1, (tx) =>
+        runtime.prepareWithin(tx, scopeA1, {
+          botId,
+          runId: otherTeamRun,
+          attemptGeneration: 1,
+        }),
+      );
+      expect(
+        await runtime.readPinnedSkills(scopeA1, {
+          botId,
+          runId: otherTeamRun,
+          attemptGeneration: 1,
+        }),
+      ).toEqual([]);
+    },
+  );
+
+  itDb(
+    "OCR-fix-B6: a disable→re-enable→re-grant cycle retires old-generation pins for skills too",
+    async () => {
+      const botId = await seedBot();
+      const installId = await seedInstall({
+        digest: digestV1,
+        skills: [SKILL_A],
+        botId,
+      });
+      const oldRun = await seedRun({ botId });
+      await withinRunTx(scopeA1, (tx) =>
+        runtime.prepareWithin(tx, scopeA1, {
+          botId,
+          runId: oldRun,
+          attemptGeneration: 1,
+        }),
+      );
+      // Positive control: the pinned skill serves before the lifecycle turn.
+      expect(
+        (
+          await runtime.readPinnedSkills(scopeA1, {
+            botId,
+            runId: oldRun,
+            attemptGeneration: 1,
+          })
+        ).map((skill) => skill.slug),
+      ).toEqual([`pkg:${installId}:${SKILL_A}`]);
+
+      // The lifecycle turn (arrangement stand-in, disclosed): disable ratchets
+      // the install generation and revokes grants; re-enable + re-grant lands
+      // the SAME skill under the NEW generation.
+      await setup.$client.unsafe(
+        `update enterprise_package_installs set generation = generation + 1
+         where tenant_id = $1 and id = $2`,
+        [companyA, installId],
+      );
+      await setup.$client.unsafe(
+        `update enterprise_package_grants set revoked_at = now()
+         where tenant_id = $1 and install_id = $2 and generation = 1`,
+        [companyA, installId],
+      );
+      await setup.$client.unsafe(
+        `insert into enterprise_package_grants
+           (tenant_id, install_id, generation, bot_id, resource_id, workspace_id,
+            resource_kind, tool_ref, granted_by)
+         values ($1, $2, 2, $3, $4, $5, 'skill', '', $6)`,
+        [companyA, installId, botId, SKILL_A, teamA1, adminPrincipal],
+      );
+
+      // The OLD run's old-generation pin serves nothing: the install's
+      // generation moved, so the old pin does not revive through the re-grant.
+      expect(
+        await runtime.readPinnedSkills(scopeA1, {
+          botId,
+          runId: oldRun,
+          attemptGeneration: 1,
+        }),
+      ).toEqual([]);
+
+      // A NEW admission under the re-granted generation pins and serves again.
+      const newRun = await seedRun({ botId });
+      await withinRunTx(scopeA1, (tx) =>
+        runtime.prepareWithin(tx, scopeA1, {
+          botId,
+          runId: newRun,
+          attemptGeneration: 1,
+        }),
+      );
+      expect(
+        (
+          await runtime.readPinnedSkills(scopeA1, {
+            botId,
+            runId: newRun,
+            attemptGeneration: 1,
+          })
+        ).map((skill) => skill.slug),
+      ).toEqual([`pkg:${installId}:${SKILL_A}`]);
     },
   );
 });
