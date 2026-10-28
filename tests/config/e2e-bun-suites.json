@@ -1391,6 +1391,12 @@
       "files": [
         "server/tests/better-auth/personal-model-identity.test.ts"
       ]
+    },
+    {
+      "name": "server/tests/better-auth:T05.12.01",
+      "files": [
+        "server/tests/better-auth/mobile-session-handoff.test.ts"
+      ]
     }
   ],
   "directoryIslands": [
@@ -2098,7 +2104,8 @@
     "server/tests/better-auth/personal-model-grants.test.ts",
     "server/tests/better-auth/admin-account-routes.test.ts",
     "server/tests/better-auth/remote-identity-binding.test.ts",
-    "server/tests/better-auth/personal-model-identity.test.ts"
+    "server/tests/better-auth/personal-model-identity.test.ts",
+    "server/tests/better-auth/mobile-session-handoff.test.ts"
   ],
   "artifacts": [
     "deliverables/mobile-e2e-qa/tests/e2e/specs/auth.spec.ts",
@@ -2260,6 +2267,7 @@
     "server/tests/better-auth/personal-model-grants.test.ts": "T05.10 (#566) personal-model-grants suite: needs the five BA_TEST_* role URLs, the 0209-0220 BA tag replay with the 0212 access-grants source columns, and the real PrincipalRegistry behind the service's principal seam — Bun-only",
     "server/tests/better-auth/admin-account-routes.test.ts": "T05.08 (#564) admin-account-routes suite: needs the five BA_TEST_* role URLs, the production createAuth identity executor behind createApp's coworker.directory seam and real Bun servers — Bun-only",
     "server/tests/better-auth/remote-identity-binding.test.ts": "T05.09 (#565) remote-identity-binding suite: needs the five BA_TEST_* role URLs and real Bun-served organization authorities for the cross-deployment handoff — Bun-only",
-    "server/tests/better-auth/personal-model-identity.test.ts": "T05.11 (#567) personal-model-identity suite: needs the five BA_TEST_* role URLs, the 0209-0220 BA tag replay, the real PrincipalRegistry behind the grant seam and a fake Bifrost management surface behind the mounted claim/renew routes — Bun-only"
+    "server/tests/better-auth/personal-model-identity.test.ts": "T05.11 (#567) personal-model-identity suite: needs the five BA_TEST_* role URLs, the 0209-0220 BA tag replay, the real PrincipalRegistry behind the grant seam and a fake Bifrost management surface behind the mounted claim/renew routes — Bun-only",
+    "server/tests/better-auth/mobile-session-handoff.test.ts": "T05.12 (#568) mobile-session-handoff suite: needs the five BA_TEST_* role URLs and its own 0222 handoff-tables migration replayed on the isolated BA island — Bun-only"
   }
 }

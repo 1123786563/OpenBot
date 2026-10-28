@@ -1151,8 +1151,11 @@ describe("T02.06 restricted connections, DML guard and deferred constraints", ()
     // admission — ob_ent_auth_writer's INSERT/UPDATE on auth_provisioning_rules
     // (SELECT-only since 0212) plus the DML guard's rule branch, with the
     // identity columns immutable and the revision advancing by exactly one.
-    expect(before?.tag).toBe("0220_better_auth_company_auth_policy_read");
-    expect(last?.tag).toBe("0221_better_auth_provisioning_rules");
+    // T05.12 (#568) appended 0222 the same way: the mobile session handoff's
+    // two tables, written by the mobile-session service on the auth-writer
+    // capability (0221's direct-grant admission), every other role at zero.
+    expect(before?.tag).toBe("0221_better_auth_provisioning_rules");
+    expect(last?.tag).toBe("0222_better_auth_mobile_session_handoff");
     expect(last?.idx).toBe((before?.idx ?? 0) + 1);
     expect(existsSync(MIGRATION_PATH)).toBe(true);
   });

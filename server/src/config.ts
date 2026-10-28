@@ -401,6 +401,15 @@ export type DeploymentConfig = {
    */
   webBotAuth?: WebBotAuth;
   /**
+   * The registered mobile clients that may start a one-time PKCE session handoff
+   * (T05.12, interfaces §5.2): clientId, its one registered redirect, the OpenBot
+   * authority origin handles name, and the registered BFF service credential the
+   * exchange authenticates with (stored as a SHA-256 digest). Undefined when
+   * `MOBILE_SESSION_CLIENTS` is unset — no client is registered, so no handoff
+   * surface is mounted and nothing about the legacy boot changes.
+   */
+  mobileSession?: MobileSessionConfig;
+  /**
    * Where the browser app is served from, with no trailing slash.
    *
    * Separate from {@link DeploymentConfig.publicUrl} because they are genuinely two addresses: the
@@ -608,6 +617,87 @@ function required(environment: Environment, name: string): string {
 
 function optional(environment: Environment, name: string): string | undefined {
   return environment[name]?.trim() || undefined;
+}
+
+/** One registered mobile client (T05.12); see DeploymentConfig.mobileSession. */
+export interface MobileSessionClientConfig {
+  clientId: string;
+  redirectUri: string;
+  authorityOrigin: string;
+  bffServiceId: string;
+  /** SHA-256 hex of the BFF service secret; the secret itself never reaches the config. */
+  bffCredentialDigest: string;
+}
+
+export interface MobileSessionConfig {
+  clients: ReadonlyArray<MobileSessionClientConfig>;
+}
+
+/**
+ * MOBILE_SESSION_CLIENTS, deployment-controlled: a JSON array of registered
+ * mobile clients. Unset means the handoff surface stays unmounted. Malformed
+ * is a boot refusal, not a silent skip — a half-registered client is exactly
+ * the kind of deployment state this config refuses to guess about.
+ */
+function mobileSessionFromEnv(
+  environment: Environment,
+): MobileSessionConfig | undefined {
+  const raw = optional(environment, "MOBILE_SESSION_CLIENTS");
+  if (!raw) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("MOBILE_SESSION_CLIENTS must be a JSON array.");
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error(
+      "MOBILE_SESSION_CLIENTS must list at least one registered client.",
+    );
+  }
+  const clients = parsed.map((entry, index) => {
+    const entryRecord = entry as Record<string, unknown>;
+    const label = `MOBILE_SESSION_CLIENTS[${index}]`;
+    const read = (field: string): string => {
+      const value = entryRecord[field];
+      if (typeof value !== "string" || !value) {
+        throw new Error(`${label}.${field} must be a non-empty string.`);
+      }
+      return value;
+    };
+    const client: MobileSessionClientConfig = {
+      clientId: read("clientId"),
+      redirectUri: read("redirectUri"),
+      authorityOrigin: read("authorityOrigin"),
+      bffServiceId: read("bffServiceId"),
+      bffCredentialDigest: read("bffCredentialDigest"),
+    };
+    for (const field of ["redirectUri", "authorityOrigin"] as const) {
+      let origin: URL;
+      try {
+        origin = new URL(client[field]);
+      } catch {
+        throw new Error(`${label}.${field} must be an absolute URL.`);
+      }
+      const loopback =
+        origin.hostname === "127.0.0.1" || origin.hostname === "localhost";
+      if (
+        origin.protocol !== "https:" &&
+        !(loopback && origin.protocol === "http:")
+      ) {
+        throw new Error(
+          `${label}.${field} must be https (loopback http allowed for development).`,
+        );
+      }
+    }
+    if (!/^[0-9a-f]{64}$/.test(client.bffCredentialDigest)) {
+      throw new Error(
+        `${label}.bffCredentialDigest must be the sha256 hex digest of the service secret.`,
+      );
+    }
+    return client;
+  });
+  return { clients };
 }
 
 /**
@@ -3083,6 +3173,7 @@ export function loadConfig(
     publicUrl,
     keyEncryptionKey: deploymentKey,
   });
+  const mobileSession = mobileSessionFromEnv(environment);
 
   return {
     port: serverPort(environment),
@@ -3117,6 +3208,7 @@ export function loadConfig(
       fileURLToPath(new URL("../../plugins/marketplace.json", import.meta.url)),
     keyEncryptionKey: deploymentKey,
     ...(webBotAuth ? { webBotAuth } : {}),
+    ...(mobileSession ? { mobileSession } : {}),
     ...(managedAgent ? { managedAgent } : {}),
     ...(githubApp ? { githubApp } : {}),
     agentEndpointAllowedHosts: agentEndpointAllowedHosts(environment),

@@ -76,6 +76,11 @@ import {
   requireAdmin,
 } from "./auth/guards";
 import type { IdentityProviderStore } from "./auth/identity-provider-store";
+import {
+  createMobileSessionHandoff,
+  type MobileHandoffClient,
+} from "./auth/mobile-session";
+import { createMobileSessionRoutes } from "./auth/mobile-session-routes";
 import { desktopAuthPage } from "./auth/native-browser";
 import { createAsyncJobsViewService } from "./billing/async-jobs-view";
 import type { Credits } from "./billing/credits";
@@ -1193,28 +1198,54 @@ export function createApp(
    * half-wired challenge.
    */
   if (auth) {
+    // The real BA session reader both enterprise auth surfaces share: the
+    // company-auth challenge and the mobile handoff bind to the live
+    // session, never to a caller's claim about one.
+    const readBaSession = async (request: Request) => {
+      const session = await auth.api
+        .getSession({
+          headers: request.headers,
+          query: { disableCookieCache: true },
+        })
+        .catch(() => null);
+      // The declared type names {user}; the real BA session also carries
+      // its id, which the challenge binds to — narrowed here, not
+      // re-declared in the vendor's types.
+      const sessionId = (session as { session?: { id?: string } } | null)
+        ?.session?.id;
+      return session?.user.id && sessionId
+        ? { userId: session.user.id, sessionId }
+        : null;
+    };
     app.route(
       "/api/enterprise/company-auth",
       createCompanyAuthRoutes({
-        authenticate: async (request) => {
-          const session = await auth.api
-            .getSession({
-              headers: request.headers,
-              query: { disableCookieCache: true },
-            })
-            .catch(() => null);
-          // The declared type names {user}; the real BA session also carries
-          // its id, which the challenge binds to — narrowed here, not
-          // re-declared in the vendor's types.
-          const sessionId = (session as { session?: { id?: string } } | null)
-            ?.session?.id;
-          return session?.user.id && sessionId
-            ? { userId: session.user.id, sessionId }
-            : null;
-        },
+        authenticate: readBaSession,
         assurance: coworker?.directory?.companyAuth ?? companyAssurance,
       }),
     );
+    /*
+     * The mobile session handoff (T05.12 / #568, interfaces §5.2): the
+     * system-browser authorize and the registered BFF's exchange, on the
+     * application database where the handoff rows and the BA sessions they
+     * re-verify live. Mounted only when a session source, a database and at
+     * least one registered mobile client all exist — a deployment without
+     * MOBILE_SESSION_CLIENTS grows no half-registered surface, exactly as it
+     * booted before.
+     */
+    if (attachmentDatabase && config.mobileSession) {
+      app.route(
+        "/api/enterprise/mobile",
+        createMobileSessionRoutes({
+          authenticate: readBaSession,
+          handoff: createMobileSessionHandoff({
+            database: attachmentDatabase,
+            clients: config.mobileSession
+              .clients as ReadonlyArray<MobileHandoffClient>,
+          }),
+        }),
+      );
+    }
   }
   /*
    * The native directory ingress (T02.11 / P04; interfaces §3.2).

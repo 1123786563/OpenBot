@@ -34,6 +34,7 @@ export default defineConfig({
     "./src/db/schema/auth-assurance.ts",
     "./src/db/schema/auth-directory.ts",
     "./src/db/schema/auth-eligibility.ts",
+    "./src/db/schema/auth-mobile.ts",
     "./src/db/schema/core.ts",
     "./src/db/schema/computer.ts",
     "./src/db/schema/coworker.ts",
