@@ -554,46 +554,7 @@ export function createSpeechSettlementService(
         return { status: "unknown", reservationId };
       }
 
-      // The character side must be corroborated by the spec the hold froze (13.2): what
-      // 13.1's admission certified — the characters, the tier, the cap and the
-      // per-character price — is what the settle surface must re-carry exactly. A settle
-      // naming other quantities is not the work this hold was priced for: refused, never
-      // adopted, never rewritten to the caller's numbers (same semantics as the
-      // per-second corroboration against the lock below).
-      const spec = speechSpecOfReservation(reservation);
-      if (spec === null) {
-        return refused("price_basis_not_found", {
-          stage: "speech_spec_not_locked",
-        });
-      }
-      const carriedPerChar = parseExactDecimal(req.priced.perInputCharacterUsd);
-      const frozenPerChar = parseExactDecimal(spec.perInputCharacterUsd);
-      if (
-        req.requested.inputCharacters !== spec.inputCharacters ||
-        req.requested.voiceTier !== spec.voiceTier ||
-        req.requested.durationCapSeconds !== spec.durationCapSeconds ||
-        carriedPerChar === null ||
-        frozenPerChar === null ||
-        carriedPerChar.numerator * frozenPerChar.denominator !==
-          frozenPerChar.numerator * carriedPerChar.denominator
-      ) {
-        return refused("price_basis_not_found", {
-          stage: "spec_not_corroborated",
-          frozen: {
-            inputCharacters: spec.inputCharacters,
-            voiceTier: spec.voiceTier,
-            durationCapSeconds: spec.durationCapSeconds,
-            perInputCharacterUsd: spec.perInputCharacterUsd,
-          },
-          carried: {
-            inputCharacters: req.requested.inputCharacters,
-            voiceTier: req.requested.voiceTier,
-            durationCapSeconds: req.requested.durationCapSeconds,
-            perInputCharacterUsd: req.priced.perInputCharacterUsd,
-          },
-        });
-      }
-
+      // The locked price basis resolves first: every corroboration below needs it.
       const basis = lockedBasisOfReservation(reservation);
       if (basis === null) {
         return refused("price_basis_not_found", {
@@ -619,12 +580,14 @@ export function createSpeechSettlementService(
 
       // The evidence rules (13.2's tightened AC2): a provider usage report is evidence
       // only with a reference someone can trace, and artifact metadata is evidence only
-      // when THIS server re-measures the artifact's container to the claimed seconds —
-      // the same parser 14.1's meter reads, never a belief in a label. Neither satisfied:
-      // no evidence anyone may bill from, the hold goes unknown (06.8). A measurement
-      // that DISAGREES with the claim is not absent evidence but a conflict: refused,
-      // never rewritten to the measured number. The input characters are never an
-      // estimate of the duration — that substitution stays the forbidden shortcut.
+      // when it names a server-side collection record (the reference) AND THIS server
+      // re-measures the carried containers to the claimed seconds — carried header bytes
+      // without that binding are self-attestation, and self-attestation bills anything.
+      // Neither satisfied: no evidence anyone may bill from, the hold goes unknown
+      // (06.8). A measurement that DISAGREES with the claim is not absent evidence but a
+      // conflict: refused, never rewritten to the measured number. The input characters
+      // are never an estimate of the duration — that substitution stays the forbidden
+      // shortcut.
       if (req.result.evidence.kind === "provider_usage_report") {
         const reference = req.result.evidence.reference;
         if (reference === undefined || reference.trim() === "") {
@@ -635,6 +598,14 @@ export function createSpeechSettlementService(
           return { status: "unknown", reservationId };
         }
       } else {
+        const reference = req.result.evidence.reference;
+        if (reference === undefined || reference.trim() === "") {
+          await writer.markReservationUnknown(
+            reservationId,
+            "speech synthesis evidence unusable: artifact metadata without the server-side collection reference",
+          );
+          return { status: "unknown", reservationId };
+        }
         const metadata = req.result.evidence.metadata;
         const measured = metadata
           ? measuredWavContainersRational(metadata.bytesBase64)
@@ -702,6 +673,53 @@ export function createSpeechSettlementService(
           lockedAmount:
             lockedPerSecond.status === "known" ? lockedPerSecond.amount : null,
           carriedAmount: req.priced.perOutputSecondUsd,
+        });
+      }
+
+      // The frozen spec corroborates what the lock cannot speak for — the characters,
+      // the tier, the duration cap, the per-character price — AND re-speaks the
+      // per-second price: what 13.1's admission certified is frozen WITH the lock, and
+      // the settle surface must re-carry it exactly, never be rewritten to the caller's
+      // numbers. A frozen second price nobody checked was dead data pretending to be a
+      // check (OCR r2); both sides are exact cross-multiplied rationals.
+      const spec = speechSpecOfReservation(reservation);
+      if (spec === null) {
+        return refused("price_basis_not_found", {
+          stage: "speech_spec_not_locked",
+        });
+      }
+      const carriedPerChar = parseExactDecimal(req.priced.perInputCharacterUsd);
+      const frozenPerChar = parseExactDecimal(spec.perInputCharacterUsd);
+      const frozenPerSecond = parseExactDecimal(spec.perOutputSecondUsd);
+      if (
+        req.requested.inputCharacters !== spec.inputCharacters ||
+        req.requested.voiceTier !== spec.voiceTier ||
+        req.requested.durationCapSeconds !== spec.durationCapSeconds ||
+        carriedPerChar === null ||
+        frozenPerChar === null ||
+        carriedPerChar.numerator * frozenPerChar.denominator !==
+          frozenPerChar.numerator * carriedPerChar.denominator ||
+        tierPerSecond === null ||
+        frozenPerSecond === null ||
+        tierPerSecond.numerator * frozenPerSecond.denominator !==
+          frozenPerSecond.numerator * tierPerSecond.denominator
+      ) {
+        return refused("price_basis_not_found", {
+          stage: "spec_not_corroborated",
+          frozen: {
+            inputCharacters: spec.inputCharacters,
+            voiceTier: spec.voiceTier,
+            durationCapSeconds: spec.durationCapSeconds,
+            perInputCharacterUsd: spec.perInputCharacterUsd,
+            perOutputSecondUsd: spec.perOutputSecondUsd,
+          },
+          carried: {
+            inputCharacters: req.requested.inputCharacters,
+            voiceTier: req.requested.voiceTier,
+            durationCapSeconds: req.requested.durationCapSeconds,
+            perInputCharacterUsd: req.priced.perInputCharacterUsd,
+            perOutputSecondUsd: req.priced.perOutputSecondUsd,
+          },
         });
       }
 
