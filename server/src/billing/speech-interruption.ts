@@ -151,6 +151,7 @@ function terminatingDecimal(value: Rational): string {
   }
   if (denominator !== 1n) {
     // Not terminating: scale to nine fractional digits, rounding up.
+    const scale = 10n ** 9n;
     const scaled = reduceRational({
       numerator: value.numerator * scale,
       denominator: value.denominator,

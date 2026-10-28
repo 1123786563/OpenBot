@@ -6,8 +6,8 @@ import {
   CreditReservationConflictError,
   createCreditWriter,
 } from "../src/billing/credits-writer";
-import type { SpeechGenerationResult } from "../src/billing/speech-settlement";
 import { createPayerAccount, payerKey } from "../src/billing/payer";
+import type { SpeechGenerationResult } from "../src/billing/speech-settlement";
 import { createSpeechSettlementService } from "../src/billing/speech-settlement";
 import { createDatabase } from "../src/db/client";
 import { accessGrants, botServices, payerAccounts } from "../src/db/schema";
