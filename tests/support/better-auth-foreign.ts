@@ -131,7 +131,11 @@ export function baForeignGaps(registry: unknown): string[] {
           gaps.push(
             `runner type "${id}" carries "${key}": only runner, cwd, argv, report`,
           );
-      if (typeof type.runner !== "string" || !type.runner || SHELLISH.test(type.runner))
+      if (
+        typeof type.runner !== "string" ||
+        !type.runner ||
+        SHELLISH.test(type.runner)
+      )
         gaps.push(`runner type "${id}" names no plain runner`);
       if (typeof type.cwd !== "string" || !type.cwd)
         gaps.push(`runner type "${id}" names no cwd`);
@@ -152,9 +156,13 @@ export function baForeignGaps(registry: unknown): string[] {
         );
         for (const hit of placeholders)
           if (!PLACEHOLDERS.has(hit))
-            gaps.push(`runner type "${id}" argv uses unknown placeholder ${hit}`);
+            gaps.push(
+              `runner type "${id}" argv uses unknown placeholder ${hit}`,
+            );
         if (placeholders.filter((hit) => hit === "{{target}}").length !== 1)
-          gaps.push(`runner type "${id}" argv must name {{target}} exactly once`);
+          gaps.push(
+            `runner type "${id}" argv must name {{target}} exactly once`,
+          );
         // A junit-reporting runner needs a file to write; a stream reporter must not be given one.
         const wantsFile = type.report === "bun-junit";
         if (wantsFile !== placeholders.includes("{{reportPath}}"))
@@ -179,7 +187,8 @@ export function baForeignGaps(registry: unknown): string[] {
       const task = String(entry.task ?? "");
       if (!TASK_ID.test(task))
         gaps.push(`task "${task}" is not a TaskId of the form Txx.nn`);
-      if (seenTasks.has(task)) gaps.push(`task ${task} is listed more than once`);
+      if (seenTasks.has(task))
+        gaps.push(`task ${task} is listed more than once`);
       seenTasks.add(task);
       for (const key of Object.keys(entry))
         if (key !== "task" && key !== "targets")
@@ -230,10 +239,7 @@ export function readForeignWhitelist(path: string): ForeignWhitelist {
 export function scrubSecrets(text: string): string {
   return text
     .replace(/:\/\/[^@\s/]+@/g, "://***@")
-    .replace(
-      /\b((?:BA_)?(?:TEST_)?[A-Z_]*DATABASE_URL)=\S+/g,
-      "$1=***",
-    );
+    .replace(/\b((?:BA_)?(?:TEST_)?[A-Z_]*DATABASE_URL)=\S+/g, "$1=***");
 }
 
 export interface ReportCounts {
@@ -456,7 +462,9 @@ export async function runForeignTarget(
     options.signal?.removeEventListener("abort", onAbort);
     rmSync(reportDir, { recursive: true, force: true });
   }
-  const tail = scrubSecrets(`${stderr}${stdout}`.replace(/\s+/g, " ").slice(-600));
+  const tail = scrubSecrets(
+    `${stderr}${stdout}`.replace(/\s+/g, " ").slice(-600),
+  );
   if (cancelledBy)
     return {
       task: taskId,
@@ -486,9 +494,13 @@ export async function runForeignTarget(
     };
   const problems: string[] = [];
   if (counts.tests === 0)
-    problems.push("the report names no test — a suite that ran nothing is not a pass");
+    problems.push(
+      "the report names no test — a suite that ran nothing is not a pass",
+    );
   if (counts.skipped > 0)
-    problems.push(`${counts.skipped} test(s) skipped — a foreign suite may not skip`);
+    problems.push(
+      `${counts.skipped} test(s) skipped — a foreign suite may not skip`,
+    );
   if (counts.failures > 0)
     problems.push(
       `${counts.failures} test(s) failed: ${counts.failed.slice(0, 5).join(" | ")}`,

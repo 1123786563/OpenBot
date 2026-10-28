@@ -1,16 +1,13 @@
-import {
-  AuthUIProvider,
-  type AuthUIProviderProps,
-} from "better-auth-ui";
 import { Link as RouterLink, useNavigate } from "@tanstack/react-router";
+import { AuthUIProvider, type AuthUIProviderProps } from "better-auth-ui";
 import {
-  createContext,
-  useContext,
-  useMemo,
   type ComponentType,
+  createContext,
   type PropsWithChildren,
   type ReactElement,
   type ReactNode,
+  useContext,
+  useMemo,
 } from "react";
 import { authClient } from "@/lib/auth/client";
 import type { UiSourceManifest } from "@/lib/auth/ui-provider";

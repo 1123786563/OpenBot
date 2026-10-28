@@ -56,12 +56,12 @@ import {
   verifications,
 } from "../../src/db/schema/core";
 import {
-  createCompanyAdminRoutes,
   type CompanyAdminRouteDeps,
+  createCompanyAdminRoutes,
 } from "../../src/enterprise/tenancy/company-admin-routes";
 import {
-  createPlatformCompanyProvisionService,
   type CompanyBillingInitializationPort,
+  createPlatformCompanyProvisionService,
 } from "../../src/enterprise/tenancy/provision";
 
 /*
@@ -410,9 +410,7 @@ interface Harness {
       readonly status: string;
     }[]
   >;
-  grantRows(
-    grantId: string,
-  ): Promise<{ status: string; generation: number }[]>;
+  grantRows(grantId: string): Promise<{ status: string; generation: number }[]>;
   auditCountByOperation(tenantId: string, operation: string): Promise<number>;
 }
 
@@ -950,11 +948,9 @@ describe("T04.07 team management grants", () => {
     expect(memberBView.status).toBe("active");
     expect(memberBView.userId).toBe(memberB.userId);
 
-    const revoke = await routes.call(
-      "DELETE",
-      `${path}/${grantId}`,
-      { reason: "route round trip" },
-    );
+    const revoke = await routes.call("DELETE", `${path}/${grantId}`, {
+      reason: "route round trip",
+    });
     expect(revoke.status).toBe(200);
     const revokeBody = revoke.body as {
       grant: { grantId: string | null; grantGeneration: number };

@@ -13,12 +13,12 @@
  * checkout blocks (explicitly, non-zero) rather than passing or silently skipping.
  */
 import { join } from "node:path";
-import { expect, test } from "./support/e2e-compat";
 import {
   baForeignGaps,
   readForeignWhitelist,
   runForeignTarget,
 } from "./support/better-auth-foreign";
+import { expect, test } from "./support/e2e-compat";
 
 const whitelistPath = join(
   import.meta.dirname,
@@ -51,16 +51,14 @@ if (!wanted) {
     });
   } else {
     for (const target of entry.targets) {
-      test(
-        `BA foreign suite ${wanted} ${target.type} ${target.target}`,
-        { timeout: 900_000 },
-        async () => {
-          const result = await runForeignTarget(whitelist, wanted, target);
-          expect(result.exitCode, result.message).toBe(0);
-          expect(result.reportedTests, result.message).toBeGreaterThan(0);
-          expect(result.skipped, result.message).toBe(0);
-        },
-      );
+      test(`BA foreign suite ${wanted} ${target.type} ${target.target}`, {
+        timeout: 900_000,
+      }, async () => {
+        const result = await runForeignTarget(whitelist, wanted, target);
+        expect(result.exitCode, result.message).toBe(0);
+        expect(result.reportedTests, result.message).toBeGreaterThan(0);
+        expect(result.skipped, result.message).toBe(0);
+      });
     }
   }
 }

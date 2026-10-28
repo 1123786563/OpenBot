@@ -1552,70 +1552,70 @@
     {
       "idx": 221,
       "version": "7",
-      "when": 1792870645200,
+      "when": 1793171461000,
       "tag": "0221_better_auth_directory",
       "breakpoints": true
     },
     {
       "idx": 222,
       "version": "7",
-      "when": 1792881446929,
+      "when": 1793175061000,
       "tag": "0222_better_auth_clocks",
       "breakpoints": true
     },
     {
       "idx": 223,
       "version": "7",
-      "when": 1792883454900,
+      "when": 1793178661000,
       "tag": "0223_better_auth_command_authority",
       "breakpoints": true
     },
     {
       "idx": 224,
       "version": "7",
-      "when": 1792887000000,
+      "when": 1793182261000,
       "tag": "0224_better_auth_authority_sources",
       "breakpoints": true
     },
     {
       "idx": 225,
       "version": "7",
-      "when": 1792888078374,
+      "when": 1793185861000,
       "tag": "0225_better_auth_assurance",
       "breakpoints": true
     },
     {
       "idx": 226,
       "version": "7",
-      "when": 1792892119284,
+      "when": 1793189461000,
       "tag": "0226_better_auth_schema_roles",
       "breakpoints": true
     },
     {
       "idx": 227,
       "version": "7",
-      "when": 1792965326836,
+      "when": 1793193061000,
       "tag": "0227_better_auth_company_lifecycle",
       "breakpoints": true
     },
     {
       "idx": 228,
       "version": "7",
-      "when": 1792992000000,
+      "when": 1793196661000,
       "tag": "0228_better_auth_invitation_resend",
       "breakpoints": true
     },
     {
       "idx": 229,
       "version": "7",
-      "when": 1793078400000,
+      "when": 1793200261000,
       "tag": "0229_better_auth_team_management_grants",
       "breakpoints": true
     },
     {
       "idx": 230,
       "version": "7",
-      "when": 1793164800000,
+      "when": 1793203861000,
       "tag": "0230_better_auth_company_auth_challenge",
       "breakpoints": true
     },

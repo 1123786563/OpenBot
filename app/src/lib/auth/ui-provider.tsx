@@ -92,7 +92,10 @@ export function verifyUiSource(manifest: unknown): UiSourceVerdict {
     fail("source: missing");
   } else {
     if (!source.name) fail("source.name: missing");
-    if (typeof source.version !== "string" || !EXACT_VERSION.test(source.version)) {
+    if (
+      typeof source.version !== "string" ||
+      !EXACT_VERSION.test(source.version)
+    ) {
       fail(
         `source.version: must be an exact x.y.z pin, got ${JSON.stringify(source.version)}`,
       );
@@ -142,16 +145,26 @@ export function verifyUiSource(manifest: unknown): UiSourceVerdict {
     const registryRootPrefix = `${m.registryRoot ?? ""}/`;
     const seenPaths = new Set<string>();
     for (const entry of m.vendored) {
-      if (!entry?.path?.startsWith(registryRootPrefix) || entry.path.includes("..")) {
-        fail(`vendored path: ${entry?.path} must live under ${registryRootPrefix}`);
+      if (
+        !entry?.path?.startsWith(registryRootPrefix) ||
+        entry.path.includes("..")
+      ) {
+        fail(
+          `vendored path: ${entry?.path} must live under ${registryRootPrefix}`,
+        );
         continue;
       }
       if (seenPaths.has(entry.path)) {
         fail(`vendored path: ${entry.path} listed twice`);
       }
       seenPaths.add(entry.path);
-      if (typeof entry.upstream !== "string" || !entry.upstream.startsWith("src/")) {
-        fail(`vendored upstream: ${entry.path} must name its pinned-source file (src/…)`);
+      if (
+        typeof entry.upstream !== "string" ||
+        !entry.upstream.startsWith("src/")
+      ) {
+        fail(
+          `vendored upstream: ${entry.path} must name its pinned-source file (src/…)`,
+        );
       }
       if (typeof entry.sha256 !== "string" || !SHA256_HEX.test(entry.sha256)) {
         fail(`vendored sha256: ${entry.path} must be a sha256 hex digest`);
@@ -202,5 +215,7 @@ export function OpenBotAuthProvider({
       `OpenBotAuthProvider refuses to mount: the fixed BA UI source manifest is incompatible or unpinned — ${verdict.errors.join("; ")}`,
     );
   }
-  return <OpenBotAuthUIProvider source={uiSource}>{children}</OpenBotAuthUIProvider>;
+  return (
+    <OpenBotAuthUIProvider source={uiSource}>{children}</OpenBotAuthUIProvider>
+  );
 }
