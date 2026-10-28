@@ -280,9 +280,18 @@ export async function createDeletionSemanticsFixture(): Promise<DeletionSemantic
       `);
     },
     async dispose() {
-      await setup.$client.close();
-      await platform.$client.close();
-      await base.dispose();
+      // 失败隔离：任一步抛错也不跳过其余清理，聚合后上报。
+      const failures: unknown[] = [];
+      await setup.$client.close().catch((error) => failures.push(error));
+      await platform.$client.close().catch((error) => failures.push(error));
+      try {
+        await base.dispose();
+      } catch (error) {
+        failures.push(error);
+      }
+      if (failures.length > 0) {
+        throw new AggregateError(failures, "MT067 fixture dispose failed");
+      }
     },
   };
 }

@@ -562,7 +562,14 @@ export function createTriggerStore(
       const [row] = await database
         .update(responsibilityTriggers)
         .set({ config, updatedAt: new Date() })
-        .where(eq(responsibilityTriggers.id, id))
+        // Ownership rides in the WHERE: the pre-check read and this write are not one
+        // statement, and a transfer landing between them must not redirect the write.
+        .where(
+          and(
+            eq(responsibilityTriggers.id, id),
+            eq(responsibilityTriggers.ownerUserId, ownerUserId),
+          ),
+        )
         .returning(columns);
       if (!row) throw new ResponsibilityNotFoundError();
       return record(row);
@@ -572,7 +579,13 @@ export function createTriggerStore(
       const [row] = await database
         .update(responsibilityTriggers)
         .set({ enabled, updatedAt: new Date() })
-        .where(eq(responsibilityTriggers.id, id))
+        // Same ownership-in-WHERE defense as update above.
+        .where(
+          and(
+            eq(responsibilityTriggers.id, id),
+            eq(responsibilityTriggers.ownerUserId, ownerUserId),
+          ),
+        )
         .returning(columns);
       if (!row) throw new ResponsibilityNotFoundError();
       return record(row);

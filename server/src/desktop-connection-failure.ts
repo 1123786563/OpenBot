@@ -55,10 +55,26 @@ export function isModelAuthenticationError(error: unknown): boolean {
     error.statusCode === 401
   )
     return true;
+  const cause = error.cause;
+  if (cause === error || !(cause instanceof Error)) return false;
+  // Cycle guard: A.cause=B, B.cause=A must terminate, not blow the stack inside an
+  // error tap.
+  let node: unknown = cause;
+  while (node instanceof Error) {
+    if (isModelAuthenticationErrorShallow(node)) return true;
+    if (node === error || node.cause === node) return false;
+    node = node.cause;
+  }
+  return false;
+}
+
+/** The name/statusCode checks only, no cause walk. */
+function isModelAuthenticationErrorShallow(error: Error): boolean {
+  if (error.name === "OpenBotModelAuthenticationError") return true;
   return (
-    error.cause !== error &&
-    error.cause instanceof Error &&
-    isModelAuthenticationError(error.cause)
+    error.name === "AI_APICallError" &&
+    "statusCode" in error &&
+    error.statusCode === 401
   );
 }
 

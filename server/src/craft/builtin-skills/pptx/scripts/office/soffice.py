@@ -33,7 +33,13 @@ def get_soffice_env() -> dict:
 
 
 def run_soffice(args: list[str], **kwargs) -> subprocess.CompletedProcess:
+    # A caller-supplied env merges over the shim env instead of colliding with
+    # it (duplicate `env=` kwargs would raise TypeError) — dropping the shim's
+    # LD_PRELOAD here would silently un-fix blocked AF_UNIX sockets.
+    override = kwargs.pop("env", None)
     env = get_soffice_env()
+    if override:
+        env.update(override)
     return subprocess.run(["soffice"] + args, env=env, **kwargs)
 
 
@@ -187,8 +193,10 @@ int close(int fd) {
         if (wake_r[fd] >= 0) { real_close(wake_r[fd]); wake_r[fd]  = -1; }
         if (peer_of[fd] >= 0) { real_close(peer_of[fd]); peer_of[fd] = -1; }
 
-        if (was_listener)
-            _exit(0);                        /* conversion done – exit */
+        if (was_listener) {
+            fflush(NULL); /* _exit would discard buffered stdio output */
+            _exit(0);     /* conversion done – exit */
+        }
     }
     return real_close(fd);
 }

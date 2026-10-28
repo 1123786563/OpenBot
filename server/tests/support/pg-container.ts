@@ -79,13 +79,19 @@ export async function dropDatabaseAndRole(
   dbName: string,
   roleName?: string,
 ): Promise<void> {
+  // Swallowing is deliberate (a drop() must not mask the caller's assertion
+  // error), but silent swallowing hides accumulating leftovers in the shared
+  // test container — make each failed DROP visible.
   await psql(
     "postgres",
     `DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`,
-  ).catch(() => undefined);
+  ).catch((error) =>
+    console.warn(`dropDatabaseAndRole: DROP DATABASE ${dbName} failed: ${String(error)}`),
+  );
   if (roleName) {
     await psql("postgres", `DROP ROLE IF EXISTS "${roleName}"`).catch(
-      () => undefined,
+      (error) =>
+        console.warn(`dropDatabaseAndRole: DROP ROLE ${roleName} failed: ${String(error)}`),
     );
   }
 }
@@ -115,6 +121,13 @@ export async function createDisposableDatabase(options: {
   label: string;
   afterGrants?: (dbName: string, roleName: string) => Promise<void>;
 }): Promise<DisposableDatabase> {
+  // The label lands inside quoted SQL identifiers, a dollar-quoted password and
+  // the runtime URL: only identifier-safe characters may pass.
+  if (!/^[A-Za-z0-9_]+$/.test(options.label)) {
+    throw new Error(
+      `createDisposableDatabase: label must match [A-Za-z0-9_]+, got ${JSON.stringify(options.label)}`,
+    );
+  }
   const dbName = `openbot_${options.label}_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
   const roleName = `${options.label}_rt_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
   const password = `${options.label}_${randomUUID().replaceAll("-", "").slice(0, 24)}`;

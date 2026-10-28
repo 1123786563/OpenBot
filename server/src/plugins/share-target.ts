@@ -14,7 +14,7 @@ import type { ShareAudience } from "../proactive/private-share";
  * to be private costs a click; not asking about one that was public costs the person their privacy.
  */
 const SENDS =
-  /(^|[_\-.\s])(send|post|reply|respond|forward|share|comment|publish|broadcast|invite|notify|message|chat[_-]?post|create[_-]?message|create[_-]?post|create[_-]?comment)([_\-.\s]|s?$)/i;
+  /(^|[_\-.\s])(resend|send|post|reply|respond|forward|share|comment|publish|broadcast|invite|notify|message|chat[_-]?post|create[_-]?message|create[_-]?post|create[_-]?comment)s?([_\-.\s]|$)/i;
 /** A write that only stages something for the owner, which sends nothing yet. */
 const STAGES = /(^|[_\-.\s])(draft|drafts)([_\-.\s]|$)/i;
 
@@ -64,8 +64,23 @@ export function shareTargetOf(
   toolName: string,
   args: Record<string, unknown>,
 ): ShareTarget | null {
-  const name = toolName.replace(/([a-z])([A-Z])/g, "$1_$2");
-  if (!SENDS.test(name) || STAGES.test(name)) return null;
+  // Both camel boundaries become separators: lowercase→uppercase
+  // ("sendMessage") and an acronym's last letter against a lowercase word
+  // ("SMSsend", "SMSend") — a verb hiding behind an acronym must not pass
+  // the ask unrequested.
+  const name = toolName
+    .replace(/(?<=[A-Z])([A-Z])([a-z])/g, "$1_$2")
+    .replace(/([a-z])([A-Z])/g, "$1_$2");
+  if (!SENDS.test(name)) return null;
+  /*
+   * A staging word only exempts a name that does nothing but stage: a name
+   * carrying both (`send_draft`, `draft_and_send`) still sends, so it is
+   * asked about like any other send — the over-inclusive side the header
+   * promises.
+   */
+  if (STAGES.test(name) && !SENDS.test(name.replace(STAGES, " "))) {
+    return null;
+  }
   const content = CONTENT_KEYS.map((key) => flatten(args[key]))
     .filter(Boolean)
     .join("\n");

@@ -383,12 +383,14 @@ function projectStep(row: OpikSpanRow): RunStep | null {
   // upstream mapper lifts into its own field (row.output.output). A retrieval step
   // records a query only — its hit summary rides `retrieval`, never an output.
   const input = stepContent(attributes.input);
-  const output =
-    kind === "retrieval"
-      ? null
-      : typeof row.output === "object" && row.output !== null
-        ? stepContent((row.output as Record<string, unknown>).output)
-        : null;
+  let output: SafeValue | null = null;
+  if (
+    kind !== "retrieval" &&
+    typeof row.output === "object" &&
+    row.output !== null
+  ) {
+    output = stepContent((row.output as Record<string, unknown>).output);
+  }
   const retrieval =
     kind === "retrieval" ? stepRetrieval(attributes) : undefined;
   // R4-03: the call id the protocol named the call by, when the recorded step

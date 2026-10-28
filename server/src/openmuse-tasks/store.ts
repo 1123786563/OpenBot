@@ -782,10 +782,10 @@ export function createOpenMuseTaskStore(deps: {
     try {
       await deps.rows.insertTask(task);
     } catch (error) {
-      // M35: the insert's own quota bound — one typed refusal for every
-      // racing caller that passed the pre-check.
-      if (error instanceof OpenMuseTaskQuotaError) throw error;
-      // A concurrent insert with the same key wins; re-read and agree with it.
+      // A concurrent insert with the same key wins; re-read and agree with
+      // it BEFORE the quota refusal: a duplicate arriving at a full quota
+      // must answer the stored row, not 429 — an idempotent replay never
+      // creates, so it cannot be the caller that broke the bound.
       if (input.idempotencyKey !== null) {
         const winner = await deps.rows.findTaskByIdempotencyKey(
           input.ownerUserId,
@@ -793,6 +793,8 @@ export function createOpenMuseTaskStore(deps: {
         );
         if (winner) return { task: winner, created: false };
       }
+      // M35: the insert's own quota bound — one typed refusal for every
+      // racing caller that passed the pre-check.
       throw error;
     }
     // Offered only on the row this call created: an idempotent retry hands

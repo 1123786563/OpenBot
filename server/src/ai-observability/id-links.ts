@@ -98,16 +98,8 @@ export function validateLinkId(value: string): string {
 
 /** The chain-check evidence: same refusal discipline, one opaque reference. */
 export function validateTraceRef(value: string): string {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new IdLinkError("ID_LINK_INPUT_INVALID", 400);
-  }
-  if (value.length > MAX_ID_CHARS || hasControlCharacter(value)) {
-    throw new IdLinkError("ID_LINK_INPUT_INVALID", 400);
-  }
-  if (denyReason(value) !== undefined) {
-    throw new IdLinkError("ID_LINK_INPUT_INVALID", 400);
-  }
-  return value;
+  // One implementation, no drift: the rules are the local link id's, exactly.
+  return validateLinkId(value);
 }
 
 export type IdLinkStore = {

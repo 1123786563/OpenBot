@@ -28,14 +28,27 @@ const RANK: Record<RuleBehaviour, number> = {
   hand_off: 3,
 };
 
-/** `*` matches any run of characters; everything else is literal and the whole value must match. */
+/** `*` matches any run of characters; everything else is literal and the whole value must match.
+ * Segment matching, not regex: a rule pattern like `*a*a*a*b` must never send the regex engine
+ * into catastrophic backtracking on a long candidate. */
 export function globMatches(pattern: string, value: string): boolean {
   if (pattern === "*") return true;
-  const source = pattern
-    .split("*")
-    .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
-    .join(".*");
-  return new RegExp(`^${source}$`, "s").test(value);
+  const parts = pattern.split("*");
+  // No wildcard: literal equality.
+  if (parts.length === 1) return value === pattern;
+  const head = parts[0];
+  const tail = parts[parts.length - 1];
+  if (!value.startsWith(head)) return false;
+  if (!value.endsWith(tail)) return false;
+  // end: the last position a middle segment may start at (the tail owns the string's end).
+  const end = value.length - tail.length;
+  let at = head.length;
+  for (const part of parts.slice(1, -1)) {
+    const found = value.indexOf(part, at);
+    if (found < 0 || found > end) return false;
+    at = found + part.length;
+  }
+  return at <= end;
 }
 
 type AnyRule = Pick<
@@ -150,8 +163,9 @@ export function safetyRequirement(
  */
 export function reviewable(candidate: ApprovalCandidate): boolean {
   if (candidate.effect === "read") return false;
-  // OpenBot's own memory and Bot-settings tools only. Matched anywhere in the ref, "settings" also
-  // exempted vendor tools such as `composio/GITHUB_UPDATE_REPOSITORY_SETTINGS`.
+  // OpenBot's own memory and Bot-settings tools only, prefix-anchored: `memory/…` or
+  // `bot/<segment>` ending in a settings/preferences tool. A vendor tool such as
+  // `composio/GITHUB_UPDATE_REPOSITORY_SETTINGS` is NOT exempt — it gets reviewed.
   return !/^memory\/|^bot\/[^/]*(settings|preferences)/i.test(
     candidate.toolRef,
   );
@@ -346,7 +360,7 @@ export async function decideAction(input: {
       reason: SAFETY_REASONS[category],
       review,
     };
-  if (review && input.autoReview && reviewable(candidate)) {
+  if (review) {
     if (review.verdict === "hand_off")
       return {
         behaviour: "hand_off",
@@ -385,8 +399,9 @@ export async function decideAction(input: {
           behaviour: "ask",
           source: matched.layer,
           ruleId: matched.rule.id,
-          reason:
-            "A rule allows this only when the person asked for it, and this run's request did not.",
+          reason: review?.failedClosed
+            ? "A rule allows this when the person asks for it, but the automatic review could not run, so it needs your approval."
+            : "A rule allows this only when the person asked for it, and this run's request did not.",
           ...(review ? { review } : {}),
         };
   if (matched?.rule.behaviour === "allow")

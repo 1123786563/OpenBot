@@ -222,7 +222,7 @@ export async function createOAuthStateFixture(): Promise<OAuthStateFixture> {
       ];
       const principalId = principalOf(identity, companyKey);
       await setup.transaction(async (tx) => {
-        await tx.execute(sql`
+        const updated = (await tx.execute(sql`
           update enterprise_memberships
           set status = ${status},
             epoch = (select coalesce(max(epoch), 0) + 1
@@ -231,13 +231,24 @@ export async function createOAuthStateFixture(): Promise<OAuthStateFixture> {
                        and principal_id = ${principalId})
           where tenant_id = ${tenantId}
             and principal_id = ${principalId}
-        `);
+          returning 1
+        `)) as unknown;
+        // 0 affected rows means the membership row is gone; say so instead of
+        // letting downstream denial assertions pass for the wrong reason.
+        const rows = Array.isArray(updated)
+          ? updated
+          : ((updated as { rows?: unknown[] })?.rows ?? []);
+        if (rows.length !== 1) {
+          throw new Error(
+            `MEMBERSHIP_STATUS_FAILED:${tenantId}:${principalId}:${rows.length}`,
+          );
+        }
       });
     },
     async setTeamMembershipStatus(identity, teamKey, status) {
       const fact = teamOf(identity, teamKey);
       await setup.transaction(async (tx) => {
-        await tx.execute(sql`
+        const updated = (await tx.execute(sql`
           update enterprise_workspace_memberships
           set status = ${status},
             epoch = (select coalesce(max(epoch), 0) + 1
@@ -248,7 +259,18 @@ export async function createOAuthStateFixture(): Promise<OAuthStateFixture> {
           where tenant_id = ${fact.tenantId}
             and workspace_id = ${fact.workspaceId}
             and principal_id = ${fact.principalId}
-        `);
+          returning 1
+        `)) as unknown;
+        // 0 affected rows means the membership row is gone; say so instead of
+        // letting downstream denial assertions pass for the wrong reason.
+        const rows = Array.isArray(updated)
+          ? updated
+          : ((updated as { rows?: unknown[] })?.rows ?? []);
+        if (rows.length !== 1) {
+          throw new Error(
+            `MEMBERSHIP_STATUS_FAILED:${fact.tenantId}:${fact.workspaceId}:${fact.principalId}:${rows.length}`,
+          );
+        }
       });
     },
     catalog: {
@@ -266,8 +288,10 @@ export async function createOAuthStateFixture(): Promise<OAuthStateFixture> {
         };
       },
       async hasPrivilege(table, role, privilege) {
+        // Schema-qualify like rlsFlags above: a bare table name resolves
+        // through search_path and can hit a same-named table in another schema.
         const rows = (await setup.$client.unsafe(
-          "select has_table_privilege($1, $2, $3) as allowed",
+          "select has_table_privilege($1, 'public.' || $2, $3) as allowed",
           [role, table, privilege],
         )) as Array<Record<string, unknown>>;
         return Boolean(rows[0]?.allowed);

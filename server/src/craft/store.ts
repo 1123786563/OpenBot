@@ -113,7 +113,7 @@ export type CraftStore = {
    */
   markSessionIdleIfStillIdle(sessionId: string, before: Date): Promise<boolean>;
   /** Bump lastActivityAt — onyx did this with an ORM onupdate hook; here it's explicit. */
-  updateSessionActivity(sessionId: string): Promise<void>;
+  updateSessionActivity(sessionId: string, at?: Date): Promise<void>;
   /** The CAS core: initializing → active|failed, with the resolved runtime ids. */
   finalizeSessionInitialization(input: {
     sessionId: string;
@@ -141,7 +141,16 @@ export type CraftStore = {
     portStart: number;
     portEnd: number;
   }): Promise<number>;
-  deleteSession(sessionId: string, userId: string): Promise<boolean>;
+  /**
+   * Deletes the session's snapshot rows FIRST, inside the ownership-verified call, and
+   * returns them so the caller can free their blobs. The object store has no FK: if the
+   * row delete's cascade dropped the snapshot rows first, the archives would be orphans
+   * nothing could ever free again.
+   */
+  deleteSession(
+    sessionId: string,
+    userId: string,
+  ): Promise<{ deleted: boolean; snapshots: CraftSnapshotRow[] }>;
 
   // ── messages ────────────────────────────────────────────────────────────────
   createMessage(input: {
@@ -154,8 +163,9 @@ export type CraftStore = {
   countUserMessages(sessionId: string): Promise<number>;
   /** The transcript read: one session ordered by (turn, time). */
   getMessages(sessionId: string): Promise<CraftMessageRow[]>;
-  /** Update one message's metadata (plan upserts). */
+  /** Update one message's metadata (plan upserts), scoped to its session. */
   updateMessage(
+    sessionId: string,
     messageId: string,
     messageMetadata: Record<string, unknown>,
   ): Promise<CraftMessageRow | undefined>;
@@ -216,8 +226,11 @@ export function createCraftStore(db: Database): CraftStore {
     async getSession(sessionId, userId) {
       const session = await this.findSession(sessionId, userId);
       if (!session) return undefined;
-      await this.updateSessionActivity(sessionId);
-      return session;
+      const bumpedAt = new Date();
+      await this.updateSessionActivity(sessionId, bumpedAt);
+      // The answered row carries the bump: lastActivityAt just moved, and idle
+      // decisions read it off this row.
+      return { ...session, lastActivityAt: bumpedAt };
     },
 
     async listUserSessions(userId, limit = 100) {
@@ -305,10 +318,10 @@ export function createCraftStore(db: Database): CraftStore {
       return rows.length === 1;
     },
 
-    async updateSessionActivity(sessionId) {
+    async updateSessionActivity(sessionId, at = new Date()) {
       await db
         .update(craftSessions)
-        .set({ lastActivityAt: new Date() })
+        .set({ lastActivityAt: at })
         .where(eq(craftSessions.id, sessionId));
     },
 
@@ -398,6 +411,12 @@ export function createCraftStore(db: Database): CraftStore {
             .where(eq(craftSessions.id, input.sessionId))
             .returning({ port: craftSessions.nextjsPort });
           if (rows.length === 1) return port;
+          // Zero rows is not "this port is gone": the update only fails to land
+          // when the session row itself is gone (a concurrent delete). Naming it
+          // keeps "range exhausted" (retryable) apart from "no such session" (not).
+          throw new Error(
+            `Session ${input.sessionId} no longer exists; no port to reserve.`,
+          );
         } catch (error) {
           if (
             error !== null &&
@@ -416,6 +435,24 @@ export function createCraftStore(db: Database): CraftStore {
     },
 
     async deleteSession(sessionId, userId) {
+      // The ownership verdict comes FIRST: snapshot rows are keyed by session alone, so
+      // deleting them before knowing the caller owns the session would let a non-owner
+      // name another person's session and strip its archives.
+      const [owned] = await db
+        .select({ id: craftSessions.id })
+        .from(craftSessions)
+        .where(
+          and(
+            eq(craftSessions.id, sessionId),
+            eq(craftSessions.userId, userId),
+          ),
+        )
+        .limit(1);
+      if (!owned) return { deleted: false, snapshots: [] };
+      const snapshots = await db
+        .delete(craftSnapshots)
+        .where(eq(craftSnapshots.sessionId, sessionId))
+        .returning();
       const rows = await db
         .delete(craftSessions)
         .where(
@@ -425,7 +462,7 @@ export function createCraftStore(db: Database): CraftStore {
           ),
         )
         .returning({ id: craftSessions.id });
-      return rows.length === 1;
+      return { deleted: rows.length === 1, snapshots };
     },
 
     async createMessage(input) {
@@ -463,11 +500,17 @@ export function createCraftStore(db: Database): CraftStore {
         .orderBy(asc(craftMessages.turnIndex), asc(craftMessages.createdAt));
     },
 
-    async updateMessage(messageId, messageMetadata) {
+    async updateMessage(sessionId, messageId, messageMetadata) {
       const rows = await db
         .update(craftMessages)
         .set({ messageMetadata })
-        .where(eq(craftMessages.id, messageId))
+        // Scoped: a stale/polluted plan id must never rewrite another session's row.
+        .where(
+          and(
+            eq(craftMessages.id, messageId),
+            eq(craftMessages.sessionId, sessionId),
+          ),
+        )
         .returning();
       return rows[0];
     },
@@ -475,6 +518,7 @@ export function createCraftStore(db: Database): CraftStore {
     async upsertAgentPlan(input) {
       if (input.existingPlanId) {
         const updated = await this.updateMessage(
+          input.sessionId,
           input.existingPlanId,
           input.planMetadata,
         );
@@ -495,6 +539,7 @@ export function createCraftStore(db: Database): CraftStore {
         .limit(1);
       if (existing.length > 0) {
         const updated = await this.updateMessage(
+          input.sessionId,
           existing[0].id,
           input.planMetadata,
         );

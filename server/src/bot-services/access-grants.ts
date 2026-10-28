@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
+import { getLogger } from "../../../shared/logger";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
@@ -179,20 +180,27 @@ export class WorkbenchGrantRevokedError extends Error {
   }
 }
 
+const log = getLogger("server");
+
 /**
  * The violated constraint's name when `error` is a Postgres unique_violation (SQLSTATE 23505), else
- * null. Bun's driver puts the SQLSTATE in `errno` and the name in `constraint`; drizzle wraps the
- * driver error as `cause`. (Same helper the bot service store uses, kept local so the two modules
- * stay independently readable.)
+ * null. Bun's driver puts the SQLSTATE in `errno` (some wrappers surface it as `code`) and the name
+ * in `constraint`; drizzle wraps the driver error as `cause`, and the whole cause chain is probed.
+ * (Same helper the bot service store uses, kept local so the two modules stay independently
+ * readable.)
  */
 function uniqueViolationConstraint(error: unknown): string | null {
-  type Driver = { errno?: unknown; constraint?: unknown };
-  const candidates = [
-    error as Driver | null | undefined,
-    (error as { cause?: Driver } | null | undefined)?.cause,
-  ];
+  type Driver = { errno?: unknown; code?: unknown; constraint?: unknown };
+  const candidates: Driver[] = [];
+  for (
+    let current: unknown = error;
+    current !== null && typeof current === "object";
+    current = (current as { cause?: unknown }).cause
+  ) {
+    candidates.push(current as Driver);
+  }
   for (const candidate of candidates) {
-    if (candidate?.errno === "23505")
+    if (candidate?.errno === "23505" || candidate?.code === "23505")
       return typeof candidate.constraint === "string"
         ? candidate.constraint
         : "";
@@ -479,6 +487,12 @@ export function createAccessGrantService(
           .select()
           .from(accessGrants)
           .where(eq(accessGrants.grantId, grantId));
+        if (!winner) {
+          // The conditional update lost to a concurrent revoke and the row is gone
+          // (retention hard-delete): a malformed grant must not leave as a silent
+          // success — the same uniform refusal every unusable grant answers.
+          throw new AccessGrantUseError();
+        }
         return {
           grant: toGrant(winner),
           revoked: false,
@@ -486,7 +500,10 @@ export function createAccessGrantService(
         };
       });
 
-      if (outcome.revoked && dependencies.auditStore) {
+      // Recorded for the no-op too: the docblock's "caller retries into the idempotent
+      // no-op" is only a self-healing trail if the retry writes the event the first
+      // attempt lost, so `revoked` in the payload tells the two answers apart.
+      if (dependencies.auditStore) {
         await recordAuditEvent(dependencies.auditStore, {
           eventType: "model_access.revoked",
           targetType: "access_grant",
@@ -499,6 +516,7 @@ export function createAccessGrantService(
             externalIdentity: outcome.grant.externalIdentity,
             scope: outcome.grant.scope,
             source: outcome.grant.source,
+            revoked: outcome.revoked,
           },
         });
       }
@@ -509,21 +527,28 @@ export function createAccessGrantService(
       ) {
         // After the commit, after the trail: the person's answer is already true. The seam is
         // total by contract (failures recorded, never thrown), so a gateway that cannot be
-        // reached softens nothing — the synchronous refusal lives in the rows above.
-        await dependencies.revokeGatewayKeys({
-          grantId: outcome.grant.grantId,
-          gatewayVirtualKeyIds: outcome.retiredGatewayVirtualKeyIds,
-        });
+        // reached softens nothing — the synchronous refusal lives in the rows above. A seam
+        // that breaks its contract and throws must not turn the committed revocation into a
+        // 500 whose idempotent retry would then skip this call and strand the keys live.
+        try {
+          await dependencies.revokeGatewayKeys({
+            grantId: outcome.grant.grantId,
+            gatewayVirtualKeyIds: outcome.retiredGatewayVirtualKeyIds,
+          });
+        } catch (error) {
+          log.error(
+            {
+              type: "gateway-key-revocation-failed",
+              grantId: outcome.grant.grantId,
+              error: String(error),
+            },
+            "gateway-key-revocation-failed",
+          );
+        }
       }
       return outcome;
     },
 
-    /**
-     * What one live binding code would authorize, for the signed-in `userId` looking at it.
-     * Reads the offer and the Bot and answers; consumes nothing, creates nothing — the person
-     * has not confirmed yet, and looking must not spend the one thing (the code) the confirmation
-     * needs. An unknown, used, expired or disabled-Bot code is the one uniform refusal.
-     */
     /**
      * The person's revoke-everything act (Bifrost 05.10, AC08): one Bot's whole authorization
      * — every active grant the person holds for it, and through {@link revokeForUser} every
@@ -559,12 +584,32 @@ export function createAccessGrantService(
         .orderBy(desc(accessGrants.createdAt));
       const grants: AccessGrant[] = [];
       for (const { grantId } of rows) {
-        const outcome = await this.revokeForUser(grantId, userId);
-        grants.push(outcome.grant);
+        try {
+          const outcome = await this.revokeForUser(grantId, userId);
+          grants.push(outcome.grant);
+        } catch (error) {
+          // Each grant's revocation is independent: one failure (an audit write, a
+          // gateway seam) must not strand the rest of the person's grants unrevoked.
+          // The failed grant keeps its row and is picked up by the next revoke-all.
+          log.error(
+            {
+              type: "access-grant-revoke-all-item-failed",
+              grantId,
+              error: String(error),
+            },
+            "access-grant-revoke-all-item-failed",
+          );
+        }
       }
       return { grants, revokedCount: grants.length };
     },
 
+    /**
+     * What one live binding code would authorize, for the signed-in `userId` looking at it.
+     * Reads the offer and the Bot and answers; consumes nothing, creates nothing — the person
+     * has not confirmed yet, and looking must not spend the one thing (the code) the confirmation
+     * needs. An unknown, used, expired or disabled-Bot code is the one uniform refusal.
+     */
     async preview(
       userId: string,
       bindingCode: string,
@@ -698,6 +743,11 @@ export function createAccessGrantService(
               eq(accessGrants.status, "active"),
             ),
           );
+        if (!twin) {
+          // The twin that won the race was revoked (or hard-deleted) before this read:
+          // answer the uniform refusal rather than a malformed grant.
+          throw new AccessGrantUseError();
+        }
         return { grant: toGrant(twin), created: false };
       });
 
@@ -888,12 +938,12 @@ const workbenchGrantInput = z
   .transform((value) => ({ reauthorize: value.reauthorize ?? undefined }));
 
 /**
- * `/api/model-access`, mounted behind the login guard: a person's own confirmation surface. Two
- * routes and only these — the preview that shows what a code would authorize, and the confirm
- * that authorizes it. Everything a later ticket adds (the list, the revocation) is a later
- * ticket's own route on this same mount; nothing here is reachable without a session, and no
- * route takes a user or an identity from the body. Without a composed service the whole surface
- * answers a tagged 503 — the feature absent, not the server broken.
+ * `/api/model-access`, mounted behind the login guard: a person's own confirmation surface. The
+ * binding-code pair came first — the preview that shows what a code would authorize, and the
+ * confirm that authorizes it; the workbench grant, the list, the revoke and the revoke-everything
+ * followed on this same mount. Everything here is the session's own: nothing is reachable without
+ * a session, and no route takes a user or an identity from the body. Without a composed service
+ * the whole surface answers a tagged 503 — the feature absent, not the server broken.
  */
 export function accessGrantRoutes(
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,

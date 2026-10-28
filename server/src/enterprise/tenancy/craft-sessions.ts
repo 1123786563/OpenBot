@@ -724,6 +724,22 @@ export function createCraftSessionsService(deps: {
       if (input.action === "share" && input.patch?.sharingScope === undefined) {
         throw new Error(`${CRAFT_SESSION_INPUT_INVALID}: patch.sharingScope`);
       }
+      // 运行时闭集校验：TS 类型挡不住 JS 调用方，脏 sharingScope/status
+      // 会经 updateSession 直达权威行（sharingScope 是团队公共可见性判据）。
+      if (
+        input.patch?.sharingScope !== undefined &&
+        !["private", "public_org"].includes(input.patch.sharingScope)
+      ) {
+        throw new Error(`${CRAFT_SESSION_INPUT_INVALID}: patch.sharingScope`);
+      }
+      if (
+        input.patch?.status !== undefined &&
+        !["initializing", "active", "idle", "failed"].includes(
+          input.patch.status,
+        )
+      ) {
+        throw new Error(`${CRAFT_SESSION_INPUT_INVALID}: patch.status`);
+      }
       const ownership = await authorizeSession(scope, sessionId);
       if (ownership === null) {
         // 非属主但同团队活跃成员、会话公共 → forbidden（不是不可见——

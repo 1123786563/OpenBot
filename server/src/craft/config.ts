@@ -534,11 +534,17 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
         true,
       ),
     },
-    sandboxBotId: isPlainBotId(
-      stringEnv(env, "OPENBOT_CRAFT_SANDBOX_BOT_ID", "craft"),
-    )
-      ? stringEnv(env, "OPENBOT_CRAFT_SANDBOX_BOT_ID", "craft")
-      : "craft",
+    sandboxBotId: (() => {
+      // Read once. An invalid id falls back to "craft" like the sibling scope does, but
+      // it says so: a typo here would otherwise land every session in the default Bot's
+      // workspace with nothing in the log to point at the variable.
+      const raw = stringEnv(env, "OPENBOT_CRAFT_SANDBOX_BOT_ID", "craft");
+      if (isPlainBotId(raw)) return raw;
+      getLogger("server").warn(
+        `OPENBOT_CRAFT_SANDBOX_BOT_ID is not a plain bot id; falling back to "craft".`,
+      );
+      return "craft";
+    })(),
 
     sandboxExecutionScope: craftSandboxExecutionScope(env),
 

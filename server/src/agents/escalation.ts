@@ -19,6 +19,7 @@
  */
 
 import { z } from "zod";
+import { getLogger } from "../../../shared/logger";
 import { PUT_TO } from "@openbot/shared/handoff-markers";
 import {
   type AuditInitiator,
@@ -30,6 +31,8 @@ import type { RunAssertion } from "./callback-token";
 
 /** What the model is offered. One name, so a transcript can find every escalation by searching. */
 export const ESCALATE_TOOL = "ask_person";
+
+const log = getLogger("server");
 
 /**
  * Where a question for a person goes.
@@ -126,6 +129,11 @@ export function escalationTool(options: {
       if (!question) {
         return "That was not put to anybody: say what you need a person to answer.";
       }
+      // Capped like every other model-supplied text in this family (`handoff.ts` caps the task,
+      // `routes.ts` and `wake-up.ts` cap the reason at 500): a runaway answer must not page
+      // somebody with a megabyte or write one into the trail.
+      const asked = question.slice(0, 500);
+      const why = parsed.data.why?.slice(0, 500);
 
       /*
        * A route that throws is a route that refused, and the run has to survive it.
@@ -158,8 +166,8 @@ export function escalationTool(options: {
           ...(from.threadId ? { threadId: from.threadId } : {}),
           runId: from.runId,
           ...(from.initiator ? { initiator: from.initiator } : {}),
-          question,
-          ...(parsed.data.why ? { why: parsed.data.why } : {}),
+          question: asked,
+          ...(why ? { why } : {}),
         });
       } catch (error) {
         /*
@@ -198,8 +206,8 @@ export function escalationTool(options: {
           payload: {
             bot: from.botId,
             run: from.runId,
-            question,
-            ...(parsed.data.why ? { why: parsed.data.why } : {}),
+            question: asked,
+            ...(why ? { why } : {}),
             ...("reached" in outcome
               ? { reached: outcome.reached }
               : { reason: outcome.refusal }),
@@ -207,6 +215,16 @@ export function escalationTool(options: {
             // was given; this is what actually went wrong, which is the pair `store.ts` keeps too.
             ...(thrown ? { failure: thrown } : {}),
           },
+        }).catch((error) => {
+          // The row must not take the answer with it: a store that is down throwing here would
+          // end the run with nothing said — the exact failure the route guard above prevents.
+          log.warn(
+            {
+              type: "escalation-audit-failed",
+              error: error instanceof Error ? error.message : String(error),
+            },
+            "escalation-audit-failed",
+          );
         });
       }
 

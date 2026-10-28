@@ -266,6 +266,9 @@ export function createPersonalMemoryService(channels: {
     async searchMemories(scope, input) {
       assertScopeShape(scope);
       const query = assertPlainString(input?.query, "query", 512);
+      // ILIKE 按字面量匹配：转义用户输入中的 LIKE 通配符（PG 默认转义符
+      // 为反斜杠），否则单个 % 会命中全部记忆、_ 单字符通配。
+      const literal = query.replace(/[\\%_]/g, "\\$&");
       return data.transaction(async (tx) => {
         await beginContext(tx, scope);
         await takeLocks(tx, scope);
@@ -274,8 +277,8 @@ export function createPersonalMemoryService(channels: {
           and(
             ownRowsPredicate(scope),
             or(
-              ilike(enterprisePersonalMemories.memoryKey, `%${query}%`),
-              ilike(enterprisePersonalMemories.content, `%${query}%`),
+              ilike(enterprisePersonalMemories.memoryKey, `%${literal}%`),
+              ilike(enterprisePersonalMemories.content, `%${literal}%`),
             ),
           ),
         ).limit(100);
@@ -306,6 +309,8 @@ export function createPersonalMemoryService(channels: {
               ),
               eq(enterpriseResourceGrants.resourceId, enterpriseResources.id),
               eq(enterpriseResourceGrants.principalId, scope.principalId),
+              // 只认显式 read 授权行（MT010），不放行其他 action 位。
+              eq(enterpriseResourceGrants.action, "read"),
             ),
           )
           .where(

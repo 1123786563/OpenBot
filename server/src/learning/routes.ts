@@ -60,7 +60,12 @@ export function createLearningRoutes(
   });
   routes.onError((error) => {
     log.error(
-      { type: "learning-admin-error", errorType: error.name },
+      {
+        type: "learning-admin-error",
+        errorType: error.name,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+      },
       "learning-admin-error",
     );
     return new Response(
@@ -79,7 +84,9 @@ export function createLearningRoutes(
       const autoAssign = dependencies.autoAssign;
       let timer: ReturnType<typeof setTimeout> | undefined;
       automatic = await Promise.race([
-        autoAssign.check(),
+        // A failed check degrades to the current snapshot, like a slow one: neither may
+        // take this settings read down.
+        autoAssign.check().catch(() => autoAssign.state()),
         new Promise<LearningAutoAssignState>((resolve) => {
           timer = setTimeout(
             () => resolve(autoAssign.state()),
@@ -124,16 +131,25 @@ export function createLearningRoutes(
         409,
       );
     const automatic = await dependencies.autoAssign.createNow();
+    // The creation already happened: an audit-write fault must not read back to the
+    // administrator as a failed creation (a retry would create a second container).
     if (audit)
-      await recordAuditEvent(audit, {
-        eventType: "configuration.changed",
-        targetType: "learning",
-        actorUserId: context.var.actor.id,
-        payload: {
-          change: "container_creation_requested",
-          outcome: automatic.state,
-        },
-      });
+      try {
+        await recordAuditEvent(audit, {
+          eventType: "configuration.changed",
+          targetType: "learning",
+          actorUserId: context.var.actor.id,
+          payload: {
+            change: "container_creation_requested",
+            outcome: automatic.state,
+          },
+        });
+      } catch (error) {
+        log.error(
+          { type: "learning-admin-audit-failed", error },
+          "The Learning audit row for the container creation failed.",
+        );
+      }
     return context.json({ automatic });
   });
   routes.put(
@@ -154,17 +170,25 @@ export function createLearningRoutes(
       );
       if (!parsed.ok) return context.json({ error: parsed.error }, 400);
       const settings = await dependencies.store.write(parsed.settings);
+      // The write already happened: the audit row is best-effort beside it.
       if (audit)
-        await recordAuditEvent(audit, {
-          eventType: "configuration.changed",
-          targetType: "learning",
-          actorUserId: context.var.actor.id,
-          payload: {
-            enabled: settings.enabled,
-            defaultContainerId: settings.defaultTarget?.containerId ?? null,
-            botMappingCount: Object.keys(settings.agents).length,
-          },
-        });
+        try {
+          await recordAuditEvent(audit, {
+            eventType: "configuration.changed",
+            targetType: "learning",
+            actorUserId: context.var.actor.id,
+            payload: {
+              enabled: settings.enabled,
+              defaultContainerId: settings.defaultTarget?.containerId ?? null,
+              botMappingCount: Object.keys(settings.agents).length,
+            },
+          });
+        } catch (error) {
+          log.error(
+            { type: "learning-admin-audit-failed", error },
+            "The Learning audit row for the settings write failed.",
+          );
+        }
       return context.json({ settings });
     },
   );
@@ -188,7 +212,12 @@ export function createLearningRoutes(
         ...(agentId ? { agentId } : {}),
         ...(target ? { runtimeContainerId: target.containerId } : {}),
       });
-      return context.json({ overview: overview(snapshot) });
+      // The container the answer actually describes: an unmapped agentId falls back to the
+      // default target, and without this field the fallback would be invisible.
+      return context.json({
+        overview: overview(snapshot),
+        resolvedContainerId: target?.containerId ?? null,
+      });
     } catch {
       return context.json(
         {

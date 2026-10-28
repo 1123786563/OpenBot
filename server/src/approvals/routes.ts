@@ -1,12 +1,15 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { type AppVariables, requireAdmin } from "../auth/guards";
+import { getLogger } from "../../../shared/logger";
 import type { ApprovalService } from "./service";
 import {
   ApprovalNotFoundError,
   ApprovalRefusedError,
   RULE_BEHAVIOURS,
 } from "./types";
+
+const log = getLogger("server");
 
 const pattern = z.string().trim().min(1).max(300);
 /** An action class: which Bot, which tool or app, which kind of effect, and which target. */
@@ -41,21 +44,30 @@ export function createApprovalRoutes(
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", requireUser);
-  routes.onError((error, context) =>
+  routes.onError((error, context) => {
     // A body that is not JSON is the caller's mistake, as the delivery routes answer it, not a
     // 500 carrying the parser's message.
-    error instanceof SyntaxError
-      ? context.json({ error: "Supply a valid request." }, 400)
-      : context.json(
-          { error: error.message },
-          error instanceof ApprovalNotFoundError
-            ? 404
-            : error instanceof ApprovalRefusedError ||
-                error instanceof z.ZodError
-              ? 400
-              : 500,
-        ),
-  );
+    if (error instanceof SyntaxError)
+      return context.json({ error: "Supply a valid request." }, 400);
+    // A schema failure's message is the raw issues JSON: answer the house sentence instead of
+    // echoing what the caller sent.
+    if (error instanceof z.ZodError)
+      return context.json({ error: "Supply a valid request." }, 400);
+    if (error instanceof ApprovalNotFoundError)
+      return context.json({ error: error.message }, 404);
+    if (error instanceof ApprovalRefusedError)
+      return context.json({ error: error.message }, 400);
+    // Anything else is ours, not the caller's: log it and answer a sentence that names no
+    // implementation detail (a raw message can carry SQL, paths, table names).
+    log.error(
+      { type: "approval-route-failed", error: String(error) },
+      "approval-route-failed",
+    );
+    return context.json(
+      { error: "The approval request could not be handled." },
+      500,
+    );
+  });
   routes.get("/", async (context) =>
     context.json(await service.inbox(context.var.actor.id)),
   );
@@ -92,6 +104,12 @@ export function createApprovalRoutes(
     if (!service.store.policy) {
       if (input.enabled === undefined)
         throw new ApprovalRefusedError("Choose whether to ask first.");
+      // This deployment has no policy store: the other two preferences cannot be
+      // saved, so refusing them beats a 200 that silently dropped the change.
+      if (input.autoReview !== undefined || input.hostCommands !== undefined)
+        throw new ApprovalRefusedError(
+          "This deployment does not support automatic review or host command preferences.",
+        );
       await service.store.setEnabled(context.var.actor.id, input.enabled);
       return context.json({ enabled: input.enabled });
     }

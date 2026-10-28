@@ -143,12 +143,20 @@ export function resultText(
      * the tool answered, and the model fills the gap from memory. Read only when `content` had
      * nothing; a text part already present is the representation the server chose to show.
      */
-    const structured =
+    let structured = "";
+    if (
       structuredContent !== null &&
       structuredContent !== undefined &&
       typeof structuredContent === "object"
-        ? JSON.stringify(structuredContent)
-        : "";
+    ) {
+      try {
+        structured = JSON.stringify(structuredContent);
+      } catch {
+        // A circular or otherwise unserializable payload has no readable
+        // form — it answers as "no content", like any other unreadable body.
+        structured = "";
+      }
+    }
     if (structured === "") {
       return {
         text: "The tool returned no content. Nothing was found, so there is nothing here to answer from.",
@@ -161,8 +169,11 @@ export function resultText(
   if (joined.length <= MAX_RESULT_CHARS) {
     return { text: joined, truncated: false };
   }
+  // The note rides inside the cap, not on top of it: a truncated answer that
+  // overshot MAX_RESULT_CHARS would defeat the cap it announces.
+  const note = `\n\n[truncated: the tool returned ${joined.length} characters]`;
   return {
-    text: `${cutAtCodeUnits(joined, MAX_RESULT_CHARS)}\n\n[truncated: the tool returned ${joined.length} characters]`,
+    text: `${cutAtCodeUnits(joined, MAX_RESULT_CHARS - note.length)}${note}`,
     truncated: true,
   };
 }

@@ -54,8 +54,24 @@ type RowishAdapter = Record<
 >;
 
 function isEnvelope(value: string): boolean {
-  // What `encryptSecret` produces. Anything else is a value written before this wrapper existed.
-  return value.startsWith('{"version":1');
+  // What `encryptSecret` produces — checked with the SAME three-field shape `decryptSecret`
+  // requires (see credentials.ts's parseEnvelope), not a prefix: a provider config that happens
+  // to begin `{"version":1` would otherwise skip encryption on write and fail decryption on
+  // read, silently breaking that company's sign-in both ways.
+  try {
+    const parsed = JSON.parse(value) as {
+      version?: unknown;
+      iv?: unknown;
+      ciphertext?: unknown;
+    };
+    return (
+      parsed?.version === 1 &&
+      typeof parsed.iv === "string" &&
+      typeof parsed.ciphertext === "string"
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function encryptFields(
@@ -66,6 +82,21 @@ async function encryptFields(
   const next = { ...row };
   for (const field of ENCRYPTED_FIELDS) {
     const value = next[field];
+    // A field the payload does not carry at all is normal (a provider configures one method).
+    // A field that EXISTS but cannot be encrypted is not: this is the one place a customer
+    // secret could reach the column in the clear, so it leaves a line saying so.
+    if (value !== undefined && value !== null && value !== "") {
+      if (typeof value !== "string" || !isEnvelope(value)) {
+        log.warn(
+          {
+            type: "sso-config-field-not-encryptable",
+            field,
+            kind: typeof value,
+          },
+          "sso-config-field-not-encryptable",
+        );
+      }
+    }
     if (typeof value === "string" && value && !isEnvelope(value)) {
       next[field] = await encryptSecret(key, value);
     }
@@ -142,6 +173,15 @@ function wrapAdapter<T extends AdapterLike>(
 
     create: async (data: Rowish) => {
       if (!isSsoModel(data)) return inner.create?.(data);
+      if (!data.data || typeof data.data !== "object") {
+        // The payload key moved or disappeared (a Better Auth upgrade): nothing would be
+        // encrypted and nothing would say so. The write proceeds — refusing it could break
+        // registration — but the absence is on the record.
+        log.warn(
+          { type: "sso-config-write-payload-missing", method: "create" },
+          "sso-config-write-payload-missing",
+        );
+      }
       const result = await inner.create?.({
         ...data,
         data: await encryptFields(encryptionKey, data.data as Rowish),

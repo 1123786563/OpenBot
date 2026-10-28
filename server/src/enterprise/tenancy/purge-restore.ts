@@ -624,6 +624,9 @@ export function createPurgeRestoreService(channels: {
       // 审计面归 operator 读通道（MT069 审计先例；data 无审计表授权）。
       return operator.transaction(async (tx) => {
         await beginContext(tx, scope);
+        // 撤权即失效（与 build/execute/restore 同款纪律）：现读成员资格。
+        // 列表面的「不可见 = 空页」与 countBots/listBots 同例，不泄露存在性。
+        if (!(await membershipActive(tx, scope))) return deepFreeze([]);
         const rows = await tx
           .select({
             id: enterprisePurgeAudit.id,

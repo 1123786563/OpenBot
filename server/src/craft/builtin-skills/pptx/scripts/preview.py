@@ -7,6 +7,9 @@ Output protocol (stdout):
     Line 1: status — one of CACHED, GENERATED, ERROR_NOT_FOUND, ERROR_NO_PDF
     Lines 2+: sorted absolute paths to slide-*.jpg files
 
+A soffice/pdftoppm failure additionally notes "CONVERSION_ERROR" on stderr
+and exits 1 (stdout then carries no status line).
+
 Usage:
     python preview.py /path/to/file.pptx /path/to/cache_dir
 """
@@ -14,6 +17,7 @@ Usage:
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -29,9 +33,14 @@ CONVERSION_DPI = 150
 
 def _find_slides(directory: Path) -> list[str]:
     """Find slide-*.jpg files in directory, sorted by page number."""
-    slides = list(directory.glob("slide-*.jpg"))
-    slides.sort(key=lambda p: int(p.stem.split("-")[-1]))
-    return [str(s) for s in slides]
+    # Numeric suffixes only: a stray "slide-notes.jpg" must not crash the sort.
+    slides = [
+        p
+        for p in directory.glob("slide-*.jpg")
+        if re.fullmatch(r"slide-\d+", p.stem)
+    ]
+    slides.sort(key=lambda p: int(p.stem.split("-", 1)[1]))
+    return [str(s.resolve()) for s in slides]
 
 
 def _source_fingerprint(pptx_path: Path) -> dict[str, str]:

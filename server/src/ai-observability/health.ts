@@ -187,8 +187,13 @@ export function createOpikHealthService(
   let lastProbed: OpikReadiness | null = null;
   /** When the gate's current verdict was recorded — the cooldown's zero. */
   let lastProbedAt = 0;
-  /** The one in-flight bootstrap probe, from the first unprobed submit (R2-45). */
-  let bootstrapProbe: Promise<OpikReadiness> | null = null;
+  /**
+   * The one in-flight bootstrap probe, from the first unprobed submit (R2-45). Its
+   * value is only ever awaited as a barrier (the verdict is read through
+   * `lastProbed`), so a probe whose injected seams throw collapses to undefined
+   * instead of rejecting into the submit path or the pump.
+   */
+  let bootstrapProbe: Promise<OpikReadiness | undefined> | null = null;
   const stats = {
     submitted: 0,
     accepted: 0,
@@ -307,6 +312,9 @@ export function createOpikHealthService(
         // that flipped not-ready after submit must keep queued writes from beginning
         // (review F1). In-flight writes are never cancelled — only waiting ones.
         if (lastProbed === null || !lastProbed.ready) {
+          // Counted here in addition to the submit-time `accepted`: the write was
+          // admitted, then the gate refused it before it began. accepted is an
+          // admission count, not a completion ledger, and never balances.
           stats.failed.unavailable += 1;
           continue;
         }
@@ -327,9 +335,14 @@ export function createOpikHealthService(
       // an in-flight one leaves the gate unknown for this submit, and the
       // write waits in the queue for the pump's post-probe re-check below.
       if (bootstrapProbe === null) {
-        bootstrapProbe = readiness().finally(() => {
-          bootstrapProbe = null;
-        });
+        // The injected seams ahead of the port call can throw synchronously; a probe
+        // that rejects must not take the submit path or the pump down with it. The
+        // gate re-check below still sees no verdict and refuses.
+        bootstrapProbe = readiness()
+          .catch(() => undefined)
+          .finally(() => {
+            bootstrapProbe = null;
+          });
       }
     } else if (
       !lastProbed.ready &&
@@ -345,9 +358,11 @@ export function createOpikHealthService(
         lastProbed.reason === "authentication_failure") &&
       now() - lastProbedAt >= reArmAfterMs
     ) {
-      bootstrapProbe = readiness().finally(() => {
-        bootstrapProbe = null;
-      });
+      bootstrapProbe = readiness()
+        .catch(() => undefined)
+        .finally(() => {
+          bootstrapProbe = null;
+        });
     }
     if (lastProbed !== null && !lastProbed.ready) {
       stats.refusedNotReady += 1;

@@ -16,6 +16,12 @@ type RemoteAgent = {
 };
 type SeededAgent = BuiltInAgent | RemoteAgent;
 
+/**
+ * Build the agent list from seeds and the credentials configured right now.
+ *
+ * Availability is a snapshot taken at creation: a credential added or removed later is not
+ * reflected here — call this again to rebuild the registry when credentials change.
+ */
 export function createAgentRegistry(
   agents: SeededAgent[],
   activeCredentials: Set<string>,
@@ -40,7 +46,10 @@ export function createAgentRegistry(
           name: agent.name,
           type: agent.type,
           available: false,
-          reason: "AG-UI endpoint is invalid.",
+          reason:
+            agent.type === "remote_mastra"
+              ? "Mastra endpoint is invalid."
+              : "AG-UI endpoint is invalid.",
         };
   });
 }

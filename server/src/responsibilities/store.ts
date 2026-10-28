@@ -88,11 +88,20 @@ export function createResponsibilityStore(
       if (!row) throw new Error("Responsibility creation returned no row.");
       return row;
     },
-    list: (ownerUserId) =>
+    // The agent filter belongs in the SQL: a recent-100 page that is filtered in JavaScript
+    // can be entirely other Bots' rows, leaving this Bot's responsibilities invisible.
+    list: (ownerUserId, agentId) =>
       database
         .select()
         .from(responsibilities)
-        .where(eq(responsibilities.ownerUserId, ownerUserId))
+        .where(
+          agentId
+            ? and(
+                eq(responsibilities.ownerUserId, ownerUserId),
+                eq(responsibilities.agentId, agentId),
+              )
+            : eq(responsibilities.ownerUserId, ownerUserId),
+        )
         .orderBy(desc(responsibilities.updatedAt))
         .limit(100),
     get: (ownerUserId, id) => owned(database, ownerUserId, id),

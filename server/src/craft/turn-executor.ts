@@ -12,6 +12,8 @@
  */
 
 import { getLogger } from "../../../shared/logger";
+
+const log = getLogger("server");
 import type { Database } from "../db/client";
 import type { CraftConfig } from "./config";
 import { isBuildPacket } from "./events/packets";
@@ -180,8 +182,14 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
       // The transport already aborted the timed-out step and ends the stream
       // after this event; drain it (don't return early, which would re-abort)
       // and let the caller re-prompt.
-      if (isActivityTimeout(sandboxEvent) && input.canContinue) {
-        timedOut = true;
+      if (isActivityTimeout(sandboxEvent)) {
+        if (input.canContinue) {
+          timedOut = true;
+          continue;
+        }
+        // Last attempt: the marker is a transport detail, not content. Persisting it
+        // would put a consumed marker into the transcript; drain it and let the
+        // TIMED_OUT outcome below record the failure.
         continue;
       }
 
@@ -192,12 +200,28 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
       );
 
       if (!isBuildPacket(sandboxEvent) && isSandboxError(sandboxEvent)) {
-        await manager.finalizePersist(input.sessionId, input.state);
-        await manager.persistTurnError(
-          input.sessionId,
-          input.state.turnIndex,
-          `${sandboxEvent.message} ${TURN_ERROR_SUFFIX}`,
-        );
+        // Best-effort, like the path's other persistence: a storage failure here must
+        // not mask the sandbox error that is already on its way to the caller.
+        await manager
+          .finalizePersist(input.sessionId, input.state)
+          .catch((error: unknown) => {
+            log.warn(
+              { error, sessionId: input.sessionId },
+              "[craft] failed to persist sandbox error partials",
+            );
+          });
+        await manager
+          .persistTurnError(
+            input.sessionId,
+            input.state.turnIndex,
+            `${sandboxEvent.message} ${TURN_ERROR_SUFFIX}`,
+          )
+          .catch((error: unknown) => {
+            log.warn(
+              { error, sessionId: input.sessionId },
+              "[craft] failed to persist turn error row",
+            );
+          });
         await turnState.finishTurn({
           turnId: input.turnId,
           status: TURN_STATUS_FAILED,

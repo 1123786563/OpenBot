@@ -35,11 +35,19 @@ export function testDatabaseUrlFrom(
       "TEST_DATABASE_URL must use the postgres:// or postgresql:// protocol.",
     );
   }
-  const database = decodeURIComponent(url.pathname.replace(/^\//, ""));
+  let database: string;
+  try {
+    database = decodeURIComponent(url.pathname.replace(/^\//, ""));
+  } catch {
+    throw new Error(
+      "TEST_DATABASE_URL contains an invalid percent-encoded database name.",
+    );
+  }
   if (!database) {
     throw new Error("TEST_DATABASE_URL must name a database.");
   }
-  if (database === "openbot") {
+  // A trailing slash must not smuggle the live database past this guard.
+  if (database.replace(/\/+$/, "") === "openbot") {
     throw new Error(
       "TEST_DATABASE_URL must not point at the live openbot database. Use a dedicated database such as openbot_test.",
     );

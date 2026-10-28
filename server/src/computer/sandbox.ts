@@ -25,14 +25,20 @@ import type { ComputerStatus } from "./schema";
 
 const log = getLogger("server");
 
+/** The port the sandbox agent answers on, inside every computer sandbox. */
+const SANDBOX_AGENT_PORT = 4100;
+
 const SERVICE_ACCOUNT = "/var/run/secrets/kubernetes.io/serviceaccount";
 const GROUP = "agents.x-k8s.io";
 const VERSION = "v1beta1";
 
 export class SandboxError extends Error {
-  constructor(message: string) {
+  /** The cluster's own status code, when the error IS one answer from it. */
+  readonly httpStatus?: number;
+  constructor(message: string, options?: { httpStatus?: number }) {
     super(message);
     this.name = "SandboxError";
+    this.httpStatus = options?.httpStatus;
   }
 }
 
@@ -157,8 +163,10 @@ export async function readSandboxTemplate(
     );
   }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    // The file parsed; it just is not a JSON object. Naming that saves the operator
+    // from re-checking a file that is fine.
     throw new SandboxError(
-      `${path} is not valid JSON, so there is nothing to make a computer from.`,
+      `${path} is valid JSON but not a JSON object, so there is nothing to make a computer from.`,
     );
   }
   const podTemplate = (parsed as Record<string, unknown>).podTemplate;
@@ -290,6 +298,7 @@ export function createSandboxComputerProvider(
       const body = await response.text().catch(() => "");
       throw new SandboxError(
         `The cluster refused a sandbox request (${response.status}): ${body.slice(0, 300)}`,
+        { httpStatus: response.status },
       );
     }
     return response.json();
@@ -399,8 +408,10 @@ export function createSandboxComputerProvider(
       );
       if (
         suspended?.status === "True" &&
-        (generation === undefined ||
-          (suspended.observedGeneration ?? 0) >= generation)
+        // Without the generation the PATCH answered with, a True cannot be told apart from
+        // the stale one the last idle suspend left: keep waiting rather than resume onto it.
+        generation !== undefined &&
+        (suspended.observedGeneration ?? 0) >= generation
       ) {
         return;
       }
@@ -420,11 +431,23 @@ export function createSandboxComputerProvider(
     async locate(botId: string): Promise<string> {
       const existing = await read(botId);
       if (!existing) {
-        await call("", {
-          method: "POST",
-          contentType: "application/json",
-          body: JSON.stringify(desired(botId)),
-        });
+        try {
+          await call("", {
+            method: "POST",
+            contentType: "application/json",
+            body: JSON.stringify(desired(botId)),
+          });
+        } catch (error) {
+          // Two concurrent `locate` calls for a new Bot both see 404 and both POST; the loser
+          // gets 409 AlreadyExists — the outcome it wanted. Treated as created, and the wait
+          // below proceeds, instead of a first race failing as a cluster fault.
+          if (
+            !(error instanceof SandboxError) ||
+            error.httpStatus !== 409
+          ) {
+            throw error;
+          }
+        }
       } else if (isSuspended(existing)) {
         /*
          * Woken, because somebody is asking for it.
@@ -469,7 +492,7 @@ export function createSandboxComputerProvider(
           `The computer for ${botId} is ready but reported no address, so it cannot be reached.`,
         );
       }
-      return `http://${fqdn}:4100`;
+      return `http://${fqdn}:${SANDBOX_AGENT_PORT}`;
     },
 
     async status(botId: string): Promise<ComputerStatus> {
@@ -548,11 +571,14 @@ export function createSandboxComputerProvider(
         await waitForSuspended(botId, patched?.metadata?.generation);
         // Reset while it was stopping: there is nothing left to bring back.
         if (!(await read(botId))) return;
-        await call(`/${sandboxNameFor(botId)}`, {
+        const resumed = await call(`/${sandboxNameFor(botId)}`, {
           method: "PATCH",
           contentType: "application/merge-patch+json",
           body: JSON.stringify({ spec: { operatingMode: "Running" } }),
         });
+        // A reset that landed between the read and this PATCH deleted the Sandbox: a 404
+        // answers undefined, so stop here rather than spin out waitForReady on a missing pod.
+        if (!resumed) return;
         await waitForReady(botId);
       })();
       lastRestart.set(botId, restarted);
@@ -593,7 +619,7 @@ export function createSandboxComputerProvider(
             isSuspended(sandbox) || !isReady(sandbox) ? "stopped" : "running",
           updateAvailable: isOutOfDate(sandbox),
           url: sandbox.status?.serviceFQDN
-            ? `http://${sandbox.status.serviceFQDN}:4100`
+            ? `http://${sandbox.status.serviceFQDN}:${SANDBOX_AGENT_PORT}`
             : "",
           ...(sandbox.metadata?.creationTimestamp
             ? { startedAt: sandbox.metadata.creationTimestamp }

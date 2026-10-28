@@ -170,11 +170,20 @@ function assertAgentId(agentId: string): string {
 }
 
 function assertNoClientAttribution(document: Record<string, unknown>): void {
-  for (const key of Object.keys(document)) {
-    if (ATTRIBUTION_KEYS.includes(key)) {
-      throw new Error("ATTRIBUTION_NOT_CLIENT_DECLARABLE");
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
     }
-  }
+    if (!value || typeof value !== "object") return;
+    for (const [key, child] of Object.entries(value)) {
+      if (ATTRIBUTION_KEYS.includes(key)) {
+        throw new Error("ATTRIBUTION_NOT_CLIENT_DECLARABLE");
+      }
+      visit(child);
+    }
+  };
+  visit(document);
 }
 
 function assertScopeContext(scope: PlatformScope): void {
@@ -570,7 +579,11 @@ export function createMarketplaceInstallService(channels: {
           })
           .onConflictDoNothing();
         const [createdProduct] = await tx
-          .select({ revision: enterpriseBotOwnership.revision })
+          .select({
+            workspaceId: enterpriseBotOwnership.workspaceId,
+            ownerPrincipalId: enterpriseBotOwnership.ownerPrincipalId,
+            status: enterpriseBotOwnership.status,
+          })
           .from(enterpriseBotOwnership)
           .where(
             and(
@@ -579,7 +592,14 @@ export function createMarketplaceInstallService(channels: {
             ),
           )
           .limit(1);
-        if (!createdProduct) {
+        // 冲突吞掉后的重读只认本人本团队的活行；同租户他人/别团队的占用行
+        // 对 RLS 可见，不得当作安装成功（同码 BOT_ID_UNAVAILABLE，不泄露）。
+        if (
+          !createdProduct ||
+          createdProduct.status !== "active" ||
+          createdProduct.ownerPrincipalId !== scope.principalId ||
+          createdProduct.workspaceId !== scope.workspaceId
+        ) {
           throw new Error("BOT_ID_UNAVAILABLE");
         }
         await tx.insert(enterpriseResources).values({

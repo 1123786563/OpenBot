@@ -28,6 +28,12 @@ export function untrustedNotice(what: string): string {
 export const UNTRUSTED_TAG = "untrusted_data";
 
 const CLOSING = new RegExp(`</${UNTRUSTED_TAG}`, "gi");
+/**
+ * A forged opening tag nests a fake envelope inside the real one — the consumer's lazy
+ * de-envelope regex then cuts at the inner pair and leaks content past the boundary — so it
+ * is escaped exactly like the closing tag.
+ */
+const OPENING = new RegExp(`<${UNTRUSTED_TAG}`, "gi");
 
 /**
  * A string of outside content, wrapped.
@@ -39,7 +45,7 @@ const CLOSING = new RegExp(`</${UNTRUSTED_TAG}`, "gi");
 export function markUntrusted(content: string, source: string): string {
   if (isMarkedUntrusted(content)) return content;
   const safeSource = source.replace(/["<>\n\r]/g, " ").slice(0, 120);
-  return `${untrustedNotice(`${safeSource} content`)}\n<${UNTRUSTED_TAG} source="${safeSource}">\n${content.replace(CLOSING, `<\\/${UNTRUSTED_TAG}`)}\n</${UNTRUSTED_TAG}>`;
+  return `${untrustedNotice(`${safeSource} content`)}\n<${UNTRUSTED_TAG} source="${safeSource}">\n${content.replace(CLOSING, `<\\/${UNTRUSTED_TAG}`).replace(OPENING, `<\\${UNTRUSTED_TAG}`)}\n</${UNTRUSTED_TAG}>`;
 }
 
 /** Whether a string is already an envelope. */
@@ -63,10 +69,20 @@ export function withUntrustedNotice<T extends object>(
   fields: readonly string[],
 ): { untrusted: string } & T {
   const present = fields.filter((field) => field in value);
-  return {
-    untrusted: `${untrustedNotice(`${source} content`)} Untrusted fields: ${present.length ? present.join(", ") : "all"}.`,
-    ...value,
+  // Outside content never names the boundary itself: a foreign `untrusted` key (a page
+  // snapshot or command output can carry any field) is dropped, so the notice cannot be
+  // overwritten by the very object it marks.
+  const { untrusted: _foreign, ...rest } = value as T & {
+    untrusted?: unknown;
   };
+  // Same scrub markUntrusted applies to its source: this notice rides in model-visible text
+  // too, and a future dynamic source (a connector name, a URL) must not be able to forge
+  // quotes, angle brackets or a newline inside it.
+  const safeSource = source.replace(/["<>\n\r]/g, " ").slice(0, 120);
+  return {
+    untrusted: `${untrustedNotice(`${safeSource} content`)} Untrusted fields: ${present.length ? present.join(", ") : "all"}.`,
+    ...rest,
+  } as { untrusted: string } & T;
 }
 
 /**

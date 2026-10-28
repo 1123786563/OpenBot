@@ -59,3 +59,27 @@ test("an always-allow for a group does not cover people added to it later", asyn
   expect((await share(["owner", "priya", "sam"])).status).toBe("pending");
   expect(opened).toHaveLength(2);
 });
+
+test("an unnamed audience requires approval even when origin was shared", async () => {
+  const opened: unknown[] = [];
+  const check = createPrivateShareCheck({
+    approvals: {
+      rules: async () => [],
+      list: async () => [],
+      open: async (action: never) => {
+        opened.push(action);
+        return { id: "approval", status: "pending" } as ApprovalRecord;
+      },
+    },
+  });
+  const verdict = await check({
+    ownerUserId: "owner",
+    botId: "bot",
+    audience: { kind: "group", id: "group", recipientUserIds: [] },
+    content: "private note",
+    origin: { kind: "shared_conversation", sharedWithUserIds: ["owner"] },
+    continuation,
+  });
+  expect(verdict.status).toBe("pending");
+  expect(opened).toHaveLength(1);
+});

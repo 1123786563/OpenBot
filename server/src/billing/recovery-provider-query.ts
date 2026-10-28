@@ -186,7 +186,10 @@ function boundedSummary(summary: string): string {
   if (trimmed.length <= MAX_SUMMARY_LENGTH) {
     return trimmed;
   }
-  return `${trimmed.slice(0, MAX_SUMMARY_LENGTH - 1)}…`;
+  // Cut on code units, then drop a trailing lone surrogate: a split surrogate pair would
+  // fail the evidence row's utf8 encoding outright.
+  const trimmedStart = trimmed.slice(0, MAX_SUMMARY_LENGTH - 1);
+  return `${trimmedStart.replace(/[\uD800-\uDBFF]$/, "")}…`;
 }
 
 export function createProviderQueryRecovery(
@@ -318,7 +321,26 @@ export function createProviderQueryRecovery(
 
     // An answer this module cannot classify is still-unknown BY CONSTRUCTION — the
     // optimistic read of an ambiguous answer is the bug this ticket exists to prevent.
-    const classified = classifyAnswer(answer);
+    // Classification belongs inside the same guarded lane as the query itself: a malformed
+    // answer (circular usage, a hostile non-serializable value) is a failed witness, not a
+    // crash the sweep cannot route.
+    let classified: ReturnType<typeof classifyAnswer>;
+    try {
+      classified = classifyAnswer(answer);
+    } catch {
+      log(
+        `billing: provider final-state query failed reservation=${item.reservationId} attempt=${item.attemptId}`,
+      );
+      const evidenceId = await appendEvidence({
+        itemId: item.id,
+        item,
+        conclusion: "still_unknown",
+        summary: "provider_query_failed: unclassifiable source answer",
+        usage: null,
+      });
+      await handBack(item.id, QUERY_REASON.stillUnknown, true);
+      return { outcome: "still_unknown", evidenceId };
+    }
 
     switch (classified.conclusion) {
       case "settled_evidence": {

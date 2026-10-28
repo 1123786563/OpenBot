@@ -306,6 +306,23 @@ export function accessFor(
     };
   }
 
+  /*
+   * A provenance this binary does not know is a row it cannot vouch for — a
+   * hand-edited column or a broker value written by a newer version. Letting
+   * it fall through to the plain-MCP answer below would hand the
+   * deployment's token to a URL nobody reviewed, so it is refused, the same
+   * way an entry/provenance contradiction above is.
+   */
+  if (
+    !isBrokeredProvenance(row.provenance) &&
+    row.provenance !== "first-party" &&
+    row.provenance !== "custom"
+  ) {
+    throw new ServerRowAmbiguousError(
+      `This server row's provenance is "${row.provenance}", which this deployment does not recognise. Nothing can tell an edited column from a broker this build predates, so the row is not resolved at all: correct its provenance, or upgrade this deployment.`,
+    );
+  }
+
   const broker = isBrokeredProvenance(row.provenance)
     ? BROKERS[row.provenance]
     : null;

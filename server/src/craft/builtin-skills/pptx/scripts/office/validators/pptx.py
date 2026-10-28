@@ -100,7 +100,11 @@ class PPTXSchemaValidator(BaseSchemaValidator):
 
     def _looks_like_uuid(self, value):
         clean_value = value.strip("{}()").replace("-", "")
-        return len(clean_value) == 32 and all(c.isalnum() for c in clean_value)
+        # Hex characters, not isalnum(): "looks like a UUID" must mean what the
+        # "contains invalid hex characters" error says it means.
+        return len(clean_value) == 32 and all(
+            c in "0123456789abcdefABCDEF" for c in clean_value
+        )
 
     def validate_slide_layout_ids(self):
         import lxml.etree
@@ -244,7 +248,7 @@ class PPTXSchemaValidator(BaseSchemaValidator):
                                     posixpath.join(source_dir, target)
                                 )
 
-                            slide_name = rels_file.stem.replace(".xml", "")
+                            slide_name = rels_file.stem.removesuffix(".xml")
 
                             if normalized_target not in notes_slide_references:
                                 notes_slide_references[normalized_target] = []

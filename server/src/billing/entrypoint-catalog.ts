@@ -134,6 +134,31 @@ const ENTRY_DOOR_STAGES = [
 ] as const;
 
 /** The inventory. Grounded per family; see the module header for the reconciliation rules. */
+/**
+ * The audio verdict, straight from 14.3's own record — three outcomes as branches, none
+ * of them an implied fallback.
+ */
+function audioAdmissionOf(
+  record: (typeof AUDIO_CAPABILITY_EVIDENCE)[number],
+): ModelEntrypoint["admission"] {
+  if (!record.exists) {
+    return {
+      status: "absent",
+      checkedAbsence: record.missingItems[0]?.detail ?? "no gateway entrypoint",
+    };
+  }
+  if (record.missingItems.length > 0) {
+    return {
+      status: "blocked",
+      blockingReasons: record.missingItems.map(
+        (item) => `${item.code}: ${item.detail}`,
+      ),
+      ownerTicket: "#313 (14.4 未验证音频路径保持不可用)",
+    };
+  }
+  return { status: "admitted", stagesBeforeDispatch: ENTRY_DOOR_STAGES };
+}
+
 export const MODEL_ENTRYPOINTS: readonly ModelEntrypoint[] = [
   // ── text: the governed LLM lane (one funnel, every LLM-family route) ──
   {
@@ -243,21 +268,7 @@ export const MODEL_ENTRYPOINTS: readonly ModelEntrypoint[] = [
         : "audioPathsWithEvidenceGaps",
     },
     payerSource: "grant-resolution",
-    admission: record.exists
-      ? record.missingItems.length === 0
-        ? { status: "admitted", stagesBeforeDispatch: ENTRY_DOOR_STAGES }
-        : {
-            status: "blocked",
-            blockingReasons: record.missingItems.map(
-              (item) => `${item.code}: ${item.detail}`,
-            ),
-            ownerTicket: "#313 (14.4 未验证音频路径保持不可用)",
-          }
-      : {
-          status: "absent",
-          checkedAbsence:
-            record.missingItems[0]?.detail ?? "no gateway entrypoint",
-        },
+    admission: audioAdmissionOf(record),
   })),
 
   // ── embedding / rerank / ocr: the 11.x counted-input doors ──

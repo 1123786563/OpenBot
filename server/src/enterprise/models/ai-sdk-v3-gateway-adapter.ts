@@ -498,7 +498,9 @@ export function createAiSdkV3GatewayAdapter(
                     .filter((line) => line.startsWith("data:"))
                     .map((line) => line.slice(5).trimStart())
                     .join("\n");
-                  if (!data) fail();
+                  // SSE 注释行（": keep-alive" 心跳等）天然无 data 字段，
+                  // 不是协议损坏：跳过该帧，只对携带 data 的帧继续解析。
+                  if (!data) continue;
                   if (data === "[DONE]") {
                     if (
                       terminalSeen ||

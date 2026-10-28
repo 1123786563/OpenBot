@@ -753,7 +753,7 @@ function reachOf(raw: string): Reach {
     bare === "localhost" ||
     bare === "::1" ||
     bare === "0:0:0:0:0:0:0:1" ||
-    /^127(\.\d{1,3}){3}$/.test(bare)
+    /^127(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(bare)
   ) {
     return "loopback";
   }
@@ -2567,7 +2567,7 @@ function notifyBaseAllowed(
     return ipv6LiteralAllowed(host, allowPrivate) ? undefined : refusal;
   }
   const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (ipv4) {
+  if (ipv4 && ipv4.slice(1).every((octet) => Number(octet) <= 255)) {
     return ipv4LiteralAllowed(Number(ipv4[1]), Number(ipv4[2]), allowPrivate)
       ? undefined
       : refusal;
@@ -2611,6 +2611,27 @@ function ipv6LiteralAllowed(literal: string, allowPrivate: boolean): boolean {
   if (address.startsWith("fc") || address.startsWith("fd")) return allowPrivate; // fc00::/7
   if (/^fe[89ab]/.test(address)) return false; // fe80::/10 link-local
   if (address.startsWith("ff")) return false; // multicast
+  // IPv4-mapped (::ffff:0:0/96): judged by the embedded IPv4, in either spelling —
+  // the dotted one, or the hex one URL parsers normalize bracketed literals to
+  // ([::ffff:169.254.169.254] arrives as ::ffff:a9fe:a9fe). Left unexpanded, a
+  // metadata address in mapped form would sail past every check above as "global".
+  if (address.startsWith("::ffff:")) {
+    const tail = address.slice("::ffff:".length);
+    const bytes = tail.includes(":")
+      ? tail
+          .split(":")
+          .flatMap((group) => {
+            const value = Number.parseInt(group, 16);
+            return Number.isInteger(value) && value >= 0 && value <= 0xffff
+              ? [value >> 8, value & 0xff]
+              : [-1];
+          })
+      : tail.split(".").map((part) => Number.parseInt(part, 10));
+    if (bytes.length === 4 && bytes.every((byte) => byte >= 0 && byte <= 255)) {
+      return ipv4LiteralAllowed(bytes[0], bytes[1], allowPrivate);
+    }
+    return false;
+  }
   return true;
 }
 
@@ -2816,13 +2837,18 @@ function paymentsConfig(
     // overcharged. Refuse to start; the monthly cycle is the only cycle v1 collects.
     const displayed = billing.planCatalog
       .get(planCode)
-      ?.pricing.find(
+      ?.pricing.filter(
         (cycle) =>
           cycle.code === "monthly" || cycle.code === "recurring_monthly",
       );
-    if (displayed && displayed.priceCents !== amountCents) {
+    // Every monthly-spelled cycle must agree with the amount: a find-first would let a
+    // mismatched second spelling pass checkout while the dialog shows the other price.
+    const mismatch = displayed?.find(
+      (cycle) => cycle.priceCents !== amountCents,
+    );
+    if (mismatch) {
       throw new Error(
-        `PAYMENT_PLAN_CATALOG plan "${planCode}" amountCents (${amountCents}) does not match LAGO_PLAN_CATALOG's monthly price (${displayed.priceCents}): the checkout would collect a different number than the dialog shows — align the two catalogs before starting`,
+        `PAYMENT_PLAN_CATALOG plan "${planCode}" amountCents (${amountCents}) does not match LAGO_PLAN_CATALOG's monthly price (${mismatch.priceCents} on "${mismatch.code}"): the checkout would collect a different number than the dialog shows — align the two catalogs before starting`,
       );
     }
     if (!displayed) {
@@ -3151,7 +3177,11 @@ export function loadConfig(
     publicUrl,
     appUrl: (
       optional(environment, "OPENBOT_APP_URL") ??
-      commaSeparated(environment, "TRUSTED_ORIGINS")[0] ??
+      // An http(s) entry only: TRUSTED_ORIGINS may carry mobile scheme urls, which are
+      // legitimate configuration but no app URL any browser can open.
+      commaSeparated(environment, "TRUSTED_ORIGINS").find((origin) =>
+        /^https?:\/\//i.test(origin),
+      ) ??
       optional(environment, "OPENBOT_PUBLIC_URL") ??
       auth?.baseUrl
     )?.replace(/\/+$/, ""),

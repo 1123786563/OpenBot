@@ -4,6 +4,18 @@ import twilio from "twilio";
 
 import { DELIVERY_REQUEST_TIMEOUT_MS } from "../timeouts";
 
+
+/**
+ * Cut to `limit` UTF-16 units without splitting a surrogate pair: a lone high
+ * surrogate in position 1400 would reach Twilio as U+FFFD and silently corrupt
+ * the message's last character.
+ */
+function truncateForSms(text: string, limit: number): string {
+  const cut = text.slice(0, limit);
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
+}
+
 const { validateRequest } = twilio;
 
 import {
@@ -125,7 +137,7 @@ export function createTwilioTransport(config: TwilioConfig) {
           Body:
             input.text.length <= 1500
               ? input.text
-              : `${input.text.slice(0, 1400)}…\nOpen OpenBot to read the full message.`,
+              : `${truncateForSms(input.text, 1400)}…\nOpen OpenBot to read the full message.`,
           ...(config.statusUrl ? { StatusCallback: config.statusUrl } : {}),
         },
       );

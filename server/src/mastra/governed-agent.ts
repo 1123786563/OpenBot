@@ -25,7 +25,13 @@ import type { ExecutionRequest } from "./execution-contracts";
  * wrapped RUN_ERROR message).
  */
 
-export class MastraGovernedExecutionRefusal extends Error {}
+export class MastraGovernedExecutionRefusal extends Error {
+  constructor(code: string) {
+    super(code);
+    // Named, so stacks and wrapped RUN_ERROR logs carry the category, not a bare "Error:".
+    this.name = "MastraGovernedExecutionRefusal";
+  }
+}
 
 /**
  * Every PlatformScope field the admission identity covers, frozen next to the
@@ -53,9 +59,13 @@ const SCOPE_IDENTITY_FIELDS = [
  * `scope: facts.scope`), so this gate is defense in depth.
  */
 function scopeIdentityEquals(
-  facts: PlatformScope,
-  binding: PlatformScope,
+  facts: PlatformScope | null | undefined,
+  binding: PlatformScope | null | undefined,
 ): boolean {
+  // A malformed cross-package collaborator (or request) that publishes no scope cannot
+  // prove the admission identity: that is a mismatch — the named refusal at the caller —
+  // never a bare TypeError from reading a field of nothing.
+  if (!facts || !binding) return false;
   return SCOPE_IDENTITY_FIELDS.every(
     (field) => facts[field] === binding[field],
   );

@@ -185,10 +185,10 @@ export function createBillingStatements(deps: {
         rows.push({
           ...ceiling,
           used,
-          remaining: Math.max(
-            ceiling.limit === null ? 0 : ceiling.limit - used,
-            0,
-          ),
+          remaining:
+            ceiling.limit === null
+              ? null
+              : Math.max(ceiling.limit - used, 0),
           usedCents: charge?.amountCents ?? 0,
         });
       }
@@ -242,11 +242,14 @@ export function createBillingStatements(deps: {
         to: window.to,
         scope,
       });
+      // The page comes from the caller and is not trusted: 0 or a negative number would push
+      // a negative offset into the store's SQL. Clamp to the first real page before reading.
+      const page = Math.max(1, Math.floor(window.page));
       const rows = await orders.listOrdersInWindow({
         from: window.from,
         to: window.to,
         limit: INVOICE_PAGE_SIZE,
-        offset: (window.page - 1) * INVOICE_PAGE_SIZE,
+        offset: (page - 1) * INVOICE_PAGE_SIZE,
         scope,
       });
       // One batched anomaly read for the whole page: a payment record without its 异常进度 is a
@@ -265,11 +268,8 @@ export function createBillingStatements(deps: {
         pagination: {
           totalCount,
           totalPages,
-          currentPage: window.page,
-          nextPage:
-            window.page * INVOICE_PAGE_SIZE < totalCount
-              ? window.page + 1
-              : null,
+          currentPage: page,
+          nextPage: page * INVOICE_PAGE_SIZE < totalCount ? page + 1 : null,
         },
       };
     },

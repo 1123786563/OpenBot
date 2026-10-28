@@ -1,4 +1,5 @@
 import {
+  canonicalPriceAmount,
   PRICE_DIMENSIONS,
   type PriceDimensionUnknownReason,
   type PriceSnapshotDims,
@@ -256,7 +257,13 @@ export function assessVideoEditEnablement(input: {
     };
   }
 
-  const free = tier.amount === "0" && inputRate.amount === "0";
+  const tierAmount = canonicalPriceAmount(tier.amount);
+  const inputRateAmount = canonicalPriceAmount(inputRate.amount);
+  const free =
+    tierAmount.ok &&
+    tierAmount.amount === "0" &&
+    inputRateAmount.ok &&
+    inputRateAmount.amount === "0";
   const inputSeconds = spec.spec.inputSpecs.reduce(
     (sum, entry) => sum + entry.seconds,
     0,
@@ -266,14 +273,15 @@ export function assessVideoEditEnablement(input: {
   // (AC3): priced by the same 06.5 conversion over the same locked basis, submitted
   // through the same 19.1 path, settled by the same 17.6 lane.
   const quantities = Object.fromEntries(
-    PRICE_DIMENSIONS.map((dimension) => [
-      dimension,
-      dimension === "video"
-        ? spec.spec.seconds * spec.spec.outputCount
-        : dimension === "video_input"
-          ? inputSeconds
-          : 0,
-    ]),
+    PRICE_DIMENSIONS.map((dimension) => {
+      let quantity = 0;
+      if (dimension === "video") {
+        quantity = spec.spec.seconds * spec.spec.outputCount;
+      } else if (dimension === "video_input") {
+        quantity = inputSeconds;
+      }
+      return [dimension, quantity];
+    }),
   ) as ReservationBoundQuantities;
 
   return {

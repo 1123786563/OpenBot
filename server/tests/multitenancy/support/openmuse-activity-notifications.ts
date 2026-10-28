@@ -33,6 +33,7 @@ import {
   enterpriseTenants,
   enterpriseWorkspaces,
 } from "../../../src/db/schema/enterprise-tenancy";
+import type { BindingTransport } from "../../../src/delivery/types";
 import { openmuseNotifications } from "../../../src/db/schema/openmuse";
 import type { PlatformScope } from "../../../src/enterprise/contracts";
 import {
@@ -88,12 +89,13 @@ export interface OpenMuseActivityFixture {
     ownerUserId: string;
     title: string;
     detail?: string | null;
-    eventKind?: string;
+    // The column's own enumerated kind: a misspelled event must not typecheck.
+    eventKind?: (typeof openmuseNotifications.$inferInsert)["eventKind"];
   }): Promise<string>;
   /** Seeds one `delivery_bindings` row (on the shared anchors) and returns its id. */
   seedBinding(input: {
     ownerUserId: string;
-    transport?: string;
+    transport?: BindingTransport;
     enabled?: boolean;
   }): Promise<string>;
   /** Seeds one real §6 proposal row (owner-scoped, no pin) and returns its id. */
@@ -527,7 +529,7 @@ export async function createOpenMuseActivityFixture(): Promise<OpenMuseActivityF
           id: notificationId,
           userId: input.ownerUserId,
           taskId: `${prefix}-task`,
-          eventKind: (input.eventKind as "task.succeeded") ?? "task.succeeded",
+          eventKind: input.eventKind ?? "task.succeeded",
           attemptKey: `att-${notificationId}`,
           title: input.title,
           detail: input.detail ?? null,
@@ -543,7 +545,7 @@ export async function createOpenMuseActivityFixture(): Promise<OpenMuseActivityF
           channelId,
           agentId,
           threadId: `${prefix}-thread`,
-          transport: (input.transport as "sms") ?? "sms",
+          transport: input.transport ?? "sms",
           identity: `identity-${bindingId}`,
           realm: "test",
           address: `+1000000${bindingId.length}`,

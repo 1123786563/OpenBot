@@ -144,6 +144,9 @@ export function createMemoryPasswordStore(): PasswordStore & {
 } {
   const requests = new Map<string, SignInRequestRecord>();
   const saved = new Map<string, SavedLoginRecord>();
+  // A deep copy per return: the database store hands back freshly deserialized rows every
+  // read, and a caller mutating a returned `continuation` must not reach into this store.
+  const clone = <T>(row: T): T => structuredClone(row);
   return {
     requests,
     saved,
@@ -159,36 +162,50 @@ export function createMemoryPasswordStore(): PasswordStore & {
         fillingUntil: null,
       };
       requests.set(record.id, record);
-      return { ...record };
+      return clone(record);
     },
     async request(ownerUserId, id) {
       const row = requests.get(id);
-      return row && row.ownerUserId === ownerUserId ? { ...row } : null;
+      return row && row.ownerUserId === ownerUserId ? clone(row) : null;
     },
     async pendingRequests(ownerUserId) {
-      return [...requests.values()].filter(
-        (row) =>
-          row.ownerUserId === ownerUserId &&
-          ["pending", "code_required", "taken_over"].includes(row.status) &&
-          row.expiresAt > new Date(),
-      );
+      // The Postgres store's ordering and cap, mirrored: newest first, at most 50, each a copy.
+      return [...requests.values()]
+        .filter(
+          (row) =>
+            row.ownerUserId === ownerUserId &&
+            ["pending", "code_required", "taken_over"].includes(row.status) &&
+            row.expiresAt > new Date(),
+        )
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        .slice(0, 50)
+        .map(clone);
     },
     async transition(ownerUserId, id, from, to) {
       const row = requests.get(id);
       if (!row || row.ownerUserId !== ownerUserId || !from.includes(row.status))
         return null;
       Object.assign(row, to);
-      return { ...row };
+      return clone(row);
     },
     async logins(ownerUserId, origin) {
-      return [...saved.values()].filter(
-        (row) =>
-          row.ownerUserId === ownerUserId && (!origin || row.origin === origin),
-      );
+      // The Postgres store's ordering, mirrored: origin, then username, each a copy.
+      return [...saved.values()]
+        .filter(
+          (row) =>
+            row.ownerUserId === ownerUserId &&
+            (!origin || row.origin === origin),
+        )
+        .sort(
+          (a, b) =>
+            a.origin.localeCompare(b.origin) ||
+            a.username.localeCompare(b.username),
+        )
+        .map(clone);
     },
     async login(ownerUserId, id) {
       const row = saved.get(id);
-      return row && row.ownerUserId === ownerUserId ? { ...row } : null;
+      return row && row.ownerUserId === ownerUserId ? clone(row) : null;
     },
     async saveLogin(input) {
       const existing = [...saved.values()].find(
@@ -210,7 +227,7 @@ export function createMemoryPasswordStore(): PasswordStore & {
         lastUsedAt: null,
       };
       saved.set(record.id, record);
-      return { ...record };
+      return clone(record);
     },
     async touchLogin(ownerUserId, id) {
       const row = saved.get(id);

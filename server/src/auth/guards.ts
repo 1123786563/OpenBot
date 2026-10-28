@@ -1,8 +1,11 @@
 import { eq } from "drizzle-orm";
 import type { Context, MiddlewareHandler } from "hono";
+import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import { userRoles } from "../db/schema";
 import type { OpenBotRole } from "./roles";
+
+const log = getLogger("server");
 
 export type AuthenticatedActor = {
   id: string;
@@ -57,18 +60,39 @@ export function createRequireUser(
   roleRepository: RoleRepository,
 ): MiddlewareHandler<{ Variables: AppVariables }> {
   return async (context, next) => {
-    const session = await auth.api.getSession({
-      headers: context.req.raw.headers,
-      query: { disableCookieCache: true },
-    });
+    // Auth-backend and role-store faults answer as a named 503, not as a bare 500 from an
+    // exception escaping the middleware. Route errors below `next()` are not caught here:
+    // those belong to the routers' own error handling.
+    let session: Awaited<ReturnType<AuthService["api"]["getSession"]>>;
+    try {
+      session = await auth.api.getSession({
+        headers: context.req.raw.headers,
+        query: { disableCookieCache: true },
+      });
+    } catch (error) {
+      log.error({ err: error }, "Could not read the session in the auth guard.");
+      return context.json(
+        { error: "Sign-in is temporarily unavailable. Try again." },
+        503,
+      );
+    }
 
     if (!session) {
       return context.json({ error: "Authentication required." }, 401);
     }
 
-    const roles = session.user.role
-      ? [session.user.role]
-      : await roleRepository.rolesForUser(session.user.id);
+    let roles: OpenBotRole[];
+    try {
+      roles = session.user.role
+        ? [session.user.role]
+        : await roleRepository.rolesForUser(session.user.id);
+    } catch (error) {
+      log.error({ err: error }, "Could not read roles in the auth guard.");
+      return context.json(
+        { error: "Sign-in is temporarily unavailable. Try again." },
+        503,
+      );
+    }
     const role = roles.includes("admin")
       ? "admin"
       : roles.includes("user")

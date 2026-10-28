@@ -1168,13 +1168,31 @@ export function createPreviewOrigin(deps: {
       // The app-relative path this request addresses — the shared derivation
       // (appPathFor above), so the HMR upgrade dispatcher (#363) hands the dev
       // server the very same path this HTTP entry would.
-      return deps.servePreview({
-        sessionId,
-        userId: verified.userId,
-        request,
-        appPath: this.appPathFor(request),
-        query: url.search,
-      });
+      try {
+        return await deps.servePreview({
+          sessionId,
+          userId: verified.userId,
+          request,
+          appPath: this.appPathFor(request),
+          query: url.search,
+        });
+      } catch (error) {
+        // This entry is the preview surface's last error boundary: a dev-server
+        // refusal here is the iframe-facing shape, not an unhandled rejection.
+        getLogger("server").warn(
+          {
+            type: "preview-serve-failed",
+            sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          "preview-serve-failed",
+        );
+        return refuseResponse(
+          request,
+          "The preview is not available right now.",
+          503,
+        );
+      }
     },
 
     verifyPass(sessionId, request) {

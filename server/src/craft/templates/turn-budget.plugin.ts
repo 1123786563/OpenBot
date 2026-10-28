@@ -66,6 +66,9 @@ export default (async ({ directory }) => {
     ) {
       return null;
     }
+    // An incoherent stamp (soft past stale, or final outside [soft, stale]) means a
+    // mis-written budget, not a schedule: refuse to nag rather than guess.
+    if (soft > stale || final < soft || final > stale) return null;
     const now = Date.now();
     // A stamp past stale_after is from an already-capped turn whose restamp
     // failed — never nag a fresh turn off it.

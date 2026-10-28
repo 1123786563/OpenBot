@@ -7,6 +7,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  /* Both font vars are injected by next/font in app/layout.tsx (Inter →
+     --font-sans, Geist_Mono → --font-geist-mono); remove a font there and
+     these silently fall back to browser defaults. */
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
   --color-sidebar-ring: var(--sidebar-ring);

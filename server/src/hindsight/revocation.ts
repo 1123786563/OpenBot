@@ -296,25 +296,33 @@ export function createRevocationService(
             eq(hindsightMemoryGrants.targetId, targetId),
           ),
         );
-      for (const row of boundRows) {
+      // Two batched tombstone statements, one per table: the rows share the block's
+      // tenant, so id-set predicates land exactly the rows the per-row loop did.
+      if (boundRows.length) {
         await tx
           .update(sourceBoundMemories)
           .set({ ...tombstoneSet, deletedAt: blockedAt, updatedAt: blockedAt })
           .where(
             and(
-              eq(sourceBoundMemories.tenantId, row.tenantId),
-              eq(sourceBoundMemories.id, row.id),
+              eq(sourceBoundMemories.tenantId, identity.tenantId),
+              inArray(
+                sourceBoundMemories.id,
+                boundRows.map((row) => row.id),
+              ),
             ),
           );
       }
-      for (const row of judgmentRows) {
+      if (judgmentRows.length) {
         await tx
           .update(derivedJudgmentCandidates)
           .set({ ...tombstoneSet, deletedAt: blockedAt, updatedAt: blockedAt })
           .where(
             and(
-              eq(derivedJudgmentCandidates.tenantId, row.tenantId),
-              eq(derivedJudgmentCandidates.id, row.id),
+              eq(derivedJudgmentCandidates.tenantId, identity.tenantId),
+              inArray(
+                derivedJudgmentCandidates.id,
+                judgmentRows.map((row) => row.id),
+              ),
             ),
           );
       }
