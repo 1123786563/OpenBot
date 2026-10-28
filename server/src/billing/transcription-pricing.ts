@@ -88,6 +88,40 @@ export function parseWavDurationSeconds(bytes: Uint8Array): number | null {
   return dataSize / byteRate;
 }
 
+/**
+ * The same measurement as {@link parseWavDurationSeconds}, kept as the EXACT rational it
+ * is — the `data` chunk's payload size over the `fmt ` chunk's byte rate, two integers,
+ * never a float that has already been through binary rounding. The speech settle surface
+ * re-measures carried artifacts with this, so an honest reporter's rounded decimal is
+ * checked against the rational itself, not against another rounding of it.
+ */
+export function readWavDurationSecondsExact(
+  bytes: Uint8Array,
+): { numerator: bigint; denominator: bigint } | null {
+  const view = safeView(bytes);
+  if (view === null) return null;
+  if (bytes.length < 12) return null;
+  if (tag(bytes, 0) !== "RIFF" || tag(bytes, 8) !== "WAVE") return null;
+
+  let offset = 12;
+  let byteRate: bigint | null = null;
+  let dataSize: bigint | null = null;
+  while (offset + 8 <= bytes.length) {
+    const id = tag(bytes, offset);
+    const size = BigInt(view.getUint32(offset + 4, true));
+    const body = offset + 8;
+    if (id === "fmt " && size >= 16n && body + 16 <= bytes.length) {
+      byteRate = BigInt(view.getUint32(body + 8, true));
+    } else if (id === "data") {
+      dataSize = size;
+      break;
+    }
+    offset = body + Number(size) + (Number(size) % 2);
+  }
+  if (byteRate === null || dataSize === null || byteRate <= 0n) return null;
+  return { numerator: dataSize, denominator: byteRate };
+}
+
 /** A DataView over the bytes, or null when the buffer cannot back one. */
 function safeView(bytes: Uint8Array): DataView | null {
   if (bytes.byteLength < bytes.length) return null;

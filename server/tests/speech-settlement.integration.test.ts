@@ -166,12 +166,19 @@ const FROZEN_SPEC = {
  * A minimal WAV container header whose own metadata states `seconds` — the `fmt ` byte
  * rate against the `data` size, the same two integers parseWavDurationSeconds reads. The
  * audio payload itself is not carried: the header's size word IS the artifact's statement.
+ * `dataSizeOverride` pins the payload size word when the seconds string alone would round
+ * to a different byte count (a non-terminating duration's own decimal, for one).
  */
-function wavMetadataBase64(seconds: string, byteRate = 8000): string {
+function wavMetadataBase64(
+  seconds: string,
+  byteRate = 8000,
+  dataSizeOverride?: number,
+): string {
   const [whole, fraction = ""] = seconds.split(".");
   const dataSize =
+    dataSizeOverride ??
     Number(whole) * byteRate +
-    (fraction ? Math.round(Number(`0.${fraction}`) * byteRate) : 0);
+      (fraction ? Math.round(Number(`0.${fraction}`) * byteRate) : 0);
   const header = new Uint8Array(44);
   const view = new DataView(header.buffer);
   const ascii = (offset: number, text: string) => {
@@ -800,6 +807,93 @@ test("artifact metadata that states no readable duration keeps the hold unknown"
     .where(eq(creditReservations.id, reservationId));
   expect(reservation.status).toBe("unknown");
   expect(await writer.availableBalance(world.customerKey)).toBe(held);
+});
+
+test("a non-terminating duration at 44.1kHz is the collector's own 9-digit ceil — honest evidence settles", async () => {
+  const world = await seedSpeechWorld("0.0005");
+  const reservationId = await holdFor(world, 315);
+
+  // 4096 bytes over an 88200 B/s byte rate is 0.046439909297052… s — non-terminating, so
+  // the interrupted collector reports its documented 9-digit upward rounding, never the
+  // exact rational. The settle surface re-measures EXACTLY and accepts that documented
+  // ceil; strict double equality here was R1-H1's false settlement_conflict.
+  const outcome = await settleSpeech.settle({
+    reservationId,
+    requested: {
+      inputCharacters: 100,
+      voiceTier: null,
+      durationCapSeconds: 60,
+    },
+    priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
+    result: {
+      outcome: "synthesized",
+      actualSeconds: "0.04643991",
+      evidence: {
+        kind: "artifact_metadata",
+        metadata: {
+          container: "wav",
+          bytesBase64: [wavMetadataBase64("0.04643991", 88200, 4096)],
+        },
+      },
+    },
+    settledBy: "bifrost",
+    idempotencyKey: `${prefix}-settle-44k1`,
+  });
+
+  expect(outcome.status).toBe("settled");
+  if (outcome.status !== "settled") return;
+  expect(outcome.line.actualSeconds).toBe("0.04643991");
+  // 100 × $0.000015 + 0.04643991 × $0.0005 = $0.001523219955 → 15.2322 scaled units:
+  // the writer charges the whole units (15) and carries the fraction — the fraction is
+  // never rounded into a bill.
+  expect(outcome.chargedCredits).toBe(15);
+  const [reservation] = await database
+    .select()
+    .from(creditReservations)
+    .where(eq(creditReservations.id, reservationId));
+  expect(reservation.status).toBe("settled");
+});
+
+test("a claim below the measured duration is a conflict in the other direction", async () => {
+  const world = await seedSpeechWorld("0.0005");
+  const reservationId = await holdFor(world, 315);
+
+  // The same 88200 B/s header, claimed SHORT of what the container states: the ceil
+  // window is one-directional (the reporter's rounding, never a discount).
+  const outcome = await settleSpeech.settle({
+    reservationId,
+    requested: {
+      inputCharacters: 100,
+      voiceTier: null,
+      durationCapSeconds: 60,
+    },
+    priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
+    result: {
+      outcome: "synthesized",
+      actualSeconds: "0.04",
+      evidence: {
+        kind: "artifact_metadata",
+        metadata: {
+          container: "wav",
+          bytesBase64: [wavMetadataBase64("0.04643991", 88200, 4096)],
+        },
+      },
+    },
+    settledBy: "bifrost",
+    idempotencyKey: `${prefix}-settle-44k1-short`,
+  });
+
+  expect(outcome).toMatchObject({
+    status: "refused",
+    reasonCode: "settlement_conflict",
+    detail: { stage: "artifact_duration_mismatch" },
+  });
+  expect(
+    await database
+      .select()
+      .from(creditReservations)
+      .where(eq(creditReservations.id, reservationId)),
+  ).toMatchObject([{ status: "reserved" }]);
 });
 
 afterAll(async () => {

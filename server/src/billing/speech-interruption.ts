@@ -1,6 +1,8 @@
-import type {
-  SpeechSettlementOutcome,
-  SpeechSettleRequest,
+import {
+  SPEECH_EVIDENCE_MAX_WAV_CONTAINERS,
+  SPEECH_EVIDENCE_MAX_WAV_HEADER_BYTES,
+  type SpeechSettlementOutcome,
+  type SpeechSettleRequest,
 } from "./speech-settlement";
 
 /*
@@ -80,12 +82,28 @@ export function collectInterruptedSpeechUsage(input: {
   let numerator = 0n;
   let denominator = 1n;
   const containerHeaders: string[] = [];
+  // The evidence-carrying budget, single-sourced with the settle surface's own shape
+  // validation (R1-M1): a buffer past it confirms nothing — unknown (06.8) at the settle,
+  // never an over-budget request the settle surface must refuse as malformed.
+  if (input.chunks.length > SPEECH_EVIDENCE_MAX_WAV_CONTAINERS) {
+    return {
+      outcome: "unconfirmed",
+      reason: "more buffered chunks than the settle evidence can carry",
+    };
+  }
   for (const chunk of input.chunks) {
     const measured = chunkSeconds(chunk);
     if (measured === null) {
       return {
         outcome: "unconfirmed",
         reason: "a buffered chunk is not a readable audio container",
+      };
+    }
+    if (measured.headerEnd > SPEECH_EVIDENCE_MAX_WAV_HEADER_BYTES) {
+      return {
+        outcome: "unconfirmed",
+        reason:
+          "a buffered chunk's container header exceeds the settle evidence's carry budget",
       };
     }
     numerator =

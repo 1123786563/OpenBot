@@ -204,6 +204,71 @@ function wavOf(durationSeconds: number): Uint8Array {
   return bytes;
 }
 
+/**
+ * One full 16-bit mono 44.1kHz WAV chunk whose `data` chunk carries exactly `dataSize`
+ * bytes — 4096/88200 s is NON-terminating, so the collector can only report its
+ * documented 9-digit upward rounding, the shape R1-H1 proved the settle surface must
+ * accept as the reporter's own rounding.
+ */
+function wav44k1Of(dataSize: number): Uint8Array {
+  const bytes = new Uint8Array(44 + dataSize);
+  const view = new DataView(bytes.buffer);
+  const ascii = (offset: number, text: string) => {
+    for (let i = 0; i < text.length; i += 1) {
+      bytes[offset + i] = text.charCodeAt(i);
+    }
+  };
+  ascii(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  ascii(8, "WAVE");
+  ascii(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, 44100, true);
+  view.setUint32(28, 88200, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  ascii(36, "data");
+  view.setUint32(40, dataSize, true);
+  return bytes;
+}
+
+/**
+ * A WAV whose container header is larger than the settle evidence's carry budget: a
+ * 7000-byte LIST metadata chunk ahead of `fmt `/`data` pushes the header past 6144
+ * bytes — real readable audio the collector must refuse to carry, not misshape.
+ */
+function wavWithOversizedHeader(): Uint8Array {
+  const listSize = 7000;
+  const dataSize = 16000;
+  const bytes = new Uint8Array(12 + 8 + listSize + 8 + 16 + 8 + dataSize);
+  const view = new DataView(bytes.buffer);
+  const ascii = (offset: number, text: string) => {
+    for (let i = 0; i < text.length; i += 1) {
+      bytes[offset + i] = text.charCodeAt(i);
+    }
+  };
+  ascii(0, "RIFF");
+  view.setUint32(4, bytes.length - 8, true);
+  ascii(8, "WAVE");
+  ascii(12, "LIST");
+  view.setUint32(16, listSize, true);
+  let offset = 20 + listSize;
+  ascii(offset, "fmt ");
+  view.setUint32(offset + 4, 16, true);
+  view.setUint16(offset + 8, 1, true);
+  view.setUint16(offset + 10, 1, true);
+  view.setUint32(offset + 12, 8000, true);
+  view.setUint32(offset + 16, 16000, true);
+  view.setUint16(offset + 20, 2, true);
+  view.setUint16(offset + 22, 16, true);
+  offset += 8 + 16;
+  ascii(offset, "data");
+  view.setUint32(offset + 4, dataSize, true);
+  return bytes;
+}
+
 /** The interruption settle the stages share: collect from the buffer, settle once. */
 function interrupt(
   reservationId: string,
@@ -269,6 +334,22 @@ test("an empty or unreadable buffer confirms nothing", () => {
   // as good as every piece of it (measured-not-believed, all the way down).
   expect(
     collectInterruptedSpeechUsage({ chunks: [wavOf(10), new Uint8Array(0)] }),
+  ).toMatchObject({ outcome: "unconfirmed" });
+});
+
+test("evidence the settle surface cannot carry confirms nothing — the budget is single-sourced", () => {
+  // More chunks than one settle request may carry: the collector refuses to emit the
+  // evidence (06.8's unconfirmed), never hands over a request the settle surface must
+  // refuse as malformed.
+  expect(
+    collectInterruptedSpeechUsage({
+      chunks: Array.from({ length: 65 }, () => wavOf(1)),
+    }),
+  ).toMatchObject({ outcome: "unconfirmed" });
+  // A real readable chunk whose container header exceeds the carry budget (an oversized
+  // LIST metadata chunk ahead of `data`): same refusal to emit.
+  expect(
+    collectInterruptedSpeechUsage({ chunks: [wavWithOversizedHeader()] }),
   ).toMatchObject({ outcome: "unconfirmed" });
 });
 
@@ -338,6 +419,77 @@ test("a mid-playback interruption settles the confirmed tail exactly once", asyn
     .where(eq(creditReservations.externalCustomerId, world.customerKey));
   expect(reservations).toHaveLength(1);
   expect(reservations[0].status).toBe("settled");
+});
+
+test("a 44.1kHz tail re-measures exactly at the settle surface — the collector's ceil is the contract", async () => {
+  const world = await seedSpeechWorld();
+  const reservationId = await holdFor(world, 315);
+
+  // One 4096-byte chunk of 44.1kHz audio: 4096/88200 s, non-terminating, so the
+  // collector's own report is its documented 9-digit upward rounding. R1-H1: strict
+  // double equality here turned THIS honest evidence into a settlement_conflict.
+  const usage = collectInterruptedSpeechUsage({ chunks: [wav44k1Of(4096)] });
+  expect(usage).toMatchObject({
+    outcome: "confirmed",
+    actualSeconds: "0.04643991",
+  });
+
+  const outcome = await interrupt(
+    reservationId,
+    [wav44k1Of(4096)],
+    `${prefix}-cut-44k1`,
+  );
+  expect(outcome.status).toBe("settled");
+  if (outcome.status !== "settled") return;
+  // 100 × $0.000015 + 0.04643991 × $0.0005 = $0.001523219955 → 15.2322 scaled units,
+  // charged at the whole units (15), the fraction carried.
+  expect(outcome.chargedCredits).toBe(15);
+  const [detail] = await database
+    .select()
+    .from(creditSpeechSettlementDetails)
+    .where(eq(creditSpeechSettlementDetails.reservationId, reservationId));
+  expect(detail.actualSeconds).toBe("0.04643991");
+  expect(
+    (await writer.availableBalance(world.customerKey)) - 15,
+  ).toBeGreaterThan(0);
+});
+
+test("the carry budget's last honest buffer settles — 64 chunks ride the evidence", async () => {
+  const world = await seedSpeechWorld();
+  const reservationId = await holdFor(world, 315);
+
+  const chunks = Array.from({ length: 64 }, () => wavOf(0.5));
+  const usage = collectInterruptedSpeechUsage({ chunks });
+  expect(usage).toMatchObject({ outcome: "confirmed", actualSeconds: "32" });
+
+  const outcome = await interrupt(reservationId, chunks, `${prefix}-cut-64`);
+  expect(outcome.status).toBe("settled");
+  if (outcome.status !== "settled") return;
+  // 100 × $0.000015 + 32 × $0.0005 = $0.0175 → 175 scaled units.
+  expect(outcome.chargedCredits).toBe(175);
+});
+
+test("a buffer past the carry budget keeps the hold unknown, not misshapen", async () => {
+  const world = await seedSpeechWorld();
+  const reservationId = await holdFor(world, 315);
+  const held = await writer.availableBalance(world.customerKey);
+
+  // 65 chunks: the collector itself refuses to emit (the single-sourced budget), so the
+  // settle sees NO evidence — unknown (06.8), full capacity occupied, never a
+  // request_invalid that would leave the hold hanging as if the caller lied.
+  const outcome = await interrupt(
+    reservationId,
+    Array.from({ length: 65 }, () => wavOf(1)),
+    `${prefix}-cut-65`,
+  );
+  expect(outcome.status).toBe("unknown");
+  expect(await writer.availableBalance(world.customerKey)).toBe(held);
+  expect(
+    await database
+      .select()
+      .from(creditLedger)
+      .where(eq(creditLedger.externalCustomerId, world.customerKey)),
+  ).toHaveLength(0);
 });
 
 test("an interruption with nothing confirmable keeps the hold unknown at full capacity", async () => {

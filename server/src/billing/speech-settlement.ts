@@ -17,7 +17,7 @@ import {
   speechSpecOfReservation,
 } from "./reserve-bound";
 import { parseExactDecimal } from "./speech-pricing";
-import { parseWavDurationSeconds } from "./transcription-pricing";
+import { readWavDurationSecondsExact } from "./transcription-pricing";
 
 /**
  * The speech-generation settlement path (Bifrost 13.2, #307): what a synthesis dispatch owes
@@ -172,6 +172,17 @@ export type SpeechSettlementServiceDependencies = {
 };
 
 const MAX_STORED_UNITS = 2_147_483_647n;
+
+/**
+ * The evidence-carrying budget (R1-M1), single-sourced with the interrupted-buffer
+ * collector (speech-interruption.ts): one settle request's artifact metadata may carry
+ * at most this many WAV container headers, and no carried header may exceed this many
+ * bytes (6144 bytes is exactly 8192 base64 chars). The collector refuses to EMIT
+ * evidence beyond the budget — the result is unknown (06.8), never a request the settle
+ * surface must refuse as malformed.
+ */
+export const SPEECH_EVIDENCE_MAX_WAV_CONTAINERS = 64;
+export const SPEECH_EVIDENCE_MAX_WAV_HEADER_BYTES = 6144;
 
 function refused(
   reasonCode: SpeechSettlementRefusalReasonCode,
@@ -379,7 +390,8 @@ function validateRequest(input: unknown): RequestValidation {
     }
     // Shape only — the BILLABILITY of artifact metadata (does it measure, does it agree)
     // is the service's evidence rule below; a shape-invalid metadata blob is a malformed
-    // request, not absent evidence.
+    // request, not absent evidence. The per-header budget is the decoded byte length
+    // against the single-sourced constant, not a base64 char count.
     const metadata = evidence.metadata as Record<string, unknown> | undefined;
     if (evidence.kind === "artifact_metadata" && metadata !== undefined) {
       const containers = metadata.bytesBase64 as unknown;
@@ -387,12 +399,13 @@ function validateRequest(input: unknown): RequestValidation {
         metadata.container === "wav" &&
         Array.isArray(containers) &&
         containers.length >= 1 &&
-        containers.length <= 64 &&
+        containers.length <= SPEECH_EVIDENCE_MAX_WAV_CONTAINERS &&
         containers.every(
           (container) =>
             typeof container === "string" &&
             container.length >= 1 &&
-            container.length <= 8192,
+            Buffer.byteLength(container, "base64") <=
+              SPEECH_EVIDENCE_MAX_WAV_HEADER_BYTES,
         );
       if (!validShape) {
         return {
@@ -462,23 +475,25 @@ function gcd(a: bigint, b: bigint): bigint {
 }
 
 /**
- * Σ of every carried container's own stated duration — each read by the same whole-file
- * meter 14.1 uses, so a carried artifact (one container header) or an interrupted
- * buffer's chunk headers re-measure exactly the statements they were measured from.
- * Null when anything is absent or unreadable: the sum is only as good as every container
- * in it. PCM containers' sizes are byte-rate multiples, so every honest header measures
- * to an exact double and the sum stays exact with it.
+ * Σ of every carried container's own stated duration, EXACT — each header re-read as the
+ * rational it states (data size over byte rate, BigInt), so a carried artifact or an
+ * interrupted buffer's chunk headers re-measure the very quantities they were measured
+ * from, with no rounding anywhere in the re-measurement. Null when anything is absent or
+ * unreadable: the sum is only as good as every container in it.
  */
-function measuredWavContainersSeconds(
+function measuredWavContainersRational(
   containersBase64: readonly string[],
-): number | null {
-  let total = 0;
+): { numerator: bigint; denominator: bigint } | null {
+  let numerator = 0n;
+  let denominator = 1n;
   for (const base64 of containersBase64) {
-    const measured = parseWavDurationSeconds(Buffer.from(base64, "base64"));
+    const measured = readWavDurationSecondsExact(Buffer.from(base64, "base64"));
     if (measured === null) return null;
-    total += measured;
+    numerator =
+      numerator * measured.denominator + measured.numerator * denominator;
+    denominator = denominator * measured.denominator;
   }
-  return total;
+  return { numerator, denominator };
 }
 
 function reduce(
@@ -614,10 +629,10 @@ export function createSpeechSettlementService(
         }
       } else {
         const metadata = req.result.evidence.metadata;
-        const measuredSeconds = metadata
-          ? measuredWavContainersSeconds(metadata.bytesBase64)
+        const measured = metadata
+          ? measuredWavContainersRational(metadata.bytesBase64)
           : null;
-        if (measuredSeconds === null) {
+        if (measured === null) {
           await writer.markReservationUnknown(
             reservationId,
             "speech synthesis evidence unusable: artifact metadata states no readable duration",
@@ -630,19 +645,24 @@ export function createSpeechSettlementService(
           // never divides a number it could not read exactly.
           return refused("request_invalid", { field: "result.actualSeconds" });
         }
-        // Exact for every honest report: both sides are the correctly-rounded double of
-        // the SAME rational when the durations are equal, and a measurable duration's
-        // lowest terms always fit the safe-integer guard (byteRate ≤ 2^32). A claimed
-        // decimal too wide for the guard cannot be any container's measurement anyway.
-        const measuredMatches =
-          Number.isSafeInteger(Number(claimed.numerator)) &&
-          Number.isSafeInteger(Number(claimed.denominator)) &&
-          measuredSeconds ===
-            Number(claimed.numerator) / Number(claimed.denominator);
-        if (!measuredMatches) {
+        // EXACT, with the one documented rounding an honest reporter may carry: the
+        // interrupted collector renders a non-terminating rational (44.1 kHz byte rates
+        // and the like) as its 9-digit UPWARD rounding, so the claim is accepted when it
+        // IS the measured rational or sits above it by at most a nanosecond — the
+        // collector's own ceil direction and magnitude, a dishonest caller's whole
+        // over-billing bound (~1e-9 s of audio). Strict double equality here rejected
+        // the collector's own honest evidence — the false conflict R1-H1 removed.
+        // Anything else is a conflict: refused, never rewritten to the measured number.
+        const gapNumerator =
+          claimed.numerator * measured.denominator -
+          measured.numerator * claimed.denominator;
+        const gapDenominator = claimed.denominator * measured.denominator;
+        const withinDocumentedCeil =
+          gapNumerator >= 0n && gapNumerator * 10n ** 9n <= gapDenominator;
+        if (!withinDocumentedCeil) {
           return refused("settlement_conflict", {
             stage: "artifact_duration_mismatch",
-            measuredSeconds: String(measuredSeconds),
+            measuredSeconds: `${measured.numerator}/${measured.denominator}`,
             carriedSeconds: req.result.actualSeconds,
           });
         }
