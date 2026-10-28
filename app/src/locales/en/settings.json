@@ -385,6 +385,8 @@
     "overdrawBadge": "({{shortfall}} unfunded)",
     "feeSplitModel": "Model {{amount}}",
     "feeSplitSurcharge": "Surcharge {{amount}}",
+    "speechUsage": "Speech {{characters}} chars · {{seconds}} s · {{tier}}",
+    "speechUsageNoTier": "Speech {{characters}} chars · {{seconds}} s",
     "overdrawHint": "This call cost more than the balance could fund. The ledger records the full cost; {{shortfall}} was not covered by any grant.",
     "pagerStatus": "Page {{page}} of {{totalPages}} · {{total}} entries",
     "consumptionTable": "Usage details",

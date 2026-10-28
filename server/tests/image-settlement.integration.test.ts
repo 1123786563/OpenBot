@@ -1,20 +1,10 @@
-import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { createImageSettlementService } from "../src/billing/image-settlement";
-import { createCreditWriter } from "../src/billing/credits-writer";
+import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import { createCredits } from "../src/billing/credits";
+import { createCreditWriter } from "../src/billing/credits-writer";
+import { createImageSettlementService } from "../src/billing/image-settlement";
 import { createPayerAccount, payerKey } from "../src/billing/payer";
-import type { ConversionRate } from "../src/gateway/conversion-rate";
-import {
-  GATEWAY_PRICE_SNAPSHOT_SOURCE,
-  PRICE_DIMENSIONS,
-  WIRE_PRICED_DIMENSIONS,
-  mapPriceDims,
-  type PriceDimension,
-  type PriceSnapshotDims,
-} from "../src/gateway/price-snapshot";
-import { createEnterpriseGatewayPriceSnapshotStore } from "../src/gateway/price-snapshot";
 import { createDatabase } from "../src/db/client";
 import { accessGrants, botServices, payerAccounts } from "../src/db/schema";
 import {
@@ -22,6 +12,16 @@ import {
   creditSettlementDetails,
 } from "../src/db/schema/credit-reservations";
 import { creditLedger } from "../src/db/schema/credits";
+import type { ConversionRate } from "../src/gateway/conversion-rate";
+import {
+  createEnterpriseGatewayPriceSnapshotStore,
+  GATEWAY_PRICE_SNAPSHOT_SOURCE,
+  mapPriceDims,
+  PRICE_DIMENSIONS,
+  type PriceDimension,
+  type PriceSnapshotDims,
+  WIRE_PRICED_DIMENSIONS,
+} from "../src/gateway/price-snapshot";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -356,6 +356,7 @@ test("the user's consumption detail shows the image spec, count and amount", asy
   const entry = view.entries[0];
   expect(entry.credits).toBe(8); // 2 × $0.04 × 100 credits/USD = 8.00 whole credits
   expect(entry.lineDetail).toEqual({
+    kind: "image",
     capability: "image",
     image: {
       size: "1024x1792",

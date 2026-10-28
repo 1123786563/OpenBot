@@ -37,6 +37,7 @@ import {
   type ReservationStatusService,
   reservationStatusEndpoints,
 } from "./reservation-status";
+import type { ReservationSpeechSpec } from "./reserve-bound";
 
 /**
  * The Reserve protocol's transactional revalidation (Bifrost #253, 06.2; payer conflict
@@ -160,6 +161,12 @@ export type CreditReserveRequest = {
   boundEvidence: ReserveBoundEvidence[];
   /** The hold ceiling in scaled credit units (×100), a positive 32-bit integer. */
   maximumCredits: number;
+  /**
+   * The certified speech spec (13.2, #307), for a speech-capability hold: frozen with the
+   * pricing lock so settlement can corroborate the character side. A hold for any other
+   * capability carries none.
+   */
+  speechSpec?: ReservationSpeechSpec;
   /** The caller's retry identity; a replay answers the original reservation. */
   idempotencyKey: string;
   /** When recovery may release an unanswered hold; default 15 minutes out. */
@@ -414,6 +421,50 @@ function validateRequest(input: unknown, now: Date): RequestValidation {
     };
   }
 
+  // The certified speech spec (13.2), for a speech-capability hold: parsed with the same
+  // strictness as everything else on this wire. A carried spec the caller cannot spell
+  // is refused, never silently dropped — dropping it would freeze nothing and doom every
+  // downstream settlement to speech_spec_not_locked (OCR r2's dead-field finding).
+  let speechSpec: ReservationSpeechSpec | undefined;
+  if (raw.speechSpec !== undefined) {
+    const candidate = raw.speechSpec as Record<string, unknown> | null;
+    const specTier =
+      candidate !== null &&
+      typeof candidate === "object" &&
+      candidate.voiceTier !== undefined
+        ? candidate.voiceTier
+        : null;
+    const pricesExact =
+      typeof candidate === "object" &&
+      candidate !== null &&
+      typeof candidate.perInputCharacterUsd === "string" &&
+      typeof candidate.perOutputSecondUsd === "string" &&
+      /^[0-9]+(\.[0-9]+)?$/.test(candidate.perInputCharacterUsd) &&
+      /^[0-9]+(\.[0-9]+)?$/.test(candidate.perOutputSecondUsd);
+    if (
+      candidate === null ||
+      typeof candidate !== "object" ||
+      !isNonNegativeInteger(candidate.inputCharacters) ||
+      (candidate.inputCharacters as number) > MAX_STORED_UNITS ||
+      !isPositiveInteger(candidate.durationCapSeconds) ||
+      (candidate.durationCapSeconds as number) > MAX_STORED_UNITS ||
+      (specTier !== null && !isIdentifier(specTier, 128)) ||
+      !pricesExact
+    ) {
+      return {
+        ok: false,
+        outcome: refused("request_invalid", { field: "speechSpec" }),
+      };
+    }
+    speechSpec = {
+      inputCharacters: candidate.inputCharacters as number,
+      voiceTier: specTier as string | null,
+      durationCapSeconds: candidate.durationCapSeconds as number,
+      perInputCharacterUsd: candidate.perInputCharacterUsd as string,
+      perOutputSecondUsd: candidate.perOutputSecondUsd as string,
+    };
+  }
+
   // Bound evidence: a non-empty set of mechanism proofs with real ceilings. Anything
   // else — including an estimate-shaped entry — proves nothing enforceable.
   const evidence = raw.boundEvidence;
@@ -483,6 +534,7 @@ function validateRequest(input: unknown, now: Date): RequestValidation {
       rateVersion: raw.rateVersion,
       boundEvidence: evidence as ReserveBoundEvidence[],
       maximumCredits: raw.maximumCredits,
+      ...(speechSpec === undefined ? {} : { speechSpec }),
       idempotencyKey: raw.idempotencyKey,
       expiresAt,
     },
@@ -690,6 +742,11 @@ export async function reserveCreditInTransaction(
         snapshotVersion: request.snapshotVersion,
         rateVersion: request.rateVersion,
       },
+      // 13.2: a speech hold freezes its certified quantities with the lock — the
+      // two-side anchor settlement checks the character side against.
+      ...(request.speechSpec === undefined
+        ? {}
+        : { speechSpec: request.speechSpec }),
     });
   } catch (error) {
     if (error instanceof CreditReservationConflictError) {

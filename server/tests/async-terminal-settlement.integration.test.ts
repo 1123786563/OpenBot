@@ -6,21 +6,15 @@ import {
   expect,
   test,
 } from "../../tests/support/bun-test-compat";
+import type { AuditEventInput } from "../src/audit";
 import { createAsyncSubmitService } from "../src/billing/async-job-submit";
 import { createAsyncTerminalSettleService } from "../src/billing/async-terminal";
-import { createCreditReserveService } from "../src/billing/credit-reserve";
-import { createCreditWriter } from "../src/billing/credits-writer";
-import { createCredits } from "../src/billing/credits";
-import { createPayerAccount, payerKey } from "../src/billing/payer";
 import { readCapacity } from "../src/billing/capacity";
+import { createCreditReserveService } from "../src/billing/credit-reserve";
+import { createCredits } from "../src/billing/credits";
+import { createCreditWriter } from "../src/billing/credits-writer";
+import { createPayerAccount, payerKey } from "../src/billing/payer";
 import { resolveLockedReservationBasis } from "../src/billing/reserve-bound";
-import type { AuditEventInput } from "../src/audit";
-import {
-  GATEWAY_PRICE_SNAPSHOT_SOURCE,
-  PRICE_DIMENSIONS,
-  createEnterpriseGatewayPriceSnapshotStore,
-  type PriceDimension,
-} from "../src/gateway/price-snapshot";
 import { createDatabase } from "../src/db/client";
 import {
   accessGrants,
@@ -37,6 +31,12 @@ import {
 } from "../src/db/schema/credit-reservations";
 import { creditLedger } from "../src/db/schema/credits";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../src/gateway/catalog-sync";
+import {
+  createEnterpriseGatewayPriceSnapshotStore,
+  GATEWAY_PRICE_SNAPSHOT_SOURCE,
+  PRICE_DIMENSIONS,
+  type PriceDimension,
+} from "../src/gateway/price-snapshot";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -554,6 +554,7 @@ describe("17.6 AC-4 — the consumption entry names its job", () => {
     const entry = page.entries[0];
     expect(entry.requestId).toBe(world.jobId);
     expect(entry.lineDetail).toMatchObject({
+      kind: "async_job",
       capability: "video",
       asyncJob: {
         jobId: world.jobId,

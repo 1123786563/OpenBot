@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { BillingPager } from "@/components/billing/pager";
 import { Button } from "@/components/ui/button";
 import type { CreditConsumptionEntry } from "@/lib/billing/credits";
-import { credits } from "@/lib/billing/format";
+import { count, credits, seconds } from "@/lib/billing/format";
 import { cn } from "@/lib/utils";
 
 /** The three quick windows the consumption table offers, mapping to from/to in the page. */
@@ -116,6 +116,34 @@ export function ConsumptionTable({
                       {entry.requestId ? (
                         <p className="text-muted-foreground truncate font-mono text-xs">
                           {entry.requestId}
+                        </p>
+                      ) : null}
+                      {/*
+                       * 13.2's speech line (AC4): a speech consumption shows what was
+                       * spoken — the characters in, the seconds out, the tier — said in
+                       * the reader's language, distinguishable from every other row. The
+                       * numbers are DISPLAY numbers (grouped characters, seconds to three
+                       * decimals), never the raw wire decimal. A null line shows nothing.
+                       * The parameters are built once; only the key differs by tier.
+                       */}
+                      {entry.lineDetail?.kind === "speech" ? (
+                        <p className="text-muted-foreground mt-0.5 text-xs">
+                          {t(
+                            entry.lineDetail.speech.voiceTier
+                              ? "creditsPage.speechUsage"
+                              : "creditsPage.speechUsageNoTier",
+                            {
+                              characters: count(
+                                entry.lineDetail.speech.inputCharacters,
+                              ),
+                              seconds: seconds(
+                                entry.lineDetail.speech.actualSeconds,
+                              ),
+                              ...(entry.lineDetail.speech.voiceTier
+                                ? { tier: entry.lineDetail.speech.voiceTier }
+                                : {}),
+                            },
+                          )}
                         </p>
                       ) : null}
                     </td>

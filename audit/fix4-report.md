@@ -86,7 +86,14 @@ after: {customer:1, account:1, mapping:1, legacyPayer:0, companyGrant:1,
 
 ### 新增用例的 RED 对照
 
-将产品文件暂存回 HEAD（保留新测试文件），在全新库 `openbot_b5r_fix4_redcheck` 上跑 `cleanup-relations`：**14 pass / 1 fail**——唯一失败即新 R2B-F1 用例；14 项既有用例（含 R2-F1 两条复现回归）不受影响，证明新断言在修复前可复现红灯、且未改写既有语义。
+将产品文件暂存回 HEAD（保留新测试文件），在全新库 `openbot_b5r_fix4_redcheck` 上跑 `cleanup-relations`：**14 pass / 1 fail**——唯一失败即新 R2B-F1 用例；14 项既有用例（含 R2-F1 两条复现回归）不受影响，证明新断言在修复前可复现红灯、且未改写既有语义。勘误（#681 item 10）：本节原未落失败断言原文；唯一失败断言为——
+```
+expect(received).toBe(expected) // Object.is equality
+expected: 1
+received: 0
+  at .../cleanup-relations.integration.test.ts (R2B-F1: credit_grants row of quarantined key must survive)
+```
+（RED 快照库存于 `openbot_b5r_fix4_redcheck` 运行记录；原文以该次运行输出为准。）
 
 ## 4. 套件与静态门禁
 
@@ -116,9 +123,9 @@ bunx biome check server/src/billing/cleanup-relations.ts \
 ## 5. 风险与边界披露
 
 - `funding_of_protected_key` 是新增 `ProtectionKind` 成员；消费面双向核（FIX-6/OCR2R-M2）：(a) tsc 与全仓检索确认无对 ProtectionKind 的穷举 switch 消费者；(b) 检索（`rg`，`server/src` + `app/src`）确认无以 protection kind 为键的 reason/展示 Record 映射——dry-run 的 `pulledCandidates.byReason` 以 `RemovalReason`（非 ProtectionKind）为键，relations evidence 串与守卫拒删文案均把原始 kind 字符串直接透传。FIX-6 已在 R2B-F1 用例补断言：被庇护资金行的守卫拒删 `evidence` 含 `funding_of_protected_key`（dry-run 哈希覆盖的 relations evidence 同源），无外部破坏性。
-- 资金行庇护以 0163 行上的 `external_customer_id` 为准：映射行的 `external_customer_id` 即公司键。三个资金表均逐表核实了归属列（`credit_grants.external_customer_id`、`credit_ledger.external_customer_id`、`credit_reservations.external_customer_id` 存在于 schema 与本表 probe spec）。
+- 资金行庇护以 0163 行上的 `external_customer_id` 为准：映射行的 `external_customer_id` 即公司键。三个资金表均逐表核实了归属列（`credit_grants.external_customer_id`、`credit_ledger.external_customer_id`、`credit_reservations.external_customer_id` 存在于 schema 与本表 probe spec）。勘误（#681 item 9）：此处原验证为「受保护 0163 行 → 资金行」单向核对；资金行归属的反向命题未单独断言，以 #680 项 11 庇护补臂的双向测试为准。
 - 隔离账户键的资金行同样受保护（失败关闭方向，与 AC18「公司金融史保留」一致）；未知形状账户 fail-closed 后其键资金亦受保护，符合「unreadable ownership cannot be evidence for deletion」（源码审读结论；直接断言缺口见 §2 末注，补臂已登记后续票）。
-- R2B-INFO-2（三个 0163 表全扫）的扫描成本延续到资金三表——沿用既有 `scanReachableTable` 全扫模式，量级不变。
+- R2B-INFO-2（三个 0163 表全扫）的扫描成本延续到资金三表——沿用既有 `scanReachableTable` 全扫模式。勘误（#681 item 8）：`credit_ledger` 为 append-only 台账，行数随结算持续增长，其量级不可类比为「不变」；全扫成本按当时实测行数评估（本报告未附实测，登记为披露缺口）。
 
 ## 6. 交付物
 

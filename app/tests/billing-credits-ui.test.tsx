@@ -979,6 +979,7 @@ test("ConsumptionTable shows the unfunded suffix only on a row the grants could 
     client: null,
     botId: null,
     botName: null,
+    lineDetail: null,
     timestamp: "2026-10-15T10:00:00.000Z",
   });
   const view = render(
