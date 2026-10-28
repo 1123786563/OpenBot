@@ -486,6 +486,24 @@ export function createAccessGrantService(
         };
       });
 
+      if (
+        outcome.retiredGatewayVirtualKeyIds.length > 0 &&
+        dependencies.revokeGatewayKeys
+      ) {
+        // Before the audit write, on purpose: the remote disable is an outward side effect
+        // that must not hinge on the audit table being writable — an audit failure must not
+        // leave the retired keys live at the gateway with nothing asked about them. The seam
+        // is total by contract (it records each failed key as
+        // `gateway.key_revocation_deactivation_failed` and never throws), so a gateway that
+        // cannot be reached softens nothing — the synchronous refusal lives in the rows
+        // above. A process crash in the window between the commit and this seam is not
+        // compensated here: an exact retry needs a persisted asked-the-seam marker (a
+        // migration), which is out of this ticket's write scope.
+        await dependencies.revokeGatewayKeys({
+          grantId: outcome.grant.grantId,
+          gatewayVirtualKeyIds: outcome.retiredGatewayVirtualKeyIds,
+        });
+      }
       if (outcome.revoked && dependencies.auditStore) {
         await recordAuditEvent(dependencies.auditStore, {
           eventType: "model_access.revoked",
@@ -500,19 +518,6 @@ export function createAccessGrantService(
             scope: outcome.grant.scope,
             source: outcome.grant.source,
           },
-        });
-      }
-      if (
-        outcome.revoked &&
-        outcome.retiredGatewayVirtualKeyIds.length > 0 &&
-        dependencies.revokeGatewayKeys
-      ) {
-        // After the commit, after the trail: the person's answer is already true. The seam is
-        // total by contract (failures recorded, never thrown), so a gateway that cannot be
-        // reached softens nothing — the synchronous refusal lives in the rows above.
-        await dependencies.revokeGatewayKeys({
-          grantId: outcome.grant.grantId,
-          gatewayVirtualKeyIds: outcome.retiredGatewayVirtualKeyIds,
         });
       }
       return outcome;
