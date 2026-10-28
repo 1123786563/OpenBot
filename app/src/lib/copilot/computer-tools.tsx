@@ -12,7 +12,7 @@ import {
   runNavigation,
 } from "@/lib/computers/handoff";
 import { useActiveBotHolder } from "./active-bot";
-import { useFrontendTool } from "./approval-tools";
+import { pairOf, useCallTimeScope, useFrontendTool } from "./approval-tools";
 import {
   useComputerAvailable,
   useComputerToolsOffered,
@@ -187,6 +187,9 @@ function didNotWork(outcome: ComputerOutcome): boolean {
 
 export function ComputerTools() {
   const bot = useActiveBotHolder();
+  // Audit bookkeeping rides the scope the surface holds, read when the handler fires (the
+  // registered-once rule): a refusal record lands in the selection in force, never a stale one.
+  const scopeHolder = useCallTimeScope();
   /*
    * Not offered to a Team Bot's teammates, and not offered where this deployment's capability
    * switches would refuse them; see computerToolsOffered.
@@ -540,7 +543,12 @@ export function ComputerTools() {
       try {
         const response = await tryClient(
           `/api/agents/${encodeURIComponent(bot.current)}/declined`,
-          { method: "POST", body: input, signal },
+          {
+            method: "POST",
+            body: input,
+            signal,
+            ...pairOf(scopeHolder.current),
+          },
         );
         return response.ok
           ? "Recorded. Now tell the person what you decided and why."

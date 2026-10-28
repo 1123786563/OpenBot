@@ -1,6 +1,6 @@
 import { CopilotChat } from "@copilotkit/react-core/v2";
 import { IconPlus } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { ComputerChatControls } from "@/components/computer/computer-controls";
@@ -10,11 +10,11 @@ import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
 import { Button } from "@/components/ui/button";
 import { defaultAgentId } from "@/lib/agents/default-agent";
 import {
-  type AgentProfile,
-  agentKeys,
-  agentListQueryOptions,
+  AgentUnavailableError,
+  scopedAgentDetailQueryOptions,
+  scopedAgentListQueryOptions,
 } from "@/lib/agents/queries";
-import { tryClient } from "@/lib/client";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { useActiveBot } from "@/lib/copilot/active-bot";
 import { useBotThread } from "@/lib/copilot/bot-thread";
 import { useStoppedTurn } from "@/lib/copilot/stopped-turn";
@@ -41,60 +41,39 @@ export const Route = createFileRoute("/_authed/_app/bot")({
  * A named Bot that this deployment does not have is answered in a sentence rather than thrown,
  * for the same reason: a mistyped link is not a crash.
  */
-type BotDetailLookup =
-  | { bot: AgentProfile; status: "found" }
-  | { status: "missing" };
-
-function isAgentEnvelope(body: unknown): body is { agent: AgentProfile } {
-  if (body === null || typeof body !== "object") return false;
-  const agent = (body as { agent?: unknown }).agent;
-  return (
-    agent !== null &&
-    typeof agent === "object" &&
-    typeof (agent as { id?: unknown }).id === "string" &&
-    typeof (agent as { name?: unknown }).name === "string"
-  );
-}
-
-async function loadExplicitBot(agentId: string): Promise<BotDetailLookup> {
-  const response = await tryClient(
-    `/api/agents/${encodeURIComponent(agentId)}`,
-  );
-  if (response.status === 404) return { status: "missing" };
-  if (!response.ok) throw new Error("Bot couldn't be loaded.");
-
-  const body: unknown = await response.json().catch(() => null);
-  if (!isAgentEnvelope(body)) throw new Error("Bot couldn't be loaded.");
-  return { bot: body.agent, status: "found" };
-}
-
 function RouteComponent() {
   const { t } = useTranslation("channels");
   const search = Route.useSearch();
   const agent = search.agent === "" ? undefined : search.agent;
+  // The roster and the explicit-Bot fallback read through the scope seam (MOD19 / Issue #639,
+  // T1b): the page lists and opens Bots of the scope in force, and the fallback is the scoped
+  // detail read itself — its 404 refusal (`AgentUnavailableError`) is this screen's "missing".
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
   const {
     data: agents,
     isError,
     isPending,
-  } = useQuery(agentListQueryOptions());
+  } = useQuery(scopedAgentListQueryOptions(queryClient, scope));
   const agentId = agent ?? defaultAgentId(agents);
   const listedBot = agents?.find((candidate) => candidate.id === agentId);
   const detailAgentId = agent ?? "";
   const shouldLoadExplicitBot =
     Boolean(agent) && agents !== undefined && listedBot === undefined;
   const {
-    data: detail,
-    isError: isDetailError,
+    data: detailBot,
+    error: detailError,
     isPending: isDetailPending,
   } = useQuery({
+    ...scopedAgentDetailQueryOptions(queryClient, scope, detailAgentId),
     enabled: shouldLoadExplicitBot,
-    queryKey: agentKeys.botRouteDetail(detailAgentId),
-    queryFn: () => loadExplicitBot(detailAgentId),
     retry: false,
   });
-  const bot =
-    listedBot ?? (detail?.status === "found" ? detail.bot : undefined);
+  const bot = listedBot ?? detailBot;
   const known = bot !== undefined;
+  // The scoped read's own unavailable refusal is this screen's old "missing" answer; any other
+  // failure keeps the old load-failure sentence.
+  const detailMissing = detailError instanceof AgentUnavailableError;
 
   if (isPending || (shouldLoadExplicitBot && isDetailPending)) return null;
   if (isError && agents === undefined) {
@@ -106,7 +85,7 @@ function RouteComponent() {
       </div>
     );
   }
-  if (shouldLoadExplicitBot && isDetailError) {
+  if (shouldLoadExplicitBot && !detailMissing && detailError !== null) {
     return (
       <div className="flex h-screen items-center justify-center p-6">
         <p className="text-destructive text-sm" role="alert">

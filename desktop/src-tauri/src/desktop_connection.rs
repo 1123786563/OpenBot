@@ -10,6 +10,9 @@ struct Failure {
     code: String,
 }
 
+/// The host token's header name, one spelling for the request and the pin that watches it.
+const HOST_TOKEN_HEADER: &str = "x-openbot-desktop-host-token";
+
 pub fn client() -> Result<Client, String> {
     Client::builder()
         .timeout(std::time::Duration::from_secs(1))
@@ -23,7 +26,7 @@ pub fn poll(client: &Client, port: u16, token: &str) -> Result<Option<Connection
         .get(format!(
             "http://127.0.0.1:{port}/api/desktop/connection-failure"
         ))
-        .header("x-openbot-desktop-host-token", token)
+        .header(HOST_TOKEN_HEADER, token)
         .send()
         .map_err(|error| format!("Connection status request failed: {error}"))?;
     // Older installed payloads have no status endpoint. This is a capability check, not auth.
@@ -111,7 +114,7 @@ mod tests {
                 assert!(headers.starts_with("GET /api/desktop/connection-failure "));
                 assert!(headers
                     .to_lowercase()
-                    .contains("x-openbot-desktop-host-token: synthetic-run-token\r\n"));
+                    .contains(&format!("{HOST_TOKEN_HEADER}: synthetic-run-token\r\n")));
                 write!(stream, "HTTP/1.1 {status} Fixture\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
             });
             let result = poll(&client().unwrap(), port, "synthetic-run-token");

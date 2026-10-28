@@ -1,4 +1,4 @@
-import { openingOf } from "@/lib/voice/cut";
+import { openingOf } from "@/lib/voice/public";
 
 /**
  * How a conversation is named in a picker: its Bot and, once it has one, its title.

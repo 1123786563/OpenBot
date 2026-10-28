@@ -1,7 +1,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import type { BotCatalog } from "../agents/public";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import { afterExposureChange } from "../plugins/exposure-change";
 import type { SharedUseStore } from "../plugins/shared-use-store";
 import { getLogger } from "../../../shared/logger";

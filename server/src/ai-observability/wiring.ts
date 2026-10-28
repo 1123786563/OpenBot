@@ -11,7 +11,7 @@
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { getLogger } from "../../../shared/logger";
-import type { AgentActor } from "../agents/profile-types";
+import type { AgentActor } from "../agents/public";
 import type { OpenBotRole } from "../auth/roles";
 import type { Database } from "../db/client";
 import { agentProfiles } from "../db/schema";

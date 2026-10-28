@@ -120,3 +120,10 @@ export type {
   ApprovalDecision,
   ApprovalRecord,
 } from "./types";
+
+/**
+ * 服务类型面（MOD21 #641）：mobile Activity 聚合以 ApprovalService 形状注入
+ * 依赖，恒等 re-export（类型面，零逻辑）；ApprovalsAccess 能力面不动，
+ * inbox 仍不在此扩面（MOD13 冻结边界）。
+ */
+export type { ApprovalService } from "./service";

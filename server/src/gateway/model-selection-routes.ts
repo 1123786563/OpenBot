@@ -49,7 +49,7 @@
 
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { enterpriseControls } from "../admin/controls";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import { WORKBENCH_BOT_ID } from "../bot-services/access-grants";
 import type { BotServiceStore } from "../bot-services/store";
 import type { BotServiceCapability } from "../bot-services/types";

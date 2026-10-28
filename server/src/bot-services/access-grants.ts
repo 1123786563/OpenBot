@@ -4,7 +4,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { getLogger } from "../../../shared/logger";
 import { type AuditStore, recordAuditEvent } from "../audit";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { Database } from "../db/client";
 import {
   type AccessGrantSource,

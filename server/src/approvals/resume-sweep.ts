@@ -3,10 +3,10 @@ import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { headlessTurnRefusal } from "../admin/controls";
-import type { AgentActor } from "../agents/profile-types";
+import type { AgentActor } from "../agents/public";
 import { PERSON_INITIATOR } from "../audit";
 import type { GroupConversations } from "../channels/group";
-import type { ChannelStore } from "../channels/routes";
+import type { ChannelStore } from "../channels/public";
 import type { Database } from "../db/client";
 import {
   intelligenceChannelMappings,

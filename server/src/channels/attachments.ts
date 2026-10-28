@@ -12,7 +12,7 @@ import {
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { getLogger } from "@openbot/shared/logger";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { Database } from "../db/client";
 import {
   attachments,

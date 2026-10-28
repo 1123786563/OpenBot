@@ -1,6 +1,6 @@
 import { getLogger } from "../../../shared/logger";
 import type { MiddlewareHandler } from "hono";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 
 const log = getLogger("server");
 

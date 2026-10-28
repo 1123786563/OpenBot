@@ -3,9 +3,15 @@ import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "../../tests
 import * as ReactCoreV2 from "@copilotkit/react-core/v2";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import { observeApprovalAgent } from "@/lib/copilot/approval-context";
 import { useFrontendTool } from "@/lib/copilot/approval-tools";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import {
+  selectionKeys,
+  selectionStorageKey,
+  storeSelection,
+} from "@/lib/enterprise/tenant/selection";
 
 /**
  * The handler the SDK keeps for a computer change.
@@ -68,10 +74,16 @@ test("a change goes to the server's gate even when nothing about approvals has l
   const originalFetch = global.fetch;
   global.fetch = Object.assign(
     async (path: Parameters<typeof fetch>[0], init?: RequestInit) => {
-      posted.push({
-        path: String(path),
-        body: init?.body ? JSON.parse(String(init.body)) : undefined,
-      });
+      // Only the gate's own calls are evidence here. Since MOD19 (#639) the tool registration
+      // also holds the scope seam, whose auth read (`/api/me`) may fire during the render; the
+      // scope it answers with stays pending in this harness, which is exactly the state under
+      // test — a gate POST that rides no selection pair.
+      if (String(path).startsWith("/api/approvals/")) {
+        posted.push({
+          path: String(path),
+          body: init?.body ? JSON.parse(String(init.body)) : undefined,
+        });
+      }
       return Response.json(
         { waiting: true, approvalId: "approval-1" },
         { status: 202 },
@@ -155,4 +167,145 @@ test("a change goes to the server's gate even when nothing about approvals has l
   } finally {
     global.fetch = originalFetch;
   }
+});
+
+/*
+ * MOD19 / Issue #639: the registered handler reads the selection pair when it RUNS (the holder
+ * rule active-bot.tsx owns), and the 202 card clears both inbox homes when a scope is in force.
+ * These two probes are the same drive as the test above, with the scope seeded through the real
+ * seam — they live here because the SDK namespace spy they need is Bun-only, and this suite is
+ * where that harness already lives.
+ */
+
+const USER = "user-mod19";
+const ACME = { tenantId: "acme", workspaceId: "acme-finance" };
+
+/** The same reactive fact the tool's holder reads, shown so the drive can wait for it. */
+function ScopeProbe() {
+  const scope = useScopedCache();
+  return (
+    <span data-testid="scope-state">
+      {scope.status === "open"
+        ? `open ${JSON.stringify(scope.selection)}`
+        : scope.status}
+    </span>
+  );
+}
+
+async function driveGateWithScope(
+  seedSelection: { tenantId: string; workspaceId: string } | null,
+): Promise<{
+  posted: { path: string; headers: Record<string, string> }[];
+  invalidated: unknown[];
+  stoppedCount: number;
+}> {
+  const posted: { path: string; headers: Record<string, string> }[] = [];
+  const invalidated: unknown[] = [];
+  const originalFetch = global.fetch;
+  global.fetch = Object.assign(
+    async (path: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (String(path).startsWith("/api/approvals/")) {
+        const headers =
+          init?.headers instanceof Headers
+            ? Object.fromEntries(init.headers.entries())
+            : ((init?.headers ?? {}) as Record<string, string>);
+        posted.push({ path: String(path), headers });
+        return Response.json({ waiting: true }, { status: 202 });
+      }
+      return Response.json({ user: { id: USER } });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const queries = new QueryClient();
+  const invalidate = queries.invalidateQueries.bind(queries);
+  queries.invalidateQueries = ((filters?: unknown) => {
+    invalidated.push(filters);
+    return invalidate(filters as never);
+  }) as typeof queries.invalidateQueries;
+  try {
+    if (seedSelection) storeSelection(USER, seedSelection);
+    // The registry dedupes by name, so a stale definition from an earlier render (whose holder
+    // belongs to an unmounted instance) would be the one the drive hits. Re-register against this
+    // render's holder, and count this run's stops only.
+    registered.length = 0;
+    stopped.length = 0;
+    render(
+      <QueryClientProvider client={queries}>
+        <Tools />
+        <ScopeProbe />
+      </QueryClientProvider>,
+    );
+    // The handler reads the holder, which is current at the render AFTER the auth read answers —
+    // wait for the scope to be open before driving it, or the drive races the /api/me observer.
+    await waitFor(() =>
+      expect(
+        globalThis.document.querySelector('[data-testid="scope-state"]')
+          ?.textContent ?? "",
+      ).toContain("open"),
+    );
+    const tool = registered.find((entry) => entry.name === "computer_click");
+    const toolCall = {
+      id: "click-call",
+      type: "function" as const,
+      function: { name: "computer_click", arguments: '{"ref":"e7"}' },
+    };
+    const subscribers: {
+      onRunInitialized?: (input: { input: unknown }) => void;
+    }[] = [];
+    const agent = {
+      threadId: "thread",
+      state: {},
+      messages: [
+        { id: "u1", role: "user", content: "Submit the form" },
+        { id: "a1", role: "assistant", content: "", toolCalls: [toolCall] },
+      ],
+      subscribe: (subscriber: (typeof subscribers)[number]) => {
+        subscribers.push(subscriber);
+        return { unsubscribe: () => undefined };
+      },
+    };
+    const stop = observeApprovalAgent(agent as never);
+    for (const subscriber of subscribers)
+      subscriber.onRunInitialized?.({
+        input: {
+          runId: "run-1",
+          threadId: "thread",
+          messages: agent.messages,
+          tools: [],
+          context: [],
+          state: {},
+          forwardedProps: {},
+        },
+      });
+    await tool?.handler?.({ ref: "e7" }, { agent, toolCall } as never);
+    stop();
+    return { posted, invalidated, stoppedCount: stopped.length };
+  } finally {
+    global.fetch = originalFetch;
+    if (seedSelection)
+      window.localStorage.removeItem(selectionStorageKey(USER));
+  }
+}
+
+test("with an open scope the gate POST rides the pair and both inbox homes are cleared", async () => {
+  const { posted, invalidated, stoppedCount } = await driveGateWithScope(ACME);
+  expect(posted).toHaveLength(1);
+  expect(posted[0]?.headers["x-openbot-tenant"]).toBe(ACME.tenantId);
+  expect(posted[0]?.headers["x-openbot-workspace"]).toBe(ACME.workspaceId);
+  const keys = invalidated.map(
+    (filters) => (filters as { queryKey?: unknown[] }).queryKey,
+  );
+  expect(keys).toContainEqual(["approvals"]);
+  expect(keys).toContainEqual([
+    ...selectionKeys.workspaceScope(USER, ACME.tenantId, ACME.workspaceId),
+    "approvals",
+  ]);
+  expect(stoppedCount).toBe(1);
+});
+
+test("a personal context (open, no selection) rides no pair like the pending scope", async () => {
+  const { posted } = await driveGateWithScope(null);
+  expect(posted).toHaveLength(1);
+  expect(posted[0]?.headers["x-openbot-tenant"]).toBeUndefined();
+  expect(posted[0]?.headers["x-openbot-workspace"]).toBeUndefined();
 });
