@@ -164,11 +164,12 @@ const RESERVATION_ID_BODY = /^[0-9a-f]{16}$/;
 function findForbiddenAccountKeyField(
   source: Record<string, unknown>,
 ): string | null {
-  const forbidden = new Set(
-    RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS.map((key) => key.toLowerCase()),
-  );
+  // Case- and separator-insensitive: `external_customer_id` is the same account field as
+  // `externalCustomerId`, and presence is the attempt under either spelling.
+  const normalize = (key: string) => key.toLowerCase().replace(/[_-]/g, "");
+  const forbidden = new Set(RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS.map(normalize));
   for (const key of Object.keys(source)) {
-    if (forbidden.has(key.toLowerCase())) return key;
+    if (forbidden.has(normalize(key))) return key;
   }
   return null;
 }

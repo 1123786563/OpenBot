@@ -438,7 +438,7 @@ interface DirectorySnapshot {
 }
 
 async function readAuthorityRow(
-  sql: postgres.Sql,
+  sql: postgres.Sql | postgres.TransactionSql,
 ): Promise<AuthoritySnapshot | null> {
   const rows = (await sql`
     SELECT authority_version::text AS authority_version, phase,
@@ -1453,7 +1453,9 @@ export async function runVerifyDirectory(
     // Read-only proof: the row after the run is the row before it.
     const authorityAfter = await readAuthorityRow(sql);
 
-    const authorizationSources = {
+    const authorizationSources: NonNullable<
+      VerifyDirectoryReport["authorizationSources"]
+    > = {
       personalGrants: snapshot.grants.map((grant) => ({
         ...grant,
         disposition:

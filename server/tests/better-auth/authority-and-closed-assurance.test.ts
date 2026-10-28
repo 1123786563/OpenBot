@@ -83,7 +83,7 @@ import {
  *   proof-demanding company, and always refuses challenge/complete with 503
  *   COMPANY_AUTH_NOT_READY.
  *
- * The suite applies the real `0211_better_auth_command_authority` migration on
+ * The suite applies the real `0223_better_auth_command_authority` migration on
  * the isolated BA_TEST_* database (the AuthorityState seed is the fact these
  * gates read), and cleans up exactly what it created. The five BA_TEST_* role
  * URLs are all required; a missing one is a blocked suite, never a fallback to
@@ -99,7 +99,7 @@ const BA_URL_VARIABLES = [
   "BA_TEST_AUTH_WRITER_DATABASE_URL",
 ] as const;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
-const MIGRATION_TAG = "0211_better_auth_command_authority";
+const MIGRATION_TAG = "0223_better_auth_command_authority";
 const MIGRATION_PATH = join(
   import.meta.dirname,
   `../../drizzle/${MIGRATION_TAG}.sql`,

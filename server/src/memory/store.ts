@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import { memorySources, personalMemories } from "../db/schema/memory";
+import type { MemoryCompany } from "./company";
 import { lockDefaults, recordOptOut, sourceServerId } from "./defaults";
 import {
   CREDENTIAL_REFUSAL,
@@ -13,6 +14,8 @@ import {
   type FormedMemoryInput,
   formedMemorySchema,
   type ImportedMemory,
+  LEARNING_PAUSED_REFUSAL,
+  MEMORY_ATTRIBUTION_REFUSAL,
   MemoryNotFoundError,
   type MemoryRecord,
   MemoryRefusedError,
@@ -41,7 +44,33 @@ const CANDIDATE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
  * from, whether it is reviewed or paused, which Bot formed it and which source it was imported
  * from — so the exit changes only whose copy is read, never who may see what.
  */
-export function createMemoryStore(database: Database) {
+export function createMemoryStore(
+  database: Database,
+  options: {
+    /**
+     * Hindsight 14 (#392): the person's pause-learning switch, read live at the two
+     * candidate-generation entries this store owns — a Bot's observation (`formMemory`) and a
+     * connector import (`completeSync`). Paused means neither produces a new candidate; nothing
+     * already stored is deleted, hidden or confirmed, and the person's own explicit remember
+     * (`create`) is not this switch's business.
+     */
+    learningPaused?: (ownerUserId: string) => Promise<boolean>;
+    /**
+     * FIX-OCR3 (O3-H2, FIX-F1's missed seam): the attribution fallback for the callers that
+     * carry no company of their own — the proactive engine's `form_memory`, assembled with a
+     * bare store. Present exactly where the enterprise layer is wired (the production option
+     * is `resolveMemoryCompany`, the same rule the ingestion seams resolve through); a
+     * deployment without the enterprise layer passes nothing and every seam answers as it
+     * always did. With the option present, an observation that resolves to NO provable
+     * company is refused outright — an enterprise deployment never writes the invisible
+     * tenant-less row that no company-pinned face could ever show, confirm or delete.
+     */
+    companyFor?: (input: {
+      ownerUserId: string;
+      agentId: string;
+    }) => Promise<MemoryCompany | undefined>;
+  } = {},
+) {
   const getSource = async (ownerUserId: string, id: string) => {
     const [row] = await database
       .select()
@@ -59,13 +88,16 @@ export function createMemoryStore(database: Database) {
   /**
    * The rows a Bot may recall, every filter in the query. Bot-formed memories go only to the Bot that
    * formed them, and only while it still holds their source app; imported ones only through a source
-   * this Bot may use; the person's own to every Bot of theirs.
+   * this Bot may use; the person's own to every Bot of theirs. A `company` pins the rows to one
+   * proven company (FIX-F1 / FR-1): a row of another company — or one nobody could attribute — is
+   * not this company's memory, so it does not exist for this read.
    */
   function eligibleRows(
     ownerUserId: string,
     eligibleSourceIds: string[],
     formed: { botId: string; heldServerIds: ReadonlySet<string> } | undefined,
     narrow: { term?: string },
+    company?: MemoryCompany,
   ) {
     const held = [...(formed?.heldServerIds ?? [])];
     const formedByThisBot = formed
@@ -98,6 +130,9 @@ export function createMemoryStore(database: Database) {
       .where(
         and(
           eq(personalMemories.ownerUserId, ownerUserId),
+          // FIX-F1 (FR-1): the company pin. Absent (a deployment without the enterprise
+          // layer) the query is exactly what it always was.
+          company ? eq(personalMemories.tenantId, company.tenantId) : undefined,
           eq(personalMemories.enabled, true),
           isNull(personalMemories.deletedAt),
           // A candidate waits for the person's review on every Bot-side path: only a confirmed or
@@ -117,13 +152,22 @@ export function createMemoryStore(database: Database) {
   }
 
   return {
-    async list(ownerUserId: string): Promise<MemoryRecord[]> {
+    async list(
+      ownerUserId: string,
+      company?: MemoryCompany,
+    ): Promise<MemoryRecord[]> {
       const rows = await database
         .select()
         .from(personalMemories)
         .where(
           and(
             eq(personalMemories.ownerUserId, ownerUserId),
+            // FIX-F1 (FR-1): the person's list answers one company's rows — the
+            // candidates included, so review itself never crosses a company either.
+            // A row of another company or an unattributed one is not on this list.
+            company
+              ? eq(personalMemories.tenantId, company.tenantId)
+              : undefined,
             isNull(personalMemories.deletedAt),
           ),
         )
@@ -131,7 +175,7 @@ export function createMemoryStore(database: Database) {
         .limit(500);
       return rows;
     },
-    async create(ownerUserId: string, input: unknown) {
+    async create(ownerUserId: string, input: unknown, company?: MemoryCompany) {
       const parsed = parseMemoryInput(input);
       // A credential is refused even when the person asks for it outright. A sensitive fact the
       // person did ask for is stored — as a candidate, shown to them with its content and source
@@ -144,6 +188,9 @@ export function createMemoryStore(database: Database) {
         .values({
           id: randomUUID(),
           ownerUserId,
+          // FIX-F1 (FR-1): a company-scoped write stamps its company, so the row is
+          // readable in that company alone from the moment it exists.
+          tenantId: company?.tenantId ?? null,
           ...parsed,
           reviewState: sensitivity === "normal" ? "confirmed" : "unreviewed",
         })
@@ -158,7 +205,11 @@ export function createMemoryStore(database: Database) {
      * even when the Bot reads the same record again tomorrow. It reaches a Bot only once the
      * person accepts it.
      */
-    async formMemory(ownerUserId: string, input: FormedMemoryInput) {
+    async formMemory(
+      ownerUserId: string,
+      input: FormedMemoryInput,
+      company?: MemoryCompany,
+    ) {
       const parsed = formedMemorySchema.safeParse({
         content: input.content,
         sourceApp: input.sourceApp,
@@ -169,6 +220,11 @@ export function createMemoryStore(database: Database) {
         throw new MemoryRefusedError(
           parsed.error.issues[0]?.message ?? "Invalid memory.",
         );
+      // Pause-learning (#392): the switch stops the automatic candidate here, before anything
+      // of the observation is read further — the refusal is the person's own decision, said
+      // plainly, and it changes nothing that already exists.
+      if (options.learningPaused && (await options.learningPaused(ownerUserId)))
+        throw new MemoryRefusedError(LEARNING_PAUSED_REFUSAL);
       // Nothing a Bot observed becomes sensitive material, whatever it read: the person never
       // asked for this, and a candidate is already more exposure than a refusal. Credentials go
       // the same way, so none of it is written, even as a candidate awaiting review.
@@ -179,6 +235,24 @@ export function createMemoryStore(database: Database) {
             ? CREDENTIAL_REFUSAL
             : SENSITIVE_OBSERVATION_REFUSAL,
         );
+      /*
+       * FIX-OCR3 (O3-H2): a caller with no company of its own (the proactive engine) gets its
+       * attribution the same way the request-carrying seams do — resolved here from the run's
+       * own (owner, agent) pair. Fail-closed where the enterprise layer is wired and nothing
+       * is provable: the alternative was a tenant-less row no company-pinned face could ever
+       * see, whose per-person dedup would then quietly suppress the same fact's next
+       * company-scoped observation. A deployment without the enterprise layer has no
+       * companyFor and writes exactly what it always wrote.
+       */
+      let attributed = company;
+      if (!attributed && options.companyFor) {
+        attributed = await options.companyFor({
+          ownerUserId,
+          agentId: input.agentId,
+        });
+      }
+      if (!company && options.companyFor && !attributed)
+        throw new MemoryRefusedError(MEMORY_ATTRIBUTION_REFUSAL);
       const digest = createHash("sha256")
         .update(parsed.data.content.toLocaleLowerCase())
         .digest("hex");
@@ -208,6 +282,12 @@ export function createMemoryStore(database: Database) {
         .values({
           id: randomUUID(),
           ownerUserId,
+          // FIX-F1 (FR-1): the company the observing Bot's run belongs to — the caller's
+          // own, or the one the attribution above resolved for a caller that carried none
+          // (O3-H2). The per-person content dedup above and the unique index below stay
+          // per-person by design — a forgotten fact stays forgotten for the whole person —
+          // so a company's observation never resurrects another's.
+          tenantId: attributed?.tenantId ?? null,
           content: parsed.data.content,
           provenance:
             `${parsed.data.sourceApp}${parsed.data.sourceLink ? ` (${parsed.data.sourceLink})` : ""}, observed ${observedAt.toISOString()}`.slice(
@@ -251,6 +331,7 @@ export function createMemoryStore(database: Database) {
       ownerUserId: string,
       id: string,
       input: unknown,
+      company?: MemoryCompany,
     ): Promise<MemoryRecord> {
       const patch = parseMemoryPatch(input);
       // An edit may not walk a credential in through the back door; the memory keeps its content.
@@ -281,6 +362,11 @@ export function createMemoryStore(database: Database) {
           and(
             eq(personalMemories.id, id),
             eq(personalMemories.ownerUserId, ownerUserId),
+            // FIX-F1 (FR-1): review itself is a company-scoped act — a row of another
+            // company (or an unattributed one) is not this company's to confirm or edit.
+            company
+              ? eq(personalMemories.tenantId, company.tenantId)
+              : undefined,
             isNull(personalMemories.deletedAt),
           ),
         )
@@ -288,7 +374,7 @@ export function createMemoryStore(database: Database) {
       if (!row) throw new MemoryNotFoundError();
       return row;
     },
-    async remove(ownerUserId: string, id: string) {
+    async remove(ownerUserId: string, id: string, company?: MemoryCompany) {
       // Imported tombstones prevent the next sync from resurrecting a fact the person deleted.
       const [row] = await database
         .update(personalMemories)
@@ -302,6 +388,10 @@ export function createMemoryStore(database: Database) {
           and(
             eq(personalMemories.id, id),
             eq(personalMemories.ownerUserId, ownerUserId),
+            // FIX-F1 (FR-1): forgetting reaches only the current company's rows.
+            company
+              ? eq(personalMemories.tenantId, company.tenantId)
+              : undefined,
             isNull(personalMemories.deletedAt),
           ),
         )
@@ -337,27 +427,49 @@ export function createMemoryStore(database: Database) {
         .returning({ id: personalMemories.id });
       return expired.length;
     },
-    async sources(ownerUserId: string) {
+    async sources(ownerUserId: string, company?: MemoryCompany) {
       return database
         .select()
         .from(memorySources)
-        .where(eq(memorySources.ownerUserId, ownerUserId))
+        .where(
+          and(
+            eq(memorySources.ownerUserId, ownerUserId),
+            // FIX-W13 (FR2-2): one company's scope lists that company's sources alone — an
+            // isolated source (NULL, nobody could prove its company) is on nobody's list,
+            // never a global row. Without a company pin (a deployment without the
+            // enterprise layer) the query is exactly what it always was.
+            company ? eq(memorySources.tenantId, company.tenantId) : undefined,
+          ),
+        )
         .orderBy(desc(memorySources.createdAt));
     },
     getSource,
-    async createSource(ownerUserId: string, input: unknown) {
+    async createSource(
+      ownerUserId: string,
+      input: unknown,
+      company?: MemoryCompany,
+    ) {
       const [row] = await database
         .insert(memorySources)
         .values({
           id: randomUUID(),
           ownerUserId,
+          // FIX-W13 (FR2-2): the company fixed at binding — the (person, Bot)'s own proven
+          // company, resolved by the caller — stamped once here and read by every later
+          // sync. A request's selection never reaches this column.
+          tenantId: company?.tenantId ?? null,
           ...parseMemorySourceInput(input),
         })
         .returning();
       if (!row) throw new Error("Memory source insert returned no row.");
       return row;
     },
-    async setSourceEnabled(ownerUserId: string, id: string, enabled: boolean) {
+    async setSourceEnabled(
+      ownerUserId: string,
+      id: string,
+      enabled: boolean,
+      company?: MemoryCompany,
+    ) {
       const [row] = await database
         .update(memorySources)
         .set({ enabled, nextSyncAt: new Date(), updatedAt: new Date() })
@@ -365,13 +477,21 @@ export function createMemoryStore(database: Database) {
           and(
             eq(memorySources.id, id),
             eq(memorySources.ownerUserId, ownerUserId),
+            // FIX-W13 (FR2-2): operating a source is a company-scoped act — a source of
+            // another company (or an isolated one) is not this company's to turn on or
+            // off, and the answer is the same not-found as a missing row.
+            company ? eq(memorySources.tenantId, company.tenantId) : undefined,
           ),
         )
         .returning();
       if (!row) throw new MemoryNotFoundError();
       return row;
     },
-    async removeSource(ownerUserId: string, id: string) {
+    async removeSource(
+      ownerUserId: string,
+      id: string,
+      company?: MemoryCompany,
+    ) {
       // The source's memories cascade with it.
       const [source] = await database
         .select({ agentId: memorySources.agentId })
@@ -380,6 +500,9 @@ export function createMemoryStore(database: Database) {
           and(
             eq(memorySources.id, id),
             eq(memorySources.ownerUserId, ownerUserId),
+            // FIX-W13 (FR2-2): deleting is a company-scoped act too, same rule as
+            // enabling: another company's source (or an isolated one) is not-found here.
+            company ? eq(memorySources.tenantId, company.tenantId) : undefined,
           ),
         )
         .limit(1);
@@ -393,6 +516,9 @@ export function createMemoryStore(database: Database) {
             and(
               eq(memorySources.id, id),
               eq(memorySources.ownerUserId, ownerUserId),
+              company
+                ? eq(memorySources.tenantId, company.tenantId)
+                : undefined,
             ),
           )
           .returning({ toolRef: memorySources.toolRef });
@@ -440,6 +566,28 @@ export function createMemoryStore(database: Database) {
         .returning();
       return row ?? null;
     },
+    /**
+     * Advance a source's due time without claiming a sync result (FIX-OCR1 / #376): an
+     * isolated source an enterprise sweep will never run still leaves the due set, so it
+     * cannot crowd every bounded, unordered sweep window and starve the sources behind it.
+     * Nothing else about the row moves — no status, no error, no last-sync stamp — because
+     * nothing was read.
+     */
+    async deferSync(ownerUserId: string, id: string, ms = 900_000) {
+      await database
+        .update(memorySources)
+        .set({
+          nextSyncAt: new Date(Date.now() + ms),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(memorySources.id, id),
+            eq(memorySources.ownerUserId, ownerUserId),
+            eq(memorySources.enabled, true),
+          ),
+        );
+    },
     async failSync(ownerUserId: string, id: string, error: string) {
       await database
         .update(memorySources)
@@ -456,11 +604,25 @@ export function createMemoryStore(database: Database) {
           ),
         );
     },
+    /**
+     * FIX-OCR2 (O2-M2): answers the number of rows this sync actually WROTE — 0 while the
+     * person's learning switch is on, fewer than `records` when the sensitivity gate dropped
+     * some or an unchanged digest upserted nothing — so the count the person sees says what
+     * was kept, the #392 discipline, never what the connector happened to hand over.
+     */
     async completeSync(
       ownerUserId: string,
       sourceId: string,
       records: ImportedMemory[],
-    ) {
+    ): Promise<number> {
+      // Pause-learning (#392): read before the transaction, so the gate never asks for a
+      // second connection while the row lock is held. Paused means the import produces no
+      // candidate — the sync still completes (the connector was read, and the source's health
+      // is bookkeeping), but no row is written and nothing already imported changes.
+      const learningPaused = options.learningPaused
+        ? await options.learningPaused(ownerUserId)
+        : false;
+      let written = 0;
       await database.transaction(async (transaction) => {
         const [source] = await transaction
           .select()
@@ -482,18 +644,25 @@ export function createMemoryStore(database: Database) {
         // the upstream defense was bypassed, it says so at error level, with a count only,
         // never content.
         let droppedSensitiveInner = 0;
-        for (const record of records) {
+        for (const record of learningPaused ? [] : records) {
           // A sync may not write sensitive material even as a candidate: it was read, not asked
           // for. Dropped whole, so nothing of it reaches the person's candidates or any index.
           if (classifyMemorySensitivity(record.content) !== "normal") {
             droppedSensitiveInner += 1;
             continue;
           }
-          await transaction
+          const inserted = await transaction
             .insert(personalMemories)
             .values({
               id: randomUUID(),
               ownerUserId,
+              // FIX-W13 (FR2-2): the import stamps the SOURCE's own company, read from the
+              // row this transaction just locked — the attribution fixed at binding and
+              // backfilled by migration 0212. No caller-supplied company reaches this
+              // column: the request's selection authorizes a sync upstream, it never
+              // restamps one. NULL (an isolated source, or a deployment without the
+              // enterprise layer) lands isolated, 0211's discipline.
+              tenantId: source.tenantId,
               sourceId,
               externalId: record.externalId,
               importDigest: record.digest,
@@ -512,8 +681,16 @@ export function createMemoryStore(database: Database) {
                 importDigest: record.digest,
                 updatedAt: new Date(),
               },
-              setWhere: sql`${personalMemories.importDigest} IS DISTINCT FROM ${record.digest}`,
-            });
+              // An edited or tombstoned row is the person's word, not the source's: its content is
+              // kept, and rewriting its importDigest would fake "this version was already seen" —
+              // so such rows are excluded from the write (and from the written count) entirely.
+              setWhere: sql`${personalMemories.reviewState} IS DISTINCT FROM 'edited' AND ${personalMemories.deletedAt} IS NULL AND ${personalMemories.importDigest} IS DISTINCT FROM ${record.digest}`,
+            })
+            // FIX-OCR2 (O2-M2): RETURNING answers only the rows the statement actually
+            // touched — the insert, and the update whose digest really changed; an
+            // unchanged row (the setWhere said no) writes nothing and returns nothing.
+            .returning({ id: personalMemories.id });
+          written += inserted.length;
         }
         if (droppedSensitiveInner > 0)
           log.error(
@@ -523,6 +700,15 @@ export function createMemoryStore(database: Database) {
               timestamp: new Date().toISOString(),
             },
             "memory-sync-sensitive-dropped-inner",
+          );
+        if (learningPaused && records.length > 0)
+          log.info(
+            {
+              type: "memory-sync-learning-paused",
+              context: { sourceId, skipped: records.length },
+              timestamp: new Date().toISOString(),
+            },
+            "memory-sync-learning-paused",
           );
         await transaction
           .update(memorySources)
@@ -535,6 +721,7 @@ export function createMemoryStore(database: Database) {
           })
           .where(eq(memorySources.id, sourceId));
       });
+      return written;
     },
     async retrieve(
       ownerUserId: string,
@@ -546,17 +733,26 @@ export function createMemoryStore(database: Database) {
        * this argument none are returned.
        */
       formed?: { botId: string; heldServerIds: ReadonlySet<string> },
+      company?: MemoryCompany,
     ): Promise<MemoryRecord[]> {
       /*
        * The rows, filtered by every rule recall obeys, with a substring match standing in for
        * ranking: the same honest text-match the Hindsight chain's degraded path uses (#385),
        * because there is no semantic index behind this store anymore. The indexed, cross-session
        * recall now runs over the Hindsight chain (preference-recall.ts, scoped-recall.ts), where
-       * OpenBot rows stay the only content authority.
+       * OpenBot rows stay the only content authority. `company` is this recall's company pin
+       * (FIX-F1 / FR-1): without it (a deployment without the enterprise layer) the query is
+       * exactly what it always was.
        */
-      return eligibleRows(ownerUserId, eligibleSourceIds, formed, {
-        term: search.trim(),
-      });
+      return eligibleRows(
+        ownerUserId,
+        eligibleSourceIds,
+        formed,
+        {
+          term: search.trim(),
+        },
+        company,
+      );
     },
   };
 }

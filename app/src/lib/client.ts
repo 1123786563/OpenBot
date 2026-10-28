@@ -165,12 +165,13 @@ const WORKSPACE_HEADER = "x-openbot-workspace";
  * the same way), the six page-binding tickets that follow the same seam: the Bot
  * operations surface (MT086 — responsibilities, computers, approvals), the conversation surface
  * (MT087 — channels and groups), the skills-and-connections surface (MT088 — plugins), the
- * memory-and-routines surface (MT089), the craft-and-workshop surface (MT091 — the sessions,
- * artifacts, turns and schedules the creation pages read and write), the catalog surface
- * (MT094 — the marketplace and component pages whose browsing, installs, configuration and
- * publication bind the same way), and the billing surface (MT097 — the orders, invoices, credits
- * and usage reads whose amounts belong to the selected scope, and the company books the finance
- * view reads through the enterprise API). The deployment's other legacy REST surfaces (the dictation
+ * memory-and-routines surface (MT089, whose hindsight face /api/hindsight carries the judgment
+ * review, the answer basis and the cleanup reads of the settings memory page), the
+ * craft-and-workshop surface (MT091 — the sessions, artifacts, turns and schedules the creation
+ * pages read and write), the catalog surface (MT094 — the marketplace and component pages whose
+ * browsing, installs, configuration and publication bind the same way), and the billing surface
+ * (MT097 — the orders, invoices, credits and usage reads whose amounts belong to the selected
+ * scope, and the company books the finance view reads through the enterprise API). The deployment's other legacy REST surfaces (the dictation
  * upload…) deliberately are NOT here: the server's entry middleware passes those through
  * untouched until they consume the scope seam themselves (MT125 lays the client headers onto
  * the legacy assembly), so sending the pair there now would be a selection no one reads. The
@@ -258,6 +259,13 @@ export const SCOPE_HEADER_ALLOWED_PATHS: readonly ScopeHeaderPathEntry[] = [
     prefix: "/api/memory",
     reason:
       "the memory surface — a person's memories and their sources are company/team business data, and the memory pages' reads and writes bind to the selection (MT089); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT089",
+  },
+  {
+    id: "hindsight-rest",
+    prefix: "/api/hindsight",
+    reason:
+      "the personal-memory review surface — the judgment candidates, the adopted judgments, the basis behind an answer and the cleanup picture are the selected company and team's own Hindsight rows, and the settings memory page's reads and decisions bind to the selection the way the memory rows beside them do (MT089's family; #387/#389); every route resolves the pair through the same scope resolver the trusted seams read, refusing a request without one",
     ownerTicket: "MT089",
   },
   {

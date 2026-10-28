@@ -1,4 +1,5 @@
 import {
+  canonicalPriceAmount,
   PRICE_DIMENSIONS,
   type PriceDimensionUnknownReason,
   type PriceSnapshotDims,
@@ -79,14 +80,27 @@ export type ImageEditSpecIssue = {
   field: "image" | "mask" | "n" | "size" | "quality";
 };
 
-const DATA_URL = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/]+={0,2})$/;
+// Optional MIME parameters (`;charset=…`) ride between the type and `base64`, and the MIME
+// word itself is case-insensitive — both are legal data URLs the strict spelling refused.
+const DATA_URL =
+  /^data:image\/(png|jpeg)(?:;[a-z0-9.-]+=[^;,]*)*;base64,([A-Za-z0-9+/]+={0,2})$/i;
 const BARE_BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
 function base64Bytes(text: string): Uint8Array | null {
   const buffer = Buffer.from(text, "base64");
   // Buffer.from is lenient about invalid characters; a payload whose round-trip length
-  // disagrees with its spelling is not data this server can certify.
-  if (buffer.length === 0) return null;
+  // disagrees with its spelling is not data this server can certify. The spelling itself
+  // names the length: every 4 base64 chars decode to 3 bytes, each '=' names one less.
+  // A shorter decode means a trailing group was silently dropped — refuse it.
+  const padding = text.endsWith("==") ? 2 : text.endsWith("=") ? 1 : 0;
+  const spelledLength = (text.length / 4) * 3 - padding;
+  if (
+    buffer.length === 0 ||
+    !Number.isInteger(spelledLength) ||
+    buffer.length !== spelledLength
+  ) {
+    return null;
+  }
   return new Uint8Array(buffer);
 }
 
@@ -130,6 +144,9 @@ function jpegDimensions(bytes: Uint8Array): InputImageSpec | null {
       continue;
     }
     const length = view.getUint16(offset + 2);
+    // A segment's length counts its own two bytes, so a real one is >= 2; a forged 0 would
+    // stall the walk at 2 bytes per step on attacker-shaped input.
+    if (length < 2) return null;
     const isFrame =
       marker >= 0xc0 &&
       marker <= 0xcf &&
@@ -161,7 +178,7 @@ export function probeImageSpec(source: string): InputImageSpec | null {
   let format: "png" | "jpeg" | null = null;
   if (dataUrl) {
     bytes = base64Bytes(dataUrl[2]);
-    format = dataUrl[1] === "png" ? "png" : "jpeg";
+    format = dataUrl[1].toLowerCase() === "png" ? "png" : "jpeg";
   } else if (BARE_BASE64.test(source)) {
     bytes = base64Bytes(source);
   } else {
@@ -309,21 +326,25 @@ export function assessImageEditEnablement(input: {
     };
   }
 
-  const free = tier.amount === "0" && inputImage.amount === "0";
+  const tierAmount = canonicalPriceAmount(tier.amount);
+  const inputAmount = canonicalPriceAmount(inputImage.amount);
+  const free =
+    tierAmount.ok &&
+    tierAmount.amount === "0" &&
+    inputAmount.ok &&
+    inputAmount.amount === "0";
 
   // The certified worst-case quantities, in the generation shape exactly (AC3): the
   // count's generated images at the tier price and the request's input images (mask
   // included) — priced by the same 06.5 conversion through the same overlay, settled by
   // the same 12.2 path whose line carries `input_images`.
   const quantities = Object.fromEntries(
-    PRICE_DIMENSIONS.map((dimension) => [
-      dimension,
-      dimension === "image_output"
-        ? spec.spec.count
-        : dimension === "image"
-          ? spec.spec.inputImages
-          : 0,
-    ]),
+    PRICE_DIMENSIONS.map((dimension) => {
+      let quantity = 0;
+      if (dimension === "image_output") quantity = spec.spec.count;
+      else if (dimension === "image") quantity = spec.spec.inputImages;
+      return [dimension, quantity];
+    }),
   ) as ReservationBoundQuantities;
 
   return {

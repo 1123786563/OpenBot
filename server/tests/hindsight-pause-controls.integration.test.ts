@@ -79,6 +79,7 @@ const run = randomUUID().slice(0, 8);
 const TENANT = `tn_pause-${run}`;
 const WORKSPACE_A = `ws_pause-a-${run}`;
 const PRINCIPAL_EMP = `prin_emp-${run}`;
+const USER_EMP = `usr_emp-${run}`;
 const GLOBAL_ACTOR = `usr_global-${run}`;
 const SOURCE_ONE = `src_pause-1-${run}`;
 const SECRET = `test-assertion-secret-${run}`;
@@ -223,13 +224,13 @@ async function makeTrustedScope(
 
 beforeAll(async () => {
   await database.insert(users).values([
-    { id: `usr_emp-${run}`, email: `emp-${run}@example.invalid` },
+    { id: USER_EMP, email: `emp-${run}@example.invalid` },
   ]);
   await database
     .insert(enterpriseTenants)
     .values([{ id: TENANT, name: `Pause ${run}` }]);
   await database.insert(enterprisePrincipals).values([
-    { id: PRINCIPAL_EMP, userId: `usr_emp-${run}` },
+    { id: PRINCIPAL_EMP, userId: USER_EMP },
   ]);
   await database.insert(enterpriseMemberships).values([
     { tenantId: TENANT, principalId: PRINCIPAL_EMP, role: "member" },
@@ -355,7 +356,7 @@ describe("Hindsight 14 (#392) — pause-learning and pause-usage", () => {
 
     // Learning on, usage off: the automatic proposal is refused with its own reason; recall
     // keeps answering.
-    await pause.setLearningPaused(TENANT, PRINCIPAL_EMP, true);
+    await pause.setLearningPaused(TENANT, PRINCIPAL_EMP, USER_EMP, true);
     await expect(proposeLead()).rejects.toMatchObject({
       name: "DerivedJudgmentRefusedError",
       reason: "learning-paused",
@@ -381,7 +382,7 @@ describe("Hindsight 14 (#392) — pause-learning and pause-usage", () => {
 
     // Learning on, usage on: recall of confirmed content answers empty at every seam; the
     // explicit review act above stays recorded.
-    await pause.setUsagePaused(TENANT, PRINCIPAL_EMP, true);
+    await pause.setUsagePaused(TENANT, PRINCIPAL_EMP, USER_EMP, true);
     expect(
       await facade.recallGenericPreferences(scope, { query: "pause matrix" }),
     ).toEqual({ memories: [], degraded: false });
@@ -394,7 +395,7 @@ describe("Hindsight 14 (#392) — pause-learning and pause-usage", () => {
 
     // Learning off, usage on: proposals work again (a fresh lead, not the confirmed one), and
     // recall stays empty.
-    await pause.setLearningPaused(TENANT, PRINCIPAL_EMP, false);
+    await pause.setLearningPaused(TENANT, PRINCIPAL_EMP, USER_EMP, false);
     const reproposed = await proposeLead();
     expect(reproposed.reviewState).toBe("unreviewed");
     expect(
@@ -404,7 +405,7 @@ describe("Hindsight 14 (#392) — pause-learning and pause-usage", () => {
 
     // Both off again (resume usage): the confirmed content recalls unchanged — resuming usage
     // confirmed nothing new and deleted nothing.
-    await pause.setUsagePaused(TENANT, PRINCIPAL_EMP, false);
+    await pause.setUsagePaused(TENANT, PRINCIPAL_EMP, USER_EMP, false);
     const resumed = await facade.recallGenericPreferences(scope, {
       query: "pause matrix",
     });
@@ -433,7 +434,7 @@ describe("Hindsight 14 (#392) — pause-learning and pause-usage", () => {
       provenance: "You",
     });
 
-    await pause.setUsagePaused(TENANT, PRINCIPAL_EMP, true);
+    await pause.setUsagePaused(TENANT, PRINCIPAL_EMP, USER_EMP, true);
     scripted.state.stallMs = STALL_MS;
     const callsBefore = scripted.state.recallCalls;
     const answer = await facade.recallGenericPreferences(scope, {
@@ -447,7 +448,7 @@ describe("Hindsight 14 (#392) — pause-learning and pause-usage", () => {
 
     // The same outage WITHOUT the pause degrades as designed — proving the pause, not the
     // wiring, produced the empty answer above.
-    await pause.setUsagePaused(TENANT, PRINCIPAL_EMP, false);
+    await pause.setUsagePaused(TENANT, PRINCIPAL_EMP, USER_EMP, false);
     scripted.state.stallMs = STALL_MS;
     const degraded = await facade.recallGenericPreferences(scope, {
       query: "pause outage",
@@ -463,8 +464,8 @@ describe("Hindsight 14 (#392) — pause-learning and pause-usage", () => {
       provenance: "You",
       restriction: { kind: "source", sourceId: SOURCE_ONE },
     });
-    await pause.setLearningPaused(TENANT, PRINCIPAL_EMP, true);
-    await pause.setUsagePaused(TENANT, PRINCIPAL_EMP, true);
+    await pause.setLearningPaused(TENANT, PRINCIPAL_EMP, USER_EMP, true);
+    await pause.setUsagePaused(TENANT, PRINCIPAL_EMP, USER_EMP, true);
     const [row] = await database
       .select()
       .from(sourceBoundMemories)

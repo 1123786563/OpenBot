@@ -46,6 +46,7 @@ const inputGroupAddonVariants = cva(
 function InputGroupAddon({
   className,
   align = "inline-start",
+  onClick,
   ...props
 }: React.ComponentProps<"div"> & VariantProps<typeof inputGroupAddonVariants>) {
   return (
@@ -55,10 +56,23 @@ function InputGroupAddon({
       data-align={align}
       className={cn(inputGroupAddonVariants({ align }), className)}
       onClick={(e) => {
-        if ((e.target as HTMLElement).closest("button")) {
+        // The caller's own handler runs first and may decline (defaultPrevented).
+        onClick?.(e);
+        if (e.defaultPrevented) return;
+        // Anything already interactive keeps its own click; only a click on
+        // inert addon content (icon, label text) steers focus into the group's
+        // input — located through the group container, not a fixed parent.
+        if (
+          (e.target as HTMLElement).closest(
+            "button, a, input, textarea, select, label, [data-slot='input-group-text'], [role='button']"
+          )
+        ) {
           return;
         }
-        e.currentTarget.parentElement?.querySelector("input")?.focus();
+        e.currentTarget
+          .closest("[data-slot='input-group']")
+          ?.querySelector("input, textarea")
+          ?.focus();
       }}
       {...props}
     />

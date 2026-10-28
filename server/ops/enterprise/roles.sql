@@ -9,20 +9,29 @@ BEGIN
 END
 $identity$;
 
+-- Race-safe create: the IF NOT EXISTS probe + CREATE pair had a window where a
+-- concurrent bootstrap could fail the whole transaction on duplicate_object.
+-- Creating unconditionally and swallowing exactly that error keeps serial
+-- behavior identical (the validate block below still checks attributes) while
+-- two concurrent bootstraps now converge instead of aborting.
 DO $roles$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ob_ent_directory') THEN
+  BEGIN
     CREATE ROLE ob_ent_directory NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ob_ent_data') THEN
+  EXCEPTION WHEN duplicate_object THEN NULL;  -- created concurrently; validated below
+  END;
+  BEGIN
     CREATE ROLE ob_ent_data NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ob_ent_operator') THEN
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
     CREATE ROLE ob_ent_operator NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ob_ent_identity_operator') THEN
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
     CREATE ROLE ob_ent_identity_operator NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
-  END IF;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
 END
 $roles$;
 
@@ -62,7 +71,7 @@ BEGIN
       FROM pg_class relation
       JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
       WHERE namespace.nspname = 'public'
-        AND relation.relname LIKE 'enterprise_%'
+        AND relation.relname LIKE 'enterprise\_%'
         AND relation.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
         AND relation.relowner = capability_oid
     ) OR EXISTS (

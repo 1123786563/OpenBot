@@ -103,6 +103,11 @@ export type ActivityNotificationsSeam = {
 };
 
 export type ActivityFeed = {
+  /*
+   * `operator` gates the §8 reconcile action and is an authorization input:
+   * callers must derive it from the server's own requireAdmin check, never
+   * from a request field — the routes module is the only sanctioned source.
+   */
   read(
     ownerUserId: string,
     input: { limit?: number; cursor?: string; operator?: boolean },

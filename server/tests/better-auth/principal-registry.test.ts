@@ -67,7 +67,7 @@ const BA_URL_VARIABLES = [
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 /** The expand migration that adds enterprise_principals.identity_generation. */
-const MIGRATION_TAG = "0210_better_auth_clocks";
+const MIGRATION_TAG = "0222_better_auth_clocks";
 const MIGRATION_PATH = join(
   import.meta.dirname,
   `../../drizzle/${MIGRATION_TAG}.sql`,

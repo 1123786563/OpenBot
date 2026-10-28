@@ -37,7 +37,6 @@
 import type { PriceSnapshot } from "./price-snapshot";
 import {
   PRICE_DIM_UNKNOWN_REASONS,
-  PRICE_DIMENSIONS,
   type PriceDimension,
   type PriceDimensionUnknownReason,
   type PriceSnapshotDims,
@@ -166,7 +165,7 @@ export function priceStatusColumns(
  * half of the database CHECKs (0134), applied on read so a tampered or divergent row fails
  * loudly instead of pricing anything. A status outside the set, a non-unknown row carrying
  * unknown details, an unknown row missing either detail, or a missing-dimension entry outside
- * the dimension or reason vocabularies is a defect, not data.
+ * the necessary dimension set or reason vocabulary is a defect, not data.
  */
 export function assertPriceStatusColumns(
   value: {
@@ -220,6 +219,7 @@ export function assertPriceStatusColumns(
     );
   }
   const missingDimensions: PriceStatusMissingDimension[] = [];
+  const seenDimensions = new Set<string>();
   for (const entry of priceStatusMissingDimensions) {
     if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
       throw new TypeError(
@@ -229,12 +229,18 @@ export function assertPriceStatusColumns(
     const { dimension, reason } = entry as Record<string, unknown>;
     if (
       typeof dimension !== "string" ||
-      !PRICE_DIMENSIONS.includes(dimension as PriceDimension)
+      !WIRE_PRICED_DIMENSIONS.includes(dimension as (typeof WIRE_PRICED_DIMENSIONS)[number])
     ) {
       throw new TypeError(
-        `${where}: the missing-dimension list carries dimension ${JSON.stringify(dimension)}, which is outside the closed vocabulary.`,
+        `${where}: the missing-dimension list carries dimension ${JSON.stringify(dimension)}, which is outside the necessary dimension set (${WIRE_PRICED_DIMENSIONS.join(", ")}).`,
       );
     }
+    if (seenDimensions.has(dimension)) {
+      throw new TypeError(
+        `${where}: the missing-dimension list carries dimension ${JSON.stringify(dimension)} more than once.`,
+      );
+    }
+    seenDimensions.add(dimension);
     if (
       typeof reason !== "string" ||
       !PRICE_DIM_UNKNOWN_REASONS.includes(reason as PriceDimensionUnknownReason)
@@ -256,6 +262,25 @@ export function assertPriceStatusColumns(
 }
 
 /**
+ * Order-independent comparison of the missing-dimension lists: jsonb readback may reorder
+ * entries, so agreement is by dimension key, never by serialized shape. The length equality
+ * also rejects duplicated dimensions.
+ */
+function missingDimensionsAgree(
+  expected: readonly PriceStatusMissingDimension[] | null,
+  actual: readonly PriceStatusMissingDimension[] | null,
+): boolean {
+  if (expected === null || actual === null) return expected === actual;
+  if (expected.length !== actual.length) return false;
+  const actualByDimension = new Map(
+    actual.map((entry) => [entry.dimension, entry.reason]),
+  );
+  return expected.every(
+    (entry) => actualByDimension.get(entry.dimension) === entry.reason,
+  );
+}
+
+/**
  * The tamper check the read path runs: the persisted columns must be exactly what the row's
  * own dims classify to. The database CHECK (0134) enforces the same rule on every write, so a
  * disagreement here means the stored row was written by something that bypassed both — fail
@@ -270,8 +295,10 @@ export function assertPriceStatusColumnsMatchDims(
   if (
     expected.priceStatus !== columns.priceStatus ||
     expected.priceStatusReason !== columns.priceStatusReason ||
-    JSON.stringify(expected.priceStatusMissingDimensions) !==
-      JSON.stringify(columns.priceStatusMissingDimensions)
+    !missingDimensionsAgree(
+      expected.priceStatusMissingDimensions,
+      columns.priceStatusMissingDimensions,
+    )
   ) {
     throw new TypeError(
       `${where}: the stored price status columns disagree with the row's own dims (stored ${columns.priceStatus}, dims classify ${expected.priceStatus}).`,

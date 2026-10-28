@@ -46,7 +46,14 @@ export async function withSweepLock<T>(
   } finally {
     // Ending the connection releases the lock with it, so a pass that threw halfway (or a
     // process that died mid-pass) does not leave the lock held and every later sweep skipped.
-    await connection.end({ timeout: 5 }).catch(() => undefined);
+    await connection.end({ timeout: 5 }).catch((error: unknown) => {
+      // biome-ignore lint/suspicious/noConsole: stable-code operational log
+      console.warn(
+        `billing: sweep lock connection did not end cleanly error=${
+          error instanceof Error ? error.name : "unknown"
+        }`,
+      );
+    });
   }
 }
 
@@ -96,7 +103,12 @@ export function startUsageDeliverySweeps(
 
   return {
     stop: () => {
-      for (const timer of timers) clearTimeout(timer);
+      // The array mixes setTimeout and setInterval handles; clear both ways so the
+      // semantics hold on any runtime, not just where the two calls interchange.
+      for (const timer of timers) {
+        clearTimeout(timer);
+        clearInterval(timer);
+      }
     },
   };
 }
@@ -157,7 +169,12 @@ export function startBillingRenewalSweeps(
 
   return {
     stop: () => {
-      for (const timer of timers) clearTimeout(timer);
+      // The array mixes setTimeout and setInterval handles; clear both ways so the
+      // semantics hold on any runtime, not just where the two calls interchange.
+      for (const timer of timers) {
+        clearTimeout(timer);
+        clearInterval(timer);
+      }
     },
   };
 }
@@ -229,7 +246,12 @@ export function startRecoveryScanSweeps(
 
   return {
     stop: () => {
-      for (const timer of timers) clearTimeout(timer);
+      // The array mixes setTimeout and setInterval handles; clear both ways so the
+      // semantics hold on any runtime, not just where the two calls interchange.
+      for (const timer of timers) {
+        clearTimeout(timer);
+        clearInterval(timer);
+      }
     },
   };
 }
@@ -307,7 +329,12 @@ export function startRecoveryRetrySweeps(
 
   return {
     stop: () => {
-      for (const timer of timers) clearTimeout(timer);
+      // The array mixes setTimeout and setInterval handles; clear both ways so the
+      // semantics hold on any runtime, not just where the two calls interchange.
+      for (const timer of timers) {
+        clearTimeout(timer);
+        clearInterval(timer);
+      }
     },
   };
 }

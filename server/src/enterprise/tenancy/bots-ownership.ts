@@ -266,6 +266,8 @@ function encodeCursor(payload: CursorPayload): string {
 function decodeCursor(token: string): CursorPayload {
   let parsed: unknown;
   try {
+    // Opaque token bound: refuses oversized tokens before base64+JSON work.
+    if (token.length > 1024) throw new Error("BOTS_CURSOR_INVALID");
     const json = Buffer.from(token, "base64url").toString("utf8");
     parsed = JSON.parse(json);
   } catch {
@@ -277,8 +279,11 @@ function decodeCursor(token: string): CursorPayload {
     (parsed as CursorPayload).v !== 1 ||
     typeof (parsed as CursorPayload).at !== "string" ||
     (parsed as CursorPayload).at.trim() === "" ||
+    !Number.isFinite(Date.parse((parsed as CursorPayload).at)) ||
+    (parsed as CursorPayload).at.length > 64 ||
     typeof (parsed as CursorPayload).id !== "string" ||
-    (parsed as CursorPayload).id.trim() === ""
+    (parsed as CursorPayload).id.trim() === "" ||
+    (parsed as CursorPayload).id.length > 200
   ) {
     throw new Error("BOTS_CURSOR_INVALID");
   }
@@ -553,6 +558,7 @@ export function createBotOwnershipService(channels: {
     tx: Tx,
     scope: PlatformScope,
     cursor: CursorPayload | null,
+    limit: number,
   ) =>
     tx
       .select({
@@ -578,7 +584,10 @@ export function createBotOwnershipService(channels: {
       .orderBy(
         asc(enterpriseBotOwnership.createdAt),
         asc(enterpriseBotOwnership.agentId),
-      );
+      )
+      // 候选行在 SQL 层截断（+1 供分页边界判定）；分页序是全序，截断语义
+      // 与「全量拉回再在 JS 截断」一致，只是不再随团队规模线性放大。
+      .limit(limit + 1);
 
   return {
     async createBot(scope, input) {
@@ -686,7 +695,12 @@ export function createBotOwnershipService(channels: {
             nextCursor: null,
           });
         }
-        const rows = (await readCandidateRows(tx, scope, cursor)) as readonly {
+        const rows = (await readCandidateRows(
+          tx,
+          scope,
+          cursor,
+          limit,
+        )) as readonly {
           agentId: string;
           workspaceId: string;
           displayName: string;
@@ -730,8 +744,9 @@ export function createBotOwnershipService(channels: {
         ]);
         const facts = await readMembershipFacts(tx, scope);
         if (!facts.companyActive || !facts.teamActive) return { total: 0 };
-        const rows = await tx
-          .select({ agentId: enterpriseBotOwnership.agentId })
+        // 计数只需聚合值：不在应用层拉全量行再数长度。
+        const [counted] = await tx
+          .select({ total: sql<number>`count(*)::int` })
           .from(enterpriseBotOwnership)
           .where(
             and(
@@ -740,7 +755,7 @@ export function createBotOwnershipService(channels: {
               eq(enterpriseBotOwnership.status, "active"),
             ),
           );
-        return { total: rows.length };
+        return { total: Number(counted?.total ?? 0) };
       });
     },
 

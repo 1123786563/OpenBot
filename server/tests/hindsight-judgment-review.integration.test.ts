@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   afterAll,
   beforeAll,
@@ -21,11 +21,16 @@ import {
 import { derivedJudgmentCandidates } from "../src/db/schema/hindsight-judgments";
 import { genericPersonalPreferences } from "../src/db/schema/hindsight-preferences";
 import { hindsightMemoryGrants } from "../src/db/schema/hindsight-source-bound";
+import { hindsightSyncWork } from "../src/db/schema/hindsight-sync";
 import type { PlatformScope } from "../src/enterprise/contracts";
 import { verifyDirectoryDatabase } from "../src/enterprise/tenancy/connections";
 import { createScopeResolver } from "../src/enterprise/tenancy/store";
-import { createAnswerEvidenceService } from "../src/hindsight/answer-evidence";
+import {
+  createAnswerEvidenceService,
+  EvidenceRefusedError,
+} from "../src/hindsight/answer-evidence";
 import { teamBankFor, userBankFor } from "../src/hindsight/bank-scope";
+import type { HindsightBudgetGate } from "../src/hindsight/budget-gate";
 import {
   createDerivedJudgmentService,
   createDrizzleDerivedJudgmentRecords,
@@ -128,6 +133,7 @@ let serviceConfig: {
   requestTimeoutMs: number;
 };
 let authorizations: ReturnType<typeof createDrizzleSourceBoundAuthorizations>;
+let syncQueue: ReturnType<typeof createHindsightSyncQueue>;
 
 async function bootScriptedHindsight() {
   const calls: CapturedCall[] = [];
@@ -331,7 +337,7 @@ beforeAll(async () => {
   );
   // The queue is the durable drain behind the confirm; wiring it in here is the production
   // shape (confirm records work, the queue drains it later).
-  const queue = createHindsightSyncQueue(database, serviceConfig, {
+  syncQueue = createHindsightSyncQueue(database, serviceConfig, {
     authorizations,
   });
   review = createDerivedJudgmentReviewService(
@@ -340,7 +346,7 @@ beforeAll(async () => {
     judgmentRecords,
     authorizations,
     serviceConfig,
-    { work: queue },
+    { work: syncQueue },
   );
   evidence = createAnswerEvidenceService(
     preferences,
@@ -758,6 +764,60 @@ describe("Hindsight 12 (#389) lifecycle: confirm, edit, reject, expire", () => {
     expect(row?.syncedContentDigest).toBeTruthy();
   });
 
+  test("a confirm records its sync work: the person's status walks pending → failed(with retry) → indexed", async () => {
+    const scope = await employeeScope();
+    const { id } = await proposeGeneralCandidate(scope, `同步状态判断 ${run}`);
+    scripted.state.retainStatus = 500;
+    const failed = await review.confirmDerivedJudgment(scope, id);
+    expect(failed.remoteSynced).toBe(false);
+
+    // The confirm's retain is eager, but the seam recorded a durable work row before it: the
+    // retry path (the production drain in index.ts) has something to pick up.
+    const [recorded] = await database
+      .select()
+      .from(hindsightSyncWork)
+      .where(
+        and(
+          eq(hindsightSyncWork.tenantId, TENANT),
+          eq(hindsightSyncWork.subjectType, "derived_judgment"),
+          eq(hindsightSyncWork.subjectId, id),
+        ),
+      );
+    expect(recorded?.state).toBe("pending");
+    expect(recorded?.attempts).toBe(0);
+    expect(
+      await syncQueue.syncStatus(TENANT, "derived_judgment", id, PRINCIPAL_EMP),
+    ).toEqual({ state: "pending", attempts: 0 });
+
+    // A drain attempt against the still-failing service records the attempt and leaves the row
+    // retrying: the status answers failed + willRetry, never a silent endless pending.
+    await syncQueue.drain();
+    const failedStatus = await syncQueue.syncStatus(
+      TENANT,
+      "derived_judgment",
+      id,
+      PRINCIPAL_EMP,
+    );
+    expect(failedStatus.state).toBe("failed");
+    if (failedStatus.state === "failed") {
+      expect(failedStatus.willRetry).toBe(true);
+      expect(failedStatus.attempts).toBeGreaterThanOrEqual(1);
+      expect(failedStatus.lastError).toContain("500");
+    }
+
+    // The service comes back: the same drain indexes the judgment and the status follows.
+    scripted.state.retainStatus = 202;
+    await syncQueue.drain();
+    const indexed = await syncQueue.syncStatus(
+      TENANT,
+      "derived_judgment",
+      id,
+      PRINCIPAL_EMP,
+    );
+    expect(indexed.state).toBe("indexed");
+    if (indexed.state === "indexed") expect(indexed.syncedAt).not.toBeNull();
+  });
+
   test("the queue buries pending work for a judgment rejected after its confirm", async () => {
     const scope = await employeeScope();
     const { id } = await proposeGeneralCandidate(
@@ -1103,5 +1163,345 @@ describe("Hindsight 12 (#389): the expandable evidence chain behind an answer", 
     expect(forgotten?.content).toBe("");
     const [expanded] = await evidence.inspectEvidence(scope, { ids: [id] });
     expect(expanded.state).toBe("unavailable");
+  });
+});
+
+describe("FIX-W12 answer basis (FR2-3): the memory entries a Bot reads", () => {
+  test("the listing answers confirmed preferences and authorized source-bound facts", async () => {
+    const scope = await employeeScope();
+    const preference = await preferences.confirmGenericPreference(scope, {
+      content: `依据列表偏好 ${run}`,
+    });
+    const { record: bound } = await scoped.confirmSourceBoundMemory(scope, {
+      content: `依据列表来源事实 ${run}`,
+      restriction: { kind: "source", sourceId: SOURCE_ONE },
+    });
+    await syncQueue.drain();
+    const listed = await evidence.listPersonalMemories(scope);
+    const kinds = new Map(listed.map((entry) => [entry.id, entry.kind]));
+    expect(kinds.get(preference.record.id)).toBe("preference");
+    expect(kinds.get(bound.id)).toBe("source_bound");
+    const entry = listed.find((row) => row.id === bound.id);
+    expect(entry?.content).toBe(`依据列表来源事实 ${run}`);
+  });
+
+  test("a source-bound entry whose authorization lapsed is withheld, and returns with it", async () => {
+    const scope = await employeeScope();
+    const { record } = await scoped.confirmSourceBoundMemory(scope, {
+      content: `依据列表停用事实 ${run}`,
+      restriction: { kind: "source", sourceId: SOURCE_ONE },
+    });
+    await syncQueue.drain();
+    expect(
+      (await evidence.listPersonalMemories(scope)).map((row) => row.id),
+    ).toContain(record.id);
+    await setGrant(SOURCE_ONE, false);
+    try {
+      expect(
+        (await evidence.listPersonalMemories(scope)).map((row) => row.id),
+      ).not.toContain(record.id);
+    } finally {
+      await setGrant(SOURCE_ONE, true);
+    }
+    expect(
+      (await evidence.listPersonalMemories(scope)).map((row) => row.id),
+    ).toContain(record.id);
+  });
+
+  test("another principal's listing never carries this person's entries", async () => {
+    const scope = await employeeScope();
+    const preference = await preferences.confirmGenericPreference(scope, {
+      content: `依据列表隔离偏好 ${run}`,
+    });
+    await syncQueue.drain();
+    const admin = await adminScope();
+    const listed = await evidence.listPersonalMemories(admin);
+    expect(listed.map((row) => row.id)).not.toContain(preference.record.id);
+  });
+
+  test("an out-of-range limit is refused rather than clamped", async () => {
+    const scope = await employeeScope();
+    await expect(
+      evidence.listPersonalMemories(scope, { limit: 0 }),
+    ).rejects.toBeInstanceOf(EvidenceRefusedError);
+  });
+});
+
+describe("FIX-W12 adopted listing (FR2-3): the cross-session control, re-verified", () => {
+  test("a confirmed judgment lists after a fresh session, with its complete basis", async () => {
+    const scope = await employeeScope();
+    const { id } = await proposeGeneralCandidate(
+      scope,
+      `跨会话已确认判断 ${run}`,
+    );
+    await review.confirmDerivedJudgment(scope, id);
+    await syncQueue.drain();
+    // A fresh session is a fresh call through the scope: no page state survives it.
+    const listed = await review.listAdoptedJudgments(await employeeScope());
+    const found = listed.find((row) => row.id === id);
+    expect(found).toBeDefined();
+    expect(found?.reviewState).toBe("confirmed");
+    expect(found?.evidence).toHaveLength(2);
+    expect(found?.content).toBe(`跨会话已确认判断 ${run}`);
+  });
+
+  test("an edited judgment lists with its edited text and unchanged basis", async () => {
+    const scope = await employeeScope();
+    const { id } = await proposeGeneralCandidate(
+      scope,
+      `跨会话编辑判断 ${run}`,
+    );
+    await review.editDerivedJudgment(scope, id, {
+      content: `编辑后确认的判断 ${run}`,
+    });
+    await syncQueue.drain();
+    const found = (await review.listAdoptedJudgments(scope)).find(
+      (row) => row.id === id,
+    );
+    expect(found?.reviewState).toBe("edited");
+    expect(found?.content).toBe(`编辑后确认的判断 ${run}`);
+    expect(found?.evidence).toHaveLength(2);
+  });
+
+  test("a judgment whose basis lost its authorization is withheld, and returns with it", async () => {
+    const scope = await employeeScope();
+    const first = await confirmBound(scope, `列表停用依据一 ${run}`, {
+      kind: "source",
+      sourceId: SOURCE_ONE,
+    });
+    const second = await confirmBound(scope, `列表停用依据二 ${run}`, {
+      kind: "source",
+      sourceId: SOURCE_ONE,
+    });
+    const candidate = await proposals.proposeDerivedJudgmentCandidate(scope, {
+      judgment: `列表停用判断 ${run}`,
+      evidence: [first, second],
+    });
+    await review.confirmDerivedJudgment(scope, candidate.id);
+    await syncQueue.drain();
+    const before = await review.listAdoptedJudgments(scope);
+    expect(before.map((row) => row.id)).toContain(candidate.id);
+    await setGrant(SOURCE_ONE, false);
+    try {
+      const withheld = await review.listAdoptedJudgments(scope);
+      expect(withheld.map((row) => row.id)).not.toContain(candidate.id);
+    } finally {
+      await setGrant(SOURCE_ONE, true);
+    }
+    const returned = await review.listAdoptedJudgments(scope);
+    expect(returned.map((row) => row.id)).toContain(candidate.id);
+  });
+
+  test("a forgotten judgment leaves the listing", async () => {
+    const scope = await employeeScope();
+    const { id } = await proposeGeneralCandidate(
+      scope,
+      `跨会话遗忘判断 ${run}`,
+    );
+    await review.confirmDerivedJudgment(scope, id);
+    await syncQueue.drain();
+    await review.forgetDerivedJudgment(scope, id);
+    const listed = await review.listAdoptedJudgments(scope);
+    expect(listed.map((row) => row.id)).not.toContain(id);
+  });
+
+  test("another principal's listing never shows this person's adopted judgments", async () => {
+    const scope = await employeeScope();
+    const { id } = await proposeGeneralCandidate(
+      scope,
+      `跨会话隔离判断 ${run}`,
+    );
+    await review.confirmDerivedJudgment(scope, id);
+    await syncQueue.drain();
+    const admin = await adminScope();
+    const listed = await review.listAdoptedJudgments(admin);
+    expect(listed.map((row) => row.id)).not.toContain(id);
+  });
+
+  test("an out-of-range limit is refused rather than clamped", async () => {
+    const scope = await employeeScope();
+    await expect(
+      review.listAdoptedJudgments(scope, { limit: 0 }),
+    ).rejects.toBeInstanceOf(DerivedJudgmentRefusedError);
+    await expect(
+      review.listAdoptedJudgments(scope, { limit: 101 }),
+    ).rejects.toBeInstanceOf(DerivedJudgmentRefusedError);
+  });
+
+  /*
+   * FIX-OCR2 (O2-HIGH, #387/#389): a bot-scope judgment is confirmable on this surface, so
+   * it must also stay visible, expandable and forgettable on it. The management snapshot
+   * carries no asking agent — nothing is asking, the person is reading their own adopted
+   * list — and the old scope check demanded base.agentId === row.agentId against it, so
+   * bot-scope rows answered false forever: the confirmation's own judgment vanished from
+   * the list it was confirmed into, and with it the cross-session verify/forget control
+   * FR2-3 promises. The management rule now judges the row's OWN scope — a bot judgment by
+   * its own Bot's live grant, the same rule Gate 4 and listPersonalMemories apply — and the
+   * asking-agent match stays where it belongs, in recall and the context half.
+   */
+  test("a bot-scope judgment confirmed here stays listed, expandable and forgettable here", async () => {
+    const scope = await employeeScope();
+    const first = await confirmBound(scope, `管理面bot依据一 ${run}`, {
+      kind: "bot",
+      agentId: BOT_ONE,
+    });
+    const second = await confirmBound(scope, `管理面bot依据二 ${run}`, {
+      kind: "bot",
+      agentId: BOT_ONE,
+    });
+    const candidate = await proposals.proposeDerivedJudgmentCandidate(scope, {
+      judgment: `管理面bot判断 ${run}`,
+      evidence: [first, second],
+    });
+    const confirmed = await review.confirmDerivedJudgment(scope, candidate.id);
+    expect(confirmed.judgment.scope).toEqual({
+      kind: "bot",
+      agentId: BOT_ONE,
+    });
+    await syncQueue.drain();
+
+    // Listed from a fresh person-scope: no Bot is asking, and none is needed.
+    const listed = await review.listAdoptedJudgments(await employeeScope());
+    const found = listed.find((row) => row.id === candidate.id);
+    expect(found).toBeDefined();
+    expect(found?.scope).toEqual({ kind: "bot", agentId: BOT_ONE });
+    expect(found?.evidence).toHaveLength(2);
+
+    // The expansion seam decides availability by the same management rule.
+    const inspection = await review.inspectJudgmentEvidence(
+      await employeeScope(),
+      candidate.id,
+    );
+    expect(inspection.state).toBe("available");
+    if (inspection.state === "available") {
+      expect(inspection.actions).toEqual(["edit", "forget"]);
+      expect(inspection.evidence).toHaveLength(2);
+    }
+
+    // The row's own Bot's grant is the authority: revoke it and the judgment is withheld
+    // from this management face too — as withholding, never a refusal — and it returns by
+    // itself when the authority returns.
+    await setGrant(BOT_ONE, false);
+    try {
+      const withheld = await review.listAdoptedJudgments(await employeeScope());
+      expect(withheld.map((row) => row.id)).not.toContain(candidate.id);
+      const gone = await review.inspectJudgmentEvidence(
+        await employeeScope(),
+        candidate.id,
+      );
+      expect(gone.state).toBe("unavailable");
+    } finally {
+      await setGrant(BOT_ONE, true);
+    }
+    const returned = await review.listAdoptedJudgments(await employeeScope());
+    expect(returned.map((row) => row.id)).toContain(candidate.id);
+
+    // Forgetting works from the person's own surface — the control the listing held.
+    await review.forgetDerivedJudgment(scope, candidate.id);
+    const after = await review.listAdoptedJudgments(await employeeScope());
+    expect(after.map((row) => row.id)).not.toContain(candidate.id);
+  });
+});
+
+/*
+ * FIX-OCR2 (O2-M1): the confirm's budget bookkeeping is a local DB write that runs after a
+ * durable decision — the judgment row and the work row both landed before admittedRetain —
+ * so its failure must degrade, never fail the confirmation the person already made. On BASE
+ * a throwing settle released the error into the confirm's answer: the person was told their
+ * confirmation failed when it had already succeeded, and their retry hit "already
+ * confirmed"; a throwing release left the reservation counting against the period for the
+ * same price. The three legs below pin each bookkeeping failure to its degraded answer.
+ */
+describe("FIX-OCR2 — budget bookkeeping never fails the review decision", () => {
+  const failures = { admit: false, settle: false, release: false };
+  const throwingBudget: HindsightBudgetGate = {
+    async admitBackgroundWork() {
+      if (failures.admit) throw new Error("admission ledger exploded");
+      return { ok: true, reservationId: `res-throw-${run}` };
+    },
+    async settleBackgroundWork() {
+      if (failures.settle) throw new Error("settle ledger exploded");
+    },
+    async releaseBackgroundWork() {
+      if (failures.release) throw new Error("release ledger exploded");
+    },
+    async currentUsage() {
+      return { companyUnits: 0, personalUnits: [], period: "2026-10" };
+    },
+  };
+  /** A review service over the same records as the suite's, with the failing budget wired. */
+  const budgetedReview = (config: typeof serviceConfig) =>
+    createDerivedJudgmentReviewService(
+      createDrizzlePreferenceRecords(database),
+      createDrizzleSourceBoundRecords(database),
+      createDrizzleDerivedJudgmentRecords(database),
+      createDrizzleSourceBoundAuthorizations(database),
+      config,
+      { work: syncQueue, budget: throwingBudget },
+    );
+
+  test("a settle that throws after a successful retain keeps the confirm standing and synced", async () => {
+    failures.admit = false;
+    failures.settle = true;
+    failures.release = false;
+    const scope = await employeeScope();
+    const { id } = await proposeGeneralCandidate(
+      scope,
+      `簿记失败结算判断 ${run}`,
+    );
+    const confirmed = await budgetedReview(
+      serviceConfig,
+    ).confirmDerivedJudgment(scope, id);
+    expect(confirmed.remoteSynced).toBe(true);
+    expect((await judgmentRow(id))?.reviewState).toBe("confirmed");
+    failures.settle = false;
+  });
+
+  test("an admission that throws skips the retain: the decision stands, the work row retries", async () => {
+    failures.admit = true;
+    failures.settle = false;
+    failures.release = false;
+    const scope = await employeeScope();
+    const { id } = await proposeGeneralCandidate(
+      scope,
+      `簿记失败准入判断 ${run}`,
+    );
+    const callsBefore = scripted.calls.filter(
+      (call) => call.method === "POST" && call.path.endsWith("/memories"),
+    ).length;
+    const confirmed = await budgetedReview(
+      serviceConfig,
+    ).confirmDerivedJudgment(scope, id);
+    // No retain ran, and the confirm still answered: the work row owns the retry.
+    expect(confirmed.remoteSynced).toBe(false);
+    expect((await judgmentRow(id))?.reviewState).toBe("confirmed");
+    const callsAfter = scripted.calls.filter(
+      (call) => call.method === "POST" && call.path.endsWith("/memories"),
+    ).length;
+    expect(callsAfter).toBe(callsBefore);
+    failures.admit = false;
+  });
+
+  test("an unreachable service with a throwing release still confirms, unsynced", async () => {
+    failures.admit = false;
+    failures.settle = false;
+    failures.release = true;
+    const deadService = {
+      ...serviceConfig,
+      apiUrl: "http://127.0.0.1:1/",
+      requestTimeoutMs: 250,
+    };
+    const scope = await employeeScope();
+    const { id } = await proposeGeneralCandidate(
+      scope,
+      `簿记失败释放判断 ${run}`,
+    );
+    const confirmed = await budgetedReview(deadService).confirmDerivedJudgment(
+      scope,
+      id,
+    );
+    expect(confirmed.remoteSynced).toBe(false);
+    expect((await judgmentRow(id))?.reviewState).toBe("confirmed");
+    failures.release = false;
   });
 });

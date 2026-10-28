@@ -1,13 +1,8 @@
 import type { SafeText, SafeValue } from "../../../../shared/ai-observability";
 import { getLogger } from "../../../../shared/logger";
-import {
-  CreditReservationConflictError,
-  type CreditWriter,
-} from "../../billing/credits-writer";
-import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "../../billing/types";
 import { createUsageEvidenceRecorder } from "../../billing/usage-evidence";
-import type { UsageOutbox } from "../../billing/usage-outbox";
 import type { BillingModelCreditPolicyEntry } from "../../config";
+import type { ModelBudgetCreditCollaborator } from "../../enterprise/models/public";
 import {
   calculateExactModelUsageCharge,
   UsageChargeError,
@@ -21,6 +16,10 @@ import type {
   EvaluationCaseOutcome,
   EvaluationCaseRunner,
 } from "../executions";
+import {
+  type EvaluationUsageOutbox,
+  USAGE_IDEMPOTENCY_KEY_PREFIX,
+} from "../public";
 import { projectSafeText } from "../redaction";
 
 /**
@@ -208,6 +207,13 @@ export type JudgeFailureCode =
   | "JUDGE_VERSION_NOT_APPROVED"
   | "JUDGE_MODEL_NOT_PRICED"
   | "JUDGE_BUDGET_REFUSED"
+  /**
+   * The task was cancelled or its authorization withdrawn before this judge call
+   * could start, or the call was aborted in flight (FREV-05). A new billed call is
+   * never spent on withdrawn eligibility; the record says so instead of leaving the
+   * judge silently absent.
+   */
+  | "JUDGE_CANCELLED"
   | "JUDGE_INPUT_UNAVAILABLE"
   | "JUDGE_OUTPUT_MISSING"
   | "JUDGE_OUTPUT_UNSAFE"
@@ -243,6 +249,12 @@ export type JudgeScoringInput = Readonly<{
   sample: Readonly<{ input: SafeText; reference: SafeText }>;
   /** The evaluated case's produced output. */
   output: unknown;
+  /**
+   * The task's cancellation signal (FREV-05), threaded to the judge's own dial: an
+   * abort interrupts a judge call already in flight, and its cost stays an unknown
+   * (evidence row, hold kept) rather than a confirmed no-cost.
+   */
+  signal?: AbortSignal;
 }>;
 
 /** `null` means no judge is configured — a rules-only experiment, not a failure. */
@@ -297,6 +309,18 @@ const failed = (code: JudgeFailureCode, message: string): JudgeScoreRecord => ({
   code,
   message,
 });
+
+/**
+ * The hold conflict's structural discriminator (MOD18): billing's
+ * `CreditReservationConflictError` answers `code = "reservation_conflict"`
+ * (credits-writer.ts), and it reaches here as an opaque thrown value from the
+ * injected writer — the instance passes through untouched and the log code
+ * reads the same field the class declares.
+ */
+const isReservationConflict = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  (error as { code?: unknown }).code === "reservation_conflict";
 
 /**
  * The judge's verdict JSON, recovered from the shapes models actually answer in
@@ -383,8 +407,8 @@ export function createJudgeScorer(
       policy: ReadonlyMap<string, BillingModelCreditPolicyEntry>;
     }>;
     billing: Readonly<{
-      creditWriter: Pick<CreditWriter, "reserveCredits">;
-      outbox: Pick<UsageOutbox, "record">;
+      creditWriter: Pick<ModelBudgetCreditCollaborator, "reserveCredits">;
+      outbox: Pick<EvaluationUsageOutbox, "record">;
       externalCustomerId: string;
     }>;
     reservationWindowMs?: number;
@@ -486,7 +510,7 @@ export function createJudgeScorer(
       // A terminal hold's replay is a refusal: a settled judge call is never dialed again.
       deps.log?.(
         `billing: opik_judge_admission_failed event=${eventId} code=${
-          error instanceof CreditReservationConflictError
+          isReservationConflict(error)
             ? "reservation_conflict"
             : "credit_gate_failed"
         }`,
@@ -584,8 +608,26 @@ export function createJudgeScorer(
           "## Output",
           outputEnvelope.text,
         ].join("\n\n"),
+        signal: input.signal,
       });
     } catch {
+      // FREV-05: an abort from the task's signal is a cancellation, not a provider
+      // failure. The call may have been producing billable work when it was
+      // stopped, so the evidence row answers `cancelled` — the unknown-cost word
+      // that keeps the hold occupied (ADR-0003's pending settlement), never the
+      // released `provider_error`.
+      if (input.signal?.aborted) {
+        await evidence({
+          ...base,
+          inputTokens: 0,
+          outputTokens: 0,
+          reason: "cancelled",
+        });
+        return failed(
+          "JUDGE_CANCELLED",
+          "the task was cancelled while the judge call was in flight",
+        );
+      }
       // One attempt, unknown cost: evidence row, hold retained — the T25 doctrine.
       await evidence({
         ...base,
@@ -637,6 +679,19 @@ export function createJudgeScorer(
  * contextual signature, so without the annotation a legacy `{status, detail}` shape
  * compiles green and the worker silently drops the judge record. With it, a shape
  * drift is a compile error, not a landing-channel loss.
+ *
+ * ## The admission re-check (FREV-05)
+ *
+ * The judge is a NEW billed call started after the evaluated call returns, and the
+ * eligibility that admitted the case can be gone by then: a cancel or a revocation
+ * settles the task while its model call is away, and the model still answers
+ * completed. No new spend starts on withdrawn eligibility — the task's signal is
+ * the cheap check, the context's re-check the authoritative re-query (row still
+ * running + live authorization), and both fail closed: a re-check that cannot be
+ * answered is not an admission. The withholder is a `JUDGE_CANCELLED` record, not
+ * a silently missing judge: the case's own completed truth stands (its cost was
+ * real and settles by the thrown-call doctrine), and the results surface shows
+ * why there is no score.
  */
 export function createJudgeScoringCaseRunner(
   deps: Readonly<{ inner: EvaluationCaseRunner; judge: JudgeScorer }>,
@@ -644,6 +699,30 @@ export function createJudgeScoringCaseRunner(
   return async (context): Promise<EvaluationCaseOutcome> => {
     const outcome = await deps.inner(context);
     if (outcome.status !== "completed") return outcome;
+    // FREV-05: the re-check before the judge's own billed call — see the module
+    // note above. Composition without a re-check seam (a unit fixture, a caller
+    // that never heard of it) keeps the signal check alone; production's worker
+    // always supplies both. The gate only guards a JUDGE (OCR R5-695): a
+    // rules-only experiment has no judge call to protect, and a fabricated
+    // JUDGE_CANCELLED failure record here would contradict this module's own
+    // "disabled is not a failure" semantics — it would render "判分失败" on a
+    // run that never had a judging step.
+    const judgeConfigured =
+      extractJudgeSpec(context.config.judgeConfig).kind !== "disabled";
+    if (
+      judgeConfigured &&
+      (context.signal?.aborted === true ||
+        (context.recheckAdmission !== undefined &&
+          !(await context.recheckAdmission().catch(() => false))))
+    ) {
+      return {
+        ...outcome,
+        judge: failed(
+          "JUDGE_CANCELLED",
+          "the task was cancelled or its authorization withdrawn before the judge call started",
+        ),
+      };
+    }
     // The judge failing never unseats the case's own outcome (OCR m223): an escape
     // from the scorer — a seam throwing, a projection regressing — lands as a failed
     // judge record, so the completed case and its settled billing stay answerable
@@ -661,6 +740,7 @@ export function createJudgeScoringCaseRunner(
           reference: context.frozenCase.referenceOutput,
         },
         output: outcome.output,
+        signal: context.signal,
       });
     } catch (error) {
       // R3-44: the record persists and renders on the results page, and a driver

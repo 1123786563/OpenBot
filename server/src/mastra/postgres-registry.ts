@@ -34,10 +34,14 @@ function stringColumn(row: RegistryRow, key: string): string {
 
 function numberColumn(row: RegistryRow, key: string): number {
   const value = row[key];
-  const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 1)
+  // A column that is not already a number is corrupt, not coercible: `Number(true)`,
+  // `Number([5])` and `Number("5")` all pass the safe-integer check and would launder
+  // a wrong-typed row into a roleVersion.
+  if (typeof value !== "number")
     throw new Error("TENANT_STORAGE_REGISTRY_CORRUPT");
-  return parsed;
+  if (!Number.isSafeInteger(value) || value < 1)
+    throw new Error("TENANT_STORAGE_REGISTRY_CORRUPT");
+  return value;
 }
 
 /** A PostgreSQL unique-row/CAS adapter; every method is safe across processes. */

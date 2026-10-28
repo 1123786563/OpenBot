@@ -114,12 +114,11 @@ export async function listFiles(
     // carries a "/" after this level names a descendant, so the first segment
     // is a directory.
     const base = relPath.replace(/^\/+|\/+$/g, "");
-    const rest =
-      base === ""
-        ? rel
-        : rel.startsWith(`${base}/`)
-          ? rel.slice(base.length + 1)
-          : rel;
+    // An entry that is not under the requested subtree (a sibling, or the directory
+    // itself) is not a child of it: folding it into `rest` would invent a childPath
+    // that reads back 404, so it is skipped.
+    if (base !== "" && (rel === base || !rel.startsWith(`${base}/`))) continue;
+    const rest = base === "" ? rel : rel.slice(base.length + 1);
     const name = rest.split("/")[0];
     if (!name || name === "") continue;
     const childPath = base === "" ? name : `${base}/${name}`;

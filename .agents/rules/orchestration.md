@@ -6,8 +6,8 @@ Orca 是工作区、Agent 与监督式 Task/Dispatch 的事实源。开始前读
 
 ## 运行边界与职责
 
-- 每轮 Run 指定一个根 Issue、仓库、集成分支、集成 Worktree、原始 BASE、授权范围、交付目标（远程、分支或 PR）、并发授权/预算及证据目录。关闭门禁绑定该目标，不由本地集成分支替代。一个主编排者拥有摄取、计划、派发、集成、裁决和收尾权；Worker 不再派发 Agent。任务 Brief 说明其他编辑者存在，保留其改动。
-- 编排者从正式 tracker 完整读取根 Issue 及递归子树、验收、讨论、正式子 Issue 与依赖；分别保存 `contains` 和 `depends_on`。外部阻塞只读核验，closed 状态须用目标代码验证。将全部验收映射到 DAG，校验唯一性、依赖、循环、所有权及资源；缺页或冲突标为不完整，仅放行有证据证明不受影响的任务。
+- 每轮普通 Run 指定一个根 Issue、仓库、集成分支、集成 Worktree、原始 BASE、授权范围、交付目标（远程、分支或 PR）、并发授权/预算及证据目录。每日已关闭 Issue 批次是显式例外：用 [daily_run_manifest](coordination-schema.json#/$defs/daily_run_manifest) 的 source_issues/scope 代替单一根 Issue，仍只有一个协调者、集成入口和完整终审范围；Task 逐项绑定原票/finding/授权，不创建虚假父票，不自动取得批次全部写权限。关闭门禁绑定该目标，不由本地集成分支替代。一个主编排者拥有摄取、计划、派发、集成、裁决和收尾权；Worker 不再派发 Agent。任务 Brief 说明其他编辑者存在，保留其改动。
+- 编排者从正式 tracker 完整读取根 Issue（每日批次为 scope 内各原票）及递归子树、验收、讨论、正式子 Issue 与依赖；分别保存 `contains` 和 `depends_on`。外部阻塞只读核验，closed 状态须用目标代码验证。将全部验收映射到 DAG，校验唯一性、依赖、循环、所有权及资源；缺页或冲突标为不完整，仅放行有证据证明不受影响的任务。
 - 方案写在 `docs/plans/`；Issue 快照、动态 DAG、Ledger、Brief、回执、检查点和报告写在 `.archive/runs/<run-key>/`。Ledger 记录 Task 的权威尝试、实际 Agent 身份、工作区、前置检查点、验证、Review 与集成状态。恢复先对账 Ledger、Git 和 Orca，避免重派已完成或仍在运行的工作。
 - 按 [Agent 选择](orchestration-agents.md) 为任务实现、独立审核轮次和集成终审确定 Agent；在 Brief 与 Ledger 记录预期身份，并核对 Orca 实际启动回执。
 
@@ -45,7 +45,7 @@ ORCA orchestration send --to dispatch:<dispatch_id> --type question --subject "<
 
 1. 派发前先用 Orca 建立或核验本轮唯一的**集成分支和集成 Worktree**，记录 BASE。已有同一 Run 的可恢复集成工作区直接复用。当前工作区的无关未提交修改留在原处；按 [Worktree 规范](worktrees.md)核对基线并显式转移必要文档。派发 Brief 写明提交策略：有本地提交授权时可按任务提交并用真实 Git 合并；无授权时保留未提交检查点，由编排者显式转移并核验任务增量，不能偷偷提交或以空 BASE..HEAD 代替审核。
 2. 任务满足业务依赖、文件所有权和资源前提后，用 Orca 从集成 HEAD 创建分支及 Worktree，再按[检查点规范](checkpoints.md)还原**完整前置树**（正常业务为 deliverable_verified；限定修复按检查点规范使用 frozen_failed）。未提交或混合模式必须额外应用已审查检查点并核对目标 manifest，只有 HEAD 一致不够。一个活跃任务占一个任务分支和 Worktree；实施、整改及独立审核复用它。
-3. 活跃任务上限 **K=4**：一轮 Run 同时最多四个任务 Worktree，加一个集成 Worktree。默认串行；并行实现须有已记录且仍有效的明确用户授权，K 不构成该授权。获授权后实际并发仍服从依赖、资源、文件所有权与 Worker 槽位。下游仅在前置成果进入集成工作树且组合验证通过后派生；多个独立任务依次集成。
+3. 活跃任务上限 **K=4**：一轮 Run 同时最多四个任务 Worktree，加一个集成 Worktree。实现默认串行；并行实现须有已记录且仍有效的明确用户授权，K 不构成该授权。每日批次的独立只读源文件审计/验证可按 [每日规则](closed-issue-daily-run.md)的 P 并行；P 限制实际在途 Task/Dispatch，审核阶段也占容量，C/K/P 不互相替代。获授权后实际并发仍服从依赖、资源、文件所有权与 Worker 槽位。下游仅在前置成果进入集成工作树且组合验证通过后派生；多个独立任务依次集成。
 4. 任务审核、集成及组合验证后，归档检查点与回执，再按 [Worktree 规范](worktrees.md)核验并清理可安全删除的工作区/分支，释放名额。终审/OCR 修复从集成 HEAD 加完整 frozen_failed 检查点派生，仅放行限定修复任务；不复活已清理工作区。未知状态、未集成改动或有效会话必须保留并待对账。
 
 ## DAG 调度与单任务阶段
@@ -73,4 +73,4 @@ ORCA orchestration send --to dispatch:<dispatch_id> --type question --subject "<
 
 ## 完整交付
 
-推送/合并前按 [delivery-gates.md](delivery-gates.md)完成目标新鲜度及经验证结果的条件写门禁；目标更新后重新完整终审/OCR。所有交付任务已集成且根 Issue 聚合验收通过后，冻结集成分支待审范围，编排者经 Orca 启动新的[终审 Agent](orchestration-agents.md)，对按 [checkpoints.md](checkpoints.md)核对的完整授权提交映射和未提交交付内容作最终 Spec/质量审核；终审通过后由编排者按 [Review/OCR 规范](review.md)对同一完整范围执行外层 OCR。终审或 OCR 的有效问题形成对应修复任务，回到实施 Agent → 独立审核 Agent → 集成及组合验证，再重新执行完整终审与 OCR。两项均通过后，按[审核和交付](orchestration-review.md)关闭已满足验收的 Issue 并清理工作区；提交、GitHub 写入、推送及对外合并仍以当前授权为准。
+推送/合并前按 [delivery-gates.md](delivery-gates.md)完成目标新鲜度及经验证结果的条件写门禁；目标更新后重新完整终审/OCR。所有交付任务已集成且根 Issue 聚合验收通过后（每日批次为全部交付 source_issues 的适用验收及必要父聚合通过），冻结集成分支待审范围，编排者经 Orca 启动新的[终审 Agent](orchestration-agents.md)，对按 [checkpoints.md](checkpoints.md)核对的完整授权提交映射和未提交交付内容作最终 Spec/质量审核；终审通过后由编排者按 [Review/OCR 规范](review.md)对同一完整范围执行外层 OCR。终审或 OCR 的有效问题形成对应修复任务，回到实施 Agent → 独立审核 Agent → 集成及组合验证，再重新执行完整终审与 OCR。两项均通过后，按[审核和交付](orchestration-review.md)关闭已满足验收的 Issue 并清理工作区；提交、GitHub 写入、推送及对外合并仍以当前授权为准。

@@ -21,14 +21,21 @@ if (operation !== "replay-unacked" || !workerId) {
     `usage: recovery-replay-worker.ts replay-unacked <workerId> [limit] — got ${operation}`,
   );
 }
+const limit = limitArg === undefined ? 10 : Number(limitArg);
+if (!Number.isInteger(limit) || limit < 1) {
+  throw new Error(
+    `usage: recovery-replay-worker.ts replay-unacked <workerId> [limit] — limit must be a positive integer, got ${JSON.stringify(limitArg)}`,
+  );
+}
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const replay = createRecoveryReplay({ database });
 
-const result = await replay.replayUnackedResults(
-  workerId,
-  limitArg === undefined ? 10 : Number(limitArg),
-);
-
-console.log(JSON.stringify(result));
-await database.$client.close();
+try {
+  const result = await replay.replayUnackedResults(workerId, limit);
+  console.log(JSON.stringify(result));
+} finally {
+  // The pool must close on the throwing path too, or the worker process keeps
+  // the parent test waiting on an open handle.
+  await database.$client.close();
+}

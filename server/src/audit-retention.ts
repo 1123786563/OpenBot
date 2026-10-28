@@ -131,7 +131,12 @@ export function startRetentionSweeps(
   pageFrames?: PageFrameStore,
   options: { intervalMs?: number; firstRunMs?: number } = {},
 ): RetentionSweeper {
-  const sweepsAudit = Boolean(retentionDays && retentionDays >= 1);
+  // Number.isInteger matches sweepAuditTrail's own gate: a fractional retentionDays
+  // must not arm an hourly sweep the sweep would silently refuse to run.
+  const sweepsAudit =
+    Boolean(retentionDays) &&
+    Number.isInteger(retentionDays) &&
+    (retentionDays as number) >= 1;
   if (!sweepsAudit && !pageFrames) return { stop: () => undefined };
 
   const intervalMs = options.intervalMs ?? 60 * 60_000;

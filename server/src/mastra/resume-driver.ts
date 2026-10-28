@@ -204,7 +204,15 @@ export function createMastraResumeDriver(
       const tools: Record<string, unknown> = { ...(loop.tools ?? {}) };
       for (const [name, tool] of Object.entries(tools)) {
         if (durableToolNames.includes(name)) {
-          (tool as { requireApproval?: boolean }).requireApproval = true;
+          // A CLONE, not the shared instance: a factory that caches its tools would otherwise
+          // carry the approval flag into the execution path and every concurrent run. The
+          // prototype is preserved so a class-shaped tool keeps its methods.
+          const copy = Object.assign(
+            Object.create(Object.getPrototypeOf(tool) as object | null),
+            tool,
+          );
+          (copy as { requireApproval?: boolean }).requireApproval = true;
+          tools[name] = copy;
         }
       }
       const agent = new Agent({
@@ -288,7 +296,18 @@ export function createMastraResumeDriver(
           claim.binding.executionKey,
           claim.payload.kind,
         );
-        await saveSuspension(fact);
+        try {
+          await saveSuspension(fact);
+        } catch (error) {
+          // The engine has already parked on its own snapshot, so a failed save here is the
+          // "engine waiting, no recovery data" state this file's header refuses to allow. The
+          // context makes it identifiable to the orchestrator/recovery sweep instead of an
+          // anonymous database error that reads as a driver defect.
+          throw new Error(
+            `MASTRA_RESUSPENSION_SAVE_FAILED executionKey=${claim.binding.executionKey}`,
+            { cause: error },
+          );
+        }
         void durable;
         return { outcome: "re_suspended", ...produced };
       }

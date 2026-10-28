@@ -701,7 +701,7 @@ describe("ME07 — Mastra contexts consume only confirmed authorized memory", ()
   });
 
   it("usage_paused_blocks_injection_instantly_and_learning_pause_is_not_a_deletion", async () => {
-    await pause.setUsagePaused(TENANT_A, PRINCIPAL, true);
+    await pause.setUsagePaused(TENANT_A, PRINCIPAL, USER, true);
     try {
       const paused = await askViaEngine(scopeA1, BOT_A);
       // The whole block closes: no prefix, no records, nothing deleted.
@@ -710,14 +710,14 @@ describe("ME07 — Mastra contexts consume only confirmed authorized memory", ()
 
       // Learning paused only: new candidates stop, existing confirmed content
       // keeps flowing — the switch must never read as a deletion.
-      await pause.setUsagePaused(TENANT_A, PRINCIPAL, false);
-      await pause.setLearningPaused(TENANT_A, PRINCIPAL, true);
+      await pause.setUsagePaused(TENANT_A, PRINCIPAL, USER, false);
+      await pause.setLearningPaused(TENANT_A, PRINCIPAL, USER, true);
       const learningPaused = await askViaEngine(scopeA1, BOT_A);
       expect(learningPaused.systemText).toContain(MEMORY_PREFIX);
       expect(learningPaused.systemText).toContain(LIVE_PREF);
     } finally {
-      await pause.setUsagePaused(TENANT_A, PRINCIPAL, false);
-      await pause.setLearningPaused(TENANT_A, PRINCIPAL, false);
+      await pause.setUsagePaused(TENANT_A, PRINCIPAL, USER, false);
+      await pause.setLearningPaused(TENANT_A, PRINCIPAL, USER, false);
     }
   });
 

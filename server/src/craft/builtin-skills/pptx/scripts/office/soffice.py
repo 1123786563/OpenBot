@@ -33,11 +33,19 @@ def get_soffice_env() -> dict:
 
 
 def run_soffice(args: list[str], **kwargs) -> subprocess.CompletedProcess:
+    # A caller-supplied env merges over the shim env instead of colliding with
+    # it (duplicate `env=` kwargs would raise TypeError) — dropping the shim's
+    # LD_PRELOAD here would silently un-fix blocked AF_UNIX sockets.
+    override = kwargs.pop("env", None)
     env = get_soffice_env()
+    if override:
+        env.update(override)
     return subprocess.run(["soffice"] + args, env=env, **kwargs)
 
 
-_SHIM_SO = Path(tempfile.gettempdir()) / "lo_socket_shim.so"
+_SHIM_TEMP_DIR = tempfile.TemporaryDirectory(prefix="lo_socket_shim_")
+_SHIM_DIR = Path(_SHIM_TEMP_DIR.name)
+_SHIM_SO = _SHIM_DIR / "lo_socket_shim.so"
 
 
 def _needs_shim() -> bool:
@@ -50,17 +58,36 @@ def _needs_shim() -> bool:
 
 
 def _ensure_shim() -> Path:
-    if _SHIM_SO.exists():
+    if _SHIM_SO.is_file():
         return _SHIM_SO
 
-    src = Path(tempfile.gettempdir()) / "lo_socket_shim.c"
-    src.write_text(_SHIM_SOURCE)
-    subprocess.run(
-        ["gcc", "-shared", "-fPIC", "-o", str(_SHIM_SO), str(src), "-ldl"],
-        check=True,
-        capture_output=True,
-    )
-    src.unlink()
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".c", dir=_SHIM_DIR, delete=False
+    ) as source:
+        source.write(_SHIM_SOURCE)
+    src = Path(source.name)
+    fd, output_name = tempfile.mkstemp(suffix=".so", dir=_SHIM_DIR)
+    os.close(fd)
+    output = Path(output_name)
+    try:
+        try:
+            subprocess.run(
+                ["gcc", "-shared", "-fPIC", "-o", str(output), str(src), "-ldl"],
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as error:
+            stderr = error.stderr
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode("utf-8", errors="replace")
+            detail = f": {stderr.strip()}" if stderr else ""
+            raise RuntimeError(
+                f"gcc failed to compile the socket shim (exit {error.returncode}){detail}"
+            ) from error
+        os.replace(output, _SHIM_SO)
+    finally:
+        src.unlink(missing_ok=True)
+        output.unlink(missing_ok=True)
     return _SHIM_SO
 
 
@@ -166,8 +193,10 @@ int close(int fd) {
         if (wake_r[fd] >= 0) { real_close(wake_r[fd]); wake_r[fd]  = -1; }
         if (peer_of[fd] >= 0) { real_close(peer_of[fd]); peer_of[fd] = -1; }
 
-        if (was_listener)
-            _exit(0);                        /* conversion done – exit */
+        if (was_listener) {
+            fflush(NULL); /* _exit would discard buffered stdio output */
+            _exit(0);     /* conversion done – exit */
+        }
     }
     return real_close(fd);
 }

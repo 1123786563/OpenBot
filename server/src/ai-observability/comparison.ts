@@ -490,13 +490,18 @@ export function createExperimentComparisonService(
           // Still open on a side: the settlement may yet answer anything, so the
           // direction stays incomparable — never a premature regressed or improved.
           direction = "incomparable";
-        } else if (bothScored && scoreDelta !== null) {
-          direction =
-            scoreDelta === 0
-              ? "unchanged"
-              : scoreDelta < 0
-                ? "regressed"
-                : "improved";
+        } else if (
+          bothScored &&
+          scoreDelta !== null &&
+          Number.isFinite(scoreDelta)
+        ) {
+          if (scoreDelta === 0) direction = "unchanged";
+          else if (scoreDelta < 0) direction = "regressed";
+          else direction = "improved";
+        } else if (bothScored) {
+          // A score pair whose delta is not finite (a NaN that reached the ledger) is no
+          // evidence of a direction; the delta itself is reported as null below.
+          direction = "incomparable";
         } else if (before.class === "scored") {
           // Used to pass, now fails terminally: a regression the missing score keeps
           // scoreless — never a fabricated −1.

@@ -70,7 +70,7 @@ const BA_URL_VARIABLES = [
   "BA_TEST_AUTH_WRITER_DATABASE_URL",
 ] as const;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
-const MIGRATION_TAG = "0213_better_auth_assurance";
+const MIGRATION_TAG = "0225_better_auth_assurance";
 const MIGRATION_PATH = join(
   import.meta.dirname,
   `../../drizzle/${MIGRATION_TAG}.sql`,

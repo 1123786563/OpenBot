@@ -1,29 +1,27 @@
-import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { createImageSettlementService } from "../src/billing/image-settlement";
-import { createCreditWriter } from "../src/billing/credits-writer";
+import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import { createCredits } from "../src/billing/credits";
+import { createCreditWriter } from "../src/billing/credits-writer";
+import { createImageSettlementService } from "../src/billing/image-settlement";
 import { createPayerAccount, payerKey } from "../src/billing/payer";
-import type { ConversionRate } from "../src/gateway/conversion-rate";
-import {
-  GATEWAY_PRICE_SNAPSHOT_SOURCE,
-  PRICE_DIMENSIONS,
-  mapPriceDims,
-  type PriceSnapshotDims,
-} from "../src/gateway/price-snapshot";
-import { createEnterpriseGatewayPriceSnapshotStore } from "../src/gateway/price-snapshot";
 import { createDatabase } from "../src/db/client";
-import {
-  accessGrants,
-  botServices,
-  payerAccounts,
-} from "../src/db/schema";
+import { accessGrants, botServices, payerAccounts } from "../src/db/schema";
 import {
   creditReservations,
   creditSettlementDetails,
 } from "../src/db/schema/credit-reservations";
 import { creditLedger } from "../src/db/schema/credits";
+import type { ConversionRate } from "../src/gateway/conversion-rate";
+import {
+  createEnterpriseGatewayPriceSnapshotStore,
+  GATEWAY_PRICE_SNAPSHOT_SOURCE,
+  mapPriceDims,
+  PRICE_DIMENSIONS,
+  type PriceDimension,
+  type PriceSnapshotDims,
+  WIRE_PRICED_DIMENSIONS,
+} from "../src/gateway/price-snapshot";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -53,7 +51,10 @@ const writer = createCreditWriter(database);
 const snapshotStore = createEnterpriseGatewayPriceSnapshotStore(database);
 const settleImage = createImageSettlementService({
   database,
-  environmentRate: { numerator: 100n, denominator: 1n } satisfies ConversionRate,
+  environmentRate: {
+    numerator: 100n,
+    denominator: 1n,
+  } satisfies ConversionRate,
 });
 
 let seedCounter = 0;
@@ -79,6 +80,46 @@ type ImageWorld = {
 };
 
 /**
+ * The dimensions the v1 wire has no field for, as THIS fixture writes them out by hand —
+ * `image_output` carries the scenario's own price (or the mapping's unknown); the rest a
+ * complete basis prices at an explicit "0" (free is a price). The list is deliberately
+ * literal so `assertReservedDimCoverage` below can catch the vocabulary moving under it.
+ */
+const FIXTURE_RESERVED_DIMENSIONS: readonly PriceDimension[] = [
+  "image_output",
+  "audio_input",
+  "audio_output",
+  "video",
+  "video_input",
+  "surcharge_tool_call",
+  "surcharge_a2a_call",
+];
+
+/**
+ * Check the fixture's hand-written reserved list against 03.2's own module — the complement of
+ * `WIRE_PRICED_DIMENSIONS` is the authoritative set of dimensions the v1 wire cannot price.
+ * Both directions are compared so a vocabulary that grows (a dimension this fixture never
+ * heard of) or shrinks (a dimension the wire now prices) is a red with the diff named.
+ */
+function assertReservedDimCoverage(covered: readonly PriceDimension[]): void {
+  const coveredSet = new Set<string>(covered);
+  const expected = new Set<string>(
+    PRICE_DIMENSIONS.filter(
+      (dimension) => !WIRE_PRICED_DIMENSIONS.includes(dimension),
+    ),
+  );
+  const missing = [...expected].filter((dim) => !coveredSet.has(dim)).sort();
+  const unexpected = [...coveredSet].filter((dim) => !expected.has(dim)).sort();
+  if (missing.length > 0 || unexpected.length > 0) {
+    throw new Error(
+      "image fixture reserved-dimension coverage drifted from price-snapshot.ts: " +
+        `missing [${missing.join(", ")}], ` +
+        `unexpected [${unexpected.join(", ")}]`,
+    );
+  }
+}
+
+/**
  * The dims of one priced cell, built the way a source that CAN price the generated image
  * would record them: every wire dimension complete (03.2's own v1 mapping over a complete
  * pricing object) with the reserved dimensions overlaid — `image_output` known at
@@ -86,9 +127,11 @@ type ImageWorld = {
  * audio/video slots a complete basis prices at "0" (free is a price), because 06.5's
  * conversion prices every dimension of the vocabulary and refuses any unknown one.
  * (`mapPriceDims` alone can never produce a known `image_output` — the v1 wire has no
- * field for it.)
+ * field for it.) Every build re-checks the hand-written reserved list against
+ * `price-snapshot.ts`'s derived set (R2-F1).
  */
 function imageDimsOf(imageOutputUsd: string | null): PriceSnapshotDims {
+  assertReservedDimCoverage(FIXTURE_RESERVED_DIMENSIONS);
   const mapped = mapPriceDims({ pricing: COMPLETE_WIRE_PRICING });
   return Object.fromEntries(
     PRICE_DIMENSIONS.map((dimension) => [
@@ -97,11 +140,7 @@ function imageDimsOf(imageOutputUsd: string | null): PriceSnapshotDims {
         ? imageOutputUsd === null
           ? mapped[dimension]
           : { status: "known", amount: imageOutputUsd }
-        : dimension === "audio_input" ||
-            dimension === "audio_output" ||
-            dimension === "video" ||
-            dimension === "surcharge_tool_call" ||
-            dimension === "surcharge_a2a_call"
+        : FIXTURE_RESERVED_DIMENSIONS.includes(dimension)
           ? { status: "known", amount: "0" }
           : mapped[dimension],
     ]),
@@ -298,7 +337,11 @@ test("the user's consumption detail shows the image spec, count and amount", asy
       quality: "hd",
       inputImages: 0,
     },
-    result: { outcome: "generated", count: 2, evidence: { kind: "provider_usage_report" } },
+    result: {
+      outcome: "generated",
+      count: 2,
+      evidence: { kind: "provider_usage_report" },
+    },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-cv`,
   });
@@ -313,6 +356,7 @@ test("the user's consumption detail shows the image spec, count and amount", asy
   const entry = view.entries[0];
   expect(entry.credits).toBe(8); // 2 × $0.04 × 100 credits/USD = 8.00 whole credits
   expect(entry.lineDetail).toEqual({
+    kind: "image",
     capability: "image",
     image: {
       size: "1024x1792",
@@ -330,7 +374,11 @@ test("a hold locked at v1 prices at v1 even after v2 lands; a v2 hold prices at 
   // The price moves: version 2 prices the same cell's generated images at $0.08.
   const { appended } = await snapshotStore.appendSnapshots([
     {
-      ref: { provider: world.provider, model: world.model, capability: "image" },
+      ref: {
+        provider: world.provider,
+        model: world.model,
+        capability: "image",
+      },
       dims: imageDimsOf("0.08"),
       fetchedAt: new Date().toISOString(),
       source: GATEWAY_PRICE_SNAPSHOT_SOURCE,
@@ -344,14 +392,22 @@ test("a hold locked at v1 prices at v1 even after v2 lands; a v2 hold prices at 
   const v1Outcome = await settleImage.settle({
     reservationId: v1Hold,
     requested: { count: 1, size: null, quality: null, inputImages: 0 },
-    result: { outcome: "generated", count: 1, evidence: { kind: "provider_usage_report" } },
+    result: {
+      outcome: "generated",
+      count: 1,
+      evidence: { kind: "provider_usage_report" },
+    },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-v1`,
   });
   const v2Outcome = await settleImage.settle({
     reservationId: v2Hold,
     requested: { count: 1, size: null, quality: null, inputImages: 0 },
-    result: { outcome: "generated", count: 1, evidence: { kind: "provider_usage_report" } },
+    result: {
+      outcome: "generated",
+      count: 1,
+      evidence: { kind: "provider_usage_report" },
+    },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-v2`,
   });
@@ -372,7 +428,10 @@ test("a result nobody can read settles nothing and keeps the hold occupied as un
   const outcome = await settleImage.settle({
     reservationId,
     requested: { count: 1, size: null, quality: null, inputImages: 0 },
-    result: { outcome: "unknown", reason: "stream cut before the image payload" },
+    result: {
+      outcome: "unknown",
+      reason: "stream cut before the image payload",
+    },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-unk`,
   });
@@ -401,7 +460,11 @@ test("a pure v1 basis (no generated-image price) refuses the settlement as price
   const outcome = await settleImage.settle({
     reservationId,
     requested: { count: 1, size: null, quality: null, inputImages: 0 },
-    result: { outcome: "generated", count: 1, evidence: { kind: "provider_usage_report" } },
+    result: {
+      outcome: "generated",
+      count: 1,
+      evidence: { kind: "provider_usage_report" },
+    },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-noprice`,
   });
@@ -426,7 +489,11 @@ test("input images ride the input-image dimension; a report beyond the spec is a
   const settled = await settleImage.settle({
     reservationId,
     requested: { count: 1, size: null, quality: null, inputImages: 2 },
-    result: { outcome: "generated", count: 1, evidence: { kind: "provider_usage_report" } },
+    result: {
+      outcome: "generated",
+      count: 1,
+      evidence: { kind: "provider_usage_report" },
+    },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-edit`,
   });
@@ -439,7 +506,11 @@ test("input images ride the input-image dimension; a report beyond the spec is a
   const defect = await settleImage.settle({
     reservationId: `${reservationId}-none`,
     requested: { count: 1, size: null, quality: null, inputImages: 0 },
-    result: { outcome: "generated", count: 5, evidence: { kind: "provider_usage_report" } },
+    result: {
+      outcome: "generated",
+      count: 5,
+      evidence: { kind: "provider_usage_report" },
+    },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-defect`,
   });
@@ -459,7 +530,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,

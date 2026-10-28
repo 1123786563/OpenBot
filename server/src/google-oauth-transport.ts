@@ -124,7 +124,13 @@ function contentParts(value: unknown): Part[] {
             part.image_url.url,
           );
         if (data) return { inlineData: { mimeType: data[1], data: data[2] } };
-        const url = new URL(part.image_url.url);
+        // A malformed URL refuses with the same named sentence, not a raw SyntaxError.
+        let url: URL;
+        try {
+          url = new URL(part.image_url.url);
+        } catch {
+          throw new Error("Unsupported image URL");
+        }
         if (url.protocol !== "https:") throw new Error("Unsupported image URL");
         return { fileData: { fileUri: url.href } };
       }

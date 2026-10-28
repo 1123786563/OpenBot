@@ -116,12 +116,12 @@ const BA_URL_VARIABLES = [
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 const MIGRATION_TAGS = [
-  "0209_better_auth_directory",
-  "0210_better_auth_clocks",
-  "0211_better_auth_command_authority",
-  "0212_better_auth_authority_sources",
-  "0213_better_auth_assurance",
-  "0214_better_auth_schema_roles",
+  "0221_better_auth_directory",
+  "0222_better_auth_clocks",
+  "0223_better_auth_command_authority",
+  "0224_better_auth_authority_sources",
+  "0225_better_auth_assurance",
+  "0226_better_auth_schema_roles",
 ] as const;
 const MIGRATION_PATHS = MIGRATION_TAGS.map((tag) =>
   join(import.meta.dirname, `../../drizzle/${tag}.sql`),

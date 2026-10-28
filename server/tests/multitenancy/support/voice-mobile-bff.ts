@@ -38,7 +38,10 @@ import {
   verifyDirectoryDatabase,
   verifyOperatorDatabase,
 } from "../../../src/enterprise/tenancy/connections";
-import { createOpenMuseVoiceMobileTenancyService } from "../../../src/enterprise/tenancy/openmuse-voice-mobile-tenancy";
+import {
+  createOpenMuseVoiceMobileTenancyService,
+  type OpenMuseVoiceMobileTenancyRows,
+} from "../../../src/enterprise/tenancy/openmuse-voice-mobile-tenancy";
 import {
   provisionDeployment,
   suspendMembership,
@@ -359,7 +362,8 @@ export async function createVoiceMobileFixture(): Promise<VoiceMobileFixture> {
     // The production row seam: voice_sessions / push_devices rows on the
     // platform channel, exactly the projection the service's rows interface
     // names.
-    const rows = {
+    // Typed against the real seam so a field or parameter drift is a compile error.
+    const rows: OpenMuseVoiceMobileTenancyRows = {
       async findOwnedSession(ownerUserId, sessionId) {
         const [row] = await platform
           .select()
@@ -441,6 +445,7 @@ export async function createVoiceMobileFixture(): Promise<VoiceMobileFixture> {
       },
 
       async seedVoiceSession(input) {
+        if (disposed) throw new Error("FIXTURE_DISPOSED");
         const sessionId = `${prefix}-voice-${randomUUID().slice(0, 8)}`;
         const duration = input.durationSeconds ?? 120;
         const started = new Date(Date.now() - (duration + 60) * 1000);
@@ -460,6 +465,7 @@ export async function createVoiceMobileFixture(): Promise<VoiceMobileFixture> {
       },
 
       async seedPushDevice(input) {
+        if (disposed) throw new Error("FIXTURE_DISPOSED");
         const deviceId = `${prefix}-device-${randomUUID().slice(0, 8)}`;
         await platform.insert(pushDevices).values({
           id: deviceId,
@@ -473,6 +479,7 @@ export async function createVoiceMobileFixture(): Promise<VoiceMobileFixture> {
       },
 
       async deviceLive(deviceId) {
+        if (disposed) throw new Error("FIXTURE_DISPOSED");
         const [row] = await platform
           .select({ id: pushDevices.id })
           .from(pushDevices)
@@ -481,15 +488,17 @@ export async function createVoiceMobileFixture(): Promise<VoiceMobileFixture> {
         return row !== undefined;
       },
 
-      suspendCompanyMembership: (tenantId, principalId) =>
+      async suspendCompanyMembership(tenantId, principalId) {
+        if (disposed) throw new Error("FIXTURE_DISPOSED");
         // MT060 fixture precedent: the suspension's operator is the suspended
         // principal itself (the security event + epoch bump is what matters).
-        suspendMembership(operator, {
+        return suspendMembership(operator, {
           operationId: id(`suspend-${principalId}`),
           operator: principalId,
           tenantId,
           principalId,
-        }),
+        });
+      },
 
       async dispose() {
         if (disposed) return;

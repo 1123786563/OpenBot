@@ -104,12 +104,18 @@ async function totalsOf(
 ): Promise<{ rowCount: number; min: string | null; max: string | null }> {
   const [row] = await tx
     .select({
-      rowCount: sql<number>`count(*)::int`,
+      // count() is bigint in Postgres; it rides back as text and is widened here, so a
+      // legacy table past 2^31-1 rows is a number instead of an "integer out of range".
+      rowCount: sql<string>`count(*)`,
       min: sql<string | null>`min(${idColumn})`,
       max: sql<string | null>`max(${idColumn})`,
     })
     .from(table);
-  return row;
+  return {
+    rowCount: Number(row?.rowCount ?? 0),
+    min: row?.min ?? null,
+    max: row?.max ?? null,
+  };
 }
 
 /** Per-key row counts of one keyed table. */
@@ -164,6 +170,11 @@ export async function enumerateCleanupManifest(
       database: string;
       schema: string;
     }>(sql`SELECT current_database() AS database, current_schema() AS schema`);
+    if (identity[0] === undefined) {
+      throw new Error(
+        "cleanup manifest: the database identity query returned no row",
+      );
+    }
     const manifestDatabase = identity[0].database;
     const manifestSchema = identity[0].schema;
 

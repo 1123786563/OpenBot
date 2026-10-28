@@ -182,8 +182,11 @@ export function createUsageEventRecorder(sink: UsageEventSink): {
               replayedUnder: stamp,
             };
       }
-      recordedUnder.set(event.eventId, stamp);
+      // 先写入后登记：write 抛错（outbox 瞬时失败）时账本不得预占该
+      // event id，否则重试只会得到 replayed 且零写入——事件静默丢失。
+      // 并发双写由生产侧 usage_outbox 的 event_id 唯一约束兜底。
       sink.write(event);
+      recordedUnder.set(event.eventId, stamp);
       return { status: "recorded" };
     },
   };

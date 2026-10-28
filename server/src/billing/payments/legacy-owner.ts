@@ -198,12 +198,18 @@ if (import.meta.main) {
       "DATABASE_URL must point at the deployment database this pass should attribute.",
     );
   }
-  const legacyDeploymentId = (
-    process.env.OPENBOT_LEGACY_DEPLOYMENT_ID ?? ""
-  ).trim();
+  const rawDeploymentId = process.env.OPENBOT_LEGACY_DEPLOYMENT_ID ?? "";
+  const legacyDeploymentId = rawDeploymentId.trim();
   if (!legacyDeploymentId) {
     throw new Error(
       "OPENBOT_LEGACY_DEPLOYMENT_ID must name the deployment identity the legacy billing key derives from; refusing to run without it.",
+    );
+  }
+  if (legacyDeploymentId !== rawDeploymentId) {
+    // attributeLegacyOrderOwnership's own guard refuses padded ids loudly; pre-trimming
+    // here would sneak one past it instead.
+    throw new Error(
+      "OPENBOT_LEGACY_DEPLOYMENT_ID carries surrounding whitespace; refusing to silently trim it.",
     );
   }
   const { createDatabase } = await import("../../db/client");

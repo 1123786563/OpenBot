@@ -329,53 +329,57 @@ export async function createBillingVisibilityFixture(): Promise<BillingVisibilit
     },
     async dispose() {
       // 授权/归属/预扣/台账/grant/审计/订单随前缀级联清扫；逐表显式删一次，
-      // 顺序满足外键（先事实后身份）。
-      await db.execute(
-        sql`delete from billing_company_finance_grants where tenant_id like ${`${run}%`} or granted_by like ${`${run}%`}`,
-      );
-      await db
-        .delete(paymentEvents)
-        .where(
-          sql`${paymentEvents.orderId} in (select id from payment_orders where created_by like ${`${run}%`})`,
+      // 顺序满足外键（先事实后身份）。清扫放 try、关池放 finally：任一
+      // delete 抛错也不漏关连接池。
+      try {
+        await db.execute(
+          sql`delete from billing_company_finance_grants where tenant_id like ${`${run}%`} or granted_by like ${`${run}%`}`,
         );
-      await db
-        .delete(paymentOrders)
-        .where(like(paymentOrders.createdBy, `${run}%`));
-      await db.execute(
-        sql`delete from credit_reservations where external_customer_id like ${`${run}%`}`,
-      );
-      await db.execute(
-        sql`delete from credit_ledger where external_customer_id like ${`${run}%`}`,
-      );
-      await db.execute(
-        sql`delete from credit_grants where external_customer_id like ${`${run}%`}`,
-      );
-      await db.execute(
-        sql`delete from billing_account_audit where tenant_id like ${`${run}%`} or external_customer_id like ${`${run}%`}`,
-      );
-      await db.execute(
-        sql`delete from billing_credit_accounts where external_customer_id like ${`${run}%`}`,
-      );
-      await db.execute(
-        sql`delete from billing_customer_mappings where tenant_id like ${`${run}%`} or external_customer_id like ${`${run}%`}`,
-      );
-      await db
-        .delete(billingCustomers)
-        .where(like(billingCustomers.externalId, `${run}%`));
-      await db
-        .delete(enterpriseMemberships)
-        .where(like(enterpriseMemberships.tenantId, `${run}%`));
-      await db
-        .delete(enterpriseWorkspaces)
-        .where(like(enterpriseWorkspaces.tenantId, `${run}%`));
-      await db
-        .delete(enterpriseTenants)
-        .where(like(enterpriseTenants.id, `${run}%`));
-      await db
-        .delete(enterprisePrincipals)
-        .where(like(enterprisePrincipals.id, `${run}%`));
-      await db.delete(users).where(like(users.id, `${run}%`));
-      await db.$client.close();
+        await db
+          .delete(paymentEvents)
+          .where(
+            sql`${paymentEvents.orderId} in (select id from payment_orders where created_by like ${`${run}%`})`,
+          );
+        await db
+          .delete(paymentOrders)
+          .where(like(paymentOrders.createdBy, `${run}%`));
+        await db.execute(
+          sql`delete from credit_reservations where external_customer_id like ${`${run}%`}`,
+        );
+        await db.execute(
+          sql`delete from credit_ledger where external_customer_id like ${`${run}%`}`,
+        );
+        await db.execute(
+          sql`delete from credit_grants where external_customer_id like ${`${run}%`}`,
+        );
+        await db.execute(
+          sql`delete from billing_account_audit where tenant_id like ${`${run}%`} or external_customer_id like ${`${run}%`}`,
+        );
+        await db.execute(
+          sql`delete from billing_credit_accounts where external_customer_id like ${`${run}%`}`,
+        );
+        await db.execute(
+          sql`delete from billing_customer_mappings where tenant_id like ${`${run}%`} or external_customer_id like ${`${run}%`}`,
+        );
+        await db
+          .delete(billingCustomers)
+          .where(like(billingCustomers.externalId, `${run}%`));
+        await db
+          .delete(enterpriseMemberships)
+          .where(like(enterpriseMemberships.tenantId, `${run}%`));
+        await db
+          .delete(enterpriseWorkspaces)
+          .where(like(enterpriseWorkspaces.tenantId, `${run}%`));
+        await db
+          .delete(enterpriseTenants)
+          .where(like(enterpriseTenants.id, `${run}%`));
+        await db
+          .delete(enterprisePrincipals)
+          .where(like(enterprisePrincipals.id, `${run}%`));
+        await db.delete(users).where(like(users.id, `${run}%`));
+      } finally {
+        await db.$client.close();
+      }
     },
   };
 }

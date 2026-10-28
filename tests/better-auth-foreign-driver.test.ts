@@ -14,8 +14,9 @@
  *   zero_skipped_or_failed_foreign_suite_is_refused        — expect(exitCode).not.toBe(0)
  *   valid_child_result_preserves_actual_test_count         — expect(reportedTests).toBe(actualTests)
  */
-import { EventEmitter } from "node:events";
+
 import { spawn as nodeSpawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import {
   existsSync,
   mkdirSync,
@@ -27,15 +28,15 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, describe, expect, test } from "./support/e2e-compat";
 import {
   baForeignGaps,
+  type ForeignWhitelist,
   readForeignWhitelist,
   runForeignTarget,
   runForeignTask,
   scrubSecrets,
-  type ForeignWhitelist,
 } from "./support/better-auth-foreign";
+import { afterEach, describe, expect, test } from "./support/e2e-compat";
 
 const scratch: string[] = [];
 afterEach(() => {
@@ -112,9 +113,9 @@ if (mode === "sleep") {
 `;
 
 const PASS_3_JUNIT = [
-  "<testcase name=\"case one\"",
-  "<testcase name=\"case two\"",
-  "<testcase name=\"case three\"",
+  '<testcase name="case one"',
+  '<testcase name="case two"',
+  '<testcase name="case three"',
 ];
 const actualTests = PASS_3_JUNIT.length;
 
@@ -143,7 +144,8 @@ function makeFixture(
   const isGo = mode.startsWith("go-");
   const target = isGo ? `cases/${mode}` : `cases/${mode}.test.ts`;
   if (isGo) mkdirSync(join(cwd, target), { recursive: true });
-  else if (targetExists) writeFileSync(join(cwd, target), "// fixture target\n");
+  else if (targetExists)
+    writeFileSync(join(cwd, target), "// fixture target\n");
   const whitelist: ForeignWhitelist = {
     version: 1,
     generatedBy: "T01.10 driver fixture",
@@ -152,11 +154,7 @@ function makeFixture(
       "fixture-bun": {
         runner: process.execPath,
         cwd,
-        argv: [
-          runner,
-          "--target={{target}}",
-          "--report={{reportPath}}",
-        ],
+        argv: [runner, "--target={{target}}", "--report={{reportPath}}"],
         report: "bun-junit",
       },
       "fixture-go": {
@@ -167,7 +165,10 @@ function makeFixture(
       },
     },
     tasks: [
-      { task: "T99.99", targets: [{ type: isGo ? "fixture-go" : "fixture-bun", target }] },
+      {
+        task: "T99.99",
+        targets: [{ type: isGo ? "fixture-go" : "fixture-bun", target }],
+      },
     ],
   };
   return { directory, cwd, target, whitelist };
@@ -196,13 +197,21 @@ function countingSpawn(): { spawn: typeof nodeSpawn; count: () => number } {
 interface SpawnCall {
   runner: string;
   argv: readonly string[];
-  options: { cwd?: string; env?: Record<string, string | undefined>; shell?: unknown };
+  options: {
+    cwd?: string;
+    env?: Record<string, string | undefined>;
+    shell?: unknown;
+  };
 }
 
 /** A spawner that records the exact call and delegates to the real one. */
 function recordingSpawn(): { spawn: typeof nodeSpawn; calls: SpawnCall[] } {
   const calls: SpawnCall[] = [];
-  const spawn = ((runner: string, argv: readonly string[], options: SpawnCall["options"]) => {
+  const spawn = ((
+    runner: string,
+    argv: readonly string[],
+    options: SpawnCall["options"],
+  ) => {
     calls.push({ runner, argv: [...argv], options });
     return nodeSpawn(runner, argv as string[], options);
   }) as unknown as typeof nodeSpawn;
@@ -257,9 +266,13 @@ describe("BA foreign driver contract", () => {
     const unlisted = await runForeignTask(fixture.whitelist, "T97.97", {
       spawn: spawns.spawn,
     });
-    const missingTarget = await runForeignTask(absentTarget.whitelist, "T99.99", {
-      spawn: spawns.spawn,
-    });
+    const missingTarget = await runForeignTask(
+      absentTarget.whitelist,
+      "T99.99",
+      {
+        spawn: spawns.spawn,
+      },
+    );
     const commandEntry = await runForeignTask(tampered, "T99.99", {
       spawn: spawns.spawn,
     });
@@ -275,26 +288,23 @@ describe("BA foreign driver contract", () => {
   test("zero_skipped_or_failed_foreign_suite_is_refused", async () => {
     for (const mode of ["zero", "skipped-1", "fail-1"]) {
       const fixture = makeFixture(mode);
-      const result = await runForeignTarget(
-        fixture.whitelist,
-        "T99.99",
-        { type: "fixture-bun", target: fixture.target },
-      );
+      const result = await runForeignTarget(fixture.whitelist, "T99.99", {
+        type: "fixture-bun",
+        target: fixture.target,
+      });
       // The named acceptance assertion, per refused shape.
       const exitCode = result.exitCode;
-      expect(
-        exitCode,
-        `${mode}: ${result.status}: ${result.message}`,
-      ).not.toBe(0);
+      expect(exitCode, `${mode}: ${result.status}: ${result.message}`).not.toBe(
+        0,
+      );
       expect(result.status, result.message).not.toBe("passed");
     }
     // A failing suite names the test it failed, so the verdict is actionable at the root report.
     const red = makeFixture("fail-1");
-    const failed = await runForeignTarget(
-      red.whitelist,
-      "T99.99",
-      { type: "fixture-bun", target: red.target },
-    );
+    const failed = await runForeignTarget(red.whitelist, "T99.99", {
+      type: "fixture-bun",
+      target: red.target,
+    });
     expect(failed.message).toContain("case red");
   });
 
@@ -335,7 +345,9 @@ describe("BA foreign driver contract", () => {
     // The child's environment is the driver's allowlist; no inherited DSN or secret survives.
     const envKeys = Object.keys(call.options.env ?? {}).sort();
     expect(envKeys).toEqual(["HOME", "PATH"]);
-    const probe = JSON.parse(readFileSync(join(fixture.cwd, "probe.json"), "utf8"));
+    const probe = JSON.parse(
+      readFileSync(join(fixture.cwd, "probe.json"), "utf8"),
+    );
     expect(probe.argv).toEqual([`--target=${fixture.target}`, probe.argv[1]]);
     // The child resolves the macOS /var symlink; the fixed cwd is the same directory either way.
     expect(probe.cwd).toBe(realpathSync(fixture.cwd));
@@ -359,7 +371,9 @@ describe("BA foreign driver contract", () => {
     expect(failed.message).toContain("TestRed");
     // Secrets in child output never reach the message: the DSN credential is redacted.
     expect(failed.message).not.toContain("fixture-secret");
-    expect(scrubSecrets("postgres://user:pass@host/db")).not.toContain("user:pass");
+    expect(scrubSecrets("postgres://user:pass@host/db")).not.toContain(
+      "user:pass",
+    );
   });
 
   test("cancellation_kills_child_and_removes_report_directory", async () => {
@@ -397,15 +411,32 @@ describe("BA foreign driver contract", () => {
 
     const smuggled = {
       ...fixture.whitelist,
-      tasks: [{ task: "T99.99", targets: [{ type: "fixture-bun", target: fixture.target, shell: "rm -rf /" }] }],
+      tasks: [
+        {
+          task: "T99.99",
+          targets: [
+            { type: "fixture-bun", target: fixture.target, shell: "rm -rf /" },
+          ],
+        },
+      ],
     };
     const undeclared = {
       ...fixture.whitelist,
-      tasks: [{ task: "T99.99", targets: [{ type: "fixture-unknown", target: fixture.target }] }],
+      tasks: [
+        {
+          task: "T99.99",
+          targets: [{ type: "fixture-unknown", target: fixture.target }],
+        },
+      ],
     };
     const escaping = {
       ...fixture.whitelist,
-      tasks: [{ task: "T99.99", targets: [{ type: "fixture-bun", target: "../../etc/passwd" }] }],
+      tasks: [
+        {
+          task: "T99.99",
+          targets: [{ type: "fixture-bun", target: "../../etc/passwd" }],
+        },
+      ],
     };
     for (const registry of [smuggled, undeclared, escaping]) {
       const gaps = baForeignGaps(registry);
@@ -421,6 +452,8 @@ describe("BA foreign driver contract", () => {
     expect(gaps, gaps.join("\n")).toEqual([]);
     // The pinned two-type fixity is the audit's check; here the driver only needs the structure.
     expect(Object.keys(committed.runnerTypes ?? {})).toContain("openmuse-bun");
-    expect(Object.keys(committed.runnerTypes ?? {})).toContain("bifrost-go-governance");
+    expect(Object.keys(committed.runnerTypes ?? {})).toContain(
+      "bifrost-go-governance",
+    );
   });
 });

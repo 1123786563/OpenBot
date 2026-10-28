@@ -5,6 +5,7 @@ import type { AuditStore } from "../audit";
 import { recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import { requireAdmin } from "../auth/guards";
+import { getLogger } from "../../../shared/logger";
 import { DATA_FUNCTIONS, dataFunction } from "./functions";
 import {
   SandboxedNotFoundError,
@@ -16,6 +17,8 @@ import {
   type ComponentStore,
   SandboxedPublicationRequiredError,
 } from "./store";
+
+const log = getLogger("server");
 
 /**
  * The local development actor, which is not a row in `users`.
@@ -67,6 +70,8 @@ export function createComponentRoutes(
   ) => {
     if (!auditStore) return;
     const actor = context.var.actor;
+    // Best-effort, like the gate's audit rows: an audit write that fails must not turn a
+    // policy refusal into a 500 or overwrite a 502 the caller was meant to see.
     await recordAuditEvent(auditStore, {
       eventType,
       targetType: "component",
@@ -75,7 +80,12 @@ export function createComponentRoutes(
         ? { actorUserId: actor.id }
         : {}),
       payload: { actor: actor?.email ?? "unknown", ...payload },
-    });
+    }).catch((error) =>
+      log.warn(
+        { type: "component-audit-failed", eventType, error: String(error) },
+        "component-audit-failed",
+      ),
+    );
   };
 
   /** Everything a person needs to see the whole grant surface at once. */
@@ -164,11 +174,13 @@ export function createComponentRoutes(
     const { added } = await store.syncCatalogue(valid);
     // Only arrivals are recorded. Announcing happens on every page load, and a row per load would
     // bury the trail it is written into.
-    for (const name of added) {
-      await audit(context, "component.published", name, {
-        note: "First seen in a build, published and available to every Bot.",
-      });
-    }
+    await Promise.all(
+      added.map((name) =>
+        audit(context, "component.published", name, {
+          note: "First seen in a build, published and available to every Bot.",
+        }),
+      ),
+    );
     return context.json({ added });
   });
 
@@ -294,7 +306,10 @@ export function createComponentRoutes(
     } | null;
     const functionName =
       typeof body?.function === "string" ? body.function : "";
-    const agentId = typeof body?.agentId === "string" ? body.agentId : "";
+    // Trimmed like the /decision and grant routes: the same Bot must be one identity
+    // on every surface.
+    const agentId =
+      typeof body?.agentId === "string" ? body.agentId.trim() : "";
     if (!functionName || !agentId) {
       return context.json(
         { error: "The function and the Bot are both required." },

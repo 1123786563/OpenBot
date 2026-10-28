@@ -43,9 +43,14 @@ export function useAutoWatchScreen({
    */
   const openedFor = useRef<number | null>(null);
 
-  // Read inside subscriptions that outlive the render they were made in.
+  // Read inside subscriptions that outlive the render they were made in. Synced in an effect,
+  // not in the render body: a render can be discarded or replayed before it commits, and a ref it
+  // wrote during rendering would hand the subscriptions values that were never shown. Effects run
+  // once per commit, and the subscription events arrive after one, so the ref is fresh for them.
   const latest = useRef({ watching, busy, open, close });
-  latest.current = { watching, busy, open, close };
+  useEffect(() => {
+    latest.current = { watching, busy, open, close };
+  });
 
   useEffect(() => {
     if (!botId) return;

@@ -64,10 +64,12 @@ export function createBillingEntitlementReader(options: {
       .catch((error: unknown) => {
         if (!failureLogged) {
           failureLogged = true;
+          // The name only: a driver message can quote a connection string, and the log
+          // line is a stable-code line, not an error dump.
           log(
             JSON.stringify({
               type: "billing-entitlement-unavailable",
-              reason: error instanceof Error ? error.message : String(error),
+              reason: error instanceof Error ? error.name : "unknown",
             }),
           );
         }
@@ -83,7 +85,10 @@ export function createBillingEntitlementReader(options: {
 
   return {
     active(externalCustomerId) {
-      const key = externalCustomerId ?? "";
+      // The bucket key IS the read argument's identity: `undefined` (the deployment's own
+      // default customer) and an explicit "" are different reads, so they must never share
+      // a bucket — the NUL sentinel cannot collide with a real customer id.
+      const key = externalCustomerId === undefined ? "\u0000default" : externalCustomerId;
       let bucket = buckets.get(key);
       if (!bucket) {
         bucket = {};
@@ -103,7 +108,7 @@ export function createBillingEntitlementReader(options: {
         buckets.clear();
         return;
       }
-      buckets.delete(externalCustomerId ?? "");
+      buckets.delete(externalCustomerId);
     },
   };
 }

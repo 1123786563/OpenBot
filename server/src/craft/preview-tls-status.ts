@@ -32,13 +32,14 @@ export const DEFAULT_TLS_STATUS_FILE = "/etc/openbot/tls/renewal-status.json";
 /** The gate's answer: open, or closed with the sentence a person can read. */
 export type TlsStatusVerdict = { ok: true } | { ok: false; reason: string };
 
-/** The record's scalar health vocabulary (renewal-guard.sh's bands, plus failed). */
+/** The record's scalar health vocabulary (renewal-guard.sh's bands, plus failed/skipped). */
 export type TlsStatusHealth =
   | "starting"
   | "ok"
   | "warn"
   | "critical"
-  | "failed";
+  | "failed"
+  | "skipped";
 
 /** The record's shape as this gate reads it: the scalars the verdict turns on. */
 export type TlsStatusRecord = {
@@ -88,6 +89,16 @@ export function tlsStatusVerdictOf(json: string): TlsStatusVerdict {
       ok: false,
       reason:
         "The preview origin is closed while the first TLS certificate is being issued (renewal-status.json health=starting).",
+    };
+  }
+  if (health === "skipped") {
+    // A recorded band of the sidecar, not malformed data: the certificate pipeline was
+    // configured off (skip template), so there is no certificate for the host form to
+    // serve — which is a deployment fact worth naming, not "cannot be judged".
+    return {
+      ok: false,
+      reason:
+        "The preview origin is closed: the TLS sidecar has no certificate pipeline to run (renewal-status.json health=skipped). Configure the sidecar to issue one, or serve the dev form.",
     };
   }
   if (health === "critical" || health === "failed") {

@@ -5,7 +5,7 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { type CodeRunStatus, codeRuns } from "../db/schema/code-runs";
 
@@ -74,7 +74,10 @@ export function createCodeRunStore(db: Database): CodeRunStore {
           error: patch.error,
           finishedAt: patch.finishedAt ?? new Date(),
         })
-        .where(eq(codeRuns.id, id));
+        // The row is the fact and the finish is its settlement: guarded on `running`, so a
+        // second settle that slips past an in-process flag (two racing paths, a future reaper)
+        // cannot overwrite an already-written terminal state and its usage.
+        .where(and(eq(codeRuns.id, id), eq(codeRuns.status, "running")));
     },
 
     async get(id) {

@@ -1,3 +1,4 @@
+import { getLogger } from "../../../shared/logger";
 import { cutAtCodeUnits } from "../channels/text";
 import {
   callTriggerTool,
@@ -18,6 +19,8 @@ import {
   type RoutineSummary,
 } from "../routines/store";
 import { MAX_RESULT_CHARS, type McpCallResult, type McpTool } from "./mcp";
+
+const log = getLogger("server");
 
 /**
  * The builtin transport for Routines: a Bot keeping, changing and dropping a person's standing
@@ -338,8 +341,18 @@ async function describeWritten(
     summary = (await tools.listFor(ownerUserId)).find(
       (candidate) => candidate.id === routine.id,
     );
-  } catch {
-    // The write landed. A confirmation that could not be read is not a write that failed.
+  } catch (error) {
+    // The write landed, so this is still not reported as a failure — but a
+    // database read failing here is a fault an operator should see, not a
+    // silently empty confirmation.
+    log.warn(
+      {
+        type: "openmuse-routine-readback-failed",
+        routineId: routine.id,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      "openmuse-routine-readback-failed",
+    );
   }
   return asResult(
     summary

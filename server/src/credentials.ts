@@ -13,6 +13,22 @@ type CredentialEnvelope = {
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+/** Postgres unique_violation, however the driver wraps it (the SQLSTATE rides `code`). */
+const UNIQUE_VIOLATION = "23505";
+
+function isUniqueViolation(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  for (
+    let node: unknown = error;
+    node !== null && node !== undefined && !seen.has(node);
+    node = (node as { cause?: unknown }).cause
+  ) {
+    seen.add(node);
+    if ((node as { code?: unknown }).code === UNIQUE_VIOLATION) return true;
+  }
+  return false;
+}
+
 /**
  * Derived from the enum rather than written out again.
  *
@@ -142,9 +158,18 @@ type CredentialService = {
 };
 
 async function aesKey(encodedKey: string) {
+  const raw = Buffer.from(encodedKey, "base64");
+  // AES-GCM takes 16/24/32-byte keys only; base64 decoding is silent about both
+  // garbage characters and wrong lengths, and importKey would only fail at the
+  // first encrypt/decrypt — surface a misconfigured key here, once, instead.
+  if (raw.length !== 16 && raw.length !== 24 && raw.length !== 32) {
+    throw new Error(
+      `The credential encryption key must decode to 16, 24 or 32 bytes; got ${raw.length}.`,
+    );
+  }
   return crypto.subtle.importKey(
     "raw",
-    Buffer.from(encodedKey, "base64"),
+    raw,
     { name: "AES-GCM" },
     false,
     ["encrypt", "decrypt"],
@@ -573,7 +598,26 @@ export async function createCredential(
     });
   }
 
-  const credential = await persistCredential(service, input);
+  let credential: CredentialStatus;
+  try {
+    credential = await persistCredential(service, input);
+  } catch (error) {
+    // Two concurrent adds for the same key both saw no live row above; the loser's
+    // insert hits credentials_active_key_idx. Re-read who won and finish as a rotation
+    // — the answer a retry a moment later would give — instead of leaking the driver's
+    // unique-violation (and its params) as a 500.
+    if (!isUniqueViolation(error)) throw error;
+    const winner = await service.store.findLiveByKey({
+      kind: input.kind,
+      provider: input.provider,
+      keyId: input.keyId,
+    });
+    if (!winner) throw error;
+    return rotateCredential(service, {
+      ...input,
+      previousCredentialId: winner.id,
+    });
+  }
 
   await recordAuditEvent(service.auditStore, {
     eventType: "credential.created",
@@ -645,6 +689,10 @@ export async function rotateCredential(
         keyId: input.keyId,
         reason: reasonWithoutStatement(error),
       },
+    }).catch(() => {
+      // The audit write failing (likely the same outage that broke the rotation)
+      // must not replace the original error: the caller needs the vault's verdict,
+      // not the trail's.
     });
     throw error;
   }

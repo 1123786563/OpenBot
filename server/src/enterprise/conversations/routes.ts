@@ -6,6 +6,7 @@ import type {
   PlatformScope,
   ScopeResolver,
 } from "../contracts";
+import type { ConversationPublic } from "./public";
 
 function errorResponse(error: unknown) {
   const code = (error as { code?: unknown } | null)?.code;
@@ -125,11 +126,19 @@ async function jsonObject(request: Request): Promise<Record<string, unknown>> {
   return value as Record<string, unknown>;
 }
 
+/**
+ * MOD06（Issue #626）：刷新与提交两 handler 的门面接线。可选——生产装配层
+ * 注入 M04 公开门面（enterprise/conversations/public.ts，五能力薄委托）后，
+ * 两 handler 改经门面；缺省（存量两参调用方：runner-scope/assembly 测试与
+ * multitenancy 清单脚本）回退直用旧路径，两臂行为等价（MOD05 team-bots
+ * routes 双路先例；conversation-public.test.ts D1 路由级两测钉死）。
+ */
 export function createConversationRoutes(
   service: ConversationService & {
     list(scope: PlatformScope): Promise<ConversationDTO[]>;
   },
   scopes: ScopeResolver,
+  conversations?: Pick<ConversationPublic, "history" | "append">,
 ) {
   const routes = new Hono();
   routes.get("/", async (context) => {
@@ -168,6 +177,46 @@ export function createConversationRoutes(
       );
     }
   });
+  /*
+   * FIX-OCR3 (O3-H1): the answer-basis re-export a browser restoring a transcript reads.
+   * The platform's own thread-history DTO carries no per-message metadata, so the basis
+   * rows the live stream stamped would vanish on refresh; this answers the same pointers
+   * from THIS store's rows, keyed by engine message id. A refresh merges it into the
+   * platform's messages; a failure there draws no basis and changes nothing else.
+   */
+  routes.get("/:threadId/answer-basis", async (context) => {
+    try {
+      const scope = await scopes.resolveForThread(
+        context.req.raw,
+        context.req.param("threadId"),
+      );
+      const threadId = context.req.param("threadId");
+      const basis: Record<string, { id: string; kind: string }[]> = {};
+      let beforeSeq: number | null = null;
+      // One whole-history walk, capped at the model context's own ceiling: a thread longer
+      // than this has basis rows the refresh could not pair anyway.
+      for (let pages = 0; pages < 50; pages += 1) {
+        const page = await service.history(scope, {
+          threadId,
+          beforeSeq,
+          limit: 100,
+        });
+        for (const item of page.items) {
+          if (item.basis !== undefined && item.engineMessageId !== undefined)
+            basis[item.engineMessageId] = [...item.basis];
+        }
+        if (page.nextBeforeSeq === null) break;
+        beforeSeq = page.nextBeforeSeq;
+      }
+      return context.json({ basis });
+    } catch (error) {
+      const response = errorResponse(error);
+      return context.json(
+        response.body,
+        response.status as 400 | 401 | 403 | 404 | 409 | 500 | 503,
+      );
+    }
+  });
   routes.get("/:threadId/messages", async (context) => {
     try {
       const scope = await scopes.resolveForThread(
@@ -177,7 +226,7 @@ export function createConversationRoutes(
       const before = context.req.query("before_seq");
       const limit = context.req.query("limit");
       return context.json(
-        await service.history(scope, {
+        await (conversations ?? service).history(scope, {
           threadId: context.req.param("threadId"),
           beforeSeq: before === undefined ? null : Number(before),
           limit: limit === undefined ? 50 : Number(limit),
@@ -211,7 +260,10 @@ export function createConversationRoutes(
         content: body.content,
         attachments: body.attachments as string[],
       };
-      return context.json(await service.append(scope, input), 201);
+      return context.json(
+        await (conversations ?? service).append(scope, input),
+        201,
+      );
     } catch (error) {
       const response = errorResponse(error);
       return context.json(

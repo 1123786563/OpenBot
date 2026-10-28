@@ -1,27 +1,55 @@
-import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/bun-test-compat";
-import { inArray } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { eq, inArray, sql } from "drizzle-orm";
 import {
-  classifyCleanup,
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
+import {
   type CleanupClassification,
+  classifyCleanup,
 } from "../src/billing/cleanup-classification";
+import { buildCleanupDryRun } from "../src/billing/cleanup-dry-run";
+import { executeAuthorizedCleanup } from "../src/billing/cleanup-execution";
+import { guardCleanupDeletion } from "../src/billing/cleanup-guards";
 import {
-  evaluateCleanupRelations,
-  EXTERNAL_LIVE_SUBSCRIPTION_STATUSES,
   type CleanupRelationsManifest,
+  EXTERNAL_LIVE_SUBSCRIPTION_STATUSES,
+  evaluateCleanupRelations,
 } from "../src/billing/cleanup-relations";
+import { createCreditWriter } from "../src/billing/credits-writer";
+import { createPayerAccountService } from "../src/billing/payer-accounts";
 import { createDatabase } from "../src/db/client";
 import {
+  billingAccountResolutions,
   billingCustomers,
   billingSubscriptions,
   billingWebhookEvents,
   payerAccounts,
 } from "../src/db/schema/billing";
+import { billingCallAttributions } from "../src/db/schema/call-attributions";
+import { users } from "../src/db/schema/core";
 import {
   creditChargeRemainders,
   creditReservationAllocations,
   creditReservations,
+  creditSettlementDetails,
+  creditSettlementDimensionBreakdown,
 } from "../src/db/schema/credit-reservations";
 import { creditGrants, creditLedger } from "../src/db/schema/credits";
+import {
+  enterpriseMemberships,
+  enterprisePrincipals,
+  enterpriseTenants,
+  enterpriseWorkspaces,
+} from "../src/db/schema/enterprise-tenancy";
+import {
+  billingAccountAudit,
+  billingCreditAccounts,
+  billingCustomerMappings,
+} from "../src/db/schema/payer-accounts";
 import { paymentEvents, paymentOrders } from "../src/db/schema/payment";
 import { usageOutbox } from "../src/db/schema/usage-outbox";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -66,14 +94,21 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  * - the whole evaluation persists as one deterministic JSON manifest (AC4).
  */
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
-const run = `b347-${Math.random().toString(36).slice(2, 10)}`;
+const run = `b347-${randomUUID().slice(0, 8)}`;
 
-/** The four fixture keys: one company keep, and the three legacy situations. */
+/** The five fixture keys: one company key as the never-cleaned comparison arm, plus the four legacy situations (K1–K4). */
 const companyKey = `b347-co-${run}`;
 const flightKey = `b347-leg1-${run}`;
 const activeSubKey = `b347-leg2-${run}`;
 const cleanKey = `b347-leg3-${run}`;
-const fixtureKeys = [companyKey, flightKey, activeSubKey, cleanKey];
+const resolutionKey = `b347-leg4-${run}`;
+const fixtureKeys = [
+  companyKey,
+  flightKey,
+  activeSubKey,
+  cleanKey,
+  resolutionKey,
+];
 
 const companyMappingId = `b347-pa-co-${run}`;
 const flightMappingId = `b347-pa-m1-${run}`;
@@ -118,16 +153,34 @@ const cleanOrderId = `b347-po3-${run}`;
 const cleanEventId = `b347-pe3-${run}`;
 const cleanWebhookId = `b347-we3-${run}`;
 const cleanOutboxId = `b347-uo3-${run}`;
+
+/** K4: clean legacy key whose customer cascade would take a 0176 resolution row, and
+ * whose settled hold stands behind a 0179 NO ACTION settlement detail row. */
+const resolutionPayerId = `b347-deploy4-${run}`;
+const resolutionMappingId = `b347-pa-m4-${run}`;
+const resolutionOrderId = `b347-po4-${run}`;
+const resolutionRowId = `b347-bar4-${run}`;
+const resolutionGrantId = `b347-g5-${run}`;
+const resolutionLedgerId = `b347-l4-${run}`;
+const resolutionSettledId = `b347-rs4-${run}`;
+const resolutionAllocationId = `b347-as4-${run}`;
 /** A pending order needs a deployment purchase slot of its own: one pending per scope. */
 const cleanOrderScope = `b347-scope-${run}`;
 
-/** The operator-vouched test-evidence registries: the three legacy orders, nothing else. */
+/** The operator-vouched test-evidence registries: one evidenced legacy order per key
+ * (K1–K4). The registries only make the keys classifiable — K2's retained arm is its ACTIVE
+ * subscription anchor and K3's is its PENDING order, not these orders. */
 const evidenceInput = {
-  testOrderIds: [flightOrderId, activeSubOrderId, cleanOrderId],
+  testOrderIds: [
+    flightOrderId,
+    activeSubOrderId,
+    cleanOrderId,
+    resolutionOrderId,
+  ],
   testUserIds: [],
 };
 
-/** The thirteen FK edges the drizzle schema declares among the legacy tables. */
+/** The twenty-nine FK edges the drizzle schema declares around the legacy tables. */
 const DECLARED_EDGES: {
   childTable: string;
   childColumn: string;
@@ -135,33 +188,254 @@ const DECLARED_EDGES: {
   parentColumn: string;
   onDelete: string;
 }[] = [
-  { childTable: "payer_accounts", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
-  { childTable: "billing_subscriptions", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
-  { childTable: "credit_grants", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
-  { childTable: "credit_ledger", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
-  { childTable: "credit_ledger", childColumn: "grant_id", parentTable: "credit_grants", parentColumn: "id", onDelete: "set_null" },
-  { childTable: "credit_reservations", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
-  { childTable: "credit_reservations", childColumn: "ledger_id", parentTable: "credit_ledger", parentColumn: "id", onDelete: "set_null" },
-  { childTable: "credit_reservation_allocations", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "cascade" },
-  { childTable: "credit_reservation_allocations", childColumn: "grant_id", parentTable: "credit_grants", parentColumn: "id", onDelete: "cascade" },
-  { childTable: "credit_charge_remainders", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
-  { childTable: "payment_events", childColumn: "order_id", parentTable: "payment_orders", parentColumn: "id", onDelete: "cascade" },
-  { childTable: "credit_reservation_attribution", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "cascade" },
+  {
+    childTable: "payer_accounts",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "billing_subscriptions",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_grants",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_ledger",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_ledger",
+    childColumn: "grant_id",
+    parentTable: "credit_grants",
+    parentColumn: "id",
+    onDelete: "set_null",
+  },
+  {
+    childTable: "credit_reservations",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_reservations",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "set_null",
+  },
+  {
+    childTable: "credit_reservation_allocations",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_reservation_allocations",
+    childColumn: "grant_id",
+    parentTable: "credit_grants",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_charge_remainders",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "payment_events",
+    childColumn: "order_id",
+    parentTable: "payment_orders",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_reservation_attribution",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
   // 0147 (#276): 08.1's recovery item, the same one-hop shape as the attribution row above.
-  { childTable: "credit_recovery_items", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "cascade" },
+  {
+    childTable: "credit_recovery_items",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
+  // 0176 (BP06 #374): the resolution registry's account key, the one-hop shape again.
+  {
+    childTable: "billing_account_resolutions",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  // 0163 (#436) restored the rest of the upstream children around the estate.
+  {
+    childTable: "billing_credit_accounts",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "billing_customer_mappings",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "billing_call_attributions",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
+  // The settlement and job family: NO ACTION children, plus the dimension breakdown.
+  {
+    childTable: "async_jobs",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "batch_jobs",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_settlement_details",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_settlement_details",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_async_settlement_details",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_async_settlement_details",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_speech_settlement_details",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_speech_settlement_details",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_batch_settlement_details",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "realtime_units",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "tool_call_charges",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_settlement_dimension_breakdown",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
 ];
 
 let classification: CleanupClassification;
 let manifest: CleanupRelationsManifest;
 
+/** Fresh rows of a table by identity column, for the post-execution assertions. */
+async function rowsOf(table: string, idColumn: string, ids: string[]) {
+  if (ids.length === 0) return [];
+  // Per-value bound params via sql.join — the same parameterized pattern the production
+  // probeRowsWhereIn uses. (Drizzle's plain `${ids}` expands to a value-list tuple and a
+  // bare array param serializes untyped on this driver; both fail at ANY().)
+  const rows = await database.execute(
+    sql`SELECT * FROM ${sql.identifier(table)} WHERE ${sql.identifier(idColumn)} IN (${sql.join(
+      ids.map((id) => sql`${id}`),
+      sql`, `,
+    )}) ORDER BY 1`,
+  );
+  return JSON.parse(JSON.stringify(rows)) as Record<string, unknown>[];
+}
+
 afterAll(async () => {
   // Children first, mirroring the FK graph the module evaluates.
   await database
     .delete(paymentEvents)
-    .where(inArray(paymentEvents.orderId, [flightOrderId, activeSubOrderId, cleanOrderId]));
+    .where(
+      inArray(paymentEvents.orderId, [
+        flightOrderId,
+        activeSubOrderId,
+        cleanOrderId,
+      ]),
+    );
   await database
     .delete(paymentOrders)
-    .where(inArray(paymentOrders.id, [flightOrderId, activeSubOrderId, cleanOrderId]));
+    .where(
+      inArray(paymentOrders.id, [
+        flightOrderId,
+        activeSubOrderId,
+        cleanOrderId,
+        resolutionOrderId,
+      ]),
+    );
   await database
     .delete(usageOutbox)
     .where(inArray(usageOutbox.externalCustomerId, fixtureKeys));
@@ -175,12 +449,18 @@ afterAll(async () => {
       ]),
     );
   await database
+    .delete(creditSettlementDetails)
+    .where(
+      inArray(creditSettlementDetails.reservationId, [resolutionSettledId]),
+    );
+  await database
     .delete(creditReservationAllocations)
     .where(
       inArray(creditReservationAllocations.reservationId, [
         flightReservedId,
         flightSettledId,
         cleanSettledId,
+        resolutionSettledId,
       ]),
     );
   await database
@@ -190,12 +470,18 @@ afterAll(async () => {
         flightReservedId,
         flightSettledId,
         cleanSettledId,
+        resolutionSettledId,
       ]),
     );
   await database
     .delete(creditLedger)
     .where(
-      inArray(creditLedger.id, [flightLedgerId, flightLedger2Id, cleanLedgerId]),
+      inArray(creditLedger.id, [
+        flightLedgerId,
+        flightLedger2Id,
+        cleanLedgerId,
+        resolutionLedgerId,
+      ]),
     );
   await database
     .delete(creditGrants)
@@ -205,6 +491,7 @@ afterAll(async () => {
         flightSpareGrantId,
         activeSubGrantId,
         cleanGrantId,
+        resolutionGrantId,
       ]),
     );
   await database
@@ -214,6 +501,9 @@ afterAll(async () => {
     .delete(billingSubscriptions)
     .where(inArray(billingSubscriptions.externalCustomerId, fixtureKeys));
   await database
+    .delete(billingAccountResolutions)
+    .where(inArray(billingAccountResolutions.id, [resolutionRowId]));
+  await database
     .delete(payerAccounts)
     .where(
       inArray(payerAccounts.id, [
@@ -221,6 +511,7 @@ afterAll(async () => {
         flightMappingId,
         activeSubMappingId,
         cleanMappingId,
+        resolutionMappingId,
       ]),
     );
   await database
@@ -260,6 +551,12 @@ beforeAll(async () => {
       kind: "legacy_deployment",
       payerId: cleanPayerId,
       externalCustomerId: cleanKey,
+    },
+    {
+      id: resolutionMappingId,
+      kind: "legacy_deployment",
+      payerId: resolutionPayerId,
+      externalCustomerId: resolutionKey,
     },
   ]);
 
@@ -464,7 +761,8 @@ beforeAll(async () => {
   ]);
 
   // Usage outbox: carries the customer key by VALUE (no FK) — deleting the customer never
-  // reaches these rows. O and O3 also carry a reservation link (again by value only).
+  // reaches these rows. The first and third rows (uo1, uo3) also carry a reservation link
+  // (again by value only); the second (uo2) carries neither link.
   await database.insert(usageOutbox).values([
     {
       eventId: flightOutboxId,
@@ -539,7 +837,8 @@ beforeAll(async () => {
     },
     {
       id: cleanOrderId,
-      // Its own scope: the schema allows one pending order per deployment scope.
+      // cleanOrderScope is shared with K4's paid resolution order below: the schema allows
+      // one PENDING order per deployment scope, and only this order is pending in it.
       deploymentScope: cleanOrderScope,
       planCode: "legacy-test",
       provider: "alipay",
@@ -551,6 +850,87 @@ beforeAll(async () => {
       expiresAt: new Date("2027-06-01T00:00:00Z"),
     },
   ]);
+
+  // K4's paid, evidenced order — the test-evidence anchor that makes its key cleanable.
+  await database.insert(paymentOrders).values({
+    id: resolutionOrderId,
+    deploymentScope: cleanOrderScope,
+    planCode: "legacy-test",
+    provider: "alipay",
+    amountCents: 4_000,
+    status: "paid",
+    activationState: "applied",
+    ownerPayerKind: "legacy_deployment",
+    ownerPayerId: resolutionPayerId,
+    expiresAt: new Date("2026-01-01T00:00:00Z"),
+    paidAt: new Date("2026-01-01T00:30:00Z"),
+    terminalAt: new Date("2026-01-01T00:30:00Z"),
+  });
+
+  // The 0176 registry row that key already carries: an operator's authorized disposal
+  // decision, the shape billing/account-resolution.ts is the only writer of.
+  await database.insert(billingAccountResolutions).values({
+    id: resolutionRowId,
+    externalCustomerId: resolutionKey,
+    action: "refund",
+    reasonCode: "paid_not_delivered",
+    evidenceKind: "payment_event",
+    evidenceReference: `b347-evidence-${run}`,
+    operatorId: `b347-op-${run}`,
+    idempotencyKey: `b347-idem-${run}`,
+    amountCents: 100,
+    detail: `b347 fixture resolution ${run}`,
+  });
+
+  // K4's settled hold — cleanable on its own — with its 0179 settlement detail row: the
+  // NO ACTION child that makes the hold's deletion the database's to refuse.
+  await database.insert(creditGrants).values({
+    id: resolutionGrantId,
+    externalCustomerId: resolutionKey,
+    source: "promo",
+    total: 5_000,
+    expiresAt: new Date("2027-01-01T00:00:00Z"),
+    idempotencyKey: `b347-promo3-${run}`,
+  });
+  await database.insert(creditLedger).values({
+    id: resolutionLedgerId,
+    externalCustomerId: resolutionKey,
+    grantId: resolutionGrantId,
+    title: `b347 blocked settlement ${run}`,
+    idempotencyKey: `b347-ledger4-${run}`,
+    credits: 100,
+    applied: 100,
+  });
+  await database.insert(creditReservations).values({
+    id: resolutionSettledId,
+    externalCustomerId: resolutionKey,
+    idempotencyKey: `b347-blocked-settled-${run}`,
+    maximum: 1_000,
+    status: "settled",
+    expiresAt: new Date("2026-01-01T00:00:00Z"),
+    terminalAt: new Date("2026-01-01T01:00:00Z"),
+    actualNumerator: "10000",
+    actualDenominator: "100",
+    charged: 100,
+    applied: 100,
+    released: 900,
+    ledgerId: resolutionLedgerId,
+  });
+  await database.insert(creditReservationAllocations).values({
+    id: resolutionAllocationId,
+    reservationId: resolutionSettledId,
+    grantId: resolutionGrantId,
+    amount: 1_000,
+    consumed: 100,
+  });
+  await database.insert(creditSettlementDetails).values({
+    reservationId: resolutionSettledId,
+    ledgerId: resolutionLedgerId,
+    capability: "image",
+    requestedCount: 1,
+    generatedCount: 1,
+    unitPriceUsd: "0.01",
+  });
 
   await database.insert(paymentEvents).values([
     {
@@ -584,9 +964,14 @@ beforeAll(async () => {
   manifest = await evaluateCleanupRelations(database, classification);
 });
 
-/** The evaluation of one candidate record, by table and record id. */
-function evaluationOf(table: string, recordId: string) {
-  const evaluation = manifest.evaluations.find(
+/** The evaluation of one candidate record, by table and record id (#680.3: parameterized so
+ * the later describes reuse it instead of keeping parallel `evaluationIn` twins). */
+function evaluationOf(
+  table: string,
+  recordId: string,
+  evaluated: CleanupRelationsManifest = manifest,
+) {
+  const evaluation = evaluated.evaluations.find(
     (entry) => entry.table === table && entry.recordId === recordId,
   );
   expect(evaluation).toBeDefined();
@@ -601,8 +986,12 @@ function removedEntryOf(table: string, recordId: string) {
   return removed!;
 }
 
-function isSafe(table: string, recordId: string) {
-  return manifest.safeCandidates.some(
+function isSafe(
+  table: string,
+  recordId: string,
+  evaluated: CleanupRelationsManifest = manifest,
+) {
+  return evaluated.safeCandidates.some(
     (entry) => entry.table === table && entry.recordId === recordId,
   );
 }
@@ -630,7 +1019,9 @@ describe("the legacy billing relations evaluation maps associations from live da
       manifest.fkEdges.filter((edge) => edge.childTable === "usage_outbox"),
     ).toEqual([]);
     expect(
-      manifest.fkEdges.filter((edge) => edge.childTable === "billing_webhook_events"),
+      manifest.fkEdges.filter(
+        (edge) => edge.childTable === "billing_webhook_events",
+      ),
     ).toEqual([]);
     expect(
       manifest.fkEdges.filter((edge) => edge.childTable === "payment_orders"),
@@ -642,9 +1033,28 @@ describe("the legacy billing relations evaluation maps associations from live da
     expect(outboxLink).toBeDefined();
     expect(outboxLink!.foreignKey).toBe(false);
     expect(outboxLink!.matchedRows).toBe(3);
-    // No drifted declarations on this database.
+    // No drifted declarations on this database — but the second-hop discovery (#679.1) does
+    // name three real catalog edges the declaration never covered: the recovery item's own
+    // CASCADE children (alerts, queries) and its NO ACTION evidence pointer back to the
+    // query. They are findings to carry, not silent fixes.
+    const undeclared = manifest.fkEdges
+      .filter((edge) => !edge.matchesDeclaration)
+      .map((edge) => edge.constraintName)
+      .sort();
+    const discoveredNames = manifest.fkEdges
+      .filter((edge) => edge.discovered)
+      .map((edge) => edge.constraintName)
+      .sort();
+    expect(discoveredNames).toEqual([
+      "credit_recovery_alerts_item_id_credit_recovery_items_id_fk",
+      "credit_recovery_items_resolution_evidence_id_fkey",
+      "credit_recovery_queries_item_id_credit_recovery_items_id_fk",
+    ]);
+    // The invariant holds again: 0 mismatches means the declaration agrees with the data;
+    // discoveries are counted separately, so real drift cannot drown among them.
     expect(manifest.summary.declarationMismatches).toBe(0);
-    expect(manifest.fkEdges).toHaveLength(DECLARED_EDGES.length);
+    expect(manifest.summary.discoveredEdges).toBe(3);
+    expect(manifest.fkEdges).toHaveLength(DECLARED_EDGES.length + 3);
   });
 
   test("FK protection: deletion or mutation reaching a retained row removes the candidate", () => {
@@ -652,7 +1062,9 @@ describe("the legacy billing relations evaluation maps associations from live da
     const customer = evaluationOf("billing_customers", flightKey);
     expect(customer.removed).toBe(true);
     expect(customer.removalReason).toBe("cascade_impact_on_retained");
-    const retainedIds = customer.retainedImpact.map((impact) => impact.recordId);
+    const retainedIds = customer.retainedImpact.map(
+      (impact) => impact.recordId,
+    );
     expect(retainedIds).toContain(flightReservedId);
     expect(retainedIds).toContain(flightAllocationId);
     for (const impact of customer.retainedImpact) {
@@ -666,6 +1078,7 @@ describe("the legacy billing relations evaluation maps associations from live da
       const impact = customer.retainedImpact.find(
         (entry) => entry.recordId === recordId,
       );
+      expect(impact).toBeDefined();
       expect(impact!.class).toBe("unknown_owner");
       expect(impact!.protection).toBe("retained");
     }
@@ -696,6 +1109,79 @@ describe("the legacy billing relations evaluation maps associations from live da
     );
     expect(ledgerImpact).toBeDefined();
     expect(ledgerImpact!.effect).toBe("set_null_mutate");
+  });
+  test("the 0176 resolution registry is retained: a customer cascade into it is pulled", () => {
+    // K4 is mapped and evidenced like the other legacy keys — without the resolution row,
+    // every row of it would be safe. The one 0176 registry row its customer cascade would
+    // delete is an operator's authorized disposal decision (the replay answer and the
+    // refund ceiling's prior history — AC18's financial history), so the customer is
+    // pulled by cascade impact with the row named, not silently cleaned around.
+    const customer = evaluationOf("billing_customers", resolutionKey);
+    expect(customer.removed).toBe(true);
+    // The pull is decided by the standing NO ACTION settlement child reached through the
+    // key's own chain: the database refuses the whole cascade, so the blocked-removal
+    // reason names what actually happens, with the registry row still named below.
+    expect(customer.removalReason).toBe(
+      "deletion_blocked_by_retained_reference",
+    );
+    expect(customer.evidence).toContain("billing_account_resolutions");
+    const impact = customer.retainedImpact.find(
+      (entry) =>
+        entry.table === "billing_account_resolutions" &&
+        entry.recordId === resolutionRowId,
+    );
+    expect(impact).toBeDefined();
+    expect(impact!.effect).toBe("cascade_delete");
+    expect(impact!.protection).toBe("retained");
+    expect(impact!.class).toBe("unclassified");
+    // The registry row rides the customer's cascade scope — probed, so the pull has data
+    // behind it, and never itself a candidate the cleanup set could name.
+    expect(
+      customer.cascadeDeletionScope.some(
+        (row) =>
+          row.table === "billing_account_resolutions" &&
+          row.recordId === resolutionRowId,
+      ),
+    ).toBe(true);
+    // The pull is the resolution's alone: the key's mapping and order stay safe.
+    expect(isSafe("payer_accounts", resolutionMappingId)).toBe(true);
+    expect(isSafe("payment_orders", resolutionOrderId)).toBe(true);
+    expect(
+      manifest.safeCandidates.some(
+        (entry) => entry.table === "billing_account_resolutions",
+      ),
+    ).toBe(false);
+  });
+
+  test("a NO ACTION settlement child pulls the hold: out-of-estate blockers are never executable", () => {
+    // K4's settled hold is evidenced and terminal — cleanable on every 21.2 rule — but it
+    // stands behind a 0179 settlement detail row whose FK is NO ACTION: the database
+    // refuses the hold's deletion while the detail stands, and the executor deletes only
+    // estate rows children-first. The hold is pulled here, with the blocker named, instead
+    // of failing as an FK error mid-execution.
+    const hold = evaluationOf("credit_reservations", resolutionSettledId);
+    expect(hold.removed).toBe(true);
+    expect(hold.removalReason).toBe("deletion_blocked_by_retained_reference");
+    expect(hold.evidence).toContain("delete_blocked");
+    expect(hold.evidence).toContain("credit_settlement_details");
+    const impact = hold.retainedImpact.find(
+      (entry) =>
+        entry.table === "credit_settlement_details" &&
+        entry.recordId === resolutionSettledId,
+    );
+    expect(impact).toBeDefined();
+    expect(impact!.effect).toBe("delete_blocked");
+    expect(impact!.protection).toBe("retained");
+    expect(impact!.class).toBe("unclassified");
+    expect(
+      hold.blockedBy.some((row) => row.table === "credit_settlement_details"),
+    ).toBe(true);
+    // The blocker reaches up the key's chain too: the ledger line behind the same detail
+    // is pulled by its own ledger_id NO ACTION reference.
+    const ledger = evaluationOf("credit_ledger", resolutionLedgerId);
+    expect(ledger.removed).toBe(true);
+    expect(ledger.removalReason).toBe("deletion_blocked_by_retained_reference");
+    expect(ledger.evidence).toContain("credit_settlement_details");
   });
 
   test("cascade-removed candidates leave their safe siblings cleanable", () => {
@@ -730,7 +1216,8 @@ describe("the legacy billing relations evaluation maps associations from live da
     expect(
       manifest.evaluations.filter(
         (entry) =>
-          entry.recordId === flightReservedId || entry.recordId === flightAllocationId,
+          entry.recordId === flightReservedId ||
+          entry.recordId === flightAllocationId,
       ),
     ).toEqual([]);
   });
@@ -750,10 +1237,49 @@ describe("the legacy billing relations evaluation maps associations from live da
     }
   });
 
+  test("the attribution verdict and the kept-mapping decision share one key derivation", async () => {
+    // Tamper: the candidate's classification-side key says flightKey while the row's own
+    // column still says cleanKey. The mapping must be kept, and its evidence must cite the
+    // records of the SAME key the keep-decision used — not silently switch derivations
+    // between deciding and explaining.
+    const tampered = {
+      ...classification,
+      candidates: classification.candidates.map((candidate) =>
+        candidate.table === "payer_accounts" &&
+        candidate.recordId === cleanMappingId
+          ? { ...candidate, externalCustomerId: flightKey }
+          : candidate,
+      ),
+    };
+    const evaluated = await evaluateCleanupRelations(database, tampered);
+    const mapping = evaluated.evaluations.find(
+      (entry) =>
+        entry.table === "payer_accounts" && entry.recordId === cleanMappingId,
+    );
+    expect(mapping).toBeDefined();
+    expect(mapping!.removed).toBe(true);
+    expect(mapping!.removalReason).toBe("attribution_basis_of_kept_records");
+    expect(mapping!.evidence).toContain(flightReservedId);
+  });
+
+  test("a removal caused by retained FK evidence cites the blocked-removal reason", () => {
+    // The K4 hold's pull is decided by its NO ACTION settlement child: the reason must be
+    // the blocked-removal member, not the generic cascade reason — a permanently-zero
+    // byReason counter for a reachable verdict is a false signal for reviewers.
+    const hold = evaluationOf("credit_reservations", resolutionSettledId);
+    expect(hold.removalReason).toBe("deletion_blocked_by_retained_reference");
+    expect(
+      manifest.summary.byReason.deletion_blocked_by_retained_reference,
+    ).toBeGreaterThan(0);
+  });
+
   test("external live subscriptions are listed separately and never auto-cancelled", () => {
     // Exactly the candidate keys' live subscriptions — the company key's active subscription
     // is not the cleanup's business; canceled ones are not live.
-    expect(EXTERNAL_LIVE_SUBSCRIPTION_STATUSES).toEqual(["active", "incomplete"]);
+    expect(EXTERNAL_LIVE_SUBSCRIPTION_STATUSES).toEqual([
+      "active",
+      "incomplete",
+    ]);
     expect(manifest.externalActiveSubscriptions).toHaveLength(1);
     const listed = manifest.externalActiveSubscriptions[0];
     expect(listed.externalSubscriptionId).toBe(activeSubscriptionId);
@@ -762,7 +1288,10 @@ describe("the legacy billing relations evaluation maps associations from live da
     expect(listed.planCode).toBe("legacy-active");
     // The anchor is pulled from the cleanup set: a human confirms before anything happens.
     expect(isSafe("billing_subscriptions", activeSubscriptionId)).toBe(false);
-    const anchor = removedEntryOf("billing_subscriptions", activeSubscriptionId);
+    const anchor = removedEntryOf(
+      "billing_subscriptions",
+      activeSubscriptionId,
+    );
     expect(anchor.reason).toBe("external_subscription_anchor");
     // The customer row's cascade would take the anchor, so it is pulled too.
     const customer = evaluationOf("billing_customers", activeSubKey);
@@ -834,8 +1363,46 @@ describe("the legacy billing relations evaluation maps associations from live da
       classification.evidenceInput.sha256,
     );
     const roundTripped = JSON.parse(JSON.stringify(manifest));
-    expect(roundTripped).toEqual(manifest);
+    // The round trip alone can never fail (#680.8): assert the persisted KEY SET survives
+    // serialization — the field inventory a 21.4 consumer hashes — and that the generation
+    // timestamp is present as the one metadata field the hash projection excludes (#679.3).
+    expect(Object.keys(roundTripped).sort()).toEqual(
+      Object.keys(manifest).sort(),
+    );
+    expect(typeof manifest.generatedAt).toBe("string");
     // Two evaluations agree on everything but the generation timestamp (21.4's hash input).
+  });
+
+  test("a declared edge whose delete behavior drifted is a mismatch, not a discovery", async () => {
+    // Restores exactly after itself: the drift FK is the declared customer→ledger cascade
+    // recreated as RESTRICT. The mismatch count must isolate this one drift — discovered
+    // edges stay out of the counter (OCR round-2, maint·medium).
+    await database.execute(
+      sql`ALTER TABLE credit_ledger DROP CONSTRAINT credit_ledger_ext_customer_id_fk`,
+    );
+    await database.execute(
+      sql`ALTER TABLE credit_ledger ADD CONSTRAINT credit_ledger_ext_customer_id_fk FOREIGN KEY (external_customer_id) REFERENCES billing_customers(external_id) ON DELETE RESTRICT`,
+    );
+    try {
+      const evaluated = await evaluateCleanupRelations(database, classification);
+      const drifted = evaluated.fkEdges.find(
+        (edge) =>
+          edge.childTable === "credit_ledger" &&
+          edge.childColumn === "external_customer_id",
+      );
+      expect(drifted).toBeDefined();
+      expect(drifted!.discovered).toBe(false);
+      expect(drifted!.matchesDeclaration).toBe(false);
+      expect(evaluated.summary.declarationMismatches).toBe(1);
+      expect(evaluated.summary.discoveredEdges).toBe(3);
+    } finally {
+      await database.execute(
+        sql`ALTER TABLE credit_ledger DROP CONSTRAINT credit_ledger_ext_customer_id_fk`,
+      );
+      await database.execute(
+        sql`ALTER TABLE credit_ledger ADD CONSTRAINT credit_ledger_ext_customer_id_fk FOREIGN KEY (external_customer_id) REFERENCES billing_customers(external_id) ON DELETE CASCADE`,
+      );
+    }
   });
 
   test("a second evaluation reproduces the manifest deterministically", async () => {
@@ -865,9 +1432,401 @@ describe("the legacy billing relations evaluation maps associations from live da
         },
       ],
     };
+    // The rejection must name the EXACT drifted row (#680.9): a validation that tripped on
+    // the fabricated attributionSource instead of the missing row would be the wrong branch
+    // passing this test.
+    await expect(evaluateCleanupRelations(database, drifted)).rejects.toThrow(
+      new RegExp(`credit_grants/b347-missing-${run}[^]*no longer exists`),
+    );
+  });
+
+  test("a SET NULL child table outside the static universe does not crash the probe", async () => {
+    // OCR report bug 1: the edges filter loads child tables of reachable parents even when
+    // the edge is SET NULL (no cascade reach), so a drift table born empty at spec time is
+    // traversed without a probe spec. The evaluation must treat the discovered table as
+    // part of its universe, name the child row, and keep the fail-closed verdict.
+    const snChildId = `${run}-sn-child`;
+    await database.execute(
+      sql`CREATE TABLE b5r_t1_sn (id text PRIMARY KEY, hold_id text REFERENCES credit_reservations(id) ON DELETE SET NULL)`,
+    );
+    try {
+      await database.execute(
+        sql`INSERT INTO b5r_t1_sn (id, hold_id) VALUES (${snChildId}, ${flightSettledId})`,
+      );
+      const evaluated = await evaluateCleanupRelations(database, classification);
+      const hold = evaluated.evaluations.find(
+        (entry) =>
+          entry.table === "credit_reservations" &&
+          entry.recordId === flightSettledId,
+      );
+      expect(hold).toBeDefined();
+      expect(hold!.removed).toBe(true);
+      expect(
+        hold!.retainedImpact.some(
+          (impact) =>
+            impact.table === "b5r_t1_sn" &&
+            impact.recordId === snChildId &&
+            impact.effect === "set_null_mutate" &&
+            impact.protection === "retained",
+        ),
+      ).toBe(true);
+    } finally {
+      await database.execute(sql`DROP TABLE IF EXISTS b5r_t1_sn`);
+    }
+  });
+
+  test("a row of an estate table that was empty at classify time is retained", async () => {
+    // OCR report bug 2: classification coverage is the ESTATE's table set, not the set of
+    // tables that happened to have records. A row written into an estate table after the
+    // classification snapshot is unclassified — it defaults to protected like any other
+    // uncovered row, never inherits a cleanable verdict from an empty-at-classify table.
+    // The row rides an existing customer key to satisfy the FK; the classification snapshot
+    // predates it, so within this evaluation it is the unclassified drift row. The table's
+    // recordId IS the customer key.
+    await database.insert(creditChargeRemainders).values({
+      externalCustomerId: resolutionKey,
+      numerator: "1",
+      denominator: "3",
+    });
+    try {
+      const tampered = {
+        ...classification,
+        records: classification.records.filter(
+          (record) => record.table !== "credit_charge_remainders",
+        ),
+        candidates: classification.candidates.filter(
+          (record) => record.table !== "credit_charge_remainders",
+        ),
+      };
+      const lateClassification = {
+        ...tampered,
+        candidates: [
+          ...tampered.candidates,
+          {
+            table: "credit_charge_remainders",
+            recordId: resolutionKey,
+            externalCustomerId: resolutionKey,
+            attributionSource: "test_order_number",
+            class: "confirmed_obsolete_test" as const,
+            testFeatures: [],
+            inFlight: false,
+            observedAt: null,
+            isolationReason: null,
+          },
+        ],
+      };
+      const evaluated = await evaluateCleanupRelations(
+        database,
+        lateClassification,
+      );
+      const lateRow = evaluated.evaluations.find(
+        (entry) =>
+          entry.table === "credit_charge_remainders" &&
+          entry.recordId === resolutionKey,
+      );
+      expect(lateRow).toBeDefined();
+      expect(lateRow!.removed).toBe(true);
+      expect(
+        lateRow!.retainedImpact.some(
+          (impact) =>
+            impact.protection === "retained" &&
+            impact.class === "unclassified",
+        ),
+      ).toBe(true);
+    } finally {
+      await database
+        .delete(creditChargeRemainders)
+        .where(eq(creditChargeRemainders.externalCustomerId, resolutionKey));
+    }
+  });
+
+  test("a cascade-discovered table's rows are retained, never deletion surface", async () => {
+    // OCR report bug 3: a table the catalog discovery added to the universe has no
+    // adjudication entry — its rows must default to protected (same direction as
+    // "classification does not cover defaults to protected"), pulling any candidate whose
+    // cascade would reach them, instead of riding the deletion scope as cleanable.
+    const h1Id = `${run}-dh1`;
+    const h2Id = `${run}-dh2`;
+    await database.execute(
+      sql`CREATE TABLE b5r_t1_dh1 (id text PRIMARY KEY, hold_id text NOT NULL REFERENCES credit_reservations(id) ON DELETE CASCADE)`,
+    );
+    await database.execute(
+      sql`CREATE TABLE b5r_t1_dh2 (id text PRIMARY KEY, h1_id text NOT NULL REFERENCES b5r_t1_dh1(id) ON DELETE CASCADE)`,
+    );
+    try {
+      await database.execute(
+        sql`INSERT INTO b5r_t1_dh1 (id, hold_id) VALUES (${h1Id}, ${flightSettledId})`,
+      );
+      await database.execute(
+        sql`INSERT INTO b5r_t1_dh2 (id, h1_id) VALUES (${h2Id}, ${h1Id})`,
+      );
+      const evaluated = await evaluateCleanupRelations(database, classification);
+      const hold = evaluated.evaluations.find(
+        (entry) =>
+          entry.table === "credit_reservations" &&
+          entry.recordId === flightSettledId,
+      );
+      expect(hold).toBeDefined();
+      expect(hold!.removed).toBe(true);
+      for (const [table, recordId] of [
+        ["b5r_t1_dh1", h1Id],
+        ["b5r_t1_dh2", h2Id],
+      ] as const) {
+        expect(
+          hold!.retainedImpact.some(
+            (impact) =>
+              impact.table === table &&
+              impact.recordId === recordId &&
+              impact.protection === "retained" &&
+              impact.class === "unclassified",
+          ),
+        ).toBe(true);
+      }
+    } finally {
+      await database.execute(sql`DROP TABLE IF EXISTS b5r_t1_dh2`);
+      await database.execute(sql`DROP TABLE IF EXISTS b5r_t1_dh1`);
+    }
+  });
+
+  test("a directly inserted unclassified estate child is retained", async () => {
+    const unknownGrantId = `b347-unclassified-${run}`;
+    await database.insert(creditGrants).values({
+      id: unknownGrantId,
+      externalCustomerId: flightKey,
+      source: "promo",
+      total: 1,
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      idempotencyKey: `b347-unclassified-${run}`,
+    });
+
+    try {
+      const evaluated = await evaluateCleanupRelations(
+        database,
+        classification,
+      );
+      const customer = evaluated.evaluations.find(
+        (entry) =>
+          entry.table === "billing_customers" && entry.recordId === flightKey,
+      );
+      expect(customer).toBeDefined();
+      const impact = customer!.retainedImpact.find(
+        (entry) =>
+          entry.table === "credit_grants" && entry.recordId === unknownGrantId,
+      );
+      expect(impact).toBeDefined();
+      expect(impact!.class).toBe("unclassified");
+      expect(impact!.protection).toBe("retained");
+      expect(impact!.effect).toBe("cascade_delete");
+    } finally {
+      await database
+        .delete(creditGrants)
+        .where(eq(creditGrants.id, unknownGrantId));
+    }
+  });
+
+  test("a second-hop CASCADE grandchild is named in the deletion scope", async () => {
+    // Drift FK chain: legacy hold -> h1 (catalog-loaded, one hop) -> h2 (a grandchild the
+    // legacy-table filter never loaded). Deleting the hold really deletes both rows through
+    // PostgreSQL's cascade, so the manifest must name them in the deletion scope and load
+    // the grandchild edge as evidence — never stop at the first hop.
+    const h1Id = `${run}-h1`;
+    const h2Id = `${run}-h2`;
+    await database.execute(
+      sql`CREATE TABLE b5r_t1_h1 (id text PRIMARY KEY, hold_id text NOT NULL REFERENCES credit_reservations(id) ON DELETE CASCADE)`,
+    );
+    await database.execute(
+      sql`CREATE TABLE b5r_t1_h2 (id text PRIMARY KEY, h1_id text NOT NULL REFERENCES b5r_t1_h1(id) ON DELETE CASCADE)`,
+    );
+    try {
+      await database.execute(
+        sql`INSERT INTO b5r_t1_h1 (id, hold_id) VALUES (${h1Id}, ${flightSettledId})`,
+      );
+      await database.execute(
+        sql`INSERT INTO b5r_t1_h2 (id, h1_id) VALUES (${h2Id}, ${h1Id})`,
+      );
+      const evaluated = await evaluateCleanupRelations(
+        database,
+        classification,
+      );
+      const hold = evaluated.evaluations.find(
+        (entry) =>
+          entry.table === "credit_reservations" &&
+          entry.recordId === flightSettledId,
+      );
+      expect(hold).toBeDefined();
+      const scopeIds = hold!.cascadeDeletionScope.map((row) => row.recordId);
+      expect(scopeIds).toContain(h1Id);
+      expect(scopeIds).toContain(h2Id);
+      expect(
+        evaluated.fkEdges.some(
+          (edge) =>
+            edge.childTable === "b5r_t1_h2" && edge.parentTable === "b5r_t1_h1",
+        ),
+      ).toBe(true);
+    } finally {
+      await database.execute(sql`DROP TABLE IF EXISTS b5r_t1_h2`);
+      await database.execute(sql`DROP TABLE IF EXISTS b5r_t1_h1`);
+    }
+  });
+
+  test("a composite FK touching the probe universe fails closed", async () => {
+    // Drift composite FK: (ledger_id, dimension) is only unique as a PAIR. Evaluating its
+    // columns separately turns partial matches into deletion evidence — a guess the
+    // evaluation must refuse instead of making.
+    await database.insert(creditSettlementDimensionBreakdown).values({
+      ledgerId: cleanLedgerId,
+      dimension: "input_tokens",
+      units: 5,
+    });
+    await database.execute(
+      sql`CREATE TABLE b5r_t1_comp (c1 text NOT NULL, c2 text NOT NULL, FOREIGN KEY (c1, c2) REFERENCES credit_settlement_dimension_breakdown(ledger_id, dimension) ON DELETE CASCADE)`,
+    );
+    try {
+      await database.execute(
+        sql`INSERT INTO b5r_t1_comp (c1, c2) VALUES (${cleanLedgerId}, 'input_tokens')`,
+      );
+      await expect(
+        evaluateCleanupRelations(database, classification),
+      ).rejects.toThrow(/composite/);
+    } finally {
+      await database.execute(sql`DROP TABLE IF EXISTS b5r_t1_comp`);
+      await database
+        .delete(creditSettlementDimensionBreakdown)
+        .where(eq(creditSettlementDimensionBreakdown.ledgerId, cleanLedgerId));
+    }
+  });
+
+  test("a SET DEFAULT FK edge fails closed instead of being silently skipped", async () => {
+    // Drift FK: a real ON DELETE SET DEFAULT edge the three passes never traversed. The
+    // evaluator cannot represent the child's post-mutation value (the column default may
+    // name another parent), so discovering one must refuse the evaluation — never silently
+    // evaluate as if the edge did not exist.
+    await database.execute(
+      sql`ALTER TABLE billing_webhook_events ADD COLUMN b5r_t1_default_ref text REFERENCES credit_ledger(id) ON DELETE SET DEFAULT`,
+    );
+    try {
+      const drifted = await classifyCleanup(database, evidenceInput);
+      await expect(evaluateCleanupRelations(database, drifted)).rejects.toThrow(
+        /set_default/,
+      );
+    } finally {
+      await database.execute(
+        sql`ALTER TABLE billing_webhook_events DROP COLUMN IF EXISTS b5r_t1_default_ref`,
+      );
+    }
+  });
+
+  test("a row reached through both SET NULL and NO ACTION is reported blocked, not mutated", async () => {
+    // Drift FKs: a settlement detail row (a protected, never-executable blocker by table)
+    // that ALSO carries a SET NULL reference to the same candidate ledger. The database's
+    // truth is "the ledger's deletion is refused" — blocking must win over mutation, and
+    // the shared pass state must not swallow the blocker because the mutation pass ran first.
+    await database.insert(creditSettlementDetails).values({
+      reservationId: flightSettledId,
+      ledgerId: flightLedgerId,
+      capability: "image",
+      requestedCount: 1,
+      generatedCount: 1,
+      unitPriceUsd: "0.01",
+    });
+    await database.execute(
+      sql`ALTER TABLE credit_settlement_details ADD COLUMN b5r_t1_sn_ref text REFERENCES credit_ledger(id) ON DELETE SET NULL`,
+    );
+    await database.execute(
+      sql`UPDATE credit_settlement_details SET b5r_t1_sn_ref = ${flightLedgerId} WHERE reservation_id = ${flightSettledId}`,
+    );
+    try {
+      const evaluated = await evaluateCleanupRelations(
+        database,
+        classification,
+      );
+      const ledger = evaluated.evaluations.find(
+        (entry) =>
+          entry.table === "credit_ledger" && entry.recordId === flightLedgerId,
+      );
+      expect(ledger).toBeDefined();
+      expect(ledger!.removed).toBe(true);
+      expect(
+        ledger!.blockedBy.some(
+          (row) =>
+            row.table === "credit_settlement_details" &&
+            row.recordId === flightSettledId,
+        ),
+      ).toBe(true);
+      const impact = ledger!.retainedImpact.find(
+        (entry) =>
+          entry.table === "credit_settlement_details" &&
+          entry.recordId === flightSettledId,
+      );
+      expect(impact).toBeDefined();
+      expect(impact!.effect).toBe("delete_blocked");
+      expect(
+        ledger!.setNullMutationScope.some(
+          (mutation) =>
+            mutation.table === "credit_settlement_details" &&
+            mutation.recordId === flightSettledId,
+        ),
+      ).toBe(false);
+    } finally {
+      await database
+        .delete(creditSettlementDetails)
+        .where(eq(creditSettlementDetails.reservationId, flightSettledId));
+      await database.execute(
+        sql`ALTER TABLE credit_settlement_details DROP COLUMN IF EXISTS b5r_t1_sn_ref`,
+      );
+    }
+  });
+
+  test("a candidate root whose own class is kept is refused, not only its descendants", async () => {
+    // Classification drift: the settled hold of a clean key is re-stamped as a kept class and
+    // forced into the candidate set. Its cascade reaches only a cleanable allocation, so the
+    // verdict must come from the ROOT's own protection walk — the same fail-closed default a
+    // touched row gets — instead of the root silently staying safe.
+    const holdRecord = classification.records.find(
+      (record) =>
+        record.table === "credit_reservations" &&
+        record.recordId === cleanSettledId,
+    );
+    expect(holdRecord).toBeDefined();
+    const tampered = {
+      ...classification,
+      records: classification.records.map((record) =>
+        record.table === "credit_reservations" &&
+        record.recordId === cleanSettledId
+          ? { ...record, class: "company_history" as const }
+          : record,
+      ),
+      candidates: [
+        ...classification.candidates,
+        {
+          ...holdRecord!,
+          class: "company_history" as const,
+        },
+      ],
+    };
+    const evaluated = await evaluateCleanupRelations(database, tampered);
+    const hold = evaluated.evaluations.find(
+      (entry) =>
+        entry.table === "credit_reservations" &&
+        entry.recordId === cleanSettledId,
+    );
+    expect(hold).toBeDefined();
+    expect(hold!.removed).toBe(true);
     expect(
-      evaluateCleanupRelations(database, drifted),
-    ).rejects.toThrow(/no longer exists/);
+      hold!.retainedImpact.some(
+        (impact) =>
+          impact.table === "credit_reservations" &&
+          impact.recordId === cleanSettledId &&
+          impact.protection === "retained",
+      ),
+    ).toBe(true);
+    expect(
+      evaluated.safeCandidates.some(
+        (entry) =>
+          entry.table === "credit_reservations" &&
+          entry.recordId === cleanSettledId,
+      ),
+    ).toBe(false);
   });
 
   test("a row the classification does not cover defaults to protected", async () => {
@@ -904,5 +1863,1249 @@ describe("the legacy billing relations evaluation maps associations from live da
     expect(impact).toBeDefined();
     expect(impact!.class).toBe("unclassified");
     expect(impact!.protection).toBe("retained");
+  });
+});
+
+/*
+ * R2-F1 regression (REV-2 → FIX-2b): the 0163 upstream children carry their own ownership
+ * facts, and a legacy payer_accounts mapping on the parent key may never override them.
+ * Both minimal reproductions from the REV-2 report are replayed end to end on the real
+ * execution path — classify → relations → fresh 21.5 guard → dry-run → authorized
+ * execution → post-execution data retention:
+ *
+ * - Path A registers, through the REAL payer-account service, a quarantined account, an
+ *   active company account with its company payment mapping, an active personal account,
+ *   and — the estate-semantics boundary — a personal account whose owner IS in this run's
+ *   explicit test-user registry. The first three customers must be pulled from the
+ *   relations manifest with the owned rows named, refused by the fresh guard, and still
+ *   standing after a real authorized execution; the test-owned personal account follows
+ *   the estate semantics and is really deleted with its legacy parent.
+ * - Path B puts a real company call attribution (tenant/workspace/principal FKs all live)
+ *   under a legacy-classified settled chain — settled hold, its ledger line and two
+ *   dimension breakdown rows. The attribution is a company accounting fact: the conflict
+ *   fail-closes the chain (customer, hold, ledger, breakdown rows all named and retained),
+ *   the authorized execution still commits its verified scope, and the company rows are
+ *   all still present afterwards.
+ */
+/**
+ * One legacy estate's persisted roots (#680.1): the customers, their legacy_deployment
+ * payer mappings and their evidenced orders, inserted once and named per key. The explicit
+ * id lists keep the persisted rows byte-identical to the former inline inserts; the return
+ * value is the per-key record set the cleanup assertions cite.
+ */
+async function insertLegacyEstate(
+  db: typeof database,
+  config: {
+    label: string;
+    scope: string;
+    amountBase: number;
+    keys: {
+      key: string;
+      payerId: string;
+      deployId: string;
+      orderId: string;
+    }[];
+  },
+): Promise<{ keys: string[]; payers: string[]; orders: string[] }> {
+  await db.insert(billingCustomers).values(
+    config.keys.map(({ key }) => ({
+      externalId: key,
+      name: `${config.label} fixture ${key}`,
+    })),
+  );
+  await db.insert(payerAccounts).values(
+    config.keys.map(({ key, payerId, deployId }) => ({
+      id: payerId,
+      kind: "legacy_deployment" as const,
+      payerId: deployId,
+      externalCustomerId: key,
+    })),
+  );
+  const orders = config.keys.map(({ orderId }) => orderId);
+  await db.insert(paymentOrders).values(
+    config.keys.map(({ deployId, orderId }, index) => ({
+      id: orderId,
+      deploymentScope: config.scope,
+      planCode: "legacy-test",
+      provider: "alipay" as const,
+      amountCents: config.amountBase + index,
+      status: "canceled" as const,
+      activationState: "pending" as const,
+      ownerPayerKind: "legacy_deployment" as const,
+      ownerPayerId: deployId,
+      expiresAt: new Date("2026-01-01T00:00:00Z"),
+      terminalAt: new Date("2026-01-01T00:30:00Z"),
+    })),
+  );
+  return {
+    keys: config.keys.map(({ key }) => key),
+    payers: config.keys.map(({ payerId }) => payerId),
+    orders,
+  };
+}
+
+describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", () => {
+  const fix2b = `fix2b-${randomUUID().slice(0, 8)}`;
+  const actor = `fix2b-review-${fix2b}`;
+
+  // Path A: four evidenced legacy keys, each carrying a real 0163 registration.
+  const aTenant = `${fix2b}-a-tenant`;
+  const aKeys = {
+    quarantined: `${fix2b}-a-q`,
+    company: `${fix2b}-a-co`,
+    personal: `${fix2b}-a-p`,
+    personalTestOwned: `${fix2b}-a-p2`,
+  } as const;
+  const aPayers = {
+    quarantined: `${fix2b}-a-pa-q`,
+    company: `${fix2b}-a-pa-co`,
+    personal: `${fix2b}-a-pa-p`,
+    personalTestOwned: `${fix2b}-a-pa-p2`,
+  } as const;
+  const aDeploys = {
+    quarantined: `${fix2b}-a-deploy-q`,
+    company: `${fix2b}-a-deploy-co`,
+    personal: `${fix2b}-a-deploy-p`,
+    personalTestOwned: `${fix2b}-a-deploy-p2`,
+  } as const;
+  const aOrders = {
+    quarantined: `${fix2b}-a-order-q`,
+    company: `${fix2b}-a-order-co`,
+    personal: `${fix2b}-a-order-p`,
+    personalTestOwned: `${fix2b}-a-order-p2`,
+  } as const;
+  const aUserPersonal = `${fix2b}-a-user-p`;
+  const aUserPersonalTest = `${fix2b}-a-user-p2`;
+
+  // Path B: one evidenced legacy key whose settled chain carries a company attribution.
+  const bTenant = `${fix2b}-b-tenant`;
+  const bWorkspace = `${fix2b}-b-workspace`;
+  const bPrincipal = `${fix2b}-b-principal`;
+  const bUser = `${fix2b}-b-user`;
+  const bKey = `${fix2b}-b-call`;
+  const bPayer = `${fix2b}-b-pa`;
+  const bDeploy = `${fix2b}-b-deploy`;
+  const bOrder = `${fix2b}-b-order`;
+  const bHold = `${fix2b}-b-hold`;
+  const bLedger = `${fix2b}-b-ledger`;
+
+  const evidenceA = {
+    testOrderIds: [
+      aOrders.quarantined,
+      aOrders.company,
+      aOrders.personal,
+      aOrders.personalTestOwned,
+    ],
+    testUserIds: [aUserPersonalTest],
+  };
+  const evidenceB = { testOrderIds: [bOrder], testUserIds: [] };
+
+  let aQuarantinedAccountId = "";
+  let aCompanyAccountId = "";
+  let aPersonalAccountId = "";
+  let aPersonalTestAccountId = "";
+
+  // Named candidate groups (#680.5): Path A's four arms are enumerated, never positional —
+  // "the first four" is an accident of layout, not a contract.
+  const aKeyList = [
+    aKeys.quarantined,
+    aKeys.company,
+    aKeys.personal,
+    aKeys.personalTestOwned,
+  ];
+  const aPayerList = [
+    aPayers.quarantined,
+    aPayers.company,
+    aPayers.personal,
+    aPayers.personalTestOwned,
+  ];
+  const aOrderList = [
+    aOrders.quarantined,
+    aOrders.company,
+    aOrders.personal,
+    aOrders.personalTestOwned,
+  ];
+  const allFix2bCustomers = [...aKeyList, bKey];
+  const allFix2bPayers = [...aPayerList, bPayer];
+  const allFix2bOrders = [...aOrderList, bOrder];
+
+  beforeAll(async () => {
+    // Identity and tenancy the composite FKs require (0163's discipline: a forged
+    // attribution row is structurally impossible, so the fixture builds the real graph).
+    await database.insert(users).values([
+      { id: aUserPersonal, email: `${aUserPersonal}@openbot.test` },
+      { id: aUserPersonalTest, email: `${aUserPersonalTest}@openbot.test` },
+      { id: bUser, email: `${bUser}@openbot.test` },
+    ]);
+    await database.insert(enterpriseTenants).values([
+      { id: aTenant, name: `fix2b A ${fix2b}` },
+      { id: bTenant, name: `fix2b B ${fix2b}` },
+    ]);
+    await database
+      .insert(enterprisePrincipals)
+      .values([{ id: bPrincipal, userId: bUser }]);
+    await database
+      .insert(enterpriseMemberships)
+      .values([{ tenantId: bTenant, principalId: bPrincipal, role: "member" }]);
+    await database
+      .insert(enterpriseWorkspaces)
+      .values([
+        { tenantId: bTenant, id: bWorkspace, name: `fix2b B ws ${fix2b}` },
+      ]);
+
+    // Legacy estate roots: customers, legacy_deployment payer mappings, canceled orders —
+    // through the shared factory (#680.1), with the exact ids the describe always used.
+    await insertLegacyEstate(database, {
+      label: "fix2b",
+      scope: `${fix2b}-scope`,
+      amountBase: 1_000,
+      keys: [
+        {
+          key: aKeys.quarantined,
+          payerId: aPayers.quarantined,
+          deployId: aDeploys.quarantined,
+          orderId: aOrders.quarantined,
+        },
+        {
+          key: aKeys.company,
+          payerId: aPayers.company,
+          deployId: aDeploys.company,
+          orderId: aOrders.company,
+        },
+        {
+          key: aKeys.personal,
+          payerId: aPayers.personal,
+          deployId: aDeploys.personal,
+          orderId: aOrders.personal,
+        },
+        {
+          key: aKeys.personalTestOwned,
+          payerId: aPayers.personalTestOwned,
+          deployId: aDeploys.personalTestOwned,
+          orderId: aOrders.personalTestOwned,
+        },
+        { key: bKey, payerId: bPayer, deployId: bDeploy, orderId: bOrder },
+      ],
+    });
+
+    // Path B's settled chain first: the attribution's FK needs the hold to stand.
+    await database.insert(creditLedger).values({
+      id: bLedger,
+      externalCustomerId: bKey,
+      title: `fix2b B settlement ${fix2b}`,
+      idempotencyKey: `${fix2b}-b-ledger`,
+      credits: 100,
+      applied: 100,
+    });
+    await database.insert(creditReservations).values({
+      id: bHold,
+      externalCustomerId: bKey,
+      idempotencyKey: `${fix2b}-b-hold`,
+      maximum: 1_000,
+      status: "settled",
+      expiresAt: new Date("2026-01-01T00:00:00Z"),
+      terminalAt: new Date("2026-01-01T01:00:00Z"),
+      actualNumerator: "10000",
+      actualDenominator: "100",
+      charged: 100,
+      applied: 100,
+      released: 900,
+      ledgerId: bLedger,
+    });
+    await database.insert(billingCallAttributions).values({
+      reservationId: bHold,
+      tenantId: bTenant,
+      workspaceId: bWorkspace,
+      principalId: bPrincipal,
+      botRef: `${fix2b}-bot`,
+      callKey: `${fix2b}-call`,
+    });
+    await database.insert(creditSettlementDimensionBreakdown).values([
+      { ledgerId: bLedger, dimension: "input_tokens", units: 60 },
+      { ledgerId: bLedger, dimension: "output_tokens", units: 40 },
+    ]);
+
+    // Path A's 0163 rows are written by the REAL service — the only door — exactly like
+    // the REV-2 reproduction, so the regression covers the registrations as production
+    // writes them, not a hand-shaped row.
+    const service = createPayerAccountService(database);
+    const quarantined = await service.quarantineUnknownAccount({
+      externalCustomerId: aKeys.quarantined,
+      reason: "ownership unresolved (R2-F1 regression)",
+      actor,
+    });
+    aQuarantinedAccountId = quarantined.id;
+    await service.bindCompanyCustomer({
+      tenantId: aTenant,
+      externalCustomerId: aKeys.company,
+      actor,
+    });
+    const company = await service.registerCompanyAccount({
+      tenantId: aTenant,
+      actor,
+    });
+    aCompanyAccountId = company.id;
+    const personal = await service.registerPersonalAccount({
+      userId: aUserPersonal,
+      externalCustomerId: aKeys.personal,
+      actor,
+    });
+    aPersonalAccountId = personal.id;
+    const personalTestOwned = await service.registerPersonalAccount({
+      userId: aUserPersonalTest,
+      externalCustomerId: aKeys.personalTestOwned,
+      actor,
+    });
+    aPersonalTestAccountId = personalTestOwned.id;
+  });
+
+  afterAll(async () => {
+    // Children before parents, mirroring the FK graph; rows a successful execution
+    // deleted are no-ops here.
+    await database
+      .delete(billingCallAttributions)
+      .where(eq(billingCallAttributions.reservationId, bHold));
+    await database
+      .delete(creditSettlementDimensionBreakdown)
+      .where(eq(creditSettlementDimensionBreakdown.ledgerId, bLedger));
+    await database
+      .delete(billingCreditAccounts)
+      .where(
+        inArray(billingCreditAccounts.id, [
+          aQuarantinedAccountId,
+          aCompanyAccountId,
+          aPersonalAccountId,
+          aPersonalTestAccountId,
+        ]),
+      );
+    await database
+      .delete(billingCustomerMappings)
+      .where(inArray(billingCustomerMappings.tenantId, [aTenant]));
+    await database
+      .delete(billingAccountAudit)
+      .where(eq(billingAccountAudit.actor, actor));
+    await database
+      .delete(creditReservations)
+      .where(inArray(creditReservations.id, [bHold]));
+    await database
+      .delete(creditLedger)
+      .where(inArray(creditLedger.id, [bLedger]));
+    await database
+      .delete(payerAccounts)
+      .where(inArray(payerAccounts.id, allFix2bPayers));
+    await database
+      .delete(paymentOrders)
+      .where(inArray(paymentOrders.id, allFix2bOrders));
+    await database
+      .delete(billingCustomers)
+      .where(inArray(billingCustomers.externalId, allFix2bCustomers));
+    await database
+      .delete(enterpriseWorkspaces)
+      .where(eq(enterpriseWorkspaces.id, bWorkspace));
+    await database
+      .delete(enterpriseMemberships)
+      .where(eq(enterpriseMemberships.tenantId, bTenant));
+    await database
+      .delete(enterprisePrincipals)
+      .where(eq(enterprisePrincipals.id, bPrincipal));
+    await database
+      .delete(enterpriseTenants)
+      .where(inArray(enterpriseTenants.id, [aTenant, bTenant]));
+    await database
+      .delete(users)
+      .where(inArray(users.id, [aUserPersonal, aUserPersonalTest, bUser]));
+  });
+
+  test("R2-F1 repro A: service-registered accounts and the company mapping are verified, never cascaded away", async () => {
+    // 21.2 still classifies from the legacy mapping alone: all four keys are candidates.
+    const classification = await classifyCleanup(database, evidenceA);
+    for (const key of Object.values(aKeys)) {
+      const record = classification.records.find(
+        (entry) =>
+          entry.table === "billing_customers" && entry.recordId === key,
+      );
+      expect(record?.class).toBe("confirmed_obsolete_test");
+    }
+
+    // 21.3 verifies ownership and pulls the three keys whose 0163 rows prove a current
+    // owner; the test-user-owned personal account follows the estate semantics and its
+    // key stays cleanable.
+    const evaluated = await evaluateCleanupRelations(database, classification);
+    const quarantined = evaluationOf(
+      "billing_customers",
+      aKeys.quarantined,
+      evaluated,
+    );
+    expect(quarantined.removed).toBe(true);
+    expect(quarantined.removalReason).toBe("cascade_impact_on_retained");
+    expect(
+      quarantined.retainedImpact.some(
+        (impact) =>
+          impact.table === "billing_credit_accounts" &&
+          impact.recordId === aQuarantinedAccountId &&
+          impact.protection === "quarantined_account" &&
+          impact.class === "unclassified",
+      ),
+    ).toBe(true);
+    expect(quarantined.evidence).toContain("quarantined_account");
+
+    const company = evaluationOf("billing_customers", aKeys.company, evaluated);
+    expect(company.removed).toBe(true);
+    expect(
+      company.retainedImpact.some(
+        (impact) =>
+          impact.table === "billing_credit_accounts" &&
+          impact.recordId === aCompanyAccountId &&
+          impact.protection === "company_account",
+      ),
+    ).toBe(true);
+    expect(
+      company.retainedImpact.some(
+        (impact) =>
+          impact.table === "billing_customer_mappings" &&
+          impact.recordId === aTenant &&
+          impact.protection === "company_payment_mapping",
+      ),
+    ).toBe(true);
+
+    const personal = evaluationOf(
+      "billing_customers",
+      aKeys.personal,
+      evaluated,
+    );
+    expect(personal.removed).toBe(true);
+    expect(
+      personal.retainedImpact.some(
+        (impact) =>
+          impact.table === "billing_credit_accounts" &&
+          impact.recordId === aPersonalAccountId &&
+          impact.protection === "personal_account",
+      ),
+    ).toBe(true);
+
+    const testOwned = evaluationOf(
+      "billing_customers",
+      aKeys.personalTestOwned,
+      evaluated,
+    );
+    expect(testOwned.removed).toBe(false);
+    expect(
+      isSafe("billing_customers", aKeys.personalTestOwned, evaluated),
+    ).toBe(true);
+    for (const key of [aKeys.quarantined, aKeys.company, aKeys.personal]) {
+      expect(isSafe("billing_customers", key, evaluated)).toBe(false);
+    }
+
+    // The fresh 21.5 guard refuses the same three with the ownership evidence attached.
+    const guard = await guardCleanupDeletion(database, evidenceA, {
+      targets: [
+        { table: "billing_customers", recordId: aKeys.quarantined },
+        { table: "billing_customers", recordId: aKeys.company },
+        { table: "billing_customers", recordId: aKeys.personal },
+        { table: "billing_customers", recordId: aKeys.personalTestOwned },
+      ],
+    });
+    expect(guard.deletable.map((target) => target.recordId)).toEqual([
+      aKeys.personalTestOwned,
+    ]);
+    for (const key of [aKeys.quarantined, aKeys.company, aKeys.personal]) {
+      const refusal = guard.refused.find(
+        (entry) =>
+          entry.table === "billing_customers" && entry.recordId === key,
+      );
+      expect(refusal).toBeDefined();
+      expect(refusal!.reason).toBe("not_in_verified_deletion_scope");
+      expect(refusal!.evidence).toContain("billing_credit_accounts");
+    }
+    expect(
+      guard.refused.find(
+        (entry) =>
+          entry.table === "billing_customers" &&
+          entry.recordId === aKeys.company,
+      )!.evidence,
+    ).toContain("billing_customer_mappings");
+
+    // The real authorized execution commits its verified scope — and every ownership row
+    // is still standing afterwards, while the test-owned chain is really gone.
+    const dryRun = await buildCleanupDryRun(database, evidenceA);
+    const report = await executeAuthorizedCleanup(database, evidenceA, {
+      authorizationVersion: 1,
+      authorizedBy: actor,
+      authorizedAt: new Date().toISOString(),
+      statement: `R2-F1 regression A on ${dryRun.binding.database}: execute the verified scope; service-registered ownership rows must survive`,
+      scope: dryRun.binding,
+    });
+    expect(report.transaction.committed).toBe(true);
+    expect(report.postVerification.passed).toBe(true);
+    expect(report.accountingSmoke.passed).toBe(true);
+    // Cross-suite survival (OCR2R-H2): this real deletion must not have touched the
+    // sibling suites' fixture keys — a scope that silently widened shows up here.
+    expect(
+      await rowsOf("billing_customers", "external_id", fixtureKeys),
+    ).toHaveLength(5);
+
+    // The three ownership-protected customers, their accounts and the company mapping
+    // survived — on disk, after the commit.
+    expect(
+      await rowsOf("billing_customers", "external_id", [
+        aKeys.quarantined,
+        aKeys.company,
+        aKeys.personal,
+      ]),
+    ).toHaveLength(3);
+    expect(
+      await rowsOf("billing_credit_accounts", "id", [
+        aQuarantinedAccountId,
+        aCompanyAccountId,
+        aPersonalAccountId,
+      ]),
+    ).toHaveLength(3);
+    expect(
+      await rowsOf("billing_customer_mappings", "tenant_id", [aTenant]),
+    ).toHaveLength(1);
+    // The estate-semantics arm: the test-user-owned personal account and its legacy
+    // parent are really deleted (the protection is evidence-scoped, not table-wide).
+    expect(
+      await rowsOf("billing_customers", "external_id", [
+        aKeys.personalTestOwned,
+      ]),
+    ).toHaveLength(0);
+    expect(
+      await rowsOf("billing_credit_accounts", "id", [aPersonalTestAccountId]),
+    ).toHaveLength(0);
+    // The legacy payer mappings and evidenced orders of the pulled keys stay cleanable —
+    // they are the obsolete legacy attribution, unlike the company mapping above.
+    expect(await rowsOf("payer_accounts", "id", aPayerList)).toHaveLength(0);
+    expect(await rowsOf("payment_orders", "id", aOrderList)).toHaveLength(0);
+  });
+
+  test("R2-F1 repro B: a company call attribution fail-closes its legacy-classified settled chain", async () => {
+    const classification = await classifyCleanup(database, evidenceB);
+    const customerRecord = classification.records.find(
+      (entry) => entry.table === "billing_customers" && entry.recordId === bKey,
+    );
+    expect(customerRecord?.class).toBe("confirmed_obsolete_test");
+
+    // Relations: the attribution is protected as the company call fact it is; the hold
+    // shelters it, the ledger shelters the hold, and the dimension rows are pinned with
+    // the ledger — every one named.
+    const evaluated = await evaluateCleanupRelations(database, classification);
+    const customer = evaluationOf("billing_customers", bKey, evaluated);
+    expect(customer.removed).toBe(true);
+    expect(customer.removalReason).toBe("cascade_impact_on_retained");
+    expect(
+      customer.retainedImpact.some(
+        (impact) =>
+          impact.table === "billing_call_attributions" &&
+          impact.recordId === bHold &&
+          impact.protection === "company_call_attribution",
+      ),
+    ).toBe(true);
+    for (const [table, recordId] of [
+      ["credit_reservations", bHold],
+      ["credit_ledger", bLedger],
+      ["credit_settlement_dimension_breakdown", `${bLedger}/input_tokens`],
+      ["credit_settlement_dimension_breakdown", `${bLedger}/output_tokens`],
+    ] as const) {
+      expect(
+        customer.retainedImpact.some(
+          (impact) =>
+            impact.table === table &&
+            impact.recordId === recordId &&
+            impact.protection === "protects_owned_record",
+        ),
+      ).toBe(true);
+    }
+
+    const hold = evaluationOf("credit_reservations", bHold, evaluated);
+    expect(hold.removed).toBe(true);
+    expect(
+      hold.retainedImpact.some(
+        (impact) =>
+          impact.table === "billing_call_attributions" &&
+          impact.protection === "company_call_attribution",
+      ),
+    ).toBe(true);
+    expect(hold.evidence).toContain("billing_call_attributions");
+
+    const ledger = evaluationOf("credit_ledger", bLedger, evaluated);
+    expect(ledger.removed).toBe(true);
+    // The hold's SET NULL link is what pulls the ledger line itself…
+    expect(
+      ledger.retainedImpact.some(
+        (impact) =>
+          impact.table === "credit_reservations" &&
+          impact.recordId === bHold &&
+          impact.effect === "set_null_mutate" &&
+          impact.protection === "protects_owned_record",
+      ),
+    ).toBe(true);
+    // …and the two dimension rows are named on it explicitly (点名).
+    for (const dimension of ["input_tokens", "output_tokens"]) {
+      expect(
+        ledger.retainedImpact.some(
+          (impact) =>
+            impact.table === "credit_settlement_dimension_breakdown" &&
+            impact.recordId === `${bLedger}/${dimension}`,
+        ),
+      ).toBe(true);
+    }
+    expect(isSafe("billing_customers", bKey, evaluated)).toBe(false);
+    expect(isSafe("credit_reservations", bHold, evaluated)).toBe(false);
+    expect(isSafe("credit_ledger", bLedger, evaluated)).toBe(false);
+
+    // Fresh guard: every chain row is refused with the attribution named upstream.
+    const guard = await guardCleanupDeletion(database, evidenceB, {
+      targets: [
+        { table: "billing_customers", recordId: bKey },
+        { table: "credit_reservations", recordId: bHold },
+        { table: "credit_ledger", recordId: bLedger },
+      ],
+    });
+    expect(guard.deletable).toEqual([]);
+    expect(guard.refused).toHaveLength(3);
+    for (const refusal of guard.refused) {
+      expect(refusal.reason).toBe("not_in_verified_deletion_scope");
+    }
+
+    // The real authorized execution commits — and the whole company-attributed chain,
+    // the attribution and the dimension details are still there afterwards.
+    const dryRun = await buildCleanupDryRun(database, evidenceB);
+    const report = await executeAuthorizedCleanup(database, evidenceB, {
+      authorizationVersion: 1,
+      authorizedBy: actor,
+      authorizedAt: new Date().toISOString(),
+      statement: `R2-F1 regression B on ${dryRun.binding.database}: execute the verified scope; the company-attributed chain must survive`,
+      scope: dryRun.binding,
+    });
+    expect(report.transaction.committed).toBe(true);
+    expect(report.postVerification.passed).toBe(true);
+    expect(report.accountingSmoke.passed).toBe(true);
+    // Cross-suite survival (OCR2R-H2), same contract as repro A.
+    expect(
+      await rowsOf("billing_customers", "external_id", fixtureKeys),
+    ).toHaveLength(5);
+
+    expect(
+      await rowsOf("billing_customers", "external_id", [bKey]),
+    ).toHaveLength(1);
+    expect(await rowsOf("credit_reservations", "id", [bHold])).toHaveLength(1);
+    expect(await rowsOf("credit_ledger", "id", [bLedger])).toHaveLength(1);
+    expect(
+      await rowsOf("billing_call_attributions", "reservation_id", [bHold]),
+    ).toHaveLength(1);
+    expect(
+      await rowsOf("credit_settlement_dimension_breakdown", "ledger_id", [
+        bLedger,
+      ]),
+    ).toHaveLength(2);
+    // The legacy attribution (payer mapping) and the evidenced order stay cleanable.
+    expect(await rowsOf("payer_accounts", "id", [bPayer])).toHaveLength(0);
+    expect(await rowsOf("payment_orders", "id", [bOrder])).toHaveLength(0);
+  });
+});
+
+/*
+ * R2B-F1 regression (REV-2b → FIX-4): the ownership verdict travels to the key's money.
+ * A legacy-classified key that carries a protected 0163 row (company account + company
+ * payment mapping, or a quarantined account) keeps its unattributed funding rows — the
+ * REV-2b reproducers showed the company grant deleted while the company survived, because
+ * protection followed the billing_call_attributions chain and attribution can be missing.
+ * The reverse pin: a personal account whose owner IS in the test registry and a key with
+ * no 0163 row at all keep the legacy cleanup semantics — their money is really deleted by
+ * the same authorized execution.
+ */
+describe("R2B-F1 (REV-2b): funding rows follow their key's 0163 ownership verdict", () => {
+  const fix4 = `fix4-${randomUUID().slice(0, 8)}`;
+  const actor = `fix4-review-${fix4}`;
+
+  const coTenant = `${fix4}-co-tenant`;
+  const coKey = `${fix4}-co`;
+  const quarKey = `${fix4}-q`;
+  const testOwnedKey = `${fix4}-p2`;
+  const legacyKey = `${fix4}-legacy`;
+  const keys = [coKey, quarKey, testOwnedKey, legacyKey];
+  const payers = keys.map((key) => `${key}-pa`);
+  const deploys = keys.map((key) => `${key}-deploy`);
+  const orders = keys.map((key) => `${key}-order`);
+  const testUser = `${fix4}-user`;
+
+  const evidence = { testOrderIds: orders, testUserIds: [testUser] };
+
+  const coLedgerId = `${fix4}-co-ledger`;
+  const coHoldId = `${fix4}-co-hold`;
+  // #680.11: the quarantined key's OWN ledger/hold shelter arm — previously only its grant
+  // had a direct fixture; the ledger and reservation claims had no direct DB assertion.
+  const quarLedgerId = `${fix4}-q-ledger`;
+  const quarHoldId = `${fix4}-q-hold`;
+  const legacyLedgerId = `${fix4}-legacy-ledger`;
+  const legacyHoldId = `${fix4}-legacy-hold`;
+
+  let coAccountId = "";
+  let quarAccountId = "";
+  let testOwnedAccountId = "";
+  let coGrantId = "";
+  let quarGrantId = "";
+  let testOwnedGrantId = "";
+  let legacyGrantId = "";
+
+  beforeAll(async () => {
+    await database
+      .insert(users)
+      .values([{ id: testUser, email: `${testUser}@openbot.test` }]);
+    await database
+      .insert(enterpriseTenants)
+      .values([{ id: coTenant, name: `fix4 ${fix4}` }]);
+    // Legacy estate roots through the shared factory (#680.1); the id conventions
+    // (`${key}-pa` / `${key}-deploy` / `${key}-order`) are unchanged.
+    await insertLegacyEstate(database, {
+      label: "fix4",
+      scope: `${fix4}-scope`,
+      amountBase: 2_000,
+      keys: keys.map((key, index) => ({
+        key,
+        payerId: payers[index],
+        deployId: deploys[index],
+        orderId: orders[index],
+      })),
+    });
+
+    // The 0163 rows through the REAL service: a company account with its payment mapping,
+    // a quarantined account, and — the estate-semantics boundary — a personal account
+    // whose owner IS in this run's test-user registry. The pure legacy key gets none.
+    const service = createPayerAccountService(database);
+    await service.bindCompanyCustomer({
+      tenantId: coTenant,
+      externalCustomerId: coKey,
+      actor,
+    });
+    const company = await service.registerCompanyAccount({
+      tenantId: coTenant,
+      actor,
+    });
+    coAccountId = company.id;
+    const quarantined = await service.quarantineUnknownAccount({
+      externalCustomerId: quarKey,
+      reason: "ownership unresolved (R2B-F1 regression)",
+      actor,
+    });
+    quarAccountId = quarantined.id;
+    const testOwned = await service.registerPersonalAccount({
+      userId: testUser,
+      externalCustomerId: testOwnedKey,
+      actor,
+    });
+    testOwnedAccountId = testOwned.id;
+
+    // Post-registration money through the REAL writer — no billing_call_attributions row
+    // anywhere in the chain (a plan/promo allowance, not a call).
+    const writer = createCreditWriter(database);
+    const coGrant = await writer.grantCredits({
+      externalCustomerId: coKey,
+      source: "promo",
+      totalCents: 60_000,
+      expiresAt: new Date("2027-06-01T00:00:00Z"),
+      reason: `FIX-4 company allowance ${fix4}`,
+      idempotencyKey: `${fix4}-co-grant`,
+    });
+    coGrantId = coGrant.grant.id;
+    const quarGrant = await writer.grantCredits({
+      externalCustomerId: quarKey,
+      source: "promo",
+      totalCents: 30_000,
+      expiresAt: new Date("2027-06-01T00:00:00Z"),
+      reason: `FIX-4 quarantined allowance ${fix4}`,
+      idempotencyKey: `${fix4}-q-grant`,
+    });
+    quarGrantId = quarGrant.grant.id;
+    const testOwnedGrant = await writer.grantCredits({
+      externalCustomerId: testOwnedKey,
+      source: "promo",
+      totalCents: 10_000,
+      expiresAt: new Date("2027-06-01T00:00:00Z"),
+      reason: `FIX-4 registry-personal allowance ${fix4}`,
+      idempotencyKey: `${fix4}-p2-grant`,
+    });
+    testOwnedGrantId = testOwnedGrant.grant.id;
+    const legacyGrant = await writer.grantCredits({
+      externalCustomerId: legacyKey,
+      source: "promo",
+      totalCents: 20_000,
+      expiresAt: new Date("2027-06-01T00:00:00Z"),
+      reason: `FIX-4 legacy allowance ${fix4}`,
+      idempotencyKey: `${fix4}-legacy-grant`,
+    });
+    legacyGrantId = legacyGrant.grant.id;
+
+    // The other two funding tables, one settled chain per boundary key: the company key's
+    // chain must shelter with it, the pure legacy key's chain must die with it.
+    await database.insert(creditLedger).values([
+      {
+        id: coLedgerId,
+        externalCustomerId: coKey,
+        title: `fix4 company settlement ${fix4}`,
+        idempotencyKey: `${fix4}-co-ledger`,
+        credits: 100,
+        applied: 100,
+      },
+      {
+        id: quarLedgerId,
+        externalCustomerId: quarKey,
+        title: `fix4 quarantined settlement ${fix4}`,
+        idempotencyKey: `${fix4}-q-ledger`,
+        credits: 100,
+        applied: 100,
+      },
+      {
+        id: legacyLedgerId,
+        externalCustomerId: legacyKey,
+        title: `fix4 legacy settlement ${fix4}`,
+        idempotencyKey: `${fix4}-legacy-ledger`,
+        credits: 100,
+        applied: 100,
+      },
+    ]);
+    await database.insert(creditReservations).values([
+      {
+        id: coHoldId,
+        externalCustomerId: coKey,
+        idempotencyKey: `${fix4}-co-hold`,
+        maximum: 1_000,
+        status: "settled",
+        expiresAt: new Date("2026-01-01T00:00:00Z"),
+        terminalAt: new Date("2026-01-01T01:00:00Z"),
+        actualNumerator: "10000",
+        actualDenominator: "100",
+        charged: 100,
+        applied: 100,
+        released: 900,
+        ledgerId: coLedgerId,
+      },
+      {
+        id: quarHoldId,
+        externalCustomerId: quarKey,
+        idempotencyKey: `${fix4}-q-hold`,
+        maximum: 1_000,
+        status: "settled",
+        expiresAt: new Date("2026-01-01T00:00:00Z"),
+        terminalAt: new Date("2026-01-01T01:00:00Z"),
+        actualNumerator: "10000",
+        actualDenominator: "100",
+        charged: 100,
+        applied: 100,
+        released: 900,
+        ledgerId: quarLedgerId,
+      },
+      {
+        id: legacyHoldId,
+        externalCustomerId: legacyKey,
+        idempotencyKey: `${fix4}-legacy-hold`,
+        maximum: 1_000,
+        status: "settled",
+        expiresAt: new Date("2026-01-01T00:00:00Z"),
+        terminalAt: new Date("2026-01-01T01:00:00Z"),
+        actualNumerator: "10000",
+        actualDenominator: "100",
+        charged: 100,
+        applied: 100,
+        released: 900,
+        ledgerId: legacyLedgerId,
+      },
+    ]);
+  });
+
+  afterAll(async () => {
+    // Children before parents, mirroring the FK graph; rows a successful execution
+    // deleted are no-ops here.
+    await database
+      .delete(billingCreditAccounts)
+      .where(
+        inArray(
+          billingCreditAccounts.id,
+          [coAccountId, quarAccountId, testOwnedAccountId].filter(Boolean),
+        ),
+      );
+    await database
+      .delete(billingCustomerMappings)
+      .where(eq(billingCustomerMappings.tenantId, coTenant));
+    await database
+      .delete(billingAccountAudit)
+      .where(eq(billingAccountAudit.actor, actor));
+    await database
+      .delete(creditReservations)
+      .where(
+        inArray(creditReservations.id, [coHoldId, quarHoldId, legacyHoldId]),
+      );
+    await database
+      .delete(creditLedger)
+      .where(
+        inArray(creditLedger.id, [coLedgerId, quarLedgerId, legacyLedgerId]),
+      );
+    await database
+      .delete(creditGrants)
+      .where(
+        inArray(
+          creditGrants.id,
+          [coGrantId, quarGrantId, testOwnedGrantId, legacyGrantId].filter(
+            Boolean,
+          ),
+        ),
+      );
+    await database
+      .delete(payerAccounts)
+      .where(inArray(payerAccounts.id, payers));
+    await database
+      .delete(paymentOrders)
+      .where(inArray(paymentOrders.id, orders));
+    await database
+      .delete(billingCustomers)
+      .where(inArray(billingCustomers.externalId, keys));
+    await database
+      .delete(enterpriseTenants)
+      .where(eq(enterpriseTenants.id, coTenant));
+    await database.delete(users).where(eq(users.id, testUser));
+  });
+
+  test("a protected key's unattributed funding rows survive; every legacy arm still cleans", async () => {
+    // 21.2 still classifies all four keys from the legacy mapping alone: every money row
+    // is a candidate — the shelter has to come from 21.3's ownership verification.
+    const classification = await classifyCleanup(database, evidence);
+    for (const key of keys) {
+      const record = classification.records.find(
+        (entry) =>
+          entry.table === "billing_customers" && entry.recordId === key,
+      );
+      expect(record?.class).toBe("confirmed_obsolete_test");
+    }
+
+    // Relations: the company and quarantined keys' money is pulled with the ownership
+    // verdict named on each row — grant, ledger and settled hold alike, no attribution
+    // chain anywhere. The registry-personal key and the pure legacy key keep their money
+    // in the safe set.
+    const evaluated = await evaluateCleanupRelations(database, classification);
+    for (const [table, recordId] of [
+      ["credit_grants", coGrantId],
+      ["credit_ledger", coLedgerId],
+      ["credit_reservations", coHoldId],
+      ["credit_grants", quarGrantId],
+      ["credit_ledger", quarLedgerId],
+      ["credit_reservations", quarHoldId],
+    ] as const) {
+      const evaluation = evaluated.evaluations.find(
+        (entry) => entry.table === table && entry.recordId === recordId,
+      );
+      expect(evaluation).toBeDefined();
+      expect(evaluation!.removed).toBe(true);
+      expect(
+        evaluation!.retainedImpact.some(
+          (impact) => impact.protection === "funding_of_protected_key",
+        ),
+      ).toBe(true);
+      expect(
+        evaluated.safeCandidates.some(
+          (entry) => entry.table === table && entry.recordId === recordId,
+        ),
+      ).toBe(false);
+    }
+    for (const [table, recordId] of [
+      ["credit_grants", testOwnedGrantId],
+      ["credit_grants", legacyGrantId],
+      ["credit_ledger", legacyLedgerId],
+      ["credit_reservations", legacyHoldId],
+    ] as const) {
+      const evaluation = evaluated.evaluations.find(
+        (entry) => entry.table === table && entry.recordId === recordId,
+      );
+      expect(evaluation).toBeDefined();
+      expect(evaluation!.removed).toBe(false);
+      expect(
+        evaluated.safeCandidates.some(
+          (entry) => entry.table === table && entry.recordId === recordId,
+        ),
+      ).toBe(true);
+    }
+
+    // The fresh 21.5 guard refuses the sheltered money with the same reviewable reason.
+    const guard = await guardCleanupDeletion(database, evidence, {
+      targets: [
+        { table: "credit_grants", recordId: coGrantId },
+        { table: "credit_reservations", recordId: coHoldId },
+        { table: "credit_grants", recordId: legacyGrantId },
+      ],
+    });
+    expect(guard.refused).toHaveLength(2);
+    for (const refusal of guard.refused) {
+      expect(refusal.reason).toBe("not_in_verified_deletion_scope");
+      // OCR2R-M2: the kind reaches reviewer-facing evidence verbatim (no keyed
+      // display map exists in app/server src — grep verified); both surfaces —
+      // the relations manifest evidence the dry-run's hash covers, and this guard
+      // copy — pass the raw string through.
+      expect(refusal.evidence).toContain("funding_of_protected_key");
+    }
+    expect(guard.deletable).toEqual([
+      { table: "credit_grants", recordId: legacyGrantId },
+    ]);
+
+    // The real authorized execution commits its verified scope — the company and
+    // quarantined money is still standing afterwards, the legacy arms are really gone.
+    const dryRun = await buildCleanupDryRun(database, evidence);
+    const report = await executeAuthorizedCleanup(database, evidence, {
+      authorizationVersion: 1,
+      authorizedBy: actor,
+      authorizedAt: new Date().toISOString(),
+      statement: `R2B-F1 regression on ${dryRun.binding.database}: execute the verified scope; protected-key money must survive`,
+      scope: dryRun.binding,
+    });
+    expect(report.transaction.committed).toBe(true);
+    expect(report.postVerification.passed).toBe(true);
+    expect(report.accountingSmoke.passed).toBe(true);
+    // Cross-suite survival (OCR2R-H2), same contract as the R2-F1 repros.
+    expect(
+      await rowsOf("billing_customers", "external_id", fixtureKeys),
+    ).toHaveLength(5);
+
+    // The ownership survivors: both keys' customers/accounts, the company mapping, and
+    // every unattributed funding row of both keys.
+    expect(
+      await database
+        .select({ id: billingCustomers.externalId })
+        .from(billingCustomers)
+        .where(inArray(billingCustomers.externalId, [coKey, quarKey])),
+    ).toHaveLength(2);
+    expect(
+      await database
+        .select({ id: billingCreditAccounts.id })
+        .from(billingCreditAccounts)
+        .where(inArray(billingCreditAccounts.id, [coAccountId, quarAccountId])),
+    ).toHaveLength(2);
+    expect(
+      await database
+        .select({ id: billingCustomerMappings.tenantId })
+        .from(billingCustomerMappings)
+        .where(eq(billingCustomerMappings.tenantId, coTenant)),
+    ).toHaveLength(1);
+    expect(
+      await database
+        .select({ id: creditGrants.id })
+        .from(creditGrants)
+        .where(inArray(creditGrants.id, [coGrantId, quarGrantId])),
+    ).toHaveLength(2);
+    expect(
+      await database
+        .select({ id: creditLedger.id })
+        .from(creditLedger)
+        .where(inArray(creditLedger.id, [coLedgerId, quarLedgerId])),
+    ).toHaveLength(2);
+    expect(
+      await database
+        .select({ id: creditReservations.id })
+        .from(creditReservations)
+        .where(inArray(creditReservations.id, [coHoldId, quarHoldId])),
+    ).toHaveLength(2);
+
+    // The cleanup line still holds, exactly as AC18's other half demands: the pure
+    // legacy key is fully deleted (customer, payer, order, grant, ledger, settled hold),
+    // and the registry-personal estate arm follows 21.2's semantics — account, customer
+    // and money all really gone.
+    expect(
+      await database
+        .select({ id: billingCustomers.externalId })
+        .from(billingCustomers)
+        .where(inArray(billingCustomers.externalId, [legacyKey, testOwnedKey])),
+    ).toHaveLength(0);
+    expect(
+      await database
+        .select({ id: billingCreditAccounts.id })
+        .from(billingCreditAccounts)
+        .where(eq(billingCreditAccounts.id, testOwnedAccountId)),
+    ).toHaveLength(0);
+    expect(
+      await database
+        .select({ id: creditGrants.id })
+        .from(creditGrants)
+        .where(inArray(creditGrants.id, [legacyGrantId, testOwnedGrantId])),
+    ).toHaveLength(0);
+    expect(
+      await database
+        .select({ id: creditLedger.id })
+        .from(creditLedger)
+        .where(eq(creditLedger.id, legacyLedgerId)),
+    ).toHaveLength(0);
+    expect(
+      await database
+        .select({ id: creditReservations.id })
+        .from(creditReservations)
+        .where(eq(creditReservations.id, legacyHoldId)),
+    ).toHaveLength(0);
+    expect(
+      await database
+        .select({ id: payerAccounts.id })
+        .from(payerAccounts)
+        .where(inArray(payerAccounts.id, payers)),
+    ).toHaveLength(0);
+    expect(
+      await database
+        .select({ id: paymentOrders.id })
+        .from(paymentOrders)
+        .where(inArray(paymentOrders.id, orders)),
+    ).toHaveLength(0);
+  });
+});
+
+/*
+ * OCR2R-H1 regression (FIX-6): the account shape includes the derived account_key, and the
+ * ownership pass enforces it at runtime like every other shape column — an account whose
+ * five legacy columns form a legal personal shape and whose owner is even in the test-user
+ * registry still fails closed when its account_key is missing or points at another owner.
+ * These rows are direct inserts on purpose: the real service derives the key correctly, so
+ * only a historical drift row can carry a missing or mismatching one.
+ */
+describe("OCR2R-H1 (FIX-6): account_key drift fails closed as unknown_account_shape", () => {
+  const fix6 = `fix6-${randomUUID().slice(0, 8)}`;
+  const actor = `fix6-review-${fix6}`;
+  const registryUser = `${fix6}-user`;
+  /** A second owner id whose derived key names the mismatch arm's wrong owner (#680.6). */
+  const mismatchOwnerUser = `${fix6}-user-else`;
+  const nullKey = `${fix6}-null`;
+  const mismatchKey = `${fix6}-mismatch`;
+  const keys = [nullKey, mismatchKey];
+  const payers = keys.map((key) => `${key}-pa`);
+  const deploys = keys.map((key) => `${key}-deploy`);
+  const orders = keys.map((key) => `${key}-order`);
+  const nullAccountId = `${fix6}-acc-null`;
+  const mismatchAccountId = `${fix6}-acc-mismatch`;
+
+  const evidence = { testOrderIds: orders, testUserIds: [registryUser] };
+
+  beforeAll(async () => {
+    await database
+      .insert(users)
+      .values([{ id: registryUser, email: `${registryUser}@openbot.test` }]);
+    // Legacy estate roots through the shared factory (#680.1), same id conventions.
+    await insertLegacyEstate(database, {
+      label: "fix6",
+      scope: `${fix6}-scope`,
+      amountBase: 2_000,
+      keys: keys.map((key, index) => ({
+        key,
+        payerId: payers[index],
+        deployId: deploys[index],
+        orderId: orders[index],
+      })),
+    });
+    // The drift arms: every one of the five legacy columns reads as a legal personal
+    // account and the owner IS in this run's registry — only account_key breaks the
+    // declared shape (NULL, or a key derived from a different owner).
+    await database.insert(billingCreditAccounts).values([
+      {
+        id: nullAccountId,
+        externalCustomerId: nullKey,
+        accountType: "personal",
+        status: "active",
+        ownerUserId: registryUser,
+        accountKey: null,
+      },
+      {
+        id: mismatchAccountId,
+        externalCustomerId: mismatchKey,
+        accountType: "personal",
+        status: "active",
+        ownerUserId: registryUser,
+        // The mismatch arm derives its wrong-owner key with the SAME rule production uses
+        // (`personal:${ownerUserId}` in payer-accounts.ts) so the fixture breaks only on the
+        // ownership fact, never on an arbitrarily malformed string (#680.6).
+        accountKey: `personal:${mismatchOwnerUser}`,
+      },
+    ]);
+  });
+
+  afterAll(async () => {
+    // Children before parents; rows a successful execution deleted are no-ops here.
+    await database
+      .delete(billingCreditAccounts)
+      .where(
+        inArray(billingCreditAccounts.id, [nullAccountId, mismatchAccountId]),
+      );
+    await database
+      .delete(payerAccounts)
+      .where(inArray(payerAccounts.id, payers));
+    await database
+      .delete(paymentOrders)
+      .where(inArray(paymentOrders.id, orders));
+    await database
+      .delete(billingCustomers)
+      .where(inArray(billingCustomers.externalId, keys));
+    await database.delete(users).where(eq(users.id, registryUser));
+  });
+
+  test("a drifted account_key is unknown_account_shape: the account and its customer survive", async () => {
+    // 21.2 classifies both keys from the legacy mapping alone.
+    const classification = await classifyCleanup(database, evidence);
+    for (const key of keys) {
+      const record = classification.records.find(
+        (entry) =>
+          entry.table === "billing_customers" && entry.recordId === key,
+      );
+      expect(record?.class).toBe("confirmed_obsolete_test");
+    }
+
+    // 21.3 fails both drifted shapes closed and pulls their keys with the kind named.
+    const evaluated = await evaluateCleanupRelations(database, classification);
+    for (const [key, accountId] of [
+      [nullKey, nullAccountId],
+      [mismatchKey, mismatchAccountId],
+    ] as const) {
+      const evaluation = evaluated.evaluations.find(
+        (entry) =>
+          entry.table === "billing_customers" && entry.recordId === key,
+      );
+      expect(evaluation).toBeDefined();
+      expect(evaluation!.removed).toBe(true);
+      expect(evaluation!.removalReason).toBe("cascade_impact_on_retained");
+      expect(
+        evaluation!.retainedImpact.some(
+          (impact) =>
+            impact.table === "billing_credit_accounts" &&
+            impact.recordId === accountId &&
+            impact.protection === "unknown_account_shape",
+        ),
+      ).toBe(true);
+      expect(evaluation!.evidence).toContain("unknown_account_shape");
+      expect(
+        evaluated.safeCandidates.some(
+          (entry) =>
+            entry.table === "billing_customers" && entry.recordId === key,
+        ),
+      ).toBe(false);
+    }
+
+    // The real authorized execution commits its verified scope — both drifted accounts
+    // and their customers are still standing afterwards, while the legacy attribution
+    // rows of the same keys stay cleanable.
+    const dryRun = await buildCleanupDryRun(database, evidence);
+    const report = await executeAuthorizedCleanup(database, evidence, {
+      authorizationVersion: 1,
+      authorizedBy: actor,
+      authorizedAt: new Date().toISOString(),
+      statement: `OCR2R-H1 regression on ${dryRun.binding.database}: execute the verified scope; drifted account_key rows must survive`,
+      scope: dryRun.binding,
+    });
+    expect(report.transaction.committed).toBe(true);
+    expect(report.postVerification.passed).toBe(true);
+    expect(report.accountingSmoke.passed).toBe(true);
+    // Cross-suite survival (OCR2R-H2), same contract as the other real executions.
+    expect(
+      await rowsOf("billing_customers", "external_id", fixtureKeys),
+    ).toHaveLength(5);
+    expect(await rowsOf("billing_customers", "external_id", keys)).toHaveLength(
+      2,
+    );
+    expect(
+      await rowsOf("billing_credit_accounts", "id", [
+        nullAccountId,
+        mismatchAccountId,
+      ]),
+    ).toHaveLength(2);
+    expect(await rowsOf("payer_accounts", "id", payers)).toHaveLength(0);
   });
 });

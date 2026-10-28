@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { payerAccounts } from "../db/schema/billing";
 import {
@@ -243,7 +243,13 @@ export function createAccountReconciler(
       for (const row of attributedApplied) {
         // The WHERE clause keeps NULLs out; the guard keeps the compiler's truth honest.
         if (row.grantId === null) continue;
-        appliedOnGrant.set(row.grantId, BigInt(row.total));
+        // The grouping above is per (row-account, grant-id): a grant attributed from two
+        // accounts arrives as two rows, and the per-grant identity below reads the grant's
+        // TOTAL attributed applied — accumulate, never overwrite.
+        appliedOnGrant.set(
+          row.grantId,
+          (appliedOnGrant.get(row.grantId) ?? 0n) + BigInt(row.total),
+        );
         // 3: a row on one account attributed to another account's grant is cross-book
         // money. BOTH books get the finding — the row's account (money consumed here,
         // drawn there) and the grant's account (its `used` says drawn, the rows say
@@ -294,9 +300,17 @@ export function createAccountReconciler(
         .where(eq(creditReservations.status, "unknown"));
       const namedReservations = new Set(
         (
+          // Only the candidates this scan can name — the recovery-items table grows with
+          // history, and the scan needs membership for these holds alone.
           await database
             .select({ reservationId: creditRecoveryItems.reservationId })
             .from(creditRecoveryItems)
+            .where(
+              inArray(
+                creditRecoveryItems.reservationId,
+                unknownHolds.map((hold) => hold.id),
+              ),
+            )
         ).map((row) => row.reservationId),
       );
       for (const hold of unknownHolds) {
@@ -367,8 +381,9 @@ export function createAccountReconciler(
         });
       }
 
-      // Every account with grants or ledger rows appears, anomalous or not, so an empty
-      // anomalies list is a checked answer, not an overlooked account.
+      // Every account with grants, ledger rows, or even only unknown-hold entries appears,
+      // anomalous or not, so an empty anomalies list is a checked answer, not an
+      // overlooked account.
       for (const customer of new Set([
         ...usedMap.keys(),
         ...appliedMap.keys(),
@@ -379,11 +394,7 @@ export function createAccountReconciler(
       return {
         ranAt: at.toISOString(),
         accounts: [...entries.values()].sort((a, b) =>
-          a.accountKey < b.accountKey
-            ? -1
-            : a.accountKey > b.accountKey
-              ? 1
-              : 0,
+          a.accountKey.localeCompare(b.accountKey),
         ),
         unattributedPaymentAnomalies,
         accountsExamined: entries.size,

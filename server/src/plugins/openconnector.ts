@@ -1,5 +1,9 @@
+import { getLogger } from "../../../shared/logger";
+import { sanitizeLastError } from "../openmuse-deletion/retention";
 import { cutAtCodeUnits } from "../channels/text";
 import { type ListedTool, MAX_RESULT_CHARS, type McpCallResult } from "./mcp";
+
+const log = getLogger("server");
 
 /**
  * How this deployment calls OpenConnector the TRANSPORT: one service's actions, dialled over REST
@@ -140,15 +144,27 @@ export async function callTool(
     );
     return success(JSON.stringify(answer.data ?? null));
   } catch (error) {
-    return failure(vendorSentence(error));
+    /*
+     * The vendor's own sentence lands in a model's context and in the audit
+     * row, and it can quote the token it failed on, internal URLs and tenant
+     * ids. The operator gets the raw message in the log; the model and the
+     * audit get this deployment's sanitized words.
+     */
+    const raw = error instanceof Error ? error.message : String(error);
+    log.warn(
+      {
+        type: "openconnector-action-failed",
+        service,
+        actionId: toolName,
+        error: raw,
+      },
+      "openconnector-action-failed",
+    );
+    return failure(
+      sanitizeLastError(raw) ??
+        "OpenConnector refused this action, and its reason is not safe to relay. Check this deployment's logs.",
+    );
   }
-}
-
-function vendorSentence(error: unknown): string {
-  const message = error instanceof Error ? error.message : "";
-  return message.trim() === ""
-    ? "OpenConnector said nothing about why this action failed. Check its container and its logs."
-    : message;
 }
 
 /**

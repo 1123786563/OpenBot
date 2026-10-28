@@ -75,7 +75,7 @@ const BA_URL_VARIABLES = [
   "BA_TEST_AUTH_WRITER_DATABASE_URL",
 ] as const;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
-const MIGRATION_TAG = "0218_better_auth_company_auth_challenge";
+const MIGRATION_TAG = "0230_better_auth_company_auth_challenge";
 const MIGRATION_PATH = join(
   import.meta.dirname,
   `../../drizzle/${MIGRATION_TAG}.sql`,
@@ -90,12 +90,12 @@ const ISSUE_FUNCTION =
  * cleanup, exactly the discipline the sibling BA suites keep on this island.
  */
 const PREREQUISITE_TAGS = [
-  "0209_better_auth_directory",
-  "0210_better_auth_clocks",
-  "0211_better_auth_command_authority",
-  "0212_better_auth_authority_sources",
-  "0213_better_auth_assurance",
-  "0214_better_auth_schema_roles",
+  "0221_better_auth_directory",
+  "0222_better_auth_clocks",
+  "0223_better_auth_command_authority",
+  "0224_better_auth_authority_sources",
+  "0225_better_auth_assurance",
+  "0226_better_auth_schema_roles",
 ] as const;
 
 /** The BA tables this suite's chain creates (schema-roles' list). */

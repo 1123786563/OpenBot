@@ -64,7 +64,9 @@ afterAll(async () => {
     .delete(paymentOrders)
     .where(like(paymentOrders.id, `${prefix}%`));
   await database.$client.close();
-}, 240_000);
+  // Budget only, raised with the slow-case budget above: the same millions-row delete took
+  // 171s in isolation and was killed here at 240002ms mid-run on a slower host.
+}, 600_000);
 
 afterEach(async () => {
   await database
@@ -827,8 +829,10 @@ describe("exact credit-identity arithmetic beyond Number.MAX_SAFE_INTEGER", () =
   const MAKE_UP = 4_194_304;
 
   // Seed and reconcile each walk millions of rows: these cases carry their own timeout
-  // (bun's default 5s is tuned for unit tests, not generate_series).
-  const SLOW = 240_000;
+  // (bun's default 5s is tuned for unit tests, not generate_series). Budget only — 240s
+  // killed the exact-arithmetic cases at 240002ms on a slower host, so 600s; no scenario
+  // was shortened.
+  const SLOW = 600_000;
 
   beforeAll(async () => {
     await database
@@ -1310,8 +1314,8 @@ describe("the paged walks cross page boundaries (audit C3, final review)", () =>
   // Seeded server-side in one round trip each (generate_series, the precision suite's way): a
   // client-side row-by-row loop would turn a paging test into a load test. These cases also
   // walk the precision suite's millions of residue rows, so they carry the same slow-case
-  // timeout those do.
-  const SLOW = 240_000;
+  // timeout those do (600s — the same slow-host budget the precision suite raised to).
+  const SLOW = 600_000;
 
   test(
     "1200 agreeing paid orders are all walked across three pages, with zero paid_without_fact",

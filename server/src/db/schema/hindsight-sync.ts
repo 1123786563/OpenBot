@@ -58,7 +58,7 @@ export const hindsightSyncWork = pgTable(
     primaryKey({ columns: [table.tenantId, table.id] }),
     check(
       "hindsight_sync_work_subject_type",
-      sql`${table.subjectType} in ('preference', 'source_bound')`,
+      sql`${table.subjectType} in ('preference', 'source_bound', 'derived_judgment')`,
     ),
     check(
       "hindsight_sync_work_state",

@@ -23,8 +23,11 @@ import {
   readCapacity,
   type Tx,
 } from "./capacity";
+import type {
+  ReservationLockedBasis,
+  ReservationSpeechSpec,
+} from "./reserve-bound";
 import type { CreditGrantSource } from "./types";
-import type { ReservationLockedBasis } from "./reserve-bound";
 
 /**
  * The local credit ledger's WRITE side. The deposit (grantCredits) is the only writer
@@ -360,6 +363,9 @@ export type CreditWriter = {
    * nothing and reports what was available. When `lockedBasis` is given (the credit protocol's
    * reserve path, 06.5), it is persisted with the hold: the pricing basis — cell plus
    * snapshotVersion plus rateVersion — the admission priced, for settlement to resolve exactly.
+   * When `speechSpec` is given (13.2's speech holds), the certified quantities are frozen with
+   * it: the characters in, the tier, the duration cap and both tier prices, for settlement to
+   * corroborate the character side the price vocabulary has no slot for.
    */
   reserveCredits(input: {
     externalCustomerId: string;
@@ -367,6 +373,7 @@ export type CreditWriter = {
     maximumCents: number;
     expiresAt: Date;
     lockedBasis?: ReservationLockedBasis;
+    speechSpec?: ReservationSpeechSpec;
   }): Promise<
     | { reserved: true; reservationId: string }
     | { reserved: false; availableCents: number }
@@ -567,6 +574,28 @@ export function createCreditWriter(database: Database): CreditWriter {
           "reserveCredits needs a complete locked basis: a non-empty cell with a positive snapshot version and a non-negative rate version.",
         );
       }
+      const spec = input.speechSpec;
+      if (
+        spec !== undefined &&
+        (!Number.isSafeInteger(spec.inputCharacters) ||
+          spec.inputCharacters < 0 ||
+          spec.inputCharacters > MAX_STORED_UNITS ||
+          !Number.isSafeInteger(spec.durationCapSeconds) ||
+          spec.durationCapSeconds < 1 ||
+          spec.durationCapSeconds > MAX_STORED_UNITS ||
+          (spec.voiceTier !== null &&
+            (typeof spec.voiceTier !== "string" ||
+              spec.voiceTier.length === 0 ||
+              spec.voiceTier.length > 128)) ||
+          typeof spec.perInputCharacterUsd !== "string" ||
+          !/^\d+(\.\d+)?$/.test(spec.perInputCharacterUsd) ||
+          typeof spec.perOutputSecondUsd !== "string" ||
+          !/^\d+(\.\d+)?$/.test(spec.perOutputSecondUsd))
+      ) {
+        throw new TypeError(
+          "reserveCredits needs a complete speech spec: quantities within the int4 column bounds, a tier under 128 chars, and exact-decimal tier prices.",
+        );
+      }
       await ensureCustomer(database, input.externalCustomerId);
 
       const at = new Date();
@@ -585,6 +614,24 @@ export function createCreditWriter(database: Database): CreditWriter {
           ) {
             throw new CreditReservationConflictError(
               "reserveCredits: the idempotency key belongs to a different reservation.",
+            );
+          }
+          // The frozen speech spec is part of the reservation's identity: a replay with
+          // a different spec would silently resurrect the ORIGINAL hold and doom its
+          // settle to spec_not_corroborated with a hold only recovery could free — the
+          // same conflict a different amount already is.
+          const specMismatch =
+            (spec === undefined) !== (existing.specInputCharacters === null) ||
+            (spec !== undefined &&
+              (existing.specInputCharacters !== spec.inputCharacters ||
+                existing.specVoiceTier !== spec.voiceTier ||
+                existing.specDurationCapSeconds !== spec.durationCapSeconds ||
+                existing.specPerInputCharacterUsd !==
+                  spec.perInputCharacterUsd ||
+                existing.specPerOutputSecondUsd !== spec.perOutputSecondUsd));
+          if (specMismatch) {
+            throw new CreditReservationConflictError(
+              "reserveCredits: the idempotency key belongs to a reservation frozen with a different speech spec.",
             );
           }
           if (existing.status !== "reserved") {
@@ -622,6 +669,15 @@ export function createCreditWriter(database: Database): CreditWriter {
                 capability: basis.capability,
                 snapshotVersion: basis.snapshotVersion,
                 rateVersion: basis.rateVersion,
+              }),
+          ...(spec === undefined
+            ? {}
+            : {
+                specInputCharacters: spec.inputCharacters,
+                specVoiceTier: spec.voiceTier,
+                specDurationCapSeconds: spec.durationCapSeconds,
+                specPerInputCharacterUsd: spec.perInputCharacterUsd,
+                specPerOutputSecondUsd: spec.perOutputSecondUsd,
               }),
         });
         let toHold = input.maximumCents;

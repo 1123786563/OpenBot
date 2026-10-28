@@ -63,11 +63,11 @@ export type RefusalEvidence = {
   /** The live drive 22.2's own integration test performs for this family. */
   drive: string;
   /**
-   * What the named suite actually answered on THIS delivery's tree (bound receipts in
-   * reports/bf20-ac-matrix-receipts.txt). An evidence row may name a suite that is
-   * baseline-red (the pre-existing fixture drifts) — the audit carries that truth
-   * instead of implying green; the claims the four-way check relies on are the live
-   * drives and the delivered receipts, never a suite's exit code.
+   * What the named suite actually answered on THIS delivery's tree — recorded in the
+   * row's own note (this delivery's verification log keeps the run's output). An evidence
+   * row may name a suite that is baseline-red (the pre-existing fixture drifts) — the
+   * audit carries that truth instead of implying green; the claims the four-way check
+   * relies on are the live drives and the recorded runs, never a suite's exit code.
    */
   lastRun: { verdict: "green" | "baseline-red"; note: string };
 };

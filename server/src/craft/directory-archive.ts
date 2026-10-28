@@ -16,8 +16,11 @@
  * only subdirectories — nested files silently dropped.
  */
 
+import { getLogger } from "../../../shared/logger";
 import type { AgentSandboxFileApi } from "./sandbox-gateway";
 import { zipEntries } from "./zip-archive";
+
+const log = getLogger("server");
 
 /**
  * Hidden directories/files to filter from listings — onyx `manager.py:141-153`, verbatim:
@@ -69,6 +72,10 @@ export class WorkspaceListingError extends Error {
       `The workspace listing for ${path} is unreachable: ${
         cause instanceof Error ? cause.message : String(cause)
       }`,
+      // Keep the original error as the structured cause (#618 OCR r2): the scope
+      // refusal the craft routes must recognize survives any rewrite of the text
+      // above only through this chain, never through the embedded sentence.
+      { cause },
     );
     this.name = "WorkspaceListingError";
   }
@@ -129,7 +136,16 @@ export async function collectWorkspaceFiles(
       )
         continue;
       if (isHiddenWorkspacePath(rel)) continue; // hidden subtree pruned whole
-      const bytes = await fileApi.readFileBytes(entry).catch(() => null);
+      // Absent means "not a file" (walk it as a directory). A read that THREW is a sandbox
+      // failure, not absence: skipping silently here would hand back a 200 with a quietly
+      // incomplete archive, so the skip is logged even though it is not fatal.
+      const bytes = await fileApi.readFileBytes(entry).catch((error) => {
+        log.warn(
+          { error, entry },
+          "[craft] directory archive skipped an unreadable file",
+        );
+        return null;
+      });
       if (bytes !== null) {
         entries.push({ path: rel, bytes });
         continue;

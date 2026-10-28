@@ -20,6 +20,13 @@ type ProviderSpec = {
   credentialProvider?: string;
 };
 
+/**
+ * The credential provider a GitHub OAuth link holds, named once: the link's
+ * `credentialProvider` and the callback's credential row must spell it identically
+ * or a link silently stops matching the credential it exists for.
+ */
+export const GITHUB_USER_TOKEN_PROVIDER = "github-user-token";
+
 export const PROVIDERS: Readonly<Record<IdentityProvider, ProviderSpec>> =
   Object.freeze({
     slack: {
@@ -31,7 +38,7 @@ export const PROVIDERS: Readonly<Record<IdentityProvider, ProviderSpec>> =
     github: {
       title: "GitHub",
       methods: ["oauth"],
-      credentialProvider: "github-user-token",
+      credentialProvider: GITHUB_USER_TOKEN_PROVIDER,
     },
   });
 

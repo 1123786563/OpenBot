@@ -149,6 +149,11 @@ export function createGatewayReadinessService(
 
     // Condition 1: the address is configured.
     let endpoint: GatewayEndpointConfig | undefined;
+    // True when the read itself failed. The remaining conditions then cannot say anything
+    // about configuration, probing or negotiation — reporting "not configured", "probe
+    // missing" or "not negotiated" on top of the failure would be misleading — so only
+    // the failure reason is reported.
+    let endpointUnreadable = false;
     try {
       endpoint = await deps.readGatewayEndpoint();
     } catch (error) {
@@ -156,7 +161,7 @@ export function createGatewayReadinessService(
         {
           type: "gateway-readiness-condition-failed",
           condition: "endpoint",
-          errorName: error instanceof Error ? error.name : String(typeof error),
+          errorName: error instanceof Error ? error.name : String(error),
         },
         "The gateway endpoint configuration could not be read.",
       );
@@ -165,14 +170,15 @@ export function createGatewayReadinessService(
         message:
           "The gateway address could not be read, so paid model capabilities are refused until the failure is resolved.",
       });
+      endpointUnreadable = true;
     }
-    if (endpoint === undefined) {
+    if (!endpointUnreadable && endpoint === undefined) {
       blocking.push({
         reason: "gateway_readiness_endpoint_not_configured",
         message:
           "No gateway address is configured, so paid model capabilities are refused: an administrator must save the gateway endpoint (or set BIFROST_GATEWAY_URL).",
       });
-    } else {
+    } else if (endpoint !== undefined) {
       configVersion = endpoint.configVersion;
     }
 
@@ -192,7 +198,7 @@ export function createGatewayReadinessService(
             type: "gateway-readiness-condition-failed",
             condition: "credential",
             errorName:
-              error instanceof Error ? error.name : String(typeof error),
+              error instanceof Error ? error.name : String(error),
           },
           "The gateway admin credential could not be resolved.",
         );
@@ -211,16 +217,17 @@ export function createGatewayReadinessService(
     try {
       const probe = await deps.readLastGatewayProbe();
       if (
-        endpoint === undefined ||
-        probe === undefined ||
-        probe.configVersion !== configVersion
+        !endpointUnreadable &&
+        (endpoint === undefined ||
+          probe === undefined ||
+          probe.configVersion !== configVersion)
       ) {
         blocking.push({
           reason: "gateway_readiness_probe_missing",
           message:
             "No successful gateway probe is on file for the current gateway configuration, so paid model capabilities are refused: run a probe after configuring the gateway.",
         });
-      } else if (probe.status !== "ok") {
+      } else if (!endpointUnreadable && probe !== undefined && probe.status !== "ok") {
         blocking.push({
           reason: "gateway_readiness_probe_not_ok",
           message: `The last gateway probe did not succeed (status: ${probe.status}), so paid model capabilities are refused: fix what the probe reports and probe again.`,
@@ -231,7 +238,7 @@ export function createGatewayReadinessService(
         {
           type: "gateway-readiness-condition-failed",
           condition: "probe",
-          errorName: error instanceof Error ? error.name : String(typeof error),
+          errorName: error instanceof Error ? error.name : String(error),
         },
         "The last gateway probe result could not be read.",
       );
@@ -247,19 +254,30 @@ export function createGatewayReadinessService(
     // always means "not negotiated for this configuration".
     try {
       const negotiation = await deps.readLastGatewayNegotiation();
-      if (endpoint === undefined || negotiation === undefined) {
+      if (
+        !endpointUnreadable &&
+        (endpoint === undefined || negotiation === undefined)
+      ) {
         blocking.push({
           reason: "gateway_readiness_extension_not_negotiated",
           message:
             "No capability negotiation has completed for the current gateway configuration, so paid model capabilities are refused: negotiate the gateway's extensions.",
         });
-      } else if (negotiation.creditAdmissionExtension === "absent") {
+      } else if (
+        !endpointUnreadable &&
+        negotiation !== undefined &&
+        negotiation.creditAdmissionExtension === "absent"
+      ) {
         blocking.push({
           reason: "gateway_readiness_extension_absent",
           message:
             "The gateway does not expose the OpenBot credit-admission extension, so paid model capabilities are refused: deploy the extension before enabling billing.",
         });
-      } else if (negotiation.creditAdmissionExtension === "incompatible") {
+      } else if (
+        !endpointUnreadable &&
+        negotiation !== undefined &&
+        negotiation.creditAdmissionExtension === "incompatible"
+      ) {
         blocking.push({
           reason: "gateway_readiness_extension_incompatible",
           message:
@@ -271,7 +289,7 @@ export function createGatewayReadinessService(
         {
           type: "gateway-readiness-condition-failed",
           condition: "extension",
-          errorName: error instanceof Error ? error.name : String(typeof error),
+          errorName: error instanceof Error ? error.name : String(error),
         },
         "The extension negotiation result could not be read.",
       );
@@ -294,7 +312,15 @@ export function createGatewayReadinessService(
             "The USD→credits conversion rate is not configured, so paid model capabilities are refused: an administrator must save a legal rate (there is no default).",
         });
       }
-    } catch {
+    } catch (error) {
+      log.error(
+        {
+          type: "gateway-readiness-condition-failed",
+          condition: "rate",
+          errorName: error instanceof Error ? error.name : String(error),
+        },
+        "The conversion-rate state could not be read.",
+      );
       blocking.push({
         reason: "gateway_readiness_rate_unavailable",
         message:

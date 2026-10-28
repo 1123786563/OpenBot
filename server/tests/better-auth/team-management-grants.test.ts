@@ -56,12 +56,12 @@ import {
   verifications,
 } from "../../src/db/schema/core";
 import {
-  createCompanyAdminRoutes,
   type CompanyAdminRouteDeps,
+  createCompanyAdminRoutes,
 } from "../../src/enterprise/tenancy/company-admin-routes";
 import {
-  createPlatformCompanyProvisionService,
   type CompanyBillingInitializationPort,
+  createPlatformCompanyProvisionService,
 } from "../../src/enterprise/tenancy/provision";
 
 /*
@@ -111,15 +111,15 @@ const BA_URL_VARIABLES = [
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 const MIGRATION_TAGS = [
-  "0209_better_auth_directory",
-  "0210_better_auth_clocks",
-  "0211_better_auth_command_authority",
-  "0212_better_auth_authority_sources",
-  "0213_better_auth_assurance",
-  "0214_better_auth_schema_roles",
-  "0215_better_auth_company_lifecycle",
-  "0216_better_auth_invitation_resend",
-  "0217_better_auth_team_management_grants",
+  "0221_better_auth_directory",
+  "0222_better_auth_clocks",
+  "0223_better_auth_command_authority",
+  "0224_better_auth_authority_sources",
+  "0225_better_auth_assurance",
+  "0226_better_auth_schema_roles",
+  "0227_better_auth_company_lifecycle",
+  "0228_better_auth_invitation_resend",
+  "0229_better_auth_team_management_grants",
 ] as const;
 
 /** Everything the migrations above create (the T02.15 inventory + 0217). */
@@ -410,9 +410,7 @@ interface Harness {
       readonly status: string;
     }[]
   >;
-  grantRows(
-    grantId: string,
-  ): Promise<{ status: string; generation: number }[]>;
+  grantRows(grantId: string): Promise<{ status: string; generation: number }[]>;
   auditCountByOperation(tenantId: string, operation: string): Promise<number>;
 }
 
@@ -950,11 +948,9 @@ describe("T04.07 team management grants", () => {
     expect(memberBView.status).toBe("active");
     expect(memberBView.userId).toBe(memberB.userId);
 
-    const revoke = await routes.call(
-      "DELETE",
-      `${path}/${grantId}`,
-      { reason: "route round trip" },
-    );
+    const revoke = await routes.call("DELETE", `${path}/${grantId}`, {
+      reason: "route round trip",
+    });
     expect(revoke.status).toBe(200);
     const revokeBody = revoke.body as {
       grant: { grantId: string | null; grantGeneration: number };

@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { getLogger } from "../../../shared/logger";
+import { sanitizeLastError } from "../openmuse-deletion/retention";
 import {
   OPENMUSE_GOOGLE_PROVIDERS,
   OpenConnectorAuthExpiredError,
@@ -12,6 +14,8 @@ import type {
 
 export type { OpenMuseGoogleProvider };
 export { OPENMUSE_GOOGLE_PROVIDERS };
+
+const log = getLogger("server");
 
 /** The scopes a Gmail consent asks for; the state is bound to them (§4). */
 export const GMAIL_GRANT_SCOPES = [
@@ -621,6 +625,9 @@ export function createOpenMuseGoogleOAuth(deps: {
               lastError: OPENMUSE_SCOPE_NARROWED_MESSAGE,
             },
             connection.status,
+            // Same snapshot guard runProviderCall uses (M14): a concurrent
+            // refresh that already healed the row must not be rolled back.
+            connection.generation,
           );
           throw new OpenMuseRefreshRequiredError(provider);
         }
@@ -642,6 +649,8 @@ export function createOpenMuseGoogleOAuth(deps: {
             lastError: null,
           },
           connection.status,
+          // Snapshot guard: only heal the row this refresh actually read.
+          connection.generation,
         );
       } catch (error) {
         // Only the vendor naming the credential as expired may downgrade the
@@ -696,7 +705,13 @@ export function createOpenMuseGoogleOAuth(deps: {
         status: "disconnected",
         lastError: null,
       };
-      await deps.rows.overwriteConnection(disconnected, connection.status);
+      await deps.rows.overwriteConnection(
+        disconnected,
+        connection.status,
+        // Snapshot guard: a concurrent refresh's heal wins over this stale
+        // disconnect write.
+        connection.generation,
+      );
       return disconnected;
     },
 
@@ -725,9 +740,19 @@ export function createOpenMuseGoogleOAuth(deps: {
           // Vendor first, best-effort (G05's delete-by-alias seam; the 404
           // "nothing to withdraw" is tolerated inside the client).
           await client().deleteConnection(provider, connection.alias);
-        } catch {
+        } catch (error) {
           // Recorded, not thrown: a refused withdrawal must never fail the
-          // delete route, and the row must stay as it was for the retry.
+          // delete route, and the row must stay as it was for the retry. The
+          // line is logged so a programming fault in this path stops being
+          // invisible behind the retryable outcome.
+          log.warn({
+            type: "openmuse-google-revoke-failed",
+            provider,
+            error:
+              sanitizeLastError(
+                error instanceof Error ? error.message : String(error),
+              ) ?? "unprintable failure",
+          });
           outcomes.push({
             kind: connectionKindOf(provider),
             id: connection.id,
@@ -743,6 +768,8 @@ export function createOpenMuseGoogleOAuth(deps: {
             lastError: null,
           },
           connection.status,
+          // Snapshot guard: leave a row another writer moved in the meantime.
+          connection.generation,
         );
         outcomes.push({
           kind: connectionKindOf(provider),

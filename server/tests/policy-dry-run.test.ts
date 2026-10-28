@@ -243,4 +243,26 @@ describe("dryRunAgainstHistory", () => {
     expect(report.wouldRefuse).toBe(60);
     expect(report.changes).toHaveLength(50);
   });
+
+  test("the initiator is read off the row's own columns, not the payload", () => {
+    // The gateway writes the initiator to initiator_kind/initiator_id and never into the
+    // payload, so a replay bound to the payload judged every unattended run as a person and
+    // an initiator rule never fired in the dry-run report.
+    const candidate: ActionPolicy = {
+      mode: "enforce",
+      deny: ['initiator.kind == "routine"'],
+      allow: ["true"],
+    };
+    const routineRow = {
+      ...event({ id: "r", payload: CLICK_SUBMIT }),
+      initiatorKind: "routine",
+      initiatorId: "nightly-summary",
+    } as AuditEvent;
+    const personRow = event({ id: "p", payload: CLICK_SUBMIT });
+    const report = dryRunAgainstHistory(candidate, [routineRow, personRow]);
+    // The routine row flips to refused; the person row stays allowed under the same policy.
+    expect(report.wouldRefuse).toBe(1);
+    expect(report.unchanged).toBe(1);
+    expect(report.changes[0]?.id).toBe("r");
+  });
 });

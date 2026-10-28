@@ -13,10 +13,33 @@
  * it with the same token headers the codesandbox client uses.
  */
 
+import {
+  applyExecutionScopeHeaders,
+  type ExecutionScope,
+} from "../../../shared/execution-scope";
 import type { CraftConfig } from "./config";
+import { refuseExecutionScope } from "./errors";
 import { PodEventBus } from "./opencode/event-bus";
 import { OpencodeServeClient } from "./opencode/serve-client";
 import type { WorkspaceApi } from "./workspace";
+
+/**
+ * #618 OCR r4: the gateway's HTTP failures, structured — the refused path and
+ * status ride as fields, not as prose, so the deferred 403-propagation face
+ * (OCRFX-F4) can dispatch by code instead of matching the message text. The
+ * message keeps the `Sandbox <path> answered <status>.` convention the file
+ * routes' `/answered 413/` needle already matches, so both dispatch styles
+ * keep working against the same text.
+ */
+export class SandboxHttpError extends Error {
+  constructor(
+    public readonly path: string,
+    public readonly status: number,
+  ) {
+    super(`Sandbox ${path} answered ${status}.`);
+    this.name = "SandboxHttpError";
+  }
+}
 
 /** The sandbox-side file surface craft needs (backed by the gateway's file endpoints). */
 export type AgentSandboxFileApi = {
@@ -51,6 +74,15 @@ export type SandboxGatewayOptions = {
   config: CraftConfig;
   /** Resolve the connection for a Bot's sandbox (baseUrl/token come from deployment wiring). */
   connectionFor: (botId: string) => SandboxConnection | null;
+  /**
+   * Resolve the execution ownership every outbound request states (MT050, #618): the
+   * deployment-level pair the boot file threads beside its connection lambda — same
+   * facts, every assembly point. Unset callers fall back to the config's parsed
+   * `sandboxExecutionScope`, which is the same single source. A null resolution makes
+   * every outbound group fail closed with the displayable error, never an
+   * unattributed request.
+   */
+  executionScopeFor?: () => ExecutionScope | null;
   fetchImpl?: typeof fetch;
 };
 
@@ -64,15 +96,41 @@ export type SandboxGateway = {
   }): OpencodeServeClient | null;
   /** The shared per-(sandbox, directory) event bus, created on first use, replaced when dead. */
   eventBusFor(input: { botId: string; directory: string }): PodEventBus | null;
-  /** Liveness of the sandbox's opencode-serve (readiness probes). */
+  /**
+   * Liveness of the sandbox's opencode-serve (readiness probes). Rejects with the
+   * displayable scope refusal in a scopeless deployment (#618 OCR#12) — a permanent
+   * configuration failure callers answer as unavailable, not as a cold start.
+   */
   healthCheck(botId: string): Promise<boolean>;
+  /**
+   * Resolve the execution ownership ONLY — throw the displayable refusal when the
+   * deployment has none, without dialing anything (#618 OCR r3 #4). The seam for
+   * callers that must answer the refusal before they can know an outbound call
+   * really ran: the restore entrance wakes through restoreLatestSnapshot, which
+   * answers false (no dial) when no snapshot row or blob exists, so its 503 must
+   * not depend on the dial happening — assert here, zero requests, zero caching.
+   */
+  assertExecutionScope(): void;
   /** Close every cached bus (shutdown hook). */
   close(): void;
   /** The workspace-write view of the file API. */
   workspaceApiFor(botId: string): WorkspaceApi | null;
-  /** One packed snapshot of the Bot's whole workspace (application/gzip), or null when absent. */
+  /**
+   * One packed snapshot of the Bot's whole workspace (application/gzip). Null when the
+   * gateway answers 404 ("nothing snapshotted yet") and when the Bot has no configured
+   * sandbox connection (nothing to ask — a different fact from the scope refusal); any
+   * other failure, a scope mismatch included, throws (#618 FR-F2), and a missing
+   * execution scope throws the displayable refusal.
+   */
   snapshotArchiveFor(botId: string): Promise<Uint8Array | null>;
-  /** Replay a snapshot archive into the Bot's workspace; false when refused/unreachable. */
+  /**
+   * Replay a snapshot archive into the Bot's workspace. False on the gateway's own
+   * refusals — 409 mid-turn, 400 non-snapshot, the honest "could not restore this
+   * instant" — and when the Bot has no configured sandbox connection (nothing to
+   * replay onto — again not the scope refusal); every other failure throws, and a
+   * missing execution scope throws the displayable refusal instead of answering
+   * false (#618 OCR#5).
+   */
   restoreWorkspace(botId: string, archive: Uint8Array): Promise<boolean>;
 };
 
@@ -97,6 +155,31 @@ export function createSandboxGateway(
     return conn;
   };
 
+  /*
+   * #618: the execution ownership, resolved through the injected lambda (the boot
+   * file's one-const family) or the config's parsed pair — one source either way.
+   * Two cadences by consumer (OCR#7): the file verbs and healthCheck resolve per
+   * use, so the refusal keeps firing as long as the deployment has no scope;
+   * serveClientFor and eventBusFor freeze the value resolved at CONSTRUCTION into
+   * their cached instances (never invalidated while alive), so a later scope change
+   * reaches them only through a fresh client or bus — in production the pair is
+   * boot-time config, so there is no such moment.
+   */
+  const executionScope = (): ExecutionScope | null =>
+    options.executionScopeFor
+      ? options.executionScopeFor()
+      : config.sandboxExecutionScope;
+
+  /**
+   * The two ownership headers, or the fail-closed refusal — never unattributed
+   * headers. The triple semantics live in the shared helper's JSDoc (#656 D1,
+   * single source): a scope injects, null refuses through the injected
+   * rejector, undefined skips. The craft pair is object-or-null only, so the
+   * undefined arm never occurs on this dial family.
+   */
+  const scopeHeaders = (): Record<string, string> =>
+    applyExecutionScopeHeaders({}, executionScope(), refuseExecutionScope);
+
   const busKey = (botId: string, directory: string) => `${botId}::${directory}`;
 
   return {
@@ -104,21 +187,47 @@ export function createSandboxGateway(
       const conn = connection(botId);
       if (!conn) return null;
       const base = gatewayUrl(conn).replace(/\/$/, "");
-      const headers: Record<string, string> = {};
-      if (conn.token) headers["x-sandbox-token"] = conn.token;
-      headers["x-openbot-bot-id"] = botId;
+      // Per request, not once: the ownership half is resolved (or refused) on every
+      // call, so a deployment without a scope can never have cached unattributed
+      // headers from a moment the scope did exist.
+      const headersFor = (): Record<string, string> => {
+        const headers: Record<string, string> = {};
+        if (conn.token) headers["x-sandbox-token"] = conn.token;
+        headers["x-openbot-bot-id"] = botId;
+        return { ...headers, ...scopeHeaders() };
+      };
       const doFetch = options.fetchImpl ?? fetch;
       const request = async (
         path: string,
-        init: RequestInit = {},
+        // (#618 OCR r4) headers narrowed to the plain record the spread below
+        // understands: RequestInit also admits Headers and [key, value][] —
+        // shapes an object spread flattens to nothing, silently dropping the
+        // caller's headers. The type now makes the spread total; the `as`
+        // assertion that used to paper over it is gone.
+        init: Omit<RequestInit, "headers"> & {
+          headers?: Record<string, string>;
+        } = {},
         timeoutMs = config.opencodeServeRequestTimeoutSeconds * 1000,
       ) => {
         const response = await doFetch(`${base}${path}`, {
           ...init,
-          headers: { ...headers, ...(init.headers as Record<string, string>) },
+          headers: {
+            // #618 (OCR#4): trust headers land LAST, mirroring serve-client's
+            // buildHeaders — token/bot-id/scope are always the deployment's, so
+            // a future verb that forwards caller headers into init.headers can
+            // never override ownership or strip the credentials. headersFor()
+            // states no content-type, so writeFile's own survives untouched.
+            ...init.headers,
+            ...headersFor(),
+          },
           signal: AbortSignal.timeout(timeoutMs),
         });
         if (!response.ok) {
+          // Release the body before throwing (#618 OCR r4): an unconsumed body
+          // pins its pool socket in undici until GC — the leak the event-bus
+          // dial fixed for /event (OCR r2), same shape on every file verb: a
+          // 403 answered per call would strand one socket per call.
+          await response.body?.cancel().catch(() => undefined);
           throw new Error(`Sandbox ${path} answered ${response.status}.`);
         }
         return response;
@@ -139,19 +248,31 @@ export function createSandboxGateway(
             .filter((entry) => entry.length > 0);
         },
         async writeFile(path, content) {
-          await request(`/file?path=${encodeURIComponent(path)}`, {
-            method: "POST",
-            headers: { "content-type": "text/plain" },
-            body: content,
-          });
+          const response = await request(
+            `/file?path=${encodeURIComponent(path)}`,
+            {
+              method: "POST",
+              headers: { "content-type": "text/plain" },
+              body: content,
+            },
+          );
+          // The 201 answer owns a body ({path,size}) this write never reads —
+          // release it, the same undici pin the throw arms below already fix
+          // (#656 OCRfix): the normal path pins a socket per write otherwise.
+          await response.body?.cancel().catch(() => undefined);
         },
         async writeFileBytes(path, bytes) {
           // The raw-bytes twin of writeFile: the body rides as-is (no content-type text
           // coercion), so a binary attachment round-trips exactly.
-          await request(`/file?path=${encodeURIComponent(path)}`, {
-            method: "POST",
-            body: bytes as unknown as BodyInit,
-          });
+          const response = await request(
+            `/file?path=${encodeURIComponent(path)}`,
+            {
+              method: "POST",
+              body: bytes as unknown as BodyInit,
+            },
+          );
+          // Same unread 201 body as the text twin (#656 OCRfix).
+          await response.body?.cancel().catch(() => undefined);
         },
         async deletePath(path) {
           // 404 is the honest "absent" (and the gateway's answer for a directory too —
@@ -160,18 +281,29 @@ export function createSandboxGateway(
             `${base}/file?path=${encodeURIComponent(path)}`,
             {
               method: "DELETE",
-              headers,
+              headers: headersFor(),
               signal: AbortSignal.timeout(
                 config.opencodeServeRequestTimeoutSeconds * 1000,
               ),
             },
           );
-          if (response.status === 404) return false;
+          if (response.status === 404) {
+            // Release before the early return (#656 D4): the honest degrade is
+            // still a non-consumed body pinning its undici pool socket until
+            // GC — the same pin the throw arms below already fix.
+            await response.body?.cancel().catch(() => undefined);
+            return false;
+          }
           if (!response.ok) {
+            // Release before throwing — same undici socket pin as request() (#618 OCR r4).
+            await response.body?.cancel().catch(() => undefined);
             throw new Error(
               `Sandbox DELETE /file answered ${response.status}.`,
             );
           }
+          // The success answer owns a body ({ok,path}) nobody reads — release
+          // before returning (#656 OCRfix), the same pin the arms above fix.
+          await response.body?.cancel().catch(() => undefined);
           return true;
         },
         async readFile(path) {
@@ -183,14 +315,21 @@ export function createSandboxGateway(
           const response = await doFetch(
             `${base}/file/content?path=${encodeURIComponent(path)}`,
             {
-              headers,
+              headers: headersFor(),
               signal: AbortSignal.timeout(
                 config.opencodeServeRequestTimeoutSeconds * 1000,
               ),
             },
           );
-          if (response.status === 404) return null;
+          if (response.status === 404) {
+            // Release before the early return (#656 D4) — same undici socket
+            // pin as the throw arm below; "absent" still owns its body.
+            await response.body?.cancel().catch(() => undefined);
+            return null;
+          }
           if (!response.ok) {
+            // Release before throwing — same undici socket pin as request() (#618 OCR r4).
+            await response.body?.cancel().catch(() => undefined);
             throw new Error(
               `Sandbox /file/content answered ${response.status}.`,
             );
@@ -222,14 +361,21 @@ export function createSandboxGateway(
           const response = await doFetch(
             `${base}/file/content?path=${encodeURIComponent(path)}`,
             {
-              headers,
+              headers: headersFor(),
               signal: AbortSignal.timeout(
                 config.opencodeServeRequestTimeoutSeconds * 1000,
               ),
             },
           );
-          if (response.status === 404) return null;
+          if (response.status === 404) {
+            // Release before the early return (#656 D4) — the bytes twin owes
+            // the same release its text twin pays just above.
+            await response.body?.cancel().catch(() => undefined);
+            return null;
+          }
           if (!response.ok) {
+            // Release before throwing — same undici socket pin as request() (#618 OCR r4).
+            await response.body?.cancel().catch(() => undefined);
             throw new Error(
               `Sandbox /file/content answered ${response.status}.`,
             );
@@ -258,12 +404,20 @@ export function createSandboxGateway(
       // Bot workspace it lives in — the shared-workspace divergence the port documents.
       const conn = connection(botId);
       if (!conn) return null;
+      // #618: the ownership headers resolve (or refuse) before the dial — the archive
+      // read is an outbound request like any other, not a side door.
       const headers: Record<string, string> = {};
       if (conn.token) headers["x-sandbox-token"] = conn.token;
       headers["x-openbot-bot-id"] = botId;
+      Object.assign(headers, scopeHeaders());
       const doFetch = options.fetchImpl ?? fetch;
+      // One name for the endpoint both sides of the dial use (#656 D4, OCR r5):
+      // the error's path field is what the deferred structured dispatch will
+      // match on, and a hand-copied second literal could drift from the dialed
+      // URL with no compiler to notice.
+      const snapshotPath = "/workspace/snapshot";
       const response = await doFetch(
-        `${gatewayUrl(conn).replace(/\/$/, "")}/workspace/snapshot`,
+        `${gatewayUrl(conn).replace(/\/$/, "")}${snapshotPath}`,
         {
           headers,
           signal: AbortSignal.timeout(
@@ -271,20 +425,41 @@ export function createSandboxGateway(
           ),
         },
       );
-      if (!response.ok) return null;
+      // #618 (FR-F2): only a 404 is the honest "no snapshot yet". Folding every !ok
+      // into null dressed a scope-mismatch 403 up as "nothing to restore" — the
+      // mismatch verdict must travel out as the error it is.
+      if (response.status === 404) {
+        // Release before the early return (#656 D4, OCR r5): the "no snapshot
+        // yet" answer still owns a body nobody reads — every first sleep poll
+        // of a not-yet-snapshotted Bot would pin one pool socket until GC.
+        await response.body?.cancel().catch(() => undefined);
+        return null;
+      }
+      if (!response.ok) {
+        // Release the body before throwing (#618 OCR r4): the verdict this
+        // usually is — a scope-mismatch 403 — arrives with a body nobody reads,
+        // and an unconsumed body pins its pool socket until GC: one stranded
+        // socket per snapshot call in a deployment failing like this every turn.
+        await response.body?.cancel().catch(() => undefined);
+        throw new SandboxHttpError(snapshotPath, response.status);
+      }
       return new Uint8Array(await response.arrayBuffer());
     },
 
     async restoreWorkspace(botId, archive) {
       const conn = connection(botId);
       if (!conn) return false;
+      // #618: same gate as the snapshot half — refuse before any bytes leave.
       const headers: Record<string, string> = {};
       if (conn.token) headers["x-sandbox-token"] = conn.token;
       headers["x-openbot-bot-id"] = botId;
       headers["content-type"] = "application/gzip";
+      Object.assign(headers, scopeHeaders());
       const doFetch = options.fetchImpl ?? fetch;
+      // Same single-name binding as the snapshot half (#656 D4, OCR r5).
+      const restorePath = "/workspace/restore";
       const response = await doFetch(
-        `${gatewayUrl(conn).replace(/\/$/, "")}/workspace/restore`,
+        `${gatewayUrl(conn).replace(/\/$/, "")}${restorePath}`,
         {
           method: "POST",
           headers,
@@ -295,9 +470,29 @@ export function createSandboxGateway(
         },
       );
       // The gateway refuses a restore mid-turn (409) and rejects a non-snapshot (400); both are
-      // honest "could not restore this instant" answers — false, not a throw — so the caller can
-      // degrade to "rebuild the workspace" instead of surfacing a phantom error.
-      return response.ok;
+      // honest "could not restore this instant" answers — false, not a throw. Every OTHER
+      // verdict — a scope-mismatch 403 included — travels out as the error it is, mirroring
+      // the snapshot half (#618 FR-F2/OCR#5): folding it into false dressed a mismatch up as
+      // "nothing to restore" and the wake silently rebuilt the workspace over the mismatch.
+      if (response.status === 409 || response.status === 400) {
+        // Release before the early return (#656 D4, OCR r5): 409 is the
+        // high-traffic degrade — every restore poll colliding with a live turn
+        // lands here, each pinning its pool socket until GC without this.
+        await response.body?.cancel().catch(() => undefined);
+        return false;
+      }
+      if (!response.ok) {
+        // Same release as the snapshot half (#618 OCR r4); the verdict leaves
+        // structured — SandboxHttpError carries the path and status the deferred
+        // 403 propagation (OCRFX-F4) will dispatch on, message text unchanged.
+        await response.body?.cancel().catch(() => undefined);
+        throw new SandboxHttpError(restorePath, response.status);
+      }
+      // The success answer owns a body too ({"ok":true,...}) — release before
+      // returning, the same undici pin the 409/400 and throw arms above fix
+      // (#656 OCRfix): every successful restore would pin its socket until GC.
+      await response.body?.cancel().catch(() => undefined);
+      return true;
     },
 
     serveClientFor(input) {
@@ -312,6 +507,10 @@ export function createSandboxGateway(
         config,
         token: conn.token,
         botId: input.botId,
+        // #618: null (not undefined) when the deployment has no scope, so every verb
+        // of this client refuses at its own boundary. Resolved at construction like
+        // the connection above: the pair is deployment config, one value per process.
+        executionScope: executionScope(),
         eventBus: bus,
         fetchImpl: options.fetchImpl,
       });
@@ -336,6 +535,9 @@ export function createSandboxGateway(
         directory: input.directory,
         token: conn.token,
         botId: input.botId,
+        // #618: null (not undefined) when the deployment has no scope — subscribe()
+        // then refuses with the displayable error instead of dialing unattributed.
+        executionScope: executionScope(),
         fetchImpl: options.fetchImpl,
       });
       buses.set(key, bus);
@@ -350,9 +552,19 @@ export function createSandboxGateway(
         config,
         token: conn.token,
         botId,
+        // #618: the probe is an outbound request too — same ownership, same refusal.
+        executionScope: executionScope(),
         fetchImpl: options.fetchImpl,
       });
       return client.healthCheck();
+    },
+
+    assertExecutionScope() {
+      // The headers resolver IS the assertion — resolving the pair or refusing is
+      // its whole contract. Nothing is dialed and nothing is cached; the caller
+      // learns only "this deployment can state ownership" or the displayable
+      // refusal every outbound group would have thrown.
+      scopeHeaders();
     },
 
     close() {

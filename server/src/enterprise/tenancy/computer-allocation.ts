@@ -490,7 +490,7 @@ export function createComputerAllocationService(deps: {
         if (session.requestId !== undefined) {
           await ports.cancelControl(
             botId,
-            { id: scope.actorId },
+            { id: session.principalId },
             session.requestId,
           );
         } else {

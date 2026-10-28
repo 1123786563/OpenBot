@@ -212,8 +212,8 @@ describe("static candidate extraction", () => {
     const retention = inventory.backgroundPrograms.find(
       (program) => program.name === "startRetentionSweeps",
     );
-    expect(retention?.source).toBe("src/index.ts");
-    expect(retention?.evidence).toMatch(/^src\/index\.ts:\d+:/);
+    expect(retention?.source).toBe("src/assembly/runtime.ts");
+    expect(retention?.evidence).toMatch(/^src\/assembly\/runtime\.ts:\d+:/);
     for (const program of inventory.backgroundPrograms) {
       expect(program.evidence).toMatch(/:\d+:/);
     }

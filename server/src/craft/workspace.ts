@@ -203,11 +203,14 @@ export async function setupSessionWorkspace(
       input.mcpRelayBaseUrl,
     );
   }
+  // Mark complete only after every managed file has landed. `mkdir(outputs)` is the
+  // first setup step (and is a no-op on the live agent-sandbox API), so the directory
+  // cannot say "ready": it either appears too early on a real mkdir or never appears at all.
+  await api.writeFile(`${root}/.opencode/craft-workspace-ready`, input.sessionId);
 }
 
 /**
- * Whether the workspace exists: the outputs directory is the completion marker (a
- * half-written workspace has attachments but not outputs, mirroring onyx's sentinel logic).
+ * Whether the workspace exists: the ready marker is written only after setup has completed.
  */
 export async function sessionWorkspaceExists(
   api: Pick<AgentSandboxFileApi, "listFiles">,
@@ -216,8 +219,11 @@ export async function sessionWorkspaceExists(
 ): Promise<boolean> {
   const root = sessionDirectory(sessionId, mode);
   try {
-    const entries = await api.listFiles(`${root}/outputs`);
-    return Array.isArray(entries);
+    // The ready marker is the completion record: setup writes it only after every managed
+    // file has landed, so a workspace interrupted mid-setup does not pass (and, on the
+    // live gateway whose mkdir is a no-op, a finished one actually can).
+    const entries = await api.listFiles(`${root}/.opencode`);
+    return entries.includes(`${root}/.opencode/craft-workspace-ready`);
   } catch {
     return false;
   }

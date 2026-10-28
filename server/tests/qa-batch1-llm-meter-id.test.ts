@@ -8,8 +8,9 @@ const hereDir = dirname(herePath);
 
 /*
  * QA batch-1 probe (f): the LLM meter's outbox write, verified against the SOURCE — the
- * wiring lives inside index.ts's assembly (a module with heavy side effects that no unit test
- * can import), so the check is twofold:
+ * wiring lives inside assembly/runtime.ts's assembleRuntime (MOD03 #623 moved it there
+ * from index.ts; still a module with heavy side effects that no unit test can import),
+ * so the check is twofold:
  *
  *   1. STATIC: the implementation the file actually contains — a usage-outbox write keyed by
  *      the stream event id, zero-usage short-circuit, and no direct Lago or credit draw —
@@ -18,7 +19,7 @@ const hereDir = dirname(herePath);
  */
 
 const SOURCE = readFileSync(
-  join(hereDir, "../src/index.ts"),
+  join(hereDir, "../src/assembly/runtime.ts"),
   "utf8",
 );
 

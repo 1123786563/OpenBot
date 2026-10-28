@@ -29,6 +29,8 @@ import { z } from "zod";
 import { type AuditStore, recordAuditEvent } from "../../audit";
 import type { AppVariables } from "../../auth/guards";
 import { resolvePayerForPersonalUser } from "../payer-personal";
+// MOD10（Issue #630）：组内公开门面的能力面类型（仅类型；运行时零依赖）。
+import type { BillingOrders, BillingResolvePayer } from "../public";
 import { readBodyCapped } from "../raw-body";
 import { billingReadScopeOf } from "../routes";
 import { BillingError } from "../types";
@@ -44,9 +46,9 @@ type RequireAdmin = (
 ) => Response | undefined;
 
 /**
- * The channels' anonymous deliveries, at their own prefix. The provider path segment is matched
- * against the configured providers only — anything else (a probe, a mistyped channel name) is a
- * plain 404 with no body-parsing work done.
+ * The channels' anonymous deliveries, at their own prefix. The body is read once and capped
+ * first — the size limit holds for every delivery, configured provider or not — and a provider
+ * path segment matching nothing (a probe, a mistyped channel name) is then a plain 404.
  */
 export function createPaymentCallbackRoutes(deps: { service: PaymentService }) {
   const routes = new Hono<{ Variables: AppVariables }>();
@@ -104,14 +106,11 @@ async function callbackAnswer(
       return fail(409);
     case "unknown-provider":
       return context.json({ error: "Unknown payment provider." }, 404);
-    case "unverified":
-      return fail(
-        outcome.refusal === "stale"
-          ? 401
-          : outcome.refusal === "decryption"
-            ? 400
-            : 403,
-      );
+    case "unverified": {
+      if (outcome.refusal === "stale") return fail(401);
+      if (outcome.refusal === "decryption") return fail(400);
+      return fail(403);
+    }
     case "not-success":
       return fail(409);
     case "unknown-order":
@@ -166,6 +165,14 @@ export function createPaymentRoutes(deps: {
   activePlanCode(): Promise<string | null>;
   /** Present on a deployment with the audit store; absent skips the trail, as everywhere else. */
   audit?: AuditStore;
+  /**
+   * MOD10（Issue #630）C8：订单事实门面（可选）。生产装配注入后三读 handler 经
+   * 门面；缺省回退直用 `service`（存量调用方与两臂行为等价，双路先例）。
+   * `createPurchase`/`cancelPurchase` 的写与处置面不经门面（C10）。
+   */
+  orders?: Pick<BillingOrders, "catalog" | "readOrder" | "readCurrentOrder">;
+  /** MOD10 C1/C9 双路：读作用域与订单 owner 的 Payer 解析经门面 `resolvePayer.personal`。 */
+  resolvePayer?: Pick<BillingResolvePayer, "personal">;
 }) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", deps.requireUser);
@@ -225,19 +232,24 @@ export function createPaymentRoutes(deps: {
     const denied = deps.requireAdmin(context);
     const canPurchase = !denied;
     return context.json(
-      deps.service.catalog(canPurchase, await deps.activePlanCode()),
+      (deps.orders ?? deps.service).catalog(
+        canPurchase,
+        await deps.activePlanCode(),
+      ),
     );
   });
   routes.get("/purchases/current", async (context) => {
     return context.json(
-      await deps.service.readCurrentOrder(billingReadScopeOf(context)),
+      await (deps.orders ?? deps.service).readCurrentOrder(
+        billingReadScopeOf(context, deps.resolvePayer),
+      ),
     );
   });
 
   routes.get("/purchases/:id", async (context) => {
-    const { order } = await deps.service.readOrder(
+    const { order } = await (deps.orders ?? deps.service).readOrder(
       context.req.param("id"),
-      billingReadScopeOf(context),
+      billingReadScopeOf(context, deps.resolvePayer),
     );
     if (!order) {
       return context.json({ error: "No such purchase." }, 404);
@@ -252,7 +264,10 @@ export function createPaymentRoutes(deps: {
     // The order's owner is resolved HERE, from the authenticated session — the request body
     // (a strict zod object) carries no ownership field at all, so nothing a caller sends can
     // choose or change who the order belongs to (AC14/Q27). The audit actor rides beside it.
-    const ownerPayerRef = resolvePayerForPersonalUser(context.var.actor);
+    // MOD10 C9：解析经公开门面 `resolvePayer.personal`（薄委托同一纯函数），缺省直用。
+    const ownerPayerRef = (
+      deps.resolvePayer?.personal ?? resolvePayerForPersonalUser
+    )(context.var.actor);
     const { order } = await deps.service.createPurchase({
       planCode: input.planCode,
       provider: input.provider,

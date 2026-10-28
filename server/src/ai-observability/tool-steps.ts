@@ -21,17 +21,29 @@
  * classification cannot lean on a framework's internal shapes (acceptance 4).
  *
  * Egress is structural, as in T14: the projected span enters ONLY through the T09 bounded
- * write queue, never a direct port call, and only after the T05 projection — free text is
- * asserted-by-the-recorder span content (`allowFreeText`), and even then the deny patterns
- * run first and always win. Scoping: a span is written upstream only when the observation
- * carries a scope this process issued (T06); a scope-less observation submits nothing
- * rather than inventing an owner.
+ * write queue, never a direct port call, and only after the T05 projection. Since the
+ * f5a1 review's F2 the step bodies pass the SAME approval gate the model spans do
+ * (FREV-01): free text projects only behind an approval minted from the Bot's
+ * configured security policy — without one the step keeps its metrics and structural
+ * fields and omits its prose — and even approved, the deny patterns run first and
+ * always win. Since FREV-02 the write is also binding-gated: the run's local
+ * authoritative binding (T07) is established before the span reaches the port, and a
+ * binding that cannot be established fails the write closed — counted, never exported
+ * unattributed. Scoping: a span is written upstream only when the observation carries
+ * a scope this process issued (T06); a scope-less observation submits nothing rather
+ * than inventing an owner.
  */
 import { randomBytes } from "node:crypto";
 import type { SafeValue } from "../../../shared/ai-observability";
+import {
+  isUsableRunRef,
+  type ObserverRunBindingGate,
+  observerChainId,
+} from "./bindings";
 import type { ObservationScope } from "./contracts";
 import type { OpikHealthService, OpikObservationWrite } from "./health";
 import type { IdLinkStore } from "./id-links";
+import { runUpstreamIdentity, spanUpstreamId } from "./opik-http";
 import type { OpikOtlpSpan } from "./opik-port";
 import {
   DEFAULT_METADATA_ALLOWLIST,
@@ -43,9 +55,11 @@ import {
   type SafeRecord,
 } from "./redaction";
 import {
+  issuedSpanContentApproval,
   nanos,
   nowNs,
-  projectSpanContent,
+  projectApprovedSpanContent,
+  type SpanContentApproval,
   W3C_SPAN_ID,
   W3C_TRACE_ID,
 } from "./span-support";
@@ -107,10 +121,29 @@ export type ToolStepObservation = Readonly<{
   input?: string | null;
   /** The raw execution output (or error text) — projected at the recorder. */
   output?: string | null;
+  /**
+   * The FREV-01 proof for this step's bodies (f5a1 review F2): an approval
+   * minted from the Bot's configured security policy, carried where the run's
+   * policy is known. Absent is no proof — input/output are omitted and the
+   * span keeps its metrics and structural fields, exactly as for model spans.
+   */
+  contentApproval?: SpanContentApproval | null;
   /** The trusted scope, when this path carries one; absent submits nothing upstream. */
   scope?: ObservationScope;
-  /** The run's W3C trace context; absent roots the span's own trace, as before. */
+  /**
+   * The run's W3C trace context; absent (or unprovable) the span submits
+   * nothing upstream — since FREV-02 the chain is the binding's identity, and
+   * a chain-less step has no local authority to export under.
+   */
   trace?: StepTraceContext;
+  /**
+   * R4-03: which path observed the step. `builtin` (the default) saw the run's
+   * own event stream; `remote-agui` saw an endpoint's stream THROUGH this
+   * server — a run whose tools executed elsewhere, whose observations therefore
+   * never claim an execution, and whose binding is the run identity the fact
+   * carried (not the chain-minted one). The span's `origin` attribute names it.
+   */
+  origin?: "builtin" | "remote-agui";
 }>;
 
 /**
@@ -184,9 +217,14 @@ export type RetrievalStepObservation = Readonly<{
     | { kind: "hit"; fragments: readonly RetrievalFragment[] }
     | { kind: "miss" }
     | { kind: "degraded"; reason: string };
+  /**
+   * The FREV-01 proof for the query body (f5a1 review F2), on the same
+   * footing as the tool-step bodies above: absent omits the query prose.
+   */
+  contentApproval?: SpanContentApproval | null;
   /** The trusted scope, when this path carries one; absent submits nothing upstream. */
   scope?: ObservationScope;
-  /** The run's W3C trace context; absent roots the span's own trace, as before. */
+  /** The run's W3C trace context (the FREV-02 binding identity; see above). */
   trace?: StepTraceContext;
 }>;
 
@@ -220,6 +258,7 @@ const SPAN_ATTRIBUTE_ALLOWLIST: readonly string[] = [
   "fragments_original_bytes",
   "kb_ids",
   "origin",
+  "content_policy_ref",
 ];
 
 /** The fragment locator keys that survive projection, in the span's own naming. */
@@ -233,6 +272,13 @@ const FRAGMENT_KEYS: readonly string[] = [
 
 /** Retriever options cap top_k at 10; the cap here is a defensive ceiling, not policy. */
 const MAX_FRAGMENTS = 64;
+
+/**
+ * The tool_call_id bound both faces answer to (OCR final #59): the read side
+ * treats an id past this length as never provided, so the write side clamps to
+ * the same line — one shared constant, never two ceilings that can drift apart.
+ */
+export const MAX_TOOL_CALL_ID_LENGTH = 256;
 
 /** Hyphenated UUIDv7 — the explicit-id shape the verified contract adopts verbatim. */
 const UUID_V7 =
@@ -378,6 +424,11 @@ function baseSpan(
 
 function buildToolStepSpan(observation: ToolStepObservation): OpikOtlpSpan {
   const executionState = toolStepExecutionState(observation);
+  // f5a1 review F2 / FREV-01: bodies and audit attribute share ONE verdict —
+  // the runtime-verified mint — the same discipline the model spans hold
+  // since F5A1-R1-F1. The recorder's say-so stopped being a voucher when the
+  // model half closed; without a minted approval the step is metrics-only.
+  const approval = issuedSpanContentApproval(observation.contentApproval);
   const attributes: SafeRecord = projectSafeRecord(
     {
       step_kind: "tool",
@@ -389,14 +440,26 @@ function buildToolStepSpan(observation: ToolStepObservation): OpikOtlpSpan {
       receipt_observed: observation.receiptObserved,
       window: observation.window,
       span_state: toolStepTerminalState(observation),
-      origin: "builtin",
+      /*
+       * R4-03: the span names the path that observed it — `builtin` for the run's
+       * own stream, `remote-agui` for an endpoint's stream this server mediated.
+       * The call id ↔ step linkage this attribute set carries is the finding's
+       * closure: a real business call never disappears from governance steps for
+       * want of its identity, and a surface/endpoint execution reads unobserved,
+       * never executed.
+       */
+      origin: observation.origin ?? "builtin",
+      // The FREV-01 audit chain: a span that carried bodies names the policy
+      // that approved them; a proof-less span carries no bodies to name.
+      ...(approval ? { content_policy_ref: approval.policyRef } : {}),
     },
     SPAN_ATTRIBUTE_ALLOWLIST,
   );
-  const input = projectSpanContent(observation.input);
+  const input = projectApprovedSpanContent(observation.input, approval);
   if (input) attributes.input = input;
-  const output = projectSpanContent(
+  const output = projectApprovedSpanContent(
     observation.output ?? observation.execution?.output ?? null,
+    approval,
   );
   if (output) attributes.output = output;
   return {
@@ -449,6 +512,9 @@ function projectKbIds(
 function buildRetrievalStepSpan(
   observation: RetrievalStepObservation,
 ): OpikOtlpSpan {
+  // f5a1 review F2 / FREV-01: the query is a body like any other — gated by
+  // the same verified mint, audit attribute included (see buildToolStepSpan).
+  const approval = issuedSpanContentApproval(observation.contentApproval);
   const attributes: SafeRecord = projectSafeRecord(
     {
       step_kind: "retrieval",
@@ -464,6 +530,7 @@ function buildRetrievalStepSpan(
       span_state:
         observation.outcome.kind === "degraded" ? "failed" : "completed",
       origin: "builtin",
+      ...(approval ? { content_policy_ref: approval.policyRef } : {}),
     },
     SPAN_ATTRIBUTE_ALLOWLIST,
   );
@@ -491,7 +558,7 @@ function buildRetrievalStepSpan(
       };
     }
   }
-  const input = projectSpanContent(observation.query);
+  const input = projectApprovedSpanContent(observation.query, approval);
   if (input) attributes.input = input;
   return {
     ...baseSpan(
@@ -505,15 +572,62 @@ function buildRetrievalStepSpan(
   };
 }
 
+/**
+ * The run chain an observation can prove (FREV-02): a W3C-valid trace id plus,
+ * only when the association is honestly carried and usable, its runRef. Null —
+ * nothing provable — submits nothing upstream.
+ */
+function observerChain(trace: StepTraceContext | undefined): {
+  traceId: string;
+  runRef?: Readonly<{ runId: string; attemptId: string }>;
+} | null {
+  const traceId = observerChainId(trace?.traceId);
+  if (traceId === null) return null;
+  const runRef = trace?.runRef;
+  if (runRef === undefined) return { traceId };
+  if (!isUsableRunRef(runRef)) {
+    // An association that names the run half-honestly is worse than none.
+    return null;
+  }
+  return { traceId, runRef };
+}
+
+/**
+ * The counted half of the FREV-02 chain gate for steps (OCR final #49), on the
+ * model-span recorder's footing (OCR R2 C1): a scoped observation whose run
+ * cannot prove a chain exports nothing — the fail-closed verdict is unchanged —
+ * but the drop is a fact, never silence: counted here, bounded by construction
+ * (one number per reason, no ids, no content). record and recordRetrieval share
+ * the one counter, so operation cannot distinguish a dropped tool step from a
+ * dropped retrieval by which one was silent. The count has the operator outlet
+ * the id-link counters have (T-M #2): the health service projects it into
+ * writeStats()/snapshot() as `chainGateDrops.steps`, so it reaches the health
+ * route — not only the tests that pin the gate.
+ */
+const chainGateDrops = { missingChain: 0 };
+
+/** Read the step chain-gate drop counts (a copy: readers cannot reset what was counted). */
+export function toolStepChainGateDrops(): Readonly<{ missingChain: number }> {
+  return { ...chainGateDrops };
+}
+
 export function createToolStepRecorder(
   deps: Readonly<{
     healthService: Pick<OpikHealthService, "submit" | "countIdLink">;
     /**
-     * The id-mapping store (Issue #23/T17). When present, a tool step whose span
-     * carries an explicit upstream id is linked AFTER the upstream write landed —
-     * the governed write path's ordering: projection, span, then the mapping, so an
-     * id the backend never adopted can never be claimed. Absent means no mapping
-     * happens and the span write is unchanged.
+     * FREV-02: the local authoritative run binding, established (or replayed)
+     * before any business span of the run is exported. Required on purpose —
+     * see the model-span recorder's own seam note.
+     */
+    bindings: Pick<ObserverRunBindingGate, "ensure">;
+    /**
+     * The id-mapping store (Issue #23/T17). When present, a tool step whose
+     * upstream span id is verifiable — the span's explicit override, or the
+     * chain-derived id when it derives to the binding's upstream trace — is
+     * linked AFTER the upstream write landed — the governed write path's
+     * ordering: projection, span, then the mapping, so an id the backend never
+     * adopted can never be claimed. Absent means no mapping happens and the
+     * span write is unchanged.
      */
     idLinks?: Pick<IdLinkStore, "link">;
   }>,
@@ -522,36 +636,84 @@ export function createToolStepRecorder(
     record(observation) {
       const scope = observation.scope;
       if (scope === undefined) return;
-      const span = buildToolStepSpan(observation);
+      // FREV-02: the run's provable chain is the binding's identity — a
+      // chain-less step has no local authority to export under and submits
+      // nothing, rather than rooting a fresh unattributable trace.
+      const chain = observerChain(observation.trace);
+      if (chain === null) {
+        // Counted, never silent (OCR R2 C1 — the model-span gate's discipline,
+        // OCR final #49): the refusal is the FREV-02 verdict; this count is its
+        // visibility.
+        chainGateDrops.missingChain += 1;
+        return;
+      }
+      // One bound on both faces (#59): an id past MAX_TOOL_CALL_ID_LENGTH would
+      // otherwise land in the store only for the read side to judge "never
+      // provided" — the association lost silently. Clamped once here, so the
+      // span's attribute and the id link below carry the SAME readable id.
+      const bounded: ToolStepObservation =
+        observation.toolCallId.length > MAX_TOOL_CALL_ID_LENGTH
+          ? {
+              ...observation,
+              toolCallId: observation.toolCallId.slice(
+                0,
+                MAX_TOOL_CALL_ID_LENGTH,
+              ),
+            }
+          : observation;
+      const span = buildToolStepSpan(bounded);
       const idLinks = deps.idLinks;
       const write: OpikObservationWrite = {
         scopeKey: scope.key,
         operation: "writeSpans",
         perform: async (port) => {
-          const result = await port.writeSpans(scope, { spans: [span] });
-          if (result.outcome === "ok" && idLinks !== undefined && span.opik) {
-            // The mapping follows the write, never precedes it. A refused verdict
-            // (chain_broken, divergent) is a detected fact, and a link store that
-            // throws must not turn a span that already landed into a counted
-            // failure — both are observations here, swallowed by design, but
-            // never silently: each lands on one governed counter (safe labels,
-            // no ids, no evidence) so a broken chain is observable in operation.
-            try {
-              const verdict = await idLinks.link(scope, {
-                local: { kind: "tool_step", id: observation.toolCallId },
-                upstream: { kind: "span", id: span.opik.spanId },
-                ...(observation.trace?.runRef !== undefined
-                  ? { runRef: observation.trace.runRef }
-                  : {}),
-                observedTraceId: span.traceId,
-              });
-              if (!verdict.linked) {
-                deps.healthService.countIdLink(verdict.reason);
+          // The binding first (FREV-02): its failure fails this write visibly
+          // and the span never reaches the port.
+          const binding = await deps.bindings.ensure(scope, chain);
+          const result = await port.writeSpans(scope, {
+            spans: [span],
+            binding,
+          });
+          if (result.outcome === "ok" && idLinks !== undefined) {
+            // The mapping follows the write, never precedes it. The upstream id is
+            // the three-state verdict (OCR delta T-J #7): the span's explicit
+            // override when it carries one, else — and only when the chain derives
+            // to the binding's recorded upstream trace, the same derivation the
+            // port's completion adopts — the derived id, so a link never claims an
+            // id the backend did not take. A chain that derives elsewhere names no
+            // verifiable span: nothing to link.
+            const upstreamSpanId =
+              span.opik !== undefined
+                ? span.opik.spanId
+                : binding.opikTraceId !== null &&
+                    runUpstreamIdentity(span.traceId).opikTraceId ===
+                      binding.opikTraceId
+                  ? spanUpstreamId(span.traceId, span.spanId)
+                  : undefined;
+            if (upstreamSpanId !== undefined) {
+              // A refused verdict (chain_broken, divergent) is a detected fact,
+              // and a link store that throws must not turn a span that already
+              // landed into a counted failure — both are observations here,
+              // swallowed by design, but never silently: each lands on one
+              // governed counter (safe labels, no ids, no evidence) so a broken
+              // chain is observable in operation.
+              try {
+                const verdict = await idLinks.link(scope, {
+                  local: { kind: "tool_step", id: bounded.toolCallId },
+                  upstream: { kind: "span", id: upstreamSpanId },
+                  ...(observation.trace?.runRef !== undefined
+                    ? { runRef: observation.trace.runRef }
+                    : {}),
+                  observedTraceId: span.traceId,
+                });
+                if (!verdict.linked) {
+                  deps.healthService.countIdLink(verdict.reason);
+                }
+              } catch {
+                // See above: the span write's own outcome is the queue's truth;
+                // the mapping failure is counted, never propagated.
+                deps.healthService.countIdLink("error");
               }
-            } catch {
-              // See above: the span write's own outcome is the queue's truth;
-              // the mapping failure is counted, never propagated.
-              deps.healthService.countIdLink("error");
             }
           }
           return result;
@@ -565,11 +727,20 @@ export function createToolStepRecorder(
       // No id link: a retrieval step has no local id of its own (queries are not
       // id'd), and a synthesized one would make the mapping ambiguous. Only tool
       // steps — which carry a toolCallId — link.
+      const chain = observerChain(observation.trace);
+      if (chain === null) {
+        // FREV-02: see record above — same gate, same count (#49).
+        chainGateDrops.missingChain += 1;
+        return;
+      }
       const span = buildRetrievalStepSpan(observation);
       const write: OpikObservationWrite = {
         scopeKey: scope.key,
         operation: "writeSpans",
-        perform: (port) => port.writeSpans(scope, { spans: [span] }),
+        perform: async (port) => {
+          const binding = await deps.bindings.ensure(scope, chain);
+          return port.writeSpans(scope, { spans: [span], binding });
+        },
       };
       deps.healthService.submit(write);
     },

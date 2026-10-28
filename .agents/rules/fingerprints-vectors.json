@@ -1,0 +1,584 @@
+{
+  "note": "Synthetic fixed vectors. canonical_utf8 is authoritative; fixture generation is not a general JCS implementation. raw_input must normalize to input.",
+  "vectors": [
+    {
+      "name": "requirements-empty-sets",
+      "input": {
+        "algorithm": "requirements-v3",
+        "root": "example.invalid/team/repo#1",
+        "issues": [
+          {
+            "identity": "example.invalid/team/repo#1",
+            "title": "Example",
+            "body": "",
+            "acceptance": "",
+            "decisions": [],
+            "contains": [],
+            "depends_on": []
+          }
+        ],
+        "sources": [],
+        "dependencies": [],
+        "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "canonical_utf8": "{\"algorithm\":\"requirements-v3\",\"dependencies\":[],\"issues\":[{\"acceptance\":\"\",\"body\":\"\",\"contains\":[],\"decisions\":[],\"depends_on\":[],\"identity\":\"example.invalid/team/repo#1\",\"title\":\"Example\"}],\"policy_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"root\":\"example.invalid/team/repo#1\",\"sources\":[]}",
+      "sha256": "bf9fc71e9a44b99621f1c1f868a4ba30f2475c6316c09671d53a62378e919bf7"
+    },
+    {
+      "name": "requirements-crlf-unicode",
+      "input": {
+        "algorithm": "requirements-v3",
+        "root": "example.invalid/team/repo#1",
+        "issues": [
+          {
+            "identity": "example.invalid/team/repo#1",
+            "title": "验收 😀",
+            "body": "第一行\n第二行",
+            "acceptance": "",
+            "decisions": [],
+            "contains": [],
+            "depends_on": []
+          }
+        ],
+        "sources": [],
+        "dependencies": [],
+        "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "canonical_utf8": "{\"algorithm\":\"requirements-v3\",\"dependencies\":[],\"issues\":[{\"acceptance\":\"\",\"body\":\"第一行\\n第二行\",\"contains\":[],\"decisions\":[],\"depends_on\":[],\"identity\":\"example.invalid/team/repo#1\",\"title\":\"验收 😀\"}],\"policy_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"root\":\"example.invalid/team/repo#1\",\"sources\":[]}",
+      "sha256": "fe104d57be15aba341a27cbba9fb477d198a9f2ac0a450ad30d3d99c66eaa98c",
+      "raw_input": {
+        "algorithm": "requirements-v3",
+        "root": "example.invalid/team/repo#1",
+        "issues": [
+          {
+            "identity": "example.invalid/team/repo#1",
+            "title": "验收 😀",
+            "body": "第一行\r\n第二行",
+            "acceptance": "",
+            "decisions": [],
+            "contains": [],
+            "depends_on": []
+          }
+        ],
+        "sources": [],
+        "dependencies": [],
+        "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "requirements-set-order",
+      "input": {
+        "algorithm": "requirements-v3",
+        "root": "example.invalid/team/repo#1",
+        "issues": [
+          {
+            "identity": "example.invalid/team/repo#1",
+            "title": "Example",
+            "body": "",
+            "acceptance": "",
+            "decisions": [],
+            "contains": [],
+            "depends_on": [
+              "example.invalid/other/repo#2",
+              "example.invalid/other/repo#3"
+            ]
+          }
+        ],
+        "sources": [],
+        "dependencies": [
+          {
+            "identity": "example.invalid/other/repo#2",
+            "state": "closed",
+            "interface_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          {
+            "identity": "example.invalid/other/repo#3",
+            "state": "closed",
+            "interface_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        ],
+        "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "canonical_utf8": "{\"algorithm\":\"requirements-v3\",\"dependencies\":[{\"identity\":\"example.invalid/other/repo#2\",\"interface_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"state\":\"closed\"},{\"identity\":\"example.invalid/other/repo#3\",\"interface_sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"state\":\"closed\"}],\"issues\":[{\"acceptance\":\"\",\"body\":\"\",\"contains\":[],\"decisions\":[],\"depends_on\":[\"example.invalid/other/repo#2\",\"example.invalid/other/repo#3\"],\"identity\":\"example.invalid/team/repo#1\",\"title\":\"Example\"}],\"policy_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"root\":\"example.invalid/team/repo#1\",\"sources\":[]}",
+      "sha256": "fd74c15d845e12d093afb1c9189936c7f6fcbe3cbebda5ad9200ef0868caed39",
+      "raw_input": {
+        "algorithm": "requirements-v3",
+        "root": "example.invalid/team/repo#1",
+        "issues": [
+          {
+            "identity": "example.invalid/team/repo#1",
+            "title": "Example",
+            "body": "",
+            "acceptance": "",
+            "decisions": [],
+            "contains": [],
+            "depends_on": [
+              "example.invalid/other/repo#3",
+              "example.invalid/other/repo#2"
+            ]
+          }
+        ],
+        "sources": [],
+        "dependencies": [
+          {
+            "identity": "example.invalid/other/repo#3",
+            "state": "closed",
+            "interface_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          {
+            "identity": "example.invalid/other/repo#2",
+            "state": "closed",
+            "interface_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          }
+        ],
+        "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "requirements-approval-source",
+      "input": {
+        "algorithm": "requirements-v3",
+        "root": "example.invalid/team/repo#1",
+        "issues": [
+          {
+            "identity": "example.invalid/team/repo#1",
+            "title": "Example",
+            "body": "",
+            "acceptance": "",
+            "decisions": [
+              {
+                "id": "d1",
+                "actor": "user",
+                "scope": "issue-1",
+                "version_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+                "at": "2026-10-26T00:00:00Z",
+                "approval_ref": "protected://fixtures/approval-1",
+                "authority": {
+                  "kind": "current-user",
+                  "reference": "protected://fixtures/approval-1",
+                  "scope": "issue-1",
+                  "content_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+                }
+              }
+            ],
+            "contains": [],
+            "depends_on": []
+          }
+        ],
+        "sources": [
+          {
+            "id": "protected://fixtures/approval-1",
+            "kind": "approval",
+            "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "approval_ref": null,
+            "authority": null,
+            "supersedes": []
+          }
+        ],
+        "dependencies": [],
+        "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "canonical_utf8": "{\"algorithm\":\"requirements-v3\",\"dependencies\":[],\"issues\":[{\"acceptance\":\"\",\"body\":\"\",\"contains\":[],\"decisions\":[{\"actor\":\"user\",\"approval_ref\":\"protected://fixtures/approval-1\",\"at\":\"2026-10-26T00:00:00Z\",\"authority\":{\"content_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"kind\":\"current-user\",\"reference\":\"protected://fixtures/approval-1\",\"scope\":\"issue-1\"},\"id\":\"d1\",\"scope\":\"issue-1\",\"version_sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\"}],\"depends_on\":[],\"identity\":\"example.invalid/team/repo#1\",\"title\":\"Example\"}],\"policy_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"root\":\"example.invalid/team/repo#1\",\"sources\":[{\"approval_ref\":null,\"authority\":null,\"id\":\"protected://fixtures/approval-1\",\"kind\":\"approval\",\"sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"supersedes\":[]}]}",
+      "sha256": "b7d5a35795ab4ca46d5084b355751845a7931c0896b99b753898985c0a402e9a"
+    },
+    {
+      "name": "daily-incomplete-null",
+      "input": {
+        "algorithm": "daily-input-v3",
+        "issue": "example.invalid/team/repo#1",
+        "requirements_sha256": null,
+        "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "authorization": [],
+        "target": {
+          "repository": null,
+          "ref": null,
+          "sha": null
+        },
+        "dependencies": [],
+        "environment_sha256": null,
+        "evidence": [],
+        "conditions": []
+      },
+      "canonical_utf8": "{\"algorithm\":\"daily-input-v3\",\"authorization\":[],\"conditions\":[],\"dependencies\":[],\"environment_sha256\":null,\"evidence\":[],\"issue\":\"example.invalid/team/repo#1\",\"policy_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"requirements_sha256\":null,\"target\":{\"ref\":null,\"repository\":null,\"sha\":null}}",
+      "sha256": "bf39aa235beb0eece6b4a590c79bd1d9d439d0573cb0c27429497362d5295d82"
+    },
+    {
+      "name": "daily-ready",
+      "input": {
+        "algorithm": "daily-input-v3",
+        "issue": "example.invalid/team/repo#1",
+        "requirements_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "authorization": [
+          {
+            "kind": "current-user",
+            "reference": "approval:decision-1",
+            "scope": "issue-1",
+            "content_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          }
+        ],
+        "target": {
+          "repository": "example.invalid/team/repo",
+          "ref": "refs/heads/main",
+          "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "dependencies": [],
+        "environment_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "evidence": [],
+        "conditions": [
+          {
+            "kind": "api_retry",
+            "subject": "elapsed",
+            "expected": true,
+            "observed": true,
+            "source_ref": "receipt:clock-1"
+          }
+        ]
+      },
+      "canonical_utf8": "{\"algorithm\":\"daily-input-v3\",\"authorization\":[{\"content_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"kind\":\"current-user\",\"reference\":\"approval:decision-1\",\"scope\":\"issue-1\"}],\"conditions\":[{\"expected\":true,\"kind\":\"api_retry\",\"observed\":true,\"source_ref\":\"receipt:clock-1\",\"subject\":\"elapsed\"}],\"dependencies\":[],\"environment_sha256\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"evidence\":[],\"issue\":\"example.invalid/team/repo#1\",\"policy_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"requirements_sha256\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"target\":{\"ref\":\"refs/heads/main\",\"repository\":\"example.invalid/team/repo\",\"sha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}",
+      "sha256": "ee1eec4417445513d80597054d9133e1e0163ba85fcde0b9b3d044179d277ebd"
+    },
+    {
+      "name": "daily-exact-integer-and-fraction",
+      "input": {
+        "algorithm": "daily-input-v3",
+        "issue": "example.invalid/team/repo#1",
+        "requirements_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "authorization": [
+          {
+            "kind": "current-user",
+            "reference": "approval:decision-1",
+            "scope": "issue-1",
+            "content_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          }
+        ],
+        "target": {
+          "repository": "example.invalid/team/repo",
+          "ref": "refs/heads/main",
+          "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "dependencies": [],
+        "environment_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "evidence": [],
+        "conditions": [
+          {
+            "kind": "api_retry",
+            "subject": "elapsed",
+            "expected": 9007199254740991,
+            "observed": 1.5,
+            "source_ref": "receipt:clock-1"
+          }
+        ]
+      },
+      "canonical_utf8": "{\"algorithm\":\"daily-input-v3\",\"authorization\":[{\"content_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"kind\":\"current-user\",\"reference\":\"approval:decision-1\",\"scope\":\"issue-1\"}],\"conditions\":[{\"expected\":9007199254740991,\"kind\":\"api_retry\",\"observed\":1.5,\"source_ref\":\"receipt:clock-1\",\"subject\":\"elapsed\"}],\"dependencies\":[],\"environment_sha256\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"evidence\":[],\"issue\":\"example.invalid/team/repo#1\",\"policy_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"requirements_sha256\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"target\":{\"ref\":\"refs/heads/main\",\"repository\":\"example.invalid/team/repo\",\"sha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}",
+      "sha256": "50ed92b523d09a1c930d40c980f4547d472111d89514856ed8025a5e044dc6da"
+    },
+    {
+      "name": "requirements-multi-decision-delegated",
+      "input": {
+        "algorithm": "requirements-v3",
+        "root": "example.invalid/team/repo#1",
+        "issues": [
+          {
+            "identity": "example.invalid/team/repo#1",
+            "title": "Example",
+            "body": "",
+            "acceptance": "",
+            "decisions": [
+              {
+                "id": "d1",
+                "actor": "user",
+                "scope": "issue-1",
+                "version_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+                "at": "2026-10-26T00:00:00Z",
+                "approval_ref": "protected://fixtures/approval-1",
+                "authority": {
+                  "kind": "current-user",
+                  "reference": "protected://fixtures/approval-1",
+                  "scope": "issue-1",
+                  "content_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+                }
+              },
+              {
+                "id": "d2",
+                "actor": "user",
+                "scope": "issue-1",
+                "version_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+                "at": "2026-10-26T00:00:00Z",
+                "approval_ref": "protected://fixtures/approval-1",
+                "authority": {
+                  "kind": "delegated",
+                  "reference": "approval:delegation-1",
+                  "scope": "issue-1",
+                  "content_sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+                }
+              }
+            ],
+            "contains": [],
+            "depends_on": []
+          }
+        ],
+        "sources": [
+          {
+            "id": "approval:delegation-1",
+            "kind": "approval",
+            "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+            "approval_ref": null,
+            "authority": null,
+            "supersedes": []
+          },
+          {
+            "id": "protected://fixtures/approval-1",
+            "kind": "approval",
+            "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "approval_ref": null,
+            "authority": null,
+            "supersedes": []
+          }
+        ],
+        "dependencies": [],
+        "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "canonical_utf8": "{\"algorithm\":\"requirements-v3\",\"dependencies\":[],\"issues\":[{\"acceptance\":\"\",\"body\":\"\",\"contains\":[],\"decisions\":[{\"actor\":\"user\",\"approval_ref\":\"protected://fixtures/approval-1\",\"at\":\"2026-10-26T00:00:00Z\",\"authority\":{\"content_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"kind\":\"current-user\",\"reference\":\"protected://fixtures/approval-1\",\"scope\":\"issue-1\"},\"id\":\"d1\",\"scope\":\"issue-1\",\"version_sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\"},{\"actor\":\"user\",\"approval_ref\":\"protected://fixtures/approval-1\",\"at\":\"2026-10-26T00:00:00Z\",\"authority\":{\"content_sha256\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"kind\":\"delegated\",\"reference\":\"approval:delegation-1\",\"scope\":\"issue-1\"},\"id\":\"d2\",\"scope\":\"issue-1\",\"version_sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\"}],\"depends_on\":[],\"identity\":\"example.invalid/team/repo#1\",\"title\":\"Example\"}],\"policy_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"root\":\"example.invalid/team/repo#1\",\"sources\":[{\"approval_ref\":null,\"authority\":null,\"id\":\"approval:delegation-1\",\"kind\":\"approval\",\"sha256\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"supersedes\":[]},{\"approval_ref\":null,\"authority\":null,\"id\":\"protected://fixtures/approval-1\",\"kind\":\"approval\",\"sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"supersedes\":[]}]}",
+      "sha256": "4e17884bf37df605848512422b41f9aa543faa71777af78085e91e2a9b21f260",
+      "raw_input": {
+        "algorithm": "requirements-v3",
+        "root": "example.invalid/team/repo#1",
+        "issues": [
+          {
+            "identity": "example.invalid/team/repo#1",
+            "title": "Example",
+            "body": "",
+            "acceptance": "",
+            "decisions": [
+              {
+                "id": "d2",
+                "actor": "user",
+                "scope": "issue-1",
+                "version_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+                "at": "2026-10-26T00:00:00Z",
+                "approval_ref": "protected://fixtures/approval-1",
+                "authority": {
+                  "kind": "delegated",
+                  "reference": "approval:delegation-1",
+                  "scope": "issue-1",
+                  "content_sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+                }
+              },
+              {
+                "id": "d1",
+                "actor": "user",
+                "scope": "issue-1",
+                "version_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+                "at": "2026-10-26T00:00:00Z",
+                "approval_ref": "protected://fixtures/approval-1",
+                "authority": {
+                  "kind": "current-user",
+                  "reference": "protected://fixtures/approval-1",
+                  "scope": "issue-1",
+                  "content_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+                }
+              }
+            ],
+            "contains": [],
+            "depends_on": []
+          }
+        ],
+        "sources": [
+          {
+            "id": "protected://fixtures/approval-1",
+            "kind": "approval",
+            "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "approval_ref": null,
+            "authority": null,
+            "supersedes": []
+          },
+          {
+            "id": "approval:delegation-1",
+            "kind": "approval",
+            "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+            "approval_ref": null,
+            "authority": null,
+            "supersedes": []
+          }
+        ],
+        "dependencies": [],
+        "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "requirements-supersedes-order",
+      "input": {
+        "algorithm": "requirements-v3",
+        "root": "example.invalid/team/repo#1",
+        "issues": [
+          {
+            "identity": "example.invalid/team/repo#1",
+            "title": "Example",
+            "body": "",
+            "acceptance": "",
+            "decisions": [],
+            "contains": [],
+            "depends_on": []
+          }
+        ],
+        "sources": [
+          {
+            "id": "context:current",
+            "kind": "context",
+            "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+            "approval_ref": null,
+            "authority": null,
+            "supersedes": [
+              "context:old-a",
+              "context:old-b"
+            ]
+          },
+          {
+            "id": "context:old-a",
+            "kind": "context",
+            "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+            "approval_ref": null,
+            "authority": null,
+            "supersedes": []
+          },
+          {
+            "id": "context:old-b",
+            "kind": "context",
+            "sha256": "7777777777777777777777777777777777777777777777777777777777777777",
+            "approval_ref": null,
+            "authority": null,
+            "supersedes": []
+          }
+        ],
+        "dependencies": [],
+        "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "canonical_utf8": "{\"algorithm\":\"requirements-v3\",\"dependencies\":[],\"issues\":[{\"acceptance\":\"\",\"body\":\"\",\"contains\":[],\"decisions\":[],\"depends_on\":[],\"identity\":\"example.invalid/team/repo#1\",\"title\":\"Example\"}],\"policy_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"root\":\"example.invalid/team/repo#1\",\"sources\":[{\"approval_ref\":null,\"authority\":null,\"id\":\"context:current\",\"kind\":\"context\",\"sha256\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"supersedes\":[\"context:old-a\",\"context:old-b\"]},{\"approval_ref\":null,\"authority\":null,\"id\":\"context:old-a\",\"kind\":\"context\",\"sha256\":\"6666666666666666666666666666666666666666666666666666666666666666\",\"supersedes\":[]},{\"approval_ref\":null,\"authority\":null,\"id\":\"context:old-b\",\"kind\":\"context\",\"sha256\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"supersedes\":[]}]}",
+      "sha256": "87f2dfe5bb04c3169566f10b1ff3e1baf97df9a839b068f7beff29a4fb41ede8",
+      "raw_input": {
+        "algorithm": "requirements-v3",
+        "root": "example.invalid/team/repo#1",
+        "issues": [
+          {
+            "identity": "example.invalid/team/repo#1",
+            "title": "Example",
+            "body": "",
+            "acceptance": "",
+            "decisions": [],
+            "contains": [],
+            "depends_on": []
+          }
+        ],
+        "sources": [
+          {
+            "id": "context:old-b",
+            "kind": "context",
+            "sha256": "7777777777777777777777777777777777777777777777777777777777777777",
+            "approval_ref": null,
+            "authority": null,
+            "supersedes": []
+          },
+          {
+            "id": "context:old-a",
+            "kind": "context",
+            "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+            "approval_ref": null,
+            "authority": null,
+            "supersedes": []
+          },
+          {
+            "id": "context:current",
+            "kind": "context",
+            "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+            "approval_ref": null,
+            "authority": null,
+            "supersedes": [
+              "context:old-b",
+              "context:old-a"
+            ]
+          }
+        ],
+        "dependencies": [],
+        "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    }
+  ],
+  "invalid_inputs": [
+    {
+      "name": "unknown-algorithm",
+      "stage": "schema",
+      "input": {
+        "algorithm": "requirements-v999",
+        "root": "example.invalid/team/repo#1",
+        "issues": [
+          {
+            "identity": "example.invalid/team/repo#1",
+            "title": "Example",
+            "body": "",
+            "acceptance": "",
+            "decisions": [],
+            "contains": [],
+            "depends_on": []
+          }
+        ],
+        "sources": [],
+        "dependencies": [],
+        "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "missing-body",
+      "stage": "schema",
+      "input": {
+        "algorithm": "requirements-v3",
+        "root": "example.invalid/team/repo#1",
+        "issues": [
+          {
+            "identity": "example.invalid/team/repo#1",
+            "title": "Example",
+            "acceptance": "",
+            "decisions": [],
+            "contains": [],
+            "depends_on": []
+          }
+        ],
+        "sources": [],
+        "dependencies": [],
+        "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "duplicate-identity-conflict",
+      "stage": "semantic",
+      "input": {
+        "algorithm": "requirements-v3",
+        "root": "example.invalid/team/repo#1",
+        "issues": [
+          {
+            "identity": "example.invalid/team/repo#1",
+            "title": "Example",
+            "body": "",
+            "acceptance": "",
+            "decisions": [],
+            "contains": [],
+            "depends_on": []
+          },
+          {
+            "identity": "example.invalid/team/repo#1",
+            "title": "Conflicting title",
+            "body": "",
+            "acceptance": "",
+            "decisions": [],
+            "contains": [],
+            "depends_on": []
+          }
+        ],
+        "sources": [],
+        "dependencies": [],
+        "policy_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    }
+  ]
+}

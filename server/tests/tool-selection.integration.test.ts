@@ -1,19 +1,35 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import type { RunAgentInput } from "@ag-ui/client";
 import { MastraAgent } from "@ag-ui/mastra";
-import { buildAGUITextResponse, LLMock } from "@copilotkit/aimock";
+import {
+  buildAGUICompositeResponse,
+  buildAGUICustomEvent,
+  buildAGUITextResponse,
+  LLMock,
+} from "@copilotkit/aimock";
 import { AGUIMock } from "@copilotkit/aimock/agui";
 import { CopilotRuntime } from "@copilotkit/runtime/v2";
 import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
-import { getLogger } from "../../shared/logger";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { z } from "zod";
+import { getLogger } from "../../shared/logger";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  spyOn,
+  test,
+} from "../../tests/support/e2e-compat";
 import {
   buildAgents,
+  REMOTE_BUDGET_RECEIPT_EVENT,
   type RegisteredAgent,
   type RuntimeModel,
+  setRemoteBudgetContractResolver,
+  setRemoteRunBudgetGate,
 } from "../src/copilot";
 import type { Selection } from "../src/plugins/selection";
-import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { createModelCompleter } from "../src/routing/model";
 
 declare global {
@@ -135,6 +151,34 @@ type NativeMastraRequestBody = {
 };
 
 beforeAll(async () => {
+  setRemoteRunBudgetGate(async () => ({ finish: async () => undefined }));
+  /*
+   * R3-02: a remote dial now also requires a budget CONTRACT (build-time caps + a checked
+   * receipt), which the product's resolver grants only to endpoints this deployment runs and
+   * has declared contract-capable. These cases are about tool narrowing and the transport
+   * wrapper — not about budgets — so they wire the seam permissively and let the real
+   * resolver's endpoint/token/ceiling rules be pinned where they belong, in
+   * `remote-budget-contract.test.ts`. The scripted endpoints here emit no receipt, which this
+   * stand-in accepts; under the production resolver that same run is refused before the dial.
+   */
+  setRemoteBudgetContractResolver(() => ({
+    caps: {
+      modelSteps: 8,
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      totalTokens: 1_000_000,
+    },
+    verifyReceipt: () => ({
+      state: "verified" as const,
+      status: "ok" as const,
+      usage: {
+        modelSteps: 1,
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+      },
+    }),
+  }));
   let llmUrl = "";
   recordLifecycleEvent("tool-selection-beforeAll:start");
   originalModelEnvironment = {
@@ -169,7 +213,18 @@ beforeAll(async () => {
       },
       // Built rather than hand-written: the events carry the run and thread ids the protocol requires,
       // and the client verifies them, so a hand-rolled sequence fails validation rather than the test.
-      buildAGUITextResponse("done") as never,
+      // The trailing CUSTOM event is the budget receipt the contract's order requires before the
+      // terminal (accepted by this suite's permissive stand-in above); the composite builder puts
+      // it in front of the RUN_FINISHED it closes with.
+      buildAGUICompositeResponse([
+        buildAGUITextResponse("done"),
+        buildAGUICustomEvent(REMOTE_BUDGET_RECEIPT_EVENT, {
+          kind: REMOTE_BUDGET_RECEIPT_EVENT,
+          v: 1,
+          runId: "stand-in",
+          status: "ok",
+        }),
+      ]) as never,
     );
     remoteUrl = await remote.start();
     recordLifecycleEvent("tool-selection-beforeAll:remote-started");
@@ -188,6 +243,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  setRemoteRunBudgetGate(undefined);
+  setRemoteBudgetContractResolver(undefined);
   let teardownFailure: unknown;
   try {
     recordLifecycleEvent("tool-selection-afterAll:stop-start");
@@ -493,7 +550,9 @@ describe("a built-in Bot", () => {
         }
       )?.messages ?? []
     )
-      .filter((message) => message.role === "system" || message.role === "developer")
+      .filter(
+        (message) => message.role === "system" || message.role === "developer",
+      )
       .map((message) => String(message.content))
       .join("\n");
     /*

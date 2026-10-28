@@ -5,6 +5,7 @@ import { requireAdmin } from "../auth/guards";
 import {
   SandboxedNameRefusedError,
   SandboxedNotFoundError,
+  SandboxedPublicationRefusedError,
   type SandboxedStore,
 } from "./sandboxed";
 
@@ -158,6 +159,12 @@ export function createSandboxedRoutes(
       );
       return context.json({ component });
     } catch (error) {
+      // `publish` answers a missing name and a draft it will not publish with the REFUSED
+      // error (the decision lives in the store), so both map to 400 here; a NotFound here is
+      // unreachable but kept for the same shape the delete route answers.
+      if (error instanceof SandboxedPublicationRefusedError) {
+        return context.json({ error: error.message }, 400);
+      }
       if (error instanceof SandboxedNotFoundError) {
         return context.json({ error: error.message }, 404);
       }

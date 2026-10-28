@@ -6,7 +6,7 @@
  *
  * ```ts
  * import { createCraftRoutes } from "./craft";
- * import { loadCraftConfig } from "./craft/config";
+ * import type { ApprovalStore } from "../approvals/types";
  *
  * // in createApp's wiring, where the workshop routes mount:
  * const craftConfig = loadCraftConfig(process.env);
@@ -19,6 +19,8 @@
  *         config: craftConfig,
  *         db: database,
  *         redis,                       // RedisPort | null — same port the workshop uses
+ *         approvals: storedApprovals,  // ApprovalStore, REQUIRED — craft's decision face
+ *                                      // writes through the raw store's decideQuiet
  *         botIdFor: async (sessionId) => /* resolve the Bot owning this session *​/,
  *         llmConfigFor: async (session) => /* CraftLLMProviderConfig from your catalog *​/,
  *         sandboxConnectionFor: (botId) => sandboxClients.has(botId)
@@ -65,6 +67,7 @@ export {
   loadCraftConfig,
 } from "./config";
 export {
+  SandboxExecutionScopeUnavailableError,
   SandboxProvisioningError,
   SandboxProvisioningInProgressError,
   StaleProvisioningAttemptError,

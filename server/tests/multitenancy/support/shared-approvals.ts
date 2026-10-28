@@ -192,12 +192,13 @@ export async function createSharedApprovalsFixture(): Promise<SharedApprovalsFix
     credentialAdmin,
     leases,
     async provisionTeamCredential({ teamKey, target, label, plaintext }) {
+      const memberByTeam: Record<"team-a1" | "team-a2" | "team-b1", string> = {
+        "team-a1": "a1-member",
+        "team-a2": "a2-member",
+        "team-b1": "b1-member",
+      };
       const fact = channels.teamOf(
-        teamKey === "team-a2"
-          ? "a2-member"
-          : teamKey === "team-b1"
-            ? "b1-member"
-            : "a1-member",
+        memberByTeam[teamKey],
         teamKey,
       );
       const { credentialId } = await credentialAdmin.register({
@@ -234,11 +235,19 @@ export async function createSharedApprovalsFixture(): Promise<SharedApprovalsFix
         },
         selectTenant: (request) => request.headers.get("x-openbot-tenant"),
       });
+      const adminUserId = channels.isolation.ids["user-company-admin"];
+      if (adminUserId === undefined) {
+        // sessions.set with an undefined user id would authenticate nobody and
+        // fail far away from the actual cause.
+        throw new Error(
+          "MT034 fixture: isolation.ids is missing user-company-admin",
+        );
+      }
       const request = new Request("https://mt034.invalid/admin-context", {
         headers: { "x-openbot-tenant": tenantId },
       });
       sessions.set(request, {
-        userId: channels.isolation.ids["user-company-admin"],
+        userId: adminUserId,
       });
       return authorizer.resolveAdminContext(request);
     },
@@ -268,8 +277,9 @@ export async function createSharedApprovalsFixture(): Promise<SharedApprovalsFix
           // fixture same aid).
           const code = (e as Error & { code?: unknown }).code;
           const errno = (e as Error & { errno?: unknown }).errno;
-          if (typeof code === "string" && /^\d{5}$/.test(code)) return code;
-          if (typeof errno === "string" && /^\d{5}$/.test(errno)) {
+          // SQLSTATE is five [0-9A-Z] characters (42P01, 55P03, …), not only digits.
+          if (typeof code === "string" && /^[0-9A-Z]{5}$/.test(code)) return code;
+          if (typeof errno === "string" && /^[0-9A-Z]{5}$/.test(errno)) {
             return errno;
           }
         }
@@ -345,7 +355,8 @@ export async function createSharedApprovalsFixture(): Promise<SharedApprovalsFix
       const rows = (await setup.execute(
         sql`select grantee, privilege_type
             from information_schema.role_table_grants
-            where table_name = ${table} and grantee in ('ob_ent_data','ob_ent_operator','ob_ent_directory')
+            where table_name = ${table} and table_schema = current_schema()
+              and grantee in ('ob_ent_data','ob_ent_operator','ob_ent_directory')
             order by grantee, privilege_type`,
       )) as unknown as Record<string, unknown>[];
       return rows.map(
@@ -353,8 +364,13 @@ export async function createSharedApprovalsFixture(): Promise<SharedApprovalsFix
       );
     },
     async dispose() {
-      await setup.$client.close();
-      await base.dispose();
+      // base.dispose() owns the real provisioning cleanup — it must run even
+      // when the setup connection close throws.
+      try {
+        await setup.$client.close();
+      } finally {
+        await base.dispose();
+      }
     },
   };
 }

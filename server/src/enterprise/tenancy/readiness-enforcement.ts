@@ -30,6 +30,8 @@
 // 与空理由都是配置错误）。隔离清单没有配置放宽路径：清空它的唯一方式是
 // 处置条目（MT120 的 assign/destroy，带审计），不是绕过校验。
 
+import { writeSync } from "node:fs";
+
 import { getLogger } from "../../../../shared/logger";
 import type { Database } from "../../db/client";
 import { evaluateMultitenancyQuarantineReadiness } from "./quarantine-list";
@@ -302,7 +304,9 @@ export function applyReadinessEnforcementVerdict(
   );
   if (!record.accepted) {
     const report = buildReadinessGapReport(record);
-    const write = hooks.write ?? ((line: string) => process.stderr.write(line));
+    // 默认走同步写：stderr 指向管道时 process.stderr.write 是异步的，
+    // 紧随的 process.exit(1) 可能截断缺口报告，破坏 CI 可 parse 契约。
+    const write = hooks.write ?? ((line: string) => writeSync(2, line));
     write(`${JSON.stringify(report)}\n`);
     if (hooks.exit) hooks.exit(1);
     else process.exit(1);

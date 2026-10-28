@@ -377,9 +377,15 @@ export async function runChildBackfillBatch2(
       !(stopAfterChunks > 0 && chunkIndex >= stopAfterChunks)
     ) {
       phase = "completed";
+      // 空源类别（分块循环零执行）也必须有进度行：upsert 保证 completed
+      // 相位行一定落库，一致性报告不再把「空源」误报成「缺行未跑」。
       await database.execute(sql`
-        update enterprise_backfill_batches set phase = 'completed', updated_at = now()
-        where batch_id = ${CHILD_BACKFILL_BATCH2_ID} and kind = ${kind}
+        insert into enterprise_backfill_batches
+          (batch_id, kind, phase, last_cursor, scanned, applied, skipped_existing,
+           mismatch_reported, quarantined, written_rows, resumes, updated_at)
+        values (${CHILD_BACKFILL_BATCH2_ID}, ${kind}, 'completed', '', 0, 0, 0, 0, 0, 0, 0, now())
+        on conflict (batch_id, kind) do update set
+          phase = 'completed', updated_at = now()
       `);
     } else if (input.mode === "apply") {
       // 未跑完（主动停）：phase 保持 running（进度行已由最后块事务落盘）。
@@ -527,21 +533,20 @@ export async function mainBackfillCompletion(
     `)) as unknown as { kind: string; phase: string }[];
     const present = rows.length;
     const missing: string[] = [];
-    if (present < expected.kinds) {
-      // 逐类别核对缺谁（第一批类别词汇属其交付面，此处按计数与行名对账）。
-      const known =
-        expected.batchId === CHILD_BACKFILL_BATCH2_ID
-          ? ([...CHILD_BACKFILL_BATCH2_KINDS] as string[])
-          : [
-              "bot-ownership",
-              "conversation",
-              "attachment",
-              "credential",
-              "plugin-connection",
-            ];
-      for (const kind of known) {
-        if (!rows.some((row) => row.kind === kind)) missing.push(kind);
-      }
+    // 缺类核对无条件执行：计数守恒（present ≥ kinds）不排除「混入未知 kind
+    // 挤掉期望类别」——缺谁必须按行名逐类对账，不能被 present 计数门控。
+    const known =
+      expected.batchId === CHILD_BACKFILL_BATCH2_ID
+        ? ([...CHILD_BACKFILL_BATCH2_KINDS] as string[])
+        : [
+            "bot-ownership",
+            "conversation",
+            "attachment",
+            "credential",
+            "plugin-connection",
+          ];
+    for (const kind of known) {
+      if (!rows.some((row) => row.kind === kind)) missing.push(kind);
     }
     const incomplete = rows
       .filter((row) => row.phase !== "completed")

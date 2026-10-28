@@ -158,8 +158,8 @@ async function assertQueryScope(
   }
   if (actor.kind === "company") {
     // 公司主体读 business 域：活跃成员 ∧ auditor/tenant_admin 角色。
-    // 与查询同一 operator 事务内活查（tenant pin 下读 memberships），
-    // 停用立即失效。
+    // 在 tenant pin 下的独立 operator 事务内活查 memberships；判定即时，
+    // 但与随后的行读取不是同一事务（停用与读取之间存在窗口）。
     const rows = await operator.transaction(async (tx) => {
       await tx.execute(
         sql`select set_config('app.tenant_id', ${input.tenantId}, true)`,
@@ -228,7 +228,9 @@ export async function queryTenantAuditEvents(
   query: TenantAuditQuery,
 ): Promise<readonly TenantAuditEventRow[]> {
   await assertQueryScope(operator, actor, query);
-  const limit = Math.min(Math.max(query.limit ?? 100, 1), 500);
+  // 导出面会请求 maxRows + 1（≤ 5001）以保证 truncated 如实披露；查询面
+  // 自身的路由钳制把常规读取压在 ≤ 500，这里的上界只兜住行读取。
+  const limit = Math.min(Math.max(query.limit ?? 100, 1), 5001);
   return operator.transaction(async (tx) => {
     await tx.execute(
       sql`select set_config('app.tenant_id', ${query.tenantId}, true)`,
@@ -392,6 +394,46 @@ export function createBillingManagementService({
     return value;
   };
 
+  /** Postgres unique_violation (SQLSTATE 23505), possibly nested under cause. */
+  const isUniqueViolation = (error: unknown): boolean => {
+    const candidates = [error, (error as { cause?: unknown } | null)?.cause];
+    return candidates.some((candidate) => {
+      if (candidate === null || typeof candidate !== "object") return false;
+      const record = candidate as { code?: unknown; errno?: unknown };
+      return record.code === "23505" || record.errno === "23505";
+    });
+  };
+
+  /** 判定门本体（闭包函数，不依赖 this——方法可被解构/分离调用）。 */
+  const assertBillingManagerGate = async (input: {
+    tenantId: string;
+    principalId: string;
+    action: (typeof BILLING_MANAGE_ACTIONS)[number];
+  }) => {
+    requireText(input?.tenantId, "tenantId");
+    requireText(input?.principalId, "principalId");
+    if (!BILLING_MANAGE_ACTIONS.includes(input.action)) {
+      throw new Error("BILLING_MANAGE_REQUIRED");
+    }
+    if (!(await activeMembership(input.tenantId, input.principalId))) {
+      throw new Error(BILLING_MANAGE_REQUIRED);
+    }
+    const [row] = await database
+      .select()
+      .from(manageGrants)
+      .where(
+        and(
+          eq(manageGrants.tenantId, input.tenantId),
+          eq(manageGrants.principalId, input.principalId),
+        ),
+      )
+      .limit(1);
+    if (!row || (row.actions & billingManageActionBit(input.action)) === 0) {
+      throw new Error(BILLING_MANAGE_REQUIRED);
+    }
+    return grantOfRow(row);
+  };
+
   const grantOfRow = (
     row: typeof manageGrants.$inferSelect,
   ): BillingManageGrant => ({
@@ -453,7 +495,18 @@ export function createBillingManagementService({
           grantedBy: input.grantedBy,
           actions: bits,
         })
-        .returning();
+        .returning()
+        .catch((error: unknown) => {
+          // Concurrent grant between the existence check and this insert: the
+          // primary-key violation must surface as the canonical sentinel, not
+          // as a bare driver error.
+          if (isUniqueViolation(error)) {
+            throw new Error(
+              `BILLING_MANAGE_GRANT_EXISTS: principal ${input.principalId} already holds the billing management grant of company ${input.tenantId}`,
+            );
+          }
+          throw error;
+        });
       return grantOfRow(row);
     },
 
@@ -473,28 +526,7 @@ export function createBillingManagementService({
     },
 
     async assertBillingManager(input) {
-      requireText(input?.tenantId, "tenantId");
-      requireText(input?.principalId, "principalId");
-      if (!BILLING_MANAGE_ACTIONS.includes(input.action)) {
-        throw new Error("BILLING_MANAGE_REQUIRED");
-      }
-      if (!(await activeMembership(input.tenantId, input.principalId))) {
-        throw new Error(BILLING_MANAGE_REQUIRED);
-      }
-      const [row] = await database
-        .select()
-        .from(manageGrants)
-        .where(
-          and(
-            eq(manageGrants.tenantId, input.tenantId),
-            eq(manageGrants.principalId, input.principalId),
-          ),
-        )
-        .limit(1);
-      if (!row || (row.actions & billingManageActionBit(input.action)) === 0) {
-        throw new Error(BILLING_MANAGE_REQUIRED);
-      }
-      return grantOfRow(row);
+      return assertBillingManagerGate(input);
     },
 
     async holdsAnyBillingManageGrant(input) {
@@ -531,7 +563,9 @@ export function createBillingManagementService({
         );
       }
       // 判定门先于一切账务事实读取（拒绝路径零账面读取、零审计写入）。
-      await this.assertBillingManager({
+      // 不经 this 调用：方法被解构/作回调分离时 this 为 undefined 会变成
+      // 与业务无关的 TypeError。
+      await assertBillingManagerGate({
         tenantId: input.tenantId,
         principalId: input.principalId,
         action: input.action,

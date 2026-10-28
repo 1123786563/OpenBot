@@ -492,7 +492,10 @@ export function createTriggerIngressRoutes(deps: TriggerIngressDeps) {
             { error: "PagerDuty V3 event envelope is required." },
             400,
           );
-        if (type === "pagey.ping")
+        // PagerDuty V3 webhook subscriptions answer a delivery with event_type "ping" (their
+        // docs' test event). "pagey.ping" is a historical misspelling kept accepted so older
+        // fixtures and clients still short-circuit; it is not a real PagerDuty value.
+        if (type === "ping" || type === "pagey.ping")
           return context.json({
             accepted: true,
             queued: false,

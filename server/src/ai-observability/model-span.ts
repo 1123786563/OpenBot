@@ -13,9 +13,13 @@
  *
  * Egress is structural: the projected span enters ONLY through the T09 bounded write
  * queue, never a direct port call. Content reaches the queue only after the T05
- * projection — free text is asserted-by-the-recorder span content (`allowFreeText`),
- * and even then the deny patterns run first and always win, so a credential-shaped
- * canary dies at the projection, not in transit.
+ * projection — and since FREV-01, span bodies carry free text only behind an approval
+ * minted from the Bot's configured security policy; without one the span is
+ * metrics-only. Even approved, the deny patterns run first and always win, so a
+ * credential-shaped canary dies at the projection, not in transit. Since FREV-02 the
+ * write is also binding-gated: the run's local authoritative binding (T07) is
+ * established before the span reaches the port, and a binding that cannot be
+ * established fails the write closed — counted, never exported unattributed.
  *
  * Scoping: a span is written upstream only when the observation carries a scope this
  * process issued (T06). The built-in path's facts arrive without one today — the
@@ -23,6 +27,7 @@
  * nothing rather than inventing an owner.
  */
 import { randomBytes } from "node:crypto";
+import { type ObserverRunBindingGate, observerChainId } from "./bindings";
 import type { ObservationScope } from "./contracts";
 import type { OpikHealthService, OpikObservationWrite } from "./health";
 import type { OpikOtlpSpan } from "./opik-port";
@@ -33,11 +38,12 @@ import {
   type SafeRecord,
 } from "./redaction";
 import {
+  issuedSpanContentApproval,
   nanos,
   nowNs,
-  projectSpanContent,
+  projectApprovedSpanContent,
+  type SpanContentApproval,
   W3C_SPAN_ID,
-  W3C_TRACE_ID,
 } from "./span-support";
 
 /**
@@ -74,13 +80,23 @@ export type ModelSpanObservation = Readonly<{
    * inside this recorder.
    */
   output?: string | null;
+  /**
+   * The FREV-01 proof for this call's bodies: an approval minted from the Bot's
+   * configured security policy, resolved where the run's policy is known and carried
+   * here on the same journey as `scope`. Absent — every wiring today — is no proof:
+   * `input`/`output` are omitted and the span keeps its metrics. The token is
+   * process-internal trust (span-support mints and verifies it); a wire value or a
+   * hand-built lookalike projects nothing.
+   */
+  contentApproval?: SpanContentApproval | null;
   /** The trusted scope, when this path carries one; absent submits nothing upstream. */
   scope?: ObservationScope;
   /**
    * The run's W3C trace context captured when the model call began — the chain this
    * span joins instead of rooting its own (the T15 tool-step precedent, OCR round-1
-   * h6). Absent, malformed, or outside the W3C shapes roots the span's own trace with
-   * no parent, exactly as before: a context the caller cannot prove is never claimed.
+   * h6). Absent or malformed exports nothing at all (FREV-02): the gate counts the
+   * observation and drops the whole span, so no fresh root is ever minted for a
+   * context the caller cannot prove — never claimed, never exported as a new root.
    */
   trace?: Readonly<{ traceId: string; parentSpanId?: string }>;
 }>;
@@ -103,6 +119,7 @@ const SPAN_ATTRIBUTE_ALLOWLIST: readonly string[] = [
   "ending_kind",
   "ending_code",
   "origin",
+  "content_policy_ref",
 ];
 
 /**
@@ -148,28 +165,31 @@ function usageOf(
     : { state: "unavailable" };
 }
 
-function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
+function buildModelSpan(
+  observation: ModelSpanObservation,
+  chainTraceId: string,
+): OpikOtlpSpan {
   const { ending } = observation;
   const usage = usageOf(ending);
   const spanState = modelSpanTerminalState(ending);
 
   // The run's chain (OCR h6): a provable W3C context joins the run's trace and
   // parents under the run span, so every model call of one run lands in one trace
-  // instead of minting an orphan per call. The context is adopted whole — a
-  // malformed trace id claims nothing, not even a well-formed parent. Same
-  // discipline as the tool-step spanIdentity.
-  const proven =
-    observation.trace !== undefined &&
-    W3C_TRACE_ID.test(observation.trace.traceId);
-  const traceId = proven
-    ? observation.trace.traceId
-    : randomBytes(16).toString("hex");
+  // instead of minting an orphan per call. The trace id is the chain record()
+  // already proved — FREV-02 counts and drops an unprovable observation whole,
+  // so no fresh-root fallback exists here (OCR final #57): a span without a
+  // proven chain never reaches this function. The parent is still adopted whole:
+  // an unprovable parentSpanId claims nothing, not even beside a proven chain.
   const parentSpanId =
-    proven &&
     observation.trace?.parentSpanId !== undefined &&
     W3C_SPAN_ID.test(observation.trace.parentSpanId)
       ? observation.trace.parentSpanId
       : undefined;
+
+  // FREV-01 / F5A1-R1-F1: bodies and audit attribute share ONE verdict — the
+  // runtime-verified mint, never the carried token's truthiness — so a forged or
+  // spread-copied approval withholds the bodies AND names no policy.
+  const approval = issuedSpanContentApproval(observation.contentApproval);
 
   const attributes: SafeRecord = projectSafeRecord(
     {
@@ -191,12 +211,18 @@ function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
           ? ending.code
           : undefined,
       origin: "builtin",
+      // FREV-01 audit chain: a span that carried bodies names the policy that
+      // approved them; a proof-less span carries no bodies to name. The name comes
+      // from the same verified mint the bodies pass through, never the raw carry.
+      ...(approval ? { content_policy_ref: approval.policyRef } : {}),
     },
     SPAN_ATTRIBUTE_ALLOWLIST,
   );
-  const input = projectSpanContent(observation.input);
+  // FREV-01: bodies project only behind the observation's minted policy approval —
+  // the recorder's say-so is not one. Deny patterns still run first and always win.
+  const input = projectApprovedSpanContent(observation.input, approval);
   if (input) attributes.input = input;
-  const output = projectSpanContent(observation.output);
+  const output = projectApprovedSpanContent(observation.output, approval);
   if (output) attributes.output = output;
 
   const label =
@@ -209,7 +235,7 @@ function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
   const startNs =
     nanos(observation.occurredAt) ?? nanos(observation.endedAt) ?? nowNs();
   return {
-    traceId,
+    traceId: chainTraceId,
     ...(parentSpanId !== undefined ? { parentSpanId } : {}),
     spanId: randomBytes(8).toString("hex"),
     // A withheld name would be refused by the port; a known-safe literal stands in.
@@ -221,18 +247,64 @@ function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
   };
 }
 
+/**
+ * The counted half of the FREV-02 chain gate (OCR R2 C1). A scoped observation
+ * whose run cannot prove a chain exports nothing — the fail-closed verdict is
+ * unchanged — but the drop is a fact, never silence: counted here, bounded by
+ * construction (one number per reason, no ids, no content). The same footing
+ * the remote dial's chain counts have (`remoteDialChainCounts`): the visible
+ * half of a degradation contract, read by the tests that pin the gate — and,
+ * since T-M #2, projected by the health service into writeStats()/snapshot()
+ * as `chainGateDrops.modelSpans`, the operator outlet the steps twin shares.
+ */
+const chainGateDrops = { missingChain: 0 };
+
+/** Read the chain-gate drop counts (a copy: readers cannot reset what was counted). */
+export function modelSpanChainGateDrops(): Readonly<{ missingChain: number }> {
+  return { ...chainGateDrops };
+}
+
 export function createModelSpanRecorder(
-  deps: Readonly<{ healthService: Pick<OpikHealthService, "submit"> }>,
+  deps: Readonly<{
+    healthService: Pick<OpikHealthService, "submit">;
+    /**
+     * FREV-02: the local authoritative run binding, established (or replayed)
+     * before any business span of the run is exported. Required on purpose: a
+     * recorder without a binding gate cannot be constructed, so no observation
+     * path can submit an unattributable business span — the final review drove
+     * exactly that recorder (scope, no binding) and watched the span queue.
+     */
+    bindings: Pick<ObserverRunBindingGate, "ensure">;
+  }>,
 ): ModelSpanRecorder {
   return {
     record(observation) {
       const scope = observation.scope;
       if (scope === undefined) return;
-      const span = buildModelSpan(observation);
+      // FREV-02: the run's provable chain is the binding's identity. An
+      // observation without one has no local authority to export under, so it
+      // submits nothing rather than rooting a fresh trace per span — that
+      // fallback is precisely the unattributable write the review refused.
+      const chainTraceId = observerChainId(observation.trace?.traceId);
+      if (chainTraceId === null) {
+        // Counted, never silent (OCR R2 C1): the refusal above is the FREV-02
+        // verdict; this count is its visibility.
+        chainGateDrops.missingChain += 1;
+        return;
+      }
+      const span = buildModelSpan(observation, chainTraceId);
       const write: OpikObservationWrite = {
         scopeKey: scope.key,
         operation: "writeSpans",
-        perform: (port) => port.writeSpans(scope, { spans: [span] }),
+        perform: async (port) => {
+          // The binding first, on the write's own perform: its failure fails
+          // this write visibly (the queue counts every failure) and the span
+          // is never handed to the port.
+          const binding = await deps.bindings.ensure(scope, {
+            traceId: chainTraceId,
+          });
+          return port.writeSpans(scope, { spans: [span], binding });
+        },
       };
       deps.healthService.submit(write);
     },

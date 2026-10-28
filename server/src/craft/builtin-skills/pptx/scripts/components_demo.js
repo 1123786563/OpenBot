@@ -272,6 +272,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  process.stderr.write(`Error: ${err.message}\n`);
+  process.stderr.write(`Error: ${err.stack || err.message}\n`);
   process.exit(1);
 });

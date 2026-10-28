@@ -65,7 +65,9 @@ const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const DOMAIN_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
 
 function isPositiveInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 1;
+  // 安全整数上界：超过 MAX_SAFE_INTEGER 的两个 revision 会塌缩成同一个
+  // double，键对身份的单射在此失守——响亮拒绝而不是静默碰撞。
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
 }
 
 function hasControlCharacter(value: string): boolean {

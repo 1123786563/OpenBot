@@ -65,7 +65,7 @@ const AUTH_TABLES = [
 ] as const;
 const MIGRATION_PATH = join(
   import.meta.dirname,
-  "../../drizzle/0209_better_auth_directory.sql",
+  "../../drizzle/0221_better_auth_directory.sql",
 );
 const TENANT_A = "t0201-tenant-a";
 const TENANT_B = "t0201-tenant-b";
@@ -600,7 +600,7 @@ describe("T02.01 BA directory schema bindings", () => {
       ),
     ) as { entries: { idx: number; tag: string }[] };
     const entry = journal.entries.find(
-      (candidate) => candidate.tag === "0209_better_auth_directory",
+      (candidate) => candidate.tag === "0221_better_auth_directory",
     );
     expect(entry?.idx).toBe(209);
     expect(existsSync(MIGRATION_PATH)).toBe(true);

@@ -1,5 +1,6 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
+import { getLogger } from "../../../shared/logger";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import {
@@ -29,11 +30,24 @@ export function identityRoutes(
   options: IdentityRouteOptions = {},
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
+  const log = getLogger("server");
   app.use("*", async (context, next) => {
     context.header("cache-control", "no-store");
     await next();
   });
   app.use("*", requireUser);
+  // Every response here keeps the `{ error, code }` shape, including the failures an audit
+  // write throws after an unlink has already committed — never a bare text 500.
+  app.onError((error, context) => {
+    log.error({ err: error }, "An identity route failed.");
+    return context.json(
+      {
+        error: "That linked-account request could not be completed.",
+        code: "identity_route_failed",
+      },
+      500,
+    );
+  });
   if (!store) {
     /*
      * The code is what tells the settings page "this deployment has no identity store" apart from a

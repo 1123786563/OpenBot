@@ -43,7 +43,8 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import { enterpriseWorkspaceMemberships } from "../db/schema/enterprise-tenancy";
 import {
@@ -62,6 +63,7 @@ import {
   sourceBankFor,
   teamBankFor,
 } from "./bank-scope";
+import type { HindsightBudgetGate } from "./budget-gate";
 import { type HindsightPauseControls, usagePausedFor } from "./pause-controls";
 import type { PreferenceRecallServiceConfig } from "./preference-recall";
 import { type HindsightRecoveryGate, recallOpenFor } from "./restore-recovery";
@@ -70,6 +72,7 @@ import {
   type PersonalMemoryRevocationRecorder,
   STOPPED_USING_SUMMARY,
 } from "./revocation-ledger";
+import { assertMemoryContentAdmissible } from "./sensitivity-gate";
 
 /** The restriction that carves a memory's bank; exactly one target, spelled by the kind. */
 export type SourceBoundRestriction =
@@ -122,6 +125,16 @@ export interface SourceBoundRecordStore {
     tenantId: string,
     principalId: string,
     documentIds: readonly string[],
+  ): Promise<SourceBoundRecordRow[]>;
+  /**
+   * This principal's living rows in this company, newest change first (FIX-W12 FR2-3): the raw
+   * feed the answer-basis listing filters further — the service re-reads each row's CURRENT
+   * restriction authorization, the store only narrows to the principal's own rows.
+   */
+  listLiving(
+    tenantId: string,
+    principalId: string,
+    limit: number,
   ): Promise<SourceBoundRecordRow[]>;
 }
 
@@ -427,8 +440,18 @@ export function createSourceBoundRecallService(
      * degradation path (whose rows a restore may have resurrected) never runs either.
      */
     recovery?: HindsightRecoveryGate;
+    /**
+     * The background-processing budget gate (#393, FIX-F23 / FR-2). The confirm/edit eager
+     * retains are model-call paths exactly like the judgment review's, and they admit through
+     * the same gate the sync queue's drains do: exhaustion skips the retain — the person's
+     * confirmation stands and the work row keeps the retry — and an admitted retain settles
+     * when the service answered (a refusal did the work) and releases when it was never
+     * reached, the queue's discipline.
+     */
+    budget?: HindsightBudgetGate;
   } = {},
 ) {
+  const log = getLogger("server");
   const now = options.now ?? (() => new Date());
   const doFetch =
     config.fetch ?? ((input: string, init?: RequestInit) => fetch(input, init));
@@ -455,12 +478,16 @@ export function createSourceBoundRecallService(
     });
   }
 
-  /** Retain one row's confirmed content into its restricted bank; failure leaves the row pending. */
+  /**
+   * Retain one row's confirmed content into its restricted bank; failure leaves the row
+   * pending. `reached` says whether the service answered at all, so a budgeted caller can
+   * settle the one outcome and release the other.
+   */
   async function retain(
     grant: HindsightBankScope,
     bankId: string,
     row: SourceBoundRecordRow,
-  ): Promise<boolean> {
+  ): Promise<{ synced: boolean; reached: boolean }> {
     try {
       const response = await hindsight(
         grant,
@@ -477,12 +504,98 @@ export function createSourceBoundRecallService(
           },
         },
       );
-      if (!response.ok) return false;
+      if (!response.ok) return { synced: false, reached: true };
       row.syncedContentDigest = digestOf(row.content);
       row.syncedAt = now();
-      return true;
+      return { synced: true, reached: true };
     } catch {
+      return { synced: false, reached: false };
+    }
+  }
+
+  /**
+   * The eager retain behind a confirm/edit, admitted through the budget gate when one is
+   * wired (#393, FIX-F23 / FR-2 — the seam the final review caught bypassing it). An
+   * exhausted budget does NOT fail the person's decision: the retain is skipped,
+   * `remoteSynced` answers false and the work row recorded just above owns the retry — the
+   * drain re-admits it under its own work key once the budget recovers, so an exhausted
+   * decision charges nothing here. The admission key is stable per row and confirmed
+   * content, the judgment review's `admittedRetain` discipline.
+   *
+   * FIX-OCR3 (O3-M1): that discipline includes its bookkeeping guard, verbatim now — the
+   * admission and settle/release calls are local DB writes that run after the decision row
+   * and work row already landed, so their failure degrades, never fails the confirm (the
+   * judgment review's O2-M1 rule, which this seam had copied in name only).
+   */
+  async function admittedRetain(
+    identity: { tenantId: string; principalId: string },
+    bank: HindsightBankGrant,
+    row: SourceBoundRecordRow,
+  ): Promise<boolean> {
+    if (!options.budget) {
+      return (
+        await retain(backgroundTaskBankScope(identity, bank), bank.id, row)
+      ).synced;
+    }
+    let admission: Awaited<
+      ReturnType<HindsightBudgetGate["admitBackgroundWork"]>
+    >;
+    try {
+      admission = await options.budget.admitBackgroundWork({
+        tenantId: identity.tenantId,
+        principalId: identity.principalId,
+        workKey: `source-bound-eager:${row.id}:${digestOf(row.content)}`,
+        units: 1,
+      });
+    } catch {
+      log.error(
+        {
+          type: "source-bound-eager-budget-admit-failed",
+          context: { rowId: row.id },
+          timestamp: new Date().toISOString(),
+        },
+        "source-bound-eager-budget-admit-failed",
+      );
       return false;
+    }
+    if (!admission.ok) return false;
+    const outcome = await retain(
+      backgroundTaskBankScope(identity, bank),
+      bank.id,
+      row,
+    );
+    try {
+      if (outcome.synced) {
+        await options.budget.settleBackgroundWork(admission.reservationId);
+        return true;
+      }
+      if (outcome.reached) {
+        // The service answered and refused: it did the work, the charge stands — the same
+        // split the sync queue's retains draw.
+        await options.budget.settleBackgroundWork(admission.reservationId);
+      } else {
+        await options.budget.releaseBackgroundWork(
+          admission.reservationId,
+          "eager retain could not reach the service",
+        );
+      }
+      return false;
+    } catch {
+      log.error(
+        {
+          type: "source-bound-eager-budget-bookkeeping-failed",
+          context: {
+            rowId: row.id,
+            reservationId: admission.reservationId,
+          },
+          timestamp: new Date().toISOString(),
+        },
+        "source-bound-eager-budget-bookkeeping-failed",
+      );
+      // The retain itself already answered; only its ledger entry is unsound. The decision
+      // stands with the outcome the service gave, and the reservation the failed call left
+      // behind is the period's to age out.
+      return outcome.synced;
     }
   }
 
@@ -553,10 +666,15 @@ export function createSourceBoundRecallService(
         content: unknown;
         provenance?: unknown;
         restriction: unknown;
+        /** The person's explicit second confirmation for sensitive content (F-G1-4). */
+        confirmSensitive?: unknown;
       },
     ): Promise<{ record: RecalledSourceBoundMemory; remoteSynced: boolean }> {
       const identity = resolveHindsightBankScope(scope);
       const content = plainString(input.content, "content", CONTENT_MAX);
+      // The chain-side sensitivity gate (audit F-G1-4), before the restriction is even read:
+      // a refused credential leaves no row, no work and no audit copy of the bytes.
+      assertMemoryContentAdmissible(content, input.confirmSensitive);
       const provenance = plainString(
         input.provenance ?? "You",
         "provenance",
@@ -608,11 +726,7 @@ export function createSourceBoundRecallService(
           contentDigest: digestOf(row.content),
         });
       }
-      const remoteSynced = await retain(
-        backgroundTaskBankScope(identity, bank),
-        bank.id,
-        row,
-      );
+      const remoteSynced = await admittedRetain(identity, bank, row);
       if (remoteSynced) await records.save(row);
       return { record: toRecalledSourceBoundView(row), remoteSynced };
     },
@@ -724,10 +838,16 @@ export function createSourceBoundRecallService(
     async editSourceBoundMemory(
       scope: PlatformScope,
       id: string,
-      input: { content: unknown },
+      input: {
+        content: unknown;
+        /** The person's explicit second confirmation for sensitive content (F-G1-4). */
+        confirmSensitive?: unknown;
+      },
     ): Promise<{ record: RecalledSourceBoundMemory; remoteSynced: boolean }> {
       const identity = resolveHindsightBankScope(scope);
       const content = plainString(input.content, "content", CONTENT_MAX);
+      // Same gate as the confirm: an edit cannot walk a credential into an authorized bank.
+      assertMemoryContentAdmissible(content, input.confirmSensitive);
       const row = await records.load(identity.tenantId, id);
       if (
         !row ||
@@ -761,11 +881,7 @@ export function createSourceBoundRecallService(
         });
       }
       const bank = bankGrantForRestriction(restriction);
-      const remoteSynced = await retain(
-        backgroundTaskBankScope(identity, bank),
-        bank.id,
-        row,
-      );
+      const remoteSynced = await admittedRetain(identity, bank, row);
       await records.save(row);
       return { record: toRecalledSourceBoundView(row), remoteSynced };
     },
@@ -888,6 +1004,20 @@ export function createDrizzleSourceBoundRecords(
             inArray(table.hindsightDocumentId, [...documentIds]),
           ),
         );
+    },
+    async listLiving(tenantId, principalId, limit) {
+      return database
+        .select()
+        .from(table)
+        .where(
+          and(
+            eq(table.tenantId, tenantId),
+            eq(table.principalId, principalId),
+            isNull(table.deletedAt),
+          ),
+        )
+        .orderBy(desc(table.updatedAt))
+        .limit(limit);
     },
   };
 }

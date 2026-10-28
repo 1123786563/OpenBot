@@ -28,15 +28,27 @@
  * part of its published surface, so an `instanceof` here would pin this deployment to an internal
  * path a minor release may move. `query` and `params` as own properties on an `Error` is not prose
  * — it is the shape the constructor assigns, it is what makes the message dangerous, and anything
- * else carrying both fields is a query failure too.
+ * else carrying both fields AND that message shape is a query failure too. The message conjunct is
+ * the drift guard: an upgrade that drops either half must turn this gate off (and fail the pin in
+ * tests/db-query-failure-shape.test.ts) rather than let a no-longer-dangerous message be suppressed
+ * — or a newly dangerous one pass.
  */
 export function isQueryFailure(
   error: unknown,
 ): error is Error & { query: unknown; params: unknown } {
   return (
     error instanceof Error &&
+    // Also require the dangerous message shape: a future drizzle that moves
+    // `query`/`params` off own properties (or stops inlining them into the
+    // message) must make this answer FALSE — the criterion is "relaying the
+    // message is unsafe", and a shape half of which is gone is no longer it.
+    // tests/db-query-failure-shape.test.ts pins both halves against the
+    // installed drizzle so a silent drift fails CI instead of leaking.
     Object.hasOwn(error, "query") &&
-    Object.hasOwn(error, "params")
+    Object.hasOwn(error, "params") &&
+    typeof error.message === "string" &&
+    (error.message.includes("Failed query") ||
+      error.message.includes("params:"))
   );
 }
 

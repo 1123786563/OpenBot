@@ -645,6 +645,9 @@ export function createJobOwnershipService(
             and(
               eq(leaseRow.kind, jobKind),
               eq(leaseRow.objectId, id),
+              // 已完结（finished_at 非空）的租约不得被扫描器静默认领复活：
+              // 重开只走 armRetry 的显式清标记路径。
+              sql`${jobLeases.finishedAt} is null`,
               sql`(${jobLeases.claimedBy} is null or ${jobLeases.leaseUntil} is null or ${jobLeases.leaseUntil} <= now())`,
             ),
           )
@@ -692,6 +695,10 @@ export function createJobOwnershipService(
             and(
               eq(leaseRow.kind, jobKind),
               eq(leaseRow.objectId, id),
+              // 范围第二道防线（与 claim 的归属三比同源）：租约行的
+              // tenant/workspace 必须与传入 jobScope 一致。
+              eq(jobLeases.tenantId, jobScope.tenantId),
+              eq(jobLeases.workspaceId, jobScope.workspaceId),
               eq(leaseRow.claimedByKind, holder.kind),
               eq(leaseRow.claimedBy, holder.id),
               sql`${jobLeases.finishedAt} is null`,
@@ -742,6 +749,9 @@ export function createJobOwnershipService(
             and(
               eq(leaseRow.kind, jobKind),
               eq(leaseRow.objectId, id),
+              // 范围第二道防线（与 renew 同源）：行必须属于传入 jobScope。
+              eq(jobLeases.tenantId, jobScope.tenantId),
+              eq(jobLeases.workspaceId, jobScope.workspaceId),
               eq(leaseRow.claimedByKind, holder.kind),
               eq(leaseRow.claimedBy, holder.id),
               sql`${jobLeases.finishedAt} is null`,
@@ -792,6 +802,9 @@ export function createJobOwnershipService(
             and(
               eq(leaseRow.kind, jobKind),
               eq(leaseRow.objectId, id),
+              // 范围第二道防线（与 renew/finish 同源）：行必须属于传入 jobScope。
+              eq(jobLeases.tenantId, jobScope.tenantId),
+              eq(jobLeases.workspaceId, jobScope.workspaceId),
               eq(leaseRow.claimedByKind, holder.kind),
               eq(leaseRow.claimedBy, holder.id),
               sql`${jobLeases.finishedAt} is null`,

@@ -29,7 +29,7 @@
  *
  * The restricted-connection roles, the controlled functions, the DML guard
  * and the deferred constraint fences are T02.06's (migration
- * 0214_better_auth_schema_roles): ob_ent_auth_writer owns these tables end to
+ * 0226_better_auth_schema_roles): ob_ent_auth_writer owns these tables end to
  * end and reaches projections/clocks/command receipts only through those
  * SECURITY DEFINER functions; the legacy writer of 0056 keeps its enterprise_*
  * rights until M4. They live in SQL, not here — this file stays the typed

@@ -37,14 +37,21 @@ import {
  *   are anchors: their rows are pulled from the cleanup set, their cascade subtrees pulled
  *   with them, and each is listed separately for human confirmation. Nothing here cancels,
  *   closes or otherwise disposes of an external association (Q28/Q29).
- * - A payer_accounts mapping row whose key still keeps any protected record is pulled as that
- *   key's attribution evidence (Q29: kept quarantine must stay explicable) — and every kept
- *   row is then protected against OTHER candidates' cascades, which is how a clean key's
- *   customer row gets pulled when its only sin is cascading into the kept mapping.
+ * - A payer_accounts mapping row whose key still keeps any classification-kept or anchored
+ *   record is pulled as that key's attribution evidence (Q29: kept quarantine must stay
+ *   explicable) — and every kept row is then protected against OTHER candidates' cascades,
+ *   which is how a clean key's customer row gets pulled when its only sin is cascading into
+ *   the kept mapping. The R2B-F1 funding shelter is deliberately NOT such a record: money
+ *   rows kept under funding_of_protected_key leave the legacy mapping row cleanable —
+ *   their attribution stays explicable through the key's surviving 0163 rows (the
+ *   protected account or company mapping itself, or the customer row whose own cascade
+ *   would reach the sheltered funding), adjudicated as AC18's correct semantics.
  * - Read-only by construction: one READ ONLY, REPEATABLE READ transaction, like 21.1/21.2 —
  *   persisting the manifest is the operator's act of saving the JSON. The shape is
- *   deterministic (21.2's table order, record-id sorting, timestamps only as metadata), so
- *   21.4 can hash it and two evaluations of the same data agree byte for byte.
+ *   deterministic (21.2's table order, record-id sorting); `generatedAt` is generation
+ *   metadata that lives in the JSON but is OUTSIDE the hash projection — 21.4's serialization
+ *   excludes it, so two evaluations of the same data produce identical hash inputs (#679.3:
+ *   the byte-for-byte claim holds for the hash projection, not the whole JSON).
  */
 
 /** The statuses that mean "the subscription still exists at the payment gateway". */
@@ -61,12 +68,29 @@ export type RemovalReason =
   | "attribution_basis_of_kept_records"
   | "deletion_blocked_by_retained_reference";
 
-/** What makes a touched row untouchable: its class, its anchor role, or its evidence role. */
+/**
+ * What makes a touched row untouchable: its class, its anchor role, its evidence role — or
+ * the ownership it verifiably carries. The last eight are the R2-F1 (REV-2 → FIX-2b)
+ * ownership kinds: the first six name a 0163 upstream child row by the ownership its own
+ * columns prove (an unrecognized account shape fails closed as unknown-owner), the seventh
+ * names a row whose deletion would destroy one of them, and the eighth (R2B-F1, REV-2b)
+ * names a funding row (credit_grants/credit_ledger/credit_reservations) whose customer key
+ * carries a protected 0163 row — the ownership verdict travels to the key's money with or
+ * without an attribution chain.
+ */
 export type ProtectionKind =
   | "retained"
   | "external_subscription_anchor"
   | "external_payment_order_open"
-  | "attribution_kept";
+  | "attribution_kept"
+  | "company_account"
+  | "personal_account"
+  | "quarantined_account"
+  | "unknown_account_shape"
+  | "company_payment_mapping"
+  | "company_call_attribution"
+  | "protects_owned_record"
+  | "funding_of_protected_key";
 
 /** How deleting the candidate would touch the row. */
 export type ImpactEffect =
@@ -85,8 +109,14 @@ export type RelationFkEdge = {
   parentColumn: string;
   constraintName: string;
   onDelete: "cascade" | "set_null" | "restrict" | "no_action" | "set_default";
-  /** False = the catalog disagrees with the schema declaration: a finding, never a silent fix. */
+  /**
+   * False = the catalog disagrees with a DECLARED edge's delete behavior: a finding, never
+   * a silent fix. Edges the declaration never named are `discovered`, not mismatches, so
+   * the mismatch count keeps its 0-means-agrees invariant (OCR report, maint round 2).
+   */
   matchesDeclaration: boolean;
+  /** True = the declaration has no such edge at all; counted in summary.discoveredEdges. */
+  discovered: boolean;
   evidence: string;
 };
 
@@ -200,6 +230,11 @@ export type CleanupRelationsManifest = {
   /** `current_database()` — the database the evidence was read from. */
   database: string;
   schema: string;
+  /**
+   * Generation metadata only: names when this evaluation ran. It is deliberately OUTSIDE
+   * the deterministic hash projection — 21.4's serialization excludes it (#679.3), so two
+   * evaluations of unchanged data agree on everything but this field.
+   */
   generatedAt: string;
   /** The classification this evaluation consumed, identified for the review trail. */
   basis: {
@@ -226,6 +261,8 @@ export type CleanupRelationsManifest = {
     externalOpenOrders: number;
     fkEdges: number;
     declarationMismatches: number;
+    /** Edges the declaration never named: catalog discoveries, not drift. */
+    discoveredEdges: number;
   };
 };
 
@@ -251,6 +288,12 @@ const TABLE_ORDER = [
 type TableSpec = {
   /** The column the classification's recordId names. */
   idColumn: string;
+  /**
+   * A composite primary key, when the table's identity is one: the probe renders the
+   * recordId by joining these in order. Absent for every single-column key, where
+   * `idColumn` already names the identity.
+   */
+  idColumns?: string[];
   /** The columns a probe of this table must return for traversal and live-state reads. */
   columns: string[];
 };
@@ -316,6 +359,92 @@ const TABLE_SPECS: Record<string, TableSpec> = {
   credit_recovery_items: {
     idColumn: "id",
     columns: ["id", "reservation_id", "state"],
+  },
+  // Added by migration 0176 (BP06 #374): the account-level resolution registry — one
+  // append-only row per authorized disposal command an operator made on a payer account,
+  // written by billing/account-resolution.ts and deleted by nothing (it is the idempotency
+  // answer a replayed command reads and the refund ceiling's prior history). Not a legacy
+  // billing table — the classification never names it, and 21.5's estate wall keeps
+  // refusing it as a deletion target — but its CASCADE edge into billing_customers is an
+  // edge a customer candidate's deletion travels, so the probe universe knows the child
+  // like the 0145/0147 one-hop entries above.
+  billing_account_resolutions: {
+    idColumn: "id",
+    columns: ["id", "external_customer_id"],
+  },
+  // The rest of the upstream children 0163 (#436) restored around the estate, same rule:
+  // the catalog's edges out of the estate are edges a candidate's deletion travels, so the
+  // probe universe knows each child. But these three are NOT the deleted record's own test
+  // data (R2-F1, REV-2): the account's own columns carry its registered ownership verdict
+  // (status/account_type/tenant_id/owner_user_id/quarantine_reason — and the derived
+  // account_key, 'company:'||tenant_id / 'personal:'||owner_user_id, NULL when quarantined.
+  // The schema declares the three legal shapes and the derived key, but the shipped 0163
+  // migration creates no CHECK, so the ownership pass below is the runtime enforcement), the
+  // mapping row IS the company relationship, and the attribution's NOT NULL
+  // tenant/workspace/principal make every row a company call fact. The ownership pass below
+  // reads exactly these columns (account_key included) and verifies each row — shape and
+  // derived key — before it may ride a cascade.
+  billing_credit_accounts: {
+    idColumn: "id",
+    columns: [
+      "id",
+      "external_customer_id",
+      "status",
+      "account_type",
+      "tenant_id",
+      "owner_user_id",
+      "account_key",
+      "quarantine_reason",
+    ],
+  },
+  billing_customer_mappings: {
+    idColumn: "tenant_id",
+    columns: ["tenant_id", "external_customer_id"],
+  },
+  billing_call_attributions: {
+    idColumn: "reservation_id",
+    columns: ["reservation_id", "tenant_id", "workspace_id", "principal_id"],
+  },
+  // The settlement and job family the later migrations added: NO ACTION children of the
+  // holds and their ledger lines (0179/0181/0188/0189/0194/0195/0197-0199, 0204-0207) —
+  // probed for the blockedBy pass, protected by table in protectionOf — plus the
+  // dimension breakdown (0189), a CASCADE child of a ledger line that rides its deletion.
+  async_jobs: {
+    idColumn: "job_id",
+    columns: ["job_id", "reservation_id"],
+  },
+  batch_jobs: {
+    idColumn: "batch_id",
+    columns: ["batch_id", "reservation_id"],
+  },
+  credit_settlement_details: {
+    idColumn: "reservation_id",
+    columns: ["reservation_id", "ledger_id"],
+  },
+  credit_async_settlement_details: {
+    idColumn: "reservation_id",
+    columns: ["reservation_id", "ledger_id"],
+  },
+  credit_speech_settlement_details: {
+    idColumn: "reservation_id",
+    columns: ["reservation_id", "ledger_id"],
+  },
+  credit_batch_settlement_details: {
+    idColumn: "item_id",
+    columns: ["item_id", "ledger_id"],
+  },
+  realtime_units: {
+    idColumn: "unit_id",
+    columns: ["unit_id", "reservation_id"],
+  },
+  tool_call_charges: {
+    idColumn: "charge_id",
+    columns: ["charge_id", "reservation_id"],
+  },
+  credit_settlement_dimension_breakdown: {
+    idColumn: "ledger_id",
+    idColumns: ["ledger_id", "dimension"],
+    columns: ["ledger_id", "dimension"],
   },
 };
 
@@ -419,6 +548,127 @@ const DECLARED_EDGES: {
     parentColumn: "id",
     onDelete: "cascade",
   },
+  // 0176 (BP06 #374): the resolution registry's account key, the one-hop shape again —
+  // with the difference that its rows are operator decision records, not the deleted
+  // account's own test data: protectionOf keeps them off every candidate's cascade.
+  {
+    childTable: "billing_account_resolutions",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  // 0163 (#436) restored the rest of the upstream children around the estate: the account
+  // state, the tenant mapping and the per-call attribution ride CASCADE edges like the
+  // estate's own children do.
+  {
+    childTable: "billing_credit_accounts",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "billing_customer_mappings",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "billing_call_attributions",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
+  // The settlement and job family (0179/0181/0188/0189/0194/0195/0197-0199): NO ACTION
+  // children — the database refuses the parent's deletion while they stand, which is the
+  // blockedBy pass's own subject — plus the dimension breakdown's CASCADE.
+  {
+    childTable: "async_jobs",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "batch_jobs",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_settlement_details",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_settlement_details",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_async_settlement_details",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_async_settlement_details",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_speech_settlement_details",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_speech_settlement_details",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_batch_settlement_details",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "realtime_units",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "tool_call_charges",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_settlement_dimension_breakdown",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
 ];
 
 const ON_DELETE_BY_CODE: Record<string, RelationFkEdge["onDelete"]> = {
@@ -429,10 +679,62 @@ const ON_DELETE_BY_CODE: Record<string, RelationFkEdge["onDelete"]> = {
   d: "set_default",
 };
 
+/**
+ * The three tables the 0163 ownership pass adjudicates row by row: they are the only place
+ * an unclassified row may carry an explicit cleanable verdict (the test-owned
+ * estate-semantics arm). Every other uncovered row — estate or catalog-discovered — is
+ * retained by default.
+ */
+const OWNERSHIP_ADJUDICATED_TABLES: ReadonlySet<string> = new Set([
+  "billing_credit_accounts",
+  "billing_customer_mappings",
+  "billing_call_attributions",
+  // The dimension breakdown is the ledger row's own per-dimension split, declared to ride
+  // its ledger's cascade — cleanable exactly when the ledger line is (module header).
+  "credit_settlement_dimension_breakdown",
+]);
+
 const KEEP_CLASSES: ReadonlySet<RowClass> = new Set<RowClass>([
   "company_history",
   "personal_records",
   "unknown_owner",
+]);
+
+/**
+ * Out-of-estate children a candidate's deletion can reach but must never take with it —
+ * protected by table, because the classification cannot name rows in tables it does not
+ * cover (its verdicts are the legacy estate's four, nothing else):
+ *
+ * - `billing_account_resolutions` (0176, BP06 #374): the append-only registry of every
+ *   authorized disposal command an operator made on a payer account — the idempotency
+ *   answer a replayed command reads and the refund ceiling's prior history. Each row is
+ *   AC18's "financial history", not the deleted account's own test data, and nothing in
+ *   the system ever deletes one: no candidate's cascade may either.
+ * - the settlement and job family (`async_jobs`, `batch_jobs`, `credit_settlement_details`,
+ *   `credit_async_settlement_details`, `credit_speech_settlement_details`,
+ *   `credit_batch_settlement_details`, `realtime_units`, `tool_call_charges`): NO ACTION
+ *   children of the holds and their ledger lines. The database itself refuses the parent's
+ *   deletion while they stand, and the executor deletes only estate rows children-first —
+ *   so a candidate blocked behind out-of-estate rows is pulled here, in the manifest, with
+ *   the blocking rows named, instead of being discovered as an FK error mid-execution.
+ *
+ * The dimension breakdown rides its ledger line's cascade: it is the ledger row's own
+ * per-dimension split, so it is cleanable exactly when the ledger line itself is. The three
+ * 0163 children are NOT — they are verified per row by the ownership pass below (R2-F1,
+ * REV-2 → FIX-2b): a registered account, the company payment binding and the company call
+ * attribution carry ownership in their own columns, and the cascade of a legacy-classified
+ * parent may never take them.
+ */
+const PROTECTED_OUTSIDE_ESTATE: ReadonlySet<string> = new Set([
+  "billing_account_resolutions",
+  "async_jobs",
+  "batch_jobs",
+  "credit_settlement_details",
+  "credit_async_settlement_details",
+  "credit_speech_settlement_details",
+  "credit_batch_settlement_details",
+  "realtime_units",
+  "tool_call_charges",
 ]);
 
 /** A probed legacy row: its identity and the columns traversal needs. */
@@ -444,26 +746,32 @@ type ProbeRow = {
 
 const rowKey = (table: string, recordId: string) => `${table}/${recordId}`;
 
-/** One row probe: the named columns of every row of `table` whose `whereColumn` equals `value`. */
-async function probeRows(
-  tx: Transaction,
+/**
+ * The probe specs discovered at evaluation time: tables outside the static universe that a
+ * CASCADE path from the estate reaches (the second hop and beyond). The probe universe never
+ * widens silently — a discovered table gets a spec only because the live catalog proved a
+ * cascade edge into it, and its rows are named in the same manifest that cites the edge.
+ */
+type SpecResolver = (table: string) => TableSpec | undefined;
+
+/** Render raw query rows of `table` as probe rows, per its registered spec. */
+function toProbeRows(
   table: string,
-  whereColumn: string,
-  value: string,
-): Promise<ProbeRow[]> {
-  const spec = TABLE_SPECS[table];
-  if (!spec) throw new Error(`no probe spec for legacy table ${table}`);
-  const rows = await tx.execute<Record<string, unknown>>(
-    sql`SELECT ${sql.join(
-      spec.columns.map((column) => sql.identifier(column)),
-      sql`, `,
-    )}
-      FROM ${sql.identifier(table)}
-      WHERE ${sql.identifier(whereColumn)} = ${value}`,
-  );
+  rows: Record<string, unknown>[],
+  resolveSpec: SpecResolver,
+): ProbeRow[] {
+  const spec = resolveSpec(table);
+  if (!spec)
+    throw new Error(
+      TABLE_SPECS[table]
+        ? `probe spec missing a column list for known table ${table} (contract drift)`
+        : `no probe spec for table ${table} (outside the static universe and not discovered by the catalog)`,
+    );
   return rows.map((row) => ({
     table,
-    recordId: String(row[spec.idColumn]),
+    recordId: (spec.idColumns ?? [spec.idColumn])
+      .map((column) => String(row[column]))
+      .join("/"),
     cols: Object.fromEntries(
       spec.columns.map((column) => [
         column,
@@ -473,6 +781,92 @@ async function probeRows(
       ]),
     ),
   }));
+}
+
+/** One row probe: the named columns of every row of `table` whose `whereColumn` equals `value`. */
+async function probeRows(
+  tx: Transaction,
+  table: string,
+  whereColumn: string,
+  value: string,
+  resolveSpec: SpecResolver,
+): Promise<ProbeRow[]> {
+  const spec = resolveSpec(table);
+  if (!spec)
+    throw new Error(
+      TABLE_SPECS[table]
+        ? `probe spec missing a column list for known table ${table} (contract drift)`
+        : `no probe spec for table ${table} (outside the static universe and not discovered by the catalog)`,
+    );
+  const rows = await tx.execute<Record<string, unknown>>(
+    sql`SELECT ${sql.join(
+      spec.columns.map((column) => sql.identifier(column)),
+      sql`, `,
+    )}
+      FROM ${sql.identifier(table)}
+      WHERE ${sql.identifier(whereColumn)} = ${value}`,
+  );
+  return toProbeRows(table, rows, resolveSpec);
+}
+
+/**
+ * Every row of `table` as probe rows — the R2-F1 ownership pass's full-table read. Same
+ * fail-closed spec gate as probeRows: the probe universe never silently widens.
+ */
+async function scanTableRows(
+  tx: Transaction,
+  table: string,
+  resolveSpec: SpecResolver,
+): Promise<ProbeRow[]> {
+  const spec = resolveSpec(table);
+  if (!spec)
+    throw new Error(
+      TABLE_SPECS[table]
+        ? `probe spec missing a column list for known table ${table} (contract drift)`
+        : `no probe spec for table ${table} (outside the static universe and not discovered by the catalog)`,
+    );
+  const rows = await tx.execute<Record<string, unknown>>(
+    sql`SELECT ${sql.join(
+      spec.columns.map((column) => sql.identifier(column)),
+      sql`, `,
+    )}
+      FROM ${sql.identifier(table)}`,
+  );
+  return toProbeRows(table, rows, resolveSpec);
+}
+
+/**
+ * The rows of `table` whose `whereColumn` is any of `values` — the R2B-F1 funding
+ * shelter's key pushdown, so a pure-legacy evaluation (no owned keys) never touches the
+ * money tables at all. Same fail-closed spec gate as probeRows/scanTableRows: the probe
+ * universe never silently widens. Callers must pass a non-empty list.
+ */
+async function probeRowsWhereIn(
+  tx: Transaction,
+  table: string,
+  whereColumn: string,
+  values: readonly string[],
+  resolveSpec: SpecResolver,
+): Promise<ProbeRow[]> {
+  const spec = resolveSpec(table);
+  if (!spec)
+    throw new Error(
+      TABLE_SPECS[table]
+        ? `probe spec missing a column list for known table ${table} (contract drift)`
+        : `no probe spec for table ${table} (outside the static universe and not discovered by the catalog)`,
+    );
+  const rows = await tx.execute<Record<string, unknown>>(
+    sql`SELECT ${sql.join(
+      spec.columns.map((column) => sql.identifier(column)),
+      sql`, `,
+    )}
+      FROM ${sql.identifier(table)}
+      WHERE ${sql.identifier(whereColumn)} IN (${sql.join(
+        values.map((value) => sql`${value}`),
+        sql`, `,
+      )})`,
+  );
+  return toProbeRows(table, rows, resolveSpec);
 }
 
 /** Deterministic sort: 21.2's table order, then record id. */
@@ -518,9 +912,11 @@ export async function evaluateCleanupRelations(
       sql`SELECT current_database() AS database, current_schema() AS schema`,
     );
 
-    // --- The FK graph, from the live catalog: every edge whose child OR parent is a legacy
-    // table, whatever the counterpart is (an edge out of the estate is still an edge the
-    // cascade can travel). Compared against the declaration; mismatches are findings.
+    // --- The FK graph, from the live catalog: the whole schema's foreign keys, read once and
+    // then trimmed to the edges a deletion of the estate can actually travel. The trim is the
+    // estate itself plus every table a CASCADE path reaches (#679.1): a second hop out of the
+    // estate is still a row the deletion takes. Compared against the declaration; mismatches
+    // are findings. No table names are string-built into the SQL — parameters only.
     type CatalogEdge = {
       childTable: string;
       childColumn: string;
@@ -553,15 +949,9 @@ export async function evaluateCleanupRelations(
       JOIN pg_attribute qa ON qa.attrelid = parent.oid AND qa.attnum = pk.attnum
       WHERE con.contype = 'f'
         AND ns.nspname = current_schema()
-        AND (child.relname = ANY(${sql.raw(
-          `ARRAY[${TABLE_ORDER.map((t) => `'${t}'`).join(",")}]`,
-        )})
-          OR parent.relname = ANY(${sql.raw(
-            `ARRAY[${TABLE_ORDER.map((t) => `'${t}'`).join(",")}]`,
-          )}))
       ORDER BY child.relname, parent.relname, ck.ord
     `);
-    const edges: CatalogEdge[] = catalogRows.map((row) => ({
+    const catalogEdges: CatalogEdge[] = catalogRows.map((row) => ({
       childTable: row.child_table,
       childColumn: row.child_column,
       parentTable: row.parent_table,
@@ -578,6 +968,123 @@ export async function evaluateCleanupRelations(
         })(),
     }));
 
+    // Deletion-reachable tables: the legacy estate plus every table a CASCADE edge hands a
+    // deleted row's identity to, transitively. SET NULL and NO ACTION children do not extend
+    // the deletion, so they do not extend the frontier.
+    const estateTableSet = new Set<string>(TABLE_ORDER);
+    const reachableTables = new Set<string>(estateTableSet);
+    const tableFrontier: string[] = [...TABLE_ORDER];
+    while (tableFrontier.length > 0) {
+      const table = tableFrontier.pop();
+      if (!table) break;
+      for (const edge of catalogEdges) {
+        if (
+          edge.parentTable === table &&
+          edge.onDelete === "cascade" &&
+          !reachableTables.has(edge.childTable)
+        ) {
+          reachableTables.add(edge.childTable);
+          tableFrontier.push(edge.childTable);
+        }
+      }
+    }
+
+    // The edges the evaluation traverses: touching the estate (child side), or leaving a
+    // deletion-reachable table toward its own children (parent side). Edges leaving tables
+    // the estate's deletions can never touch stay out — the FK surface stays the declaration
+    // set plus the discovery set, not the whole schema.
+    const edges: CatalogEdge[] = catalogEdges.filter(
+      (edge) =>
+        estateTableSet.has(edge.childTable) ||
+        reachableTables.has(edge.parentTable),
+    );
+
+    // Fail-closed contract checks run over exactly the edges the evaluation traverses:
+    // ON DELETE SET DEFAULT (the child's post-mutation value is unknowable from the catalog)
+    // and composite constraints (per-column matching would turn partial matches into
+    // deletion evidence) are refusals, never silent skips.
+    for (const edge of edges) {
+      if (edge.onDelete === "set_default") {
+        throw new Error(
+          `FK constraint ${edge.constraintName} (${edge.childTable}.${edge.childColumn} -> ${edge.parentTable}.${edge.parentColumn}) is ON DELETE ${edge.onDelete}: the evaluation cannot represent the child's post-mutation value and refuses to guess (fail-closed).`,
+        );
+      }
+    }
+    const edgeGroupsByConstraint = new Map<string, CatalogEdge[]>();
+    for (const edge of edges) {
+      const groupKey = `${edge.constraintName}:${edge.childTable}->${edge.parentTable}`;
+      const group = edgeGroupsByConstraint.get(groupKey);
+      if (group) group.push(edge);
+      else edgeGroupsByConstraint.set(groupKey, [edge]);
+    }
+    for (const group of edgeGroupsByConstraint.values()) {
+      if (group.length > 1) {
+        const [first] = group;
+        throw new Error(
+          `FK constraint ${first.constraintName} (${first.childTable} -> ${first.parentTable}) is composite (${group.length} column pairs: ${group.map((edge) => `${edge.childColumn}=${edge.parentColumn}`).join(", ")}); the evaluation refuses per-column matching because a partial composite match is not deletion evidence (fail-closed).`,
+        );
+      }
+    }
+
+    // Probe specs for discovered tables: ANY loaded edge can traverse its child or parent
+    // rows (deletion reach, references, blockers), so the discovery universe is every
+    // loaded-edge table outside the static one — not only the CASCADE-reachable set, whose
+    // omission made a future SET NULL child crash the evaluation with a misleading
+    // "no probe spec" (OCR report bug 1). Columns and primary keys are read from the
+    // catalog, registered explicitly, never guessed.
+    const dynamicSpecs = new Map<string, TableSpec>();
+    const discoveredTables = [
+      ...new Set(
+        edges.flatMap((edge) => [edge.childTable, edge.parentTable]),
+      ),
+    ].filter((table) => !TABLE_SPECS[table]);
+    if (discoveredTables.length > 0) {
+      const primaryKeyRows = await tx.execute<{
+        table_name: string;
+        column_name: string;
+      }>(sql`
+        SELECT child.relname AS table_name, pa.attname AS column_name
+        FROM pg_constraint con
+        JOIN pg_class child ON child.oid = con.conrelid
+        JOIN pg_namespace ns ON ns.oid = child.relnamespace
+        JOIN unnest(con.conkey) WITH ORDINALITY as ck(attnum, ord) ON true
+        JOIN pg_attribute pa ON pa.attrelid = child.oid AND pa.attnum = ck.attnum
+        WHERE con.contype = 'p'
+          AND ns.nspname = current_schema()
+          AND child.relname IN (${sql.join(
+            discoveredTables.map((table) => sql`${table}`),
+            sql`, `,
+          )})
+        ORDER BY child.relname, ck.ord
+      `);
+      const primaryKeysByTable = new Map<string, string[]>();
+      for (const row of primaryKeyRows) {
+        const columns = primaryKeysByTable.get(row.table_name);
+        if (columns) columns.push(row.column_name);
+        else primaryKeysByTable.set(row.table_name, [row.column_name]);
+      }
+      for (const table of discoveredTables) {
+        const primaryKey = primaryKeysByTable.get(table);
+        if (!primaryKey || primaryKey.length === 0) {
+          throw new Error(
+            `cascade-reachable table ${table} has no primary key; the evaluation cannot name its rows and refuses to guess (fail-closed).`,
+          );
+        }
+        const columns = new Set<string>(primaryKey);
+        for (const edge of catalogEdges) {
+          if (edge.childTable === table) columns.add(edge.childColumn);
+          if (edge.parentTable === table) columns.add(edge.parentColumn);
+        }
+        dynamicSpecs.set(table, {
+          idColumn: primaryKey[0],
+          idColumns: primaryKey,
+          columns: [...columns],
+        });
+      }
+    }
+    const resolveSpec: SpecResolver = (table) =>
+      TABLE_SPECS[table] ?? dynamicSpecs.get(table);
+
     const fkEdges: RelationFkEdge[] = [];
     for (const edge of edges) {
       // Data evidence for the edge itself: how many child rows actually ride it.
@@ -588,23 +1095,26 @@ export async function evaluateCleanupRelations(
           ON ${sql.identifier(edge.parentTable)}.${sql.identifier(edge.parentColumn)}
            = ${sql.identifier(edge.childTable)}.${sql.identifier(edge.childColumn)}
       `);
-      const declared = DECLARED_EDGES.find(
+      const declaredShape = DECLARED_EDGES.find(
         (candidate) =>
           candidate.childTable === edge.childTable &&
           candidate.childColumn === edge.childColumn &&
           candidate.parentTable === edge.parentTable &&
-          candidate.parentColumn === edge.parentColumn &&
-          candidate.onDelete === edge.onDelete,
+          candidate.parentColumn === edge.parentColumn,
       );
+      const discovered = declaredShape === undefined;
       fkEdges.push({
         ...edge,
-        matchesDeclaration: declared !== undefined,
+        discovered,
+        matchesDeclaration:
+          !discovered && declaredShape!.onDelete === edge.onDelete,
         evidence: `pg_constraint constraint ${edge.constraintName}: ${edge.childTable}.${edge.childColumn} -> ${edge.parentTable}.${edge.parentColumn} on delete ${edge.onDelete}; ${count[0].n} child rows ride it in the current data`,
       });
     }
     const declarationMismatches = fkEdges.filter(
-      (edge) => !edge.matchesDeclaration,
+      (edge) => !edge.discovered && !edge.matchesDeclaration,
     ).length;
+    const discoveredEdges = fkEdges.filter((edge) => edge.discovered).length;
 
     // --- Live state the classification's per-record verdicts are combined with: reservation
     // statuses (in-flight duty is live data, not manifest data), allocation parents, live
@@ -629,8 +1139,11 @@ export async function evaluateCleanupRelations(
       updated_at: Date;
     }>(sql`SELECT external_subscription_id, external_customer_id, plan_code, status, updated_at
            FROM ${sql.identifier("billing_subscriptions")}
-           WHERE status = ANY(${sql.raw(
-             `ARRAY[${EXTERNAL_LIVE_SUBSCRIPTION_STATUSES.map((s) => `'${s}'`).join(",")}]`,
+           WHERE status IN (${sql.join(
+             EXTERNAL_LIVE_SUBSCRIPTION_STATUSES.map(
+               (status) => sql`${status}`,
+             ),
+             sql`, `,
            )})`);
     const liveSubscriptionIds = new Set(
       liveSubscriptions.map((row) => row.external_subscription_id),
@@ -666,6 +1179,7 @@ export async function evaluateCleanupRelations(
         record.table,
         spec.idColumn,
         record.recordId,
+        resolveSpec,
       );
       if (found.length === 0) {
         throw new Error(
@@ -686,6 +1200,208 @@ export async function evaluateCleanupRelations(
     const classOf = (row: ProbeRow): RowClass =>
       recordClassByKey.get(rowKey(row.table, row.recordId)) ?? "unclassified";
 
+    // --- 0163 ownership verification (R2-F1, REV-2 -> FIX-2b). These rows live outside
+    // the twelve-table estate, so 21.2 cannot classify them. Their own columns are the
+    // authoritative ownership facts instead; a legacy payer_accounts mapping on the same
+    // customer key is never allowed to overrule them.
+    const ownershipProtectionByKey = new Map<string, ProtectionKind>();
+    const ownershipRowByKey = new Map<string, ProbeRow>();
+    const protect = (row: ProbeRow, protection: ProtectionKind): boolean => {
+      const key = rowKey(row.table, row.recordId);
+      if (ownershipProtectionByKey.has(key)) return false;
+      ownershipProtectionByKey.set(key, protection);
+      ownershipRowByKey.set(key, row);
+      return true;
+    };
+    const tableTouchesEstate = (table: string) =>
+      edges.some(
+        (edge) => edge.childTable === table || edge.parentTable === table,
+      );
+    const scanReachableTable = (table: string) =>
+      tableTouchesEstate(table)
+        ? scanTableRows(tx, table, resolveSpec)
+        : Promise.resolve([]);
+    const present = (value: string | null): value is string =>
+      value !== null && value !== "";
+    const testUserIds = new Set(classification.evidenceInput.testUserIds);
+
+    for (const account of await scanReachableTable("billing_credit_accounts")) {
+      const status = account.cols.status;
+      const accountType = account.cols.account_type;
+      const tenantId = account.cols.tenant_id;
+      const ownerUserId = account.cols.owner_user_id;
+      const accountKey = account.cols.account_key;
+      const quarantineReason = account.cols.quarantine_reason;
+      let protection: ProtectionKind | null;
+      if (
+        status === "active" &&
+        accountType === "company" &&
+        present(tenantId) &&
+        ownerUserId === null &&
+        accountKey === `company:${tenantId}` &&
+        quarantineReason === null
+      ) {
+        protection = "company_account";
+      } else if (
+        status === "quarantined" &&
+        accountType === null &&
+        tenantId === null &&
+        ownerUserId === null &&
+        accountKey === null &&
+        present(quarantineReason)
+      ) {
+        protection = "quarantined_account";
+      } else if (
+        status === "active" &&
+        accountType === "personal" &&
+        tenantId === null &&
+        present(ownerUserId) &&
+        accountKey === `personal:${ownerUserId}` &&
+        quarantineReason === null
+      ) {
+        // A personal account follows the existing obsolete-test estate semantics only when
+        // its actual owner is in this run's explicit test-user registry. Otherwise it is
+        // personal financial history and stays. This is evidence, never a name guess.
+        protection = testUserIds.has(ownerUserId) ? null : "personal_account";
+      } else {
+        // The schema declares row-shape CHECKs for the legal shapes, but the shipped 0163
+        // migration creates none — this unknown_account_shape branch is the runtime
+        // enforcement: unreadable ownership fails closed instead of inheriting the legacy
+        // parent class.
+        protection = "unknown_account_shape";
+      }
+      if (protection) protect(account, protection);
+    }
+
+    for (const mapping of await scanReachableTable(
+      "billing_customer_mappings",
+    )) {
+      // This table is the company's unique payment-Customer relationship, not a legacy
+      // test mapping. Every row is company financial history by table contract.
+      protect(mapping, "company_payment_mapping");
+    }
+
+    for (const attribution of await scanReachableTable(
+      "billing_call_attributions",
+    )) {
+      // tenant_id/workspace_id/principal_id are probed and are all NOT NULL under 0163's
+      // composite FKs: every row is a company call-accounting fact. Even a historical
+      // malformed row stays protected — malformed ownership cannot be evidence for deletion.
+      protect(attribution, "company_call_attribution");
+    }
+
+    // The shelter closure, walked UP the catalog's own edges from every ownership-protected
+    // row: a row whose deletion would cascade-delete, SET NULL-mutate or stand
+    // NO ACTION/RESTRICT-blocked by a protected row shelters it and is untouchable in
+    // turn. The SET NULL direction is what keeps a company-attributed hold's settlement
+    // ledger (and the grant its settlement pointer names) intact when the ledger is a
+    // candidate of its own — R2-F1 repro B. The walk is FK-precise: unrelated rows of the
+    // same legacy key stay cleanable.
+    const frontier: ProbeRow[] = [...ownershipRowByKey.values()].sort(
+      (a, b) => {
+        const ka = rowKey(a.table, a.recordId);
+        const kb = rowKey(b.table, b.recordId);
+        return ka < kb ? -1 : ka > kb ? 1 : 0;
+      },
+    );
+    while (frontier.length > 0) {
+      const row = frontier.pop();
+      if (!row) break;
+      for (const edge of edges) {
+        if (edge.childTable !== row.table) continue;
+        const value = row.cols[edge.childColumn];
+        if (value === null || value === undefined) continue;
+        for (const parentRow of await probeRows(
+          tx,
+          edge.parentTable,
+          edge.parentColumn,
+          value,
+          resolveSpec,
+        )) {
+          if (protect(parentRow, "protects_owned_record")) {
+            frontier.push(parentRow);
+          }
+        }
+      }
+    }
+
+    // R2B-F1 (REV-2b): the ownership verdict belongs to the customer key, not to the
+    // attribution chain. A protected 0163 row that names a customer key — the account rows
+    // above, or the company payment mapping — proves a current owner for that key; the
+    // funding rows written under it are that owner's financial history whether or not a
+    // billing_call_attributions row exists yet (AC18: company financial history stays
+    // intact). Keys with no protected 0163 row — the pure legacy estate — keep their
+    // funding rows fully cleanable. After the closure, so rows the FK-precise walk already
+    // keeps keep their protects_owned_record naming and only the unattributed rows are
+    // named by the new kind.
+    const ownedCustomerKeys = new Set<string>();
+    for (const row of ownershipRowByKey.values()) {
+      // Only a protected 0163 row proves a current owner for its key; rows the shelter
+      // closure pulled in protect themselves but do not widen the funding key set.
+      // Deliberately including QUARANTINED keys: their funding rows are fail-closed money
+      // of an unresolved owner (R2B-F1) — the round-3 relief proposal to exclude them was
+      // REJECTED, and the fix4 funding-survival arms pin this behavior. Comment-only.
+      if (
+        row.table !== "billing_credit_accounts" &&
+        row.table !== "billing_customer_mappings"
+      ) {
+        continue;
+      }
+      const customerKey = row.cols.external_customer_id;
+      if (customerKey) ownedCustomerKeys.add(customerKey);
+    }
+    // Empty-set guard plus key pushdown (OCR1-M1): with no owned keys — the pure legacy
+    // estate — the money tables are never touched, and with owned keys the probe fetches
+    // exactly the hit rows instead of scanning each table. scanReachableTable's estate
+    // gate is kept: a table outside the estate is never probed. Falsy keys never entered
+    // the set, and IN excludes NULL columns, so the hit set is byte-identical to the
+    // former full-scan-plus-filter. Serial per table: one drizzle connection.
+    if (ownedCustomerKeys.size > 0) {
+      for (const table of [
+        "credit_grants",
+        "credit_ledger",
+        "credit_reservations",
+      ] as const) {
+        if (!tableTouchesEstate(table)) continue;
+        for (const row of await probeRowsWhereIn(
+          tx,
+          table,
+          "external_customer_id",
+          [...ownedCustomerKeys],
+          resolveSpec,
+        )) {
+          protect(row, "funding_of_protected_key");
+        }
+      }
+    }
+
+    // A protected ledger line takes its per-dimension split rows with it by CASCADE — pin
+    // them explicitly so the manifest names the exact dimension identities that survive,
+    // not only the parent ledger.
+    const protectedLedgerIds = new Set(
+      [...ownershipRowByKey.values()]
+        .filter((row) => row.table === "credit_ledger")
+        .map((row) => row.recordId),
+    );
+    // The estate gate is a depth guard on top of the size check: if the catalog carries no
+    // edge into the dimension table at all, the pushdown has nothing to probe and must not
+    // reach for it. Behaviorally equivalent on every schema where the edge exists (it always
+    // has), defensive by construction.
+    if (
+      protectedLedgerIds.size > 0 &&
+      tableTouchesEstate("credit_settlement_dimension_breakdown")
+    ) {
+      for (const dimension of await probeRowsWhereIn(
+        tx,
+        "credit_settlement_dimension_breakdown",
+        "ledger_id",
+        [...protectedLedgerIds],
+        resolveSpec,
+      )) {
+        protect(dimension, "protects_owned_record");
+      }
+    }
+
     /** Live in-flight duty: a reserved or unknown-result hold (06.8), or an allocation of one. */
     const isLiveInFlight = (row: ProbeRow) => {
       if (row.table === "credit_reservations") {
@@ -701,9 +1417,33 @@ export async function evaluateCleanupRelations(
       return false;
     };
 
-    /** The closure a deletion of `root` takes with it, its SET NULL mutations and its blockers. */
+    /**
+     * The closure a deletion of `root` takes with it, its SET NULL mutations and its blockers.
+     * Memoized per root row (#679.5): within one snapshot the reach of a row is a function of
+     * the row alone, and the anchor pass and the per-candidate pass evaluate the same roots —
+     * the double computation the perf finding names. The per-row serial probes remain a known
+     * cost (batching is recorded as remaining debt in the run report).
+     */
+    const reachByKey = new Map<
+      string,
+      {
+        closure: ProbeRow[];
+        mutations: { row: ProbeRow; column: string }[];
+        blocked: ProbeRow[];
+      }
+    >();
     async function deletionReach(root: ProbeRow) {
-      const visited = new Set<string>([rowKey(root.table, root.recordId)]);
+      const rootKey = rowKey(root.table, root.recordId);
+      const cached = reachByKey.get(rootKey);
+      if (cached) return cached;
+      // Rows the deletion actually removes (the root and its cascade closure): a cascade-deleted
+      // row cannot block its own deletion, so the blocker pass keys on this set, not on the
+      // mutation pass's visited rows.
+      const deletedKeys = new Set<string>([rootKey]);
+      // Rows already found to block the deletion, tracked independently of the mutation pass:
+      // a row reached through both SET NULL and RESTRICT/NO ACTION is a blocker — "cannot be
+      // deleted" outranks "would be nulled", and the shared visitation state must not bury it.
+      const blockedKeys = new Set<string>();
       const closure: ProbeRow[] = [];
       // Pass 1: CASCADE edges, transitively — these rows vanish with the root.
       const frontier: ProbeRow[] = [root];
@@ -720,17 +1460,20 @@ export async function evaluateCleanupRelations(
             edge.childTable,
             edge.childColumn,
             parentValue,
+            resolveSpec,
           )) {
             const key = rowKey(childRow.table, childRow.recordId);
-            if (visited.has(key)) continue;
-            visited.add(key);
+            if (deletedKeys.has(key)) continue;
+            deletedKeys.add(key);
             closure.push(childRow);
             frontier.push(childRow);
           }
         }
       }
       // Pass 2: SET NULL edges from the deleted set — the referencing rows survive, their
-      // evidence pointer does not. Moot for rows the closure already deletes.
+      // evidence pointer does not. Moot for rows the closure already deletes; blocking
+      // precedence over mutations is enforced once, by the effectiveMutations filter after
+      // pass 3 has proven the blockers.
       const mutations: { row: ProbeRow; column: string }[] = [];
       for (const deleted of [root, ...closure]) {
         for (const edge of edges) {
@@ -746,15 +1489,16 @@ export async function evaluateCleanupRelations(
             edge.childTable,
             edge.childColumn,
             parentValue,
+            resolveSpec,
           )) {
             const key = rowKey(childRow.table, childRow.recordId);
-            if (visited.has(key)) continue;
-            visited.add(key);
+            if (deletedKeys.has(key)) continue;
             mutations.push({ row: childRow, column: edge.childColumn });
           }
         }
       }
       // Pass 3: RESTRICT / NO ACTION references — the deletion cannot happen while they stand.
+      // Independent of the mutation pass's visitation: overlap must land here.
       const blocked: ProbeRow[] = [];
       for (const deleted of [root, ...closure]) {
         for (const edge of edges) {
@@ -771,15 +1515,24 @@ export async function evaluateCleanupRelations(
             edge.childTable,
             edge.childColumn,
             parentValue,
+            resolveSpec,
           )) {
             const key = rowKey(childRow.table, childRow.recordId);
-            if (visited.has(key)) continue;
-            visited.add(key);
+            if (deletedKeys.has(key) || blockedKeys.has(key)) continue;
+            blockedKeys.add(key);
             blocked.push(childRow);
           }
         }
       }
-      return { closure, mutations, blocked };
+      // Blocking precedence: a row whose standing reference refuses the deletion is reported
+      // as blocked only — its SET NULL fate never happens.
+      const effectiveMutations = mutations.filter(
+        (mutation) =>
+          !blockedKeys.has(rowKey(mutation.row.table, mutation.row.recordId)),
+      );
+      const reach = { closure, mutations: effectiveMutations, blocked };
+      reachByKey.set(rootKey, reach);
+      return reach;
     }
 
     // --- Anchors first: the external associations whose local rows must survive until a
@@ -833,17 +1586,24 @@ export async function evaluateCleanupRelations(
       }
     }
 
-    // --- The mapping rule: a payer_accounts candidate whose key still keeps any protected
-    // record is that key's attribution evidence (Q29: a kept quarantine must stay
-    // explicable). Pulled before the cascade checks, so the kept mapping then protects
-    // itself against other candidates' cascades (a customer row cascading into it).
-    const mappingKeptIds = new Set<string>();
-    for (const candidate of candidates) {
-      if (candidate.table !== "payer_accounts") continue;
+    // --- The mapping rule: a payer_accounts candidate whose key still keeps any
+    // classification-kept or anchored record is that key's attribution evidence (Q29: a
+    // kept quarantine must stay explicable). Funding rows kept by the R2B-F1 shelter do
+    // NOT count here — the legacy mapping row stays cleanable and the key's surviving
+    // 0163 rows carry the attribution. Pulled before the cascade checks, so the kept
+    // mapping then protects itself against other candidates' cascades (a customer row
+    // cascading into it). One shared predicate derives the key and the kept-record set for
+    // BOTH the keep-decision and the verdict evidence — a candidate/row key mismatch must
+    // not let the two cite different attributions.
+    const keptRecordsForKey = (candidate: {
+      externalCustomerId: string | null;
+      recordId: string;
+      row: ProbeRow;
+    }) => {
       const key =
         candidate.externalCustomerId ?? candidate.row.cols.external_customer_id;
-      if (!key) continue;
-      const kept = classification.records.filter(
+      if (!key) return [];
+      return classification.records.filter(
         (record) =>
           record.externalCustomerId === key &&
           !(
@@ -853,12 +1613,20 @@ export async function evaluateCleanupRelations(
           (KEEP_CLASSES.has(record.class) ||
             anchorReasonByKey.has(rowKey(record.table, record.recordId))),
       );
-      if (kept.length > 0) {
+    };
+    const mappingKeptIds = new Set<string>();
+    for (const candidate of candidates) {
+      if (candidate.table !== "payer_accounts") continue;
+      if (keptRecordsForKey(candidate).length > 0) {
         mappingKeptIds.add(rowKey(candidate.table, candidate.recordId));
       }
     }
 
-    /** Why a touched row is untouchable — or null when it is itself cleanable. */
+    /**
+     * Why a touched row is untouchable — or null when it is itself cleanable. The anchor
+     * component is deliberately separate: a candidate that IS an anchor (or rides in one's
+     * subtree) is pulled by its anchor reason, never by naming itself as its own impact.
+     */
     const protectionOf = (row: ProbeRow): ProtectionKind | null => {
       const key = rowKey(row.table, row.recordId);
       if (anchorReasonByKey.has(key)) {
@@ -866,9 +1634,30 @@ export async function evaluateCleanupRelations(
           ? "external_subscription_anchor"
           : "external_payment_order_open";
       }
+      return protectionOfNonAnchor(row);
+    };
+    const protectionOfNonAnchor = (row: ProbeRow): ProtectionKind | null => {
+      const key = rowKey(row.table, row.recordId);
       if (mappingKeptIds.has(key)) return "attribution_kept";
-      if (KEEP_CLASSES.has(classOf(row)) || isLiveInFlight(row))
+      const ownershipProtection = ownershipProtectionByKey.get(key);
+      if (ownershipProtection) return ownershipProtection;
+      const rowClass = classOf(row);
+      // An unclassified row defaults to protected, exactly as the file contract states —
+      // wherever it lives. The ONLY tables with a legitimate explicit cleanable verdict for
+      // an unclassified row are the three the ownership pass adjudicates row by row (its
+      // null = the test-owned estate-semantics arm); every other uncovered row — an estate
+      // table that was empty at classify time, or a catalog-discovered table with no
+      // adjudication entry at all (OCR report bugs 2 and 3) — stays out of the deletion
+      // surface.
+      if (
+        (rowClass === "unclassified" &&
+          !OWNERSHIP_ADJUDICATED_TABLES.has(row.table)) ||
+        PROTECTED_OUTSIDE_ESTATE.has(row.table) ||
+        KEEP_CLASSES.has(rowClass) ||
+        isLiveInFlight(row)
+      ) {
         return "retained";
+      }
       return null;
     };
 
@@ -889,6 +1678,7 @@ export async function evaluateCleanupRelations(
           edge.parentTable,
           edge.parentColumn,
           value,
+          resolveSpec,
         )) {
           outgoingReferences.push({
             table: parentRow.table,
@@ -916,6 +1706,7 @@ export async function evaluateCleanupRelations(
           edge.childTable,
           edge.childColumn,
           value,
+          resolveSpec,
         )) {
           incomingReferences.push({
             table: childRow.table,
@@ -943,6 +1734,7 @@ export async function evaluateCleanupRelations(
             "billing_customers",
             "external_id",
             customerKey,
+            resolveSpec,
           );
           observedLinks.push({
             link: "usage_outbox.external_customer_id -> billing_customers.external_id (no FK: deletion does not travel this link)",
@@ -959,6 +1751,7 @@ export async function evaluateCleanupRelations(
             "credit_reservations",
             "id",
             reservationId,
+            resolveSpec,
           );
           observedLinks.push({
             link: "usage_outbox.reservation_id -> credit_reservations.id (no FK: deletion does not travel this link)",
@@ -977,6 +1770,7 @@ export async function evaluateCleanupRelations(
             "billing_subscriptions",
             "external_subscription_id",
             objectId,
+            resolveSpec,
           );
           observedLinks.push({
             link: `billing_webhook_events.object_id -> billing_subscriptions.external_subscription_id (no FK: ${subscriptions.length === 0 ? "resolves to nothing in the data" : "deletion does not travel this link"})`,
@@ -993,6 +1787,7 @@ export async function evaluateCleanupRelations(
           "credit_grants",
           "idempotency_key",
           `plan:${candidate.recordId}`,
+          resolveSpec,
         );
         if (grants.length > 0) {
           observedLinks.push({
@@ -1010,6 +1805,23 @@ export async function evaluateCleanupRelations(
         candidate.row,
       );
       const retainedImpact: RetainedImpact[] = [];
+      // The root walks the same protection rules as every touched row (minus its own anchor
+      // naming, which the verdict handles first): a candidate whose class, live state or
+      // ownership verdict says keep is pulled for itself, not only through its descendants.
+      // The attribution_kept kind is excluded — a kept mapping root is named by the more
+      // precise attribution_basis_of_kept_records verdict, not as its own cascade impact.
+      const rootProtectionValue = protectionOfNonAnchor(candidate.row);
+      const rootProtection =
+        rootProtectionValue === "attribution_kept" ? null : rootProtectionValue;
+      if (rootProtection) {
+        retainedImpact.push({
+          table: candidate.row.table,
+          recordId: candidate.row.recordId,
+          effect: "cascade_delete",
+          protection: rootProtection,
+          class: classOf(candidate.row),
+        });
+      }
       for (const row of closure) {
         const protection = protectionOf(row);
         if (protection) {
@@ -1025,6 +1837,18 @@ export async function evaluateCleanupRelations(
       for (const mutation of mutations) {
         const protection = protectionOf(mutation.row);
         if (protection) {
+          // Two SET NULL edges can reach the same child row; the impact list names it once
+          // per (row, effect) — defensive, no current schema triggers it.
+          if (
+            retainedImpact.some(
+              (existing) =>
+                existing.table === mutation.row.table &&
+                existing.recordId === mutation.row.recordId &&
+                existing.effect === "set_null_mutate",
+            )
+          ) {
+            continue;
+          }
           retainedImpact.push({
             table: mutation.row.table,
             recordId: mutation.row.recordId,
@@ -1076,7 +1900,13 @@ export async function evaluateCleanupRelations(
         removalReason = anchorReason;
         evidence = anchorEvidenceByKey.get(key) ?? anchorReason;
       } else if (retainedImpact.length > 0) {
-        removalReason = "cascade_impact_on_retained";
+        // A pull decided by standing RESTRICT/NO ACTION references names the blocked-removal
+        // reason — the byReason counter must reflect a reachable verdict, not sit at zero.
+        removalReason = retainedImpact.some(
+          (impact) => impact.effect === "delete_blocked",
+        )
+          ? "deletion_blocked_by_retained_reference"
+          : "cascade_impact_on_retained";
         evidence = `deleting ${candidate.table} ${candidate.recordId} would reach ${retainedImpact.length} protected row(s): ${retainedImpact
           .map(
             (impact) =>
@@ -1085,17 +1915,10 @@ export async function evaluateCleanupRelations(
           .join("; ")}`;
       } else if (mappingKeptIds.has(key)) {
         removalReason = "attribution_basis_of_kept_records";
-        const keptKey = candidate.row.cols.external_customer_id;
-        const kept = classification.records.filter(
-          (record) =>
-            record.externalCustomerId === keptKey &&
-            !(
-              record.table === "payer_accounts" &&
-              record.recordId === candidate.recordId
-            ) &&
-            (KEEP_CLASSES.has(record.class) ||
-              anchorReasonByKey.has(rowKey(record.table, record.recordId))),
-        );
+        const keptKey =
+          candidate.externalCustomerId ??
+          candidate.row.cols.external_customer_id;
+        const kept = keptRecordsForKey(candidate);
         evidence = `payer_accounts ${candidate.recordId} is the attribution evidence the kept records of key ${keptKey} cite (${kept
           .map((record) => `${record.table}/${record.recordId}`)
           .join(
@@ -1167,8 +1990,15 @@ export async function evaluateCleanupRelations(
     let outboxLinkMatched = 0;
     for (const key of candidateOutboxKeys) {
       if (
-        (await probeRows(tx, "billing_customers", "external_id", key)).length >
-        0
+        (
+          await probeRows(
+            tx,
+            "billing_customers",
+            "external_id",
+            key,
+            resolveSpec,
+          )
+        ).length > 0
       ) {
         outboxLinkMatched += 1;
       }
@@ -1322,6 +2152,7 @@ export async function evaluateCleanupRelations(
         externalOpenOrders: externalOpenOrders.length,
         fkEdges: fkEdges.length,
         declarationMismatches,
+        discoveredEdges,
       },
     };
   });

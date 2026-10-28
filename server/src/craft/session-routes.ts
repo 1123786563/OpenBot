@@ -21,14 +21,11 @@ const logger = getLogger("server");
 import type { CraftConfig } from "./config";
 import type { SessionFlowLocks } from "./locks";
 import type { CraftSessionManager } from "./manager";
-import { generateSessionName } from "./naming";
+import { generateSessionName, MAX_NAME_LENGTH } from "./naming";
 import type { SandboxGateway } from "./sandbox-gateway";
+import { assertNotScopeRefusal, sandboxScopeRefusalOf } from "./scope-refusal";
 import { sessionRuntimeStale } from "./skills";
-import {
-  deleteSnapshots,
-  restoreLatestSnapshot,
-  takeSnapshot,
-} from "./snapshot";
+import { restoreLatestSnapshot, takeSnapshot } from "./snapshot";
 import type { ObjectStore } from "./storage/object-store";
 import type { CraftSessionRow, CraftStore } from "./store";
 import type { TurnStateStore } from "./turn-state";
@@ -136,17 +133,48 @@ export function createSessionRoutes(
    * exists) and CASed back to active before it answers a detail fetch. A missing snapshot is not
    * an error — the sandbox is warm here, so the workspace is still intact and the next turn's
    * reconcile rebuilds whatever is missing.
+   *
+   * #618 (FR-F1): the scope refusal is the one wake failure that is not best-effort — but only
+   * the restore entrance surfaces it (`surfaceScopeRefusal`), because the detail read must stay
+   * available in a scopeless deployment (the turn face carries the refusal when the person
+   * actually acts); silently degrading the WAKE itself into "no snapshot" was the mask T2 saw.
+   *
+   * #618 (OCR#11): a SWALLOWED refusal must not CAS the row active either — "200 + active +
+   * nothing restored" was the same mask moved onto the detail face, and it stranded the restore
+   * entrance's 503 behind the warm fast path. The row honestly stays idle (detail shows
+   * sleeping), so POST restore — and the turn — keep their chance to surface the refusal.
+   *
+   * #618 (OCRFX-F4, info): non-refusal failures — the gateway's thrown restore 403 among
+   * them — still fold to false here (rebuild, CAS active), the pre-#618 route-face answer;
+   * OCR#5's honesty therefore lives at the gateway contract, not yet at the HTTP face.
+   * Whether the routes should carry that verdict too is a registered later ruling.
    */
   const wakeIfIdle = async (
     session: CraftSessionRow,
+    options: { surfaceScopeRefusal?: boolean } = {},
   ): Promise<CraftSessionRow> => {
     if (session.status !== "idle") return session;
     const botId = await deps.botIdFor(session.id);
     if (botId) {
-      await restoreLatestSnapshot(snapshotCtx(), {
+      let scopeRefused = false;
+      const restored = await restoreLatestSnapshot(snapshotCtx(), {
         botId,
         sessionId: session.id,
-      }).catch(() => false);
+      }).catch((error) => {
+        const refusal = sandboxScopeRefusalOf(error);
+        if (refusal && options.surfaceScopeRefusal) throw refusal;
+        if (refusal) scopeRefused = true;
+        return false;
+      });
+      if (scopeRefused) return session; // not woken: keep idle, keep the entrances reachable
+      // #618 (OCR r3 #4): a missing snapshot row (or an evicted blob) means
+      // restoreLatestSnapshot never dialed — the refusal had no chance to throw,
+      // and the surface entrance would CAS active behind a wake that ran nothing.
+      // Assert the scope with ZERO dials before the CAS, so the restore entrance's
+      // 503 does not depend on a snapshot existing.
+      if (options.surfaceScopeRefusal && !restored) {
+        deps.gateway.assertExecutionScope();
+      }
     }
     const updated = await deps.store.updateSession(session.id, {
       status: "active",
@@ -173,7 +201,13 @@ export function createSessionRoutes(
     const body = (await context.req.json().catch(() => ({}))) as {
       name?: unknown;
     };
-    const name = typeof body.name === "string" ? body.name : null;
+    // Same cap the auto-namer enforces: an unbounded name lands in every list
+    // response, every load.
+    let name = typeof body.name === "string" ? body.name.trim() : null;
+    if (name !== null && name.length === 0) name = null;
+    if (name !== null && name.length > MAX_NAME_LENGTH) {
+      name = `${name.slice(0, MAX_NAME_LENGTH - 3)}...`;
+    }
     try {
       const session = await deps.locks.withSessionCreationLock(
         actor.id,
@@ -191,6 +225,12 @@ export function createSessionRoutes(
         201,
       );
     } catch (error) {
+      // #618 (FR-F1): a scopeless deployment is an answerable, admin-fixable condition —
+      // the fixed sentence as 503, not the generic 500 T2 saw swallow it. Like the file
+      // face, no log line and no echoed value: the sentence IS the reason and names none.
+      // The guard's throw is the answer itself (#656 D2) — it outranks the 500 mask
+      // by construction.
+      assertNotScopeRefusal(error);
       logger.error(
         { error: error instanceof Error ? error.stack : String(error) },
         "[craft] session creation failed",
@@ -212,7 +252,12 @@ export function createSessionRoutes(
     const woken = await wakeIfIdle(session);
     return context.json(
       sessionResponse(woken, await skillsStaleFor(woken), {
-        session_loaded_in_sandbox: true,
+        // #618 (OCR r3 #1): derive from the wake result — a refused wake kept the
+        // row idle and loaded nothing into any sandbox, so a hardcoded true would
+        // contradict the status: "sleeping" right beside it. (No app/src consumer
+        // reads the flag today; create answers true after a real build, restore
+        // only answers after a wake that ran.)
+        session_loaded_in_sandbox: woken.status !== "idle",
       }),
     );
   });
@@ -228,11 +273,13 @@ export function createSessionRoutes(
     const body = (await context.req.json().catch(() => ({}))) as {
       name?: unknown;
     };
-    if (typeof body.name !== "string" || body.name.length === 0) {
+    if (typeof body.name !== "string" || body.name.trim().length === 0) {
       return context.json({ error: "name is required" }, 400);
     }
     const updated = await deps.store.updateSession(sessionId, {
-      name: body.name,
+      // Same cap and normalization as create; blank control characters never
+      // belong in a roster row.
+      name: body.name.replace(/\s+/g, " ").trim().slice(0, MAX_NAME_LENGTH),
     });
     const row = updated ?? session;
     return context.json(sessionResponse(row, await skillsStaleFor(row)));
@@ -287,13 +334,32 @@ export function createSessionRoutes(
   app.delete("/sessions/:sessionId", async (context) => {
     const actor = context.var.actor;
     const sessionId = context.req.param("sessionId");
-    const deleted = await deps.store.deleteSession(sessionId, actor.id);
+    const { deleted, snapshots } = await deps.store.deleteSession(
+      sessionId,
+      actor.id,
+    );
     if (!deleted) {
       return context.json({ error: "Session not found" }, 404);
     }
-    // Force-free the snapshot blobs before the row cascade drops their rows — the object store
-    // has no FK, so an orphaned archive is otherwise permanent.
-    await deleteSnapshots(snapshotCtx(), sessionId).catch(() => undefined);
+    // The rows came back from the delete itself: the object store has no FK, so each
+    // archive must be freed from a row we still hold — one the cascade had dropped
+    // first would be an orphan for good.
+    // The rows are gone; a blob that refuses to die here is an orphan no later
+    // code can reach — it must at least be findable in the logs.
+    await Promise.all(
+      snapshots.map((snapshot) =>
+        deps.objectStore.delete(snapshot.storagePath).catch((error) => {
+          getLogger("server").warn(
+            {
+              type: "craft-session-snapshot-orphan",
+              storagePath: snapshot.storagePath,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            "craft-session-snapshot-orphan",
+          );
+        }),
+      ),
+    );
     return context.body(null, 204);
   });
 
@@ -349,6 +415,11 @@ export function createSessionRoutes(
         201,
       );
     } catch (error) {
+      // #618 (FR-F1): same recognizer, same 503, before the generic 502 — the snapshot
+      // dial is an outbound request like any other and must not wear "Snapshot failed".
+      // The guard's throw is the 503 itself (#656 D2), so the ordering below is
+      // structural rather than remembered.
+      assertNotScopeRefusal(error);
       logger.error({ error }, "[craft] snapshot failed");
       return context.json({ error: "Snapshot failed" }, 502);
     }
@@ -364,12 +435,24 @@ export function createSessionRoutes(
     }
     // The real sleep/wake chain: an idle session replays its newest snapshot and returns
     // active; an already-active session is the warm fast path (nothing to restore).
-    const woken = await wakeIfIdle(session);
-    return context.json(
-      sessionResponse(woken, await skillsStaleFor(woken), {
-        session_loaded_in_sandbox: true,
-      }),
-    );
+    // #618 (FR-F1): the wake's scope refusal surfaces here — this IS the lifecycle
+    // entrance for waking, and "wake quietly degraded to a rebuild" is not an answer a
+    // person can act on. Everything else keeps the route's original no-catch shape.
+    try {
+      const woken = await wakeIfIdle(session, { surfaceScopeRefusal: true });
+      return context.json(
+        sessionResponse(woken, await skillsStaleFor(woken), {
+          session_loaded_in_sandbox: true,
+        }),
+      );
+    } catch (error) {
+      // The rethrow entrance keeps its shape (#656 D2 hard constraint): the
+      // guard answers a refusal as its own 503; everything else — including the
+      // wrap shapes the wake meets — passes through to the global error face,
+      // untouched, exactly as before.
+      assertNotScopeRefusal(error);
+      throw error;
+    }
   });
 
   // ── POST /sessions/:sessionId/skills/reload — the explicit refresh ─────────
@@ -408,6 +491,12 @@ export function createSessionRoutes(
       );
       return context.json({ skills_stale: skillsStale });
     } catch (error) {
+      // #618 (OCR#1): reload is a person's explicit action, and its file writes route
+      // through the gateway — a scopeless deployment answers the fixed 503 sentence
+      // BEFORE the generic 502, the same contract create/snapshot/restore already
+      // carry (the turn face carries the refusal when the person actually acts).
+      // The guard's throw makes the precedence structural (#656 D2).
+      assertNotScopeRefusal(error);
       logger.error({ error }, "[craft] skills reload failed");
       return context.json({ error: "Failed to reload session." }, 502);
     }
@@ -427,6 +516,11 @@ export function createSessionRoutes(
  * - active         → probe the gateway's opencode-serve: reachable = "running"; unreachable =
  *   "provisioning" — the closest onyx value, honest here because the gateway spawns a Bot's
  *   runtime lazily and reaps it idle, so "not answering yet" is a cold start, not a failure.
+ *   A scopeless deployment's refusal is the one probe failure that is NOT a cold start (#618
+ *   OCR#12): it answers "failed", the settled state the chip renders red. Note the order:
+ *   an IDLE row answers "sleeping" before any probe, so with OCR#11's honest-idle CAS the
+ *   chip shows "failed" only on active rows — an idle session's fail-closed display waits
+ *   for the turn/restore entrance to surface the sentence (OCRFX-F5, info).
  *   A session whose Bot is not even configured has no sandbox to speak of: null (onyx's
  *   "no sandbox record" answer).
  *
@@ -442,6 +536,18 @@ async function sandboxStatusFor(
   if (session.status === "idle") return "sleeping";
   if (session.status === "initializing") return "provisioning";
   if (!botId) return null;
-  const alive = await deps.gateway.healthCheck(botId).catch(() => false);
-  return alive ? "running" : "provisioning";
+  try {
+    const alive = await deps.gateway.healthCheck(botId);
+    return alive ? "running" : "provisioning";
+  } catch (error) {
+    // #618 (OCR#12): a missing scope is an admin-level permanent failure, not a cold
+    // start — the probe rethrows the displayable refusal, and the chip wears the
+    // settled red "failed" instead of a "provisioning" that can never clear.
+    // OCR r3 #2: recognize it the way every entrance's catch does — the bare
+    // instanceof only matched while healthCheck's chain propagated bare errors;
+    // any future wrap (bot context, an error enhancer) would silently fold back
+    // into the eternal "provisioning" this branch exists to kill.
+    if (sandboxScopeRefusalOf(error)) return "failed";
+    return "provisioning"; // a probe outage stays a cold start, the pre-#618 answer
+  }
 }

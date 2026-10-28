@@ -281,7 +281,35 @@ export function createOpenMuseReviewedActionService(deps: {
       completedAt: null,
       reconciliation: null,
     });
-    const result = await executor.execute(toProposal(claimed));
+    let result: Awaited<ReturnType<typeof executor.execute>>;
+    try {
+      result = await executor.execute(toProposal(claimed));
+    } catch (error) {
+      /*
+       * The executor contract is "never rejects" (the dial seam folds its own
+       * failures into a result), but that is a convention between this build's
+       * executors, not an interface guarantee — and a rejection here would
+       * strand the row `executing` until a reboot: decide/cancel answer 409
+       * forever, recoverAbandonedExecutions runs only at boot, and reconcile
+       * reads outcome_unknown alone. Settle the row the way boot recovery
+       * would (§6: uncertain, reconcilable) and still let the failure reach
+       * the caller. The fallback itself is best-effort: if the persistence
+       * seam is what failed, the original error is the one worth surfacing.
+       */
+      await rows
+        .claimTransition(claimed.id, "executing", "outcome_unknown", {
+          completedAt: now(),
+          ...(error instanceof Error ? { error: error.message } : {}),
+        })
+        .catch(() => {});
+      await rows
+        .updateAttempt(attemptId, {
+          outcome: "outcome_unknown",
+          completedAt: now(),
+        })
+        .catch(() => {});
+      throw error;
+    }
     const completedAt = now();
     const settled = await rows.claimTransition(
       claimed.id,

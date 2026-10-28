@@ -1,22 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
-import { createAsyncSubmitService } from "../src/billing/async-job-submit";
 import {
-  createAsyncTerminalSettleService,
-  type AsyncTerminalSettleOutcome,
-} from "../src/billing/async-terminal";
-import { createCreditReserveService } from "../src/billing/credit-reserve";
-import { createCreditWriter } from "../src/billing/credits-writer";
-import { createCredits } from "../src/billing/credits";
-import { createPayerAccount, payerKey } from "../src/billing/payer";
-import { readCapacity } from "../src/billing/capacity";
-import { resolveLockedReservationBasis } from "../src/billing/reserve-bound";
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import type { AuditEventInput } from "../src/audit";
-import {
-  GATEWAY_PRICE_SNAPSHOT_SOURCE,
-  createEnterpriseGatewayPriceSnapshotStore,
-} from "../src/gateway/price-snapshot";
+import { createAsyncSubmitService } from "../src/billing/async-job-submit";
+import { createAsyncTerminalSettleService } from "../src/billing/async-terminal";
+import { readCapacity } from "../src/billing/capacity";
+import { createCreditReserveService } from "../src/billing/credit-reserve";
+import { createCredits } from "../src/billing/credits";
+import { createCreditWriter } from "../src/billing/credits-writer";
+import { createPayerAccount, payerKey } from "../src/billing/payer";
+import { resolveLockedReservationBasis } from "../src/billing/reserve-bound";
 import { createDatabase } from "../src/db/client";
 import {
   accessGrants,
@@ -33,6 +31,12 @@ import {
 } from "../src/db/schema/credit-reservations";
 import { creditLedger } from "../src/db/schema/credits";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../src/gateway/catalog-sync";
+import {
+  createEnterpriseGatewayPriceSnapshotStore,
+  GATEWAY_PRICE_SNAPSHOT_SOURCE,
+  PRICE_DIMENSIONS,
+  type PriceDimension,
+} from "../src/gateway/price-snapshot";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -66,7 +70,7 @@ const reserveService = createCreditReserveService({
   catalogFreshnessWindowMs: 15 * 60 * 1000,
 });
 
-const V1_AMOUNTS = {
+const V1_AMOUNTS: Record<PriceDimension, string> = {
   input: "0.000001",
   output: "0.000002",
   reasoning: "0.000003",
@@ -77,13 +81,39 @@ const V1_AMOUNTS = {
   cache_read: "0.0000001",
   cache_write: "0.0000015",
   video: "0.01",
+  video_input: "0",
   surcharge_web_search: "0.001",
   surcharge_per_request: "0.0001",
   surcharge_tool_call: "0.002",
   surcharge_a2a_call: "0.003",
 };
 
+/**
+ * The price and usage literals below are hand-written copies of the FULL dimension
+ * vocabulary (`V1_AMOUNTS`, `TERMINAL_USAGE`): a complete basis prices every dimension, wire
+ * or not. Check the copy against `PRICE_DIMENSIONS` in both directions — missing and
+ * unexpected named — so a vocabulary expansion cannot leave this suite's constants behind
+ * (R2-F1), silently turning a complete basis into an incomplete one.
+ */
+function assertFullVocabularyCoverage(
+  covered: readonly string[],
+  label: string,
+): void {
+  const coveredSet = new Set<string>(covered);
+  const expected = new Set<string>(PRICE_DIMENSIONS);
+  const missing = [...expected].filter((dim) => !coveredSet.has(dim)).sort();
+  const unexpected = [...coveredSet].filter((dim) => !expected.has(dim)).sort();
+  if (missing.length > 0 || unexpected.length > 0) {
+    throw new Error(
+      `${label} drifted from price-snapshot.ts's PRICE_DIMENSIONS: ` +
+        `missing [${missing.join(", ")}], ` +
+        `unexpected [${unexpected.join(", ")}]`,
+    );
+  }
+}
+
 function dimsOf(amounts: Record<string, string>) {
+  assertFullVocabularyCoverage(Object.keys(amounts), "async fixture amounts");
   const dims: Record<string, { status: "known"; amount: string }> = {};
   for (const [dimension, amount] of Object.entries(amounts)) {
     dims[dimension] = { status: "known", amount };
@@ -216,7 +246,8 @@ async function seedJobWorld(certifiedUnits: number): Promise<World> {
     rateVersion: 0,
     entries: [{ quantities: { video: certifiedUnits } }],
   });
-  if (outcome.status !== "submitted") throw new Error(`seed submit failed: ${JSON.stringify(outcome)}`);
+  if (outcome.status !== "submitted")
+    throw new Error(`seed submit failed: ${JSON.stringify(outcome)}`);
 
   return {
     userId,
@@ -243,7 +274,7 @@ function makeAuditSpy() {
   };
 }
 
-const TERMINAL_USAGE = {
+const TERMINAL_USAGE: Record<PriceDimension, number> = {
   input: 0,
   output: 0,
   reasoning: 0,
@@ -259,7 +290,7 @@ const TERMINAL_USAGE = {
   surcharge_per_request: 0,
   surcharge_tool_call: 0,
   surcharge_a2a_call: 0,
-} as const;
+};
 
 function terminalOf(
   jobId: string,
@@ -275,6 +306,10 @@ function terminalOf(
     evidence: { kind: "provider_usage_report" };
   };
 } {
+  assertFullVocabularyCoverage(
+    Object.keys(TERMINAL_USAGE),
+    "async TERMINAL_USAGE",
+  );
   return {
     jobId,
     terminal: {
@@ -300,12 +335,15 @@ afterAll(async () => {
   await database.execute(
     sql`DELETE FROM async_settle_triggers WHERE job_id IN (SELECT job_id FROM async_jobs WHERE grant_id LIKE ${`${prefix}%`})`,
   );
-  await database
-    .delete(asyncJobs)
-    .where(like(asyncJobs.grantId, `${prefix}%`));
+  await database.delete(asyncJobs).where(like(asyncJobs.grantId, `${prefix}%`));
   await database
     .delete(creditReservations)
-    .where(like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`));
+    .where(
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
+    );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
@@ -516,6 +554,7 @@ describe("17.6 AC-4 — the consumption entry names its job", () => {
     const entry = page.entries[0];
     expect(entry.requestId).toBe(world.jobId);
     expect(entry.lineDetail).toMatchObject({
+      kind: "async_job",
       capability: "video",
       asyncJob: {
         jobId: world.jobId,

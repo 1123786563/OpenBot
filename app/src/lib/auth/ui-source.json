@@ -61,9 +61,7 @@
     "AcceptInvitationCard": {
       "reuse": "inject-openbot-adapter",
       "upstream": "src/components/organization/accept-invitation-card.tsx",
-      "xClassDependencies": [
-        "/organization/get-invitation"
-      ],
+      "xClassDependencies": ["/organization/get-invitation"],
       "note": "Invitation landing; minimal invitation info via the OpenBot invitations adapter."
     },
     "CreateOrganizationDialog": {
@@ -107,9 +105,7 @@
     "OrganizationRefetcher": {
       "reuse": "not-reused",
       "upstream": "src/lib/organization-refetcher.tsx",
-      "xClassDependencies": [
-        "/organization/list"
-      ],
+      "xClassDependencies": ["/organization/list"],
       "note": "Refetch follows native organization hooks; OpenBot adapters own refetch semantics."
     },
     "OrganizationSettingsCards": {
@@ -125,9 +121,7 @@
     "OrganizationSwitcher": {
       "reuse": "inject-openbot-adapter",
       "upstream": "src/components/organization/organization-switcher.tsx",
-      "xClassDependencies": [
-        "/organization/list"
-      ],
+      "xClassDependencies": ["/organization/list"],
       "note": "Built-in discovery reads /organization/list; scope comes from OpenBot workspace-scope."
     },
     "OrganizationView": {
@@ -138,9 +132,7 @@
     "OrganizationsCard": {
       "reuse": "inject-openbot-adapter",
       "upstream": "src/components/organization/organizations-card.tsx",
-      "xClassDependencies": [
-        "/organization/list"
-      ],
+      "xClassDependencies": ["/organization/list"],
       "note": "Built-in listing reads /organization/list; adapted to workspace-scope."
     },
     "UserInvitationsCard": {
@@ -155,9 +147,7 @@
     "useCurrentOrganization": {
       "reuse": "not-reused",
       "upstream": "src/hooks/use-current-organization.ts",
-      "xClassDependencies": [
-        "/organization/list"
-      ],
+      "xClassDependencies": ["/organization/list"],
       "note": "Active organization is only a preference; business scope comes from verified ID pairs, never a native read."
     }
   },

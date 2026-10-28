@@ -58,7 +58,21 @@ export async function steeringOf(
     case "memory":
       return { kind: "actor", outside: false };
     case "responsibility": {
-      const sources = await sourcesOf(initiator.id);
+      /*
+       * THE CONTRACT IS REFUSE, NOT THROW. A sources read that fails is this
+       * file's "cannot tell who is steering" case: it lands the explicit
+       * refusal (and files no request) instead of an exception every caller
+       * would have to remember to keep on the refused path.
+       */
+      let sources: readonly string[];
+      try {
+        sources = await sourcesOf(initiator.id);
+      } catch {
+        return {
+          kind: "refuse",
+          why: "the sources of a responsibility run could not be read",
+        };
+      }
       return {
         kind: "actor",
         outside: sources.some((source) => !OWNER_STEERED_SOURCES.has(source)),
@@ -107,10 +121,13 @@ export function admits(
   >;
   if (approval.audience === "team") return true;
   if (approval.audience === "owner") return false;
+  // Compared trimmed on both sides, matching asSharedUseApproval's parse:
+  // an actor value with stray whitespace must not miss an approved member.
   return approval.members.some(
     (member) =>
-      (member.kind === "user" && member.value === actor.actorId) ||
-      (member.kind === "group" && actor.groups.includes(member.value)),
+      (member.kind === "user" && member.value === actor.actorId.trim()) ||
+      (member.kind === "group" &&
+        actor.groups.some((group) => group.trim() === member.value)),
   );
 }
 
@@ -138,9 +155,11 @@ export function exposureOf(bot: BotFacts): SharedUseApproval {
   }
   const members: ApprovalMember[] = [
     ...(bot.publication?.members ?? []),
+    // Trimmed like asSharedUseApproval trims its parse side, so the approval
+    // written from this shape compares equal to the actor values later.
     ...bot.assignments.map((group) => ({
       kind: "group" as const,
-      value: group,
+      value: group.trim(),
     })),
   ];
   if (members.length > 0) return { audience: "people", outsideInput, members };

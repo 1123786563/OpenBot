@@ -64,7 +64,15 @@ export const responsibilityEventSchema = z
   })
   .strict()
   .superRefine((event, context) => {
-    if (JSON.stringify(event.payload).length > 32_768)
+    // An unserializable payload (circular, BigInt, from an internal constructor rather than
+    // JSON) is invalid input, not a crash out of safeParse.
+    let payloadSize = Number.POSITIVE_INFINITY;
+    try {
+      payloadSize = JSON.stringify(event.payload).length;
+    } catch {
+      // falls through to the size refusal below
+    }
+    if (payloadSize > 32_768)
       context.addIssue({
         code: "custom",
         message: "Event payload exceeds 32 KiB.",
@@ -173,7 +181,8 @@ export type ResponsibilityEventResult = {
 };
 export type ResponsibilityStore = {
   create(ownerUserId: string, input: unknown): Promise<Responsibility>;
-  list(ownerUserId: string): Promise<Responsibility[]>;
+  /** `agentId` narrows in the SQL, so one Bot's page is not the owner's recent-100. */
+  list(ownerUserId: string, agentId?: string): Promise<Responsibility[]>;
   get(ownerUserId: string, id: string): Promise<Responsibility>;
   update(
     ownerUserId: string,

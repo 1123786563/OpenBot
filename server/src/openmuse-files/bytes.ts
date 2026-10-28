@@ -42,6 +42,12 @@ function localPath(root: string, key: string): string {
   if (isAbsolute(key)) {
     throw new Error(`File key must be relative: ${key}`);
   }
+  // Backslash and NUL are refused before the split below: on Windows join
+  // treats "\\" as a separator, so a `..\x`-shaped key would escape the
+  // segment check entirely.
+  if (key.includes("\\") || key.includes("\0")) {
+    throw new Error(`File key contains illegal characters: ${key}`);
+  }
   const segments = key.split("/").filter((s) => s.length > 0 && s !== ".");
   if (segments.some((s) => s === "..")) {
     throw new Error(`File key may not traverse upward: ${key}`);

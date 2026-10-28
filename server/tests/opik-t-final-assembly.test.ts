@@ -23,15 +23,17 @@
 // Integration facts run against the dedicated Opik test database; the wiring
 // guards read the real assembly source the way opik-execution-wiring.test.ts
 // does, so the seam BETWEEN the modules and the boot file cannot silently rot.
-import { describe, expect, test } from "../../tests/support/bun-test-compat";
+
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { AbstractAgent, BaseEvent } from "@ag-ui/client";
 import { LLMock } from "@copilotkit/aimock";
 import { eq } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { Observable } from "rxjs";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { createActorAgentResolver } from "../src/agents/agent-resolver";
 import type { AgentActor, AgentProfile } from "../src/agents/profile-types";
 import { createRunBindingStore } from "../src/ai-observability/bindings";
@@ -59,8 +61,6 @@ import {
 } from "../src/observation-run-scope";
 import { opikTestDatabase } from "./support/opik-test-db";
 
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 const herePath = fileURLToPath(import.meta.url);
 const hereDir = dirname(herePath);
 
@@ -500,7 +500,13 @@ describe("T-final M1: the ambient run-scope seam", () => {
 
 describe("T-final M1: the boot assembly reads the ambient scope", () => {
   const indexSource = readFileSync(
-    join(hereDir, "..", "src", "index.ts"),
+    join(hereDir, "..", "src", "assembly", "runtime.ts"),
+    "utf8",
+  );
+  // MOD17 moved the fact adapters into the M11 public facade; the captured-
+  // scope budget below is asserted where those adapters now live.
+  const publicSource = readFileSync(
+    join(hereDir, "..", "src", "ai-observability", "public.ts"),
     "utf8",
   );
 
@@ -511,7 +517,7 @@ describe("T-final M1: the boot assembly reads the ambient scope", () => {
     // model span from doStream entry (R2-58), the tool step from cell open
     // (R3-39: the finalize path settles outside the ambient context).
     expect(
-      indexSource.match(/scope: fact\.scope as ObservationScope/g)?.length,
+      publicSource.match(/scope: fact\.scope as ObservationScope/g)?.length,
     ).toBe(2);
   });
 
@@ -544,7 +550,7 @@ describe("T-final M1: the boot assembly reads the ambient scope", () => {
     expect(firstTopLevelAwait).toBeGreaterThan(0);
     for (const declaration of [
       "const opikBootConfig = opikConfigFromEnv(process.env);",
-      "const aiObservabilityCanManageBot: BotManagementCheck = async (",
+      "const aiObservabilityCanObserveBot: BotManagementCheck = async (",
       "const aiObservabilityScopeEpoch = createAgentProfileScopeEpoch(database);",
       "const aiObservabilityRunScope = createBuiltinRunScopeResolver({",
     ]) {
@@ -724,7 +730,7 @@ describe("T-final M1: createActorAgentResolver threads the run scope (behavior)"
     // production createActorAgentResolver call. The forwarding itself is
     // pinned by the behavior tests above, not by this text.
     const assemblySource = readFileSync(
-      join(hereDir, "..", "src", "index.ts"),
+      join(hereDir, "..", "src", "assembly", "runtime.ts"),
       "utf8",
     );
     expect(assemblySource).toMatch(
@@ -819,7 +825,7 @@ describe("T-final M2: the contract manifest is a server asset with a boot voice"
 
 describe("T-final L3: one billing gate, two consumers", () => {
   const indexSource = readFileSync(
-    join(hereDir, "..", "src", "index.ts"),
+    join(hereDir, "..", "src", "assembly", "runtime.ts"),
     "utf8",
   );
 

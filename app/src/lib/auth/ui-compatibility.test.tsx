@@ -3,7 +3,6 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, afterEach, beforeAll, expect, test } from "../../../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import {
@@ -15,8 +14,15 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { cleanup, render, waitFor } from "@testing-library/react";
-import { useContext } from "react";
 import type { ComponentType, ReactNode } from "react";
+import { useContext } from "react";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../../../tests/support/e2e-compat";
 
 /*
  * T01.08 (#520): the fixed Better Auth UI source and the existing React providers.

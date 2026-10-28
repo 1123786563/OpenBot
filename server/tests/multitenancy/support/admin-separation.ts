@@ -18,23 +18,38 @@ export interface AdminSeparationFixture {
   readonly scope: WorkspaceScopeFixture;
   /** A verified operator connection for management-audit writes. */
   readonly operator: Awaited<ReturnType<typeof verifyOperatorDatabase>>;
-  /** 暴露隔离夹具的受限查询（审计读回）。 */
+  /** 释放夹具资源：清扫行 + 倒序关池 + 隔离夹具 dispose（失败聚合上报）。 */
   readonly dispose: () => Promise<void>;
 }
 
 export async function createAdminSeparationFixture(): Promise<AdminSeparationFixture> {
   const scope = await createWorkspaceScopeFixture();
-  const candidate = createDatabase(
-    enterpriseRuntimeDatabaseUrlFrom("operator"),
-    { max: 1 },
-  );
+  let candidate: ReturnType<typeof createDatabase>;
   let operator: Awaited<ReturnType<typeof verifyOperatorDatabase>>;
   try {
+    // Inside the try: a missing/malformed operator URL must take the same
+    // cleanup path as a failed verification instead of leaking the scope.
+    candidate = createDatabase(enterpriseRuntimeDatabaseUrlFrom("operator"), {
+      max: 1,
+    });
     operator = await verifyOperatorDatabase(candidate);
   } catch (error) {
-    await candidate.$client.close();
-    await scope.dispose();
-    throw error;
+    // Independent cleanup steps: a close failure must neither skip
+    // scope.dispose() nor mask the verification error that caused them.
+    const failures: unknown[] = [error];
+    try {
+      await candidate.$client.close();
+    } catch (closeError) {
+      failures.push(closeError);
+    }
+    try {
+      await scope.dispose();
+    } catch (disposeError) {
+      failures.push(disposeError);
+    }
+    throw failures.length > 1
+      ? new AggregateError(failures, "MT075 fixture setup failed.")
+      : error;
   }
   let disposed = false;
   return {
