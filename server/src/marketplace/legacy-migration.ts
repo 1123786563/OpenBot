@@ -383,7 +383,13 @@ export function classifySkillRow(
 }
 
 export function classifyGrant(
-  row: { kind: string; ref: string; agentId: string; grantedBy: string | null },
+  row: {
+    kind: string;
+    ref: string;
+    agentId: string;
+    grantedBy: string | null;
+    agentMissing?: boolean;
+  },
   ownership: OwnershipEvidence | null,
   skillEvidence: ReadonlyMap<string, SkillRowRecord>,
   builtin: BuiltinFacts,
@@ -394,6 +400,10 @@ export function classifyGrant(
   else if (!builtin.skills.has(row.ref)) unresolved = "EXPERT_UNKNOWN";
   else if (evidence === undefined) unresolved = "SKILL_ROW_MISSING";
   else if (!evidence.matchesBuiltin) unresolved = "PRIVATE_EDIT";
+  // OCR-fix-H (R7-H2): a soft-deleted Bot's grant migrates nowhere — the
+  // apply channel's readBotInScope refuses a non-active Bot, so mapping it
+  // only produced a half-finished apply (provenance landed, grant threw).
+  else if (row.agentMissing) unresolved = "AGENT_MISSING";
   else if (ownership === null) unresolved = "SCOPE_UNPROVEN";
   return {
     kind: "skillGrant",
@@ -478,6 +488,7 @@ export async function readLegacyInventory(
       agentName: agents.name,
       profileTitle: agentProfiles.title,
       profileRoleDescription: agentProfiles.roleDescription,
+      profileDeletedAt: agentProfiles.deletedAt,
       configuration: agents.configuration,
     })
     .from(expertInstalls)
@@ -519,6 +530,7 @@ export async function readLegacyInventory(
       workspaceId: enterpriseBotOwnership.workspaceId,
       agentId: enterpriseBotOwnership.agentId,
       ownerPrincipalId: enterpriseBotOwnership.ownerPrincipalId,
+      status: enterpriseBotOwnership.status,
     })
     .from(enterpriseBotOwnership);
 
@@ -534,15 +546,27 @@ export async function readLegacyInventory(
     })
     .from(enterprisePluginInstalls);
 
+  // OCR-fix-H (R7-H2): a soft-deleted roster row is NOT ownership
+  // evidence — roster delete ≠ marketplace uninstall. Only active rows
+  // prove scope; a deleted row marks the Bot gone, so its experts/grants
+  // classify AGENT_MISSING (never mapped, never written) instead of
+  // resolving and dying mid-apply at the grant step.
+  const deletedBotIds = new Set(
+    ownershipRows
+      .filter((row) => row.status !== "active")
+      .map((row) => row.agentId),
+  );
   const ownershipByAgent = new Map(
-    ownershipRows.map((row) => [
-      row.agentId,
-      {
-        tenantId: row.tenantId,
-        workspaceId: row.workspaceId,
-        ownerPrincipalId: row.ownerPrincipalId,
-      },
-    ]),
+    ownershipRows
+      .filter((row) => row.status === "active")
+      .map((row) => [
+        row.agentId,
+        {
+          tenantId: row.tenantId,
+          workspaceId: row.workspaceId,
+          ownerPrincipalId: row.ownerPrincipalId,
+        },
+      ]),
   );
   const skillEvidence = new Map(
     skillRowsRaw.map((row) => [row.slug, classifySkillRow(row, builtin)]),
@@ -576,7 +600,14 @@ export async function readLegacyInventory(
           profileTitle: row.profileTitle,
           profileRoleDescription: row.profileRoleDescription,
           systemPrompt: systemPromptOf(row.configuration),
-          agentMissing: row.agentName === null,
+          // OCR-fix-H (R7-H2): two soft-delete filters, one semantics — the
+          // enterprise roster row (deletedBotIds) and the legacy profile
+          // tombstone (deleted_at) both mean "this Bot no longer exists";
+          // the agents-row absence was already the third face of that fact.
+          agentMissing:
+            row.agentName === null ||
+            row.profileDeletedAt !== null ||
+            deletedBotIds.has(row.agentId),
         },
         ownershipByAgent.get(row.agentId) ?? null,
         builtin,
@@ -585,7 +616,13 @@ export async function readLegacyInventory(
     skillRows: [...skillEvidence.values()],
     grants: grantRows.map((row) =>
       classifyGrant(
-        row,
+        {
+          ...row,
+          // Grants never consult the legacy profile; the roster row's
+          // status is their landing check (setBotGrant reads it via
+          // readBotInScope), so the roster filter is the one that applies.
+          agentMissing: deletedBotIds.has(row.agentId),
+        },
         ownershipByAgent.get(row.agentId) ?? null,
         skillEvidence,
         builtin,

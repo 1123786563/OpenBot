@@ -281,6 +281,10 @@ let unownedAgentId: string;
 let managedAgentId: string;
 /** OCR-fix-F2 H-C: hand-edited systemPrompt WITH ownership (stays legacy). */
 let promptEditedAgentId: string;
+/** OCR-fix-H (R7-H2): pristine Bot whose roster row is soft-deleted (status='deleted'). */
+let rosterDeletedAgentId: string;
+/** OCR-fix-H (R7-H2): pristine Bot, ACTIVE roster row, legacy profile tombstoned. */
+let profileDeletedAgentId: string;
 
 async function countRows(sqlText: string): Promise<number> {
   const rows = (await setup.$client.unsafe(
@@ -376,6 +380,29 @@ beforeAll(async () => {
   await seedOwnership(editedAgentId);
   await seedOwnership(managedAgentId);
   await seedOwnership(promptEditedAgentId);
+  // OCR-fix-H (R7-H2) stock: the two faces of "the Bot is soft-deleted" — a
+  // roster row tombstoned by the roster-delete flow, and a legacy profile
+  // tombstone over an otherwise active roster row. Both must classify
+  // AGENT_MISSING (never mapped), or apply would write provenance ahead of
+  // the grant step's RESOURCE_NOT_FOUND refusal: a half-finished apply.
+  rosterDeletedAgentId = await seedLegacyBot({
+    slug: "product-manager",
+    ownerUserId: legacyUserId,
+  });
+  profileDeletedAgentId = await seedLegacyBot({
+    slug: "legal-advisor",
+    ownerUserId: legacyUserId,
+  });
+  await seedOwnership(rosterDeletedAgentId);
+  await seedOwnership(profileDeletedAgentId);
+  await setup.$client.unsafe(
+    `update enterprise_bot_ownership set status = 'deleted' where agent_id = $1`,
+    [rosterDeletedAgentId],
+  );
+  await setup.$client.unsafe(
+    `update agent_profiles set deleted_at = now() where agent_id = $1`,
+    [profileDeletedAgentId],
+  );
   // unownedAgentId deliberately gets NO ownership row.
   // Slug-held stock from before PKG11 (F-T12-1): a deployment-wide row on
   // the pristine skill and another company member's private row on the
@@ -394,6 +421,9 @@ beforeAll(async () => {
   await seedLegacyGrant(PRISTINE_SKILL!.slug, pristineAgentId);
   await seedLegacyGrant(EDITED_SKILL!.slug, pristineAgentId);
   await seedLegacyGrant("chart-reading", unownedAgentId);
+  // OCR-fix-H (R7-H2): a grant on a soft-deleted Bot — the exact record the
+  // pre-fix apply tried to land (and died on) after provenance was written.
+  await seedLegacyGrant("chart-reading", rosterDeletedAgentId);
 });
 
 afterAll(async () => {
@@ -545,6 +575,41 @@ describeDb("PKG11 legacy migration drill (real restricted roles)", () => {
     expect(manifest.counts.mappedExpertInstalls).toBe(2);
     expect(manifest.counts.mappedGrants).toBe(1);
     expect(manifest.manifestDigest).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  // OCR-fix-H (R7-H2): soft-deleted Bots are not ownership evidence. A
+  // roster-deleted row and a legacy profile tombstone both classify
+  // AGENT_MISSING with no mapping; the green path's mapped counts are
+  // untouched (the roster-deleted Bot's grant was resolvable pre-fix — it
+  // was exactly the record that made apply half-finished).
+  test("OCR-fix-H H2: soft-deleted bots classify AGENT_MISSING and never map", async () => {
+    const builtin = builtinFacts(await builtinIndexEntry(INDEX_PATH));
+    const manifest = buildManifest(
+      builtin,
+      await readLegacyInventory(setup, setup, builtin),
+    );
+
+    const rosterDeleted = manifest.sources.expertInstalls.find(
+      (r) => r.agentId === rosterDeletedAgentId,
+    );
+    expect(rosterDeleted?.unresolved).toBe("AGENT_MISSING");
+    expect(rosterDeleted?.mapping).toBeNull();
+    expect(rosterDeleted?.ownership).toBeNull();
+
+    const profileDeleted = manifest.sources.expertInstalls.find(
+      (r) => r.agentId === profileDeletedAgentId,
+    );
+    expect(profileDeleted?.unresolved).toBe("AGENT_MISSING");
+    expect(profileDeleted?.mapping).toBeNull();
+
+    const deletedGrant = manifest.sources.grants.find(
+      (r) => r.agentId === rosterDeletedAgentId && r.ref === "chart-reading",
+    );
+    expect(deletedGrant?.unresolved).toBe("AGENT_MISSING");
+    expect(deletedGrant?.mapping).toBeNull();
+
+    expect(manifest.counts.mappedExpertInstalls).toBe(2);
+    expect(manifest.counts.mappedGrants).toBe(1);
   });
 
   test("apply refuses a source that changed since the dry-run (CAS)", async () => {
@@ -879,6 +944,51 @@ describeDb("PKG11 legacy migration drill (real restricted roles)", () => {
     expect(outcome.provenanceWritten).toBe(0);
     expect(outcome.botsGranted).toBe(0);
     expect(await packageInstallCount()).toBe(1);
+  });
+
+  // OCR-fix-H (R7-H2): the apply must never touch a soft-deleted Bot — pre-fix
+  // its grant record resolved (the roster row existed), step 7 wrote
+  // provenance, and step 8's setBotGrant died on RESOURCE_NOT_FOUND
+  // (readBotInScope refuses non-active Bots): provenance landed, grant did
+  // not, apply aborted. Post-fix the records classify AGENT_MISSING, stay
+  // out of the apply set entirely, and the run completes untouched.
+  test("OCR-fix-H H2: apply skips soft-deleted bots — no provenance, no grant, no half-apply", async () => {
+    const builtin = builtinFacts(await builtinIndexEntry(INDEX_PATH));
+    const manifest = buildManifest(
+      builtin,
+      await readLegacyInventory(setup, setup, builtin),
+    );
+    const path = `/tmp/pkg11-h2-${randomUUID()}.json`;
+    await writeFile(path, JSON.stringify(manifest));
+    const outcome: ApplyOutcome = await runApply({
+      manifestPath: path,
+      expectedDigest: manifest.manifestDigest,
+      scope: { tenantId: tenantA, workspaceId: teamA1 },
+      actorUserId: (
+        fixture.base.isolation.identities["a1-member"] as { userId: string }
+      ).userId,
+      indexPath: INDEX_PATH,
+      artifactRoot: ARTIFACT_ROOT,
+      urls: {
+        legacyUrl: urls.setup,
+        setupUrl: urls.setup,
+        directoryUrl: urls.directory,
+        dataUrl: urls.data,
+        operatorUrl: urls.operator,
+      },
+    });
+    expect(outcome.refused).toBe(false);
+    // Zero writes for both soft-deleted faces: no provenance, no grants.
+    expect(
+      await countRows(
+        `from enterprise_package_experts where agent_id = '${rosterDeletedAgentId}' or agent_id = '${profileDeletedAgentId}'`,
+      ),
+    ).toBe(0);
+    expect(
+      await countRows(
+        `from enterprise_package_grants where bot_id = '${rosterDeletedAgentId}'`,
+      ),
+    ).toBe(0);
   });
 
   test("shadow read records the same-scope diff without writing", async () => {
