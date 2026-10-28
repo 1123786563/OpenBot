@@ -137,12 +137,15 @@ function htmlToText(html: string): string {
 
 /** Provider time as epoch ms: a Gmail-style ms number, or an ISO string. */
 function receivedAtMs(value: unknown): number {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const parsed = Date.parse(value);
-    if (!Number.isNaN(parsed)) return parsed;
-  }
-  return 0;
+  const parsed =
+    typeof value === "number" && Number.isFinite(value)
+      ? value
+      : typeof value === "string"
+        ? Date.parse(value)
+        : Number.NaN;
+  // Outside ECMAScript's date range (±8.64e15 ms) `new Date(...)` is Invalid
+  // and its toISOString throws — an unrepresentable stamp is unparseable.
+  return Number.isFinite(parsed) && Math.abs(parsed) <= 8.64e15 ? parsed : 0;
 }
 
 /** The list sort: newest receivedAt first, then id descending (§4). */
@@ -186,6 +189,10 @@ export function mapThreadMessages(
 ): OpenMuseMailMessage[] {
   return sortOldestFirst(
     thread.messages.flatMap((row, index) => {
+      // M29's own drop rule, applied before the spread: `{...null}` is an
+      // object, so a non-object row must not reach the id derivation — it
+      // would otherwise come back as a fieldless phantom message.
+      if (row === null || typeof row !== "object") return [];
       const mapped = mapProviderMessage({
         ...row,
         id:

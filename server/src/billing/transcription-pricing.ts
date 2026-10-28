@@ -223,16 +223,13 @@ export function assessTranscription(input: {
       input.dims[dimension].amount === "0",
   );
   const quantities = Object.fromEntries(
-    PRICE_DIMENSIONS.map((dimension) => [
-      dimension,
-      dimension === "audio_input"
-        ? inputSeconds
-        : dimension === "output"
-          ? input.outputTokenCap
-          : dimension === "surcharge_per_request"
-            ? 1
-            : 0,
-    ]),
+    PRICE_DIMENSIONS.map((dimension) => {
+      let quantity = 0;
+      if (dimension === "audio_input") quantity = inputSeconds;
+      else if (dimension === "output") quantity = input.outputTokenCap;
+      else if (dimension === "surcharge_per_request") quantity = 1;
+      return [dimension, quantity];
+    }),
   ) as ReservationBoundQuantities;
 
   return {

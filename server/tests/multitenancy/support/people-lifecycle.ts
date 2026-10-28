@@ -204,8 +204,15 @@ export async function createPeopleLifecycleFixture(): Promise<PeopleLifecycleFix
     },
     async dispose() {
       // Drizzle's Database exposes the underlying postgres client at $client.
-      await setup.$client.close();
-      await isolation.dispose();
+      // The restricted operator/directory pools are closed too; isolation
+      // cleanup still runs even when one of the closes throws.
+      try {
+        await operator.$client.close();
+        await directory.$client.close();
+        await setup.$client.close();
+      } finally {
+        await isolation.dispose();
+      }
     },
   };
 }

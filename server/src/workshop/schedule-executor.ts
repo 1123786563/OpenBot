@@ -118,23 +118,38 @@ export async function sweepWorkshopSchedules(
     // The claim: one run row per (schedule, moment). The unique constraint arbitrates
     // between replicas; the loser reads the winner's row and counts it "already".
     const runId = `wsr-${schedule.id}-${scheduledFor.getTime().toString(36)}`;
-    const inserted = await deps.db
-      .insert(workshopScheduleRuns)
-      .values({
-        id: runId,
-        scheduleId: schedule.id,
-        scheduledFor,
-        status: "planned",
-      })
-      .onConflictDoNothing({
-        target: [
-          workshopScheduleRuns.scheduleId,
-          workshopScheduleRuns.scheduledFor,
-        ],
-      })
-      .returning({ id: workshopScheduleRuns.id })
-      .catch(() => [] as Array<{ id: string }>);
+    let inserted: Array<{ id: string }>;
+    try {
+      inserted = await deps.db
+        .insert(workshopScheduleRuns)
+        .values({
+          id: runId,
+          scheduleId: schedule.id,
+          scheduledFor,
+          status: "planned",
+        })
+        .onConflictDoNothing({
+          target: [
+            workshopScheduleRuns.scheduleId,
+            workshopScheduleRuns.scheduledFor,
+          ],
+        })
+        .returning({ id: workshopScheduleRuns.id });
+    } catch (error) {
+      // An insert that THREW is a store in trouble, not a rival claim: named in the log and
+      // counted refused, never folded into "already fired elsewhere".
+      logger.warn(
+        {
+          scheduleId: schedule.id,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "workshop schedule claim insert failed",
+      );
+      report.refused += 1;
+      continue;
+    }
     if (inserted.length === 0) {
+      // Empty only on conflict (onConflictDoNothing): another replica claimed this moment.
       report.already += 1;
       continue;
     }
@@ -150,16 +165,22 @@ export async function sweepWorkshopSchedules(
       now().getTime(),
     ).catch(() => null);
     if (!advanced) {
-      // The schedule's recurrence stopped parsing (an edit raced the sweep): mark the run
-      // skipped with the reason and stand down — the write path's recompute owns recovery.
+      // The schedule's recurrence stopped parsing (an edit raced the sweep). The claim row goes:
+      // left in place it IS this (schedule, moment) for ever, so every later pass reads a unique
+      // conflict and the schedule never fires again. Removing it returns the schedule to
+      // retryable state — the write path's recompute owns the real recovery, and the pass says
+      // why it stood down.
       await deps.db
-        .update(workshopScheduleRuns)
-        .set({
-          status: "skipped",
-          note: "The recurrence stopped parsing at fire time.",
-        })
+        .delete(workshopScheduleRuns)
         .where(eq(workshopScheduleRuns.id, runId))
         .catch(() => undefined);
+      logger.warn(
+        {
+          scheduleId: schedule.id,
+          runId,
+        },
+        "workshop schedule advance failed; claim row returned",
+      );
       report.refused += 1;
       continue;
     }
@@ -183,7 +204,9 @@ export async function sweepWorkshopSchedules(
       report.fired += 1;
     } catch (error) {
       // The firing failed to start; the run row keeps the failure for the history, and the
-      // schedule's nextRunAt (already advanced) keeps the recurrence alive.
+      // schedule's nextRunAt (already advanced) keeps the recurrence alive. The history write
+      // itself is contained: a database already unwell is when it most needs not to kill the
+      // sweep for the schedules still behind this one.
       await deps.db
         .update(workshopScheduleRuns)
         .set({
@@ -191,7 +214,20 @@ export async function sweepWorkshopSchedules(
           note: error instanceof Error ? error.message : String(error),
           finishedAt: now(),
         })
-        .where(eq(workshopScheduleRuns.id, runId));
+        .where(eq(workshopScheduleRuns.id, runId))
+        .catch((updateError: unknown) => {
+          logger.warn(
+            {
+              scheduleId: schedule.id,
+              runId,
+              error:
+                updateError instanceof Error
+                  ? updateError.message
+                  : String(updateError),
+            },
+            "workshop schedule run failure write failed",
+          );
+        });
       report.refused += 1;
       logger.warn(
         {

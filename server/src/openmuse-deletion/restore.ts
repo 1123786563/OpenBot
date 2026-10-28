@@ -54,7 +54,12 @@ export type OpenMuseRestoreReport = {
 /** What the restore decided — the route's whole truth. */
 export type OpenMuseDeletionRestoreOutcome =
   | { status: 404 }
-  | { status: 410; restoreUntil: string }
+  | {
+      status: 410;
+      restoreUntil: string;
+      /** elapsed: the window ran out; completed: the final purge already emptied the account. */
+      reason: "elapsed" | "completed";
+    }
   | { status: 200; report: OpenMuseRestoreReport };
 
 export type OpenMuseDeletionRestore = (
@@ -141,7 +146,11 @@ export function createOpenMuseDeletionRestore(deps: {
         new Date(
           marker.disabledAt.getTime() + OPENMUSE_RESTORE_WINDOW_DAYS * DAY_MS,
         );
-      return { status: 410, restoreUntil: deadline.toISOString() } as const;
+      return {
+        status: 410,
+        restoreUntil: deadline.toISOString(),
+        reason: "completed",
+      } as const;
     }
     // An already-restored marker answers its report again — the window
     // governs the restoration act, not the answer about a completed one.
@@ -159,12 +168,27 @@ export function createOpenMuseDeletionRestore(deps: {
         marker.disabledAt.getTime() + OPENMUSE_RESTORE_WINDOW_DAYS * DAY_MS,
       );
     if (now().getTime() > deadline.getTime()) {
-      return { status: 410, restoreUntil: deadline.toISOString() } as const;
+      return {
+        status: 410,
+        restoreUntil: deadline.toISOString(),
+        reason: "elapsed",
+      } as const;
     }
     // The flip first — the fence re-admits the moment the phase turns — then
     // the idempotent module hooks. A repeat of either changes nothing, and
     // nothing here writes a Task or Monitor: cancelled work stays stopped.
+    // The CAS answers the row it found: a concurrent D08 that completed the
+    // deletion between the read and the flip means nothing is coming back —
+    // the same 410 the completed branch answers, not a restored report.
     const stored = (await deps.marker.restore(userId, deadline)) ?? marker;
+    if (stored.phase === "completed") {
+      return {
+        status: 410,
+        restoreUntil:
+          stored.restoreUntil?.toISOString() ?? deadline.toISOString(),
+        reason: "completed",
+      } as const;
+    }
     await deps.files?.restoreOwner(userId);
     await deps.notifications?.restoreOwner(userId);
     return {
@@ -243,7 +267,13 @@ export function createOpenMuseDeletionAdminRoutes(deps: {
     if (outcome.status === 410) {
       return context.json(
         {
-          error: "The 30-day restoration window has elapsed.",
+          // The window can be custom (restoreUntil), so the sentence does
+          // not hard-code 30 days — and a completed purge is gone for good,
+          // not merely out of time.
+          error:
+            outcome.reason === "completed"
+              ? "This account's deletion has been completed."
+              : "The restoration window has elapsed.",
           restoreUntil: outcome.restoreUntil,
         },
         410,

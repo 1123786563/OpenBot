@@ -51,10 +51,13 @@ export const foreignAccountIdentityKeys = [
   "tenantId",
 ] as const;
 
-/** Matching is case-insensitive, so `UserID` cannot ride past the refusal a `userId` gets. */
-const foreignKeySet = new Set(
-  foreignAccountIdentityKeys.map((key) => key.toLowerCase()),
-);
+/**
+ * Matching is case- and separator-insensitive, so `UserID` and `user_id` cannot ride past
+ * the refusal a `userId` gets.
+ */
+const normalizeForeign = (key: string) =>
+  key.toLowerCase().replace(/[_-]/g, "");
+const foreignKeySet = new Set(foreignAccountIdentityKeys.map(normalizeForeign));
 
 /**
  * The first account-identity parameter present in a request's fields — answered with the key as

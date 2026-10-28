@@ -118,7 +118,10 @@ export const enterprisePackageInstalls = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
-    primaryKey({ columns: [table.tenantId, table.id] }),
+    primaryKey({
+      name: "enterprise_package_installs_tenant_id_id_pk",
+      columns: [table.tenantId, table.id],
+    }),
     uniqueIndex("enterprise_package_install_scope_key_uq").on(
       table.tenantId,
       table.workspaceId,
@@ -199,6 +202,7 @@ export const enterprisePackageRevisions = pgTable(
   },
   (table) => [
     primaryKey({
+      name: "enterprise_package_revisions_tenant_id_install_id_revision_pk",
       columns: [table.tenantId, table.installId, table.revision],
     }),
     foreignKey({
@@ -273,7 +277,10 @@ export const enterprisePackagePlans = pgTable(
     createdAt: createdAt(),
   },
   (table) => [
-    primaryKey({ columns: [table.tenantId, table.id] }),
+    primaryKey({
+      name: "enterprise_package_plans_tenant_id_id_pk",
+      columns: [table.tenantId, table.id],
+    }),
     foreignKey({
       columns: [table.tenantId],
       foreignColumns: [enterpriseTenants.id],
@@ -793,7 +800,10 @@ export const enterprisePackageChanges = pgTable(
     createdAt: createdAt(),
   },
   (table) => [
-    primaryKey({ columns: [table.tenantId, table.changeId] }),
+    primaryKey({
+      name: "enterprise_package_changes_tenant_id_change_id_pk",
+      columns: [table.tenantId, table.changeId],
+    }),
     foreignKey({
       columns: [table.tenantId],
       foreignColumns: [enterpriseTenants.id],

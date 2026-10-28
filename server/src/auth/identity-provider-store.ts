@@ -17,7 +17,7 @@
  * Registration still goes to Better Auth. This never writes a provider, so there is one parser for
  * metadata and one place a client secret is stored.
  */
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { ssoProviders } from "../db/schema";
 
@@ -59,7 +59,10 @@ export function createIdentityProviderStore(
           providerId: ssoProviders.providerId,
           issuer: ssoProviders.issuer,
           domain: ssoProviders.domain,
-          samlConfig: ssoProviders.samlConfig,
+          // Only whether a SAML config exists — the column carries the signing certificate,
+          // and this module never needs the material itself, so it never reads it.
+          hasSaml:
+            sql<boolean>`(${ssoProviders.samlConfig} is not null and ${ssoProviders.samlConfig} <> '')`,
           userId: ssoProviders.userId,
         })
         .from(ssoProviders)
@@ -70,7 +73,7 @@ export function createIdentityProviderStore(
         issuer: row.issuer,
         domain: row.domain,
         // A row carries one config or the other, and which one is the protocol.
-        protocol: row.samlConfig ? "saml" : "oidc",
+        protocol: row.hasSaml ? "saml" : "oidc",
         registeredBy: row.userId,
       }));
     },

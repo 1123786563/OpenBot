@@ -60,11 +60,19 @@ export async function takeSnapshot(
     bot_id: input.botId,
     session_id: input.sessionId,
   });
-  return ctx.store.createSnapshot({
-    sessionId: input.sessionId,
-    storagePath,
-    sizeBytes: archive.byteLength,
-  });
+  try {
+    return await ctx.store.createSnapshot({
+      sessionId: input.sessionId,
+      storagePath,
+      sizeBytes: archive.byteLength,
+    });
+  } catch (error) {
+    // No row points at the blob, so nothing can ever reach it again: delete it and
+    // let the real error surface. A failed cleanup is harmless (the blob is already
+    // unreachable) and must not mask why the row failed.
+    await ctx.objectStore.delete(storagePath).catch(() => undefined);
+    throw error;
+  }
 }
 
 /**
@@ -89,9 +97,22 @@ export async function deleteSnapshots(
   sessionId: string,
 ): Promise<void> {
   const rows = await ctx.store.deleteSnapshots(sessionId);
-  for (const row of rows) {
-    await ctx.objectStore.delete(row.storagePath).catch(() => undefined);
-  }
+  // The rows are gone already, so a failed blob delete here is the last chance
+  // anyone hears about the orphan; parallel because the deletes are independent.
+  await Promise.all(
+    rows.map((row) =>
+      ctx.objectStore.delete(row.storagePath).catch((error) => {
+        getLogger("server").warn(
+          {
+            type: "craft-snapshot-blob-delete-failed",
+            storagePath: row.storagePath,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          "craft-snapshot-blob-delete-failed",
+        );
+      }),
+    ),
+  );
 }
 
 export type CraftIdleReaperDeps = {
@@ -124,18 +145,30 @@ export type CraftIdleReaper = {
  * live state, and the gateway already reaps idle per-Bot runtimes itself). So the sweep's release
  * degrades to snapshot + session→idle; the wake half (wakeIfIdle) restores from the snapshot.
  */
+/** Reaper runs no more often than once per 30 seconds. */
+const MIN_IDLE_REAPER_INTERVAL_MS = 30_000;
+
 export function startCraftIdleReaper(
   ctx: SnapshotContext,
   deps: CraftIdleReaperDeps,
 ): CraftIdleReaper {
   const periodMs = Math.max(
-    30_000,
+    MIN_IDLE_REAPER_INTERVAL_MS,
     ctx.config.idleReaperIntervalSeconds * 1000,
   );
+  // setInterval doesn't wait for async work; overlap would pack the same shared
+  // workspace twice and race the session idle CAS.
+  let sweeping = false;
   const timer = setInterval(() => {
-    reapIdleSessions(ctx, deps).catch((error) => {
-      logger.error({ error }, "[craft] idle reaper sweep failed");
-    });
+    if (sweeping) return;
+    sweeping = true;
+    reapIdleSessions(ctx, deps)
+      .catch((error) => {
+        logger.error({ error }, "[craft] idle reaper sweep failed");
+      })
+      .finally(() => {
+        sweeping = false;
+      });
   }, periodMs);
   timer.unref?.();
 

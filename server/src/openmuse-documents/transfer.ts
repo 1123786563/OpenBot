@@ -195,8 +195,12 @@ export async function transferVersionToWorkspace(input: {
   const at = new Date().toISOString();
   try {
     await filesystem.write(path, bytes);
-    ledger[transferKey] = { fileId, versionId, path, status: "complete", at };
-    await filesystem.write(TRANSFER_LEDGER_PATH, ledgerBytes(ledger));
+    // The entry-read ledger is a snapshot; re-reading before recording is
+    // what the catch path already does, so a concurrent transfer's completed
+    // entry survives this write instead of being erased by the later writer.
+    const recorded = await readLedger(filesystem);
+    recorded[transferKey] = { fileId, versionId, path, status: "complete", at };
+    await filesystem.write(TRANSFER_LEDGER_PATH, ledgerBytes(recorded));
     return { kind: "transferred", path };
   } catch {
     /*

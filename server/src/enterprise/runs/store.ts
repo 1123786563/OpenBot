@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   enterpriseConversations,
   enterpriseMessages,
@@ -414,8 +414,10 @@ export async function createRunInTransaction(
     // An active-status row whose lease expired belongs to a crashed or
     // abandoned process: terminalize it truthfully (cancelled with timeout
     // semantics — its events can no longer settle) in this same
-    // transaction, then reclaim the thread for the new run.
-    await tx
+    // transaction, then reclaim the thread for the new run. The guarded
+    // UPDATE decides: side effects (attempt terminalization + cancel outbox)
+    // fire only when this transaction really performed the reclaim.
+    const reclaimed = await tx
       .update(enterpriseRuns)
       .set({
         status: "cancelled",
@@ -430,24 +432,27 @@ export async function createRunInTransaction(
           eq(enterpriseRuns.attemptGeneration, existing.attemptGeneration),
           sql`${enterpriseRuns.status} in ('queued', 'running', 'waiting_approval', 'suspended')`,
         ),
-      );
-    await tx
-      .update(enterpriseRunAttempts)
-      .set({ status: "cancelled", finishedAt: now })
-      .where(
-        and(
-          eq(enterpriseRunAttempts.tenantId, scope.tenantId),
-          eq(enterpriseRunAttempts.runId, existing.id),
-          eq(enterpriseRunAttempts.generation, existing.attemptGeneration),
-          eq(enterpriseRunAttempts.status, "active"),
-        ),
-      );
-    await tx.insert(enterpriseRunOutbox).values({
-      tenantId: scope.tenantId,
-      runId: existing.id,
-      eventType: "run.cancel",
-      payload: { runId: existing.id, generation: existing.attemptGeneration },
-    });
+      )
+      .returning({ id: enterpriseRuns.id });
+    if (reclaimed.length > 0) {
+      await tx
+        .update(enterpriseRunAttempts)
+        .set({ status: "cancelled", finishedAt: now })
+        .where(
+          and(
+            eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+            eq(enterpriseRunAttempts.runId, existing.id),
+            eq(enterpriseRunAttempts.generation, existing.attemptGeneration),
+            eq(enterpriseRunAttempts.status, "active"),
+          ),
+        );
+      await tx.insert(enterpriseRunOutbox).values({
+        tenantId: scope.tenantId,
+        runId: existing.id,
+        eventType: "run.cancel",
+        payload: { runId: existing.id, generation: existing.attemptGeneration },
+      });
+    }
   }
   const leaseExpiresAt = new Date(now.getTime() + leaseMs);
   const runId = randomUUID();
@@ -778,12 +783,16 @@ export function createRunStore(
         // A stream longer than one lease window must stay live: the renewal
         // extends the run's main lease (and the active attempt's) alongside
         // the request claim, capped by the maximum run duration so renewal
-        // cannot keep a run alive forever.
+        // cannot keep a run alive forever. Renewal never shortens: a larger
+        // existing window (create-time lease window bigger than renewal's, or
+        // a prior renewal) must survive, so take the max with the current
+        // value — the cap still bounds what renewal itself computes.
+        const renewed = Math.min(
+          now.getTime() + leaseMilliseconds,
+          run.createdAt.getTime() + MAXIMUM_RUN_DURATION_MILLISECONDS,
+        );
         const runLeaseExpiresAt = new Date(
-          Math.min(
-            now.getTime() + leaseMilliseconds,
-            run.createdAt.getTime() + MAXIMUM_RUN_DURATION_MILLISECONDS,
-          ),
+          Math.max(run.leaseExpiresAt.getTime(), renewed),
         );
         if (runLeaseExpiresAt <= now)
           throw new RunDomainError("RUN_LEASE_EXPIRED", 409);
@@ -1051,6 +1060,23 @@ export function createRunStore(
             ),
           )
           .returning({ id: enterpriseRuns.id, status: enterpriseRuns.status });
+        // 与 cancel()/transitionTerminal() 的终态化路径一致：run 置 failed
+        // 的同一事务里终态化其 active attempt，租约事实不留活行。
+        if (settled.length > 0) {
+          await tx
+            .update(enterpriseRunAttempts)
+            .set({ status: "cancelled", finishedAt: now })
+            .where(
+              and(
+                eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+                inArray(
+                  enterpriseRunAttempts.runId,
+                  settled.map((row) => row.id),
+                ),
+                eq(enterpriseRunAttempts.status, "active"),
+              ),
+            );
+        }
         for (const row of settled) {
           await tx.insert(enterpriseRunOutbox).values({
             tenantId: scope.tenantId,

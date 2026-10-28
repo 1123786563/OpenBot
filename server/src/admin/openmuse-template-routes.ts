@@ -5,6 +5,7 @@
  * and apply writes only the managed keys inside the configuration JSON.
  */
 import { Hono, type MiddlewareHandler } from "hono";
+import { getLogger } from "../../../shared/logger";
 import { z } from "zod";
 import {
   OPENMUSE_TEMPLATE_REVISIONS,
@@ -13,6 +14,8 @@ import {
   TemplateBotNotFoundError,
 } from "../agents/openmuse-template-store";
 import { type AppVariables, requireAdmin } from "../auth/guards";
+
+const log = getLogger("server");
 
 const ownerUserId = z.string().trim().min(1);
 /*
@@ -27,14 +30,13 @@ const knownRevision = z
     (v) => v in OPENMUSE_TEMPLATE_REVISIONS,
     "Unknown template revision.",
   );
-const targetVersion = knownRevision;
 
 const previewQuery = z.strictObject({
   ownerUserId,
   targetVersion: z.coerce.number().pipe(knownRevision),
 });
 
-const applyInput = z.strictObject({ ownerUserId, targetVersion });
+const applyInput = z.strictObject({ ownerUserId, targetVersion: knownRevision });
 
 export function createOpenMuseTemplateAdminRoutes(deps: {
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
@@ -48,6 +50,28 @@ export function createOpenMuseTemplateAdminRoutes(deps: {
     await next();
   });
 
+  /*
+   * Nothing behind this router answers with a bodyless 500: the store's
+   * named errors keep their status, and anything unexpected is logged and
+   * given the same sentence every other refusal here carries.
+   */
+  routes.onError((error, context) => {
+    if (error instanceof TemplateBotNotFoundError) {
+      return context.json({ error: error.message }, 404);
+    }
+    if (error instanceof StaleTemplateRevisionError) {
+      return context.json({ error: error.message }, 409);
+    }
+    log.error({
+      type: "openmuse-template-admin-failed",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return context.json(
+      { error: "The template change did not go through. Try again." },
+      500,
+    );
+  });
+
   routes.get("/preview", async (context) => {
     const parsed = previewQuery.safeParse(context.req.query());
     if (!parsed.success) {
@@ -56,19 +80,12 @@ export function createOpenMuseTemplateAdminRoutes(deps: {
         400,
       );
     }
-    try {
-      return context.json(
-        await deps.revisions.previewRevision(
-          parsed.data.ownerUserId,
-          parsed.data.targetVersion,
-        ),
-      );
-    } catch (error) {
-      if (error instanceof TemplateBotNotFoundError) {
-        return context.json({ error: error.message }, 404);
-      }
-      throw error;
-    }
+    return context.json(
+      await deps.revisions.previewRevision(
+        parsed.data.ownerUserId,
+        parsed.data.targetVersion,
+      ),
+    );
   });
 
   routes.post("/apply", async (context) => {
@@ -81,22 +98,12 @@ export function createOpenMuseTemplateAdminRoutes(deps: {
         400,
       );
     }
-    try {
-      return context.json(
-        await deps.revisions.applyRevision(
-          parsed.data.ownerUserId,
-          parsed.data.targetVersion,
-        ),
-      );
-    } catch (error) {
-      if (error instanceof TemplateBotNotFoundError) {
-        return context.json({ error: error.message }, 404);
-      }
-      if (error instanceof StaleTemplateRevisionError) {
-        return context.json({ error: error.message }, 409);
-      }
-      throw error;
-    }
+    return context.json(
+      await deps.revisions.applyRevision(
+        parsed.data.ownerUserId,
+        parsed.data.targetVersion,
+      ),
+    );
   });
 
   return routes;

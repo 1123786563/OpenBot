@@ -249,6 +249,17 @@ describe("plan usage", () => {
     expect(computer).toMatchObject({ limit: null, remaining: null, used: 42 });
   });
 
+  test("a ceiling entry whose limit is null answers remaining null, never a floored zero", async () => {
+    const statements = createBillingStatements({
+      service: fakeService(ACTIVE, USAGE),
+      quotas: new Map([
+        ["pro", [{ ...QUOTAS[0], limit: null, remaining: null }]],
+      ]),
+    });
+    const answer = await statements.planUsage();
+    expect(answer.quotas[0]?.remaining).toBeNull();
+  });
+
   test("a configured ceiling with no usage yet reads full", async () => {
     const statements = createBillingStatements({
       service: fakeService(ACTIVE, {
@@ -295,6 +306,21 @@ describe("plan usage", () => {
 });
 
 describe("invoices", () => {
+  test("a page below 1 clamps to the first page — a negative offset never reaches the store", async () => {
+    const rows = Array.from({ length: 20 }, (_, index) =>
+      order({ id: `po-${String(index).padStart(16, "0")}` }),
+    );
+    const { store } = fakeOrders(rows);
+    const statements = createBillingStatements({
+      service: fakeService(ACTIVE, USAGE),
+      quotas: new Map(),
+      orders: store,
+    });
+    const page = await statements.invoices({ from: null, to: null, page: 0 });
+    expect(page.pagination.currentPage).toBe(1);
+    expect(page.invoices).toHaveLength(20);
+  });
+
   test("a bill is a stored order read as a statement", async () => {
     const { store } = fakeOrders([order()]);
     const statements = createBillingStatements({

@@ -196,13 +196,20 @@ export function parseWaiverFile(content: string): readonly CoverageWaiver[] {
   // undefined 漏到下游 evaluator 的拒绝消息里。
   for (let index = 0; index < file.waivers.length; index += 1) {
     const waiver = file.waivers[index] as unknown;
+    // entrance/reason 给了就必须是字符串：真值非字符串会通过此处、再让
+    // evaluator 的 reason.trim()/entrance 匹配抛裸 TypeError（缺省键仍由
+    // evaluator 的既有闭集校验拒绝，不在此扩大边界）。
+    const entrance = (waiver as { entrance?: unknown } | null)?.entrance;
+    const reason = (waiver as { reason?: unknown } | null)?.reason;
     if (
       typeof waiver !== "object" ||
       waiver === null ||
-      Array.isArray(waiver)
+      Array.isArray(waiver) ||
+      (entrance !== undefined && typeof entrance !== "string") ||
+      (reason !== undefined && typeof reason !== "string")
     ) {
       throw new TypeError(
-        `coverage waiver file waivers[${index}] must be an object like {"entrance":"METHOD /path","reason":"…"}, got ${describeWaiverElement(waiver)}`,
+        `coverage waiver file waivers[${index}] must be an object like {"entrance":"METHOD /path","reason":"…"} with string entrance/reason, got ${describeWaiverElement(waiver)}`,
       );
     }
   }
@@ -540,10 +547,21 @@ async function loadCoverageInventory(
     };
   }
   try {
-    return {
-      ok: true,
-      inventory: JSON.parse(raw) as CoverageInventory,
-    };
+    const parsed = JSON.parse(raw) as Partial<CoverageInventory> | null;
+    // 形状先于判定：缺数组的清单不得被「?? []」兜底成零入口=全覆盖。
+    const shapeOk =
+      !!parsed &&
+      Array.isArray(parsed.entrances) &&
+      Array.isArray(parsed.assemblies) &&
+      !!parsed.summary &&
+      typeof parsed.summary === "object";
+    if (!shapeOk) {
+      return {
+        ok: false,
+        reason: `coverage inventory at ${inventoryPath} does not match the CoverageInventory shape (entrances/assemblies arrays and a summary object are required) — regenerate with server/scripts/multitenancy/inventory.ts`,
+      };
+    }
+    return { ok: true, inventory: parsed as CoverageInventory };
   } catch (error) {
     return {
       ok: false,
@@ -583,7 +601,19 @@ async function evaluateCoverageCheck(
       };
     }
   }
-  const evaluation = evaluateInventoryCoverage(loaded.inventory, waivers);
+  // 清单形状畸形（entrances 非数组等）是带理由的校验失败，不是穿透
+  // 模块边界的 TypeError（与 waivers 读路径同款 containment）。
+  let evaluation: ReturnType<typeof evaluateInventoryCoverage>;
+  try {
+    evaluation = evaluateInventoryCoverage(loaded.inventory, waivers);
+  } catch (error) {
+    return {
+      ok: false,
+      reason: `inventory coverage evaluation could not run: ${error instanceof Error ? error.message : String(error)}`,
+      uncovered: [],
+      waivedEntrances: [],
+    };
+  }
   return evaluation.ok
     ? { ok: true, waivedEntrances: evaluation.waivedEntrances }
     : {
@@ -748,7 +778,12 @@ export async function runMultitenancyStartupChecks(
       try {
         probes.push(await probeRoleSafety(database, role));
       } finally {
-        await closeDatabase(database);
+        // close 抛错不得打断其余角色探测（containment：缺口一次列全）。
+        try {
+          await closeDatabase(database);
+        } catch {
+          // 连接释放失败不影响已取得的探测结果。
+        }
       }
     }
     const evaluation = evaluateRoleSafety(probes);

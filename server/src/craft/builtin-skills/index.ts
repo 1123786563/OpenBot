@@ -67,7 +67,8 @@ export function renderConnectorSkillTemplate(template: string): string {
 function assertNoUnresolvedMarkup(rendered: string): string {
   if (rendered.includes("{{")) {
     const offending = rendered.split("\n").find((line) => line.includes("{{"));
-    throw new Error(`Unresolved skill-template markup: ${offending ?? "}}"}`);
+    // find() cannot miss here: `rendered` is known to contain the marker.
+    throw new Error(`Unresolved skill-template markup: ${offending ?? rendered}`);
   }
   return rendered;
 }
@@ -89,7 +90,16 @@ async function loadBuiltinSkillTree(): Promise<BuiltinSkillTree> {
   const files = new Map<string, Uint8Array>();
   const encoder = new TextEncoder();
   const walk = async (dir: URL, prefix: string): Promise<void> => {
-    const entries = await readdir(dir, { withFileTypes: true });
+    // Only a missing root is the documented no-skills deployment case.
+    const entries = await readdir(dir, { withFileTypes: true }).catch((error) => {
+      if (
+        prefix === "" &&
+        (error as NodeJS.ErrnoException).code === "ENOENT"
+      ) {
+        return [];
+      }
+      throw error;
+    });
     for (const entry of entries) {
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
       // Top-level files are this module's own source (index.ts), not skill
@@ -114,7 +124,7 @@ async function loadBuiltinSkillTree(): Promise<BuiltinSkillTree> {
       }
     }
   };
-  await walk(ROOT, "").catch(() => undefined);
+  await walk(ROOT, "");
   builtinSkillTreeCache = files;
   return files;
 }
@@ -149,7 +159,9 @@ export async function builtinSkillFilesFor(
     ) {
       continue;
     }
-    files.set(path, bytes);
+    // A copy, not the cached array: the tree is process-wide, and one caller's
+    // in-place write to its bytes must not poison every later session.
+    files.set(path, bytes.slice());
   }
   return files;
 }

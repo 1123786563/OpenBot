@@ -140,14 +140,25 @@ type SharedComputerEntry = {
  * This adapter keeps shared deployments behind the same provider seam as the
  * Docker supervisor, and is the seam a remote backend plugs into.
  */
+/** Printable ASCII, no control characters: what an HTTP header value may carry. */
+const HEADER_SAFE = /^[\x20-\x7e]*$/;
+
 export function createSharedComputerProvider(
   options: SharedComputerProviderOptions,
 ): ComputerProvider {
   const base = options.baseUrl.replace(/\/$/, "");
   const fetchImpl = options.fetchImpl ?? fetch;
-  const timeoutMs = options.timeoutMs ?? 45_000;
+  // A 0/negative timeout would abort every request instantly and read as "unreachable".
+  const timeoutMs =
+    options.timeoutMs === undefined ? 45_000 : Math.max(1, options.timeoutMs);
 
   function headers(botId?: string): Record<string, string> {
+    // A header value must be printable ASCII without CR/LF; anything else makes fetch
+    // throw a TypeError the caller would report as "unreachable".
+    if (botId !== undefined && !HEADER_SAFE.test(botId))
+      throw new ProviderError(
+        `The shared computer cannot address a Bot id of ${JSON.stringify(botId)}.`,
+      );
     return {
       ...(botId ? { "x-openbot-bot-id": botId } : {}),
       ...(options.token ? { "x-openbot-computer-token": options.token } : {}),
@@ -172,15 +183,23 @@ export function createSharedComputerProvider(
       );
     }
 
-    const body = (await response.json().catch(() => null)) as {
-      error?: string;
-    } | null;
     if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
       throw new ProviderError(
         body?.error ?? `The shared computer answered ${response.status}.`,
       );
     }
-    return body;
+    try {
+      return await response.json();
+    } catch {
+      // A 2xx whose body is not JSON (a proxy page, an empty reply) used to read as
+      // null, which stop/reset reported as wasRunning:false — say it is unreadable.
+      throw new ProviderError(
+        `The shared computer at ${base} answered ${response.status} with an unreadable body.`,
+      );
+    }
   }
 
   return {
@@ -299,6 +318,12 @@ export function createComputerProvider(
        * rather than the file being read on every call.
        */
       return createLazySandboxProvider(config);
+    default:
+      // Unreachable while the union above is exhaustive; a provider value added to
+      // ComputerConfig before this build implements it must refuse, not fall through.
+      throw new Error(
+        `The computer provider ${JSON.stringify((config as ComputerConfig).provider)} is not supported by this build.`,
+      );
   }
 }
 

@@ -133,9 +133,10 @@ type Executor = {
 };
 function rowsOf(value: unknown): Row[] {
   if (Array.isArray(value)) return value as Row[];
-  return record(value) && Array.isArray(value.rows)
-    ? (value.rows as Row[])
-    : [];
+  if (record(value) && Array.isArray(value.rows)) return value.rows as Row[];
+  // Unrecognized executor result shape is a contract regression, not an empty
+  // result: fail closed instead of reporting a misleading conflict.
+  throw new TypeError("EXPERT_VERSION_ROWS_INVALID");
 }
 function snapshotOf(row: Row): unknown {
   if (typeof row.snapshot !== "string") return row.snapshot;
@@ -199,19 +200,15 @@ export class ExpertVersionCatalog {
       if (!existing) fail("EXPERT_VERSION_CONFLICT");
       let verified: CanonicalExpertDefinition;
       try {
-        try {
-          verified = verify(
-            scope.tenantId,
-            canonical.expertVersionRef,
-            existing,
-          );
-        } catch (cause) {
-          // The corrupt-row verification failure rides on cause so operators
-          // can tell a drift conflict from a damaged catalog row (OCR R10).
-          throw Object.assign(new Error("EXPERT_VERSION_CONFLICT"), { cause });
-        }
-      } catch {
-        fail("EXPERT_VERSION_CONFLICT");
+        verified = verify(
+          scope.tenantId,
+          canonical.expertVersionRef,
+          existing,
+        );
+      } catch (cause) {
+        // The corrupt-row verification failure rides on cause so operators
+        // can tell a drift conflict from a damaged catalog row (OCR R10).
+        throw Object.assign(new Error("EXPERT_VERSION_CONFLICT"), { cause });
       }
       if (
         canonicalJson(verified.definition) !==

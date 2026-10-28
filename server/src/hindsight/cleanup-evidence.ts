@@ -289,6 +289,15 @@ export function createCleanupEvidenceService(
       const payload = (await units.json().catch(() => null)) as {
         items?: unknown[];
       } | null;
+      // A 200 whose body cannot be read proves nothing about the units; only a parsed
+      // empty list is evidence of absence.
+      if (payload === null) {
+        return {
+          documentId: row.documentId,
+          state: "unreachable",
+          error: "memory-unit probe answered 200 with an unreadable body",
+        };
+      }
       const remaining = payload?.items?.length ?? 0;
       if (remaining > 0) {
         return {

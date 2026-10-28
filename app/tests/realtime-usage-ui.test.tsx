@@ -188,6 +188,13 @@ const CLOSED_UNMAPPED: SessionFixture = {
 
 const BALANCE = {
   accountType: "personal",
+  /*
+   * BP07 (#375) made the account-level capability part of the balance answer the card reads
+   * off directly — non-optional on the wire (PersonalCreditBalance.account), the same shape
+   * the sibling personal-credits-ui fixture carries. This fixture's sessions belong to an
+   * ordinary active account; the quarantined rendering has its own case below.
+   */
+  account: { status: "active", quarantineReason: null },
   available: 0,
   consumed: 0,
   expired: 0,
@@ -204,7 +211,10 @@ const BALANCE = {
   },
 };
 
-function installFetchStub(realtime: { status: number; body: unknown }) {
+function installFetchStub(
+  realtime: { status: number; body: unknown },
+  balance: unknown = BALANCE,
+) {
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), {
       status,
@@ -214,7 +224,7 @@ function installFetchStub(realtime: { status: number; body: unknown }) {
     input: string | URL | Request,
   ): Promise<Response> => {
     const url = String(input);
-    if (url.startsWith("/api/billing/credits/summary")) return json(BALANCE);
+    if (url.startsWith("/api/billing/credits/summary")) return json(balance);
     if (url.startsWith("/api/billing/credits/grants"))
       return json({ grants: [] });
     if (url.startsWith("/api/billing/credits/consumption"))
@@ -308,4 +318,34 @@ test("实时面不可用时整节隐藏，不把错误装扮成空列表", async
   // The realtime section is absent — no title, no empty sentence, no error dressed as data.
   expect(view.queryByText("实时会话")).toBeNull();
   expect(view.queryByText("暂无实时会话。")).toBeNull();
+});
+
+
+/*
+ * BP07 (#375): a quarantined account's capabilities are unavailable, said as the fixed
+ * sentence — the row's raw quarantine reason is the operator's diagnosis and never reaches
+ * the reader's page (the card's own redaction). The sibling personal-credits-ui suite pins
+ * this on the card component directly; this case carries it through the page's own summary
+ * read, the door these stubs answer.
+ */
+test("隔离账户的能力徽标是固定句，原始隔离原因不进 DOM", async () => {
+  installFetchStub(
+    { status: 200, body: { sessions: [] } },
+    {
+      ...BALANCE,
+      account: {
+        status: "quarantined",
+        quarantineReason: "legacy key with unknown attribution",
+      },
+    },
+  );
+  const view = renderView();
+
+  const badge = await view.findByTestId("account-capability");
+  expect(badge.textContent).toContain("能力暂不可用");
+  // innerHTML, not textContent: the raw reason must also be absent from the attribute
+  // channel (title/data-*/aria-label serializations), which textContent cannot see.
+  expect(document.body.innerHTML).not.toContain(
+    "legacy key with unknown attribution",
+  );
 });

@@ -25,7 +25,7 @@ export function textOf(content: unknown): string {
       const { text } = part as { text?: unknown };
       return typeof text === "string" ? text : "";
     })
-    .filter((part) => part !== "")
+    .filter((part) => /\S/.test(part))
     .join(" ")
     .trim();
 }

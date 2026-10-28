@@ -191,6 +191,22 @@ export function createApprovalStore(database: Database): ApprovalStore {
     },
     async decideQuiet(owner, id, decision) {
       return database.transaction(async (tx) => {
+        // decide()'s hand_off invariant holds on the quiet path too: an action whose policy
+        // handed the work to the person cannot be approved by machine here, or the craft
+        // endpoint would be a bypass for "do this yourself".
+        const [request] = await tx
+          .select()
+          .from(approvalRequests)
+          .where(owned(owner, id))
+          .for("update")
+          .limit(1);
+        if (
+          request?.action.policy?.behaviour === "hand_off" &&
+          decision !== "deny"
+        )
+          throw new ApprovalRefusedError(
+            "This action is handed to you. Do it yourself and mark it done, or decline it.",
+          );
         // The single guarded UPDATE is the whole write: it can only land on a row still pending,
         // so a racing writer loses atomically instead of interleaving with a read-then-write.
         const [updated] = await tx
@@ -207,6 +223,17 @@ export function createApprovalStore(database: Database): ApprovalStore {
           await get(owner, id);
           throw new ApprovalRefusedError("This request was already decided.");
         }
+        // decide()'s invariant on the quiet path too: an allow_always approval must
+        // leave the rule consume() looks for, or the approved action can never run.
+        if (decision === "allow_always")
+          await tx.insert(approvalRules).values({
+            id: crypto.randomUUID(),
+            ownerUserId: owner,
+            botId: request.action.botId,
+            toolRef: request.action.toolRef,
+            effect: request.action.effect,
+            scope: request.action.scope,
+          });
         // The audit row commits with the decision or not at all, as decide() pairs them.
         await recordAuditEvent(createAuditStore(tx as unknown as Database), {
           eventType: "approval.person_decided",
@@ -528,21 +555,23 @@ function createPolicyStore(database: Database): ApprovalPolicyStore {
           await tx.execute(
             sql`select pg_notify('openbot_work_offered', 'approval.resume')`,
           );
+          // The audit row commits with the withdrawal or not at all — the same
+          // pairing decide()/decideQuiet() keep.
+          await recordAuditEvent(createAuditStore(tx as unknown as Database), {
+            eventType: "approval.withdrawn",
+            targetType: "approval",
+            targetId: request.id,
+            actorUserId: owner,
+            payload: {
+              bot: request.action.botId,
+              tool: request.action.toolRef,
+              reason,
+            },
+          });
           return true;
         });
         if (!done) continue;
         withdrawn.push(request.id);
-        await recordAuditEvent(audit, {
-          eventType: "approval.withdrawn",
-          targetType: "approval",
-          targetId: request.id,
-          actorUserId: owner,
-          payload: {
-            bot: request.action.botId,
-            tool: request.action.toolRef,
-            reason,
-          },
-        });
       }
       return withdrawn;
     },

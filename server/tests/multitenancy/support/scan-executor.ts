@@ -148,9 +148,19 @@ export async function createScanExecutorFixture(): Promise<ScanFixture> {
         await tx.execute(
           sql`select set_config('app.tenant_id', ${tenantId}, true), set_config('app.operator_principal_id', ${principalId}, true), set_config('app.workspace_id', ${workspaceId}, true)`,
         );
-        await tx.execute(
-          sql`update enterprise_workspace_memberships set status = 'suspended', epoch = epoch + 1 where tenant_id = ${tenantId} and workspace_id = ${workspaceId} and principal_id = ${principalId}`,
-        );
+        const updated = (await tx.execute(
+          sql`update enterprise_workspace_memberships set status = 'suspended', epoch = epoch + 1 where tenant_id = ${tenantId} and workspace_id = ${workspaceId} and principal_id = ${principalId} returning 1`,
+        )) as unknown;
+        // 0 affected rows means the membership fact is wrong and the case would
+        // race nothing; say so instead of letting downstream assertions pass.
+        const rows = Array.isArray(updated)
+          ? updated
+          : ((updated as { rows?: unknown[] })?.rows ?? []);
+        if (rows.length !== 1) {
+          throw new Error(
+            `MT076 SUSPEND_MISSED:${tenantId}:${workspaceId}:${principalId}:${rows.length}`,
+          );
+        }
       });
     },
 

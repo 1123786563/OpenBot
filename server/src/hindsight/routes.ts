@@ -298,16 +298,23 @@ export function createHindsightMemoryRoutes(deps: HindsightMemoryRoutesDeps) {
         subjectId,
       };
     });
-    const statuses: Record<string, unknown> = {};
-    for (const subject of subjects) {
-      statuses[`${subject.subjectType}:${subject.subjectId}`] =
-        await deps.syncQueue.syncStatus(
+    // The subjects are independent read-only queries (capped at 200 above), so they are
+    // issued together: a badge refresh costs the slowest read, not the sum of all of them.
+    // A rejection still reaches the module's onError as one failed read did before.
+    const answers = await Promise.all(
+      subjects.map((subject) =>
+        deps.syncQueue.syncStatus(
           scope.tenantId,
           subject.subjectType,
           subject.subjectId,
           scope.principalId,
-        );
-    }
+        ),
+      ),
+    );
+    const statuses: Record<string, unknown> = {};
+    subjects.forEach((subject, index) => {
+      statuses[`${subject.subjectType}:${subject.subjectId}`] = answers[index];
+    });
     return context.json({ statuses });
   });
   return routes;

@@ -653,13 +653,13 @@ export function createBatchPartialSettleService(
 
       // Every item of the batch must have a classification by now — items nobody reported
       // are unknown (no evidence at all), the strictest member of the vocabulary.
-      const classified = new Map(
+      const outcomeByCustomId = new Map(
         (
           await database
             .select()
             .from(batchItemOutcomes)
             .where(eq(batchItemOutcomes.batchId, batch.batchId))
-        ).map((row) => [row.customId, row.classification]),
+        ).map((row) => [row.customId, row]),
       );
       const counts: BatchOutcomeCounts = {
         completed: 0,
@@ -670,7 +670,8 @@ export function createBatchPartialSettleService(
       };
       const unknownItems: string[] = [];
       for (const row of itemRows) {
-        const classification = classified.get(row.customId) ?? "unknown";
+        const classification =
+          outcomeByCustomId.get(row.customId)?.classification ?? "unknown";
         switch (classification) {
           case "completed":
             counts.completed += 1;
@@ -731,21 +732,26 @@ export function createBatchPartialSettleService(
       >();
       const billable: {
         item: (typeof itemRows)[number];
-        report: BatchPartialItemReport & { kind: "terminal" | "cancelled" };
+        terminalState: BatchPartialItemTerminalState;
         exact: { numerator: bigint; denominator: bigint };
         usageFull: Record<PriceDimension, number>;
       }[] = [];
       let totalNumerator = 0n;
       let totalDenominator = 1n;
       for (const row of itemRows) {
-        const entry = reported.get(row.customId);
-        if (entry === undefined) continue;
+        const outcome = outcomeByCustomId.get(row.customId);
+        if (outcome === undefined) continue;
         if (
-          entry.classification !== "completed" &&
-          entry.classification !== "failed_billable" &&
-          !(entry.classification === "cancelled" && entry.usageFull !== null)
+          outcome.classification !== "completed" &&
+          outcome.classification !== "failed_billable" &&
+          !(outcome.classification === "cancelled" && outcome.usage !== null)
         ) {
           continue;
+        }
+        if (outcome.terminalState === null || outcome.usage === null) {
+          throw new TypeError(
+            `batch-partial: billable outcome ${row.customId} is missing terminal usage`,
+          );
         }
         const cellKey = `${row.provider}\u0000${row.model}\u0000${row.capability}`;
         let basis = basisCache.get(cellKey);
@@ -779,7 +785,7 @@ export function createBatchPartialSettleService(
           basis = { dims: resolved.dims, rate: resolved.rate };
           basisCache.set(cellKey, basis);
         }
-        const usageFull = entry.usageFull as Record<PriceDimension, number>;
+        const usageFull = outcome.usage as Record<PriceDimension, number>;
         const priced = computeReservationCeiling({
           dims: basis.dims,
           quantities: usageFull,
@@ -823,9 +829,7 @@ export function createBatchPartialSettleService(
         }
         billable.push({
           item: row,
-          report: entry.report as BatchPartialItemReport & {
-            kind: "terminal" | "cancelled";
-          },
+          terminalState: outcome.terminalState,
           exact: priced.exactScaledUnits,
           usageFull,
         });
@@ -873,10 +877,7 @@ export function createBatchPartialSettleService(
               capability: entry.item.capability,
               // A billed cancellation's line carries the provider's terminal word for
               // what ran — `cancelled` — the detail's own closed vocabulary owns it.
-              terminalState:
-                entry.report.kind === "terminal"
-                  ? entry.report.terminalState
-                  : "cancelled",
+              terminalState: entry.terminalState,
               actualUsage: entry.usageFull,
               exactCost: entry.exact,
             })),

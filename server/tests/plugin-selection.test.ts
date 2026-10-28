@@ -253,7 +253,8 @@ describe("every failure offers everything", () => {
         throw new Error("should not be asked");
       },
     });
-    expect(selection.reason).toBe("unavailable");
+    // Not `unavailable`: pass one was never asked, and the trail says so.
+    expect(selection.reason).toBe("no-text");
     expect(selection.offered).toHaveLength(manyTools.length);
   });
 });

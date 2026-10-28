@@ -362,10 +362,13 @@ export function createMastraTools(
           const decision = ctx.agent.resumeData as {
             approved?: unknown;
             reason?: unknown;
-          };
-          if (decision && decision.approved === false) {
+          } | null;
+          // FAIL CLOSED: only an explicit `approved: true` reaches the granted execute. A
+          // malformed decision ({}, a stray field, `"true"` as a string) previously fell
+          // through to the external call — the one place a wrong guess is a real-world effect.
+          if (decision?.approved !== true) {
             const reason =
-              typeof decision.reason === "string" && decision.reason.trim()
+              typeof decision?.reason === "string" && decision.reason.trim()
                 ? decision.reason.trim()
                 : "The person declined this action.";
             return `${REFUSAL_MARKER} ${reason}`;

@@ -618,10 +618,15 @@ export async function createPublicBotUsageFixture(): Promise<PublicBotUsageFixtu
             update enterprise_tenants
             set policy_revision = ${revision}
             where id = ${tenantId}
+            returning id
           `);
-          const changed = Number(
-            (updated as unknown as { count?: number }).count ?? 0,
-          );
+          // execute() 结果归一：bun-sql 返回行数组、node postgres 返回 {rows}。
+          const rows = (
+            Array.isArray(updated)
+              ? updated
+              : ((updated as { rows?: unknown[] })?.rows ?? [])
+          ) as unknown[];
+          const changed = rows.length;
           if (changed !== 1) {
             throw new Error(
               `TENANT_POLICY_REVISION_FAILED:${tenantId}:${revision}:${changed}`,

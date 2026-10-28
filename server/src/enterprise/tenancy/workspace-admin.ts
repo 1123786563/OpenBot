@@ -321,8 +321,10 @@ async function resolveCompanyMembership(
 ): Promise<{ tenantId: string; membership: CompanyMemberContext }> {
   const identity = await options.authenticate(request);
   if (!identity?.actorId) throw new Error("AUTH_REQUIRED");
-  const tenantId = options.selectTenant?.(request);
-  if (!tenantId?.trim()) throw new Error("TENANT_REQUIRED");
+  // 归一化后再用：非空判定与后续查询/上下文必须同一值，带首尾空白的
+  // 租户头不得在判定处通过、在查询处落空（永远 TENANT_FORBIDDEN）。
+  const tenantId = options.selectTenant?.(request)?.trim() ?? "";
+  if (!tenantId) throw new Error("TENANT_REQUIRED");
   const membership = await directory.transaction(async (tx) => {
     await tx.execute(sql`set transaction isolation level read committed`);
     await tx.execute(sql`set local lock_timeout = '2s'`);

@@ -3069,9 +3069,14 @@ describe("the .webapp-mount read is single-sourced (fix-ocr28 #4 — source pins
   test("readMountRecordExact exists and exactly the mint's one shared read calls it (OCR R1 medium)", () => {
     expect(source).toContain("async function readMountRecordExact(");
     const calls = [...source.matchAll(/await readMountRecordExact\(/g)];
-    // Definition line excluded: 1 call site — the preview-ticket mint's
-    // shared read, both resolved generations (fix-ocr27 #3 + #437 GAP-C).
-    expect(calls.length).toBe(1);
+    // Definition line excluded: 2 call sites since #648 — the preview-ticket
+    // mint's shared read (both resolved generations, fix-ocr27 #3 + #437
+    // GAP-C), plus readMountRecord, which #648 turned into a pure FOLD over
+    // this three-state read so the readFile+trim+catch lives in ONE body.
+    // The pin still holds what it exists to hold: the raw read is spelled
+    // once, and the info face's two-state collapse is the only other entry
+    // point to it.
+    expect(calls.length).toBe(2);
   });
 
   test("expectedMountFor exists and exactly the three consumers derive through it", () => {

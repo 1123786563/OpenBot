@@ -206,8 +206,11 @@ export function startHttpServer(deps: {
           decision.actorId,
           decision.botId,
         );
+        // The upstream URL may or may not already carry a query string (today it
+        // does, but the stream URL is another module's output): join accordingly.
+        const joiner = decision.upstream.includes("?") ? "&" : "?";
         const upstream = recording
-          ? `${decision.upstream}&recording=${encodeURIComponent(recording.id)}`
+          ? `${decision.upstream}${joiner}recording=${encodeURIComponent(recording.id)}`
           : decision.upstream;
         if (
           server.upgrade(request, {
@@ -282,14 +285,22 @@ export function startHttpServer(deps: {
         const inward = new WebSocket(stream.upstream, {
           headers: { "x-openbot-computer-token": stream.token },
         } as unknown as string | string[]);
+        // Binary frames must reach the viewer as the bytes they are: the default Blob would
+        // flatten to "[object Blob]" under String() below, corrupting the stream irreversibly.
+        inward.binaryType = "arraybuffer";
         stream.inward = inward;
         // Frames outward, input inward. Buffered by neither side: a frame the browser is too slow for
         // should be dropped, not queued, because a stale frame is worse than a missing one.
         inward.onmessage = (event) => {
+          const frame = event.data as string | ArrayBuffer;
+          const text =
+            typeof frame === "string"
+              ? frame
+              : Buffer.from(frame).toString("utf8");
           if (stream.recordingId) {
             let recorded: unknown;
             try {
-              recorded = JSON.parse(String(event.data));
+              recorded = JSON.parse(text);
             } catch {
               recorded = null;
             }
@@ -348,7 +359,8 @@ export function startHttpServer(deps: {
             }
           }
           try {
-            ws.send(String(event.data));
+            // Forward the frame in its own encoding: a string stays text, binary stays bytes.
+            ws.send(frame);
           } catch {
             inward.close();
           }
@@ -368,7 +380,9 @@ export function startHttpServer(deps: {
           channelSocket.message(asChannelSocket(ws), raw);
           return;
         }
-        if (ws.data.inward?.readyState === 1) ws.data.inward.send(String(raw));
+        // Forward inbound frames in their own encoding: String() would lossily re-decode a
+        // binary frame (invalid sequences become U+FFFD), so the raw message goes as-is.
+        if (ws.data.inward?.readyState === 1) ws.data.inward.send(raw);
       },
       close(ws, code, reason) {
         if (isHmrSocket(ws.data)) {

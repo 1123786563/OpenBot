@@ -1,4 +1,5 @@
 import {
+  canonicalPriceAmount,
   PRICE_DIMENSIONS,
   type PriceDimension,
   type PriceDimensionUnknownReason,
@@ -201,24 +202,25 @@ export function assessEmbeddingEnablement(input: {
     }
   }
 
-  const free = EMBEDDING_BILLED_DIMENSIONS.every(
-    (dimension) =>
-      input.dims[dimension].status === "known" &&
-      input.dims[dimension].amount === "0",
-  );
+  const free = EMBEDDING_BILLED_DIMENSIONS.every((dimension) => {
+    const state = input.dims[dimension];
+    if (state.status !== "known") return false;
+    const canonical = canonicalPriceAmount(state.amount);
+    return canonical.ok && canonical.amount === "0";
+  });
 
   // The certified worst-case quantities, one per dimension of the closed vocabulary:
   // the counted input tokens, the per-entry surcharge, and 0 for every dimension the
   // embeddings wire cannot bill (the vector-output evidence, stated numerically).
   const quantities = Object.fromEntries(
-    PRICE_DIMENSIONS.map((dimension) => [
-      dimension,
-      dimension === "input"
-        ? inputTokens
-        : dimension === "surcharge_per_request"
-          ? entry.entries
-          : 0,
-    ]),
+    PRICE_DIMENSIONS.map((dimension) => {
+      let quantity = 0;
+      if (dimension === "input") quantity = inputTokens;
+      else if (dimension === "surcharge_per_request") {
+        quantity = entry.entries;
+      }
+      return [dimension, quantity];
+    }),
   ) as ReservationBoundQuantities;
 
   return {

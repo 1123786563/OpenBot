@@ -33,9 +33,12 @@ export type ArtifactRoutesDeps = {
  * any walk that would escape it. Returns null on traversal; the route turns that into a 400.
  */
 export function safeJoin(directory: string, rel: string): string | null {
+  // Split on backslashes too: `%5C` decodes to a segment separator on Windows-semantics
+  // filesystems, so `..\..\etc` must reach the `..` handler below, not hide inside one
+  // literal segment.
   const segments = rel
     .replace(/^\/+/, "")
-    .split("/")
+    .split(/[\\/]/)
     .filter((segment) => segment.length > 0 && segment !== ".");
   const resolved: string[] = [];
   for (const segment of segments) {
@@ -50,6 +53,18 @@ export function safeJoin(directory: string, rel: string): string | null {
 }
 
 /** A minimal extension → content-type map for artifact downloads (binary falls back to octet-stream). */
+// A filename safe for a content-disposition header: control characters (which the
+// Headers constructor rejects outright, turning a decoded %0d%0a into a 500) and
+// quotes/backslashes are replaced before the value is ever interpolated.
+// Built from char codes: biome's noControlCharactersInRegex reads the \u escapes
+// as the very control characters this class exists to match.
+const DISPOSITION_UNSAFE = new RegExp(
+  `[${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}"\\\\]`,
+  "g",
+);
+const safeDispositionName = (name: string): string =>
+  name.replace(DISPOSITION_UNSAFE, "_");
+
 const MIME_BY_EXTENSION: Record<string, string> = {
   html: "text/html; charset=utf-8",
   htm: "text/html; charset=utf-8",
@@ -188,7 +203,7 @@ export function createArtifactRoutes(
       headers: {
         "content-type": contentTypeFor(name),
         "content-length": String(bytes.byteLength),
-        "content-disposition": `attachment; filename="${name.replace(/["\\]/g, "_")}"`,
+        "content-disposition": `attachment; filename="${safeDispositionName(name)}"`,
       },
     });
   });
@@ -236,7 +251,15 @@ export function createArtifactRoutes(
     if (markdown === null)
       return context.json({ error: "File not found" }, 404);
 
-    const docxBytes = await exportDocx(markdown);
+    let docxBytes: Uint8Array;
+    try {
+      docxBytes = await exportDocx(markdown);
+    } catch (error) {
+      // The read above is guarded; the conversion is a second failure surface (a
+      // malformed document, a broken converter) and must not become a raw 500.
+      assertNotScopeRefusal(error);
+      return context.json({ error: "The document could not be converted." }, 502);
+    }
     const docxName = `${name.replace(/\.md$/i, "")}.docx`;
     return new Response(docxBytes as unknown as BodyInit, {
       status: 200,
@@ -244,7 +267,7 @@ export function createArtifactRoutes(
         "content-type":
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "content-length": String(docxBytes.byteLength),
-        "content-disposition": `attachment; filename="${docxName.replace(/["\\]/g, "_")}"`,
+        "content-disposition": `attachment; filename="${safeDispositionName(docxName)}"`,
       },
     });
   });
@@ -260,6 +283,17 @@ export function createArtifactRoutes(
     const { session, fileApi } = await resolve(sessionId, actor.id);
     if (!session) return context.json({ error: "Session not found" }, 404);
     if (!fileApi) return context.json({ error: "File not found" }, 404);
+
+    // Same input contract as the docx face: the exporter consumes markdown, and a
+    // binary riding this endpoint would be decoded as text. The two export faces
+    // share one rule.
+    const deckName = rel.split("/").at(-1) ?? "";
+    if (!deckName.toLowerCase().endsWith(".md")) {
+      return context.json(
+        { error: "Only markdown (.md) files can be exported as PPTX" },
+        400,
+      );
+    }
 
     const directory = sessionDirectory(
       sessionId,
@@ -285,7 +319,15 @@ export function createArtifactRoutes(
     if (markdown === null)
       return context.json({ error: "File not found" }, 404);
 
-    const pptxBytes = await exportPptx(markdown);
+    let pptxBytes: Uint8Array;
+    try {
+      pptxBytes = await exportPptx(markdown);
+    } catch (error) {
+      // Same second failure surface as the docx face above; answered as its own
+      // upstream-style failure instead of an unhandled 500.
+      assertNotScopeRefusal(error);
+      return context.json({ error: "The deck could not be converted." }, 502);
+    }
     const name = rel.split("/").at(-1) ?? "deck.md";
     const pptxName = `${name.replace(/\.[^.]+$/, "")}.pptx`;
     return new Response(pptxBytes as unknown as BodyInit, {
@@ -294,7 +336,7 @@ export function createArtifactRoutes(
         "content-type":
           "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         "content-length": String(pptxBytes.byteLength),
-        "content-disposition": `attachment; filename="${pptxName.replace(/["\\]/g, "_")}"`,
+        "content-disposition": `attachment; filename="${safeDispositionName(pptxName)}"`,
       },
     });
   });

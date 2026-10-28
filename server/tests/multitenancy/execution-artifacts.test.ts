@@ -138,6 +138,10 @@ describe("MT047 execution artifact naming and isolation (pure)", () => {
       "/data/tenants/Tenant-A/workspaces/team-a1/bots/bot-1", // 非 plain id
       "/data/tenants/tenant-a/workspaces/team-a1/bots/bot 1", // 空格
       "/elsewhere/tenants/tenant-a/workspaces/team-a1/bots/bot-1", // 别的 root
+      // botId 之后的段是文件名，不参与归属判定，但也不能携带爬升段逃出 scope 树。
+      "/data/tenants/tenant-a/workspaces/team-a1/bots/bot-1/../../../tenants/tenant-b/workspaces/team-b1/bots/bot-2/snapshots/s4.tar.gz",
+      "/data/tenants/tenant-a/workspaces/team-a1/bots/bot-1//x", // 空段
+      "/data/tenants/tenant-a/workspaces/team-a1/bots/bot-1/./x", // 本段
     ];
     for (const path of bad) {
       expect(parseExecutionArtifactPath("/data", path)).toBeNull();

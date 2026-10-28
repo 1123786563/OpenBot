@@ -24,7 +24,12 @@
 import { Hono } from "hono";
 import type { AgentActor } from "../../agents/profile-types";
 import type { AppVariables } from "../../auth/guards";
-import { type BotManagementCheck, resolveObservationBot } from "../context";
+import {
+  type BotManagementCheck,
+  explicitObservationOwnership,
+  OBSERVATION_BOT_NOT_FOUND,
+  resolveObservationBot,
+} from "../context";
 import { ObservationScopeError } from "../contracts";
 import type { ObservationDatasetStore } from "../datasets";
 import { ExecutionError, type ObservationExecutionStore } from "../executions";
@@ -91,10 +96,15 @@ export function createExperimentResultsRoutes(
       return Response.json({ error: access.error }, { status: access.status });
     }
     const actor = context.var.actor;
-    const ownership =
-      access.profile.ownerUserId === actor.id
-        ? ("owner" as const)
-        : ("admin" as const);
+    // Explicit, never inferred (OCR h10/m182): a caller the seam refuses to mint
+    // for is answered with the same unified not-found the manage gate uses.
+    const ownership = explicitObservationOwnership(actor, access.profile);
+    if (ownership === null) {
+      return Response.json(
+        { error: OBSERVATION_BOT_NOT_FOUND },
+        { status: 404 },
+      );
+    }
     const epoch = await deps.scopeEpoch(actor, access.botId);
     return {
       scope: resolveObservationScope({

@@ -30,6 +30,7 @@ import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { enterpriseControls } from "../admin/controls";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import { type AppVariables, requireAdmin } from "../auth/guards";
+import { getLogger } from "../../../shared/logger";
 import { audioPathAvailabilityView } from "../billing/audio-path-admission";
 import {
   type GatewayAdminCredentialService,
@@ -72,6 +73,8 @@ import {
   type GatewayReadinessService,
   gatewayReadinessControls,
 } from "./readiness";
+
+const log = getLogger("server");
 
 /**
  * The services this surface drives. Defaults resolve through the installed
@@ -139,6 +142,25 @@ export function gatewayAdminRoutes(
 ) {
   const resolved: GatewayAdminRouteDeps = { ...defaultDeps(), ...deps };
   const app = new Hono<{ Variables: AppVariables }>();
+
+  // Every handler here reads or writes the gateway stores through services that may throw on a
+  // database fault; the surface's contract is a tagged `{ error }` answer, never Hono's
+  // plain-text 500 fallback — the same boundary the sibling credential route draws.
+  app.onError((error, context) => {
+    log.error(
+      {
+        type: "gateway-admin-route-error",
+        errorType: error.name,
+        context: { route: context.req.path },
+        timestamp: new Date().toISOString(),
+      },
+      "gateway-admin-route-error",
+    );
+    return context.json(
+      { error: "The gateway admin surface is unavailable. Try again." },
+      503,
+    );
+  });
 
   app.use("*", async (context, next) => {
     context.header("cache-control", "no-store");

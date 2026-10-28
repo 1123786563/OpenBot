@@ -357,7 +357,8 @@ test("a repeated revocation neither re-disables remote keys nor rewrites history
   expect(second.status).toBe(200);
   expect(((await second.json()) as { revoked: boolean }).revoked).toBe(false);
 
-  // The idempotent no-op goes nowhere near the gateway seam and writes no second audit event.
+  // The idempotent no-op goes nowhere near the gateway seam; the audit trail appends
+  // the no-op as its own event (`revoked: false`) rather than rewriting the first one.
   expect(remoteDisableCalls.length).toBe(callsAfterFirst);
   const events = await database
     .select()
@@ -368,7 +369,12 @@ test("a repeated revocation neither re-disables remote keys nor rewrites history
         eq(auditEvents.targetId, grant.grantId),
       ),
     );
-  expect(events).toHaveLength(1);
+  expect(events).toHaveLength(2);
+  expect(
+    events
+      .map((event) => (event.payload as { revoked: boolean }).revoked)
+      .sort(),
+  ).toEqual([false, true]);
 });
 
 test("revocation leaves settled consumption and pending holds exactly as they were", async () => {

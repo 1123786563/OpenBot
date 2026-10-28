@@ -122,7 +122,10 @@ export function decodeCursor(value: string | undefined): Cursor | undefined {
       parsed.lastSignedInAt !== null &&
       parsed.lastSignedInAt !== undefined &&
       (typeof parsed.lastSignedInAt !== "string" ||
-        Number.isNaN(Date.parse(parsed.lastSignedInAt)))
+        (Number.isNaN(Date.parse(parsed.lastSignedInAt)) &&
+          !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d+)?[+-]\d{2}(:\d{2})?$/.test(
+            parsed.lastSignedInAt,
+          )))
     ) {
       return undefined;
     }
@@ -215,6 +218,12 @@ export function createPeopleStore(
           string[]
         >`coalesce(array_agg(distinct ${accounts.providerId}) filter (where ${accounts.providerId} is not null), '{}')`,
         lastSignedInAt: users.lastSignedInAt,
+        /*
+         * The raw `::text` stamp for the cursor: a Date holds milliseconds, the column holds
+         * microseconds, and an ISO round-trip in the cursor would silently skip every row
+         * inside the lost digits. The raw string re-parses losslessly in `::timestamptz`.
+         */
+        cursorLastSignedInAt: sql<string | null>`${users.lastSignedInAt}::text`,
         revoked: sql<boolean>`bool_or(${revokedAccess.email} is not null)`,
       })
       .from(users)
@@ -222,7 +231,10 @@ export function createPeopleStore(
       .leftJoin(accounts, eq(accounts.userId, users.id))
       .leftJoin(
         revokedAccess,
-        eq(revokedAccess.email, sql`lower(${users.email})`),
+        // The deny-list keys are stored trim+lower; the join must normalize the same way,
+        // or an email that arrived with surrounding whitespace is revoked at the gate but
+        // never shows as revoked here.
+        eq(revokedAccess.email, sql`lower(btrim(${users.email}))`),
       )
       .where(filters.length > 0 ? and(...filters) : undefined)
       .groupBy(users.id)
@@ -259,9 +271,7 @@ export function createPeopleStore(
       nextCursor:
         rows.length > limit && last
           ? encodeCursor({
-              lastSignedInAt: last.lastSignedInAt
-                ? new Date(last.lastSignedInAt).toISOString()
-                : null,
+              lastSignedInAt: last.cursorLastSignedInAt,
               email: last.email,
             })
           : null,

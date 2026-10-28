@@ -282,8 +282,13 @@ export function deriveCapabilitiesFromEntry(raw: Record<string, unknown>):
   }
   const capabilities = new Set<ModelCapability>();
   for (const method of methods) {
-    const capability =
-      CAPABILITY_VOCABULARY[normalizeMethodToken(method) ?? ""];
+    // Own-property lookup only: a plain subscript walks the prototype chain, so a
+    // method named "constructor" or "valueOf" would "resolve" to an inherited
+    // function and never to a capability.
+    const token = normalizeMethodToken(method) ?? "";
+    const capability = Object.hasOwn(CAPABILITY_VOCABULARY, token)
+      ? CAPABILITY_VOCABULARY[token]
+      : undefined;
     if (capability && capability !== "unknown") capabilities.add(capability);
   }
   if (capabilities.size === 0) {
@@ -368,7 +373,7 @@ export function normalizeGatewayModelCatalog(
       seen.add(key);
       result.entries.push({
         ref,
-        capabilitySource: derived.ok ? derived.source : derived.source,
+        capabilitySource: derived.source,
         ...(derived.ok ? {} : { unknownReason: derived.reason }),
         rawEntry: entry,
       });
@@ -737,23 +742,28 @@ async function fetchManifestPage(options: {
   // every stream read on every runtime, so the budget is enforced here as well (the probe's
   // rule, for the same reason).
   const remainingMs = config.requestTimeoutMs - (Date.now() - startedAt);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  // The race's losing timer must not keep spinning for the rest of the budget after
+  // the body promise settles: cleared the moment either side wins.
   const body = await Promise.race([
     readBodyCapped(response, GATEWAY_CATALOG_MAX_BODY_BYTES),
     new Promise<never>((_, reject) => {
-      setTimeout(() => reject(timeoutError()), Math.max(1, remainingMs));
+      timeout = setTimeout(() => reject(timeoutError()), Math.max(1, remainingMs));
     }),
-  ]).catch(
-    (
-      error: unknown,
-    ):
-      | "timeout"
-      | { ok: true; text: string }
-      | { ok: false; reason: "too_large" | "unreadable" } => {
-      if (isTimeoutError(error)) return "timeout";
-      void response.body?.cancel().catch(() => {});
-      return { ok: false, reason: "unreadable" };
-    },
-  );
+  ])
+    .catch(
+      (
+        error: unknown,
+      ):
+        | "timeout"
+        | { ok: true; text: string }
+        | { ok: false; reason: "too_large" | "unreadable" } => {
+        if (isTimeoutError(error)) return "timeout";
+        void response.body?.cancel().catch(() => {});
+        return { ok: false, reason: "unreadable" };
+      },
+    )
+    .finally(() => clearTimeout(timeout));
   if (body === "timeout") {
     return { ok: false, reasonCode: "catalog_fetch_timeout" };
   }
@@ -991,7 +1001,8 @@ export function createGatewayCatalogService(
         if (normalized.invalid) {
           return fail("catalog_fetch_invalid_response", { configVersion });
         }
-        rawEntries.push(...(pageResult.payload as { data: unknown[] }).data);
+        for (const raw of (pageResult.payload as { data: unknown[] }).data)
+          rawEntries.push(raw);
         if (pageResult.nextPageToken === undefined) {
           exhausted = true;
           break;

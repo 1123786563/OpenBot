@@ -49,6 +49,7 @@ import {
 } from "../../tests/multitenancy/support/scenarios";
 import {
   enterpriseRuntimeDatabaseUrlFrom,
+  enterpriseTestDatabaseNameFrom,
   enterpriseTestDatabaseUrlFrom,
 } from "../../tests/support/enterprise-database";
 import {
@@ -330,7 +331,7 @@ export function resolveMatrixIsolation(
   const setupUrl = new URL(setupUrlRaw);
   return {
     runId,
-    databaseName: setupUrl.pathname.replace(/^\//, "").replace(/\/+$/, ""),
+    databaseName: enterpriseTestDatabaseNameFrom(setupUrlRaw),
     databaseHost: setupUrl.hostname,
     databasePort: Number(setupUrl.port || 5432),
     restrictedRoles: [...RESTRICTED_ROLES],
@@ -537,9 +538,9 @@ export async function runMatrixCoverage(
     { exercised: number; covered: number }
   >();
   for (const id of CLASS_IDS) classUsage.set(id, { exercised: 0, covered: 0 });
-  const bump = (ref: MatrixEvidenceRef | undefined, covered: boolean) => {
-    if (!ref?.matrixClass) return;
-    const usage = classUsage.get(ref.matrixClass);
+  const bump = (matrixClass: IdentityMatrixClassId | undefined, covered: boolean) => {
+    if (!matrixClass) return;
+    const usage = classUsage.get(matrixClass);
     if (!usage) return;
     usage.exercised += 1;
     if (covered) usage.covered += 1;
@@ -580,8 +581,14 @@ export async function runMatrixCoverage(
         ? "covered"
         : "uncovered";
     if (planned) {
-      bump(planned.positive, status === "covered");
-      bump(planned.denial, status === "covered");
+      // Count the entrance once per class: both sides regularly cite the same
+      // class, which double-counted the per-entrance coverage metric.
+      const citedClasses = new Set<IdentityMatrixClassId>([
+        planned.positive.matrixClass,
+        planned.denial.matrixClass,
+      ]);
+      for (const matrixClass of citedClasses)
+        bump(matrixClass, status === "covered");
     }
     entrances.push({
       id: entry.id,
@@ -717,8 +724,19 @@ function parseFlags(argv: readonly string[]): CliFlags {
 async function withCleanStdout<T>(run: () => Promise<T>): Promise<T> {
   const original = process.stdout.write.bind(process.stdout);
   const captured: string[] = [];
-  process.stdout.write = ((chunk: unknown) => {
-    captured.push(String(chunk));
+  process.stdout.write = ((
+    chunk: unknown,
+    encoding?: BufferEncoding | ((err?: Error | null) => void),
+    callback?: (err?: Error | null) => void,
+  ) => {
+    captured.push(
+      typeof chunk === "string"
+        ? chunk
+        : Buffer.from(chunk as Uint8Array).toString("utf8"),
+    );
+    // Fire the writer's completion callback (if any): swallowing it would hang
+    // callers that wait for flush confirmation.
+    (typeof encoding === "function" ? encoding : callback)?.();
     return true;
   }) as typeof process.stdout.write;
   try {

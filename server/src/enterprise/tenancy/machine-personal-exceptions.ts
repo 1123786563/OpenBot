@@ -379,7 +379,7 @@ function entryInvalidReason(
     entry.paymentAccount.trim().length === 0
   )
     return "paymentAccount is empty — every exception must state how its payment account is fixed (spec §7.1)";
-  if (!["none", "machine", "session"].includes(entry.context))
+  if (!["machine", "session"].includes(entry.context))
     return `context must be machine|session, got "${String(entry.context)}"`;
   if (!["always", "conditional"].includes(entry.surface))
     return `surface must be always|conditional, got "${String(entry.surface)}"`;

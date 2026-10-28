@@ -17,7 +17,7 @@
  * `SCIM_BEARER_TOKEN` is unset.
  */
 import type { SCIMOptions } from "@better-auth/scim";
-import { eq } from "drizzle-orm";
+import { and, eq, like } from "drizzle-orm";
 import { getLogger } from "../../../shared/logger";
 import { enterpriseControls } from "../admin/controls";
 import { type AuditStore, recordAuditEvent } from "../audit";
@@ -106,24 +106,31 @@ export async function reconcileDirectoryState(
     return;
   }
 
-  const [entry] = await deps.database
-    .select({ revokedBy: revokedAccess.revokedBy })
-    .from(revokedAccess)
-    .where(eq(revokedAccess.email, normalized))
-    .limit(1);
-  // An administrator's removal stands until an administrator lifts it.
-  if (entry?.revokedBy.startsWith(SCIM_REVOKED_BY_PREFIX)) {
-    await deps.database
-      .delete(revokedAccess)
-      .where(eq(revokedAccess.email, normalized));
-    if (deps.auditStore) {
-      await recordAuditEvent(deps.auditStore, {
-        eventType: "person.reprovisioned",
-        targetType: "person",
-        targetId: state.userId,
-        payload: { email, via: "SCIM" },
-      }).catch(() => undefined);
-    }
+  // An administrator's removal stands until an administrator lifts it — so the SCIM prefix is
+  // judged INSIDE the delete, not in a read a concurrent upsert can outrun: an entry an
+  // administrator wrote between the old select and delete would have been deleted anyway.
+  // The audit rides the deleted rows, so it never describes a removal that did not happen.
+  const lifted = await deps.database
+    .delete(revokedAccess)
+    .where(
+      and(
+        eq(revokedAccess.email, normalized),
+        like(revokedAccess.revokedBy, `${SCIM_REVOKED_BY_PREFIX}%`),
+      ),
+    )
+    .returning({ email: revokedAccess.email });
+  if (lifted.length > 0 && deps.auditStore) {
+    await recordAuditEvent(deps.auditStore, {
+      eventType: "person.reprovisioned",
+      targetType: "person",
+      targetId: state.userId,
+      payload: { email, via: "SCIM" },
+    }).catch((error: unknown) =>
+      log.error(
+        { err: error, eventType: "person.reprovisioned" },
+        "Could not write the reprovision audit row.",
+      ),
+    );
   }
 }
 
@@ -168,7 +175,12 @@ export function scimOptions(
      */
     projection: {
       roles: {
-        map: ({ source }) => [source.displayName],
+        // A directory group with no name contributes nothing; without this it landed in
+        // `users.groups` as an `undefined`/blank slug that no policy can ever match.
+        map: ({ source }) => {
+          const name = source.displayName?.trim();
+          return name ? [name] : [];
+        },
         exists: () => true,
       },
       reconcileUser: async (projected, { database }) => {
@@ -211,5 +223,10 @@ export async function recordProvisioned(
       via: "SCIM",
       role: role?.role ?? roleForEmail(user.email, deps.initialAdminEmails),
     },
-  }).catch(() => undefined);
+  }).catch((error: unknown) =>
+    log.error(
+      { err: error, eventType: "person.provisioned" },
+      "Could not write the provision audit row.",
+    ),
+  );
 }

@@ -13,6 +13,7 @@ import {
   createJudgeScorer,
   createJudgeScoringCaseRunner,
   JUDGE_SCORER_VERSION,
+  type JudgeScorer,
   JUDGE_USAGE_CLIENT,
   judgeCaseUsageId,
 } from "../src/ai-observability/scoring/judge";
@@ -551,6 +552,49 @@ test("a charge the pricing refuses fails the scoring and leaves the hold retaine
   ).toBeNull();
 });
 
+test("a judge call aborted by the task's cancellation keeps its hold and records cancelled evidence (FREV-05)", async () => {
+  // The mirror of the wrapper's gate: here the judge dial already started —
+  // reservation held, request on the wire — when the task's cancellation
+  // reaches it. The abort is an unknown cost, never a confirmed no-cost: the
+  // evidence row answers `cancelled` (the word that keeps the hold occupied,
+  // ADR-0003's pending settlement), and the record names JUDGE_CANCELLED
+  // rather than a provider failure the provider never was.
+  const controller = new AbortController();
+  const { judge, model, billing } = scorerFor({
+    throws: new Error("The operation was aborted"),
+  });
+
+  const settled = judge({ ...inputFor(), signal: controller.signal });
+  controller.abort();
+  const record = await settled;
+
+  expect(record).toMatchObject({ status: "failed", code: "JUDGE_CANCELLED" });
+  // The hold was taken and stays occupied: no settlement ever claimed a cost.
+  expect(billing.reserves).toHaveLength(1);
+  expect(billing.records).toHaveLength(1);
+  expect(billing.records[0]).toMatchObject({
+    status: "cancelled",
+    inputTokens: 0,
+    outputTokens: 0,
+  });
+  // The dial was attempted — the abort is what ended it.
+  expect(model.calls).toHaveLength(1);
+});
+
+test("a judge call whose task signal never fires threads the signal into the dial and scores as before (FREV-05 positive control)", async () => {
+  const controller = new AbortController();
+  const { judge, model } = scorerFor({
+    output: VERDICT,
+    inputTokens: 12,
+    outputTokens: 34,
+  });
+
+  const record = await judge({ ...inputFor(), signal: controller.signal });
+
+  expect(record).toMatchObject({ status: "scored", score: 0.9 });
+  expect(model.calls[0]?.signal).toBe(controller.signal);
+});
+
 describe("the case-runner wrapper", () => {
   const context = (config = frozenConfig()): EvaluationCaseContext => ({
     executionId: "exec-1",
@@ -632,6 +676,29 @@ describe("the case-runner wrapper", () => {
     expect(model.calls).toHaveLength(0);
   });
 
+  test("a cancellation on a rules-only experiment fabricates no judge failure (OCR R5-695)", async () => {
+    // The gate protects a JUDGE call; a run with no judge subtree has none to
+    // protect. Without this guard the wrapper wrote a JUDGE_CANCELLED failure
+    // record for an experiment that never had a judging step — contradicting
+    // the module's own "disabled is not a failure" semantics on the results page.
+    const { runner, model } = wrappedCaseRunner(
+      { output: VERDICT },
+      { status: "completed", output: "the answer" },
+    );
+    const controller = new AbortController();
+
+    const settled = runner({
+      ...context(frozenConfig({ rules: [] })),
+      signal: controller.signal,
+    });
+    controller.abort();
+    const outcome = await settled;
+
+    expect(outcome.status).toBe("completed");
+    expect(outcome.judge).toBeUndefined();
+    expect(model.calls).toHaveLength(0);
+  });
+
   test("a refused judge admission fails the scoring, not the case", async () => {
     const { runner, model } = wrappedCaseRunner(
       { output: VERDICT, inputTokens: 1, outputTokens: 1 },
@@ -652,6 +719,115 @@ describe("the case-runner wrapper", () => {
       code: "JUDGE_ENTRANCE_NOT_APPROVED",
     });
     expect(model.calls).toHaveLength(0);
+  });
+
+  test("a cancel that lands while the case's model call is away withholds the judge — no dial, no reservation, the record says cancelled (FREV-05)", async () => {
+    // The final-review timing: sample A admitted and awaiting its model → the
+    // task settles cancelled behind the worker's back → the model still answers
+    // completed. The judge is a NEW billed call on withdrawn eligibility, and
+    // the answer to withdrawn eligibility is no dial: the case's own completed
+    // truth stands (its cost was real and settles per the thrown-call
+    // doctrine), and a JUDGE_CANCELLED record says why there is no score
+    // instead of swallowing the judge silently.
+    const model = fakeJudgeModel({
+      output: VERDICT,
+      inputTokens: 12,
+      outputTokens: 34,
+    });
+    const billing = fakeBilling();
+    const judge = createJudgeScorer({
+      callModel: model.callModel,
+      admission: { entrances, approvedVersions, policy },
+      billing: {
+        creditWriter: billing.creditWriter,
+        outbox: billing.outbox,
+        externalCustomerId: "customer-1",
+      },
+    });
+    let release!: (outcome: EvaluationCaseOutcome) => void;
+    const inFlight = new Promise<EvaluationCaseOutcome>((resolve) => {
+      release = resolve;
+    });
+    const inner: EvaluationCaseRunner = () => inFlight;
+    const runner = createJudgeScoringCaseRunner({ inner, judge });
+    const controller = new AbortController();
+
+    const settled = runner({ ...context(), signal: controller.signal });
+    controller.abort();
+    release({ status: "completed", output: "the answer" });
+    const outcome = await settled;
+
+    expect(outcome.status).toBe("completed");
+    expect(outcome.output).toBe("the answer");
+    expect(outcome.judge).toMatchObject({
+      status: "failed",
+      code: "JUDGE_CANCELLED",
+    });
+    // Zero judge dials, zero judge holds: the gate sits upstream of the
+    // scorer's own admission, so nothing is reserved either.
+    expect(model.calls).toHaveLength(0);
+    expect(billing.reserves).toHaveLength(0);
+  });
+
+  test("an authorization the re-check answers revoked after the inner call settles withholds the judge (FREV-05)", async () => {
+    // Same withholding, second source: the task's row never left running, but
+    // live authorization for its actor is gone. The judge's spend rides the
+    // actor's CURRENT eligibility, never the eligibility the case started
+    // under — which is exactly what the re-check re-derives.
+    const { runner, model } = wrappedCaseRunner(
+      { output: VERDICT, inputTokens: 12, outputTokens: 34 },
+      { status: "completed", output: "the answer" },
+    );
+
+    const outcome = await runner({
+      ...context(),
+      recheckAdmission: async () => false,
+    });
+
+    expect(outcome.judge).toMatchObject({
+      status: "failed",
+      code: "JUDGE_CANCELLED",
+    });
+    expect(model.calls).toHaveLength(0);
+  });
+
+  test("a re-check that still answers eligible lets the judge run — the gate withholds, it never vetoes", async () => {
+    const { runner, model } = wrappedCaseRunner(
+      { output: VERDICT, inputTokens: 12, outputTokens: 34 },
+      { status: "completed", output: "the answer" },
+    );
+    let rechecks = 0;
+
+    const outcome = await runner({
+      ...context(),
+      recheckAdmission: async () => {
+        rechecks += 1;
+        return true;
+      },
+    });
+
+    expect(rechecks).toBe(1);
+    expect(model.calls).toHaveLength(1);
+    expect(outcome.judge).toMatchObject({ status: "scored", score: 0.9 });
+  });
+
+  test("the wrapper threads the task's signal into the judge input (FREV-05)", async () => {
+    const seen: Parameters<JudgeScorer>[0][] = [];
+    const judge = (async (input: Parameters<JudgeScorer>[0]) => {
+      seen.push(input);
+      return null;
+    }) satisfies JudgeScorer;
+    const runner = createJudgeScoringCaseRunner({
+      inner: async () => ({ status: "completed", output: "the answer" }),
+      judge,
+    });
+    const controller = new AbortController();
+
+    await runner({ ...context(), signal: controller.signal });
+
+    // The judge's own dial holds the same cancellation chain the evaluated
+    // call's dial holds: one signal, one interruption, two facts.
+    expect(seen[0]?.signal).toBe(controller.signal);
   });
 });
 

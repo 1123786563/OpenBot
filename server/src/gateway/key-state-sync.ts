@@ -483,19 +483,25 @@ export function createGatewayKeyStateSyncService(
     // 1. The local side of the comparison: only what this deployment currently believes
     // active. This selection IS the no-resurrection rule — a revoked or expired record is
     // invisible to the sync, so no remote answer can reach it. The owner and term ride
-    // along as 05.9's comparison sides.
-    const activeKeys: GatewayKeyRecordRow[] = await deps.database
-      .select({
-        keyId: gatewayVirtualKeys.id,
-        grantId: gatewayVirtualKeys.grantId,
-        botId: gatewayVirtualKeys.botId,
-        gatewayVirtualKeyId: gatewayVirtualKeys.gatewayVirtualKeyId,
-        gatewayCustomerId: gatewayVirtualKeys.gatewayCustomerId,
-        expiresAt: gatewayVirtualKeys.expiresAt,
-        status: gatewayVirtualKeys.status,
-      })
-      .from(gatewayVirtualKeys)
-      .where(eq(gatewayVirtualKeys.status, "active"));
+    // along as 05.9's comparison sides. A local read failure is classified like any other
+    // stage: the outcome never throws, and the state row names why the run stopped.
+    let activeKeys: GatewayKeyRecordRow[];
+    try {
+      activeKeys = await deps.database
+        .select({
+          keyId: gatewayVirtualKeys.id,
+          grantId: gatewayVirtualKeys.grantId,
+          botId: gatewayVirtualKeys.botId,
+          gatewayVirtualKeyId: gatewayVirtualKeys.gatewayVirtualKeyId,
+          gatewayCustomerId: gatewayVirtualKeys.gatewayCustomerId,
+          expiresAt: gatewayVirtualKeys.expiresAt,
+          status: gatewayVirtualKeys.status,
+        })
+        .from(gatewayVirtualKeys)
+        .where(eq(gatewayVirtualKeys.status, "active"));
+    } catch {
+      return recordFailure("fetch", "gateway_key_sync_unexpected_error");
+    }
 
     // 2. The remote reads, ALL of them, before a single local row is touched. The first
     // refused read aborts the run: a partial read must never look like a full one, or the

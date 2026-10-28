@@ -33,6 +33,30 @@ import type { PayerRef } from "./payer";
 /** How many sessions one answer itemizes. Ours, not the caller's — the view's bound. */
 const REALTIME_SESSION_VIEW_LIMIT = 50;
 
+/** The abnormal stop to surface for a session row, if any — branches, never a ternary chain. */
+function abnormalStopOf(row: {
+  closeReason: string | null;
+  closedAt: Date | null;
+  stopReason: string | null;
+  stoppedAt: Date | null;
+}): { kind: "closed" | "stopped"; reason: string; at: string } | null {
+  if (row.closeReason !== null && row.closedAt !== null) {
+    return {
+      kind: "closed",
+      reason: row.closeReason,
+      at: row.closedAt.toISOString(),
+    };
+  }
+  if (row.stopReason !== null && row.stoppedAt !== null) {
+    return {
+      kind: "stopped",
+      reason: row.stopReason,
+      at: row.stoppedAt.toISOString(),
+    };
+  }
+  return null;
+}
+
 /** The session's abnormal state as the page reads it: the closed door codes, or null while healthy. */
 export type RealtimeSessionAbnormal = {
   /** Which verdict ended or degraded the session — 15.5's stop or 15.6's close. */
@@ -105,8 +129,8 @@ export function createRealtimeUsageService(
           holdingCount: sql<number>`count(*) filter (where ${realtimeUnits.state} in ('reserved', 'processing'))::int`,
           unknownCount: sql<number>`count(*) filter (where ${realtimeUnits.state} = 'unknown')::int`,
           refusedCount: sql<number>`count(*) filter (where ${realtimeUnits.state} = 'refused')::int`,
-          consumedCents: sql<number>`coalesce(sum(${creditReservations.charged}) filter (where ${realtimeUnits.state} = 'settled'), 0)::int`,
-          pendingCents: sql<number>`coalesce(sum(${creditReservations.maximum}) filter (where ${realtimeUnits.state} in ('reserved', 'processing', 'unknown')), 0)::int`,
+          consumedCents: sql<number>`coalesce(sum(${creditReservations.charged}) filter (where ${realtimeUnits.state} = 'settled'), 0)::bigint`,
+          pendingCents: sql<number>`coalesce(sum(${creditReservations.maximum}) filter (where ${realtimeUnits.state} in ('reserved', 'processing', 'unknown')), 0)::bigint`,
         })
         .from(realtimeSessions)
         .leftJoin(
@@ -134,20 +158,7 @@ export function createRealtimeUsageService(
         state: row.state,
         stopped: row.stoppedAt !== null,
         closed: row.state === "closed",
-        abnormal:
-          row.closeReason !== null && row.closedAt !== null
-            ? {
-                kind: "closed" as const,
-                reason: row.closeReason,
-                at: row.closedAt.toISOString(),
-              }
-            : row.stopReason !== null && row.stoppedAt !== null
-              ? {
-                  kind: "stopped" as const,
-                  reason: row.stopReason,
-                  at: row.stoppedAt.toISOString(),
-                }
-              : null,
+        abnormal: abnormalStopOf(row),
         units: {
           settled: Number(row.settledCount ?? 0),
           holding: Number(row.holdingCount ?? 0),

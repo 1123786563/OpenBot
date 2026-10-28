@@ -35,7 +35,12 @@ import { Hono } from "hono";
 import type { AgentActor } from "../../agents/profile-types";
 import type { AppVariables } from "../../auth/guards";
 import { RunBindingError, type RunBindingStore } from "../bindings";
-import { type BotManagementCheck, resolveObservationBot } from "../context";
+import {
+  type BotManagementCheck,
+  explicitObservationOwnership,
+  OBSERVATION_BOT_NOT_FOUND,
+  resolveObservationBot,
+} from "../context";
 import { type ObservationScope, ObservationScopeError } from "../contracts";
 import {
   type AttemptRunState,
@@ -230,12 +235,12 @@ export function createBasicRunRoutes(
     if (!access.ok) return context.json({ error: access.error }, access.status);
 
     const actor = context.var.actor;
-    // Ownership is answered from the same row the decision was made on; the epoch is
-    // injected wiring, never a body value.
-    const ownership =
-      access.profile.ownerUserId === actor.id
-        ? ("owner" as const)
-        : ("admin" as const);
+    // Explicit, never inferred (OCR h10/m182): a caller the seam refuses to mint
+    // for is answered with the same unified not-found the manage gate uses.
+    const ownership = explicitObservationOwnership(actor, access.profile);
+    if (ownership === null) {
+      return context.json({ error: OBSERVATION_BOT_NOT_FOUND }, 404);
+    }
     let scope: ObservationScope;
     try {
       const epoch = await deps.scopeEpoch(actor, access.botId);

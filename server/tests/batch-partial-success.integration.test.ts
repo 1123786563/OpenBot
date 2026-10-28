@@ -414,6 +414,46 @@ describe("18.3 AC-3 — an absent item without evidence is unknown and keeps the
     if (resolved.status !== "settled") return;
     expect(resolved.chargedCredits).toBe(1400);
   });
+
+  test("a sparse recovery report settles earlier persisted billable outcomes", async () => {
+    const world = await seedPartialWorld();
+    const initialReports = partialReport();
+    initialReports[4] = {
+      kind: "unknown",
+      customId: "req-5",
+      reason: "no_result_row",
+    };
+    const pending = await partialService.settlePartialBatch({
+      batchId: world.batchId,
+      reports: initialReports,
+      source: "poll",
+    });
+    expect(pending.status).toBe("pending_unknown");
+
+    const resolved = await partialService.settlePartialBatch({
+      batchId: world.batchId,
+      reports: [
+        {
+          kind: "absent",
+          customId: "req-5",
+          evidence: {
+            kind: "not_dispatched",
+            reference: "provider-batch-status:request_counts.total=4",
+          },
+        },
+      ],
+      source: "notification",
+    });
+
+    expect(resolved.status).toBe("settled");
+    if (resolved.status !== "settled") return;
+    expect(resolved.chargedCredits).toBe(1400);
+    const details = await database
+      .select({ count: sql<number>`count(*)::int` })
+      .from(creditBatchSettlementDetails)
+      .where(eq(creditBatchSettlementDetails.batchId, world.batchId));
+    expect(details[0].count).toBe(4);
+  });
 });
 
 // ── AC-4: the batch status names partiality and the counts ──────────────────────────

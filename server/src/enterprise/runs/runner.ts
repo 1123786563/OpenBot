@@ -43,14 +43,15 @@ import {
 } from "./events";
 import {
   classifyGovernedRunFailure,
-  createGovernedModelExecution,
   type GovernedModelExecution,
 } from "./governed-execution";
+import { createGovernedExecutionArm } from "./integration";
 import {
   ModelRouteCatalogStore,
   type ModelRouteSnapshotInput,
 } from "./model-route-catalog";
 import { runOutputCeilingFromInput } from "./output-ceiling";
+import { createRunLifecyclePublic, type RunLifecyclePublic } from "./public";
 import {
   createRunService,
   type RunModelRoute,
@@ -100,6 +101,13 @@ export interface ProductionRunnerDependencies {
   readonly gatewayEnvironment?: Record<string, string | undefined>;
   /** Upstream fetch for the gateway dial; defaults to the runtime's fetch. */
   readonly modelFetch?: typeof fetch;
+  /**
+   * MOD07（#627）：聊天提交→Run 建立的 M05 公开门面（薄委托）。生产组合
+   * （createProductionRunnerComposition）恒注入，浏览器 admit 路径因此恒经
+   * 门面；直构本依赖的存量调用方（runner-production / mastra-browser-runner
+   * 测试）不注入时回退 runs.start——两臂同参同结果（MOD06 routes 双路先例）。
+   */
+  readonly runLifecycle?: RunLifecyclePublic;
 }
 
 /** Server-issued Bot Expert identity, frozen for the governed executor slice. */
@@ -374,7 +382,7 @@ class DurableProductionRunner extends AgentRunner {
       secret !== undefined &&
       encryptionKey !== undefined &&
       credentialReader !== undefined
-        ? createGovernedModelExecution({
+        ? createGovernedExecutionArm({
             scope,
             agentId,
             routeRef: route.routeRef,
@@ -454,7 +462,11 @@ class DurableProductionRunner extends AgentRunner {
         routeRef: route.routeRef,
         maximumTokens: ceiling,
       },
-      () => deps.runs.start(scope, admission),
+      // MOD07 (#627): the chat-submit → Run-establishment call goes through the
+      // M05 public facade in production (the composition always injects it);
+      // a directly-built runner without the facade falls back to the internal
+      // service — both arms pass the identical (scope, admission) objects.
+      () => (deps.runLifecycle ?? deps.runs).start(scope, admission),
     );
 
     let lease: RunnerRequestLease;
@@ -555,6 +567,9 @@ class DurableProductionRunner extends AgentRunner {
             Math.max(1_000, Math.floor(leaseMilliseconds / 2)),
             Math.max(leaseMilliseconds, 1_001),
           );
+    // 单飞护栏：一次续租未返回前不再发起下一次，避免慢续租后完成时把
+    // state.lease 覆盖回一份更旧的租约（乱序写回 → 后续以陈旧租约被拒）。
+    let renewInFlight = false;
     const timer = setInterval(() => {
       void (async () => {
         if (
@@ -566,6 +581,8 @@ class DurableProductionRunner extends AgentRunner {
           if (state.renewalTimer) clearInterval(state.renewalTimer);
           return;
         }
+        if (renewInFlight) return;
+        renewInFlight = true;
         try {
           const renewed = await this.deps.runs.renewRequestLease(
             state.scope,
@@ -576,6 +593,8 @@ class DurableProductionRunner extends AgentRunner {
         } catch {
           state.leaseLost = true;
           if (state.renewalTimer) clearInterval(state.renewalTimer);
+        } finally {
+          renewInFlight = false;
         }
       })();
     }, interval);
@@ -588,11 +607,11 @@ class DurableProductionRunner extends AgentRunner {
     state: RelayedRunState,
     startedEvent: BaseEvent,
   ): Promise<Observable<BaseEvent>> {
-    const errorEvent: BaseEvent = {
+    const errorEvent: BaseEvent = this.withServerRunIdentity(state, {
       type: EventType.RUN_ERROR,
       message: "Model execution is not available for this Bot yet.",
       code: MODEL_EXECUTION_UNAVAILABLE,
-    };
+    });
     await this.appendEvent(state, errorEvent);
     state.settlementAttempted = true;
     const settled = await this.deps.runs.fail(state.scope, {
@@ -668,7 +687,10 @@ class DurableProductionRunner extends AgentRunner {
 
     if (type === EventType.RUN_ERROR) {
       const code = classifyGovernedRunFailure(state.carrier, event);
-      const relayed = { ...event, code } as BaseEvent;
+      const relayed = this.withServerRunIdentity(
+        state,
+        { ...event, code } as BaseEvent,
+      );
       await this.appendEvent(state, relayed);
       state.settlementAttempted = true;
       const settled = await this.deps.runs.fail(state.scope, {
@@ -762,11 +784,11 @@ class DurableProductionRunner extends AgentRunner {
     const code = classifyGovernedRunFailure(state.carrier, error);
     const message =
       error instanceof Error ? error.message : String(error ?? "unknown");
-    const relayed: BaseEvent = {
+    const relayed: BaseEvent = this.withServerRunIdentity(state, {
       type: EventType.RUN_ERROR,
       message,
       code,
-    };
+    });
     await this.appendEvent(state, relayed);
     state.settlementAttempted = true;
     const settled = await this.deps.runs.fail(state.scope, {
@@ -932,6 +954,8 @@ export function createProductionRunnerComposition(
     scopeResolver: deps.scopeResolver,
     conversations: deps.conversations,
     runs,
+    // MOD07 (#627): 生产链恒经 M05 公开门面（薄委托，五能力同参同结果）
+    runLifecycle: createRunLifecyclePublic({ runs }),
     events,
     expertVersions,
     modelRoutes,

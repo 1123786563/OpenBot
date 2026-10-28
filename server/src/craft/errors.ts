@@ -21,10 +21,20 @@ export class SandboxProvisioningError extends Error {
 }
 
 /** A live provisioning attempt already owns the sandbox; the caller should retry shortly. */
-export class SandboxProvisioningInProgressError extends SandboxProvisioningError {}
+export class SandboxProvisioningInProgressError extends SandboxProvisioningError {
+  constructor(message = "A sandbox provisioning attempt is already in progress.") {
+    super(message);
+    this.name = "SandboxProvisioningInProgressError";
+  }
+}
 
 /** This attempt was superseded before it could finalize; its work must not be recorded. */
-export class StaleProvisioningAttemptError extends SandboxProvisioningError {}
+export class StaleProvisioningAttemptError extends SandboxProvisioningError {
+  constructor(message = "This provisioning attempt was superseded.") {
+    super(message);
+    this.name = "StaleProvisioningAttemptError";
+  }
+}
 
 /**
  * #618: the sandbox gateway has no execution ownership to state. agent-sandbox's proxy

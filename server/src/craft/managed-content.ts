@@ -171,7 +171,11 @@ async function defaultWebTemplateFiles(): Promise<
       }
     }
   };
-  await walk(root, "").catch(() => undefined);
+  await walk(root, "").catch((error) => {
+    // An unreadable template tree must be visible: an empty/partial set cached here
+    // would silently hydrate every session with missing web-template files.
+    logger.warn({ error, root: String(root) }, "[craft] failed to walk web templates");
+  });
   webTemplateFilesCache = files;
   return files;
 }
@@ -282,6 +286,13 @@ export async function materializeManagedContent(
     }
   }
   for (const old of stale) {
+    // A delete is destructive: only paths anchored at the managed root, the same
+    // containment the three write legs below are required to pass.
+    if (containedRelativePath(old) === null) {
+      logger.warn({ path: old, root }, "[craft] stale skill path failed containment; not deleting");
+      skillsHydrated = false;
+      continue;
+    }
     await api.deletePath(old).catch((error) => {
       // A stale file that refuses to delete would linger under the new hash —
       // the push cannot claim to have hydrated what it could not clear.

@@ -9,7 +9,7 @@
  * EVERY QUERY IS NARROWED TO THE PERSON FIRST. A public Bot works for many people; this screen shows
  * the work done in the caller's name and nothing of anybody else's.
  */
-import { and, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { HANDOFF_KIND } from "../agents/handoff";
 import { WAKE_UP_KIND, type WakeUpPayload } from "../agents/wake-up";
 import type { Database } from "../db/client";
@@ -71,6 +71,8 @@ export type BotAttention = {
 };
 
 const COMPLETED_LIMIT = 25;
+/** The `lastError` a stopped hop carries; the status derivation reads it back. */
+const STOPPED_BY_PERSON = "Stopped by the person";
 const clip = (text: string | null | undefined, max = 200) =>
   text ? Array.from(text).slice(0, max).join("") : null;
 const iso = (value: Date | string | null | undefined) =>
@@ -161,12 +163,31 @@ export function createActivityStore(database: Database) {
         const byId = new Map(
           ownedRoutines.map((routine) => [routine.id, routine]),
         );
-        const runs = await database
-          .select()
-          .from(routineRuns)
-          .where(inArray(routineRuns.routineId, [...byId.keys()]))
-          .orderBy(desc(routineRuns.startedAt))
-          .limit(COMPLETED_LIMIT * 2);
+        // Unfinished firings are fetched without a window, so a backlog of finished ones cannot
+        // push a run that is still going (or waiting) out of the screen.
+        const runs = [
+          ...(await database
+            .select()
+            .from(routineRuns)
+            .where(
+              and(
+                inArray(routineRuns.routineId, [...byId.keys()]),
+                isNull(routineRuns.finishedAt),
+              ),
+            )
+            .orderBy(desc(routineRuns.startedAt))),
+          ...(await database
+            .select()
+            .from(routineRuns)
+            .where(
+              and(
+                inArray(routineRuns.routineId, [...byId.keys()]),
+                isNotNull(routineRuns.finishedAt),
+              ),
+            )
+            .orderBy(desc(routineRuns.startedAt))
+            .limit(COMPLETED_LIMIT * 2)),
+        ];
         for (const run of runs) {
           const routine = byId.get(run.routineId);
           if (!routine) continue;
@@ -216,20 +237,46 @@ export function createActivityStore(database: Database) {
           });
       if (goals.length > 0) {
         const byId = new Map(goals.map((goal) => [goal.id, goal]));
-        const runs = await database
-          .select({
-            run: responsibilityRuns,
-            eventType: responsibilityEvents.type,
-            source: responsibilityEvents.source,
-          })
-          .from(responsibilityRuns)
-          .innerJoin(
-            responsibilityEvents,
-            eq(responsibilityEvents.id, responsibilityRuns.eventId),
-          )
-          .where(inArray(responsibilityRuns.responsibilityId, [...byId.keys()]))
-          .orderBy(desc(responsibilityRuns.createdAt))
-          .limit(COMPLETED_LIMIT * 2);
+        // Same split as routine runs: unfinished runs stay listed however long the tail is.
+        const runs = [
+          ...(await database
+            .select({
+              run: responsibilityRuns,
+              eventType: responsibilityEvents.type,
+              source: responsibilityEvents.source,
+            })
+            .from(responsibilityRuns)
+            .innerJoin(
+              responsibilityEvents,
+              eq(responsibilityEvents.id, responsibilityRuns.eventId),
+            )
+            .where(
+              and(
+                inArray(responsibilityRuns.responsibilityId, [...byId.keys()]),
+                isNull(responsibilityRuns.finishedAt),
+              ),
+            )
+            .orderBy(desc(responsibilityRuns.createdAt))),
+          ...(await database
+            .select({
+              run: responsibilityRuns,
+              eventType: responsibilityEvents.type,
+              source: responsibilityEvents.source,
+            })
+            .from(responsibilityRuns)
+            .innerJoin(
+              responsibilityEvents,
+              eq(responsibilityEvents.id, responsibilityRuns.eventId),
+            )
+            .where(
+              and(
+                inArray(responsibilityRuns.responsibilityId, [...byId.keys()]),
+                isNotNull(responsibilityRuns.finishedAt),
+              ),
+            )
+            .orderBy(desc(responsibilityRuns.createdAt))
+            .limit(COMPLETED_LIMIT * 2)),
+        ];
         for (const { run, eventType, source } of runs) {
           const goal = byId.get(run.responsibilityId);
           if (!goal) continue;
@@ -254,12 +301,31 @@ export function createActivityStore(database: Database) {
       }
 
       // Delegated tasks: hops this Bot asked for, or was asked to do, on this person's behalf.
-      const hops = await database
-        .select()
-        .from(workItems)
-        .where(handoffsFor(ownerUserId, agentId))
-        .orderBy(desc(workItems.createdAt))
-        .limit(COMPLETED_LIMIT * 2);
+      // Same split as the runs: a queued hop is the item that most needs the screen, so it is
+      // never pushed out by a long finished tail.
+      const hops = [
+        ...(await database
+          .select()
+          .from(workItems)
+          .where(
+            and(
+              handoffsFor(ownerUserId, agentId),
+              isNull(workItems.finishedAt),
+            ),
+          )
+          .orderBy(desc(workItems.createdAt))),
+        ...(await database
+          .select()
+          .from(workItems)
+          .where(
+            and(
+              handoffsFor(ownerUserId, agentId),
+              isNotNull(workItems.finishedAt),
+            ),
+          )
+          .orderBy(desc(workItems.createdAt))
+          .limit(COMPLETED_LIMIT * 2)),
+      ];
       const hopChannels = await channelsForThreads(
         hops.map((hop) => (hop.payload as HandoffPayload).threadId ?? ""),
       );
@@ -274,23 +340,24 @@ export function createActivityStore(database: Database) {
           hop.claimedBy !== null &&
           hop.leaseUntil !== null &&
           hop.leaseUntil.getTime() > now;
-        const gaveUp = !hop.finishedAt && hop.attempts >= DEFAULT_MAX_ATTEMPTS;
+        // The final attempt still holding its lease is executing, not given up on.
+        const gaveUp =
+          !hop.finishedAt &&
+          !running &&
+          hop.attempts >= DEFAULT_MAX_ATTEMPTS;
+        let status: string;
+        if (hop.finishedAt)
+          status = hop.lastError === STOPPED_BY_PERSON ? "stopped" : "delivered";
+        else if (gaveUp) status = "failed";
+        else if (running) status = "running";
+        else if (hop.attempts > 0) status = "retrying";
+        else status = "queued";
         const item: ActivityItem = {
           id: hop.key,
           kind: "handoff",
           title: clip(work.task, 120) ?? "Delegated task",
           detail: asked ? `Delegated to ${other}` : `Asked by ${other}`,
-          status: hop.finishedAt
-            ? hop.lastError === "Stopped by the person"
-              ? "stopped"
-              : "delivered"
-            : gaveUp
-              ? "failed"
-              : running
-                ? "running"
-                : hop.attempts > 0
-                  ? "retrying"
-                  : "queued",
+          status,
           at: iso(hop.finishedAt ?? hop.updatedAt),
           channelId: hopChannels.get(work.threadId ?? "") ?? null,
           needsYou: gaveUp,
@@ -368,19 +435,35 @@ export function createActivityStore(database: Database) {
         });
       }
 
-      // Follow-ups the Bot scheduled for itself.
-      const wakeUps = await database
-        .select()
-        .from(workItems)
-        .where(
-          and(
-            eq(workItems.kind, WAKE_UP_KIND),
-            sql`${workItems.payload}->>'ownerUserId' = ${ownerUserId}`,
-            sql`${workItems.payload}->>'agentId' = ${agentId}`,
-          ),
-        )
-        .orderBy(desc(workItems.runAt))
-        .limit(COMPLETED_LIMIT * 2);
+      // Follow-ups the Bot scheduled for itself. Same split as hops: the overdue follow-up at the
+      // head of the runAt order is the one a finished tail must not push out.
+      const wakeUps = [
+        ...(await database
+          .select()
+          .from(workItems)
+          .where(
+            and(
+              eq(workItems.kind, WAKE_UP_KIND),
+              isNull(workItems.finishedAt),
+              sql`${workItems.payload}->>'ownerUserId' = ${ownerUserId}`,
+              sql`${workItems.payload}->>'agentId' = ${agentId}`,
+            ),
+          )
+          .orderBy(desc(workItems.runAt))),
+        ...(await database
+          .select()
+          .from(workItems)
+          .where(
+            and(
+              eq(workItems.kind, WAKE_UP_KIND),
+              isNotNull(workItems.finishedAt),
+              sql`${workItems.payload}->>'ownerUserId' = ${ownerUserId}`,
+              sql`${workItems.payload}->>'agentId' = ${agentId}`,
+            ),
+          )
+          .orderBy(desc(workItems.runAt))
+          .limit(COMPLETED_LIMIT * 2)),
+      ];
       for (const row of wakeUps) {
         const payload = row.payload as WakeUpPayload;
         const running =
@@ -388,16 +471,15 @@ export function createActivityStore(database: Database) {
           row.claimedBy !== null &&
           row.leaseUntil !== null &&
           row.leaseUntil.getTime() > now;
+        let status: string;
+        if (row.finishedAt) status = payload.outcome?.status ?? "done";
+        else status = running ? "running" : "scheduled";
         const item: ActivityItem = {
           id: row.key,
           kind: "follow_up",
           title: clip(payload.reason, 160) ?? "Follow-up",
           detail: clip(payload.outcome?.detail ?? payload.instruction),
-          status: row.finishedAt
-            ? (payload.outcome?.status ?? "done")
-            : running
-              ? "running"
-              : "scheduled",
+          status,
           at: row.finishedAt
             ? iso(payload.outcome?.at ?? row.finishedAt)
             : iso(payload.dueAt ?? row.runAt),
@@ -436,7 +518,7 @@ export function createActivityStore(database: Database) {
           finishedAt: sql`now()`,
           claimedBy: null,
           leaseUntil: null,
-          lastError: "Stopped by the person",
+          lastError: STOPPED_BY_PERSON,
           updatedAt: sql`now()`,
         })
         .where(
@@ -521,6 +603,9 @@ export function createActivityStore(database: Database) {
             gte(workItems.attempts, DEFAULT_MAX_ATTEMPTS),
             sql`${workItems.payload}->>'actorId' = ${ownerUserId}`,
             sql`${workItems.payload}->>'answerIn' is null`,
+            // The last attempt may be executing right now under a live lease: that is not a task
+            // only the person can pick up.
+            sql`(${workItems.claimedBy} is null or ${workItems.leaseUntil} is null or ${workItems.leaseUntil} <= now())`,
           ),
         )
         .groupBy(sql`${workItems.payload}->>'fromBotId'`);
@@ -541,7 +626,16 @@ export function createActivityStore(database: Database) {
             eq(channelMemberships.userId, ownerUserId),
           ),
         )
-        .innerJoin(channelAgents, eq(channelAgents.channelId, channels.id))
+        .innerJoin(
+          channelAgents,
+          and(
+            eq(channelAgents.channelId, channels.id),
+            // The badge is "this Bot spoke after the person last looked", so the counted
+            // agent must BE the last speaker: without this condition a channel whose last
+            // message came from one of its three Bots adds an unread to all three.
+            sql`${channelAgents.agentId} = ${channels.lastMessageAgentId}`,
+          ),
+        )
         .where(
           and(
             isNull(channels.deletedAt),

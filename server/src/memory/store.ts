@@ -244,14 +244,13 @@ export function createMemoryStore(
        * company-scoped observation. A deployment without the enterprise layer has no
        * companyFor and writes exactly what it always wrote.
        */
-      const attributed = company
-        ? company
-        : options.companyFor
-          ? await options.companyFor({
-              ownerUserId,
-              agentId: input.agentId,
-            })
-          : undefined;
+      let attributed = company;
+      if (!attributed && options.companyFor) {
+        attributed = await options.companyFor({
+          ownerUserId,
+          agentId: input.agentId,
+        });
+      }
       if (!company && options.companyFor && !attributed)
         throw new MemoryRefusedError(MEMORY_ATTRIBUTION_REFUSAL);
       const digest = createHash("sha256")
@@ -682,7 +681,10 @@ export function createMemoryStore(
                 importDigest: record.digest,
                 updatedAt: new Date(),
               },
-              setWhere: sql`${personalMemories.importDigest} IS DISTINCT FROM ${record.digest}`,
+              // An edited or tombstoned row is the person's word, not the source's: its content is
+              // kept, and rewriting its importDigest would fake "this version was already seen" —
+              // so such rows are excluded from the write (and from the written count) entirely.
+              setWhere: sql`${personalMemories.reviewState} IS DISTINCT FROM 'edited' AND ${personalMemories.deletedAt} IS NULL AND ${personalMemories.importDigest} IS DISTINCT FROM ${record.digest}`,
             })
             // FIX-OCR2 (O2-M2): RETURNING answers only the rows the statement actually
             // touched — the insert, and the update whose digest really changed; an

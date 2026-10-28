@@ -364,6 +364,19 @@ describe("ME12 — the OpenMuse Task entry runs the row, not the claim", () => {
     expect(entry.surfaceInputs[0]!.agentId).toBe("bot-a");
   });
 
+  it("a_running_task_without_words_refuses_rather_than_running_an_empty_instruction", async () => {
+    const entry = await harness({ row: agentRow({ prompt: null }) });
+    let refusal: GovernedHeadlessRefusal | undefined;
+    try {
+      await entry.runner(turnInput());
+    } catch (error) {
+      if (error instanceof GovernedHeadlessRefusal) refusal = error;
+    }
+    expect(refusal?.code).toBe(GOVERNED_HEADLESS_REFUSALS.recordGone);
+    expect(entry.appends).toHaveLength(0);
+    expect(entry.dialCount()).toBe(0);
+  });
+
   it("a_plan_task_runs_the_step_its_claim_marked_running", async () => {
     const entry = await harness({
       row: agentRow({

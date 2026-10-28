@@ -8,6 +8,10 @@ import { cn } from "@/lib/utils";
 // Format: { THEME_NAME: CSS_SELECTOR }
 const THEMES = { light: "", dark: ".dark" } as const;
 
+// Config ids/keys can carry chart data into raw CSS text; reduce them to
+// CSS-identifier-safe characters before interpolation.
+const cssIdentifier = (value: string) => value.replace(/[^\w-]/g, "");
+
 export type ChartConfig = {
   [k in string]: {
     label?: React.ReactNode;
@@ -84,13 +88,16 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
         __html: Object.entries(THEMES)
           .map(
             ([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
+${prefix} [data-chart="${cssIdentifier(id)}"] {
 ${colorConfig
   .map(([key, itemConfig]) => {
     const color =
       itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ||
       itemConfig.color;
-    return color ? `  --color-${key}: ${color};` : null;
+    // Config keys and colors can ride in from backend data: keep them inside
+    // this <style>'s grammar so neither can break out into markup or rules.
+    if (!color || /[<>{};'"\\]/.test(color)) return null;
+    return `  --color-${cssIdentifier(key)}: ${color};`;
   })
   .join("\n")}
 }
@@ -184,7 +191,7 @@ function ChartTooltipContent({
           .map((item, index) => {
             const key = `${nameKey || item.name || item.dataKey || "value"}`;
             const itemConfig = getPayloadConfigFromPayload(config, item, key);
-            const indicatorColor = color || item.payload.fill || item.color;
+            const indicatorColor = color || item.payload?.fill || item.color;
 
             return (
               <div
@@ -234,9 +241,13 @@ function ChartTooltipContent({
                           {itemConfig?.label || item.name}
                         </span>
                       </div>
-                      {item.value && (
+                      {item.value != null && item.value !== "" && (
                         <span className="text-foreground font-mono font-medium tabular-nums">
-                          {item.value.toLocaleString()}
+                          {/* 0 is falsy but a real data point; stringify non-numbers
+                              instead of letting React render them as bare text. */}
+                          {typeof item.value === "number"
+                            ? item.value.toLocaleString()
+                            : String(item.value)}
                         </span>
                       )}
                     </div>

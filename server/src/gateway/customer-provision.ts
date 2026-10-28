@@ -235,10 +235,20 @@ export function createGatewayCustomerProvisioning(
     rowId: string,
     state: "recoverable" | "confirmed",
   ) => {
+    // A recoverable row is, by the module's own invariant, one with no remote id — a caller
+    // that already adopted the remote customer must never be read back to recoverable by a
+    // racing attempt, so the downgrade is guarded the same way the adoption write is.
     await database
       .update(gatewayCustomers)
       .set({ provisionState: state })
-      .where(eq(gatewayCustomers.id, rowId));
+      .where(
+        state === "recoverable"
+          ? and(
+              eq(gatewayCustomers.id, rowId),
+              isNull(gatewayCustomers.gatewayCustomerId),
+            )
+          : eq(gatewayCustomers.id, rowId),
+      );
   };
 
   /**

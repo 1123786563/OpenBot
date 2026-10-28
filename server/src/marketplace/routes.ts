@@ -181,6 +181,14 @@ export function createMarketplaceRoutes(deps: MarketplaceDeps) {
         503,
       );
     }
+    // The card promises "install and it works": a deployment that cannot attach the expert's
+    // skills must refuse rather than create a Bot without them.
+    if (expert.skills.length > 0 && !(deps.skillWrites && deps.grants)) {
+      return context.json(
+        { error: "This deployment cannot install skills." },
+        503,
+      );
+    }
     const actor = context.var.actor;
     const agentActor = { id: actor.id, role: actor.role };
 
@@ -215,34 +223,46 @@ export function createMarketplaceRoutes(deps: MarketplaceDeps) {
      */
     const grantedSkills: string[] = [];
     const skippedSkills: string[] = [];
-    if (deps.skillWrites && deps.grants) {
-      for (const skillSlug of expert.skills) {
-        const entry = CATALOGUE_SKILLS.find(
-          (skill) => skill.slug === skillSlug,
-        );
-        if (!entry) continue;
-        const owner = await deps.skillWrites.skillOwner(skillSlug);
-        if (owner === undefined) {
-          await deps.skillWrites.installSkill({
-            slug: entry.slug,
-            title: entry.title,
-            summary: entry.summary,
-            instructions: entry.instructions,
-            origin: "catalogue",
-            icon: entry.icon,
-            category: entry.category,
-            ownerUserId: actor.id,
-            tools: [],
-            by: actor.email,
-          });
-        }
-        if (owner === undefined || owner === actor.id || owner === null) {
-          await deps.grants.grant("skill", skillSlug, agent.id, actor.email);
-          grantedSkills.push(skillSlug);
-        } else {
-          skippedSkills.push(skillSlug);
+    try {
+      if (deps.skillWrites && deps.grants) {
+        for (const skillSlug of expert.skills) {
+          const entry = CATALOGUE_SKILLS.find(
+            (skill) => skill.slug === skillSlug,
+          );
+          if (!entry) continue;
+          let owner = await deps.skillWrites.skillOwner(skillSlug);
+          if (owner === undefined) {
+            await deps.skillWrites.installSkill({
+              slug: entry.slug,
+              title: entry.title,
+              summary: entry.summary,
+              instructions: entry.instructions,
+              origin: "catalogue",
+              icon: entry.icon,
+              category: entry.category,
+              ownerUserId: actor.id,
+              tools: [],
+              by: actor.email,
+            });
+            // Recheck after the write: a concurrent install of the same slug may have won
+            // the row (conflicts keep the first owner), and this loop must not grant a
+            // skill this person does not hold.
+            owner = await deps.skillWrites.skillOwner(skillSlug);
+          }
+          if (owner === undefined || owner === actor.id || owner === null) {
+            await deps.grants.grant("skill", skillSlug, agent.id, actor.email);
+            grantedSkills.push(skillSlug);
+          } else {
+            skippedSkills.push(skillSlug);
+          }
         }
       }
+    } catch (error) {
+      // The Bot exists but the receipt never landed: retire the twin here, so a failed
+      // grant or skill write cannot leave an unaccounted Bot on the roster. The person's
+      // retry starts clean.
+      await deps.agents.softDelete(agentActor, agent.id).catch(() => undefined);
+      throw error;
     }
 
     const inserted = await deps.installs.insert({
@@ -255,6 +275,13 @@ export function createMarketplaceRoutes(deps: MarketplaceDeps) {
       // would sit on the roster forever unaccounted, so it is retired here.
       await deps.agents.softDelete(agentActor, agent.id);
       const winner = await deps.installs.installFor(actor.id, slug);
+      // The trail row the winner's answer already wrote covers the install; this records
+      // that a concurrent twin was created and retired, so the Bot audit is not orphaned.
+      await record(context, "expert_installed", {
+        slug,
+        bot: winner?.agentId ?? agent.id,
+        twinRetired: agent.id,
+      });
       return context.json({
         agentId: winner?.agentId ?? agent.id,
         installed: true,
@@ -340,6 +367,20 @@ export function createMarketplaceRoutes(deps: MarketplaceDeps) {
       tools: [],
       by: actor.email,
     });
+    // Recheck after the write: a concurrent install of the same slug wins the row's
+    // ownership (conflicts keep the first owner), and a 201 here would promise a row this
+    // person does not hold. Only a real third-party owner conflicts — a missing row (a
+    // concurrent uninstall won) simply reads as not installed, the same as before the write.
+    const landedOwner = await deps.skillWrites.skillOwner(slug);
+    if (typeof landedOwner === "string" && landedOwner !== actor.id) {
+      return context.json(
+        {
+          error:
+            "该技能标识已被其他成员占用。可以让管理员将其设为工作区技能，或换一个标识。",
+        },
+        409,
+      );
+    }
     await record(context, "skill_installed", { slug });
     return context.json({ installed: true }, 201);
   });

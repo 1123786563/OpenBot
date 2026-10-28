@@ -623,7 +623,19 @@ export function createBillingService(deps: {
           // Nothing recorded: the provider retries the whole delivery, re-read included.
           return json(503, { error: "Billing webhook could not be applied." });
         }
-        return json(400, { error: "Billing webhook could not be applied." });
+        if (error instanceof BillingError) {
+          (deps.log ?? console.warn)(`billing: webhook failed — ${error.code}`);
+          // 4xx is reserved for a delivery we verified and then could not make sense of.
+          return json(400, { error: "Billing webhook could not be applied." });
+        }
+        // Anything else is OUR bug, not the delivery's: say 500 and leave the evidence —
+        // answering 400 here would drop the event with no log line at all.
+        (deps.log ?? console.warn)(
+          `billing: webhook failed unexpectedly name=${
+            error instanceof Error ? error.name : "unknown"
+          }`,
+        );
+        return json(500, { error: "Billing webhook could not be applied." });
       }
     },
 
