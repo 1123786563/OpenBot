@@ -1379,6 +1379,12 @@
       "files": [
         "server/tests/better-auth/admin-account-routes.test.ts"
       ]
+    },
+    {
+      "name": "server/tests/better-auth:T05.09.01",
+      "files": [
+        "server/tests/better-auth/remote-identity-binding.test.ts"
+      ]
     }
   ],
   "directoryIslands": [
@@ -2084,7 +2090,8 @@
     "server/tests/workshop-store.test.ts",
     "shared/harnesses.test.ts",
     "server/tests/better-auth/personal-model-grants.test.ts",
-    "server/tests/better-auth/admin-account-routes.test.ts"
+    "server/tests/better-auth/admin-account-routes.test.ts",
+    "server/tests/better-auth/remote-identity-binding.test.ts"
   ],
   "artifacts": [
     "deliverables/mobile-e2e-qa/tests/e2e/specs/auth.spec.ts",
@@ -2244,6 +2251,7 @@
     "server/tests/better-auth/provisioning-global-admin.test.ts": "T05.06 (#562) provisioning-global-admin suite: needs the five BA_TEST_* role URLs, the pinned build's SSO/mail callbacks, the directory executor's provisioning-rule handlers and the Mailpit sink — Bun-only",
     "server/tests/better-auth/global-identity-routes.test.ts": "T05.07 (#563) global-identity-routes suite: needs the five BA_TEST_* role URLs, the production identity executor behind createApp's coworker.directory seam and real Bun servers — Bun-only",
     "server/tests/better-auth/personal-model-grants.test.ts": "T05.10 (#566) personal-model-grants suite: needs the five BA_TEST_* role URLs, the 0209-0220 BA tag replay with the 0212 access-grants source columns, and the real PrincipalRegistry behind the service's principal seam — Bun-only",
-    "server/tests/better-auth/admin-account-routes.test.ts": "T05.08 (#564) admin-account-routes suite: needs the five BA_TEST_* role URLs, the production createAuth identity executor behind createApp's coworker.directory seam and real Bun servers — Bun-only"
+    "server/tests/better-auth/admin-account-routes.test.ts": "T05.08 (#564) admin-account-routes suite: needs the five BA_TEST_* role URLs, the production createAuth identity executor behind createApp's coworker.directory seam and real Bun servers — Bun-only",
+    "server/tests/better-auth/remote-identity-binding.test.ts": "T05.09 (#565) remote-identity-binding suite: needs the five BA_TEST_* role URLs and real Bun-served organization authorities for the cross-deployment handoff — Bun-only"
   }
 }

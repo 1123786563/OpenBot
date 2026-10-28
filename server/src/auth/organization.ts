@@ -67,12 +67,38 @@ function sessionCookie(value: unknown): value is string {
   );
 }
 
+/*
+ * The identity a handoff carries, as this server knows it: the authority's
+ * word about the person (`AuthenticatedActor`) plus the registered authority
+ * origin that vouched for it. The origin is this server's own setting — it
+ * is never read from a remote body — and it is what the subject binds to:
+ * the same subject under a different authority is a different remote
+ * identity, never the same local account by email (T05.09, design §9).
+ */
+export type RemoteOrganizationIdentity = AuthenticatedActor & {
+  readonly authority: string;
+};
+
 export function createOrganizationAuth(options: {
   authorityUrl: string;
-  materializeUser: (user: AuthenticatedActor) => Promise<AuthenticatedActor>;
+  materializeUser: (
+    user: RemoteOrganizationIdentity,
+  ) => Promise<AuthenticatedActor>;
 }): AuthService {
   const authority = organizationAuthority(options.authorityUrl);
-  const tickets = new Map<string, { cookie: string; expires: number }>();
+  /*
+   * A pending handoff records the subject the authority named when the
+   * ticket was minted, under the sign-in epoch the ticket belongs to. Every
+   * completed handoff opens a new epoch, so a callback minted before the
+   * current sign-in — an old tab, a queued redirect, an account already
+   * switched away from — is dead on arrival and can neither replace the
+   * session that follows it nor pick among pending ones (T05.09).
+   */
+  const tickets = new Map<
+    string,
+    { cookie: string; subject: string; epoch: number; expires: number }
+  >();
+  let handoffEpoch = 0;
 
   async function verify(cookie: string): Promise<AuthenticatedActor | null> {
     if (!sessionCookie(cookie)) return null;
@@ -102,9 +128,17 @@ export function createOrganizationAuth(options: {
     }
     const user = actor(await response.json().catch(() => null));
     if (!user) return null;
-    const localUser = await options.materializeUser(user);
+    const localUser = await options.materializeUser({ ...user, authority });
     clearDesktopConnectionFailure("organization");
-    return localUser;
+    // The registered origin is this server's own fact, consumed by the
+    // binding above; the session payload keeps its established shape.
+    return {
+      id: localUser.id,
+      email: localUser.email,
+      name: localUser.name,
+      image: localUser.image,
+      role: localUser.role,
+    };
   }
 
   function cookieFrom(headers: Headers): string | null {
@@ -184,21 +218,31 @@ export function createOrganizationAuth(options: {
           // Native supplies this exact Origin; a foreign browser cannot deliver a login via CSRF.
           if (!allowedOrigin()) return json({ error: "Origin refused." }, 403);
           const body: unknown = await request.json().catch(() => null);
-          if (
-            !body ||
-            typeof body !== "object" ||
-            !("cookie" in body) ||
-            !sessionCookie(body.cookie) ||
-            !(await verify(body.cookie))
-          )
-            return unavailable();
+          const handoffCookie =
+            body &&
+            typeof body === "object" &&
+            "cookie" in body &&
+            sessionCookie(body.cookie)
+              ? body.cookie
+              : null;
+          // The subject is pinned at mint time: redemption re-verifies the
+          // cookie and refuses it if the authority now names someone else
+          // (T05.09 — no silent account switch mid-handoff).
+          if (!handoffCookie) return unavailable();
+          const verified = await verify(handoffCookie);
+          if (!verified) return unavailable();
           const now = Date.now();
           for (const [key, ticket] of tickets)
             if (ticket.expires <= now) tickets.delete(key);
           if (tickets.size >= 32)
             return json({ error: "Too many pending sign-ins." }, 429);
           const ticket = crypto.randomUUID();
-          tickets.set(ticket, { cookie: body.cookie, expires: now + 60_000 });
+          tickets.set(ticket, {
+            cookie: handoffCookie,
+            subject: verified.id,
+            epoch: handoffEpoch,
+            expires: now + 60_000,
+          });
           return json({ ticket });
         }
         if (url.pathname === HANDOFF_PATH && request.method === "GET") {
@@ -208,9 +252,12 @@ export function createOrganizationAuth(options: {
           if (
             !ticket ||
             ticket.expires <= Date.now() ||
-            !(await verify(ticket.cookie))
+            ticket.epoch !== handoffEpoch
           )
             return unavailable();
+          const verified = await verify(ticket.cookie);
+          if (!verified || verified.id !== ticket.subject) return unavailable();
+          handoffEpoch += 1;
           const value = Buffer.from(
             JSON.stringify({ authority, cookie: ticket.cookie }),
           ).toString("base64url");
