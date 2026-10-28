@@ -3,6 +3,11 @@ import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { type AuditStore, recordAuditEvent } from "../audit";
+import type {
+  DirectoryTx,
+  PrincipalRef,
+  PrincipalRegistry,
+} from "../auth/directory/contracts";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import {
@@ -10,11 +15,16 @@ import {
   accessGrants,
   botBindingOffers,
   botServices,
+  enterprisePrincipals,
   gatewayVirtualKeys,
 } from "../db/schema";
 import { bindingCodeHash } from "./binding-codes";
 import type { BotServiceStore } from "./store";
-import { type BotServiceIdentity, BotServiceInputError } from "./types";
+import {
+  AccessGrantIdentityInactiveError,
+  type BotServiceIdentity,
+  BotServiceInputError,
+} from "./types";
 
 /**
  * Model access grants (Bifrost #238, 04.5): the confirmation flow that turns a one-time binding
@@ -83,6 +93,16 @@ export type AccessGrant = {
   scope: typeof MODEL_ACCESS_SCOPE;
   /** Which flow created this grant: a confirmed code, or the workbench's login identity. */
   source: AccessGrantSource;
+  /**
+   * The principal the authorization is bound to (T05.10 / #566): the company-independent subject
+   * the confirmation ensured, whose generation below was read at confirmation time. Null on every
+   * row a registry-less (M0/M1) assembly writes and on pre-T02.04 rows — a missing source is never
+   * stamped from the current state; only an explicit re-authorization makes a new one, and every
+   * registry-wired resolve door refuses the old row until then.
+   */
+  principalId: string | null;
+  /** The source identity generation the grant was confirmed against; present exactly when principalId is. */
+  identityGeneration: number | null;
   status: "active" | "revoked";
   createdAt: Date;
   revokedAt: Date | null;
@@ -205,6 +225,14 @@ type GrantRow = typeof accessGrants.$inferSelect;
 function toGrant(row: GrantRow): AccessGrant {
   return { ...row, scope: MODEL_ACCESS_SCOPE };
 }
+
+/** Whether the grant's saved source is still the principal's current one (T05.10). */
+function hasCurrentSource(row: GrantRow, principal: PrincipalRef): boolean {
+  return (
+    row.principalId === principal.principalId &&
+    row.identityGeneration === principal.identityGeneration
+  );
+}
 function requireUserId(userId: string) {
   if (
     typeof userId !== "string" ||
@@ -241,6 +269,16 @@ export type AccessGrantServiceDependencies = {
     grantId: string;
     gatewayVirtualKeyIds: string[];
   }) => Promise<void>;
+  /**
+   * T05.10's personal-grant seam: the BA-mode principal registry. When the assembly wires it, a
+   * confirmation is a *personal* authorization — no company required — that ensures the user's one
+   * principal at the principal lock layer inside the same transaction and saves the source
+   * generation on the grant row; the resolve doors then re-verify the user, the principal, the
+   * grant and the Bot live. Absent, every legacy read/write path keeps its exact shape and
+   * capability (M0/M1): no principal is ensured, nothing is compared, and rows without a source
+   * stay exactly as usable as they were.
+   */
+  principalRegistry?: Pick<PrincipalRegistry, "ensure">;
 };
 
 export type AccessGrantService = ReturnType<typeof createAccessGrantService>;
@@ -249,6 +287,62 @@ export function createAccessGrantService(
   dependencies: AccessGrantServiceDependencies,
 ) {
   const { database } = dependencies;
+
+  /*
+   * The personal source of a new grant (T05.10): ensure the user's one principal at the principal
+   * lock layer of THIS transaction — a personal grant never requires a company — and refuse a
+   * suspended identity before the confirmation consumes anything, so a refused confirmation spends
+   * no code and the rollback leaves no half-written state behind. Undefined when this deployment
+   * runs the legacy paths (no registry wired): nothing is ensured and nothing compared.
+   */
+  async function ensureGrantSource(
+    tx: DirectoryTx,
+    userId: string,
+  ): Promise<PrincipalRef | undefined> {
+    const registry = dependencies.principalRegistry;
+    if (!registry) return undefined;
+    const principal = await registry.ensure(tx, userId);
+    const [row] = await tx
+      .select({ status: enterprisePrincipals.status })
+      .from(enterprisePrincipals)
+      .where(eq(enterprisePrincipals.id, principal.principalId))
+      .limit(1);
+    if (row?.status !== "active") throw new AccessGrantIdentityInactiveError();
+    return principal;
+  }
+
+  /**
+   * T05.10's re-verification behind both resolve doors (04.6's use check): the row's saved source
+   * must still be the live principal of its user, active, at the same verified generation. A row
+   * with no source is refused the moment a registry is wired — a version that cannot be compared
+   * is never valid — and one a registry-less assembly wrote stays usable exactly as before. Every
+   * failure is the one uniform silence of {@link AccessGrantUseError}: whose grant went stale, and
+   * why, is nobody's information to learn by probing.
+   */
+  async function requireCurrentSource(row: GrantRow): Promise<void> {
+    if (!dependencies.principalRegistry && row.principalId === null) return;
+    const [principal] = await database
+      .select({
+        id: enterprisePrincipals.id,
+        status: enterprisePrincipals.status,
+        identityGeneration: enterprisePrincipals.identityGeneration,
+      })
+      .from(enterprisePrincipals)
+      .where(eq(enterprisePrincipals.userId, row.userId))
+      .limit(1);
+    // No principal, a suspended one, or any disagreement between the row's
+    // saved pair and the live principal's id/generation (both columns are
+    // CHECK-bounded to the safe-integer range, so the comparison is exact):
+    // one refusal covers all of them.
+    if (
+      principal?.status !== "active" ||
+      row.principalId === null ||
+      row.identityGeneration === null ||
+      principal?.id !== row.principalId ||
+      principal?.identityGeneration !== row.identityGeneration
+    )
+      throw new AccessGrantUseError();
+  }
 
   return {
     /**
@@ -277,6 +371,8 @@ export function createAccessGrantService(
         throw new AccessGrantUseError();
       const bot = await dependencies.botServices.getBotService(identity.botId);
       if (bot?.status !== "active") throw new AccessGrantUseError();
+      // T05.10: the person behind the grant is re-verified too — user, principal, grant, Bot.
+      await requireCurrentSource(row);
       return toGrant(row);
     },
 
@@ -305,6 +401,8 @@ export function createAccessGrantService(
         .where(eq(accessGrants.grantId, grantId));
       if (!row || row.userId !== userId || row.status !== "active")
         throw new AccessGrantUseError();
+      // T05.10: the same live-source re-verification the Bot-side door makes.
+      await requireCurrentSource(row);
       return toGrant(row);
     },
 
@@ -639,6 +737,11 @@ export function createAccessGrantService(
           .returning({ codeHash: botBindingOffers.codeHash });
         if (!consumed) throw new AccessGrantCodeError();
 
+        // T05.10: the personal source — ensured (no company required) at the principal lock layer
+        // of this same transaction, and refused whole for a suspended identity, so a refused
+        // confirmation spends no code.
+        const principal = await ensureGrantSource(tx, userId);
+
         // The same person confirming the same authorization again is the same grant, not a second
         // one — checked before the insert so the common repeat does no doomed write at all.
         const [existing] = await tx
@@ -652,7 +755,27 @@ export function createAccessGrantService(
               eq(accessGrants.status, "active"),
             ),
           );
-        if (existing) return { grant: toGrant(existing), created: false };
+        if (existing) {
+          /*
+           * T05.10's one exception: an active grant whose saved source generation no longer matches
+           * the principal's (the identity moved — disable, restore, role change) is stale, and THIS
+           * confirmation is the explicit re-authorization. The old row is revoked in this same
+           * transaction and a NEW grantId is created against the current generation below, so the
+           * one-active-per-identity index still holds and the old row keeps its own generation and
+           * every key reference exactly as they were — nothing is rewritten; history moves on.
+           */
+          if (!principal || hasCurrentSource(existing, principal))
+            return { grant: toGrant(existing), created: false };
+          await tx
+            .update(accessGrants)
+            .set({ status: "revoked", revokedAt: sql`clock_timestamp()` })
+            .where(
+              and(
+                eq(accessGrants.grantId, existing.grantId),
+                eq(accessGrants.status, "active"),
+              ),
+            );
+        }
 
         // The insert runs inside a savepoint: a unique violation aborts a plain PostgreSQL
         // transaction outright (25P02 on the next command), and the recovery this function owes —
@@ -670,6 +793,8 @@ export function createAccessGrantService(
                 externalIdentity: offer.externalIdentityHint,
                 scope: MODEL_ACCESS_SCOPE,
                 source: BINDING_CODE_SOURCE,
+                principalId: principal?.principalId ?? null,
+                identityGeneration: principal?.identityGeneration ?? null,
                 status: "active",
               })
               .returning();
@@ -724,6 +849,13 @@ export function createAccessGrantService(
             externalIdentity: grant.externalIdentity,
             scope: grant.scope,
             source: grant.source,
+            // T05.10: the source identity the trail names, when the grant carries one.
+            ...(grant.principalId !== null
+              ? {
+                  principalId: grant.principalId,
+                  identityGeneration: grant.identityGeneration,
+                }
+              : {}),
             codeHash,
           },
         });
@@ -770,6 +902,10 @@ export function createAccessGrantService(
         throw new WorkbenchGrantUnavailableError();
 
       const { grant, created } = await database.transaction(async (tx) => {
+        // T05.10: the same personal source the binding-code flow ensures — no company, the
+        // principal lock layer of this transaction, refusal whole for a suspended identity.
+        const principal = await ensureGrantSource(tx, userId);
+
         // The common case first: an active implicit grant already is the authorization.
         const [existing] = await tx
           .select()
@@ -782,11 +918,18 @@ export function createAccessGrantService(
               eq(accessGrants.status, "active"),
             ),
           );
-        if (existing) return { grant: toGrant(existing), created: false };
+        if (existing && (!principal || hasCurrentSource(existing, principal)))
+          return { grant: toGrant(existing), created: false };
 
-        // No active grant: without an explicit re-authorization, a revoked one stays revoked —
-        // using the workbench must not quietly un-cancel what the person cancelled.
+        /*
+         * No current grant: without an explicit re-authorization, a revoked one stays revoked —
+         * using the workbench must not quietly un-cancel what the person cancelled — and (T05.10)
+         * a stale-active one is exactly as dead: every Bot door already refuses it, and plain
+         * asking must not re-authorize what the identity's own security event killed. Only the
+         * explicit reauthorize act below creates the replacement.
+         */
         if (options.reauthorize !== true) {
+          if (existing) throw new WorkbenchGrantRevokedError();
           const [latest] = await tx
             .select()
             .from(accessGrants)
@@ -801,6 +944,20 @@ export function createAccessGrantService(
             .orderBy(desc(accessGrants.revokedAt))
             .limit(1);
           if (latest) throw new WorkbenchGrantRevokedError();
+        }
+        if (existing) {
+          // The explicit re-authorization of a stale-active row (T05.10): revoke the old row in
+          // this same transaction, exactly like the binding-code flow, and let the insert below
+          // create the new grantId at the current generation.
+          await tx
+            .update(accessGrants)
+            .set({ status: "revoked", revokedAt: sql`clock_timestamp()` })
+            .where(
+              and(
+                eq(accessGrants.grantId, existing.grantId),
+                eq(accessGrants.status, "active"),
+              ),
+            );
         }
 
         // The savepoint is the same race recovery confirmation owes: a concurrent twin that
@@ -817,6 +974,8 @@ export function createAccessGrantService(
                 externalIdentity: identity,
                 scope: MODEL_ACCESS_SCOPE,
                 source: WORKBENCH_IMPLICIT_SOURCE,
+                principalId: principal?.principalId ?? null,
+                identityGeneration: principal?.identityGeneration ?? null,
                 status: "active",
               })
               .returning();
@@ -868,6 +1027,13 @@ export function createAccessGrantService(
             externalIdentity: grant.externalIdentity,
             scope: grant.scope,
             source: grant.source,
+            // T05.10: the source identity the trail names, when the grant carries one.
+            ...(grant.principalId !== null
+              ? {
+                  principalId: grant.principalId,
+                  identityGeneration: grant.identityGeneration,
+                }
+              : {}),
           },
         });
       }
@@ -982,6 +1148,8 @@ export function accessGrantRoutes(
         return context.json({ error: error.message, code: error.code }, 409);
       if (error instanceof WorkbenchGrantUnavailableError)
         return context.json({ error: error.message, code: error.code }, 503);
+      if (error instanceof AccessGrantIdentityInactiveError)
+        return context.json({ error: error.message, code: error.code }, 403);
       if (error instanceof BotServiceInputError)
         return context.json(
           { error: error.message, code: "workbench_grant_invalid_request" },
@@ -1098,6 +1266,8 @@ async function confirmationResponse(
   } catch (error) {
     if (error instanceof AccessGrantCodeError)
       return context.json({ error: error.message, code: error.code }, 400);
+    if (error instanceof AccessGrantIdentityInactiveError)
+      return context.json({ error: error.message, code: error.code }, 403);
     if (error instanceof BotServiceInputError)
       return context.json(
         { error: error.message, code: "model_access_invalid_request" },
