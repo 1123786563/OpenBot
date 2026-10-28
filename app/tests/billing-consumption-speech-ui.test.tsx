@@ -39,6 +39,7 @@ const baseEntry: CreditConsumptionEntry = {
   client: null,
   botId: null,
   botName: null,
+  lineDetail: null,
   timestamp: "2026-10-15T10:00:00.000Z",
 };
 
@@ -72,6 +73,7 @@ test("语音行显示字符、时长与档位，无明细的行保持原样", as
     ...baseEntry,
     id: "row-tiered",
     lineDetail: {
+      kind: "speech",
       capability: "speech",
       speech: {
         inputCharacters: 100,
@@ -85,6 +87,7 @@ test("语音行显示字符、时长与档位，无明细的行保持原样", as
     ...baseEntry,
     id: "row-untiered",
     lineDetail: {
+      kind: "speech",
       capability: "speech",
       speech: {
         inputCharacters: 80,
@@ -103,4 +106,33 @@ test("语音行显示字符、时长与档位，无明细的行保持原样", as
   // No raw key path and no second speech line on the plain row.
   expect(view.container.textContent).not.toContain("{{");
   expect(view.queryAllByText(/语音 /)).toHaveLength(2);
+});
+
+/*
+ * The speech line's numbers are DISPLAY numbers, not wire strings: a grouped character
+ * count in the reader's language and seconds rounded to at most three decimals — an
+ * exact wire decimal like "0.04643991" must not leak nine digits into a table cell (nor
+ * be silently cut off by truncation).
+ */
+test("语音行按读者语言分组字符数，秒数四舍五入到三位小数", async () => {
+  /* zh-CN is this test's language; the assertions are written against it. */
+  await i18n.changeLanguage("zh-CN");
+  const formatted: CreditConsumptionEntry = {
+    ...baseEntry,
+    id: "row-format",
+    lineDetail: {
+      kind: "speech",
+      capability: "speech",
+      speech: {
+        inputCharacters: 12345,
+        voiceTier: "alloy",
+        cappedSeconds: 60,
+        actualSeconds: "0.04643991",
+      },
+    },
+  };
+  const view = renderTable([formatted]);
+
+  expect(view.getByText(/语音 12,345 字符 · 0\.046 秒 · alloy/)).toBeTruthy();
+  expect(view.container.textContent).not.toContain("0.04643991");
 });

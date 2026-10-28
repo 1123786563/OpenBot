@@ -40,6 +40,25 @@ export function credits(value: number): string {
   }).format(value);
 }
 
+/**
+ * A speech line's measured seconds as a reader reads them: at most three decimals
+ * (0.04643991 → 0.046). The wire carries an exact decimal; the table shows a display
+ * number, never nine digits and never a value cut off mid-digit.
+ */
+export function seconds(value: string): string {
+  return new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3,
+  }).format(Number(value));
+}
+
+/** A whole count as the reader's language groups it (12,345). */
+export function count(value: number): string {
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(
+    value,
+  );
+}
+
 /** A datetime to the second, as the design shows expiries and resets: "2026-10-11 18:48:21". */
 export function dateTime(value: string): string {
   return new Intl.DateTimeFormat(undefined, {

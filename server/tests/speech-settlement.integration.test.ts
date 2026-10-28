@@ -436,6 +436,7 @@ test("the user's consumption detail shows the speech characters, seconds and amo
   const entry = view.entries[0];
   expect(entry.credits).toBe(1.4); // $0.014 × 100 credits/USD = 1.40 whole credits
   expect(entry.lineDetail).toEqual({
+    kind: "speech",
     capability: "speech",
     speech: {
       inputCharacters: 100,
@@ -894,6 +895,35 @@ test("a claim below the measured duration is a conflict in the other direction",
       .from(creditReservations)
       .where(eq(creditReservations.id, reservationId)),
   ).toMatchObject([{ status: "reserved" }]);
+});
+
+test("a row carrying only a voice tier is refused by the database, not laundered", async () => {
+  const world = await seedSpeechWorld("0.0005");
+  // A half-broken frozen spec: the tier alone, no certified quantities. The CHECK is
+  // all-or-nothing INCLUDING the tier — a tier without its four columns is not a spec,
+  // and the database is the one place that can refuse it before any reader sees it.
+  // (Drizzle builders are thenable, not native promises, so the rejection is captured
+  // through the builder's own rejection handler.)
+  const error = await database
+    .insert(creditReservations)
+    .values({
+      id: `${prefix}-half-spec`,
+      externalCustomerId: world.customerKey,
+      idempotencyKey: `${prefix}-half-spec`,
+      maximum: 100,
+      expiresAt: new Date(Date.now() + 60_000),
+      specVoiceTier: "alloy",
+    })
+    .then(
+      () => null,
+      (rejection: unknown) => rejection,
+    );
+  expect(error).toBeInstanceOf(Error);
+  // Drizzle wraps the driver failure: the constraint name rides the cause's message.
+  const cause = (error as { cause?: unknown }).cause;
+  expect(String((cause as Error | undefined)?.message)).toMatch(
+    /credit_reservations_speech_spec_check/,
+  );
 });
 
 afterAll(async () => {

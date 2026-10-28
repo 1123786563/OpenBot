@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { BillingPager } from "@/components/billing/pager";
 import { Button } from "@/components/ui/button";
 import type { CreditConsumptionEntry } from "@/lib/billing/credits";
-import { credits } from "@/lib/billing/format";
+import { count, credits, seconds } from "@/lib/billing/format";
 import { cn } from "@/lib/utils";
 
 /** The three quick windows the consumption table offers, mapping to from/to in the page. */
@@ -121,22 +121,29 @@ export function ConsumptionTable({
                       {/*
                        * 13.2's speech line (AC4): a speech consumption shows what was
                        * spoken — the characters in, the seconds out, the tier — said in
-                       * the reader's language, distinguishable from every other row. A
-                       * row without a speech line shows nothing, exactly as before.
+                       * the reader's language, distinguishable from every other row. The
+                       * numbers are DISPLAY numbers (grouped characters, seconds to three
+                       * decimals), never the raw wire decimal. A null line shows nothing.
                        */}
-                      {entry.lineDetail && "speech" in entry.lineDetail ? (
-                        <p className="text-muted-foreground mt-0.5 truncate text-xs">
+                      {entry.lineDetail?.kind === "speech" ? (
+                        <p className="text-muted-foreground mt-0.5 text-xs">
                           {entry.lineDetail.speech.voiceTier
                             ? t("creditsPage.speechUsage", {
-                                characters:
+                                characters: count(
                                   entry.lineDetail.speech.inputCharacters,
-                                seconds: entry.lineDetail.speech.actualSeconds,
+                                ),
+                                seconds: seconds(
+                                  entry.lineDetail.speech.actualSeconds,
+                                ),
                                 tier: entry.lineDetail.speech.voiceTier,
                               })
                             : t("creditsPage.speechUsageNoTier", {
-                                characters:
+                                characters: count(
                                   entry.lineDetail.speech.inputCharacters,
-                                seconds: entry.lineDetail.speech.actualSeconds,
+                                ),
+                                seconds: seconds(
+                                  entry.lineDetail.speech.actualSeconds,
+                                ),
                               })}
                         </p>
                       ) : null}

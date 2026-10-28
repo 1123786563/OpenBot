@@ -135,11 +135,14 @@ export type CreditConsumptionEntry = {
   } | null;
   /**
    * The capability line (12.2 image / 13.2 speech / 17.6 async): what this entry
-   * consumed, shaped by the capability that settled it. Absent when the settlement
-   * wrote no line — the UI renders no usage detail for such rows, never a guess.
+   * consumed, shaped by the capability that settled it — `kind` is the discriminator,
+   * `capability` the provider's own word. The wire contract carries the key on every
+   * entry, null when the settlement wrote no line; the UI renders no usage detail for
+   * null rows, never a guess.
    */
-  lineDetail?:
+  lineDetail:
     | {
+        kind: "image";
         capability: string;
         image: {
           size: string | null;
@@ -149,6 +152,7 @@ export type CreditConsumptionEntry = {
         };
       }
     | {
+        kind: "speech";
         capability: string;
         speech: {
           inputCharacters: number;
@@ -158,6 +162,7 @@ export type CreditConsumptionEntry = {
         };
       }
     | {
+        kind: "async_job";
         capability: string;
         asyncJob: {
           jobId: string;

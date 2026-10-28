@@ -59,9 +59,10 @@ export const creditReservations = pgTable(
     /**
      * The frozen speech spec (Bifrost 13.2, #307): the certified quantities 13.1's
      * admission froze WITH the pricing lock, so settlement can corroborate the character
-     * side — the side the price vocabulary has no slot for. All-or-nothing like the lock
-     * above, keyed on `spec_input_characters` (`spec_voice_tier` may be null AS A VALUE):
-     * a non-speech hold carries none, a half-spec is refused outright.
+     * side — the side the price vocabulary has no slot for. All-or-nothing INCLUDING the
+     * tier, keyed on `spec_input_characters` (`spec_voice_tier` may be null AS A VALUE,
+     * but a tier without its four columns is not a spec): a non-speech hold carries none,
+     * a half-spec is refused outright.
      */
     specInputCharacters: integer("spec_input_characters"),
     specVoiceTier: text("spec_voice_tier"),
@@ -123,7 +124,7 @@ export const creditReservations = pgTable(
     ),
     check(
       "credit_reservations_speech_spec_check",
-      sql`(${table.specInputCharacters} IS NULL) = (${table.specDurationCapSeconds} IS NULL) AND (${table.specInputCharacters} IS NULL) = (${table.specPerInputCharacterUsd} IS NULL) AND (${table.specInputCharacters} IS NULL) = (${table.specPerOutputSecondUsd} IS NULL) AND (${table.specInputCharacters} IS NULL OR (${table.specInputCharacters} >= 0 AND ${table.specDurationCapSeconds} >= 1 AND ${table.specPerInputCharacterUsd} ~ '^[0-9]+(\\.[0-9]+)?$' AND ${table.specPerOutputSecondUsd} ~ '^[0-9]+(\\.[0-9]+)?$'))`,
+      sql`(${table.specInputCharacters} IS NULL) = (${table.specDurationCapSeconds} IS NULL) AND (${table.specInputCharacters} IS NULL) = (${table.specPerInputCharacterUsd} IS NULL) AND (${table.specInputCharacters} IS NULL) = (${table.specPerOutputSecondUsd} IS NULL) AND (${table.specVoiceTier} IS NULL OR ${table.specInputCharacters} IS NOT NULL) AND (${table.specInputCharacters} IS NULL OR (${table.specInputCharacters} >= 0 AND ${table.specDurationCapSeconds} >= 1 AND ${table.specPerInputCharacterUsd} ~ '^[0-9]+(\\.[0-9]+)?$' AND ${table.specPerOutputSecondUsd} ~ '^[0-9]+(\\.[0-9]+)?$'))`,
     ),
     check(
       "credit_reservations_settled_check",
