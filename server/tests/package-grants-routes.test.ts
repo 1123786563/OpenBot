@@ -15,6 +15,7 @@ import {
   PackageServiceError,
   packageError,
 } from "../src/enterprise/plugin-packages/contracts";
+import { createMarketplaceGate } from "../src/enterprise/plugin-packages/marketplace-gate";
 import {
   createPluginPackageRoutes,
   createUnavailablePluginPackageRoutes,
@@ -163,6 +164,10 @@ function appWith(options: {
   app.route(
     "/api/enterprise/plugin-packages",
     createPluginPackageRoutes({
+      gate: createMarketplaceGate({
+        enabled: true,
+        pilotWorkspaces: [{ tenantId: "tenant-1", workspaceId: "workspace-1" }],
+      }),
       catalogue: fakeCatalogue(),
       service:
         options.service === undefined ? fakeService().service : options.service,

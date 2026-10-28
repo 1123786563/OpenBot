@@ -18,6 +18,8 @@ import type { GovernedModelRequest } from "../enterprise/runs/governed-execution
 import type { AcquireLearnedSkills } from "../learning/public";
 // MOD15 (#635)：M10 出口段迁移——记忆装载器类型改经 M10 公开门面，环边落公开出口。
 import type { LoadPersonalMemory } from "../memory/public";
+import type { PackageToolRunContext } from "../plugins/package-tools";
+import type { SelectableSkill } from "../plugins/public";
 import type { AgentActor } from "./profile-types";
 
 export type AgentResolutionContext = {
@@ -32,6 +34,23 @@ export type AgentResolutionContext = {
    * build. Never taken from a wire field or a global.
    */
   governedModel?: GovernedModelRequest;
+  /**
+   * PKG03B (T03-fix): the admitted run's pinned package skills, read through
+   * `readPinnedSkills` by the Runner AFTER its own admission (pin ∩ active
+   * grant ∩ membership revalidated per read, zero cache). Present only on the
+   * re-resolution of a run that has pins; the build merges them after the
+   * legacy `grantedSkills` catalogue — never replacing or downgrading legacy
+   * grants, and never reachable from a wire field. A run without pins
+   * re-resolves nothing and keeps the legacy contract untouched.
+   */
+  pinnedPackageSkills?: readonly SelectableSkill[];
+  /**
+   * PKG05 (Issue #464): the admitted run's package execution context. Present
+   * only on the re-resolution of a run with dispatchable package tools; the
+   * build hands it to `grantedTools`, and every package tool call carries it
+   * to the dispatch chain. Never reachable from a wire field.
+   */
+  packageRun?: PackageToolRunContext;
 };
 
 export class CoworkerUnavailableError extends Error {}
@@ -167,6 +186,11 @@ export function createActorAgentResolver(
       // agent's own id, known where the model wrapper is built; the person is known here.
       { userId: actor.id },
       observation,
+      // PKG03B (T03-fix): the admitted run's pinned package skills, threaded
+      // to the builds so the run's Skill catalogue serves the pinned revision.
+      context?.pinnedPackageSkills,
+      // PKG05: the admitted run's package context, threaded to the tool offer.
+      context?.packageRun,
     );
   };
 

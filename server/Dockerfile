@@ -58,6 +58,20 @@ COPY server server
 COPY shared shared
 COPY toolkit toolkit
 COPY examples examples
+# PKG11 (#470, Spec §12): the plugin-package marketplace ships WITH the image
+# (see the root Dockerfile's note) — the release index plus the immutable
+# content-addressed artifacts the server's default boot path resolves.
+# `--chown` because the runtime user below opens `plugins/<index>.lock` in
+# that directory (acquireReleaseLock mkdir); a root-owned COPY would make
+# every dispatch fail-closed with EACCES once the marketplace is enabled.
+COPY --chown=openbot:openbot plugins plugins
+
+# The marketplace's governance sources: `server/src/plugin-packages/deployment-facts.ts`
+# imports `scripts/plugin-packages/index-file` as a value (the withdrawal-facts gate
+# dispatch consults under the release lock), so the runtime image needs this subtree
+# beside the marketplace it governs, or the server's static import chain fails module
+# resolution at startup. Its only other import is `shared/enterprise/`, copied above.
+COPY scripts/plugin-packages scripts/plugin-packages
 
 # The built app, served by the process below. `APP_DIST_DIR` is what turns that on, so an image
 # without this layer is still a working API.

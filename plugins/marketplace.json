@@ -6,14 +6,24 @@
       "version": "1.0.0",
       "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
       "category": "productivity",
-      "listed": true
+      "listed": true,
+      "state": "published"
     },
     {
       "packageKey": "openbot/demo-skill",
       "version": "1.1.0",
       "artifactDigest": "be9ea9557fd26fe0e3141223391e2c35b9ff89a35e743e3f16d173d155701bd4",
       "category": "productivity",
-      "listed": true
+      "listed": true,
+      "state": "published"
+    },
+    {
+      "packageKey": "openbot/legacy-catalogue",
+      "version": "1.0.0",
+      "artifactDigest": "7f1e4c39eb324f2c07782dc3006ad8c1d8c060c9b3c496040d52bde1d652242c",
+      "category": "builtin",
+      "listed": true,
+      "state": "published"
     }
   ]
 }

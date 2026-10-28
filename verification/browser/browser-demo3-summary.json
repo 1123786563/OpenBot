@@ -1,0 +1,54 @@
+[
+  {
+    "step": "PKG06-detail-rollback-offer",
+    "chars": 653
+  },
+  {
+    "step": "PKG06-rollback-preview",
+    "chars": 399
+  },
+  {
+    "step": "PKG06-rollback-applied",
+    "chars": 529
+  },
+  {
+    "step": "PKG07-disabled",
+    "chars": 1138
+  },
+  {
+    "step": "PKG07-detail-disabled",
+    "chars": 565
+  },
+  {
+    "step": "PKG07-enable-FAILED",
+    "chars": 936
+  },
+  {
+    "step": "PKG07-uninstall-confirm",
+    "chars": 195
+  },
+  {
+    "step": "PKG07-uninstalled",
+    "chars": 721
+  },
+  {
+    "step": "PKG02-catalogue-after-uninstall",
+    "chars": 371
+  },
+  {
+    "step": "PKG02-detail-uninstalled",
+    "chars": 349
+  },
+  {
+    "step": "PKG02-install-ui-FAILED",
+    "chars": 721
+  },
+  {
+    "step": "PKG10-detail-ledger",
+    "chars": 349
+  },
+  {
+    "step": "PKG10-dispatch-inspect",
+    "chars": 514
+  }
+]

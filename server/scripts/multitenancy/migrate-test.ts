@@ -1887,7 +1887,7 @@ const PACKAGE_INSTALL_TASK: TaskMigrationSpec = {
     {
       slug: "package_hardening_case_insensitive",
       impact:
-        "R5-4（OCR round5，追加步骤，不改已入账步骤）：package_hardening 的三个递归秘密载体 CHECK（revision config / plans canonical_input / changes diff）的 like_regex 补 flag \"i\"——键名大小写变体（\"Token\"/\"API_KEY\"/\"SecretRef\"）此前可穿透 DB 级防线，与 PKG04 强化函数（package_expert_create_function_hardening）属同一漏洞家族。约束名不变，仅 DROP+重建；CHECK 只约束新写入，既有行不受影响。",
+        'R5-4（OCR round5，追加步骤，不改已入账步骤）：package_hardening 的三个递归秘密载体 CHECK（revision config / plans canonical_input / changes diff）的 like_regex 补 flag "i"——键名大小写变体（"Token"/"API_KEY"/"SecretRef"）此前可穿透 DB 级防线，与 PKG04 强化函数（package_expert_create_function_hardening）属同一漏洞家族。约束名不变，仅 DROP+重建；CHECK 只约束新写入，既有行不受影响。',
       objects: [
         "enterprise_package_revisions",
         "enterprise_package_plans",
@@ -2165,6 +2165,179 @@ const PACKAGE_EXPERT_TASK: TaskMigrationSpec = {
           '  RETURN "p_agent_id";\n' +
           "END\n" +
           "$function$;",
+      ],
+    },
+  ],
+};
+
+/**
+ * PKG05（Issue #464）：受管工具派发。expand-only——新增
+ * enterprise_package_dispatches（派发状态机 prepared→dispatched→
+ * succeeded/failed/unknown|cancelled，同 attempt+tool_call 唯一）；为
+ * enterprise_package_grants 补 connector 工具授权三列（schema_digest/
+ * effect/connector_install_id + 复合外键）；为 enterprise_run_package_pins
+ * 补 allowed_tool_bindings（钉扎工具集合）与 install_generation。不重写任何
+ * 已应用步骤文本，不改任何既有策略/授权。
+ */
+const PACKAGE_DISPATCH_TASK: TaskMigrationSpec = {
+  id: "PKG05",
+  description:
+    "PKG05（Issue #464）：插件包受管工具派发——dispatch 状态机表、connector 工具授权三列、Run 钉扎工具集合（expand-only，最小 RLS 与授权）。",
+  steps: [
+    {
+      slug: "package_dispatch_table",
+      impact:
+        "新增 enterprise_package_dispatches：主键 (tenant_id, operation_id)；run/attempt/tool_call_id 唯一（同一 attempt 的重复调用至多派发一次）；state 闭集 CHECK（prepared/dispatched/succeeded/failed/unknown/cancelled）；args_digest 64 位十六进制、effect ∈ read/write、generation 正数 CHECK；复合外键钉 tenants/workspaces/enterprise_runs/包安装表。行只存 id 与摘要：参数正文、token、供应商文本一律不落表。",
+      objects: ["enterprise_package_dispatches"],
+      statements: [
+        'CREATE TABLE "enterprise_package_dispatches" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"operation_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"run_id" uuid NOT NULL,\n' +
+          '\t"attempt_generation" integer NOT NULL,\n' +
+          '\t"tool_call_id" text NOT NULL,\n' +
+          '\t"install_id" text NOT NULL,\n' +
+          '\t"revision" integer NOT NULL,\n' +
+          '\t"resource_id" text NOT NULL,\n' +
+          '\t"tool_ref" text NOT NULL,\n' +
+          '\t"connector_install_id" text NOT NULL,\n' +
+          '\t"connection_id" text,\n' +
+          '\t"connection_generation" integer NOT NULL,\n' +
+          '\t"args_digest" text NOT NULL,\n' +
+          '\t"effect" text NOT NULL,\n' +
+          "\t\"state\" text DEFAULT 'prepared' NOT NULL,\n" +
+          '\t"receipt_ref" jsonb,\n' +
+          '\t"error_code" text,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"completed_at" timestamp with time zone,\n' +
+          '\tCONSTRAINT "enterprise_package_dispatch_pk" PRIMARY KEY("tenant_id","operation_id"),\n' +
+          "\tCONSTRAINT \"enterprise_package_dispatch_state\" CHECK (\"enterprise_package_dispatches\".\"state\" in ('prepared','dispatched','succeeded','failed','unknown','cancelled')),\n" +
+          '\tCONSTRAINT "enterprise_package_dispatch_counters" CHECK ("enterprise_package_dispatches"."attempt_generation" > 0 and "enterprise_package_dispatches"."revision" > 0 and "enterprise_package_dispatches"."connection_generation" > 0),\n' +
+          '\tCONSTRAINT "enterprise_package_dispatch_digest" CHECK ("enterprise_package_dispatches"."args_digest" ~ \'^[0-9a-f]{64}$\'),\n' +
+          '\tCONSTRAINT "enterprise_package_dispatch_effect" CHECK ("enterprise_package_dispatches"."effect" in (\'read\',\'write\'))\n' +
+          ");",
+        'ALTER TABLE "enterprise_package_dispatches" ADD CONSTRAINT "enterprise_package_dispatch_tenant_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_dispatches" ADD CONSTRAINT "enterprise_package_dispatch_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_dispatches" ADD CONSTRAINT "enterprise_package_dispatch_run_fk" FOREIGN KEY ("tenant_id","run_id") REFERENCES "public"."enterprise_runs"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_dispatches" ADD CONSTRAINT "enterprise_package_dispatch_install_fk" FOREIGN KEY ("tenant_id","workspace_id","install_id") REFERENCES "public"."enterprise_package_installs"("tenant_id","workspace_id","id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE UNIQUE INDEX "enterprise_package_dispatch_call_uq" ON "enterprise_package_dispatches" ("tenant_id","run_id","attempt_generation","tool_call_id");',
+        'CREATE INDEX "enterprise_package_dispatch_install_idx" ON "enterprise_package_dispatches" ("tenant_id","workspace_id","install_id");',
+      ],
+    },
+    {
+      slug: "package_dispatch_rls",
+      impact:
+        "enterprise_package_dispatches 的 FORCE RLS 与最小授权：data 读/插/更新（租户臂+团队臂——派发行只在可信 Run 的数据通道事务内写入与推进）；operator 读+插+更新（装配与测试通道）；无 DELETE（派发台账只追加与推进）；directory 零授权。",
+      objects: ["enterprise_package_dispatches"],
+      statements: [
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_package_dispatches" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_package_dispatches" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_package_dispatches" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_package_dispatch_data_read" ON "enterprise_package_dispatches"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_package_dispatches"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_package_dispatches"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_dispatch_data_insert" ON "enterprise_package_dispatches"\n  FOR INSERT TO ob_ent_data\n  WITH CHECK ("enterprise_package_dispatches"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_package_dispatches"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_dispatch_data_update" ON "enterprise_package_dispatches"\n  FOR UPDATE TO ob_ent_data\n  USING ("enterprise_package_dispatches"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_package_dispatches"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'))\n  WITH CHECK ("enterprise_package_dispatches"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_package_dispatches"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_dispatch_operator_read" ON "enterprise_package_dispatches"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_package_dispatches"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_dispatch_operator_insert" ON "enterprise_package_dispatches"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_package_dispatches"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_dispatch_operator_update" ON "enterprise_package_dispatches"\n  FOR UPDATE TO ob_ent_operator\n  USING ("enterprise_package_dispatches"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'))\n  WITH CHECK ("enterprise_package_dispatches"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT, INSERT, UPDATE ON TABLE "enterprise_package_dispatches" TO ob_ent_data;',
+        'GRANT SELECT, INSERT, UPDATE ON TABLE "enterprise_package_dispatches" TO ob_ent_operator;',
+      ],
+    },
+    {
+      slug: "package_grant_tool_columns",
+      impact:
+        "为 enterprise_package_grants 追加 connector 工具授权三列：schema_digest（64 位十六进制，取自钉扎修订清单的已审定工具契约摘要）、effect（read/write）、connector_install_id（复合外键钉 MT031 连接器安装）。新增 CHECK 要求三列只在 connectorTool 行同时出现（skill 行全 NULL）。存量行全部是 skill 行：新列 NULL，CHECK 对存量等价。不改既有列/主键/唯一索引。",
+      objects: ["enterprise_package_grants", "enterprise_plugin_installs"],
+      statements: [
+        'ALTER TABLE "enterprise_package_grants" ADD COLUMN "schema_digest" text;',
+        'ALTER TABLE "enterprise_package_grants" ADD COLUMN "effect" text;',
+        'ALTER TABLE "enterprise_package_grants" ADD COLUMN "connector_install_id" text;',
+        'ALTER TABLE "enterprise_package_grants" ADD CONSTRAINT "enterprise_package_grant_tool_contract" CHECK (("enterprise_package_grants"."resource_kind" = \'skill\' and "enterprise_package_grants"."schema_digest" is null and "enterprise_package_grants"."effect" is null and "enterprise_package_grants"."connector_install_id" is null) or ("enterprise_package_grants"."resource_kind" = \'connectorTool\' and "enterprise_package_grants"."schema_digest" ~ \'^[0-9a-f]{64}$\' and "enterprise_package_grants"."effect" in (\'read\',\'write\') and "enterprise_package_grants"."connector_install_id" is not null));',
+        'ALTER TABLE "enterprise_package_grants" ADD CONSTRAINT "enterprise_package_grant_connector_fk" FOREIGN KEY ("tenant_id","workspace_id","connector_install_id") REFERENCES "public"."enterprise_plugin_installs"("tenant_id","workspace_id","id") ON DELETE cascade ON UPDATE no action;',
+      ],
+    },
+    {
+      slug: "run_package_pin_tool_bindings",
+      impact:
+        "为 enterprise_run_package_pins 追加 allowed_tool_bindings（jsonb 数组 ≤256：准入时已授权的受管连接器工具绑定 {resourceId, toolRef, schemaDigest, effect, connectorInstallId}）与 install_generation（准入时的安装 generation，派发时重验）。存量行取默认 '[]'::jsonb / 1：旧钉扎不含工具，工具派发一律拒绝（fail-closed，不吸收新工具）。不改既有列/策略。",
+      objects: ["enterprise_run_package_pins"],
+      statements: [
+        'ALTER TABLE "enterprise_run_package_pins" ADD COLUMN "allowed_tool_bindings" jsonb DEFAULT \'[]\'::jsonb NOT NULL;',
+        'ALTER TABLE "enterprise_run_package_pins" ADD COLUMN "install_generation" integer DEFAULT 1 NOT NULL;',
+        'ALTER TABLE "enterprise_run_package_pins" ADD CONSTRAINT "enterprise_run_package_pin_tool_bindings_shape" CHECK (jsonb_typeof("enterprise_run_package_pins"."allowed_tool_bindings") = \'array\' and jsonb_array_length("enterprise_run_package_pins"."allowed_tool_bindings") <= 256);',
+        'ALTER TABLE "enterprise_run_package_pins" ADD CONSTRAINT "enterprise_run_package_pin_install_generation" CHECK ("enterprise_run_package_pins"."install_generation" > 0);',
+      ],
+    },
+    {
+      slug: "plugin_connection_generation",
+      impact:
+        "为 enterprise_plugin_connections 追加 generation（正数 CHECK，默认 1）：派发行记录解析时的连接代次并在派发 CAS 重验；审批期间换代（重绑/换绑）的旧提案在重验处被拒（A07）。解绑=删行不变。存量行取默认 1（既有绑定未换代）。不改既有列/策略。",
+      objects: ["enterprise_plugin_connections"],
+      statements: [
+        'ALTER TABLE "enterprise_plugin_connections" ADD COLUMN "generation" integer DEFAULT 1 NOT NULL;',
+        'ALTER TABLE "enterprise_plugin_connections" ADD CONSTRAINT "enterprise_plugin_connection_generation" CHECK ("enterprise_plugin_connections"."generation" > 0);',
+      ],
+    },
+  ],
+};
+
+/**
+ * PKG07（Issue #466）：停用/卸载/重装。expand-only——只把
+ * enterprise_package_changes 的动作 CHECK 从
+ * ('install','upgrade','rollback','grant','revoke','createExpert') 扩到含
+ * 'disable'/'enable'/'uninstall'（生命周期回执与领域变更同事务追加；幂等复用
+ * 既有 (tenant, workspace, actor, key) 唯一）。不新增表、不新增列、不改任何
+ * 既有策略/授权；约束只放宽不收紧，既有行不受影响。
+ */
+const PACKAGE_LIFECYCLE_TASK: TaskMigrationSpec = {
+  id: "PKG07",
+  description:
+    "PKG07（Issue #466）：插件包停用/卸载/重装——changes 动作 CHECK 扩到 disable/enable/uninstall（expand-only：无新表、无新列、无策略变更）。",
+  steps: [
+    {
+      slug: "package_changes_lifecycle_actions",
+      impact:
+        "把 enterprise_package_changes 的动作 CHECK 从 ('install','upgrade','rollback','grant','revoke','createExpert') 扩到含 'disable'/'enable'/'uninstall'：停用、重新启用（含从卸载 tombstone 重装）各写一条与安装状态变更同事务的回执；安装行本身是 tombstone，不删行，revision/pin/审计与调用证据保留。约束只放宽不收紧。",
+      objects: ["enterprise_package_changes"],
+      statements: [
+        // IF EXISTS: this step only WIDENS a constraint an earlier task owns.
+        // The test-side drift reconciler (support/task-drift.ts) sees the
+        // un-journaled `ADD CONSTRAINT` below and may already have dropped the
+        // constraint as 0163 drift, so the drop must tolerate its absence; the
+        // ADD then rebuilds exactly the widened definition in both cases.
+        'ALTER TABLE "enterprise_package_changes" DROP CONSTRAINT IF EXISTS "enterprise_package_change_action";',
+        "ALTER TABLE \"enterprise_package_changes\" ADD CONSTRAINT \"enterprise_package_change_action\" CHECK (\"enterprise_package_changes\".\"action\" in ('install','upgrade','rollback','grant','revoke','createExpert','disable','enable','uninstall'));",
+      ],
+    },
+  ],
+};
+
+/**
+ * PKG11（T13-fix-2，Codex FC-02）：派发者进程租约。expand-only——为
+ * enterprise_package_dispatches 追加派发者租约两列与形状 CHECK：
+ * owner_incarnation（执行 dispatched CAS 的服务实例身份，进程启动时生成的
+ * uuid，随 CAS 同事务落库）与 owner_lease_expires_at（租约承诺窗口，崩溃
+ * 恢复的证据事实）。两列可空：prepared 行无租约；存量 dispatched 行 owner
+ * 为 NULL 或异于当前 incarnation 即视为派发者已死（单写者边界，与 §10
+ * release 锁单机语义一致），恢复路径转 unknown/DISPATCH_CRASH，绝不自动
+ * 重发。不改既有列/约束/策略/授权。
+ */
+const PACKAGE_DISPATCH_LEASE_TASK: TaskMigrationSpec = {
+  id: "PKG11",
+  description:
+    "PKG11（T13-fix-2）：插件包派发者进程租约——dispatches 追加 owner_incarnation/owner_lease_expires_at 两列与形状 CHECK（expand-only，恢复路径的证据事实）。",
+  steps: [
+    {
+      slug: "package_dispatch_owner_lease",
+      impact:
+        "为 enterprise_package_dispatches 追加派发者租约两列：owner_incarnation（执行 dispatched CAS 的进程身份，uuid）与 owner_lease_expires_at（租约承诺窗口）。两列同空同非空（prepared 行与存量行均为 NULL，由恢复路径按孤儿收编转 unknown/DISPATCH_CRASH，绝不自动重发）；incarnation 有长度上限。expand-only，不改既有列/约束/策略。",
+      objects: ["enterprise_package_dispatches"],
+      statements: [
+        'ALTER TABLE "enterprise_package_dispatches" ADD COLUMN "owner_incarnation" text;',
+        'ALTER TABLE "enterprise_package_dispatches" ADD COLUMN "owner_lease_expires_at" timestamp with time zone;',
+        'ALTER TABLE "enterprise_package_dispatches" ADD CONSTRAINT "enterprise_package_dispatch_owner_lease_shape" CHECK (("owner_incarnation" is null) = ("owner_lease_expires_at" is null) and ("owner_incarnation" is null or char_length("owner_incarnation") between 1 and 64));',
       ],
     },
   ],
@@ -4510,6 +4683,9 @@ export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
   [PACKAGE_INSTALL_TASK.id, PACKAGE_INSTALL_TASK],
   [PACKAGE_GRANT_TASK.id, PACKAGE_GRANT_TASK],
   [PACKAGE_EXPERT_TASK.id, PACKAGE_EXPERT_TASK],
+  [PACKAGE_DISPATCH_TASK.id, PACKAGE_DISPATCH_TASK],
+  [PACKAGE_LIFECYCLE_TASK.id, PACKAGE_LIFECYCLE_TASK],
+  [PACKAGE_DISPATCH_LEASE_TASK.id, PACKAGE_DISPATCH_LEASE_TASK],
   [SCAN_SCOPE_REBUILD_TASK.id, SCAN_SCOPE_REBUILD_TASK],
   [PERSONAL_BOT_TASK.id, PERSONAL_BOT_TASK],
   [CREDENTIAL_LEASE_TASK.id, CREDENTIAL_LEASE_TASK],

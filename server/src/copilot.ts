@@ -139,6 +139,7 @@ import {
   currentRunObservationScope,
   withRunObservationScope,
 } from "./observation-run-scope";
+import type { PackageToolRunContext } from "./plugins/package-tools";
 import type { SelectableSkill, Selection } from "./plugins/public";
 import {
   grantedToolGuidance,
@@ -3554,6 +3555,13 @@ export async function buildAgents(
     actorId: string;
     resolveScope: (botId: string) => Promise<unknown>;
   },
+  /**
+   * PKG03B (T03-fix): the admitted run's pinned package skills, forwarded to
+   * every built Bot. Appended last for the positional reason.
+   */
+  pinnedPackageSkills?: readonly SelectableSkill[],
+  /** PKG05: forwarded from {@link resolveRuntimeAgents}. Appended last. */
+  packageRun?: PackageToolRunContext,
 ): Promise<Record<string, AbstractAgent>> {
   let vendors: readonly string[] = [];
   try {
@@ -3627,6 +3635,8 @@ export async function buildAgents(
                 resolveScope: observation.resolveScope,
               }
             : undefined,
+          pinnedPackageSkills,
+          packageRun,
         );
         // ME14 (carried ME07 review F1): the middleware is the LEGACY engine's
         // personal-memory block. A build the selector routes to the Mastra
@@ -3920,6 +3930,10 @@ async function buildAgent(
    * scope-keyed like any other observed run.
    */
   observation?: BuiltinRunObservationThreading,
+  /** PKG03B (T03-fix): the admitted run's pinned package skills. Appended last. */
+  pinnedPackageSkills?: readonly SelectableSkill[],
+  /** PKG05: the admitted run's package context, handed to the tool offer. */
+  packageRun?: PackageToolRunContext,
 ): Promise<AbstractAgent> {
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
@@ -3943,7 +3957,7 @@ async function buildAgent(
     });
   }
 
-  const granted = await loadTools(agent.id);
+  const granted = await loadTools(agent.id, packageRun);
 
   /*
    * Whether narrowing can do anything here at all.
@@ -3958,6 +3972,14 @@ async function buildAgent(
     try {
       skills = await selection.loadSkills(agent.id);
     } catch {}
+  }
+  // PKG03B (T03-fix): the admitted run's pinned package skills join the
+  // catalogue. They are pin ∩ active grant ∩ membership summaries revalidated
+  // at every read, carried in the immutable artifact of the pinned revision;
+  // they declare no tools (dispatch is a later slice), so narrowing behavior
+  // is unchanged. Merged after — never instead of — the legacy grants.
+  if (pinnedPackageSkills?.length) {
+    skills = [...skills, ...pinnedPackageSkills];
   }
   const narrowing =
     selection &&
@@ -4095,7 +4117,8 @@ async function buildAgent(
         gatewayModel,
       ),
       {
-        wrapChain: (input, run) => builtinRunChainMiddleware(agent.id)(input, run),
+        wrapChain: (input, run) =>
+          builtinRunChainMiddleware(agent.id)(input, run),
         observe: (run) =>
           observeModelConnection(
             observeBuiltinRunLifecycle(observeBuiltinToolSteps(run)),
@@ -4873,48 +4896,49 @@ export function builtinRunChainCounts(): Readonly<
 export function builtinRunChainMiddleware(
   botId: string,
 ): (input: RunAgentInput, run: Observable<BaseEvent>) => Observable<BaseEvent> {
-  return (input, run) => defer(() => {
-    if (currentTraceContext() !== undefined) {
-      builtinRunChainTally.ambient += 1;
-      return run;
-    }
-    const runId = typeof input.runId === "string" ? input.runId.trim() : "";
-    if (runId === "") {
-      builtinRunChainTally.unavailable += 1;
-      log.warn(
-        { type: "builtin-run-chain-unavailable", botId },
-        "builtin-run-chain-unavailable: no active span and no run identity; the run's facts stay chain-less and submit nothing upstream",
+  return (input, run) =>
+    defer(() => {
+      if (currentTraceContext() !== undefined) {
+        builtinRunChainTally.ambient += 1;
+        return run;
+      }
+      const runId = typeof input.runId === "string" ? input.runId.trim() : "";
+      if (runId === "") {
+        builtinRunChainTally.unavailable += 1;
+        log.warn(
+          { type: "builtin-run-chain-unavailable", botId },
+          "builtin-run-chain-unavailable: no active span and no run identity; the run's facts stay chain-less and submit nothing upstream",
+        );
+        return run;
+      }
+      builtinRunChainTally.derived += 1;
+      // The chain derives from a per-subscription nonce, not the wire runId (OCR delta T-J
+      // #2): the runId is display, and this mint is the one identity two re-driven runs
+      // cannot share.
+      const attemptId = randomUUID();
+      const traceId = derivedBuiltinRunTraceId(botId, attemptId);
+      log.info(
+        {
+          type: "builtin-run-chain",
+          botId,
+          runId,
+          origin: "derived",
+          traceId,
+        },
+        "builtin-run-chain",
       );
-      return run;
-    }
-    builtinRunChainTally.derived += 1;
-    // The chain derives from a per-subscription nonce, not the wire runId (OCR delta T-J
-    // #2): the runId is display, and this mint is the one identity two re-driven runs
-    // cannot share.
-    const attemptId = randomUUID();
-    const traceId = derivedBuiltinRunTraceId(botId, attemptId);
-    log.info(
-      {
-        type: "builtin-run-chain",
-        botId,
-        runId,
-        origin: "derived",
-        traceId,
-      },
-      "builtin-run-chain",
-    );
-    const ctx = trace.setSpan(
-      context.active(),
-      trace.wrapSpanContext({
-        traceId,
-        spanId: runRootSpanId(traceId),
-        traceFlags: TraceFlags.SAMPLED,
-        isRemote: false,
-        traceState: undefined,
-      }),
-    );
-    return subscribeWithin(ctx, run);
-  });
+      const ctx = trace.setSpan(
+        context.active(),
+        trace.wrapSpanContext({
+          traceId,
+          spanId: runRootSpanId(traceId),
+          traceFlags: TraceFlags.SAMPLED,
+          isRemote: false,
+          traceState: undefined,
+        }),
+      );
+      return subscribeWithin(ctx, run);
+    });
 }
 
 /**
@@ -5686,8 +5710,7 @@ function remoteAgentWithStandingRole(
               // the governed run's local): the receipt echoes this id back and is
               // checked against the trimmed one, so a wire runId with surrounding
               // whitespace used to fail its own honest endpoint (T-N#3).
-              runId:
-                typeof input.runId === "string" ? input.runId.trim() : "",
+              runId: typeof input.runId === "string" ? input.runId.trim() : "",
               caps: contract.caps,
             },
           }),
@@ -6157,6 +6180,20 @@ export async function resolveRuntimeAgents(
     actorId: string;
     resolveScope: (botId: string) => Promise<unknown>;
   },
+  /**
+   * PKG03B (T03-fix): the admitted run's pinned package skills, read by the
+   * Runner through `readPinnedSkills` after its own admission. Appended last
+   * for the same positional reason. Absent leaves every build on the legacy
+   * contract.
+   */
+  pinnedPackageSkills?: readonly SelectableSkill[],
+  /**
+   * PKG05: the admitted run's package execution context. Present, the build's
+   * `loadTools` is handed it so the run's dispatchable package tools join its
+   * offer beside — never instead of — the legacy grants. Absent leaves every
+   * build on the legacy contract.
+   */
+  packageRun?: PackageToolRunContext,
 ): Promise<Record<string, AbstractAgent>> {
   const all = await loadAgents();
   if (all.length === 0) {
@@ -6211,11 +6248,17 @@ export async function resolveRuntimeAgents(
     attribution,
     gatewayModelDial,
     observation,
+    pinnedPackageSkills,
+    packageRun,
   );
 }
 
 /** What one Bot may call, for the person whose request this is. */
-export type LoadToolsForBot = (botId: string) => Promise<GrantedTool[]>;
+export type LoadToolsForBot = (
+  botId: string,
+  /** PKG05: present only for a build the Runner re-resolved with a package run. */
+  packageRun?: PackageToolRunContext,
+) => Promise<GrantedTool[]>;
 
 /**
  * The deployment's signed statement of what a run is, for the agent that will run it.

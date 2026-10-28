@@ -6,7 +6,18 @@ export type GrantedTool = {
   name: string;
   description: string;
   parameters: z.ZodType;
-  execute: (args: unknown) => Promise<string>;
+  /**
+   * PKG09: the runtime's own call id, when it carries one.
+   *
+   * The package dispatch branch uses it as the operation identity, so the
+   * prepared row a parked approval left behind is the row the resumed call
+   * completes — not an orphan beside a second, randomly-keyed one. Runtimes
+   * that carry no id simply omit it (the store mints one per call).
+   */
+  execute: (
+    args: unknown,
+    context?: { toolCallId?: string },
+  ) => Promise<string>;
   initiator?: AuditInitiator;
   /**
    * `<serverId>/<toolName>`, carried alongside the name the model is offered.

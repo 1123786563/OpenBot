@@ -1,0 +1,14 @@
+{
+  "status": 201,
+  "body": {
+    "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+    "botId": "t12-bot-1",
+    "revision": 2,
+    "resources": [
+      {
+        "resourceId": "summarize",
+        "kind": "skill"
+      }
+    ]
+  }
+}

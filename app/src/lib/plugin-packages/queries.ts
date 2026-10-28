@@ -2,6 +2,8 @@ import { queryOptions } from "@tanstack/react-query";
 import { client } from "@/lib/client";
 import type {
   PackageCatalogueDetail,
+  PackageDispatchInspectionDTO,
+  PackageDispatchSummaryDTO,
   PackageInstallDetailDTO,
   PackagePage,
 } from "../../../../shared/enterprise/plugin-package-contracts";
@@ -73,6 +75,25 @@ export const pluginPackageKeys = {
    */
   installDetail: (scope: PluginPackageScope, installId: string) =>
     [...scopeKey(scope), "install", installId] as const,
+  /**
+   * PKG10: the install's dispatch ledger (unknown visibility). Same scope-prefixed key discipline
+   * — a team switch is a different key, and a late answer cannot land in the new team's tree.
+   */
+  dispatches: (scope: PluginPackageScope, installId: string) =>
+    [...scopeKey(scope), "install", installId, "dispatches"] as const,
+  /** PKG10: one dispatch's verification view (facts + evidence + recovery). */
+  dispatchInspection: (
+    scope: PluginPackageScope,
+    installId: string,
+    operationId: string,
+  ) =>
+    [
+      ...scopeKey(scope),
+      "install",
+      installId,
+      "dispatch",
+      operationId,
+    ] as const,
 };
 
 function listPath(query: PluginPackageListQuery): string {
@@ -152,6 +173,66 @@ export function pluginPackageInstallDetailQueryOptions(
         },
       );
       return (await response.json()) as PackageInstallDetailDTO;
+    },
+  });
+}
+
+/**
+ * PKG10 (#469): the dispatch ledger of one install — the unknown-effect rows a
+ * member must be able to see after a crash or a vendor write timeout. Read-only
+ * scope headers; the DTOs never carry arguments or secrets.
+ */
+export function pluginPackageDispatchesQueryOptions(
+  scope: PluginPackageScope,
+  installId: string,
+) {
+  return queryOptions({
+    queryKey: pluginPackageKeys.dispatches(scope, installId),
+    queryFn: async ({ signal }): Promise<PackageDispatchSummaryDTO[]> => {
+      const response = await client(
+        `${PACKAGE_ROOT}/installs/${encodeURIComponent(installId)}/dispatches`,
+        {
+          tenantId: scope.tenantId,
+          workspaceId: scope.workspaceId,
+          signal,
+          fallbackKey: "marketplace.load",
+        },
+      );
+      const body = (await response.json()) as {
+        dispatches: PackageDispatchSummaryDTO[];
+      };
+      return body.dispatches;
+    },
+  });
+}
+
+/**
+ * PKG10: one dispatch's verification view — the evidence binding (original
+ * account / target / argument digest), the no-auto-resend reason, related
+ * receipts and the recovery gate. Only fetched for a row the person expanded.
+ */
+export function pluginPackageDispatchInspectionQueryOptions(
+  scope: PluginPackageScope,
+  installId: string,
+  operationId: string,
+) {
+  return queryOptions({
+    queryKey: pluginPackageKeys.dispatchInspection(
+      scope,
+      installId,
+      operationId,
+    ),
+    queryFn: async ({ signal }): Promise<PackageDispatchInspectionDTO> => {
+      const response = await client(
+        `${PACKAGE_ROOT}/installs/${encodeURIComponent(installId)}/dispatches/${encodeURIComponent(operationId)}`,
+        {
+          tenantId: scope.tenantId,
+          workspaceId: scope.workspaceId,
+          signal,
+          fallbackKey: "marketplace.load",
+        },
+      );
+      return (await response.json()) as PackageDispatchInspectionDTO;
     },
   });
 }

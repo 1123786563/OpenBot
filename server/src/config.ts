@@ -36,6 +36,10 @@ import {
   transcriptionConfig,
 } from "./dictation/config";
 import {
+  parseMarketplaceEnabledFlag,
+  parsePilotWorkspaces,
+} from "./enterprise/plugin-packages/marketplace-gate";
+import {
   type ConversionRate,
   parseConversionRate,
 } from "./gateway/conversion-rate";
@@ -298,6 +302,24 @@ export type DeploymentConfig = {
    * the startup path always read, so default behavior is unchanged.
    */
   pluginMarketplaceIndexPath: string;
+  /**
+   * PKG11 (#470, Spec §12.4): the package-marketplace entry switch, named by
+   * `OPENBOT_PACKAGE_MARKETPLACE_ENABLED`. Default false — install/upgrade
+   * plans, apply and new Bot grants answer 503 until a deployment opts in,
+   * while browse, reads and the governance of installs that already exist
+   * (pins, dispatch revalidation, revoke, lifecycle) keep working.
+   */
+  packageMarketplaceEnabled: boolean;
+  /**
+   * Exact (tenantId, workspaceId) pilot tuples, named by
+   * `OPENBOT_PACKAGE_PILOT_WORKSPACES` as a JSON array. No wildcards and no
+   * defaults: while the entry is enabled, only a named team may write, and a
+   * malformed value refuses startup rather than guessing an allowlist.
+   */
+  packagePilotWorkspaces: ReadonlyArray<{
+    tenantId: string;
+    workspaceId: string;
+  }>;
   keyEncryptionKey: string;
   /**
    * Authentication for the bundled Bot and/or the installed picked harness.
@@ -2618,14 +2640,12 @@ function ipv6LiteralAllowed(literal: string, allowPrivate: boolean): boolean {
   if (address.startsWith("::ffff:")) {
     const tail = address.slice("::ffff:".length);
     const bytes = tail.includes(":")
-      ? tail
-          .split(":")
-          .flatMap((group) => {
-            const value = Number.parseInt(group, 16);
-            return Number.isInteger(value) && value >= 0 && value <= 0xffff
-              ? [value >> 8, value & 0xff]
-              : [-1];
-          })
+      ? tail.split(":").flatMap((group) => {
+          const value = Number.parseInt(group, 16);
+          return Number.isInteger(value) && value >= 0 && value <= 0xffff
+            ? [value >> 8, value & 0xff]
+            : [-1];
+        })
       : tail.split(".").map((part) => Number.parseInt(part, 10));
     if (bytes.length === 4 && bytes.every((byte) => byte >= 0 && byte <= 255)) {
       return ipv4LiteralAllowed(bytes[0], bytes[1], allowPrivate);
@@ -3159,6 +3179,13 @@ export function loadConfig(
     pluginMarketplaceIndexPath:
       optional(environment, "OPENBOT_PLUGIN_MARKETPLACE_INDEX") ??
       fileURLToPath(new URL("../../plugins/marketplace.json", import.meta.url)),
+    // PKG11: strict parse — an unparseable/illegal pilot list fails startup.
+    packageMarketplaceEnabled: parseMarketplaceEnabledFlag(
+      optional(environment, "OPENBOT_PACKAGE_MARKETPLACE_ENABLED"),
+    ),
+    packagePilotWorkspaces: parsePilotWorkspaces(
+      optional(environment, "OPENBOT_PACKAGE_PILOT_WORKSPACES"),
+    ),
     keyEncryptionKey: deploymentKey,
     ...(webBotAuth ? { webBotAuth } : {}),
     ...(managedAgent ? { managedAgent } : {}),

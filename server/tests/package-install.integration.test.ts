@@ -460,7 +460,14 @@ describeDb(
           expect.arrayContaining([
             { id: "summarize", kind: "skill", available: true },
             { id: "assistant", kind: "expertTemplate", available: true },
-            { id: "calendar", kind: "managedConnector", available: true },
+            // PKG05 (#464): a connector resource also names the tools its
+            // current revision declares — the grant form offers exactly these.
+            {
+              id: "calendar",
+              kind: "managedConnector",
+              available: true,
+              tools: [{ ref: "calendar:list-events", effect: "read" }],
+            },
           ]),
         );
         await expectCode(
@@ -501,7 +508,18 @@ describeDb(
           "grant-key",
         );
         expect(applied.install.readiness).toBe("needs_grant");
-        expect(applied.install.allowedActions).toEqual([]);
+        // PKG06: the apply actor is a revalidated tenant_admin, so the result
+        // names the actions this build supports on an enabled install. PKG07
+        // (#466) adds the lifecycle verbs — turning off or uninstalling an
+        // enabled install is a real action this build now serves.
+        expect(applied.install.allowedActions).toEqual([
+          "plan",
+          "apply",
+          "grant",
+          "createExpert",
+          "disable",
+          "uninstall",
+        ]);
         expect(applied.install.blockers).toEqual([{ code: "NEEDS_GRANT" }]);
         expect(
           await countRows("select count(*)::int as n from plugin_grants", []),
@@ -1042,7 +1060,7 @@ describeDb(
     );
 
     itDb(
-      "expectedRevision is null for the first install and refuses CAS in PKG02",
+      "install keeps expectedRevision null; an installed package plans as upgrade (PKG06 L-1)",
       async () => {
         const adminA = await fixture.adminContextOf(
           "company-admin",
@@ -1054,11 +1072,23 @@ describeDb(
         );
         const first = await service.plan(scopeA, adminA, input(PACKAGE));
         await service.apply(scopeA, adminA, first.planId, "cas-first");
+        // PKG06 (PKG02 L-1): an install request against an installed package
+        // is no longer a misleading first-install preview — it is presented
+        // and recorded as the upgrade it is, CAS-bound to the live revision.
         const second = await service.plan(scopeA, adminA, input(PACKAGE));
-        await expectCode(
-          service.apply(scopeA, adminA, second.planId, "cas-second"),
-          "REVISION_CONFLICT",
+        expect(second.operation).toBe("upgrade");
+        expect(second.expectedRevision).toBe(1);
+        expect(second.diff?.currentVersion).toBe("1.0.0");
+        // Same version + same config: the upgrade apply is an idempotent
+        // no-op that returns the standing install, not a 409.
+        const replay = await service.apply(
+          scopeA,
+          adminA,
+          second.planId,
+          "cas-second",
         );
+        expect(replay.created).toBe(false);
+        expect(replay.install.version).toBe("1.0.0");
       },
     );
 

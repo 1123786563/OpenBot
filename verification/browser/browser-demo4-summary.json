@@ -1,0 +1,30 @@
+[
+  {
+    "step": "PKG07-reinstall-preview",
+    "chars": 182
+  },
+  {
+    "step": "PKG07-reinstalled",
+    "chars": 1063
+  },
+  {
+    "step": "PKG07-disabled-final",
+    "chars": 722
+  },
+  {
+    "step": "PKG07-detail-disabled-final",
+    "chars": 350
+  },
+  {
+    "step": "PKG07-enabled-final",
+    "chars": 1063
+  },
+  {
+    "step": "PKG10-detail-after-lifecycle",
+    "chars": 623
+  },
+  {
+    "step": "PKG10-inspect-after-lifecycle",
+    "chars": 788
+  }
+]

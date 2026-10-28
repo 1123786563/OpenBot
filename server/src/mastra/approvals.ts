@@ -154,6 +154,18 @@ export interface ResumeMastraContinuationDeps {
      * pre-ME09 assemblies (treated as `approval`).
      */
     kind?: "approval" | "question" | "frontend_tool";
+    /**
+     * PKG09 (Spec §9): the continuation's OWN bound run and attempt. A
+     * package tool's grant is its run's pin set at that attempt, so the grant
+     * re-check needs the run identity to find the tool at all; without it a
+     * `pkg:` call can never match and every package approval would refuse as
+     * `MASTRA_CONTINUATION_GRANT_REVOKED`. Absent on assemblies that do not
+     * serve package tools (the legacy grant check ignores it).
+     */
+    boundRun?: {
+      readonly runId: string;
+      readonly attemptGeneration: number;
+    };
   }) => Promise<boolean>;
   /** Is the run's generation still the one the continuation binds? */
   readonly generationCurrent: (input: {
@@ -250,6 +262,13 @@ export async function resumeMastraContinuation(
       // ME09: kind-aware re-verification — the gate the decision faces is
       // the one that granted the KIND of call that is waiting.
       kind: record.payload.kind,
+      // PKG09: the parked continuation's own run/attempt, from the record
+      // the claim was taken on — the same identity the six gates below
+      // re-verify, never a current-run guess.
+      boundRun: {
+        runId: record.binding.runId,
+        attemptGeneration: record.binding.generation,
+      },
     }))
   ) {
     throw new MastraContinuationRefusal(
@@ -452,6 +471,11 @@ export function createMastraContinuationInstall(deps: {
     botId: string;
     toolName: string;
     kind?: "approval" | "question" | "frontend_tool";
+    /** PKG09: the continuation's own run/attempt (see `ResumeMastraContinuationDeps`). */
+    boundRun?: {
+      readonly runId: string;
+      readonly attemptGeneration: number;
+    };
   }) => Promise<boolean>;
   generationCurrent: (input: {
     scope: PlatformScope;

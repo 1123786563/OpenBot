@@ -9,6 +9,7 @@ import {
   type PackagePage,
   type PackagePageItem,
   PackagePageSchema,
+  type PackageReleaseState,
   type PackageResourceSummary,
 } from "../../../shared/enterprise/plugin-package-contracts";
 import type { PlatformScope } from "../enterprise/contracts";
@@ -49,13 +50,32 @@ export interface PackageCatalogue {
   ): Promise<PackageCatalogueDetail>;
   /**
    * Exact-release facts for plan/apply, including the verified manifest when the
-   * artifact loaded. Unlisted releases are returned (so the caller can refuse
-   * with PACKAGE_UNSUPPORTED, not a false 404); an unknown version is null.
+   * artifact loaded. Unlisted and withdrawn releases are returned (so the
+   * caller can refuse with PACKAGE_UNSUPPORTED / PACKAGE_WITHDRAWN, not a
+   * false 404); an unknown version is null.
    */
   resolveRelease(
     packageKey: string,
     version: string,
   ): Promise<PackageReleaseFacts | null>;
+  /**
+   * PKG06 (#465): the package's listed releases, newest first, with the
+   * verification fact per release. The upgrade/rollback planner and the
+   * detail reads draw their exact target versions from here. PKG08 (#467)
+   * narrows the set to PUBLISHED listed releases: unlisted releases stay
+   * invisible (discovery), withdrawn releases stay unpickable (a plan would
+   * refuse them anyway — the picker must not offer a target the plan layer
+   * cannot accept).
+   */
+  listVersions(packageKey: string): Promise<readonly ListedReleaseFacts[]>;
+}
+
+/** One listed published release as a version picker sees it. */
+export interface ListedReleaseFacts {
+  readonly version: string;
+  readonly artifactDigest: string;
+  readonly verified: boolean;
+  readonly listed: true;
 }
 
 /** Server-internal release facts; the manifest never leaves the server. */
@@ -65,6 +85,12 @@ export interface PackageReleaseFacts {
   readonly artifactDigest: string;
   readonly category: string;
   readonly listed: boolean;
+  /**
+   * PKG08 (#467): the deployment release state. `withdrawn` blocks new
+   * dispatches and new installs of this exact release; `listed` stays
+   * orthogonal (unlisting is discovery-only).
+   */
+  readonly state: PackageReleaseState;
   /** False when the artifact is missing/invalid or the manifest disagrees. */
   readonly verified: boolean;
   readonly displayName: string;
@@ -88,6 +114,7 @@ interface CatalogueRecord {
   readonly artifactDigest: string;
   readonly category: string;
   readonly listed: boolean;
+  readonly state: PackageReleaseState;
   readonly verified: boolean;
   readonly displayName: string;
   readonly summary: string;
@@ -215,6 +242,12 @@ async function buildRecord(
     blockers.push({ code: missing ? "ARTIFACT_MISSING" : "ARTIFACT_INVALID" });
     artifact = null;
   }
+  if (entry.state === "withdrawn") {
+    // PKG08 (#467): withdrawal is a deployment safety fact, not a discovery
+    // fact — the release stays resolvable so pin/plan reads can explain it,
+    // but it is marked withdrawn for every projection.
+    blockers.push({ code: "PACKAGE_WITHDRAWN" });
+  }
   if (!entry.listed) blockers.push({ code: "PACKAGE_UNLISTED" });
 
   const resources: PackageResourceSummary[] = [];
@@ -242,6 +275,7 @@ async function buildRecord(
     artifactDigest: entry.artifactDigest,
     category: entry.category,
     listed: entry.listed,
+    state: entry.state,
     verified: usable,
     displayName: usable && artifact ? artifact.manifest.display.name : name,
     summary: usable && artifact ? artifact.manifest.display.summary : "",
@@ -274,18 +308,24 @@ function newestRecord(
 }
 
 /**
- * Public reads choose among listed releases only: the newest listed verified
- * release wins, and only when nothing listed verifies does the newest listed
- * release explain why it is unavailable. A newer unlisted or broken release
- * never hides one that is listed and works.
+ * Public reads choose among listed PUBLISHED releases first: the newest
+ * listed published verified release wins, and only when nothing listed and
+ * published verifies does the newest listed published release explain why it
+ * is unavailable. A newer unlisted, broken or withdrawn (PKG08) release never
+ * hides one that is listed, published and works. A package whose every
+ * listed release is withdrawn still surfaces — as unavailable with the
+ * PACKAGE_WITHDRAWN blocker, never as an installable row and never hidden
+ * from the teams that already run it.
  */
 function selectPublicRecord(
   records: readonly CatalogueRecord[],
 ): CatalogueRecord | undefined {
   const listed = records.filter((record) => record.listed);
   if (listed.length === 0) return undefined;
+  const published = listed.filter((record) => record.state === "published");
   return (
-    newestRecord(listed.filter((record) => record.verified)) ??
+    newestRecord(published.filter((record) => record.verified)) ??
+    newestRecord(published) ??
     newestRecord(listed)
   );
 }
@@ -317,6 +357,31 @@ export async function loadPackageCatalogue({
     if (group) group.push(record);
     else records.set(record.packageKey, [record]);
   }
+
+  /**
+   * Listed published releases of one package, newest first (the PKG06 picker
+   * source, narrowed by PKG08: a withdrawn release is not a target).
+   */
+  const listedVersionsOf = async (
+    packageKey: string,
+  ): Promise<ListedReleaseFacts[]> => {
+    if (!PACKAGE_KEY_PATTERN.test(packageKey)) return [];
+    const group = records.get(packageKey) ?? [];
+    return group
+      .filter((record) => record.listed && record.state === "published")
+      .sort((left, right) => {
+        const byVersion = comparePackageVersions(right.version, left.version);
+        if (byVersion !== 0) return byVersion;
+        // Stable within one version: digest descending, mirroring isNewer.
+        return left.artifactDigest > right.artifactDigest ? 1 : -1;
+      })
+      .map((record) => ({
+        version: record.version,
+        artifactDigest: record.artifactDigest,
+        verified: record.verified,
+        listed: true as const,
+      }));
+  };
 
   return {
     async list(_scope, query, options) {
@@ -364,6 +429,7 @@ export async function loadPackageCatalogue({
       // Branded, not bare: routes.ts maps this by error code, never by message
       // text, so a message drift cannot silently degrade a 404 into a 500.
       if (!record) throw packageError("RESOURCE_NOT_FOUND");
+      const listedVersions = await listedVersionsOf(`${publisher}/${name}`);
       return PackageCatalogueDetailSchema.parse({
         packageKey: record.packageKey,
         version: record.version,
@@ -376,6 +442,12 @@ export async function loadPackageCatalogue({
         resources: record.resources,
         installable: record.blockers.length === 0,
         blockers: record.blockers,
+        versions: listedVersions.map((entry) => ({
+          version: entry.version,
+          artifactDigest: entry.artifactDigest,
+          verified: entry.verified,
+          listed: entry.listed,
+        })),
       });
     },
 
@@ -396,12 +468,17 @@ export async function loadPackageCatalogue({
         artifactDigest: record.artifactDigest,
         category: record.category,
         listed: record.listed,
+        state: record.state,
         verified: record.verified,
         displayName: record.displayName,
         summary: record.summary,
         blockers: record.blockers,
         manifest: record.manifest,
       };
+    },
+
+    async listVersions(packageKey) {
+      return listedVersionsOf(packageKey);
     },
   };
 }
