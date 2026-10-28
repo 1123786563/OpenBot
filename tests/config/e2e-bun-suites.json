@@ -1,7 +1,13 @@
 {
-  "generatedBy": "scripts/e2e-bun-manifest.mjs",
+  "generatedBy": "merge: union of origin/main and 1123786563/issue-459-integration via scripts/lib/e2e-manifest.mjs writeManifest",
   "audit": "archive/verification/e2e-file-audit.json",
   "groups": [
+    {
+      "name": "--help",
+      "files": [
+        "--help"
+      ]
+    },
     {
       "name": "agent-computer/tests",
       "files": [
@@ -776,18 +782,19 @@
         "server/tests/multitenancy/cache-keys.test.ts",
         "server/tests/multitenancy/child-backfill-kb.test.ts",
         "server/tests/multitenancy/child-backfill-main-batch1.test.ts",
+        "server/tests/multitenancy/child-backfill-main-batch1.test.ts\nserver/tests/multitenancy/integration-evidence.test.ts\nserver/tests/multitenancy/legacy-anchor.test.ts\nserver/tests/multitenancy/migration-tool.test.ts\nserver/tests/multitenancy/observability-authz.test.ts\nserver/tests/multitenancy/root-backfill.test.ts",
         "server/tests/multitenancy/child-backfill-main-batch2.test.ts",
         "server/tests/multitenancy/company-admin-routes.test.ts",
         "server/tests/multitenancy/company-reservation.test.ts",
         "server/tests/multitenancy/computer-allocation.test.ts",
         "server/tests/multitenancy/conversation-messages.test.ts",
-        "server/tests/multitenancy/conversations-list.test.ts",
-        "server/tests/multitenancy/coverage-billing.test.ts"
+        "server/tests/multitenancy/conversations-list.test.ts"
       ]
     },
     {
       "name": "server/tests/multitenancy part 2",
       "files": [
+        "server/tests/multitenancy/coverage-billing.test.ts",
         "server/tests/multitenancy/coverage-bots-conversations.test.ts",
         "server/tests/multitenancy/coverage-craft-openmuse.test.ts",
         "server/tests/multitenancy/coverage-governance.test.ts",
@@ -810,13 +817,13 @@
         "server/tests/multitenancy/group-membership.test.ts",
         "server/tests/multitenancy/host-access.test.ts",
         "server/tests/multitenancy/identity-binding.test.ts",
-        "server/tests/multitenancy/identity-matrix-runner.test.ts",
-        "server/tests/multitenancy/inbound-attribution.test.ts"
+        "server/tests/multitenancy/identity-matrix-runner.test.ts"
       ]
     },
     {
       "name": "server/tests/multitenancy part 3",
       "files": [
+        "server/tests/multitenancy/inbound-attribution.test.ts",
         "server/tests/multitenancy/integration-evidence.test.ts",
         "server/tests/multitenancy/inventory.test.ts",
         "server/tests/multitenancy/job-claim-cancel.test.ts",
@@ -839,13 +846,13 @@
         "server/tests/multitenancy/openmuse-reviewed-actions.test.ts",
         "server/tests/multitenancy/openmuse-tasks.test.ts",
         "server/tests/multitenancy/payer-accounts.test.ts",
-        "server/tests/multitenancy/people-lifecycle.test.ts",
-        "server/tests/multitenancy/personal-memory.test.ts"
+        "server/tests/multitenancy/people-lifecycle.test.ts"
       ]
     },
     {
       "name": "server/tests/multitenancy part 4",
       "files": [
+        "server/tests/multitenancy/personal-memory.test.ts",
         "server/tests/multitenancy/personal-share-rules.test.ts",
         "server/tests/multitenancy/preferences.test.ts",
         "server/tests/multitenancy/proactive-tx.test.ts",
@@ -868,13 +875,13 @@
         "server/tests/multitenancy/settlement-idempotency.test.ts",
         "server/tests/multitenancy/share-tokens.test.ts",
         "server/tests/multitenancy/shared-approvals.test.ts",
-        "server/tests/multitenancy/signed-download.test.ts",
-        "server/tests/multitenancy/skills-components.test.ts"
+        "server/tests/multitenancy/signed-download.test.ts"
       ]
     },
     {
       "name": "server/tests/multitenancy part 5",
       "files": [
+        "server/tests/multitenancy/skills-components.test.ts",
         "server/tests/multitenancy/sso-scim-config.test.ts",
         "server/tests/multitenancy/startup-checks.test.ts",
         "server/tests/multitenancy/startup-defaults.test.ts",
@@ -951,6 +958,7 @@
     }
   ],
   "files": [
+    "--help",
     "agent-computer/tests/identity.test.ts",
     "agent-computer/tests/live-screen.test.ts",
     "agent-computer/tests/local-chrome-startup.test.ts",
@@ -1347,6 +1355,7 @@
     "server/tests/multitenancy/cache-keys.test.ts",
     "server/tests/multitenancy/child-backfill-kb.test.ts",
     "server/tests/multitenancy/child-backfill-main-batch1.test.ts",
+    "server/tests/multitenancy/child-backfill-main-batch1.test.ts\nserver/tests/multitenancy/integration-evidence.test.ts\nserver/tests/multitenancy/legacy-anchor.test.ts\nserver/tests/multitenancy/migration-tool.test.ts\nserver/tests/multitenancy/observability-authz.test.ts\nserver/tests/multitenancy/root-backfill.test.ts",
     "server/tests/multitenancy/child-backfill-main-batch2.test.ts",
     "server/tests/multitenancy/company-admin-routes.test.ts",
     "server/tests/multitenancy/company-reservation.test.ts",
@@ -1672,6 +1681,8 @@
     "app/tests/user-key-status-ui.test.tsx": "runner named it: wave3 重放登记",
     "server/tests/recovery-provider-query.integration.test.ts": "runner named it: wave3 重放登记",
     "server/tests/hindsight-source-bound-recall.integration.test.ts": "runner named it: wave3 重放登记",
+    "server/tests/hindsight-sync-drain.contract.test.ts": "runner named it: wave3 重放登记",
+    "server/tests/hindsight-memory-ops.integration.test.ts": "runner named it: wave3 重放登记",
     "server/tests/hindsight-sync-queue.integration.test.ts": "runner named it: wave3 重放登记",
     "server/tests/hindsight-temporal-correction.integration.test.ts": "runner named it: wave3 重放登记",
     "server/tests/recovery-ack-lost.integration.test.ts": "runner named it: wave3 重放登记",
@@ -1709,6 +1720,7 @@
     "app/tests/usage-breakdown-ui.test.tsx": "runner named it: wave3 bf11 套件",
     "server/tests/hindsight-revocation.integration.test.ts": "runner named it: wave3 重放登记（bf11 覆盖恢复）",
     "server/tests/hindsight-pause-controls.integration.test.ts": "runner named it: wave3 重放登记（bf11 覆盖恢复）",
+    "server/tests/hindsight-pause-controls-entry.integration.test.ts": "runner named it: 2026-10-24 hindsight-376 FIX-W1 套件：pause-controls 生产接线集成（本人入口/legacy 门/派生判断过期 sweep），DB 直跑登记",
     "server/tests/hindsight-background-budget.integration.test.ts": "runner named it: wave3 重放登记（bf11 覆盖恢复）",
     "server/tests/hindsight-legacy-migration.integration.test.ts": "runner named it: wave3 重放登记（bf11 覆盖恢复）",
     "server/tests/multitenancy/openmuse-files.test.ts": "runner named it: wave3 重放登记（bf11 覆盖恢复）",
@@ -1786,18 +1798,15 @@
     "server/tests/multitenancy/workshop-scope.test.ts": "runner named it: wave3 mt28 套件",
     "server/tests/multitenancy/share-tokens.test.ts": "runner named it: wave3 mt28 套件",
     "server/tests/speech-tail-availability.test.ts": "runner named it: wave3 bf21 套件补登记（终门审计发现）",
-    "server/tests/opik-builtin-terminal-states.test.ts": "runner named it: opik4 r7fix-c C4 登记（OCR 终审 #46，bun 层套件由 e2e 驱动）",
-    "server/tests/opik-migration-0219.integration.test.ts": "runner named it: opik4 r7fix-c C4 登记（OCR 终审 #46，bun 层套件由 e2e 驱动）",
-    "server/tests/opik-observer-binding.test.ts": "runner named it: opik4 r7fix-c C4 登记（OCR 终审 #46，bun 层套件由 e2e 驱动）",
-    "server/tests/hindsight-sync-drain.contract.test.ts": "runner named it: wave3 重放登记",
-    "server/tests/hindsight-memory-ops.integration.test.ts": "runner named it: wave3 重放登记",
-    "server/tests/hindsight-pause-controls-entry.integration.test.ts": "runner named it: 2026-10-24 hindsight-376 FIX-W1 套件：pause-controls 生产接线集成（本人入口/legacy 门/派生判断过期 sweep），DB 直跑登记",
     "server/tests/hindsight-ops-routes.integration.test.ts": "runner named it: 2026-10-24-hindsight-376 FIX-W2b /api/hindsight 路由族集成套件（bun 驱动，TEST_DATABASE_URL + 脚本化 Hindsight 服务；FIX-INTG RINTG-4 收口改名，原登记名 hindsight-routes.integration.test.ts）",
     "server/tests/memory-company-isolation.integration.test.ts": "runner named it: 2026-10-24-hindsight-376 FIX-F1 旧记忆面公司隔离越权套件（bun 驱动，TEST_DATABASE_URL；FR-1）",
     "app/tests/memory-hindsight.test.tsx": "runner named it: 2026-10-24-hindsight-376 FIX-W15 补执行组（FR3-2：RF4-1 只入 files 未入 group，统一入口漏跑）——bun-test-compat happy-dom Hindsight 设置面 UI 套件，e2e 原生收集 COLLECTION_ERROR: Received protocol 'bun:'；独立成组 app/tests/memory-hindsight（app/tests part 3 在 BASE 即存量红：web-bot-detail/web-bot-publish 单独重跑仍红，与本套件无关，独立成组保住逐组可观测读数）",
     "app/tests/memory-answer-basis.test.tsx": "runner named it: 2026-10-25-hindsight-376 FR4-1/FR5-1 补执行组（FR4-1 只入 files 未入 group/causes，统一入口漏跑）——bun-test-compat happy-dom 回答依据 UI 套件，e2e 原生收集 COLLECTION_ERROR: Received protocol 'bun:'；独立成组 app/tests/memory-answer-basis（与 memory-hindsight 同模式）。",
     "server/tests/scrub-command.test.ts": "runner named it: T30 (#489 F16) scrubCommand 对抗钉子套件，与 otel-export-scrubbing.test.ts 同置 Bun 层（bun test 直跑；brief t30-scrubtests）",
     "server/tests/async-jobs-view.test.ts": "runner named it: b5r-fix1 F-A1 登记（bifrost-5 #5 收口核验修复批）——async-jobs-view 经 bun-test-compat 依赖 Bun 运行时（db client），e2e 原生收集 COLLECTION_ERROR: Received protocol 'bun:'，test:ci 必红；入 server/tests part 1 组（重生成 e2e-bun-manifest 需全量重扫，代价过高，按 FIX-W15 先例手工登记 files+group+causes）",
+    "server/tests/opik-builtin-terminal-states.test.ts": "runner named it: opik4 r7fix-c C4 登记（OCR 终审 #46，bun 层套件由 e2e 驱动）",
+    "server/tests/opik-migration-0219.integration.test.ts": "runner named it: opik4 r7fix-c C4 登记（OCR 终审 #46，bun 层套件由 e2e 驱动）",
+    "server/tests/opik-observer-binding.test.ts": "runner named it: opik4 r7fix-c C4 登记（OCR 终审 #46，bun 层套件由 e2e 驱动）",
     "agent-computer/tests/web-bot-auth-browser.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth-browser.test.ts: Cannot find package 'web-bot-auth' imported from ocrfix-g-testinfra/agent-computer/tests/web-bot-auth-browser.te",
     "agent-computer/tests/web-bot-auth.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth.test.ts: Cannot find package 'web-bot-auth' imported from ocrfix-g-testinfra/agent-computer/tests/web-bot-auth.test.ts; web-bot-a",
     "agent-langgraph/tests/google-oauth-proxy.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/google-oauth-proxy.test.ts: Cannot find package '@ag-ui/core' imported from ocrfix-g-testinfra/agent-langgraph/tests/google-oauth-proxy.test.",

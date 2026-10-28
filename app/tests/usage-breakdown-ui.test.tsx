@@ -1,4 +1,8 @@
 import "./preload";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { cleanup, render } from "@testing-library/react";
+import type { CreditConsumptionEntry } from "@/lib/billing/credits";
+import i18n from "@/lib/i18n";
 import {
   afterAll,
   afterEach,
@@ -7,11 +11,7 @@ import {
   mock,
   test,
 } from "../../tests/support/bun-test-compat";
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { cleanup, render } from "@testing-library/react";
-import i18n from "@/lib/i18n";
 import { settleReactWork } from "./settle-react-work";
-import type { CreditConsumptionEntry } from "@/lib/billing/credits";
 
 /*
  * Ticket 20.3 — the consumption table's fee split (model fee / surcharge fee), the UI half
@@ -63,6 +63,7 @@ function entryOf(
     client: null,
     botId: null,
     botName: null,
+    lineDetail: null,
     timestamp: "2026-10-21T00:00:00.000Z",
     ...overrides,
   };
@@ -140,6 +141,8 @@ test("the two parts never drift from the total: what is shown sums to the row", 
       feeBreakdown: { modelCredits, surchargeCredits },
     }),
   ]);
-  expect(view.getByText(`模型 ${modelCredits} · 附加 ${surchargeCredits}`)).toBeTruthy();
+  expect(
+    view.getByText(`模型 ${modelCredits} · 附加 ${surchargeCredits}`),
+  ).toBeTruthy();
   expect(modelCredits + surchargeCredits).toBe(credits);
 });

@@ -1541,6 +1541,13 @@
       "when": 1793081098944,
       "tag": "0219_opik_stable_resource_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 220,
+      "version": "7",
+      "when": 1793167861000,
+      "tag": "0220_bifrost_speech_reservation_spec",
+      "breakpoints": true
     }
   ]
 }
