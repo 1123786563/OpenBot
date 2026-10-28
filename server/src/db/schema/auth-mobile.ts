@@ -147,3 +147,47 @@ export const authMobileSessionHandles = pgTable(
     ),
   ],
 );
+
+/*
+ * T05.13 (#569, original task P12; interfaces §5.2 / F2): the per-action
+ * admission fence. POST /api/enterprise/mobile/session/authorize writes one
+ * row per admitted action, in the SAME transaction that re-verifies the
+ * handle's session, account, binding and generation live — an admission
+ * never exists for facts the transaction did not verify. The UNIQUE
+ * (handle_digest, request_id) is the "仅当前动作一次" fence: a second
+ * admission for the same requestId under the same handle is structurally
+ * impossible, whatever raced. The server stores only the admissionId's
+ * SHA-256; the plaintext leaves exactly once, in the authorize response.
+ */
+export const authMobileSessionAdmissions = pgTable(
+  "auth_mobile_session_admissions",
+  {
+    /** SHA-256 hex of the admissionId; the plaintext never lands in the table. */
+    admissionDigest: text("admission_digest").primaryKey(),
+    /** The handle this admission rode on; the handle's death takes it along. */
+    handleDigest: text("handle_digest")
+      .notNull()
+      .references(() => authMobileSessionHandles.handleDigest, {
+        onDelete: "cascade",
+      }),
+    /** The caller's action id this admission is good for — once, ever. */
+    requestId: text("request_id").notNull(),
+    /** The whitelisted operation word the admission covers. */
+    operation: text("operation").notNull(),
+    /** The resource the action names, when it names one; opaque to the fence. */
+    resourceId: text("resource_id"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    // The one-shot fence (0223): one admission per (handle, requestId).
+    uniqueIndex("auth_mobile_session_admission_once").on(
+      table.handleDigest,
+      table.requestId,
+    ),
+    check(
+      "auth_mobile_session_admission_shape",
+      sql`${table.admissionDigest} ~ '^[0-9a-f]{64}$' and ${table.requestId} <> '' and length(${table.requestId}) <= 256 and ${table.operation} <> ''`,
+    ),
+    index("auth_mobile_session_admission_created_idx").on(table.createdAt),
+  ],
+);

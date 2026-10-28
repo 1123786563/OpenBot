@@ -1,5 +1,5 @@
 {
-  "generatedBy": "T05.10 personal-model-grants registration",
+  "generatedBy": "T05.13 (#569) incremental registration: one test file, group T05.13.01",
   "groups": [
     {
       "name": "app/tests/multitenancy",
@@ -1397,6 +1397,10 @@
       "files": [
         "server/tests/better-auth/mobile-session-handoff.test.ts"
       ]
+    },
+    {
+      "name": "server/tests/better-auth:T05.13.01",
+      "files": ["server/tests/better-auth/mobile-authority-contract.test.ts"]
     }
   ],
   "directoryIslands": [
@@ -1581,6 +1585,7 @@
     "server/tests/batch-partial-success.integration.test.ts",
     "server/tests/batch-reservation.integration.test.ts",
     "server/tests/batch-settlement.integration.test.ts",
+    "server/tests/better-auth/admin-account-routes.test.ts",
     "server/tests/better-auth/authority-and-closed-assurance.test.ts",
     "server/tests/better-auth/company-assurance.test.ts",
     "server/tests/better-auth/company-auth-challenge.test.ts",
@@ -1600,12 +1605,17 @@
     "server/tests/better-auth/migration-expand.test.ts",
     "server/tests/better-auth/migration-inventory.test.ts",
     "server/tests/better-auth/migration-verify.test.ts",
+    "server/tests/better-auth/mobile-authority-contract.test.ts",
+    "server/tests/better-auth/mobile-session-handoff.test.ts",
     "server/tests/better-auth/oidc-evidence-contract.test.ts",
     "server/tests/better-auth/outbox-fence.test.ts",
     "server/tests/better-auth/password-recovery.test.ts",
     "server/tests/better-auth/password-reset-request.test.ts",
+    "server/tests/better-auth/personal-model-grants.test.ts",
+    "server/tests/better-auth/personal-model-identity.test.ts",
     "server/tests/better-auth/principal-registry.test.ts",
     "server/tests/better-auth/provisioning-global-admin.test.ts",
+    "server/tests/better-auth/remote-identity-binding.test.ts",
     "server/tests/better-auth/saml-evidence-contract.test.ts",
     "server/tests/better-auth/schema-assurance.test.ts",
     "server/tests/better-auth/schema-authority-sources.test.ts",
@@ -2100,12 +2110,7 @@
     "server/tests/workshop-preview.test.ts",
     "server/tests/workshop-schedule-executor.integration.test.ts",
     "server/tests/workshop-store.test.ts",
-    "shared/harnesses.test.ts",
-    "server/tests/better-auth/personal-model-grants.test.ts",
-    "server/tests/better-auth/admin-account-routes.test.ts",
-    "server/tests/better-auth/remote-identity-binding.test.ts",
-    "server/tests/better-auth/personal-model-identity.test.ts",
-    "server/tests/better-auth/mobile-session-handoff.test.ts"
+    "shared/harnesses.test.ts"
   ],
   "artifacts": [
     "deliverables/mobile-e2e-qa/tests/e2e/specs/auth.spec.ts",
@@ -2268,6 +2273,7 @@
     "server/tests/better-auth/admin-account-routes.test.ts": "T05.08 (#564) admin-account-routes suite: needs the five BA_TEST_* role URLs, the production createAuth identity executor behind createApp's coworker.directory seam and real Bun servers — Bun-only",
     "server/tests/better-auth/remote-identity-binding.test.ts": "T05.09 (#565) remote-identity-binding suite: needs the five BA_TEST_* role URLs and real Bun-served organization authorities for the cross-deployment handoff — Bun-only",
     "server/tests/better-auth/personal-model-identity.test.ts": "T05.11 (#567) personal-model-identity suite: needs the five BA_TEST_* role URLs, the 0209-0220 BA tag replay, the real PrincipalRegistry behind the grant seam and a fake Bifrost management surface behind the mounted claim/renew routes — Bun-only",
-    "server/tests/better-auth/mobile-session-handoff.test.ts": "T05.12 (#568) mobile-session-handoff suite: needs the five BA_TEST_* role URLs and its own 0222 handoff-tables migration replayed on the isolated BA island — Bun-only"
+    "server/tests/better-auth/mobile-session-handoff.test.ts": "T05.12 (#568) mobile-session-handoff suite: needs the five BA_TEST_* role URLs and its own 0222 handoff-tables migration replayed on the isolated BA island — Bun-only",
+    "server/tests/better-auth/mobile-authority-contract.test.ts": "T05.13 (#569) mobile-authority-contract suite: needs the five BA_TEST_* role URLs and its own 0223 admission-fence migration replayed on the isolated BA island — Bun-only"
   }
 }

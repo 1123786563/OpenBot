@@ -1154,8 +1154,11 @@ describe("T02.06 restricted connections, DML guard and deferred constraints", ()
     // T05.12 (#568) appended 0222 the same way: the mobile session handoff's
     // two tables, written by the mobile-session service on the auth-writer
     // capability (0221's direct-grant admission), every other role at zero.
-    expect(before?.tag).toBe("0221_better_auth_provisioning_rules");
-    expect(last?.tag).toBe("0222_better_auth_mobile_session_handoff");
+    // T05.13 (#569) appended 0223 the same way: the per-action admission
+    // fence's one table, SELECT/INSERT on the same auth-writer capability,
+    // every other role at zero.
+    expect(before?.tag).toBe("0222_better_auth_mobile_session_handoff");
+    expect(last?.tag).toBe("0223_better_auth_mobile_session_admission");
     expect(last?.idx).toBe((before?.idx ?? 0) + 1);
     expect(existsSync(MIGRATION_PATH)).toBe(true);
   });

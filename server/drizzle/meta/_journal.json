@@ -1562,6 +1562,13 @@
       "when": 1793344800000,
       "tag": "0222_better_auth_mobile_session_handoff",
       "breakpoints": true
+    },
+    {
+      "idx": 223,
+      "version": "7",
+      "when": 1793344800001,
+      "tag": "0223_better_auth_mobile_session_admission",
+      "breakpoints": true
     }
   ]
 }

@@ -1242,6 +1242,13 @@ export function createApp(
             database: attachmentDatabase,
             clients: config.mobileSession
               .clients as ReadonlyArray<MobileHandoffClient>,
+            assurance: {
+              require: companyAssurance.require,
+              challenge:
+                coworker?.directory?.companyAuth?.challenge ??
+                companyAssurance.challenge,
+              complete: companyAssurance.complete,
+            },
           }),
         }),
       );
