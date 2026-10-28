@@ -133,6 +133,45 @@ export type CreditConsumptionEntry = {
     modelCredits: number;
     surchargeCredits: number;
   } | null;
+  /**
+   * The capability line (12.2 image / 13.2 speech / 17.6 async): what this entry
+   * consumed, shaped by the capability that settled it — `kind` is the discriminator,
+   * `capability` the provider's own word. The wire contract carries the key on every
+   * entry, null when the settlement wrote no line; the UI renders no usage detail for
+   * null rows, never a guess.
+   */
+  lineDetail:
+    | {
+        kind: "image";
+        capability: string;
+        image: {
+          size: string | null;
+          quality: string | null;
+          requestedCount: number;
+          generatedCount: number;
+        };
+      }
+    | {
+        kind: "speech";
+        capability: string;
+        speech: {
+          inputCharacters: number;
+          voiceTier: string | null;
+          cappedSeconds: number;
+          actualSeconds: string;
+        };
+      }
+    | {
+        kind: "async_job";
+        capability: string;
+        asyncJob: {
+          jobId: string;
+          providerJobId: string | null;
+          entryCount: number;
+          terminalState: "completed" | "failed" | "cancelled";
+        };
+      }
+    | null;
   timestamp: string;
 };
 
