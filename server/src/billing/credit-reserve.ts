@@ -32,6 +32,7 @@ import {
 } from "./credits-writer";
 import { type PayerKind, type PayerRef, payerKey } from "./payer";
 import { COMPANY_SCOPE_IDENTITY_FIELDS } from "./personal-key-isolation";
+import type { ReservationSpeechSpec } from "./reserve-bound";
 import {
   attemptIdForReservation,
   type ReservationStatusService,
@@ -160,6 +161,12 @@ export type CreditReserveRequest = {
   boundEvidence: ReserveBoundEvidence[];
   /** The hold ceiling in scaled credit units (×100), a positive 32-bit integer. */
   maximumCredits: number;
+  /**
+   * The certified speech spec (13.2, #307), for a speech-capability hold: frozen with the
+   * pricing lock so settlement can corroborate the character side. A hold for any other
+   * capability carries none.
+   */
+  speechSpec?: ReservationSpeechSpec;
   /** The caller's retry identity; a replay answers the original reservation. */
   idempotencyKey: string;
   /** When recovery may release an unanswered hold; default 15 minutes out. */
@@ -690,6 +697,11 @@ export async function reserveCreditInTransaction(
         snapshotVersion: request.snapshotVersion,
         rateVersion: request.rateVersion,
       },
+      // 13.2: a speech hold freezes its certified quantities with the lock — the
+      // two-side anchor settlement checks the character side against.
+      ...(request.speechSpec === undefined
+        ? {}
+        : { speechSpec: request.speechSpec }),
     });
   } catch (error) {
     if (error instanceof CreditReservationConflictError) {

@@ -56,6 +56,18 @@ export const creditReservations = pgTable(
     capability: text("capability"),
     snapshotVersion: integer("snapshot_version"),
     rateVersion: integer("rate_version"),
+    /**
+     * The frozen speech spec (Bifrost 13.2, #307): the certified quantities 13.1's
+     * admission froze WITH the pricing lock, so settlement can corroborate the character
+     * side — the side the price vocabulary has no slot for. All-or-nothing like the lock
+     * above, keyed on `spec_input_characters` (`spec_voice_tier` may be null AS A VALUE):
+     * a non-speech hold carries none, a half-spec is refused outright.
+     */
+    specInputCharacters: integer("spec_input_characters"),
+    specVoiceTier: text("spec_voice_tier"),
+    specDurationCapSeconds: integer("spec_duration_cap_seconds"),
+    specPerInputCharacterUsd: text("spec_per_input_character_usd"),
+    specPerOutputSecondUsd: text("spec_per_output_second_usd"),
     status: text("status")
       .$type<"reserved" | "unknown" | "settled" | "released">()
       .notNull()
@@ -108,6 +120,10 @@ export const creditReservations = pgTable(
     check(
       "credit_reservations_terminal_check",
       sql`(${table.status} IN ('reserved', 'unknown') AND ${table.terminalAt} IS NULL) OR (${table.status} IN ('settled', 'released') AND ${table.terminalAt} IS NOT NULL)`,
+    ),
+    check(
+      "credit_reservations_speech_spec_check",
+      sql`(${table.specInputCharacters} IS NULL) = (${table.specDurationCapSeconds} IS NULL) AND (${table.specInputCharacters} IS NULL) = (${table.specPerInputCharacterUsd} IS NULL) AND (${table.specInputCharacters} IS NULL) = (${table.specPerOutputSecondUsd} IS NULL) AND (${table.specInputCharacters} IS NULL OR (${table.specInputCharacters} >= 0 AND ${table.specDurationCapSeconds} >= 1 AND ${table.specPerInputCharacterUsd} ~ '^[0-9]+(\\.[0-9]+)?$' AND ${table.specPerOutputSecondUsd} ~ '^[0-9]+(\\.[0-9]+)?$'))`,
     ),
     check(
       "credit_reservations_settled_check",

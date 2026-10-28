@@ -14,6 +14,7 @@ import {
 import {
   lockedBasisOfReservation,
   resolveLockedReservationBasis,
+  speechSpecOfReservation,
 } from "./reserve-bound";
 import { parseExactDecimal } from "./speech-pricing";
 
@@ -471,6 +472,46 @@ export function createSpeechSettlementService(
           `speech synthesis result unreadable: ${req.result.reason}`,
         );
         return { status: "unknown", reservationId };
+      }
+
+      // The character side must be corroborated by the spec the hold froze (13.2): what
+      // 13.1's admission certified — the characters, the tier, the cap and the
+      // per-character price — is what the settle surface must re-carry exactly. A settle
+      // naming other quantities is not the work this hold was priced for: refused, never
+      // adopted, never rewritten to the caller's numbers (same semantics as the
+      // per-second corroboration against the lock below).
+      const spec = speechSpecOfReservation(reservation);
+      if (spec === null) {
+        return refused("price_basis_not_found", {
+          stage: "speech_spec_not_locked",
+        });
+      }
+      const carriedPerChar = parseExactDecimal(req.priced.perInputCharacterUsd);
+      const frozenPerChar = parseExactDecimal(spec.perInputCharacterUsd);
+      if (
+        req.requested.inputCharacters !== spec.inputCharacters ||
+        req.requested.voiceTier !== spec.voiceTier ||
+        req.requested.durationCapSeconds !== spec.durationCapSeconds ||
+        carriedPerChar === null ||
+        frozenPerChar === null ||
+        carriedPerChar.numerator * frozenPerChar.denominator !==
+          frozenPerChar.numerator * carriedPerChar.denominator
+      ) {
+        return refused("price_basis_not_found", {
+          stage: "spec_not_corroborated",
+          frozen: {
+            inputCharacters: spec.inputCharacters,
+            voiceTier: spec.voiceTier,
+            durationCapSeconds: spec.durationCapSeconds,
+            perInputCharacterUsd: spec.perInputCharacterUsd,
+          },
+          carried: {
+            inputCharacters: req.requested.inputCharacters,
+            voiceTier: req.requested.voiceTier,
+            durationCapSeconds: req.requested.durationCapSeconds,
+            perInputCharacterUsd: req.priced.perInputCharacterUsd,
+          },
+        });
       }
 
       const basis = lockedBasisOfReservation(reservation);

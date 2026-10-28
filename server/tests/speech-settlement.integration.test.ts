@@ -150,11 +150,26 @@ async function seedSpeechWorld(
   };
 }
 
+/**
+ * The spec 13.1 certifies and every hold below freezes WITH its pricing lock — the
+ * quantities the settle surface must re-carry exactly (13.2's two-side check): the
+ * characters in, the tier, the duration cap, and both locked tier prices.
+ */
+const FROZEN_SPEC = {
+  inputCharacters: 100,
+  voiceTier: null as string | null,
+  durationCapSeconds: 60,
+  perInputCharacterUsd: "0.000015",
+  perOutputSecondUsd: "0.0005",
+};
+
 /** One held speech reservation locked at the cell's current snapshot version. */
 async function holdFor(
   world: SpeechWorld,
   maximumCents: number,
+  spec: Partial<typeof FROZEN_SPEC> = {},
 ): Promise<string> {
+  const frozen = { ...FROZEN_SPEC, ...spec };
   const snapshot = await snapshotStore.latestPriceSnapshot({
     provider: world.provider,
     model: world.model,
@@ -173,6 +188,7 @@ async function holdFor(
       snapshotVersion: snapshot!.snapshotVersion,
       rateVersion: 0,
     },
+    speechSpec: frozen,
   });
   expect(reserved.reserved).toBe(true);
   return reserved.reserved ? reserved.reservationId : "";
@@ -182,7 +198,7 @@ test("cap 60 over an actual 25 seconds settles 25 and hands the rest back", asyn
   const world = await seedSpeechWorld("0.0005"); // $0.0005 per output second
   // 13.1's own ceiling for this world: 100 chars × $0.000015 + 60 s × $0.0005 = $0.0315
   // → 315 scaled units at the fixture rate.
-  const reservationId = await holdFor(world, 315);
+  const reservationId = await holdFor(world, 315, { voiceTier: "alloy" });
 
   const outcome = await settleSpeech.settle({
     reservationId,
@@ -290,7 +306,7 @@ test("fractional seconds price exactly — artifact metadata is a verifiable sou
 
 test("the per-request surcharge rides the locked dims into the charge", async () => {
   const world = await seedSpeechWorld("0.0005");
-  const reservationId = await holdFor(world, 325);
+  const reservationId = await holdFor(world, 325, { voiceTier: "alloy" });
 
   // This world's wire prices the flat request side at $0 (free is a price): the
   // settlement prices the surcharge from the LOCK — the wire's own field, never anything
@@ -314,7 +330,7 @@ test("the per-request surcharge rides the locked dims into the charge", async ()
 
 test("the user's consumption detail shows the speech characters, seconds and amount", async () => {
   const world = await seedSpeechWorld("0.0005");
-  const reservationId = await holdFor(world, 315);
+  const reservationId = await holdFor(world, 315, { voiceTier: "alloy" });
   await database.insert(botServices).values({
     botId: `${prefix}-bot-cv`,
     displayName: "Speech settle view Bot",
@@ -495,6 +511,76 @@ test("no evidence anyone may bill from keeps the hold occupied as unknown", asyn
       .from(creditLedger)
       .where(eq(creditLedger.externalCustomerId, world.customerKey)),
   ).toHaveLength(0);
+});
+
+test("a settle whose characters are not the frozen spec's is refused, never adopted", async () => {
+  const world = await seedSpeechWorld("0.0005");
+  const reservationId = await holdFor(world, 315);
+
+  // The settle surface re-carries 120 characters where the hold froze 100: not the work
+  // the hold was certified against, so not a bill — and never a rewrite to the caller's
+  // number. Same two-side semantics the per-second price already had.
+  const outcome = await settleSpeech.settle({
+    reservationId,
+    requested: { inputCharacters: 120, voiceTier: null, durationCapSeconds: 60 },
+    priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
+    result: {
+      outcome: "synthesized",
+      actualSeconds: "25",
+      evidence: { kind: "provider_usage_report", reference: "tts-307-chars" },
+    },
+    settledBy: "bifrost",
+    idempotencyKey: `${prefix}-settle-spec-chars`,
+  });
+
+  expect(outcome).toMatchObject({
+    status: "refused",
+    reasonCode: "price_basis_not_found",
+    detail: { stage: "spec_not_corroborated" },
+  });
+  expect(
+    await database
+      .select()
+      .from(creditLedger)
+      .where(eq(creditLedger.externalCustomerId, world.customerKey)),
+  ).toHaveLength(0);
+  expect(
+    await database
+      .select()
+      .from(creditReservations)
+      .where(eq(creditReservations.id, reservationId)),
+  ).toMatchObject([{ status: "reserved" }]);
+});
+
+test("a character price the hold did not freeze is refused, never adopted", async () => {
+  const world = await seedSpeechWorld("0.0005");
+  const reservationId = await holdFor(world, 315);
+
+  const outcome = await settleSpeech.settle({
+    reservationId,
+    requested: { inputCharacters: 100, voiceTier: null, durationCapSeconds: 60 },
+    // A tampered settle surface carrying a dearer per-character price than the frozen spec.
+    priced: { perInputCharacterUsd: "0.00002", perOutputSecondUsd: "0.0005" },
+    result: {
+      outcome: "synthesized",
+      actualSeconds: "25",
+      evidence: { kind: "provider_usage_report", reference: "tts-307-price" },
+    },
+    settledBy: "bifrost",
+    idempotencyKey: `${prefix}-settle-spec-price`,
+  });
+
+  expect(outcome).toMatchObject({
+    status: "refused",
+    reasonCode: "price_basis_not_found",
+    detail: { stage: "spec_not_corroborated" },
+  });
+  expect(
+    await database
+      .select()
+      .from(creditReservations)
+      .where(eq(creditReservations.id, reservationId)),
+  ).toMatchObject([{ status: "reserved" }]);
 });
 
 afterAll(async () => {
