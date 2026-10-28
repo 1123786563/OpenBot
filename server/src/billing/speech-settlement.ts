@@ -18,6 +18,7 @@ import {
 } from "./reserve-bound";
 import { parseExactDecimal } from "./speech-pricing";
 import { readWavDurationSecondsExact } from "./transcription-pricing";
+import { addRational, reduceRational, type Rational } from "./rational";
 
 /**
  * The speech-generation settlement path (Bifrost 13.2, #307): what a synthesis dispatch owes
@@ -470,17 +471,6 @@ function validateRequest(input: unknown): RequestValidation {
   };
 }
 
-function gcd(a: bigint, b: bigint): bigint {
-  let x = a;
-  let y = b;
-  while (y !== 0n) {
-    const next = x % y;
-    x = y;
-    y = next;
-  }
-  return x;
-}
-
 /**
  * Σ of every carried container's own stated duration, EXACT — each header re-read as the
  * rational it states (data size over byte rate, BigInt), so a carried artifact or an
@@ -490,29 +480,17 @@ function gcd(a: bigint, b: bigint): bigint {
  */
 function measuredWavContainersRational(
   containersBase64: readonly string[],
-): { numerator: bigint; denominator: bigint } | null {
-  let numerator = 0n;
-  let denominator = 1n;
+): Rational | null {
+  let total: Rational = { numerator: 0n, denominator: 1n };
   for (const base64 of containersBase64) {
     const measured = readWavDurationSecondsExact(Buffer.from(base64, "base64"));
     if (measured === null) return null;
-    numerator =
-      numerator * measured.denominator + measured.numerator * denominator;
-    denominator = denominator * measured.denominator;
+    total = addRational(total, {
+      numerator: measured.numerator,
+      denominator: measured.denominator,
+    });
   }
-  return { numerator, denominator };
-}
-
-function reduce(
-  numerator: bigint,
-  denominator: bigint,
-): {
-  numerator: bigint;
-  denominator: bigint;
-} {
-  if (numerator === 0n) return { numerator: 0n, denominator: 1n };
-  const divisor = gcd(numerator, denominator);
-  return { numerator: numerator / divisor, denominator: denominator / divisor };
+  return total;
 }
 
 /**
@@ -776,7 +754,10 @@ export function createSpeechSettlementService(
       const scaledNumerator =
         costNumerator * resolved.rate.numerator * BigInt(CREDIT_SCALE);
       const scaledDenominator = common * resolved.rate.denominator;
-      const exact = reduce(scaledNumerator, scaledDenominator);
+      const exact = reduceRational({
+        numerator: scaledNumerator,
+        denominator: scaledDenominator,
+      });
       const chargeCeiling =
         exact.numerator === 0n
           ? 0n

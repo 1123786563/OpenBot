@@ -421,6 +421,48 @@ function validateRequest(input: unknown, now: Date): RequestValidation {
     };
   }
 
+  // The certified speech spec (13.2), for a speech-capability hold: parsed with the same
+  // strictness as everything else on this wire. A carried spec the caller cannot spell
+  // is refused, never silently dropped — dropping it would freeze nothing and doom every
+  // downstream settlement to speech_spec_not_locked (OCR r2's dead-field finding).
+  let speechSpec: ReservationSpeechSpec | undefined;
+  if (raw.speechSpec !== undefined) {
+    const candidate = raw.speechSpec as Record<string, unknown> | null;
+    const specTier =
+      candidate !== null && typeof candidate === "object" && candidate.voiceTier !== undefined
+        ? candidate.voiceTier
+        : null;
+    const pricesExact =
+      typeof candidate === "object" &&
+      candidate !== null &&
+      typeof candidate.perInputCharacterUsd === "string" &&
+      typeof candidate.perOutputSecondUsd === "string" &&
+      /^[0-9]+(\.[0-9]+)?$/.test(candidate.perInputCharacterUsd) &&
+      /^[0-9]+(\.[0-9]+)?$/.test(candidate.perOutputSecondUsd);
+    if (
+      candidate === null ||
+      typeof candidate !== "object" ||
+      !isNonNegativeInteger(candidate.inputCharacters) ||
+      (candidate.inputCharacters as number) > MAX_STORED_UNITS ||
+      !isPositiveInteger(candidate.durationCapSeconds) ||
+      (candidate.durationCapSeconds as number) > MAX_STORED_UNITS ||
+      (specTier !== null && !isIdentifier(specTier, 128)) ||
+      !pricesExact
+    ) {
+      return {
+        ok: false,
+        outcome: refused("request_invalid", { field: "speechSpec" }),
+      };
+    }
+    speechSpec = {
+      inputCharacters: candidate.inputCharacters as number,
+      voiceTier: specTier as string | null,
+      durationCapSeconds: candidate.durationCapSeconds as number,
+      perInputCharacterUsd: candidate.perInputCharacterUsd as string,
+      perOutputSecondUsd: candidate.perOutputSecondUsd as string,
+    };
+  }
+
   // Bound evidence: a non-empty set of mechanism proofs with real ceilings. Anything
   // else — including an estimate-shaped entry — proves nothing enforceable.
   const evidence = raw.boundEvidence;
@@ -490,6 +532,7 @@ function validateRequest(input: unknown, now: Date): RequestValidation {
       rateVersion: raw.rateVersion,
       boundEvidence: evidence as ReserveBoundEvidence[],
       maximumCredits: raw.maximumCredits,
+      ...(speechSpec === undefined ? {} : { speechSpec }),
       idempotencyKey: raw.idempotencyKey,
       expiresAt,
     },
