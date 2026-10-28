@@ -480,9 +480,12 @@ export type CreditConsumptionEntry = {
    * The capability line this entry settled as, when its settlement wrote one: the image
    * line (12.2), the speech line (13.2) or the async job line (17.6) — the entry shows
    * WHAT was consumed, distinguishable across capabilities. Other entries carry null.
+   * `kind` is the discriminator every consumer narrows on; `capability` stays the
+   * provider's own capability word (an async job may be chat, video, …).
    */
   lineDetail:
     | {
+        kind: "image";
         capability: string;
         image: {
           size: string | null;
@@ -492,6 +495,7 @@ export type CreditConsumptionEntry = {
         };
       }
     | {
+        kind: "speech";
         capability: string;
         speech: {
           inputCharacters: number;
@@ -501,6 +505,7 @@ export type CreditConsumptionEntry = {
         };
       }
     | {
+        kind: "async_job";
         capability: string;
         asyncJob: {
           jobId: string;

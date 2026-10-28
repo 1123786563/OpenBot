@@ -7,6 +7,7 @@ import {
   CreditReservationConflictError,
   createCreditWriter,
 } from "./credits-writer";
+import { addRational, type Rational, reduceRational } from "./rational";
 import {
   attemptIdForReservation,
   reservationIdFromAttemptId,
@@ -14,8 +15,10 @@ import {
 import {
   lockedBasisOfReservation,
   resolveLockedReservationBasis,
+  speechSpecOfReservation,
 } from "./reserve-bound";
 import { parseExactDecimal } from "./speech-pricing";
+import { readWavDurationSecondsExact } from "./transcription-pricing";
 
 /**
  * The speech-generation settlement path (Bifrost 13.2, #307): what a synthesis dispatch owes
@@ -76,10 +79,23 @@ export type SpeechGenerationResult =
       outcome: "synthesized";
       /** The actual billed seconds — an exact decimal string (e.g. "25.5"). */
       actualSeconds: string;
-      /** What the seconds stand on; a closed vocabulary like every evidence seam here. */
+      /** What the seconds stand on; a closed vocabulary like every evidence seam here.
+       * The tightened rules are part of the shape: a provider usage report is billable
+       * only through a traceable reference, and artifact metadata is billable only when
+       * the reference names a server-side collection record whose carried container
+       * headers THIS server re-measures to the claimed seconds (self-attested bytes are
+       * not evidence). A hostile/legacy caller omitting either lands on unknown (06.8),
+       * never a bill. */
       evidence:
-        | { kind: "provider_usage_report"; reference?: string }
-        | { kind: "artifact_metadata"; reference?: string };
+        | {
+            kind: "provider_usage_report";
+            reference: string;
+          }
+        | {
+            kind: "artifact_metadata";
+            reference: string;
+            metadata: { container: "wav"; bytesBase64: string[] };
+          };
     }
   | {
       /**
@@ -160,6 +176,17 @@ export type SpeechSettlementServiceDependencies = {
 };
 
 const MAX_STORED_UNITS = 2_147_483_647n;
+
+/**
+ * The evidence-carrying budget (R1-M1), single-sourced with the interrupted-buffer
+ * collector (speech-interruption.ts): one settle request's artifact metadata may carry
+ * at most this many WAV container headers, and no carried header may exceed this many
+ * bytes (6144 bytes is exactly 8192 base64 chars). The collector refuses to EMIT
+ * evidence beyond the budget — the result is unknown (06.8), never a request the settle
+ * surface must refuse as malformed.
+ */
+export const SPEECH_EVIDENCE_MAX_WAV_CONTAINERS = 64;
+export const SPEECH_EVIDENCE_MAX_WAV_HEADER_BYTES = 6144;
 
 function refused(
   reasonCode: SpeechSettlementRefusalReasonCode,
@@ -365,6 +392,39 @@ function validateRequest(input: unknown): RequestValidation {
         outcome: refused("request_invalid", { field: "result.evidence" }),
       };
     }
+    // Shape only — the BILLABILITY of artifact metadata (does it measure, does it agree)
+    // is the service's evidence rule below; a shape-invalid metadata blob is a malformed
+    // request, not absent evidence. A null (or otherwise non-object) metadata is the
+    // malformed kind — the settle must answer request_invalid, never a TypeError 500.
+    // The per-header budget is the decoded byte length against the single-sourced
+    // constant, not a base64 char count.
+    const metadata = evidence.metadata as Record<string, unknown> | null;
+    if (evidence.kind === "artifact_metadata" && metadata !== undefined) {
+      const containers = metadata === null ? null : metadata.bytesBase64;
+      const validShape =
+        metadata !== null &&
+        typeof metadata === "object" &&
+        metadata.container === "wav" &&
+        Array.isArray(containers) &&
+        containers.length >= 1 &&
+        containers.length <= SPEECH_EVIDENCE_MAX_WAV_CONTAINERS &&
+        containers.every(
+          (container) =>
+            typeof container === "string" &&
+            container.length >= 1 &&
+            Buffer.byteLength(container, "base64") <=
+              SPEECH_EVIDENCE_MAX_WAV_HEADER_BYTES,
+        );
+      if (!validShape) {
+        return {
+          ok: false,
+          outcome: refused("request_invalid", {
+            field: "result.evidence",
+            reason: "artifact_metadata_shape",
+          }),
+        };
+      }
+    }
   } else if (result.outcome === "unknown") {
     if (typeof result.reason !== "string" || result.reason.trim() === "") {
       return {
@@ -411,27 +471,26 @@ function validateRequest(input: unknown): RequestValidation {
   };
 }
 
-function gcd(a: bigint, b: bigint): bigint {
-  let x = a;
-  let y = b;
-  while (y !== 0n) {
-    const next = x % y;
-    x = y;
-    y = next;
+/**
+ * Σ of every carried container's own stated duration, EXACT — each header re-read as the
+ * rational it states (data size over byte rate, BigInt), so a carried artifact or an
+ * interrupted buffer's chunk headers re-measure the very quantities they were measured
+ * from, with no rounding anywhere in the re-measurement. Null when anything is absent or
+ * unreadable: the sum is only as good as every container in it.
+ */
+function measuredWavContainersRational(
+  containersBase64: readonly string[],
+): Rational | null {
+  let total: Rational = { numerator: 0n, denominator: 1n };
+  for (const base64 of containersBase64) {
+    const measured = readWavDurationSecondsExact(Buffer.from(base64, "base64"));
+    if (measured === null) return null;
+    total = addRational(total, {
+      numerator: measured.numerator,
+      denominator: measured.denominator,
+    });
   }
-  return x;
-}
-
-function reduce(
-  numerator: bigint,
-  denominator: bigint,
-): {
-  numerator: bigint;
-  denominator: bigint;
-} {
-  if (numerator === 0n) return { numerator: 0n, denominator: 1n };
-  const divisor = gcd(numerator, denominator);
-  return { numerator: numerator / divisor, denominator: denominator / divisor };
+  return total;
 }
 
 /**
@@ -473,6 +532,7 @@ export function createSpeechSettlementService(
         return { status: "unknown", reservationId };
       }
 
+      // The locked price basis resolves first: every corroboration below needs it.
       const basis = lockedBasisOfReservation(reservation);
       if (basis === null) {
         return refused("price_basis_not_found", {
@@ -494,6 +554,74 @@ export function createSpeechSettlementService(
           rateVersion: basis.rateVersion,
           reason: resolved.reason,
         });
+      }
+
+      // The evidence rules (13.2's tightened AC2): a provider usage report is evidence
+      // only with a reference someone can trace, and artifact metadata is evidence only
+      // when it names a server-side collection record (the reference) AND THIS server
+      // re-measures the carried containers to the claimed seconds — carried header bytes
+      // without that binding are self-attestation, and self-attestation bills anything.
+      // Neither satisfied: no evidence anyone may bill from, the hold goes unknown
+      // (06.8). A measurement that DISAGREES with the claim is not absent evidence but a
+      // conflict: refused, never rewritten to the measured number. The input characters
+      // are never an estimate of the duration — that substitution stays the forbidden
+      // shortcut.
+      if (req.result.evidence.kind === "provider_usage_report") {
+        const reference = req.result.evidence.reference;
+        if (reference === undefined || reference.trim() === "") {
+          await writer.markReservationUnknown(
+            reservationId,
+            "speech synthesis evidence unusable: provider usage report without a reference",
+          );
+          return { status: "unknown", reservationId };
+        }
+      } else {
+        const reference = req.result.evidence.reference;
+        if (reference === undefined || reference.trim() === "") {
+          await writer.markReservationUnknown(
+            reservationId,
+            "speech synthesis evidence unusable: artifact metadata without the server-side collection reference",
+          );
+          return { status: "unknown", reservationId };
+        }
+        const metadata = req.result.evidence.metadata;
+        const measured = metadata
+          ? measuredWavContainersRational(metadata.bytesBase64)
+          : null;
+        if (measured === null) {
+          await writer.markReservationUnknown(
+            reservationId,
+            "speech synthesis evidence unusable: artifact metadata states no readable duration",
+          );
+          return { status: "unknown", reservationId };
+        }
+        const claimed = exactDecimal(req.result.actualSeconds);
+        if (claimed === null) {
+          // Unreachable behind the request validation; kept so the comparison below
+          // never divides a number it could not read exactly.
+          return refused("request_invalid", { field: "result.actualSeconds" });
+        }
+        // EXACT, with the one documented rounding an honest reporter may carry: the
+        // interrupted collector renders a non-terminating rational (44.1 kHz byte rates
+        // and the like) as its 9-digit UPWARD rounding, so the claim is accepted when it
+        // IS the measured rational or sits above it by at most a nanosecond — the
+        // collector's own ceil direction and magnitude, a dishonest caller's whole
+        // over-billing bound (~1e-9 s of audio). Strict double equality here rejected
+        // the collector's own honest evidence — the false conflict R1-H1 removed.
+        // Anything else is a conflict: refused, never rewritten to the measured number.
+        const gapNumerator =
+          claimed.numerator * measured.denominator -
+          measured.numerator * claimed.denominator;
+        const gapDenominator = claimed.denominator * measured.denominator;
+        const withinDocumentedCeil =
+          gapNumerator >= 0n && gapNumerator * 10n ** 9n <= gapDenominator;
+        if (!withinDocumentedCeil) {
+          return refused("settlement_conflict", {
+            stage: "artifact_duration_mismatch",
+            measuredSeconds: `${measured.numerator}/${measured.denominator}`,
+            carriedSeconds: req.result.actualSeconds,
+          });
+        }
       }
 
       // The seconds side must be corroborated by the lock: `audio_output` is the
@@ -523,6 +651,53 @@ export function createSpeechSettlementService(
           lockedAmount:
             lockedPerSecond.status === "known" ? lockedPerSecond.amount : null,
           carriedAmount: req.priced.perOutputSecondUsd,
+        });
+      }
+
+      // The frozen spec corroborates what the lock cannot speak for — the characters,
+      // the tier, the duration cap, the per-character price — AND re-speaks the
+      // per-second price: what 13.1's admission certified is frozen WITH the lock, and
+      // the settle surface must re-carry it exactly, never be rewritten to the caller's
+      // numbers. A frozen second price nobody checked was dead data pretending to be a
+      // check (OCR r2); both sides are exact cross-multiplied rationals.
+      const spec = speechSpecOfReservation(reservation);
+      if (spec === null) {
+        return refused("price_basis_not_found", {
+          stage: "speech_spec_not_locked",
+        });
+      }
+      const carriedPerChar = parseExactDecimal(req.priced.perInputCharacterUsd);
+      const frozenPerChar = parseExactDecimal(spec.perInputCharacterUsd);
+      const frozenPerSecond = parseExactDecimal(spec.perOutputSecondUsd);
+      if (
+        req.requested.inputCharacters !== spec.inputCharacters ||
+        req.requested.voiceTier !== spec.voiceTier ||
+        req.requested.durationCapSeconds !== spec.durationCapSeconds ||
+        carriedPerChar === null ||
+        frozenPerChar === null ||
+        carriedPerChar.numerator * frozenPerChar.denominator !==
+          frozenPerChar.numerator * carriedPerChar.denominator ||
+        tierPerSecond === null ||
+        frozenPerSecond === null ||
+        tierPerSecond.numerator * frozenPerSecond.denominator !==
+          frozenPerSecond.numerator * tierPerSecond.denominator
+      ) {
+        return refused("price_basis_not_found", {
+          stage: "spec_not_corroborated",
+          frozen: {
+            inputCharacters: spec.inputCharacters,
+            voiceTier: spec.voiceTier,
+            durationCapSeconds: spec.durationCapSeconds,
+            perInputCharacterUsd: spec.perInputCharacterUsd,
+            perOutputSecondUsd: spec.perOutputSecondUsd,
+          },
+          carried: {
+            inputCharacters: req.requested.inputCharacters,
+            voiceTier: req.requested.voiceTier,
+            durationCapSeconds: req.requested.durationCapSeconds,
+            perInputCharacterUsd: req.priced.perInputCharacterUsd,
+            perOutputSecondUsd: req.priced.perOutputSecondUsd,
+          },
         });
       }
 
@@ -579,7 +754,10 @@ export function createSpeechSettlementService(
       const scaledNumerator =
         costNumerator * resolved.rate.numerator * BigInt(CREDIT_SCALE);
       const scaledDenominator = common * resolved.rate.denominator;
-      const exact = reduce(scaledNumerator, scaledDenominator);
+      const exact = reduceRational({
+        numerator: scaledNumerator,
+        denominator: scaledDenominator,
+      });
       const chargeCeiling =
         exact.numerator === 0n
           ? 0n
