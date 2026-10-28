@@ -1105,7 +1105,8 @@ export async function evaluateCleanupRelations(
         ...edge,
         discovered,
         matchesDeclaration:
-          !discovered && declaredShape!.onDelete === edge.onDelete,
+          declaredShape !== undefined &&
+          declaredShape.onDelete === edge.onDelete,
         evidence: `pg_constraint constraint ${edge.constraintName}: ${edge.childTable}.${edge.childColumn} -> ${edge.parentTable}.${edge.parentColumn} on delete ${edge.onDelete}; ${count[0].n} child rows ride it in the current data`,
       });
     }

@@ -1037,10 +1037,6 @@ describe("the legacy billing relations evaluation maps associations from live da
     // name three real catalog edges the declaration never covered: the recovery item's own
     // CASCADE children (alerts, queries) and its NO ACTION evidence pointer back to the
     // query. They are findings to carry, not silent fixes.
-    const undeclared = manifest.fkEdges
-      .filter((edge) => !edge.matchesDeclaration)
-      .map((edge) => edge.constraintName)
-      .sort();
     const discoveredNames = manifest.fkEdges
       .filter((edge) => edge.discovered)
       .map((edge) => edge.constraintName)
