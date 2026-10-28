@@ -32,12 +32,12 @@ import {
 } from "./credits-writer";
 import { type PayerKind, type PayerRef, payerKey } from "./payer";
 import { COMPANY_SCOPE_IDENTITY_FIELDS } from "./personal-key-isolation";
-import type { ReservationSpeechSpec } from "./reserve-bound";
 import {
   attemptIdForReservation,
   type ReservationStatusService,
   reservationStatusEndpoints,
 } from "./reservation-status";
+import type { ReservationSpeechSpec } from "./reserve-bound";
 
 /**
  * The Reserve protocol's transactional revalidation (Bifrost #253, 06.2; payer conflict

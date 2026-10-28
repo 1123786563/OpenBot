@@ -23,11 +23,11 @@ import {
   readCapacity,
   type Tx,
 } from "./capacity";
-import type { CreditGrantSource } from "./types";
 import type {
   ReservationLockedBasis,
   ReservationSpeechSpec,
 } from "./reserve-bound";
+import type { CreditGrantSource } from "./types";
 
 /**
  * The local credit ledger's WRITE side. The deposit (grantCredits) is the only writer

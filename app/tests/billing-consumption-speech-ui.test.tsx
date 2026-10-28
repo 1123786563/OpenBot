@@ -1,23 +1,25 @@
 import "./preload";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { cleanup, render } from "@testing-library/react";
+import { ConsumptionTable } from "@/components/billing/consumption-table";
+import type { CreditConsumptionEntry } from "@/lib/billing/credits";
+import i18n from "@/lib/i18n";
 /*
  * The runner comes straight from bun:test — the door the sibling realtime-usage-ui suite
  * uses, because the e2e-compat runner cannot collect app suites in this worktree. No
  * module stubs are needed: ConsumptionTable renders no dialog and talks to no network
  * (the entries arrive as props), so the harness is happy-dom, i18n and nothing else.
  */
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { cleanup, render } from "@testing-library/react";
-import type { CreditConsumptionEntry } from "@/lib/billing/credits";
-import i18n from "@/lib/i18n";
-import { ConsumptionTable } from "@/components/billing/consumption-table";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { settleReactWork } from "./settle-react-work";
 
 beforeAll(() => GlobalRegistrator.register());
-/* zh-CN per test (these assertions are written against it), English restored after each. */
-beforeEach(async () => {
-  await i18n.changeLanguage("zh-CN");
-});
 afterEach(() => {
   cleanup();
   void i18n.changeLanguage("en");
@@ -63,7 +65,9 @@ function renderTable(entries: CreditConsumptionEntry[]) {
  * and tier — distinguishable from every other capability's row, said in the reader's own
  * language. A row whose settlement wrote no speech line looks exactly as it always has.
  */
-test("语音行显示字符、时长与档位，无明细的行保持原样", () => {
+test("语音行显示字符、时长与档位，无明细的行保持原样", async () => {
+  /* zh-CN is this test's language; the assertions are written against it. */
+  await i18n.changeLanguage("zh-CN");
   const speechTiered: CreditConsumptionEntry = {
     ...baseEntry,
     id: "row-tiered",

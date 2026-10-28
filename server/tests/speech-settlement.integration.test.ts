@@ -1,29 +1,25 @@
-import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { createSpeechSettlementService } from "../src/billing/speech-settlement";
-import { createCreditWriter } from "../src/billing/credits-writer";
+import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import { createCredits } from "../src/billing/credits";
+import { createCreditWriter } from "../src/billing/credits-writer";
 import { createPayerAccount, payerKey } from "../src/billing/payer";
-import type { ConversionRate } from "../src/gateway/conversion-rate";
-import {
-  GATEWAY_PRICE_SNAPSHOT_SOURCE,
-  PRICE_DIMENSIONS,
-  mapPriceDims,
-  type PriceSnapshotDims,
-} from "../src/gateway/price-snapshot";
-import { createEnterpriseGatewayPriceSnapshotStore } from "../src/gateway/price-snapshot";
+import { createSpeechSettlementService } from "../src/billing/speech-settlement";
 import { createDatabase } from "../src/db/client";
-import {
-  accessGrants,
-  botServices,
-  payerAccounts,
-} from "../src/db/schema";
+import { accessGrants, botServices, payerAccounts } from "../src/db/schema";
 import {
   creditReservations,
   creditSpeechSettlementDetails,
 } from "../src/db/schema/credit-reservations";
 import { creditLedger } from "../src/db/schema/credits";
+import type { ConversionRate } from "../src/gateway/conversion-rate";
+import {
+  createEnterpriseGatewayPriceSnapshotStore,
+  GATEWAY_PRICE_SNAPSHOT_SOURCE,
+  mapPriceDims,
+  PRICE_DIMENSIONS,
+  type PriceSnapshotDims,
+} from "../src/gateway/price-snapshot";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -53,7 +49,10 @@ const writer = createCreditWriter(database);
 const snapshotStore = createEnterpriseGatewayPriceSnapshotStore(database);
 const settleSpeech = createSpeechSettlementService({
   database,
-  environmentRate: { numerator: 100n, denominator: 1n } satisfies ConversionRate,
+  environmentRate: {
+    numerator: 100n,
+    denominator: 1n,
+  } satisfies ConversionRate,
 });
 
 let seedCounter = 0;
@@ -176,7 +175,8 @@ function wavMetadataBase64(seconds: string, byteRate = 8000): string {
   const header = new Uint8Array(44);
   const view = new DataView(header.buffer);
   const ascii = (offset: number, text: string) => {
-    for (let i = 0; i < text.length; i += 1) header[offset + i] = text.charCodeAt(i);
+    for (let i = 0; i < text.length; i += 1)
+      header[offset + i] = text.charCodeAt(i);
   };
   ascii(0, "RIFF");
   view.setUint32(4, 36 + dataSize, true);
@@ -233,7 +233,11 @@ test("cap 60 over an actual 25 seconds settles 25 and hands the rest back", asyn
 
   const outcome = await settleSpeech.settle({
     reservationId,
-    requested: { inputCharacters: 100, voiceTier: "alloy", durationCapSeconds: 60 },
+    requested: {
+      inputCharacters: 100,
+      voiceTier: "alloy",
+      durationCapSeconds: 60,
+    },
     priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
     result: {
       outcome: "synthesized",
@@ -287,7 +291,11 @@ test("cap 60 over an actual 25 seconds settles 25 and hands the rest back", asyn
   // A replay of the same result answers the first settlement, not a second charge.
   const replay = await settleSpeech.settle({
     reservationId,
-    requested: { inputCharacters: 100, voiceTier: "alloy", durationCapSeconds: 60 },
+    requested: {
+      inputCharacters: 100,
+      voiceTier: "alloy",
+      durationCapSeconds: 60,
+    },
     priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
     result: {
       outcome: "synthesized",
@@ -312,7 +320,11 @@ test("fractional seconds price exactly — artifact metadata is a verifiable sou
 
   const outcome = await settleSpeech.settle({
     reservationId,
-    requested: { inputCharacters: 100, voiceTier: null, durationCapSeconds: 60 },
+    requested: {
+      inputCharacters: 100,
+      voiceTier: null,
+      durationCapSeconds: 60,
+    },
     priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
     result: {
       outcome: "synthesized",
@@ -351,7 +363,11 @@ test("the per-request surcharge rides the locked dims into the charge", async ()
   // the settle request carries — so the charge is the two-sided cost alone.
   const outcome = await settleSpeech.settle({
     reservationId,
-    requested: { inputCharacters: 100, voiceTier: "alloy", durationCapSeconds: 60 },
+    requested: {
+      inputCharacters: 100,
+      voiceTier: "alloy",
+      durationCapSeconds: 60,
+    },
     priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
     result: {
       outcome: "synthesized",
@@ -388,7 +404,11 @@ test("the user's consumption detail shows the speech characters, seconds and amo
 
   const settled = await settleSpeech.settle({
     reservationId,
-    requested: { inputCharacters: 100, voiceTier: "alloy", durationCapSeconds: 60 },
+    requested: {
+      inputCharacters: 100,
+      voiceTier: "alloy",
+      durationCapSeconds: 60,
+    },
     priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
     result: {
       outcome: "synthesized",
@@ -426,7 +446,11 @@ test("a hold locked at v1 prices at v1 even after v2 lands", async () => {
   // The per-second price moves: version 2 prices the same cell's seconds at $0.0008.
   const { appended } = await snapshotStore.appendSnapshots([
     {
-      ref: { provider: world.provider, model: world.model, capability: "speech" },
+      ref: {
+        provider: world.provider,
+        model: world.model,
+        capability: "speech",
+      },
       dims: speechDimsOf("0.0008"),
       fetchedAt: new Date().toISOString(),
       source: GATEWAY_PRICE_SNAPSHOT_SOURCE,
@@ -438,7 +462,11 @@ test("a hold locked at v1 prices at v1 even after v2 lands", async () => {
 
   const v1Outcome = await settleSpeech.settle({
     reservationId: v1Hold,
-    requested: { inputCharacters: 100, voiceTier: null, durationCapSeconds: 60 },
+    requested: {
+      inputCharacters: 100,
+      voiceTier: null,
+      durationCapSeconds: 60,
+    },
     priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
     result: {
       outcome: "synthesized",
@@ -460,7 +488,11 @@ test("a tier the lock cannot corroborate is refused, never priced", async () => 
 
   const outcome = await settleSpeech.settle({
     reservationId,
-    requested: { inputCharacters: 100, voiceTier: null, durationCapSeconds: 60 },
+    requested: {
+      inputCharacters: 100,
+      voiceTier: null,
+      durationCapSeconds: 60,
+    },
     // A tampered settle surface carrying a cheaper per-second price than the lock holds.
     priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0001" },
     result: {
@@ -498,7 +530,11 @@ test("an actual beyond the certified cap is a defect, never a bill", async () =>
 
   const outcome = await settleSpeech.settle({
     reservationId,
-    requested: { inputCharacters: 100, voiceTier: null, durationCapSeconds: 60 },
+    requested: {
+      inputCharacters: 100,
+      voiceTier: null,
+      durationCapSeconds: 60,
+    },
     priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
     result: {
       outcome: "synthesized",
@@ -526,9 +562,16 @@ test("no evidence anyone may bill from keeps the hold occupied as unknown", asyn
 
   const outcome = await settleSpeech.settle({
     reservationId,
-    requested: { inputCharacters: 100, voiceTier: null, durationCapSeconds: 60 },
+    requested: {
+      inputCharacters: 100,
+      voiceTier: null,
+      durationCapSeconds: 60,
+    },
     priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
-    result: { outcome: "unknown", reason: "stream cut before the audio payload" },
+    result: {
+      outcome: "unknown",
+      reason: "stream cut before the audio payload",
+    },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-unk`,
   });
@@ -560,7 +603,11 @@ test("a settle whose characters are not the frozen spec's is refused, never adop
   // number. Same two-side semantics the per-second price already had.
   const outcome = await settleSpeech.settle({
     reservationId,
-    requested: { inputCharacters: 120, voiceTier: null, durationCapSeconds: 60 },
+    requested: {
+      inputCharacters: 120,
+      voiceTier: null,
+      durationCapSeconds: 60,
+    },
     priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
     result: {
       outcome: "synthesized",
@@ -596,7 +643,11 @@ test("a character price the hold did not freeze is refused, never adopted", asyn
 
   const outcome = await settleSpeech.settle({
     reservationId,
-    requested: { inputCharacters: 100, voiceTier: null, durationCapSeconds: 60 },
+    requested: {
+      inputCharacters: 100,
+      voiceTier: null,
+      durationCapSeconds: 60,
+    },
     // A tampered settle surface carrying a dearer per-character price than the frozen spec.
     priced: { perInputCharacterUsd: "0.00002", perOutputSecondUsd: "0.0005" },
     result: {
@@ -631,7 +682,11 @@ test("a provider usage report without a reference is no evidence anyone may bill
   // (06.8), settles nothing, releases nothing.
   const outcome = await settleSpeech.settle({
     reservationId,
-    requested: { inputCharacters: 100, voiceTier: null, durationCapSeconds: 60 },
+    requested: {
+      inputCharacters: 100,
+      voiceTier: null,
+      durationCapSeconds: 60,
+    },
     priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
     result: {
       outcome: "synthesized",
@@ -666,7 +721,11 @@ test("artifact metadata that disagrees with the reported seconds is a conflict, 
   // rewrite to the measured number, the hold stays reserved for the real trail.
   const outcome = await settleSpeech.settle({
     reservationId,
-    requested: { inputCharacters: 100, voiceTier: null, durationCapSeconds: 60 },
+    requested: {
+      inputCharacters: 100,
+      voiceTier: null,
+      durationCapSeconds: 60,
+    },
     priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
     result: {
       outcome: "synthesized",
@@ -709,7 +768,11 @@ test("artifact metadata that states no readable duration keeps the hold unknown"
 
   const outcome = await settleSpeech.settle({
     reservationId,
-    requested: { inputCharacters: 100, voiceTier: null, durationCapSeconds: 60 },
+    requested: {
+      inputCharacters: 100,
+      voiceTier: null,
+      durationCapSeconds: 60,
+    },
     priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
     result: {
       outcome: "synthesized",
@@ -719,7 +782,9 @@ test("artifact metadata that states no readable duration keeps the hold unknown"
         metadata: {
           container: "wav",
           bytesBase64: [
-            Buffer.from("certainly not a riff wave container").toString("base64"),
+            Buffer.from("certainly not a riff wave container").toString(
+              "base64",
+            ),
           ],
         },
       },
@@ -746,7 +811,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,

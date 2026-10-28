@@ -1,21 +1,13 @@
-import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
+import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
+import { createCreditWriter } from "../src/billing/credits-writer";
+import { createPayerAccount, payerKey } from "../src/billing/payer";
 import {
   collectInterruptedSpeechUsage,
   settleInterruptedSpeech,
 } from "../src/billing/speech-interruption";
 import { createSpeechSettlementService } from "../src/billing/speech-settlement";
-import { createCreditWriter } from "../src/billing/credits-writer";
-import { createPayerAccount, payerKey } from "../src/billing/payer";
-import type { ConversionRate } from "../src/gateway/conversion-rate";
-import {
-  GATEWAY_PRICE_SNAPSHOT_SOURCE,
-  PRICE_DIMENSIONS,
-  mapPriceDims,
-  type PriceSnapshotDims,
-} from "../src/gateway/price-snapshot";
-import { createEnterpriseGatewayPriceSnapshotStore } from "../src/gateway/price-snapshot";
 import { createDatabase } from "../src/db/client";
 import { payerAccounts } from "../src/db/schema";
 import {
@@ -23,6 +15,14 @@ import {
   creditSpeechSettlementDetails,
 } from "../src/db/schema/credit-reservations";
 import { creditLedger } from "../src/db/schema/credits";
+import type { ConversionRate } from "../src/gateway/conversion-rate";
+import {
+  createEnterpriseGatewayPriceSnapshotStore,
+  GATEWAY_PRICE_SNAPSHOT_SOURCE,
+  mapPriceDims,
+  PRICE_DIMENSIONS,
+  type PriceSnapshotDims,
+} from "../src/gateway/price-snapshot";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -53,8 +53,14 @@ const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const prefix = `b10-308-${randomUUID().slice(0, 8)}`;
 const writer = createCreditWriter(database);
 const snapshotStore = createEnterpriseGatewayPriceSnapshotStore(database);
-const environmentRate = { numerator: 100n, denominator: 1n } satisfies ConversionRate;
-const settleSpeech = createSpeechSettlementService({ database, environmentRate });
+const environmentRate = {
+  numerator: 100n,
+  denominator: 1n,
+} satisfies ConversionRate;
+const settleSpeech = createSpeechSettlementService({
+  database,
+  environmentRate,
+});
 
 let seedCounter = 0;
 
@@ -132,7 +138,10 @@ async function seedSpeechWorld(
 }
 
 /** One held speech reservation locked at the cell's current snapshot version. */
-async function holdFor(world: SpeechWorld, maximumCents: number): Promise<string> {
+async function holdFor(
+  world: SpeechWorld,
+  maximumCents: number,
+): Promise<string> {
   const snapshot = await snapshotStore.latestPriceSnapshot({
     provider: world.provider,
     model: world.model,
@@ -205,11 +214,20 @@ function interrupt(
     { settle: (request) => settleSpeech.settle(request) },
     {
       reservationId,
-      requested: { inputCharacters: 100, voiceTier: "alloy", durationCapSeconds: 60 },
-      priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
+      requested: {
+        inputCharacters: 100,
+        voiceTier: "alloy",
+        durationCapSeconds: 60,
+      },
+      priced: {
+        perInputCharacterUsd: "0.000015",
+        perOutputSecondUsd: "0.0005",
+      },
       // The interruption point's own evidence: the server-held buffer, or its absence.
       ...(chunks === "no-buffer" ? {} : { chunks }),
-      ...(chunks === "no-buffer" ? { interruptionReason: "client disconnected before any audio arrived" } : {}),
+      ...(chunks === "no-buffer"
+        ? { interruptionReason: "client disconnected before any audio arrived" }
+        : {}),
       settledBy: "bifrost-playback",
       idempotencyKey,
     },
@@ -226,9 +244,7 @@ test("the collector sums the buffered chunks' own stated durations exactly", () 
   // this sum was built from, never a number it must take on faith.
   expect(usage.outcome).toBe("confirmed");
   expect(usage.outcome === "confirmed" && usage.actualSeconds).toBe("25");
-  expect(
-    usage.outcome === "confirmed" && usage.evidence.metadata,
-  ).toEqual({
+  expect(usage.outcome === "confirmed" && usage.evidence.metadata).toEqual({
     container: "wav",
     bytesBase64: chunks.map((chunk) =>
       Buffer.from(chunk.subarray(0, 44)).toString("base64"),
@@ -239,7 +255,10 @@ test("the collector sums the buffered chunks' own stated durations exactly", () 
   const fractional = collectInterruptedSpeechUsage({
     chunks: [wavOf(10), wavOf(10), wavOf(5.5)],
   });
-  expect(fractional).toMatchObject({ outcome: "confirmed", actualSeconds: "25.5" });
+  expect(fractional).toMatchObject({
+    outcome: "confirmed",
+    actualSeconds: "25.5",
+  });
 });
 
 test("an empty or unreadable buffer confirms nothing", () => {
@@ -371,7 +390,10 @@ test("a buffer beyond the certified cap is a defect, never a bill and never a cl
   expect(outcome).toMatchObject({
     status: "refused",
     reasonCode: "request_invalid",
-    detail: { field: "result.actualSeconds", reason: "actual_exceeds_certified_spec" },
+    detail: {
+      field: "result.actualSeconds",
+      reason: "actual_exceeds_certified_spec",
+    },
   });
   expect(await writer.availableBalance(world.customerKey)).toBe(held);
   expect(
@@ -389,7 +411,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,

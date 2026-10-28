@@ -155,7 +155,11 @@ function chunkSeconds(bytes: Uint8Array): {
     offset = body + Number(size) + (Number(size) % 2);
   }
   if (byteRate === null || dataSize === null || byteRate <= 0n) return null;
-  return { numerator: dataSize, denominator: byteRate, headerEnd: dataHeaderEnd };
+  return {
+    numerator: dataSize,
+    denominator: byteRate,
+    headerEnd: dataHeaderEnd,
+  };
 }
 
 function gcd(a: bigint, b: bigint): bigint {
