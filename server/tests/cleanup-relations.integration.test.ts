@@ -1021,9 +1021,21 @@ describe("the legacy billing relations evaluation maps associations from live da
     expect(outboxLink).toBeDefined();
     expect(outboxLink!.foreignKey).toBe(false);
     expect(outboxLink!.matchedRows).toBe(3);
-    // No drifted declarations on this database.
-    expect(manifest.summary.declarationMismatches).toBe(0);
-    expect(manifest.fkEdges).toHaveLength(DECLARED_EDGES.length);
+    // No drifted declarations on this database — but the second-hop discovery (#679.1) does
+    // name three real catalog edges the declaration never covered: the recovery item's own
+    // CASCADE children (alerts, queries) and its NO ACTION evidence pointer back to the
+    // query. They are findings to carry, not silent fixes.
+    const undeclared = manifest.fkEdges
+      .filter((edge) => !edge.matchesDeclaration)
+      .map((edge) => edge.constraintName)
+      .sort();
+    expect(undeclared).toEqual([
+      "credit_recovery_alerts_item_id_credit_recovery_items_id_fk",
+      "credit_recovery_items_resolution_evidence_id_fkey",
+      "credit_recovery_queries_item_id_credit_recovery_items_id_fk",
+    ]);
+    expect(manifest.summary.declarationMismatches).toBe(3);
+    expect(manifest.fkEdges).toHaveLength(DECLARED_EDGES.length + 3);
   });
 
   test("FK protection: deletion or mutation reaching a retained row removes the candidate", () => {
@@ -1086,7 +1098,12 @@ describe("the legacy billing relations evaluation maps associations from live da
     // pulled by cascade impact with the row named, not silently cleaned around.
     const customer = evaluationOf("billing_customers", resolutionKey);
     expect(customer.removed).toBe(true);
-    expect(customer.removalReason).toBe("cascade_impact_on_retained");
+    // The pull is decided by the standing NO ACTION settlement child reached through the
+    // key's own chain: the database refuses the whole cascade, so the blocked-removal
+    // reason names what actually happens, with the registry row still named below.
+    expect(customer.removalReason).toBe(
+      "deletion_blocked_by_retained_reference",
+    );
     expect(customer.evidence).toContain("billing_account_resolutions");
     const impact = customer.retainedImpact.find(
       (entry) =>
@@ -1124,7 +1141,7 @@ describe("the legacy billing relations evaluation maps associations from live da
     // of failing as an FK error mid-execution.
     const hold = evaluationOf("credit_reservations", resolutionSettledId);
     expect(hold.removed).toBe(true);
-    expect(hold.removalReason).toBe("cascade_impact_on_retained");
+    expect(hold.removalReason).toBe("deletion_blocked_by_retained_reference");
     expect(hold.evidence).toContain("delete_blocked");
     expect(hold.evidence).toContain("credit_settlement_details");
     const impact = hold.retainedImpact.find(
@@ -1143,7 +1160,7 @@ describe("the legacy billing relations evaluation maps associations from live da
     // is pulled by its own ledger_id NO ACTION reference.
     const ledger = evaluationOf("credit_ledger", resolutionLedgerId);
     expect(ledger.removed).toBe(true);
-    expect(ledger.removalReason).toBe("cascade_impact_on_retained");
+    expect(ledger.removalReason).toBe("deletion_blocked_by_retained_reference");
     expect(ledger.evidence).toContain("credit_settlement_details");
   });
 
@@ -1198,6 +1215,42 @@ describe("the legacy billing relations evaluation maps associations from live da
       expect(mapping.removed).toBe(true);
       expect(mapping.removalReason).toBe("attribution_basis_of_kept_records");
     }
+  });
+
+  test("the attribution verdict and the kept-mapping decision share one key derivation", async () => {
+    // Tamper: the candidate's classification-side key says flightKey while the row's own
+    // column still says cleanKey. The mapping must be kept, and its evidence must cite the
+    // records of the SAME key the keep-decision used — not silently switch derivations
+    // between deciding and explaining.
+    const tampered = {
+      ...classification,
+      candidates: classification.candidates.map((candidate) =>
+        candidate.table === "payer_accounts" &&
+        candidate.recordId === cleanMappingId
+          ? { ...candidate, externalCustomerId: flightKey }
+          : candidate,
+      ),
+    };
+    const evaluated = await evaluateCleanupRelations(database, tampered);
+    const mapping = evaluated.evaluations.find(
+      (entry) =>
+        entry.table === "payer_accounts" && entry.recordId === cleanMappingId,
+    );
+    expect(mapping).toBeDefined();
+    expect(mapping!.removed).toBe(true);
+    expect(mapping!.removalReason).toBe("attribution_basis_of_kept_records");
+    expect(mapping!.evidence).toContain(flightReservedId);
+  });
+
+  test("a removal caused by retained FK evidence cites the blocked-removal reason", () => {
+    // The K4 hold's pull is decided by its NO ACTION settlement child: the reason must be
+    // the blocked-removal member, not the generic cascade reason — a permanently-zero
+    // byReason counter for a reachable verdict is a false signal for reviewers.
+    const hold = evaluationOf("credit_reservations", resolutionSettledId);
+    expect(hold.removalReason).toBe("deletion_blocked_by_retained_reference");
+    expect(
+      manifest.summary.byReason.deletion_blocked_by_retained_reference,
+    ).toBeGreaterThan(0);
   });
 
   test("external live subscriptions are listed separately and never auto-cancelled", () => {
@@ -1324,6 +1377,247 @@ describe("the legacy billing relations evaluation maps associations from live da
     await expect(evaluateCleanupRelations(database, drifted)).rejects.toThrow(
       /no longer exists/,
     );
+  });
+
+  test("a directly inserted unclassified estate child is retained", async () => {
+    const unknownGrantId = `b347-unclassified-${run}`;
+    await database.insert(creditGrants).values({
+      id: unknownGrantId,
+      externalCustomerId: flightKey,
+      source: "promo",
+      total: 1,
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      idempotencyKey: `b347-unclassified-${run}`,
+    });
+
+    try {
+      const evaluated = await evaluateCleanupRelations(
+        database,
+        classification,
+      );
+      const customer = evaluated.evaluations.find(
+        (entry) =>
+          entry.table === "billing_customers" && entry.recordId === flightKey,
+      );
+      expect(customer).toBeDefined();
+      const impact = customer!.retainedImpact.find(
+        (entry) =>
+          entry.table === "credit_grants" && entry.recordId === unknownGrantId,
+      );
+      expect(impact).toBeDefined();
+      expect(impact!.class).toBe("unclassified");
+      expect(impact!.protection).toBe("retained");
+      expect(impact!.effect).toBe("cascade_delete");
+    } finally {
+      await database
+        .delete(creditGrants)
+        .where(eq(creditGrants.id, unknownGrantId));
+    }
+  });
+
+  test("a second-hop CASCADE grandchild is named in the deletion scope", async () => {
+    // Drift FK chain: legacy hold -> h1 (catalog-loaded, one hop) -> h2 (a grandchild the
+    // legacy-table filter never loaded). Deleting the hold really deletes both rows through
+    // PostgreSQL's cascade, so the manifest must name them in the deletion scope and load
+    // the grandchild edge as evidence — never stop at the first hop.
+    const h1Id = `${run}-h1`;
+    const h2Id = `${run}-h2`;
+    await database.execute(
+      sql`CREATE TABLE b5r_t1_h1 (id text PRIMARY KEY, hold_id text NOT NULL REFERENCES credit_reservations(id) ON DELETE CASCADE)`,
+    );
+    await database.execute(
+      sql`CREATE TABLE b5r_t1_h2 (id text PRIMARY KEY, h1_id text NOT NULL REFERENCES b5r_t1_h1(id) ON DELETE CASCADE)`,
+    );
+    try {
+      await database.execute(
+        sql`INSERT INTO b5r_t1_h1 (id, hold_id) VALUES (${h1Id}, ${flightSettledId})`,
+      );
+      await database.execute(
+        sql`INSERT INTO b5r_t1_h2 (id, h1_id) VALUES (${h2Id}, ${h1Id})`,
+      );
+      const evaluated = await evaluateCleanupRelations(
+        database,
+        classification,
+      );
+      const hold = evaluated.evaluations.find(
+        (entry) =>
+          entry.table === "credit_reservations" &&
+          entry.recordId === flightSettledId,
+      );
+      expect(hold).toBeDefined();
+      const scopeIds = hold!.cascadeDeletionScope.map((row) => row.recordId);
+      expect(scopeIds).toContain(h1Id);
+      expect(scopeIds).toContain(h2Id);
+      expect(
+        evaluated.fkEdges.some(
+          (edge) =>
+            edge.childTable === "b5r_t1_h2" && edge.parentTable === "b5r_t1_h1",
+        ),
+      ).toBe(true);
+    } finally {
+      await database.execute(sql`DROP TABLE IF EXISTS b5r_t1_h2`);
+      await database.execute(sql`DROP TABLE IF EXISTS b5r_t1_h1`);
+    }
+  });
+
+  test("a composite FK touching the probe universe fails closed", async () => {
+    // Drift composite FK: (ledger_id, dimension) is only unique as a PAIR. Evaluating its
+    // columns separately turns partial matches into deletion evidence — a guess the
+    // evaluation must refuse instead of making.
+    await database.insert(creditSettlementDimensionBreakdown).values({
+      ledgerId: cleanLedgerId,
+      dimension: "input_tokens",
+      units: 5,
+    });
+    await database.execute(
+      sql`CREATE TABLE b5r_t1_comp (c1 text NOT NULL, c2 text NOT NULL, FOREIGN KEY (c1, c2) REFERENCES credit_settlement_dimension_breakdown(ledger_id, dimension) ON DELETE CASCADE)`,
+    );
+    try {
+      await database.execute(
+        sql`INSERT INTO b5r_t1_comp (c1, c2) VALUES (${cleanLedgerId}, 'input_tokens')`,
+      );
+      await expect(
+        evaluateCleanupRelations(database, classification),
+      ).rejects.toThrow(/composite/);
+    } finally {
+      await database.execute(sql`DROP TABLE IF EXISTS b5r_t1_comp`);
+      await database
+        .delete(creditSettlementDimensionBreakdown)
+        .where(eq(creditSettlementDimensionBreakdown.ledgerId, cleanLedgerId));
+    }
+  });
+
+  test("a SET DEFAULT FK edge fails closed instead of being silently skipped", async () => {
+    // Drift FK: a real ON DELETE SET DEFAULT edge the three passes never traversed. The
+    // evaluator cannot represent the child's post-mutation value (the column default may
+    // name another parent), so discovering one must refuse the evaluation — never silently
+    // evaluate as if the edge did not exist.
+    await database.execute(
+      sql`ALTER TABLE billing_webhook_events ADD COLUMN b5r_t1_default_ref text REFERENCES credit_ledger(id) ON DELETE SET DEFAULT`,
+    );
+    try {
+      const drifted = await classifyCleanup(database, evidenceInput);
+      await expect(evaluateCleanupRelations(database, drifted)).rejects.toThrow(
+        /set_default/,
+      );
+    } finally {
+      await database.execute(
+        sql`ALTER TABLE billing_webhook_events DROP COLUMN IF EXISTS b5r_t1_default_ref`,
+      );
+    }
+  });
+
+  test("a row reached through both SET NULL and NO ACTION is reported blocked, not mutated", async () => {
+    // Drift FKs: a settlement detail row (a protected, never-executable blocker by table)
+    // that ALSO carries a SET NULL reference to the same candidate ledger. The database's
+    // truth is "the ledger's deletion is refused" — blocking must win over mutation, and
+    // the shared pass state must not swallow the blocker because the mutation pass ran first.
+    await database.insert(creditSettlementDetails).values({
+      reservationId: flightSettledId,
+      ledgerId: flightLedgerId,
+      capability: "image",
+      requestedCount: 1,
+      generatedCount: 1,
+      unitPriceUsd: "0.01",
+    });
+    await database.execute(
+      sql`ALTER TABLE credit_settlement_details ADD COLUMN b5r_t1_sn_ref text REFERENCES credit_ledger(id) ON DELETE SET NULL`,
+    );
+    await database.execute(
+      sql`UPDATE credit_settlement_details SET b5r_t1_sn_ref = ${flightLedgerId} WHERE reservation_id = ${flightSettledId}`,
+    );
+    try {
+      const evaluated = await evaluateCleanupRelations(
+        database,
+        classification,
+      );
+      const ledger = evaluated.evaluations.find(
+        (entry) =>
+          entry.table === "credit_ledger" && entry.recordId === flightLedgerId,
+      );
+      expect(ledger).toBeDefined();
+      expect(ledger!.removed).toBe(true);
+      expect(
+        ledger!.blockedBy.some(
+          (row) =>
+            row.table === "credit_settlement_details" &&
+            row.recordId === flightSettledId,
+        ),
+      ).toBe(true);
+      const impact = ledger!.retainedImpact.find(
+        (entry) =>
+          entry.table === "credit_settlement_details" &&
+          entry.recordId === flightSettledId,
+      );
+      expect(impact).toBeDefined();
+      expect(impact!.effect).toBe("delete_blocked");
+      expect(
+        ledger!.setNullMutationScope.some(
+          (mutation) =>
+            mutation.table === "credit_settlement_details" &&
+            mutation.recordId === flightSettledId,
+        ),
+      ).toBe(false);
+    } finally {
+      await database
+        .delete(creditSettlementDetails)
+        .where(eq(creditSettlementDetails.reservationId, flightSettledId));
+      await database.execute(
+        sql`ALTER TABLE credit_settlement_details DROP COLUMN IF EXISTS b5r_t1_sn_ref`,
+      );
+    }
+  });
+
+  test("a candidate root whose own class is kept is refused, not only its descendants", async () => {
+    // Classification drift: the settled hold of a clean key is re-stamped as a kept class and
+    // forced into the candidate set. Its cascade reaches only a cleanable allocation, so the
+    // verdict must come from the ROOT's own protection walk — the same fail-closed default a
+    // touched row gets — instead of the root silently staying safe.
+    const holdRecord = classification.records.find(
+      (record) =>
+        record.table === "credit_reservations" &&
+        record.recordId === cleanSettledId,
+    );
+    expect(holdRecord).toBeDefined();
+    const tampered = {
+      ...classification,
+      records: classification.records.map((record) =>
+        record.table === "credit_reservations" &&
+        record.recordId === cleanSettledId
+          ? { ...record, class: "company_history" as const }
+          : record,
+      ),
+      candidates: [
+        ...classification.candidates,
+        {
+          ...holdRecord!,
+          class: "company_history" as const,
+        },
+      ],
+    };
+    const evaluated = await evaluateCleanupRelations(database, tampered);
+    const hold = evaluated.evaluations.find(
+      (entry) =>
+        entry.table === "credit_reservations" &&
+        entry.recordId === cleanSettledId,
+    );
+    expect(hold).toBeDefined();
+    expect(hold!.removed).toBe(true);
+    expect(
+      hold!.retainedImpact.some(
+        (impact) =>
+          impact.table === "credit_reservations" &&
+          impact.recordId === cleanSettledId &&
+          impact.protection === "retained",
+      ),
+    ).toBe(true);
+    expect(
+      evaluated.safeCandidates.some(
+        (entry) =>
+          entry.table === "credit_reservations" &&
+          entry.recordId === cleanSettledId,
+      ),
+    ).toBe(false);
   });
 
   test("a row the classification does not cover defaults to protected", async () => {
