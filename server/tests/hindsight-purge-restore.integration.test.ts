@@ -771,8 +771,7 @@ describe("Hindsight 14 (#391) — the backup-restore gate and its replay", () =>
     expect(drained.confirmed).toBeGreaterThanOrEqual(1);
     const stillOpen = await recovery.gateStatus();
     expect(stillOpen.recallOpen).toBe(true);
-  }, // default per-test budget is not enough once the row count grows mid-suite. // The outage replay re-issues one timed-out delete per ledger row (~500ms each); the
-  60_000);
+  }, 60_000); // default per-test budget is not enough once the row count grows mid-suite. // The outage replay re-issues one timed-out delete per ledger row (~500ms each); the
 
   test("AC2: the replay re-issues deletions for CONFIRMED documents a Hindsight-side restore resurrected", async () => {
     const scope = await makeTrustedScope(PRINCIPAL_EMP, WORKSPACE_A);

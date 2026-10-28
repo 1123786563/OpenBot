@@ -45,6 +45,7 @@
         "app/tests/agent-roster-error.test.tsx",
         "app/tests/approval-tools.test.tsx",
         "app/tests/approvals-rules.test.tsx",
+        "app/tests/async-jobs-ui.test.tsx",
         "app/tests/audit-dry-run-label.test.tsx",
         "app/tests/audit-export-truncated.test.tsx",
         "app/tests/authoring-tool-cards.test.tsx",
@@ -59,13 +60,13 @@
         "app/tests/bot-profile-notice.test.tsx",
         "app/tests/bot-reaching-you.test.tsx",
         "app/tests/bot-responsibilities.test.tsx",
-        "app/tests/bot-roster.test.tsx",
-        "app/tests/bot-route-default-agent.test.tsx"
+        "app/tests/bot-roster.test.tsx"
       ]
     },
     {
       "name": "app/tests part 2",
       "files": [
+        "app/tests/bot-route-default-agent.test.tsx",
         "app/tests/bot-settings-rows.test.tsx",
         "app/tests/bot-setup.test.tsx",
         "app/tests/bot-sharing.test.tsx",
@@ -88,13 +89,13 @@
         "app/tests/composer-dropped-attachments.test.tsx",
         "app/tests/composer-inflight-removal.test.tsx",
         "app/tests/composer-insecure-context.test.tsx",
-        "app/tests/composer-paste.test.tsx",
-        "app/tests/composer-queue-attachments.test.tsx"
+        "app/tests/composer-paste.test.tsx"
       ]
     },
     {
       "name": "app/tests part 3",
       "files": [
+        "app/tests/composer-queue-attachments.test.tsx",
         "app/tests/composer-send-failure.test.tsx",
         "app/tests/composer-unnamed-mime.test.tsx",
         "app/tests/composer-upload-group.test.tsx",
@@ -113,17 +114,20 @@
         "app/tests/failed-send-attachments.test.tsx",
         "app/tests/form-submit-controls.test.ts",
         "app/tests/github-sources-settings.test.tsx",
+        "app/tests/hindsight-sensitive-mutations.test.ts",
         "app/tests/home-fallback-routing.test.tsx",
         "app/tests/learning-admin.test.tsx",
         "app/tests/live-screen-app-shortcuts.test.tsx",
-        "app/tests/live-screen-keyboard.test.tsx",
-        "app/tests/mastra-runtime-compat.test.tsx",
-        "app/tests/memory-settings.test.tsx"
+        "app/tests/live-screen-keyboard.test.tsx"
       ]
     },
     {
       "name": "app/tests part 4",
       "files": [
+        "app/tests/mastra-runtime-compat.test.tsx",
+        "app/tests/memory-answer-basis.test.tsx",
+        "app/tests/memory-hindsight.test.tsx",
+        "app/tests/memory-settings.test.tsx",
         "app/tests/model-picker-ui.test.tsx",
         "app/tests/observability-i18n-namespaces.test.ts",
         "app/tests/observability-route-guards.test.tsx",
@@ -143,10 +147,17 @@
         "app/tests/sign-in-code-step.test.tsx",
         "app/tests/skills-read-failure.test.tsx",
         "app/tests/stopped-turn.test.ts",
-        "app/tests/tool-activity.test.tsx",
+        "app/tests/tool-activity.test.tsx"
+      ]
+    },
+    {
+      "name": "app/tests part 5",
+      "files": [
+        "app/tests/tool-boundary.test.tsx",
         "app/tests/transcript-attachments.test.tsx",
         "app/tests/usage-breakdown-ui.test.tsx",
-        "app/tests/user-authorizations-ui.test.tsx"
+        "app/tests/user-authorizations-ui.test.tsx",
+        "app/tests/user-key-status-ui.test.tsx"
       ]
     },
     {
@@ -348,12 +359,13 @@
         "server/tests/embedding-pricing.test.ts",
         "server/tests/embedding-refusal.integration.test.ts",
         "server/tests/enterprise-controls.integration.test.ts",
-        "server/tests/enterprise/ai-sdk-v3-gateway-adapter.test.ts"
+        "server/tests/enterprise-settings-corrupt-row.test.ts"
       ]
     },
     {
       "name": "server/tests part 6",
       "files": [
+        "server/tests/enterprise/ai-sdk-v3-gateway-adapter.test.ts",
         "server/tests/enterprise/conversations.integration.test.ts",
         "server/tests/enterprise/mastra-compatibility.test.ts",
         "server/tests/enterprise/mastra-continuations.integration.test.ts",
@@ -376,13 +388,13 @@
         "server/tests/enterprise/tenancy.integration.test.ts",
         "server/tests/entrypoint-enumeration.test.ts",
         "server/tests/entrypoint-gate-audit.integration.test.ts",
-        "server/tests/gateway-admin-routes.test.ts",
-        "server/tests/gateway-capability-negotiation.integration.test.ts"
+        "server/tests/gateway-admin-routes.test.ts"
       ]
     },
     {
       "name": "server/tests part 7",
       "files": [
+        "server/tests/gateway-capability-negotiation.integration.test.ts",
         "server/tests/gateway-capability-negotiation.test.ts",
         "server/tests/gateway-conversion-rate.test.ts",
         "server/tests/gateway-credential.integration.test.ts",
@@ -396,23 +408,30 @@
         "server/tests/health.test.ts",
         "server/tests/hindsight-answer-evidence.integration.test.ts",
         "server/tests/hindsight-background-budget.integration.test.ts",
+        "server/tests/hindsight-backup-registry.integration.test.ts",
+        "server/tests/hindsight-cleanup-evidence-status.integration.test.ts",
         "server/tests/hindsight-degraded-recall.integration.test.ts",
         "server/tests/hindsight-derived-judgments.integration.test.ts",
         "server/tests/hindsight-judgment-review.contract.test.ts",
         "server/tests/hindsight-judgment-review.integration.test.ts",
         "server/tests/hindsight-legacy-migration.integration.test.ts",
-        "server/tests/hindsight-pause-controls.integration.test.ts",
-        "server/tests/hindsight-personal-memory-context.integration.test.ts",
-        "server/tests/hindsight-preference-recall.integration.test.ts",
-        "server/tests/hindsight-purge-restore.contract.test.ts",
-        "server/tests/hindsight-purge-restore.integration.test.ts",
-        "server/tests/hindsight-revocation.integration.test.ts"
+        "server/tests/hindsight-memory-ops.integration.test.ts",
+        "server/tests/hindsight-memory-routes.test.ts",
+        "server/tests/hindsight-ops-routes.integration.test.ts"
       ]
     },
     {
       "name": "server/tests part 8",
       "files": [
+        "server/tests/hindsight-pause-controls-entry.integration.test.ts",
+        "server/tests/hindsight-pause-controls.integration.test.ts",
+        "server/tests/hindsight-personal-memory-context.integration.test.ts",
+        "server/tests/hindsight-preference-recall.integration.test.ts",
+        "server/tests/hindsight-purge-restore.contract.test.ts",
+        "server/tests/hindsight-purge-restore.integration.test.ts",
+        "server/tests/hindsight-revocation.integration.test.ts",
         "server/tests/hindsight-source-bound-recall.integration.test.ts",
+        "server/tests/hindsight-sync-drain.contract.test.ts",
         "server/tests/hindsight-sync-queue.integration.test.ts",
         "server/tests/hindsight-temporal-correction.integration.test.ts",
         "server/tests/human-input-end-to-end.test.ts",
@@ -427,7 +446,12 @@
         "server/tests/image-settlement.integration.test.ts",
         "server/tests/intelligence-authentication.test.ts",
         "server/tests/jsonb-encoding.integration.test.ts",
-        "server/tests/key-drift-handling.test.ts",
+        "server/tests/key-drift-handling.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests part 9",
+      "files": [
         "server/tests/key-expiry.test.ts",
         "server/tests/key-issuance.integration.test.ts",
         "server/tests/key-renewal.test.ts",
@@ -435,12 +459,7 @@
         "server/tests/key-state-sync.test.ts",
         "server/tests/last-sign-in-backfill.integration.test.ts",
         "server/tests/learning-agent.integration.test.ts",
-        "server/tests/learning-langgraph.test.ts"
-      ]
-    },
-    {
-      "name": "server/tests part 9",
-      "files": [
+        "server/tests/learning-langgraph.test.ts",
         "server/tests/learning-mastra.test.ts",
         "server/tests/learning-settings.integration.test.ts",
         "server/tests/mastra-ag-ui-agent.test.ts",
@@ -456,20 +475,22 @@
         "server/tests/mastra-handoff.test.ts",
         "server/tests/mastra-headless.test.ts",
         "server/tests/mastra-intelligence-optional.test.ts",
-        "server/tests/mastra-learned-skills.test.ts",
-        "server/tests/mastra-legacy-import.test.ts",
-        "server/tests/mastra-message-parts.test.ts",
-        "server/tests/mastra-openmuse-entry.test.ts",
-        "server/tests/mastra-personal-memory.test.ts",
-        "server/tests/mastra-stream-events.test.ts",
-        "server/tests/mastra-tools.test.ts",
-        "server/tests/mcp-grant-removal.integration.test.ts",
-        "server/tests/memory-defaults.integration.test.ts"
+        "server/tests/mastra-learned-skills.test.ts"
       ]
     },
     {
       "name": "server/tests part 10",
       "files": [
+        "server/tests/mastra-legacy-import.test.ts",
+        "server/tests/mastra-message-parts.test.ts",
+        "server/tests/mastra-openmuse-entry.test.ts",
+        "server/tests/mastra-personal-memory.test.ts",
+        "server/tests/mastra-produced-message-collector.test.ts",
+        "server/tests/mastra-stream-events.test.ts",
+        "server/tests/mastra-tools.test.ts",
+        "server/tests/mcp-grant-removal.integration.test.ts",
+        "server/tests/memory-company-isolation.integration.test.ts",
+        "server/tests/memory-defaults.integration.test.ts",
         "server/tests/memory-exit-single-authority.integration.test.ts",
         "server/tests/memory-expiry.test.ts",
         "server/tests/memory-sensitivity.test.ts",
@@ -483,7 +504,12 @@
         "server/tests/ocr-pricing.test.ts",
         "server/tests/offboarding-retirement.integration.test.ts",
         "server/tests/openmuse-activity.test.ts",
-        "server/tests/openmuse-deletion.test.ts",
+        "server/tests/openmuse-deletion.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests part 11",
+      "files": [
         "server/tests/openmuse-reviewed-actions-store.integration.test.ts",
         "server/tests/opik-admin-contract.test.ts",
         "server/tests/opik-admin-summary.integration.test.ts",
@@ -493,12 +519,7 @@
         "server/tests/opik-case-review.integration.test.ts",
         "server/tests/opik-case-review.test.ts",
         "server/tests/opik-comparison.integration.test.ts",
-        "server/tests/opik-comparison.test.ts"
-      ]
-    },
-    {
-      "name": "server/tests part 11",
-      "files": [
+        "server/tests/opik-comparison.test.ts",
         "server/tests/opik-contract.test.ts",
         "server/tests/opik-control-plane-auth.test.ts",
         "server/tests/opik-datasets-routes.integration.test.ts",
@@ -512,7 +533,12 @@
         "server/tests/opik-execution-runner.test.ts",
         "server/tests/opik-execution-wiring.test.ts",
         "server/tests/opik-executions.integration.test.ts",
-        "server/tests/opik-executions.test.ts",
+        "server/tests/opik-executions.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests part 12",
+      "files": [
         "server/tests/opik-experiment-routes.integration.test.ts",
         "server/tests/opik-experiments.integration.test.ts",
         "server/tests/opik-experiments.test.ts",
@@ -522,12 +548,7 @@
         "server/tests/opik-id-links.integration.test.ts",
         "server/tests/opik-id-links.test.ts",
         "server/tests/opik-judge-scoring.integration.test.ts",
-        "server/tests/opik-judge-scoring.test.ts"
-      ]
-    },
-    {
-      "name": "server/tests part 12",
-      "files": [
+        "server/tests/opik-judge-scoring.test.ts",
         "server/tests/opik-model-span.test.ts",
         "server/tests/opik-module-skeleton.test.ts",
         "server/tests/opik-port.test.ts",
@@ -541,7 +562,12 @@
         "server/tests/opik-run-steps.test.ts",
         "server/tests/opik-runs-query.test.ts",
         "server/tests/opik-schema-barrel.test.ts",
-        "server/tests/opik-scope.test.ts",
+        "server/tests/opik-scope.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests part 13",
+      "files": [
         "server/tests/opik-scoring-rules.test.ts",
         "server/tests/opik-t-final-assembly.test.ts",
         "server/tests/opik-tool-steps.test.ts",
@@ -551,12 +577,7 @@
         "server/tests/organization-store.integration.test.ts",
         "server/tests/otel-export-scrubbing.test.ts",
         "server/tests/page-frame-retention.integration.test.ts",
-        "server/tests/passwords-store.integration.test.ts"
-      ]
-    },
-    {
-      "name": "server/tests part 13",
-      "files": [
+        "server/tests/passwords-store.integration.test.ts",
         "server/tests/payer-account.integration.test.ts",
         "server/tests/payer-company-resolution.integration.test.ts",
         "server/tests/payer-legacy-mapping.integration.test.ts",
@@ -570,7 +591,12 @@
         "server/tests/personal-credits-read.test.ts",
         "server/tests/personal-key-isolation.test.ts",
         "server/tests/picked-harness-auth.test.ts",
-        "server/tests/plan-credits-personal.integration.test.ts",
+        "server/tests/plan-credits-personal.integration.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests part 14",
+      "files": [
         "server/tests/plan-model.test.ts",
         "server/tests/plugin-credential-binding.integration.test.ts",
         "server/tests/plugin-credential-rotation.integration.test.ts",
@@ -580,12 +606,7 @@
         "server/tests/plugin-store.integration.test.ts",
         "server/tests/plugin-user-credential.integration.test.ts",
         "server/tests/policy-durability.integration.test.ts",
-        "server/tests/policy-fanout.integration.test.ts"
-      ]
-    },
-    {
-      "name": "server/tests part 14",
-      "files": [
+        "server/tests/policy-fanout.integration.test.ts",
         "server/tests/price-snapshot.integration.test.ts",
         "server/tests/price-status-classification.integration.test.ts",
         "server/tests/proactive-store.integration.test.ts",
@@ -599,7 +620,12 @@
         "server/tests/qa-batch2-t5-semantics.integration.test.ts",
         "server/tests/qa-batch2-unreadable-fourth.integration.test.ts",
         "server/tests/qa-batch3-reconcile.test.ts",
-        "server/tests/realtime-bypass-audit.test.ts",
+        "server/tests/realtime-bypass-audit.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests part 15",
+      "files": [
         "server/tests/realtime-exhaustion.integration.test.ts",
         "server/tests/realtime-recovery.integration.test.ts",
         "server/tests/realtime-revocation.integration.test.ts",
@@ -609,12 +635,7 @@
         "server/tests/realtime-webrtc-parity.integration.test.ts",
         "server/tests/recovery-ack-lost.integration.test.ts",
         "server/tests/recovery-alerting.integration.test.ts",
-        "server/tests/recovery-provider-query.integration.test.ts"
-      ]
-    },
-    {
-      "name": "server/tests part 15",
-      "files": [
+        "server/tests/recovery-provider-query.integration.test.ts",
         "server/tests/recovery-retry.test.ts",
         "server/tests/recovery-scan.integration.test.ts",
         "server/tests/recovery-unacked-replay.integration.test.ts",
@@ -628,7 +649,12 @@
         "server/tests/reserve-bound-rounding.test.ts",
         "server/tests/reserve-concurrency.integration.test.ts",
         "server/tests/reserve-payer-tampering.test.ts",
-        "server/tests/reserve-revalidation.integration.test.ts",
+        "server/tests/reserve-revalidation.integration.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests part 16",
+      "files": [
         "server/tests/reserve-version-locking.integration.test.ts",
         "server/tests/responsibilities-store.integration.test.ts",
         "server/tests/responsibility-triggers.integration.test.ts",
@@ -638,13 +664,9 @@
         "server/tests/run-built-agent-cancellation.test.ts",
         "server/tests/runtime-agents.integration.test.ts",
         "server/tests/sandbox-state.test.ts",
-        "server/tests/sandboxed-components.integration.test.ts"
-      ]
-    },
-    {
-      "name": "server/tests part 16",
-      "files": [
+        "server/tests/sandboxed-components.integration.test.ts",
         "server/tests/sandboxed-publication.integration.test.ts",
+        "server/tests/scrub-command.test.ts",
         "server/tests/server-side-tools.integration.test.ts",
         "server/tests/settle-conflict-grant-expiry.integration.test.ts",
         "server/tests/settle-idempotency.integration.test.ts",
@@ -656,7 +678,12 @@
         "server/tests/shared-gated-mode.integration.test.ts",
         "server/tests/shared-use-store.integration.test.ts",
         "server/tests/shared-wiring.integration.test.ts",
-        "server/tests/skill-ownership.integration.test.ts",
+        "server/tests/skill-ownership.integration.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests part 17",
+      "files": [
         "server/tests/skill-tools.integration.test.ts",
         "server/tests/skill-uninstall-grants.integration.test.ts",
         "server/tests/speech-interruption.integration.test.ts",
@@ -667,12 +694,7 @@
         "server/tests/subscription-ownership.integration.test.ts",
         "server/tests/team-bots.integration.test.ts",
         "server/tests/tenant-package.test.ts",
-        "server/tests/test-database-url.integration.test.ts"
-      ]
-    },
-    {
-      "name": "server/tests part 17",
-      "files": [
+        "server/tests/test-database-url.integration.test.ts",
         "server/tests/tool-isolation.test.ts",
         "server/tests/tool-selection-environment-restoration-driver.test.ts",
         "server/tests/tool-selection-environment-restoration.test.ts",
@@ -685,7 +707,12 @@
         "server/tests/usage-outbox.integration.test.ts",
         "server/tests/user-instructions.integration.test.ts",
         "server/tests/user-preferences.integration.test.ts",
-        "server/tests/video-edit-pricing.test.ts",
+        "server/tests/video-edit-pricing.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests part 18",
+      "files": [
         "server/tests/video-pricing.test.ts",
         "server/tests/video-settlement-recovery.integration.test.ts",
         "server/tests/voice-session-preview.integration.test.ts",
@@ -696,12 +723,7 @@
         "server/tests/workbench-implicit-grant.test.ts",
         "server/tests/workshop-artifacts.test.ts",
         "server/tests/workshop-metering.test.ts",
-        "server/tests/workshop-preview.test.ts"
-      ]
-    },
-    {
-      "name": "server/tests part 18",
-      "files": [
+        "server/tests/workshop-preview.test.ts",
         "server/tests/workshop-schedule-executor.integration.test.ts",
         "server/tests/workshop-store.test.ts"
       ]
@@ -733,6 +755,7 @@
         "server/tests/multitenancy/billing-visibility.test.ts",
         "server/tests/multitenancy/bot-lifecycle.test.ts",
         "server/tests/multitenancy/bot-publish.test.ts",
+        "server/tests/multitenancy/bots-ownership.test.ts",
         "server/tests/multitenancy/cache-keys.test.ts",
         "server/tests/multitenancy/child-backfill-kb.test.ts",
         "server/tests/multitenancy/child-backfill-main-batch1.test.ts",
@@ -742,14 +765,15 @@
         "server/tests/multitenancy/computer-allocation.test.ts",
         "server/tests/multitenancy/conversation-messages.test.ts",
         "server/tests/multitenancy/conversations-list.test.ts",
-        "server/tests/multitenancy/coverage-billing.test.ts",
-        "server/tests/multitenancy/coverage-bots-conversations.test.ts"
+        "server/tests/multitenancy/coverage-billing.test.ts"
       ]
     },
     {
       "name": "server/tests/multitenancy part 2",
       "files": [
+        "server/tests/multitenancy/coverage-bots-conversations.test.ts",
         "server/tests/multitenancy/coverage-craft-openmuse.test.ts",
+        "server/tests/multitenancy/coverage-governance.test.ts",
         "server/tests/multitenancy/coverage-jobs-execution.test.ts",
         "server/tests/multitenancy/coverage-plugins-knowledge.test.ts",
         "server/tests/multitenancy/craft-schedules.test.ts",
@@ -758,6 +782,8 @@
         "server/tests/multitenancy/credentials-ownership.test.ts",
         "server/tests/multitenancy/deletion-semantics.test.ts",
         "server/tests/multitenancy/entry-context.test.ts",
+        "server/tests/multitenancy/execution-artifacts.test.ts",
+        "server/tests/multitenancy/execution-guarantees.test.ts",
         "server/tests/multitenancy/external-files-migration.test.ts",
         "server/tests/multitenancy/fixtures.test.ts",
         "server/tests/multitenancy/full-coverage.test.ts",
@@ -768,25 +794,27 @@
         "server/tests/multitenancy/host-access.test.ts",
         "server/tests/multitenancy/identity-binding.test.ts",
         "server/tests/multitenancy/identity-matrix-runner.test.ts",
-        "server/tests/multitenancy/inbound-attribution.test.ts",
-        "server/tests/multitenancy/integration-evidence.test.ts",
-        "server/tests/multitenancy/inventory.test.ts",
-        "server/tests/multitenancy/job-claim-cancel.test.ts",
-        "server/tests/multitenancy/job-ownership.test.ts"
+        "server/tests/multitenancy/inbound-attribution.test.ts"
       ]
     },
     {
       "name": "server/tests/multitenancy part 3",
       "files": [
+        "server/tests/multitenancy/integration-evidence.test.ts",
+        "server/tests/multitenancy/inventory.test.ts",
+        "server/tests/multitenancy/job-claim-cancel.test.ts",
+        "server/tests/multitenancy/job-ownership.test.ts",
         "server/tests/multitenancy/learning-demonstrations.test.ts",
         "server/tests/multitenancy/legacy-anchor.test.ts",
         "server/tests/multitenancy/machine-personal-exceptions.test.ts",
         "server/tests/multitenancy/marketplace-install.test.ts",
         "server/tests/multitenancy/membership-model.test.ts",
         "server/tests/multitenancy/migration-tool.test.ts",
+        "server/tests/multitenancy/model-invocation-budget-public.test.ts",
         "server/tests/multitenancy/native-runtime.test.ts",
         "server/tests/multitenancy/not-found-semantics.test.ts",
         "server/tests/multitenancy/oauth-state.test.ts",
+        "server/tests/multitenancy/observability-authz.test.ts",
         "server/tests/multitenancy/openmuse-activity-notifications.test.ts",
         "server/tests/multitenancy/openmuse-files.test.ts",
         "server/tests/multitenancy/openmuse-personal.test.ts",
@@ -795,18 +823,18 @@
         "server/tests/multitenancy/openmuse-tasks.test.ts",
         "server/tests/multitenancy/payer-accounts.test.ts",
         "server/tests/multitenancy/people-lifecycle.test.ts",
-        "server/tests/multitenancy/personal-memory.test.ts",
-        "server/tests/multitenancy/personal-share-rules.test.ts",
-        "server/tests/multitenancy/preferences.test.ts",
-        "server/tests/multitenancy/proactive-tx.test.ts",
-        "server/tests/multitenancy/public-bot-profiles.test.ts",
-        "server/tests/multitenancy/public-bot-usage.test.ts",
-        "server/tests/multitenancy/purge-restore.test.ts"
+        "server/tests/multitenancy/personal-memory.test.ts"
       ]
     },
     {
       "name": "server/tests/multitenancy part 4",
       "files": [
+        "server/tests/multitenancy/personal-share-rules.test.ts",
+        "server/tests/multitenancy/preferences.test.ts",
+        "server/tests/multitenancy/proactive-tx.test.ts",
+        "server/tests/multitenancy/public-bot-profiles.test.ts",
+        "server/tests/multitenancy/public-bot-usage.test.ts",
+        "server/tests/multitenancy/purge-restore.test.ts",
         "server/tests/multitenancy/quarantine-list.test.ts",
         "server/tests/multitenancy/readiness-enforcement.test.ts",
         "server/tests/multitenancy/resource-policy.test.ts",
@@ -824,18 +852,18 @@
         "server/tests/multitenancy/share-tokens.test.ts",
         "server/tests/multitenancy/shared-approvals.test.ts",
         "server/tests/multitenancy/signed-download.test.ts",
-        "server/tests/multitenancy/skills-components.test.ts",
-        "server/tests/multitenancy/sso-scim-config.test.ts",
-        "server/tests/multitenancy/startup-checks.test.ts",
-        "server/tests/multitenancy/startup-defaults.test.ts",
-        "server/tests/multitenancy/streams.test.ts",
-        "server/tests/multitenancy/team-public-rules.test.ts",
-        "server/tests/multitenancy/telemetry-attribution.test.ts"
+        "server/tests/multitenancy/skills-components.test.ts"
       ]
     },
     {
       "name": "server/tests/multitenancy part 5",
       "files": [
+        "server/tests/multitenancy/sso-scim-config.test.ts",
+        "server/tests/multitenancy/startup-checks.test.ts",
+        "server/tests/multitenancy/startup-defaults.test.ts",
+        "server/tests/multitenancy/streams.test.ts",
+        "server/tests/multitenancy/team-public-rules.test.ts",
+        "server/tests/multitenancy/telemetry-attribution.test.ts",
         "server/tests/multitenancy/telemetry-usage.test.ts",
         "server/tests/multitenancy/vendor-billing.test.ts",
         "server/tests/multitenancy/voice-mobile-bff.test.ts",
@@ -856,39 +884,12 @@
         "server/tests/multitenancy/package-runtime.test.ts",
         "server/tests/multitenancy/package-grants.test.ts",
         "server/tests/multitenancy/package-expert.test.ts",
-        "server/tests/multitenancy/package-dispatch.test.ts",
-        "server/tests/multitenancy/package-unknown.test.ts",
-        "server/tests/multitenancy/package-crash-recovery.test.ts",
-        "server/tests/multitenancy/package-upgrade.test.ts",
-        "server/tests/multitenancy/package-entrypoints.test.ts",
-        "server/tests/multitenancy/package-lifecycle.test.ts",
-        "server/tests/multitenancy/package-withdraw.test.ts",
         "server/tests/package-install.integration.test.ts"
       ]
     },
     {
-      "name": "server/tests/multitenancy/package-withdraw-contention",
-      "files": ["server/tests/multitenancy/package-withdraw-contention.test.ts"]
-    },
-    {
-      "name": "server/tests/multitenancy/package-migration",
-      "files": ["server/tests/multitenancy/package-migration.test.ts"]
-    },
-    {
       "name": "server/tests/multitenancy/tool-invocation",
       "files": ["server/tests/multitenancy/tool-invocation.test.ts"]
-    },
-    {
-      "name": "server/tests/package-dispatch-call",
-      "files": ["server/tests/package-dispatch-call.test.ts"]
-    },
-    {
-      "name": "server/tests/package-index-ops",
-      "files": ["server/tests/package-index-ops.test.ts"]
-    },
-    {
-      "name": "server/tests/package-entrypoints",
-      "files": ["server/tests/package-entrypoints.test.ts"]
     }
   ],
   "files": [
@@ -921,6 +922,7 @@
     "app/tests/ai-observability-runs-list.test.tsx",
     "app/tests/approval-tools.test.tsx",
     "app/tests/approvals-rules.test.tsx",
+    "app/tests/async-jobs-ui.test.tsx",
     "app/tests/audit-dry-run-label.test.tsx",
     "app/tests/audit-export-truncated.test.tsx",
     "app/tests/authoring-tool-cards.test.tsx",
@@ -979,11 +981,14 @@
     "app/tests/failed-send-attachments.test.tsx",
     "app/tests/form-submit-controls.test.ts",
     "app/tests/github-sources-settings.test.tsx",
+    "app/tests/hindsight-sensitive-mutations.test.ts",
     "app/tests/home-fallback-routing.test.tsx",
     "app/tests/learning-admin.test.tsx",
     "app/tests/live-screen-app-shortcuts.test.tsx",
     "app/tests/live-screen-keyboard.test.tsx",
     "app/tests/mastra-runtime-compat.test.tsx",
+    "app/tests/memory-answer-basis.test.tsx",
+    "app/tests/memory-hindsight.test.tsx",
     "app/tests/memory-settings.test.tsx",
     "app/tests/model-picker-ui.test.tsx",
     "app/tests/multitenancy/cache-generation.test.tsx",
@@ -1022,9 +1027,11 @@
     "app/tests/skills-read-failure.test.tsx",
     "app/tests/stopped-turn.test.ts",
     "app/tests/tool-activity.test.tsx",
+    "app/tests/tool-boundary.test.tsx",
     "app/tests/transcript-attachments.test.tsx",
     "app/tests/usage-breakdown-ui.test.tsx",
     "app/tests/user-authorizations-ui.test.tsx",
+    "app/tests/user-key-status-ui.test.tsx",
     "desktop/scripts/desktop-version.test.ts",
     "desktop/src/telemetry.test.ts",
     "scripts/processes.test.ts",
@@ -1150,6 +1157,7 @@
     "server/tests/embedding-pricing.test.ts",
     "server/tests/embedding-refusal.integration.test.ts",
     "server/tests/enterprise-controls.integration.test.ts",
+    "server/tests/enterprise-settings-corrupt-row.test.ts",
     "server/tests/enterprise/ai-sdk-v3-gateway-adapter.test.ts",
     "server/tests/enterprise/conversations.integration.test.ts",
     "server/tests/enterprise/mastra-compatibility.test.ts",
@@ -1190,11 +1198,17 @@
     "server/tests/health.test.ts",
     "server/tests/hindsight-answer-evidence.integration.test.ts",
     "server/tests/hindsight-background-budget.integration.test.ts",
+    "server/tests/hindsight-backup-registry.integration.test.ts",
+    "server/tests/hindsight-cleanup-evidence-status.integration.test.ts",
     "server/tests/hindsight-degraded-recall.integration.test.ts",
     "server/tests/hindsight-derived-judgments.integration.test.ts",
     "server/tests/hindsight-judgment-review.contract.test.ts",
     "server/tests/hindsight-judgment-review.integration.test.ts",
     "server/tests/hindsight-legacy-migration.integration.test.ts",
+    "server/tests/hindsight-memory-ops.integration.test.ts",
+    "server/tests/hindsight-memory-routes.test.ts",
+    "server/tests/hindsight-ops-routes.integration.test.ts",
+    "server/tests/hindsight-pause-controls-entry.integration.test.ts",
     "server/tests/hindsight-pause-controls.integration.test.ts",
     "server/tests/hindsight-personal-memory-context.integration.test.ts",
     "server/tests/hindsight-preference-recall.integration.test.ts",
@@ -1202,6 +1216,7 @@
     "server/tests/hindsight-purge-restore.integration.test.ts",
     "server/tests/hindsight-revocation.integration.test.ts",
     "server/tests/hindsight-source-bound-recall.integration.test.ts",
+    "server/tests/hindsight-sync-drain.contract.test.ts",
     "server/tests/hindsight-sync-queue.integration.test.ts",
     "server/tests/hindsight-temporal-correction.integration.test.ts",
     "server/tests/human-input-end-to-end.test.ts",
@@ -1245,9 +1260,11 @@
     "server/tests/mastra-message-parts.test.ts",
     "server/tests/mastra-openmuse-entry.test.ts",
     "server/tests/mastra-personal-memory.test.ts",
+    "server/tests/mastra-produced-message-collector.test.ts",
     "server/tests/mastra-stream-events.test.ts",
     "server/tests/mastra-tools.test.ts",
     "server/tests/mcp-grant-removal.integration.test.ts",
+    "server/tests/memory-company-isolation.integration.test.ts",
     "server/tests/memory-defaults.integration.test.ts",
     "server/tests/memory-exit-single-authority.integration.test.ts",
     "server/tests/memory-expiry.test.ts",
@@ -1272,6 +1289,7 @@
     "server/tests/multitenancy/billing-visibility.test.ts",
     "server/tests/multitenancy/bot-lifecycle.test.ts",
     "server/tests/multitenancy/bot-publish.test.ts",
+    "server/tests/multitenancy/bots-ownership.test.ts",
     "server/tests/multitenancy/cache-keys.test.ts",
     "server/tests/multitenancy/child-backfill-kb.test.ts",
     "server/tests/multitenancy/child-backfill-main-batch1.test.ts",
@@ -1284,6 +1302,7 @@
     "server/tests/multitenancy/coverage-billing.test.ts",
     "server/tests/multitenancy/coverage-bots-conversations.test.ts",
     "server/tests/multitenancy/coverage-craft-openmuse.test.ts",
+    "server/tests/multitenancy/coverage-governance.test.ts",
     "server/tests/multitenancy/coverage-jobs-execution.test.ts",
     "server/tests/multitenancy/coverage-plugins-knowledge.test.ts",
     "server/tests/multitenancy/craft-schedules.test.ts",
@@ -1292,6 +1311,8 @@
     "server/tests/multitenancy/credentials-ownership.test.ts",
     "server/tests/multitenancy/deletion-semantics.test.ts",
     "server/tests/multitenancy/entry-context.test.ts",
+    "server/tests/multitenancy/execution-artifacts.test.ts",
+    "server/tests/multitenancy/execution-guarantees.test.ts",
     "server/tests/multitenancy/external-files-migration.test.ts",
     "server/tests/multitenancy/fixtures.test.ts",
     "server/tests/multitenancy/full-coverage.test.ts",
@@ -1313,28 +1334,21 @@
     "server/tests/multitenancy/marketplace-install.test.ts",
     "server/tests/multitenancy/membership-model.test.ts",
     "server/tests/multitenancy/migration-tool.test.ts",
+    "server/tests/multitenancy/model-invocation-budget-public.test.ts",
     "server/tests/multitenancy/native-runtime.test.ts",
     "server/tests/multitenancy/not-found-semantics.test.ts",
     "server/tests/multitenancy/oauth-state.test.ts",
+    "server/tests/multitenancy/observability-authz.test.ts",
     "server/tests/multitenancy/openmuse-activity-notifications.test.ts",
     "server/tests/multitenancy/openmuse-files.test.ts",
     "server/tests/multitenancy/openmuse-personal.test.ts",
     "server/tests/multitenancy/openmuse-private-bot.test.ts",
     "server/tests/multitenancy/openmuse-reviewed-actions.test.ts",
     "server/tests/multitenancy/openmuse-tasks.test.ts",
-    "server/tests/multitenancy/package-crash-recovery.test.ts",
-    "server/tests/multitenancy/package-dispatch.test.ts",
-    "server/tests/multitenancy/package-entrypoints.test.ts",
     "server/tests/multitenancy/package-expert.test.ts",
     "server/tests/multitenancy/package-grants.test.ts",
-    "server/tests/multitenancy/package-lifecycle.test.ts",
-    "server/tests/multitenancy/package-migration.test.ts",
     "server/tests/multitenancy/package-runtime.test.ts",
     "server/tests/multitenancy/package-storage.test.ts",
-    "server/tests/multitenancy/package-unknown.test.ts",
-    "server/tests/multitenancy/package-upgrade.test.ts",
-    "server/tests/multitenancy/package-withdraw-contention.test.ts",
-    "server/tests/multitenancy/package-withdraw.test.ts",
     "server/tests/multitenancy/payer-accounts.test.ts",
     "server/tests/multitenancy/people-lifecycle.test.ts",
     "server/tests/multitenancy/personal-memory.test.ts",
@@ -1436,9 +1450,6 @@
     "server/tests/organization-auth.test.ts",
     "server/tests/organization-store.integration.test.ts",
     "server/tests/otel-export-scrubbing.test.ts",
-    "server/tests/package-dispatch-call.test.ts",
-    "server/tests/package-entrypoints.test.ts",
-    "server/tests/package-index-ops.test.ts",
     "server/tests/package-install.integration.test.ts",
     "server/tests/page-frame-retention.integration.test.ts",
     "server/tests/passwords-store.integration.test.ts",
@@ -1515,6 +1526,7 @@
     "server/tests/sandbox-state.test.ts",
     "server/tests/sandboxed-components.integration.test.ts",
     "server/tests/sandboxed-publication.integration.test.ts",
+    "server/tests/scrub-command.test.ts",
     "server/tests/server-side-tools.integration.test.ts",
     "server/tests/settle-conflict-grant-expiry.integration.test.ts",
     "server/tests/settle-idempotency.integration.test.ts",
@@ -1568,23 +1580,19 @@
   ],
   "artifacts": [],
   "causes": {
-    "agent-computer/tests/web-bot-auth-browser.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth-browser.test.ts: Cannot find package 'web-bot-auth' imported from ocrfix-f-manifest-regen/agent-computer/tests/web-bot-auth-brows",
-    "agent-computer/tests/web-bot-auth.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth.test.ts: Cannot find package 'web-bot-auth' imported from ocrfix-f-manifest-regen/agent-computer/tests/web-bot-auth.test.ts; web-",
-    "agent-langgraph/tests/google-oauth-proxy.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/google-oauth-proxy.test.ts: Cannot find package '@ag-ui/core' imported from ocrfix-f-manifest-regen/agent-langgraph/tests/google-oauth-proxy.",
-    "agent-langgraph/tests/governed-tracing.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/governed-tracing.test.ts: Cannot find package '@langchain/core' imported from ocrfix-f-manifest-regen/agent-langgraph/tests/governed-tracing.",
-    "agent-langgraph/tests/history.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/history.test.ts: Cannot find package '@langchain/anthropic' imported from ocrfix-f-manifest-regen/agent-langgraph/tests/history.test.ts; @lan",
+    "agent-computer/tests/web-bot-auth-browser.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth-browser.test.ts: Cannot find package 'web-bot-auth' imported from ci-baseline-repair/agent-computer/tests/web-bot-auth-browser.te",
+    "agent-computer/tests/web-bot-auth.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth.test.ts: Cannot find package 'web-bot-auth' imported from ci-baseline-repair/agent-computer/tests/web-bot-auth.test.ts; web-bot-a",
+    "agent-langgraph/tests/google-oauth-proxy.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/google-oauth-proxy.test.ts: Cannot find package '@ag-ui/core' imported from ci-baseline-repair/agent-langgraph/tests/google-oauth-proxy.test.",
+    "agent-langgraph/tests/governed-tracing.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/governed-tracing.test.ts: Cannot find package '@langchain/core' imported from ci-baseline-repair/agent-langgraph/tests/governed-tracing.test.",
+    "agent-langgraph/tests/history.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/history.test.ts: Cannot find package '@langchain/anthropic' imported from ci-baseline-repair/agent-langgraph/tests/history.test.ts; @langchai",
     "app/tests/auth-client.test.ts": "COLLECTION_ERROR: failed to collect app/tests/auth-client.test.ts: Invalid base URL: null. Please provide a valid base URL. ",
-    "desktop/src/App.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/App.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/App.test.tsx; @happy-dom/global-reg",
-    "desktop/src/CompanySelection.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/CompanySelection.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/CompanySelection.test.",
-    "desktop/src/LocalStateIsolation.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/LocalStateIsolation.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/LocalStateIsolation",
-    "desktop/src/OrgSwitchCleanup.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/OrgSwitchCleanup.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/OrgSwitchCleanup.test.",
-    "desktop/src/Problem.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/Problem.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/Problem.test.tsx; @happy-dom/gl",
-    "desktop/src/ProviderPicker.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/ProviderPicker.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/ProviderPicker.test.tsx;",
-    "server/tests/multitenancy/bots-ownership.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/bots-ownership.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier is on",
-    "server/tests/multitenancy/coverage-governance.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/coverage-governance.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier ",
-    "server/tests/multitenancy/execution-artifacts.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/execution-artifacts.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier ",
-    "server/tests/multitenancy/execution-guarantees.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/execution-guarantees.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier",
-    "server/tests/multitenancy/observability-authz.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/observability-authz.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier "
+    "desktop/src/App.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/App.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ci-baseline-repair/desktop/src/App.test.tsx; @happy-dom/global-registra",
+    "desktop/src/CompanySelection.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/CompanySelection.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ci-baseline-repair/desktop/src/CompanySelection.test.tsx; ",
+    "desktop/src/LocalStateIsolation.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/LocalStateIsolation.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ci-baseline-repair/desktop/src/LocalStateIsolation.test",
+    "desktop/src/OrgSwitchCleanup.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/OrgSwitchCleanup.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ci-baseline-repair/desktop/src/OrgSwitchCleanup.test.tsx; ",
+    "desktop/src/Problem.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/Problem.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ci-baseline-repair/desktop/src/Problem.test.tsx; @happy-dom/global-",
+    "desktop/src/ProviderPicker.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/ProviderPicker.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ci-baseline-repair/desktop/src/ProviderPicker.test.tsx; @hap",
+    "worker/tests/env.test.ts": "COLLECTION_ERROR: failed to collect worker/tests/env.test.ts: Cannot find package '@openbot/shared' imported from ci-baseline-repair/worker/src/env.ts; @openbot/shared is declared in <user>"
   },
   "directoryIslands": ["server/tests/multitenancy", "app/tests/multitenancy"]
 }

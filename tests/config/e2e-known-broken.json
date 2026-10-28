@@ -73,34 +73,10 @@
       "added": "2026-10-27"
     },
     {
-      "file": "server/tests/multitenancy/bots-ownership.test.ts",
-      "reason": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/bots-ownership.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier is on",
+      "file": "worker/tests/env.test.ts",
+      "reason": "COLLECTION_ERROR: failed to collect worker/tests/env.test.ts: Cannot find package '@openbot/shared' imported from ci-baseline-repair/worker/src/env.ts; @openbot/shared is declared in <user>",
       "evidence": "scripts/e2e-file-audit.mjs collection audit, status=collect_error",
-      "added": "2026-10-27"
-    },
-    {
-      "file": "server/tests/multitenancy/coverage-governance.test.ts",
-      "reason": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/coverage-governance.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier ",
-      "evidence": "scripts/e2e-file-audit.mjs collection audit, status=collect_error",
-      "added": "2026-10-27"
-    },
-    {
-      "file": "server/tests/multitenancy/execution-artifacts.test.ts",
-      "reason": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/execution-artifacts.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier ",
-      "evidence": "scripts/e2e-file-audit.mjs collection audit, status=collect_error",
-      "added": "2026-10-27"
-    },
-    {
-      "file": "server/tests/multitenancy/execution-guarantees.test.ts",
-      "reason": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/execution-guarantees.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier",
-      "evidence": "scripts/e2e-file-audit.mjs collection audit, status=collect_error",
-      "added": "2026-10-27"
-    },
-    {
-      "file": "server/tests/multitenancy/observability-authz.test.ts",
-      "reason": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/observability-authz.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier ",
-      "evidence": "scripts/e2e-file-audit.mjs collection audit, status=collect_error",
-      "added": "2026-10-27"
+      "added": "2026-10-28"
     }
   ],
   "resolved": [

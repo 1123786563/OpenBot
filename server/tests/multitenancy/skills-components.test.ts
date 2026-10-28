@@ -25,7 +25,7 @@ import {
   describe,
   expect,
   test,
-} from "../../../tests/support/e2e-compat";
+} from "../../../tests/support/bun-test-compat";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import {
   notFoundVerdict,
