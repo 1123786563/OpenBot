@@ -1,92 +1,13 @@
 {
-  "entries": [
-    {
-      "file": "agent-computer/tests/web-bot-auth-browser.test.ts",
-      "reason": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth-browser.test.ts: Cannot find package 'web-bot-auth' imported from ocrfix-f-manifest-regen/agent-computer/tests/web-bot-auth-brows",
-      "evidence": "scripts/e2e-file-audit.mjs collection audit, status=collect_error",
-      "added": "2026-10-27"
-    },
-    {
-      "file": "agent-computer/tests/web-bot-auth.test.ts",
-      "reason": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth.test.ts: Cannot find package 'web-bot-auth' imported from ocrfix-f-manifest-regen/agent-computer/tests/web-bot-auth.test.ts; web-",
-      "evidence": "scripts/e2e-file-audit.mjs collection audit, status=collect_error",
-      "added": "2026-10-27"
-    },
-    {
-      "file": "agent-langgraph/tests/google-oauth-proxy.test.ts",
-      "reason": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/google-oauth-proxy.test.ts: Cannot find package '@ag-ui/core' imported from ocrfix-f-manifest-regen/agent-langgraph/tests/google-oauth-proxy.",
-      "evidence": "scripts/e2e-file-audit.mjs collection audit, status=collect_error",
-      "added": "2026-10-27"
-    },
-    {
-      "file": "agent-langgraph/tests/governed-tracing.test.ts",
-      "reason": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/governed-tracing.test.ts: Cannot find package '@langchain/core' imported from ocrfix-f-manifest-regen/agent-langgraph/tests/governed-tracing.",
-      "evidence": "scripts/e2e-file-audit.mjs collection audit, status=collect_error",
-      "added": "2026-10-27"
-    },
-    {
-      "file": "agent-langgraph/tests/history.test.ts",
-      "reason": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/history.test.ts: Cannot find package '@langchain/anthropic' imported from ocrfix-f-manifest-regen/agent-langgraph/tests/history.test.ts; @lan",
-      "evidence": "scripts/e2e-file-audit.mjs collection audit, status=collect_error",
-      "added": "2026-10-27"
-    },
-    {
-      "file": "app/tests/auth-client.test.ts",
-      "reason": "COLLECTION_ERROR: failed to collect app/tests/auth-client.test.ts: Invalid base URL: null. Please provide a valid base URL. ",
-      "evidence": "scripts/e2e-file-audit.mjs collection audit, status=collect_error",
-      "added": "2026-10-27"
-    },
-    {
-      "file": "desktop/src/App.test.tsx",
-      "reason": "COLLECTION_ERROR: failed to collect desktop/src/App.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/App.test.tsx; @happy-dom/global-reg",
-      "evidence": "scripts/e2e-file-audit.mjs collection audit, status=collect_error",
-      "added": "2026-10-27"
-    },
-    {
-      "file": "desktop/src/CompanySelection.test.tsx",
-      "reason": "COLLECTION_ERROR: failed to collect desktop/src/CompanySelection.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/CompanySelection.test.",
-      "evidence": "scripts/e2e-file-audit.mjs collection audit, status=collect_error",
-      "added": "2026-10-27"
-    },
-    {
-      "file": "desktop/src/LocalStateIsolation.test.tsx",
-      "reason": "COLLECTION_ERROR: failed to collect desktop/src/LocalStateIsolation.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/LocalStateIsolation",
-      "evidence": "scripts/e2e-file-audit.mjs collection audit, status=collect_error",
-      "added": "2026-10-27"
-    },
-    {
-      "file": "desktop/src/OrgSwitchCleanup.test.tsx",
-      "reason": "COLLECTION_ERROR: failed to collect desktop/src/OrgSwitchCleanup.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/OrgSwitchCleanup.test.",
-      "evidence": "scripts/e2e-file-audit.mjs collection audit, status=collect_error",
-      "added": "2026-10-27"
-    },
-    {
-      "file": "desktop/src/Problem.test.tsx",
-      "reason": "COLLECTION_ERROR: failed to collect desktop/src/Problem.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/Problem.test.tsx; @happy-dom/gl",
-      "evidence": "scripts/e2e-file-audit.mjs collection audit, status=collect_error",
-      "added": "2026-10-27"
-    },
-    {
-      "file": "desktop/src/ProviderPicker.test.tsx",
-      "reason": "COLLECTION_ERROR: failed to collect desktop/src/ProviderPicker.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/ProviderPicker.test.tsx;",
-      "evidence": "scripts/e2e-file-audit.mjs collection audit, status=collect_error",
-      "added": "2026-10-27"
-    },
-    {
-      "file": "worker/tests/env.test.ts",
-      "reason": "COLLECTION_ERROR: failed to collect worker/tests/env.test.ts: Cannot find package '@openbot/shared' imported from ci-baseline-repair/worker/src/env.ts; @openbot/shared is declared in <user>",
-      "evidence": "scripts/e2e-file-audit.mjs collection audit, status=collect_error",
-      "added": "2026-10-28"
-    }
-  ],
-  "resolved": [
-    {
-      "file": "server/tests/qa-batch1-migration-0071.test.ts",
-      "reason": "reads ../drizzle/0071_billing_idempotency.sql, which no longer exists: 0071 is now 0071_enterprise_model_route_catalog.sql and billing idempotency moved to 0081. The ENOENT happens at import time, so e2e aborts the entire run at collection; `bun test` failed the same way before the migration. Owned by the billing wave, not by this migration.",
-      "evidence": "ls server/drizzle shows 0071_enterprise_model_route_catalog.sql and 0081_billing_idempotency.sql",
-      "added": "2026-10-18",
-      "resolved": "2026-10-18",
-      "resolution": "repointed at 0081_billing_idempotency (the migration this probe actually describes); 8 assertions pass under `e2e run`, so the suite is collected again"
-    }
-  ]
+ "entries": [],
+ "resolved": [
+  {
+   "file": "server/tests/qa-batch1-migration-0071.test.ts",
+   "reason": "reads ../drizzle/0071_billing_idempotency.sql, which no longer exists: 0071 is now 0071_enterprise_model_route_catalog.sql and billing idempotency moved to 0081. The ENOENT happens at import time, so e2e aborts the entire run at collection; `bun test` failed the same way before the migration. Owned by the billing wave, not by this migration.",
+   "evidence": "ls server/drizzle shows 0071_enterprise_model_route_catalog.sql and 0081_billing_idempotency.sql",
+   "added": "2026-10-18",
+   "resolved": "2026-10-18",
+   "resolution": "repointed at 0081_billing_idempotency (the migration this probe actually describes); 8 assertions pass under `e2e run`, so the suite is collected again"
+  }
+ ]
 }
