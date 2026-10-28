@@ -21,10 +21,7 @@ export function draftDemonstration(recording: {
     // "" url): skipping it mid-recording would leave every later step describing a page
     // the browser is no longer on, so the skill would click in the wrong place.
     const startedBlank = url === "";
-    if (
-      action.url !== url &&
-      (action.url !== "about:blank" || startedBlank)
-    ) {
+    if (action.url !== url && (action.url !== "about:blank" || startedBlank)) {
       url = action.url;
       required.add("computer_navigate");
       steps.push(

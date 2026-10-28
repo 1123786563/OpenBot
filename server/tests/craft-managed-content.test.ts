@@ -533,10 +533,7 @@ function readyHarness(input: {
       async listFiles(path: string) {
         // The ready marker under .opencode is the completion sentinel; an intact
         // workspace answers with it (the /outputs listing is not the gate anymore).
-        if (
-          input.workspaceExists &&
-          path.endsWith("/.opencode")
-        ) {
+        if (input.workspaceExists && path.endsWith("/.opencode")) {
           return [`${path}/craft-workspace-ready`];
         }
         // The real gateway's answer for an absent directory — the 404 shape the

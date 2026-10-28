@@ -107,7 +107,8 @@ export function botServiceCredentialRoutes(
     );
     return context.json(
       {
-        error: "The bot service credential surface could not complete the request.",
+        error:
+          "The bot service credential surface could not complete the request.",
         code: "bot_service_internal",
       },
       500,
@@ -121,10 +122,7 @@ export function botServiceCredentialRoutes(
     const actorId = context.var.actor.id;
     try {
       const issued = await credentials.issue(botId, actorId);
-      return context.json(
-        { botServiceCredential: issued },
-        201,
-      );
+      return context.json({ botServiceCredential: issued }, 201);
     } catch (error) {
       if (error instanceof BotServiceNotFoundError) return notFound(context);
       if (error instanceof BotServiceInputError)

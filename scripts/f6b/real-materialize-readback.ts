@@ -320,7 +320,9 @@ async function main() {
   if (s["materialize"].reconciled !== true) failures.push("not-reconciled");
   // no-stats fails the run AND skips the dependent assertion: dereferencing a
   // missing stats object here would throw away every failure collected above.
-  const stats = s["materialize"].healthStats as { completed: number } | undefined;
+  const stats = s["materialize"].healthStats as
+    | { completed: number }
+    | undefined;
   if (stats === undefined) failures.push("no-stats");
   else if (stats.completed !== 2) failures.push(`completed=${stats.completed}`);
   const rb = s["readback"];

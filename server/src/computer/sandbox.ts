@@ -441,10 +441,7 @@ export function createSandboxComputerProvider(
           // Two concurrent `locate` calls for a new Bot both see 404 and both POST; the loser
           // gets 409 AlreadyExists — the outcome it wanted. Treated as created, and the wait
           // below proceeds, instead of a first race failing as a cluster fault.
-          if (
-            !(error instanceof SandboxError) ||
-            error.httpStatus !== 409
-          ) {
+          if (!(error instanceof SandboxError) || error.httpStatus !== 409) {
             throw error;
           }
         }

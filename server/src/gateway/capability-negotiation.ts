@@ -327,7 +327,10 @@ export async function fetchGatewayExtensionManifest(options: {
   const body = await Promise.race([
     readBodyCapped(response, GATEWAY_PROBE_MAX_BODY_BYTES),
     new Promise<never>((_, reject) => {
-      timeout = setTimeout(() => reject(timeoutError()), Math.max(1, remainingMs));
+      timeout = setTimeout(
+        () => reject(timeoutError()),
+        Math.max(1, remainingMs),
+      );
     }),
   ])
     .catch((error: unknown) => {

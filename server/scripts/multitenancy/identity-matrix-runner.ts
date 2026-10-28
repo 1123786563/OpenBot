@@ -538,7 +538,10 @@ export async function runMatrixCoverage(
     { exercised: number; covered: number }
   >();
   for (const id of CLASS_IDS) classUsage.set(id, { exercised: 0, covered: 0 });
-  const bump = (matrixClass: IdentityMatrixClassId | undefined, covered: boolean) => {
+  const bump = (
+    matrixClass: IdentityMatrixClassId | undefined,
+    covered: boolean,
+  ) => {
     if (!matrixClass) return;
     const usage = classUsage.get(matrixClass);
     if (!usage) return;

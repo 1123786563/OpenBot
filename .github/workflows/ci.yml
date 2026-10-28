@@ -989,7 +989,7 @@ jobs:
         run: bun run test:craft-preview-e2e
       - name: Archive the evidence bundle
         if: always()
-        uses: actions/upload-artifact@330a01c3d88c704b4f927c5b4c9283643fb0c660 # v5.0.0
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: craft-preview-e2e-${{ github.run_id }}
           path: .archive/runs/craft-preview/verification/

@@ -1384,7 +1384,10 @@ describe("the legacy billing relations evaluation maps associations from live da
       sql`ALTER TABLE credit_ledger ADD CONSTRAINT credit_ledger_ext_customer_id_fk FOREIGN KEY (external_customer_id) REFERENCES billing_customers(external_id) ON DELETE RESTRICT`,
     );
     try {
-      const evaluated = await evaluateCleanupRelations(database, classification);
+      const evaluated = await evaluateCleanupRelations(
+        database,
+        classification,
+      );
       const drifted = evaluated.fkEdges.find(
         (edge) =>
           edge.childTable === "credit_ledger" &&
@@ -1453,7 +1456,10 @@ describe("the legacy billing relations evaluation maps associations from live da
       await database.execute(
         sql`INSERT INTO b5r_t1_sn (id, hold_id) VALUES (${snChildId}, ${flightSettledId})`,
       );
-      const evaluated = await evaluateCleanupRelations(database, classification);
+      const evaluated = await evaluateCleanupRelations(
+        database,
+        classification,
+      );
       const hold = evaluated.evaluations.find(
         (entry) =>
           entry.table === "credit_reservations" &&
@@ -1529,8 +1535,7 @@ describe("the legacy billing relations evaluation maps associations from live da
       expect(
         lateRow!.retainedImpact.some(
           (impact) =>
-            impact.protection === "retained" &&
-            impact.class === "unclassified",
+            impact.protection === "retained" && impact.class === "unclassified",
         ),
       ).toBe(true);
     } finally {
@@ -1560,7 +1565,10 @@ describe("the legacy billing relations evaluation maps associations from live da
       await database.execute(
         sql`INSERT INTO b5r_t1_dh2 (id, h1_id) VALUES (${h2Id}, ${h1Id})`,
       );
-      const evaluated = await evaluateCleanupRelations(database, classification);
+      const evaluated = await evaluateCleanupRelations(
+        database,
+        classification,
+      );
       const hold = evaluated.evaluations.find(
         (entry) =>
           entry.table === "credit_reservations" &&

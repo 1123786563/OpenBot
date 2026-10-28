@@ -50,12 +50,7 @@ export function createOnboardingStore(database: Database): OnboardingStore {
       await database
         .update(users)
         .set({ onboardingStep: step, updatedAt: sql`now()` })
-        .where(
-          and(
-            eq(users.id, userId),
-            isNull(users.onboardingCompletedAt),
-          ),
-        );
+        .where(and(eq(users.id, userId), isNull(users.onboardingCompletedAt)));
     },
 
     async complete(userId) {
@@ -72,7 +67,9 @@ export function createOnboardingStore(database: Database): OnboardingStore {
       // A users row that is not there must not read as success: the person would be bounced
       // back into /onboarding forever with nothing on any log.
       if (updated.length === 0)
-        throw new Error(`The users row ${userId} is missing; cannot complete onboarding.`);
+        throw new Error(
+          `The users row ${userId} is missing; cannot complete onboarding.`,
+        );
     },
   };
 }

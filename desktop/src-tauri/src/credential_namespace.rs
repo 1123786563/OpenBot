@@ -51,8 +51,7 @@ pub const ORGANIZATION_PREFIX: &str = "OPENBOT_ORGANIZATION.";
 /// Is this name one of the personal provider credential slots? The closed set is the vault's
 /// own secret-name list plus the compatible-endpoint credential slot saved beside them.
 pub fn is_personal_credential(name: &str) -> bool {
-    crate::vault::is_secret(name)
-        || name == crate::saved_intent::COMPATIBLE_CREDENTIAL
+    crate::vault::is_secret(name) || name == crate::saved_intent::COMPATIBLE_CREDENTIAL
 }
 
 /// The deterministic vault name for one organization credential. The authority is normalized
@@ -211,7 +210,9 @@ mod tests {
         let root = root("credns-roundtrip");
         org_remember(&root, COMPANY_A, SESSION_CREDENTIAL, "cookie-a").unwrap();
         assert_eq!(
-            org_recall(&root, COMPANY_A, SESSION_CREDENTIAL).unwrap().as_deref(),
+            org_recall(&root, COMPANY_A, SESSION_CREDENTIAL)
+                .unwrap()
+                .as_deref(),
             Some("cookie-a")
         );
         std::fs::remove_dir_all(&root).unwrap();
@@ -223,11 +224,15 @@ mod tests {
         org_remember(&root, COMPANY_A, SESSION_CREDENTIAL, "cookie-a").unwrap();
         org_remember(&root, COMPANY_B, SESSION_CREDENTIAL, "cookie-b").unwrap();
         assert_eq!(
-            org_recall(&root, COMPANY_A, SESSION_CREDENTIAL).unwrap().as_deref(),
+            org_recall(&root, COMPANY_A, SESSION_CREDENTIAL)
+                .unwrap()
+                .as_deref(),
             Some("cookie-a")
         );
         assert_eq!(
-            org_recall(&root, COMPANY_B, SESSION_CREDENTIAL).unwrap().as_deref(),
+            org_recall(&root, COMPANY_B, SESSION_CREDENTIAL)
+                .unwrap()
+                .as_deref(),
             Some("cookie-b")
         );
         // A third authority sees nothing at all.
@@ -243,7 +248,10 @@ mod tests {
         let root = root("credns-personal-blind");
         org_remember(&root, COMPANY_A, SESSION_CREDENTIAL, "cookie-a").unwrap();
         // The organization entry lives under its derived name, never under any personal name.
-        assert_eq!(crate::vault::recall(&root, SESSION_CREDENTIAL).unwrap(), None);
+        assert_eq!(
+            crate::vault::recall(&root, SESSION_CREDENTIAL).unwrap(),
+            None
+        );
         assert_eq!(
             crate::vault::recall(&root, "OPENAI_API_KEY").unwrap(),
             None,
@@ -318,7 +326,10 @@ mod tests {
             );
             // Nothing was written under the personal name or any derived name.
             assert_eq!(crate::vault::recall(&root, personal).unwrap(), None);
-            assert_eq!(org_credentials(&root, COMPANY_A).unwrap(), Vec::<String>::new());
+            assert_eq!(
+                org_credentials(&root, COMPANY_A).unwrap(),
+                Vec::<String>::new()
+            );
         }
         std::fs::remove_dir_all(&root).unwrap();
     }
@@ -333,7 +344,9 @@ mod tests {
             "the refusal never echoes the secret"
         );
         assert_eq!(
-            crate::vault::recall(&root, "OPENAI_API_KEY").unwrap().as_deref(),
+            crate::vault::recall(&root, "OPENAI_API_KEY")
+                .unwrap()
+                .as_deref(),
             Some("personal-key"),
             "the personal credential is untouched"
         );
@@ -348,11 +361,15 @@ mod tests {
         org_remember(&root, COMPANY_A, SESSION_CREDENTIAL, "cookie-a").unwrap();
         org_remember(&root, COMPANY_A, "COMPANY_PROXY_TOKEN", "org-token").unwrap();
         assert_eq!(
-            crate::vault::recall(&root, "OPENAI_API_KEY").unwrap().as_deref(),
+            crate::vault::recall(&root, "OPENAI_API_KEY")
+                .unwrap()
+                .as_deref(),
             Some("personal-key")
         );
         assert_eq!(
-            crate::vault::recall(&root, "ANTHROPIC_API_KEY").unwrap().as_deref(),
+            crate::vault::recall(&root, "ANTHROPIC_API_KEY")
+                .unwrap()
+                .as_deref(),
             Some("personal-key-2")
         );
         std::fs::remove_dir_all(&root).unwrap();
@@ -372,15 +389,25 @@ mod tests {
         removed.sort_unstable();
         assert_eq!(removed, vec!["COMPANY_PROXY_TOKEN", "SESSION"]);
 
-        assert_eq!(org_recall(&root, COMPANY_A, SESSION_CREDENTIAL).unwrap(), None);
-        assert_eq!(org_recall(&root, COMPANY_A, "COMPANY_PROXY_TOKEN").unwrap(), None);
+        assert_eq!(
+            org_recall(&root, COMPANY_A, SESSION_CREDENTIAL).unwrap(),
+            None
+        );
+        assert_eq!(
+            org_recall(&root, COMPANY_A, "COMPANY_PROXY_TOKEN").unwrap(),
+            None
+        );
         // The other organization and the personal space are untouched.
         assert_eq!(
-            org_recall(&root, COMPANY_B, SESSION_CREDENTIAL).unwrap().as_deref(),
+            org_recall(&root, COMPANY_B, SESSION_CREDENTIAL)
+                .unwrap()
+                .as_deref(),
             Some("cookie-b")
         );
         assert_eq!(
-            crate::vault::recall(&root, "OPENAI_API_KEY").unwrap().as_deref(),
+            crate::vault::recall(&root, "OPENAI_API_KEY")
+                .unwrap()
+                .as_deref(),
             Some("personal-key")
         );
         std::fs::remove_dir_all(&root).unwrap();
@@ -399,8 +426,14 @@ mod tests {
             vec![SESSION_CREDENTIAL.to_string()]
         );
         // A second wipe finds nothing and still succeeds.
-        assert_eq!(forget_organization(&root, COMPANY_A).unwrap(), Vec::<String>::new());
-        assert_eq!(org_credentials(&root, COMPANY_A).unwrap(), Vec::<String>::new());
+        assert_eq!(
+            forget_organization(&root, COMPANY_A).unwrap(),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            org_credentials(&root, COMPANY_A).unwrap(),
+            Vec::<String>::new()
+        );
         std::fs::remove_dir_all(&root).unwrap();
     }
 
@@ -415,11 +448,15 @@ mod tests {
 
         forget_organization(&root, COMPANY_A).unwrap();
         assert_eq!(
-            crate::vault::recall(&root, crate::org_context::VAULT_KEY).unwrap().as_deref(),
+            crate::vault::recall(&root, crate::org_context::VAULT_KEY)
+                .unwrap()
+                .as_deref(),
             Some("context-record")
         );
         assert_eq!(
-            crate::vault::recall(&root, auth::SAVED_COOKIE).unwrap().as_deref(),
+            crate::vault::recall(&root, auth::SAVED_COOKIE)
+                .unwrap()
+                .as_deref(),
             Some("legacy-session")
         );
         std::fs::remove_dir_all(&root).unwrap();
@@ -431,7 +468,14 @@ mod tests {
     fn ns12_a_credential_name_must_be_a_plain_safe_word() {
         assert!(organization_vault_name(COMPANY_A, "SESSION").is_ok());
         assert!(organization_vault_name(COMPANY_A, "COMPANY_PROXY_TOKEN").is_ok());
-        for bad in ["", "has-dash", "has.dot", "has space", "has/slash", &"x".repeat(65)] {
+        for bad in [
+            "",
+            "has-dash",
+            "has.dot",
+            "has space",
+            "has/slash",
+            &"x".repeat(65),
+        ] {
             assert!(
                 organization_vault_name(COMPANY_A, bad).is_err(),
                 "credential name {bad:?} must be refused"
@@ -464,9 +508,14 @@ mod tests {
         org_remember(&root, COMPANY_A, SESSION_CREDENTIAL, "cookie-a").unwrap();
         org_remember(&root, COMPANY_A, "COMPANY_PROXY_TOKEN", "org-token").unwrap();
         org_forget(&root, COMPANY_A, SESSION_CREDENTIAL).unwrap();
-        assert_eq!(org_recall(&root, COMPANY_A, SESSION_CREDENTIAL).unwrap(), None);
         assert_eq!(
-            org_recall(&root, COMPANY_A, "COMPANY_PROXY_TOKEN").unwrap().as_deref(),
+            org_recall(&root, COMPANY_A, SESSION_CREDENTIAL).unwrap(),
+            None
+        );
+        assert_eq!(
+            org_recall(&root, COMPANY_A, "COMPANY_PROXY_TOKEN")
+                .unwrap()
+                .as_deref(),
             Some("org-token")
         );
         std::fs::remove_dir_all(&root).unwrap();
@@ -485,7 +534,9 @@ mod tests {
         );
         // The pointer is an identifier, not a session: it never carries cookie material.
         assert_eq!(
-            crate::vault::recall(&root, CURRENT_ORGANIZATION_KEY).unwrap().as_deref(),
+            crate::vault::recall(&root, CURRENT_ORGANIZATION_KEY)
+                .unwrap()
+                .as_deref(),
             Some(COMPANY_A)
         );
         std::fs::remove_dir_all(&root).unwrap();

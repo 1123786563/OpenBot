@@ -86,12 +86,15 @@ export async function dropDatabaseAndRole(
     "postgres",
     `DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`,
   ).catch((error) =>
-    console.warn(`dropDatabaseAndRole: DROP DATABASE ${dbName} failed: ${String(error)}`),
+    console.warn(
+      `dropDatabaseAndRole: DROP DATABASE ${dbName} failed: ${String(error)}`,
+    ),
   );
   if (roleName) {
-    await psql("postgres", `DROP ROLE IF EXISTS "${roleName}"`).catch(
-      (error) =>
-        console.warn(`dropDatabaseAndRole: DROP ROLE ${roleName} failed: ${String(error)}`),
+    await psql("postgres", `DROP ROLE IF EXISTS "${roleName}"`).catch((error) =>
+      console.warn(
+        `dropDatabaseAndRole: DROP ROLE ${roleName} failed: ${String(error)}`,
+      ),
     );
   }
 }

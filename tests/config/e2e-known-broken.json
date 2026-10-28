@@ -1,13 +1,13 @@
 {
- "entries": [],
- "resolved": [
-  {
-   "file": "server/tests/qa-batch1-migration-0071.test.ts",
-   "reason": "reads ../drizzle/0071_billing_idempotency.sql, which no longer exists: 0071 is now 0071_enterprise_model_route_catalog.sql and billing idempotency moved to 0081. The ENOENT happens at import time, so e2e aborts the entire run at collection; `bun test` failed the same way before the migration. Owned by the billing wave, not by this migration.",
-   "evidence": "ls server/drizzle shows 0071_enterprise_model_route_catalog.sql and 0081_billing_idempotency.sql",
-   "added": "2026-10-18",
-   "resolved": "2026-10-18",
-   "resolution": "repointed at 0081_billing_idempotency (the migration this probe actually describes); 8 assertions pass under `e2e run`, so the suite is collected again"
-  }
- ]
+  "entries": [],
+  "resolved": [
+    {
+      "file": "server/tests/qa-batch1-migration-0071.test.ts",
+      "reason": "reads ../drizzle/0071_billing_idempotency.sql, which no longer exists: 0071 is now 0071_enterprise_model_route_catalog.sql and billing idempotency moved to 0081. The ENOENT happens at import time, so e2e aborts the entire run at collection; `bun test` failed the same way before the migration. Owned by the billing wave, not by this migration.",
+      "evidence": "ls server/drizzle shows 0071_enterprise_model_route_catalog.sql and 0081_billing_idempotency.sql",
+      "added": "2026-10-18",
+      "resolved": "2026-10-18",
+      "resolution": "repointed at 0081_billing_idempotency (the migration this probe actually describes); 8 assertions pass under `e2e run`, so the suite is collected again"
+    }
+  ]
 }

@@ -79,7 +79,12 @@ test("a completed cleanup shows the evidence counts and finishes", async () => {
   invokeAnswers = [doneReceipt];
   let left: CleanupReceipt | undefined;
   render(
-    <OrgSwitchCleanup root="/fixtures/openbot" onLeft={(r) => (left = r)} />,
+    <OrgSwitchCleanup
+      root="/fixtures/openbot"
+      onLeft={(r) => {
+        left = r;
+      }}
+    />,
   );
   await act(async () => {
     fireEvent.click(
@@ -118,7 +123,12 @@ test("an unfinished cleanup says so, keeps its state retryable, and retries", as
   ];
   const left: CleanupReceipt[] = [];
   render(
-    <OrgSwitchCleanup root="/fixtures/openbot" onLeft={(r) => left.push(r)} />,
+    <OrgSwitchCleanup
+      root="/fixtures/openbot"
+      onLeft={(r) => {
+        left.push(r);
+      }}
+    />,
   );
   await act(async () => {
     fireEvent.click(

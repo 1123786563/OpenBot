@@ -64,7 +64,7 @@ function InputGroupAddon({
         // input — located through the group container, not a fixed parent.
         if (
           (e.target as HTMLElement).closest(
-            "button, a, input, textarea, select, label, [data-slot='input-group-text'], [role='button']"
+            "button, a, input, textarea, select, label, [data-slot='input-group-text'], [role='button']",
           )
         ) {
           return;

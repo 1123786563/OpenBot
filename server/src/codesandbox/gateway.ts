@@ -494,9 +494,9 @@ export function createCodeRunGateway(
         if (status !== "cancelled" && sessionId)
           await client.abortSession?.(sessionId).catch(() => undefined);
       };
-      let subscription: Awaited<
-        ReturnType<typeof client.subscribeEvents>
-      > | undefined;
+      let subscription:
+        | Awaited<ReturnType<typeof client.subscribeEvents>>
+        | undefined;
       try {
         // Both dials sit inside the try: either one failing after the started audit and the
         // code_runs row would otherwise strand the row at "running" forever — the same shape
@@ -516,7 +516,6 @@ export function createCodeRunGateway(
         );
         throw error;
       }
-
 
       // The task itself: sent as one message; its stream IS the /events subscription. The
       // promise is raced against `done` because a cancelled run's message may never resolve —

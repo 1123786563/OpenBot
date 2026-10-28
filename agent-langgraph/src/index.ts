@@ -253,7 +253,9 @@ function buildModel(maxOutputTokens?: number) {
       apiKey: apiKeyOrPlaceholder(API_KEY),
       streaming: true,
       ...(BASE_URL ? { anthropicApiUrl: BASE_URL } : {}),
-      ...(cappedOutputTokens === undefined ? {} : { maxTokens: cappedOutputTokens }),
+      ...(cappedOutputTokens === undefined
+        ? {}
+        : { maxTokens: cappedOutputTokens }),
     });
   }
   if (PROVIDER === "google") {
@@ -273,7 +275,9 @@ function buildModel(maxOutputTokens?: number) {
     streaming: true,
     ...(BASE_URL ? { configuration: { baseURL: BASE_URL } } : {}),
     ...(USE_RESPONSES_API ? { useResponsesApi: true } : {}),
-    ...(cappedOutputTokens === undefined ? {} : { maxTokens: cappedOutputTokens }),
+    ...(cappedOutputTokens === undefined
+      ? {}
+      : { maxTokens: cappedOutputTokens }),
     /*
      * `reasoning.effort`, not the `reasoningEffort` convenience field: the integration deprecated
      * the latter in favour of merging it into this object, and one of them is the one that survives.

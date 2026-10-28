@@ -163,7 +163,10 @@ export async function summariseClaimedChannels(
         });
         // This release path never reaches the catch below, so the cap would pass
         // silently: say it out loud here too, on the attempt that is the last one.
-        if (item.attempts + 1 >= (options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS)) {
+        if (
+          item.attempts + 1 >=
+          (options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS)
+        ) {
           log.warn(
             {
               type: "channel-summary-gave-up",

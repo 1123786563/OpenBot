@@ -311,10 +311,7 @@ function allowedReturnUri(
   // The configured origin is compared shape-for-shape: a deployment that
   // wrote a trailing slash (or uppercase host) must not have every http(s)
   // return refused — WHATWG already lowercases url.host.
-  const allowed = allowedHttpOrigin
-    ?.trim()
-    .replace(/\/+$/, "")
-    .toLowerCase();
+  const allowed = allowedHttpOrigin?.trim().replace(/\/+$/, "").toLowerCase();
   if (
     (url.protocol === "https:" || url.protocol === "http:") &&
     allowed !== undefined &&

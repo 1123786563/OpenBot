@@ -348,9 +348,7 @@ export function createHarnessControl(
         // createIsolationFixture already cleans up its own partial state, but
         // leftovers on the shared test database or restricted roles must stay
         // visible: the next run may otherwise reuse a poisoned run state.
-        process.stderr.write(
-          `HARNESS_DISPOSE_FAILED:${messageOf(error)}\n`,
-        );
+        process.stderr.write(`HARNESS_DISPOSE_FAILED:${messageOf(error)}\n`);
       }
     },
   };

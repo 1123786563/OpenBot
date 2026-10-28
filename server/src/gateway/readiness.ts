@@ -197,8 +197,7 @@ export function createGatewayReadinessService(
           {
             type: "gateway-readiness-condition-failed",
             condition: "credential",
-            errorName:
-              error instanceof Error ? error.name : String(error),
+            errorName: error instanceof Error ? error.name : String(error),
           },
           "The gateway admin credential could not be resolved.",
         );
@@ -227,7 +226,11 @@ export function createGatewayReadinessService(
           message:
             "No successful gateway probe is on file for the current gateway configuration, so paid model capabilities are refused: run a probe after configuring the gateway.",
         });
-      } else if (!endpointUnreadable && probe !== undefined && probe.status !== "ok") {
+      } else if (
+        !endpointUnreadable &&
+        probe !== undefined &&
+        probe.status !== "ok"
+      ) {
         blocking.push({
           reason: "gateway_readiness_probe_not_ok",
           message: `The last gateway probe did not succeed (status: ${probe.status}), so paid model capabilities are refused: fix what the probe reports and probe again.`,

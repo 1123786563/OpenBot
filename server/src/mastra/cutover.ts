@@ -1597,9 +1597,7 @@ export async function runCutoverRollback(
         `rollback-unsafe: ${thread.threadId} backend_version drifted (recorded ${thread.toBackendVersion}, found ${row?.backendVersion ?? "missing row"})`,
       );
     }
-    let bumped: Awaited<
-      ReturnType<typeof deps.switchPorts.bumpBackendVersion>
-    >;
+    let bumped: Awaited<ReturnType<typeof deps.switchPorts.bumpBackendVersion>>;
     try {
       bumped = await deps.switchPorts.bumpBackendVersion(
         fence.scope.tenantId,

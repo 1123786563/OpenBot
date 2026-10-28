@@ -76,7 +76,9 @@ function parseArgs(argv: readonly string[]): Args {
 // Crypto-random hex (W3C trace ids must be unique across runs — a Math.random
 // collision would merge two runs into one chain and misattribute evidence).
 const hex = (n: number): string =>
-  randomBytes(Math.ceil(n / 2)).toString("hex").slice(0, n);
+  randomBytes(Math.ceil(n / 2))
+    .toString("hex")
+    .slice(0, n);
 
 // One retry round submits exactly this many observations (see submitBoth below):
 // the safe one and the credential-bearing one. The acceptance predicate, the retry
@@ -103,7 +105,10 @@ export const writesEstablished = (stats: OpikWriteStats): boolean =>
 // The counter increment between two writeStats snapshots (r8fix-G): the retry
 // loop snapshots before each round and the acceptance gate above judges this
 // delta. capacity/depth are gauges, not counters — they ride along unchanged.
-const roundDelta = (before: OpikWriteStats, after: OpikWriteStats): OpikWriteStats => ({
+const roundDelta = (
+  before: OpikWriteStats,
+  after: OpikWriteStats,
+): OpikWriteStats => ({
   capacity: after.capacity,
   depth: after.depth,
   submitted: after.submitted - before.submitted,
@@ -115,7 +120,8 @@ const roundDelta = (before: OpikWriteStats, after: OpikWriteStats): OpikWriteSta
     unavailable: after.failed.unavailable - before.failed.unavailable,
     upstream_error: after.failed.upstream_error - before.failed.upstream_error,
     malformed: after.failed.malformed - before.failed.malformed,
-    ownership_drift: after.failed.ownership_drift - before.failed.ownership_drift,
+    ownership_drift:
+      after.failed.ownership_drift - before.failed.ownership_drift,
     unexpected: after.failed.unexpected - before.failed.unexpected,
   },
   idLinks: {
@@ -330,13 +336,19 @@ async function main(): Promise<void> {
     const traces = await poll("listTraces", async () => {
       const r = await port.listTraces(scope, { projectId, size: 100 });
       if (r.outcome !== "ok") return { ok: false as const, detail: r.outcome };
-      if (r.value.content.length === 0) return { ok: false as const, detail: "empty page (read visibility lag)" };
+      if (r.value.content.length === 0)
+        return {
+          ok: false as const,
+          detail: "empty page (read visibility lag)",
+        };
       return { ok: true as const, value: r.value };
     });
     // #17: single-page size=100 truncation — if total exceeds content.length,
     // the absence proof covers only the first page. Fail explicitly.
     if (traces.total > traces.content.length) {
-      throw new Error(`listTraces truncated: total=${traces.total} > content=${traces.content.length} (absence proof would cover only page 1)`);
+      throw new Error(
+        `listTraces truncated: total=${traces.total} > content=${traces.content.length} (absence proof would cover only page 1)`,
+      );
     }
     for (const trace of traces.content as readonly OpikTraceRow[]) {
       // A failed span read is NOT "this trace has no spans": poll like the
@@ -348,13 +360,20 @@ async function main(): Promise<void> {
           traceId: trace.id,
           size: 100,
         });
-        if (r.outcome !== "ok") return { ok: false as const, detail: r.outcome };
-        if (r.value.content.length === 0) return { ok: false as const, detail: "empty page (read visibility lag)" };
+        if (r.outcome !== "ok")
+          return { ok: false as const, detail: r.outcome };
+        if (r.value.content.length === 0)
+          return {
+            ok: false as const,
+            detail: "empty page (read visibility lag)",
+          };
         return { ok: true as const, value: r.value };
       });
       // #17: same truncation guard for spans.
       if (spans.total > spans.content.length) {
-        throw new Error(`listSpans truncated for trace ${trace.id}: total=${spans.total} > content=${spans.content.length} (absence proof would cover only page 1)`);
+        throw new Error(
+          `listSpans truncated for trace ${trace.id}: total=${spans.total} > content=${spans.content.length} (absence proof would cover only page 1)`,
+        );
       }
       rows.push({ traceId: trace.id, spans: spans.content as unknown });
     }

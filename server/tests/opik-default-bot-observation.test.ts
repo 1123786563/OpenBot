@@ -24,10 +24,7 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { canObserveAgent } from "../src/agents/profile-policy";
-import type {
-  AgentActor,
-  AgentProfile,
-} from "../src/agents/profile-types";
+import type { AgentActor, AgentProfile } from "../src/agents/profile-types";
 import {
   type BotManagementCheck,
   explicitObservationOwnership,
@@ -37,12 +34,12 @@ import {
 import type { RunBinding } from "../src/ai-observability/bindings";
 import type { OpikConfig } from "../src/ai-observability/config";
 import type { ObservationScope } from "../src/ai-observability/contracts";
-import type {
-  OpikPort,
-  OpikTraceRow,
-} from "../src/ai-observability/opik-port";
+import type { OpikPort, OpikTraceRow } from "../src/ai-observability/opik-port";
 import { createRunsQueryRoutes } from "../src/ai-observability/routes/runs";
-import { resourceScopeKey, resolveObservationScope } from "../src/ai-observability/scope";
+import {
+  resourceScopeKey,
+  resolveObservationScope,
+} from "../src/ai-observability/scope";
 import { createBuiltinRunScopeResolver } from "../src/ai-observability/wiring";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 
@@ -171,9 +168,10 @@ describe("the run-scope resolver on a real system Bot execution", () => {
     });
 
   test("mints the administrator's run scope under the Bot's stable data key", async () => {
-    const scope = (await resolverFor(true)(admin, DEFAULT_BOT_ID)) as
-      | ObservationScope
-      | null;
+    const scope = (await resolverFor(true)(
+      admin,
+      DEFAULT_BOT_ID,
+    )) as ObservationScope | null;
 
     expect(scope).not.toBeNull();
     // The scope names the Bot's data range, not the actor: the administrator's
@@ -189,9 +187,7 @@ describe("the run-scope resolver on a real system Bot execution", () => {
   test("answers null for every refusal shape: disabled, deleted, unknown", async () => {
     expect(await resolverFor(false)(admin, DEFAULT_BOT_ID)).toBeNull();
 
-    const check = observeCheck([
-      systemBot({ deletedAt: new Date() }),
-    ]);
+    const check = observeCheck([systemBot({ deletedAt: new Date() })]);
     const resolver = createBuiltinRunScopeResolver({
       enabled: () => true,
       canManageBot: check,
@@ -216,9 +212,7 @@ const adminScope = resolveObservationScope({
  * `basic` — the honest verdict for a remote AG-UI run OpenBot mediated but
  * could not see inside.
  */
-function boundRun(
-  overrides: Partial<RunBinding> = {},
-): RunBinding {
+function boundRun(overrides: Partial<RunBinding> = {}): RunBinding {
   return {
     id: "binding-1",
     scopeKey: adminScope.key,
@@ -301,11 +295,7 @@ const enabledConfig: OpikConfig = {
   otlpGrpcPort: 5417,
 };
 
-function appFor(
-  actor: AgentActor,
-  bindings: RunBinding[],
-  port: OpikPort,
-) {
+function appFor(actor: AgentActor, bindings: RunBinding[], port: OpikPort) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", actorVariables(actor));
   app.route(
@@ -321,13 +311,21 @@ function appFor(
         capabilitiesByOpikTraceIds: async (_scope, ids) =>
           new Map(
             bindings
-              .filter((row) => row.opikTraceId !== null && ids.includes(row.opikTraceId ?? ""))
+              .filter(
+                (row) =>
+                  row.opikTraceId !== null &&
+                  ids.includes(row.opikTraceId ?? ""),
+              )
               .map((row) => [row.opikTraceId ?? "", row.capability]),
           ),
         statesByOpikTraceIds: async (_scope, ids) =>
           new Map(
             bindings
-              .filter((row) => row.opikTraceId !== null && ids.includes(row.opikTraceId ?? ""))
+              .filter(
+                (row) =>
+                  row.opikTraceId !== null &&
+                  ids.includes(row.opikTraceId ?? ""),
+              )
               .map((row) => [row.opikTraceId ?? "", row.state]),
           ),
       },

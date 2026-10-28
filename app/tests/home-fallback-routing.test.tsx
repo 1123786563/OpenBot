@@ -59,7 +59,10 @@ function agent(
 // MOD19 / #639: the composer roster reads the scoped key under the personal prefix, and the
 // scope seam opens from the seeded current user — no fetch of /api/me is wanted here.
 const USER = "user-1";
-const rosterKey = [...selectionKeys.personalScope(USER), ...agentKeys.list(false)];
+const rosterKey = [
+  ...selectionKeys.personalScope(USER),
+  ...agentKeys.list(false),
+];
 
 function queryClientWithAgents(agents: AgentProfile[]) {
   const queryClient = new QueryClient({

@@ -133,10 +133,15 @@ export function createSandboxSupervisor(
       // the reconcile sweep fails, which would unpick this provision one pass later.
       await runtime.recreate(input.botId);
       const address = addressFor(input.botId);
-      const moved = await state.transition(attempt.id, "provisioning", "ready", {
-        address: address.address,
-        ports: address.ports,
-      });
+      const moved = await state.transition(
+        attempt.id,
+        "provisioning",
+        "ready",
+        {
+          address: address.address,
+          ports: address.ports,
+        },
+      );
       // CAS false means the row was torn down under us (a stop, another replica): the address
       // is no longer ours to hand out.
       if (!moved)

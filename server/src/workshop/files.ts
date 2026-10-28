@@ -86,26 +86,28 @@ export async function listTree(
   // used to serialize into N awaits. A size the sandbox will not give stays 0 (the tree
   // is best-effort), but the failure is said instead of reading as an empty file.
   const topLevel = scoped.filter(
-    (file) => (prefix ? file.slice(prefix.length + 1) : file).split("/").length === 1,
+    (file) =>
+      (prefix ? file.slice(prefix.length + 1) : file).split("/").length === 1,
   );
   const sizes = new Map(
     (
       await Promise.all(
-        topLevel.map(async (file) => [
-          file,
-          await client
-            .readFile(file, 1)
-            .then(
-              (detail) => detail?.size ?? 0,
-              (error: unknown) => {
-                log.warn(
-                  { err: error, path: file },
-                  "Could not read a workshop file's size.",
-                );
-                return 0;
-              },
-            ),
-        ] as const),
+        topLevel.map(
+          async (file) =>
+            [
+              file,
+              await client.readFile(file, 1).then(
+                (detail) => detail?.size ?? 0,
+                (error: unknown) => {
+                  log.warn(
+                    { err: error, path: file },
+                    "Could not read a workshop file's size.",
+                  );
+                  return 0;
+                },
+              ),
+            ] as const,
+        ),
       )
     ).map(([file, size]) => [file, size] as const),
   );
@@ -235,9 +237,12 @@ export async function upload(
       const raw = files[index]!.name;
       const name = raw.replace(/[/\\]/g, "_").trim();
       if (!name || name === "." || name === ".." || seen.has(name)) {
-        await refuse(`The file name ${JSON.stringify(raw)} is not usable in this workspace.`, {
-          name: raw,
-        });
+        await refuse(
+          `The file name ${JSON.stringify(raw)} is not usable in this workspace.`,
+          {
+            name: raw,
+          },
+        );
       }
       seen.add(name);
       const written = await client!.writeFile(name, files[index]!.content);

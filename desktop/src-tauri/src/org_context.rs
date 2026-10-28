@@ -565,12 +565,20 @@ impl<'a> Gate<'a> {
                 Requirement::Organization => {}
                 Requirement::Company => {
                     if context.company.is_none() {
-                        return Err(self.refuse(&mut state, "ORG_CONTEXT_COMPANY_REQUIRED", now_ms));
+                        return Err(self.refuse(
+                            &mut state,
+                            "ORG_CONTEXT_COMPANY_REQUIRED",
+                            now_ms,
+                        ));
                     }
                 }
                 Requirement::Team => {
                     if context.company.is_none() {
-                        return Err(self.refuse(&mut state, "ORG_CONTEXT_COMPANY_REQUIRED", now_ms));
+                        return Err(self.refuse(
+                            &mut state,
+                            "ORG_CONTEXT_COMPANY_REQUIRED",
+                            now_ms,
+                        ));
                     }
                     if context.team.is_none() {
                         return Err(self.refuse(&mut state, "ORG_CONTEXT_TEAM_REQUIRED", now_ms));
@@ -926,8 +934,8 @@ mod tests {
     #[test]
     fn t8_establish_needs_a_live_session() {
         let connection = FakeConnection::new().with_dead_session();
-        let refusal = establish(&connection, None, NOW)
-            .expect_err("a dead session cannot freeze a context");
+        let refusal =
+            establish(&connection, None, NOW).expect_err("a dead session cannot freeze a context");
         assert_eq!(refusal.code(), "ORG_CONTEXT_EXPIRED");
     }
 
@@ -938,7 +946,11 @@ mod tests {
         let connection = FakeConnection::new();
         let gate = plain_gate(&connection);
         let refusal = gate
-            .check(Requirement::Organization, &command("https://company.example"), NOW)
+            .check(
+                Requirement::Organization,
+                &command("https://company.example"),
+                NOW,
+            )
             .expect_err("nothing established means nothing allowed");
         assert_eq!(refusal.code(), "ORG_CONTEXT_REQUIRED");
     }
@@ -952,7 +964,11 @@ mod tests {
         let connection = FakeConnection::new().with_dead_session();
         let gate = Gate::load(&connection, PersistedRecord::Present(context), None, NOW);
         let refusal = gate
-            .check(Requirement::Organization, &command("https://company.example"), NOW)
+            .check(
+                Requirement::Organization,
+                &command("https://company.example"),
+                NOW,
+            )
             .expect_err("restart verification already failed");
         assert_eq!(refusal.code(), "ORG_CONTEXT_EXPIRED");
     }
@@ -964,7 +980,11 @@ mod tests {
         let baseline = connection.verify_calls();
         let gate = Gate::load(&connection, PersistedRecord::Present(context), None, NOW);
         let refusal = gate
-            .check(Requirement::Organization, &command("https://evil.example"), NOW + 1)
+            .check(
+                Requirement::Organization,
+                &command("https://evil.example"),
+                NOW + 1,
+            )
             .expect_err("a forged authority names a connection this context never belonged to");
         assert_eq!(refusal.code(), "ORG_CONTEXT_AUTHORITY_MISMATCH");
         assert_eq!(
@@ -980,7 +1000,11 @@ mod tests {
         let scoped = established_with(&connection, "tenant-1", None);
         let gate = Gate::load(&connection, PersistedRecord::Present(scoped), None, NOW);
         let refusal = gate
-            .check(Requirement::Organization, &claiming("tenant-2", None), NOW + 1)
+            .check(
+                Requirement::Organization,
+                &claiming("tenant-2", None),
+                NOW + 1,
+            )
             .expect_err("the freeze says Acme, the command says Globex");
         assert_eq!(refusal.code(), "ORG_CONTEXT_COMPANY_MISMATCH");
 
@@ -988,7 +1012,11 @@ mod tests {
         let bare = established(&connection, NOW);
         let gate = Gate::load(&connection, PersistedRecord::Present(bare), None, NOW);
         let refusal = gate
-            .check(Requirement::Organization, &claiming("tenant-1", None), NOW + 1)
+            .check(
+                Requirement::Organization,
+                &claiming("tenant-1", None),
+                NOW + 1,
+            )
             .expect_err("a claim cannot attach itself to a context that never chose one");
         assert_eq!(refusal.code(), "ORG_CONTEXT_COMPANY_MISMATCH");
     }
@@ -999,7 +1027,11 @@ mod tests {
         let scoped = established_with(&connection, "tenant-1", Some("team-1"));
         let gate = Gate::load(&connection, PersistedRecord::Present(scoped), None, NOW);
         let refusal = gate
-            .check(Requirement::Organization, &claiming("tenant-1", Some("team-2")), NOW + 1)
+            .check(
+                Requirement::Organization,
+                &claiming("tenant-1", Some("team-2")),
+                NOW + 1,
+            )
             .expect_err("the freeze says Platform, the command says Apps");
         assert_eq!(refusal.code(), "ORG_CONTEXT_TEAM_MISMATCH");
     }
@@ -1008,8 +1040,16 @@ mod tests {
     fn t14_refusals_are_recorded_with_a_code_and_a_time_and_no_values() {
         let connection = FakeConnection::new();
         let gate = plain_gate(&connection);
-        let _ = gate.check(Requirement::Organization, &command("https://evil.example"), NOW);
-        let _ = gate.check(Requirement::Organization, &command("https://company.example"), NOW + 5);
+        let _ = gate.check(
+            Requirement::Organization,
+            &command("https://evil.example"),
+            NOW,
+        );
+        let _ = gate.check(
+            Requirement::Organization,
+            &command("https://company.example"),
+            NOW + 5,
+        );
         let log = gate.rejection_log();
         assert_eq!(log.len(), 2);
         assert_eq!(log[0].code, "ORG_CONTEXT_REQUIRED");
@@ -1026,7 +1066,11 @@ mod tests {
         let connection = FakeConnection::new();
         let gate = plain_gate(&connection);
         for step in 0..70u64 {
-            let _ = gate.check(Requirement::Organization, &command("https://company.example"), NOW + step);
+            let _ = gate.check(
+                Requirement::Organization,
+                &command("https://company.example"),
+                NOW + step,
+            );
         }
         let log = gate.rejection_log();
         assert_eq!(log.len(), REJECTION_LOG_CAP);
@@ -1041,12 +1085,28 @@ mod tests {
         let baseline = connection.verify_calls();
         let gate = Gate::load(&connection, PersistedRecord::Present(context), None, NOW);
         let grant = gate
-            .check(Requirement::Team, &claiming("tenant-1", Some("team-1")), NOW + 1_000)
+            .check(
+                Requirement::Team,
+                &claiming("tenant-1", Some("team-1")),
+                NOW + 1_000,
+            )
             .expect("a fresh, matching command runs");
         assert_eq!(grant.authority, "https://company.example");
         assert_eq!(grant.user_id, "person-1");
-        assert_eq!(grant.company.expect("grant carries the frozen company").tenant_id, "tenant-1");
-        assert_eq!(grant.team.expect("grant carries the frozen team").workspace_id, "team-1");
+        assert_eq!(
+            grant
+                .company
+                .expect("grant carries the frozen company")
+                .tenant_id,
+            "tenant-1"
+        );
+        assert_eq!(
+            grant
+                .team
+                .expect("grant carries the frozen team")
+                .workspace_id,
+            "team-1"
+        );
         assert_eq!(
             connection.verify_calls(),
             baseline + 1,
@@ -1061,7 +1121,11 @@ mod tests {
         let baseline = connection.verify_calls();
         let gate = Gate::load(&connection, PersistedRecord::Present(context), None, NOW);
         let grant = gate
-            .check(Requirement::Organization, &command("https://company.example"), STALE)
+            .check(
+                Requirement::Organization,
+                &command("https://company.example"),
+                STALE,
+            )
             .expect("the authority re-proved the same identity");
         assert_eq!(grant.user_id, "person-1");
         assert_eq!(
@@ -1071,8 +1135,15 @@ mod tests {
         );
         let refreshed = gate.context().expect("still established");
         assert_eq!(refreshed.verified_at_ms, STALE);
-        assert_eq!(refreshed.established_at_ms, NOW, "freezing time never moves");
-        assert_eq!(refreshed.user, user("person-1"), "identity is byte-identical");
+        assert_eq!(
+            refreshed.established_at_ms, NOW,
+            "freezing time never moves"
+        );
+        assert_eq!(
+            refreshed.user,
+            user("person-1"),
+            "identity is byte-identical"
+        );
     }
 
     #[test]
@@ -1082,12 +1153,19 @@ mod tests {
         let baseline = connection.verify_calls();
         let gate = Gate::load(&connection, PersistedRecord::Present(context), None, NOW);
         let refusal = gate
-            .check(Requirement::Organization, &command("https://company.example"), STALE)
+            .check(
+                Requirement::Organization,
+                &command("https://company.example"),
+                STALE,
+            )
             .expect_err("the authority now answers for a different person");
         assert_eq!(refusal.code(), "ORG_CONTEXT_EXPIRED");
         // Death is remembered: the next command refuses without dialing again.
-        let again = gate
-            .check(Requirement::Organization, &command("https://company.example"), STALE + 1);
+        let again = gate.check(
+            Requirement::Organization,
+            &command("https://company.example"),
+            STALE + 1,
+        );
         assert_eq!(again.unwrap_err().code(), "ORG_CONTEXT_EXPIRED");
         assert_eq!(
             connection.verify_calls(),
@@ -1109,14 +1187,24 @@ mod tests {
         let gate = Gate::load(
             &connection,
             PersistedRecord::Present(restored),
-            Some(Box::new(move |refreshed| sink.borrow_mut().push(refreshed.clone()))),
+            Some(Box::new(move |refreshed| {
+                sink.borrow_mut().push(refreshed.clone())
+            })),
             STALE,
         );
         let grant = gate
-            .check(Requirement::Organization, &command("https://company.example"), STALE)
+            .check(
+                Requirement::Organization,
+                &command("https://company.example"),
+                STALE,
+            )
             .expect("the same person is back after the restart");
         assert_eq!(grant.user_id, "person-1");
-        assert_eq!(refreshes.borrow().len(), 1, "the refresh is offered for persistence");
+        assert_eq!(
+            refreshes.borrow().len(),
+            1,
+            "the refresh is offered for persistence"
+        );
         assert_eq!(refreshes.borrow()[0].verified_at_ms, STALE);
     }
 
@@ -1126,7 +1214,11 @@ mod tests {
         let context = established(&FakeConnection::new(), NOW);
         let gate = Gate::load(&connection, PersistedRecord::Present(context), None, STALE);
         let refusal = gate
-            .check(Requirement::Organization, &command("https://company.example"), STALE)
+            .check(
+                Requirement::Organization,
+                &command("https://company.example"),
+                STALE,
+            )
             .expect_err("the session the freeze trusted is gone");
         assert_eq!(refusal.code(), "ORG_CONTEXT_EXPIRED");
     }
@@ -1137,7 +1229,11 @@ mod tests {
         let context = established(&FakeConnection::new(), NOW);
         let gate = Gate::load(&connection, PersistedRecord::Present(context), None, STALE);
         let refusal = gate
-            .check(Requirement::Organization, &command("https://company.example"), STALE)
+            .check(
+                Requirement::Organization,
+                &command("https://company.example"),
+                STALE,
+            )
             .expect_err("a restart never silently adopts a new identity");
         assert_eq!(refusal.code(), "ORG_CONTEXT_EXPIRED");
     }
@@ -1148,14 +1244,22 @@ mod tests {
         let context = established(&FakeConnection::new(), NOW);
         let gate = Gate::load(&connection, PersistedRecord::Present(context), None, STALE);
         let refusal = gate
-            .check(Requirement::Organization, &command("https://company.example"), STALE)
+            .check(
+                Requirement::Organization,
+                &command("https://company.example"),
+                STALE,
+            )
             .expect_err("an unreachable authority cannot be trusted blind");
         assert_eq!(refusal.code(), "ORG_CONTEXT_UNAVAILABLE");
         // The outage is not an identity fact: when the authority answers again, the same
         // frozen context resumes — it is never silently replaced.
         connection.recover();
         let grant = gate
-            .check(Requirement::Organization, &command("https://company.example"), STALE + 1)
+            .check(
+                Requirement::Organization,
+                &command("https://company.example"),
+                STALE + 1,
+            )
             .expect("the same context resumes when the authority is reachable");
         assert_eq!(grant.user_id, "person-1");
     }
@@ -1165,7 +1269,11 @@ mod tests {
         let connection = FakeConnection::new();
         let gate = Gate::load(&connection, PersistedRecord::Corrupt, None, NOW);
         let refusal = gate
-            .check(Requirement::Organization, &command("https://company.example"), NOW)
+            .check(
+                Requirement::Organization,
+                &command("https://company.example"),
+                NOW,
+            )
             .expect_err("unreadable state is not a context");
         assert_eq!(refusal.code(), "ORG_CONTEXT_REQUIRED");
         assert_eq!(gate.rejection_log()[0].code, "ORG_CONTEXT_CORRUPT");
@@ -1178,10 +1286,19 @@ mod tests {
         context.authority = "https://other.example".to_string();
         let gate = Gate::load(&connection, PersistedRecord::Present(context), None, NOW);
         let refusal = gate
-            .check(Requirement::Organization, &command("https://company.example"), NOW)
-            .expect_err("a record naming another authority never becomes this connection's context");
+            .check(
+                Requirement::Organization,
+                &command("https://company.example"),
+                NOW,
+            )
+            .expect_err(
+                "a record naming another authority never becomes this connection's context",
+            );
         assert_eq!(refusal.code(), "ORG_CONTEXT_REQUIRED");
-        assert_eq!(gate.rejection_log()[0].code, "ORG_CONTEXT_AUTHORITY_MISMATCH");
+        assert_eq!(
+            gate.rejection_log()[0].code,
+            "ORG_CONTEXT_AUTHORITY_MISMATCH"
+        );
     }
 
     // --- T25: the renderer-facing DTO carries no secret material ---
@@ -1197,18 +1314,35 @@ mod tests {
         keys.sort_unstable();
         assert_eq!(
             keys,
-            vec!["authority", "company", "establishedAtMs", "team", "user", "verifiedAtMs"]
+            vec![
+                "authority",
+                "company",
+                "establishedAtMs",
+                "team",
+                "user",
+                "verifiedAtMs"
+            ]
         );
         let user_keys: Vec<_> = top["user"].as_object().unwrap().keys().cloned().collect();
         assert_eq!(user_keys, vec!["email", "id", "name", "role"]);
-        let company_keys: Vec<_> =
-            top["company"].as_object().unwrap().keys().cloned().collect();
-        assert_eq!(company_keys, vec!["memberEpoch", "name", "role", "tenantId"]);
+        let company_keys: Vec<_> = top["company"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        assert_eq!(
+            company_keys,
+            vec!["memberEpoch", "name", "role", "tenantId"]
+        );
         let team_keys: Vec<_> = top["team"].as_object().unwrap().keys().cloned().collect();
         assert_eq!(team_keys, vec!["name", "workspaceId"]);
         let rendered = serde_json::to_string(&status).unwrap().to_lowercase();
         for forbidden in ["token", "secret", "cookie"] {
-            assert!(!rendered.contains(forbidden), "{forbidden} leaked into the DTO");
+            assert!(
+                !rendered.contains(forbidden),
+                "{forbidden} leaked into the DTO"
+            );
         }
         // A command payload naming a field the model never declared is refused at the door.
         let smuggled = serde_json::json!({
@@ -1261,7 +1395,10 @@ mod tests {
     fn t28_an_installation_with_no_context_has_no_status_and_no_default() {
         let connection = FakeConnection::new();
         let gate = Gate::load(&connection, PersistedRecord::Absent, None, NOW);
-        assert!(gate.context().is_none(), "absent means absent, not a first company");
+        assert!(
+            gate.context().is_none(),
+            "absent means absent, not a first company"
+        );
     }
 
     #[test]
@@ -1270,7 +1407,11 @@ mod tests {
         let context = established(&connection, NOW);
         let gate = Gate::from_persisted(PersistedRecord::Present(context));
         let refusal = gate
-            .check(Requirement::Organization, &command("https://company.example"), NOW + 1)
+            .check(
+                Requirement::Organization,
+                &command("https://company.example"),
+                NOW + 1,
+            )
             .expect_err("without a connection no freshness can be proven");
         assert_eq!(refusal.code(), "ORG_CONTEXT_UNAVAILABLE");
     }
@@ -1322,13 +1463,23 @@ mod tests {
         let gate = Gate::load(
             &connection,
             PersistedRecord::Present(context),
-            Some(Box::new(move |refreshed| sink.borrow_mut().push(refreshed.clone()))),
+            Some(Box::new(move |refreshed| {
+                sink.borrow_mut().push(refreshed.clone())
+            })),
             NOW,
         );
         // Loading a record always re-verifies, so the load itself offered one refresh.
-        assert_eq!(refreshes.borrow().len(), 1, "the load's refresh is offered for persistence");
+        assert_eq!(
+            refreshes.borrow().len(),
+            1,
+            "the load's refresh is offered for persistence"
+        );
         let _ = gate
-            .check(Requirement::Organization, &command("https://company.example"), NOW + 1_000)
+            .check(
+                Requirement::Organization,
+                &command("https://company.example"),
+                NOW + 1_000,
+            )
             .expect("inside the window");
         assert_eq!(
             refreshes.borrow().len(),
@@ -1336,7 +1487,11 @@ mod tests {
             "no re-verification, no callback"
         );
         let _ = gate
-            .check(Requirement::Organization, &command("https://company.example"), STALE)
+            .check(
+                Requirement::Organization,
+                &command("https://company.example"),
+                STALE,
+            )
             .expect("re-verified");
         assert_eq!(refreshes.borrow().len(), 2);
         assert_eq!(refreshes.borrow()[1].verified_at_ms, STALE);

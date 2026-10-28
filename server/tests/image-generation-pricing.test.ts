@@ -143,7 +143,9 @@ describe("imageGenerationSpecOf", () => {
       ok: false,
       issue: { field: "image" },
     });
-    expect(imageGenerationSpecOf({ n: 1, image: ["a.png", "  "] })).toMatchObject({
+    expect(
+      imageGenerationSpecOf({ n: 1, image: ["a.png", "  "] }),
+    ).toMatchObject({
       ok: false,
       issue: { field: "image" },
     });

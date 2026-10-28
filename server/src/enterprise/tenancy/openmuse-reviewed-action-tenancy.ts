@@ -611,8 +611,7 @@ export function createOpenMuseReviewedActionTenancyService(deps: {
         scope,
         actionId,
         "openmuse.reviewed_action.decided",
-        ({ actionId: id, userId }) =>
-          decisions.decide(userId, id, decision),
+        ({ actionId: id, userId }) => decisions.decide(userId, id, decision),
       );
     },
 

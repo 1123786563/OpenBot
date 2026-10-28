@@ -10,7 +10,9 @@ import { sniffMimeType } from "../src/channels/attachment-mime";
  */
 describe("sniffing a file's real MIME type from its bytes", () => {
   test("recognizes a PNG signature", () => {
-    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const bytes = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
     expect(sniffMimeType(bytes, "application/octet-stream")).toBe("image/png");
   });
 
@@ -43,7 +45,9 @@ describe("sniffing a file's real MIME type from its bytes", () => {
   });
 
   test("a PNG claiming to be text/plain still sniffs as image/png", () => {
-    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const bytes = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
     expect(sniffMimeType(bytes, "text/plain")).toBe("image/png");
   });
 
@@ -123,7 +127,9 @@ describe("sniffing a file's real MIME type from its bytes", () => {
   });
 
   test("a real PNG claiming image/png is still image/png", () => {
-    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const bytes = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
     expect(sniffMimeType(bytes, "image/png")).toBe("image/png");
   });
 

@@ -192,7 +192,11 @@ describe("the production case runner makes one controlled, observed model call",
       bindings: observerRunBindingGateForTests(),
     });
     const runner = createProductionEvaluationCaseRunner({
-      callModel: async () => ({ output: "ok", inputTokens: 1, outputTokens: 1 }),
+      callModel: async () => ({
+        output: "ok",
+        inputTokens: 1,
+        outputTokens: 1,
+      }),
       observe: (observation) => recorderImpl.record(observation),
     });
 

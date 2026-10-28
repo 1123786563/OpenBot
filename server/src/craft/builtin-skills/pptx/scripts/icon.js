@@ -297,7 +297,7 @@ async function main() {
   // not reach path building for either the icon lookup or the output path.
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(opts.iconName)) {
     fail(
-      `Error: icon name must be kebab-case (lowercase letters, digits, dashes); got "${opts.iconName}".`
+      `Error: icon name must be kebab-case (lowercase letters, digits, dashes); got "${opts.iconName}".`,
     );
   }
   opts.color = normalizeColor(opts.color);

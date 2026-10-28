@@ -745,7 +745,11 @@ export async function sweepScheduledTasks(
     // queued or running, so this sweep records a skipped run (onyx's shape) instead of
     // firing a second concurrent headless turn with real side effects.
     if (await deps.tasks.hasInFlightRun(task.id)) {
-      const skipped = await deps.tasks.insertRun(task.id, "scheduled", "skipped");
+      const skipped = await deps.tasks.insertRun(
+        task.id,
+        "scheduled",
+        "skipped",
+      );
       await deps.tasks.markRunStatus(skipped.id, {
         status: "skipped",
         skipReason: "A previous run is still in flight.",

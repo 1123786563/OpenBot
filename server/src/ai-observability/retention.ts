@@ -915,7 +915,10 @@ export function createObservationRetentionWorker(
              * any upstream I/O) and let the upstream half below verify-delete it;
              * a retry after the binding row is gone needs nothing but the record.
              */
-            const promoted = await promoteUpstreamReference(id, row.opikTraceId);
+            const promoted = await promoteUpstreamReference(
+              id,
+              row.opikTraceId,
+            );
             // The lease keeps one pass on this record; a concurrent promote could
             // only have written the same id, and the fallback keeps this pass on it.
             upstreamKind = promoted?.upstreamKind ?? "trace";

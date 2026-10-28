@@ -4,7 +4,6 @@ import twilio from "twilio";
 
 import { DELIVERY_REQUEST_TIMEOUT_MS } from "../timeouts";
 
-
 /**
  * Cut to `limit` UTF-16 units without splitting a surrogate pair: a lone high
  * surrogate in position 1400 would reach Twilio as U+FFFD and silently corrupt

@@ -1006,10 +1006,7 @@ describe("webappHmrSocketHandlers — the client↔upstream bridge", () => {
 // the seam's single entry condition — and the seam file is pinned at the
 // source level, the same shape the qa-batch1 pins use.
 describe("the preview seam's HMR wiring (fix-ocr18 #3 — source pin)", () => {
-  const source = readFileSync(
-    join(hereDir, "../src/craft/preview.ts"),
-    "utf8",
-  );
+  const source = readFileSync(join(hereDir, "../src/craft/preview.ts"), "utf8");
 
   test("the preview-origin branch dispatches upgrades through its OWN deps", () => {
     // The preview branch (the front door's `dispatch`, gated on the origin's

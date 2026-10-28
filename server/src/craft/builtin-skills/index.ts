@@ -68,7 +68,9 @@ function assertNoUnresolvedMarkup(rendered: string): string {
   if (rendered.includes("{{")) {
     const offending = rendered.split("\n").find((line) => line.includes("{{"));
     // find() cannot miss here: `rendered` is known to contain the marker.
-    throw new Error(`Unresolved skill-template markup: ${offending ?? rendered}`);
+    throw new Error(
+      `Unresolved skill-template markup: ${offending ?? rendered}`,
+    );
   }
   return rendered;
 }

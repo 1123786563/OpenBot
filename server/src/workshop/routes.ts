@@ -234,7 +234,10 @@ export function createWorkshopRoutes(input: {
       }).catch((error: unknown) =>
         // The link exists; a trail write that fails must not read as a failed create and
         // goad a retry into minting a second link.
-        log.warn({ err: error, eventType: "workshop.share_created" }, "Could not write the share audit row."),
+        log.warn(
+          { err: error, eventType: "workshop.share_created" },
+          "Could not write the share audit row.",
+        ),
       );
     }
     return context.json(
@@ -529,7 +532,10 @@ export function createWorkshopRoutes(input: {
         }).catch((error: unknown) =>
           // The schedule exists; the trail failing must not fail the create (a retry
           // would make a second schedule).
-          log.warn({ err: error, eventType: "workshop.schedule_created" }, "Could not write the schedule audit row."),
+          log.warn(
+            { err: error, eventType: "workshop.schedule_created" },
+            "Could not write the schedule audit row.",
+          ),
         );
       }
       return context.json(
@@ -627,7 +633,10 @@ export function createWorkshopRoutes(input: {
           payload: { rrule },
         }).catch((error: unknown) =>
           // Same as create: the update is committed, so its trail row failing is a log, not a 5xx.
-          log.warn({ err: error, eventType: "workshop.schedule_updated" }, "Could not write the schedule audit row."),
+          log.warn(
+            { err: error, eventType: "workshop.schedule_updated" },
+            "Could not write the schedule audit row.",
+          ),
         );
       }
       return context.json({ id, rrule, nextRunAt: next.toISOString() });

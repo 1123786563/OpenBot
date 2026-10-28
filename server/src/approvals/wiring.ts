@@ -122,9 +122,9 @@ export function createServerApprovalService(deps: {
                 text: `${botName} asks for approval to use ${action.toolRef}. Open the Bot's page in OpenBot to review this action.`,
               },
             );
+          // The approval still pends, but the person is never told; leave a
+          // trace instead of a silent gap.
           else
-            // The approval still pends, but the person is never told; leave a
-            // trace instead of a silent gap.
             log.warn(
               {
                 type: "approval-notice-unsent",

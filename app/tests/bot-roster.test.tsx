@@ -63,8 +63,14 @@ function bot(overrides: Partial<AgentProfile> & { id: string }): AgentProfile {
 // MOD19 / #639: the roster reads the scoped key under the personal-context prefix, and the scope
 // seam needs the signed-in user before any of it opens — every stub answers /api/me first.
 const USER = "user-1";
-const visibleKey = [...selectionKeys.personalScope(USER), ...agentKeys.list(false)];
-const hiddenKey = [...selectionKeys.personalScope(USER), ...agentKeys.list(true)];
+const visibleKey = [
+  ...selectionKeys.personalScope(USER),
+  ...agentKeys.list(false),
+];
+const hiddenKey = [
+  ...selectionKeys.personalScope(USER),
+  ...agentKeys.list(true),
+];
 
 /** Serves the visible roster, the hidden roster, and an empty attention list. */
 function serving(
@@ -165,9 +171,7 @@ test("with nothing hidden there is no Hidden section", async () => {
   const view = draw();
   expect(await view.findByText("Mine")).toBeTruthy();
   await waitFor(() =>
-    expect(queryClient.getQueryState(hiddenKey)?.status).toBe(
-      "success",
-    ),
+    expect(queryClient.getQueryState(hiddenKey)?.status).toBe("success"),
   );
   expect(view.queryByText("Hidden")).toBeNull();
 });
@@ -184,9 +188,7 @@ test("a roster that never loaded says so, not that you have no Bots", async () =
 });
 
 test("a failed refetch keeps the roster it already had, not the error", async () => {
-  queryClient.setQueryData(visibleKey, [
-    bot({ id: "mine", name: "Mine" }),
-  ]);
+  queryClient.setQueryData(visibleKey, [bot({ id: "mine", name: "Mine" })]);
   global.fetch = (async (input: RequestInfo | URL) => {
     if (String(input) === "/api/me")
       return Response.json({ user: { id: USER } });
@@ -194,9 +196,7 @@ test("a failed refetch keeps the roster it already had, not the error", async ()
   }) as unknown as typeof fetch;
   const view = draw();
   await waitFor(() =>
-    expect(queryClient.getQueryState(visibleKey)?.status).toBe(
-      "error",
-    ),
+    expect(queryClient.getQueryState(visibleKey)?.status).toBe("error"),
   );
   expect(view.getByText("Mine")).toBeTruthy();
   expect(view.queryByRole("alert")).toBeNull();

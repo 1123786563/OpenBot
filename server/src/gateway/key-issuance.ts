@@ -585,10 +585,13 @@ export function createGatewayVirtualKeyClient(
           readAbort.signal,
         ),
         new Promise<never>((_, reject) => {
-          readTimer = setTimeout(() => {
-            readAbort.abort();
-            reject(timeoutError());
-          }, Math.max(1, remainingMs));
+          readTimer = setTimeout(
+            () => {
+              readAbort.abort();
+              reject(timeoutError());
+            },
+            Math.max(1, remainingMs),
+          );
         }),
       ])
         .catch((error: unknown) => {

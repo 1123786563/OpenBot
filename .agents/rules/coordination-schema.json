@@ -204,7 +204,21 @@
     "daily_run_manifest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "run_id", "repo_identity", "capacity", "max_parallel_tasks", "reserve_label_slots", "source_issues", "target", "scope", "policy_sha256", "parallel_implementation_approval", "max_run_minutes", "max_run_repair_rounds"],
+      "required": [
+        "kind",
+        "run_id",
+        "repo_identity",
+        "capacity",
+        "max_parallel_tasks",
+        "reserve_label_slots",
+        "source_issues",
+        "target",
+        "scope",
+        "policy_sha256",
+        "parallel_implementation_approval",
+        "max_run_minutes",
+        "max_run_repair_rounds"
+      ],
       "properties": {
         "kind": { "const": "daily-run-v1" },
         "run_id": { "type": "string", "minLength": 1 },
@@ -213,25 +227,47 @@
         "max_parallel_tasks": { "type": "integer", "minimum": 1, "maximum": 4 },
         "reserve_label_slots": { "type": "boolean" },
         "source_issues": {
-          "type": "array", "minItems": 1, "uniqueItems": true,
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
           "items": { "type": "string", "pattern": "^[^#]+#[1-9][0-9]*$" }
         },
         "target": { "$ref": "#/$defs/audit_epoch_manifest/properties/target" },
         "scope": { "$ref": "#/$defs/evidence" },
         "policy_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "parallel_implementation_approval": { "$ref": "#/$defs/nullable_evidence" },
+        "parallel_implementation_approval": {
+          "$ref": "#/$defs/nullable_evidence"
+        },
         "max_run_minutes": { "type": "integer", "minimum": 1 },
-        "max_run_repair_rounds": { "type": "integer", "minimum": 1, "maximum": 5 }
+        "max_run_repair_rounds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        }
       },
-      "allOf": [{
-        "if": { "properties": { "reserve_label_slots": { "const": true } } },
-        "then": { "properties": { "capacity": { "minimum": 2 } } }
-      }]
+      "allOf": [
+        {
+          "if": { "properties": { "reserve_label_slots": { "const": true } } },
+          "then": { "properties": { "capacity": { "minimum": 2 } } }
+        }
+      ]
     },
     "repair_wave_manifest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "wave_id", "run_id", "audit_issue", "round_number", "previous_wave", "baseline", "repair_authorization", "scope", "tasks", "policy_sha256"],
+      "required": [
+        "kind",
+        "wave_id",
+        "run_id",
+        "audit_issue",
+        "round_number",
+        "previous_wave",
+        "baseline",
+        "repair_authorization",
+        "scope",
+        "tasks",
+        "policy_sha256"
+      ],
       "properties": {
         "kind": { "const": "repair-wave-v1" },
         "wave_id": { "type": "string", "format": "uuid" },
@@ -242,29 +278,50 @@
         "baseline": {
           "allOf": [
             { "$ref": "#/$defs/evidence" },
-            { "properties": { "checkpoint_id": { "type": "string", "minLength": 1 } } }
+            {
+              "properties": {
+                "checkpoint_id": { "type": "string", "minLength": 1 }
+              }
+            }
           ]
         },
         "repair_authorization": { "$ref": "#/$defs/evidence" },
         "scope": { "$ref": "#/$defs/evidence" },
         "tasks": {
-          "type": "array", "minItems": 1, "uniqueItems": true,
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
           "items": {
-            "type": "object", "additionalProperties": false,
+            "type": "object",
+            "additionalProperties": false,
             "required": ["task_id", "finding_ids", "owned_files"],
             "properties": {
               "task_id": { "type": "string", "minLength": 1 },
-              "finding_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
-              "owned_files": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+              "finding_ids": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "owned_files": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1 }
+              }
             }
           }
         },
         "policy_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       },
-      "allOf": [{
-        "if": { "properties": { "round_number": { "minimum": 2 } } },
-        "then": { "properties": { "previous_wave": { "$ref": "#/$defs/evidence" } } }
-      }]
+      "allOf": [
+        {
+          "if": { "properties": { "round_number": { "minimum": 2 } } },
+          "then": {
+            "properties": { "previous_wave": { "$ref": "#/$defs/evidence" } }
+          }
+        }
+      ]
     },
     "audit_epoch_manifest": {
       "type": "object",
@@ -871,10 +928,40 @@
               {
                 "if": {
                   "anyOf": [
-                    { "properties": { "label_action": { "enum": ["stale", "label_correction_pending"] }, "label_wait_reason": { "type": "null" } } },
-                    { "properties": { "close_action": { "enum": ["stale", "close_correction_pending"] }, "close_wait_reason": { "type": "null" } } },
-                    { "properties": { "delivery_action": { "enum": ["delivery_pending", "stale", "delivery_correction_pending"] }, "delivery_wait_reason": { "type": "null" } } },
-                    { "properties": { "delivery_state": { "const": "integration_pending" }, "delivery_wait_reason": { "type": "null" } } }
+                    {
+                      "properties": {
+                        "label_action": {
+                          "enum": ["stale", "label_correction_pending"]
+                        },
+                        "label_wait_reason": { "type": "null" }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "close_action": {
+                          "enum": ["stale", "close_correction_pending"]
+                        },
+                        "close_wait_reason": { "type": "null" }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "delivery_action": {
+                          "enum": [
+                            "delivery_pending",
+                            "stale",
+                            "delivery_correction_pending"
+                          ]
+                        },
+                        "delivery_wait_reason": { "type": "null" }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "delivery_state": { "const": "integration_pending" },
+                        "delivery_wait_reason": { "type": "null" }
+                      }
+                    }
                   ]
                 },
                 "then": { "properties": { "class": { "const": "recovery" } } }
@@ -945,10 +1032,44 @@
               {
                 "if": {
                   "anyOf": [
-                    { "properties": { "label_action": { "enum": ["stale", "label_correction_pending"] }, "label_wait_reason": { "type": "null" } } },
-                    { "properties": { "close_action": { "enum": ["close_pending", "stale", "close_correction_pending"] }, "close_wait_reason": { "type": "null" } } },
-                    { "properties": { "delivery_action": { "enum": ["delivery_pending", "stale", "delivery_correction_pending"] }, "delivery_wait_reason": { "type": "null" } } },
-                    { "properties": { "delivery_state": { "const": "integration_pending" }, "delivery_wait_reason": { "type": "null" } } }
+                    {
+                      "properties": {
+                        "label_action": {
+                          "enum": ["stale", "label_correction_pending"]
+                        },
+                        "label_wait_reason": { "type": "null" }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "close_action": {
+                          "enum": [
+                            "close_pending",
+                            "stale",
+                            "close_correction_pending"
+                          ]
+                        },
+                        "close_wait_reason": { "type": "null" }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "delivery_action": {
+                          "enum": [
+                            "delivery_pending",
+                            "stale",
+                            "delivery_correction_pending"
+                          ]
+                        },
+                        "delivery_wait_reason": { "type": "null" }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "delivery_state": { "const": "integration_pending" },
+                        "delivery_wait_reason": { "type": "null" }
+                      }
+                    }
                   ]
                 },
                 "then": { "properties": { "class": { "const": "recovery" } } }

@@ -70,7 +70,10 @@ export function createRequireUser(
         query: { disableCookieCache: true },
       });
     } catch (error) {
-      log.error({ err: error }, "Could not read the session in the auth guard.");
+      log.error(
+        { err: error },
+        "Could not read the session in the auth guard.",
+      );
       return context.json(
         { error: "Sign-in is temporarily unavailable. Try again." },
         503,

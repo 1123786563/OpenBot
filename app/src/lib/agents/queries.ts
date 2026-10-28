@@ -294,7 +294,11 @@ export function scopedAgentHandoffQueryOptions(
             guarded(queryClient, open.userId, async () => {
               const response = await tryClient(
                 `${agentApiPath(agentId)}/handoff`,
-                { signal, fallbackKey: "agents.loadDelegation", ...(open.selection ?? {}) },
+                {
+                  signal,
+                  fallbackKey: "agents.loadDelegation",
+                  ...(open.selection ?? {}),
+                },
               );
               if (!response.ok) {
                 if (response.status === 404) throw new AgentUnavailableError();

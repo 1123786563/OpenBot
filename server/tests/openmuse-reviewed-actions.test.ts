@@ -4000,10 +4000,14 @@ describe("a rejecting executor does not strand the row executing", () => {
     expect(stored?.status).toBe("outcome_unknown");
     // The operator's surface can still close it (the route's admin seat is
     // routes-level; the service method is the same contract).
-    const reconciled = await fixture.service.reconcile("ops@openbot.test", created.id, {
-      outcome: "confirmed_not_sent",
-      evidence: "operator closed the uncertain send",
-    });
+    const reconciled = await fixture.service.reconcile(
+      "ops@openbot.test",
+      created.id,
+      {
+        outcome: "confirmed_not_sent",
+        evidence: "operator closed the uncertain send",
+      },
+    );
     expect(reconciled?.status).toBe("failed");
   });
 });

@@ -151,9 +151,7 @@ export function createApprovalQuestions(
         // question) would otherwise swallow this answer while the caller reads
         // queued: true.
         if (!queued)
-          throw new ApprovalRefusedError(
-            "This response was already recorded.",
-          );
+          throw new ApprovalRefusedError("This response was already recorded.");
         await tx
           .update(workItems)
           .set({ finishedAt: sql`now()`, updatedAt: sql`now()` })
