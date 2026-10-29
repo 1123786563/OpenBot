@@ -1362,7 +1362,7 @@ test("a terminal remote run closes its upstream root with the observed window", 
   expect(closed.endTimeUnixNano).toBe(nanos(fact.endedAt));
   expect(closed.startTimeUnixNano).toBe(nanos(fact.dial!.startedAt));
   expect(
-    (closed.attributes as Record<string, unknown>)["span_state"],
+    (closed.attributes as Record<string, unknown>).span_state,
   ).toMatchObject({ state: "projected", value: "completed" });
   expect(rootClose!.binding?.opikTraceId).toBe(identity.opikTraceId);
 

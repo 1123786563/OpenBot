@@ -784,12 +784,10 @@ async function collectOne(
       usageActual.length > 0
         ? JSON.stringify(
             usageActual.map((s) => ({
-              tokens_input: ((s.input ?? {}) as Record<string, unknown>)[
-                "tokens_input"
-              ],
-              tokens_output: ((s.input ?? {}) as Record<string, unknown>)[
-                "tokens_output"
-              ],
+              tokens_input: ((s.input ?? {}) as Record<string, unknown>)
+                .tokens_input,
+              tokens_output: ((s.input ?? {}) as Record<string, unknown>)
+                .tokens_output,
             })),
           )
         : "no span carries actual provider usage",

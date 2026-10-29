@@ -48,6 +48,7 @@ export * from "./enterprise-model-routes";
 export * from "./enterprise-oauth-state";
 export * from "./enterprise-personal-bot";
 export * from "./enterprise-personal-memory";
+export * from "./enterprise-plugin-packages";
 export * from "./enterprise-plugins";
 export * from "./enterprise-purge-restore";
 export * from "./enterprise-runs";

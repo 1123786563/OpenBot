@@ -69,7 +69,7 @@ async function main() {
   const input = args(process.argv.slice(2));
   const opikUrl = need(input, "opik").replace(/\/+$/, "");
   const evidenceDir = need(input, "evidence");
-  const databaseUrl = input["database"];
+  const databaseUrl = input.database;
   mkdirSync(evidenceDir, { recursive: true });
 
   const manifest = (await Bun.file(
@@ -317,15 +317,13 @@ async function main() {
   const s = evidence.steps as Record<string, Record<string, unknown>>;
   if (s["instance-health"].healthy !== true)
     failures.push("instance-unhealthy");
-  if (s["materialize"].reconciled !== true) failures.push("not-reconciled");
+  if (s.materialize.reconciled !== true) failures.push("not-reconciled");
   // no-stats fails the run AND skips the dependent assertion: dereferencing a
   // missing stats object here would throw away every failure collected above.
-  const stats = s["materialize"].healthStats as
-    | { completed: number }
-    | undefined;
+  const stats = s.materialize.healthStats as { completed: number } | undefined;
   if (stats === undefined) failures.push("no-stats");
   else if (stats.completed !== 2) failures.push(`completed=${stats.completed}`);
-  const rb = s["readback"];
+  const rb = s.readback;
   if (rb.detailStatus !== "present") failures.push(`detail=${rb.detailStatus}`);
   if (rb.syncing !== false) failures.push("still-syncing");
   if (Array.isArray(rb.steps) && (rb.steps as unknown[]).length !== 2)
