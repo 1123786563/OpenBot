@@ -240,3 +240,161 @@ describe("MOD01 import 检查器 — 反例", () => {
     }
   });
 });
+
+describe("MOD01 public 出口环", () => {
+  for (const scenario of [
+    { name: "双向 public 引用拒绝", reverse: "public", cycle: true },
+    { name: "public 与深层引用混合环拒绝", reverse: "internal", cycle: true },
+    { name: "单向 public 引用通过", reverse: null, cycle: false },
+  ]) {
+    test(scenario.name, () => {
+      const roots: ModuleRoot[] = [
+        { path: "modA", module: "MA", kind: "business" },
+        { path: "modB", module: "MB", kind: "business" },
+      ];
+      const { cwd, cleanup } = makeFixture(
+        {
+          "modA/public.ts": `export const a = 1;`,
+          "modA/internal.ts": `export const a = 1;`,
+          "modA/use.ts": `import { b } from "../modB/public";`,
+          "modB/public.ts": `export const b = 1;`,
+          "modB/use.ts": scenario.reverse
+            ? `import { a } from "../modA/${scenario.reverse}";`
+            : `export const b = 1;`,
+        },
+        roots,
+        ["modA", "modB"],
+      );
+      try {
+        const result = runCheck(
+          { version: 1, moduleRoots: roots, exceptions: [] },
+          { cwd, scanRoots: ["modA", "modB"] },
+        );
+        expect(result.ok).toBe(!scenario.cycle);
+        expect(result.violations.map((v) => v.category)).toEqual(
+          scenario.cycle ? ["cycle", "cycle"] : [],
+        );
+        expect(result.cycles.length > 0).toBe(scenario.cycle);
+        expect(result.phantomExceptions).toEqual([]);
+      } finally {
+        cleanup();
+      }
+    });
+  }
+
+  test("深层引用例外在新增反向 public 边时变为幻影，移除后恢复消费", () => {
+    const roots: ModuleRoot[] = [
+      { path: "modA", module: "MA", kind: "business" },
+      { path: "modB", module: "MB", kind: "business" },
+    ];
+    const { cwd, cleanup } = makeFixture(
+      {
+        "modA/public.ts": `export const a = 1;`,
+        "modA/use.ts": `import { b } from "../modB/internal";`,
+        "modB/internal.ts": `export const b = 1;`,
+        "modB/use.ts": `import { a } from "../modA/public";`,
+      },
+      roots,
+      ["modA", "modB"],
+    );
+    const exception = {
+      source: "modA/use.ts",
+      target: "modB/internal.ts",
+      category: "deep-reference",
+      reason: "存量引用",
+      ticket: "MOD99",
+      exit_condition: "迁移出口",
+    };
+    try {
+      const config: CheckConfig = {
+        version: 1,
+        moduleRoots: roots,
+        exceptions: [exception],
+      };
+      const options = { cwd, scanRoots: ["modA", "modB"] };
+      const cyclic = runCheck(config, options);
+      expect(cyclic.ok).toBe(false);
+      expect(cyclic.violations.map((v) => v.category)).toEqual([
+        "cycle",
+        "cycle",
+      ]);
+      expect(cyclic.cycles.length).toBeGreaterThan(0);
+      expect(cyclic.phantomExceptions).toEqual([exception]);
+
+      writeFileSync(join(cwd, "modB/use.ts"), `export const b = 1;`);
+      const oneWay = runCheck(config, options);
+      expect(oneWay.ok).toBe(true);
+      expect(oneWay.violations).toEqual([]);
+      expect(oneWay.cycles).toEqual([]);
+      expect(oneWay.phantomExceptions).toEqual([]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("integration 出口双向引用形成环", () => {
+    const roots: ModuleRoot[] = [
+      { path: "modA", module: "MA", kind: "business" },
+      { path: "modB", module: "MB", kind: "business" },
+    ];
+    const { cwd, cleanup } = makeFixture(
+      {
+        "modA/integration.ts": `export const a = 1;`,
+        "modA/use.ts": `import { b } from "../modB/integration";`,
+        "modB/integration.ts": `export const b = 1;`,
+        "modB/use.ts": `import { a } from "../modA/integration";`,
+      },
+      roots,
+      ["modA", "modB"],
+    );
+    try {
+      const result = runCheck(
+        { version: 1, moduleRoots: roots, exceptions: [] },
+        { cwd, scanRoots: ["modA", "modB"] },
+      );
+      expect(result.ok).toBe(false);
+      expect(result.violations.map((v) => v.category)).toEqual([
+        "cycle",
+        "cycle",
+      ]);
+      expect(result.cycles.length).toBeGreaterThan(0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("三个模块通过 public 出口形成环", () => {
+    const roots: ModuleRoot[] = [
+      { path: "modA", module: "MA", kind: "business" },
+      { path: "modB", module: "MB", kind: "business" },
+      { path: "modC", module: "MC", kind: "business" },
+    ];
+    const { cwd, cleanup } = makeFixture(
+      {
+        "modA/public.ts": `export const a = 1;`,
+        "modA/use.ts": `import { b } from "../modB/public";`,
+        "modB/public.ts": `export const b = 1;`,
+        "modB/use.ts": `import { c } from "../modC/public";`,
+        "modC/public.ts": `export const c = 1;`,
+        "modC/use.ts": `import { a } from "../modA/public";`,
+      },
+      roots,
+      ["modA", "modB", "modC"],
+    );
+    try {
+      const result = runCheck(
+        { version: 1, moduleRoots: roots, exceptions: [] },
+        { cwd, scanRoots: ["modA", "modB", "modC"] },
+      );
+      expect(result.ok).toBe(false);
+      expect(result.violations.map((v) => v.category)).toEqual([
+        "cycle",
+        "cycle",
+        "cycle",
+      ]);
+      expect(result.cycles.length).toBeGreaterThan(0);
+    } finally {
+      cleanup();
+    }
+  });
+});
