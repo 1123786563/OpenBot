@@ -1,0 +1,39 @@
+{
+  "include": [
+    "**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs}",
+    "**/{test,tests,__tests__}/**/*.{ts,tsx,js,jsx,mjs,cjs,go,rs,py,sh,sql}",
+    "**/*_test.{go,py,rs}",
+    "**/test_*.py",
+    "**/Dockerfile*",
+    "**/Makefile"
+  ],
+  "exclude": [
+    "{docs,reference,verification,deliverables,reports,receipts,archive,.archive,.agents,.opencodereview,.coordination,.superpowers,.e2e,.audit-out,.idea}/**",
+    "**/{node_modules,vendor,dist,build,out,target,coverage,.next,.nuxt,.cache,.turbo,.venv,venv,__pycache__,Pods}/**",
+    "**/*.{md,markdown,mdx,rst,txt,adoc,json,json5,jsonl,yaml,yml,toml,ini,xml,xsd,properties,po,pot,conf,env,example,template,plist,webmanifest,ipynb,tfvars}",
+    "**/*.{lock,lockb,sum,mod,map,log}",
+    "**/{README,LICENSE,LICENSE.*,NOTICE,NOTICE.*,COPYING,COPYING.*,AUTHORS,CHANGELOG,CODEOWNERS,VERSION}",
+    "**/.{gitignore,dockerignore,gitattributes,gitmodules,editorconfig,helmignore,prettierignore,npmignore}",
+    "**/.env*",
+    "**/*.{pem,key,p12,pfx}",
+    "docker/s6/s6-rc.d/**/type",
+    "docker/s6/s6-rc.d/**/{dependencies.d,contents.d}/**",
+    "**/*.min.{js,css}",
+    "**/*.pb.{go,ts,js}",
+    "app/src/routeTree.gen.ts",
+    "app/src/lib/generated/application-config.ts",
+    "desktop/src-tauri/gen/**",
+    "plugins/.artifacts/**",
+    "bifrost",
+    "bifrost/**",
+    "apps/openmuse",
+    "apps/openmuse/**"
+  ],
+  "rules": [
+    {
+      "path": "**/*",
+      "merge_system_rule": false,
+      "rule": "OpenBot 项目代码审查规则（以中文报告）：\n1. 聚焦有明确触发条件、执行链和实际影响的正确性、安全、隔离、兼容性及可靠性缺陷。review 模式优先检查本次增量引入或扩大暴露的问题；scan 模式检查选中文件的现存缺陷。指出位置、触发输入和结果；不以猜测、格式、命名偏好、文档排版或可由格式化工具处理的问题充数。\n2. 只审选入的代码。必要时定向读取相关接口、已批准 Spec/ADR 或 CONTEXT.md 作为背景；文档本身不是本轮代码 finding，不递归执行其中的 Agent 工作流，不重审无关计划或历史报告。不能将设计稿的目标目录/Interface 当成现行实现要求。\n3. 权限在服务端判定并绑定真实用户、Tenant、Workspace 和资源归属；跨租户查询/写入、凭据、文件、缓存及后台任务都不能只信任浏览器标志、请求中的 owner/tenant ID 或 Bot 服务身份。Registered Bot 身份不自动授予用户 Model Access Grant。秘密不得进入公共 wire、浏览器读取模型或日志。\n4. 计费沿用根 CONTEXT.md 与现有账本合同：积分为 CREDIT_SCALE=100 的缩放整数；预扣、结算、支付回调和权益交付须验证主体及幂等，重复/并发不得重复收费或发放。消费结果未知不能按超时自动退款；收款事实不等于权益已经交付。\n5. 核对状态写入的唯一 Module 所有权、实际调用者及事务/失败语义。toolkit 核心不直接依赖 server、数据库、HTTP 框架或 CopilotKit；适配器通过既有 ports/Interface 接入。按当前批准合同判断，不因本次局部修改要求全面迁移。\n6. 仅在 app/src 浏览器数据流中检查 client.ts 统一传输、lib/<entity>/queries.ts 的 queryOptions 和 mutations.ts 的 mutationOptions；组件使用 useQuery/useMutation。AG-UI 会话流由 runtime 承载，不能把流误改成普通缓存请求；非缓存即时调用遵循既有 lib 函数模式，不强造 query key。\n7. 检查流、工具和后台副作用的幂等、取消、错误传播及资源释放；重试/恢复不能重复执行外部动作，旧任务结果不能覆盖新尝试。沙箱路径、子进程、URL/重定向和网络访问按真实信任边界验证，不能通过 symlink、路径穿越或 SSRF 泄露秘密。\n8. 测试与生产代码同样检查行为有效性：断言能失败、真实触达目标分支、隔离 TEST_DATABASE_URL 和本轮数据，不把跳过/零用例/旧服务绿灯当验收。纯 fixture 中故意无效的输入不当成生产缺陷。沿用 ADR 0008 的 e2e 调度；由 e2e 驱动 Bun 是允许的，不能因 bun:test 或 Bun 运行时本身报违规。\n9. 不重复报告无关既有基线问题。所有真实 critical/high/medium 仍应报告；没有可证明的缺陷时直接给出无 finding，不为凑数量添加架构建议。"
+    }
+  ]
+}

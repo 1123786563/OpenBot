@@ -1,20 +1,20 @@
 # 验证流程与测试容器
 
-运行任何测试或验证前，先读 [测试 ADR 0008](../../docs/adr/0008-test-runner-tester-army-e2e.md)。按以下顺序执行，把命令、退出码、实际用例数、跳过项和清理结果写入 `.archive/runs/<run-key>/verification/`；方案只保留验收方法和证据入口。
+运行软件测试前，先读 [测试 ADR 0008](../../docs/adr/0008-test-runner-tester-army-e2e.md)。按改动范围选择相关检查；纯规则/文档改动以链接、差异和流程场景核验为主，不为文档强跑无关产品测试。记录命令、退出码、实际用例数（适用时）、跳过项和清理结果；按 [artifacts.md](artifacts.md)保留与流程档位相称的证据，方案只保留验收方法和证据入口。
 
 1. 根据改动范围选择最小的相关测试，再运行适用的类型检查、Lint、构建和验收检查。规范入口按测试 ADR 确定，`package.json` 只提供具体 argv，命令存在不构成批准例外；`bun run test:ci` 会额外核验实际执行的测试数量及未收集的测试文件。报告跳过项、环境限制和失败，不把退出码 0 单独当作覆盖证据。
 2. 需要 Docker 时，先记录已有容器及其归属。仅复用已证明版本和数据隔离适合的依赖，不因测试结束而停止它们；若需新建，使用独立的 Compose project、唯一名称或测试标签，并记录新建的容器 ID。测试脚本自行创建的容器也纳入本次记录。跨 Run 的数据库、端口、Compose project、缓存和输出目录按[共享协调状态](coordination-state.md)先登记再使用。
 3. 在运行测试的同一流程中设置清理步骤（shell `trap` 或程序 `finally`），使成功、失败和中断时都能关闭本次新建的容器。`docker run` 和 `docker compose run` 的一次性容器优先使用 `--rm`；独立 Compose project 在测试后使用**同一个 project 名、Compose 文件、project-directory、env-file 与必要 profile**执行 down。其他新建容器按已记录 ID 停止并移除。清理失败须报告容器 ID 和错误。
 4. 清理后再次检查这些 ID 或测试 project，通过 inspect/同 project 的全状态列表确认本次新建容器 ID 已不存在（停止仍残留不算移除），并核对本轮网络/挂载/名称占用已释放或有明确保留归属；未通过检查时不得报告验证完成。保留测试日志、退出码与清理结果。只清理本次创建且已核对归属的资源；已有服务、其他 Agent 的容器及数据卷保持原状。
-5. 运行器临时结果放在 `.e2e/<run-key>/<task>-<attempt>/`，使用 `E2E_UNIT_OUTPUT` 等已支持参数指定唯一目录，并使汇总脚本读取同一目录。不能配置输出位置时，将固定目录作为独占资源，运行后立即复制归档。最终证据保存到 Run 的 `verification/`，记录检查点、命令、退出码、用例数、失败/跳过、原始文件清单及 SHA-256，并按 [checkpoints.md](checkpoints.md)将输出声明为交付物或绑定源检查点的 rebuildable_output；核验归档可读后才释放输出目录。`.e2e/` 是临时工作区，不是最终留存位置。
+5. 运行器临时结果放在 `.e2e/<run-key>/<task>-<attempt>/`，使用 `E2E_UNIT_OUTPUT` 等已支持参数指定唯一目录，并使汇总脚本读取同一目录。不能配置输出位置时，将固定目录作为独占资源，运行后立即复制归档。最终证据按 [artifacts.md](artifacts.md)保留命令、源码版本、退出码、用例数及失败/跳过；完整流程及跨 Run 转移另保存输出清单/哈希，按 [checkpoints.md](checkpoints.md)绑定源检查点。核验必要报告可读后才释放输出目录。`.e2e/` 是临时工作区，不是最终留存位置。
 
 ## 规范入口、诊断与交付 CI
 
 层级为：有效测试 ADR 的规范入口 → 有权批准的具名例外 → 辅助诊断。ADR 0008 要求 e2e 统一入口、调度和报告，依赖 Bun 的套件通过其驱动层执行。直接 `bun test` 仅可用于诊断，不能以其绿灯代替 e2e 的正式验收和收集覆盖对账。
 
-当前 `package.json` 的 `test:tls` 直接调用 bun test，按此层级记为辅助诊断/待迁移入口，不是本规则批准的例外；即使 CI 调用了它也不改变 ADR。TLS 正式证据须从 e2e 统一调度及覆盖报告取得；未接入或不可运行时保留验证缺口。具名例外须有批准者/approval_ref、套件范围、替代报告/覆盖方法、有效期及回迁条件；本次规则修订不擅改 ADR 或测试脚本。
+具体测试 argv 从当前 `package.json` 读取，不在规则缓存脚本实现。TLS 等套件通过 e2e 驱动 Bun 时属于统一调度入口；正式证据须包含对应收集/执行报告，命令名或 CI 调用本身不替代覆盖核验。具名例外须有批准者/approval_ref、套件范围、替代报告/覆盖方法、有效期及回迁条件；本次规则修订不擅改 ADR 或测试脚本。
 
-关闭/贴标/交付前登记目标 SHA 的必需检查集合：读取目标分支保护/ruleset 的 Required Checks，并核对该 SHA 中标准 CI 工作流及其 event/path 条件（当前 CI 入口为 `.github/workflows/ci.yml`，聚合 job 为 verify）。保存查询时间、配置版本、check 名称/应用身份、run URL、head SHA、结论及被跳过原因。Required Checks 与适用标准 CI 均须 completed/success，必要 live 验收另补；pending、failure、cancelled、未运行、无法读取均保持 blocked。skipped/neutral 只有经工作流条件和改动范围证明不适用、独立审核确认时可排除；仅聚合绿灯不能掩盖必要 job 被跳过。没有配置 Required Checks 不等于无需标准 CI。只有目标交付契约从未配置适用标准 CI 时，才可按有权批准的交付契约采用等价完整验证和独立批准依据；CI 故障、权限不足、暂时不可读、pending 或结果缺失不属于该例外，始终 blocked。此远端交付门禁不阻止无远端 SHA 的本地草稿修订，后者不宣称完成目标交付。
+目标 SHA 变化时，行为验收及 Review/OCR 的复用按 [review.md](review.md)判断；CI 仍绑定实际目标 SHA。关闭/贴标/交付前登记目标 SHA 的必需检查集合：读取目标分支保护/ruleset 的 Required Checks，并核对该 SHA 中标准 CI 工作流及其 event/path 条件（当前 CI 入口为 `.github/workflows/ci.yml`，聚合 job 为 verify）。保存查询时间、配置版本、check 名称/应用身份、run URL、head SHA、结论及被跳过原因。Required Checks 与适用标准 CI 均须 completed/success，必要 live 验收另补；pending、failure、cancelled、未运行、无法读取均保持 blocked。skipped/neutral 只有经工作流条件和改动范围证明不适用、独立审核确认时可排除；仅聚合绿灯不能掩盖必要 job 被跳过。没有配置 Required Checks 不等于无需标准 CI。只有目标交付契约从未配置适用标准 CI 时，才可按有权批准的交付契约采用等价完整验证和独立批准依据；CI 故障、权限不足、暂时不可读、pending 或结果缺失不属于该例外，始终 blocked。此远端交付门禁不阻止无远端 SHA 的本地草稿修订，后者不宣称完成目标交付。
 
 使用 merge queue 前，核对目标 SHA 的 CI 工作流支持 `merge_group` 的 `checks_requested`，且必需 job 的 event/path 条件实际覆盖该候选；当前 `.github/workflows/ci.yml` 尚未声明该触发器，不能假定队列检查已接入。队列实际启用须另完成 CI 接入及候选 SHA 的门禁验收；本规则修订不启用队列或修改工作流。终审/OCR 也须有能在合入前约束该候选的必需检查，不能只靠普通 PR 绿灯。候选失效或重建时按 [交付门禁](delivery-gates.md)重新绑定验证与审查结果。
 

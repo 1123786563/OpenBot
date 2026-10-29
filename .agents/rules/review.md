@@ -1,48 +1,57 @@
 # Review、OCR 与交付
 
-任务审查、处理 finding 或最终交付时读取。仅 Review 的用户请求不授权修改；已授权完整实施则包含必要修复。
+审查、处理 finding 或最终交付时读取。仅 Review 不授权修改；已授权实施包含必要修复。审核要求按 [execution.md](execution.md)的档位选择。
 
-## 任务 Review
+## 审核范围与独立性
 
-普通 SDD 负责每 Task 的独立 Spec compliance 与 code quality Review。Reviewer 默认只读；验证者和实现者自查不能替代独立 Review。Orca 多 Agent Run 的任务审核与集成终审 Agent 按 [Agent 选择](orchestration-agents.md)确定，具体门禁见[编排审核与交付](orchestration-review.md)。非 Orca 的完整分支审查按风险使用当前已验证可用的 Sol high 或 Astra high；角色/升级遵守 [execution.md](execution.md)。
+- 轻量任务完成 diff 自查和相关验证，不强制独立 Review 或 OCR。
+- 标准任务对完整授权增量做一次独立 Spec compliance / code quality Review。修复后复审受影响差异及调用链；不按文件或角色机械拆成多轮审核。
+- 完整任务先完成独立行为验收和独立 Review。一个任务且没有额外集成差异时，其完整范围的独立 Review 可作为终审；多任务、跨分支集成或整体风险无法局部判定时，另审实际组合结果。独立性遵守 [execution.md](execution.md)。
+- Orca 多 Agent、已关闭 Issue 审计和每日自动化继续执行各自的独立身份、任务审核和完整终审要求；Agent 选择见 [orchestration-agents.md](orchestration-agents.md)。
 
-每任务最多 5 轮修复；第 4–5 轮使用新上下文并至少升级一档。非 Orca 按 [execution.md](execution.md)选择已验证的更强 Sol/Astra；Orca 的升级候选、参数授权与无可用升级时的阻塞处理统一按 [Agent 选择](orchestration-agents.md)，不绕过主机或模型授权限制。连续两轮同一 finding 无进展即触发 `systematic-debugging`，按上述路径换新上下文、升级并重判根因；缺权限、环境或必要输入时记录阻塞与恢复条件。真实阻塞问题未解决不能交付，不因达到轮次上限而改判通过。
+每任务最多 5 轮修复。连续两轮同一 finding 无实质进展时，重新复现、核对根因并换新上下文；第 4–5 轮核实可用的更强能力后升级。记录实际配置和依据；强制升级无法满足时报告阻塞，不编造能力或变更未经授权的模型参数。达到轮次上限仍有真实阻塞问题时不能交付。Orca 升级按 [Agent 选择](orchestration-agents.md)。
 
-## Finding 裁决与统一通过阈值
-
-此标准同时适用于任务 Review、终审、OCR、通用/Orca 回溯审计和每日审计。稳定 finding ID 关联原发现者、复现输入、影响验收、代码位置及每轮检查点；迁移位置不产生“新问题已消失”的假象。
+## Finding 裁决
 
 | 严重度 | 判定依据 | 门禁 |
 | --- | --- | --- |
-| critical | 可造成严重越权、秘密/数据大规模泄露、不可恢复损坏或核心服务全面失效 | 有效即阻塞 |
+| critical | 严重越权、大规模秘密/数据泄露、不可恢复损坏或核心服务全面失效 | 有效即阻塞 |
 | high | 安全/隔离边界破坏、主要验收不可达、重大数据/兼容性错误 | 有效即阻塞 |
 | medium | 可复现的正确性、回归、可靠性缺陷，或必需验收/证据缺口 | 有效即阻塞 |
-| low | 不影响验收、安全、隔离或数据正确性的局部可维护性/展示改进 | 可修复或按下述条件接受风险 |
+| low | 不影响验收、安全、隔离或数据正确性的局部可维护性/展示改进 | 记录后可继续，不强制修复或单独审批 |
 
-“有效阻塞/真实阻塞问题”统一指有效 critical/high/medium，以及导致必需验收或证据无法成立的环境/权限/完整性阻塞。无“非阻塞 medium”的放行例外。主控核实 finding，不得单方通过降低严重度绕过门禁；误报/降级须有复现或反证、影响分析，并由新的独立 reviewer 确认，保留原级别和裁决链。涉及需求取舍仍须 [design.md](design.md) 的有权批准者决定，不能作为已满足原验收。
+记录 finding 的位置、复现/反证、影响和处理结论；跨轮修复保留稳定 ID，避免问题换名后丢失。误报由主控基于证据裁决；存在争议、影响需求取舍或涉及安全/隔离的裁决，交独立 reviewer 或有权决策者核实。不得仅为放行降低真实问题等级；变更需求仍按 [design.md](design.md)批准。
 
-low 延期须记录有权风险接受人及 `approval_ref`、理由/影响、可访问跟踪 Issue 或项目风险条目、责任人、恢复触发条件和复评截止日；缺任何项则保持待处理，不自行接受风险。有权风险接受依据只能是当前用户覆盖该风险的明确决定，或已批准 Spec/ADR 中可核实且覆盖该范围的风险接受角色授权；GitHub 身份、维护者标签、Agent 自述或角色名称本身不构成接受。关闭后跟踪入口仍须有效。
+low 可在报告中注明暂不处理及理由，无需专门建 Issue、设置截止日或取得风险接受审批。若延期实际影响验收、安全、隔离或数据正确性，须按真实影响重新分级；用户或批准 Spec/ADR 明确要求跟踪的风险继续遵守该契约。
 
-“同一 finding 无进展”指连续两轮在新检查点上复现相同失败或仍缺同一必需证据，且没有验收结果/可复现根因边界的实质变化；改文字、换 ID 或重跑相同配置不算进展。Ledger 对比 ID、输入、结果和影响。非 Orca 升级依次考虑同模型更高推理等级、已核实更强的 Sol、Astra；后两者须有当前能力证据，不单按名称断言顺序。记录前后有效配置和能力改善依据；不支持或无可证明升级则 blocked。Orca 参数授权仍按 [Agent 选择](orchestration-agents.md)。
+## 变化后的证据承接
 
-## OCR 外层关卡
+首次审核覆盖该档位要求的完整授权范围。后续源码、目标 SHA、需求或环境变化时，先比较旧/新内容、递归 gitlink、依赖/配置和验收，记录影响，再决定补验和复审范围：
 
-Issue 实施及所有已关闭 Issue 回溯审计在验证和独立 Review 后，由主控按 `open-code-review` Skill 直接执行 OCR，始终 `--audience agent`，提供 Issue、验收、接口和范围背景，不先探测安装情况。Orca Run 先集成、验证并由选定的终审 Agent 审查完整范围，再完成外层 OCR。技能未安装或不可调用时按 [execution.md](execution.md)记录 `capability_blocked`；只有当前用户明确授权本次安装及安装范围后才可按技能安装，并记录实际环境变更，仅 Review 的请求不暗含安装授权。不支持 `--output` 时同样先取得升级授权；provider/凭据失败报告所需配置，禁止编造凭据或盲重试。`review_model` 不配置 OCR provider，不能假定终审 Agent 的模型别名可用于 OCR。
+1. 仅提交身份变化，交付 tree、所需前置内容、需求与验证环境均相同：以原报告/日志中的依赖与脱敏配置身份、工具版本和验证命令核对，保留原报告并记录新旧映射，无需重跑相同 Review/OCR；缺少可核对的旧记录时不能走本项，按第 2/3 项补验。目标 SHA 的 CI 仍须重新核验。
+2. 差异和影响可明确界定：承接未受影响的通过证据，验证/审查新增差异、相关调用链与必要组合行为。标准/完整流程由独立 reviewer 确认承接范围；OCR 适用时保存原报告、新输入和逐项覆盖映射，不能把新增文件视为已审。
+3. 影响不明、需求/接口整体改变，或涉及全局安全/隔离假设：重新执行受影响的完整验收及审查。旧报告只作历史；无法安全补齐覆盖时保留阻塞。
 
-- 已提交范围使用真实记录的 BASE、HEAD：`ocr review --audience agent --background "业务背景" --from <BASE> --to <HEAD> --output <本轮报告路径>`，执行前替换真实参数。
-- 有未提交交付时使用 workspace 模式覆盖 staged、unstaged 和 untracked；混合交付同时审查已提交范围，不能遗漏已提交部分。原始 BASE..HEAD 只含授权内容时直接使用；夹杂无关用户提交时按 [checkpoints.md](checkpoints.md)构建授权提交镜像及映射，不将无关内容送入 provider。
-- 有无关用户基线或敏感内容时，按[检查点规范](checkpoints.md)构建干净审查镜像并核对授权增量，不能直接把整个脏工作区送入 OCR 或修复基线 finding。受影响子模块分别执行其仓库范围的 Review/OCR，再核对父仓库 gitlink；根仓库报告不替代子模块审查。
-- 每轮单独保存范围、SHA/检查点、退出码、警告、跳过与失败文件。exit 0、超时或预算不足不能替代完整覆盖。
-- finding 按本文件统一标准裁决和处理；延期仅适用于获风险接受的 low。
-- 有效问题生成只覆盖 finding 的编号修复 DAG/方案，使用 writing-plans；普通实施走 SDD 专业实现者、验证者、reviewer，Orca 多 Agent Run 的实施、独立任务复审与完整终审按 [Agent 选择](orchestration-agents.md)执行。主控不绕过已选流程自修生产代码。
-- 修复后重新 OCR，确认原问题消除；最终对完整授权交付范围（含已提交映射及全部未提交交付）取得覆盖完整的通过报告。外层新编号修复方案不受单次 SDD “一次修复波次”限制，也不重派原已完成 Task。
+承接证据必须有可读原报告、明确的旧检查点及覆盖范围，并证明相关代码、前置依赖、环境、输入和验收未变化；仅 SHA 相同或测试 exit 0 不够。专用自动化明确要求当前目标完整终审/OCR 时，仍执行其完整关卡。
 
-OCR 覆盖必须可对账：从逐仓库交付 manifest 生成预期文件及改动范围，保存 OCR 实际输入/处理清单、工具版本/配置、报告清单和逐项映射。仅二进制及可重建生成文件可经独立 reviewer 批准排除 OCR 文本分析，并须记录理由、源文件关系及替代验证/安全审查；预期集合 = 已实际 OCR 项 + 此类具名排除项。源码、配置、需求文档及子模块内容必须实际进入 OCR，不得因 reviewer 批准、敏感、skipped、预算、超时、文件过大或工具不支持而计入排除项；无法安全或完整处理时保持覆盖阻塞。failed/未知/无清单证据的项保持未覆盖；拆批/重跑或补独立审查不能冒充 OCR 已审。回溯审计按验收映射列出目标 SHA 的实现、装配链及相关变更作为预期输入；无可用差异时构造只读审查镜像，不能以空 diff 通过。零 finding 或 exit 0 不等于覆盖完整。归档/外发前执行 [artifacts.md](artifacts.md) 的敏感信息检查。
+## OCR（完整流程、专用审计或明确要求时）
 
-所有审查、修复验证和裁决证据写入 `.archive/runs/<run-key>/`，方案写到 `docs/plans/`；具体布局见 [artifacts.md](artifacts.md)。
+完整流程和所有已关闭 Issue 回溯审计，在验证与独立 Review 后由主控按 `open-code-review` Skill 对适用代码执行 OCR，始终 `--audience agent`，提供需求、验收、接口和授权范围。标准/轻量流程不因关联 Issue 自动增加 OCR。技能/工具故障阻塞适用的 OCR，不将独立 Review 冒充工具报告；安装、升级及 provider 配置按现有授权，不盲重试或编造凭据。
+
+默认代码范围由根 [项目配置](../../.opencodereview/rule.json)定义；普通流程及专用编排中的“完整 OCR”均指完整的适用代码范围。文档、非代码配置/数据、日志/归档、依赖、锁文件及具名生成物不送入 OCR；它们仍须完成适用验证和独立 Review，不因被排除而免验收。仅此类文件变化时记录 `not_applicable: no_code_changes`，不把空扫描/零 finding 称作 OCR 通过，也不为满足 OCR 再强制 include Markdown。源码、测试、迁移 SQL 和运行脚本不能以预算/工具失败冒充范围排除；子模块各自审查，不以根配置的排除宣称子模块已通过。
+
+执行前用 `ocr review --preview` 或 `ocr scan --preview`核对实际选入和排除清单，排除原因与授权代码 manifest 对账。原生 `include` 仅绕过默认过滤，不是严格白名单；`exclude` 优先，且不支持 Gitignore 的 `!` 重纳入。新类型/目录需检查实际预览，不能凭 include 推断只剩代码。scan 从仓库根运行或显式 `--repo <根目录>`；项目规则自动加载，临时 `--rule` 可覆盖项目过滤，使用时须重新核对范围。配置只控制待审集合，不能当作后续 file_read/code_search 的访问控制。
+
+- 已提交范围使用真实 BASE/HEAD；未提交用 workspace 模式覆盖 staged、unstaged、授权 untracked。混合交付两部分均覆盖，不以空 diff 通过。
+- 无关用户基线和敏感内容不送入 provider；需要审查镜像时按 [checkpoints.md](checkpoints.md)隔离并核对授权增量。受影响子模块分别审查，父仓库核对 gitlink。
+- 保存输入/实际处理清单、检查点、工具配置、报告、退出码、警告与 skipped/failed。只有可核实的实际覆盖才算 OCR；工具不支持、预算或敏感限制留下的源码/配置/需求缺口不得冒充通过。
+- 二进制及可重建生成文件可具名排除文本分析，记录理由、源关系和替代验证，由独立 reviewer 核实。其余预期项须有当前实际报告或满足上节契约的承接映射。
+- finding 按上述阈值修复、验证并复审；范围明确的局部修复沿用原计划/任务，新增依赖或扩大范围时再更新计划。专用编排修复遵守其派发路径。
+
+覆盖对账以“承接的有效覆盖 + 新增实际覆盖 + 允许的具名非文本排除”匹配本轮预期集合；专用审计要求完整重跑时不承接 OCR。归档/外发前按 [artifacts.md](artifacts.md)脱敏，零 finding 或 exit 0 不单独证明覆盖完整。
 
 ## 完成与收尾
 
-Issue 实施完成须同时满足：Issue 树及最新范围明确、验收映射无遗漏、交付节点 verified、适用测试/类型检查/Lint/构建通过、独立 Review 通过、完整 OCR 无有效 critical/high/medium、最终 diff 仅授权范围。真实环境阻塞或有效 critical/high/medium finding 不计完成；low 延期按风险接受契约持续跟踪。本地实现 verified 与目标分支交付分别记录；未进入事先约定的交付目标时为 `integration_pending`，不能据本地通过关闭 Issue。目标 SHA、需求或交付树变化时按 [delivery-gates.md](delivery-gates.md)重新冻结，完成相关验收、完整独立终审和完整 OCR；Required Checks/标准 CI 绑定实际目标 SHA。
+完成要求：当前授权范围及验收明确，适用验证和所选档位的审核通过，无有效 critical/high/medium，最终 diff 只含授权修改。报告实际命令/结果、审查状态、未验证项及遗留限制；按 [artifacts.md](artifacts.md)保留必要证据。
 
-清理 Worktree 前持久保存 Issue/DAG、验证、Review/OCR、全部裁决与风险，核对其可恢复性，再按 [execution.md](execution.md) 的技能可用性规则及 [worktrees.md](worktrees.md) 对应创建者的清理路径收尾。提交、推送、合并、发布和关闭 Issue 依已有独立授权。最终报告列实际验收、验证命令及结果、审查状态、遗留限制和变更范围。
+本地修复完成与目标交付分别记录；未进入约定交付目标为 `integration_pending`，不因此关闭 Issue。推送、合并、关闭和标签写入须另满足当前授权及 [delivery-gates.md](delivery-gates.md)。清理 Worktree 前先保全未提交内容、数据和证据，按创建者对应的 [worktrees.md](worktrees.md)路径收尾。

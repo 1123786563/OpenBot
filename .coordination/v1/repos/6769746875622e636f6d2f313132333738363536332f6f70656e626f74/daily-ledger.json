@@ -1,0 +1,774 @@
+{
+  "host_id": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+  "kind": "daily",
+  "records": [
+    {
+      "capacity": 4,
+      "consecutive_recovery": 0,
+      "issues": [
+        {
+          "aggregate_children": [],
+          "audit_epoch": null,
+          "checkpoint": {
+            "attempt": 1,
+            "checkpoint_id": null,
+            "content_kind": "file",
+            "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run16/verification/issue-260/ci-gate-reconciliation.md",
+            "sha256": "940cc052987afe6b0c6fc8bb00f59d582053eda1f99a4a695c3368bf94cd65d6",
+            "snapshot_generation": null
+          },
+          "class": "revalidate",
+          "close": null,
+          "close_action": "none",
+          "close_action_reason": null,
+          "close_input_fingerprint": null,
+          "close_intent": null,
+          "close_next_action": null,
+          "close_resume_condition": {
+            "all": []
+          },
+          "close_retry_after": null,
+          "close_wait_reason": null,
+          "decision": null,
+          "delivery": null,
+          "delivery_action": "none",
+          "delivery_action_reason": null,
+          "delivery_input_fingerprint": null,
+          "delivery_intent": null,
+          "delivery_next_action": null,
+          "delivery_resume_condition": {
+            "all": []
+          },
+          "delivery_retry_after": null,
+          "delivery_state": "none",
+          "delivery_wait_reason": null,
+          "eligible_since": "2026-10-29T06:24:18Z",
+          "enqueue_sequence": 0,
+          "history": [
+            {
+              "action": "slot_selected",
+              "at": "2026-10-29T04:14:11Z",
+              "attempt": 1,
+              "capacity_at_selection": 4,
+              "class_at_selection": "new",
+              "event_id": "ea84d33e-c138-5922-86de-db689864dbc7",
+              "refs": [
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run14-trial-aceb3f2/index.md",
+                  "sha256": "a63ed212123a51d3ec0a3c577af79afa014acde5842e07f7148675e6376e9258",
+                  "snapshot_generation": null
+                }
+              ],
+              "result": "not_settled",
+              "run_id": "run14",
+              "slot_kind": "audit",
+              "slot_sequence": 1
+            },
+            {
+              "action": "state_changed",
+              "at": "2026-10-29T04:22:28Z",
+              "attempt": 1,
+              "capacity_at_selection": null,
+              "class_at_selection": null,
+              "event_id": "161d48ba-bf17-5d3d-8370-3d779dfefcad",
+              "refs": [
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run14-trial-aceb3f2/verification/issue-260/audit-report.md",
+                  "sha256": "fd3980483f1933a81b19def39633d01524e8bed6bc0d093488102f5e8f8b2e06",
+                  "snapshot_generation": null
+                }
+              ],
+              "result": "recorded",
+              "run_id": "run14",
+              "slot_kind": null,
+              "slot_sequence": null
+            },
+            {
+              "action": "settled",
+              "at": "2026-10-29T04:22:28Z",
+              "attempt": 1,
+              "capacity_at_selection": 4,
+              "class_at_selection": "new",
+              "event_id": "20a2f18e-287b-53e6-a460-91bf6f2bd24f",
+              "refs": [
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run14-trial-aceb3f2/verification/issue-260/audit-report.md",
+                  "sha256": "fd3980483f1933a81b19def39633d01524e8bed6bc0d093488102f5e8f8b2e06",
+                  "snapshot_generation": null
+                }
+              ],
+              "result": "verified",
+              "run_id": "run14",
+              "slot_kind": "audit",
+              "slot_sequence": 1
+            },
+            {
+              "action": "slot_selected",
+              "at": "2026-10-29T06:23:48Z",
+              "attempt": 1,
+              "capacity_at_selection": 4,
+              "class_at_selection": "revalidate",
+              "event_id": "50fbc1b8-a878-5369-91e3-4d77deb06d5c",
+              "refs": [
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run16/verification/issue-260/ci-gate-reconciliation.md",
+                  "sha256": "940cc052987afe6b0c6fc8bb00f59d582053eda1f99a4a695c3368bf94cd65d6",
+                  "snapshot_generation": null
+                },
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run16/verification/intake/issue-260.json",
+                  "sha256": "d36fd48c7b36b5e29d033f49e2debf3ea1c9616ca6da518cd30a3c26a31cfc22",
+                  "snapshot_generation": null
+                }
+              ],
+              "result": "not_settled",
+              "run_id": "run16",
+              "slot_kind": "audit",
+              "slot_sequence": 5
+            },
+            {
+              "action": "state_changed",
+              "at": "2026-10-29T06:24:18Z",
+              "attempt": 1,
+              "capacity_at_selection": null,
+              "class_at_selection": null,
+              "event_id": "556bc678-2052-51d6-80e3-5c055c70658c",
+              "refs": [
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run16/verification/issue-260/ci-gate-reconciliation.md",
+                  "sha256": "940cc052987afe6b0c6fc8bb00f59d582053eda1f99a4a695c3368bf94cd65d6",
+                  "snapshot_generation": null
+                }
+              ],
+              "result": "recorded",
+              "run_id": "run16",
+              "slot_kind": null,
+              "slot_sequence": null
+            },
+            {
+              "action": "settled",
+              "at": "2026-10-29T06:24:18Z",
+              "attempt": 1,
+              "capacity_at_selection": 4,
+              "class_at_selection": "revalidate",
+              "event_id": "d771f999-64a7-5a0c-af45-2f6817baeaf1",
+              "refs": [
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run16/verification/issue-260/ci-gate-reconciliation.md",
+                  "sha256": "940cc052987afe6b0c6fc8bb00f59d582053eda1f99a4a695c3368bf94cd65d6",
+                  "snapshot_generation": null
+                }
+              ],
+              "result": "blocked",
+              "run_id": "run16",
+              "slot_kind": "audit",
+              "slot_sequence": 5
+            }
+          ],
+          "human_review": null,
+          "human_review_state": "none",
+          "input_fingerprint": {
+            "algorithm": "daily-input-v3",
+            "input_ref": {
+              "attempt": 1,
+              "checkpoint_id": null,
+              "content_kind": "file",
+              "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run14-trial-aceb3f2/index.md",
+              "sha256": "a63ed212123a51d3ec0a3c577af79afa014acde5842e07f7148675e6376e9258",
+              "snapshot_generation": null
+            },
+            "sha256": "a878c498a13137c3b994bb8286b8c688fef35931ff094c1ae754a65ac86e68b8"
+          },
+          "issue": "github.com/1123786563/openbot#260",
+          "label": null,
+          "label_action": "none",
+          "label_action_reason": null,
+          "label_input_fingerprint": null,
+          "label_intent": null,
+          "label_next_action": null,
+          "label_resume_condition": {
+            "all": []
+          },
+          "label_retry_after": null,
+          "label_wait_reason": null,
+          "last_slot": 5,
+          "next_action": "await target-sha CI repair then revalidate CI clause (run14 behavioral evidence reusable via target-diff carryover analysis)",
+          "repair_rounds_total": 0,
+          "requirements_fingerprint": {
+            "algorithm": "requirements-v3",
+            "input_ref": {
+              "attempt": 1,
+              "checkpoint_id": null,
+              "content_kind": "file",
+              "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run14-trial-aceb3f2/verification/issue-260/issue-snapshot.json",
+              "sha256": "9b0f166a55a979d872a240bb8316f26bef94540556636c3ad8eb6b94646b34fe",
+              "snapshot_generation": null
+            },
+            "sha256": "9b0f166a55a979d872a240bb8316f26bef94540556636c3ad8eb6b94646b34fe"
+          },
+          "resume_condition": {
+            "all": []
+          },
+          "retry_after": "2026-11-05T00:00:00Z",
+          "review": {
+            "attempt": 1,
+            "checkpoint_id": null,
+            "content_kind": "file",
+            "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run14-trial-aceb3f2/verification/issue-260/audit-report.md",
+            "sha256": "fd3980483f1933a81b19def39633d01524e8bed6bc0d093488102f5e8f8b2e06",
+            "snapshot_generation": null
+          },
+          "run": {
+            "attempt": 1,
+            "checkpoint_id": null,
+            "content_kind": "file",
+            "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run16/receipts/daily_run_manifest.json",
+            "sha256": "8e8f01f70a1dfccbb081dce9d5673173b91d0df21c1c0484cf0012edb496d98a",
+            "snapshot_generation": null
+          },
+          "target_sha": "3cffc19ec7245a41c25c668fd17d762d264b7443",
+          "validation_state": "blocked",
+          "wait_reason": "behavioral ACs verified run14 (29/29 green, 0 blocking findings); standard CI at frozen sha 3cffc19ec failure (2026-10-29T02:45Z, 9 red main-baseline jobs) \u2014 CI clause of verified gate positively unmet, reconciled per run15 note. Resume: CI green at this or re-frozen target SHA (in-flight PR #699), or authorized delivery-contract exception.",
+          "workspace": null
+        },
+        {
+          "aggregate_children": [],
+          "audit_epoch": null,
+          "checkpoint": {
+            "attempt": 1,
+            "checkpoint_id": null,
+            "content_kind": "file",
+            "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/verification/issue-261/audit-report.md",
+            "sha256": "82e2b0ccc083311e28ac15c8da28241e0c0a440f48f3580911a926fb86048f94",
+            "snapshot_generation": null
+          },
+          "class": "new",
+          "close": null,
+          "close_action": "none",
+          "close_action_reason": null,
+          "close_input_fingerprint": null,
+          "close_intent": null,
+          "close_next_action": null,
+          "close_resume_condition": {
+            "all": []
+          },
+          "close_retry_after": null,
+          "close_wait_reason": null,
+          "decision": null,
+          "delivery": null,
+          "delivery_action": "none",
+          "delivery_action_reason": null,
+          "delivery_input_fingerprint": null,
+          "delivery_intent": null,
+          "delivery_next_action": null,
+          "delivery_resume_condition": {
+            "all": []
+          },
+          "delivery_retry_after": null,
+          "delivery_state": "none",
+          "delivery_wait_reason": null,
+          "eligible_since": "2026-10-29T06:24:18Z",
+          "enqueue_sequence": 0,
+          "history": [
+            {
+              "action": "slot_selected",
+              "at": "2026-10-29T05:49:52Z",
+              "attempt": 1,
+              "capacity_at_selection": 4,
+              "class_at_selection": "new",
+              "event_id": "4ebd51df-e299-5099-ba8c-4f2b2146e592",
+              "refs": [
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/receipts/../verification/intake/issue-261.json",
+                  "sha256": "fb409b6161c22c89c835ddf94329b025f324d9835bbb65da886cf082a4970291",
+                  "snapshot_generation": null
+                },
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/receipts/../verification/intake/issue-262.json",
+                  "sha256": "c11244ffa603cf9f1c284f3f864a9ac1f74338b47bb709e8d8407e128d095371",
+                  "snapshot_generation": null
+                },
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/receipts/../verification/intake/issue-263.json",
+                  "sha256": "6a49c74ed3cfad6970cabdfb93fca98f525cde602eae585dee8d29dacbddb773",
+                  "snapshot_generation": null
+                }
+              ],
+              "result": "not_settled",
+              "run_id": "run15",
+              "slot_kind": "audit",
+              "slot_sequence": 2
+            },
+            {
+              "action": "settled",
+              "at": "2026-10-29T06:01:35Z",
+              "attempt": 1,
+              "capacity_at_selection": 4,
+              "class_at_selection": "new",
+              "event_id": "dfbdafeb-4682-54b3-831e-d3ab4040957f",
+              "refs": [
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/verification/issue-261/audit-report.md",
+                  "sha256": "82e2b0ccc083311e28ac15c8da28241e0c0a440f48f3580911a926fb86048f94",
+                  "snapshot_generation": null
+                }
+              ],
+              "result": "blocked",
+              "run_id": "run15",
+              "slot_kind": "audit",
+              "slot_sequence": 2
+            },
+            {
+              "action": "state_changed",
+              "at": "2026-10-29T06:01:54Z",
+              "attempt": 1,
+              "capacity_at_selection": null,
+              "class_at_selection": null,
+              "event_id": "72d32ee3-f681-554f-a873-b857012d79de",
+              "refs": [
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/verification/issue-261/audit-report.md",
+                  "sha256": "82e2b0ccc083311e28ac15c8da28241e0c0a440f48f3580911a926fb86048f94",
+                  "snapshot_generation": null
+                }
+              ],
+              "result": "recorded",
+              "run_id": "run15",
+              "slot_kind": null,
+              "slot_sequence": null
+            }
+          ],
+          "human_review": null,
+          "human_review_state": "none",
+          "input_fingerprint": {
+            "algorithm": "daily-input-v3",
+            "input_ref": {
+              "attempt": 1,
+              "checkpoint_id": null,
+              "content_kind": "file",
+              "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/receipts/../verification/intake/issue-261.json",
+              "sha256": "fb409b6161c22c89c835ddf94329b025f324d9835bbb65da886cf082a4970291",
+              "snapshot_generation": null
+            },
+            "sha256": "73d15b2a141cffee4b1a4898ef9596e140ed40889c976570f8febe7e30ba6997"
+          },
+          "issue": "github.com/1123786563/openbot#261",
+          "label": null,
+          "label_action": "none",
+          "label_action_reason": null,
+          "label_input_fingerprint": null,
+          "label_intent": null,
+          "label_next_action": null,
+          "label_resume_condition": {
+            "all": []
+          },
+          "label_retry_after": null,
+          "label_wait_reason": null,
+          "last_slot": 2,
+          "next_action": "await target-sha CI repair then revalidate",
+          "repair_rounds_total": 0,
+          "requirements_fingerprint": null,
+          "resume_condition": {
+            "all": []
+          },
+          "retry_after": "2026-11-05T00:00:00Z",
+          "review": null,
+          "run": {
+            "attempt": 1,
+            "checkpoint_id": null,
+            "content_kind": "file",
+            "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/receipts/daily_run_manifest.json",
+            "sha256": "d3d221148fe0ce9407da6eb39abf709e4ab750b37edf6987d2371a7f98e0f786",
+            "snapshot_generation": null
+          },
+          "target_sha": "3cffc19ec7245a41c25c668fd17d767d264b7443",
+          "validation_state": "blocked",
+          "wait_reason": "behavioral ACs all verified in isolation; blocked solely by standard CI at target sha 3cffc19ec: aggregate job verify=failure (9 red jobs: tests/migrations/format-lint-types/startup win+macos/python harness/dockerfiles/computer; documented main baseline since 2026-10-25). Resume: CI green at this or re-frozen target SHA, or authorized delivery-contract exception.",
+          "workspace": null
+        },
+        {
+          "aggregate_children": [],
+          "audit_epoch": null,
+          "checkpoint": {
+            "attempt": 1,
+            "checkpoint_id": null,
+            "content_kind": "file",
+            "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/verification/issue-262/audit-report.md",
+            "sha256": "94bd6791c564abdf006233699eb65920ec2938ed3f54e4ba17d9e258fa9ba9e3",
+            "snapshot_generation": null
+          },
+          "class": "new",
+          "close": null,
+          "close_action": "none",
+          "close_action_reason": null,
+          "close_input_fingerprint": null,
+          "close_intent": null,
+          "close_next_action": null,
+          "close_resume_condition": {
+            "all": []
+          },
+          "close_retry_after": null,
+          "close_wait_reason": null,
+          "decision": null,
+          "delivery": null,
+          "delivery_action": "none",
+          "delivery_action_reason": null,
+          "delivery_input_fingerprint": null,
+          "delivery_intent": null,
+          "delivery_next_action": null,
+          "delivery_resume_condition": {
+            "all": []
+          },
+          "delivery_retry_after": null,
+          "delivery_state": "none",
+          "delivery_wait_reason": null,
+          "eligible_since": "2026-10-29T06:24:18Z",
+          "enqueue_sequence": 0,
+          "history": [
+            {
+              "action": "slot_selected",
+              "at": "2026-10-29T05:49:53Z",
+              "attempt": 1,
+              "capacity_at_selection": 4,
+              "class_at_selection": "new",
+              "event_id": "9234498b-4ca8-5b45-ac4b-6eee33926f94",
+              "refs": [
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/receipts/../verification/intake/issue-261.json",
+                  "sha256": "fb409b6161c22c89c835ddf94329b025f324d9835bbb65da886cf082a4970291",
+                  "snapshot_generation": null
+                },
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/receipts/../verification/intake/issue-262.json",
+                  "sha256": "c11244ffa603cf9f1c284f3f864a9ac1f74338b47bb709e8d8407e128d095371",
+                  "snapshot_generation": null
+                },
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/receipts/../verification/intake/issue-263.json",
+                  "sha256": "6a49c74ed3cfad6970cabdfb93fca98f525cde602eae585dee8d29dacbddb773",
+                  "snapshot_generation": null
+                }
+              ],
+              "result": "not_settled",
+              "run_id": "run15",
+              "slot_kind": "audit",
+              "slot_sequence": 3
+            },
+            {
+              "action": "settled",
+              "at": "2026-10-29T06:01:36Z",
+              "attempt": 1,
+              "capacity_at_selection": 4,
+              "class_at_selection": "new",
+              "event_id": "42c63764-0f8b-5308-86ed-2fc5a974f679",
+              "refs": [
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/verification/issue-262/audit-report.md",
+                  "sha256": "94bd6791c564abdf006233699eb65920ec2938ed3f54e4ba17d9e258fa9ba9e3",
+                  "snapshot_generation": null
+                }
+              ],
+              "result": "blocked",
+              "run_id": "run15",
+              "slot_kind": "audit",
+              "slot_sequence": 3
+            },
+            {
+              "action": "state_changed",
+              "at": "2026-10-29T06:01:54Z",
+              "attempt": 1,
+              "capacity_at_selection": null,
+              "class_at_selection": null,
+              "event_id": "a5e98c19-3180-52c2-ba53-308123b67a3b",
+              "refs": [
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/verification/issue-262/audit-report.md",
+                  "sha256": "94bd6791c564abdf006233699eb65920ec2938ed3f54e4ba17d9e258fa9ba9e3",
+                  "snapshot_generation": null
+                }
+              ],
+              "result": "recorded",
+              "run_id": "run15",
+              "slot_kind": null,
+              "slot_sequence": null
+            }
+          ],
+          "human_review": null,
+          "human_review_state": "none",
+          "input_fingerprint": {
+            "algorithm": "daily-input-v3",
+            "input_ref": {
+              "attempt": 1,
+              "checkpoint_id": null,
+              "content_kind": "file",
+              "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/receipts/../verification/intake/issue-261.json",
+              "sha256": "fb409b6161c22c89c835ddf94329b025f324d9835bbb65da886cf082a4970291",
+              "snapshot_generation": null
+            },
+            "sha256": "73d15b2a141cffee4b1a4898ef9596e140ed40889c976570f8febe7e30ba6997"
+          },
+          "issue": "github.com/1123786563/openbot#262",
+          "label": null,
+          "label_action": "none",
+          "label_action_reason": null,
+          "label_input_fingerprint": null,
+          "label_intent": null,
+          "label_next_action": null,
+          "label_resume_condition": {
+            "all": []
+          },
+          "label_retry_after": null,
+          "label_wait_reason": null,
+          "last_slot": 3,
+          "next_action": "await target-sha CI repair then revalidate",
+          "repair_rounds_total": 0,
+          "requirements_fingerprint": null,
+          "resume_condition": {
+            "all": []
+          },
+          "retry_after": "2026-11-05T00:00:00Z",
+          "review": null,
+          "run": {
+            "attempt": 1,
+            "checkpoint_id": null,
+            "content_kind": "file",
+            "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/receipts/daily_run_manifest.json",
+            "sha256": "d3d221148fe0ce9407da6eb39abf709e4ab750b37edf6987d2371a7f98e0f786",
+            "snapshot_generation": null
+          },
+          "target_sha": "3cffc19ec7245a41c25c668fd17d767d264b7443",
+          "validation_state": "blocked",
+          "wait_reason": "behavioral ACs all verified in isolation; blocked solely by standard CI at target sha 3cffc19ec: aggregate job verify=failure (9 red jobs: tests/migrations/format-lint-types/startup win+macos/python harness/dockerfiles/computer; documented main baseline since 2026-10-25). Resume: CI green at this or re-frozen target SHA, or authorized delivery-contract exception.",
+          "workspace": null
+        },
+        {
+          "aggregate_children": [],
+          "audit_epoch": null,
+          "checkpoint": {
+            "attempt": 1,
+            "checkpoint_id": null,
+            "content_kind": "file",
+            "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/verification/issue-263/audit-report.md",
+            "sha256": "04e050bc52894269c20d59db8b0f6816192639f6f1e7bb71dfad09355beafe20",
+            "snapshot_generation": null
+          },
+          "class": "new",
+          "close": null,
+          "close_action": "none",
+          "close_action_reason": null,
+          "close_input_fingerprint": null,
+          "close_intent": null,
+          "close_next_action": null,
+          "close_resume_condition": {
+            "all": []
+          },
+          "close_retry_after": null,
+          "close_wait_reason": null,
+          "decision": null,
+          "delivery": null,
+          "delivery_action": "none",
+          "delivery_action_reason": null,
+          "delivery_input_fingerprint": null,
+          "delivery_intent": null,
+          "delivery_next_action": null,
+          "delivery_resume_condition": {
+            "all": []
+          },
+          "delivery_retry_after": null,
+          "delivery_state": "none",
+          "delivery_wait_reason": null,
+          "eligible_since": "2026-10-29T06:24:18Z",
+          "enqueue_sequence": 0,
+          "history": [
+            {
+              "action": "slot_selected",
+              "at": "2026-10-29T05:49:53Z",
+              "attempt": 1,
+              "capacity_at_selection": 4,
+              "class_at_selection": "new",
+              "event_id": "1ac96e2b-d03c-51f6-ab1e-fc7613f44f94",
+              "refs": [
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/receipts/../verification/intake/issue-261.json",
+                  "sha256": "fb409b6161c22c89c835ddf94329b025f324d9835bbb65da886cf082a4970291",
+                  "snapshot_generation": null
+                },
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/receipts/../verification/intake/issue-262.json",
+                  "sha256": "c11244ffa603cf9f1c284f3f864a9ac1f74338b47bb709e8d8407e128d095371",
+                  "snapshot_generation": null
+                },
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/receipts/../verification/intake/issue-263.json",
+                  "sha256": "6a49c74ed3cfad6970cabdfb93fca98f525cde602eae585dee8d29dacbddb773",
+                  "snapshot_generation": null
+                }
+              ],
+              "result": "not_settled",
+              "run_id": "run15",
+              "slot_kind": "audit",
+              "slot_sequence": 4
+            },
+            {
+              "action": "state_changed",
+              "at": "2026-10-29T06:07:04Z",
+              "attempt": 1,
+              "capacity_at_selection": null,
+              "class_at_selection": null,
+              "event_id": "adb2caa0-1330-5b88-979c-1eb81d4533cb",
+              "refs": [
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/verification/issue-263/audit-report.md",
+                  "sha256": "04e050bc52894269c20d59db8b0f6816192639f6f1e7bb71dfad09355beafe20",
+                  "snapshot_generation": null
+                }
+              ],
+              "result": "recorded",
+              "run_id": "run15",
+              "slot_kind": null,
+              "slot_sequence": null
+            },
+            {
+              "action": "settled",
+              "at": "2026-10-29T06:07:04Z",
+              "attempt": 1,
+              "capacity_at_selection": 4,
+              "class_at_selection": "new",
+              "event_id": "ff73a846-f01d-5ae1-bcc9-49b9593f2371",
+              "refs": [
+                {
+                  "attempt": 1,
+                  "checkpoint_id": null,
+                  "content_kind": "file",
+                  "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/verification/issue-263/audit-report.md",
+                  "sha256": "04e050bc52894269c20d59db8b0f6816192639f6f1e7bb71dfad09355beafe20",
+                  "snapshot_generation": null
+                }
+              ],
+              "result": "blocked",
+              "run_id": "run15",
+              "slot_kind": "audit",
+              "slot_sequence": 4
+            }
+          ],
+          "human_review": null,
+          "human_review_state": "none",
+          "input_fingerprint": {
+            "algorithm": "daily-input-v3",
+            "input_ref": {
+              "attempt": 1,
+              "checkpoint_id": null,
+              "content_kind": "file",
+              "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/receipts/../verification/intake/issue-261.json",
+              "sha256": "fb409b6161c22c89c835ddf94329b025f324d9835bbb65da886cf082a4970291",
+              "snapshot_generation": null
+            },
+            "sha256": "73d15b2a141cffee4b1a4898ef9596e140ed40889c976570f8febe7e30ba6997"
+          },
+          "issue": "github.com/1123786563/openbot#263",
+          "label": null,
+          "label_action": "none",
+          "label_action_reason": null,
+          "label_input_fingerprint": null,
+          "label_intent": null,
+          "label_next_action": null,
+          "label_resume_condition": {
+            "all": []
+          },
+          "label_retry_after": null,
+          "label_wait_reason": null,
+          "last_slot": 4,
+          "next_action": "await target-sha CI repair then revalidate",
+          "repair_rounds_total": 0,
+          "requirements_fingerprint": null,
+          "resume_condition": {
+            "all": []
+          },
+          "retry_after": "2026-11-05T00:00:00Z",
+          "review": null,
+          "run": {
+            "attempt": 1,
+            "checkpoint_id": null,
+            "content_kind": "file",
+            "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/receipts/daily_run_manifest.json",
+            "sha256": "d3d221148fe0ce9407da6eb39abf709e4ab750b37edf6987d2371a7f98e0f786",
+            "snapshot_generation": null
+          },
+          "target_sha": "3cffc19ec7245a41c25c668fd17d767d264b7443",
+          "validation_state": "blocked",
+          "wait_reason": "behavioral ACs all verified in isolation (incl. app UI suite); blocked solely by standard CI at target sha 3cffc19ec: aggregate job verify=failure (9 red jobs; documented main baseline since 2026-10-25). Resume: CI green at this or re-frozen target SHA, or authorized delivery-contract exception.",
+          "workspace": null
+        }
+      ],
+      "next_class": "recovery",
+      "repo_identity": "github.com/1123786563/openbot",
+      "slot_sequence": 5
+    }
+  ],
+  "revision": 84,
+  "schema_version": 3,
+  "updated_at": "2026-10-29T06:24:18Z"
+}

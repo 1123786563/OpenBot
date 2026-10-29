@@ -1,0 +1,60 @@
+{
+  "config_version": 1,
+  "coordination_root": "/Users/wuyongjun/trea/OpenBot/.coordination/v1",
+  "adapter": {
+    "entry": "/Users/wuyongjun/trea/openbot-coordination/src/coord",
+    "version": "0.1.0",
+    "content_sha256": "3b1795cbf0197125e7d4357b8dbcfaf47d47c3aa5e62f14bc915a1b8a358f9cb",
+    "schema_compatibility": {
+      "ledger_schema_version": 3,
+      "schema_sha256": "c5db1792474acd3296fc71be3e92dbd308a902042af6753be9fb3a89cd9768dc",
+      "schema_path": "/Users/wuyongjun/trea/OpenBot/.agents/rules/coordination-schema.json"
+    },
+    "acceptance_receipts": [
+      {
+        "case": "claim_acquisition",
+        "evidence": "/Users/wuyongjun/trea/openbot-coordination/samples/receipts/claim_acquisition.json"
+      },
+      {
+        "case": "idempotency_replay",
+        "evidence": "/Users/wuyongjun/trea/openbot-coordination/samples/receipts/idempotency_replay.json"
+      },
+      {
+        "case": "crash_recovery",
+        "evidence": "/Users/wuyongjun/trea/openbot-coordination/samples/receipts/crash_recovery.json"
+      },
+      {
+        "case": "fairness_replay",
+        "evidence": "/Users/wuyongjun/trea/openbot-coordination/samples/receipts/fairness_replay.json"
+      },
+      {
+        "case": "v3_acceptance_matrix",
+        "evidence": "/Users/wuyongjun/trea/openbot-coordination/samples/receipts/v3_acceptance_matrix.json"
+      }
+    ]
+  },
+  "heartbeat_ttl": {
+    "heartbeat_seconds": 60,
+    "ttl_seconds": 300
+  },
+  "service_aliases": {
+    "github.com/1123786563/OpenBot": "github.com/1123786563/openbot"
+  },
+  "safe_restore_tool": {
+    "entry": "/Users/wuyongjun/trea/openbot-coordination/src/coord/restore.py",
+    "version": "0.1.0",
+    "content_sha256": "0739728792a82a2c64d8343104c2d9406cf54beb725b68d524bdf3d0d5e80e24",
+    "acceptance_receipt": {
+      "case": "restore_limits",
+      "evidence": "/Users/wuyongjun/trea/openbot-coordination/samples/receipts/restore_limits.json"
+    },
+    "limits": {
+      "max_files": 10000,
+      "max_single_file_bytes": 104857600,
+      "max_total_bytes": 1073741824,
+      "max_compression_ratio": 100,
+      "max_symlink_depth": 8
+    }
+  },
+  "credentials": {}
+}

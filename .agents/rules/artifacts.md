@@ -18,6 +18,12 @@
 
 测试输入不是运行证据。不能把实际影响 CI 的 manifest、fixture 或已知失败配置移进被忽略的 `.archive/`；它们应放在 `tests/`、`scripts/` 或模块配置目录，并同步修改读写脚本、测试和 CI。
 
+## 按流程保留证据
+
+轻量任务无需新建 Run：保留改动范围、来源/验收、验证命令及结果，最终回复可承载简短记录；需要长期或跨会话保留时再写归档。标准任务可用一份归档说明索引计划、验证和独立 Review，不要求 DAG、逐文件哈希、策略 manifest 或冻结回执。日志/报告一旦落盘，仍按本文件归类，不写进方案。
+
+以下 Run 身份与布局适用于完整流程、多实施者编排、跨 Run 恢复和专用自动化；标准流程仅增加一次只读独立 reviewer 不触发完整 Run，仅需保留普通报告不触发整套协议。
+
 ## Run 布局
 
 新 run-key 使用日期、Issue/任务短名和不可变 Run ID 的短后缀，例如 `2026-10-25-issue619-a1b2c3d4`。Orca Run 使用实际 Run ID，普通文档等非 Orca 任务生成 UUID。index 记录完整 Run ID、规范仓库、执行主机、工作区、方案身份/哈希、原始 BASE 和交付目标；短后缀碰撞时延长，不能复用别的身份。复用同一次工作的目录；修复轮次在其内部编号。旧目录不强制改名，先补齐并核对身份后才能复用。
@@ -36,7 +42,7 @@
 
 所有 Run（含普通 Orca）初始化时选定唯一 `archive_root`：将持久拥有者的 `.archive/runs/<run-key>/` 解析成绝对物理路径，写入 index、Ledger 和每个 Brief 的报告参数。Worker 必须写向该根或由主控显式收取带哈希的报告；不得各自在 Worktree 按相对 `.archive/` 建第二根。远端 Worker 无法共享文件系统时记录其暂存根与唯一权威根之间的传输映射，收取核验后才接受结果。根随 Worktree 清理会消失时，先执行 [coordination-state.md](coordination-state.md)的恢复索引迁移门禁。
 
-每个 Run 保存不可变 policy manifest：适用根/局部 AGENTS、规则与技能的规范路径、版本/内容哈希及实际来源；首次建立后不覆盖，变化建立新 revision。policy_sha256 始终指该不可变 manifest 的完整字节 SHA-256；revision 是独立序号，不能与哈希互相替代。epoch 的 policy.manifest.sha256 与指纹的 policy_sha256 必须相等。恢复、终审及交付写入前核对当前文件，规则变化时保存 policy_changed 回执、受影响验收与旧证据承接/失效依据，必要重验；不能仅因政策文字修改就默认旧放行有效或全量失效。入口引用缺失（含 @RTK.md）记来源缺口，按受影响能力阻塞，不猜测缺失内容，也不把外部用户入口擅自写回仓库。
+无人值守自动化、机器协调及跨 Run 恢复保存不可变 policy manifest：适用根/局部 AGENTS、规则与技能的规范路径、版本/内容哈希及实际来源；首次建立后不覆盖，变化建立新 revision。policy_sha256 始终指该不可变 manifest 的完整字节 SHA-256；revision 是独立序号，不能与哈希互相替代。epoch 的 policy.manifest.sha256 与指纹的 policy_sha256 必须相等。其他完整流程记录适用规则/技能来源和版本即可。恢复、终审及交付写入前核对当前文件，规则变化时保存 policy_changed 回执、受影响验收与旧证据承接/失效依据，必要重验；不能仅因政策文字修改就默认旧放行有效或全量失效。入口引用缺失（含 @RTK.md）记来源缺口，按受影响能力阻塞，不猜测缺失内容，也不把外部用户入口擅自写回仓库。
 
 这些是按需创建的类别，不强制每次建空目录。方案及修复方案存 `docs/plans/<date>-<issue-or-task>/`，仅引用必要的归档路径。新工具的 runDir、reportPath、OCR output 及测试报告参数按本规则配置；默认写旧目录的工具，在支持时显式指定归档输出，不支持时记录技术债，修改默认值须验证调用方。
 
@@ -47,7 +53,7 @@
 普通 SDD 启动前按 [execution.md](execution.md)核验能力；仅在 sdd-workspace 实际可用时记录当前技能版本、方案规范路径与哈希、其实际返回的绝对路径及所属 Run ID。已获准手工等价流程时以 Run 下唯一 Ledger 为活动事实源，不捏造工具回执。工具固定使用 `.superpowers/sdd/<plan>/` 时允许保留该活动目录，不盲改工具或以符号链接混用其他计划。
 
 - **单一活动 Ledger**：该计划以工具目录中的 `progress.md` 为唯一可变执行 Ledger；Run 的 index/ledger 只索引它和已归档检查点，不另维护一套独立任务状态。Orca 采用自己的 Task/Dispatch 状态和 Run Ledger，不创建 SDD 的第二派发状态。
-- 每个任务/修复轮次结算、进入 Review 或交付前，以及压缩/交接前，先停止相关写入并取得同一 snapshot_generation/attempt 的冻结回执，再将活动 Ledger、Brief、报告、Review Package 与 plan-path 标记复制成 Run 内 `sdd/<plan-key>/<checkpoint>/` 的不可变快照，记录完整清单、哈希和源/目标映射。逐项记录共同事务序号、检查点/manifest 引用，校验交叉引用与源文件复制前后哈希一致；manifest 最后写入并 fsync，文件和父目录持久化后以提交标记发布。写入未能冻结或代际不一致则快照无效，重采而不恢复混代内容。先核对落盘再推进下一阶段；工具的临时目录例外不豁免归档。
+- 进入 Review/交付或压缩/交接前，保留活动 Ledger、Brief、报告和完整审查范围的可恢复副本，记录源/目标与检查点并核对可读性。跨写入者、跨 Run 或机器恢复采用 [checkpoints.md](checkpoints.md) 的同代冻结与完整清单；普通单工作区不逐轮创建事务快照。journal、fsync 和原子发布由采用该合同的工具实现，Agent 核验工具回执，不另手工维护第二套提交协议。
 - 恢复先读 Run 身份与最后归档快照，再核对工具目录、plan-path、Ledger 和 Git。缺目录时仅从匹配身份且核验通过的快照恢复；两份冲突时对账原始事件与代码，不按 mtime 任选，也不重新生成空 Ledger 后重派已完成任务。
 - 技能清理临时目录前，先核对最终快照、全部 Ruling、未提交内容及证据在临时目录外可恢复；这些条件未满足时保留目录。技能目录删除不等于交付证据已持久化。
 

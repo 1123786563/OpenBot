@@ -1,0 +1,34 @@
+{
+  "_example_only": "Template only. Do not use as config.json until tools and receipts are verified.",
+  "config_version": 1,
+  "coordination_root": "/Users/wuyongjun/trea/OpenBot/.coordination/v1",
+  "adapter": {
+    "entry": null,
+    "version": null,
+    "content_sha256": null,
+    "schema_compatibility": {
+      "ledger_schema_version": 3,
+      "schema_sha256": null
+    },
+    "acceptance_receipts": []
+  },
+  "heartbeat_ttl": {
+    "heartbeat_seconds": 60,
+    "ttl_seconds": 300
+  },
+  "service_aliases": {},
+  "safe_restore_tool": {
+    "entry": null,
+    "version": null,
+    "content_sha256": null,
+    "acceptance_receipt": null,
+    "limits": {
+      "max_files": null,
+      "max_single_file_bytes": null,
+      "max_total_bytes": null,
+      "max_compression_ratio": null,
+      "max_symlink_depth": null
+    }
+  },
+  "credentials": {}
+}

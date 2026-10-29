@@ -1,0 +1,2240 @@
+{
+  "records": {
+    "probe-a\u0000probe-a": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "probe",
+            "created_at": "2026-10-29T04:15:13Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T04:20:13Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T04:15:13Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "probe-a",
+            "relation_snapshot": null,
+            "resource_key": [
+              "path",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "/tmp/run14-probe-scratch-1"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "1242e254-1e5c-4fa5-accb-3b1728da4e7b"
+          }
+        ],
+        "file_hashes": {
+          "claims.json": "e1ae77f5937003ae81be82853fdc092153e4932b41c3fb5e56dac6ea0da3b410"
+        },
+        "request_hash": "c7b64b135d34a9e6d475e61ff2411bd1127d6b4584bae5d30c3a154dd1162a08",
+        "request_id": "probe-a",
+        "revisions": {
+          "claims.json": 7
+        },
+        "status": "applied",
+        "transaction_sequence": 7
+      },
+      "request_hash": "c7b64b135d34a9e6d475e61ff2411bd1127d6b4584bae5d30c3a154dd1162a08"
+    },
+    "probe-b\u0000probe-b": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "probe",
+            "created_at": "2026-10-29T04:17:13Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T04:22:13Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T04:17:13Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "probe-b",
+            "relation_snapshot": null,
+            "resource_key": [
+              "path",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "/tmp/run14-probe-scratch-2"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "0ef3b484-7297-4613-9630-a6b1ff1eb7bc"
+          }
+        ],
+        "file_hashes": {
+          "claims.json": "f23beb15852c71fc054e268bb7f78cabc5f8db621fc1b819a83c261b43fbb92f"
+        },
+        "request_hash": "86b3b462d672c6332749f1af7b2d79f3ca9fa5ccc9e98442d300bc345e304463",
+        "request_id": "probe-b",
+        "revisions": {
+          "claims.json": 8
+        },
+        "status": "applied",
+        "transaction_sequence": 8
+      },
+      "request_hash": "86b3b462d672c6332749f1af7b2d79f3ca9fa5ccc9e98442d300bc345e304463"
+    },
+    "probe-c\u0000probe-c": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "probe",
+            "created_at": "2026-10-29T04:17:52Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T04:22:52Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T04:17:52Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "probe-c",
+            "relation_snapshot": null,
+            "resource_key": [
+              "path",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "/tmp/run14-probe-scratch-3"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "2cbc8d12-3234-4058-8c78-8fe8bbf098f1"
+          }
+        ],
+        "file_hashes": {
+          "claims.json": "bb1971cc7863c2a1086e9b10b909a85f36ff83acb2ee4adcdeb204baaeb9b6de"
+        },
+        "request_hash": "57b1d5b8cd660130fccbd1b21dfe7a508d163102dd90c3162b7668e74f7130e9",
+        "request_id": "probe-c",
+        "revisions": {
+          "claims.json": 9
+        },
+        "status": "applied",
+        "transaction_sequence": 9
+      },
+      "request_hash": "57b1d5b8cd660130fccbd1b21dfe7a508d163102dd90c3162b7668e74f7130e9"
+    },
+    "probe-d\u0000probe-d": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "probe",
+            "created_at": "2026-10-29T04:17:52Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T04:22:52Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T04:17:52Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "probe-d",
+            "relation_snapshot": null,
+            "resource_key": [
+              "path",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "/tmp/run14-probe-scratch-4"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "8631ca78-9f59-4458-b590-71d38705d64a"
+          }
+        ],
+        "file_hashes": {
+          "claims.json": "8a9db31c85d49ad60da700597f5a6f56196224118532011933ee80c6d2ad5866"
+        },
+        "request_hash": "29d74ce4bd7e06d535c87534b24cbb8ed15e9f8aebfc893841e6ae9286b7c550",
+        "request_id": "probe-d",
+        "revisions": {
+          "claims.json": 10
+        },
+        "status": "applied",
+        "transaction_sequence": 10
+      },
+      "request_hash": "29d74ce4bd7e06d535c87534b24cbb8ed15e9f8aebfc893841e6ae9286b7c550"
+    },
+    "run14\u0000run14-daily-release": {
+      "receipt": {
+        "claims": [
+          {
+            "released": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ]
+          }
+        ],
+        "file_hashes": {
+          "claims.json": "c0debc871769942a5c7061c97c11f56465f94e437b4959166415e341554a3aa4"
+        },
+        "request_hash": "b5a0dc34ab6ced951960c5e17d834ee2d7a8b9d38faae82205598371afa5abad",
+        "request_id": "run14-daily-release",
+        "revisions": {
+          "claims.json": 14
+        },
+        "status": "applied",
+        "transaction_sequence": 14
+      },
+      "request_hash": "b5a0dc34ab6ced951960c5e17d834ee2d7a8b9d38faae82205598371afa5abad"
+    },
+    "run14\u0000run14-daily-settle": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T04:13:40Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T04:18:40Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T04:13:40Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run14",
+            "relation_snapshot": null,
+            "resource_key": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ],
+            "state": "settling",
+            "task": null,
+            "token": "5dd0128d-e98c-4d20-b3f2-159f1aa80b2d"
+          }
+        ],
+        "file_hashes": {
+          "claims.json": "371e0758cd62e63be611aef5c1af918c2d82f18989d7e0f7ad81f75164e3cb61"
+        },
+        "request_hash": "864ba4e5b01106c2c6d77db03308de3c610cef985e5386de1e802d7d260cfab8",
+        "request_id": "run14-daily-settle",
+        "revisions": {
+          "claims.json": 13
+        },
+        "status": "applied",
+        "transaction_sequence": 13
+      },
+      "request_hash": "864ba4e5b01106c2c6d77db03308de3c610cef985e5386de1e802d7d260cfab8"
+    },
+    "run14\u0000run14-rel-260-release": {
+      "receipt": {
+        "claims": [
+          {
+            "released": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "260"
+            ]
+          }
+        ],
+        "file_hashes": {
+          "claims.json": "0d415a258d7c4913dfbe8f6338128510de1d26fd32c5923b4b7abb2548b65e72"
+        },
+        "request_hash": "5e92d08e3e5e538597d90ad060c55336f72eb73ee72f507efd8daed6fc3ab48f",
+        "request_id": "run14-rel-260-release",
+        "revisions": {
+          "claims.json": 15
+        },
+        "status": "applied",
+        "transaction_sequence": 15
+      },
+      "request_hash": "5e92d08e3e5e538597d90ad060c55336f72eb73ee72f507efd8daed6fc3ab48f"
+    },
+    "run14\u0000run14-rel-db-release": {
+      "receipt": {
+        "claims": [
+          {
+            "released": [
+              "database",
+              "run14-pg",
+              "openbot_test",
+              "public"
+            ]
+          }
+        ],
+        "file_hashes": {
+          "claims.json": "5b2dadc217267c030da95bf8f302bb3f71ab7e0a4af5457aafe72799809818fb"
+        },
+        "request_hash": "93c7e6137ca59c220f1d0db4c3ed5bf0ebb965c0a594b3e62eb3b18bb9c20a84",
+        "request_id": "run14-rel-db-release",
+        "revisions": {
+          "claims.json": 16
+        },
+        "status": "applied",
+        "transaction_sequence": 16
+      },
+      "request_hash": "93c7e6137ca59c220f1d0db4c3ed5bf0ebb965c0a594b3e62eb3b18bb9c20a84"
+    },
+    "run14\u0000run14-rel-port-release": {
+      "receipt": {
+        "claims": [
+          {
+            "released": [
+              "port",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "default",
+              "tcp",
+              "127.0.0.1",
+              "5593",
+              "5593"
+            ]
+          }
+        ],
+        "file_hashes": {
+          "claims.json": "c21639c0f8d17a8e46b8ee74644320d9273c4ca8186072a65b1c9d8cc2c9e74c"
+        },
+        "request_hash": "70f1452493002015269b7caae6fce53bc25b13c00d15d98e70b7886fde7eb402",
+        "request_id": "run14-rel-port-release",
+        "revisions": {
+          "claims.json": 17
+        },
+        "status": "applied",
+        "transaction_sequence": 17
+      },
+      "request_hash": "70f1452493002015269b7caae6fce53bc25b13c00d15d98e70b7886fde7eb402"
+    },
+    "run14\u0000run14-t1-claims": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T04:13:40Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T04:18:40Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T04:13:40Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run14",
+            "relation_snapshot": null,
+            "resource_key": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "5dd0128d-e98c-4d20-b3f2-159f1aa80b2d"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T04:13:40Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T04:18:40Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T04:13:40Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run14",
+            "relation_snapshot": null,
+            "resource_key": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "260"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "2dac812e-8628-44f1-bfbe-0b5ba675173d"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T04:13:40Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T04:18:40Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T04:13:40Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run14",
+            "relation_snapshot": null,
+            "resource_key": [
+              "database",
+              "run14-pg",
+              "openbot_test",
+              "public"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "a8ea436d-b69c-438f-8989-f00adcd32d4a"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T04:13:40Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T04:18:40Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T04:13:40Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run14",
+            "relation_snapshot": null,
+            "resource_key": [
+              "port",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "default",
+              "tcp",
+              "127.0.0.1",
+              "5593",
+              "5593"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "85915bf9-0519-4eab-a1be-3fa5aa9c3c6d"
+          }
+        ],
+        "file_hashes": {
+          "claims.json": "b47ed050a37226d2a16428a8a2ba3d2c9492362a4e256300bf287586622af051"
+        },
+        "request_hash": "4db52af3cd8c107f3335a44ad73055f7db54ab8ef5c2ac76e15c80a63118ea97",
+        "request_id": "run14-t1-claims",
+        "revisions": {
+          "claims.json": 4
+        },
+        "status": "applied",
+        "transaction_sequence": 4
+      },
+      "request_hash": "4db52af3cd8c107f3335a44ad73055f7db54ab8ef5c2ac76e15c80a63118ea97"
+    },
+    "run14\u0000run14-t1b-running": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T04:13:40Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T04:18:40Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T04:13:40Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run14",
+            "relation_snapshot": null,
+            "resource_key": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ],
+            "state": "running",
+            "task": null,
+            "token": "5dd0128d-e98c-4d20-b3f2-159f1aa80b2d"
+          }
+        ],
+        "file_hashes": {
+          "claims.json": "e05e70351616a705bb5a6620d81ee054d3c49b1d213a478dadeabe35ffc02459"
+        },
+        "request_hash": "b4fe529fbd9973329237e70b33fa7f920ffd6270e677d4b2f6576f5745efb2e8",
+        "request_id": "run14-t1b-running",
+        "revisions": {
+          "claims.json": 5
+        },
+        "status": "applied",
+        "transaction_sequence": 5
+      },
+      "request_hash": "b4fe529fbd9973329237e70b33fa7f920ffd6270e677d4b2f6576f5745efb2e8"
+    },
+    "run15\u0000run15-hb2": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 2,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ],
+            "state": "running",
+            "task": null,
+            "token": "daf29c95-2d7c-4bba-9f8c-8b64dde1d1c4"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "database",
+              "run15-pg-261",
+              "openbot_test",
+              "public"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "d10ee573-6df9-4650-8857-6c89730456da"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "database",
+              "run15-pg-262",
+              "openbot_test",
+              "public"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "52609db1-6251-47ea-9f4e-65181d09a905"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "database",
+              "run15-pg-263",
+              "openbot_test",
+              "public"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "24673a49-fd91-4eb0-8475-aefe0e4c380d"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "261"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "2d122dee-6ba5-4863-8850-28a3b95f3176"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "262"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "66bec27b-6072-42ec-864b-f7e68cf4a192"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "263"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "24983c25-7ba8-479d-b726-0b43a6a25a29"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "port",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "default",
+              "tcp",
+              "127.0.0.1",
+              "5594",
+              "5594"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "814d3174-c850-4342-b315-a32bfa5e6141"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "port",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "default",
+              "tcp",
+              "127.0.0.1",
+              "5595",
+              "5595"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "c05db312-6f2e-45e4-b8c7-9b6b53ec0bcd"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "port",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "default",
+              "tcp",
+              "127.0.0.1",
+              "5596",
+              "5596"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "4ebda149-16b0-4153-bf05-a3d8db880370"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "19dd97310f7442e14c09f0753d8cc1f717d88c0bfa13cde1279ec3448aceff54"
+        },
+        "request_hash": "33f4d64ac4e9822fafe32c11619e4951cd03ed285aa66b750437cdeab4eb038a",
+        "request_id": "run15-hb2",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 41
+        },
+        "status": "applied",
+        "transaction_sequence": 41
+      },
+      "request_hash": "33f4d64ac4e9822fafe32c11619e4951cd03ed285aa66b750437cdeab4eb038a"
+    },
+    "run15\u0000run15-hb3": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:58:27Z",
+            "generation": 2,
+            "heartbeat_at": "2026-10-29T05:53:27Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ],
+            "state": "running",
+            "task": null,
+            "token": "daf29c95-2d7c-4bba-9f8c-8b64dde1d1c4"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:58:27Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:53:27Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "database",
+              "run15-pg-261",
+              "openbot_test",
+              "public"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "d10ee573-6df9-4650-8857-6c89730456da"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:58:27Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:53:27Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "database",
+              "run15-pg-262",
+              "openbot_test",
+              "public"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "52609db1-6251-47ea-9f4e-65181d09a905"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:58:27Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:53:27Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "database",
+              "run15-pg-263",
+              "openbot_test",
+              "public"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "24673a49-fd91-4eb0-8475-aefe0e4c380d"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:58:27Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:53:27Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "261"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "2d122dee-6ba5-4863-8850-28a3b95f3176"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:58:27Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:53:27Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "262"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "66bec27b-6072-42ec-864b-f7e68cf4a192"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:58:27Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:53:27Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "263"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "24983c25-7ba8-479d-b726-0b43a6a25a29"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:58:27Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:53:27Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "port",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "default",
+              "tcp",
+              "127.0.0.1",
+              "5594",
+              "5594"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "814d3174-c850-4342-b315-a32bfa5e6141"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:58:27Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:53:27Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "port",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "default",
+              "tcp",
+              "127.0.0.1",
+              "5595",
+              "5595"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "c05db312-6f2e-45e4-b8c7-9b6b53ec0bcd"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:58:27Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:53:27Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "port",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "default",
+              "tcp",
+              "127.0.0.1",
+              "5596",
+              "5596"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "4ebda149-16b0-4153-bf05-a3d8db880370"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "8e655ac4255239097983a482ac581d790bf3912c90f2f6e7cc4545a7acd4280a"
+        },
+        "request_hash": "b2ae8e3cc6c2791d911cb553d8eb4f9e94ecdac51e5e488ba2a145381c33696e",
+        "request_id": "run15-hb3",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 51
+        },
+        "status": "applied",
+        "transaction_sequence": 51
+      },
+      "request_hash": "b2ae8e3cc6c2791d911cb553d8eb4f9e94ecdac51e5e488ba2a145381c33696e"
+    },
+    "run15\u0000run15-hb4": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T06:06:36Z",
+            "generation": 2,
+            "heartbeat_at": "2026-10-29T06:01:36Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ],
+            "state": "running",
+            "task": null,
+            "token": "daf29c95-2d7c-4bba-9f8c-8b64dde1d1c4"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T06:06:36Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T06:01:36Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "database",
+              "run15-pg-261",
+              "openbot_test",
+              "public"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "d10ee573-6df9-4650-8857-6c89730456da"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T06:06:36Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T06:01:36Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "database",
+              "run15-pg-262",
+              "openbot_test",
+              "public"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "52609db1-6251-47ea-9f4e-65181d09a905"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T06:06:36Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T06:01:36Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "database",
+              "run15-pg-263",
+              "openbot_test",
+              "public"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "24673a49-fd91-4eb0-8475-aefe0e4c380d"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T06:06:36Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T06:01:36Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "261"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "2d122dee-6ba5-4863-8850-28a3b95f3176"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T06:06:36Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T06:01:36Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "262"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "66bec27b-6072-42ec-864b-f7e68cf4a192"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T06:06:36Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T06:01:36Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "263"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "24983c25-7ba8-479d-b726-0b43a6a25a29"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T06:06:36Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T06:01:36Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "port",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "default",
+              "tcp",
+              "127.0.0.1",
+              "5594",
+              "5594"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "814d3174-c850-4342-b315-a32bfa5e6141"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T06:06:36Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T06:01:36Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "port",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "default",
+              "tcp",
+              "127.0.0.1",
+              "5595",
+              "5595"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "c05db312-6f2e-45e4-b8c7-9b6b53ec0bcd"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T06:06:36Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T06:01:36Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "port",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "default",
+              "tcp",
+              "127.0.0.1",
+              "5596",
+              "5596"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "4ebda149-16b0-4153-bf05-a3d8db880370"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "e1021583b18c650a06151bd6f6be329060d32145315c3105e653620ca61884eb"
+        },
+        "request_hash": "b2ae8e3cc6c2791d911cb553d8eb4f9e94ecdac51e5e488ba2a145381c33696e",
+        "request_id": "run15-hb4",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 63
+        },
+        "status": "applied",
+        "transaction_sequence": 63
+      },
+      "request_hash": "b2ae8e3cc6c2791d911cb553d8eb4f9e94ecdac51e5e488ba2a145381c33696e"
+    },
+    "run15\u0000run15-t1-claims": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 2,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "daf29c95-2d7c-4bba-9f8c-8b64dde1d1c4"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "261"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "2d122dee-6ba5-4863-8850-28a3b95f3176"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "database",
+              "run15-pg-261",
+              "openbot_test",
+              "public"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "d10ee573-6df9-4650-8857-6c89730456da"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "port",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "default",
+              "tcp",
+              "127.0.0.1",
+              "5594",
+              "5594"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "814d3174-c850-4342-b315-a32bfa5e6141"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "262"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "66bec27b-6072-42ec-864b-f7e68cf4a192"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "database",
+              "run15-pg-262",
+              "openbot_test",
+              "public"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "52609db1-6251-47ea-9f4e-65181d09a905"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "port",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "default",
+              "tcp",
+              "127.0.0.1",
+              "5595",
+              "5595"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "c05db312-6f2e-45e4-b8c7-9b6b53ec0bcd"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "263"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "24983c25-7ba8-479d-b726-0b43a6a25a29"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "database",
+              "run15-pg-263",
+              "openbot_test",
+              "public"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "24673a49-fd91-4eb0-8475-aefe0e4c380d"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 1,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "port",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "default",
+              "tcp",
+              "127.0.0.1",
+              "5596",
+              "5596"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "4ebda149-16b0-4153-bf05-a3d8db880370"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "05dcbaf9f1e8218026885f6bf362126acdd8658615e6c82c224b214f234bd8d5"
+        },
+        "request_hash": "b842930e6a0b36eb8d065d98b6e314a1c5f2fec8b822e55517875bd560b3addb",
+        "request_id": "run15-t1-claims",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 27
+        },
+        "status": "applied",
+        "transaction_sequence": 27
+      },
+      "request_hash": "b842930e6a0b36eb8d065d98b6e314a1c5f2fec8b822e55517875bd560b3addb"
+    },
+    "run15\u0000run15-t10-release-all": {
+      "receipt": {
+        "claims": [
+          {
+            "released": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ]
+          },
+          {
+            "released": [
+              "database",
+              "run15-pg-261",
+              "openbot_test",
+              "public"
+            ]
+          },
+          {
+            "released": [
+              "database",
+              "run15-pg-262",
+              "openbot_test",
+              "public"
+            ]
+          },
+          {
+            "released": [
+              "database",
+              "run15-pg-263",
+              "openbot_test",
+              "public"
+            ]
+          },
+          {
+            "released": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "261"
+            ]
+          },
+          {
+            "released": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "262"
+            ]
+          },
+          {
+            "released": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "263"
+            ]
+          },
+          {
+            "released": [
+              "port",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "default",
+              "tcp",
+              "127.0.0.1",
+              "5594",
+              "5594"
+            ]
+          },
+          {
+            "released": [
+              "port",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "default",
+              "tcp",
+              "127.0.0.1",
+              "5595",
+              "5595"
+            ]
+          },
+          {
+            "released": [
+              "port",
+              "4067db8a-f54b-462d-8cb9-396482c06bcc",
+              "default",
+              "tcp",
+              "127.0.0.1",
+              "5596",
+              "5596"
+            ]
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "0f7627d4df7c0d637a47083db7e8caa862a871bbd0f3ccbd4bee2bb2b2aaaa58"
+        },
+        "request_hash": "78a2034f25b692faa5ce35ce857126c7771ee6cf54a91d617fc88e6017f67fec",
+        "request_id": "run15-t10-release-all",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 78
+        },
+        "status": "applied",
+        "transaction_sequence": 78
+      },
+      "request_hash": "78a2034f25b692faa5ce35ce857126c7771ee6cf54a91d617fc88e6017f67fec"
+    },
+    "run15\u0000run15-t1b-daily-running": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T05:54:37Z",
+            "generation": 2,
+            "heartbeat_at": "2026-10-29T05:49:37Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ],
+            "state": "running",
+            "task": null,
+            "token": "daf29c95-2d7c-4bba-9f8c-8b64dde1d1c4"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "87c807c7f548cc82de13093d5c18daf12aa593e0ea96d51bc27837f47e78fa7f"
+        },
+        "request_hash": "1d1ccfcaea9c689f0abb790960329cdf351be4afcd54041c05fb161e1cd1ef0d",
+        "request_id": "run15-t1b-daily-running",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 28
+        },
+        "status": "applied",
+        "transaction_sequence": 28
+      },
+      "request_hash": "1d1ccfcaea9c689f0abb790960329cdf351be4afcd54041c05fb161e1cd1ef0d"
+    },
+    "run15\u0000run15-t2-select": {
+      "receipt": {
+        "claims": [],
+        "daily": [
+          {
+            "action": null,
+            "class": "new",
+            "key": "261",
+            "slot_kind": "audit",
+            "slot_seq": 2,
+            "status": "applied"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "87c807c7f548cc82de13093d5c18daf12aa593e0ea96d51bc27837f47e78fa7f",
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": "9080177e2026b2ca56194fc37aae468cd36904379c349e982dea9952cbb83634"
+        },
+        "request_hash": "551b91ef7010c41f3a4c3c9a9da2059c7426f1a6d2843530a5871bbef405ea97",
+        "request_id": "run15-t2-select",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 28,
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": 29
+        },
+        "selection": {
+          "action": null,
+          "class": "new",
+          "key": "261",
+          "slot_kind": "audit",
+          "slot_seq": 2,
+          "status": "applied"
+        },
+        "status": "applied",
+        "transaction_sequence": 29
+      },
+      "request_hash": "551b91ef7010c41f3a4c3c9a9da2059c7426f1a6d2843530a5871bbef405ea97"
+    },
+    "run15\u0000run15-t3-select": {
+      "receipt": {
+        "claims": [],
+        "daily": [
+          {
+            "action": null,
+            "class": "new",
+            "key": "262",
+            "slot_kind": "audit",
+            "slot_seq": 3,
+            "status": "applied"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "87c807c7f548cc82de13093d5c18daf12aa593e0ea96d51bc27837f47e78fa7f",
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": "dff23a64d4d52af992578ab6d18b943a42a3e4415ebff66715c90acd68f0b0ba"
+        },
+        "request_hash": "551b91ef7010c41f3a4c3c9a9da2059c7426f1a6d2843530a5871bbef405ea97",
+        "request_id": "run15-t3-select",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 28,
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": 30
+        },
+        "selection": {
+          "action": null,
+          "class": "new",
+          "key": "262",
+          "slot_kind": "audit",
+          "slot_seq": 3,
+          "status": "applied"
+        },
+        "status": "applied",
+        "transaction_sequence": 30
+      },
+      "request_hash": "551b91ef7010c41f3a4c3c9a9da2059c7426f1a6d2843530a5871bbef405ea97"
+    },
+    "run15\u0000run15-t4-select": {
+      "receipt": {
+        "claims": [],
+        "daily": [
+          {
+            "action": null,
+            "class": "new",
+            "key": "263",
+            "slot_kind": "audit",
+            "slot_seq": 4,
+            "status": "applied"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "87c807c7f548cc82de13093d5c18daf12aa593e0ea96d51bc27837f47e78fa7f",
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": "f471be8c8871e89055c7cbee7504de309e8c2b0b9c4f8034d0e2a9b29a3d54da"
+        },
+        "request_hash": "551b91ef7010c41f3a4c3c9a9da2059c7426f1a6d2843530a5871bbef405ea97",
+        "request_id": "run15-t4-select",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 28,
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": 31
+        },
+        "selection": {
+          "action": null,
+          "class": "new",
+          "key": "263",
+          "slot_kind": "audit",
+          "slot_seq": 4,
+          "status": "applied"
+        },
+        "status": "applied",
+        "transaction_sequence": 31
+      },
+      "request_hash": "551b91ef7010c41f3a4c3c9a9da2059c7426f1a6d2843530a5871bbef405ea97"
+    },
+    "run15\u0000run15-t5b-state-261": {
+      "receipt": {
+        "claims": [],
+        "daily": [
+          {
+            "key": "261",
+            "status": "applied"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "e1021583b18c650a06151bd6f6be329060d32145315c3105e653620ca61884eb",
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": "84e36ee2a5043bdb8836cefcf552be8b50bd976563a1dda96a8cce4c4d398bfa"
+        },
+        "request_hash": "99038984f4a46a8c11aa1cdffb9ecdbbe48411f0ef0d453c2600a9ceedd3b638",
+        "request_id": "run15-t5b-state-261",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 63,
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": 64
+        },
+        "status": "applied",
+        "transaction_sequence": 64
+      },
+      "request_hash": "99038984f4a46a8c11aa1cdffb9ecdbbe48411f0ef0d453c2600a9ceedd3b638"
+    },
+    "run15\u0000run15-t5b-state-262": {
+      "receipt": {
+        "claims": [],
+        "daily": [
+          {
+            "key": "262",
+            "status": "applied"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "e1021583b18c650a06151bd6f6be329060d32145315c3105e653620ca61884eb",
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": "ea7061dbeebbd56f760b43d2785912280c7969320c9b8800fbbd9f1c67889c11"
+        },
+        "request_hash": "3b9f0207266ead608a757bfebbea4b690cc2a7a0b94d1dbccc9716589cccafa3",
+        "request_id": "run15-t5b-state-262",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 63,
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": 65
+        },
+        "status": "applied",
+        "transaction_sequence": 65
+      },
+      "request_hash": "3b9f0207266ead608a757bfebbea4b690cc2a7a0b94d1dbccc9716589cccafa3"
+    },
+    "run15\u0000run15-t6-settle-261": {
+      "receipt": {
+        "claims": [],
+        "daily": [
+          {
+            "at": "2026-10-29T06:01:35Z",
+            "capacity": 4,
+            "class": "new",
+            "key": "261",
+            "kind": "slot_settled",
+            "outcome": "blocked",
+            "owner_run": "run15",
+            "refs": [
+              {
+                "attempt": 1,
+                "checkpoint_id": null,
+                "content_kind": "file",
+                "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/verification/issue-261/audit-report.md",
+                "sha256": "82e2b0ccc083311e28ac15c8da28241e0c0a440f48f3580911a926fb86048f94",
+                "snapshot_generation": null
+              }
+            ],
+            "result": "blocked",
+            "slot_kind": "audit",
+            "slot_seq": 2,
+            "status": "applied"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "8e655ac4255239097983a482ac581d790bf3912c90f2f6e7cc4545a7acd4280a",
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": "55d9d371ae5ae0408a2f409fe8e57ec052144a8ae80e5ab3efb3a6852945cc9f"
+        },
+        "request_hash": "abe963401e959da6044762106daab8b7f0bd04eeeb835af10562e702bcb8f769",
+        "request_id": "run15-t6-settle-261",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 51,
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": 52
+        },
+        "selection": {
+          "at": "2026-10-29T06:01:35Z",
+          "capacity": 4,
+          "class": "new",
+          "key": "261",
+          "kind": "slot_settled",
+          "outcome": "blocked",
+          "owner_run": "run15",
+          "refs": [
+            {
+              "attempt": 1,
+              "checkpoint_id": null,
+              "content_kind": "file",
+              "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/verification/issue-261/audit-report.md",
+              "sha256": "82e2b0ccc083311e28ac15c8da28241e0c0a440f48f3580911a926fb86048f94",
+              "snapshot_generation": null
+            }
+          ],
+          "result": "blocked",
+          "slot_kind": "audit",
+          "slot_seq": 2,
+          "status": "applied"
+        },
+        "status": "applied",
+        "transaction_sequence": 52
+      },
+      "request_hash": "abe963401e959da6044762106daab8b7f0bd04eeeb835af10562e702bcb8f769"
+    },
+    "run15\u0000run15-t6-settle-262": {
+      "receipt": {
+        "claims": [],
+        "daily": [
+          {
+            "at": "2026-10-29T06:01:36Z",
+            "capacity": 4,
+            "class": "new",
+            "key": "262",
+            "kind": "slot_settled",
+            "outcome": "blocked",
+            "owner_run": "run15",
+            "refs": [
+              {
+                "attempt": 1,
+                "checkpoint_id": null,
+                "content_kind": "file",
+                "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/verification/issue-262/audit-report.md",
+                "sha256": "94bd6791c564abdf006233699eb65920ec2938ed3f54e4ba17d9e258fa9ba9e3",
+                "snapshot_generation": null
+              }
+            ],
+            "result": "blocked",
+            "slot_kind": "audit",
+            "slot_seq": 3,
+            "status": "applied"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "8e655ac4255239097983a482ac581d790bf3912c90f2f6e7cc4545a7acd4280a",
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": "70bc660eb3fbdbc6c29d17dca0c81a8f3aa0de4c30cb9072cd95e0501b25b5db"
+        },
+        "request_hash": "f43fef1360d58e90ff265564dee0119c8f9fd38687cebfd63456b38709909da4",
+        "request_id": "run15-t6-settle-262",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 51,
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": 53
+        },
+        "selection": {
+          "at": "2026-10-29T06:01:36Z",
+          "capacity": 4,
+          "class": "new",
+          "key": "262",
+          "kind": "slot_settled",
+          "outcome": "blocked",
+          "owner_run": "run15",
+          "refs": [
+            {
+              "attempt": 1,
+              "checkpoint_id": null,
+              "content_kind": "file",
+              "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/verification/issue-262/audit-report.md",
+              "sha256": "94bd6791c564abdf006233699eb65920ec2938ed3f54e4ba17d9e258fa9ba9e3",
+              "snapshot_generation": null
+            }
+          ],
+          "result": "blocked",
+          "slot_kind": "audit",
+          "slot_seq": 3,
+          "status": "applied"
+        },
+        "status": "applied",
+        "transaction_sequence": 53
+      },
+      "request_hash": "f43fef1360d58e90ff265564dee0119c8f9fd38687cebfd63456b38709909da4"
+    },
+    "run15\u0000run15-t7-state-263": {
+      "receipt": {
+        "claims": [],
+        "daily": [
+          {
+            "key": "263",
+            "status": "applied"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "e1021583b18c650a06151bd6f6be329060d32145315c3105e653620ca61884eb",
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": "dcbe38ee6d0bcad1c1a08c95158b3a5db4dc7e5bf6f2fa944aa36ab45dc043fd"
+        },
+        "request_hash": "c4717104387577472e134e3c649e0bfdd0c571cda8da1e82166ef445ed07b131",
+        "request_id": "run15-t7-state-263",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 63,
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": 66
+        },
+        "status": "applied",
+        "transaction_sequence": 66
+      },
+      "request_hash": "c4717104387577472e134e3c649e0bfdd0c571cda8da1e82166ef445ed07b131"
+    },
+    "run15\u0000run15-t8-settle-263": {
+      "receipt": {
+        "claims": [],
+        "daily": [
+          {
+            "at": "2026-10-29T06:07:04Z",
+            "capacity": 4,
+            "class": "new",
+            "key": "263",
+            "kind": "slot_settled",
+            "outcome": "blocked",
+            "owner_run": "run15",
+            "refs": [
+              {
+                "attempt": 1,
+                "checkpoint_id": null,
+                "content_kind": "file",
+                "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/verification/issue-263/audit-report.md",
+                "sha256": "04e050bc52894269c20d59db8b0f6816192639f6f1e7bb71dfad09355beafe20",
+                "snapshot_generation": null
+              }
+            ],
+            "result": "blocked",
+            "slot_kind": "audit",
+            "slot_seq": 4,
+            "status": "applied"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "e1021583b18c650a06151bd6f6be329060d32145315c3105e653620ca61884eb",
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": "82e46652018988cf24a8f453b09635dfdeccd6d9e6f0af126a1b870c0c1fac78"
+        },
+        "request_hash": "720913327826bebf45cc0842823dd2c280adb7e43f5736642184f815e6d1dc68",
+        "request_id": "run15-t8-settle-263",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 63,
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": 67
+        },
+        "selection": {
+          "at": "2026-10-29T06:07:04Z",
+          "capacity": 4,
+          "class": "new",
+          "key": "263",
+          "kind": "slot_settled",
+          "outcome": "blocked",
+          "owner_run": "run15",
+          "refs": [
+            {
+              "attempt": 1,
+              "checkpoint_id": null,
+              "content_kind": "file",
+              "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run15/verification/issue-263/audit-report.md",
+              "sha256": "04e050bc52894269c20d59db8b0f6816192639f6f1e7bb71dfad09355beafe20",
+              "snapshot_generation": null
+            }
+          ],
+          "result": "blocked",
+          "slot_kind": "audit",
+          "slot_seq": 4,
+          "status": "applied"
+        },
+        "status": "applied",
+        "transaction_sequence": 67
+      },
+      "request_hash": "720913327826bebf45cc0842823dd2c280adb7e43f5736642184f815e6d1dc68"
+    },
+    "run15\u0000run15-t9-daily-settling": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session",
+            "created_at": "2026-10-29T05:49:37Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T06:06:36Z",
+            "generation": 2,
+            "heartbeat_at": "2026-10-29T06:01:36Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run15",
+            "relation_snapshot": null,
+            "resource_key": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ],
+            "state": "settling",
+            "task": null,
+            "token": "daf29c95-2d7c-4bba-9f8c-8b64dde1d1c4"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "e0ca5462c78942baa3189c8dba63a197cb03779ce2c8134ab13d029c3984c316"
+        },
+        "request_hash": "78021af8d633cc8b69c8b61302a1d5c3b7f2e92ee7b02eab0d64e22af89c39bd",
+        "request_id": "run15-t9-daily-settling",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 68
+        },
+        "status": "applied",
+        "transaction_sequence": 68
+      },
+      "request_hash": "78021af8d633cc8b69c8b61302a1d5c3b7f2e92ee7b02eab0d64e22af89c39bd"
+    },
+    "run16\u0000run16-t1-claims": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session:orca-run9",
+            "created_at": "2026-10-29T06:23:31Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T06:28:31Z",
+            "generation": 3,
+            "heartbeat_at": "2026-10-29T06:23:31Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run16",
+            "relation_snapshot": null,
+            "resource_key": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "b932efaf-5a20-4441-804e-3d7e5246a8a0"
+          },
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session:orca-run9",
+            "created_at": "2026-10-29T06:23:31Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T06:28:31Z",
+            "generation": 2,
+            "heartbeat_at": "2026-10-29T06:23:31Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run16",
+            "relation_snapshot": null,
+            "resource_key": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "260"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "d3cea098-0edb-42da-bf91-ac30c6a1a1e3"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "3c5d52bac3203ce4934e1a2ff38a189cf7b7c26fe81e960adb3c6598b2157dff"
+        },
+        "request_hash": "4fbe827de136c822c5b6000228aba648a6c38619fb2de7bc4a03c21acccf8216",
+        "request_id": "run16-t1-claims",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 80
+        },
+        "status": "applied",
+        "transaction_sequence": 80
+      },
+      "request_hash": "4fbe827de136c822c5b6000228aba648a6c38619fb2de7bc4a03c21acccf8216"
+    },
+    "run16\u0000run16-t1b-daily-running": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session:orca-run9",
+            "created_at": "2026-10-29T06:23:31Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T06:28:31Z",
+            "generation": 3,
+            "heartbeat_at": "2026-10-29T06:23:31Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run16",
+            "relation_snapshot": null,
+            "resource_key": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ],
+            "state": "running",
+            "task": null,
+            "token": "b932efaf-5a20-4441-804e-3d7e5246a8a0"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "898685e4ab37bbcc9cf04e3250e8ecd4e8ce640fcc77443d27fbaf19ac1d54f8"
+        },
+        "request_hash": "5a6ee0f875522ef249cbff9b96db3cc1a14c4590c3af8f5fc6e8bc52f177bd2b",
+        "request_id": "run16-t1b-daily-running",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 81
+        },
+        "status": "applied",
+        "transaction_sequence": 81
+      },
+      "request_hash": "5a6ee0f875522ef249cbff9b96db3cc1a14c4590c3af8f5fc6e8bc52f177bd2b"
+    },
+    "run16\u0000run16-t2-select": {
+      "receipt": {
+        "claims": [],
+        "daily": [
+          {
+            "action": null,
+            "class": "revalidate",
+            "key": "260",
+            "slot_kind": "audit",
+            "slot_seq": 5,
+            "status": "applied"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "898685e4ab37bbcc9cf04e3250e8ecd4e8ce640fcc77443d27fbaf19ac1d54f8",
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": "25b599e9de1020c9cabc365d562e4ab8cffdb5353ac1c8d7979b76c0c1c9167d"
+        },
+        "request_hash": "94544a3a1165e4d31b6762f8b4c29bfff26027a2852e51c70447ef55d70de951",
+        "request_id": "run16-t2-select",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 81,
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": 82
+        },
+        "selection": {
+          "action": null,
+          "class": "revalidate",
+          "key": "260",
+          "slot_kind": "audit",
+          "slot_seq": 5,
+          "status": "applied"
+        },
+        "status": "applied",
+        "transaction_sequence": 82
+      },
+      "request_hash": "94544a3a1165e4d31b6762f8b4c29bfff26027a2852e51c70447ef55d70de951"
+    },
+    "run16\u0000run16-t3-state-260": {
+      "receipt": {
+        "claims": [],
+        "daily": [
+          {
+            "key": "260",
+            "status": "applied"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "898685e4ab37bbcc9cf04e3250e8ecd4e8ce640fcc77443d27fbaf19ac1d54f8",
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": "34f659812c89a19ddffde7a06f2b2f8c8df0598b300b632b6b03fe9a5972d1ce"
+        },
+        "request_hash": "86672820f71ec0ca57ba2a88108d4e26bf5a2c9c5e0877484e5b76d76171e282",
+        "request_id": "run16-t3-state-260",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 81,
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": 83
+        },
+        "status": "applied",
+        "transaction_sequence": 83
+      },
+      "request_hash": "86672820f71ec0ca57ba2a88108d4e26bf5a2c9c5e0877484e5b76d76171e282"
+    },
+    "run16\u0000run16-t4-settle-260": {
+      "receipt": {
+        "claims": [],
+        "daily": [
+          {
+            "at": "2026-10-29T06:24:18Z",
+            "capacity": 4,
+            "class": "revalidate",
+            "key": "260",
+            "kind": "slot_settled",
+            "outcome": "blocked",
+            "owner_run": "run16",
+            "refs": [
+              {
+                "attempt": 1,
+                "checkpoint_id": null,
+                "content_kind": "file",
+                "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run16/verification/issue-260/ci-gate-reconciliation.md",
+                "sha256": "940cc052987afe6b0c6fc8bb00f59d582053eda1f99a4a695c3368bf94cd65d6",
+                "snapshot_generation": null
+              }
+            ],
+            "result": "blocked",
+            "slot_kind": "audit",
+            "slot_seq": 5,
+            "status": "applied"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "898685e4ab37bbcc9cf04e3250e8ecd4e8ce640fcc77443d27fbaf19ac1d54f8",
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": "e3fa61ed07edee1508f0c0018bfc916c4b91ad1ea184d480fb43912a58b500ed"
+        },
+        "request_hash": "2c10daba2bc5d0f1239534ead2994e3a0ed22fe896786d66323802cac5330cc4",
+        "request_id": "run16-t4-settle-260",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 81,
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/repos/6769746875622e636f6d2f313132333738363536332f6f70656e626f74/daily-ledger.json": 84
+        },
+        "selection": {
+          "at": "2026-10-29T06:24:18Z",
+          "capacity": 4,
+          "class": "revalidate",
+          "key": "260",
+          "kind": "slot_settled",
+          "outcome": "blocked",
+          "owner_run": "run16",
+          "refs": [
+            {
+              "attempt": 1,
+              "checkpoint_id": null,
+              "content_kind": "file",
+              "path": "/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-29-closed-issue-daily-run16/verification/issue-260/ci-gate-reconciliation.md",
+              "sha256": "940cc052987afe6b0c6fc8bb00f59d582053eda1f99a4a695c3368bf94cd65d6",
+              "snapshot_generation": null
+            }
+          ],
+          "result": "blocked",
+          "slot_kind": "audit",
+          "slot_seq": 5,
+          "status": "applied"
+        },
+        "status": "applied",
+        "transaction_sequence": 84
+      },
+      "request_hash": "2c10daba2bc5d0f1239534ead2994e3a0ed22fe896786d66323802cac5330cc4"
+    },
+    "run16\u0000run16-t5-daily-settling": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session:orca-run9",
+            "created_at": "2026-10-29T06:23:31Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T06:28:31Z",
+            "generation": 3,
+            "heartbeat_at": "2026-10-29T06:23:31Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run16",
+            "relation_snapshot": null,
+            "resource_key": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ],
+            "state": "settling",
+            "task": null,
+            "token": "b932efaf-5a20-4441-804e-3d7e5246a8a0"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "94c4b40a40f80e32f4969866affdf1fcd209b77ed2121274afb8b756882aaa7e"
+        },
+        "request_hash": "0ffc1d511fe4b031b8799178756f0e9da4bf5288fe563b86bd3871cc7c0ad6e9",
+        "request_id": "run16-t5-daily-settling",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 85
+        },
+        "status": "applied",
+        "transaction_sequence": 85
+      },
+      "request_hash": "0ffc1d511fe4b031b8799178756f0e9da4bf5288fe563b86bd3871cc7c0ad6e9"
+    },
+    "run16\u0000run16-t6-release-all": {
+      "receipt": {
+        "claims": [
+          {
+            "released": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ]
+          },
+          {
+            "released": [
+              "issue",
+              "github.com/1123786563/openbot",
+              "260"
+            ]
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "6ecad29c42fc38ba78f3038a1b756ab92f805af17ba8230b1c703623059b0369"
+        },
+        "request_hash": "b601bb4b74ba36b91c7f2f838868666cac7e235b38502a121b63e0ce8bee59d2",
+        "request_id": "run16-t6-release-all",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 87
+        },
+        "status": "applied",
+        "transaction_sequence": 87
+      },
+      "request_hash": "b601bb4b74ba36b91c7f2f838868666cac7e235b38502a121b63e0ce8bee59d2"
+    }
+  }
+}
