@@ -6,7 +6,13 @@ import {
   test,
 } from "../../tests/support/bun-test-compat";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import versions from "../../docker/opik/versions.json";
@@ -130,6 +136,26 @@ describe("configuration surface", () => {
 
   test("the optional stack is listed where the other optional stacks are listed", () => {
     expect(rootCompose).toContain("opik.yml");
+  });
+
+  test("every opik.md pointer in .env.example and docker-compose.yml resolves to a repo file", () => {
+    // 3f6cf8810 moved docs/opik.md to reference/opik.md and left stale pointers behind;
+    // the guard fails on any opik.md reference whose path no longer exists.
+    for (const [file, text] of [
+      [".env.example", envExample],
+      ["docker-compose.yml", rootCompose],
+    ] as const) {
+      const pointers = [...text.matchAll(/(docs|reference)\/opik\.md/g)].map(
+        (match) => `${match[1]}/opik.md`,
+      );
+      expect(pointers, `${file} matches no opik.md pointer`).not.toEqual([]);
+      for (const pointer of pointers) {
+        expect(
+          existsSync(join(repoRoot, pointer)),
+          `${file} points at missing ${pointer}`,
+        ).toBe(true);
+      }
+    }
   });
 });
 
