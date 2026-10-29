@@ -312,6 +312,48 @@ describe("network policy selection", () => {
       },
     ]);
   });
+
+  test("the push states execution ownership when the deployment has a scope", async () => {
+    const headers: Headers[] = [];
+    const provider = {
+      list: async () => [
+        { botId: "a", status: "running", url: "http://10.0.0.1:4100" },
+      ],
+    } as unknown as ComputerProvider;
+    await pushEgressPolicies({
+      provider,
+      token: "t",
+      executionScope: { tenantId: "acme", workspaceId: "research" },
+      policyForBot: async () => ({ mode: "deny_all", rules: [] }),
+      fetchImpl: (async (_url: string, init: RequestInit) => {
+        headers.push(new Headers(init.headers));
+        return new Response("{}");
+      }) as unknown as typeof fetch,
+    });
+    expect(headers[0].get("x-openbot-tenant-id")).toBe("acme");
+    expect(headers[0].get("x-openbot-workspace-id")).toBe("research");
+  });
+
+  test("a half-set scope refuses the push rather than sending it unattributed", async () => {
+    let calls = 0;
+    const provider = {
+      list: async () => [
+        { botId: "a", status: "running", url: "http://10.0.0.1:4100" },
+      ],
+    } as unknown as ComputerProvider;
+    const report = await pushEgressPolicies({
+      provider,
+      token: "t",
+      executionScope: null,
+      policyForBot: async () => ({ mode: "deny_all", rules: [] }),
+      fetchImpl: (async () => {
+        calls += 1;
+        return new Response("{}");
+      }) as unknown as typeof fetch,
+    });
+    expect(calls).toBe(0);
+    expect(report.failed[0]?.reason).toMatch(/execution ownership/i);
+  });
 });
 
 describe("SSO required", () => {

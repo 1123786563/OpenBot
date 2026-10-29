@@ -10,6 +10,10 @@ import { createRequire } from "node:module";
 // without putting it in this module's eager import graph. Node has no such global, so the same
 // laziness needs a handle.
 import { fileURLToPath } from "node:url";
+import {
+  type ExecutionScope,
+  isPlainScopeId,
+} from "@openbot/shared/execution-scope";
 /**
  * What the runtime can do. There is exactly one answer because CopilotKit Intelligence is required
  * for durable threads and memory. Configuration the product cannot function without belongs at the
@@ -100,6 +104,8 @@ export type SharedComputerConfig = {
   provider: "shared";
   baseUrl: string;
   token?: string;
+  /** Execution ownership stated on every dial (MT050): scope injects, null refuses, absent dials as before. */
+  executionScope?: ExecutionScope | null;
   allowPrivateHosts: boolean;
   policy?: ActionPolicy;
 };
@@ -1643,6 +1649,30 @@ function computerConfig(environment: Environment): ComputerConfig | undefined {
    */
   const computerToken = optional(environment, "COMPUTER_TOKEN");
 
+  /*
+   * The execution ownership a SHARED computer deployment states on its dials (MT050): the
+   * same deployment-level pair the craft sandbox reads (#618's ruling). Both set and
+   * well-formed is a scope; both empty means the deployment wired no scope and dials as it
+   * always did; anything else is half-set garbage the sending side must refuse rather than
+   * silently strip (#656 D1's three states). The supervisor and sandbox providers do not
+   * dial the computer directly, so the pair is only read on the shared branch.
+   */
+  let computerExecutionScope: ExecutionScope | null | undefined;
+  {
+    const tenantId =
+      optional(environment, "OPENBOT_COMPUTER_EXECUTION_TENANT_ID") ?? "";
+    const workspaceId =
+      optional(environment, "OPENBOT_COMPUTER_EXECUTION_WORKSPACE_ID") ?? "";
+    const valid = isPlainScopeId(tenantId) && isPlainScopeId(workspaceId);
+    if (valid) computerExecutionScope = { tenantId, workspaceId };
+    else if (tenantId !== "" || workspaceId !== "") {
+      log.warn(
+        "OPENBOT_COMPUTER_EXECUTION_TENANT_ID and OPENBOT_COMPUTER_EXECUTION_WORKSPACE_ID must both be set to plain scope ids; one without the other is refused, and every shared-computer call will fail until the pair is fixed.",
+      );
+      computerExecutionScope = null;
+    }
+  }
+
   const allowPrivateHosts = privateHostsAllowed(environment);
   const policy = actionPolicy(environment);
   /*
@@ -1688,6 +1718,9 @@ function computerConfig(environment: Environment): ComputerConfig | undefined {
     provider: "shared",
     baseUrl,
     allowPrivateHosts,
+    ...(computerExecutionScope !== undefined
+      ? { executionScope: computerExecutionScope }
+      : {}),
     ...(computerToken ? { token: computerToken } : {}),
     ...(policy ? { policy } : {}),
   };

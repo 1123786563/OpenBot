@@ -404,6 +404,49 @@ describe("computer provider factory", () => {
 
     expect(createComputerProvider(config).name).toBe("shared");
   });
+
+  test("the shared adapter states execution ownership on every call", async () => {
+    const seen: {
+      path: string;
+      tenant: string | null;
+      workspace: string | null;
+    }[] = [];
+    const base = serveAgentComputer({
+      computers: (request) => {
+        seen.push({
+          path: new URL(request.url).pathname,
+          tenant: request.headers.get("x-openbot-tenant-id"),
+          workspace: request.headers.get("x-openbot-workspace-id"),
+        });
+        return Response.json({ computers: [] });
+      },
+    });
+    const provider = createSharedComputerProvider({
+      baseUrl: base,
+      executionScope: { tenantId: "acme", workspaceId: "research" },
+    });
+
+    await provider.list();
+
+    expect(seen).toEqual([
+      { path: "/computers", tenant: "acme", workspace: "research" },
+    ]);
+  });
+
+  test("without a scope the shared adapter dials as before, unattributed", async () => {
+    const seen: string[] = [];
+    const base = serveAgentComputer({
+      computers: (request) => {
+        seen.push(request.headers.get("x-openbot-tenant-id") ?? "<none>");
+        return Response.json({ computers: [] });
+      },
+    });
+    const provider = createSharedComputerProvider({ baseUrl: base });
+
+    await provider.list();
+
+    expect(seen).toEqual(["<none>"]);
+  });
 });
 
 /**
