@@ -885,33 +885,33 @@ export function evidenceFingerprint(
  */
 export const DELIVERED_FINGERPRINTS: Readonly<Record<string, string>> = {
   "conformance.text":
-    "fc2f3eb182b1ab61143e9d69fa38a802a153343854ec60627c603e44e5c2fed9",
+    "c88de2f2ca9795413db8e392d9093698f33b682aea0f72a289fffe4bb3260e0a",
   "conformance.image":
     "5721d17fe9b0fc34ab5867105b73880d88d97dc8c3d97b832eda074512e4dc78",
   "conformance.audio":
-    "09e829c310373c2b92ede3c5a7db502b4db24f62bfa8991c8daf81be0883ebe9",
+    "b6374bd7abe225da3efa59900ae44eb621db67b8dc72ce140a44e5bea97cf1d2",
   "conformance.runtime":
-    "e25359e7be75fc014ca7b3fe6cecb1f00f43a4caa8c4bbd5914e6de821c6f675",
+    "3f6ea082c8291fa5011e49ce3d12f9951b31d4a3259c99d3f726102ffa283f8f",
   "conformance.embedding":
     "b643f683c5ea20d9cc2f92b7ae62dad72e2984f0bb3ff44f3afabc690c87e4f4",
   "conformance.rerank":
-    "2eb95fce142fb5b96cd634eee45a6d9b2ff4de62ad1072c740152d078aca4bc3",
+    "508ea4862b71ed926e4b16cc5134eec56b28d575f0f8c968e1b81637e84374bf",
   "conformance.ocr":
-    "036ebbcd5c2c3e9676d553ff1256a19a231424ed7be7b926ee57f3dcd5550ba1",
+    "56100f8ad72f2999b0907c989a115d145c367dcb3d07358adc2f563276876d72",
   "conformance.realtime":
-    "78ee8cbfc3d3eaffe87141e793bd5fa0916bd5fc3e8d59fbcba134e06e6d0fc7",
+    "09b7976bc3c21736e4d182fc995f9876252b4c3c1b46436d4c8f82bc7b554db3",
   "conformance.async":
-    "54c61e7db510c0847ce4a7a6440d62a61b6d3ec165e391c7ce0c0d2f69b7d6c3",
+    "bfbbece2cc4d9d343b8b1d3c3786a32ba2232569c0a1acaf46e42af710e6b43a",
   "conformance.batch":
     "a863787b70cee9da5ae213e0c3acd47628cada96f2595aa97e61374de19e3b4e",
   "conformance.video":
     "9e2c3dd01eae4f7a287f2459aa76fe7f5710a8915cdf1e9512848c43806c9a67",
   "conformance.tool":
-    "1ce756dcf656e478c56bd221c1bdc018aef1a5acb34d561c9c61ae3f4ce6e4c7",
+    "793cad661cd5c45e30ab0bba9cc0e57cfbc0b2cb3c404f0767276ec5ec963121",
   "conformance.evaluation":
-    "f86d77b64510798308a9b71012d8191c31c5123708d55f04378e253544cdb51a",
+    "33f19f165fd4b55046830cb9ace93ee85ca4e3ff07b1237a6ed4168bbf9e077c",
   "conformance.harness":
-    "f5a0ffec000d7e9ef91bc9848355f0b2e84ba0ce5f6b8aa99147cb06509a3919",
+    "f6827af6c46f622573d6b271be0a03af380e5b734c7dbfec73d1e9086aeca838",
 } as const;
 
 /** A record whose bound files changed (or vanished), or whose fingerprint was never recorded. */

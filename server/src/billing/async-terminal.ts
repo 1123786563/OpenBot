@@ -144,6 +144,24 @@ export async function readAsyncSettleTrigger(
   };
 }
 
+/**
+ * The trigger upsert converged against a row whose idempotency key names a DIFFERENT job.
+ * The unified key is the pure function of a job's own facts, so a key already carried by
+ * another job's row is an identity conflict — refused out loud (the settle surface answers
+ * it as `settlement_conflict`), never a raw 23505 escaping the trigger.
+ */
+export class AsyncSettleTriggerKeyConflictError extends Error {
+  /** The stable machine-readable kind the refusal `detail` answers with. */
+  readonly conflictKind = "settle_trigger_key_conflict";
+  /** The job the existing row — and therefore the key — belongs to, when it could be read. */
+  readonly keyOwnerJobId: string | undefined;
+  constructor(message: string, keyOwnerJobId: string | undefined) {
+    super(message);
+    this.name = "AsyncSettleTriggerKeyConflictError";
+    this.keyOwnerJobId = keyOwnerJobId;
+  }
+}
+
 /** Why a terminal settle refused — the settlement family's closed vocabulary. */
 export type AsyncTerminalRefusalReasonCode =
   | "job_not_found"
@@ -275,6 +293,31 @@ async function auditOverCap(
 }
 
 /**
+ * The violated constraint's name when `error` is a Postgres unique_violation (SQLSTATE 23505), else
+ * null. Bun's driver puts the SQLSTATE in `errno` and the name in `constraint`; drizzle wraps the
+ * driver error as `cause`. (Same helper the identity store uses, kept local so the two modules
+ * stay independently readable.)
+ */
+function uniqueViolationConstraint(error: unknown): string | null {
+  type Driver = { errno?: unknown; code?: unknown; constraint?: unknown };
+  const candidates = [
+    error as Driver | null | undefined,
+    (error as { cause?: Driver } | null | undefined)?.cause,
+  ];
+  for (const candidate of candidates) {
+    if (
+      candidate?.errno === "23505" ||
+      candidate?.errno === 23505 ||
+      candidate?.code === "23505"
+    )
+      return typeof candidate.constraint === "string"
+        ? candidate.constraint
+        : "";
+  }
+  return null;
+}
+
+/**
  * The terminal settlement service: resolve the job, count the trigger, price the terminal
  * usage at the LOCKED basis, and settle exactly once through the credit writer with the
  * job's line detail and the per-dimension split riding the same transaction. The
@@ -288,7 +331,15 @@ export function createAsyncTerminalSettleService(
   const writer = createCreditWriter(database);
   const now = () => dependencies.now?.() ?? new Date();
 
-  /** The atomic counter upsert — first insert writes the key, every trigger increments. */
+  /**
+   * The atomic counter upsert — first insert writes the key, every trigger increments.
+   * The arbiter is `job_id` only; the idempotency_key unique is NOT one, so a first-trigger
+   * race (two lanes inserting the same new key together) can surface as 23505 on that
+   * second index. One retry converges through the arbiter — the winner's row is visible by
+   * then, so the same-job conflict lands on `job_id` and the counters grow. A retry that
+   * violates the key AGAIN names a key owned by a DIFFERENT job: the typed conflict
+   * `settleTerminal` refuses with, never a raw 23505 escaping the trigger.
+   */
   async function countTrigger(input: {
     jobId: string;
     idempotencyKey: string;
@@ -296,41 +347,70 @@ export function createAsyncTerminalSettleService(
     source: AsyncSettleTriggerSource;
   }): Promise<AsyncSettleTriggerView> {
     const at = now();
-    const [row] = await database
-      .insert(asyncSettleTriggers)
-      .values({
-        jobId: input.jobId,
-        idempotencyKey: input.idempotencyKey,
-        terminalState: input.terminalState,
-        totalTriggers: 1,
-        pollTriggers: input.source === "poll" ? 1 : 0,
-        notificationTriggers: input.source === "notification" ? 1 : 0,
-        firstTriggeredAt: at,
-        lastTriggeredAt: at,
-        lastSource: input.source,
-      })
-      .onConflictDoUpdate({
-        target: asyncSettleTriggers.jobId,
-        set: {
-          totalTriggers: sql`${asyncSettleTriggers.totalTriggers} + 1`,
-          pollTriggers: sql`${asyncSettleTriggers.pollTriggers} + ${input.source === "poll" ? 1 : 0}`,
-          notificationTriggers: sql`${asyncSettleTriggers.notificationTriggers} + ${input.source === "notification" ? 1 : 0}`,
+    const upsert = async (): Promise<AsyncSettleTriggerView> => {
+      const [row] = await database
+        .insert(asyncSettleTriggers)
+        .values({
+          jobId: input.jobId,
+          idempotencyKey: input.idempotencyKey,
+          terminalState: input.terminalState,
+          totalTriggers: 1,
+          pollTriggers: input.source === "poll" ? 1 : 0,
+          notificationTriggers: input.source === "notification" ? 1 : 0,
+          firstTriggeredAt: at,
           lastTriggeredAt: at,
           lastSource: input.source,
-        },
-      })
-      .returning();
-    return {
-      jobId: row.jobId,
-      idempotencyKey: row.idempotencyKey,
-      terminalState: row.terminalState,
-      totalTriggers: row.totalTriggers,
-      pollTriggers: row.pollTriggers,
-      notificationTriggers: row.notificationTriggers,
-      firstTriggeredAt: row.firstTriggeredAt.toISOString(),
-      lastTriggeredAt: row.lastTriggeredAt.toISOString(),
-      lastSource: row.lastSource,
+        })
+        .onConflictDoUpdate({
+          target: asyncSettleTriggers.jobId,
+          set: {
+            totalTriggers: sql`${asyncSettleTriggers.totalTriggers} + 1`,
+            pollTriggers: sql`${asyncSettleTriggers.pollTriggers} + ${input.source === "poll" ? 1 : 0}`,
+            notificationTriggers: sql`${asyncSettleTriggers.notificationTriggers} + ${input.source === "notification" ? 1 : 0}`,
+            lastTriggeredAt: at,
+            lastSource: input.source,
+          },
+        })
+        .returning();
+      return {
+        jobId: row.jobId,
+        idempotencyKey: row.idempotencyKey,
+        terminalState: row.terminalState,
+        totalTriggers: row.totalTriggers,
+        pollTriggers: row.pollTriggers,
+        notificationTriggers: row.notificationTriggers,
+        firstTriggeredAt: row.firstTriggeredAt.toISOString(),
+        lastTriggeredAt: row.lastTriggeredAt.toISOString(),
+        lastSource: row.lastSource,
+      };
     };
+    try {
+      return await upsert();
+    } catch (error) {
+      if (
+        uniqueViolationConstraint(error) !==
+        "async_settle_triggers_idempotency_key_key"
+      )
+        throw error;
+    }
+    try {
+      return await upsert();
+    } catch (error) {
+      if (
+        uniqueViolationConstraint(error) !==
+        "async_settle_triggers_idempotency_key_key"
+      )
+        throw error;
+    }
+    const [existing] = await database
+      .select()
+      .from(asyncSettleTriggers)
+      .where(eq(asyncSettleTriggers.idempotencyKey, input.idempotencyKey))
+      .limit(1);
+    throw new AsyncSettleTriggerKeyConflictError(
+      `async-terminal: settle idempotency key already owned by job ${existing?.jobId ?? "unknown"}`,
+      existing?.jobId,
+    );
   }
 
   return {
@@ -418,12 +498,30 @@ export function createAsyncTerminalSettleService(
       // The trigger count FIRST — even a converged or refused trigger is a trigger the
       // observability must see (that is how a duplicate becomes discoverable).
       const idempotencyKey = asyncTerminalSettleKey(job.jobId, input.terminal);
-      const trigger = await countTrigger({
-        jobId: job.jobId,
-        idempotencyKey,
-        terminalState: input.terminal.state,
-        source: input.source,
-      });
+      let trigger: AsyncSettleTriggerView;
+      try {
+        trigger = await countTrigger({
+          jobId: job.jobId,
+          idempotencyKey,
+          terminalState: input.terminal.state,
+          source: input.source,
+        });
+      } catch (error) {
+        if (error instanceof AsyncSettleTriggerKeyConflictError) {
+          // The key belongs to a different job's row — the identity conflict it is,
+          // answered in the same closed vocabulary as every other refusal here.
+          return {
+            status: "refused",
+            reasonCode: "settlement_conflict",
+            detail: {
+              kind: error.conflictKind,
+              reason: error.message,
+              keyOwnerJobId: error.keyOwnerJobId,
+            },
+          };
+        }
+        throw error;
+      }
 
       // The reservation is the settlement's anchor: it names the account and carries the
       // pricing basis the terminal usage must be priced at — the LOCK, never the latest.
