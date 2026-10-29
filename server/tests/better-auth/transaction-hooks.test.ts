@@ -813,7 +813,7 @@ async function resetTokenRows(
 ): Promise<string[]> {
   const rows =
     (await client`select identifier from ${client(schema)}.${client("verification")}
-    where value = ${userId} and identifier like ${RESET_IDENTIFIER_PREFIX + "%"}`) as unknown as {
+    where value = ${userId} and identifier like ${`${RESET_IDENTIFIER_PREFIX}%`}`) as unknown as {
       identifier: string;
     }[];
   return rows.map((row) => row.identifier);

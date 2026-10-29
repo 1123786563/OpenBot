@@ -50,6 +50,9 @@ function api(path: string, authenticated = true) {
     headers: authenticated
       ? {
           "x-openbot-bot-id": BOT,
+          // MT050: state execution ownership alongside the deployment token.
+          "x-openbot-tenant-id": "file-download-fixture",
+          "x-openbot-workspace-id": "file-download-fixture",
           "x-openbot-computer-token": TOKEN,
         }
       : {},

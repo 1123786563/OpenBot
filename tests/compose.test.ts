@@ -473,7 +473,7 @@ test("runs migrations after PostgreSQL becomes healthy", () => {
 
   expect(compose).toContain("migrate:");
   expect(compose).toContain("condition: service_healthy");
-  expect(compose).toContain('"drizzle-kit", "migrate"');
+  expect(compose).toContain('"bun", "scripts/migrate.ts"');
 });
 
 test("builds the deployment image with Playwright's Chromium payload only", () => {
@@ -668,7 +668,10 @@ for (const { name, services } of optionalStacks) {
  * behind.
  */
 test("reference/compose.md indexes every optional stack and the shared invocation", () => {
-  const doc = readFileSync(join(hereDir, "..", "docs", "compose.md"), "utf8");
+  const doc = readFileSync(
+    join(hereDir, "..", "reference", "compose.md"),
+    "utf8",
+  );
   for (const { name } of optionalStacks) {
     expect(doc).toContain(`docker/compose/${name}.yml`);
   }

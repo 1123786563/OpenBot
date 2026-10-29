@@ -81,6 +81,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   check,
+  integer,
   foreignKey,
   index,
   pgTable,
@@ -359,5 +360,56 @@ export const authCompanySessionAssurances = pgTable(
         authCompanyAuthChallenges.protocol,
       ],
     }),
+  ],
+);
+
+const updatedAt = () =>
+  timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
+
+/**
+ * The per-tenant company auth policy — the table 0219 created and 0231
+ * completed, declared here so the #436 drift gate sees it in the schema
+ * (declared tables and migrated tables must be the same set, both
+ * directions). The §9.1 gate reads the provider, protocol and revision to
+ * issue `authCompanyAuthChallenges`; the proof's read gate compares the
+ * same revision and enforces `max_auth_age_seconds`. One row per tenant.
+ */
+export const authCompanyAuthPolicies = pgTable(
+  "auth_company_auth_policies",
+  {
+    tenantId: text("tenant_id").notNull(),
+    /** The provider the tenant's policy allows; the registry is a later task's. */
+    providerId: text("provider_id").notNull(),
+    /** Closed set: the two protocols the verified evidence bridge reads. */
+    protocol: text("protocol").notNull(),
+    /** Monotonic per-tenant revision; fits a JS number by CHECK, not hope. */
+    policyRevision: bigint("policy_revision", { mode: "number" }).notNull(),
+    /** The auth-age ceiling the proof's read gate enforces, in seconds. */
+    maxAuthAgeSeconds: integer("max_auth_age_seconds").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    primaryKey({
+      name: "auth_company_auth_policy_pk",
+      columns: [table.tenantId],
+    }),
+    foreignKey({
+      name: "auth_company_auth_policy_tenant_fk",
+      columns: [table.tenantId],
+      foreignColumns: [enterpriseTenants.id],
+    }).onDelete("cascade"),
+    check(
+      "auth_company_auth_policy_protocol",
+      sql`${table.protocol} in ('oidc', 'saml')`,
+    ),
+    check(
+      "auth_company_auth_policy_revision_safe_integer",
+      sql`${table.policyRevision} >= 0 and ${table.policyRevision} <= 9007199254740991`,
+    ),
+    check(
+      "auth_company_auth_policy_max_age_positive",
+      sql`${table.maxAuthAgeSeconds} > 0`,
+    ),
   ],
 );

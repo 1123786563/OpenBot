@@ -1,2 +1,4 @@
 ag-ui-crewai
 uvicorn[standard]
+# shortcut: litellm>=1.106 hard-imports CacheableResult from mcp.types (mcp>=2.2 API) while crewai pins mcp<2; unpin when either side moves
+litellm<1.106

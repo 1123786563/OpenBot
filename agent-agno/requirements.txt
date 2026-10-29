@@ -3,3 +3,7 @@ litellm
 fastapi
 python-multipart
 uvicorn[standard]
+
+# shortcut: litellm>=1.106 hard-imports the mcp package (mcp>=2.2 API) and every model call
+# dies on ImportError; same pin reason as agent-crewai. Unpin with that one.
+litellm<1.106

@@ -8,3 +8,6 @@ fastapi
 python-multipart
 uvicorn[standard]
 httpx>=0.28,<1
+# shortcut: anthropic>=2 sends the key as "authorization: Bearer" while the provider-boundary
+# tests pin the x-api-key wire form; unpin when the tests accept both header forms
+anthropic<2

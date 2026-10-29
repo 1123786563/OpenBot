@@ -16,9 +16,7 @@
  * their owning modules.
  */
 
-import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { isDeepStrictEqual } from "node:util";
 import type { AbstractAgent } from "@ag-ui/client";
 import {
   CopilotKitIntelligence,
@@ -34,7 +32,6 @@ import {
 import { workOwner } from "@openbot/shared/work-owner";
 import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { createTurnRunner } from "@openbot/toolkit/run-turn";
-import { serve } from "bun";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { packageToolRefFor } from "../../../shared/enterprise/plugin-package-contracts";
@@ -428,10 +425,6 @@ import {
   runReadinessEnforcement,
 } from "../enterprise/tenancy/readiness-enforcement";
 import {
-  applyStartupVerdict,
-  runMultitenancyStartupChecks,
-} from "../enterprise/tenancy/startup-checks";
-import {
   applyStartupDefaultsVerdict,
   buildStartupDefaultsRecord,
   evaluateStartupAssemblyReadiness,
@@ -569,8 +562,6 @@ import {
   assertResumeBindingCurrent,
   createGenerationCurrentGate,
   createGovernedTurnRunner,
-  GOVERNED_HEADLESS_REFUSALS,
-  GovernedHeadlessRefusal,
   settleResumedRun,
 } from "../mastra/headless";
 import { openMuseTaskSchedulingRecordFor } from "../mastra/openmuse-task-entry";
@@ -590,7 +581,6 @@ import { createMemoryStore } from "../memory/store";
 import { memoryTools } from "../memory/tools";
 import { OPENMUSE_TEMPLATE_KEY } from "../mobile-bff/openmuse-bot";
 import { officialModelMetadataLookup } from "../model-availability-check";
-import { currentRunObservationScope } from "../observation-run-scope";
 import { createActivityFeed } from "../openmuse-activity/feed";
 import { createOpenMuseActivityRoutes } from "../openmuse-activity/routes";
 import { createOpenMuseCalendarClient } from "../openmuse-calendar/client";
@@ -749,7 +739,6 @@ import { createTriggerIngressRoutes } from "../responsibilities/trigger-routes";
 import { useTriggerTools } from "../responsibilities/trigger-tools";
 import { createTriggerStore } from "../responsibilities/triggers";
 import type { Responsibility } from "../responsibilities/types";
-import { createServerResponsibilityEngine } from "../responsibilities/wiring";
 import { createRoutineRunner } from "../routines/runner";
 import { createRoutineStore } from "../routines/store";
 import { createIntentRouter } from "../routing/classify";

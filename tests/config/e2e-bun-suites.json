@@ -1,11 +1,9 @@
 {
-  "generatedBy": "merge: union of origin/main into 1123786563/ba503-integration via scripts/lib/e2e-manifest.mjs writeManifest",
+  "generatedBy": "scripts/e2e-add-driven.mjs",
   "groups": [
     {
       "name": "--help",
-      "files": [
-        "--help"
-      ]
+      "files": ["--help"]
     },
     {
       "name": "agent-computer/tests",
@@ -26,9 +24,7 @@
     },
     {
       "name": "agent-mastra/src",
-      "files": [
-        "agent-mastra/src/mastra/index.test.ts"
-      ]
+      "files": ["agent-mastra/src/mastra/index.test.ts"]
     },
     {
       "name": "agent-sandbox/tests",
@@ -40,9 +36,7 @@
     },
     {
       "name": "app/src",
-      "files": [
-        "app/src/lib/i18n/ai-observability.test.ts"
-      ]
+      "files": ["app/src/lib/i18n/ai-observability.test.ts"]
     },
     {
       "name": "app/tests part 1",
@@ -162,9 +156,7 @@
     },
     {
       "name": "app/tests part 5",
-      "files": [
-        "app/tests/user-key-status-ui.test.tsx"
-      ]
+      "files": ["app/tests/user-key-status-ui.test.tsx"]
     },
     {
       "name": "app/tests/ai-observability",
@@ -205,33 +197,23 @@
     },
     {
       "name": "desktop/scripts",
-      "files": [
-        "desktop/scripts/desktop-version.test.ts"
-      ]
+      "files": ["desktop/scripts/desktop-version.test.ts"]
     },
     {
       "name": "desktop/src",
-      "files": [
-        "desktop/src/telemetry.test.ts"
-      ]
+      "files": ["desktop/src/telemetry.test.ts"]
     },
     {
       "name": "scripts/processes.test.ts",
-      "files": [
-        "scripts/processes.test.ts"
-      ]
+      "files": ["scripts/processes.test.ts"]
     },
     {
       "name": "scripts/start-restart-guard.test.ts",
-      "files": [
-        "scripts/start-restart-guard.test.ts"
-      ]
+      "files": ["scripts/start-restart-guard.test.ts"]
     },
     {
       "name": "scripts/tls-pipeline.test.ts",
-      "files": [
-        "scripts/tls-pipeline.test.ts"
-      ]
+      "files": ["scripts/tls-pipeline.test.ts"]
     },
     {
       "name": "server/tests part 1",
@@ -748,9 +730,7 @@
     },
     {
       "name": "server/tests/billing-credits-writer",
-      "files": [
-        "server/tests/billing-credits-writer.integration.test.ts"
-      ]
+      "files": ["server/tests/billing-credits-writer.integration.test.ts"]
     },
     {
       "name": "server/tests/gateway-probe",
@@ -896,87 +876,59 @@
     },
     {
       "name": "shared/harnesses.test.ts",
-      "files": [
-        "shared/harnesses.test.ts"
-      ]
+      "files": ["shared/harnesses.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T01.02.01",
-      "files": [
-        "server/tests/better-auth/fixture-contract.test.ts"
-      ]
+      "files": ["server/tests/better-auth/fixture-contract.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T01.06.01",
-      "files": [
-        "server/tests/better-auth/oidc-evidence-contract.test.ts"
-      ]
+      "files": ["server/tests/better-auth/oidc-evidence-contract.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T01.07.01",
-      "files": [
-        "server/tests/better-auth/saml-evidence-contract.test.ts"
-      ]
+      "files": ["server/tests/better-auth/saml-evidence-contract.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T01.03.01",
-      "files": [
-        "server/tests/better-auth/transaction-contract.test.ts"
-      ]
+      "files": ["server/tests/better-auth/transaction-contract.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T01.04.01",
-      "files": [
-        "server/tests/better-auth/transaction-hooks.test.ts"
-      ]
+      "files": ["server/tests/better-auth/transaction-hooks.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T01.05.01",
-      "files": [
-        "server/tests/better-auth/team-extension-contract.test.ts"
-      ]
+      "files": ["server/tests/better-auth/team-extension-contract.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T02.01.01",
-      "files": [
-        "server/tests/better-auth/schema-bindings.test.ts"
-      ]
+      "files": ["server/tests/better-auth/schema-bindings.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T02.02.01",
-      "files": [
-        "server/tests/better-auth/schema-clocks.test.ts"
-      ]
+      "files": ["server/tests/better-auth/schema-clocks.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T02.03.01",
-      "files": [
-        "server/tests/better-auth/schema-command-authority.test.ts"
-      ]
+      "files": ["server/tests/better-auth/schema-command-authority.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T02.04.01",
-      "files": [
-        "server/tests/better-auth/schema-authority-sources.test.ts"
-      ]
+      "files": ["server/tests/better-auth/schema-authority-sources.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T02.05.01",
-      "files": [
-        "server/tests/better-auth/schema-assurance.test.ts"
-      ]
+      "files": ["server/tests/better-auth/schema-assurance.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T02.06.01",
-      "files": [
-        "server/tests/better-auth/schema-roles.test.ts"
-      ]
+      "files": ["server/tests/better-auth/schema-roles.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T02.07.01",
-      "files": [
-        "server/tests/better-auth/principal-registry.test.ts"
-      ]
+      "files": ["server/tests/better-auth/principal-registry.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T02.10.01",
@@ -986,201 +938,135 @@
     },
     {
       "name": "server/tests/better-auth:T02.08.01",
-      "files": [
-        "server/tests/better-auth/directory-command.test.ts"
-      ]
+      "files": ["server/tests/better-auth/directory-command.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T02.12.01",
-      "files": [
-        "server/tests/better-auth/outbox-fence.test.ts"
-      ]
+      "files": ["server/tests/better-auth/outbox-fence.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T02.09.01",
-      "files": [
-        "server/tests/better-auth/identity-command.test.ts"
-      ]
+      "files": ["server/tests/better-auth/identity-command.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T02.11.01",
-      "files": [
-        "server/tests/better-auth/ingress-coverage.test.ts"
-      ]
+      "files": ["server/tests/better-auth/ingress-coverage.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T02.13.01",
-      "files": [
-        "server/tests/better-auth/migration-inventory.test.ts"
-      ]
+      "files": ["server/tests/better-auth/migration-inventory.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T02.14.01",
-      "files": [
-        "server/tests/better-auth/migration-expand.test.ts"
-      ]
+      "files": ["server/tests/better-auth/migration-expand.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T02.15.01",
-      "files": [
-        "server/tests/better-auth/migration-verify.test.ts"
-      ]
+      "files": ["server/tests/better-auth/migration-verify.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T03.01.01",
-      "files": [
-        "server/tests/better-auth/scope-generations.test.ts"
-      ]
+      "files": ["server/tests/better-auth/scope-generations.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T03.02.01",
-      "files": [
-        "server/tests/better-auth/selection-api.test.ts"
-      ]
+      "files": ["server/tests/better-auth/selection-api.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T03.03.01",
-      "files": [
-        "server/tests/better-auth/company-provision.test.ts"
-      ]
+      "files": ["server/tests/better-auth/company-provision.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T03.04.01",
-      "files": [
-        "server/tests/better-auth/company-lifecycle.test.ts"
-      ]
+      "files": ["server/tests/better-auth/company-lifecycle.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T04.01.01",
-      "files": [
-        "server/tests/better-auth/invitation-commands.test.ts"
-      ]
+      "files": ["server/tests/better-auth/invitation-commands.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T04.02.01",
-      "files": [
-        "server/tests/better-auth/invitation-acceptance.test.ts"
-      ]
+      "files": ["server/tests/better-auth/invitation-acceptance.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T04.03.01",
-      "files": [
-        "server/tests/better-auth/membership-lifecycle.test.ts"
-      ]
+      "files": ["server/tests/better-auth/membership-lifecycle.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T04.07.01",
-      "files": [
-        "server/tests/better-auth/team-management-grants.test.ts"
-      ]
+      "files": ["server/tests/better-auth/team-management-grants.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T04.08.01",
-      "files": [
-        "server/tests/better-auth/scoped-team-admin.test.ts"
-      ]
+      "files": ["server/tests/better-auth/scoped-team-admin.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T05.01.01",
-      "files": [
-        "server/tests/better-auth/company-auth-challenge.test.ts"
-      ]
+      "files": ["server/tests/better-auth/company-auth-challenge.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T05.02.01",
-      "files": [
-        "server/tests/better-auth/company-auth-oidc.test.ts"
-      ]
+      "files": ["server/tests/better-auth/company-auth-oidc.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T05.03.01",
-      "files": [
-        "server/tests/better-auth/company-auth-saml.test.ts"
-      ]
+      "files": ["server/tests/better-auth/company-auth-saml.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T05.04.01",
-      "files": [
-        "server/tests/better-auth/company-assurance.test.ts"
-      ]
+      "files": ["server/tests/better-auth/company-assurance.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T05.05.01",
-      "files": [
-        "server/tests/better-auth/scim-provisioning.test.ts"
-      ]
+      "files": ["server/tests/better-auth/scim-provisioning.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T04.04.01",
-      "files": [
-        "server/tests/better-auth/email-verification.test.ts"
-      ]
+      "files": ["server/tests/better-auth/email-verification.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T04.05.01",
-      "files": [
-        "server/tests/better-auth/password-reset-request.test.ts"
-      ]
+      "files": ["server/tests/better-auth/password-reset-request.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T04.06.01",
-      "files": [
-        "server/tests/better-auth/password-recovery.test.ts"
-      ]
+      "files": ["server/tests/better-auth/password-recovery.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T05.06.01",
-      "files": [
-        "server/tests/better-auth/provisioning-global-admin.test.ts"
-      ]
+      "files": ["server/tests/better-auth/provisioning-global-admin.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T05.07.01",
-      "files": [
-        "server/tests/better-auth/global-identity-routes.test.ts"
-      ]
+      "files": ["server/tests/better-auth/global-identity-routes.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T05.10.01",
-      "files": [
-        "server/tests/better-auth/personal-model-grants.test.ts"
-      ]
+      "files": ["server/tests/better-auth/personal-model-grants.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T05.08.01",
-      "files": [
-        "server/tests/better-auth/admin-account-routes.test.ts"
-      ]
+      "files": ["server/tests/better-auth/admin-account-routes.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T05.09.01",
-      "files": [
-        "server/tests/better-auth/remote-identity-binding.test.ts"
-      ]
+      "files": ["server/tests/better-auth/remote-identity-binding.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T05.11.01",
-      "files": [
-        "server/tests/better-auth/personal-model-identity.test.ts"
-      ]
+      "files": ["server/tests/better-auth/personal-model-identity.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T05.12.01",
-      "files": [
-        "server/tests/better-auth/mobile-session-handoff.test.ts"
-      ]
+      "files": ["server/tests/better-auth/mobile-session-handoff.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T05.13.01",
-      "files": [
-        "server/tests/better-auth/mobile-authority-contract.test.ts"
-      ]
+      "files": ["server/tests/better-auth/mobile-authority-contract.test.ts"]
     },
     {
       "name": "server/tests/better-auth:T05.14.01",
-      "files": [
-        "server/tests/better-auth/password-recovery-not-wired.test.ts"
-      ]
+      "files": ["server/tests/better-auth/password-recovery-not-wired.test.ts"]
     },
     {
       "name": "server/tests/multitenancy/package chain",
@@ -1201,33 +1087,23 @@
     },
     {
       "name": "server/tests/multitenancy/package-withdraw-contention",
-      "files": [
-        "server/tests/multitenancy/package-withdraw-contention.test.ts"
-      ]
+      "files": ["server/tests/multitenancy/package-withdraw-contention.test.ts"]
     },
     {
       "name": "server/tests/multitenancy/package-migration",
-      "files": [
-        "server/tests/multitenancy/package-migration.test.ts"
-      ]
+      "files": ["server/tests/multitenancy/package-migration.test.ts"]
     },
     {
       "name": "server/tests/package-dispatch-call",
-      "files": [
-        "server/tests/package-dispatch-call.test.ts"
-      ]
+      "files": ["server/tests/package-dispatch-call.test.ts"]
     },
     {
       "name": "server/tests/package-index-ops",
-      "files": [
-        "server/tests/package-index-ops.test.ts"
-      ]
+      "files": ["server/tests/package-index-ops.test.ts"]
     },
     {
       "name": "server/tests/package-entrypoints",
-      "files": [
-        "server/tests/package-entrypoints.test.ts"
-      ]
+      "files": ["server/tests/package-entrypoints.test.ts"]
     },
     {
       "name": "app/tests",
@@ -1250,15 +1126,22 @@
     },
     {
       "name": "server/tests/multitenancy",
-      "files": [
-        "server/tests/multitenancy/bots-ownership.test.ts"
-      ]
+      "files": ["server/tests/multitenancy/bots-ownership.test.ts"]
+    },
+    {
+      "name": "server/tests increment 1",
+      "files": ["server/tests/db-query-failure-shape.test.ts"]
+    },
+    {
+      "name": "server/tests increment 2",
+      "files": ["server/tests/opik-default-bot-observation.test.ts"]
+    },
+    {
+      "name": "server/tests increment 3",
+      "files": ["server/tests/opik-span-support.test.ts"]
     }
   ],
-  "directoryIslands": [
-    "server/tests/multitenancy",
-    "app/tests/multitenancy"
-  ],
+  "directoryIslands": ["server/tests/multitenancy", "app/tests/multitenancy"],
   "files": [
     "--help",
     "agent-computer/tests/identity.test.ts",
@@ -1565,6 +1448,7 @@
     "server/tests/customer-provision-recovery.test.ts",
     "server/tests/database.test.ts",
     "server/tests/db-client-address.test.ts",
+    "server/tests/db-query-failure-shape.test.ts",
     "server/tests/delivery-baseline.test.ts",
     "server/tests/delivery-store.integration.test.ts",
     "server/tests/demonstrations-store.integration.test.ts",
@@ -1839,6 +1723,7 @@
     "server/tests/opik-datasets-routes.integration.test.ts",
     "server/tests/opik-datasets.integration.test.ts",
     "server/tests/opik-datasets.test.ts",
+    "server/tests/opik-default-bot-observation.test.ts",
     "server/tests/opik-deployment.test.ts",
     "server/tests/opik-execution-billing.integration.test.ts",
     "server/tests/opik-execution-billing.test.ts",
@@ -1876,6 +1761,7 @@
     "server/tests/opik-schema-barrel.test.ts",
     "server/tests/opik-scope.test.ts",
     "server/tests/opik-scoring-rules.test.ts",
+    "server/tests/opik-span-support.test.ts",
     "server/tests/opik-t-final-assembly.test.ts",
     "server/tests/opik-tool-steps.test.ts",
     "server/tests/opik-trace-chain.test.ts",
@@ -2214,6 +2100,9 @@
     "server/tests/better-auth/personal-model-identity.test.ts": "T05.11 (#567) personal-model-identity suite: needs the five BA_TEST_* role URLs, the 0209-0220 BA tag replay, the real PrincipalRegistry behind the grant seam and a fake Bifrost management surface behind the mounted claim/renew routes — Bun-only",
     "server/tests/better-auth/mobile-session-handoff.test.ts": "T05.12 (#568) mobile-session-handoff suite: needs the five BA_TEST_* role URLs and its own 0222 handoff-tables migration replayed on the isolated BA island — Bun-only",
     "server/tests/better-auth/mobile-authority-contract.test.ts": "T05.13 (#569) mobile-authority-contract suite: needs the five BA_TEST_* role URLs and its own 0223 admission-fence migration replayed on the isolated BA island — Bun-only",
-    "server/tests/better-auth/password-recovery-not-wired.test.ts": "T05.14 r1 F2 (#570): pins the outbox:null fail-closed refusal (503 PASSWORD_RECOVERY_NOT_WIRED before any command transaction); imports password-recovery.ts whose chain loads the Bun runtime — Bun-only"
+    "server/tests/better-auth/password-recovery-not-wired.test.ts": "T05.14 r1 F2 (#570): pins the outbox:null fail-closed refusal (503 PASSWORD_RECOVERY_NOT_WIRED before any command transaction); imports password-recovery.ts whose chain loads the Bun runtime — Bun-only",
+    "server/tests/db-query-failure-shape.test.ts": "runner named it: cannot load under Node: imports the bun:test layer",
+    "server/tests/opik-default-bot-observation.test.ts": "runner named it: cannot load under Node: imports the bun:test layer",
+    "server/tests/opik-span-support.test.ts": "runner named it: cannot load under Node: imports the bun:test layer"
   }
 }

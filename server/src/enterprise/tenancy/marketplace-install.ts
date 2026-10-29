@@ -595,8 +595,7 @@ export function createMarketplaceInstallService(channels: {
         // 冲突吞掉后的重读只认本人本团队的活行；同租户他人/别团队的占用行
         // 对 RLS 可见，不得当作安装成功（同码 BOT_ID_UNAVAILABLE，不泄露）。
         if (
-          !createdProduct ||
-          createdProduct.status !== "active" ||
+          createdProduct?.status !== "active" ||
           createdProduct.ownerPrincipalId !== scope.principalId ||
           createdProduct.workspaceId !== scope.workspaceId
         ) {

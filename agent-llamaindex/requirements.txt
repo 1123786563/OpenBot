@@ -4,3 +4,7 @@ llama-index-llms-litellm
 fastapi
 python-multipart
 uvicorn[standard]
+# shortcut: litellm>=1.106 hard-imports CacheableResult from mcp.types (mcp>=2.2 API) and
+# every call dies in retries; same pin reason as agent-crewai. Unpin with that one.
+litellm<1.106
+

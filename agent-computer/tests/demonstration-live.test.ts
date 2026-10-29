@@ -26,6 +26,8 @@ async function api(path: string, input?: unknown) {
   const response = await fetch(`${base}${path}`, {
     method: input === undefined ? "GET" : "POST",
     headers: {
+      "x-openbot-tenant-id": "demonstration-live",
+      "x-openbot-workspace-id": "demonstration-live",
       "x-openbot-computer-token": token,
       "x-openbot-bot-id": botId,
       "content-type": "application/json",
@@ -108,7 +110,7 @@ describe.skipIf(!asked)("real human live-screen demonstration", () => {
     });
     await api("/control/take", { requestId: requested.request.id });
     const socket = new WebSocket(
-      `${base.replace("http:", "ws:")}/stream?bot=${botId}&token=${token}&recording=${recordingId}`,
+      `${base.replace("http:", "ws:")}/stream?bot=${botId}&token=${token}&recording=${recordingId}&x-openbot-tenant-id=demonstration-fixture&x-openbot-workspace-id=demonstration-fixture`,
     );
     const messages: string[] = [];
     let frame: (() => void) | undefined;

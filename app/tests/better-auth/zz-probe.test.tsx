@@ -1,6 +1,11 @@
 import "../preload";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { afterAll, beforeAll, expect, test } from "../../../tests/support/e2e-compat";
+import {
+  afterAll,
+  beforeAll,
+  expect,
+  test,
+} from "../../../tests/support/e2e-compat";
 
 let fetchHandler: typeof globalThis.fetch;
 const originalFetch = globalThis.BunTEST_ORIGINAL_FETCH ?? globalThis.fetch;

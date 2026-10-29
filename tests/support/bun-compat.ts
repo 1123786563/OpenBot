@@ -187,7 +187,11 @@ function collect(stream: Readable | null): Any {
 
 function run(command: readonly string[], options: SpawnOptions = {}): Any {
   const [executable, ...args] = command as string[];
-  const child = nodeSpawn(executable, args, {
+  // Under the real runtime `process.execPath` IS Bun; suites re-run the runtime
+  // on TS entries (the Computer fixture spawns `src/index.ts`), and plain Node
+  // dies on those at import. Land execPath on Bun here too.
+  const resolved = executable === process.execPath ? bunBinary() : executable;
+  const child = nodeSpawn(resolved, args, {
     cwd: options.cwd,
     env: (options.env as NodeJS.ProcessEnv) ?? process.env,
     stdio: [
@@ -270,10 +274,21 @@ function serve(options: {
     } as RequestInit);
     Promise.resolve(options.fetch(request as Request, api))
       .then((response) => {
-        res.writeHead(
-          response.status,
-          Object.fromEntries(response.headers.entries()),
-        );
+        // writeHead's object form joins duplicate headers with ", " — for
+        // set-cookie that is one malformed header and the browser keeps only
+        // one cookie of the response (a site that sets a session and a
+        // persistent cookie lost the session one). Use the flat-array form and
+        // hand Node the split list undici already parsed.
+        const setCookies =
+          typeof response.headers.getSetCookie === "function"
+            ? response.headers.getSetCookie()
+            : [];
+        const flat: string[] = [];
+        for (const cookie of setCookies) flat.push("set-cookie", cookie);
+        for (const [key, value] of response.headers.entries()) {
+          if (key !== "set-cookie") flat.push(key, value);
+        }
+        res.writeHead(response.status, flat);
         if (!response.body) return res.end();
         // Chunk by chunk, never buffered to the end first: an event-stream reply has no end, so
         // `arrayBuffer()` would sit there until the client's own timeout and the suite would read an
@@ -286,7 +301,15 @@ function serve(options: {
         res.writeHead(500).end(String((error as Error).message));
       });
   });
-  const port = options.port ?? 0;
+  // Node only assigns the ephemeral port on the 'listening' tick, so a suite that reads
+  // `.port` on the line after serve() gets 0 and navigates to http://127.0.0.1:0 (Bun binds
+  // synchronously, which is why the same suite is green under the real runtime). Choose a
+  // concrete port up front instead; the getter below then has the real number immediately.
+  // shortcut: a self-picked port can collide with another listener; reserve-then-listen if a suite ever hits EADDRINUSE
+  const port =
+    (options.port ?? 0) === 0
+      ? 20000 + Math.floor(Math.random() * 20000)
+      : options.port!;
   server.listen(port, options.hostname ?? "127.0.0.1");
   // A test that forgets `stop()` must not be able to keep the process alive: e2e writes its report
   // and then waits for the worker to exit, so a leaked listener hangs `bun run test` forever after

@@ -4,3 +4,7 @@ agent-framework-openai
 fastapi
 python-multipart
 uvicorn[standard]
+# shortcut: agent-framework-ag-ui>=1.7 makes the AG-UI endpoint authorization resolver
+# mandatory and the agent's own construction raises; 1.6 is the last permissive line.
+agent-framework-ag-ui<1.7
+
