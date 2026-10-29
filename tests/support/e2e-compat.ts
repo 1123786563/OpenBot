@@ -659,7 +659,15 @@ function installMockHooks(): void {
       if (!url.startsWith("e2e-mock:")) {
         // A suite file re-entering the loader is the start of a fresh collection pass.
         const suite = suiteFileOf(url);
-        if (suite) forgetTitlesOf(suite);
+        if (suite) {
+          forgetTitlesOf(suite);
+          // ...and a realm boundary for module mocks: `mock.module` is registry
+          // level, so a suite's mocks must not reach the next suite's imports —
+          // one suite mocking "./Problem" used to replace another suite's real
+          // import of it and abort the whole run's collection.
+          moduleMocks.clear();
+          mocks.clear();
+        }
         return nextLoad(url, context);
       }
       const key = decodeURIComponent(url.slice("e2e-mock:".length));

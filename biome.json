@@ -17,7 +17,8 @@
       "!plugins/.artifacts",
       "!plugins/packages/openbot/legacy-catalogue",
       "!verification",
-      "!apps/openmuse"
+      "!apps/openmuse",
+      "!.coordination"
     ]
   },
   "vcs": {
