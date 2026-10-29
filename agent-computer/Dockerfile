@@ -32,6 +32,11 @@ COPY agent-computer/src ./src
 # ../../shared/execution-scope at runtime (the other shared imports are type-only and
 # erased), so those files go where those paths resolve from /app/src.
 COPY shared/file-download.ts shared/trace.ts shared/execution-scope.ts /shared/
+# /shared files resolve their own imports walking up from / — which never reaches
+# /app/node_modules, and Bun answers the miss with its global-cache auto-install
+# (a spin, then a broken cached copy). One root-level symlink puts the workspace's
+# node_modules on that walk-up path.
+RUN ln -s /app/node_modules /node_modules
 
 # Durable working directory. Bot-produced files that must survive replacement live here.
 RUN mkdir -p /workspace
