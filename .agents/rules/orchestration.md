@@ -45,4 +45,4 @@ Brief 在执行规范基础上增加 Task/attempt/Dispatch、角色/预期 Agent
 
 ## 完整交付
 
-全部交付 Task 已集成、根聚合验收通过；每日批次另含全部交付 source_issues 及必要父聚合。按编排审核合同执行新会话完整终审、OCR 和修复回路；目标变化后的完整重审要求保持。推送/合并及 GitHub 写入执行 [delivery-gates.md](delivery-gates.md)，权限不由 Run 推导。
+全部交付 Task 已集成、根聚合验收通过；每日批次另含全部交付 source_issues 及必要父聚合。按 [编排审核合同](orchestration-review.md)执行完整终审、OCR、变化后的重审及修复回路。推送/合并及 GitHub 写入执行 [delivery-gates.md](delivery-gates.md)，权限不由 Run 推导。
