@@ -1,0 +1,331 @@
+kind	class	owner	src	dst	line	commit
+cycle	A_new	BA503 系	app/src/lib/auth/company-assurance.ts	app/src/lib/enterprise/tenant/selection.ts	11	8fc132c3e 2026-10-28 feat(#571): 账户证明客户端接续——company reauth 暂停墙+challenge mutation（T05.15）
+cycle	A_new	BA503 系	app/src/lib/auth/mutations.ts	app/src/lib/enterprise/tenant/queries.ts	68	1190cd5ed 2026-10-29 feat(#572): 平台账户管理收尾——people 屏原生 Admin 动作+身份选择旧态清理（T05.16）
+cycle	A_new	BA503 系	app/src/lib/auth/organization-plugin.tsx	app/src/lib/enterprise/tenant/selection.ts	29	acee414e1 2026-10-26 feat(#542): Web 唯一公司团队切换协调器——冻结→validate→偏好→发布单入口（T03.05）
+cycle	C_integ_only	MOD Run 自身 (#620 系)	app/src/lib/channels/label.ts	app/src/lib/voice/public.ts	1	d4dc024ed 2026-10-27 refactor(#644): VOICE 公开出口+S7 语音听写计费缝验收钉——VOICE 出环 45
+cycle	A_new	BA503 系	app/src/lib/enterprise/tenant/directory.ts	app/src/lib/auth/queries.ts	2	ce62ee214 2026-10-28 feat(#555): 公开邀请落地与登录换账号恢复——/accept-invitation 窄读页+接受/拒绝命令+returnPath 重建（T04.11）
+cycle	D_both	Billing/清理系	app/src/lib/marketplace/mutations.ts	app/src/lib/enterprise/tenant/scoped-cache.ts	3	e8ea2102a 2026-10-22 Scope app data by tenant; add company admin area and billing lanes
+cycle	D_both	Billing/清理系	app/src/lib/marketplace/mutations.ts	app/src/lib/plugins/mutations.ts	4	e8ea2102a 2026-10-22 Scope app data by tenant; add company admin area and billing lanes
+cycle	D_both	Billing/清理系	app/src/lib/marketplace/queries.ts	app/src/lib/enterprise/tenant/queries.ts	3	e8ea2102a 2026-10-22 Scope app data by tenant; add company admin area and billing lanes
+cycle	D_both	Billing/清理系	app/src/lib/marketplace/queries.ts	app/src/lib/enterprise/tenant/scoped-cache.ts	4	e8ea2102a 2026-10-22 Scope app data by tenant; add company admin area and billing lanes
+cycle	D_both	同步保存 (sync)	app/src/lib/plugin-packages/use-package-scope.ts	app/src/lib/auth/queries.ts	2	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	C_integ_only	MOD Run 自身 (#620 系)	app/src/lib/plugin-packages/use-package-scope.ts	app/src/lib/enterprise/tenant/scoped-cache.ts	3	9dd28588d 2026-10-26 feat(#639): Web 范围状态与业务调用经领域 Module 统一消费（T1a 接线+T1b 消费者迁移+T2 统一缝）
+cycle	D_both	机械 Format	app/src/lib/plugin-packages/use-package-scope.ts	app/src/lib/enterprise/tenant/selection.ts	4	1d0bf9935 2026-10-28 Format app and server sources to satisfy Biome formatting gates
+cycle	D_both	Voice	app/src/lib/voice/archive.ts	app/src/lib/channels/queries.ts	3	8b592a12d 2026-09-29 Cut a voice call's context, captions and answers between characters (#652)
+cycle	D_both	其他/早期	app/src/lib/voice/outbox.ts	app/src/lib/auth/queries.ts	2	4be9d2cbf 2026-10-11 refactor: 调整组件导入顺序并补充缺失的类型导入
+cycle	D_both	Billing/清理系	app/src/lib/voice/use-voice-call.ts	app/src/lib/enterprise/tenant/stream-scope.ts	4	a789f6a43 2026-10-21 Add tenant-scoped surfaces, memory governance, billing admission gates
+cycle	D_both	Billing/清理系	app/src/lib/voice/webrtc.ts	app/src/lib/enterprise/tenant/stream-scope.ts	1	a789f6a43 2026-10-21 Add tenant-scoped surfaces, memory governance, billing admission gates
+cycle	D_both	Billing/清理系	app/src/lib/voice/websocket.ts	app/src/lib/enterprise/tenant/stream-scope.ts	1	a789f6a43 2026-10-21 Add tenant-scoped surfaces, memory governance, billing admission gates
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/agents/agent-resolver.ts	server/src/learning/public.ts	18	d5ba262c1 2026-10-27 refactor(#643): Learning 窄公开出口收敛+快照合同负向钉
+cycle	D_both	MOD Run 自身 (#620 系)	server/src/agents/agent-resolver.ts	server/src/memory/public.ts	20	16f97f260 2026-10-26 refactor(#635): 统一个人记忆审核召回与遗忘的业务出口（memory S7 M10）
+cycle	A_new	PKG 系 (#460s)	server/src/agents/agent-resolver.ts	server/src/plugins/package-tools.ts	21	623a2dfd6 2026-10-25 feat(#464): PKG05 本人连接受管工具执行——dispatch 状态机、connector 工具授权与 callTool 包分支
+cycle	A_new	其他/早期	server/src/agents/agent-resolver.ts	server/src/plugins/public.ts	22	ade3200cc 2026-10-28 Merge remote-tracking branch 'origin/main' into 1123786563/issue-459-integration
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/agents/coordination-wiring.ts	server/src/approvals/public.ts	5	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/agents/coordination-wiring.ts	server/src/channels/public.ts	13	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/agents/handoff-wiring.ts	server/src/channels/public.ts	8	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	D_both	MOD Run 自身 (#620 系)	server/src/agents/lifecycle-reset.ts	server/src/memory/public.ts	44	16f97f260 2026-10-26 refactor(#635): 统一个人记忆审核召回与遗忘的业务出口（memory S7 M10）
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/agents/lifecycle-routes.ts	server/src/auth/public.ts	16	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/agents/openmuse-template-store.ts	server/src/mobile-bff/public.ts	17	46c77a0c5 2026-10-27 refactor(#641): OpenMuse Mobile BFF 合同转译出口——OPENMUSE 出环+16 例外退出
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/agents/routes.ts	server/src/auth/public.ts	6	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/agents/wake-up.ts	server/src/channels/public.ts	23	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/context.ts	server/src/agents/public.ts	23	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/execution-boot.ts	server/src/agents/public.ts	32	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	A_new	其他/早期	server/src/ai-observability/execution-boot.ts	server/src/plugins/store.ts	40	aa6a1314a 2026-10-25 fix(#4): FREV-04 评测跑公共工具循环——冻结白名单 schema 声明 + gate 拦截 callTool
+cycle	A_new	其他/早期	server/src/ai-observability/execution-runner.ts	server/src/billing/input-bound.ts	65	77d25c9dd 2026-10-25 fix(#4): R3-01 每个 doStream 逐步预算——空白名单同装预算、输入保守计数调用前拒绝、输出默认受 policy 约束
+cycle	A_new	其他/早期	server/src/ai-observability/execution-seam.ts	server/src/billing/input-bound.ts	75	653050ef3 2026-10-26 fix(ocrfix-a): 余量 low 批 + 探测循环合一 + 守卫消费面审计
+cycle	D_both	MOD Run 自身 (#620 系)	server/src/ai-observability/integration.ts	server/src/enterprise/models/public.ts	33	ec94fdc2e 2026-10-26 refactor(#638): 评测与 Judge 跨模块取用改经公开出口+受管模型具名臂
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/admin-summary.ts	server/src/agents/public.ts	18	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/admin-summary.ts	server/src/auth/public.ts	19	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/basic-run.ts	server/src/agents/public.ts	35	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/basic-run.ts	server/src/auth/public.ts	36	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/case-review.ts	server/src/agents/public.ts	24	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/case-review.ts	server/src/auth/public.ts	26	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/comparison.ts	server/src/agents/public.ts	23	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/comparison.ts	server/src/auth/public.ts	24	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/datasets.ts	server/src/agents/public.ts	14	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/datasets.ts	server/src/auth/public.ts	15	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/exports.ts	server/src/agents/public.ts	26	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/exports.ts	server/src/auth/public.ts	27	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/health.ts	server/src/auth/public.ts	24	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/index.ts	server/src/agents/public.ts	21	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/index.ts	server/src/auth/public.ts	23	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/results.ts	server/src/agents/public.ts	25	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/results.ts	server/src/auth/public.ts	26	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/runs.ts	server/src/agents/public.ts	26	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/routes/runs.ts	server/src/auth/public.ts	27	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	D_both	MOD Run 自身 (#620 系)	server/src/ai-observability/scoring/judge.ts	server/src/enterprise/models/public.ts	5	ec94fdc2e 2026-10-26 refactor(#638): 评测与 Judge 跨模块取用改经公开出口+受管模型具名臂
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/ai-observability/wiring.ts	server/src/agents/public.ts	14	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/approvals/person-response-sweep.ts	server/src/agents/public.ts	5	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/approvals/person-response-sweep.ts	server/src/channels/public.ts	6	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/approvals/resume-sweep.ts	server/src/agents/public.ts	6	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/approvals/resume-sweep.ts	server/src/channels/public.ts	9	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/approvals/wiring.ts	server/src/agents/public.ts	6	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	A_new	BA503 系	server/src/auth/company-assurance.ts	server/src/credentials.ts	48	35b23155b 2026-10-27 feat(#557): 公司二次认证挑战签发——受控函数 0218+live challenge 工厂+路由（T05.01）
+cycle	A_new	BA503 系	server/src/auth/directory/lifecycle.ts	server/src/billing/payer.ts	57	4bffb4d50 2026-10-26 feat(#503): T03.04 公司暂停/恢复/安全删除申请（#541 verified）
+cycle	A_new	BA503 系	server/src/auth/directory/lifecycle.ts	server/src/billing/payer-binding.ts	63	4dff8b341 2026-10-26 feat(#503): T03.03 平台入口原子开通公司并固定 payer（#540 verified）
+cycle	A_new	BA503 系	server/src/auth/directory/read-routes.ts	server/src/enterprise/tenancy/store.ts	30	78804bd7f 2026-10-26 feat(#545): 邀请创建/取消/重发受控命令与本人窄读面（T04.01）
+cycle	A_new	BA503 系	server/src/auth/directory/read-routes.ts	server/src/enterprise/tenancy/workspace-scope-routes.ts	31	78804bd7f 2026-10-26 feat(#545): 邀请创建/取消/重发受控命令与本人窄读面（T04.01）
+cycle	A_new	BA503 系	server/src/auth/scim.ts	server/src/enterprise/tenancy/scim-directory.ts	44	02b4e12f3 2026-10-27 feat(#561): SCIM 全方法接入原子目录命令（T05.05）
+cycle	A_new	BA503 系	server/src/auth/sso-evidence.ts	server/src/credentials.ts	35	895855c86 2026-10-27 feat(#558): 公司二次认证回调完成——受控函数 0219+complete 半区+policy 存储模型（T05.02）
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/billing/credit-service-auth.ts	server/src/auth/public.ts	9	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/billing/payments/routes.ts	server/src/auth/public.ts	30	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/billing/routes.ts	server/src/auth/public.ts	25	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	A_new	BA503 系	server/src/bot-services/access-grants.ts	server/src/auth/directory/contracts.ts	11	073509653 2026-10-28 feat(#566): 个人模型授予——principalRegistry seam 锁层同事务主体保存（T05.10）
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/bot-services/access-grants.ts	server/src/auth/public.ts	12	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/bot-services/auth.ts	server/src/auth/public.ts	3	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/channels/attachments.ts	server/src/auth/public.ts	15	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/channels/group.ts	server/src/auth/public.ts	36	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/channels/routes.ts	server/src/agents/public.ts	22	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/channels/routes.ts	server/src/auth/public.ts	24	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/channels/thread-routes.ts	server/src/auth/public.ts	4	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/codesandbox/routes.ts	server/src/auth/public.ts	11	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/computer/stream-auth.ts	server/src/agents/public.ts	3	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/craft/approvals.ts	server/src/auth/public.ts	32	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/craft/artifact-routes.ts	server/src/auth/public.ts	14	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/craft/connect-app-routes.ts	server/src/auth/public.ts	33	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/craft/file-routes.ts	server/src/auth/public.ts	19	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/craft/message-routes.ts	server/src/auth/public.ts	14	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/craft/routes.ts	server/src/auth/public.ts	14	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/craft/scheduled-tasks.ts	server/src/auth/public.ts	26	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/craft/session-routes.ts	server/src/auth/public.ts	16	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/craft/subagent-routes.ts	server/src/auth/public.ts	14	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/craft/turn-routes.ts	server/src/auth/public.ts	19	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/craft/webapp-proxy.ts	server/src/auth/public.ts	33	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/craft/write-origin-guard.ts	server/src/auth/public.ts	53	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/delivery/routes.ts	server/src/auth/public.ts	6	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/demonstrations/routes.ts	server/src/auth/public.ts	4	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/dictation/routes.ts	server/src/auth/public.ts	9	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	A_new	BA503 系	server/src/enterprise/contracts.ts	server/src/auth/directory/contracts.ts	12	327b3fcbb 2026-10-26 feat(#503): T03.01 真实 Scope gate 比较持久身份与两层资格版本（#538 verified）
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/contracts.ts	server/src/enterprise/contracts.ts	19	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/contracts.ts	server/src/enterprise/tenancy/connections.ts	20	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/contracts.ts	server/src/enterprise/tenancy/workspace-admin.ts	21	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	A_new	PKG 系 (#460s)	server/src/enterprise/plugin-packages/dispatch.ts	server/src/plugins/package-tools.ts	61	623a2dfd6 2026-10-25 feat(#464): PKG05 本人连接受管工具执行——dispatch 状态机、connector 工具授权与 callTool 包分支
+cycle	A_new	PKG 系 (#460s)	server/src/enterprise/plugin-packages/dispatch.ts	server/src/plugins/transport.ts	62	623a2dfd6 2026-10-25 feat(#464): PKG05 本人连接受管工具执行——dispatch 状态机、connector 工具授权与 callTool 包分支
+cycle	A_new	PKG 系 (#460s)	server/src/enterprise/plugin-packages/dispatch.ts	server/src/enterprise/contracts.ts	63	623a2dfd6 2026-10-25 feat(#464): PKG05 本人连接受管工具执行——dispatch 状态机、connector 工具授权与 callTool 包分支
+cycle	A_new	PKG 系 (#460s)	server/src/enterprise/plugin-packages/dispatch.ts	server/src/enterprise/tenancy/connections.ts	64	623a2dfd6 2026-10-25 feat(#464): PKG05 本人连接受管工具执行——dispatch 状态机、connector 工具授权与 callTool 包分支
+cycle	A_new	PKG 系 (#460s)	server/src/enterprise/plugin-packages/dispatch.ts	server/src/enterprise/tenancy/credential-ownership.ts	65	623a2dfd6 2026-10-25 feat(#464): PKG05 本人连接受管工具执行——dispatch 状态机、connector 工具授权与 callTool 包分支
+cycle	A_new	PKG 系 (#460s)	server/src/enterprise/plugin-packages/dispatch.ts	server/src/enterprise/tenancy/plugin-catalog.ts	66	623a2dfd6 2026-10-25 feat(#464): PKG05 本人连接受管工具执行——dispatch 状态机、connector 工具授权与 callTool 包分支
+cycle	A_new	PKG 系 (#460s)	server/src/enterprise/plugin-packages/dispatch.ts	server/src/enterprise/tenancy/scope-gate.ts	67	623a2dfd6 2026-10-25 feat(#464): PKG05 本人连接受管工具执行——dispatch 状态机、connector 工具授权与 callTool 包分支
+cycle	A_new	PKG 系 (#460s)	server/src/enterprise/plugin-packages/dispatch.ts	server/src/enterprise/tenancy/store.ts	68	623a2dfd6 2026-10-25 feat(#464): PKG05 本人连接受管工具执行——dispatch 状态机、connector 工具授权与 callTool 包分支
+cycle	A_new	PKG 系 (#460s)	server/src/enterprise/plugin-packages/dispatch.ts	server/src/enterprise/tenancy/tool-invocation.ts	69	623a2dfd6 2026-10-25 feat(#464): PKG05 本人连接受管工具执行——dispatch 状态机、connector 工具授权与 callTool 包分支
+cycle	A_new	PKG 系 (#460s)	server/src/enterprise/plugin-packages/entrypoints.ts	server/src/plugins/package-tools.ts	38	cf985e0bc 2026-10-25 fix(#468): PKG09 复审整改——审批恢复生产臂接入包运行上下文
+cycle	A_new	PKG 系 (#460s)	server/src/enterprise/plugin-packages/entrypoints.ts	server/src/enterprise/contracts.ts	39	e4497d72b 2026-10-25 feat(#468): PKG09 审批恢复与后台入口保持包运行原范围
+cycle	A_new	PKG 系 (#460s)	server/src/enterprise/plugin-packages/entrypoints.ts	server/src/enterprise/tenancy/connections.ts	40	e4497d72b 2026-10-25 feat(#468): PKG09 审批恢复与后台入口保持包运行原范围
+cycle	A_new	PKG 系 (#460s)	server/src/enterprise/plugin-packages/entrypoints.ts	server/src/enterprise/tenancy/store.ts	41	e4497d72b 2026-10-25 feat(#468): PKG09 审批恢复与后台入口保持包运行原范围
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/experts.ts	server/src/enterprise/contracts.ts	24	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/experts.ts	server/src/enterprise/tenancy/workspace-admin.ts	25	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/grants.ts	server/src/enterprise/contracts.ts	19	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	A_new	PKG 系 (#460s)	server/src/enterprise/plugin-packages/grants.ts	server/src/enterprise/tenancy/personal-bot.ts	20	6c9ba00ce 2026-10-24 fix: PKG03 缺口修复——绑定/准入 PACKAGE_BOT_SCOPE_UNAVAILABLE 与 pinned Skill 读取接线
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/grants.ts	server/src/enterprise/tenancy/workspace-admin.ts	21	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	A_new	PKG 系 (#460s)	server/src/enterprise/plugin-packages/install-service.ts	server/src/enterprise/contracts.ts	39	dc94cb484 2026-10-25 feat(#466): PKG07 停用/卸载/重装——status CAS、generation 撤权与重装不复活
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/install-service.ts	server/src/enterprise/tenancy/workspace-admin.ts	40	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/mutation-context.ts	server/src/enterprise/contracts.ts	9	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/mutation-context.ts	server/src/enterprise/tenancy/connections.ts	13	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/mutation-context.ts	server/src/enterprise/tenancy/scope-gate.ts	14	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/mutation-context.ts	server/src/enterprise/tenancy/store.ts	15	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/mutation-context.ts	server/src/enterprise/tenancy/workspace-admin.ts	19	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/routes.ts	server/src/enterprise/contracts.ts	17	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/routes.ts	server/src/enterprise/tenancy/admin-separation.ts	18	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/routes.ts	server/src/enterprise/tenancy/workspace-admin.ts	19	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/runtime.ts	server/src/enterprise/contracts.ts	18	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/runtime.ts	server/src/enterprise/tenancy/connections.ts	19	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	A_new	PKG 系 (#460s)	server/src/enterprise/plugin-packages/runtime.ts	server/src/enterprise/tenancy/personal-bot.ts	20	6c9ba00ce 2026-10-24 fix: PKG03 缺口修复——绑定/准入 PACKAGE_BOT_SCOPE_UNAVAILABLE 与 pinned Skill 读取接线
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/runtime.ts	server/src/enterprise/tenancy/store.ts	21	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/store.ts	server/src/enterprise/contracts.ts	13	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/store.ts	server/src/enterprise/tenancy/connections.ts	14	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/store.ts	server/src/enterprise/tenancy/store.ts	15	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/enterprise/runs/runner.ts	server/src/agents/public.ts	23	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	A_new	PKG 系 (#460s)	server/src/enterprise/runs/runner.ts	server/src/enterprise/plugin-packages/runtime.ts	42	6c9ba00ce 2026-10-24 fix: PKG03 缺口修复——绑定/准入 PACKAGE_BOT_SCOPE_UNAVAILABLE 与 pinned Skill 读取接线
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/enterprise/runs/service.ts	server/src/enterprise/plugin-packages/public.ts	27	592512b6b 2026-10-27 refactor(#636): PackageLifecycle pin 面出口+marketplace 改道所有者门面
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/company-admin-routes.ts	server/src/auth/directory/membership.ts	30	dbfcbfb83 2026-10-27 feat(#547): 成员生命周期六操作 Directory 接线与 owner 不灭失（T04.03）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/company-admin-routes.ts	server/src/auth/directory/team-extension.ts	34	bbc516073 2026-10-28 feat(#562): JIT 与批准组规则接入单次团队能力（T05.06）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/company-admin-routes.ts	server/src/auth/directory/team-grants.ts	38	ec3bce111 2026-10-27 feat(#551): 团队管理 Grant 授予/撤销 Directory 命令与管理授予 API（T04.07）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/company-admin-routes.ts	server/src/auth/directory/authority.ts	857	4dff8b341 2026-10-26 feat(#503): T03.03 平台入口原子开通公司并固定 payer（#540 verified）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/company-admin-routes.ts	server/src/auth/directory/executor.ts	858	4bffb4d50 2026-10-26 feat(#503): T03.04 公司暂停/恢复/安全删除申请（#541 verified）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/company-admin-routes.ts	server/src/auth/directory/lifecycle.ts	859	4bffb4d50 2026-10-26 feat(#503): T03.04 公司暂停/恢复/安全删除申请（#541 verified）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/deletion-semantics.ts	server/src/auth/directory/membership.ts	58	dbfcbfb83 2026-10-27 feat(#547): 成员生命周期六操作 Directory 接线与 owner 不灭失（T04.03）
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/enterprise/tenancy/openmuse-task-tenancy.ts	server/src/openmuse-tasks/public.ts	86	46c77a0c5 2026-10-27 refactor(#641): OpenMuse Mobile BFF 合同转译出口——OPENMUSE 出环+16 例外退出
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/people-lifecycle.ts	server/src/auth/directory/membership.ts	41	dbfcbfb83 2026-10-27 feat(#547): 成员生命周期六操作 Directory 接线与 owner 不灭失（T04.03）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/provision.ts	server/src/auth/directory/contracts.ts	591	4dff8b341 2026-10-26 feat(#503): T03.03 平台入口原子开通公司并固定 payer（#540 verified）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/provision.ts	server/src/auth/directory/lifecycle.ts	598	4dff8b341 2026-10-26 feat(#503): T03.03 平台入口原子开通公司并固定 payer（#540 verified）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/provision.ts	server/src/auth/directory/principal-registry.ts	603	4dff8b341 2026-10-26 feat(#503): T03.03 平台入口原子开通公司并固定 payer（#540 verified）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/provision.ts	server/src/billing/payer.ts	607	4dff8b341 2026-10-26 feat(#503): T03.03 平台入口原子开通公司并固定 payer（#540 verified）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/provision.ts	server/src/billing/payer-binding.ts	608	4dff8b341 2026-10-26 feat(#503): T03.03 平台入口原子开通公司并固定 payer（#540 verified）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/scim-directory.ts	server/src/auth/directory/contracts.ts	593	02b4e12f3 2026-10-27 feat(#561): SCIM 全方法接入原子目录命令（T05.05）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/scope-gate.ts	server/src/auth/company-assurance.ts	21	327b3fcbb 2026-10-26 feat(#503): T03.01 真实 Scope gate 比较持久身份与两层资格版本（#538 verified）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/scope-gate.ts	server/src/auth/directory/authority.ts	22	327b3fcbb 2026-10-26 feat(#503): T03.01 真实 Scope gate 比较持久身份与两层资格版本（#538 verified）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/store.ts	server/src/auth/company-assurance.ts	2	327b3fcbb 2026-10-26 feat(#503): T03.01 真实 Scope gate 比较持久身份与两层资格版本（#538 verified）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/store.ts	server/src/auth/directory/authority.ts	3	327b3fcbb 2026-10-26 feat(#503): T03.01 真实 Scope gate 比较持久身份与两层资格版本（#538 verified）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/workspace-admin.ts	server/src/auth/company-assurance.ts	33	6063031f3 2026-10-26 feat(#503): T03.02 稳定 ID 公司团队发现与选择校验接口（#539 verified）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/workspace-admin.ts	server/src/auth/directory/authority.ts	34	6063031f3 2026-10-26 feat(#503): T03.02 稳定 ID 公司团队发现与选择校验接口（#539 verified）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/workspace-admin.ts	server/src/auth/directory/membership.ts	40	dbfcbfb83 2026-10-27 feat(#547): 成员生命周期六操作 Directory 接线与 owner 不灭失（T04.03）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/workspace-scope-routes.ts	server/src/auth/company-assurance.ts	16	6063031f3 2026-10-26 feat(#503): T03.02 稳定 ID 公司团队发现与选择校验接口（#539 verified）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/workspace-scope-routes.ts	server/src/auth/directory/authority.ts	17	6063031f3 2026-10-26 feat(#503): T03.02 稳定 ID 公司团队发现与选择校验接口（#539 verified）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/workspace-scope-routes.ts	server/src/auth/directory/executor.ts	18	08ab17b59 2026-10-27 feat(#552): 指定团队管理员成员增删命令接通——既有 POST/DELETE members 路由 ba 转译（T04.08）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/workspace-scope-routes.ts	server/src/auth/directory/membership.ts	19	08ab17b59 2026-10-27 feat(#552): 指定团队管理员成员增删命令接通——既有 POST/DELETE members 路由 ba 转译（T04.08）
+cycle	A_new	BA503 系	server/src/enterprise/tenancy/workspace-scope-routes.ts	server/src/auth/directory/team-extension.ts	20	08ab17b59 2026-10-27 feat(#552): 指定团队管理员成员增删命令接通——既有 POST/DELETE members 路由 ba 转译（T04.08）
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/gateway/model-selection-routes.ts	server/src/auth/public.ts	52	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	D_both	Billing/清理系	server/src/hindsight/answer-evidence.ts	server/src/enterprise/contracts.ts	33	0f1b941cd 2026-10-21 Add capability billing, Hindsight memory lifecycle, and MT governance
+cycle	D_both	其他/早期	server/src/hindsight/bank-scope.ts	server/src/enterprise/contracts.ts	30	807844ee7 2026-10-20 Add integration tests for recovery provider query and subscription ownership
+cycle	D_both	其他/早期	server/src/hindsight/bank-scope.ts	server/src/enterprise/tenancy/store.ts	31	807844ee7 2026-10-20 Add integration tests for recovery provider query and subscription ownership
+cycle	D_both	Billing/清理系	server/src/hindsight/degraded-recall.ts	server/src/enterprise/contracts.ts	36	0f1b941cd 2026-10-21 Add capability billing, Hindsight memory lifecycle, and MT governance
+cycle	D_both	Billing/清理系	server/src/hindsight/derived-judgments.ts	server/src/enterprise/contracts.ts	55	0f1b941cd 2026-10-21 Add capability billing, Hindsight memory lifecycle, and MT governance
+cycle	D_both	其他/早期	server/src/hindsight/judgment-review.ts	server/src/enterprise/contracts.ts	49	119e9b27c 2026-10-21 Add judgment review, runs protocol ownership, and agent adapters
+cycle	D_both	Hindsight #376	server/src/hindsight/ops-routes.ts	server/src/auth/guards.ts	42	39c4a70c6 2026-10-25 merge: 合并 1123786563/h376-fixw2b 到集成树（判断缝/撤销/证据/恢复ops/drain/备份登记）
+cycle	D_both	Hindsight #376	server/src/hindsight/ops-routes.ts	server/src/enterprise/contracts.ts	44	39c4a70c6 2026-10-25 merge: 合并 1123786563/h376-fixw2b 到集成树（判断缝/撤销/证据/恢复ops/drain/备份登记）
+cycle	D_both	Billing/清理系	server/src/hindsight/pause-controls.ts	server/src/enterprise/contracts.ts	32	a789f6a43 2026-10-21 Add tenant-scoped surfaces, memory governance, billing admission gates
+cycle	D_both	Billing/清理系	server/src/hindsight/personal-memory-context.ts	server/src/enterprise/contracts.ts	39	a789f6a43 2026-10-21 Add tenant-scoped surfaces, memory governance, billing admission gates
+cycle	D_both	Billing/清理系	server/src/hindsight/preference-recall.ts	server/src/enterprise/contracts.ts	38	3c7bad64d 2026-10-20 Add execution-scope enforcement and wave3 tenancy, billing, recall fixes
+cycle	D_both	Billing/清理系	server/src/hindsight/revocation.ts	server/src/enterprise/contracts.ts	48	a789f6a43 2026-10-21 Add tenant-scoped surfaces, memory governance, billing admission gates
+cycle	D_both	其他/早期	server/src/hindsight/routes.ts	server/src/enterprise/contracts.ts	30	b24275764 2026-10-25 feat(#384/#385): 生产接线同步队列/确认写路径与链侧敏感性门（G3-F2 + F-G1-4）
+cycle	D_both	Billing/清理系	server/src/hindsight/scoped-recall.ts	server/src/enterprise/contracts.ts	54	0f1b941cd 2026-10-21 Add capability billing, Hindsight memory lifecycle, and MT governance
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/host-access/routes.ts	server/src/auth/public.ts	6	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	D_both	MOD Run 自身 (#620 系)	server/src/learning/routes.ts	server/src/auth/guards.ts	11	d43162684 2026-09-26 feat: integrate automatic learning across OpenBot agents (#643)
+cycle	A_new	PKG 系 (#460s)	server/src/marketplace/legacy-migration.ts	server/src/enterprise/contracts.ts	34	2834f38fc 2026-10-25 feat(#470): PKG11 存量迁移与灰度启用——内置包导出、迁移 dry-run/manifest/apply、影子读取、pilot 开关与镜像制品
+cycle	A_new	PKG 系 (#460s)	server/src/marketplace/legacy-migration.ts	server/src/enterprise/tenancy/workspace-admin.ts	36	2834f38fc 2026-10-25 feat(#470): PKG11 存量迁移与灰度启用——内置包导出、迁移 dry-run/manifest/apply、影子读取、pilot 开关与镜像制品
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/marketplace/routes.ts	server/src/agents/public.ts	3	592512b6b 2026-10-27 refactor(#636): PackageLifecycle pin 面出口+marketplace 改道所有者门面
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/marketplace/routes.ts	server/src/auth/public.ts	5	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/marketplace/routes.ts	server/src/plugins/public.ts	6	592512b6b 2026-10-27 refactor(#636): PackageLifecycle pin 面出口+marketplace 改道所有者门面
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/mastra/continuation-routes.ts	server/src/auth/public.ts	9	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/mastra/openmuse-task-entry.ts	server/src/openmuse-tasks/public.ts	29	46c77a0c5 2026-10-27 refactor(#641): OpenMuse Mobile BFF 合同转译出口——OPENMUSE 出环+16 例外退出
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/mastra/tools.ts	server/src/learning/public.ts	13	d5ba262c1 2026-10-27 refactor(#643): Learning 窄公开出口收敛+快照合同负向钉
+cycle	D_both	其他/早期	server/src/memory/ingestion.ts	server/src/plugins/access.ts	4	ce718c5cc 2026-10-01 feat: Bots work as coworkers (#673)
+cycle	D_both	其他/早期	server/src/memory/ingestion.ts	server/src/plugins/broker.ts	5	0d4a56c14 2026-10-09 An app's account can belong to the team (#757)
+cycle	D_both	其他/早期	server/src/memory/ingestion.ts	server/src/plugins/catalogue.ts	6	ce718c5cc 2026-10-01 feat: Bots work as coworkers (#673)
+cycle	D_both	其他/早期	server/src/memory/ingestion.ts	server/src/plugins/composio.ts	7	928961095 2026-10-12 Turn memory sources, background research and Learning on by default (#776)
+cycle	D_both	其他/早期	server/src/memory/ingestion.ts	server/src/plugins/shared-accounts.ts	8	0d4a56c14 2026-10-09 An app's account can belong to the team (#757)
+cycle	D_both	其他/早期	server/src/memory/ingestion.ts	server/src/plugins/store.ts	9	ce718c5cc 2026-10-01 feat: Bots work as coworkers (#673)
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/memory/routes.ts	server/src/auth/public.ts	4	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	D_both	其他/早期	server/src/memory/routes.ts	server/src/enterprise/contracts.ts	5	2202a87ea 2026-10-25 feat(#392): 暂停两开关生产接线 + 门覆盖补齐 + 派生判断过期调度（FIX-W1）
+cycle	D_both	同步保存 (sync)	server/src/memory/routes.ts	server/src/plugins/store.ts	9	05599e7bf 2026-10-03 Answer a policy-refused memory sync with 400 and its reason, not 503 (#709)
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/mobile-bff/activity.ts	server/src/agents/public.ts	1	46c77a0c5 2026-10-27 refactor(#641): OpenMuse Mobile BFF 合同转译出口——OPENMUSE 出环+16 例外退出
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/mobile-bff/activity.ts	server/src/approvals/public.ts	2	46c77a0c5 2026-10-27 refactor(#641): OpenMuse Mobile BFF 合同转译出口——OPENMUSE 出环+16 例外退出
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/mobile-bff/activity.ts	server/src/routines/public.ts	3	46c77a0c5 2026-10-27 refactor(#641): OpenMuse Mobile BFF 合同转译出口——OPENMUSE 出环+16 例外退出
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/mobile-bff/openmuse-bot.ts	server/src/agents/public.ts	1	46c77a0c5 2026-10-27 refactor(#641): OpenMuse Mobile BFF 合同转译出口——OPENMUSE 出环+16 例外退出
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/mobile-bff/openmuse-bot.ts	server/src/auth/public.ts	2	46c77a0c5 2026-10-27 refactor(#641): OpenMuse Mobile BFF 合同转译出口——OPENMUSE 出环+16 例外退出
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/mobile-bff/routes.ts	server/src/agents/public.ts	6	46c77a0c5 2026-10-27 refactor(#641): OpenMuse Mobile BFF 合同转译出口——OPENMUSE 出环+16 例外退出
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/mobile-bff/routes.ts	server/src/auth/public.ts	7	46c77a0c5 2026-10-27 refactor(#641): OpenMuse Mobile BFF 合同转译出口——OPENMUSE 出环+16 例外退出
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/mobile-bff/routes.ts	server/src/channels/public.ts	8	46c77a0c5 2026-10-27 refactor(#641): OpenMuse Mobile BFF 合同转译出口——OPENMUSE 出环+16 例外退出
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/mobile-bff/workspace.ts	server/src/agents/public.ts	1	46c77a0c5 2026-10-27 refactor(#641): OpenMuse Mobile BFF 合同转译出口——OPENMUSE 出环+16 例外退出
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/mobile-bff/workspace.ts	server/src/channels/public.ts	2	46c77a0c5 2026-10-27 refactor(#641): OpenMuse Mobile BFF 合同转译出口——OPENMUSE 出环+16 例外退出
+cycle	D_both	OpenMuse	server/src/openmuse-activity/routes.ts	server/src/approvals/types.ts	7	6934058df 2026-10-14 feat(v4): OpenMuse frontend on OpenBot backend — swap openmuse-mobile for apps/openmuse submodule
+cycle	D_both	OpenMuse	server/src/openmuse-activity/routes.ts	server/src/auth/guards.ts	8	6934058df 2026-10-14 feat(v4): OpenMuse frontend on OpenBot backend — swap openmuse-mobile for apps/openmuse submodule
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/openmuse-calendar/routes.ts	server/src/auth/public.ts	4	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/openmuse-connectors/routes.ts	server/src/auth/public.ts	4	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/openmuse-deletion/fence.ts	server/src/auth/public.ts	3	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/openmuse-deletion/manifest.ts	server/src/agents/public.ts	1	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/openmuse-deletion/manifest.ts	server/src/channels/public.ts	2	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/openmuse-deletion/purge-relational.ts	server/src/agents/public.ts	1	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/openmuse-deletion/purge-relational.ts	server/src/channels/public.ts	2	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	D_both	OpenMuse	server/src/openmuse-deletion/restore.ts	server/src/auth/guards.ts	2	6934058df 2026-10-14 feat(v4): OpenMuse frontend on OpenBot backend — swap openmuse-mobile for apps/openmuse submodule
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/openmuse-deletion/routes.ts	server/src/auth/public.ts	2	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/openmuse-documents/routes.ts	server/src/auth/public.ts	5	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/openmuse-files/routes.ts	server/src/auth/public.ts	7	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	D_both	OpenMuse	server/src/openmuse-files/routes.ts	server/src/channels/attachment-mime.ts	8	6934058df 2026-10-14 feat(v4): OpenMuse frontend on OpenBot backend — swap openmuse-mobile for apps/openmuse submodule
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/openmuse-mail/routes.ts	server/src/auth/public.ts	3	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/openmuse-notifications/routes.ts	server/src/auth/public.ts	3	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	D_both	OpenMuse	server/src/openmuse-ops/routes.ts	server/src/auth/guards.ts	2	6934058df 2026-10-14 feat(v4): OpenMuse frontend on OpenBot backend — swap openmuse-mobile for apps/openmuse submodule
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/openmuse-personal/goals.ts	server/src/auth/public.ts	4	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/openmuse-personal/ideas.ts	server/src/auth/public.ts	4	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/openmuse-personal/memories.ts	server/src/auth/public.ts	4	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	D_both	OpenMuse	server/src/openmuse-personal/tools.ts	server/src/plugins/tools.ts	12	6934058df 2026-10-14 feat(v4): OpenMuse frontend on OpenBot backend — swap openmuse-mobile for apps/openmuse submodule
+cycle	D_both	OpenMuse	server/src/openmuse-reviewed-actions/routes.ts	server/src/auth/guards.ts	4	6934058df 2026-10-14 feat(v4): OpenMuse frontend on OpenBot backend — swap openmuse-mobile for apps/openmuse submodule
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/openmuse-tasks/routes.ts	server/src/auth/public.ts	4	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/openmuse-tasks/runner.ts	server/src/agents/public.ts	55	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/openmuse-tasks/runner.ts	server/src/channels/public.ts	57	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	D_both	OpenMuse	server/src/openmuse-tasks/runner.ts	server/src/work/queue.ts	75	6934058df 2026-10-14 feat(v4): OpenMuse frontend on OpenBot backend — swap openmuse-mobile for apps/openmuse submodule
+cycle	D_both	OpenMuse	server/src/openmuse-tasks/store.ts	server/src/work/queue.ts	24	6934058df 2026-10-14 feat(v4): OpenMuse frontend on OpenBot backend — swap openmuse-mobile for apps/openmuse submodule
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/passwords/routes.ts	server/src/auth/public.ts	4	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	D_both	同步保存 (sync)	server/src/plugin-packages/catalogue.ts	server/src/enterprise/contracts.ts	15	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+cycle	A_new	其他/早期	server/src/plugins/openconnector.ts	server/src/openmuse-deletion/retention.ts	2	7e2d514e2 2026-10-28 修复整个服务器中静默的错误吞噬问题
+cycle	D_both	MOD Run 自身 (#620 系)	server/src/proactive/engine.ts	server/src/memory/public.ts	17	16f97f260 2026-10-26 refactor(#635): 统一个人记忆审核召回与遗忘的业务出口（memory S7 M10）
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/proactive/routes.ts	server/src/auth/public.ts	5	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	D_both	MOD Run 自身 (#620 系)	server/src/proactive/store.ts	server/src/memory/public.ts	10	16f97f260 2026-10-26 refactor(#635): 统一个人记忆审核召回与遗忘的业务出口（memory S7 M10）
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/responsibilities/routes.ts	server/src/auth/public.ts	5	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	其他/早期	server/src/responsibilities/wiring.ts	server/src/agents/public.ts	14	5f044bd41 2026-10-28 Merge remote-tracking branch 'origin/main' into 1123786563/issue-620-integration
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/responsibilities/wiring.ts	server/src/channels/public.ts	21	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/routines/routes.ts	server/src/auth/public.ts	8	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/routines/runner.ts	server/src/agents/public.ts	28	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/routines/runner.ts	server/src/channels/public.ts	29	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/team-bots/routes.ts	server/src/auth/public.ts	4	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/voice/routes.ts	server/src/agents/public.ts	3	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/voice/routes.ts	server/src/auth/public.ts	4	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/voice/routes.ts	server/src/channels/public.ts	5	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/voice/session-routes.ts	server/src/agents/public.ts	5	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/voice/session-routes.ts	server/src/auth/public.ts	6	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/voice/session-routes.ts	server/src/channels/public.ts	7	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/voice/sessions.ts	server/src/agents/public.ts	8	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/voice/sessions.ts	server/src/channels/public.ts	9	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	D_both	MOD Run 自身 (#620 系)	server/src/voice/summary.ts	server/src/agents/plan-model.ts	2	fd76ee038 2026-09-23 feat: add voice conversations and improve chat and settings UX (#636)
+cycle	D_both	MOD Run 自身 (#620 系)	server/src/voice/summary.ts	server/src/channels/titler.ts	3	fd76ee038 2026-09-23 feat: add voice conversations and improve chat and settings UX (#636)
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/workshop/preview.ts	server/src/auth/public.ts	4	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+cycle	C_integ_only	MOD Run 自身 (#620 系)	server/src/workshop/routes.ts	server/src/auth/public.ts	17	a935883e2 2026-10-27 refactor(#645): P2-B1 type-only 例外收窄 106 条改道公开出口——例外 629→523、环 45→39
+phantom	D_both	Billing/清理系	app/src/lib/marketplace/mutations.ts	app/src/lib/enterprise/tenant/scoped-cache.ts	3	e8ea2102a 2026-10-22 Scope app data by tenant; add company admin area and billing lanes
+phantom	D_both	Billing/清理系	app/src/lib/marketplace/mutations.ts	app/src/lib/plugins/mutations.ts	4	e8ea2102a 2026-10-22 Scope app data by tenant; add company admin area and billing lanes
+phantom	D_both	Billing/清理系	app/src/lib/marketplace/queries.ts	app/src/lib/enterprise/tenant/queries.ts	3	e8ea2102a 2026-10-22 Scope app data by tenant; add company admin area and billing lanes
+phantom	D_both	Billing/清理系	app/src/lib/marketplace/queries.ts	app/src/lib/enterprise/tenant/scoped-cache.ts	4	e8ea2102a 2026-10-22 Scope app data by tenant; add company admin area and billing lanes
+phantom	D_both	同步保存 (sync)	app/src/lib/plugin-packages/use-package-scope.ts	app/src/lib/auth/queries.ts	2	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	机械 Format	app/src/lib/plugin-packages/use-package-scope.ts	app/src/lib/enterprise/tenant/selection.ts	4	1d0bf9935 2026-10-28 Format app and server sources to satisfy Biome formatting gates
+phantom	D_both	Voice	app/src/lib/voice/archive.ts	app/src/lib/channels/queries.ts	3	8b592a12d 2026-09-29 Cut a voice call's context, captions and answers between characters (#652)
+phantom	D_both	其他/早期	app/src/lib/voice/outbox.ts	app/src/lib/auth/queries.ts	2	4be9d2cbf 2026-10-11 refactor: 调整组件导入顺序并补充缺失的类型导入
+phantom	D_both	Billing/清理系	app/src/lib/voice/use-voice-call.ts	app/src/lib/enterprise/tenant/stream-scope.ts	4	a789f6a43 2026-10-21 Add tenant-scoped surfaces, memory governance, billing admission gates
+phantom	D_both	Billing/清理系	app/src/lib/voice/webrtc.ts	app/src/lib/enterprise/tenant/stream-scope.ts	1	a789f6a43 2026-10-21 Add tenant-scoped surfaces, memory governance, billing admission gates
+phantom	D_both	Billing/清理系	app/src/lib/voice/websocket.ts	app/src/lib/enterprise/tenant/stream-scope.ts	1	a789f6a43 2026-10-21 Add tenant-scoped surfaces, memory governance, billing admission gates
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/contracts.ts	server/src/enterprise/contracts.ts	19	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/contracts.ts	server/src/enterprise/tenancy/connections.ts	20	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/contracts.ts	server/src/enterprise/tenancy/workspace-admin.ts	21	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/experts.ts	server/src/enterprise/contracts.ts	24	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/experts.ts	server/src/enterprise/tenancy/workspace-admin.ts	25	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/grants.ts	server/src/enterprise/contracts.ts	19	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/grants.ts	server/src/enterprise/tenancy/workspace-admin.ts	21	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/install-service.ts	server/src/enterprise/tenancy/workspace-admin.ts	40	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/mutation-context.ts	server/src/enterprise/contracts.ts	9	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/mutation-context.ts	server/src/enterprise/tenancy/connections.ts	13	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/mutation-context.ts	server/src/enterprise/tenancy/scope-gate.ts	14	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/mutation-context.ts	server/src/enterprise/tenancy/store.ts	15	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/mutation-context.ts	server/src/enterprise/tenancy/workspace-admin.ts	19	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/routes.ts	server/src/enterprise/contracts.ts	17	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/routes.ts	server/src/enterprise/tenancy/admin-separation.ts	18	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/routes.ts	server/src/enterprise/tenancy/workspace-admin.ts	19	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/runtime.ts	server/src/enterprise/contracts.ts	18	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/runtime.ts	server/src/enterprise/tenancy/connections.ts	19	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/runtime.ts	server/src/enterprise/tenancy/store.ts	21	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/store.ts	server/src/enterprise/contracts.ts	13	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/store.ts	server/src/enterprise/tenancy/connections.ts	14	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	同步保存 (sync)	server/src/enterprise/plugin-packages/store.ts	server/src/enterprise/tenancy/store.ts	15	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	MOD Run 自身 (#620 系)	server/src/learning/routes.ts	server/src/auth/guards.ts	11	d43162684 2026-09-26 feat: integrate automatic learning across OpenBot agents (#643)
+phantom	D_both	OpenMuse	server/src/openmuse-activity/routes.ts	server/src/approvals/types.ts	7	6934058df 2026-10-14 feat(v4): OpenMuse frontend on OpenBot backend — swap openmuse-mobile for apps/openmuse submodule
+phantom	D_both	OpenMuse	server/src/openmuse-activity/routes.ts	server/src/auth/guards.ts	8	6934058df 2026-10-14 feat(v4): OpenMuse frontend on OpenBot backend — swap openmuse-mobile for apps/openmuse submodule
+phantom	D_both	OpenMuse	server/src/openmuse-deletion/restore.ts	server/src/auth/guards.ts	2	6934058df 2026-10-14 feat(v4): OpenMuse frontend on OpenBot backend — swap openmuse-mobile for apps/openmuse submodule
+phantom	D_both	OpenMuse	server/src/openmuse-files/routes.ts	server/src/channels/attachment-mime.ts	8	6934058df 2026-10-14 feat(v4): OpenMuse frontend on OpenBot backend — swap openmuse-mobile for apps/openmuse submodule
+phantom	D_both	OpenMuse	server/src/openmuse-ops/routes.ts	server/src/auth/guards.ts	2	6934058df 2026-10-14 feat(v4): OpenMuse frontend on OpenBot backend — swap openmuse-mobile for apps/openmuse submodule
+phantom	D_both	OpenMuse	server/src/openmuse-personal/tools.ts	server/src/plugins/tools.ts	12	6934058df 2026-10-14 feat(v4): OpenMuse frontend on OpenBot backend — swap openmuse-mobile for apps/openmuse submodule
+phantom	D_both	OpenMuse	server/src/openmuse-reviewed-actions/routes.ts	server/src/auth/guards.ts	4	6934058df 2026-10-14 feat(v4): OpenMuse frontend on OpenBot backend — swap openmuse-mobile for apps/openmuse submodule
+phantom	D_both	OpenMuse	server/src/openmuse-tasks/runner.ts	server/src/work/queue.ts	75	6934058df 2026-10-14 feat(v4): OpenMuse frontend on OpenBot backend — swap openmuse-mobile for apps/openmuse submodule
+phantom	D_both	OpenMuse	server/src/openmuse-tasks/store.ts	server/src/work/queue.ts	24	6934058df 2026-10-14 feat(v4): OpenMuse frontend on OpenBot backend — swap openmuse-mobile for apps/openmuse submodule
+phantom	D_both	同步保存 (sync)	server/src/plugin-packages/catalogue.ts	server/src/enterprise/contracts.ts	15	f45a87104 2026-10-23 chore(sync): 保存 plugin-package-market worktree 未提交工作以合并 main
+phantom	D_both	MOD Run 自身 (#620 系)	server/src/voice/summary.ts	server/src/agents/plan-model.ts	2	fd76ee038 2026-09-23 feat: add voice conversations and improve chat and settings UX (#636)
+phantom	D_both	MOD Run 自身 (#620 系)	server/src/voice/summary.ts	server/src/channels/titler.ts	3	fd76ee038 2026-09-23 feat: add voice conversations and improve chat and settings UX (#636)
+phantom	D_both	Billing/清理系	server/src/hindsight/answer-evidence.ts	server/src/enterprise/contracts.ts	33	0f1b941cd 2026-10-21 Add capability billing, Hindsight memory lifecycle, and MT governance
+phantom	D_both	其他/早期	server/src/hindsight/bank-scope.ts	server/src/enterprise/contracts.ts	30	807844ee7 2026-10-20 Add integration tests for recovery provider query and subscription ownership
+phantom	D_both	其他/早期	server/src/hindsight/bank-scope.ts	server/src/enterprise/tenancy/store.ts	31	807844ee7 2026-10-20 Add integration tests for recovery provider query and subscription ownership
+phantom	D_both	Billing/清理系	server/src/hindsight/degraded-recall.ts	server/src/enterprise/contracts.ts	36	0f1b941cd 2026-10-21 Add capability billing, Hindsight memory lifecycle, and MT governance
+phantom	D_both	Billing/清理系	server/src/hindsight/derived-judgments.ts	server/src/enterprise/contracts.ts	55	0f1b941cd 2026-10-21 Add capability billing, Hindsight memory lifecycle, and MT governance
+phantom	D_both	其他/早期	server/src/hindsight/judgment-review.ts	server/src/enterprise/contracts.ts	49	119e9b27c 2026-10-21 Add judgment review, runs protocol ownership, and agent adapters
+phantom	D_both	Billing/清理系	server/src/hindsight/pause-controls.ts	server/src/enterprise/contracts.ts	32	a789f6a43 2026-10-21 Add tenant-scoped surfaces, memory governance, billing admission gates
+phantom	D_both	Billing/清理系	server/src/hindsight/personal-memory-context.ts	server/src/enterprise/contracts.ts	39	a789f6a43 2026-10-21 Add tenant-scoped surfaces, memory governance, billing admission gates
+phantom	D_both	Billing/清理系	server/src/hindsight/preference-recall.ts	server/src/enterprise/contracts.ts	38	3c7bad64d 2026-10-20 Add execution-scope enforcement and wave3 tenancy, billing, recall fixes
+phantom	D_both	Billing/清理系	server/src/hindsight/revocation.ts	server/src/enterprise/contracts.ts	48	a789f6a43 2026-10-21 Add tenant-scoped surfaces, memory governance, billing admission gates
+phantom	D_both	Billing/清理系	server/src/hindsight/scoped-recall.ts	server/src/enterprise/contracts.ts	54	0f1b941cd 2026-10-21 Add capability billing, Hindsight memory lifecycle, and MT governance
+phantom	D_both	其他/早期	server/src/memory/ingestion.ts	server/src/plugins/access.ts	4	ce718c5cc 2026-10-01 feat: Bots work as coworkers (#673)
+phantom	D_both	其他/早期	server/src/memory/ingestion.ts	server/src/plugins/broker.ts	5	0d4a56c14 2026-10-09 An app's account can belong to the team (#757)
+phantom	D_both	其他/早期	server/src/memory/ingestion.ts	server/src/plugins/catalogue.ts	6	ce718c5cc 2026-10-01 feat: Bots work as coworkers (#673)
+phantom	D_both	其他/早期	server/src/memory/ingestion.ts	server/src/plugins/composio.ts	7	928961095 2026-10-12 Turn memory sources, background research and Learning on by default (#776)
+phantom	D_both	其他/早期	server/src/memory/ingestion.ts	server/src/plugins/shared-accounts.ts	8	0d4a56c14 2026-10-09 An app's account can belong to the team (#757)
+phantom	D_both	其他/早期	server/src/memory/ingestion.ts	server/src/plugins/store.ts	9	ce718c5cc 2026-10-01 feat: Bots work as coworkers (#673)
+phantom	D_both	同步保存 (sync)	server/src/memory/routes.ts	server/src/plugins/store.ts	9	05599e7bf 2026-10-03 Answer a policy-refused memory sync with 400 and its reason, not 503 (#709)
+phantom	D_both	Hindsight #376	server/src/hindsight/ops-routes.ts	server/src/auth/guards.ts	42	39c4a70c6 2026-10-25 merge: 合并 1123786563/h376-fixw2b 到集成树（判断缝/撤销/证据/恢复ops/drain/备份登记）
+phantom	D_both	Hindsight #376	server/src/hindsight/ops-routes.ts	server/src/enterprise/contracts.ts	44	39c4a70c6 2026-10-25 merge: 合并 1123786563/h376-fixw2b 到集成树（判断缝/撤销/证据/恢复ops/drain/备份登记）
+phantom	D_both	其他/早期	server/src/hindsight/routes.ts	server/src/enterprise/contracts.ts	30	b24275764 2026-10-25 feat(#384/#385): 生产接线同步队列/确认写路径与链侧敏感性门（G3-F2 + F-G1-4）
+phantom	D_both	其他/早期	server/src/memory/routes.ts	server/src/enterprise/contracts.ts	5	2202a87ea 2026-10-25 feat(#392): 暂停两开关生产接线 + 门覆盖补齐 + 派生判断过期调度（FIX-W1）
+phantom	C_integ_only	MOD Run 自身 (#620 系)	app/src/lib/plugin-packages/use-package-scope.ts	app/src/lib/enterprise/tenant/scoped-cache.ts	3	9dd28588d 2026-10-26 feat(#639): Web 范围状态与业务调用经领域 Module 统一消费（T1a 接线+T1b 消费者迁移+T2 统一缝）

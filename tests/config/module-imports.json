@@ -744,6 +744,30 @@
       "reason": "模块级环边 M03 -> M02（M03 与 M02 互相可达）"
     },
     {
+      "source": "app/src/lib/auth/company-assurance.ts",
+      "target": "app/src/lib/enterprise/tenant/selection.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 8fc132c3e BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "app/src/lib/auth/mutations.ts",
+      "target": "app/src/lib/enterprise/tenant/queries.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 1190cd5ed BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "app/src/lib/auth/organization-plugin.tsx",
+      "target": "app/src/lib/enterprise/tenant/selection.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 acee414e1 BA503 系",
+      "category": "cycle"
+    },
+    {
       "source": "app/src/lib/billing/async-jobs.ts",
       "target": "app/src/lib/enterprise/tenant/queries.ts",
       "category": "cycle",
@@ -798,6 +822,14 @@
       "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M04 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M04（M03 与 M04 互相可达）"
+    },
+    {
+      "source": "app/src/lib/channels/label.ts",
+      "target": "app/src/lib/voice/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 d4dc024ed MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "app/src/lib/channels/mark-read.ts",
@@ -894,6 +926,14 @@
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M09 改走公开出口，使 M09↔M02 单向化后移除此例外",
       "reason": "模块级环边 M09 -> M02（M09 与 M02 互相可达）"
+    },
+    {
+      "source": "app/src/lib/copilot/approval-tools.tsx",
+      "target": "app/src/lib/enterprise/tenant/scoped-cache.ts",
+      "category": "cycle",
+      "ticket": "MOD04 (S2 身份与 Access)",
+      "exit_condition": "M02 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M02 单向化后移除此例外",
+      "reason": "模块级环边 M04 -> M02（M04 与 M02 互相可达）"
     },
     {
       "source": "app/src/lib/copilot/bot-tools.tsx",
@@ -1136,6 +1176,14 @@
       "reason": "模块级环边 CRAFT -> M02（CRAFT 与 M02 互相可达）"
     },
     {
+      "source": "app/src/lib/enterprise/tenant/directory.ts",
+      "target": "app/src/lib/auth/queries.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 ce62ee214 BA503 系",
+      "category": "cycle"
+    },
+    {
       "source": "app/src/lib/enterprise/tenant/stream-scope.ts",
       "target": "app/src/lib/auth/queries.ts",
       "category": "cycle",
@@ -1146,7 +1194,7 @@
     {
       "source": "app/src/lib/marketplace/mutations.ts",
       "target": "app/src/lib/enterprise/tenant/scoped-cache.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -1154,7 +1202,7 @@
     {
       "source": "app/src/lib/marketplace/mutations.ts",
       "target": "app/src/lib/plugins/mutations.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M08（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -1162,7 +1210,7 @@
     {
       "source": "app/src/lib/marketplace/queries.ts",
       "target": "app/src/lib/enterprise/tenant/queries.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -1170,7 +1218,7 @@
     {
       "source": "app/src/lib/marketplace/queries.ts",
       "target": "app/src/lib/enterprise/tenant/scoped-cache.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -1194,15 +1242,23 @@
     {
       "source": "app/src/lib/plugin-packages/use-package-scope.ts",
       "target": "app/src/lib/auth/queries.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M01 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M01（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "app/src/lib/plugin-packages/use-package-scope.ts",
+      "target": "app/src/lib/enterprise/tenant/scoped-cache.ts",
+      "category": "cycle",
+      "ticket": "MOD04 (S2 身份与 Access)",
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
+    },
+    {
+      "source": "app/src/lib/plugin-packages/use-package-scope.ts",
       "target": "app/src/lib/enterprise/tenant/selection.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -1258,7 +1314,7 @@
     {
       "source": "app/src/lib/voice/archive.ts",
       "target": "app/src/lib/channels/queries.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M04 单向化后移除此例外",
       "reason": "跨模块深层引用 VOICE -> M04（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
@@ -1266,7 +1322,7 @@
     {
       "source": "app/src/lib/voice/outbox.ts",
       "target": "app/src/lib/auth/queries.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M01 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M01 单向化后移除此例外",
       "reason": "跨模块深层引用 VOICE -> M01（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
@@ -1274,7 +1330,7 @@
     {
       "source": "app/src/lib/voice/use-voice-call.ts",
       "target": "app/src/lib/enterprise/tenant/stream-scope.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M02 单向化后移除此例外",
       "reason": "跨模块深层引用 VOICE -> M02（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
@@ -1282,7 +1338,7 @@
     {
       "source": "app/src/lib/voice/webrtc.ts",
       "target": "app/src/lib/enterprise/tenant/stream-scope.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M02 单向化后移除此例外",
       "reason": "跨模块深层引用 VOICE -> M02（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
@@ -1290,7 +1346,7 @@
     {
       "source": "app/src/lib/voice/websocket.ts",
       "target": "app/src/lib/enterprise/tenant/stream-scope.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M02 单向化后移除此例外",
       "reason": "跨模块深层引用 VOICE -> M02（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
@@ -1352,6 +1408,38 @@
       "reason": "模块级环边 M03 -> M05（M03 与 M05 互相可达）"
     },
     {
+      "source": "server/src/agents/agent-resolver.ts",
+      "target": "server/src/learning/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 d5ba262c1 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/agents/agent-resolver.ts",
+      "target": "server/src/memory/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 16f97f260 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/agents/agent-resolver.ts",
+      "target": "server/src/plugins/package-tools.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 623a2dfd6 PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/agents/agent-resolver.ts",
+      "target": "server/src/plugins/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 ade3200cc 其他/早期",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/agents/auth-header.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
@@ -1366,6 +1454,14 @@
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M01 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M01 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M01（M03 与 M01 互相可达）"
+    },
+    {
+      "source": "server/src/agents/coordination-wiring.ts",
+      "target": "server/src/approvals/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/agents/coordination-wiring.ts",
@@ -1390,6 +1486,14 @@
       "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M04 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M04（M03 与 M04 互相可达）"
+    },
+    {
+      "source": "server/src/agents/coordination-wiring.ts",
+      "target": "server/src/channels/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/agents/coordination-wiring.ts",
@@ -1513,6 +1617,14 @@
     },
     {
       "source": "server/src/agents/handoff-wiring.ts",
+      "target": "server/src/channels/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/agents/handoff-wiring.ts",
       "target": "server/src/channels/thread-identity.ts",
       "category": "cycle",
       "ticket": "MOD06 (S2 身份与 Access)",
@@ -1545,6 +1657,14 @@
     },
     {
       "source": "server/src/agents/lifecycle-reset.ts",
+      "target": "server/src/memory/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 16f97f260 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/agents/lifecycle-reset.ts",
       "target": "server/src/proactive/engine.ts",
       "category": "cycle",
       "ticket": "MOD14 (S7 定时职责与 Worker)",
@@ -1560,12 +1680,36 @@
       "reason": "模块级环边 M03 -> AUTOMATION（M03 与 AUTOMATION 互相可达）"
     },
     {
+      "source": "server/src/agents/lifecycle-routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/agents/openmuse-template-store.ts",
+      "target": "server/src/mobile-bff/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 46c77a0c5 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/agents/profile-store.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
       "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
+    },
+    {
+      "source": "server/src/agents/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/agents/routes.ts",
@@ -1593,6 +1737,14 @@
     },
     {
       "source": "server/src/agents/wake-up.ts",
+      "target": "server/src/channels/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/agents/wake-up.ts",
       "target": "server/src/mastra/headless.ts",
       "category": "cycle",
       "ticket": "MOD07 (S3 会话与一次文本 Run)",
@@ -1614,6 +1766,14 @@
       "ticket": "MOD14 (S7 定时职责与 Worker)",
       "exit_condition": "AUTOMATION 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔AUTOMATION 单向化后移除此例外",
       "reason": "模块级环边 M03 -> AUTOMATION（M03 与 AUTOMATION 互相可达）"
+    },
+    {
+      "source": "server/src/ai-observability/context.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/ai-observability/control-plane-auth.ts",
@@ -1665,6 +1825,14 @@
     },
     {
       "source": "server/src/ai-observability/execution-boot.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/execution-boot.ts",
       "target": "server/src/billing/credits-writer.ts",
       "category": "cycle",
       "ticket": "MOD09 (S4 受管模型与资金)",
@@ -1688,6 +1856,30 @@
       "reason": "模块级环边 M11 -> M08（M11 与 M08 互相可达）"
     },
     {
+      "source": "server/src/ai-observability/execution-boot.ts",
+      "target": "server/src/plugins/store.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 aa6a1314a 其他/早期",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/execution-runner.ts",
+      "target": "server/src/billing/input-bound.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 77d25c9dd 其他/早期",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/execution-seam.ts",
+      "target": "server/src/billing/input-bound.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 653050ef3 其他/早期",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/ai-observability/executions.ts",
       "target": "server/src/work/loop.ts",
       "category": "cycle",
@@ -1720,6 +1912,14 @@
       "reason": "模块级环边 M11 -> AUTOMATION（M11 与 AUTOMATION 互相可达）"
     },
     {
+      "source": "server/src/ai-observability/integration.ts",
+      "target": "server/src/enterprise/models/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 ec94fdc2e MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/ai-observability/retention.ts",
       "target": "server/src/work/loop.ts",
       "category": "cycle",
@@ -1734,6 +1934,158 @@
       "ticket": "MOD14 (S7 定时职责与 Worker)",
       "exit_condition": "AUTOMATION 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔AUTOMATION 单向化后移除此例外",
       "reason": "模块级环边 M11 -> AUTOMATION（M11 与 AUTOMATION 互相可达）"
+    },
+    {
+      "source": "server/src/ai-observability/routes/admin-summary.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/routes/admin-summary.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/routes/basic-run.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/routes/basic-run.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/routes/case-review.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/routes/case-review.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/routes/comparison.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/routes/comparison.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/routes/datasets.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/routes/datasets.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/routes/exports.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/routes/exports.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/routes/health.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/routes/index.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/routes/index.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/routes/results.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/routes/results.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/routes/runs.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/routes/runs.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/ai-observability/scoring/judge.ts",
@@ -1745,11 +2097,27 @@
     },
     {
       "source": "server/src/ai-observability/scoring/judge.ts",
+      "target": "server/src/enterprise/models/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 ec94fdc2e MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/ai-observability/scoring/judge.ts",
       "target": "server/src/workshop/metering.ts",
       "category": "cycle",
       "ticket": "MOD22 (S6 范围绑定环境)",
       "exit_condition": "WORKSHOP 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔WORKSHOP 单向化后移除此例外",
       "reason": "模块级环边 M11 -> WORKSHOP（M11 与 WORKSHOP 互相可达）"
+    },
+    {
+      "source": "server/src/ai-observability/wiring.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/ai-observability/wiring.ts",
@@ -1774,6 +2142,22 @@
       "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M03 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M03（M08 与 M03 互相可达）"
+    },
+    {
+      "source": "server/src/approvals/person-response-sweep.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/approvals/person-response-sweep.ts",
+      "target": "server/src/channels/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/approvals/person-response-sweep.ts",
@@ -1809,11 +2193,27 @@
     },
     {
       "source": "server/src/approvals/resume-sweep.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/approvals/resume-sweep.ts",
       "target": "server/src/channels/group.ts",
       "category": "cycle",
       "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M04 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M04（M08 与 M04 互相可达）"
+    },
+    {
+      "source": "server/src/approvals/resume-sweep.ts",
+      "target": "server/src/channels/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/approvals/resume-sweep.ts",
@@ -1857,11 +2257,59 @@
     },
     {
       "source": "server/src/approvals/wiring.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/approvals/wiring.ts",
       "target": "server/src/delivery/types.ts",
       "category": "cycle",
       "ticket": "MOD14 (S7 定时职责与 Worker)",
       "exit_condition": "AUTOMATION 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔AUTOMATION 单向化后移除此例外",
       "reason": "模块级环边 M08 -> AUTOMATION（M08 与 AUTOMATION 互相可达）"
+    },
+    {
+      "source": "server/src/auth/company-assurance.ts",
+      "target": "server/src/credentials.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 35b23155b BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/auth/directory/lifecycle.ts",
+      "target": "server/src/billing/payer-binding.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 4dff8b341 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/auth/directory/lifecycle.ts",
+      "target": "server/src/billing/payer.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 4bffb4d50 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/auth/directory/read-routes.ts",
+      "target": "server/src/enterprise/tenancy/store.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 78804bd7f BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/auth/directory/read-routes.ts",
+      "target": "server/src/enterprise/tenancy/workspace-scope-routes.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 78804bd7f BA503 系",
+      "category": "cycle"
     },
     {
       "source": "server/src/auth/encrypt-sso-config.ts",
@@ -1872,12 +2320,28 @@
       "reason": "模块级环边 M01 -> M08（M01 与 M08 互相可达）"
     },
     {
+      "source": "server/src/auth/scim.ts",
+      "target": "server/src/enterprise/tenancy/scim-directory.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 02b4e12f3 BA503 系",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/auth/signed-value.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
       "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M01 改走公开出口，使 M01↔M08 单向化后移除此例外",
       "reason": "模块级环边 M01 -> M08（M01 与 M08 互相可达）"
+    },
+    {
+      "source": "server/src/auth/sso-evidence.ts",
+      "target": "server/src/credentials.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 895855c86 BA503 系",
+      "category": "cycle"
     },
     {
       "source": "server/src/billing/async-job-submit.ts",
@@ -2033,6 +2497,14 @@
     },
     {
       "source": "server/src/billing/credit-service-auth.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/billing/credit-service-auth.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
       "ticket": "MOD12 (S5 工具审批与恢复)",
@@ -2176,6 +2648,14 @@
       "reason": "模块级环边 M07 -> M02（M07 与 M02 互相可达）"
     },
     {
+      "source": "server/src/billing/payments/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/billing/realtime-session.ts",
       "target": "server/src/gateway/catalog-freshness.ts",
       "category": "cycle",
@@ -2286,6 +2766,14 @@
       "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
+    },
+    {
+      "source": "server/src/billing/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/billing/routes.ts",
@@ -2456,6 +2944,30 @@
       "reason": "模块级环边 M07 -> M02（M07 与 M02 互相可达）"
     },
     {
+      "source": "server/src/bot-services/access-grants.ts",
+      "target": "server/src/auth/directory/contracts.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 073509653 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/bot-services/access-grants.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/bot-services/auth.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/bot-services/auth.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
@@ -2496,6 +3008,14 @@
       "reason": "模块级环边 M06 -> M08（M06 与 M08 互相可达）"
     },
     {
+      "source": "server/src/channels/attachments.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/channels/group.ts",
       "target": "server/src/agents/handoff.ts",
       "category": "cycle",
@@ -2510,6 +3030,14 @@
       "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M08 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M08（M04 与 M08 互相可达）"
+    },
+    {
+      "source": "server/src/channels/group.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/channels/group.ts",
@@ -2536,6 +3064,22 @@
       "reason": "模块级环边 M04 -> M03（M04 与 M03 互相可达）"
     },
     {
+      "source": "server/src/channels/routes.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/channels/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/channels/summary.ts",
       "target": "server/src/work/queue.ts",
       "category": "cycle",
@@ -2544,12 +3088,28 @@
       "reason": "模块级环边 M04 -> AUTOMATION（M04 与 AUTOMATION 互相可达）"
     },
     {
+      "source": "server/src/channels/thread-routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/codesandbox/routes.ts",
       "target": "server/src/agents/profile-policy.ts",
       "category": "cycle",
       "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M09 改走公开出口，使 M09↔M03 单向化后移除此例外",
       "reason": "模块级环边 M09 -> M03（M09 与 M03 互相可达）"
+    },
+    {
+      "source": "server/src/codesandbox/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/computer/gateway.ts",
@@ -2592,6 +3152,14 @@
       "reason": "模块级环边 M09 -> M03（M09 与 M03 互相可达）"
     },
     {
+      "source": "server/src/computer/stream-auth.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/craft/approval-gate.ts",
       "target": "server/src/approvals/types.ts",
       "category": "cycle",
@@ -2608,12 +3176,44 @@
       "reason": "模块级环边 CRAFT -> M08（CRAFT 与 M08 互相可达）"
     },
     {
+      "source": "server/src/craft/approvals.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/craft/artifact-routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/craft/artifacts.ts",
       "target": "server/src/workshop/artifacts.ts",
       "category": "cycle",
       "ticket": "MOD22 (S6 范围绑定环境)",
       "exit_condition": "WORKSHOP 建立 public/integration 出口并让 CRAFT 改走公开出口，使 CRAFT↔WORKSHOP 单向化后移除此例外",
       "reason": "模块级环边 CRAFT -> WORKSHOP（CRAFT 与 WORKSHOP 互相可达）"
+    },
+    {
+      "source": "server/src/craft/connect-app-routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/craft/file-routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/craft/manager.ts",
@@ -2624,6 +3224,14 @@
       "reason": "模块级环边 CRAFT -> M08（CRAFT 与 M08 互相可达）"
     },
     {
+      "source": "server/src/craft/message-routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/craft/routes.ts",
       "target": "server/src/approvals/types.ts",
       "category": "cycle",
@@ -2632,12 +3240,68 @@
       "reason": "模块级环边 CRAFT -> M08（CRAFT 与 M08 互相可达）"
     },
     {
+      "source": "server/src/craft/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/craft/scheduled-tasks.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/craft/scheduled-tasks.ts",
       "target": "server/src/routines/schedule.ts",
       "category": "cycle",
       "ticket": "MOD14 (S7 定时职责与 Worker)",
       "exit_condition": "AUTOMATION 建立 public/integration 出口并让 CRAFT 改走公开出口，使 CRAFT↔AUTOMATION 单向化后移除此例外",
       "reason": "模块级环边 CRAFT -> AUTOMATION（CRAFT 与 AUTOMATION 互相可达）"
+    },
+    {
+      "source": "server/src/craft/session-routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/craft/subagent-routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/craft/turn-routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/craft/webapp-proxy.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/craft/write-origin-guard.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/delivery/opentag-agent.ts",
@@ -2664,12 +3328,44 @@
       "reason": "模块级环边 AUTOMATION -> M05（AUTOMATION 与 M05 互相可达）"
     },
     {
+      "source": "server/src/delivery/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/demonstrations/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/demonstrations/schedule.ts",
       "target": "server/src/routines/store.ts",
       "category": "cycle",
       "ticket": "MOD14 (S7 定时职责与 Worker)",
       "exit_condition": "AUTOMATION 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔AUTOMATION 单向化后移除此例外",
       "reason": "模块级环边 M03 -> AUTOMATION（M03 与 AUTOMATION 互相可达）"
+    },
+    {
+      "source": "server/src/dictation/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/contracts.ts",
+      "target": "server/src/auth/directory/contracts.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 327b3fcbb BA503 系",
+      "category": "cycle"
     },
     {
       "source": "server/src/enterprise/contracts.ts",
@@ -2914,7 +3610,7 @@
     {
       "source": "server/src/enterprise/plugin-packages/contracts.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -2922,7 +3618,7 @@
     {
       "source": "server/src/enterprise/plugin-packages/contracts.ts",
       "target": "server/src/enterprise/tenancy/connections.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -2930,15 +3626,119 @@
     {
       "source": "server/src/enterprise/plugin-packages/contracts.ts",
       "target": "server/src/enterprise/tenancy/workspace-admin.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
+      "source": "server/src/enterprise/plugin-packages/dispatch.ts",
+      "target": "server/src/enterprise/contracts.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 623a2dfd6 PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/plugin-packages/dispatch.ts",
+      "target": "server/src/enterprise/tenancy/connections.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 623a2dfd6 PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/plugin-packages/dispatch.ts",
+      "target": "server/src/enterprise/tenancy/credential-ownership.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 623a2dfd6 PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/plugin-packages/dispatch.ts",
+      "target": "server/src/enterprise/tenancy/plugin-catalog.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 623a2dfd6 PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/plugin-packages/dispatch.ts",
+      "target": "server/src/enterprise/tenancy/scope-gate.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 623a2dfd6 PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/plugin-packages/dispatch.ts",
+      "target": "server/src/enterprise/tenancy/store.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 623a2dfd6 PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/plugin-packages/dispatch.ts",
+      "target": "server/src/enterprise/tenancy/tool-invocation.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 623a2dfd6 PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/plugin-packages/dispatch.ts",
+      "target": "server/src/plugins/package-tools.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 623a2dfd6 PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/plugin-packages/dispatch.ts",
+      "target": "server/src/plugins/transport.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 623a2dfd6 PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/plugin-packages/entrypoints.ts",
+      "target": "server/src/enterprise/contracts.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 e4497d72b PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/plugin-packages/entrypoints.ts",
+      "target": "server/src/enterprise/tenancy/connections.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 e4497d72b PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/plugin-packages/entrypoints.ts",
+      "target": "server/src/enterprise/tenancy/store.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 e4497d72b PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/plugin-packages/entrypoints.ts",
+      "target": "server/src/plugins/package-tools.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 cf985e0bc PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/enterprise/plugin-packages/experts.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -2946,7 +3746,7 @@
     {
       "source": "server/src/enterprise/plugin-packages/experts.ts",
       "target": "server/src/enterprise/tenancy/workspace-admin.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -2954,23 +3754,39 @@
     {
       "source": "server/src/enterprise/plugin-packages/grants.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/grants.ts",
+      "target": "server/src/enterprise/tenancy/personal-bot.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 6c9ba00ce PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/plugin-packages/grants.ts",
       "target": "server/src/enterprise/tenancy/workspace-admin.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/install-service.ts",
+      "target": "server/src/enterprise/contracts.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 dc94cb484 PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/plugin-packages/install-service.ts",
       "target": "server/src/enterprise/tenancy/workspace-admin.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -2978,7 +3794,7 @@
     {
       "source": "server/src/enterprise/plugin-packages/mutation-context.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -2986,7 +3802,7 @@
     {
       "source": "server/src/enterprise/plugin-packages/mutation-context.ts",
       "target": "server/src/enterprise/tenancy/connections.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -2994,7 +3810,7 @@
     {
       "source": "server/src/enterprise/plugin-packages/mutation-context.ts",
       "target": "server/src/enterprise/tenancy/scope-gate.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -3002,7 +3818,7 @@
     {
       "source": "server/src/enterprise/plugin-packages/mutation-context.ts",
       "target": "server/src/enterprise/tenancy/store.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -3010,7 +3826,7 @@
     {
       "source": "server/src/enterprise/plugin-packages/mutation-context.ts",
       "target": "server/src/enterprise/tenancy/workspace-admin.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -3018,7 +3834,7 @@
     {
       "source": "server/src/enterprise/plugin-packages/routes.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -3026,7 +3842,7 @@
     {
       "source": "server/src/enterprise/plugin-packages/routes.ts",
       "target": "server/src/enterprise/tenancy/admin-separation.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -3034,7 +3850,7 @@
     {
       "source": "server/src/enterprise/plugin-packages/routes.ts",
       "target": "server/src/enterprise/tenancy/workspace-admin.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -3042,7 +3858,7 @@
     {
       "source": "server/src/enterprise/plugin-packages/runtime.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -3050,15 +3866,23 @@
     {
       "source": "server/src/enterprise/plugin-packages/runtime.ts",
       "target": "server/src/enterprise/tenancy/connections.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/runtime.ts",
+      "target": "server/src/enterprise/tenancy/personal-bot.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 6c9ba00ce PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/plugin-packages/runtime.ts",
       "target": "server/src/enterprise/tenancy/store.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -3066,7 +3890,7 @@
     {
       "source": "server/src/enterprise/plugin-packages/store.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -3074,7 +3898,7 @@
     {
       "source": "server/src/enterprise/plugin-packages/store.ts",
       "target": "server/src/enterprise/tenancy/connections.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -3082,7 +3906,7 @@
     {
       "source": "server/src/enterprise/plugin-packages/store.ts",
       "target": "server/src/enterprise/tenancy/store.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -3289,6 +4113,14 @@
     },
     {
       "source": "server/src/enterprise/runs/runner.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/runs/runner.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
       "ticket": "MOD12 (S5 工具审批与恢复)",
@@ -3326,6 +4158,14 @@
       "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M06 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M06（M05 与 M06 互相可达）"
+    },
+    {
+      "source": "server/src/enterprise/runs/runner.ts",
+      "target": "server/src/enterprise/plugin-packages/runtime.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 6c9ba00ce PKG 系 (#460s)",
+      "category": "cycle"
     },
     {
       "source": "server/src/enterprise/runs/runner.ts",
@@ -3409,6 +4249,14 @@
     },
     {
       "source": "server/src/enterprise/runs/service.ts",
+      "target": "server/src/enterprise/plugin-packages/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 592512b6b MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/runs/service.ts",
       "target": "server/src/enterprise/tenancy/connections.ts",
       "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
@@ -3489,6 +4337,54 @@
     },
     {
       "source": "server/src/enterprise/tenancy/company-admin-routes.ts",
+      "target": "server/src/auth/directory/authority.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 4dff8b341 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/company-admin-routes.ts",
+      "target": "server/src/auth/directory/executor.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 4bffb4d50 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/company-admin-routes.ts",
+      "target": "server/src/auth/directory/lifecycle.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 4bffb4d50 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/company-admin-routes.ts",
+      "target": "server/src/auth/directory/membership.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 dbfcbfb83 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/company-admin-routes.ts",
+      "target": "server/src/auth/directory/team-extension.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 bbc516073 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/company-admin-routes.ts",
+      "target": "server/src/auth/directory/team-grants.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 ec3bce111 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/company-admin-routes.ts",
       "target": "server/src/billing/company-finance-visibility.ts",
       "category": "cycle",
       "ticket": "MOD09 (S4 受管模型与资金)",
@@ -3526,6 +4422,14 @@
       "ticket": "MOD22 (S6 范围绑定环境)",
       "exit_condition": "CRAFT 建立 public/integration 出口并让 M02 改走公开出口，使 M02↔CRAFT 单向化后移除此例外",
       "reason": "模块级环边 M02 -> CRAFT（M02 与 CRAFT 互相可达）"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/deletion-semantics.ts",
+      "target": "server/src/auth/directory/membership.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 dbfcbfb83 BA503 系",
+      "category": "cycle"
     },
     {
       "source": "server/src/enterprise/tenancy/inbound-attribution.ts",
@@ -3584,12 +4488,92 @@
       "reason": "模块级环边 M02 -> M05（M02 与 M05 互相可达）"
     },
     {
+      "source": "server/src/enterprise/tenancy/openmuse-task-tenancy.ts",
+      "target": "server/src/openmuse-tasks/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 46c77a0c5 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/people-lifecycle.ts",
+      "target": "server/src/auth/directory/membership.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 dbfcbfb83 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/provision.ts",
+      "target": "server/src/auth/directory/contracts.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 4dff8b341 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/provision.ts",
+      "target": "server/src/auth/directory/lifecycle.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 4dff8b341 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/provision.ts",
+      "target": "server/src/auth/directory/principal-registry.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 4dff8b341 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/provision.ts",
+      "target": "server/src/billing/payer-binding.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 4dff8b341 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/provision.ts",
+      "target": "server/src/billing/payer.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 4dff8b341 BA503 系",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/enterprise/tenancy/runs-protocol.ts",
       "target": "server/src/enterprise/runs/store.ts",
       "category": "cycle",
       "ticket": "MOD07 (S3 会话与一次文本 Run)",
       "exit_condition": "M05 建立 public/integration 出口并让 M02 改走公开出口，使 M02↔M05 单向化后移除此例外",
       "reason": "模块级环边 M02 -> M05（M02 与 M05 互相可达）"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/scim-directory.ts",
+      "target": "server/src/auth/directory/contracts.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 02b4e12f3 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/scope-gate.ts",
+      "target": "server/src/auth/company-assurance.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 327b3fcbb BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/scope-gate.ts",
+      "target": "server/src/auth/directory/authority.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 327b3fcbb BA503 系",
+      "category": "cycle"
     },
     {
       "source": "server/src/enterprise/tenancy/share-tokens.ts",
@@ -3616,6 +4600,22 @@
       "reason": "模块级环边 M02 -> M04（M02 与 M04 互相可达）"
     },
     {
+      "source": "server/src/enterprise/tenancy/store.ts",
+      "target": "server/src/auth/company-assurance.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 327b3fcbb BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/store.ts",
+      "target": "server/src/auth/directory/authority.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 327b3fcbb BA503 系",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/enterprise/tenancy/telemetry-usage.ts",
       "target": "server/src/telemetry/scrub.ts",
       "category": "cycle",
@@ -3638,6 +4638,70 @@
       "ticket": "MOD22 (S6 范围绑定环境)",
       "exit_condition": "WORKSHOP 建立 public/integration 出口并让 M02 改走公开出口，使 M02↔WORKSHOP 单向化后移除此例外",
       "reason": "模块级环边 M02 -> WORKSHOP（M02 与 WORKSHOP 互相可达）"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/workspace-admin.ts",
+      "target": "server/src/auth/company-assurance.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 6063031f3 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/workspace-admin.ts",
+      "target": "server/src/auth/directory/authority.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 6063031f3 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/workspace-admin.ts",
+      "target": "server/src/auth/directory/membership.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 dbfcbfb83 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/workspace-scope-routes.ts",
+      "target": "server/src/auth/company-assurance.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 6063031f3 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/workspace-scope-routes.ts",
+      "target": "server/src/auth/directory/authority.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 6063031f3 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/workspace-scope-routes.ts",
+      "target": "server/src/auth/directory/executor.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 08ab17b59 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/workspace-scope-routes.ts",
+      "target": "server/src/auth/directory/membership.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 08ab17b59 BA503 系",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/enterprise/tenancy/workspace-scope-routes.ts",
+      "target": "server/src/auth/directory/team-extension.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 08ab17b59 BA503 系",
+      "category": "cycle"
     },
     {
       "source": "server/src/gateway/admin-credential-routes.ts",
@@ -3736,12 +4800,132 @@
       "reason": "模块级环边 M06 -> M07（M06 与 M07 互相可达）"
     },
     {
+      "source": "server/src/gateway/model-selection-routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/gateway/routes.ts",
       "target": "server/src/auth/guards.ts",
       "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M01 建立 public/integration 出口并让 M06 改走公开出口，使 M06↔M01 单向化后移除此例外",
       "reason": "模块级环边 M06 -> M01（M06 与 M01 互相可达）"
+    },
+    {
+      "source": "server/src/hindsight/answer-evidence.ts",
+      "target": "server/src/enterprise/contracts.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
+      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/hindsight/bank-scope.ts",
+      "target": "server/src/enterprise/contracts.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
+      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/hindsight/bank-scope.ts",
+      "target": "server/src/enterprise/tenancy/store.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
+      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/hindsight/degraded-recall.ts",
+      "target": "server/src/enterprise/contracts.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
+      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/hindsight/derived-judgments.ts",
+      "target": "server/src/enterprise/contracts.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
+      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/hindsight/judgment-review.ts",
+      "target": "server/src/enterprise/contracts.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
+      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/hindsight/ops-routes.ts",
+      "target": "server/src/auth/guards.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 合并汇入 (#618/#376 经 main，#620 集成树) 环例外）",
+      "exit_condition": "M-obs（hindsight/memory 路由层）建立公开出口并让消费者改走公开出口，使环单向化后移除此例（#620 收口合并汇入，closure-ocr 期登记）；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/hindsight/ops-routes.ts",
+      "target": "server/src/enterprise/contracts.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 合并汇入 (#618/#376 经 main，#620 集成树) 环例外）",
+      "exit_condition": "M-obs（hindsight/memory 路由层）建立公开出口并让消费者改走公开出口，使环单向化后移除此例（#620 收口合并汇入，closure-ocr 期登记）；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/hindsight/pause-controls.ts",
+      "target": "server/src/enterprise/contracts.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
+      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/hindsight/personal-memory-context.ts",
+      "target": "server/src/enterprise/contracts.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
+      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/hindsight/preference-recall.ts",
+      "target": "server/src/enterprise/contracts.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
+      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/hindsight/revocation.ts",
+      "target": "server/src/enterprise/contracts.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
+      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/hindsight/routes.ts",
+      "target": "server/src/enterprise/contracts.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 合并汇入 (#618/#376 经 main，#620 集成树) 环例外）",
+      "exit_condition": "M-obs（hindsight/memory 路由层）建立公开出口并让消费者改走公开出口，使环单向化后移除此例（#620 收口合并汇入，closure-ocr 期登记）；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/hindsight/scoped-recall.ts",
+      "target": "server/src/enterprise/contracts.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
+      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
     },
     {
       "source": "server/src/host-access/broker.ts",
@@ -3766,6 +4950,14 @@
       "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M09 改走公开出口，使 M09↔M03 单向化后移除此例外",
       "reason": "模块级环边 M09 -> M03（M09 与 M03 互相可达）"
+    },
+    {
+      "source": "server/src/host-access/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/host-access/tools.ts",
@@ -3802,10 +4994,50 @@
     {
       "source": "server/src/learning/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M01 建立 public/integration 出口，server/src/learning/routes.ts 改走公开出口后移除",
       "reason": "跨模块深层引用 LEARNING -> M01（环已由 MOD23 出口收拢解开：M03/M05 经 learning/public.ts 改道，M01 不再可达 LEARNING，环边降级为深层引用）"
+    },
+    {
+      "source": "server/src/marketplace/legacy-migration.ts",
+      "target": "server/src/enterprise/contracts.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 2834f38fc PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/marketplace/legacy-migration.ts",
+      "target": "server/src/enterprise/tenancy/workspace-admin.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 2834f38fc PKG 系 (#460s)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/marketplace/routes.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 592512b6b MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/marketplace/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/marketplace/routes.ts",
+      "target": "server/src/plugins/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 592512b6b MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/mastra/approvals.ts",
@@ -3846,6 +5078,14 @@
       "ticket": "MOD17 (S7 观测)",
       "exit_condition": "M11 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M11 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M11（M05 与 M11 互相可达）"
+    },
+    {
+      "source": "server/src/mastra/continuation-routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/mastra/continuation-routes.ts",
@@ -4104,6 +5344,14 @@
       "reason": "模块级环边 M05 -> M06（M05 与 M06 互相可达）"
     },
     {
+      "source": "server/src/mastra/openmuse-task-entry.ts",
+      "target": "server/src/openmuse-tasks/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 46c77a0c5 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/mastra/tenant-storage.ts",
       "target": "server/src/enterprise/contracts.ts",
       "category": "cycle",
@@ -4137,6 +5385,14 @@
     },
     {
       "source": "server/src/mastra/tools.ts",
+      "target": "server/src/learning/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 d5ba262c1 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/mastra/tools.ts",
       "target": "server/src/plugins/tools.ts",
       "category": "cycle",
       "ticket": "MOD12 (S5 工具审批与恢复)",
@@ -4144,9 +5400,161 @@
       "reason": "模块级环边 M05 -> M08（M05 与 M08 互相可达）"
     },
     {
+      "source": "server/src/memory/ingestion.ts",
+      "target": "server/src/plugins/access.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
+      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/memory/ingestion.ts",
+      "target": "server/src/plugins/broker.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
+      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/memory/ingestion.ts",
+      "target": "server/src/plugins/catalogue.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
+      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/memory/ingestion.ts",
+      "target": "server/src/plugins/composio.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
+      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/memory/ingestion.ts",
+      "target": "server/src/plugins/shared-accounts.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
+      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/memory/ingestion.ts",
+      "target": "server/src/plugins/store.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
+      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/memory/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/memory/routes.ts",
+      "target": "server/src/enterprise/contracts.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 合并汇入 (#618/#376 经 main，#620 集成树) 环例外）",
+      "exit_condition": "M-obs（hindsight/memory 路由层）建立公开出口并让消费者改走公开出口，使环单向化后移除此例（#620 收口合并汇入，closure-ocr 期登记）；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/memory/routes.ts",
+      "target": "server/src/plugins/store.ts",
+      "category": "cycle",
+      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
+      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "server/src/mobile-bff/activity.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 46c77a0c5 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/mobile-bff/activity.ts",
+      "target": "server/src/approvals/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 46c77a0c5 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/mobile-bff/activity.ts",
+      "target": "server/src/routines/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 46c77a0c5 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/mobile-bff/openmuse-bot.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 46c77a0c5 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/mobile-bff/openmuse-bot.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 46c77a0c5 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/mobile-bff/routes.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 46c77a0c5 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/mobile-bff/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 46c77a0c5 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/mobile-bff/routes.ts",
+      "target": "server/src/channels/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 46c77a0c5 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/mobile-bff/workspace.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 46c77a0c5 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/mobile-bff/workspace.ts",
+      "target": "server/src/channels/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 46c77a0c5 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/openmuse-activity/routes.ts",
       "target": "server/src/approvals/types.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 OPENMUSE -> M08（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
@@ -4154,39 +5562,159 @@
     {
       "source": "server/src/openmuse-activity/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
+    },
+    {
+      "source": "server/src/openmuse-calendar/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/openmuse-connectors/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/openmuse-deletion/fence.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/openmuse-deletion/manifest.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/openmuse-deletion/manifest.ts",
+      "target": "server/src/channels/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/openmuse-deletion/purge-relational.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/openmuse-deletion/purge-relational.ts",
+      "target": "server/src/channels/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/openmuse-deletion/restore.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
+      "source": "server/src/openmuse-deletion/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/openmuse-documents/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/openmuse-files/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/openmuse-files/routes.ts",
       "target": "server/src/channels/attachment-mime.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 OPENMUSE -> M04（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
+      "source": "server/src/openmuse-mail/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/openmuse-notifications/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/openmuse-ops/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
+      "source": "server/src/openmuse-personal/goals.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/openmuse-personal/ideas.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/openmuse-personal/memories.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/openmuse-personal/tools.ts",
       "target": "server/src/plugins/tools.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 OPENMUSE -> M08（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
@@ -4194,15 +5722,39 @@
     {
       "source": "server/src/openmuse-reviewed-actions/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
+      "source": "server/src/openmuse-tasks/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/openmuse-tasks/runner.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/openmuse-tasks/runner.ts",
+      "target": "server/src/channels/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/openmuse-tasks/runner.ts",
       "target": "server/src/work/queue.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD14 (S7 定时职责与 Worker)",
       "exit_condition": "AUTOMATION 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 OPENMUSE -> AUTOMATION（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
@@ -4210,7 +5762,7 @@
     {
       "source": "server/src/openmuse-tasks/store.ts",
       "target": "server/src/work/queue.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD14 (S7 定时职责与 Worker)",
       "exit_condition": "AUTOMATION 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 OPENMUSE -> AUTOMATION（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
@@ -4230,6 +5782,14 @@
       "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M03 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M03（M08 与 M03 互相可达）"
+    },
+    {
+      "source": "server/src/passwords/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/passwords/routes.ts",
@@ -4266,7 +5826,7 @@
     {
       "source": "server/src/plugin-packages/catalogue.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
       "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
@@ -4352,6 +5912,14 @@
       "reason": "模块级环边 M08 -> M04（M08 与 M04 互相可达）"
     },
     {
+      "source": "server/src/plugins/openconnector.ts",
+      "target": "server/src/openmuse-deletion/retention.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 7e2d514e2 其他/早期",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/plugins/routes.ts",
       "target": "server/src/agents/profile-policy.ts",
       "category": "cycle",
@@ -4433,6 +6001,14 @@
     },
     {
       "source": "server/src/proactive/engine.ts",
+      "target": "server/src/memory/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 16f97f260 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/proactive/engine.ts",
       "target": "server/src/plugins/tools.ts",
       "category": "cycle",
       "ticket": "MOD12 (S5 工具审批与恢复)",
@@ -4454,6 +6030,22 @@
       "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M08 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M08（AUTOMATION 与 M08 互相可达）"
+    },
+    {
+      "source": "server/src/proactive/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/proactive/store.ts",
+      "target": "server/src/memory/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 16f97f260 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/responsibilities/bindings.ts",
@@ -4486,6 +6078,14 @@
       "ticket": "MOD07 (S3 会话与一次文本 Run)",
       "exit_condition": "M05 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M05 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M05（AUTOMATION 与 M05 互相可达）"
+    },
+    {
+      "source": "server/src/responsibilities/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/responsibilities/routes.ts",
@@ -4529,6 +6129,14 @@
     },
     {
       "source": "server/src/responsibilities/wiring.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 5f044bd41 其他/早期",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/responsibilities/wiring.ts",
       "target": "server/src/agents/turn-admission.ts",
       "category": "cycle",
       "ticket": "MOD05 (S2 身份与 Access)",
@@ -4542,6 +6150,14 @@
       "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M08 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M08（AUTOMATION 与 M08 互相可达）"
+    },
+    {
+      "source": "server/src/responsibilities/wiring.ts",
+      "target": "server/src/channels/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/responsibilities/wiring.ts",
@@ -4560,6 +6176,14 @@
       "reason": "模块级环边 AUTOMATION -> M09（AUTOMATION 与 M09 互相可达）"
     },
     {
+      "source": "server/src/routines/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/routines/runner.ts",
       "target": "server/src/agents/lifecycle.ts",
       "category": "cycle",
@@ -4569,11 +6193,35 @@
     },
     {
       "source": "server/src/routines/runner.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/routines/runner.ts",
+      "target": "server/src/channels/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/routines/runner.ts",
       "target": "server/src/mastra/headless.ts",
       "category": "cycle",
       "ticket": "MOD07 (S3 会话与一次文本 Run)",
       "exit_condition": "M05 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M05 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M05（AUTOMATION 与 M05 互相可达）"
+    },
+    {
+      "source": "server/src/team-bots/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
     },
     {
       "source": "server/src/team-bots/routes.ts",
@@ -4600,9 +6248,73 @@
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
     {
+      "source": "server/src/voice/routes.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/voice/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/voice/routes.ts",
+      "target": "server/src/channels/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/voice/session-routes.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/voice/session-routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/voice/session-routes.ts",
+      "target": "server/src/channels/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/voice/sessions.ts",
+      "target": "server/src/agents/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/voice/sessions.ts",
+      "target": "server/src/channels/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/voice/summary.ts",
       "target": "server/src/agents/plan-model.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M03 单向化后移除此例外",
       "reason": "跨模块深层引用 VOICE -> M03（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
@@ -4610,7 +6322,7 @@
     {
       "source": "server/src/voice/summary.ts",
       "target": "server/src/channels/titler.ts",
-      "category": "deep-reference",
+      "category": "cycle",
       "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M04 单向化后移除此例外",
       "reason": "跨模块深层引用 VOICE -> M04（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
@@ -4680,6 +6392,14 @@
       "reason": "模块级环边 WORKSHOP -> M03（WORKSHOP 与 M03 互相可达）"
     },
     {
+      "source": "server/src/workshop/preview.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
       "source": "server/src/workshop/routes.ts",
       "target": "server/src/agents/profile-policy.ts",
       "category": "cycle",
@@ -4689,203 +6409,19 @@
     },
     {
       "source": "server/src/workshop/routes.ts",
+      "target": "server/src/auth/public.ts",
+      "ticket": "#700",
+      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
+      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
+      "category": "cycle"
+    },
+    {
+      "source": "server/src/workshop/routes.ts",
       "target": "server/src/codesandbox/client.ts",
       "category": "cycle",
       "ticket": "MOD11 (S6 范围绑定环境)",
       "exit_condition": "M09 建立 public/integration 出口并让 WORKSHOP 改走公开出口，使 WORKSHOP↔M09 单向化后移除此例外",
       "reason": "模块级环边 WORKSHOP -> M09（WORKSHOP 与 M09 互相可达）"
-    },
-    {
-      "source": "server/src/hindsight/answer-evidence.ts",
-      "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
-      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/hindsight/bank-scope.ts",
-      "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
-      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/hindsight/bank-scope.ts",
-      "target": "server/src/enterprise/tenancy/store.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
-      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/hindsight/degraded-recall.ts",
-      "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
-      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/hindsight/derived-judgments.ts",
-      "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
-      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/hindsight/judgment-review.ts",
-      "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
-      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/hindsight/pause-controls.ts",
-      "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
-      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/hindsight/personal-memory-context.ts",
-      "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
-      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/hindsight/preference-recall.ts",
-      "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
-      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/hindsight/revocation.ts",
-      "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
-      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/hindsight/scoped-recall.ts",
-      "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
-      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/memory/ingestion.ts",
-      "target": "server/src/plugins/access.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
-      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/memory/ingestion.ts",
-      "target": "server/src/plugins/broker.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
-      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/memory/ingestion.ts",
-      "target": "server/src/plugins/catalogue.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
-      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/memory/ingestion.ts",
-      "target": "server/src/plugins/composio.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
-      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/memory/ingestion.ts",
-      "target": "server/src/plugins/shared-accounts.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
-      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/memory/ingestion.ts",
-      "target": "server/src/plugins/store.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
-      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/memory/routes.ts",
-      "target": "server/src/plugins/store.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
-      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/hindsight/ops-routes.ts",
-      "target": "server/src/auth/guards.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 合并汇入 (#618/#376 经 main，#620 集成树) 环例外）",
-      "exit_condition": "M-obs（hindsight/memory 路由层）建立公开出口并让消费者改走公开出口，使环单向化后移除此例（#620 收口合并汇入，closure-ocr 期登记）；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/hindsight/ops-routes.ts",
-      "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 合并汇入 (#618/#376 经 main，#620 集成树) 环例外）",
-      "exit_condition": "M-obs（hindsight/memory 路由层）建立公开出口并让消费者改走公开出口，使环单向化后移除此例（#620 收口合并汇入，closure-ocr 期登记）；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/hindsight/routes.ts",
-      "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 合并汇入 (#618/#376 经 main，#620 集成树) 环例外）",
-      "exit_condition": "M-obs（hindsight/memory 路由层）建立公开出口并让消费者改走公开出口，使环单向化后移除此例（#620 收口合并汇入，closure-ocr 期登记）；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/memory/routes.ts",
-      "target": "server/src/enterprise/contracts.ts",
-      "category": "deep-reference",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 合并汇入 (#618/#376 经 main，#620 集成树) 环例外）",
-      "exit_condition": "M-obs（hindsight/memory 路由层）建立公开出口并让消费者改走公开出口，使环单向化后移除此例（#620 收口合并汇入，closure-ocr 期登记）；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "app/src/lib/copilot/approval-tools.tsx",
-      "target": "app/src/lib/enterprise/tenant/scoped-cache.ts",
-      "category": "cycle",
-      "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M04 -> M02（M04 与 M02 互相可达）"
-    },
-    {
-      "source": "app/src/lib/plugin-packages/use-package-scope.ts",
-      "target": "app/src/lib/enterprise/tenant/scoped-cache.ts",
-      "category": "deep-reference",
-      "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
-      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     }
   ]
 }
