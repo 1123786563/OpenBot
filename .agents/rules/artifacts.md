@@ -28,17 +28,7 @@
 
 新 run-key 使用日期、Issue/任务短名和不可变 Run ID 的短后缀，例如 `2026-10-25-issue619-a1b2c3d4`。Orca Run 使用实际 Run ID，普通文档等非 Orca 任务生成 UUID。index 记录完整 Run ID、规范仓库、执行主机、工作区、方案身份/哈希、原始 BASE 和交付目标；短后缀碰撞时延长，不能复用别的身份。复用同一次工作的目录；修复轮次在其内部编号。旧目录不强制改名，先补齐并核对身份后才能复用。
 
-```text
-.archive/runs/<date>-<issue-or-task>-<run-id-short>/
-  index.md              # 方案路径、仓库/工作区、BASE、当前状态及证据索引
-  scope.json / issues/  # 脱敏需求快照/受控原文引用与完整性
-  dag.json / state.json / events.jsonl / ledger.md
-  briefs/               # 单任务 Brief 与修复 Brief
-  checkpoints/          # 前后快照、授权增量、文件清单和哈希
-  verification/         # 命令、退出码、用例数、失败/跳过、资源清理结果
-  reviews/ / ocr/       # 分轮报告、finding rulings、复审
-  receipts/ / workers/ / logs/
-```
+Run按需使用以下类别，不建空目录：`index.md`（身份、方案、BASE、状态与索引）；`scope.json / issues/`（需求）；`dag.json / state.json / events.jsonl / ledger.md`（执行）；`briefs/`；`checkpoints/`；`verification/`；`reviews/ / ocr/`；`receipts/ / workers/ / logs/`。
 
 所有 Run（含普通 Orca）初始化时选定唯一 `archive_root`：将持久拥有者的 `.archive/runs/<run-key>/` 解析成绝对物理路径，写入 index、Ledger 和每个 Brief 的报告参数。Worker 必须写向该根或由主控显式收取带哈希的报告；不得各自在 Worktree 按相对 `.archive/` 建第二根。远端 Worker 无法共享文件系统时记录其暂存根与唯一权威根之间的传输映射，收取核验后才接受结果。根随 Worktree 清理会消失时，先执行 [coordination-state.md](coordination-state.md)的恢复索引迁移门禁。
 
@@ -50,12 +40,12 @@
 
 ## SDD 工具目录适配
 
-普通 SDD 启动前按 [execution.md](execution.md)核验能力；仅在 sdd-workspace 实际可用时记录当前技能版本、方案规范路径与哈希、其实际返回的绝对路径及所属 Run ID。已获准手工等价流程时以 Run 下唯一 Ledger 为活动事实源，不捏造工具回执。工具固定使用 `.superpowers/sdd/<plan>/` 时允许保留该活动目录，不盲改工具或以符号链接混用其他计划。
+仅实际使用SDD时按[执行规范](execution.md)核能力，记录技能版本、方案绝对路径/哈希、工具实际目录和Run ID。手工等价流程用Run内唯一Ledger，不编造回执。工具固定使用`.superpowers/sdd/<plan>/`时保留该活动目录，不盲改工具或以链接混用计划。
 
-- **单一活动 Ledger**：该计划以工具目录中的 `progress.md` 为唯一可变执行 Ledger；Run 的 index/ledger 只索引它和已归档检查点，不另维护一套独立任务状态。Orca 采用自己的 Task/Dispatch 状态和 Run Ledger，不创建 SDD 的第二派发状态。
-- 进入 Review/交付或压缩/交接前，保留活动 Ledger、Brief、报告和完整审查范围的可恢复副本，记录源/目标与检查点并核对可读性。跨写入者、跨 Run 或机器恢复采用 [checkpoints.md](checkpoints.md) 的同代冻结与完整清单；普通单工作区不逐轮创建事务快照。journal、fsync 和原子发布由采用该合同的工具实现，Agent 核验工具回执，不另手工维护第二套提交协议。
-- 恢复先读 Run 身份与最后归档快照，再核对工具目录、plan-path、Ledger 和 Git。缺目录时仅从匹配身份且核验通过的快照恢复；两份冲突时对账原始事件与代码，不按 mtime 任选，也不重新生成空 Ledger 后重派已完成任务。
-- 技能清理临时目录前，先核对最终快照、全部 Ruling、未提交内容及证据在临时目录外可恢复；这些条件未满足时保留目录。技能目录删除不等于交付证据已持久化。
+- 工具`progress.md`是唯一活动Ledger；Run只索引它和已归档检查点。Orca使用自己的Task/Dispatch与Run Ledger，不另起SDD派发状态。
+- Review/交付、压缩/交接前保留Ledger、Brief、报告和完整审查范围的可恢复副本，核源/目标、检查点和可读性；跨写者/Run/机器恢复按[检查点规范](checkpoints.md)冻结同代清单，普通单工作区不逐轮事务快照。journal/fsync/原子发布由工具执行，Agent核回执，不手工维护第二协议。
+- 恢复核Run/最后快照、工具目录/plan-path/Ledger/Git；缺目录仅从同身份已验快照还原，冲突对账事件与代码，不按mtime任选或造空Ledger重派。
+- 清理前确认最终快照、全部Ruling、未提交内容及证据在临时目录外可恢复；不满足则保留。删除技能目录不等于证据已持久化。
 
 ## 保留与交付
 

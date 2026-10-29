@@ -1,38 +1,42 @@
 # 跨 Run 的共享协调状态
 
-跨 Run 占用 Issue、工作区、分支、数据库、端口、Docker project、缓存或报告目录，以及恢复每日任务时读取。本规范定义共享位置和互斥协议；编码、版本化 schema、唯一公共事务入口及验收样例见 [coordination-format.md](coordination-format.md)，取得写入声明前必须读取并核实适配器。不宣称 Orca 已提供不存在的锁命令。
+跨 Run 占用 Issue、工作区、分支、数据库、端口、Docker project、缓存/报告目录，或恢复每日任务时读取。普通单写者、单工作区且资源已证明隔离的本地任务不进入本协议；Orca 编排、共享资源和每日自动化仍须登记。归属不明先核验，不推断空闲。
 
-普通单写入者、单工作区且资源已证明隔离的本地任务不进入本协议，也不为本地验证加载每日调度/schema。跨 Run/共享资源、Orca 编排及每日自动化仍须登记；归属不明不能推断无人占用。协议的身份、互斥、持久化和恢复语义由统一适配器执行，Agent 使用经验证入口及回执，不手工拼装逐票状态。
+[协调格式](coordination-format.md)是身份编码、字段、兼容矩阵、事务、持久化和迁移的唯一合同。取得声明前读取其适用条款并核验统一适配器；Agent 使用工具与回执，不手工拼装 Ledger 或编造锁命令。
 
 ## 部署状态与启用入口
 
-仓库当前提供协议、schema 和验收样例，未随仓库提供协调事务适配器或安全恢复工具的安装实现。本节是部署边界，不表示服务已部署；规则修订、空配置或新建 Run 都不能使能力自动就绪。
+部署是单独授权任务，先确定维护者、可访问实现/版本、安装及验收入口。是否就绪以主机配置和实际验收为准，规则、Schema、空配置或新 Run 不代表已部署。
 
-部署作为单独授权任务执行：先指定维护责任人及可访问的实现/版本、安装说明和验收入口，再登记到主机统一的 config.json。默认入口是项目目录下 `.coordination/v1/config.json`；覆盖入口必须由主机配置提供可核实的绝对路径，Run 回执保存该配置来源及实际解析路径。首次使用时，核实该项目的统一持久根后，若默认根目录不存在则创建 `.coordination/v1/`；其他 Worktree 或 clone 不得各自创建私有根。找不到默认或覆盖配置时报告缺失路径和受阻能力，不自行搜索秘密配置、生成空配置或编造适配器命令。
+默认入口为持久项目目录的 `.coordination/v1/config.json`；覆盖入口须由主机配置给出可核实绝对路径。Run 回执记录配置来源、实际解析路径和下列身份：
 
-启用前按 [协调格式](coordination-format.md)完成协议验收并保存带工具哈希的回执；安全恢复工具还须通过 [checkpoints.md](checkpoints.md)的路径、文件类型及资源上限验收。随后按 [每日规则](closed-issue-daily-run.md)人工试运行，确认恢复、清理与证据读取后才能启用自动化。没有已验证实现或配置时，记录 `capability_blocked` 并继续不依赖这些能力的只读准备、分析和报告，不反复等待配置出现；需登记的副作用、受控恢复、跨 Run 接管及自动化启用仍受阻，不因当前只有一个 Run 而豁免。
+- 协调适配器绝对入口、版本、内容哈希、Schema 兼容范围及协议验收回执。
+- 心跳/TTL、服务别名映射；安全恢复工具入口、版本、验收和最大文件数、单文件/总展开大小、压缩比、链接深度。
+- 配置仅含身份和受控凭据引用，不存秘密。缺项记 `capability_blocked`。
+
+首次使用先核统一持久根，默认根不存在才创建；其他 clone/Worktree不另起私有根。默认或覆盖配置缺失时报告路径和受阻能力，不搜索秘密配置或生成空配置。启用前完成[协调协议验收](coordination-format.md)及[安全恢复验收](checkpoints.md)，保存工具哈希绑定回执，再按[每日规则](closed-issue-daily-run.md)人工走完一票，确认恢复、清理和证据读取。
+
+无有效配置/能力时继续可独立完成的只读准备；声明所需副作用、受控恢复、跨 Run 接管和自动化启用仍阻塞，不反复等待或因只有一个 Run 豁免。
 
 ## 位置与身份
 
-- 同一执行主机使用一个持久的绝对 `coordination_root`。默认使用持久项目目录下 `.coordination/v1/` 的实际路径；覆盖位置须由该主机配置统一指定，所有协调器启动时核对相同值。其他 clone 或 Worktree 必须使用同一个已核实的共享根；无法核实时保持受阻。它不位于可清理的 Run/Worktree 中；不得为新 Run、clone 或 new-per-run 另起资源登记根。
-- 根内保留 `host.json`、`registry.guard`、`claims.json` 和 `repos/<repo-key>/daily-ledger.json`。repo-key 从正式 tracker 的规范仓库身份生成（本仓库为 `github.com/1123786563/openbot` 的 UTF-8 小写十六进制编码），不依赖当前目录、分支或上游显示名称。Run 归档保存绝对共享路径及登记回执，共享 Ledger 保存 Run/工作区/检查点/证据索引的绝对引用和哈希。
-- 资源键按真实排他域生成：Issue 使用规范仓库 + 编号，每日入口使用格式规范的 daily 元组（`daily:<repo-key>` 仅为显示别名）；工作区使用执行主机 + 物理路径；本地分支使用执行主机 + Git common dir + ref，远程写入另登记规范远程仓库 + 完整 ref（跨 clone 相同）；端口使用主机/网络命名空间 + 协议 + 地址/范围；数据库和迁移分别使用服务身份 + database/schema 的 database/migration 元组并互相检查重叠；Docker project、缓存及输出目录使用执行主机和实际名称/物理路径。通配绑定及端口区间按重叠检测，不用不同字符串规避同一资源。
+同一主机使用一个不随 Run/Worktree 清理的绝对物理 `coordination_root`，所有 clone/Worktree核对同一值；无法核实则阻塞。根内保留 `host.json`、`registry.guard`、`claims.json`、`repos/<repo-key>/daily-ledger.json`；规范仓库身份、repo-key 和各资源元组按[身份与编码](coordination-format.md)。根名 v1 不是Schema版本，升版沿用原根/锁；迁移按下节处理。
 
-派发前从本轮 Task source_issues 和实际修改/验收范围生成 issue_write_set，不能只登记根票。包含所有实际实施子票、会被改变状态/标签的票，以及将被修改的父级聚合状态；一次原子取得全集合，范围扩展先增补声明。父级纯只读摄取不锁整树；父级聚合验收/状态写入持 aggregate 声明，并以冻结 contains 闭包与任何其他 Run 的子票 write/聚合声明互斥；子票写入也反向检查现有祖先 aggregate 声明。每个 aggregate/Issue write 声明必须按 [协调格式](coordination-format.md)持久保存 relation_snapshot；空 evidence 或私有外部状态不能替代。适配器须在登记锁内重新读取并核对关系版本与闭包，旧快照以 `stale_relation` 拒绝。
+Run归档保存共享根及登记回执；共享Ledger保存Run/工作区/检查点/证据的绝对引用和哈希。资源按真实排他域规范化并检查语义重叠，含跨clone远程ref、通配/区间端口、数据库/迁移、Docker、路径及别名；不同字符串不产生第二资源。
 
-每次 Issue/聚合副作用前再次核对 contains 关系和声明快照；优先使用外部关系版本条件写。无法提供条件写时，由唯一持有声明的副作用执行器串行完成“关系 rescan→意图核对→副作用→回读”，任何失配立即标 unverifiable 并停止其他相关写入；不能证明关系仍新鲜或旧请求已排空时保持 blocked。不得用本地 revision、一次启动前对账或不同编号代替关系新鲜度。
+派发前从 Task source_issues 和实际修改/验收范围生成 `issue_write_set`，一次原子取得所有实施子票、状态/标签写入票及父级聚合声明；扩范围先增补。父级纯只读摄取不锁整树；aggregate 按完整contains后代闭包与其他Run的子票write/重叠aggregate互斥，Issue write反向检查全部祖先aggregate。两者持久保存 `relation_snapshot`，不得以空evidence或私有状态替代；适配器持锁重新读取核对关系版本/闭包，过期以 `stale_relation` 拒绝。
 
-Issue 和每日入口声明由 Run 持有，允许该 Run 已登记的各阶段关联同一声明；不要求同一 Run 的每个子 Task 重新抢占本 Run 的 Issue。工作区、分支及测试资源按实际阶段独占，Run 内也不能并发写同一排他资源。read/read 可共享，其余兼容关系按 [协调格式](coordination-format.md)矩阵执行。Run 结束或等待外部条件时，先安全结算，按证据保留/释放声明；共享 Ledger 中的恢复索引本身不持续占有资源。
+每次Issue/聚合副作用前再次核contains及快照；优先外部关系版本条件写，否则由唯一声明持有执行器串行“rescan→意图→副作用→回读”。失配即 `unverifiable` 并停相关写入；不能证明新鲜或旧请求排空则阻塞，本地revision/一次预检不替代。
 
-主机配置统一保存到 coordination_root/config.json，至少登记协调适配器绝对入口/版本/内容哈希、schema 兼容范围、验收回执、心跳/TTL、服务别名映射，以及安全恢复工具入口/版本/验收与最大文件数、单文件/总展开大小、压缩比、链接深度。配置只含身份和受控凭据引用，不存秘密；缺项记 capability_blocked，不把文档当成已部署。根目录名中的 v1 是位置名称，不是 schema 版本，数据升版继续使用原根与锁；已有共享根须按恢复索引迁移门禁迁移，不直接新建空根替代。
+Issue/daily声明由Run持有，各阶段可关联同一声明，无需子Task重抢；工作区、分支和测试资源按阶段独占。read/read可共享，其余按合同矩阵；Run内也不得并发写同一排他域。结束或等待外部条件时安全结算再按证据保留/释放；恢复索引本身不占资源。
 
 ## 占用与释放
 
-1. 在启动、集成或测试副作用前，使用 OS 排他文件锁保护 `registry.guard` 的一次登记事务（Unix 可用 `fcntl.flock`，其他平台使用已验证的等效实现）。锁文件保持原 inode，不删除或以 rename 替换；不支持可靠锁的文件系统不得充当共享登记后端。
-2. 持锁读取声明，检查所有重叠的资源及 Issue；一次原子取得本阶段所需集合。声明含 `owner_run / coordinator / host / task / attempt / token / generation / state / created_at / heartbeat_at / expires_at / evidence / relation_snapshot`，state 区分 reserved、running、settling、unverifiable。登记须经过唯一公共事务入口，按格式规范完成可恢复 journal、文件 flush+fsync、原子替换及父目录 fsync；失败则不启动副作用。取得后在 Ledger 逐项记录 token/generation，实际 Dispatch 回执到达后补登记；无回执先对账。
-3. 每次开始副作用及恢复时逐项核对当前 token/generation；支持 fencing 的外部服务须在资源侧校验 generation，不能只本地检查。GitHub 等不支持 fencing 的服务须由唯一持有声明的副作用执行器串行发送，记录意图/请求 ID，接管前取消或排空旧请求并回读对账；不能证明旧拥有者不再写入时保持 unverifiable，不发新请求。资源不能在另一个拥有者下继续使用。结束时持锁逐项核对拥有者和 token，保存结算/退出及资源清理证据，再释放声明。不是自己的 token 不得删除，Ledger 声称空闲或进程列表缺席不等于已释放。
-4. 默认每 60 秒心跳，expires_at=最后心跳+5 分钟；主机统一配置可调整但须记录。到期只触发核查，先标 unverifiable，核对执行主机、Orca Dispatch、实际进程和副作用。仅取得原拥有者已安全结算或正面退出、所有在途请求已取消/排空并对账及资源安全的证据后，才在登记事务中接管并逐项递增 generation；不以 TTL 到期直接抢锁。
+1. 副作用前经唯一公共事务入口原子取得完整资源集合；`registry.guard` 使用可靠OS排他锁并保持原inode，不删除/rename替换，不可靠文件系统禁作后端。声明字段、Schema/语义、journal/fsync和崩溃恢复按[公共事务合同](coordination-format.md)，失败不启动副作用。
+2. Ledger逐资源记录token/generation；Dispatch回执到达后补登记，响应丢失先对账。每次副作用/恢复核当前代次；支持fencing的服务在资源侧核验，不能只本地检查。无fencing服务由唯一声明持有者串行发送并记意图/请求ID，接管前取消/排空旧请求并回读；无法证明旧者停写则不发新请求。
+3. 默认60秒心跳、最后心跳后5分钟到期，可由主机统一配置调整并记录。到期仅标 `unverifiable` 后核主机、Dispatch、进程和副作用；只有正面退出/安全结算、在途排空对账及资源安全证据齐全，才能事务接管并逐资源递增generation，TTL不授予抢占权。
+4. 结束持锁核拥有者/token，保存退出、结算和清理证据再释放；不删他人token。Ledger称空闲、列表缺席或超时不证明释放。跨主机须共同原子后端或可核实唯一协调者；本地空记录不证明远端无人写，无法核实只继续只读。
 
-跨主机操作同一 Issue、共享数据库或工作区时，须使用所有参与者共用且支持原子事务的协调后端，或已有可核实的唯一协调者。上述本地目录只证明单主机互斥；远端覆盖、后端一致性或所有权无法核实时保持 blocked，不把本地无记录当作远端无人占用。只读查询可继续，不能据此启动潜在重叠写入。
+共享Ledger只维护队列和恢复索引，不替代Orca Dispatch或SDD活动Ledger；更新通过同一事务入口核Schema版本、expected_revision、状态/追加事件和完整调度字段，保留历史与最后有效结论。
 
-每日任务的共享 Ledger 只维护队列与恢复索引，不替代 Orca 的 Dispatch 事实或 SDD 的活动 Ledger。更新时通过唯一公共事务入口，按 [coordination-format.md](coordination-format.md)校验 schema_version、expected_revision、状态迁移、追加事件和完整逐票/调度字段，保留历史和最后一次有效结论。恢复引用迁移时先冻结源写入并复制同代快照、核验目标，再事务性替换所有活跃 Run/每日条目的旧绝对路径与哈希；从共享 Ledger 实际重新读取新索引及证据成功后才允许删除旧 Worktree。保留旧→新映射，失败则保留源，不以复制成功代替引用更新。
+迁移恢复引用：冻结源写者→复制同代快照并核目标→事务替换所有活跃Run/每日条目的旧路径和哈希→从共享Ledger实际试读新索引及证据→才删除旧工作区。保留旧新映射；失败保留源，复制成功不能替代引用更新。

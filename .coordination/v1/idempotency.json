@@ -2235,6 +2235,140 @@
         "transaction_sequence": 87
       },
       "request_hash": "b601bb4b74ba36b91c7f2f838868666cac7e235b38502a121b63e0ce8bee59d2"
+    },
+    "run17\u0000run17-t1-claims": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session:orca-run10",
+            "created_at": "2026-10-29T07:10:52Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T07:15:52Z",
+            "generation": 4,
+            "heartbeat_at": "2026-10-29T07:10:52Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run17",
+            "relation_snapshot": null,
+            "resource_key": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ],
+            "state": "reserved",
+            "task": null,
+            "token": "0307921e-4d92-47fb-9310-3085d067f964"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "60be1eefc709c84052a253d9f89f5b4f223165ba665472d32b81062b1e6070a1"
+        },
+        "request_hash": "9907cdb72cd296bc2e3610ad6b121154b9cb859bfdfc1ce0ea3cffe58b15b01b",
+        "request_id": "run17-t1-claims",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 88
+        },
+        "status": "applied",
+        "transaction_sequence": 88
+      },
+      "request_hash": "9907cdb72cd296bc2e3610ad6b121154b9cb859bfdfc1ce0ea3cffe58b15b01b"
+    },
+    "run17\u0000run17-t1b-daily-running": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session:orca-run10",
+            "created_at": "2026-10-29T07:10:52Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T07:15:52Z",
+            "generation": 4,
+            "heartbeat_at": "2026-10-29T07:10:52Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run17",
+            "relation_snapshot": null,
+            "resource_key": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ],
+            "state": "running",
+            "task": null,
+            "token": "0307921e-4d92-47fb-9310-3085d067f964"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "d013369f0dce8f3a2ba4e9799312bdc6dcb69fb8c9b7a2a19691018a0e079f72"
+        },
+        "request_hash": "8f228264ec4a5caea2af246c1883bd8d1a155df7c1a00cae08a02039fc6b31ff",
+        "request_id": "run17-t1b-daily-running",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 89
+        },
+        "status": "applied",
+        "transaction_sequence": 89
+      },
+      "request_hash": "8f228264ec4a5caea2af246c1883bd8d1a155df7c1a00cae08a02039fc6b31ff"
+    },
+    "run17\u0000run17-t2-daily-settling": {
+      "receipt": {
+        "claims": [
+          {
+            "attempt": 1,
+            "coordinator": "wuyjun-mac:claude-session:orca-run10",
+            "created_at": "2026-10-29T07:10:52Z",
+            "evidence": [],
+            "expires_at": "2026-10-29T07:15:52Z",
+            "generation": 4,
+            "heartbeat_at": "2026-10-29T07:10:52Z",
+            "host": "4067db8a-f54b-462d-8cb9-396482c06bcc",
+            "mode": "write",
+            "owner_run": "run17",
+            "relation_snapshot": null,
+            "resource_key": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ],
+            "state": "settling",
+            "task": null,
+            "token": "0307921e-4d92-47fb-9310-3085d067f964"
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "2724ae0ea911b9d6a7004260c369e27a3e8f4831e610048c81d103f75a6ad84a"
+        },
+        "request_hash": "82916e5b2ee66308fa94a9b497afaf0578b420f5a06f6b81af3ac6b71fcfb905",
+        "request_id": "run17-t2-daily-settling",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 90
+        },
+        "status": "applied",
+        "transaction_sequence": 90
+      },
+      "request_hash": "82916e5b2ee66308fa94a9b497afaf0578b420f5a06f6b81af3ac6b71fcfb905"
+    },
+    "run17\u0000run17-t3-release-all": {
+      "receipt": {
+        "claims": [
+          {
+            "released": [
+              "daily",
+              "github.com/1123786563/openbot"
+            ]
+          }
+        ],
+        "file_hashes": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": "6881fcc29568eb3bf8d69f7b6966b56a93c9794540bebe05f99beca26906b183"
+        },
+        "request_hash": "a96e2a999b3477426b9ae987973d870faa34466a1718392b2da7607f305605d7",
+        "request_id": "run17-t3-release-all",
+        "revisions": {
+          "/Users/wuyongjun/trea/OpenBot/.coordination/v1/claims.json": 91
+        },
+        "status": "applied",
+        "transaction_sequence": 91
+      },
+      "request_hash": "a96e2a999b3477426b9ae987973d870faa34466a1718392b2da7607f305605d7"
     }
   }
 }

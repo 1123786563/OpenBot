@@ -18,6 +18,6 @@
 ## 失败、变化与恢复
 
 - 先分类并写持久 RecoveryDecision：环境或已确认结束的阶段故障重试阶段；有效代码 finding 返回该 Task 原实施 Agent 整改；需求变化且代码可复用时重新验证；集成回归/终审 finding 按 [checkpoints.md](checkpoints.md)以 frozen_failed 完整失败组合树为基线修复，无须先使失败树验证通过；身份/副作用不明先对账。每轮整改绑定新的代码哈希和相关验证、独立审核；每日审计另按 [协调格式](coordination-format.md)把写入尝试绑定不可变修复波次，同一 Task 再次尝试须新波，原始 Task/finding 谱系不重置单任务预算。Agent 改选按 [Agent 选择](orchestration-agents.md)记录交接；连续无进展及轮次上限按 [Review 规范](review.md)升级。
-- 按[Issue 摄取](issue-delivery.md)在实施前、恢复后、终审前和 GitHub 交付写入前强制 rescan。保存范围修订和变化，计算受影响 Task 及后继闭包；验收、接口、依赖或批准事实源变化使相关证据失效。未受影响结果须记录需求、前置树、所有权与代码哈希的承接依据；移出范围的在途工作先安全结算并记录代码处置。
+- 按[Issue摄取](issue-delivery.md)的全部强制时点执行rescan；同一边界共享完整读取结果。保存范围修订和变化，计算受影响 Task 及后继闭包；验收、接口、依赖或批准事实源变化使相关证据失效。未受影响结果须记录需求、前置树、所有权与代码哈希的承接依据；移出范围的在途工作先安全结算并记录代码处置。
 - 恢复先读当前授权、scope revision、集成分支 HEAD 与 Git 状态、DAG、Ledger、活动 Dispatch、资源/Issue 声明、启动与集成意图、待处理 Delivery 和回执。状态投影不替代原始事件及代码证据；损坏或不一致时从事件和 Git 重建、核验。未知状态保持 blocked/unverifiable，不凭超时、进程列表缺席或旧聊天摘要重派。
 - 任务增量、子模块、敏感文件例外及跨 Worktree 转移按[检查点规范](checkpoints.md)，验证与独立审核绑定同一 manifest。集成记录前后树、授权文件和实际结果；回执不明先核对树与清单，再决定继续。

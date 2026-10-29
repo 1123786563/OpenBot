@@ -17,7 +17,7 @@
 | 容量 | 正整数 C，默认 4；每轮最多 C 个 audit 或单项动作 slot。授权贴标的闭环模式 C≥2，并预留后续 label 预算；漏跑宽限 120 分钟，宽限外跳过 |
 | 并发 | P=`max_parallel_tasks`，默认 2、范围 1–4；按实际 Worker/Worktree/测试资源降额。P 不授予并行实现权限，未授权的写代码阶段仍全局串行 |
 
-创建或启用自动化前，先定位并验证协调基础设施：从主机统一配置或 [共享协调状态](coordination-state.md)的默认位置解析实际 `coordination_root` 绝对路径，读取其 `config.json`，核对唯一事务适配器的绝对入口、版本、内容哈希、schema 兼容范围及 [协调格式](coordination-format.md)规定样例的验收回执；再用试运行事务验证声明取得、幂等重放、崩溃恢复和公平性重放。自动化回执必须保存上述路径、适配器身份和验收证据入口。默认文件不存在时继续查找已核实的统一覆盖配置；没有可定位配置、适配器或有效验收时不得创建/启用定时任务，只能保留只读审计能力并报告 `capability_blocked`，不得用私有 Ledger 替代。
+创建/启用前按[共享协调入口](coordination-state.md)定位统一config、适配器/Schema兼容身份及验收回执；再试运行声明取得、幂等、崩溃恢复和公平重放。自动化回执保存路径、工具身份和验收入口。缺配置/能力则`capability_blocked`，仅保留只读审计，不创建/启用任务或私造Ledger。
 
 首次启用前还须在人工触发的试运行中走完一票，核对读取、隔离、证据、修复与恢复路径；实际启用状态以 Orca 回执为准。每轮启动时复查上述基础设施，并将回执中的 C 与共享 daily record 的 capacity 原子核对，并按 [协调格式](coordination-format.md)冻结含 P、动作预留及预算的 daily_run_manifest，二者不一致先修正配置并结算，不得按两个容量分别执行。错过触发时只补一次，过期跳过并记录；不要并发补跑多次。本机调度要求运行主机可用；每次检查 Orca `automations runs` 回执，不能把“已触发”当作“已审核”。
 
@@ -33,9 +33,9 @@
 2. **选择**：分别读取 N 新审集合与 R 标签对账集合，按下述 recovery/new/revalidate 三类别公平调度；首次遇到的非 completed 票也入 new，先核实关闭决定。有效 `not_required` 或人审终态默认不占新验收入额，只有遗留动作时进入 recovery；实现缺陷型拒绝已有修复授权时，先按 [已关闭 Issue 验证](closed-issue-audit.md)的 state_changed 契约进入新 attempt，再按既有类别及公平次序调度，不要求虚构需求变更。每个 slot 只选择一票的一项工作：`audit`（单票、子票或父聚合实际验收）或 `label / close / delivery` 中一个具名动作；同票多个动作须分别选择并结算，不能捆绑在一个 slot。`slot_selected` 回执和事件须记录 `slot_kind` 及动作身份，同一 slot 的 started/settled 沿用该身份。每轮最多 C 个不同 slot；接纳 audit 前按 [协调格式](coordination-format.md)原子预留后续 label 预算，动作真正就绪后仍另选 slot 并遵守类别轮转，不能将预留当成已经贴标。父票子树的只读摄取不等于逐子票行为验收已完成，已有标签也不是跳过对账的依据。
 3. **审计**：按 [Orca Agent 选择](orchestration-agents.md)另启逐票审核 Agent，使用批次/父级 epoch 冻结的目标完整 SHA、子模块和环境，逐条核对 Issue 验收、实际装配链、适用测试与独立代码质量审查。报告每条 `verified / failed / blocked / unproven / not_applicable`、证据、finding 严重度和归属；有效取消按审计规则直接结算 `not_required`。审计 Agent 只读业务代码和测试源文件；不能以旧测试报告或 `closed` 状态宣称通过。
 4. **缺陷分流**：主控核实 finding 的复现、验收影响及是否仍存在于冻结 SHA。误报记录反证；环境阻塞保存复跑命令；有效且在本票范围内的缺陷进入修复。跨票或需要改批准 Spec/ADR 的问题先明确边界和依赖，不在本票中顺手扩大范围。
-5. **修复闭环**：在隔离执行工作区保存 Issue 快照、最小修复 DAG、`writing-plans` 方案及检查点；按 [Orca Agent 选择](orchestration-agents.md)把有效问题交给与审核者不同的修复 Agent，跑针对性 RED→GREEN 与受影响验证，再由新的独立复审 Agent 检查 Spec compliance 和 code quality，最后对完整修复范围完成终审与 OCR。每次新修复波次启动前，按 [协调格式](coordination-format.md)冻结全部 Task/finding、授权及基线，以事务将跨 Run 的 repair_rounds_total 精确加一；波内不同 Task 的首次写入 Dispatch 共用该波次，同 Task 重试/整改或新增成员须新开一波。失败或跨日不扣减，恢复同波未尝试成员不重复计数；实际 Dispatch、前置检查点和结算均逐项关联。有效 finding 返回修复与复审；连续两轮同一问题无进展按 [Review/OCR](review.md)诊断升级。主控不以自己写完代码代替独立审核。
+5. **修复闭环**：隔离工作区保存需求、最小修复DAG、writing-plans方案和完整检查点；按[Agent选择](orchestration-agents.md)派与审核者不同的修复者，针对性RED→GREEN/受影响验证后由新独立会话复审Spec/质量，再完成终审/OCR。修复波次的冻结成员/授权/基线、原子计次、每Task每波一次写入、跨日/失败不退款、同Task再试/新增成员另开波及Dispatch结算，统一执行[协调格式的修复波次合同](coordination-format.md)。无进展及升级按[Review](review.md)，主控自测不代独立审核。
 6. **交付门禁**：修复后的结论绑定实际修复检查点。仅在代码按现有授权进入目标 `main`、重新冻结新的 SHA、相关验收、完整独立终审、完整 OCR 及 Required Checks/标准 CI 在该 SHA 通过后，才按 [已关闭 Issue 验证](closed-issue-audit.md)添加或保留 `agent:ready-for-review`。没有提交、推送、合并或 GitHub 写入授权时保留可恢复 Worktree 与完整未提交检查点，状态记 `repair_prepared` 或 `integration_pending`；不声称当前 `main` 已修复。生产部署、数据迁移与外部发布另按各自授权执行。
-7. **预算与结算**：C 只限制 slot 数，自动化回执还须给出 `max_run_minutes` 和 `max_run_repair_rounds` 两个正整数预算（默认 120 分钟、5 轮）。max_run_repair_rounds 计本 Run 打开的波次数，不按 Task/Dispatch 数相加，恢复既有波次仍受时间/P/资源约束。每票新波次不得超过其全局剩余额度；同一原审计票的 repair_rounds_total 全局最多 5 波，与 [Review/OCR](review.md) 的单 Task 五轮上限同时适用；创建新 Run、新修复 Issue、拆 Task 或改 finding ID 均不重置。达到 Run 波次上限只禁止继续打开新波，已打开波次的冻结未尝试成员可在剩余时间、P、授权及资源范围内执行；时间耗尽则停止新派发，在当前检查点安全结算并按 recovery 恢复，不能把已用完的开波预算当作未开始波内执行的停止条件；允许已打开的第 5 波完成其冻结的未尝试成员；该波结束仍未解决、已无合法剩余尝试或历史累计大于 5 时记 blocked（reason=repair_round_limit），不再打开新波，只能按有权批准的新需求/根因决定另立范围，其他对账动作不受此限制。不得因尚有剩余时间或 slot 隐瞒未解决问题。保存候选清单、目标 SHA、逐票报告、命令与用例数、资源清理、Review/OCR、标签回执、全局/本轮修复轮次、未解决问题和下一次恢复入口。按 [协调格式](coordination-format.md)为每个已选 slot 追加标准 settled 事件；释放本轮独占锁前确认 Ledger 已落盘。受控资源只清理本轮创建且归属已核对的部分。
+7. **预算与结算**：C限制slot，回执另给正整数`max_run_minutes`/`max_run_repair_rounds`，默认120分钟/5波；原审计票跨Run最多5波，另受[Review](review.md)的单Task5轮约束，换Run/修复票/Task/finding不重置。开波和第5波剩余成员规则按[协调格式](coordination-format.md)：Run开波预算耗尽只禁止新波，已开波冻结未尝试成员仍可在剩余时间/P/授权/资源内执行；时间耗尽停止新派发并安全结算恢复。第5波结束仍未解、无合法尝试或历史累计大于5时`blocked(reason=repair_round_limit)`，不得开第6波，需有权新需求/根因决定另立范围；其他对账不受此限制。完整保存候选/目标/逐票证据、验证及清理、Review/OCR、动作回执、全局/本轮计数、未解问题和恢复入口；每slot追加标准settled，确认Ledger落盘再释放独占锁，只清本轮创建且已核归属的资源，不隐瞒剩余问题。
 
 ## 发现后的 Issue 与 PR
 
@@ -46,18 +46,9 @@
 
 ## 状态与完成条件
 
-单票分别持久化验证、交付、标签、关闭和人审字段，禁止用动作状态冒充验证结论：
+验证、交付、label/close/delivery动作及人审分别持久化，动作状态不代验证结论。字段/枚举以[Schema的issue定义](coordination-schema.json#/$defs/issue)为准，证据引用、独立动作等待/意图/回执、状态迁移及失效以[协调格式](coordination-format.md)为准；写入及纠正执行[交付门禁](delivery-gates.md)，人审终态/授权修复和取消执行[已关闭Issue验证](closed-issue-audit.md)。这些合同全部适用，不在此复制字段清单。
 
-| 字段 | 枚举及边界 |
-| --- | --- |
-| validation_state | queued / auditing / finding_confirmed / repairing / revalidating / verified / not_required / blocked / failed / unproven / intake_incomplete / aggregate_pending |
-| delivery_state | none / repair_prepared（修复检查点已固定但尚未完成本地验证/审查）/ integration_pending（本地验证审查通过，等待进入约定目标或目标验收）/ delivered（已有目标交付回执；不单独表示当前 verified） |
-| delivery_action | none / delivery_pending / applied_valid（只表示意图树已进入目标）/ stale / delivery_correction_pending / corrected |
-| label_action | none / label_pending / applied_valid / stale / label_correction_pending / corrected |
-| close_action | none / close_pending / applied_valid / stale / close_correction_pending / corrected |
-| human_review_state | none / pending / approved / rejected；approved/rejected 必须有当前需求、目标及决定范围的人审证据 |
-
-另存 `decision`、`human_review`、跨 Run 的 `repair_rounds_total`、delivery/label/close 各自 intent 和当前回执。`next_action` 只表示验证下一阶段；每个动作分别保存 `<action>_action_reason`、`<action>_next_action`、`<action>_wait_reason`、`<action>_input_fingerprint`、`<action>_resume_condition` 和 `<action>_retry_after`，不得用单票共用原因、验证等待或共享指纹代替另一动作的恢复记录。标签动作 pending 可在 validation_state=verified、delivery_state=delivered 时存在；不将其算作贴标完成。写后失配按 [交付门禁](delivery-gates.md)和 [协调格式](coordination-format.md)先记 stale；除仅由有效取消或人审终态引起的标签纠正外，使当前 verified 失效，后续 correction_pending 不得复活旧结论。`not_required` 须有有效取消决定且不允许贴标/关闭放行；有效人审终态默认退出新验收入队，只保留必要的遗留动作 recovery；有授权的缺陷型拒绝按已关闭 Issue 验证的显式恢复契约执行，旧决定及当前状态的前后值留在不可变历史，不重置修复预算。每次报告各字段、动作级未完成原因、下一步和恢复入口。
+报告分列当前状态、每个动作的未完成原因/下一步/等待/恢复入口；保留decision/human_review、修复累计及前后不可变历史。`verified + delivered + label_pending`仍是贴标未完成；stale/纠正不复活旧verified。取消和有效人审终态不重新贴标，只有具名遗留动作恢复；授权缺陷修复需新attempt和新已验检查点，不重置公平/修复预算。
 
 父票容量按“实际验收名额”计算：每个子票验收和父票独有/聚合验收各占一个 `audit` 名额，同一 C 限流；只读摄取不占行为验收名额；主控分页读取和关系核验属于选票前准备，不由此取得业务写权限。摄取改变持久需求/状态投影时用 scope_changed/state_changed、result=recorded 的无 slot 事件留证；选中后的实际验收及动作仍走 slot/Dispatch 契约。首次选择父级树时持久保存不可变 epoch manifest（epoch_id、完整 contains/需求指纹、目标仓库/ref/SHA/子模块、policy revision/manifest 引用、子票队列；精确字段以 [协调 schema](coordination-schema.json#/$defs/audit_epoch_manifest)为准），跨日均验该冻结目标，不在每次父聚合时改成最新 main。父票记 aggregate_pending，子票缺口可逐名额补齐；父聚合名额只核验该 epoch 已有同 SHA 的 verified 子证据、覆盖当前子票及父级对应要求的 not_required 决定，以及父级仍适用的独有/组合行为，发现需补跑子票则另排名额，不能藏在父票名额内。需求变化使受影响 epoch 证据失效，保存旧快照后修订队列；不覆盖旧结论。
 
@@ -78,5 +69,5 @@
 ## 自动化任务提示词
 
 ```text
-对 GitHub 1123786563/OpenBot 执行一次带 ready-for-agent 的已关闭 Issue 每日审计与修复及全状态待人审标签对账。以本轮 Orca 回执中的 repoId、主机和实际 new-per-run 工作区为准，核对 Git 根目录；仓库登记路径仅用于定位，不返回主 checkout 写入。先读根 AGENTS.md、.agents/rules/closed-issue-daily-run.md 及引用规则，核对协调 config.json、唯一适配器入口/哈希和验收回执，再核对自动化、Run、Worktree、Git、共享协调根与跨日 Ledger；部署及启用入口以 coordination-state.md 为准，基础设施无效则记 capability_blocked，不启动写入，也不因规则已更新而启用自动化。从自动化回执和共享 daily record 核对同一正整数容量 C（默认 4）、P（默认 2、范围 1–4）及时间/修复波次预算，冻结 daily_run_manifest 和批次 source_issues；已授权贴标时 C≥2 且预留 label 预算，未授权并行实现时写代码阶段全局串行，每轮最多选择 C 个不同 audit 或单项 label/close/delivery 动作 slot，同票动作不捆绑；按 recovery/new/revalidate、last_slot ?? enqueue_sequence 的公平轮转及统一唤醒算法，在选票事务中推进游标并预留预算；排除在途同票，结算可乱序且不再推进游标。审计 origin/main 的冻结 SHA，逐条实跑验收并保存证据；有效取消记 not_required，有效人审终态不直接重新贴标；有修复授权的实现缺陷型拒绝按 closed-issue-audit.md 以 state_changed 建立新 attempt，保留旧拒绝和原需求指纹，验证通过的新检查点才重新送审，不重置累计修复次数。父票按冻结 epoch 跨日验同一 SHA，历史 epoch 通过不等于当前放行；目标前移先做影响分析和证据承接，只补受影响验收，当前目标仍完成完整终审/OCR/CI；需要稳定窗口时按批准、容量和连续 Run 流程取得，不反复从头重验。以一个 daily batch Run 和唯一协调者管理多票，Task 逐项绑定原票/finding/授权；有效问题用 writing-plans、Orca 监督式派发、独立 Review 和 OCR 在隔离工作区按冻结修复波次闭环，波次打开只计一次、同 Task 再尝试须下一波，旧预算保守迁移不减小，不再启动第二套 SDD 派发器。仅在代码进入目标 main 且目标检查点重验通过，并有标签写入授权时添加 agent:ready-for-review；失效标签按授权纠正，无授权记 label_correction_pending。按 delivery-gates.md 保存写入意图并在写后完整 rescan，失配先记 stale，除有效取消/人审终态纠正外使旧 verified 失效，再按现有授权纠正；保存回执，未授权提交/推送/合并/发布保持待处理。报告本轮 Issue、结论、人审状态、证据、修复位置、各动作等待条件及恢复入口。
+对GitHub 1123786563/OpenBot执行一次已关闭ready-for-agent Issue审计修复，并核对全状态待人审标签及遗留动作。先读根AGENTS.md和.agents/rules/closed-issue-daily-run.md，再按触发读取其权威合同，完整执行配置/授权、摄取、隔离、预算/公平、监督派发、独立验收/审核/OCR、目标交付与写后对账、保全及恢复要求。以本轮Orca回执确认repoId/主机/new-per-run工作区、origin/main和实际参数，不返回主checkout实施。缺能力/授权的阶段保留可恢复待处理状态；部署、启用、提交、推送、合并、发布及GitHub写入分别遵守当前授权。输出本轮确切范围、逐票结论、人审状态、各动作状态、证据、未解问题与恢复入口。
 ```
