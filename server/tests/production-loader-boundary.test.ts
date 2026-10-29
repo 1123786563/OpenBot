@@ -3,9 +3,6 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-
-const nodeRequire = createRequire(import.meta.url);
 
 const serverRoot = fileURLToPath(new URL("..", import.meta.url));
 

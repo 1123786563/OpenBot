@@ -404,9 +404,10 @@ describe("MOD03 runtime assembly (source pins)", () => {
   test("the registration segment holds every resource in TODAY's frozen shutdown order", () => {
     const heldNames: string[] = [];
     const holdPattern = /lifecycle\.hold\(\{\s*name: "([a-zA-Z]+)"/g;
-    let match: RegExpExecArray | null;
-    while ((match = holdPattern.exec(RUNTIME_SOURCE)) !== null) {
+    let match: RegExpExecArray | null = holdPattern.exec(RUNTIME_SOURCE);
+    while (match !== null) {
       heldNames.push(match[1]);
+      match = holdPattern.exec(RUNTIME_SOURCE);
     }
     // The loops (deliverySweeps, billingSweepStops) hold one statement each;
     // their expansion semantics are pinned by the unit layer above.

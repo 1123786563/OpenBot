@@ -148,7 +148,7 @@ export function ConnectAppCard({
       void queryClient.invalidateQueries({ queryKey: pluginKeys.all });
     }
     was.current = connected;
-  }, [connected, resetOutcome]);
+  }, [connected, resetOutcome, queryClient]);
 
   useEffect(() => {
     if (!waiting) return;

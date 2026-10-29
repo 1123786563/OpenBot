@@ -8,8 +8,6 @@ import {
   createCraftManagedContentResolver,
   type CraftManagedContentSources,
 } from "../src/craft/managed-content";
-import type { CraftConfig } from "../src/craft/config";
-import { loadCraftConfig } from "../src/craft/config";
 import type { CraftSessionRow } from "../src/craft/store";
 
 const CONNECTOR_SKILLS = [
@@ -52,8 +50,6 @@ function sources(
     ...overrides,
   };
 }
-
-const baseConfig: CraftConfig = loadCraftConfig({});
 
 // ── the fileset ─────────────────────────────────────────────────────────────
 

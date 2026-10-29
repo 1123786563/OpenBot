@@ -51,6 +51,7 @@ function CraftTasksPage() {
   const { t } = useTranslation("craft");
   const { new: isCreating, edit: editingId } = Route.useSearch();
   const navigate = Route.useNavigate();
+  const finish = () => navigate({ search: {} });
   // Creating wins if both are somehow set — the roster's rule, re-used verbatim.
   const showCreate = isCreating === true;
   const showEdit = !showCreate && editingId !== undefined;

@@ -254,7 +254,14 @@
         "status": "状态",
         "fulfillment": "履约",
         "paidAt": "支付时间"
+      },
+      "payer": {
+        "company": "公司付款",
+        "personal": "个人付款"
       }
+    },
+    "account": {
+      "quarantined": "该账户已被隔离：{{reason}}"
     }
   },
   "shell": {

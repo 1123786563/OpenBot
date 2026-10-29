@@ -11,11 +11,9 @@
  * single schedule that failed to fire is a row with a note, and the schedule's advanced
  * nextRunAt keeps the recurrence alive for the next sweep.
  */
-import { loadConfig } from "../src/config";
 import { createDatabase } from "../src/db/client";
 import { sweepWorkshopSchedules } from "../src/workshop/schedule-executor";
 
-const config = loadConfig(process.env);
 const database = createDatabase(process.env.DATABASE_URL ?? "");
 
 // The enqueue a firing hands the turn to: the turn row, reached through the store the server

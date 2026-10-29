@@ -243,7 +243,9 @@ export class PlanModel implements PlanLanguageModel {
     const content: GenerateResult["content"] = [];
     const texts = new Map<string, { type: "text"; text: string }>();
     let finish: Extract<Part, { type: "finish" }> | undefined;
-    for await (const part of stream) {
+    // Node's ReadableStream is async-iterable at runtime; the DOM lib types this
+    // build compiles against do not declare it, so the loop sees the async view.
+    for await (const part of stream as unknown as AsyncIterable<Part>) {
       if (part.type === "text-start") {
         const text = { type: "text" as const, text: "" };
         texts.set(part.id, text);

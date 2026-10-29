@@ -596,9 +596,9 @@ test("renewal_extends_run_and_attempt_main_leases", async () => {
   // The renewal must extend the run's main lease, not only the request claim.
   expect(runUpdate).toBeDefined();
   expect(runUpdate?.values.leaseExpiresAt).toBeInstanceOf(Date);
-  expect((runUpdate?.values.leaseExpiresAt as Date).getTime()).toBeGreaterThan(
-    now + 20_000,
-  );
+  expect(
+    (runUpdate?.values.leaseExpiresAt as Date | undefined)?.getTime(),
+  ).toBeGreaterThan(now + 20_000);
   // The active attempt's main lease rides the same extension.
   const attemptUpdate = attemptUpdateOf(state).at(-1);
   expect(attemptUpdate?.values.leaseExpiresAt).toBe(
@@ -626,7 +626,7 @@ test("renewal_extends_run_lease_capped_by_maximum_run_duration", async () => {
   ) as Extract<FakeStatement, { kind: "update" }> | undefined;
   expect(runUpdate?.values.leaseExpiresAt).toBeInstanceOf(Date);
   expect(
-    (runUpdate?.values.leaseExpiresAt as Date).getTime(),
+    (runUpdate?.values.leaseExpiresAt as Date | undefined)?.getTime(),
   ).toBeLessThanOrEqual(now + 15 * 60_000);
   expect(renewed.expiresAt.getTime()).toBeLessThanOrEqual(now + 15 * 60_000);
 });

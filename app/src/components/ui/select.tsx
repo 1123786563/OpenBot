@@ -796,6 +796,7 @@ function SelectScrollButton({
     stop();
     timer.current = setInterval(scroll, 60);
   };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: unmount-only cleanup — `stop` clears the live `timer` ref, so the mount-time closure stays correct; re-running the effect on every render would tear the scroll interval down.
   React.useEffect(() => stop, []);
 
   if (!visible) return null;

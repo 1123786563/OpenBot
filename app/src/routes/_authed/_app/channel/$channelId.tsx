@@ -36,9 +36,6 @@ const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 const HEADING_ENTRANCE_SECONDS = 0.18;
 const HEADING_ENTRANCE_OFFSET = "translateY(4px)";
 
-/** Shared detail pane width for the live screen view. */
-const SCREEN_PANEL_WIDTH = 400;
-
 /** The workshop pane is wider: it carries the turn's stream beside the file tree. */
 const WORKSHOP_PANEL_WIDTH = 480;
 

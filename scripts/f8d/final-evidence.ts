@@ -461,12 +461,6 @@ async function f8abc(a: Args): Promise<void> {
   // ---- F8C: builtin business tool call id in governance steps -----------------
   const builtRun = load("builtin-run.json");
   if (builtRun) {
-    const list = await api.getRaw(
-      `/api/ai-observability/bots/${builtRun.agentId}/runs`,
-    );
-    const rows =
-      (list.body as { runs?: Array<{ runId?: string; id?: string }> } | null)
-        ?.runs ?? [];
     const stepFindings: Array<Record<string, unknown>> = [];
     for (const loop of builtRun.loops) {
       // The tool proposal lands in the thread's FIRST run (runIds[0]); the
@@ -1017,7 +1011,7 @@ async function a11Export(a: Args): Promise<void> {
       (job.artifact as unknown[]).length > 0
         ? "PASS"
         : "GAP",
-    detail: `job ${submitted.jobId.slice(0, 8)}… state=${job?.state}, rowCount=${job?.rowCount}, artifact rows=${Array.isArray(job?.artifact) ? (job?.artifact as unknown[]).length : 0}, runs visible before export=${rowsBefore}`,
+    detail: `job ${submitted.jobId.slice(0, 8)}… state=${job?.state}, rowCount=${job?.rowCount}, artifact rows=${Array.isArray(job?.artifact) ? ((job?.artifact as unknown[] | undefined)?.length ?? 0) : 0}, runs visible before export=${rowsBefore}`,
   });
   facts.completedJob = job;
 

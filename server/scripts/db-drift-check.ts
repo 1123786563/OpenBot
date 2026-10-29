@@ -31,15 +31,18 @@ for (const f of fs
     // drizzle-orm runtime internals (not public API): the Columns/Name symbols
     // are how a pgTable carries its SQL name and column map at runtime. Pinned
     // by bun.lock; re-check both symbols if drizzle-orm is ever upgraded.
-    const cols = (v as any)?.[Symbol.for("drizzle:Columns")];
-    const name = (v as any)?.[Symbol.for("drizzle:Name")];
+    const table = v as Record<symbol, unknown> | undefined;
+    const cols = table?.[Symbol.for("drizzle:Columns")] as
+      | Record<string, { name: string }>
+      | undefined;
+    const name = table?.[Symbol.for("drizzle:Name")];
     if (typeof name === "string" && cols) {
       if (declared.has(name)) {
         throw new Error(
           `duplicate declared table "${name}" in ${f}; a copied schema file must not silently shadow the earlier one`,
         );
       }
-      declared.set(name, new Set(Object.values(cols).map((c: any) => c.name)));
+      declared.set(name, new Set(Object.values(cols).map((c) => c.name)));
     }
   }
 }

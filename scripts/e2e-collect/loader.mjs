@@ -2,8 +2,6 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const here = dirname(fileURLToPath(import.meta.url));
-
 /**
  * Collector-only stand-ins for the runner module, so a whole repository's suites can be imported
  * in one process to find out which files fail to load, without paying a runner start-up per pass.
@@ -53,7 +51,10 @@ function register(kind) {
 const testFn = register("test");
 Object.assign(testFn, {
   skip: Object.assign(register("skip"), {
-    each: (table) => () => table.forEach(() => register("skip")),
+    each: (table) => () =>
+      table.forEach(() => {
+        register("skip");
+      }),
   }),
   only: register("only"),
   todo: noop,

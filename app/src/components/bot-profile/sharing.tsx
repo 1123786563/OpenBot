@@ -7,7 +7,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
-import { Fragment, useId, useState } from "react";
+import { Fragment, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
@@ -283,6 +283,7 @@ function PublishDialog({
   const queryClient = useQueryClient();
   const scope = useScopedCache();
   const formId = useId();
+  const audienceTrigger = useRef<HTMLButtonElement>(null);
   const audiences = Object.fromEntries(
     offered.map((value) => [
       value,

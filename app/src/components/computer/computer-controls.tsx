@@ -58,7 +58,6 @@ export function ComputerChatControls({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { t } = useTranslation("computer");
   const { control } = useComputerControl(computerId ?? "", Boolean(computerId));
   const needsYou = Boolean(
     control &&

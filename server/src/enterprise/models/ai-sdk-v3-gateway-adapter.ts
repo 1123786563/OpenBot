@@ -19,9 +19,9 @@ type CallOptions = Parameters<LanguageModelV3["doGenerate"]>[0];
 
 const object = (value: unknown): value is Record<string, any> =>
   !!value && typeof value === "object" && !Array.isArray(value);
-const fail = (): never => {
+function fail(): never {
   throw new Error("UNSUPPORTED_OR_INVALID_MODEL_GATEWAY_RESPONSE");
-};
+}
 const validGatewayName = (value: unknown): value is string =>
   typeof value === "string" &&
   value.length > 0 &&
@@ -425,6 +425,7 @@ export function createAiSdkV3GatewayAdapter(
       // A 2xx with no body is protocol damage, not an HTTP error: never
       // surface it as MODEL_GATEWAY_HTTP_200 (OCR R10).
       if (!response.body) fail();
+      // biome-ignore lint/style/noNonNullAssertion: guarded by the never-returning fail() above
       const reader = response.body!.getReader();
       const decoder = new TextDecoder("utf-8", { fatal: true });
       let buffer = "";

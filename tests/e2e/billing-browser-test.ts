@@ -39,9 +39,10 @@ function log(line: string) {
 }
 
 class SkipSignal extends Error {}
-async function step(name: string, fn: () => Promise<string | void>) {
+async function step<T>(name: string, fn: () => Promise<T>) {
   try {
-    const detail = (await fn()) || "";
+    const result = await fn();
+    const detail = typeof result === "string" ? result : "";
     results.push({ name, ok: true, detail, kind: "pass" });
     log(`✅ PASS  ${name}${detail ? ` — ${detail}` : ""}`);
   } catch (error) {
@@ -196,7 +197,7 @@ async function api(
 async function withAborted(
   page: Page,
   pattern: string,
-  fn: () => Promise<string | void>,
+  fn: () => Promise<unknown>,
 ) {
   await page.route(pattern, (route) => route.abort("failed"));
   try {
@@ -683,7 +684,6 @@ async function main() {
         payBtn.click(),
       ]);
       if (!resp) return skip("未发出第二次购单请求（按钮可能被禁用）");
-      const body = (await resp.json().catch(() => ({}))) as { error?: string };
       await page.waitForTimeout(800);
       const payError = await dialog
         .locator("[role='alert']")

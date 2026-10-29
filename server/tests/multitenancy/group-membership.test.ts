@@ -88,8 +88,14 @@ const NEXT = (() => {
   let groupN = 0;
   let botN = 0;
   return {
-    groupId: () => `mt023-group-${String((groupN += 1)).padStart(3, "0")}`,
-    agentId: () => `mt023-agent-${String((botN += 1)).padStart(3, "0")}`,
+    groupId: () => {
+      groupN += 1;
+      return `mt023-group-${String(groupN).padStart(3, "0")}`;
+    },
+    agentId: () => {
+      botN += 1;
+      return `mt023-agent-${String(botN).padStart(3, "0")}`;
+    },
   };
 })();
 

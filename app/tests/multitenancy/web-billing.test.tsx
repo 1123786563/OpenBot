@@ -65,7 +65,31 @@ const GLOBEX: ScopeSelection = {
   workspaceId: "globex-ops",
 };
 
-const OWN_INVOICES_PAGE = {
+const OWN_INVOICES_PAGE: {
+  invoices: Array<
+    {
+      invoiceId: string;
+      planCode: string;
+      periodStart: string;
+      periodEnd: string;
+      amountCents: number;
+      currency: string;
+      status: string;
+      method: string;
+      issuedAt: string;
+      settledAt: string;
+      channelTransactionId: null;
+    } & {
+      anomalies?: readonly import("@/lib/billing/invoices").BillingPaymentAnomaly[];
+    }
+  >;
+  pagination: {
+    totalCount: number;
+    totalPages: number;
+    currentPage: number;
+    nextPage: number | null;
+  };
+} = {
   invoices: [
     {
       invoiceId: "po_acme_1",
@@ -142,8 +166,6 @@ beforeAll(() => {
 });
 afterAll(() => GlobalRegistrator.unregister());
 afterEach(cleanup);
-
-const originalFetch = global.fetch;
 
 type Asked = { input: string; init: RequestInit | undefined };
 

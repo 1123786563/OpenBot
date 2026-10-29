@@ -24,6 +24,7 @@ function sqlState(error: unknown): string | undefined {
  */
 export function logLinkAuditFailure(provider: string, error: unknown): void {
   const code = sqlState(error);
+  // biome-ignore lint/suspicious/noConsole: stable-code operational log
   console.error(
     JSON.stringify({
       type: "identity-link-audit-failed",

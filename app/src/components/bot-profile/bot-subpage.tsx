@@ -59,6 +59,7 @@ export function BotSubpage({
   const agent = useQuery(
     scopedAgentDetailQueryOptions(queryClient, scope, agentId),
   );
+  const agentData = agent.data;
   return (
     <PageShell
       backButton={{

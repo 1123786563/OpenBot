@@ -274,10 +274,21 @@ function parseImportSpecifiers(code: string): string[] {
   // 动态 import("...")
   const dynRe = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
 
-  let m: RegExpExecArray | null;
-  while ((m = fromRe.exec(clean)) !== null) specs.add(m[1]);
-  while ((m = sideRe.exec(clean)) !== null) specs.add(m[1]);
-  while ((m = dynRe.exec(clean)) !== null) specs.add(m[1]);
+  let m: RegExpExecArray | null = fromRe.exec(clean);
+  while (m !== null) {
+    specs.add(m[1]);
+    m = fromRe.exec(clean);
+  }
+  m = sideRe.exec(clean);
+  while (m !== null) {
+    specs.add(m[1]);
+    m = sideRe.exec(clean);
+  }
+  m = dynRe.exec(clean);
+  while (m !== null) {
+    specs.add(m[1]);
+    m = dynRe.exec(clean);
+  }
   return [...specs];
 }
 
@@ -556,14 +567,19 @@ export function runCheck(
   // 环判定：业务 Module 图内，边 u→v 属于环 ⟺ v 可达 u。
   const adj = new Map<string, Set<string>>();
   for (const { from, to } of moduleEdges.values()) {
-    if (!adj.has(from)) adj.set(from, new Set());
-    adj.get(from)!.add(to);
+    let targets = adj.get(from);
+    if (!targets) {
+      targets = new Set();
+      adj.set(from, targets);
+    }
+    targets.add(to);
   }
   const reaches = (start: string, goal: string): boolean => {
     const seen = new Set<string>();
     const stack = [start];
     while (stack.length) {
-      const cur = stack.pop()!;
+      const cur = stack.pop();
+      if (cur === undefined) break;
       if (cur === goal) return true;
       if (seen.has(cur)) continue;
       seen.add(cur);
@@ -643,7 +659,6 @@ export function runCheck(
   const visitedModules = new Set<string>();
   for (const mod of byModule.keys()) {
     if (visitedModules.has(mod)) continue;
-    const stack = [mod];
     const inStack = new Set<string>();
     const path: string[] = [];
     const found: string[][] = [];

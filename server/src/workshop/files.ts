@@ -134,21 +134,21 @@ export async function listTree(
       let directory = directories.get(parentPath);
       if (!directory) {
         directory = {
-          name: segments[depth]!,
+          name: segments[depth],
           path: parentPath,
           type: "directory",
           size: 0,
           children: [],
         };
         directories.set(parentPath, directory);
-        if (parent) parent.children!.push(directory);
+        if (parent) parent.children?.push(directory);
         else nodes.push(directory);
       }
       parent = directory;
     }
     if (parent) {
-      parent.children!.push({
-        name: segments.at(-1)!,
+      parent.children?.push({
+        name: segments[segments.length - 1],
         path: file,
         type: "file",
         size: 0,
@@ -203,10 +203,10 @@ export async function upload(
 
   const sizes = files.map((file) => Buffer.byteLength(file.content, "utf8"));
   for (let index = 0; index < files.length; index += 1) {
-    if (sizes[index]! > MAX_UPLOAD_BYTES) {
+    if (sizes[index] > MAX_UPLOAD_BYTES) {
       await refuse(
-        `The file ${files[index]!.name} exceeds the ${MAX_UPLOAD_BYTES}-byte per-file limit.`,
-        { file: files[index]!.name, size: sizes[index] },
+        `The file ${files[index].name} exceeds the ${MAX_UPLOAD_BYTES}-byte per-file limit.`,
+        { file: files[index].name, size: sizes[index] },
       );
     }
   }
@@ -218,12 +218,11 @@ export async function upload(
     );
   }
 
-  const client = options.clientFor(session.botId);
-  if (!client) {
-    await refuse("Code execution is not configured on this deployment.", {
+  const client =
+    options.clientFor(session.botId) ??
+    (await refuse("Code execution is not configured on this deployment.", {
       configured: false,
-    });
-  }
+    }));
 
   const uploaded: Array<{ path: string; size: number }> = [];
   // Two files whose names flatten to the same string would silently overwrite one another,
@@ -234,7 +233,7 @@ export async function upload(
     for (let index = 0; index < files.length; index += 1) {
       // A name from the wire never becomes a path: separators are flattened so one file cannot
       // climb out of the workspace with ../ or plant into another Bot's tree with a slash.
-      const raw = files[index]!.name;
+      const raw = files[index].name;
       const name = raw.replace(/[/\\]/g, "_").trim();
       if (!name || name === "." || name === ".." || seen.has(name)) {
         await refuse(
@@ -245,7 +244,7 @@ export async function upload(
         );
       }
       seen.add(name);
-      const written = await client!.writeFile(name, files[index]!.content);
+      const written = await client.writeFile(name, files[index].content);
       uploaded.push(written);
     }
   } catch (error) {

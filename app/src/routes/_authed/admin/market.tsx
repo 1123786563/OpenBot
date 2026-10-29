@@ -32,6 +32,7 @@ import {
 import { WbCardSkeleton, WbSecondaryButton } from "@/components/market/wb";
 import { scopedAgentListQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { usePackageScope } from "@/lib/plugin-packages/use-package-scope";
 import {
   installExpertMutationOptions,
   installMarketSkillMutationOptions,

@@ -96,8 +96,10 @@ describeDb("MT033 / Issue #76 — 技能与组件发布作用域", () => {
   const NEXT = (() => {
     let n = 0;
     return {
-      name: (kind: string) =>
-        `mt033-${kind}-${String((n += 1)).padStart(3, "0")}`,
+      name: (kind: string) => {
+        n += 1;
+        return `mt033-${kind}-${String(n).padStart(3, "0")}`;
+      },
     };
   })();
 

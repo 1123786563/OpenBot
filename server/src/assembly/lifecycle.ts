@@ -36,7 +36,7 @@ export interface HeldResource {
   /** Diagnostic identity: the name the stop-order pin and shutdown logs use. */
   name: string;
   /** Stops the resource. Return a promise only when the caller should wait on it. */
-  stop: () => void | Promise<unknown>;
+  stop: (() => void) | (() => Promise<unknown>);
   /**
    * Independent try/catch around this stop (the billing sweeps' per-stop
    * isolation): a throw is swallowed so the remaining stops still run.

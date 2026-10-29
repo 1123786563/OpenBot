@@ -659,8 +659,37 @@ function installMockHooks(): void {
       if (!url.startsWith("e2e-mock:")) {
         // A suite file re-entering the loader is the start of a fresh collection pass.
         const suite = suiteFileOf(url);
-        if (suite) forgetTitlesOf(suite);
-        return nextLoad(url, context);
+        if (suite) {
+          forgetTitlesOf(suite);
+          // ...and a realm boundary for module mocks: `mock.module` is registry
+          // level, so a suite's mocks must not reach the next suite's imports —
+          // one suite mocking "./Problem" used to replace another suite's real
+          // import of it and abort the whole run's collection. A fixture that
+          // registers mocks at its own top level must therefore be imported by
+          // each suite that needs it, not relied on across this boundary.
+          moduleMocks.clear();
+          mocks.clear();
+        }
+        // Bun mirrors `process.env` as `import.meta.env`; Node does not define it
+        // at all. A suite (or a component it renders) that reads `import.meta.env`
+        // therefore crashes under the Node runner, so a module that mentions it
+        // gets the same alias installed before its own code runs. A shebang, when
+        // present, has to stay the first line.
+        const loaded = nextLoad(url, context);
+        if (
+          typeof loaded?.source !== "string" ||
+          !loaded.source.includes("import.meta.env")
+        ) {
+          return loaded;
+        }
+        const prelude = "import.meta.env ??= process.env;";
+        const source = loaded.source.startsWith("#!")
+          ? loaded.source.replace(
+              /^#![^\n]*\n/,
+              (m: string) => `${m}${prelude}\n`,
+            )
+          : `${prelude}\n${loaded.source}`;
+        return { ...loaded, source };
       }
       const key = decodeURIComponent(url.slice("e2e-mock:".length));
       const names = Object.keys(moduleMocks.get(key)?.() ?? {});

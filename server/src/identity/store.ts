@@ -388,13 +388,15 @@ export function createIdentityStore(database: Database, credentials: Revoke) {
       for (const row of rows) {
         if (isIdentityProvider(row.provider))
           links.push(toLink(row, row.provider));
-        else
+        else {
+          // biome-ignore lint/suspicious/noConsole: stable-code operational log
           console.warn(
             JSON.stringify({
               type: "identity-link-unknown-provider",
               linkId: row.id,
             }),
           );
+        }
       }
       return links;
     },
