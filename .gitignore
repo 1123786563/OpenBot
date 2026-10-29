@@ -93,6 +93,7 @@ gui-test-screenshots/
 /updated-at.tsv
 # tester-army e2e runner output: report.json, replay cache, per-test traces
 .e2e/
+.test-db-containers.json
 # 逐文件收集审计（scripts/e2e-file-audit.mjs）的临时配置与输出
 .audit-out/
 .audit.*.config.ts

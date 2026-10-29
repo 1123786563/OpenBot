@@ -12,9 +12,12 @@
  * So this reports reachability per variable, in the order the suite reads them, and offers to own
  * the missing dependency: `--up` starts a container THIS script names, on a port nothing else has,
  * with the image CI uses (`pgvector/pgvector:pg17` — the knowledge schema needs the extension, and
- * the plain `postgres` the compose file defaults to does not carry it). `--down` removes only what
- * the `openbot-test-db-` prefix proves this script created, because concurrent sessions run their
- * own databases in this checkout and deleting one of those is not a cleanup.
+ * the plain `postgres` the compose file defaults to does not carry it). `--down` removes only
+ * containers this checkout can prove it created: the name prefix AND a
+ * `openbot.test-db.checkout` label naming this checkout AND an entry in this checkout's
+ * manifest. The prefix alone proved nothing — two closure runs deleted other checkouts'
+ * databases that way (#707) — and a container failing any check is left alone, because a
+ * cleanup that cannot prove ownership is the incident this guard exists for.
  *
  *     bun scripts/test-db.ts          # report
  *     bun scripts/test-db.ts --up     # start our own, then print the exports
@@ -22,12 +25,39 @@
  *
  * Credentials never reach the output: a URL is reduced to host, port and database name.
  */
+
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
-import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const PREFIX = "openbot-test-db-";
 const IMAGE = process.env.OPENBOT_TEST_DB_IMAGE ?? "pgvector/pgvector:pg17";
 const PORT_RANGE = [55440, 55460] as const;
+// Ownership: the creating checkout stamps its absolute path as a label and records the container
+// in a manifest next to it. Two worktrees of one clone are different owners.
+const CHECKOUT = realpathSync(dirname(fileURLToPath(import.meta.url))).replace(
+  /\/scripts$/,
+  "",
+);
+const CHECKOUT_LABEL = `openbot.test-db.checkout=${CHECKOUT}`;
+const MANIFEST = join(CHECKOUT, ".test-db-containers.json");
+
+function readManifest(): string[] {
+  if (!existsSync(MANIFEST)) return [];
+  try {
+    const parsed = JSON.parse(readFileSync(MANIFEST, "utf8"));
+    return Array.isArray(parsed)
+      ? parsed.filter((x) => typeof x === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeManifest(names: string[]): void {
+  writeFileSync(MANIFEST, `${JSON.stringify(names, null, 2)}\n`);
+}
 // The names the driven tier reads, in the order ci.yml declares them for its two services.
 const VARIABLES = [
   "TEST_DATABASE_URL",
@@ -158,6 +188,8 @@ async function up(): Promise<number> {
     "-d",
     "--name",
     name,
+    "--label",
+    CHECKOUT_LABEL,
     "--rm",
     "-p",
     `127.0.0.1:${port}:5432`,
@@ -178,6 +210,8 @@ async function up(): Promise<number> {
     );
     return 1;
   }
+  // Recorded as ours from the first moment it exists, so `--down` never needs to guess.
+  writeManifest([...new Set([...readManifest(), name])]);
   const url = `postgres://openbot:openbot@127.0.0.1:${port}/openbot_test`;
   const enterpriseUrl = `postgres://openbot:openbot@127.0.0.1:${port}/openbot_enterprise_test`;
   // Readiness is asked of the server, not of the port: a published port under OrbStack accepts
@@ -269,15 +303,51 @@ async function down(): Promise<number> {
     );
     return 0;
   }
+  const recorded = new Set(readManifest());
+  const labels = new Map(
+    names.map((name) => [
+      name,
+      spawn([
+        "docker",
+        "inspect",
+        "--format",
+        '{{ index .Config.Labels "openbot.test-db.checkout" }}',
+        name,
+      ]),
+    ]),
+  );
+  const ours: string[] = [];
   for (const name of names) {
+    const label = labels.get(name);
+    if (label?.ok && label.out === CHECKOUT && recorded.has(name)) {
+      ours.push(name);
+      continue;
+    }
+    console.log(
+      `left ${name} alone: it does not carry this checkout's label and manifest entry.`,
+    );
+  }
+  let failed = 0;
+  const removedOk: string[] = [];
+  for (const name of ours) {
     const removed = spawn(["docker", "rm", "-f", name]);
     if (!removed.ok) {
       console.error(`::error::${name} was not removed: ${removed.err}`);
+      failed += 1;
       continue;
     }
+    removedOk.push(name);
     console.log(`removed ${name}`);
   }
-  return 0;
+  // Only entries we actually removed leave the manifest; failures stay recorded for a retry,
+  // and entries whose container is already gone (a dead `--rm`) are pruned with them.
+  const survivors = new Set(names);
+  writeManifest(
+    readManifest().filter(
+      (name) => survivors.has(name) && !removedOk.includes(name),
+    ),
+  );
+  return failed === 0 ? 0 : 1;
 }
 
 process.exit(
