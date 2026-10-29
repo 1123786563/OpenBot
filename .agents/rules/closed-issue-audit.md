@@ -1,55 +1,49 @@
 # 已关闭 Issue 的 Agent 验证与待人审标签
 
-用户要求审计 `1123786563/OpenBot` 中已关闭且带 `ready-for-agent` 的 Issue，或核对、添加 `agent:ready-for-review` 标签时读取。此规则只覆盖该资格集合及下述对账对象，不宣称审计全部已关闭 Issue。此规则用于回溯验证；不把 `closed`、PR merged、历史测试通过或已有标签当作当前交付证据。`agent:ready-for-review` 的含义是“已由 Agent 验收通过，待人审”，不表示人工批准。经 Orca 派发审计或修复时，Agent 选择以 [Orca Agent 选择](orchestration-agents.md)为准。
+审计 `1123786563/OpenBot` 已关闭ready-for-agent票，或核对/添加agent:ready-for-review时读取。仅覆盖本文件N∪R，不宣称全部闭票。待人审标签表示Agent验收通过、等待人审，不表示人工批准；closed、merged、旧测试/标签均非当前交付证据。
 
 ## 1. 冻结范围和代码版本
 
-1. 分开冻结两个原始集合并逐集合分页、排除 PR：新审集合 N 为 `state=closed` 且带 `ready-for-agent` 的全部 Issue（含首次遇到的 completed、not_planned、作废和关闭原因不明票）；标签对账集合 R 为任意状态下带 `agent:ready-for-review` 的全部 Issue，加共享 Ledger 中所有未结算 label/close/delivery 意图及纠正对象（无论当前标签或状态）。R 不以 closed 或 ready-for-agent 为过滤条件，重新打开、移除资格标签的票仍可触达。保存查询起止时间、条件、页数/游标、数量、编号/URL、去重结果和完整性；搜索上限须拆分查询核对，缺页/无权/转移读取不全记 `intake_incomplete`。本轮冻结原始全集为 N∪R；批量并行审计按 [每日规则](closed-issue-daily-run.md)建立唯一批次 scope 和 C/P 调度记录，静态摄取不启动写入阶段；结束前重新对账新增、移除和状态变化，新增项登记下轮队列及发现时间，不暗中扩大本轮容量。
-2. 先对账已有 Run、报告、标签回执、人审决定、Git 和活跃工作区。已有结论只能在其需求、目标代码、环境及证据仍然一致时复用；记录每项“复用、重验、失效”的依据，不重复派发已有效完成的审计。N/R 是原始候选集合，不覆盖有效人审终态：`human_review_state=approved/rejected` 的对象只做决定有效性和遗留标签对账，不重新验收或贴标；人审决定须绑定需求指纹、目标 SHA、决定范围和 `approval_ref`。需求或交付范围变化后以 `scope_changed` 使人审终态失效并进入新结论流程；需求不变的实现缺陷型拒绝仅按第 3 节的授权修复迁移恢复。
-3. 按 [delivery-gates.md](delivery-gates.md)固定原 Issue 约定交付目标（默认 origin/main）的完整 SHA、子模块 SHA、环境和工作区基线。审计与测试使用该版本的字节一致隔离树；代码或服务已漂移时重建环境。记录共享数据库、端口、容器和测试产物的归属，按 [验证与测试资源](testing.md)隔离或串行使用。
+1. 分集合分页、排除PR并冻结：N=closed且ready-for-agent的所有票（含首次遇到的completed/not_planned/作废/关闭原因不明）；R=任意状态待人审标签票＋共享Ledger全部未结算label/close/delivery意图及纠正对象，不受当前标签/资格/状态过滤。记录查询起止/条件、页数/游标、数量/编号/URL、去重/完整性；搜索上限拆分核对，缺页/无权/转移不完整记intake_incomplete。
+2. 对账已有Run/报告/回执/人审、Git、工作区。仅需求、目标代码、环境、证据一致且有依据才复用，不重派有效完成项。有效人审approved/rejected只核决定有效性及遗留动作，不重验/贴标；决定绑定需求指纹、目标SHA、范围、approval_ref。需求/交付范围变化用scope_changed失效；原验收下的实现拒绝按第3节显式迁移。
+3. 按 [delivery-gates.md](delivery-gates.md)固定原交付契约（默认origin/main）、完整SHA/子模块、环境/基线，使用字节一致隔离树，漂移重建。测试资源按 [testing.md](testing.md)隔离/串行；批量并行按 [daily](closed-issue-daily-run.md)唯一scope及C/P接纳，摄取不授权写入。结束重查新增/移除/状态变化，新增记发现时间和下轮队列，不扩本轮容量。
 
 ## 2. 逐票摄取和验收
 
-每票按[Issue 摄取](issue-delivery.md)的只读规则读取正文、验收、评论中的已确认决定、关闭原因、正式子 Issue、依赖和相关 PR/提交；每种集合分别处理分页、去重、读取时间及完整性，递归子项也不能只取首屏。按 [设计与事实源](design.md)核对有效批准版本及 `CONTEXT.md`。区分 `contains` 与 `depends_on`，普通引用需核实关系。建立 `Issue → 每条验收 → 目标 SHA 中的实现/交付物 → 验证方法 → 证据` 映射；只读摄取不授权实施。
+每票按 [issue-delivery.md](issue-delivery.md)完整只读摄取正文/验收/已确认讨论、关闭原因、正式子项/依赖、PR/提交；按 [design.md](design.md)核批准来源及CONTEXT。建立“每条验收→目标实现/交付物→方法→证据”映射，缺口保留脱敏来源/受控原文，不以未知作无要求。
 
-- `completed` 票进入交付验收。`not_planned`、作废、撤回或转移票先按 [design.md](design.md)核实有权批准且覆盖当前需求版本的取消/无需交付决定；决定有效时将单票结论记为 `not_required`，保存决定证据和 `approval_ref`，不要求交付完成决定、不贴待人审标签，已有待人审标签进入纠正分支。没有有效决定或关闭原因不明时记 `unproven`，不得把关闭原因枚举本身当作取消批准。
-- 父 Issue 递归读取正式子项，逐项保留独立结论；每日容量及跨日 aggregate_pending 按 [每日规则](closed-issue-daily-run.md)执行；父票另验自身独有要求和组合行为。子票不因父票未通过而自动失败；混合 verified/not_required 子票按 [协调格式](coordination-format.md)逐项核对同 SHA 证据或覆盖父级对应要求的取消决定，再验父级剩余要求。全部后代均已有有效 `not_required` 决定且父级也无自身交付要求时，父票才可按同一决定链记 `not_required`。
-- 需求冲突、子项读取缺失或验收无法定义时保留经脱敏的来源证据、受控原文引用与缺口；不以未知代替“无要求”。
+- completed进入验收；not_planned/作废/撤回/转移先核有权且覆盖当前需求的取消/无需交付决定。有效则not_required并存决定/approval_ref，无须伪造交付完成决定，不贴标，旧标签纠正；否则unproven，关闭原因不等于批准。
+- 父票递归保留子票独立结论，另验父级独有/组合要求。子不随父失败；混合verified/not_required按 [协调格式](coordination-format.md)核同SHA证据或覆盖父要求的取消决定。全后代有效取消且父无自身交付要求才可按决定链not_required；每日父级/容量按daily。
 
-非 Orca 与 Orca 的逐票初审均须由与本票历史实现者及当前主控不同的独立审核者，以新会话/Brief 执行行为验收和代码审查；实际主体、会话谱系与贡献独立性按 [Agent 选择](orchestration-agents.md)核验；Agent 产品相同不自动等于同一主体，单独新开会话也不自动证明独立。历史实现身份不可核实时保留缺口，并按 [Agent 选择](orchestration-agents.md)的历史票替代独立性证明取得有权批准；不得要求恢复过去从未记录的信息。主控只核对证据并裁决，不以自审代替独立性；初审者不得接手本票修复，后续修复复审与终审按 [Agent 选择](orchestration-agents.md)同一独立性判据逐项留证；Orca 场景另核实其候选 ID/Dispatch。
+[orchestration-agents.md](orchestration-agents.md)统一规定逐票初审、修复、复审、终审的候选/主体、会话/贡献独立性及历史身份缺口替代批准，非Orca同样适用。初审须独立于主控及可核实历史实现者，新窗口不自动证明独立；主控只对账/裁决，初审者不接修复，Orca另核真实ID/Dispatch。
 
-单票按以下顺序验证：
+逐票顺序：
 
-1. 将每条验收写为可观察结果，选择正常、拒绝、边界及适用的权限、并发、持久化、回滚场景。设计或文档票核对批准的交付物与决策验收。
-2. 追溯当前 SHA 中的代码、配置、迁移和实际装配调用链，检查关闭后的变更是否撤销或改变行为。独立审查正确性、安全、兼容性和回归；跨票缺陷若使本票行为不可达，也计入本票结论。
-3. 实际运行适用的最小相关测试、类型检查、Lint、构建和真实 API/UI/服务验收。运行前读取 [验证与测试资源](testing.md) 及其指定 ADR；保存命令、退出码、实际执行/失败/跳过数、脱敏日志、受控原文引用与环境。静态阅读只支持代码判断，不能充当行为验收。
-4. 主控按 [review.md](review.md)对验收映射中的实际实现/装配范围执行 OCR，保存输入清单、覆盖对账和裁决；通用非 Orca 审计也不能省略此项。
-5. 按 [目录与产物归处](artifacts.md) 保存单票报告和原始证据，记录目标 SHA、时间、输入、预期与实际结果、代码位置、文件哈希及本轮资源清理复查。主控独立核对报告、原始日志、哈希和目标 SHA。
+1. 将验收写为可观察结果，覆盖正常/拒绝/边界及适用权限、并发、持久化、回滚；文档/设计票验批准交付物/决定。
+2. 追溯当前SHA代码、配置、迁移、实际装配，核关闭后变更及使本票行为不可达的跨票缺陷；独立审正确性/安全/兼容/回归。
+3. 按testing及ADR实际运行最小相关测试/类型/Lint/构建和必要API/UI/服务验收；静态阅读不能代替行为结果。保留命令/退出码/实际用例/失败跳过、脱敏日志/原文引用、环境及清理复查。
+4. 主控按 [review.md](review.md)对实际实现/装配范围执行适用完整OCR，保留输入/覆盖对账/裁决；非Orca也执行。
+5. 按 [artifacts.md](artifacts.md)存单票原始证据/报告，含SHA/时间、输入/预期/实际、代码位置/文件哈希；主控独立核报告、日志、哈希、目标SHA。
 
 ## 3. 裁决、贴标和人审收尾
 
-每条验收标记 `verified / failed / blocked / unproven / not_applicable`；`not_applicable` 附事实源依据。单票仅在所有适用条款 `verified`、实际运行所需依赖成立、目标 SHA 的 Required Checks/标准 CI 有效、无有效 critical/high/medium finding、独立审查与完整 OCR 及主控证据对账通过时为 `verified`。父票还须通过聚合验收。环境无法运行记 `blocked`，仅有推断记 `unproven`；任一失败或缺口均不能折算通过。`not_required` 是仅依据有效取消/无需交付决定的单票终态，不是验收条款的通过，也不进入交付验收或贴标。
+条款结论为verified/failed/blocked/unproven/not_applicable，最后一项须来源依据。单票verified要求全部适用验收通过、依赖成立、目标Required Checks/标准CI有效、无有效critical/high/medium、独立审查/适用完整OCR及主控对账通过；父票另含聚合。环境不可运行blocked，仅推断unproven；not_required仅为有效取消终态，不冒充验收通过或进入贴标。
 
-已进入每日批次时，audit 与 label 分别占名额，按 [协调格式](coordination-format.md)预留后续 label 预算；真正写入前仍须独立选中动作及满足以下门禁，预留不是贴标授权。
+本轮有贴标授权时，仅verified且human_review_state=none/pending可进入流程；每日audit与label各占slot并按协调合同预留预算，预留不授写权。
 
-当本轮请求授权 GitHub 贴标时，主控仅对 `verified` 且 `human_review_state=none/pending` 的票执行以下写入门禁：
+1. 按交付门禁核目标/批准/CI/共享证据。首次或已有标签核验中，none→pending须与持久写入意图同事务；pending保持，approved/rejected不进入。意图绑定需求/目标、预期人审/资格/状态；不能因已有标签把pending倒写none。
+2. 添加待人审标签，保留ready-for-agent；按delivery-gates执行完整写后rescan、失配/超时/纠正。记录操作者/时间/URL、前后版本、证据和回执。
+3. not_required/failed/blocked/unproven/intake_incomplete不贴标。重开、移除资格、有效取消/人审终态、证据过期使旧标无效时进入R；仅在移除授权内纠正该标签，不动其他标签；缺授权/回执不明为label_correction_pending，不宣称成功。
+4. 验证与各动作分列。证据有效且只剩贴标/回读/移除时仅对账及必要rescan，不重验整票；需求/目标树/CI失效则重验，标签重试不复活旧verified。
 
-1. 按 [delivery-gates.md](delivery-gates.md)核对交付目标、需求批准权限、CI 和人审可访问证据。首次发起贴标或复核已有待人审标签时，若 human_review_state=none，先在保存写入意图的同一事务将其改为 pending；已 pending 则保持，approved/rejected 不进入本流程。随后持久保存含需求指纹、目标 SHA、预期人审状态和资格/状态的写入意图。已有标签也须核验，不得在无有效人审终态决定时把已有待人审标签回写为 none。
-2. 添加标签并保留 `ready-for-agent`；写后按共同协议完整 rescan，只有意图条件仍成立才算有效。API/回读不明为 `label_pending`；失配为 stale，并按授权纠正，否则 `label_correction_pending`。操作者、时间、URL、前后版本、证据索引及回执均留档。
-3. 对 `not_required / failed / blocked / unproven / intake_incomplete` 不添加标签。重新打开、移除 ready-for-agent、有效取消/无需交付决定、有效人审终态或证据过期等使已有标签无效时，进入 R 的纠正分支；按现有移除授权只移除该待人审标签并复核，不改其他标签。无授权或回执不明保留 `label_correction_pending`，不报告纠正成功。
-4. 验证结论与交付/标签动作分列，状态契约和仅标签恢复见 [每日规则](closed-issue-daily-run.md)。有效证据未变且只剩贴标/回读/移除时，只做标签对账和必要 rescan；不重跑整票验收。若需求、目标树或 CI 失效则转重验，不能用标签重试复活旧 verified。
+人审决定记录可核实人工作出者、范围/时间、需求指纹/目标SHA、证据入口和approval_ref，approved/rejected替代pending并退出新审/重贴标。Agent结论仍是Agent历史，不变成人工批准；标签移除不代表人审。旧标按授权纠正，缺移除授权只留待办。
 
-人审通过或拒绝须有可核实的人工作出者、决定范围、时间、需求指纹、目标 SHA 和证据入口，分别记 `human_review_state=approved/rejected` 并撤销旧 `pending`；标签移除本身不等于人审决定。两种终态默认退出新审和重新贴标调度，保留 Agent 验证结论作为历史，不改写为人工批准。遗留待人审标签按现有授权纠正；没有移除授权时保留具名 `label_correction_pending`，不因此重新验收。拒绝后的变更按原因处理：
+拒绝后：需求改变须有权范围决定并scope_changed；实现不满足原验收且已有对应finding修复授权时，按协调合同用state_changed保存旧拒绝/需求/目标/检查点与完整前后状态，再建新attempt关联finding/授权，human_review_state=none、human_review=null、validation_state=finding_confirmed，撤旧放行，历史不可变。修复、独立验证/复审、完整终审/OCR、目标验收通过后，以新检查点/新意图转pending；旧检查点不得直接重贴标。缺授权/原因不明保持rejected及等待。新attempt沿用入队/服务序号、repair_rounds_total，不重置公平/预算，遗留动作继续各自对账。
 
-- **需求改变**：按 [design.md](design.md)取得有效范围决定，以 scope_changed 建立 revalidate 范围。
-- **实现不满足原验收**：需求可保持不变。已有覆盖 finding 的修复授权时，先按 [协调格式](coordination-format.md)保存旧拒绝、需求/目标/检查点和完整前后状态，再以 state_changed 建立新 attempt，关联原 finding 与修复授权，将当前 human_review_state 置 none、human_review 置 null，validation_state 置 finding_confirmed，并撤销依赖旧验证的放行。旧决定及证据只进入不可变历史，不能删除或改写。修复、独立验证/复审、完整终审/OCR 及目标验收通过后，才以新检查点和新写入意图转 pending、重新送审；相同旧检查点不得直接重新贴标。
-
-无修复授权或拒绝原因不明时保留 rejected 和等待条件，不自行变更需求或清空拒绝记录。新 attempt 沿用原入队/服务序号及 repair_rounds_total，不能借此重置公平调度或修复上限；原标签、关闭及交付的遗留动作继续分别对账。
-
-R 中只剩 close/delivery 动作的对象，按 [交付门禁](delivery-gates.md)逐项回读原意图与当前远端结果：关闭动作恢复/纠正必须核对授权及后续人工决定；交付动作按 [协调格式](coordination-format.md)的 delivery_action、delivery_intent 和当前回执对账。已进入目标的代码仍记 delivered，树偏离记动作 stale、验证 revalidating，回退/修复另需授权。不因本请求只授权贴标而执行关闭、重开、推送或回退。无授权或回执不明保留对应 pending/correction_pending，报告远端可能仍有错误状态。冻结范围完成还要求每个动作有明确对账结论；未授权动作保持具名待处理。
-
-审计只读代码和测试源文件；修复缺陷另立范围，修复后重验受影响条款。本规则不扩大 GitHub 写入、提交、关闭 Issue 或清理资源的授权。
+R中的close/delivery按交付门禁回读意图/远端；关闭纠正核后续人工决定，交付树偏离记delivered＋stale/revalidating，修复/回退另核授权。仅贴标授权不允许关闭/重开/推送/回退；缺授权/回执留具名pending/correction_pending并报告远端可能错误。审计只读业务代码/测试，修复另定范围并补验受影响条款。
 
 ## 4. 完成和记录
 
-按 [目录与产物归处](artifacts.md) 在 `.archive/runs/<run-key>/` 保存完整候选清单、逐票事实源和验收矩阵、Ledger、报告、验证日志、finding 裁决、label/close/delivery 意图及回执。审查者产品/主体、会话谱系、Dispatch（适用时）、贡献排除范围、历史身份缺口及替代独立性批准由单票不可变 review manifest 索引，daily.issues.review 引用该 manifest，不另造可变身份状态；取消决定和人审决定分别由 `decision`、`human_review` 引用。最终报告列候选数、已摄取数、各结论数、人审各状态数、已贴标与 `label_pending` 数、已有标签复核/移除数、`label_correction_pending` 数、close_action/delivery_action 各状态数及待纠正对象、实际交付回执与未完成原因、未审编号、结束前新增待下轮清单和每票可访问证据入口。仅在冻结 N∪R 逐票有结论或有效人审终态、父票聚合已完成且所有授权动作通过写后条件复核时，报告“冻结范围审计完成（截至时间/清单哈希）”；分批结束时只报告该批确切范围，未授权或失败的纠正明确列为待处理。
+Run保存N/R清单、来源/矩阵、Ledger、原报告/日志、finding、三个动作意图/回执。单票不可变review manifest索引审核主体/产品/会话谱系、适用Dispatch、贡献排除、历史身份缺口/替代批准，daily.issues.review引用它；decision/human_review分别引用取消/人审决定，不另造可变身份状态。
+
+报告列候选/摄取/各验证结论/各人审状态数，贴标/复核/移除及pending/correction_pending，close/delivery各动作状态和待纠正对象，实际交付回执、未审编号/原因、下轮新增、逐票可访问证据。仅N∪R逐票有结论或有效人审终态、父聚合完成、所有授权动作写后匹配时，才报告冻结范围完成并注明截至时间/清单哈希；分批只报确切批次，未授权/失败纠正仍列待办。
