@@ -486,7 +486,7 @@ export function runCheck(
   const byModule = new Map<string, ModuleRoot>();
   for (const r of config.moduleRoots) byModule.set(r.module, r);
 
-  const deepEdges = new Map<
+  const businessEdges = new Map<
     string,
     { source: string; target: string; sm: string; tm: string }
   >();
@@ -541,11 +541,8 @@ export function runCheck(
       if (srcRoot.kind !== "business" || tgtRoot.kind !== "business") continue;
       if (srcRoot.module === tgtRoot.module) continue;
 
-      // public/integration 出口（当前 public.ts/integration.ts 均不存在，故存量跨模块引用全部为深层引用）
-      if (isPublicExport(targetRel)) continue;
-
       const key = `${file}\u0000${targetRel}`;
-      deepEdges.set(key, {
+      businessEdges.set(key, {
         source: file,
         target: targetRel,
         sm: srcRoot.module,
@@ -592,9 +589,11 @@ export function runCheck(
     );
   }
 
-  for (const e of deepEdges.values()) {
+  for (const e of businessEdges.values()) {
     const mkey = `${e.sm}\u0000${e.tm}`;
     const isCycle = cyclicModuleEdges.has(mkey);
+    // 公开出口参与环判定；单向公开引用无需深层引用例外。
+    if (!isCycle && isPublicExport(e.target)) continue;
     const category: ViolationCategory = isCycle ? "cycle" : "deep-reference";
     const key = `${e.source}\u0000${e.target}\u0000${category}`;
     const baselined = baselineEdges.has(key);
