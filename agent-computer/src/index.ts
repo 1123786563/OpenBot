@@ -14,11 +14,14 @@ import {
 import {
   actsOnTheComputer,
   describeExecutionScope,
+  EXECUTION_TENANT_HEADER,
+  EXECUTION_WORKSPACE_HEADER,
   isOpenPath,
   isQuietPath,
   matchesToken,
   mutatesBrowser,
   offeredToken,
+  parseExecutionScope,
   statedScope,
 } from "./authorisation";
 import { isPlainBotId } from "./bot-id";
@@ -775,7 +778,21 @@ serve<StreamData>({
      * refused here, naming the ownership (never the token) so the log says which side crossed.
      */
     if (!isOpenPath(url.pathname)) {
-      const scope = statedScope(request.headers);
+      const scope =
+        statedScope(request.headers) ??
+        // A browser's WebSocket upgrade cannot set custom headers, which is why the
+        // stream carries the Bot and the token as query parameters at all. The
+        // ownership headers ride the same exception so a page dialing the stream
+        // directly keeps working (stream-auth.ts); the server-side proxy keeps
+        // preferring the headers, and the per-Bot binding below still applies.
+        (url.pathname === "/stream"
+          ? parseExecutionScope({
+              [EXECUTION_TENANT_HEADER]:
+                url.searchParams.get(EXECUTION_TENANT_HEADER) ?? undefined,
+              [EXECUTION_WORKSPACE_HEADER]:
+                url.searchParams.get(EXECUTION_WORKSPACE_HEADER) ?? undefined,
+            })
+          : null);
       if (!scope) {
         console.warn(
           `computer refused a ${url.pathname} request that stated no execution ownership.`,

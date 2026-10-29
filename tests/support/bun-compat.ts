@@ -187,7 +187,11 @@ function collect(stream: Readable | null): Any {
 
 function run(command: readonly string[], options: SpawnOptions = {}): Any {
   const [executable, ...args] = command as string[];
-  const child = nodeSpawn(executable, args, {
+  // Under the real runtime `process.execPath` IS Bun; suites re-run the runtime
+  // on TS entries (the Computer fixture spawns `src/index.ts`), and plain Node
+  // dies on those at import. Land execPath on Bun here too.
+  const resolved = executable === process.execPath ? bunBinary() : executable;
+  const child = nodeSpawn(resolved, args, {
     cwd: options.cwd,
     env: (options.env as NodeJS.ProcessEnv) ?? process.env,
     stdio: [
