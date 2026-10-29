@@ -26,7 +26,19 @@ const indexSource = readFileSync(
 const callStart = indexSource.indexOf(
   "const aiObservability = createAiObservabilityRoutes({",
 );
-const callEnd = callStart === -1 ? -1 : indexSource.indexOf("\n});", callStart);
+// The boot restructure moved the call inside the boot function, so its closing
+// brace sits at the call line's own indent, not at column 0 — track the line's
+// indentation instead of hardcoding the old top-level shape.
+const callIndent =
+  callStart === -1
+    ? ""
+    : (/^(\s*)/.exec(
+        indexSource.slice(indexSource.lastIndexOf("\n", callStart) + 1),
+      )?.[1] ?? "");
+const callEnd =
+  callStart === -1
+    ? -1
+    : indexSource.indexOf(`\n${callIndent}});`, callStart);
 const assemblyBlock =
   callStart === -1 || callEnd === -1
     ? ""
