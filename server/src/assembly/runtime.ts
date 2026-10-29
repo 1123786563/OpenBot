@@ -26,7 +26,6 @@ import {
 } from "@copilotkit/runtime/v2";
 import { COMPUTER_GUIDANCE } from "@openbot/shared/bot-prompt";
 import { getLogger } from "@openbot/shared/logger";
-import { buildResponsibilityTurn } from "../../../shared/responsibility-turn";
 import {
   initProcessTracing,
   SERVER_TRACING_SERVICE_NAME,
@@ -38,6 +37,7 @@ import { serve } from "bun";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { packageToolRefFor } from "../../../shared/enterprise/plugin-package-contracts";
+import { buildResponsibilityTurn } from "../../../shared/responsibility-turn";
 import { createActivityStore } from "../activity/activity";
 import {
   auditRoutineStore,
@@ -110,16 +110,16 @@ import { createOpikHealthService } from "../ai-observability/health";
 import { createIdLinkStore } from "../ai-observability/id-links";
 import { createModelSpanRecorder } from "../ai-observability/model-span";
 import {
-  createRemoteBudgetContractResolver,
-  createRemoteRunBudgetGate,
-  createRemoteRunRecorder,
-} from "../ai-observability/remote-run";
-import {
   modelSpanObserver,
   observationEnabled,
   toolStepObserver,
 } from "../ai-observability/public";
 import { createRunsQueryService } from "../ai-observability/queries/runs";
+import {
+  createRemoteBudgetContractResolver,
+  createRemoteRunBudgetGate,
+  createRemoteRunRecorder,
+} from "../ai-observability/remote-run";
 import {
   createObservationRetentionWorker,
   RETENTION_WORK_KIND,
@@ -139,8 +139,8 @@ import {
   createApprovedActionExecutor,
   proposalAttemptOf,
 } from "../approvals/execute";
-import { resumePersonQuestion } from "../approvals/question-resume";
 import { createApprovalsAccess } from "../approvals/public";
+import { resumePersonQuestion } from "../approvals/question-resume";
 import {
   type PersonQuestion,
   personQuestionSchema,
@@ -184,7 +184,6 @@ import {
   startUsageDeliverySweeps,
 } from "../billing/maintenance";
 import { checkOutboundUrl, createOutboundGuard } from "../billing/outbound";
-import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "../billing/types";
 import {
   CreditInsufficientError,
   currentPayerBinding,
@@ -206,6 +205,7 @@ import {
 } from "../billing/service";
 import { createBillingStatements } from "../billing/statements";
 import { createBillingStore } from "../billing/store";
+import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "../billing/types";
 import {
   createCreditUsageTarget,
   createLagoUsageTarget,
@@ -263,6 +263,7 @@ import { createStreamAuthorizer } from "../computer/stream-auth";
 import { loadConfig, trustedBrowserOrigins } from "../config";
 import {
   billingMethodForModel,
+  CreditGateFailureError,
   type IdentifyActor,
   type IdentifyUser,
   type ModelBillingAuditEvent,
@@ -270,7 +271,6 @@ import {
   normalizeModelBaseUrls,
   runtimeModelForEnvironment,
   setBuiltinExecutionEngine,
-  CreditGateFailureError,
   setBuiltinModelSpanObserver,
   setBuiltinRunLifecycleObserver,
   setBuiltinToolStepObserver,
@@ -298,12 +298,12 @@ import type {
 } from "../craft/opencode-config";
 import { createCraftPreview } from "../craft/preview";
 import { singleReplicaStartupNotice } from "../craft/preview-origin";
+import { createCraftSandboxPublic } from "../craft/public";
 import {
   type CraftRoutesFactory,
   createCraftRoutes,
   stopCraftIdleReaper,
 } from "../craft/routes";
-import { createCraftSandboxPublic } from "../craft/public";
 import { createCraftStore } from "../craft/store";
 import {
   createCredentialAdminService,
@@ -342,9 +342,9 @@ import type {
   RunnerRequestLease,
   RunService,
 } from "../enterprise/contracts";
-import { createUnavailableConversationRoutes } from "../enterprise/conversations/routes";
 import { createMastraStorageArm } from "../enterprise/conversations/integration";
 import { createConversationPublic } from "../enterprise/conversations/public";
+import { createUnavailableConversationRoutes } from "../enterprise/conversations/routes";
 import { createPackageDispatchService } from "../enterprise/plugin-packages/dispatch";
 import {
   createPackageEntrypoints,
@@ -353,11 +353,11 @@ import {
 import { createPackageService } from "../enterprise/plugin-packages/install-service";
 import { createMarketplaceGate } from "../enterprise/plugin-packages/marketplace-gate";
 import { createPackageMutationStore } from "../enterprise/plugin-packages/mutation-context";
-import { createPackageRuntime } from "../enterprise/plugin-packages/runtime";
 import {
   createPluginPackageRoutes,
   createUnavailablePluginPackageRoutes,
 } from "../enterprise/plugin-packages/routes";
+import { createPackageRuntime } from "../enterprise/plugin-packages/runtime";
 import { createPackageReadStore } from "../enterprise/plugin-packages/store";
 import { createRunContinuations } from "../enterprise/runs/continuations";
 import type { GovernedModelExecution } from "../enterprise/runs/governed-execution";
@@ -419,14 +419,14 @@ import {
   createPluginCatalogDecisionService,
 } from "../enterprise/tenancy/plugin-catalog";
 import {
+  applyReadinessEnforcementVerdict,
+  runReadinessEnforcement,
+} from "../enterprise/tenancy/readiness-enforcement";
+import {
   createSharedApprovalAdminService,
   createSharedApprovalService,
 } from "../enterprise/tenancy/shared-approvals";
 import { createCompanySsoScimConfigService } from "../enterprise/tenancy/sso-scim-config";
-import {
-  applyReadinessEnforcementVerdict,
-  runReadinessEnforcement,
-} from "../enterprise/tenancy/readiness-enforcement";
 import {
   applyStartupVerdict,
   runMultitenancyStartupChecks,
@@ -489,12 +489,6 @@ import {
   createDrizzlePauseControls,
   createUserPauseGate,
 } from "../hindsight/pause-controls";
-// MOD15 (#635)：个人记忆语境的降级召回装配经 M10 具名臂（memory/integration.ts），
-// 个人记忆语境组合与渲染装载器收拢在臂内；此前内联于此的组合逐参数等价。
-import {
-  createHindsightRecallArm,
-  createHindsightSyncArm,
-} from "../memory/integration";
 import {
   createDrizzlePreferenceRecords,
   createPreferenceRecallService,
@@ -586,6 +580,12 @@ import { createMastraTools } from "../mastra/tools";
 import { resolveMemoryCompany } from "../memory/company";
 import { createMemoryDefaults } from "../memory/defaults";
 import { createMemoryIngestion } from "../memory/ingestion";
+// MOD15 (#635)：个人记忆语境的降级召回装配经 M10 具名臂（memory/integration.ts），
+// 个人记忆语境组合与渲染装载器收拢在臂内；此前内联于此的组合逐参数等价。
+import {
+  createHindsightRecallArm,
+  createHindsightSyncArm,
+} from "../memory/integration";
 import { createMemoryStore } from "../memory/store";
 import { memoryTools } from "../memory/tools";
 import { OPENMUSE_TEMPLATE_KEY } from "../mobile-bff/openmuse-bot";
@@ -1058,6 +1058,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
       learningAutoAssign,
     );
     learningAutoAssign.start();
+    lifecycle.holdForStartup({
+      name: "learningAutoAssign",
+      stop: () => learningAutoAssign.stop(),
+    });
     /*
      * The boot-time Opik configuration and the builtin run's trusted scope
      * resolver (T33 wiring's synchronous half + T-final M1), deliberately placed
@@ -2045,6 +2049,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
       config.databaseUrl,
       channelEvents,
     );
+    lifecycle.holdForStartup({
+      name: "channelActivityListener",
+      stop: () => channelActivityListener.stop(),
+    });
     const roleRepository = createRoleRepository(database);
     const loadAgentsForActor = createRuntimeAgentLoader(
       database,
@@ -2137,6 +2145,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
       config.databaseUrl,
       policyStore,
     );
+    lifecycle.holdForStartup({
+      name: "policyListener",
+      stop: () => policyListener.stop(),
+    });
 
     /*
      * Record which boundary this process started with.
@@ -2368,6 +2380,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
       config.auditRetentionDays,
       pageFrameStore,
     );
+    lifecycle.holdForStartup({
+      name: "retentionSweeps",
+      stop: () => retentionSweeps.stop(),
+    });
     const computerGateway = computerProvider
       ? createComputerGateway({
           provider: computerProvider,
@@ -3029,6 +3045,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         await hindsightJudgmentExpiry?.();
       });
     }, 60_000);
+    lifecycle.holdForStartup({
+      name: "memorySweep",
+      stop: () => memorySweep.stop(),
+    });
     // Follow-ups a Bot schedules for itself, on the shared work queue. See agents/wake-up.ts.
     const wakeUpStore = createWakeUpStore(database, {
       auditStore: bootAuditStore,
@@ -4896,6 +4916,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         hindsightSyncArm.sweep,
         HINDSIGHT_SYNC_DRAIN_INTERVAL_MS,
       );
+      lifecycle.holdForStartup({
+        name: "hindsightSyncSweep",
+        stop: () => hindsightSyncSweep?.stop(),
+      });
     }
 
     const mastraContinuationRouteDeps =
@@ -5156,6 +5180,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         );
       }
     }, 2_000);
+    lifecycle.holdForStartup({
+      name: "responsibilitySweep",
+      stop: () => responsibilitySweep.stop(),
+    });
 
     const approvalQueue = createWorkQueue(database);
     const approvalOwner = workOwner("approval");
@@ -5699,6 +5727,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         );
       }
     }, 2_000);
+    lifecycle.holdForStartup({
+      name: "approvalSweep",
+      stop: () => approvalSweep.stop(),
+    });
     const deliveryProviders = configuredDeliveryProviders(
       config.publicUrl ??
         config.auth?.baseUrl ??
@@ -5874,6 +5906,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         );
       }
     }, 60_000);
+    lifecycle.holdForStartup({
+      name: "proactiveSweep",
+      stop: () => proactiveSweep.stop(),
+    });
     /*
      * Follow-ups a Bot scheduled for itself: one headless turn each, through the same turn runner as a
      * routine, into the person's conversation with that Bot. See agents/wake-up.ts.
@@ -5920,9 +5956,17 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         );
       }
     }, 5_000);
+    lifecycle.holdForStartup({
+      name: "wakeUpSweep",
+      stop: () => wakeUpSweep.stop(),
+    });
     const wakeUpReaper = repeatAfterEach(async () => {
       await wakeUpRunner.reap().catch(() => 0);
     }, 60 * 60_000);
+    lifecycle.holdForStartup({
+      name: "wakeUpReaper",
+      stop: () => wakeUpReaper.stop(),
+    });
     /*
      * OpenMuse Tasks (contracts §7 small first path): each Task row is offered to the
      * same work queue as a follow-up at creation, claimed here once, and run through
@@ -6114,9 +6158,17 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         );
       }
     }, 5_000);
+    lifecycle.holdForStartup({
+      name: "openMuseTaskSweep",
+      stop: () => openMuseTaskSweep.stop(),
+    });
     const openMuseTaskReaper = repeatAfterEach(async () => {
       await openMuseTaskRunner.reap().catch(() => 0);
     }, 60 * 60_000);
+    lifecycle.holdForStartup({
+      name: "openMuseTaskReaper",
+      stop: () => openMuseTaskReaper.stop(),
+    });
     const deliverySweeps = DELIVERY_WORK_KINDS.map((kind) =>
       repeatAfterEach(async () => {
         try {
@@ -6133,6 +6185,12 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         }
       }, 2_000),
     );
+    for (const sweep of deliverySweeps) {
+      lifecycle.holdForStartup({
+        name: "deliverySweep",
+        stop: () => sweep.stop(),
+      });
+    }
 
     const personResponseOwner = workOwner("person-response");
     /**
@@ -6212,6 +6270,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         );
       }
     }, 1_000);
+    lifecycle.holdForStartup({
+      name: "groupSweep",
+      stop: () => groupSweep.stop(),
+    });
 
     const personResponseSweep = repeatAfterEach(async () => {
       try {
@@ -6307,6 +6369,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         );
       }
     }, 2_000);
+    lifecycle.holdForStartup({
+      name: "personResponseSweep",
+      stop: () => personResponseSweep.stop(),
+    });
 
     /**
      * Delivering hops, on every replica.
@@ -6428,7 +6494,15 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         delivery: governedHandoffDelivery,
       });
       workOfferedListener = handoff.listener;
+      lifecycle.holdForStartup({
+        name: "workOfferedListener",
+        stop: () => workOfferedListener?.stop(),
+      });
       handoffKickSweep = handoff.sweep;
+      lifecycle.holdForStartup({
+        name: "handoffKickSweep",
+        stop: () => handoffKickSweep?.stop(),
+      });
     }
 
     /*
@@ -6990,6 +7064,11 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         lock: { databaseUrl: config.databaseUrl, key: 4_192_005 },
       });
       billingSweepStops.push(usageSweeps.stop);
+      lifecycle.holdForStartup({
+        name: "billingSweep",
+        stop: usageSweeps.stop,
+        isolate: true,
+      });
       // The renewal sweep (10.3): every live owned subscription whose provider period moved past
       // its allowance marker gets that period's payout into the owner's account, once — the pass
       // backs the webhook path up and retries what it could not finish. The service no-ops when
@@ -6999,6 +7078,11 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         lock: { databaseUrl: config.databaseUrl, key: 4_192_007 },
       });
       billingSweepStops.push(renewalSweeps.stop);
+      lifecycle.holdForStartup({
+        name: "billingSweep",
+        stop: renewalSweeps.stop,
+        isolate: true,
+      });
       // The recovery scan sweep (Bifrost 08.1): every interval the pass names the holds whose
       // provider result nobody knows — 06.8's unknown marks and the expired plain holds a
       // killed process left behind — one RecoveryItem each, into `credit_recovery_items`. The
@@ -7013,6 +7097,11 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         },
       );
       billingSweepStops.push(recoverySweeps.stop);
+      lifecycle.holdForStartup({
+        name: "billingSweep",
+        stop: recoverySweeps.stop,
+        isolate: true,
+      });
       // The recovery retry sweep (Bifrost 08.4): every interval the pass hands the recovery
       // lanes their DUE items — the persisted-result replay always; the provider final-state
       // query only where a source is wired, which no deployment does yet, so no-result items
@@ -7030,6 +7119,11 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         },
       );
       billingSweepStops.push(recoveryRetrySweeps.stop);
+      lifecycle.holdForStartup({
+        name: "billingSweep",
+        stop: recoveryRetrySweeps.stop,
+        isolate: true,
+      });
     }
 
     /*
@@ -7213,6 +7307,11 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
               lock: { databaseUrl: config.databaseUrl, key: 4_192_006 },
             });
             billingSweepStops.push(paymentSweeps.stop);
+            lifecycle.holdForStartup({
+              name: "billingSweep",
+              stop: paymentSweeps.stop,
+              isolate: true,
+            });
             return {
               service: paymentService,
               // The statement read's other half: a bill is a stored order, so the ledger is the only
@@ -7769,6 +7868,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
               },
             })
         : undefined;
+    lifecycle.holdForStartup({
+      name: "craftIdleReaper",
+      stop: () => stopCraftIdleReaper(),
+    });
 
     /**
      * The craft model catalog as one descriptor. The limits are honest defaults rather than
@@ -8279,6 +8382,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
           reauthorize: opikExportReauthorize,
         }).start()
       : null;
+    lifecycle.holdForStartup({
+      name: "opikExportWorker",
+      stop: () => opikExportWorker?.stop(),
+    });
     /*
      * The T35 retention worker (the fix report §5 wiring): sweep the four local
      * tables for expired targets and delete them for real. The M1c read
@@ -8301,6 +8408,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
             aiObservabilityRunsQuery.invalidateKey(scopeKey),
         }).start()
       : null;
+    lifecycle.holdForStartup({
+      name: "opikRetentionWorker",
+      stop: () => opikRetentionWorker?.stop(),
+    });
     /** Held for shutdown (OCR m205); assigned in the billing-ready block below. */
     let opikExecutionWorker: Repeating | null = null;
     // The finished opik.export and opik.retention tickets ride the same work_items
@@ -8327,6 +8438,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
       },
       24 * 60 * 60_000,
     );
+    lifecycle.holdForStartup({
+      name: "opikTicketReaper",
+      stop: () => opikTicketReaper.stop(),
+    });
 
     /*
      * Built-in model-span recording (Issue #20 / T14), on the same inert-until-proven
@@ -8527,6 +8642,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
           observe: (observation) => opikModelSpans.record(observation),
           env: process.env,
         }).start();
+        lifecycle.holdForStartup({
+          name: "opikExecutionWorker",
+          stop: () => opikExecutionWorker?.stop(),
+        });
       }
     }
 
@@ -9086,6 +9205,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     const catalogSyncScheduler = startGatewayCatalogSyncScheduler({
       environmentRate: config.gateway?.creditConversionRate,
     });
+    lifecycle.holdForStartup({
+      name: "catalogSyncScheduler",
+      stop: () => catalogSyncScheduler?.stop(),
+    });
 
     /*
      * The automatic key state sync (Bifrost 05.8, #249): one pass every minute by default,
@@ -9100,6 +9223,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
       database,
       // The drift alerts (05.9) ride the boot audit trail, like every other gateway act.
       auditStore: bootAuditStore,
+    });
+    lifecycle.holdForStartup({
+      name: "keyStateSyncScheduler",
+      stop: () => keyStateSyncScheduler?.stop(),
     });
 
     /**
@@ -9262,6 +9389,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     // the stop sequence directly; the lifecycle adds the once guard (a second
     // signal no longer replays it) and keeps exit(0) after the final group settles.
     lifecycle.installSignalShutdown(["SIGINT", "SIGTERM"]);
+    // The tail registration above now owns every resource: the startup
+    // handles are spent, and a later failure rolls back through the curated
+    // shutdown registry alone (#706 M-6).
+    lifecycle.clearStartupHandles();
 
     log.info({ port }, "OpenBot server listening on http://127.0.0.1");
 
@@ -9303,6 +9434,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     // the process still exits NON-zero. A rollback failure must not mask the
     // startup error.
     try {
+      // Mid-assembly resources first, LIFO (#706 M-6): a failure before the
+      // tail registration left them dangling under the old catch. Then the
+      // curated shutdown registry, for anything registered past the tail.
+      await lifecycle.rollbackStarted();
       await lifecycle.stopRegistered();
     } catch {
       // Swallowed on purpose: the original startup error is the one to surface.

@@ -261,6 +261,7 @@ import {
 } from "../web-bot-auth";
 import type { createWorkshopPublicRoutes } from "../workshop/public-routes";
 import type { WorkshopRoutesFactory } from "../workshop/routes";
+import { fireRoutineDispatch } from "./routine-dispatch";
 
 const log = getLogger("server");
 
@@ -2275,10 +2276,9 @@ export function assembleHttpApp(
       // The worker's bearer dispatch is an API surface, not a person's session. This route is
       // deliberately not under /api/* (see the comment above it), so no session `web` floor
       // applies here — naming `api` is what puts the turns this fans out on their usage facts
-      // at all.
-      void withUsageOrigin("api", () =>
-        routineRunner.run(routineRunId, firing),
-      ).catch(() => {});
+      // at all. The helper owns the fire-and-forget swallow and its one diagnostic log line
+      // (#706 M-3).
+      fireRoutineDispatch(routineRunner, routineRunId, firing);
       return context.json({ accepted: true }, 202);
     });
   }

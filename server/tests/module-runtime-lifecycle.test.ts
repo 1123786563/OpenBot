@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createRuntimeLifecycle } from "../src/assembly/lifecycle";
 
@@ -53,6 +53,8 @@ const FROZEN_STOP_ORDER = [
   "openMuseTaskSweep",
   "openMuseTaskReaper",
   "memorySweep",
+  // Added after MOD03 froze this list (Hindsight sync/deletion drain).
+  "hindsightSyncSweep",
   "proactiveSweep",
   "approvalSweep",
   "personResponseSweep",
@@ -102,6 +104,7 @@ describe("MOD03 lifecycle registry semantics (real module)", () => {
     hold("openMuseTaskSweep");
     hold("openMuseTaskReaper");
     hold("memorySweep");
+    hold("hindsightSyncSweep");
     hold("proactiveSweep");
     hold("approvalSweep");
     hold("personResponseSweep");
@@ -132,7 +135,7 @@ describe("MOD03 lifecycle registry semantics (real module)", () => {
     });
 
     const completion = lifecycle.stopRegistered();
-    expect(events.slice(0, 23)).toEqual([
+    expect(events.slice(0, 24)).toEqual([
       "responsibilitySweep",
       "catalogSyncScheduler",
       "keyStateSyncScheduler",
@@ -145,6 +148,7 @@ describe("MOD03 lifecycle registry semantics (real module)", () => {
       "openMuseTaskSweep",
       "openMuseTaskReaper",
       "memorySweep",
+      "hindsightSyncSweep",
       "proactiveSweep",
       "approvalSweep",
       "personResponseSweep",
@@ -157,7 +161,7 @@ describe("MOD03 lifecycle registry semantics (real module)", () => {
       "billingSweep:1",
       "craftIdleReaper",
     ]);
-    expect(events.slice(23)).toEqual([
+    expect(events.slice(24)).toEqual([
       "channelActivityListener",
       "policyListener",
       "workOfferedListener",
@@ -289,6 +293,69 @@ describe("MOD03 lifecycle registry semantics (real module)", () => {
     await empty.stopRegistered();
   });
 
+  test("rollbackStarted drains startup handles in reverse creation order, isolating every stop (#706 M-6)", async () => {
+    const lifecycle = createRuntimeLifecycle();
+    const events: string[] = [];
+    lifecycle.holdForStartup({
+      name: "first-started",
+      stop: () => {
+        events.push("first-started");
+      },
+    });
+    lifecycle.holdForStartup({
+      name: "second-started",
+      stop: () => {
+        events.push("second-started");
+        throw new Error("a rollback stop failed");
+      },
+    });
+    lifecycle.holdForStartup({
+      name: "third-started",
+      stop: () => {
+        events.push("third-started");
+      },
+    });
+
+    await lifecycle.rollbackStarted();
+    // LIFO — undo runs opposite to construction — and one throwing stop must
+    // not strand the resources started before it.
+    expect(events).toEqual([
+      "third-started",
+      "second-started",
+      "first-started",
+    ]);
+    // Drained: a second rollback is a resolving no-op.
+    await lifecycle.rollbackStarted();
+    expect(events).toEqual([
+      "third-started",
+      "second-started",
+      "first-started",
+    ]);
+  });
+
+  test("clearStartupHandles hands the resources to the shutdown registry — rollback after it is a no-op (#706 M-6)", async () => {
+    const lifecycle = createRuntimeLifecycle();
+    const events: string[] = [];
+    lifecycle.holdForStartup({
+      name: "early",
+      stop: () => {
+        events.push("early-startup");
+      },
+    });
+    lifecycle.hold({
+      name: "early",
+      stop: () => {
+        events.push("early-shutdown");
+      },
+    });
+    lifecycle.clearStartupHandles();
+
+    await lifecycle.rollbackStarted();
+    expect(events).toEqual([]);
+    await lifecycle.stopRegistered();
+    expect(events).toEqual(["early-shutdown"]);
+  });
+
   test("a second signal never replays the stop sequence (once guard, real SIGUSR2 probe)", async () => {
     const lifecycle = createRuntimeLifecycle();
     const events: string[] = [];
@@ -390,7 +457,11 @@ describe("MOD03 runtime assembly (source pins)", () => {
         'import { createRuntimeLifecycle } from "./lifecycle";'.length,
       interfaceStart,
     );
-    for (const line of between.split("\n")) {
+    // The lifecycle import is no longer the last import (later modules import
+    // after it); the invariant is imports-only, so whole import statements
+    // (which may span lines) are stripped before the comment/blank check.
+    const nonImports = between.replace(/import[\s\S]*?;/g, "");
+    for (const line of nonImports.split("\n")) {
       const trimmed = line.trim();
       expect(
         trimmed === "" ||
@@ -431,8 +502,10 @@ describe("MOD03 runtime assembly (source pins)", () => {
 
   test("optional capabilities register only under their creation guard (acceptance 4)", () => {
     for (const name of GUARDED_OPTIONALS) {
+      // Biome formats the hold across lines since MOD03 froze the one-line
+      // shape; the guard itself is the invariant.
       const guard = new RegExp(
-        `if \\(${name}\\) \\{\\s*\\n\\s*lifecycle\\.hold\\(\\{ name: "${name}"`,
+        `if \\(${name}\\) \\{[\\s\\S]*?lifecycle\\.hold\\(\\{\\s*name: "${name}"`,
       );
       expect(RUNTIME_SOURCE).toMatch(guard);
     }
@@ -467,6 +540,74 @@ describe("MOD03 runtime assembly (source pins)", () => {
     expect(catchBlock).toBeGreaterThan(-1);
     expect(rollback).toBeGreaterThan(catchBlock);
     expect(rethrow).toBeGreaterThan(rollback);
+  });
+
+  test("startup failure drains the startup rollback registry FIRST, then the shutdown registry (#706 M-6)", () => {
+    const catchBlock = RUNTIME_SOURCE.indexOf("  } catch (error) {");
+    const rollbackStartup = RUNTIME_SOURCE.indexOf(
+      "await lifecycle.rollbackStarted();",
+    );
+    const rollbackShutdown = RUNTIME_SOURCE.indexOf(
+      "await lifecycle.stopRegistered();",
+    );
+    const rethrow = RUNTIME_SOURCE.indexOf("    throw error;", rollbackStartup);
+    expect(rollbackStartup).toBeGreaterThan(catchBlock);
+    expect(rollbackShutdown).toBeGreaterThan(rollbackStartup);
+    expect(rethrow).toBeGreaterThan(rollbackStartup);
+  });
+
+  test("every resource started before the tail registration is rollback-registered at its creation point (#706 M-6)", () => {
+    // The OCR r2 M-6 window: these resources begin mid-assembly, so a startup
+    // failure between their creation and the tail left them dangling.
+    const EARLY_STARTED = [
+      "learningAutoAssign",
+      "channelActivityListener",
+      "policyListener",
+      "retentionSweeps",
+      "memorySweep",
+      "hindsightSyncSweep",
+      "responsibilitySweep",
+      "approvalSweep",
+      "proactiveSweep",
+      "wakeUpSweep",
+      "wakeUpReaper",
+      "openMuseTaskSweep",
+      "openMuseTaskReaper",
+      "deliverySweep",
+      "groupSweep",
+      "personResponseSweep",
+      "workOfferedListener",
+      "handoffKickSweep",
+      "billingSweep",
+      "opikTicketReaper",
+      "opikExportWorker",
+      "opikRetentionWorker",
+      "opikExecutionWorker",
+      "catalogSyncScheduler",
+      "keyStateSyncScheduler",
+      "craftIdleReaper",
+    ] as const;
+    for (const name of EARLY_STARTED) {
+      expect(RUNTIME_SOURCE).toMatch(
+        new RegExp(`lifecycle\\.holdForStartup\\(\\{\\s*name: "${name}"`),
+      );
+    }
+    // Each early handle registers at (or after) its resource's creation, and
+    // strictly before the tail shutdown block takes over.
+    const firstStartupHandle = RUNTIME_SOURCE.indexOf(
+      "lifecycle.holdForStartup(",
+    );
+    const tailHold = RUNTIME_SOURCE.indexOf("lifecycle.hold({");
+    expect(firstStartupHandle).toBeGreaterThan(-1);
+    expect(tailHold).toBeGreaterThan(firstStartupHandle);
+  });
+
+  test("the tail registration takes over from the startup registry before the process can serve (#706 M-6)", () => {
+    const install = RUNTIME_SOURCE.indexOf(
+      'lifecycle.installSignalShutdown(["SIGINT", "SIGTERM"]);',
+    );
+    const clear = RUNTIME_SOURCE.indexOf("lifecycle.clearStartupHandles();");
+    expect(clear).toBeGreaterThan(install);
   });
 });
 

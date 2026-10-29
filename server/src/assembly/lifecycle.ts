@@ -46,6 +46,7 @@ export interface HeldResource {
 
 export function createRuntimeLifecycle() {
   const resources: HeldResource[] = [];
+  const startup: HeldResource[] = [];
 
   function hold(resource: HeldResource): void {
     resources.push(resource);
@@ -66,6 +67,37 @@ export function createRuntimeLifecycle() {
       }
     }
     return Promise.resolve(completion);
+  }
+
+  /*
+   * Startup rollback (#706 M-6): resources that begin mid-assembly register a
+   * startup handle at their creation point. A startup failure before the tail
+   * shutdown registration drains them LIFO — undo runs opposite to
+   * construction — with every stop isolated (one failure must not strand the
+   * resources started before it) and every error swallowed (the startup error
+   * is the one to surface). Once assembly completes, the tail's curated
+   * `hold()` registrations take over and the startup handles are cleared, so
+   * nothing is ever stopped twice.
+   */
+  function holdForStartup(resource: HeldResource): void {
+    startup.push(resource);
+  }
+
+  async function rollbackStarted(): Promise<void> {
+    while (startup.length > 0) {
+      const resource = startup.pop();
+      if (!resource) continue;
+      try {
+        await resource.stop();
+      } catch {
+        // Deliberately swallowed: rollback is best-effort, and the original
+        // startup error is the one the caller rethrows.
+      }
+    }
+  }
+
+  function clearStartupHandles(): void {
+    startup.length = 0;
   }
 
   /**
@@ -102,5 +134,12 @@ export function createRuntimeLifecycle() {
     };
   }
 
-  return { hold, stopRegistered, installSignalShutdown };
+  return {
+    hold,
+    holdForStartup,
+    rollbackStarted,
+    clearStartupHandles,
+    stopRegistered,
+    installSignalShutdown,
+  };
 }
