@@ -1,0 +1,403 @@
+扫描 1583 个源文件，9881 条 import（外部 2463，资源 58，未解析 4，根外 3）。
+基线例外 523 条；违规 261 条；幻影例外 69 条；模块环 62 个。
+
+[违规]
+  - [cycle] app/src/lib/auth/company-assurance.ts -> app/src/lib/enterprise/tenant/selection.ts  模块级环边 M01 -> M02（M01 与 M02 互相可达）
+  - [cycle] app/src/lib/auth/mutations.ts -> app/src/lib/enterprise/tenant/queries.ts  模块级环边 M01 -> M02（M01 与 M02 互相可达）
+  - [cycle] app/src/lib/auth/organization-plugin.tsx -> app/src/lib/enterprise/tenant/selection.ts  模块级环边 M01 -> M02（M01 与 M02 互相可达）
+  - [cycle] app/src/lib/channels/label.ts -> app/src/lib/voice/public.ts  模块级环边 M04 -> VOICE（M04 与 VOICE 互相可达）
+  - [cycle] app/src/lib/enterprise/tenant/directory.ts -> app/src/lib/auth/queries.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] app/src/lib/marketplace/mutations.ts -> app/src/lib/enterprise/tenant/scoped-cache.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] app/src/lib/marketplace/mutations.ts -> app/src/lib/plugins/mutations.ts  模块级环边 M12 -> M08（M12 与 M08 互相可达）
+  - [cycle] app/src/lib/marketplace/queries.ts -> app/src/lib/enterprise/tenant/queries.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] app/src/lib/marketplace/queries.ts -> app/src/lib/enterprise/tenant/scoped-cache.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] app/src/lib/plugin-packages/use-package-scope.ts -> app/src/lib/auth/queries.ts  模块级环边 M12 -> M01（M12 与 M01 互相可达）
+  - [cycle] app/src/lib/plugin-packages/use-package-scope.ts -> app/src/lib/enterprise/tenant/scoped-cache.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] app/src/lib/plugin-packages/use-package-scope.ts -> app/src/lib/enterprise/tenant/selection.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] app/src/lib/voice/archive.ts -> app/src/lib/channels/queries.ts  模块级环边 VOICE -> M04（VOICE 与 M04 互相可达）
+  - [cycle] app/src/lib/voice/outbox.ts -> app/src/lib/auth/queries.ts  模块级环边 VOICE -> M01（VOICE 与 M01 互相可达）
+  - [cycle] app/src/lib/voice/use-voice-call.ts -> app/src/lib/enterprise/tenant/stream-scope.ts  模块级环边 VOICE -> M02（VOICE 与 M02 互相可达）
+  - [cycle] app/src/lib/voice/webrtc.ts -> app/src/lib/enterprise/tenant/stream-scope.ts  模块级环边 VOICE -> M02（VOICE 与 M02 互相可达）
+  - [cycle] app/src/lib/voice/websocket.ts -> app/src/lib/enterprise/tenant/stream-scope.ts  模块级环边 VOICE -> M02（VOICE 与 M02 互相可达）
+  - [cycle] server/src/agents/agent-resolver.ts -> server/src/learning/public.ts  模块级环边 M03 -> LEARNING（M03 与 LEARNING 互相可达）
+  - [cycle] server/src/agents/agent-resolver.ts -> server/src/memory/public.ts  模块级环边 M03 -> M10（M03 与 M10 互相可达）
+  - [cycle] server/src/agents/agent-resolver.ts -> server/src/plugins/package-tools.ts  模块级环边 M03 -> M08（M03 与 M08 互相可达）
+  - [cycle] server/src/agents/agent-resolver.ts -> server/src/plugins/public.ts  模块级环边 M03 -> M08（M03 与 M08 互相可达）
+  - [cycle] server/src/agents/coordination-wiring.ts -> server/src/approvals/public.ts  模块级环边 M03 -> M08（M03 与 M08 互相可达）
+  - [cycle] server/src/agents/coordination-wiring.ts -> server/src/channels/public.ts  模块级环边 M03 -> M04（M03 与 M04 互相可达）
+  - [cycle] server/src/agents/handoff-wiring.ts -> server/src/channels/public.ts  模块级环边 M03 -> M04（M03 与 M04 互相可达）
+  - [cycle] server/src/agents/lifecycle-reset.ts -> server/src/memory/public.ts  模块级环边 M03 -> M10（M03 与 M10 互相可达）
+  - [cycle] server/src/agents/lifecycle-routes.ts -> server/src/auth/public.ts  模块级环边 M03 -> M01（M03 与 M01 互相可达）
+  - [cycle] server/src/agents/openmuse-template-store.ts -> server/src/mobile-bff/public.ts  模块级环边 M03 -> OPENMUSE（M03 与 OPENMUSE 互相可达）
+  - [cycle] server/src/agents/routes.ts -> server/src/auth/public.ts  模块级环边 M03 -> M01（M03 与 M01 互相可达）
+  - [cycle] server/src/agents/wake-up.ts -> server/src/channels/public.ts  模块级环边 M03 -> M04（M03 与 M04 互相可达）
+  - [cycle] server/src/ai-observability/context.ts -> server/src/agents/public.ts  模块级环边 M11 -> M03（M11 与 M03 互相可达）
+  - [cycle] server/src/ai-observability/execution-boot.ts -> server/src/agents/public.ts  模块级环边 M11 -> M03（M11 与 M03 互相可达）
+  - [cycle] server/src/ai-observability/execution-boot.ts -> server/src/plugins/store.ts  模块级环边 M11 -> M08（M11 与 M08 互相可达）
+  - [cycle] server/src/ai-observability/execution-runner.ts -> server/src/billing/input-bound.ts  模块级环边 M11 -> M07（M11 与 M07 互相可达）
+  - [cycle] server/src/ai-observability/execution-seam.ts -> server/src/billing/input-bound.ts  模块级环边 M11 -> M07（M11 与 M07 互相可达）
+  - [cycle] server/src/ai-observability/integration.ts -> server/src/enterprise/models/public.ts  模块级环边 M11 -> M06（M11 与 M06 互相可达）
+  - [cycle] server/src/ai-observability/routes/admin-summary.ts -> server/src/agents/public.ts  模块级环边 M11 -> M03（M11 与 M03 互相可达）
+  - [cycle] server/src/ai-observability/routes/admin-summary.ts -> server/src/auth/public.ts  模块级环边 M11 -> M01（M11 与 M01 互相可达）
+  - [cycle] server/src/ai-observability/routes/basic-run.ts -> server/src/agents/public.ts  模块级环边 M11 -> M03（M11 与 M03 互相可达）
+  - [cycle] server/src/ai-observability/routes/basic-run.ts -> server/src/auth/public.ts  模块级环边 M11 -> M01（M11 与 M01 互相可达）
+  - [cycle] server/src/ai-observability/routes/case-review.ts -> server/src/agents/public.ts  模块级环边 M11 -> M03（M11 与 M03 互相可达）
+  - [cycle] server/src/ai-observability/routes/case-review.ts -> server/src/auth/public.ts  模块级环边 M11 -> M01（M11 与 M01 互相可达）
+  - [cycle] server/src/ai-observability/routes/comparison.ts -> server/src/agents/public.ts  模块级环边 M11 -> M03（M11 与 M03 互相可达）
+  - [cycle] server/src/ai-observability/routes/comparison.ts -> server/src/auth/public.ts  模块级环边 M11 -> M01（M11 与 M01 互相可达）
+  - [cycle] server/src/ai-observability/routes/datasets.ts -> server/src/agents/public.ts  模块级环边 M11 -> M03（M11 与 M03 互相可达）
+  - [cycle] server/src/ai-observability/routes/datasets.ts -> server/src/auth/public.ts  模块级环边 M11 -> M01（M11 与 M01 互相可达）
+  - [cycle] server/src/ai-observability/routes/exports.ts -> server/src/agents/public.ts  模块级环边 M11 -> M03（M11 与 M03 互相可达）
+  - [cycle] server/src/ai-observability/routes/exports.ts -> server/src/auth/public.ts  模块级环边 M11 -> M01（M11 与 M01 互相可达）
+  - [cycle] server/src/ai-observability/routes/health.ts -> server/src/auth/public.ts  模块级环边 M11 -> M01（M11 与 M01 互相可达）
+  - [cycle] server/src/ai-observability/routes/index.ts -> server/src/agents/public.ts  模块级环边 M11 -> M03（M11 与 M03 互相可达）
+  - [cycle] server/src/ai-observability/routes/index.ts -> server/src/auth/public.ts  模块级环边 M11 -> M01（M11 与 M01 互相可达）
+  - [cycle] server/src/ai-observability/routes/results.ts -> server/src/agents/public.ts  模块级环边 M11 -> M03（M11 与 M03 互相可达）
+  - [cycle] server/src/ai-observability/routes/results.ts -> server/src/auth/public.ts  模块级环边 M11 -> M01（M11 与 M01 互相可达）
+  - [cycle] server/src/ai-observability/routes/runs.ts -> server/src/agents/public.ts  模块级环边 M11 -> M03（M11 与 M03 互相可达）
+  - [cycle] server/src/ai-observability/routes/runs.ts -> server/src/auth/public.ts  模块级环边 M11 -> M01（M11 与 M01 互相可达）
+  - [cycle] server/src/ai-observability/scoring/judge.ts -> server/src/enterprise/models/public.ts  模块级环边 M11 -> M06（M11 与 M06 互相可达）
+  - [cycle] server/src/ai-observability/wiring.ts -> server/src/agents/public.ts  模块级环边 M11 -> M03（M11 与 M03 互相可达）
+  - [cycle] server/src/approvals/person-response-sweep.ts -> server/src/agents/public.ts  模块级环边 M08 -> M03（M08 与 M03 互相可达）
+  - [cycle] server/src/approvals/person-response-sweep.ts -> server/src/channels/public.ts  模块级环边 M08 -> M04（M08 与 M04 互相可达）
+  - [cycle] server/src/approvals/resume-sweep.ts -> server/src/agents/public.ts  模块级环边 M08 -> M03（M08 与 M03 互相可达）
+  - [cycle] server/src/approvals/resume-sweep.ts -> server/src/channels/public.ts  模块级环边 M08 -> M04（M08 与 M04 互相可达）
+  - [cycle] server/src/approvals/wiring.ts -> server/src/agents/public.ts  模块级环边 M08 -> M03（M08 与 M03 互相可达）
+  - [cycle] server/src/auth/company-assurance.ts -> server/src/credentials.ts  模块级环边 M01 -> M08（M01 与 M08 互相可达）
+  - [cycle] server/src/auth/directory/lifecycle.ts -> server/src/billing/payer.ts  模块级环边 M01 -> M07（M01 与 M07 互相可达）
+  - [cycle] server/src/auth/directory/lifecycle.ts -> server/src/billing/payer-binding.ts  模块级环边 M01 -> M07（M01 与 M07 互相可达）
+  - [cycle] server/src/auth/directory/read-routes.ts -> server/src/enterprise/tenancy/store.ts  模块级环边 M01 -> M02（M01 与 M02 互相可达）
+  - [cycle] server/src/auth/directory/read-routes.ts -> server/src/enterprise/tenancy/workspace-scope-routes.ts  模块级环边 M01 -> M02（M01 与 M02 互相可达）
+  - [cycle] server/src/auth/scim.ts -> server/src/enterprise/tenancy/scim-directory.ts  模块级环边 M01 -> M02（M01 与 M02 互相可达）
+  - [cycle] server/src/auth/sso-evidence.ts -> server/src/credentials.ts  模块级环边 M01 -> M08（M01 与 M08 互相可达）
+  - [cycle] server/src/billing/credit-service-auth.ts -> server/src/auth/public.ts  模块级环边 M07 -> M01（M07 与 M01 互相可达）
+  - [cycle] server/src/billing/payments/routes.ts -> server/src/auth/public.ts  模块级环边 M07 -> M01（M07 与 M01 互相可达）
+  - [cycle] server/src/billing/routes.ts -> server/src/auth/public.ts  模块级环边 M07 -> M01（M07 与 M01 互相可达）
+  - [cycle] server/src/bot-services/access-grants.ts -> server/src/auth/directory/contracts.ts  模块级环边 M06 -> M01（M06 与 M01 互相可达）
+  - [cycle] server/src/bot-services/access-grants.ts -> server/src/auth/public.ts  模块级环边 M06 -> M01（M06 与 M01 互相可达）
+  - [cycle] server/src/bot-services/auth.ts -> server/src/auth/public.ts  模块级环边 M06 -> M01（M06 与 M01 互相可达）
+  - [cycle] server/src/channels/attachments.ts -> server/src/auth/public.ts  模块级环边 M04 -> M01（M04 与 M01 互相可达）
+  - [cycle] server/src/channels/group.ts -> server/src/auth/public.ts  模块级环边 M04 -> M01（M04 与 M01 互相可达）
+  - [cycle] server/src/channels/routes.ts -> server/src/agents/public.ts  模块级环边 M04 -> M03（M04 与 M03 互相可达）
+  - [cycle] server/src/channels/routes.ts -> server/src/auth/public.ts  模块级环边 M04 -> M01（M04 与 M01 互相可达）
+  - [cycle] server/src/channels/thread-routes.ts -> server/src/auth/public.ts  模块级环边 M04 -> M01（M04 与 M01 互相可达）
+  - [cycle] server/src/codesandbox/routes.ts -> server/src/auth/public.ts  模块级环边 M09 -> M01（M09 与 M01 互相可达）
+  - [cycle] server/src/computer/stream-auth.ts -> server/src/agents/public.ts  模块级环边 M09 -> M03（M09 与 M03 互相可达）
+  - [cycle] server/src/craft/approvals.ts -> server/src/auth/public.ts  模块级环边 CRAFT -> M01（CRAFT 与 M01 互相可达）
+  - [cycle] server/src/craft/artifact-routes.ts -> server/src/auth/public.ts  模块级环边 CRAFT -> M01（CRAFT 与 M01 互相可达）
+  - [cycle] server/src/craft/connect-app-routes.ts -> server/src/auth/public.ts  模块级环边 CRAFT -> M01（CRAFT 与 M01 互相可达）
+  - [cycle] server/src/craft/file-routes.ts -> server/src/auth/public.ts  模块级环边 CRAFT -> M01（CRAFT 与 M01 互相可达）
+  - [cycle] server/src/craft/message-routes.ts -> server/src/auth/public.ts  模块级环边 CRAFT -> M01（CRAFT 与 M01 互相可达）
+  - [cycle] server/src/craft/routes.ts -> server/src/auth/public.ts  模块级环边 CRAFT -> M01（CRAFT 与 M01 互相可达）
+  - [cycle] server/src/craft/scheduled-tasks.ts -> server/src/auth/public.ts  模块级环边 CRAFT -> M01（CRAFT 与 M01 互相可达）
+  - [cycle] server/src/craft/session-routes.ts -> server/src/auth/public.ts  模块级环边 CRAFT -> M01（CRAFT 与 M01 互相可达）
+  - [cycle] server/src/craft/subagent-routes.ts -> server/src/auth/public.ts  模块级环边 CRAFT -> M01（CRAFT 与 M01 互相可达）
+  - [cycle] server/src/craft/turn-routes.ts -> server/src/auth/public.ts  模块级环边 CRAFT -> M01（CRAFT 与 M01 互相可达）
+  - [cycle] server/src/craft/webapp-proxy.ts -> server/src/auth/public.ts  模块级环边 CRAFT -> M01（CRAFT 与 M01 互相可达）
+  - [cycle] server/src/craft/write-origin-guard.ts -> server/src/auth/public.ts  模块级环边 CRAFT -> M01（CRAFT 与 M01 互相可达）
+  - [cycle] server/src/delivery/routes.ts -> server/src/auth/public.ts  模块级环边 AUTOMATION -> M01（AUTOMATION 与 M01 互相可达）
+  - [cycle] server/src/demonstrations/routes.ts -> server/src/auth/public.ts  模块级环边 M03 -> M01（M03 与 M01 互相可达）
+  - [cycle] server/src/dictation/routes.ts -> server/src/auth/public.ts  模块级环边 VOICE -> M01（VOICE 与 M01 互相可达）
+  - [cycle] server/src/enterprise/contracts.ts -> server/src/auth/directory/contracts.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/contracts.ts -> server/src/enterprise/contracts.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/contracts.ts -> server/src/enterprise/tenancy/connections.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/contracts.ts -> server/src/enterprise/tenancy/workspace-admin.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/dispatch.ts -> server/src/plugins/package-tools.ts  模块级环边 M12 -> M08（M12 与 M08 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/dispatch.ts -> server/src/plugins/transport.ts  模块级环边 M12 -> M08（M12 与 M08 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/dispatch.ts -> server/src/enterprise/contracts.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/dispatch.ts -> server/src/enterprise/tenancy/connections.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/dispatch.ts -> server/src/enterprise/tenancy/credential-ownership.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/dispatch.ts -> server/src/enterprise/tenancy/plugin-catalog.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/dispatch.ts -> server/src/enterprise/tenancy/scope-gate.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/dispatch.ts -> server/src/enterprise/tenancy/store.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/dispatch.ts -> server/src/enterprise/tenancy/tool-invocation.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/entrypoints.ts -> server/src/plugins/package-tools.ts  模块级环边 M12 -> M08（M12 与 M08 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/entrypoints.ts -> server/src/enterprise/contracts.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/entrypoints.ts -> server/src/enterprise/tenancy/connections.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/entrypoints.ts -> server/src/enterprise/tenancy/store.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/experts.ts -> server/src/enterprise/contracts.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/experts.ts -> server/src/enterprise/tenancy/workspace-admin.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/grants.ts -> server/src/enterprise/contracts.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/grants.ts -> server/src/enterprise/tenancy/personal-bot.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/grants.ts -> server/src/enterprise/tenancy/workspace-admin.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/install-service.ts -> server/src/enterprise/contracts.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/install-service.ts -> server/src/enterprise/tenancy/workspace-admin.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/mutation-context.ts -> server/src/enterprise/contracts.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/mutation-context.ts -> server/src/enterprise/tenancy/connections.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/mutation-context.ts -> server/src/enterprise/tenancy/scope-gate.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/mutation-context.ts -> server/src/enterprise/tenancy/store.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/mutation-context.ts -> server/src/enterprise/tenancy/workspace-admin.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/routes.ts -> server/src/enterprise/contracts.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/routes.ts -> server/src/enterprise/tenancy/admin-separation.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/routes.ts -> server/src/enterprise/tenancy/workspace-admin.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/runtime.ts -> server/src/enterprise/contracts.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/runtime.ts -> server/src/enterprise/tenancy/connections.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/runtime.ts -> server/src/enterprise/tenancy/personal-bot.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/runtime.ts -> server/src/enterprise/tenancy/store.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/store.ts -> server/src/enterprise/contracts.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/store.ts -> server/src/enterprise/tenancy/connections.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/plugin-packages/store.ts -> server/src/enterprise/tenancy/store.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/enterprise/runs/runner.ts -> server/src/agents/public.ts  模块级环边 M05 -> M03（M05 与 M03 互相可达）
+  - [cycle] server/src/enterprise/runs/runner.ts -> server/src/enterprise/plugin-packages/runtime.ts  模块级环边 M05 -> M12（M05 与 M12 互相可达）
+  - [cycle] server/src/enterprise/runs/service.ts -> server/src/enterprise/plugin-packages/public.ts  模块级环边 M05 -> M12（M05 与 M12 互相可达）
+  - [cycle] server/src/enterprise/tenancy/company-admin-routes.ts -> server/src/auth/directory/membership.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/company-admin-routes.ts -> server/src/auth/directory/team-extension.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/company-admin-routes.ts -> server/src/auth/directory/team-grants.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/company-admin-routes.ts -> server/src/auth/directory/authority.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/company-admin-routes.ts -> server/src/auth/directory/executor.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/company-admin-routes.ts -> server/src/auth/directory/lifecycle.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/deletion-semantics.ts -> server/src/auth/directory/membership.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/openmuse-task-tenancy.ts -> server/src/openmuse-tasks/public.ts  模块级环边 M02 -> OPENMUSE（M02 与 OPENMUSE 互相可达）
+  - [cycle] server/src/enterprise/tenancy/people-lifecycle.ts -> server/src/auth/directory/membership.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/provision.ts -> server/src/auth/directory/contracts.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/provision.ts -> server/src/auth/directory/lifecycle.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/provision.ts -> server/src/auth/directory/principal-registry.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/provision.ts -> server/src/billing/payer.ts  模块级环边 M02 -> M07（M02 与 M07 互相可达）
+  - [cycle] server/src/enterprise/tenancy/provision.ts -> server/src/billing/payer-binding.ts  模块级环边 M02 -> M07（M02 与 M07 互相可达）
+  - [cycle] server/src/enterprise/tenancy/scim-directory.ts -> server/src/auth/directory/contracts.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/scope-gate.ts -> server/src/auth/company-assurance.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/scope-gate.ts -> server/src/auth/directory/authority.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/store.ts -> server/src/auth/company-assurance.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/store.ts -> server/src/auth/directory/authority.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/workspace-admin.ts -> server/src/auth/company-assurance.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/workspace-admin.ts -> server/src/auth/directory/authority.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/workspace-admin.ts -> server/src/auth/directory/membership.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/workspace-scope-routes.ts -> server/src/auth/company-assurance.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/workspace-scope-routes.ts -> server/src/auth/directory/authority.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/workspace-scope-routes.ts -> server/src/auth/directory/executor.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/workspace-scope-routes.ts -> server/src/auth/directory/membership.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/enterprise/tenancy/workspace-scope-routes.ts -> server/src/auth/directory/team-extension.ts  模块级环边 M02 -> M01（M02 与 M01 互相可达）
+  - [cycle] server/src/gateway/model-selection-routes.ts -> server/src/auth/public.ts  模块级环边 M06 -> M01（M06 与 M01 互相可达）
+  - [cycle] server/src/hindsight/answer-evidence.ts -> server/src/enterprise/contracts.ts  模块级环边 M10 -> M02（M10 与 M02 互相可达）
+  - [cycle] server/src/hindsight/bank-scope.ts -> server/src/enterprise/contracts.ts  模块级环边 M10 -> M02（M10 与 M02 互相可达）
+  - [cycle] server/src/hindsight/bank-scope.ts -> server/src/enterprise/tenancy/store.ts  模块级环边 M10 -> M02（M10 与 M02 互相可达）
+  - [cycle] server/src/hindsight/degraded-recall.ts -> server/src/enterprise/contracts.ts  模块级环边 M10 -> M02（M10 与 M02 互相可达）
+  - [cycle] server/src/hindsight/derived-judgments.ts -> server/src/enterprise/contracts.ts  模块级环边 M10 -> M02（M10 与 M02 互相可达）
+  - [cycle] server/src/hindsight/judgment-review.ts -> server/src/enterprise/contracts.ts  模块级环边 M10 -> M02（M10 与 M02 互相可达）
+  - [cycle] server/src/hindsight/ops-routes.ts -> server/src/auth/guards.ts  模块级环边 M10 -> M01（M10 与 M01 互相可达）
+  - [cycle] server/src/hindsight/ops-routes.ts -> server/src/enterprise/contracts.ts  模块级环边 M10 -> M02（M10 与 M02 互相可达）
+  - [cycle] server/src/hindsight/pause-controls.ts -> server/src/enterprise/contracts.ts  模块级环边 M10 -> M02（M10 与 M02 互相可达）
+  - [cycle] server/src/hindsight/personal-memory-context.ts -> server/src/enterprise/contracts.ts  模块级环边 M10 -> M02（M10 与 M02 互相可达）
+  - [cycle] server/src/hindsight/preference-recall.ts -> server/src/enterprise/contracts.ts  模块级环边 M10 -> M02（M10 与 M02 互相可达）
+  - [cycle] server/src/hindsight/revocation.ts -> server/src/enterprise/contracts.ts  模块级环边 M10 -> M02（M10 与 M02 互相可达）
+  - [cycle] server/src/hindsight/routes.ts -> server/src/enterprise/contracts.ts  模块级环边 M10 -> M02（M10 与 M02 互相可达）
+  - [cycle] server/src/hindsight/scoped-recall.ts -> server/src/enterprise/contracts.ts  模块级环边 M10 -> M02（M10 与 M02 互相可达）
+  - [cycle] server/src/host-access/routes.ts -> server/src/auth/public.ts  模块级环边 M09 -> M01（M09 与 M01 互相可达）
+  - [cycle] server/src/learning/routes.ts -> server/src/auth/guards.ts  模块级环边 LEARNING -> M01（LEARNING 与 M01 互相可达）
+  - [cycle] server/src/marketplace/legacy-migration.ts -> server/src/enterprise/contracts.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/marketplace/legacy-migration.ts -> server/src/enterprise/tenancy/workspace-admin.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/marketplace/routes.ts -> server/src/agents/public.ts  模块级环边 M12 -> M03（M12 与 M03 互相可达）
+  - [cycle] server/src/marketplace/routes.ts -> server/src/auth/public.ts  模块级环边 M12 -> M01（M12 与 M01 互相可达）
+  - [cycle] server/src/marketplace/routes.ts -> server/src/plugins/public.ts  模块级环边 M12 -> M08（M12 与 M08 互相可达）
+  - [cycle] server/src/mastra/continuation-routes.ts -> server/src/auth/public.ts  模块级环边 M05 -> M01（M05 与 M01 互相可达）
+  - [cycle] server/src/mastra/openmuse-task-entry.ts -> server/src/openmuse-tasks/public.ts  模块级环边 M05 -> OPENMUSE（M05 与 OPENMUSE 互相可达）
+  - [cycle] server/src/mastra/tools.ts -> server/src/learning/public.ts  模块级环边 M05 -> LEARNING（M05 与 LEARNING 互相可达）
+  - [cycle] server/src/memory/ingestion.ts -> server/src/plugins/access.ts  模块级环边 M10 -> M08（M10 与 M08 互相可达）
+  - [cycle] server/src/memory/ingestion.ts -> server/src/plugins/broker.ts  模块级环边 M10 -> M08（M10 与 M08 互相可达）
+  - [cycle] server/src/memory/ingestion.ts -> server/src/plugins/catalogue.ts  模块级环边 M10 -> M08（M10 与 M08 互相可达）
+  - [cycle] server/src/memory/ingestion.ts -> server/src/plugins/composio.ts  模块级环边 M10 -> M08（M10 与 M08 互相可达）
+  - [cycle] server/src/memory/ingestion.ts -> server/src/plugins/shared-accounts.ts  模块级环边 M10 -> M08（M10 与 M08 互相可达）
+  - [cycle] server/src/memory/ingestion.ts -> server/src/plugins/store.ts  模块级环边 M10 -> M08（M10 与 M08 互相可达）
+  - [cycle] server/src/memory/routes.ts -> server/src/auth/public.ts  模块级环边 M10 -> M01（M10 与 M01 互相可达）
+  - [cycle] server/src/memory/routes.ts -> server/src/enterprise/contracts.ts  模块级环边 M10 -> M02（M10 与 M02 互相可达）
+  - [cycle] server/src/memory/routes.ts -> server/src/plugins/store.ts  模块级环边 M10 -> M08（M10 与 M08 互相可达）
+  - [cycle] server/src/mobile-bff/activity.ts -> server/src/agents/public.ts  模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）
+  - [cycle] server/src/mobile-bff/activity.ts -> server/src/approvals/public.ts  模块级环边 OPENMUSE -> M08（OPENMUSE 与 M08 互相可达）
+  - [cycle] server/src/mobile-bff/activity.ts -> server/src/routines/public.ts  模块级环边 OPENMUSE -> AUTOMATION（OPENMUSE 与 AUTOMATION 互相可达）
+  - [cycle] server/src/mobile-bff/openmuse-bot.ts -> server/src/agents/public.ts  模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）
+  - [cycle] server/src/mobile-bff/openmuse-bot.ts -> server/src/auth/public.ts  模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）
+  - [cycle] server/src/mobile-bff/routes.ts -> server/src/agents/public.ts  模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）
+  - [cycle] server/src/mobile-bff/routes.ts -> server/src/auth/public.ts  模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）
+  - [cycle] server/src/mobile-bff/routes.ts -> server/src/channels/public.ts  模块级环边 OPENMUSE -> M04（OPENMUSE 与 M04 互相可达）
+  - [cycle] server/src/mobile-bff/workspace.ts -> server/src/agents/public.ts  模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）
+  - [cycle] server/src/mobile-bff/workspace.ts -> server/src/channels/public.ts  模块级环边 OPENMUSE -> M04（OPENMUSE 与 M04 互相可达）
+  - [cycle] server/src/openmuse-activity/routes.ts -> server/src/approvals/types.ts  模块级环边 OPENMUSE -> M08（OPENMUSE 与 M08 互相可达）
+  - [cycle] server/src/openmuse-activity/routes.ts -> server/src/auth/guards.ts  模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）
+  - [cycle] server/src/openmuse-calendar/routes.ts -> server/src/auth/public.ts  模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）
+  - [cycle] server/src/openmuse-connectors/routes.ts -> server/src/auth/public.ts  模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）
+  - [cycle] server/src/openmuse-deletion/fence.ts -> server/src/auth/public.ts  模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）
+  - [cycle] server/src/openmuse-deletion/manifest.ts -> server/src/agents/public.ts  模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）
+  - [cycle] server/src/openmuse-deletion/manifest.ts -> server/src/channels/public.ts  模块级环边 OPENMUSE -> M04（OPENMUSE 与 M04 互相可达）
+  - [cycle] server/src/openmuse-deletion/purge-relational.ts -> server/src/agents/public.ts  模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）
+  - [cycle] server/src/openmuse-deletion/purge-relational.ts -> server/src/channels/public.ts  模块级环边 OPENMUSE -> M04（OPENMUSE 与 M04 互相可达）
+  - [cycle] server/src/openmuse-deletion/restore.ts -> server/src/auth/guards.ts  模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）
+  - [cycle] server/src/openmuse-deletion/routes.ts -> server/src/auth/public.ts  模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）
+  - [cycle] server/src/openmuse-documents/routes.ts -> server/src/auth/public.ts  模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）
+  - [cycle] server/src/openmuse-files/routes.ts -> server/src/auth/public.ts  模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）
+  - [cycle] server/src/openmuse-files/routes.ts -> server/src/channels/attachment-mime.ts  模块级环边 OPENMUSE -> M04（OPENMUSE 与 M04 互相可达）
+  - [cycle] server/src/openmuse-mail/routes.ts -> server/src/auth/public.ts  模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）
+  - [cycle] server/src/openmuse-notifications/routes.ts -> server/src/auth/public.ts  模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）
+  - [cycle] server/src/openmuse-ops/routes.ts -> server/src/auth/guards.ts  模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）
+  - [cycle] server/src/openmuse-personal/goals.ts -> server/src/auth/public.ts  模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）
+  - [cycle] server/src/openmuse-personal/ideas.ts -> server/src/auth/public.ts  模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）
+  - [cycle] server/src/openmuse-personal/memories.ts -> server/src/auth/public.ts  模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）
+  - [cycle] server/src/openmuse-personal/tools.ts -> server/src/plugins/tools.ts  模块级环边 OPENMUSE -> M08（OPENMUSE 与 M08 互相可达）
+  - [cycle] server/src/openmuse-reviewed-actions/routes.ts -> server/src/auth/guards.ts  模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）
+  - [cycle] server/src/openmuse-tasks/routes.ts -> server/src/auth/public.ts  模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）
+  - [cycle] server/src/openmuse-tasks/runner.ts -> server/src/agents/public.ts  模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）
+  - [cycle] server/src/openmuse-tasks/runner.ts -> server/src/channels/public.ts  模块级环边 OPENMUSE -> M04（OPENMUSE 与 M04 互相可达）
+  - [cycle] server/src/openmuse-tasks/runner.ts -> server/src/work/queue.ts  模块级环边 OPENMUSE -> AUTOMATION（OPENMUSE 与 AUTOMATION 互相可达）
+  - [cycle] server/src/openmuse-tasks/store.ts -> server/src/work/queue.ts  模块级环边 OPENMUSE -> AUTOMATION（OPENMUSE 与 AUTOMATION 互相可达）
+  - [cycle] server/src/passwords/routes.ts -> server/src/auth/public.ts  模块级环边 M08 -> M01（M08 与 M01 互相可达）
+  - [cycle] server/src/plugin-packages/catalogue.ts -> server/src/enterprise/contracts.ts  模块级环边 M12 -> M02（M12 与 M02 互相可达）
+  - [cycle] server/src/plugins/openconnector.ts -> server/src/openmuse-deletion/retention.ts  模块级环边 M08 -> OPENMUSE（M08 与 OPENMUSE 互相可达）
+  - [cycle] server/src/proactive/engine.ts -> server/src/memory/public.ts  模块级环边 AUTOMATION -> M10（AUTOMATION 与 M10 互相可达）
+  - [cycle] server/src/proactive/routes.ts -> server/src/auth/public.ts  模块级环边 AUTOMATION -> M01（AUTOMATION 与 M01 互相可达）
+  - [cycle] server/src/proactive/store.ts -> server/src/memory/public.ts  模块级环边 AUTOMATION -> M10（AUTOMATION 与 M10 互相可达）
+  - [cycle] server/src/responsibilities/routes.ts -> server/src/auth/public.ts  模块级环边 AUTOMATION -> M01（AUTOMATION 与 M01 互相可达）
+  - [cycle] server/src/responsibilities/wiring.ts -> server/src/agents/public.ts  模块级环边 AUTOMATION -> M03（AUTOMATION 与 M03 互相可达）
+  - [cycle] server/src/responsibilities/wiring.ts -> server/src/channels/public.ts  模块级环边 AUTOMATION -> M04（AUTOMATION 与 M04 互相可达）
+  - [cycle] server/src/routines/routes.ts -> server/src/auth/public.ts  模块级环边 AUTOMATION -> M01（AUTOMATION 与 M01 互相可达）
+  - [cycle] server/src/routines/runner.ts -> server/src/agents/public.ts  模块级环边 AUTOMATION -> M03（AUTOMATION 与 M03 互相可达）
+  - [cycle] server/src/routines/runner.ts -> server/src/channels/public.ts  模块级环边 AUTOMATION -> M04（AUTOMATION 与 M04 互相可达）
+  - [cycle] server/src/team-bots/routes.ts -> server/src/auth/public.ts  模块级环边 M03 -> M01（M03 与 M01 互相可达）
+  - [cycle] server/src/voice/routes.ts -> server/src/agents/public.ts  模块级环边 VOICE -> M03（VOICE 与 M03 互相可达）
+  - [cycle] server/src/voice/routes.ts -> server/src/auth/public.ts  模块级环边 VOICE -> M01（VOICE 与 M01 互相可达）
+  - [cycle] server/src/voice/routes.ts -> server/src/channels/public.ts  模块级环边 VOICE -> M04（VOICE 与 M04 互相可达）
+  - [cycle] server/src/voice/session-routes.ts -> server/src/agents/public.ts  模块级环边 VOICE -> M03（VOICE 与 M03 互相可达）
+  - [cycle] server/src/voice/session-routes.ts -> server/src/auth/public.ts  模块级环边 VOICE -> M01（VOICE 与 M01 互相可达）
+  - [cycle] server/src/voice/session-routes.ts -> server/src/channels/public.ts  模块级环边 VOICE -> M04（VOICE 与 M04 互相可达）
+  - [cycle] server/src/voice/sessions.ts -> server/src/agents/public.ts  模块级环边 VOICE -> M03（VOICE 与 M03 互相可达）
+  - [cycle] server/src/voice/sessions.ts -> server/src/channels/public.ts  模块级环边 VOICE -> M04（VOICE 与 M04 互相可达）
+  - [cycle] server/src/voice/summary.ts -> server/src/agents/plan-model.ts  模块级环边 VOICE -> M03（VOICE 与 M03 互相可达）
+  - [cycle] server/src/voice/summary.ts -> server/src/channels/titler.ts  模块级环边 VOICE -> M04（VOICE 与 M04 互相可达）
+  - [cycle] server/src/workshop/preview.ts -> server/src/auth/public.ts  模块级环边 WORKSHOP -> M01（WORKSHOP 与 M01 互相可达）
+  - [cycle] server/src/workshop/routes.ts -> server/src/auth/public.ts  模块级环边 WORKSHOP -> M01（WORKSHOP 与 M01 互相可达）
+
+[幻影例外（范围扩大）]
+  - app/src/lib/marketplace/mutations.ts -> app/src/lib/enterprise/tenant/scoped-cache.ts
+  - app/src/lib/marketplace/mutations.ts -> app/src/lib/plugins/mutations.ts
+  - app/src/lib/marketplace/queries.ts -> app/src/lib/enterprise/tenant/queries.ts
+  - app/src/lib/marketplace/queries.ts -> app/src/lib/enterprise/tenant/scoped-cache.ts
+  - app/src/lib/plugin-packages/use-package-scope.ts -> app/src/lib/auth/queries.ts
+  - app/src/lib/plugin-packages/use-package-scope.ts -> app/src/lib/enterprise/tenant/selection.ts
+  - app/src/lib/voice/archive.ts -> app/src/lib/channels/queries.ts
+  - app/src/lib/voice/outbox.ts -> app/src/lib/auth/queries.ts
+  - app/src/lib/voice/use-voice-call.ts -> app/src/lib/enterprise/tenant/stream-scope.ts
+  - app/src/lib/voice/webrtc.ts -> app/src/lib/enterprise/tenant/stream-scope.ts
+  - app/src/lib/voice/websocket.ts -> app/src/lib/enterprise/tenant/stream-scope.ts
+  - server/src/enterprise/plugin-packages/contracts.ts -> server/src/enterprise/contracts.ts
+  - server/src/enterprise/plugin-packages/contracts.ts -> server/src/enterprise/tenancy/connections.ts
+  - server/src/enterprise/plugin-packages/contracts.ts -> server/src/enterprise/tenancy/workspace-admin.ts
+  - server/src/enterprise/plugin-packages/experts.ts -> server/src/enterprise/contracts.ts
+  - server/src/enterprise/plugin-packages/experts.ts -> server/src/enterprise/tenancy/workspace-admin.ts
+  - server/src/enterprise/plugin-packages/grants.ts -> server/src/enterprise/contracts.ts
+  - server/src/enterprise/plugin-packages/grants.ts -> server/src/enterprise/tenancy/workspace-admin.ts
+  - server/src/enterprise/plugin-packages/install-service.ts -> server/src/enterprise/tenancy/workspace-admin.ts
+  - server/src/enterprise/plugin-packages/mutation-context.ts -> server/src/enterprise/contracts.ts
+  - server/src/enterprise/plugin-packages/mutation-context.ts -> server/src/enterprise/tenancy/connections.ts
+  - server/src/enterprise/plugin-packages/mutation-context.ts -> server/src/enterprise/tenancy/scope-gate.ts
+  - server/src/enterprise/plugin-packages/mutation-context.ts -> server/src/enterprise/tenancy/store.ts
+  - server/src/enterprise/plugin-packages/mutation-context.ts -> server/src/enterprise/tenancy/workspace-admin.ts
+  - server/src/enterprise/plugin-packages/routes.ts -> server/src/enterprise/contracts.ts
+  - server/src/enterprise/plugin-packages/routes.ts -> server/src/enterprise/tenancy/admin-separation.ts
+  - server/src/enterprise/plugin-packages/routes.ts -> server/src/enterprise/tenancy/workspace-admin.ts
+  - server/src/enterprise/plugin-packages/runtime.ts -> server/src/enterprise/contracts.ts
+  - server/src/enterprise/plugin-packages/runtime.ts -> server/src/enterprise/tenancy/connections.ts
+  - server/src/enterprise/plugin-packages/runtime.ts -> server/src/enterprise/tenancy/store.ts
+  - server/src/enterprise/plugin-packages/store.ts -> server/src/enterprise/contracts.ts
+  - server/src/enterprise/plugin-packages/store.ts -> server/src/enterprise/tenancy/connections.ts
+  - server/src/enterprise/plugin-packages/store.ts -> server/src/enterprise/tenancy/store.ts
+  - server/src/learning/routes.ts -> server/src/auth/guards.ts
+  - server/src/openmuse-activity/routes.ts -> server/src/approvals/types.ts
+  - server/src/openmuse-activity/routes.ts -> server/src/auth/guards.ts
+  - server/src/openmuse-deletion/restore.ts -> server/src/auth/guards.ts
+  - server/src/openmuse-files/routes.ts -> server/src/channels/attachment-mime.ts
+  - server/src/openmuse-ops/routes.ts -> server/src/auth/guards.ts
+  - server/src/openmuse-personal/tools.ts -> server/src/plugins/tools.ts
+  - server/src/openmuse-reviewed-actions/routes.ts -> server/src/auth/guards.ts
+  - server/src/openmuse-tasks/runner.ts -> server/src/work/queue.ts
+  - server/src/openmuse-tasks/store.ts -> server/src/work/queue.ts
+  - server/src/plugin-packages/catalogue.ts -> server/src/enterprise/contracts.ts
+  - server/src/voice/summary.ts -> server/src/agents/plan-model.ts
+  - server/src/voice/summary.ts -> server/src/channels/titler.ts
+  - server/src/hindsight/answer-evidence.ts -> server/src/enterprise/contracts.ts
+  - server/src/hindsight/bank-scope.ts -> server/src/enterprise/contracts.ts
+  - server/src/hindsight/bank-scope.ts -> server/src/enterprise/tenancy/store.ts
+  - server/src/hindsight/degraded-recall.ts -> server/src/enterprise/contracts.ts
+  - server/src/hindsight/derived-judgments.ts -> server/src/enterprise/contracts.ts
+  - server/src/hindsight/judgment-review.ts -> server/src/enterprise/contracts.ts
+  - server/src/hindsight/pause-controls.ts -> server/src/enterprise/contracts.ts
+  - server/src/hindsight/personal-memory-context.ts -> server/src/enterprise/contracts.ts
+  - server/src/hindsight/preference-recall.ts -> server/src/enterprise/contracts.ts
+  - server/src/hindsight/revocation.ts -> server/src/enterprise/contracts.ts
+  - server/src/hindsight/scoped-recall.ts -> server/src/enterprise/contracts.ts
+  - server/src/memory/ingestion.ts -> server/src/plugins/access.ts
+  - server/src/memory/ingestion.ts -> server/src/plugins/broker.ts
+  - server/src/memory/ingestion.ts -> server/src/plugins/catalogue.ts
+  - server/src/memory/ingestion.ts -> server/src/plugins/composio.ts
+  - server/src/memory/ingestion.ts -> server/src/plugins/shared-accounts.ts
+  - server/src/memory/ingestion.ts -> server/src/plugins/store.ts
+  - server/src/memory/routes.ts -> server/src/plugins/store.ts
+  - server/src/hindsight/ops-routes.ts -> server/src/auth/guards.ts
+  - server/src/hindsight/ops-routes.ts -> server/src/enterprise/contracts.ts
+  - server/src/hindsight/routes.ts -> server/src/enterprise/contracts.ts
+  - server/src/memory/routes.ts -> server/src/enterprise/contracts.ts
+  - app/src/lib/plugin-packages/use-package-scope.ts -> app/src/lib/enterprise/tenant/scoped-cache.ts
+
+[模块环]
+  - M01 -> M02 -> M01
+  - M02 -> M03 -> M08 -> M02
+  - M03 -> M08 -> M03
+  - M04 -> VOICE -> M04
+  - M01 -> M02 -> M03 -> M08 -> M04 -> VOICE -> M01
+  - M02 -> M03 -> M08 -> M04 -> VOICE -> M02
+  - M03 -> M08 -> M04 -> VOICE -> M03
+  - M02 -> M03 -> M08 -> M04 -> M02
+  - M03 -> M08 -> M04 -> M03
+  - M08 -> M04 -> M08
+  - M04 -> M09 -> M04
+  - M02 -> M03 -> M08 -> M04 -> M09 -> M02
+  - M03 -> M08 -> M04 -> M09 -> M03
+  - M01 -> M02 -> M03 -> M08 -> M04 -> M09 -> M01
+  - M08 -> M04 -> M09 -> M08
+  - M01 -> M02 -> M03 -> M08 -> M04 -> M01
+  - M02 -> M03 -> M08 -> M04 -> AUTOMATION -> M02
+  - M03 -> M08 -> M04 -> AUTOMATION -> M03
+  - M08 -> M04 -> AUTOMATION -> M08
+  - M02 -> M03 -> M08 -> M04 -> AUTOMATION -> M05 -> M02
+  - M04 -> AUTOMATION -> M05 -> M04
+  - M08 -> M04 -> AUTOMATION -> M05 -> M08
+  - M01 -> M02 -> M03 -> M08 -> M04 -> AUTOMATION -> M05 -> M06 -> M01
+  - M08 -> M04 -> AUTOMATION -> M05 -> M06 -> M08
+  - M02 -> M03 -> M08 -> M04 -> AUTOMATION -> M05 -> M06 -> M02
+  - M04 -> AUTOMATION -> M05 -> M06 -> M04
+  - M05 -> M06 -> M05
+  - M03 -> M08 -> M04 -> AUTOMATION -> M05 -> M06 -> M03
+  - M02 -> M03 -> M08 -> M04 -> AUTOMATION -> M05 -> M06 -> M07 -> M02
+  - M06 -> M07 -> M06
+  - M01 -> M02 -> M03 -> M08 -> M04 -> AUTOMATION -> M05 -> M06 -> M07 -> M01
+  - M08 -> M04 -> AUTOMATION -> M05 -> M06 -> M07 -> M08
+  - M03 -> M08 -> M04 -> AUTOMATION -> M05 -> M03
+  - M02 -> M03 -> M08 -> M04 -> AUTOMATION -> M05 -> M12 -> M02
+  - M08 -> M04 -> AUTOMATION -> M05 -> M12 -> M08
+  - M01 -> M02 -> M03 -> M08 -> M04 -> AUTOMATION -> M05 -> M12 -> M01
+  - M03 -> M08 -> M04 -> AUTOMATION -> M05 -> M12 -> M03
+  - M03 -> M08 -> M04 -> AUTOMATION -> M05 -> M11 -> M03
+  - M01 -> M02 -> M03 -> M08 -> M04 -> AUTOMATION -> M05 -> M11 -> M01
+  - M02 -> M03 -> M08 -> M04 -> AUTOMATION -> M05 -> M11 -> WORKSHOP -> M02
+  - M03 -> M08 -> M04 -> AUTOMATION -> M05 -> M11 -> WORKSHOP -> M03
+  - M01 -> M02 -> M03 -> M08 -> M04 -> AUTOMATION -> M05 -> M11 -> WORKSHOP -> M01
+  - M08 -> M04 -> AUTOMATION -> M05 -> M11 -> M08
+  - AUTOMATION -> M05 -> M11 -> AUTOMATION
+  - M01 -> M02 -> M03 -> M08 -> M04 -> AUTOMATION -> M05 -> M01
+  - AUTOMATION -> M05 -> AUTOMATION
+  - M03 -> M08 -> M04 -> AUTOMATION -> M05 -> OPENMUSE -> M03
+  - M08 -> M04 -> AUTOMATION -> M05 -> OPENMUSE -> M08
+  - AUTOMATION -> M05 -> OPENMUSE -> AUTOMATION
+  - M01 -> M02 -> M03 -> M08 -> M04 -> AUTOMATION -> M05 -> OPENMUSE -> M01
+  - M04 -> AUTOMATION -> M05 -> OPENMUSE -> M04
+  - M01 -> M02 -> M03 -> M08 -> M04 -> AUTOMATION -> M05 -> LEARNING -> M01
+  - M01 -> M02 -> M03 -> M08 -> M04 -> AUTOMATION -> M01
+  - M02 -> M03 -> M08 -> M04 -> AUTOMATION -> M10 -> M02
+  - M01 -> M02 -> M03 -> M08 -> M04 -> AUTOMATION -> M10 -> M01
+  - M08 -> M04 -> AUTOMATION -> M10 -> M08
+  - M04 -> AUTOMATION -> M04
+  - M01 -> M02 -> M03 -> M08 -> M01
+  - M02 -> M03 -> M02
+  - M01 -> M02 -> M03 -> M01
+  - M02 -> CRAFT -> M02
+  - M01 -> M02 -> CRAFT -> M01
+
+结论: 存在差异（退出码非零）
+exit=1
