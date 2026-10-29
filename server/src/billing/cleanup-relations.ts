@@ -840,6 +840,9 @@ async function scanTableRows(
  * shelter's key pushdown, so a pure-legacy evaluation (no owned keys) never touches the
  * money tables at all. Same fail-closed spec gate as probeRows/scanTableRows: the probe
  * universe never silently widens. Callers must pass a non-empty list.
+ *
+ * shortcut: the IN list binds one parameter per key with no chunking; chunk it if a
+ * pathological estate ever exceeds ~10k owned keys (R5-LOW-1).
  */
 async function probeRowsWhereIn(
   tx: Transaction,

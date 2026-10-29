@@ -74,6 +74,7 @@ const A_AMOUNTS = {
   cache_read: "0.0000001",
   cache_write: "0.0000015",
   video: "0.01",
+  video_input: "0",
   surcharge_web_search: "0.001",
   surcharge_per_request: "0.0001",
   surcharge_tool_call: "0.002",

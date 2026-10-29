@@ -6,21 +6,17 @@ import {
   expect,
   test,
 } from "../../tests/support/bun-test-compat";
+import { createAsyncJobStatusService } from "../src/billing/async-job-status";
 import { createAsyncSubmitService } from "../src/billing/async-job-submit";
 import {
   asyncTerminalSettleKey,
   createAsyncTerminalSettleService,
   readAsyncSettleTrigger,
 } from "../src/billing/async-terminal";
-import { createAsyncJobStatusService } from "../src/billing/async-job-status";
 import { createCreditReserveService } from "../src/billing/credit-reserve";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createPayerAccount, payerKey } from "../src/billing/payer";
 import { resolveLockedReservationBasis } from "../src/billing/reserve-bound";
-import {
-  GATEWAY_PRICE_SNAPSHOT_SOURCE,
-  createEnterpriseGatewayPriceSnapshotStore,
-} from "../src/gateway/price-snapshot";
 import { createDatabase } from "../src/db/client";
 import {
   accessGrants,
@@ -32,10 +28,15 @@ import {
 } from "../src/db/schema";
 import {
   asyncJobs,
+  asyncSettleTriggers,
   creditReservations,
 } from "../src/db/schema/credit-reservations";
 import { creditLedger } from "../src/db/schema/credits";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../src/gateway/catalog-sync";
+import {
+  createEnterpriseGatewayPriceSnapshotStore,
+  GATEWAY_PRICE_SNAPSHOT_SOURCE,
+} from "../src/gateway/price-snapshot";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -443,6 +444,59 @@ describe("17.5 AC-2/AC-3 — ten polls and three notifications settle once", () 
       .from(creditLedger)
       .where(eq(creditLedger.externalCustomerId, world.customerKey));
     expect(ledger).toHaveLength(1);
+  });
+});
+
+// ── F1: the first-trigger key race converges, never escapes as a raw 23505 ──────────
+
+describe("17.5 F1 — a first-trigger key race converges, never raw 23505", () => {
+  test("a key owned by a different job refuses typed; the key's own job still converges", async () => {
+    const owner = await seedJobWorld();
+    const other = await seedJobWorld();
+    const report = terminalOf(other.jobId);
+    // The unified key the OTHER job's own terminal computes.
+    const key = asyncTerminalSettleKey(other.jobId, report.terminal);
+
+    // The post-race state, seeded deterministically: the key is already carried by a
+    // row whose job is the owner — exactly what a concurrent first insert would leave.
+    await database.insert(asyncSettleTriggers).values({
+      jobId: owner.jobId,
+      idempotencyKey: key,
+      terminalState: "completed",
+      totalTriggers: 1,
+      pollTriggers: 1,
+      lastSource: "poll",
+    });
+
+    // The other job's settle computes that same key: the insert violates the
+    // non-arbiter idempotency_key unique (23505). The typed conflict the refusal
+    // vocabulary already has answers it — never a raw rejection.
+    const answer = await terminal.settleTerminal({ ...report, source: "poll" });
+    expect(answer.status).toBe("refused");
+    if (answer.status !== "refused") return;
+    expect(answer.reasonCode).toBe("settlement_conflict");
+    expect(answer.detail.kind).toBe("settle_trigger_key_conflict");
+    expect(answer.detail.keyOwnerJobId).toBe(owner.jobId);
+
+    // No money moved for the refused job.
+    const ledger = await database
+      .select({ id: creditLedger.id })
+      .from(creditLedger)
+      .where(eq(creditLedger.externalCustomerId, other.customerKey));
+    expect(ledger).toHaveLength(0);
+
+    // The key's own job converges through the job_id arbiter: counters grow, the
+    // first-written key never moves, and the settlement lands normally.
+    const own = await terminal.settleTerminal({
+      ...terminalOf(owner.jobId),
+      source: "poll",
+    });
+    expect(own.status).toBe("settled");
+    if (own.status !== "settled") return;
+    expect(own.trigger.totalTriggers).toBe(2);
+    expect(own.trigger.pollTriggers).toBe(2);
+    const trigger = await readAsyncSettleTrigger(database, owner.jobId);
+    expect(trigger?.idempotencyKey).toBe(key);
   });
 });
 
