@@ -2755,7 +2755,7 @@ function notifyBaseAllowed(
     return ipv6LiteralAllowed(host, allowPrivate) ? undefined : refusal;
   }
   const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (ipv4 && ipv4.slice(1).every((octet) => Number(octet) <= 255)) {
+  if (ipv4?.slice(1).every((octet) => Number(octet) <= 255)) {
     return ipv4LiteralAllowed(Number(ipv4[1]), Number(ipv4[2]), allowPrivate)
       ? undefined
       : refusal;

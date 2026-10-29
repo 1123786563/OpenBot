@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { type GrantedTool, parametersFor } from "@openbot/toolkit/granted-tool";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
-import { z } from "zod";
 import { parsePackageToolRef } from "../../../shared/enterprise/plugin-package-contracts";
 import {
   RESEARCH_TOOLS,
@@ -11,11 +10,7 @@ import {
 import { ApprovalRefusedError } from "../approvals/types";
 import type { AuditInitiator } from "../audit";
 import { markUntrusted } from "../untrusted-content";
-import {
-  type CatalogueEntry,
-  catalogueEntry,
-  researchRoleFor,
-} from "./catalogue";
+import { type CatalogueEntry, catalogueEntry } from "./catalogue";
 import type {
   PackageToolDescriptor,
   PackageToolRunContext,

@@ -525,8 +525,7 @@ export function createBotLifecycleService(channels: {
             // 后的重读只认本人本团队的活行——同租户他人/别团队的占用行对
             // RLS 可见，不得当作 duplicate 成功。
             if (
-              !created ||
-              created.status !== "active" ||
+              created?.status !== "active" ||
               created.ownerPrincipalId !== scope.principalId ||
               created.workspaceId !== scope.workspaceId
             ) {

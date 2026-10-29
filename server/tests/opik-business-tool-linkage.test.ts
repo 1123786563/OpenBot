@@ -40,7 +40,7 @@ import { fileURLToPath } from "node:url";
 import type { BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { EventType } from "@ag-ui/client";
 import { runRootSpanId } from "@openbot/shared/run-identity";
-import { context, trace } from "@opentelemetry/api";
+import { trace } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { firstValueFrom, Observable, toArray } from "rxjs";

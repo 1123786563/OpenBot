@@ -915,12 +915,10 @@ async function collectBuiltin(
         ? JSON.stringify(
             usageActual.slice(0, 4).map((s) => ({
               name: s.name,
-              tokens_input: ((s.input ?? {}) as Record<string, unknown>)[
-                "tokens_input"
-              ],
-              tokens_output: ((s.input ?? {}) as Record<string, unknown>)[
-                "tokens_output"
-              ],
+              tokens_input: ((s.input ?? {}) as Record<string, unknown>)
+                .tokens_input,
+              tokens_output: ((s.input ?? {}) as Record<string, unknown>)
+                .tokens_output,
             })),
           )
         : "no span carries actual provider usage",
@@ -1285,12 +1283,10 @@ async function collectLanggraph(
         ? JSON.stringify(
             usageActual.slice(0, 4).map((s) => ({
               name: s.name,
-              tokens_input: ((s.input ?? {}) as Record<string, unknown>)[
-                "tokens_input"
-              ],
-              tokens_output: ((s.input ?? {}) as Record<string, unknown>)[
-                "tokens_output"
-              ],
+              tokens_input: ((s.input ?? {}) as Record<string, unknown>)
+                .tokens_input,
+              tokens_output: ((s.input ?? {}) as Record<string, unknown>)
+                .tokens_output,
             })),
           )
         : "no span carries actual provider usage",

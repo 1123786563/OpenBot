@@ -596,6 +596,16 @@ function installMockHooks(): void {
           shortCircuit: true,
         };
       }
+      if (specifier === "bun") {
+        // A suite the runner imports under Node may import the runtime itself
+        // (`import { serve } from "bun"` — agent-computer's server entry does);
+        // the shim already installed on globalThis is that module here too.
+        return {
+          url: "e2e-bun-shim:",
+          format: "module",
+          shortCircuit: true,
+        };
+      }
       if (moduleMocks.has(specifier)) {
         return {
           url: `e2e-mock:${encodeURIComponent(specifier)}`,
@@ -616,6 +626,34 @@ function installMockHooks(): void {
           format: "module",
           shortCircuit: true,
           source: 'export default "";\n',
+        };
+      }
+      if (url === "e2e-bun-shim:") {
+        const members = [
+          "serve",
+          "spawn",
+          "file",
+          "write",
+          "sleep",
+          "which",
+          "Glob",
+          "exist",
+          "rm",
+          "mkdir",
+          "read",
+          "CryptoHasher",
+          "YAML",
+          "argv",
+          "env",
+          "version",
+        ];
+        return {
+          format: "module",
+          shortCircuit: true,
+          source:
+            "const Bun = globalThis.Bun;\n" +
+            members.map((m) => `export const ${m} = Bun.${m};`).join("\n") +
+            "\nexport default Bun;\n",
         };
       }
       if (!url.startsWith("e2e-mock:")) {

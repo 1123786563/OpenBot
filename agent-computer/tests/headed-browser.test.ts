@@ -49,6 +49,8 @@ function api(path: string, init?: RequestInit) {
     headers: {
       "content-type": "application/json",
       "x-openbot-bot-id": BOT,
+      "x-openbot-tenant-id": "headed-browser",
+      "x-openbot-workspace-id": "headed-browser",
       "x-openbot-computer-token": TOKEN,
       ...(init?.headers ?? {}),
     },

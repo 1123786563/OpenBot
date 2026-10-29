@@ -2,3 +2,7 @@ ag2[ag-ui,anthropic,openai]
 fastapi
 python-multipart
 uvicorn[standard]
+# shortcut: anthropic>=2 sends the key as "authorization: Bearer" while the boundary test
+# pins the x-api-key wire form; same pin reason as agent-langgraph-agui. Unpin together.
+anthropic<2
+
