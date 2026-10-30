@@ -142,10 +142,10 @@ const purchaseInput = z.strictObject({
   provider: z.enum(["alipay", "wechat"]),
   /**
    * The billing cycle being bought. v1 collects MONTHLY only (the Lago interval the
-   * activation creates, and the only cycle PAYMENT_PLAN_CATALOG's periodMonths=1 allows) —
-   * both spellings of monthly are accepted because the display catalog names either. A
-   * yearly code is a 400 here, on purpose: the server refusing what it cannot collect is
-   * what keeps the dialog's hidden yearly option honest.
+   * activation creates) — both spellings of monthly are accepted because the display
+   * catalog names either, and per-cycle pricing charges the catalog's price for the one
+   * named. A yearly code is a 400 here, on purpose: the server refusing what it cannot
+   * collect is what keeps the dialog's hidden yearly option honest.
    */
   cycle: z.enum(["monthly", "recurring_monthly"]),
 });
@@ -187,6 +187,14 @@ export function createPaymentRoutes(deps: {
       if (error.refusal.reason === "unknown-plan") {
         return context.json(
           { error: "That plan is not purchasable here." },
+          400,
+        );
+      }
+      if (error.refusal.reason === "unknown-cycle") {
+        return context.json(
+          {
+            error: `Plan "${error.refusal.planCode}" is not priced for cycle "${error.refusal.cycle}" on this deployment.`,
+          },
           400,
         );
       }
@@ -272,10 +280,10 @@ export function createPaymentRoutes(deps: {
     const { order } = await deps.service.createPurchase({
       planCode: input.planCode,
       provider: input.provider,
-      // v1 converges both monthly spellings to the one cycle it collects; the service's
-      // snapshot is the monthly price either way (the cross-check at boot keeps the two
-      // catalogs' monthly prices identical, so there is no second number to choose).
-      cycle: "monthly",
+      // Per-cycle pricing: the cycle the client named is the cycle priced — the service reads
+      // the catalog's price for exactly this cycle and refuses a plan that prices no such
+      // cycle before any order row exists.
+      cycle: input.cycle,
       createdBy: context.var.actor.id,
       ownerPayerRef,
     });

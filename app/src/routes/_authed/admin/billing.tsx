@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { AdminCreditGrantCard } from "@/components/billing/admin-credit-grant";
 import { BillingCleanupExecutionCard } from "@/components/admin/billing-cleanup-execution-card";
 import { BillingRecoveryReviewCard } from "@/components/admin/billing-recovery-review-card";
+import { AdminCreditGrantCard } from "@/components/billing/admin-credit-grant";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 
 export const Route = createFileRoute("/_authed/admin/billing")({

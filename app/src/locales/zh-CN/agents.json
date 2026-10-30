@@ -350,6 +350,7 @@
       "readAria": "读取 {{title}}"
     },
     "loadError": "无法加载你的记忆。",
+    "unmounted": "这台 OpenBot 没有提供个人记忆。",
     "pause": {
       "title": "暂停记忆",
       "description": "需要时，你可以让 Bots 暂停学习或暂停使用你的记忆。",

@@ -60,9 +60,8 @@ function fakeService(overrides: Partial<PaymentService> = {}): PaymentService {
       plans: [
         {
           planCode: "pro",
-          amountCents: 8800,
           currency: "CNY",
-          periodMonths: 1,
+          cycles: [{ code: "monthly", amountCents: 8800 }],
         },
       ],
       canPurchase,
@@ -285,7 +284,7 @@ describe("callback routes", () => {
       providers: new Map([["alipay", provider]]),
       store,
       catalog: new Map([
-        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+        ["pro", { currency: "CNY", cycles: new Map([["monthly", 8800]]) }],
       ]),
       notifyBaseUrl: "https://payments.openbot.example",
       orderTtlMinutes: 15,
@@ -395,9 +394,8 @@ describe("user routes: catalog and reads", () => {
       plans: [
         {
           planCode: "pro",
-          amountCents: 8800,
           currency: "CNY",
-          periodMonths: 1,
+          cycles: [{ code: "monthly", amountCents: 8800 }],
         },
       ],
       canPurchase: true,

@@ -57,12 +57,14 @@ export type PurchaseOrderView = {
   createdAt: string;
 };
 
-/** One catalog price, as the HTTP surface spells it. */
+/** One catalog price, as the HTTP surface spells it: the collected amount per purchasable cycle. */
 export type PurchasePlanEntry = {
   planCode: string;
-  amountCents: number;
   currency: "CNY";
-  periodMonths: number;
+  cycles: readonly {
+    code: PurchaseCycle;
+    amountCents: number;
+  }[];
 };
 
 /** What the catalog endpoint answers: the prices plus who may buy and what is running. */

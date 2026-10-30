@@ -113,7 +113,7 @@ function buildService(deps: {
     providers: new Map(),
     store: paymentStore,
     catalog: new Map([
-      ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+      ["pro", { currency: "CNY", cycles: new Map([["monthly", 8800]]) }],
     ]),
     notifyBaseUrl: "https://payments.openbot.example",
     orderTtlMinutes: 15,

@@ -531,35 +531,44 @@ describe("T-final M1: the boot assembly reads the ambient scope", () => {
     ).toBe(0);
   });
 
-  test("the run-scope resolver is constructed before the first top-level await — the boot TDZ race is dead (OCR R3-36)", () => {
+  test("the run-scope resolver is constructed before the first await that can observe it — the boot TDZ race is dead (OCR R3-36)", () => {
     // The resolver construction is pure and synchronous; between the first
     // repeatAfterEach sweeps registering (each first run a setTimeout away)
     // and the old construction site — past several top-level awaits, one of
     // them loadVerifiedOpikPort's >5s HTTP pull — a wake-up sweep could build
     // an agent and subscribe a run, invoking index.ts's forwarding lambda
     // while aiObservabilityRunScope was still in its temporal dead zone. The
-    // ReferenceError inside the async lambda became an errored stream that
-    // bypassed the resolver's never-throw contract entirely. The whole block
-    // — the resolver AND the closure deps its callbacks dereference (the boot
-    // config, the manage gate, the epoch store) — now sits before the first
-    // top-level await, so no await window can catch any of them uninitialized.
+    // boot restructure then wrapped the module body in a boot function, which
+    // closes the window structurally: module evaluation has no top-level await
+    // at all, and inside the boot function the resolver AND the closure deps
+    // its callbacks dereference (the boot config, the manage gate, the epoch
+    // store) are constructed synchronously, in order, before the first await
+    // that follows them — no await window can catch any of them uninitialized.
     const source = indexSource.split("\n");
     const firstTopLevelAwait = source.findIndex((line) =>
-      /^ {4}await\s/.test(line),
+      /^await\s/.test(line),
     );
-    expect(firstTopLevelAwait).toBeGreaterThan(0);
-    for (const declaration of [
+    expect(firstTopLevelAwait).toBe(-1);
+    const declarations = [
       "const opikBootConfig = opikConfigFromEnv(process.env);",
       "const aiObservabilityCanObserveBot: BotManagementCheck = async (",
       "const aiObservabilityScopeEpoch = createAgentProfileScopeEpoch(database);",
       "const aiObservabilityRunScope = createBuiltinRunScopeResolver({",
-    ]) {
-      const declared = source.findIndex((line) =>
-        line.startsWith("    " + declaration),
-      );
+    ];
+    const declaredAt = declarations.map((declaration) =>
+      source.findIndex((line) => line.trimStart().startsWith(declaration)),
+    );
+    for (const [declaration, declared] of declarations.map((d, i) => [d, declaredAt[i]] as const)) {
       expect(declared, declaration).toBeGreaterThanOrEqual(0);
-      expect(declared, declaration).toBeLessThan(firstTopLevelAwait);
     }
+    const firstAwaitInside = source.findIndex(
+      (line, index) =>
+        index > Math.min(...declaredAt) && /^\s*await\s/.test(line),
+    );
+    expect(
+      firstAwaitInside,
+      "an await runs between the boot declarations, reopening the R3-36 window",
+    ).toBeGreaterThan(Math.max(...declaredAt));
   });
 });
 

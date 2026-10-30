@@ -2,7 +2,11 @@ import { IconArchive, IconClock, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { PageRows, PageSection } from "@/components/layout/page-shell";
+import {
+  PageEmpty,
+  PageRows,
+  PageSection,
+} from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
   Item,
@@ -44,7 +48,9 @@ export function MemoryCleanupSection() {
     <PageSection
       action={
         <Button
-          disabled={verify.isPending || cleanup.isPending}
+          disabled={
+            verify.isPending || cleanup.isPending || cleanup.data === null
+          }
           onClick={() => verify.mutate(undefined)}
           size="sm"
           variant="ghost"
@@ -61,6 +67,8 @@ export function MemoryCleanupSection() {
         <p role="alert" className="mt-4 text-destructive text-sm">
           {cleanup.error.message}
         </p>
+      ) : cleanup.data === null ? (
+        <PageEmpty>{t("memory.unmounted")}</PageEmpty>
       ) : (
         <>
           {/* The claim is a fact the server already decided; the screen states it or stays silent. */}

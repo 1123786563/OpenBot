@@ -1,6 +1,6 @@
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
-import { dirname, join } from "node:path";
 import { loadConfig } from "../src/config";
 
 const herePath = fileURLToPath(import.meta.url);
@@ -56,9 +56,7 @@ const baseEnvironment: Record<string, string> = {
   LAGO_API_URL: "https://api.getlago.com",
   LAGO_API_KEY: DUMMY.providerBearer,
   LAGO_PLAN_ENTITLEMENTS: JSON.stringify({ pro: ["intelligence"] }),
-  PAYMENT_PLAN_CATALOG: JSON.stringify({
-    pro: { amountCents: 8800, currency: "CNY", periodMonths: 1 },
-  }),
+  PAYMENT_PLAN_CATALOG: JSON.stringify({ pro: { recurring_monthly: 8800 } }),
   PAYMENT_NOTIFY_BASE_URL: "https://payments.openbot.example",
 };
 
@@ -154,34 +152,44 @@ describe("payments configuration", () => {
         ...baseEnvironment,
         ...alipay,
         PAYMENT_PLAN_CATALOG: JSON.stringify({
-          ghost: { amountCents: 100, currency: "CNY", periodMonths: 1 },
+          ghost: { recurring_monthly: 100 },
         }),
       }),
     ).toThrow(/plan "ghost" is not a plan in LAGO_PLAN_ENTITLEMENTS/);
   });
 
-  test("a non-CNY catalog price stops the server", () => {
+  test("a yearly cycle in the payment catalog stops the server", () => {
+    // v1's activation creates a MONTHLY Lago interval, whatever cycle priced the order — a
+    // yearly price would collect a year against one month of entitlement.
     expect(() =>
       loadConfig({
         ...baseEnvironment,
         ...alipay,
         PAYMENT_PLAN_CATALOG: JSON.stringify({
-          pro: { amountCents: 100, currency: "USD", periodMonths: 1 },
+          pro: { yearly: 88000 },
         }),
       }),
-    ).toThrow(/currency must be "CNY"/);
+    ).toThrow(/cycle "yearly" is not collectible in v1/);
   });
 
-  test("a non-monthly period stops the server", () => {
+  test("a plan entry that prices no cycle stops the server", () => {
     expect(() =>
       loadConfig({
         ...baseEnvironment,
         ...alipay,
-        PAYMENT_PLAN_CATALOG: JSON.stringify({
-          pro: { amountCents: 100, currency: "CNY", periodMonths: 12 },
-        }),
+        PAYMENT_PLAN_CATALOG: JSON.stringify({ pro: {} }),
       }),
-    ).toThrow(/periodMonths must be 1/);
+    ).toThrow(/plan "pro" prices no cycle/);
+  });
+
+  test("a plan entry that is not an object stops the server", () => {
+    expect(() =>
+      loadConfig({
+        ...baseEnvironment,
+        ...alipay,
+        PAYMENT_PLAN_CATALOG: JSON.stringify({ pro: 8800 }),
+      }),
+    ).toThrow(/plan "pro" must be an object of cycle code to amountCents/);
   });
 
   test("a zero or fractional price stops the server", () => {
@@ -191,7 +199,7 @@ describe("payments configuration", () => {
           ...baseEnvironment,
           ...alipay,
           PAYMENT_PLAN_CATALOG: JSON.stringify({
-            pro: { amountCents, currency: "CNY", periodMonths: 1 },
+            pro: { recurring_monthly: amountCents },
           }),
         }),
       ).toThrow(/amountCents must be a positive integer/);
@@ -283,7 +291,7 @@ describe("payments configuration", () => {
       LAGO_API_KEY: baseEnvironment.LAGO_API_KEY,
       LAGO_PLAN_ENTITLEMENTS: JSON.stringify({ pro: [] }),
       PAYMENT_PLAN_CATALOG: JSON.stringify({
-        pro: { amountCents: 8800, currency: "CNY", periodMonths: 1 },
+        pro: { recurring_monthly: 8800 },
       }),
     };
     expect(() => loadConfig({ ...singleUserNoBase, ...alipay })).toThrow(
@@ -300,11 +308,9 @@ describe("payments configuration", () => {
     expect(config.payments?.alipay?.privateKeyPem).toContain("-----BEGIN");
     expect(config.payments?.alipay?.alipayPublicKeyPem).toContain("-----BEGIN");
     expect(config.payments?.wechat).toBeUndefined();
-    expect(config.payments?.planCatalog.get("pro")).toEqual({
-      amountCents: 8800,
-      currency: "CNY",
-      periodMonths: 1,
-    });
+    const pro = config.payments?.planCatalog.get("pro");
+    expect(pro?.currency).toBe("CNY");
+    expect(pro?.cycles.get("recurring_monthly")).toBe(8800);
   });
 
   test("a whole WeChat channel builds", () => {
@@ -387,10 +393,12 @@ describe("payments configuration", () => {
   });
 
   /*
-   * THE PRICE CROSS-CHECK (P1-2 closed at boot): the collected price (PAYMENT_PLAN_CATALOG)
-   * and the displayed monthly price (LAGO_PLAN_CATALOG) are two variables, and nothing
-   * downstream compares them — a deployment that edits one and forgets the other shows one
-   * number and collects another. The boot refusal is the fix; both directions are pinned here.
+   * THE PRICE CROSS-CHECK, PER CYCLE (P1-2 closed at boot): the collected price
+   * (PAYMENT_PLAN_CATALOG) and the displayed price (LAGO_PLAN_CATALOG) are two variables, and
+   * nothing downstream compares them — a deployment that edits one and forgets the other shows
+   * one number and collects another. Per-cycle pricing lets the two monthly spellings carry
+   * different prices (连续包月 vs 单月), so the comparison is cycle-by-cycle: every priced cycle
+   * must agree with the display catalog's price for THAT SAME cycle. All directions are pinned.
    */
   const DISPLAY_CATALOG = JSON.stringify({
     pro: {
@@ -406,33 +414,60 @@ describe("payments configuration", () => {
           discountLabel: null,
           unit: "month",
         },
+        {
+          code: "monthly",
+          label: "1个月",
+          priceCents: 9900,
+          originalCents: null,
+          discountLabel: null,
+          unit: "month",
+        },
       ],
     },
   });
 
-  test("matching monthly prices across the two catalogs build cleanly", () => {
+  test("per-cycle prices that match the display catalog build cleanly", () => {
     const config = loadConfig({
       ...baseEnvironment,
       ...alipay,
       LAGO_PLAN_CATALOG: DISPLAY_CATALOG,
+      PAYMENT_PLAN_CATALOG: JSON.stringify({
+        pro: { recurring_monthly: 8800, monthly: 9900 },
+      }),
     });
-    expect(config.payments?.planCatalog.get("pro")?.amountCents).toBe(8800);
+    const pro = config.payments?.planCatalog.get("pro");
+    expect(pro?.cycles.get("recurring_monthly")).toBe(8800);
+    expect(pro?.cycles.get("monthly")).toBe(9900);
   });
 
-  test("a collected price that disagrees with the displayed monthly price stops the server", () => {
+  test("pricing only one of the two monthly spellings builds — a subset is allowed", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      ...alipay,
+      LAGO_PLAN_CATALOG: DISPLAY_CATALOG,
+      PAYMENT_PLAN_CATALOG: JSON.stringify({
+        pro: { recurring_monthly: 8800 },
+      }),
+    });
+    expect(config.payments?.planCatalog.get("pro")?.cycles.has("monthly")).toBe(
+      false,
+    );
+  });
+
+  test("a collected price that disagrees with the displayed price for the same cycle stops the server", () => {
     expect(() =>
       loadConfig({
         ...baseEnvironment,
         ...alipay,
         LAGO_PLAN_CATALOG: DISPLAY_CATALOG,
-        // The dialog would show ¥88 while the channel collects ¥99 — the exact overcharge a
-        // reader cannot see coming, refused before the first order exists.
+        // The dialog would show ¥88/month while the channel collects ¥89 — the exact overcharge
+        // a reader cannot see coming, refused before the first order exists.
         PAYMENT_PLAN_CATALOG: JSON.stringify({
-          pro: { amountCents: 9900, currency: "CNY", periodMonths: 1 },
+          pro: { recurring_monthly: 8900 },
         }),
       }),
     ).toThrow(
-      /PAYMENT_PLAN_CATALOG plan "pro" amountCents \(9900\) does not match LAGO_PLAN_CATALOG's monthly price \(8800\)/,
+      /PAYMENT_PLAN_CATALOG plan "pro" cycle "recurring_monthly" collects 8900 but LAGO_PLAN_CATALOG shows 8800/,
     );
   });
 
@@ -444,6 +479,8 @@ describe("payments configuration", () => {
       ...alipay,
       // LAGO_PLAN_CATALOG unset: no displayed prices at all, nothing to disagree with.
     });
-    expect(config.payments?.planCatalog.get("pro")?.amountCents).toBe(8800);
+    expect(
+      config.payments?.planCatalog.get("pro")?.cycles.get("recurring_monthly"),
+    ).toBe(8800);
   });
 });

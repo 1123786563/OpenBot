@@ -487,6 +487,52 @@ describe("deployment configuration", () => {
     ).toThrow("OKTA_OAUTH_CLIENT_ID");
   });
 
+  test.each([{}, { OPENBOT_SINGLE_USER: "true" }])(
+    "邮箱密码独立登录保持鉴权：%j",
+    (singleUser) => {
+      const config = loadConfig({
+        ...withoutSignIn,
+        ...SESSION,
+        ...singleUser,
+        OPENBOT_EMAIL_PASSWORD: "true",
+      });
+
+      expect(config.auth?.emailPassword).toBe(true);
+      expect(config.auth?.casdoor).toBeUndefined();
+      expect(configuredAuthProviders(config.auth)).toEqual([]);
+      expect(config.singleUser).toBe(false);
+    },
+  );
+
+  test.each(["false", "TRUE", "1", ""])(
+    "邮箱密码开关 %p 不启用登录",
+    (value) => {
+      expect(() =>
+        loadConfig({
+          ...withoutSignIn,
+          ...SESSION,
+          OPENBOT_EMAIL_PASSWORD: value,
+        }),
+      ).toThrow("no identity provider");
+    },
+  );
+
+  test.each([
+    ["BETTER_AUTH_SECRET", "", "Sign-in requires BETTER_AUTH_SECRET"],
+    ["BETTER_AUTH_SECRET", "short", "at least 32 characters"],
+    ["BETTER_AUTH_URL", "", "Sign-in requires BETTER_AUTH_URL"],
+    ["INITIAL_ADMIN_EMAILS", "", "INITIAL_ADMIN_EMAILS"],
+  ])("邮箱密码独立登录校验 %s=%p", (key, value, message) => {
+    expect(() =>
+      loadConfig({
+        ...withoutSignIn,
+        ...SESSION,
+        OPENBOT_EMAIL_PASSWORD: "true",
+        [key]: value,
+      }),
+    ).toThrow(message);
+  });
+
   test("enables Casdoor against its issuer", () => {
     const config = loadConfig({
       ...withoutSignIn,

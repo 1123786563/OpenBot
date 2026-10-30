@@ -237,9 +237,9 @@ export function ScheduledTaskEditor({
   const [seeded, setSeeded] = useState(
     () => draft !== undefined || taskId === undefined,
   );
+  const [dirty, setDirty] = useState(draftDirty);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [dirty, setDirty] = useState(draftDirty);
 
   useEffect(() => {
     // An empty edit form is not a draft. Publishing it while the query is pending means a responsive

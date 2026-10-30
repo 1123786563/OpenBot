@@ -1149,6 +1149,7 @@
     "operation": "The model scope change could not be saved.",
     "empty": "The gateway has not synced any models yet. Check the gateway connection and its sync status.",
     "listTitle": "Models",
+    "pagerStatus": "Page {{page}} of {{totalPages}} · {{total}} models",
     "syncHint": "A model an administrator opened stays open across syncs; a model the gateway stops listing is no longer selectable, and a newly listed one starts closed.",
     "fields": {
       "reason": "Reason"
@@ -1168,6 +1169,24 @@
     },
     "open": "Open",
     "close": "Close",
+    "searchPlaceholder": "Search models or providers",
+    "filter": {
+      "all": "All models",
+      "open": "Open",
+      "closed": "Not open",
+      "unknown": "Price unknown"
+    },
+    "filteredEmpty": "No models match. Try another search or filter.",
+    "selectAll": "Select all",
+    "clearSelection": "Clear",
+    "selectedCount": "{{count}} selected",
+    "bulkOpen": "Open selected",
+    "bulk": {
+      "openTitle": "Open {{count}} models",
+      "description": "One reason is recorded on every model you open.",
+      "progress": "Opening {{done}} of {{total}}…",
+      "someFailed": "{{count}} models could not be opened:"
+    },
     "dialog": {
       "openTitle": "Open this model?",
       "closeTitle": "Close this model?",

@@ -105,9 +105,8 @@ const CATALOG = new Map(
   Object.keys(PLAN_ALLOWANCES).map((code) => [
     code,
     {
-      amountCents: PLAN_PRICES[code],
       currency: "CNY" as const,
-      periodMonths: 1,
+      cycles: new Map([["monthly" as const, PLAN_PRICES[code]]]),
     },
   ]),
 );

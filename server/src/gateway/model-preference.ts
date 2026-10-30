@@ -424,14 +424,19 @@ export function createGatewayModelPreferenceService(
     async resolveEffectiveModel({ userId, botId, conversationId }) {
       // Three reads, one answer: the most specific cell that exists. The identity
       // checks run per read, so a malformed user id or session id is still a
-      // caller bug even on the resolution path.
-      const [conversation, bot, global] = await Promise.all([
-        deps.preferences.getPreference({
-          userId,
-          scope: "conversation",
-          botId,
-          conversationId,
-        }),
+      // caller bug even on the resolution path. An EMPTY conversation id is not
+      // malformed — it is the picker's read (03.10 passes no session), where no
+      // conversation layer exists to read, so the answer starts one layer coarser.
+      const conversation =
+        conversationId.trim() === ""
+          ? undefined
+          : await deps.preferences.getPreference({
+              userId,
+              scope: "conversation",
+              botId,
+              conversationId,
+            });
+      const [bot, global] = await Promise.all([
         deps.preferences.getPreference({ userId, scope: "bot", botId }),
         deps.preferences.getPreference({ userId, scope: "global" }),
       ]);

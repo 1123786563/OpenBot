@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { TFunction } from "i18next";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { BillingPager } from "@/components/billing/pager";
 import {
   PageEmpty,
   PageRows,
@@ -11,6 +12,7 @@ import {
 } from "@/components/layout/page-shell";
 import { PageRowsSkeleton } from "@/components/layout/page-skeletons";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogBody,
@@ -29,6 +31,14 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import {
   type GatewayCatalogSyncResult,
@@ -44,6 +54,9 @@ import { useDateTime } from "@/lib/i18n/datetime";
 export const Route = createFileRoute("/_authed/admin/model-catalog")({
   component: ModelCatalogPage,
 });
+
+/** How many models one page of the list holds. The catalog arrives whole; the pager walks it. */
+const PAGE_SIZE = 50;
 
 /**
  * The administrator's model catalog (Bifrost 03.7): every model the gateway's
@@ -97,12 +110,61 @@ function ModelCatalogPage() {
   } | null>(null);
   const [reason, setReason] = useState("");
   const [problem, setProblem] = useState<string | undefined>(undefined);
+  const [page, setPage] = useState(1);
+  // The catalogue is one whole answer, so finding models in it is the page's
+  // own work: a name query and a state filter narrow the list before the pager
+  // walks it. Both are reading aids only — no filtering happens server-side.
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<FilterState>("all");
+  // Bulk opening: the keys of the rows whose checkboxes are on. Selection is
+  // over openable models only and survives page turns and filter changes, so
+  // "select all" then page around keeps what was picked.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // The bulk write while it runs: done/total for the progress sentence, null
+  // when no bulk dialog is open. Failures are kept for a notice after the run.
+  const [bulk, setBulk] = useState<{
+    running: boolean;
+    done: number;
+    total: number;
+  } | null>(null);
+  const [failures, setFailures] = useState<
+    { model: string; message: string }[]
+  >([]);
+
+  const models = catalog.data?.models ?? [];
+  const filtered = models.filter((model) => matches(model, query, filter));
+  const openable = filtered.filter(
+    (model) => !model.open && canOpen(model.priceStatus),
+  );
+  // A sync can shrink the list under a page already turned to, so the clamp — not the
+  // state — decides which page is on screen (the pager clamps its own display the same way).
+  const totalPages = Math.max(Math.ceil(filtered.length / PAGE_SIZE), 1);
+  const currentPage = Math.min(page, totalPages);
+  const pageModels = filtered.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
+
+  const toggle = (key: string, checked: boolean) => {
+    setSelected((previous) => {
+      const next = new Set(previous);
+      if (checked) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  };
 
   const openDialog = (
     model: AdminModelCatalogModel,
     state: "open" | "closed",
   ) => {
     setPending({ model, state });
+    setReason("");
+    setProblem(undefined);
+  };
+
+  const openBulkDialog = () => {
+    setBulk({ running: false, done: 0, total: selected.size });
     setReason("");
     setProblem(undefined);
   };
@@ -123,18 +185,48 @@ function ModelCatalogPage() {
       });
       setPending(null);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : String(error ?? "");
-      const key = refusalKey(message);
-      setProblem(
-        key
-          ? // The refusal sentences live in this page's namespace; the i18next
-            // typed keys cannot spell the dynamic template, so the read is
-            // spelled out here.
-            t(key as never)
-          : t("modelCatalog.operation"),
-      );
+      setProblem(refusalMessage(error, t));
     }
+  };
+
+  // The bulk write is the single-model write, asked once per selected model:
+  // one shared reason, one refusal sentence per model that the server refused.
+  // A run does not stop on the first refusal — every selection gets its own
+  // answer, and the ones that failed are named afterwards.
+  const submitBulk = async () => {
+    if (!bulk || bulk.running) return;
+    if (reason.trim() === "") {
+      setProblem(t("modelCatalog.dialog.reasonRequired"));
+      return;
+    }
+    const targets = models.filter(
+      (model) =>
+        selected.has(modelKey(model)) &&
+        !model.open &&
+        canOpen(model.priceStatus),
+    );
+    setBulk({ running: true, done: 0, total: targets.length });
+    const failed: { model: string; message: string }[] = [];
+    for (const [index, model] of targets.entries()) {
+      try {
+        await setScope.mutateAsync({
+          provider: model.ref.provider,
+          model: model.ref.model,
+          capability: model.ref.capability,
+          state: "open",
+          reason: reason.trim(),
+        });
+      } catch (error) {
+        failed.push({
+          model: model.ref.model,
+          message: refusalMessage(error, t),
+        });
+      }
+      setBulk({ running: true, done: index + 1, total: targets.length });
+    }
+    setBulk(null);
+    setSelected(new Set());
+    setFailures(failed);
   };
 
   return (
@@ -173,64 +265,171 @@ function ModelCatalogPage() {
         {catalog.isError ? (
           <PageEmpty>{t("modelCatalog.loadError")}</PageEmpty>
         ) : null}
-        {catalog.data && catalog.data.models.length === 0 ? (
+        {catalog.data && models.length === 0 ? (
           <PageEmpty>{t("modelCatalog.empty")}</PageEmpty>
         ) : null}
-        {catalog.data && catalog.data.models.length > 0 ? (
-          <PageRows>
-            {catalog.data.models.map((model, index) => (
-              <div key={modelKey(model)}>
-                {index > 0 ? <Separator /> : null}
-                <Item size="sm" className="py-3">
-                  <ItemContent>
-                    <ItemTitle>
-                      {model.ref.model}
-                      <span className="text-muted-foreground font-normal">
-                        {" "}
-                        · {model.ref.provider} · {model.ref.capability}
-                      </span>
-                    </ItemTitle>
-                    <ItemDescription>
-                      {priceLine(model, t)}
-                      {" · "}
-                      {scopeLine(model, t)}
-                      {model.scope
-                        ? ` · ${t("modelCatalog.scope.changedBy", {
-                            by: model.scope.changedBy,
-                            at: formatDateTime(model.scope.changedAt),
-                          })}`
-                        : null}
-                    </ItemDescription>
-                    {model.scope ? (
-                      <ItemDescription>
-                        {t("modelCatalog.fields.reason")}: {model.scope.reason}
-                      </ItemDescription>
-                    ) : null}
-                  </ItemContent>
-                  <ItemActions>
-                    {model.open ? (
-                      <Button
-                        onClick={() => openDialog(model, "closed")}
-                        size="sm"
-                        variant="outline"
-                      >
-                        {t("modelCatalog.close")}
-                      </Button>
-                    ) : (
-                      <Button
-                        disabled={model.priceStatus === "unknown"}
-                        onClick={() => openDialog(model, "open")}
-                        size="sm"
-                        variant="outline"
-                      >
-                        {t("modelCatalog.open")}
-                      </Button>
-                    )}
-                  </ItemActions>
-                </Item>
+        {catalog.data && models.length > 0 ? (
+          <>
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <Input
+                aria-label={t("modelCatalog.searchPlaceholder")}
+                className="max-w-64"
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setPage(1);
+                }}
+                placeholder={t("modelCatalog.searchPlaceholder")}
+                value={query}
+              />
+              <Select
+                onValueChange={(value) => {
+                  // null is the Select's "no selection", not a filter state.
+                  if (value === null) return;
+                  setFilter(value as FilterState);
+                  setPage(1);
+                }}
+                value={filter}
+              >
+                <SelectTrigger
+                  aria-label={t("modelCatalog.filter.all")}
+                  className="w-40"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {FILTER_STATES.map((state) => (
+                      <SelectItem key={state} value={state}>
+                        {t(`modelCatalog.filter.${state}` as never)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              {openable.length > 0 ? (
+                <Button
+                  className="ml-auto"
+                  onClick={() =>
+                    setSelected(
+                      new Set(openable.map((model) => modelKey(model))),
+                    )
+                  }
+                  size="sm"
+                  variant="ghost"
+                >
+                  {t("modelCatalog.selectAll")}
+                </Button>
+              ) : null}
+            </div>
+            {selected.size > 0 ? (
+              <div className="mb-4 flex items-center gap-2">
+                <span className="text-muted-foreground text-sm">
+                  {t("modelCatalog.selectedCount", { count: selected.size })}
+                </span>
+                <Button onClick={openBulkDialog} size="sm">
+                  {t("modelCatalog.bulkOpen")}
+                </Button>
+                <Button
+                  onClick={() => setSelected(new Set())}
+                  size="sm"
+                  variant="ghost"
+                >
+                  {t("modelCatalog.clearSelection")}
+                </Button>
               </div>
-            ))}
-          </PageRows>
+            ) : null}
+            {failures.length > 0 ? (
+              <p className="text-destructive mb-4 text-sm" role="alert">
+                {t("modelCatalog.bulk.someFailed", {
+                  count: failures.length,
+                })}{" "}
+                {failures
+                  .slice(0, 3)
+                  .map((failure) => failure.model)
+                  .join(", ")}
+              </p>
+            ) : null}
+            {filtered.length === 0 ? (
+              <PageEmpty>{t("modelCatalog.filteredEmpty")}</PageEmpty>
+            ) : (
+              <PageRows>
+                {pageModels.map((model, index) => (
+                  <div key={modelKey(model)}>
+                    {index > 0 ? <Separator /> : null}
+                    <Item size="sm" className="py-3">
+                      {canOpen(model.priceStatus) && !model.open ? (
+                        <Checkbox
+                          aria-label={model.ref.model}
+                          checked={selected.has(modelKey(model))}
+                          onCheckedChange={(checked) =>
+                            toggle(modelKey(model), checked)
+                          }
+                        />
+                      ) : (
+                        <span aria-hidden className="w-4" />
+                      )}
+                      <ItemContent>
+                        <ItemTitle>
+                          {model.ref.model}
+                          <span className="text-muted-foreground font-normal">
+                            {" "}
+                            · {model.ref.provider} · {model.ref.capability}
+                          </span>
+                        </ItemTitle>
+                        <ItemDescription>
+                          {priceLine(model, t)}
+                          {" · "}
+                          {scopeLine(model, t)}
+                          {model.scope
+                            ? ` · ${t("modelCatalog.scope.changedBy", {
+                                by: model.scope.changedBy,
+                                at: formatDateTime(model.scope.changedAt),
+                              })}`
+                            : null}
+                        </ItemDescription>
+                        {model.scope ? (
+                          <ItemDescription>
+                            {t("modelCatalog.fields.reason")}:{" "}
+                            {model.scope.reason}
+                          </ItemDescription>
+                        ) : null}
+                      </ItemContent>
+                      <ItemActions>
+                        {model.open ? (
+                          <Button
+                            onClick={() => openDialog(model, "closed")}
+                            size="sm"
+                            variant="outline"
+                          >
+                            {t("modelCatalog.close")}
+                          </Button>
+                        ) : (
+                          <Button
+                            disabled={model.priceStatus === "unknown"}
+                            onClick={() => openDialog(model, "open")}
+                            size="sm"
+                            variant="outline"
+                          >
+                            {t("modelCatalog.open")}
+                          </Button>
+                        )}
+                      </ItemActions>
+                    </Item>
+                  </div>
+                ))}
+              </PageRows>
+            )}
+          </>
+        ) : null}
+        {catalog.data && filtered.length > 0 ? (
+          <BillingPager
+            hasNext={currentPage < totalPages}
+            onPage={setPage}
+            page={currentPage}
+            statusTemplate={t("modelCatalog.pagerStatus")}
+            totalCount={filtered.length}
+            totalPages={totalPages}
+          />
         ) : null}
       </PageSection>
 
@@ -277,12 +476,103 @@ function ModelCatalogPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog
+        onOpenChange={(open) => {
+          if (!open && !bulk?.running) setBulk(null);
+        }}
+        open={bulk !== null}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {t("modelCatalog.bulk.openTitle", { count: bulk?.total ?? 0 })}
+            </DialogTitle>
+            <DialogDescription>
+              {t("modelCatalog.bulk.description")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="mt-4">
+            <Field data-invalid={problem !== undefined}>
+              <FieldLabel htmlFor="model-scope-bulk-reason">
+                {t("modelCatalog.dialog.reasonLabel")}
+              </FieldLabel>
+              <Input
+                aria-invalid={problem !== undefined}
+                disabled={bulk?.running}
+                id="model-scope-bulk-reason"
+                name="reason"
+                onChange={(event) => setReason(event.target.value)}
+                placeholder={t("modelCatalog.dialog.reasonPlaceholder")}
+                value={reason}
+              />
+              {problem ? <FieldError errors={[{ message: problem }]} /> : null}
+            </Field>
+          </DialogBody>
+          <DialogFooter>
+            <Button
+              disabled={bulk?.running}
+              onClick={() => setBulk(null)}
+              variant="ghost"
+            >
+              {t("modelCatalog.dialog.cancel")}
+            </Button>
+            <Button disabled={bulk?.running} onClick={() => void submitBulk()}>
+              {bulk?.running
+                ? t("modelCatalog.bulk.progress", {
+                    done: bulk.done,
+                    total: bulk.total,
+                  })
+                : t("modelCatalog.dialog.confirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageShell>
   );
 }
 
 function modelKey(model: AdminModelCatalogModel): string {
   return `${model.ref.provider}|${model.ref.model}|${model.ref.capability}`;
+}
+
+/** The state filter's closed vocabulary: every model, or one of the three states. */
+const FILTER_STATES = ["all", "open", "closed", "unknown"] as const;
+type FilterState = (typeof FILTER_STATES)[number];
+
+/** Only a determinable price can be opened: known and free both pass. */
+function canOpen(priceStatus: AdminModelCatalogModel["priceStatus"]): boolean {
+  return priceStatus === "known" || priceStatus === "free";
+}
+
+/** One model against the reading aids: the query over name and provider, the state filter. */
+function matches(
+  model: AdminModelCatalogModel,
+  query: string,
+  filter: FilterState,
+): boolean {
+  if (filter === "open" && !model.open) return false;
+  if (filter === "closed" && model.open) return false;
+  if (
+    filter === "unknown" &&
+    model.priceStatus !== "unknown" &&
+    model.priceStatus !== "unmapped"
+  ) {
+    return false;
+  }
+  const needle = query.trim().toLowerCase();
+  if (needle === "") return true;
+  return `${model.ref.model} ${model.ref.provider}`
+    .toLowerCase()
+    .includes(needle);
+}
+
+/** The sentence for a refused write: the server's own refusal, localized when known. */
+function refusalMessage(error: unknown, t: TFunction<"admin">): string {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const key = refusalKey(message);
+  // The refusal sentences live in this page's namespace; the i18next typed
+  // keys cannot spell the dynamic template, so the read is spelled out here.
+  return key ? t(key as never) : t("modelCatalog.operation");
 }
 
 /**

@@ -331,7 +331,7 @@ describe("probe c: duplicate_paid visibility on the sequential path", () => {
       providers: new Map([["alipay", paidDelivery(first.id, "tx-first")]]),
       store,
       catalog: new Map([
-        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+        ["pro", { currency: "CNY", cycles: new Map([["monthly", 8800]]) }],
       ]),
       notifyBaseUrl: "https://x.example",
       orderTtlMinutes: 15,
@@ -379,7 +379,7 @@ describe("probe c: duplicate_paid visibility on the sequential path", () => {
       >),
       store,
       catalog: new Map([
-        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+        ["pro", { currency: "CNY", cycles: new Map([["monthly", 8800]]) }],
       ]),
       notifyBaseUrl: "https://x.example",
       orderTtlMinutes: 15,
@@ -433,7 +433,7 @@ describe("probe c: duplicate_paid visibility on the sequential path", () => {
       providers: new Map([["alipay", paidDelivery(first.id, "tx-shared")]]),
       store,
       catalog: new Map([
-        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+        ["pro", { currency: "CNY", cycles: new Map([["monthly", 8800]]) }],
       ]),
       notifyBaseUrl: "https://x.example",
       orderTtlMinutes: 15,
@@ -474,7 +474,7 @@ describe("probe c: duplicate_paid visibility on the sequential path", () => {
       ] as ReadonlyMap<PaymentProviderId, PaymentProvider>),
       store,
       catalog: new Map([
-        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+        ["pro", { currency: "CNY", cycles: new Map([["monthly", 8800]]) }],
       ]),
       notifyBaseUrl: "https://x.example",
       orderTtlMinutes: 15,
@@ -529,7 +529,10 @@ describe("probe d: the payout keeps applied honest", () => {
       catalog: new Map([
         [
           "pro",
-          { amountCents: 8800, currency: "CNY" as const, periodMonths: 1 },
+          {
+            currency: "CNY" as const,
+            cycles: new Map([["monthly" as const, 8800]]),
+          },
         ],
       ]),
       notifyBaseUrl: "https://x.example",
