@@ -12,6 +12,7 @@ import {
   enterpriseRunOutbox,
   enterpriseRuns,
   enterpriseTenants,
+  enterpriseWorkspaceMemberships,
   users,
 } from "../../src/db/schema";
 import type {
@@ -198,6 +199,13 @@ integrationTest(
         },
         members: [{ principalId, userId: actorId, role: "tenant_admin" }],
         resources: [],
+      });
+      // MT005: provisionDeployment seeds tenant-level memberships only; the
+      // workspace-level row is what resolveScope admits on.
+      await setupDatabase.insert(enterpriseWorkspaceMemberships).values({
+        tenantId,
+        workspaceId,
+        principalId,
       });
 
       const authenticated = new WeakMap<
