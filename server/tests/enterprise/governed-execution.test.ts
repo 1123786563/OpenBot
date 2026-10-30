@@ -58,6 +58,7 @@ async function trustedScopeFor(actorId = "actor-a"): Promise<PlatformScope> {
                 principalStatus: "active",
                 memberStatus: "active",
                 memberEpoch: 1,
+                status: "active",
               },
             ],
           };

@@ -1,5 +1,6 @@
 import { expect, test } from "../../../tests/support/e2e-compat";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { BaseEvent } from "@ag-ui/client";
 import type { RunnerEventRecord } from "../../src/enterprise/contracts";
 import type {
@@ -279,7 +280,7 @@ test("event_payload_canonicalization_is_key_order_independent", () => {
 
 test("event_fk_requires_preexisting_owner_unique_key", () => {
   const migration = readFileSync(
-    "drizzle/0070_runner_event_attribution.sql",
+    join(import.meta.dir, "../../drizzle/0070_runner_event_attribution.sql"),
     "utf8",
   );
   const uniqueIndex = migration.indexOf(
@@ -308,7 +309,10 @@ test("event_append_serializes_with_cancel_and_lease_takeover", async () => {
 });
 
 test("event_append_expiry_is_sampled_after_row_locks", () => {
-  const source = readFileSync("src/enterprise/runs/events.ts", "utf8");
+  const source = readFileSync(
+    join(import.meta.dir, "../../src/enterprise/runs/events.ts"),
+    "utf8",
+  );
   expect(source).toContain("clock_timestamp()");
   expect(source.indexOf('.for("update")')).toBeLessThan(
     source.indexOf("clock_timestamp()"),
