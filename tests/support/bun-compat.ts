@@ -329,7 +329,10 @@ function serve(options: {
     },
     hostname: options.hostname ?? "127.0.0.1",
     get url() {
-      return `http://${options.hostname ?? "127.0.0.1"}:${boundPort()}`;
+      // Bun's `Server.url` is a URL, and its string form ends with the path slash. Suites build
+      // base URLs by concatenation, so the missing slash turns `<url>v1` into a host name and the
+      // SDK's URL parse throws "Invalid URL" — only under this shim, never under Bun.
+      return `http://${options.hostname ?? "127.0.0.1"}:${boundPort()}/`;
     },
     stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
