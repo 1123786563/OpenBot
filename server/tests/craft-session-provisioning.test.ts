@@ -157,7 +157,9 @@ function provisioningHarness(input?: {
     // workspace).
     fileApiFor: () => ({
       async listFiles(path: string) {
-        if (input?.workspaceExists) return [`${path}/opencode.json`];
+        // A live workspace carries the ready marker that makes the probe say so.
+        if (input?.workspaceExists)
+          return [`${path}/opencode.json`, `${path}/craft-workspace-ready`];
         throw new Error("ENOENT: no workspace yet");
       },
       async writeFile(path: string, content: string) {

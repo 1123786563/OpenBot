@@ -9,7 +9,8 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, render } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Route as ModelCatalogRoute } from "@/routes/_authed/admin/model-catalog";
 import {
   afterAll,
@@ -86,7 +87,10 @@ beforeEach(() => {
         scopeWrites.push(body);
         if (body.model === refuseModel) {
           return Response.json(
-            { error: "model_scope_price_unknown", code: "model_scope_price_unknown" },
+            {
+              error: "model_scope_price_unknown",
+              code: "model_scope_price_unknown",
+            },
             { status: 409 },
           );
         }
@@ -143,11 +147,12 @@ function renderModelCatalog() {
 
 test("搜索在分页前收窄列表，页脚报筛选后的数量", async () => {
   const view = renderModelCatalog();
+  const user = userEvent.setup({ document: view.container.ownerDocument });
   expect(await view.findByText("Page 1 of 2 · 60 models")).toBeTruthy();
 
-  fireEvent.change(
+  await user.type(
     view.getByRole("textbox", { name: "Search models or providers" }),
-    { target: { value: "model-01" } },
+    "model-01",
   );
   await settleReactWork();
 
@@ -160,35 +165,41 @@ test("搜索在分页前收窄列表，页脚报筛选后的数量", async () =>
 
 test("全选 + 共用一个原因批量开放：逐个写入，拒绝不中断并点名", async () => {
   const view = renderModelCatalog();
+  const user = userEvent.setup({ document: view.container.ownerDocument });
   expect(await view.findByText("Page 1 of 2 · 60 models")).toBeTruthy();
 
-  fireEvent.change(
+  await user.type(
     view.getByRole("textbox", { name: "Search models or providers" }),
-    { target: { value: "model-01" } },
+    "model-01",
   );
   await settleReactWork();
-  fireEvent.click(view.getByRole("button", { name: "Select all" }));
+  await user.click(view.getByRole("button", { name: "Select all" }));
   await settleReactWork();
   expect(view.getByText("10 selected")).toBeTruthy();
 
-  fireEvent.click(view.getByRole("button", { name: "Open selected" }));
+  await user.click(view.getByRole("button", { name: "Open selected" }));
   await settleReactWork();
   expect(view.getByText("Open 10 models")).toBeTruthy();
 
   // The one shared reason reaches every write the run makes.
   refuseModel = "model-013";
-  fireEvent.change(
+  await user.type(
     view.getByPlaceholderText("Why this model is being opened or closed"),
-    { target: { value: "reviewed pricing" } },
+    "reviewed pricing",
   );
-  fireEvent.click(view.getByRole("button", { name: "Save" }));
-  expect(await view.findByText("1 models could not be opened:")).toBeTruthy();
+  await user.click(view.getByRole("button", { name: "Save" }));
+  // The notice names the refused models in the same paragraph as the count.
+  expect(
+    await view.findByText("1 models could not be opened:", { exact: false }),
+  ).toBeTruthy();
 
   expect(scopeWrites).toHaveLength(10);
   expect(scopeWrites.every((write) => write.state === "open")).toBe(true);
   expect(
     scopeWrites.every((write) => write.reason === "reviewed pricing"),
   ).toBe(true);
-  // The refused model is named in the notice.
-  expect(view.getByText(/model-013/, { exact: false })).toBeTruthy();
+  // The refused model is named in the notice, not merely absent from the writes.
+  const notice = view.getByRole("alert");
+  expect(notice.textContent).toContain("could not be opened");
+  expect(notice.textContent).toContain("model-013");
 });

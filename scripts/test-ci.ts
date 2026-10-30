@@ -87,7 +87,9 @@ if (exitStatus !== 0) {
     await writeStderr(
       `\nNo readable ${REPORT} after a run that exited ${exitStatus}. Refusing to report a pass on a run that cannot be counted.\n`,
     );
-    process.exitCode = 1;
+    // A run that already failed keeps its own status: 1 here would replace the
+    // child's detail-worthy code with a generic one.
+    if (exitStatus === 0) process.exitCode = 1;
   }
 
   if (report) {

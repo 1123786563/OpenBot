@@ -1,3 +1,4 @@
+import type { AuditInitiator } from "@openbot/toolkit/initiator";
 import {
   and,
   desc,
@@ -14,7 +15,6 @@ import { getLogger } from "../../shared/logger";
 import type { Database } from "./db/client";
 import { auditEvents } from "./db/schema";
 import { parsePageLimit } from "./paging";
-import type { AuditInitiator } from "@openbot/toolkit/initiator";
 
 const log = getLogger("server");
 
@@ -399,21 +399,20 @@ export const auditEventTypes = [
    * `file_upload_refused` and the preview refusals follow the rule the rest of this trail holds:
    * what was refused is more worth knowing than what succeeded, because the refusals are the
    * decisions, and the successes merely followed them.
+   *
+   * B7 (e0a8192d) registered this family ahead of its writers, and the names nothing writes —
+   * session created/archived, artifact downloaded, sandbox reset, preview accessed, snapshot
+   * created/restored, the share access/refusal/expiry/report rows, the preview and dev-server
+   * rows, fan-out degraded, and `person.admin_by_configuration` — were trimmed rather than left
+   * declaring a trail nobody keeps. They return with the code that writes them.
    */
-  "workshop.session_created",
-  "workshop.session_archived",
   "workshop.turn_started",
   "workshop.turn_completed",
   "workshop.turn_failed",
   "workshop.turn_cancelled",
   "workshop.turn_stale_recovered",
-  "workshop.artifact_downloaded",
   "workshop.file_uploaded",
   "workshop.file_upload_refused",
-  "workshop.sandbox_reset",
-  "workshop.preview_accessed",
-  "workshop.snapshot_created",
-  "workshop.snapshot_restored",
   /*
    * Public shares of a workshop session (plan §3.7). The share rows answer the questions a
    * shared URL raises: who opened this to the world, who reached it, and who was turned away.
@@ -428,10 +427,6 @@ export const auditEventTypes = [
    */
   "workshop.share_created",
   "workshop.share_revoked",
-  "workshop.share_accessed",
-  "workshop.share_access_refused",
-  "workshop.share_expired",
-  "workshop.share_reported",
   /*
    * Previews of what a workshop turn built: the static build, the dev server behind it, and the
    * WebSocket an HMR connection upgrades to. Each refusal is its own row because the refusals
@@ -439,13 +434,6 @@ export const auditEventTypes = [
    * capacity limit that was full — and a count that merges them answers none of the three
    * questions.
    */
-  "workshop.preview_started",
-  "workshop.preview_refused",
-  "workshop.preview_ws_upgraded",
-  "workshop.preview_ws_refused",
-  "workshop.devserver_started",
-  "workshop.devserver_stopped",
-  "workshop.devserver_capacity_refused",
   /*
    * The workshop's own infrastructure, made audible. A lock that could not be reached means a
    * turn was refused rather than run twice; a fan-out that degraded to polling means the page
@@ -453,7 +441,6 @@ export const auditEventTypes = [
    * other trace anywhere.
    */
   "workshop.lock_unavailable",
-  "workshop.fanout_degraded",
   /*
    * Scheduled workshop turns (plan v2.1, D4). A schedule is a standing instruction to spend a
    * person's Bot on their behalf, which is precisely the kind of thing the trail exists for:
@@ -495,7 +482,6 @@ export const auditEventTypes = [
    */
   "session.signed_in",
   "session.refused",
-  "person.admin_by_configuration",
   /*
    * A company's own identity provider, added or taken away.
    *

@@ -1,4 +1,9 @@
 import "./preload";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render, waitFor } from "@testing-library/react";
+import { authKeys } from "@/lib/auth/queries";
+import { useMarkOpenChannelRead } from "@/lib/channels/mark-read";
 import {
   afterAll,
   afterEach,
@@ -6,10 +11,6 @@ import {
   expect,
   test,
 } from "../../tests/support/e2e-compat";
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, waitFor } from "@testing-library/react";
-import { useMarkOpenChannelRead } from "@/lib/channels/mark-read";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -68,6 +69,9 @@ function draw() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  // The roster and the write both ride the scope, and the scope opens only once
+  // the signed-in user is known — the same answer the route gate would have read.
+  client.setQueryData(authKeys.currentUser(), { id: "reader" });
   return render(
     <QueryClientProvider client={client}>
       <Open channelId="group-1" />

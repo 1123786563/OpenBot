@@ -9,14 +9,16 @@ import { testEnvironment } from "./support/environment";
  * Reviewed-action, private-Goal, Calendar, private-Idea, private-Memory, documents,
  * notification, account-deletion, activity and ops-signals seams were appended after it), so it is set by offset the same way tests/self-host-banner.test.ts sets
  * the banner, for the same reason: the optional tail only ever gains parameters appended last,
- * so a new one moves this offset by exactly one and this comment by one line.
+ * so a new one moves this offset by exactly one and this comment by one line. Four parameters
+ * have been appended since: identity, identityGithubCallback, botServices and workbenchPayer.
  */
 function appWithProbe(probe: () => Promise<void>) {
   const args: unknown[] = new Array(createApp.length).fill(undefined);
   args[0] = loadConfig(testEnvironment());
-  // The OpenMuse seam tail is ONE named object (openMuseSeams) as the last
-  // positional parameter, so the probe reaches it by name — never by offset.
-  args[createApp.length - 1] = { readinessProbe: probe };
+  // The OpenMuse seam tail is ONE named object (openMuseSeams), and the four
+  // parameters above were appended after it, so the probe reaches its object
+  // five from the end — never by the last slot.
+  args[createApp.length - 5] = { readinessProbe: probe };
   return (createApp as (...input: unknown[]) => ReturnType<typeof createApp>)(
     ...args,
   );
