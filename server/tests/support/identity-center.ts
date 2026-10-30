@@ -45,6 +45,8 @@ export type IdentityCenterProcess = {
 export async function startIdentityCenter(options: {
   port?: number;
   clientId?: string;
+  /** 额外环境变量（#715 内部主体 API 的服务令牌等）。 */
+  env?: Record<string, string>;
 } = {}): Promise<IdentityCenterProcess> {
   const port = options.port ?? 4210;
   const issuer = `http://127.0.0.1:${port}`;
@@ -77,7 +79,7 @@ export async function startIdentityCenter(options: {
   // e2e 的 node target 用 Node 执行测试进程，被测身份中心是 Bun 子进程。
   const child = spawn("bun", ["src/index.ts"], {
     cwd: identityDir,
-    env: { ...process.env, ...env as Record<string, string> },
+    env: { ...process.env, ...env as Record<string, string>, ...options.env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   const stop = () =>

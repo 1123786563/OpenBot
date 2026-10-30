@@ -188,7 +188,14 @@ export type AuthConfig = {
    * center rather than a third party: OpenBot signs in as a relying party over code+PKCE and
    * never copies a session cookie across origins.
    */
-  identityCenter?: OAuthClient & { issuer: string };
+  identityCenter?: OAuthClient & {
+    issuer: string;
+    /**
+     * Service token for the center's internal subject API (#715). Without it the
+     * projection cannot verify a subject's current status and refuses (fail-closed).
+     */
+    internalToken?: string;
+  };
   /**
    * Email + password sign-in (Better Auth's `emailAndPassword`), for clients
    * without a browser to run OAuth in — the OpenMuse mobile app. Off by
@@ -1456,9 +1463,15 @@ function casdoorAuth(
 
 function identityCenterAuth(
   environment: Environment,
-): (OAuthClient & { issuer: string }) | undefined {
+): (OAuthClient & { issuer: string; internalToken?: string }) | undefined {
   const client = oauthClient(environment, "IDENTITY_CENTER");
   const issuer = url(environment, "IDENTITY_CENTER_OAUTH_ISSUER");
+  const internalToken = environment.IDENTITY_CENTER_INTERNAL_TOKEN?.trim() || undefined;
+  if (internalToken && (!client || !issuer)) {
+    throw new Error(
+      "IDENTITY_CENTER_INTERNAL_TOKEN is set but identity-center sign-in (ISSUER/CLIENT_ID/CLIENT_SECRET) is not configured",
+    );
+  }
   if (!client) {
     if (issuer) {
       throw new Error(
@@ -1472,7 +1485,7 @@ function identityCenterAuth(
       "Identity-center sign-in requires IDENTITY_CENTER_OAUTH_ISSUER, such as http://127.0.0.1:4210",
     );
   }
-  return { ...client, issuer };
+  return internalToken ? { ...client, issuer, internalToken } : { ...client, issuer };
 }
 
 /**
