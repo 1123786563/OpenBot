@@ -8,6 +8,14 @@ import type { AuthProviderId } from "./queries";
  */
 export const authClient = createAuthClient({
   plugins: openBotClientPlugins(),
+  // Better Auth keeps the fetch it is handed when the client is built. The browser suites swap
+  // `globalThis.fetch` for their own dispatcher per file, and a client built during an earlier
+  // file's swap kept calling that file's handler (or the real network, once it was restored), so
+  // the call has to read `globalThis.fetch` when it is made. In the browser this is the same
+  // function the client would have captured.
+  fetchOptions: {
+    customFetchImpl: (input, init) => globalThis.fetch(input, init),
+  },
   // A document with no origin — `about:blank` in a test DOM, no window at all in the
   // collector — has nothing for better-auth to resolve against, and it throws that at
   // CONSTRUCTION time. A real page keeps its own origin; anything else gets a base URL
