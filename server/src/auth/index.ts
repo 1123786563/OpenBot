@@ -685,7 +685,9 @@ export function createAuth(
         ]
       : []),
     ...(authConfig.casdoor ? [casdoor(authConfig.casdoor)] : []),
-    ...(authConfig.identityCenter ? [identityCenter(authConfig.identityCenter)] : []),
+    ...(authConfig.identityCenter
+      ? [identityCenter(authConfig.identityCenter)]
+      : []),
   ];
   /*
    * The transaction capture (T05.05): every transaction the fixed build opens

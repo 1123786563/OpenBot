@@ -140,7 +140,12 @@ export type ComputerConfig =
  * has Google or Entra or Okta and is not going to acquire another, so the shape here is a set of
  * optional providers rather than one required one, and the deployment turns on whichever it has.
  */
-export type AuthProviderId = "google" | "microsoft" | "okta" | "casdoor" | "identity-center";
+export type AuthProviderId =
+  | "google"
+  | "microsoft"
+  | "okta"
+  | "casdoor"
+  | "identity-center";
 
 /** An OAuth client, as every provider here needs one. */
 export type OAuthClient = { clientId: string; clientSecret: string };
@@ -1192,7 +1197,14 @@ function authConfig(
   const baseUrl = url(environment, "BETTER_AUTH_URL");
   const authSmtp = authSmtpSettings(environment);
 
-  if (!google && !microsoft && !okta && !casdoor && !identityCenter && !emailPassword) {
+  if (
+    !google &&
+    !microsoft &&
+    !okta &&
+    !casdoor &&
+    !identityCenter &&
+    !emailPassword
+  ) {
     if (secret || baseUrl) {
       throw new Error(
         "BETTER_AUTH_SECRET or BETTER_AUTH_URL is set but no identity provider is. Configure GOOGLE_OAUTH_*, MICROSOFT_OAUTH_*, OKTA_OAUTH_* or CASDOOR_OAUTH_*, set OPENBOT_EMAIL_PASSWORD=true, or unset both",
