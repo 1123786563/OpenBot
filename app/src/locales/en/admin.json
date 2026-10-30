@@ -1169,6 +1169,24 @@
     },
     "open": "Open",
     "close": "Close",
+    "searchPlaceholder": "Search models or providers",
+    "filter": {
+      "all": "All models",
+      "open": "Open",
+      "closed": "Not open",
+      "unknown": "Price unknown"
+    },
+    "filteredEmpty": "No models match. Try another search or filter.",
+    "selectAll": "Select all",
+    "clearSelection": "Clear",
+    "selectedCount": "{{count}} selected",
+    "bulkOpen": "Open selected",
+    "bulk": {
+      "openTitle": "Open {{count}} models",
+      "description": "One reason is recorded on every model you open.",
+      "progress": "Opening {{done}} of {{total}}…",
+      "someFailed": "{{count}} models could not be opened:"
+    },
     "dialog": {
       "openTitle": "Open this model?",
       "closeTitle": "Close this model?",

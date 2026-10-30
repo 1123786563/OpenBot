@@ -1169,6 +1169,24 @@
     },
     "open": "开放",
     "close": "关闭",
+    "searchPlaceholder": "搜索模型或提供商",
+    "filter": {
+      "all": "全部模型",
+      "open": "已开放",
+      "closed": "未开放",
+      "unknown": "价格未知"
+    },
+    "filteredEmpty": "没有匹配的模型。换个搜索词或筛选条件。",
+    "selectAll": "全选",
+    "clearSelection": "清除",
+    "selectedCount": "已选 {{count}} 个",
+    "bulkOpen": "开放所选",
+    "bulk": {
+      "openTitle": "开放所选的 {{count}} 个模型",
+      "description": "同一个原因会记到每个模型的开放记录上。",
+      "progress": "正在开放 {{done}}/{{total}}…",
+      "someFailed": "{{count}} 个模型没有开放成功："
+    },
     "dialog": {
       "openTitle": "开放该模型？",
       "closeTitle": "关闭该模型？",
