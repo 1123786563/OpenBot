@@ -124,10 +124,11 @@ if (status !== "succeeded") {
 console.log(`smoke: turn ${started.turnId} succeeded`);
 
 // 3. The artifact the prompt demanded is in the session's gallery.
-const artifact = snapshot!.artifacts.find((row) => row.name === fileName);
+if (!snapshot) fail(`turn snapshot missing (status ${status})`);
+const artifact = snapshot.artifacts.find((row) => row.name === fileName);
 if (!artifact) {
   fail(
-    `${fileName} not in the gallery: ${JSON.stringify(snapshot!.artifacts.map((row) => row.name))}`,
+    `${fileName} not in the gallery: ${JSON.stringify(snapshot.artifacts.map((row) => row.name))}`,
   );
 }
 console.log(

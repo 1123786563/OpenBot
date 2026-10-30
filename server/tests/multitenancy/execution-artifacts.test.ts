@@ -461,7 +461,12 @@ describeDb(
         const page = await service.listExecutionArtifacts(
           owner,
           botId,
-          { list: async (dir) => (listed.push(dir), ["snapshots/s1.tar.gz"]) },
+          {
+            list: async (dir) => {
+              listed.push(dir);
+              return ["snapshots/s1.tar.gz"];
+            },
+          },
           "/data",
         );
         expect(page.entries).toEqual(["snapshots/s1.tar.gz"]);
@@ -484,7 +489,12 @@ describeDb(
           const denied = await service.listExecutionArtifacts(
             scope,
             botId,
-            { list: async (dir) => (listed.push(dir), ["should-not-appear"]) },
+            {
+              list: async (dir) => {
+                listed.push(dir);
+                return ["should-not-appear"];
+              },
+            },
             "/data",
           );
           expect(denied.entries).toEqual([]);
@@ -512,7 +522,10 @@ describeDb(
         const own = await service.downloadExecutionArtifact(owner, botId, {
           artifactPath: `/data/tenants/${fixture.ids["company-a"]}/workspaces/${fixture.ids["team-a1"]}/bots/${botId}/snapshots/s1.tar.gz`,
           root: "/data",
-          open: async (path) => (opened.push(path), new Uint8Array([1, 2, 3])),
+          open: async (path) => {
+            opened.push(path);
+            return new Uint8Array([1, 2, 3]);
+          },
         });
         expect(own.outcome).toBe("allow");
         if (own.outcome === "allow")
@@ -521,14 +534,20 @@ describeDb(
         const foreign = await service.downloadExecutionArtifact(a2, botId, {
           artifactPath: `/data/tenants/${fixture.ids["company-a"]}/workspaces/${fixture.ids["team-a2"]}/bots/${botId}/snapshots/s1.tar.gz`,
           root: "/data",
-          open: async (path) => (opened.push(path), new Uint8Array([9])),
+          open: async (path) => {
+            opened.push(path);
+            return new Uint8Array([9]);
+          },
         });
         expect(JSON.stringify(foreign)).toBe(canonicalDeny);
         // 同 scope 内指向别的 Bot 的路径同样拒绝。
         const strayBot = await service.downloadExecutionArtifact(owner, botId, {
           artifactPath: `/data/tenants/${fixture.ids["company-a"]}/workspaces/${fixture.ids["team-a1"]}/bots/${botIdOf("stranger")}/x`,
           root: "/data",
-          open: async (path) => (opened.push(path), new Uint8Array([9])),
+          open: async (path) => {
+            opened.push(path);
+            return new Uint8Array([9]);
+          },
         });
         expect(JSON.stringify(strayBot)).toBe(canonicalDeny);
         expect(opened).toEqual([

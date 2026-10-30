@@ -84,8 +84,10 @@ const isCanonicalNotFound = (value: unknown): boolean =>
   JSON.stringify(value) === serializeNotFoundVerdict(notFoundVerdict());
 
 let threadCounter = 0;
-const nextThread = () =>
-  `mt024-thread-${String((threadCounter += 1)).padStart(3, "0")}`;
+const nextThread = () => {
+  threadCounter += 1;
+  return `mt024-thread-${String(threadCounter).padStart(3, "0")}`;
+};
 
 describeDb("MT024 / Issue #67 — 附件归属全链路", () => {
   let fixture: AttachmentFixture;

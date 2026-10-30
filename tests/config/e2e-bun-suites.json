@@ -2,10 +2,6 @@
   "generatedBy": "T06.01 registration",
   "groups": [
     {
-      "name": "--help",
-      "files": ["--help"]
-    },
-    {
       "name": "agent-computer/tests",
       "files": [
         "agent-computer/tests/identity.test.ts",
@@ -1147,7 +1143,6 @@
   ],
   "directoryIslands": ["server/tests/multitenancy", "app/tests/multitenancy"],
   "files": [
-    "--help",
     "agent-computer/tests/identity.test.ts",
     "agent-computer/tests/live-screen.test.ts",
     "agent-computer/tests/local-chrome-startup.test.ts",

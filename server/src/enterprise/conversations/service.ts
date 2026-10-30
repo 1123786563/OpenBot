@@ -489,6 +489,7 @@ export function createConversationService({
       // message_pending 503 visible — exactly the failure this path exists to
       // prevent, with no trace of whether the probe itself ever ran. Log in
       // the file's structured shape, then keep the `null` contract.
+      // biome-ignore lint/suspicious/noConsole: stable-code operational log
       console.error({
         error: "MASTRA_FINALIZED_READ_FAILED",
         context: {
@@ -935,6 +936,7 @@ export function createConversationService({
             backend: "mastra",
           });
         } catch (cause) {
+          // biome-ignore lint/suspicious/noConsole: stable-code operational log
           console.error({
             error: "MASTRA_STORAGE_PROBE_FAILED",
             context: {

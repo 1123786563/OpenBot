@@ -313,7 +313,6 @@ describe("serialization follows the verified T04 contract exactly", () => {
       () => new Response("", { status: 200 }),
     );
     const result = await port({ fetch: transport }).writeSpans(trusted, {
-      binding: ownBinding,
       spans: [derivedSpan],
       binding: ownBinding,
     });

@@ -25,6 +25,7 @@ import {
   BA_ISLAND_DIR,
   GROUP_SIZE,
   bunSuiteEnv,
+  bunSuiteSkipReason,
   manifestGaps,
   writeManifest,
 } from "../scripts/lib/e2e-manifest.mjs";
@@ -433,5 +434,28 @@ describe("e2e manifest contract", () => {
       bunSuiteEnv("app/tests part 1", { env, directoryIslands: islands })
         .TEST_DATABASE_URL,
     ).toBe("postgres://shared/journal");
+  });
+
+  test("bunSuiteSkipReason names an absent island, never a partial one", () => {
+    // An environment with none of the five role URLs has no island: the reason to skip.
+    expect(
+      bunSuiteSkipReason(`${BA_ISLAND_DIR}:T02.01.01`, { env: {} }),
+    ).toMatch(/no better-auth island/);
+    // Job-level URLs alone do not count as an island either.
+    expect(
+      bunSuiteSkipReason(`${BA_ISLAND_DIR}:T02.01.01`, {
+        env: { TEST_DATABASE_URL: "postgres://shared/journal" },
+      }),
+    ).toMatch(/no better-auth island/);
+    // A partial set is a misconfiguration, not an absence: bunSuiteEnv's throw stands there.
+    expect(
+      bunSuiteSkipReason(`${BA_ISLAND_DIR}:T02.01.01`, {
+        env: { BA_TEST_DATABASE_URL: "postgres://ba/journal" },
+      }),
+    ).toBeNull();
+    // Only better-auth groups are ever skipped this way.
+    expect(
+      bunSuiteSkipReason("server/tests/multitenancy part 1", { env: {} }),
+    ).toBeNull();
   });
 });

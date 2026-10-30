@@ -120,7 +120,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("workshop store", () => {
     ).toBe(true);
     const settled = await store.getTurn(ok.id);
     expect(settled?.status).toBe("succeeded");
-    expect((settled?.usage as { inputTokens?: number }).inputTokens).toBe(3);
+    expect(
+      (settled?.usage as { inputTokens?: number } | undefined)?.inputTokens,
+    ).toBe(3);
   });
 
   test("heartbeat updates the runner liveness column", async () => {

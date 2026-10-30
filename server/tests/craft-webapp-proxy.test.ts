@@ -3282,7 +3282,7 @@ describe("the same-origin proxy leg under the legacy switch (#425)", () => {
   });
 
   test("switch ON + legacy session: the old path still serves (AC7's regression pin)", async () => {
-    const { app, dialed, restore } = switchedApp({
+    const { app, restore } = switchedApp({
       legacy: true,
       switchedOff: false,
     });

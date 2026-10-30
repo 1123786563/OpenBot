@@ -2703,16 +2703,6 @@ describe("#358 repair: the gate accepts only a deployment-signed pass", () => {
   });
 
   test("Review Focus 4: two dev /<label> passes coexist — each serves its own session, and cross-session passes are refused", async () => {
-    const { store } = {
-      store: {
-        async findSession(sessionId: string, userId: string) {
-          return [SESSION_ID, OTHER_SESSION_ID].includes(sessionId) &&
-            userId === USER_ID
-            ? { id: sessionId, userId }
-            : undefined;
-        },
-      } as unknown as CraftStore,
-    };
     const calls: { sessionId: string; userId: string; appPath: string }[] = [];
     const servePreview: ServePreview = async ({
       sessionId,

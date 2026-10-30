@@ -555,6 +555,7 @@ async function jobMain() {
     ),
     ...(token && projectId ? { serviceToken: { token, projectId } } : {}),
   });
+  // biome-ignore lint/suspicious/noConsole: stable-code operational log
   console.log(
     result === "skipped"
       ? `Automatic Learning: no credential here could create the openbot container. ${learningSetupInstructions(apiUrl)}`
@@ -564,6 +565,7 @@ async function jobMain() {
 
 if (import.meta.main) {
   jobMain().catch((error: unknown) => {
+    // biome-ignore lint/suspicious/noConsole: stable-code operational log
     console.log(
       `Automatic Learning: ${error instanceof Error ? error.message : "setup failed; nothing was assigned."}`,
     );

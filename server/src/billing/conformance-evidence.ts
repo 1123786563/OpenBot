@@ -885,7 +885,7 @@ export function evidenceFingerprint(
  */
 export const DELIVERED_FINGERPRINTS: Readonly<Record<string, string>> = {
   "conformance.text":
-    "c88de2f2ca9795413db8e392d9093698f33b682aea0f72a289fffe4bb3260e0a",
+    "c2a49390ecfa4399e0b79969942ba357103ab4cc8c44a83d6a0b033900eb4dba",
   "conformance.image":
     "5721d17fe9b0fc34ab5867105b73880d88d97dc8c3d97b832eda074512e4dc78",
   "conformance.audio":

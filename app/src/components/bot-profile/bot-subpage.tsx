@@ -59,6 +59,7 @@ export function BotSubpage({
   const agent = useQuery(
     scopedAgentDetailQueryOptions(queryClient, scope, agentId),
   );
+  const agentData = agent.data;
   return (
     <PageShell
       backButton={{
@@ -69,7 +70,7 @@ export function BotSubpage({
       title={title}
       width={width}
     >
-      {agent.isPending ? null : agent.error ? (
+      {agent.isPending ? null : agent.error && !agent.data ? (
         agent.error instanceof AgentUnavailableError ? (
           <BotUnavailableNote />
         ) : (
@@ -78,7 +79,17 @@ export function BotSubpage({
           </p>
         )
       ) : (
-        children(agent.data)
+        <>
+          {/* A background refresh that fails over stale data must not unmount the page's
+              children: a draft being typed is worth more than the error, so the note rides
+              along above whatever the last good read rendered. */}
+          {agent.error ? (
+            <p className="mt-6 text-destructive text-sm" role="alert">
+              {t("botSubpage.unreachable")}
+            </p>
+          ) : null}
+          {agent.data ? children(agent.data) : null}
+        </>
       )}
     </PageShell>
   );

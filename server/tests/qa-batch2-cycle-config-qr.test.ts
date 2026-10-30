@@ -56,10 +56,10 @@ describe("probe e: the cycle grammar is one contract across three files", () => 
 describe("probe f: the boot cross-check", () => {
   test("a price disagreement refuses with both numbers and the plan named", () => {
     expect(CONFIG).toContain(
-      'PAYMENT_PLAN_CATALOG plan "${planCode}" amountCents (${amountCents}) does not match',
+      `PAYMENT_PLAN_CATALOG plan "\${planCode}" amountCents (\${amountCents}) does not match`,
     );
     expect(CONFIG).toContain(
-      "LAGO_PLAN_CATALOG's monthly price (${displayed.priceCents})",
+      `LAGO_PLAN_CATALOG's monthly price (\${displayed.priceCents})`,
     );
   });
 

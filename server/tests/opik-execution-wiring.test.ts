@@ -26,7 +26,18 @@ const indexSource = readFileSync(
 const callStart = indexSource.indexOf(
   "const aiObservability = createAiObservabilityRoutes({",
 );
-const callEnd = callStart === -1 ? -1 : indexSource.indexOf("\n});", callStart);
+// Close at the SAME indentation as the statement — the assembly lives inside a
+// deeply-indented tree, so a top-level `\n});` never appears and the slice used
+// to come back empty (the guard silently judging nothing).
+const callIndent =
+  callStart === -1
+    ? ""
+    : indexSource.slice(
+        indexSource.lastIndexOf("\n", callStart) + 1,
+        callStart,
+      );
+const callEnd =
+  callStart === -1 ? -1 : indexSource.indexOf(`\n${callIndent}});`, callStart);
 const assemblyBlock =
   callStart === -1 || callEnd === -1
     ? ""

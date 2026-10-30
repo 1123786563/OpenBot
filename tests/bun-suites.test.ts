@@ -12,7 +12,7 @@ import {
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bunEnv } from "./support/bun-suite-env";
+import { bunEnv, bunSkipReason } from "./support/bun-suite-env";
 import { expect, test } from "./support/e2e-compat";
 
 /*
@@ -442,9 +442,17 @@ async function databaseUnreachable(): Promise<string | null> {
 }
 
 for (const group of groups) {
+  /*
+   * An environment with none of the five BA_TEST_* role URLs has no better-auth island; the
+   * batch is skipped with that reason (bunSuiteEnv's throw still fires on a PARTIAL set, which
+   * is a misconfiguration). Skipping keeps the plain tests job green while a configured
+   * environment — local or a future CI island — runs the group and keeps its red loud.
+   */
+  const skipReason = bunSkipReason(group.name);
   test(`bun runtime suite ${group.name}`, {
     tags: ["bun-runtime"],
     timeout: 900_000,
+    ...(skipReason ? { skip: skipReason } : {}),
   }, async () => {
     const files = onlyFile
       ? group.files.filter((file) => file === only)

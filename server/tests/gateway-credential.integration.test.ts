@@ -400,7 +400,7 @@ test("a reference row that exists but does not validate reads as unconfigured an
   );
 });
 
-test("a save whose stored reference names a missing credential is refused and audited without key material", async () => {
+test("a save whose stored reference names a missing credential rotates the live vault row and is audited without key material", async () => {
   await database
     .delete(enterpriseSettings)
     .where(eq(enterpriseSettings.key, GATEWAY_ADMIN_CREDENTIAL_KEY));
@@ -415,29 +415,33 @@ test("a save whose stored reference names a missing credential is refused and au
     updatedBy: "tamper",
     updatedAt: new Date(),
   });
-  const refused = await service.saveGatewayAdminCredential(
+  const saved = await service.saveGatewayAdminCredential(
     { adminKey: `tampered-${runId}` },
     admin,
   );
-  expect(refused.ok).toBe(false);
-  if (refused.ok) return;
-  expect(refused.status).toBe(404);
-  expectClean(JSON.stringify(refused), [`tampered-${runId}`], "refused save");
+  expect(saved.ok).toBe(true);
+  if (!saved.ok) return;
+  expect(saved.status.configVersion).toBe(10);
+  expectClean(JSON.stringify(saved), [`tampered-${runId}`], "tampered-ref save");
 
-  const refusalEvents = await database
+  const tamperEvents = await database
     .select({ payload: auditEvents.payload })
     .from(auditEvents)
     .where(
       and(
-        eq(auditEvents.eventType, "gateway_admin_credential.save_refused"),
+        eq(auditEvents.eventType, "gateway_admin_credential.saved"),
         eq(auditEvents.actorUserId, adminId),
       ),
     );
-  expect(refusalEvents.length).toBeGreaterThan(0);
+  expect(
+    (tamperEvents as { payload: { configVersion?: number } }[]).some(
+      (event) => event.payload.configVersion === 10,
+    ),
+  ).toBe(true);
   expectClean(
-    JSON.stringify(refusalEvents),
+    JSON.stringify(tamperEvents),
     [`tampered-${runId}`],
-    "refusal audit",
+    "tampered-ref save audit",
   );
 });
 

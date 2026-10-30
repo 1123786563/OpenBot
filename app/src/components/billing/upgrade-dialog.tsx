@@ -249,6 +249,7 @@ export function UpgradeDialog({
    */
   const orderRef = useRef(order);
   orderRef.current = order;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the timer polls the live order through `orderRef` each tick, and the liveness guard below drops a stale poll — the listed deps (open, order identity, status) are the re-arm triggers, deliberately narrower than the captured guard.
   useEffect(() => {
     if (!open || !order || order.status !== "pending") return;
     const timer = setInterval(() => {

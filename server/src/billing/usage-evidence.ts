@@ -53,7 +53,9 @@ export function isConfirmedNoCost(reason: string): boolean {
 
 export function createUsageEvidenceRecorder(
   outbox: Pick<UsageOutbox, "record">,
-  log: (message: string) => void = (message) => console.warn(message),
+  log: (message: string) => void = (message) =>
+    // biome-ignore lint/suspicious/noConsole: stable-code operational log
+    console.warn(message),
 ): (input: UnsettledUsageInput) => Promise<void> {
   return async (input) => {
     try {

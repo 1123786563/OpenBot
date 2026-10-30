@@ -75,6 +75,7 @@ async function mapStorageFaults<T>(operation: () => Promise<T>): Promise<T> {
     // unavailability (503) rather than raw 500s; the original fault rides on
     // `cause` for diagnostics — and leaves one structured log, so real
     // faults (including authorization regressions) are never silent (OCR R10).
+    // biome-ignore lint/suspicious/noConsole: stable-code operational log
     console.error({
       error: "DATA_DATABASE_FAULT",
       cause:

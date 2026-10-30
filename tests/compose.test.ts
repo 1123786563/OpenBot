@@ -19,13 +19,6 @@ function composeFile() {
   return readFileSync(join(hereDir, "..", "docker-compose.yml"), "utf8");
 }
 
-function optionalComposeFile(name: string) {
-  return readFileSync(
-    join(hereDir, "..", "docker", "compose", `${name}.yml`),
-    "utf8",
-  );
-}
-
 function rootDockerfile() {
   return readFileSync(join(hereDir, "..", "Dockerfile"), "utf8");
 }

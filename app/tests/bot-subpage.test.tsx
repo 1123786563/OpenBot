@@ -12,6 +12,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { BotSubpage } from "@/components/bot-profile/bot-subpage";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
+import { scopedCachePrefix } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   afterAll,
   afterEach,
@@ -68,7 +69,13 @@ function StatefulChild() {
 
 test("keeps mounted child state visible when a background Bot refresh fails", async () => {
   let requestCount = 0;
-  global.fetch = (async () => {
+  global.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    // The subpage's scope read: without a signed-in user `useScopedCache` stays `pending`
+    // and the agent query never enables, so this mock has to answer it too.
+    if (url.includes("/api/me")) {
+      return Response.json({ user: { id: "u-1", name: "U" } });
+    }
     requestCount += 1;
     return requestCount === 1
       ? Response.json({ agent: BOT })
@@ -106,7 +113,15 @@ test("keeps mounted child state visible when a background Bot refresh fails", as
   );
   expect((input as HTMLInputElement).value).toBe("Keep this draft");
 
-  await client.invalidateQueries({ queryKey: agentKeys.detail("expenses") });
+  // The scoped read files the agent under the personal scope's prefix (MT084), so the
+  // invalidation has to name that prefix — a bare agentKeys.detail key matches nothing and the
+  // background refresh this test exists to exercise never fires.
+  await client.invalidateQueries({
+    queryKey: [
+      ...scopedCachePrefix("u-1", null),
+      ...agentKeys.detail("expenses"),
+    ],
+  });
 
   await waitFor(() => expect(requestCount).toBe(2));
   expect(await view.findByRole("alert")).toBeTruthy();

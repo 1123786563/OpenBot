@@ -435,6 +435,22 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # The ME01/ME03/ME05 fixtures build disposable databases + restricted roles
+      # through server/tests/support/pg-container.ts. Locally that shells into the
+      # `openbot-test-pg` container; here there is no docker socket, so the fixtures
+      # take the wire path against this superuser DSN instead.
+      me-postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: openbot
+        ports:
+          - "127.0.0.1:5433:5432"
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot_test
       TEST_DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot_test
@@ -444,6 +460,9 @@ jobs:
       ENTERPRISE_TEST_OPERATOR_DATABASE_URL: postgres://enterprise_operator_login:enterprise-test-only@127.0.0.1:5434/openbot_enterprise_r2_codex_20261009?options=-c%20role%3Dob_ent_operator
       # Handed only to the multitenancy groups by tests/bun-suites.test.ts; see the provisioning step below.
       MT_TEST_DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot_enterprise_mt_test
+      # Wire path for the ME fixtures' disposable-database bootstrap (see the
+      # me-postgres service above); ME01_TEST_PG_PORT already defaults to 5433.
+      ME01_TEST_PG_ADMIN_DSN: postgres://postgres:openbot@127.0.0.1:5433/postgres
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

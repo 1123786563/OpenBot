@@ -109,7 +109,7 @@ export function createPreviewTickets(deps: {
       }
       // The root alone is not authority: the session must still exist and
       // still belong to the issuing user (deletion / reassignment refusal).
-      let session;
+      let session: Awaited<ReturnType<typeof deps.store.findSession>>;
       try {
         session = await deps.store.findSession(entry.sessionId, entry.userId);
       } catch (error) {

@@ -62,13 +62,18 @@ export type FakeCustomerGateway = {
   stop(): Promise<void>;
 };
 
+/** How many fakes this process started; each seeds its id counter into a distinct range. */
+let startedFakes = 0;
+
 export async function startFakeCustomerGateway(options: {
   /** The bearer token the fake requires on every request. */
   token: string;
 }): Promise<FakeCustomerGateway> {
   const { token } = options;
-  // Per-instance, so ids do not depend on how many fakes the process started before.
-  let fakeCounter = 0;
+  // shortcut: every instance restarting at cust_000001 collides on the schema's real
+  // gateway_customers_remote_id_unique_idx once an earlier test confirmed its row; seed
+  // each instance into its own id range when a second file ever shares the fake.
+  let fakeCounter = ++startedFakes * 1_000;
   const customers: FakeRemoteCustomer[] = [];
   const requests: FakeCustomerGatewayRequest[] = [];
   let dropNextCreate = false;

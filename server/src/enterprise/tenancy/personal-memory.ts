@@ -58,9 +58,6 @@ export const MEMORY_SOURCE_KINDS = ["manual", "kb", "document"] as const;
 
 export type MemorySourceKind = (typeof MEMORY_SOURCE_KINDS)[number];
 
-/** 来源选择列出的资源种类（库与文档）。 */
-const SOURCE_RESOURCE_KINDS = ["knowledge_base", "document"] as const;
-
 export interface MemoryView {
   readonly memoryId: string;
   readonly memoryKey: string;

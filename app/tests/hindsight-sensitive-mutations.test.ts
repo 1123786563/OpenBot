@@ -181,14 +181,20 @@ test("the settle semantics ride unchanged: hindsight subtree, both faces for cor
   capturingFetch(200, { judgment: { id: "j1" } });
 
   const confirm = confirmJudgmentMutationOptions(recordingClient, scope);
-  await confirm.onSettled?.(undefined, { id: "j1" }, undefined, undefined);
+  await confirm.onSettled?.(
+    undefined,
+    new Error("synthetic refusal"),
+    { id: "j1" },
+    {} as never,
+    {} as never,
+  );
   const correct = correctEvidenceMutationOptions(recordingClient, scope);
   await correct.onSettled?.(
     undefined,
+    new Error("synthetic refusal"),
     { id: "p1", input: { content: "words" } },
-    undefined,
-    undefined,
-    undefined,
+    {} as never,
+    {} as never,
   );
 
   // The scope's own prefix rides ahead of each family (MT089); the families are the fact.

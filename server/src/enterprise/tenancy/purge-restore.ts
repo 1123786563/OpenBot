@@ -225,7 +225,7 @@ export function createPurgeRestoreService(channels: {
   if (typeof channels.signingKey !== "string" || !channels.signingKey.trim()) {
     throw new Error("PURGE_SIGNING_KEY_REQUIRED");
   }
-  const { data, operator, signingKey } = channels;
+  const { operator, signingKey } = channels;
 
   type Tx =
     | Parameters<Parameters<DataDatabase["transaction"]>[0]>[0]

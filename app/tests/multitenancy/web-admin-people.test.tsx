@@ -128,8 +128,6 @@ beforeAll(() => {
 afterAll(() => GlobalRegistrator.unregister());
 afterEach(cleanup);
 
-const originalFetch = global.fetch;
-
 type Asked = { input: string; init: RequestInit | undefined };
 
 let asked: Asked[] = [];
@@ -286,6 +284,8 @@ describe("MT095 company people / identity / credentials surfaces (Issue #138)", 
     const adminSections = companyAdminSections(FULL_CAPABILITIES, tIdentity);
     expect(adminSections.map((section) => section.to)).toEqual([
       "/tenant/admin/people",
+      // T04.09: the fixed registry's organization pages ride the same peopleAdmin bit.
+      "/organization/settings",
       "/tenant/admin/audit",
       "/tenant/admin/enterprise",
       "/tenant/admin/learning",

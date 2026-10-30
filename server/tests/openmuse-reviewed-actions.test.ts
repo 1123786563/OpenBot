@@ -1831,7 +1831,7 @@ describe("R04 re-proposal gate hardening", () => {
       // index is what refuses.
       try {
         await realInsert(action);
-      } catch (error) {
+      } catch {
         throw uniqueLoss();
       }
       throw uniqueLoss();
