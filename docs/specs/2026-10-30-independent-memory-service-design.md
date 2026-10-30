@@ -1,15 +1,18 @@
 ---
 id: SPEC-INDEPENDENT-MEMORY-20261030
-status: draft
+status: approved
 version: 3
-approval_ref: null
+approved_by: 当前用户
+approved_at: 2026-10-30
+approved_revision: 'Q26 展示的 v3；批准前文件 SHA-256 为 5bd0b28611cf20d15b0da9cbc474596445b7c442ba64ad672abd0a8b299b9fb7'
+approval_ref: '当前设计访谈，用户对 Q26（批准 v3 作为跨仓库实施计划依据）回复“Q26 批准”'
 ---
 
 # 通用个人长期记忆服务
 
 ## 1. 状态与依据
 
-本文整稿待用户评审，不授权建仓、实施、数据删除或部署。用户已确认的产品及技术方向见[访谈 D01–D25](../plans/2026-10-30-independent-memory-service-design.md)及 [ADR 0012](../adr/0012-independent-personal-memory-authority.md)。本文将这些方向转为可验收合同；标注“实现建议”的内容由 Agent 提出，未获单独批准。第 3 版确定 React/HeroUI 管理界面独立访问及 OpenBot 保留侧栏内嵌、独立 Better Auth OIDC 身份中心，并补齐相应验收。
+用户已在 Q26 批准 v3 作为跨仓库实施计划依据；批准指向的内容指纹和原文见上方元数据。本批准覆盖设计及其中标注的实现起点，不自动授权建仓、产品实施、身份迁移、数据删除或部署。逐题方向见[访谈 D01–D26](../plans/2026-10-30-independent-memory-service-design.md)及 [ADR 0012](../adr/0012-independent-personal-memory-authority.md)。第 3 版确定 React/HeroUI 管理界面独立访问及 OpenBot 保留侧栏内嵌、独立 Better Auth OIDC 身份中心，并补齐相应验收。
 
 领域词义使用根 [CONTEXT.md](../../CONTEXT.md) 的“个人记忆”。[ADR 0005](../adr/0005-self-hosted-hindsight-for-personal-memory.md)作为已有业务约束的来源；权威归属由 ADR 0012 局部替代，不因删除旧实现而取消审核、来源、敏感内容、暂停与遗忘要求。当前代码仍是 OpenBot 持有记忆权威，本设计是目标架构。
 
@@ -210,6 +213,6 @@ OpenBot 接入属于单独实施范围：各聊天及无人值守入口改用同
 
 ## 13. 设计批准与实施门槛
 
-用户逐题确认的 D01–D25 不等于批准本文全部具体合同和实现建议。第 1 版已完成独立设计审阅并补齐来源撤销合同；第 3 版纳入身份中心独立部署与 OpenBot 内容区内嵌，复审该增量及直接相关合同后再交整稿确认。整稿批准需记录对应版本和可核实来源。
+第 1 版已完成独立设计审阅并补齐来源撤销合同，第 3 版身份中心及内嵌增量已完成独立复审；用户在 Q26 明确批准 v3。批准针对上方指纹所指内容；此处只更新批准记录，不增加新产品范围。实现建议是可审查的实施起点，具体协议与文件结构由实施计划细化，不得放宽本文验收。
 
-批准后再编写跨仓库实施计划，明确身份中心、服务仓库与 OpenBot 各自文件所有权、外部合同、验证环境和集成顺序。此阶段不建仓、不提交、不推送、不启动数据清理，不因文档存在而声称服务已实现或完成接入。
+跨仓库实施计划见[计划入口](../plans/2026-10-30-independent-memory-service/README.md)，明确身份中心、服务仓库与 OpenBot 各自文件所有权、外部合同、验证环境和集成顺序。此阶段不建仓、不提交、不推送、不启动数据清理，不因文档存在而声称服务已实现或完成接入。

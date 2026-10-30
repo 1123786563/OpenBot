@@ -53,4 +53,4 @@ supersedes: 'ADR-0005 中由 OpenBot 持有记忆原文、审核、更正、遗�
 
 本决定局部替代 [ADR 0005](0005-self-hosted-hindsight-for-personal-memory.md) 的记忆权威归属，保留其审核、来源约束、更正、遗忘、暂停及检索结果核验等要求；这些规则在目标架构中由记忆服务及待明确的应用合同共同落实。本决定不证明迁移已发生，也不授权产品代码实施或生产迁移。
 
-设计访谈依据见[决定记录](../plans/2026-10-30-independent-memory-service-design.md)，完整合同与验收见[待评审 Spec](../specs/2026-10-30-independent-memory-service-design.md)。完整 Spec 的批准与本文已确认方向分开记录。
+设计访谈依据见[决定记录](../plans/2026-10-30-independent-memory-service-design.md)，完整合同与验收见[Spec v3](../specs/2026-10-30-independent-memory-service-design.md)。用户已在 Q26 批准该 Spec 作为实施计划依据，其批准元数据独立记录，不自动扩大为实施或部署授权。
