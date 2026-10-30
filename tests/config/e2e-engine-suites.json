@@ -30,6 +30,7 @@
       "preflight": "tests/support/better-auth-preflight.ts",
       "files": [
         "tests/e2e/better-auth/web/directory.e2e.ts",
+        "tests/e2e/better-auth/web/memory-service.e2e.ts",
         "tests/e2e/better-auth/web/session.e2e.ts"
       ]
     }

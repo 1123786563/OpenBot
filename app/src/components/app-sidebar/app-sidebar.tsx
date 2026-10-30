@@ -1,5 +1,6 @@
 import {
   IconBolt,
+  IconBrain,
   IconBox,
   IconLogout,
   IconPackage,
@@ -432,6 +433,25 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <IconWand />
               </div>
               <span className="text-sm">{t("craft")}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            {/* The person's own memory lives in the memory service; this page frames it
+                inside the app so the sidebar stays put (#731). */}
+            <SidebarMenuButton
+              className="hover:bg-foreground/5 h-10"
+              render={(props) => (
+                <Link
+                  {...props}
+                  to="/memory"
+                  activeProps={{ className: "bg-foreground/5" }}
+                />
+              )}
+            >
+              <div className="size-[28px] flex items-center justify-center">
+                <IconBrain />
+              </div>
+              <span className="text-sm">{t("memory")}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>

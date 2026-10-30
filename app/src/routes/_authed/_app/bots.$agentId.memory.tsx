@@ -23,7 +23,7 @@ function MemoryPage() {
             {t("pages.memory.settingsIntro")}{" "}
             <Link
               className="underline underline-offset-4"
-              to="/settings/memory"
+              to="/memory"
             >
               {t("pages.memory.settingsLink")}
             </Link>

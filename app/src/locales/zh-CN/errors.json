@@ -282,5 +282,8 @@
     "verify": "无法核对清理状态",
     "sensitiveRequired": "医疗、财务和客户信息仅在你本人主动要求并二次确认后才会被记住。",
     "credential": "凭据永不被记住。即使你要求记住，OpenBot 也会拒绝保存密码、令牌、口令和密钥。"
+  },
+  "memoryService": {
+    "load": "无法加载记忆管理。"
   }
 }

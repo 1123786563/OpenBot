@@ -253,6 +253,7 @@ import {
 import type { UserPreferencesStore } from "../user-preferences";
 import { userPreferencesRoutes } from "../user-preferences-routes";
 import { createVoiceProvider } from "../voice/provider";
+import { createMemoryServiceEntryRoutes } from "../memory-service/entry-routes";
 import { createVoiceRoutes } from "../voice/routes";
 import type { VoiceSessionServices } from "../voice/session-routes";
 import {
@@ -1266,6 +1267,19 @@ export function assembleHttpApp(
     app.use("/api/*", createLegacyEntryGuard());
   }
   app.route("/api/admin/enterprise", createEnterpriseAdminRoutes(requireUser));
+  /*
+   * #731 内嵌管理入口：只返回部署配置的承载地址与本次装载的 requestId。
+   * 未配置 MEMORY_SERVICE_URL 时不挂载，页面据此显示"未启用"。
+   */
+  if (config.memoryService) {
+    app.route(
+      "/api/memory-service/entry",
+      createMemoryServiceEntryRoutes({
+        memoryBaseUrl: config.memoryService.baseUrl,
+        requireUser,
+      }),
+    );
+  }
   if (openMuseTemplateRevisions) {
     /*
      * Template revision preview/apply: administrator-only (requireUser + requireAdmin inside the

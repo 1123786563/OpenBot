@@ -295,6 +295,12 @@ export type DeploymentConfig = {
    */
   memoryDefaults: { sources: boolean; research: boolean };
   /**
+   * #731 the independent memory service's admin surface. Configured, OpenBot mounts
+   * the controlled embed entry and the sidebar page shows it; unconfigured, the
+   * page says so instead of framing a URL nobody supplied.
+   */
+  memoryService?: { baseUrl: string };
+  /**
    * The multitenancy switch and its startup-validation inputs (MT013).
    *
    * Off by default; the legacy single-tenant boot is byte-for-byte unchanged while it is off.
@@ -663,6 +669,23 @@ function handoffCaps(environment: Environment): HandoffCaps {
     maxDepth: read("BOT_HANDOFF_MAX_DEPTH", 1),
     maxPerRun: read("BOT_HANDOFF_MAX_PER_RUN", 3),
   };
+}
+
+function memoryServiceConfig(
+  environment: Environment,
+): { memoryService: { baseUrl: string } } | Record<string, never> {
+  const raw = optional(environment, "MEMORY_SERVICE_URL");
+  if (!raw) return {};
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(`MEMORY_SERVICE_URL must be an absolute URL: ${JSON.stringify(raw)}`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`MEMORY_SERVICE_URL must be http(s), not ${JSON.stringify(parsed.protocol)}`);
+  }
+  return { memoryService: { baseUrl: parsed.toString().replace(/\/$/, "") } };
 }
 
 function required(environment: Environment, name: string): string {
@@ -3487,6 +3510,7 @@ export function loadConfig(
       sources: switchedOn(environment, "OPENBOT_MEMORY_SOURCE_DEFAULTS"),
       research: switchedOn(environment, "OPENBOT_PROACTIVE_DEFAULTS"),
     },
+    ...memoryServiceConfig(environment),
     multitenancy: multitenancyConfig(environment),
     agentStallTimeoutMs: agentStallTimeoutMs(environment),
     auditRetentionDays: auditRetentionDays(environment),

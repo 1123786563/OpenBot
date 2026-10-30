@@ -40,5 +40,6 @@
   "unreadBadge": "Unread messages",
   "skipToContent": "Skip to content",
   "groupCapabilities": "Capabilities",
-  "groupGovernance": "Oversight"
+  "groupGovernance": "Oversight",
+  "memoryUnavailable": "Memory management isn't set up for this deployment."
 }

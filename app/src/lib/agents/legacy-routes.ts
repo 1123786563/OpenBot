@@ -24,7 +24,6 @@ export function legacyAgentsTarget(search: { new?: boolean; agent?: string }) {
  */
 export const LEGACY_PAGES = {
   "/approvals": "/settings/approvals",
-  "/memory": "/settings/memory",
   "/reachability": "/settings/notifications",
   "/responsibilities": "/bots",
   // A group is started from the new-conversation screen by putting two or more Bots in To:.
