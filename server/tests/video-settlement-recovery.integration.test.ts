@@ -1,23 +1,23 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   afterAll,
   describe,
   expect,
   test,
 } from "../../tests/support/bun-test-compat";
-import { createAsyncSubmitService } from "../src/billing/async-job-submit";
 import { createAsyncDispatchRecoveryService } from "../src/billing/async-job-recovery";
+import { createAsyncSubmitService } from "../src/billing/async-job-submit";
 import { createCreditReserveService } from "../src/billing/credit-reserve";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createPayerAccount } from "../src/billing/payer";
 import { resolveLockedReservationBasis } from "../src/billing/reserve-bound";
-import { createVideoSubmitService } from "../src/billing/video-submit";
 import {
-  createVideoSettlementService,
   createVideoArtifactQueryService,
+  createVideoSettlementService,
   videoTerminalUsageOf,
 } from "../src/billing/video-settlement";
+import { createVideoSubmitService } from "../src/billing/video-submit";
 import { createDatabase } from "../src/db/client";
 import {
   accessGrants,
@@ -31,11 +31,11 @@ import {
   creditReservations,
 } from "../src/db/schema/credit-reservations";
 import { creditLedger } from "../src/db/schema/credits";
-import {
-  GATEWAY_PRICE_SNAPSHOT_SOURCE,
-  createEnterpriseGatewayPriceSnapshotStore,
-} from "../src/gateway/price-snapshot";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../src/gateway/catalog-sync";
+import {
+  createEnterpriseGatewayPriceSnapshotStore,
+  GATEWAY_PRICE_SNAPSHOT_SOURCE,
+} from "../src/gateway/price-snapshot";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -264,6 +264,15 @@ async function ledgerRowsOf(reservationId: string) {
 }
 
 afterAll(async () => {
+  // The recovery queue is global: the unknown holds this file parks (AC-3's shape) are named
+  // by every later suite's scan and claimed by its replay, which reddens the suites that
+  // assert their own claim counts. The drill is over once this file ends, so hand the holds
+  // back — a released hold is not `unknown`, and no scan names it.
+  await database.execute(
+    sql`UPDATE credit_reservations SET status = 'released', terminal_at = now()
+        WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}
+          AND status = 'unknown'`,
+  );
   // One shared pool for the file; closed once, after the last test.
   await TEST_POOL.end?.();
 });

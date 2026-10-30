@@ -177,6 +177,21 @@ export const EXPLICIT_GROUPS = {
     "server/tests/package-entrypoints.test.ts",
   ],
   /*
+   * The two estate-wide suites read every legacy key in the database and assert exact totals,
+   * so they only hold while nothing else is seeding at the same moment. Their own island is not
+   * enough: `bun test` runs the files it is handed concurrently, and the family's fixtures are
+   * live for the length of their tests — measured on a fresh billing database, the group goes
+   * 62/3, and both are green alone. Each gets its own group ahead of the island, so it is the
+   * only file in its process and runs before the family seeds anything. The name keeps the
+   * island prefix so BILLING_TEST_DATABASE_URL routing applies.
+   */
+  "server/tests/billing island: estate totals": [
+    "server/tests/cleanup-dry-run.integration.test.ts",
+  ],
+  "server/tests/billing island: legacy mapping": [
+    "server/tests/payer-legacy-mapping.integration.test.ts",
+  ],
+  /*
    * The payment/billing family shares a deployment-global constraint on the
    * shared test database: createPurchase's pending-purchase guard keys on
    * DEPLOYMENT_SCOPE (store.ts), so ONE leftover pending payment_orders row —
@@ -187,14 +202,9 @@ export const EXPLICIT_GROUPS = {
    * process, fresh database), so one island database + one sequential process
    * restores "the group's red means this file is red". The name carries the
    * island so BILLING_TEST_DATABASE_URL routing applies
-   * (tests/bun-suites.test.ts); payer-legacy-mapping and cleanup-dry-run join
-   * because they assert estate-wide totals and write quarantine rows for
-   * every foreign key they see, which is only tolerable against the bounded
-   * neighbor set of their own island.
+   * (tests/bun-suites.test.ts).
    */
   "server/tests/billing island": [
-    "server/tests/cleanup-dry-run.integration.test.ts",
-    "server/tests/payer-legacy-mapping.integration.test.ts",
     "server/tests/payment-callback-ownership.integration.test.ts",
     "server/tests/payment-store.integration.test.ts",
     "server/tests/plan-credits-personal.integration.test.ts",

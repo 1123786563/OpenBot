@@ -1270,10 +1270,20 @@
       ]
     },
     {
+      "name": "server/tests/billing island: estate totals",
+      "files": [
+        "server/tests/cleanup-dry-run.integration.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests/billing island: legacy mapping",
+      "files": [
+        "server/tests/payer-legacy-mapping.integration.test.ts"
+      ]
+    },
+    {
       "name": "server/tests/billing island",
       "files": [
-        "server/tests/cleanup-dry-run.integration.test.ts",
-        "server/tests/payer-legacy-mapping.integration.test.ts",
         "server/tests/payment-callback-ownership.integration.test.ts",
         "server/tests/payment-store.integration.test.ts",
         "server/tests/plan-credits-personal.integration.test.ts",
