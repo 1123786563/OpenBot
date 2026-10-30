@@ -5027,11 +5027,17 @@ export interface ParsedArgs {
   readonly outDir?: string;
   readonly apply: boolean;
   readonly manifestPath?: string;
+  /**
+   * 已存在的同名对象按任务定义对齐（建表展开补列/补约束，策略与约束先删后建），
+   * 而不是拒绝。为 drizzle 全链先建、任务随后补 RLS/GRANT 的供给形态服务。
+   */
+  readonly adoptExisting?: boolean;
 }
 
 const USAGE =
   "usage: migrate-test.ts <generate|migrate> <taskId|all> " +
   "[--out DIR (generate)] | [--apply --manifest FILE (migrate)] | " +
+  "[--apply [--adopt-existing] (migrate, adopt pre-existing objects instead of refusing)] | " +
   "[--apply (migrate all, whole-chain provisioning)] | reconcile-drift";
 
 export function parseArgs(
@@ -5041,6 +5047,7 @@ export function parseArgs(
   let outDir: string | undefined;
   let apply = false;
   let manifestPath: string | undefined;
+  let adoptExisting = false;
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === "--out") {
@@ -5063,6 +5070,8 @@ export function parseArgs(
       }
     } else if (token === "--apply") {
       apply = true;
+    } else if (token === "--adopt-existing") {
+      adoptExisting = true;
     } else if (token.startsWith("--")) {
       return {
         ok: false,
@@ -5102,7 +5111,7 @@ export function parseArgs(
         reason: `reconcile-drift covers every registered task and takes no task id (got "${taskId}")\n${USAGE}`,
       };
     }
-    if (apply || manifestPath || outDir) {
+    if (apply || manifestPath || outDir || adoptExisting) {
       return {
         ok: false,
         reason: `reconcile-drift takes no flags\n${USAGE}`,
@@ -5135,7 +5144,7 @@ export function parseArgs(
         reason: `migrate all takes no --out or --manifest: the registry is the source of truth for every task at once\n${USAGE}`,
       };
     }
-    return { ok: true, args: { command, taskId, apply: true } };
+    return { ok: true, args: { command, taskId, apply: true, adoptExisting } };
   }
   if (!TASKS.has(taskId)) {
     return {
@@ -5144,7 +5153,7 @@ export function parseArgs(
     };
   }
   if (command === "generate") {
-    if (apply || manifestPath) {
+    if (apply || manifestPath || adoptExisting) {
       return {
         ok: false,
         reason: `generate does not accept --apply or --manifest (those gate migrate)\n${USAGE}`,
@@ -5174,7 +5183,19 @@ export function parseArgs(
         "and a provided manifest would be silently ignored, so it is refused instead",
     };
   }
-  return { ok: true, args: { command, taskId, apply, manifestPath } };
+  if (adoptExisting && !apply) {
+    return {
+      ok: false,
+      reason:
+        "--adopt-existing requires --apply: adopting is a write-path behaviour, " +
+        "and a dry-run has nothing to adopt\n" +
+        USAGE,
+    };
+  }
+  return {
+    ok: true,
+    args: { command, taskId, apply, manifestPath, adoptExisting },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -5281,7 +5302,7 @@ export async function runMigrateTest(
     return runReconcileDrift(target, deps);
   }
   if (args.command === "migrate" && args.taskId === "all") {
-    return runMigrateAll(target, deps);
+    return runMigrateAll(target, deps, Boolean(args.adoptExisting));
   }
   const plan = buildPlan(args.taskId ?? "");
   const numbering = validatePlanNumbering(plan.steps);
@@ -5606,6 +5627,7 @@ async function runReconcileDrift(
 async function runMigrateAll(
   target: DatabaseTarget,
   deps: MigrateTestDeps,
+  adoptExisting: boolean,
 ): Promise<RunOutcome> {
   const out = deps.out ?? defaultOut;
   let appliedSteps = 0;
@@ -5623,7 +5645,7 @@ async function runMigrateAll(
       };
     }
     const outcome = await runMigrate(
-      { command: "migrate", taskId, apply: true },
+      { command: "migrate", taskId, apply: true, adoptExisting },
       plan,
       target,
       deps,
@@ -5967,6 +5989,204 @@ async function runGenerate(
   return outcome;
 }
 
+/*
+ * --adopt-existing 的语句计划：给定任务语句与「同名表是否已存在」，返回实际要
+ * 执行的语句序列。任务建表语句是窄快照（0163 就是这么抄的），而 drizzle 全链
+ * 先建的表是宽现状（0164+ 只加列）——跳过建表会丢任务内联的 PK/CHECK/FK，
+ * 原样执行又撞 already exists。所以对已存在的表把建表语句展开对齐：列逐个
+ * ADD COLUMN IF NOT EXISTS（drizzle 多出的列保留），约束先 DROP IF EXISTS 再
+ * ADD（以任务定义为准）；策略、约束、索引、函数同理先删后建。纯函数，供
+ * migrate-adopt.test.ts 直接断言。
+ */
+export function adoptingStatementPlan(
+  statement: string,
+  tableExists: boolean,
+): readonly string[] {
+  const text = statement.trim();
+  const createTable = text.match(
+    /^CREATE TABLE (?:IF NOT EXISTS )?"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s*\(([\s\S]*)\)\s*;?$/i,
+  );
+  if (createTable) {
+    const [, table, body] = createTable;
+    if (!tableExists) return [text];
+    const items = splitTopLevelItems(body);
+    const plan: string[] = [];
+    for (const item of items) {
+      const constraint = item.match(/^CONSTRAINT "([^"]+)"\s/i);
+      if (constraint) {
+        plan.push(
+          `ALTER TABLE "table-placeholder" DROP CONSTRAINT IF EXISTS "${constraint[1]}"`,
+        );
+      }
+    }
+    // 两段式：先全部 DROP，再逐项 ADD——避免 A 项的 ADD 撞上 B 项还没删的同名遗留。
+    // 表级 PRIMARY KEY (...) 可不带 CONSTRAINT 名，按约束项加（列通道会拼出非法语句）。
+    for (const item of items) {
+      if (
+        /^CONSTRAINT "([^"]+)"\s/i.test(item) ||
+        /^PRIMARY KEY\s*\(/i.test(item)
+      ) {
+        plan.push(`ALTER TABLE "table-placeholder" ADD ${item}`);
+      } else {
+        plan.push(
+          `ALTER TABLE "table-placeholder" ADD COLUMN IF NOT EXISTS ${item}`,
+        );
+      }
+    }
+    return plan.map((line) =>
+      line.replaceAll('"table-placeholder"', `"${table}"`),
+    );
+  }
+  const index = text.match(
+    /^CREATE (?:UNIQUE )?INDEX (?:IF NOT EXISTS )?"([^"]+)"/i,
+  );
+  // CASCADE：唯一索引可能被 FK 依赖；任务自己的后续语句会按名重建这些 FK。
+  if (index) return [`DROP INDEX IF EXISTS "${index[1]}" CASCADE`, text];
+  const policy = text.match(/^CREATE POLICY "([^"]+)" ON "([^"]+)"/i);
+  if (policy)
+    return [`DROP POLICY IF EXISTS "${policy[1]}" ON "${policy[2]}"`, text];
+  const addConstraint = text.match(
+    /^ALTER TABLE "([^"]+)" ADD CONSTRAINT "([^"]+)"/i,
+  );
+  if (addConstraint) {
+    return [
+      `ALTER TABLE "${addConstraint[1]}" DROP CONSTRAINT IF EXISTS "${addConstraint[2]}"`,
+      text,
+    ];
+  }
+  const addColumn = text.match(
+    /^ALTER TABLE "([^"]+)" ADD COLUMN (?!IF NOT EXISTS)([\s\S]+)$/i,
+  );
+  if (addColumn) {
+    return [
+      `ALTER TABLE "${addColumn[1]}" ADD COLUMN IF NOT EXISTS ${addColumn[2].replace(/;\s*$/, "")}`,
+    ];
+  }
+  const fn = text.match(
+    /^CREATE FUNCTION ("(?:[^"]+)"(?:\."[^"]+")?)\s*\(([^)]*)\)/i,
+  );
+  if (fn && !/^CREATE OR REPLACE/i.test(text)) {
+    return [`DROP FUNCTION IF EXISTS ${fn[1]}(${fn[2]})`, text];
+  }
+  return [text];
+}
+
+/** 建表语句体按顶层逗号分割：括号、引号串与 $$ 体之内的逗号不是分隔符。 */
+function splitTopLevelItems(body: string): string[] {
+  const items: string[] = [];
+  let depth = 0;
+  let start = 0;
+  let quote: string | null = null;
+  let inDollar = false;
+  for (let index = 0; index < body.length; index += 1) {
+    const ch = body[index];
+    if (inDollar) {
+      if (ch === "$" && body[index - 1] === "$") inDollar = false;
+      continue;
+    }
+    if (quote) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      continue;
+    }
+    if (ch === "$" && body[index + 1] === "$") {
+      inDollar = true;
+      index += 1;
+      continue;
+    }
+    if (ch === "(") depth += 1;
+    else if (ch === ")") depth -= 1;
+    else if (ch === "," && depth === 0) {
+      items.push(body.slice(start, index));
+      start = index + 1;
+    }
+  }
+  items.push(body.slice(start));
+  return items.map((item) => item.trim()).filter(Boolean);
+}
+
+async function runStatementAdopting(
+  tx: MigrationSql,
+  statement: string,
+): Promise<void> {
+  const text = statement.trim();
+  const createTable = text.match(
+    /^CREATE TABLE (?:IF NOT EXISTS )?"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s*\(/i,
+  );
+  if (createTable) {
+    const probe = (await tx.unsafe(
+      `SELECT to_regclass('public.${createTable[1]}') IS NOT NULL AS exists`,
+    )) as unknown;
+    const rows = Array.isArray(probe)
+      ? probe
+      : ((probe as { rows?: { exists: boolean }[] }).rows ?? []);
+    const exists = Boolean(
+      (rows[0] as { exists?: boolean } | undefined)?.exists,
+    );
+    const plan = [...adoptingStatementPlan(statement, exists)];
+    if (exists) {
+      // 任务语句写法有 PRIMARY KEY( 与 PRIMARY KEY ( 两种，列名可带引号可不带；
+      // 表级 PK 可带 CONSTRAINT 名也可不带。
+      const pkAddPattern =
+        / ADD (?:CONSTRAINT "([^"]+)" )?PRIMARY KEY\s*\(([^)]+)\)/i;
+      const pkAddIndex = plan.findIndex((line) => pkAddPattern.test(line));
+      if (pkAddIndex >= 0) {
+        const match = plan[pkAddIndex].match(pkAddPattern) as RegExpMatchArray;
+        const wantedColumns = match[2]
+          .split(",")
+          .map((column) => column.trim().replace(/^"|"$/g, ""));
+        const current = (await tx.unsafe(
+          `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint ` +
+            `WHERE conrelid = 'public.${createTable[1]}'::regclass AND contype = 'p'`,
+        )) as unknown;
+        const pkRows = Array.isArray(current)
+          ? (current as { conname: string; def: string }[])
+          : ((current as { rows?: { conname: string; def: string }[] }).rows ??
+            []);
+        const currentDef = pkRows[0]?.def ?? "";
+        const currentColumns = (currentDef.match(/\(([^)]*)\)/)?.[1] ?? "")
+          .split(",")
+          .map((column) => column.trim().replace(/^"|"$/g, ""))
+          .filter(Boolean);
+        const sameColumns =
+          currentColumns.length === wantedColumns.length &&
+          wantedColumns.every(
+            (column, index) => column === currentColumns[index],
+          );
+        if (sameColumns) {
+          // 同列异名：现有 PK 已表达任务 PK 的语义，跳过这对 DROP/ADD——
+          // 摘名会连带 CASCADE 掉 drizzle 侧引用它的 FK。
+          plan.splice(pkAddIndex, 1);
+          const dropAt = plan.findIndex((line) =>
+            line.includes(`DROP CONSTRAINT IF EXISTS "${match[1]}"`),
+          );
+          if (dropAt >= 0) plan.splice(dropAt, 1);
+        } else {
+          const currentName = pkRows[0]?.conname ?? "";
+          if (currentName) {
+            plan.unshift(
+              `ALTER TABLE "table-placeholder" DROP CONSTRAINT IF EXISTS "${currentName}" CASCADE`,
+            );
+          }
+        }
+      }
+    }
+    const table = createTable[1];
+    for (const line of plan.map((l) =>
+      l.replaceAll('"table-placeholder"', `"${table}"`),
+    )) {
+      await tx.unsafe(line);
+    }
+    return;
+  }
+  for (const line of adoptingStatementPlan(statement, false)) {
+    await tx.unsafe(line);
+  }
+}
+
 async function runMigrate(
   args: ParsedArgs,
   plan: MigrationPlan,
@@ -6052,7 +6272,11 @@ async function runMigrate(
     for (const step of pending) {
       await connection.begin(async (tx) => {
         for (const statement of step.statements) {
-          await tx.unsafe(statement);
+          if (args.adoptExisting) {
+            await runStatementAdopting(tx, statement);
+          } else {
+            await tx.unsafe(statement);
+          }
         }
         await tx.unsafe(
           `INSERT INTO ${JOURNAL_TABLE} (task_id, number, name, statement_digest) ` +

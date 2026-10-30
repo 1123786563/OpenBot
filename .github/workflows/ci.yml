@@ -522,16 +522,13 @@ jobs:
           DATABASE_URL="$MT_TEST_DATABASE_URL" TEST_DATABASE_URL="$MT_TEST_DATABASE_URL" \
             OPENBOT_BOOTSTRAP_ENTERPRISE_ROLES=on bun scripts/migrate.ts
           # The drizzle chain (0163/0209/0210/0215) pre-creates MT-task tables on a
-          # fully migrated database — without their RLS/GRANT. Drop them so the task
-          # system is the sole creator and every suite's apply lands on task-shaped
-          # tables (the "relation already exists" wall and the aclcheck bleed share
-          # this root). Dropping is only half: the suites that read those tables
-          # without applying the owning task need them back in task shape, so the
-          # whole chain is replayed here (same shape as the enterprise step below).
+          # fully migrated database — without their RLS/GRANT. The task apply adopts
+          # those tables instead of refusing them (CREATE TABLE expands to per-column
+          # ADD COLUMN IF NOT EXISTS plus drop-then-add constraints; indexes, policies
+          # and constraints drop their same-named leftovers first), so the drizzle
+          # columns survive and the task shape fills in RLS/GRANT around them.
           DATABASE_URL="$MT_TEST_DATABASE_URL" TEST_DATABASE_URL="$MT_TEST_DATABASE_URL" \
-            bun scripts/multitenancy/migrate-test.ts reconcile-drift
-          DATABASE_URL="$MT_TEST_DATABASE_URL" TEST_DATABASE_URL="$MT_TEST_DATABASE_URL" \
-            bun scripts/multitenancy/migrate-test.ts migrate all --apply
+            bun scripts/multitenancy/migrate-test.ts migrate all --apply --adopt-existing
       # Same shape as the multitenancy step: the billing island's suites refuse
       # nothing on openbot_test, but a single leftover pending payment_orders row
       # (deployment-global guard, store.ts) reddens the whole family — give them
@@ -551,15 +548,13 @@ jobs:
         working-directory: server
         run: |
           bun scripts/enterprise-test-db.ts migrate
-          # Same drift as the multitenancy step above: the drizzle chain
+          # Same shape as the multitenancy step above: the drizzle chain
           # pre-creates the MT-task tables without their RLS/GRANT. The
           # enterprise suites do NOT apply the task chain themselves (unlike
-          # the multitenancy groups), so provision the whole chain here on
-          # task-shaped tables after clearing the drift.
+          # the multitenancy groups), so provision the whole chain here,
+          # adopting the drizzle-created tables and filling in the task shape.
           DATABASE_URL="$ENTERPRISE_TEST_SETUP_DATABASE_URL" TEST_DATABASE_URL="$ENTERPRISE_TEST_SETUP_DATABASE_URL" \
-            bun scripts/multitenancy/migrate-test.ts reconcile-drift
-          DATABASE_URL="$ENTERPRISE_TEST_SETUP_DATABASE_URL" TEST_DATABASE_URL="$ENTERPRISE_TEST_SETUP_DATABASE_URL" \
-            bun scripts/multitenancy/migrate-test.ts migrate all --apply
+            bun scripts/multitenancy/migrate-test.ts migrate all --apply --adopt-existing
       # A passing job must include the expected test floor. Import-time failures can otherwise skip
       # files before their tests are registered.
       - run: bun run test:ci
