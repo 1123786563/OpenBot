@@ -891,7 +891,7 @@ export const DELIVERED_FINGERPRINTS: Readonly<Record<string, string>> = {
   "conformance.audio":
     "b6374bd7abe225da3efa59900ae44eb621db67b8dc72ce140a44e5bea97cf1d2",
   "conformance.runtime":
-    "3f6ea082c8291fa5011e49ce3d12f9951b31d4a3259c99d3f726102ffa283f8f",
+    "be3ce749752e678e3a61320bd200751dbe78d6149fb87b4167abec34dab0fc0b",
   "conformance.embedding":
     "b643f683c5ea20d9cc2f92b7ae62dad72e2984f0bb3ff44f3afabc690c87e4f4",
   "conformance.rerank":
