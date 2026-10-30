@@ -24,7 +24,7 @@
 | #715 | 保留现有用户身份接入统一登录 | IDENTITY 514143c + OpenBot 4e52125b6 | tests/issue-715.test.ts（6 用例，IDENTITY）+ server/tests/identity-center-continuity.test.ts（6 用例，OpenBot） | 七条变异全杀（IDENTITY 5 + OpenBot 3 中重复计 2）；OpenBot 投影用合同夹具（企业测试库未运行） |
 | #730 | OpenBot 来源应用接入（来源裁决/服务客户端/上下文装载） | OpenBot c3475e779 | server/tests/memory-service-source-check.test.ts（5）+ memory-service-runtime.test.ts（4） | 四条变异全杀；企业 Access 真实接线未做（5435 未运行） |
 | #729 | 服务故障与授权降级 | MEMORY fc7f9a6 + OpenBot e43f3a34a | tests/recall-fallback.test.ts（4，MEMORY）+ server/tests/memory-service-degradation.test.ts（4，原生）+ mastra-memory-service-degradation.test.ts（3，Bun 驱动） | 见 §6c |
-| #731 | OpenBot 内嵌记忆管理（承载页/顶层登录回跳/退出） | MEMORY ecdcc6f + OpenBot da8a46b0c | app/tests/memory-service-frame.test.tsx（4）+ server/tests/memory-service-entry.test.ts（3）+ MEMORY tests/embed-channel.test.ts（3）；浏览器套件已收集未执行 | 审核中；浏览器验收 blocked（BA 栈未运行） |
+| #731 | OpenBot 内嵌记忆管理（承载页/顶层登录回跳/退出） | MEMORY ecdcc6f+feb8455 + OpenBot da8a46b0c+feba5c45a | app/tests/memory-service-frame.test.tsx（5）+ server/tests/memory-service-entry.test.ts（3）+ MEMORY tests/embed-channel.test.ts（3）；浏览器套件 5 用例已收集未执行 | 审核 9 confirmed（去重 6 类）→ 修复轮，六条变异全杀；浏览器验收 blocked（BA 栈未运行） |
 | #732–#733 | 待实施 / blocked（依赖 #731 浏览器验收与真实企业集成） | — | — | — |
 
 **当前全量基线（MEMORY）**：单元 17 文件 / 152 用例全绿（含 #728/#729）；浏览器 e2e 1/1 绿；`bun run typecheck`（root+app）绿；`bun run build` 绿。
@@ -135,6 +135,17 @@
 - 变异（已还原，全部杀死）：去掉 Origin 校验、去掉 source 校验、去掉 requestId 校验（app 套件分别 2/2/1 红）、目标 Origin 改 `"*"`（MEMORY 套件 2 红）。
 - 浏览器验收 **blocked**：`tests/e2e/better-auth/web/memory-service.e2e.ts` 已在 `tests/config/e2e-engine-suites.json` 的 better-auth-web 组登记，`e2e list` 收集到 6 个用例；实际运行因 `BA_E2E_APP_ORIGIN` 未设置被 preflight 在配置加载处拒绝（零导航），本机无 Better Auth/Casdoor 栈。票面要求记录浏览器版本与存储策略——未执行即无此证据，不列为支持。
 - 未接线：`setMastraMemoryContext` 生产装配、`MEMORY_SERVICE_URL` 的实际部署值（本地无记忆服务实例运行）。
+
+### #731 审核（25 findings → 9 confirmed，去重 6 类）与修复轮（MEMORY feb8455 / OpenBot feba5c45a）
+- **auth-required 无穷重载（high，2 条同源）**：默认处理只 `location.assign("/memory?login=1")`，无人消费该参数，也从未顶层启动 MEMORY 的 `/auth/login`；MEMORY 回调只回自己的 `/` → 任何一次内嵌 401 都会让宿主无限重载。修复：frame 默认顶层导航到 `${allowedOrigin}/auth/login`；MEMORY 新增 `MEMORY_EMBED_RETURN_URI`（服务端配置，登记承载路由），回调后跳回该地址；会话仍建立不起来时第二次 auth-required 停止并显示说明（不再重载）。
+- **任意站点可加框（low）**：MEMORY 接受任意 http(s) referrer 为宿主且无 frame-ancestors → 任意站点可嵌入管理站。修复：`MEMORY_EMBED_HOST_ORIGIN` 配置驱动 `Content-Security-Policy: frame-ancestors`（未配置即 `'none'`），页面从注入的 meta 取白名单，referrer 必须精确等于它才建立渠道。
+- **logged-out 无操作（medium）**：承载页未传 `onLoggedOut`，退出不清内嵌状态。修复：frame 自身在 logged-out 时清除内嵌界面并显示"已退出"。
+- **默认分支无覆盖（medium）**：测试只走回调分支（页面实际不传回调）。修复：新增 `default_login_goes_top_level_once_and_stops_instead_of_reloading`（注入 navigate，断言目标为 `/auth/login`、第二次不再导航并显示提示）。
+- **浏览器套件 vacuous（medium）**：`restricted_storage` 未施加任何限制、`sidebar_and_same_owner` 的 Origin 断言可被跳过、`return_url` 登录的是 OpenBot 而非记忆服务。修复：删除无夹具的 `restricted_storage` 用例并在文件头声明该 A 项 blocked；Origin 缺失改为失败；`return_url`/`logout_revocation` 改为断言记忆服务 `/auth/login` 与 `/auth/logout` 流程。
+- **覆盖审计无法验证 engine 登记（low）**：`e2e-coverage-audit.mjs` 在本仓既有 bun-manifest 契约失败处先退出，未到 engine 清单。记录为既有债，不改。
+- **入口"不挂载"半边未测（low）**：`/api/memory-service/entry` 只在 `memoryService` 配置存在时挂载，测试未断言未配置时的 404。记录为已知缺口（挂载条件在 `assembly/http.ts` 单行 `if`）。
+- 修复轮变异（已还原，全部杀死）：去掉宿主白名单（MEMORY 1 红）、去掉登录循环保护（app 1 红）。
+- 修复轮复验：app 5/5、server entry 3/3、MEMORY 全量 155/155、app/server/MEMORY typecheck 与 app/MEMORY build 全绿。
 
 ## 7. 债与已知边界
 
