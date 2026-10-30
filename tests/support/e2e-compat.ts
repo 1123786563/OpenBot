@@ -774,6 +774,8 @@ function identifier(name: string): string {
 
 installMockHooks();
 
+const liveSpies = new Set<Mock>();
+
 const makeSpy = (implementation?: (...args: any[]) => unknown): Mock =>
   makeMock(implementation ?? (() => undefined));
 
@@ -797,10 +799,13 @@ export const mock: MockFactory = Object.assign(makeSpy, {
   restore(): void {
     moduleMocks.clear();
     mocks.clear();
+    // Bun's `mock.restore()` also puts every `spyOn` target back. Without this, a suite whose
+    // last test spied on a global (`globalThis.fetch`) hands its stub to every later file in the
+    // same worker — one app suite's fake `/api/voice` answers were reaching a server suite's
+    // model calls.
+    for (const spy of [...liveSpies]) spy.mockRestore();
   },
 });
-
-const liveSpies = new Set<Mock>();
 
 export function spyOn(target: Any, key: string | symbol): Mock {
   const descriptor = Object.getOwnPropertyDescriptor(target, key);
