@@ -117,6 +117,8 @@ type SweepResult = Readonly<{
 
 `GET /v1/me`、`/v1/delegations`、`/v1/jobs/:id`、`/v1/candidates`、`/v1/memories`、`/v1/memories/:id/versions`、`/v1/cleanup/:id` 提供本人受控视图。`GET /v1/memories` 只返回各记忆当前有效版本；版本历史（新旧内容与各自半开区间）由 `GET /v1/memories/:id/versions` 返回 `MemoryVersionView[]`（本人会话；他人与不存在 404）。写入用 `/v1/ingestions`、`/v1/candidates/:id/review`、`/v1/memories/:id/corrections`（正文非空且非秘密，`effectiveFrom` 须晚于当前版本起点：更早 400，同一时点 409 `VERSION_CONFLICT`）、`/v1/memories/:id/forget`、`/v1/shares`、`/v1/shares/:id/revoke`、`/v1/sources/revoke`。`/v1/pause` 分别保存 learning/usage 状态。管理应用调用与服务调用执行同一规则。
 
+逐版本只读共享用 `POST /v1/shares`（`{ versionId, consumerAppId }` → `201 { authorizationId }`，幂等）与 `POST /v1/shares/:id/revoke`（`204`，幂等；他人与不存在 404）；`GET /v1/shares` 返回本人当前有效授权 `ShareView[]`（`{ authorizationId, versionId, memoryId, content, consumerAppId, createdAt }`）。三个入口只接受本人受信会话（应用凭据 401 `AUTH_REQUIRED`）；版本须属于本人且已确认（他人/不存在 404），接收应用须已登记且 active（否则 400）。共享是只读事实：接收应用不能创建/撤销共享，也不能修改或删除内容；新记忆、更正后新版本、新派生都不继承共享。
+
 派生判断使用 `POST /v1/derivations`（`{ basisVersionIds, content? }` → `202 { candidateId }`）：依据必须属于本人、已确认且当前在其有效区间内、对调用方可见（同来源或逐版本共享；本人会话不限应用范围）且来源在线核验 `allowed`；依据本身是派生判断时，其祖先依据递归同规则复核（继承全部依据限制，悬挂依据按不可用拒绝）。同一次判断的依据须同源，或全部为无外部来源的通用个人记忆，不跨不同授权来源合成。派生只形成待审候选，正文由调用应用给出不构成本人确认；学习暂停期间应用发起的派生返回 409 `PAUSED`（本人显式 remember 与审核不受影响）。更正与撤销提交时把旧版共享撤销意图与业务写入同一事务持久化，远端收回成功后标记完成、失败保留待重放。
 
 本人明确“请记住”使用 `POST /v1/remember`；只接受服务验证的本人交互证明，绑定应用、本人、内容摘要、来源与一次性 nonce。普通采集委托或模型输出不能制造该证明；敏感信息仍进入相应审核或被拒绝。
