@@ -135,6 +135,8 @@ type SweepResult = Readonly<{
 
 `POST /v1/cleanup-receipts` 接收应用服务身份提交的 CleanupReceipt；notification 必须属于该 app。服务提交撤销事务时持久化通知意图，通知与回执均可重试；未收到或部分失败不显示全量清除完成。
 
+`POST /v1/shares/:id/revoke`（204，幂等）把撤销时间、清理事实（`share_cleanups`）与通知意图（`cleanup_notifications`，notificationId 固定）写入同一事务：通知发送失败不影响撤销生效。通知投递走接收应用登记的回调 URL（无回调即失败），启动与周期重试未完成通知；HTTP 200 只代表送达，回执之前不是完成。`GET /v1/cleanups` 返回本人 `CleanupStatusView[]`（`{ cleanupId, authorizationId, versionId, consumerAppId, createdAt, notificationId, notificationState: pending|sent|completed, attempts, lastError, receipt, outcome }`），`GET /v1/cleanup/:id` 为单条（他人与不存在 404）；两入口只接受本人受信会话。`outcome` 由回执事实派生：无回执 `awaiting_receipt`；任一范围 `uncontrollable` 即 `uncontrollable`（不与失败混同）；整体 `completed` 且逐项有证据为 `completed`；其余 `partial`。回执入口只接受应用服务身份（本人 bearer 401）：畸形回执与"整体 completed 但空清单/无证据项/含不可控项"一律 400，通知不属于该应用 404；重复回执单行状态化（无重复效果）。界面按 outcome 区分停止共享/未回执/部分清理/无法控制/有证据完成，任何状态都不表示已追回外发内容。
+
 ## 客户端与内嵌
 
 MEMORY 提供 `createMemoryClient(options: { baseUrl: string; credentials: ServerCredentialProvider }): MemoryClient`；`MemoryClient.submit/recall` 的输入输出复用上述合同。OpenBot 的 ServerCredentialProvider 仅在服务器签发或取得已验证委托，客户端包不得包含服务秘密。
