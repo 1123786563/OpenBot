@@ -765,7 +765,7 @@ describe("openmuse google oauth (G01, G02)", () => {
   });
 
   test("nonce: issued on the authorization URL; one-sided on the callback (round 6 H4)", async () => {
-    const { app, rows, vendor } = assemble();
+    const { app, vendor } = assemble();
 
     const answer = await connect(app);
     const url = new URL(

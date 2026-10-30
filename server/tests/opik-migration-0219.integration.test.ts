@@ -162,7 +162,7 @@ afterAll(async () => {
 describe("0219 stable resource scope (OCR R5)", () => {
   test("the file splits into single statements at every marker (drizzle migrator contract)", () => {
     expect(chunks.length).toBe(15);
-    for (const [index, chunk] of chunks.entries()) {
+    for (const [, chunk] of chunks.entries()) {
       expect(topLevelSemicolons(chunk)).toBe(1);
     }
   });

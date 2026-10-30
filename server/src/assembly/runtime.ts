@@ -1663,6 +1663,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     // no share can ever be created or revoked — when that channel is not wired.
     // Held here for the share-token and share-page entrypoints that land in
     // MT058 and MT092; nothing in this assembly serves traffic with it yet.
+    // biome-ignore lint/correctness/noUnusedVariables: constructed for the MT058/MT092 share entrypoints that consume it downstream.
     const personalShareRules = await (async () => {
       if (!enterpriseCapabilities) return null;
       const operatorUrl = config.enterpriseOperatorDatabaseUrl;
@@ -1689,6 +1690,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     // the deployment's existing AES-GCM envelope (credentials.ts): plaintext is
     // sealed on registration and only ever opened inside an authorized disclosure,
     // which writes the append-only audit row in the same data transaction.
+    // biome-ignore lint/correctness/noUnusedVariables: #704 wires the credentialLease chain onto this.
     const credentialOwnership = await (async () => {
       if (!enterpriseCapabilities) return null;
       const credentialOwnershipVault: SecretVault = {
@@ -1869,6 +1871,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     // unaffected), never a flow that could not be consumed or audited. Held here
     // for the connector callback wiring that lands in the downstream ticket;
     // nothing in this assembly serves traffic with it yet.
+    // biome-ignore lint/correctness/noUnusedVariables: the connector callback ticket consumes this; no route serves it yet.
     const oauthState = await (async () => {
       if (!enterpriseCapabilities) return null;
       const operatorUrl = config.enterpriseOperatorDatabaseUrl;
@@ -1917,6 +1920,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     // execution-chain wiring (plugin/shared-account gates compose this at their
     // checkpoints downstream); nothing in this assembly serves traffic with it
     // yet.
+    // biome-ignore lint/correctness/noUnusedVariables: approval checkpoints downstream consume this; nothing serves it yet.
     const sharedApprovals = await (async () => {
       if (!enterpriseCapabilities) return null;
       const operatorUrl = config.enterpriseOperatorDatabaseUrl;
@@ -4895,6 +4899,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
       );
     }
 
+    // biome-ignore lint/correctness/noUnusedVariables: constructed-but-not-mounted wiring, tracked as #705 (M-8).
     const mastraContinuationRouteDeps =
       mastraContinuationStore &&
       enterpriseCapabilities &&

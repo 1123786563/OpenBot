@@ -121,7 +121,6 @@ test("an expired grant is not part of the balance, and a live hold is", async ()
  */
 test("the personal balance names the account capability status, quarantined reason and all", async () => {
   const plain = `${prefix}-plain`;
-  const quarantined = `${prefix}-quarantined`;
 
   // 未注册账户行的 key：active 是「没有隔离事实」的诚实读法，不是猜测。
   const plainCredits = createCredits({

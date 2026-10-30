@@ -359,7 +359,6 @@ export function createExecutionArtifactsService(
   assertDataDatabase(options.data);
   const { data, audit } = options;
   const surfaces = options.surfaces ?? [];
-  type Tx = Parameters<Parameters<DataDatabase["transaction"]>[0]>[0];
 
   const grantFor = (scope: PlatformScope, botId: string): ExecutionGrant => {
     const grant: ExecutionGrant = {

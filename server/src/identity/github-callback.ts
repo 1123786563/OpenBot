@@ -30,6 +30,7 @@ export type GithubCallbackDeps = {
 };
 
 function logRefused(reason: string): void {
+  // biome-ignore lint/suspicious/noConsole: stable-code operational log
   console.warn(
     JSON.stringify({ type: "identity-github-callback-refused", reason }),
   );
@@ -38,6 +39,7 @@ function logRefused(reason: string): void {
 // Only GithubOAuthError messages are logged: they are fixed sentences. Any other error's message
 // could carry vendor or database text, so it contributes its name alone.
 function logFailed(stage: string, error: unknown): void {
+  // biome-ignore lint/suspicious/noConsole: stable-code operational log
   console.error(
     JSON.stringify({
       type: "identity-github-callback-failed",

@@ -1,4 +1,7 @@
-import { bunSuiteEnv } from "../../scripts/lib/e2e-manifest.mjs";
+import {
+  bunSuiteEnv,
+  bunSuiteSkipReason,
+} from "../../scripts/lib/e2e-manifest.mjs";
 
 /*
  * The environment one bun-driven group's subprocess runs with (T01.02).
@@ -26,4 +29,11 @@ export function bunEnv(
   options: BunEnvOptions = {},
 ): Record<string, string | undefined> {
   return bunSuiteEnv(groupName, options);
+}
+
+export function bunSkipReason(
+  groupName: string,
+  options: Pick<BunEnvOptions, "env"> = {},
+): string | null {
+  return bunSuiteSkipReason(groupName, options);
 }

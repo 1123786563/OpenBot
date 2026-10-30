@@ -18,7 +18,10 @@
       "!plugins/packages/openbot/legacy-catalogue",
       "!verification",
       "!apps/openmuse",
-      "!.coordination"
+      "!.coordination",
+      "!ocr-comments.json",
+      "!server/assets/craft/web-template",
+      "!docs"
     ]
   },
   "vcs": {
@@ -144,6 +147,16 @@
                 ]
               }
             }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["server/src/enterprise/models/ai-sdk-v3-gateway-adapter.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noExplicitAny": "off"
           }
         }
       }

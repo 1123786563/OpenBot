@@ -45,7 +45,6 @@ function fakeState() {
           .map((row) => row.attemptNumber),
       );
       const attemptNumber = highWater + 1;
-      const current = liveOf(input.botId);
       const row: Row = {
         id: `sbx-${++sequence}`,
         botId: input.botId,

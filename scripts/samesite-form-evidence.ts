@@ -27,11 +27,9 @@ const GATEWAY =
 const GATEWAY_TOKEN =
   process.env.CRAFT_ACCEPTANCE_SANDBOX_TOKEN ?? "openbot-dev-sandbox-token";
 const SANDBOX_BOT = process.env.CRAFT_ACCEPTANCE_SANDBOX_BOT ?? "craft";
-const SERVER_LOG = process.env.CRAFT_ACCEPTANCE_SERVER_LOG ?? "";
 const SHOT_DIR =
   process.env.CRAFT_ACCEPTANCE_SHOT_DIR ??
   ".archive/runs/craft-preview/samesite-form-evidence";
-const CLEANUP = process.env.CRAFT_ACCEPTANCE_CLEANUP_SESSIONS === "1";
 /**
  * 本地沙箱容器名（stopSessionWebapp 的 docker exec 通道）。fix-ocr25 #11：
  * 「不可用时退化为警告」与事实不符 —— docker 二进制缺失/容器未跑时
@@ -46,21 +44,6 @@ const SANDBOX_CONTAINER =
 const T = 45_000;
 const SESSION_PREFIX = "#365 samesite probe";
 const RUN_STAMP = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-/**
- * 预览域通行证 cookie 名（fix-ocr18 #17）：与 server 侧常量保持一致的本地
- * 拼写 —— server/src/craft/preview-ticket.ts 的 PREVIEW_SESSION_COOKIE 是
- * 事实源，本模块不跨端 import，只收敛字面量到一处；6 处引用全部走它
- * （fix-ocr25 #10：实测 951/1034/1108/1112/1117/1122 六处，非旧注的 5 处）。
- * 两端拼写漂移时，断言会如实 FAIL（cookie 找不到），不会静默放过。
- */
-const PREVIEW_SESSION_COOKIE = "openbot_preview_session";
-
-/**
- * label 形状正则（fix-ocr25 #12）：脚本内两处断言（webapp_url 解析与 D7
- * 步骤）收敛单一常量，防单边修改造成断言口径分裂 —— 与
- * PREVIEW_SESSION_COOKIE 同一治理惯例（收敛字面量到一处）。
- */
-const LABEL_SHAPE = /^[0-9a-f]{20}$/;
 
 /**
  * AC5 两处 HMR socket 的完整地址（fix-ocr25 #5）：模块级收敛 —— 脚本侧已知
@@ -403,10 +386,8 @@ async function killPortOccupant(port: number, tag: string): Promise<void> {
   const portHex = port.toString(16).toUpperCase().padStart(4, "0");
   const script = [
     `inode=$(awk 'NR>1 && $2 ~ /:${portHex}$/ && $4 == "0A" {print $10; exit}' /proc/net/tcp 2>/dev/null)`,
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell 参数展开必须原样进入脚本
     `[ -n "$inode" ] || exit 0`,
     `for fd in /proc/[0-9]*/fd/*; do`,
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell 参数展开必须原样进入脚本
     `  [ "$(readlink "$fd" 2>/dev/null)" = "socket:[$inode]" ] && kill "$(echo "$fd" | cut -d/ -f3)" 2>/dev/null && echo killed;`,
     `done`,
     "true",

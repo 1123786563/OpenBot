@@ -126,8 +126,6 @@ beforeAll(() => {
 afterAll(() => GlobalRegistrator.unregister());
 afterEach(cleanup);
 
-const originalFetch = global.fetch;
-
 type Asked = { input: string; init: RequestInit | undefined };
 
 let asked: Asked[] = [];

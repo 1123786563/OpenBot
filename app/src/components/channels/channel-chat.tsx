@@ -362,6 +362,7 @@ export function ChannelChat({
   }, [isReady]);
 
   // Join the gateway socket, restore durable history, then release the first-message gate.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `scopeHolder.current` is a live read on purpose — a scope switch while the restore is on the wire must be paired with the prefix in force, never the one closed over at mount.
   useEffect(() => {
     if (!isReady) return;
     let current = true;
@@ -441,6 +442,7 @@ export function ChannelChat({
    * Retried briefly, because the roster is patched when the turn is on record with the runner and
    * the platform's read of the thread can be a beat behind it.
    */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `scopeHolder.current` is a live read on purpose — a scope switch between effect runs must resolve the roster key under the prefix in force, never a closed-over one (the note inside `authoredActivity` says why).
   useEffect(() => {
     const authoredActivity = (): ChannelActivitySignature | null => {
       // The roster this screen watches lives under the scope's own prefix since MOD19 (#639):

@@ -242,8 +242,11 @@ export function ScheduledTaskEditor({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
+    // An empty edit form is not a draft. Publishing it while the query is pending means a responsive
+    // remount would receive it as if it were already seeded and skip the loaded task forever.
+    if (taskId && !seeded) return;
     onDraftChange?.(form, dirty);
-  }, [form, dirty, onDraftChange]);
+  }, [form, dirty, onDraftChange, seeded, taskId]);
 
   // Seed once when the detail arrives (the panel mounts before the read resolves).
   if (taskId && detail.data && !seeded) {

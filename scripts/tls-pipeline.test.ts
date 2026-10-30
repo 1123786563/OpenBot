@@ -879,6 +879,7 @@ describe("json_escape control characters (fix-ocr17: strict-JSON readable status
     // Every control byte became a plain space; the readable text survives.
     // (CRLF becomes two spaces — CR via the cntrl rule, NL via the standing
     // tr — so the assertion is on fragments, not on one exact string.)
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: asserting the scrub removed every control byte — matching them is the test's whole point.
     expect(String(status.lastAttemptError)).not.toMatch(/[\u0000-\u001f]/);
     expect(String(status.lastAttemptError)).toContain("acme.sh failed: fatal");
     expect(String(status.lastAttemptError)).toContain("bell here");
@@ -1952,7 +1953,7 @@ describe("stale-lock recycling TOCTOU (fix-ocr8 #2: a live lock is never recycle
     });
     // Either the recycler enters the window (fixed) or it finishes without
     // one (pre-fix: it rmdir'd the corpse and acquired immediately).
-    const outcome = await Promise.race([
+    await Promise.race([
       (async () => {
         while (!existsSync(marker)) await Bun.sleep(10);
         return "marker" as const;

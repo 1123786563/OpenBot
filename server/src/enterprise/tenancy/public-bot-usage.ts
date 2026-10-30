@@ -55,6 +55,11 @@
 // （不存在/跨公司/跨团队/未发布/已撤销/版本不含团队公共路径在对外语义上
 // 不可区分）；输入形状响亮拒绝（RESOURCE_ID_INVALID / THREAD_KEY_INVALID，
 // 错误只含代码，绝不回显值）；模块零 console、零 process.env。
+//
+// T06.01 追加（文件末节）：createAgentsBotResourceActions——agents 路由面
+// 的资源动作端口组合出口（read/edit/publish/unpublish/run 五问的装配，
+// 判定语义全部复用 MT008 注册表、MT017 发布、MT009 运行门与上面的 MT018
+// 入口，本节零新判定）。
 
 import { and, asc, eq, sql } from "drizzle-orm";
 import { enterpriseBotOwnership } from "../../db/schema/enterprise-bot-ownership";
@@ -65,13 +70,24 @@ import {
   enterpriseResources,
   enterpriseWorkspaceMemberships,
 } from "../../db/schema/enterprise-tenancy";
-import type { PlatformScope } from "../contracts";
-import { assertDataDatabase, type DataDatabase } from "./connections";
+import type { PlatformScope, ScopeResolver } from "../contracts";
 import {
+  type BotPublishAudience,
+  type BotPublishService,
+  createBotPublishService,
+} from "./bot-publish";
+import {
+  assertDataDatabase,
+  type DataDatabase,
+  type OperatorDatabase,
+} from "./connections";
+import {
+  createResourcePolicyService,
   createShippedResourcePolicyRegistry,
   parseResourceVisibility,
+  type ResourcePolicyDecisionService,
 } from "./resource-policy";
-import { workspaceMembershipLockKey } from "./scope-gate";
+import { type WorkspaceGate, workspaceMembershipLockKey } from "./scope-gate";
 import { assertTrustedScope } from "./store";
 import {
   createTeamResourceActionService,
@@ -506,4 +522,311 @@ async function runEntryTransaction<T>(
     }
     return operation(tx);
   });
+}
+
+// ---------------------------------------------------------------------------
+// T06.01：agents 路由面的资源动作端口（组合出口，零新判定）
+// ---------------------------------------------------------------------------
+
+/*
+ * The agents HTTP surface's enterprise gate, composed from the family's real
+ * decision services — nothing new is decided here:
+ *
+ *   - the trusted scope comes from the wired resolver (issuance is the
+ *     resolver's own transaction, exactly as every other consumer);
+ *   - the T03.01 workspace gate revalidates the scope live: under ba
+ *     authority it compares `enterprise_principals.identity_generation`
+ *     against the scope's `identityGeneration` and the company/team clocks
+ *     against the scope's stamped epochs/generations — the comparison lives
+ *     in the gate, one definition, never re-implemented here;
+ *   - read is the MT008 policy registry (grant or team-public, the tenant's
+ *     own policy revision), publish/unpublish are the MT017 owner actions,
+ *     run is the MT018 entry above (MT009 gate + own session + own
+ *     credentials).
+ *
+ * Refusals fold to the surface's canonical shapes: a scope that cannot be
+ * minted or revalidated means the caller has no enterprise view, which is
+ * `RESOURCE_NOT_FOUND` — never a fallback, never a default identity. The
+ * port returns null only when the enterprise registry holds no fact about
+ * the Bot (no ownership row and no registration row): such a Bot keeps the
+ * legacy surface's behavior, which is what a not-yet-migrated deployment
+ * expects.
+ *
+ * The shape is the structural twin of `BotResourceActions` in
+ * agents/routes.ts — this module deliberately does not import the M03 file,
+ * and that one does not import this: the assembly wires them together.
+ */
+
+/** Resolver refusals that mean "no enterprise view for this caller". */
+const RESOLVER_REFUSALS = new Set([
+  "AUTH_REQUIRED",
+  "TENANT_REQUIRED",
+  "WORKSPACE_REQUIRED",
+  "TENANT_FORBIDDEN",
+  "WORKSPACE_FORBIDDEN",
+  "SCOPE_REVOKED",
+  "RESOURCE_NOT_FOUND",
+]);
+
+/** The agents-surface decision vocabulary (routes.ts BotResourceActionDecision). */
+export type AgentsBotActionDecision =
+  | { readonly outcome: "allow" }
+  | { readonly outcome: "deny"; readonly code: "RESOURCE_NOT_FOUND" }
+  | { readonly outcome: "deny"; readonly code: "ACTION_FORBIDDEN" }
+  | {
+      readonly outcome: "deny";
+      readonly code:
+        | "PUBLISH_AUDIENCE_UNSUPPORTED"
+        | "PUBLISH_AUDIENCE_CROSS_COMPANY"
+        | "PUBLISH_AUDIENCE_NOT_OWNING_TEAM";
+    };
+
+/** The agents-surface run-entry vocabulary (routes.ts BotRunEntryDecision). */
+export type AgentsBotRunDecision =
+  | {
+      readonly outcome: "admitted";
+      readonly threadId: string;
+      readonly ownedByPrincipalId: string;
+      readonly credentials: readonly PublicBotCredentialBinding[];
+    }
+  | {
+      readonly outcome: "authorization-required";
+      readonly missing: readonly { readonly ref: string }[];
+    }
+  | {
+      readonly outcome: "deny";
+      readonly code:
+        | "RESOURCE_NOT_FOUND"
+        | "ACTION_FORBIDDEN"
+        | "DEPENDENCY_INVALID";
+      readonly dependencyKind?: ResourceDependencyKind;
+      readonly dependencyRef?: string;
+    };
+
+/** The port the agents routes consume (structural twin; see the note above). */
+export interface AgentsBotResourceActions {
+  authorize(
+    request: Request,
+    agentId: string,
+    action: "read" | "edit",
+  ): Promise<AgentsBotActionDecision | null>;
+  publish(
+    request: Request,
+    agentId: string,
+  ): Promise<AgentsBotActionDecision | null>;
+  unpublish(
+    request: Request,
+    agentId: string,
+  ): Promise<AgentsBotActionDecision | null>;
+  admitRun(
+    request: Request,
+    agentId: string,
+    input: { readonly threadKey: string },
+  ): Promise<AgentsBotRunDecision>;
+}
+
+/** What the assembly wires: the real channels plus the two T03.01 ports. */
+export interface AgentsBotResourceActionsDeps {
+  readonly data: DataDatabase;
+  readonly operator: OperatorDatabase;
+  /** The trusted-scope issuance (createBaScopeResolver / createScopeResolver). */
+  readonly resolveScope: Pick<ScopeResolver, "resolve">;
+  /** The live revalidation (createBaWorkspaceGate / createWorkspaceGate). */
+  readonly gate: Pick<WorkspaceGate, "transaction">;
+}
+
+const ACTION_ALLOW = Object.freeze({ outcome: "allow" } as const);
+const ACTION_NOT_FOUND = Object.freeze({
+  outcome: "deny",
+  code: "RESOURCE_NOT_FOUND",
+} as const);
+const ACTION_FORBIDDEN = Object.freeze({
+  outcome: "deny",
+  code: "ACTION_FORBIDDEN",
+} as const);
+
+/** The MT016 ownership slice the routing question needs (owner or not). */
+interface BotRegistrationFacts {
+  readonly owned: boolean;
+  readonly registered: boolean;
+}
+
+export function createAgentsBotResourceActions(
+  deps: AgentsBotResourceActionsDeps,
+): AgentsBotResourceActions {
+  assertDataDatabase(deps.data);
+  const publish: BotPublishService = createBotPublishService({
+    operator: deps.operator,
+  });
+  const usage = createPublicBotUsageService(deps.data);
+  const policy: ResourcePolicyDecisionService = createResourcePolicyService(
+    deps.data,
+    createShippedResourcePolicyRegistry(),
+  );
+
+  /**
+   * Mint + live-revalidate, or null: a scope the resolver refuses or the gate
+   * revokes leaves the caller with no enterprise view — canonical not-found,
+   * never a fallback to some other identity.
+   */
+  const revalidatedScope = async (
+    request: Request,
+  ): Promise<PlatformScope | null> => {
+    let scope: PlatformScope;
+    try {
+      scope = await deps.resolveScope.resolve(request);
+    } catch (error) {
+      if (error instanceof Error && RESOLVER_REFUSALS.has(error.message)) {
+        return null;
+      }
+      throw error;
+    }
+    try {
+      await deps.gate.transaction(scope, async () => undefined);
+      return scope;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message === "SCOPE_REVOKED" ||
+          error.message === "WORKSPACE_REVOKED")
+      ) {
+        return null;
+      }
+      throw error;
+    }
+  };
+
+  /** Ownership/registration facts under the caller's own RLS context. */
+  const registrationOf = async (
+    scope: PlatformScope,
+    agentId: string,
+  ): Promise<BotRegistrationFacts> => {
+    return deps.data.transaction(async (tx) => {
+      await tx.execute(
+        sql`select set_config('app.tenant_id', ${scope.tenantId}, true), set_config('app.principal_id', ${scope.principalId}, true), set_config('app.user_id', ${scope.actorId}, true), set_config('app.workspace_id', ${scope.workspaceId}, true)`,
+      );
+      const [ownership] = await tx
+        .select({
+          workspaceId: enterpriseBotOwnership.workspaceId,
+          ownerPrincipalId: enterpriseBotOwnership.ownerPrincipalId,
+          status: enterpriseBotOwnership.status,
+        })
+        .from(enterpriseBotOwnership)
+        .where(
+          and(
+            eq(enterpriseBotOwnership.tenantId, scope.tenantId),
+            eq(enterpriseBotOwnership.agentId, agentId),
+          ),
+        )
+        .limit(1);
+      const [resource] = await tx
+        .select({ id: enterpriseResources.id })
+        .from(enterpriseResources)
+        .where(
+          and(
+            eq(enterpriseResources.tenantId, scope.tenantId),
+            eq(enterpriseResources.id, agentId),
+          ),
+        )
+        .limit(1);
+      return {
+        owned:
+          ownership?.status === "active" &&
+          ownership.workspaceId === scope.workspaceId &&
+          ownership.ownerPrincipalId === scope.principalId,
+        registered: resource != null,
+      };
+    });
+  };
+
+  /** The publish verdicts folded to the surface vocabulary. */
+  const publishDecision = (
+    verdict:
+      | { readonly outcome: "allow" }
+      | { readonly outcome: "deny"; readonly code: string },
+  ): AgentsBotActionDecision => {
+    if (verdict.outcome === "allow") return ACTION_ALLOW;
+    if (verdict.code === "RESOURCE_NOT_FOUND") return ACTION_NOT_FOUND;
+    if (verdict.code === "PUBLISH_FORBIDDEN") return ACTION_FORBIDDEN;
+    // Audience refusals carry their own codes; a drifted registration row
+    // (BOT_PUBLISH_STATE_CONFLICT) is fail-closed to the same refusal.
+    if (verdict.code.startsWith("PUBLISH_AUDIENCE_")) {
+      return { outcome: "deny", code: verdict.code } as AgentsBotActionDecision;
+    }
+    return ACTION_FORBIDDEN;
+  };
+
+  return {
+    async authorize(request, agentId, action) {
+      const scope = await revalidatedScope(request);
+      if (!scope) return ACTION_NOT_FOUND;
+      const facts = await registrationOf(scope, agentId);
+      if (!facts.owned && !facts.registered) return null;
+      if (action === "read") {
+        if (facts.owned) return ACTION_ALLOW;
+        return policy.decide(scope, agentId);
+      }
+      if (facts.owned) return ACTION_ALLOW;
+      // Visible but not the owner's: the team surface offers use, not edits —
+      // and a company admin's role is not content management (Spec §4.1).
+      const visible = await policy.decide(scope, agentId);
+      return visible.outcome === "allow" ? ACTION_FORBIDDEN : ACTION_NOT_FOUND;
+    },
+
+    async publish(request, agentId) {
+      const scope = await revalidatedScope(request);
+      if (!scope) return ACTION_NOT_FOUND;
+      const facts = await registrationOf(scope, agentId);
+      if (!facts.owned && !facts.registered) return null;
+      const audience: BotPublishAudience = {
+        type: "team",
+        tenantId: scope.tenantId,
+        workspaceId: scope.workspaceId,
+      };
+      return publishDecision(
+        await publish.publishBot(scope, agentId, audience),
+      );
+    },
+
+    async unpublish(request, agentId) {
+      const scope = await revalidatedScope(request);
+      if (!scope) return ACTION_NOT_FOUND;
+      const facts = await registrationOf(scope, agentId);
+      if (!facts.owned && !facts.registered) return null;
+      return publishDecision(await publish.unpublishBot(scope, agentId));
+    },
+
+    async admitRun(request, agentId, input) {
+      const scope = await revalidatedScope(request);
+      if (!scope) return ACTION_NOT_FOUND;
+      const admission = await usage.resolveRunEntry(scope, {
+        resourceId: agentId,
+        threadKey: input.threadKey,
+      });
+      if (admission.outcome === "admitted") {
+        return Object.freeze({
+          outcome: "admitted" as const,
+          threadId: admission.conversation.threadId,
+          ownedByPrincipalId: admission.conversation.ownedByPrincipalId,
+          credentials: admission.credentials,
+        });
+      }
+      if (admission.outcome === "authorization-required") {
+        return Object.freeze({
+          outcome: "authorization-required" as const,
+          missing: admission.missing,
+        });
+      }
+      if (admission.code === "RESOURCE_NOT_FOUND") return ACTION_NOT_FOUND;
+      if (admission.code === "TEAM_PUBLIC_ACTION_FORBIDDEN") {
+        return ACTION_FORBIDDEN;
+      }
+      return Object.freeze({
+        outcome: "deny" as const,
+        code: "DEPENDENCY_INVALID" as const,
+        dependencyKind: admission.dependencyKind,
+        dependencyRef: admission.dependencyRef,
+      });
+    },
+  };
 }

@@ -914,10 +914,8 @@ async function killPortOccupant(port: number, tag: string): Promise<void> {
   const portHex = port.toString(16).toUpperCase().padStart(4, "0");
   const script = [
     `inode=$(awk 'NR>1 && $2 ~ /:${portHex}$/ && $4 == "0A" {print $10; exit}' /proc/net/tcp 2>/dev/null)`,
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell 参数展开必须原样进入脚本
     `[ -n "$inode" ] || exit 0`,
     `for fd in /proc/[0-9]*/fd/*; do`,
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell 参数展开必须原样进入脚本
     `  [ "$(readlink "$fd" 2>/dev/null)" = "socket:[$inode]" ] && kill "$(echo "$fd" | cut -d/ -f3)" 2>/dev/null && echo killed;`,
     `done`,
     "true",

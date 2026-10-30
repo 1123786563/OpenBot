@@ -45,11 +45,12 @@ export type ClientOptions = {
   /** For the calls a Bot makes on a person's behalf, which are abandoned when the turn is. */
   signal?: AbortSignal;
   /**
-   * Extra headers a request carries beyond the transport's own, for the surfaces whose protocol
-   * needs one of its own (`x-openbot-dictation` on the transcription upload). Merged in before the
-   * selection pair, which cannot be overridden this way: the scope headers are this client's own
-   * discipline (MT005 ruling #1 — the headers only select), so a caller "helpfully" passing them
-   * is a wiring mistake the transport quietly corrects rather than a second opinion it honors.
+   * Extra headers a request carries beyond the transport's own — an endpoint's own protocol header
+   * (`x-openbot-dictation` on the transcription upload) or one the endpoint requires (`Idempotency-Key`
+   * on a confirm). Merged under the content-type and the selection pair, which cannot be overridden
+   * this way: the scope headers are this client's own discipline (MT005 ruling #1 — the headers only
+   * select), so a caller "helpfully" passing them is a wiring mistake the transport quietly corrects
+   * rather than a second opinion it honors.
    */
   headers?: Record<string, string>;
   /**
@@ -69,12 +70,6 @@ export type ClientOptions = {
    * resolver refuses a workspace without a tenant, so callers select both or neither.
    */
   workspaceId?: string;
-  /**
-   * Request headers the endpoint requires beyond the transport's own, such as an
-   * `Idempotency-Key` on a confirm. Merged under the content-type and the scope selection so a
-   * caller cannot spoof either by supplying a header here.
-   */
-  headers?: Record<string, string>;
 };
 
 /**

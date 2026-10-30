@@ -573,7 +573,7 @@ const billingScenarios: ScenarioMap = {
         operation: "customer.updated",
         actingPrincipalId: a.principalId,
       });
-    } catch (error) {
+    } catch {
       refused = true; // 无映射键 = 结构性拒绝（任何错误形状都是拒绝）
     }
     return denyObservation(refused);

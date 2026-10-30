@@ -68,12 +68,19 @@ export function WorkshopTurnView({
       latestTurn !== undefined &&
       latestTurn.id !== undefined,
     staleTime: Number.POSITIVE_INFINITY,
-    queryFn: () =>
-      fetchWorkshopTurnEvents(
+    queryFn: () => {
+      // The enabled flag above only arms this once a settled turn with an id exists; restated here
+      // so the fetch cannot assert that from a distance.
+      const turnId = latestTurn?.id;
+      if (turnId === undefined) {
+        throw new Error("settled turn events requested without a turn id");
+      }
+      return fetchWorkshopTurnEvents(
         channelId,
-        latestTurn!.id!,
+        turnId,
         workshopScopePair(scope),
-      ),
+      );
+    },
   });
   const shown = running ? events : (settledEvents.data?.events ?? []);
 

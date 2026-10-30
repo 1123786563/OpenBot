@@ -59,7 +59,6 @@ const OTHER_USER_ID = "u2";
 const SECRET = "test-rejection-suite-secret";
 const TEMPLATE = "https://{session}.preview.example.com";
 const DIRECTORY = `/workspace/sessions/${SESSION_A}`;
-const WEBAPP = `${DIRECTORY}/outputs/web`;
 
 /** The redemption leg's one refusal sentence — exact, so drift is loud. */
 const TICKET_REFUSAL =

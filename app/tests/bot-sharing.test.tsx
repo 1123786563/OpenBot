@@ -81,7 +81,10 @@ const AUDIENCES = ["team", "people"] as const;
 const writes: { url: string; method: string; body: unknown }[] = [];
 let refusePublication = false;
 
-function serving(data: TeamBotsData, role: "admin" | "user") {
+function serving(
+  data: Omit<TeamBotsData, "publishAudiences">,
+  role: "admin" | "user",
+) {
   writes.length = 0;
   refusePublication = false;
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -102,7 +105,7 @@ function serving(data: TeamBotsData, role: "admin" | "user") {
       return Response.json({});
     }
     if (url.includes("/api/team-bots"))
-      return Response.json({ publishAudiences: AUDIENCES, ...data });
+      return Response.json({ ...data, publishAudiences: AUDIENCES });
     if (url.includes("/shared-use/bot/")) return Response.json({ apps: [] });
     if (url.includes("/shared-use")) return Response.json({ requests: [] });
     return Response.json({

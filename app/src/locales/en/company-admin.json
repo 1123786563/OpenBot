@@ -254,7 +254,14 @@
         "status": "Status",
         "fulfillment": "Fulfillment",
         "paidAt": "Paid at"
+      },
+      "payer": {
+        "company": "Company payer",
+        "personal": "Personal payer"
       }
+    },
+    "account": {
+      "quarantined": "This account is quarantined: {{reason}}"
     }
   },
   "shell": {

@@ -593,6 +593,7 @@ test("消费明细表按 Bot 与模型归因渲染，非协议行留空", () => 
           client: "web",
           botId: "bot-a",
           botName: "测试 Bot A",
+          lineDetail: null,
           timestamp: "2026-10-17T10:00:00.000Z",
         },
         {
@@ -605,6 +606,7 @@ test("消费明细表按 Bot 与模型归因渲染，非协议行留空", () => 
           client: "web",
           botId: null,
           botName: null,
+          lineDetail: null,
           timestamp: "2026-10-17T10:05:00.000Z",
         },
       ]}

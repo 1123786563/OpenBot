@@ -302,6 +302,10 @@ export function manifestGaps(manifest) {
   for (const file of files) {
     if (listed.has(file))
       gaps.push(`${file} is listed in files more than once`);
+    // A CLI flag once reached this list as a "file" and survived as a driven group; a path
+    // starting with "-" is an argument that slipped into a payload, never a suite.
+    if (file.startsWith("-"))
+      gaps.push(`"${file}" is not a file path (a CLI flag in the payload?)`);
     listed.add(file);
   }
   if (files.length && !groups.length)
@@ -535,6 +539,22 @@ const BA_ROLE_URLS = [
  * so a missing role URL is a blocked group (thrown, therefore a red result), never a quiet
  * downgrade. Presence-only by design: this routing hands URLs through and reads none of them.
  */
+/*
+ * The complement to bunSuiteEnv's throw: when not one of the five BA_TEST_* role URLs is
+ * configured, the environment has no better-auth island at all, and the group is skipped with
+ * this reason instead of reported red — otherwise a runner without the island (the plain CI
+ * tests job) is red on all 47 batches that can never run there. A partial set is still a
+ * misconfiguration, so bunSuiteEnv's throw stands there: half an island is an error, no
+ * island is an absence.
+ */
+export function bunSuiteSkipReason(groupName, { env = process.env } = {}) {
+  if (!groupName.startsWith(`${BA_ISLAND_DIR}:`)) return null;
+  const set = BA_ROLE_URLS.filter(([name]) => env[name]).length;
+  if (set === 0)
+    return `${groupName}: none of the 5 BA_TEST_* role URLs is configured, so this environment has no better-auth island (set all five to run the group; a partial set stays red).`;
+  return null;
+}
+
 export function bunSuiteEnv(
   groupName,
   { env = process.env, directoryIslands = [] } = {},

@@ -25,6 +25,101 @@ import type {
 
 const log = getLogger("server");
 
+// ---------------------------------------------------------------------------
+// The enterprise resource-action port (T06.01)
+// ---------------------------------------------------------------------------
+
+/**
+ * One enterprise decision for a person's action on one Bot.
+ *
+ * `RESOURCE_NOT_FOUND` is the enterprise world's only "no" for a hidden Bot:
+ * not there, not yours, or not published to you — one shape, so nothing about
+ * the Bot's existence leaks. `ACTION_FORBIDDEN` is for a Bot the caller can
+ * already see (a teammate on a published Bot) being denied an action the team
+ * surface does not offer, which gives away nothing. The `PUBLISH_AUDIENCE_*`
+ * codes are the publish service's loud refusals for an audience this
+ * deployment's team publishing does not accept.
+ */
+export type BotResourceActionDecision =
+  | { readonly outcome: "allow" }
+  | { readonly outcome: "deny"; readonly code: "RESOURCE_NOT_FOUND" }
+  | { readonly outcome: "deny"; readonly code: "ACTION_FORBIDDEN" }
+  | { readonly outcome: "deny"; readonly code: `PUBLISH_AUDIENCE_${string}` };
+
+/**
+ * The team-run entry: what the caller may run, and what the run binds to.
+ *
+ * The admitted shape is the runner's own — their conversation thread and their
+ * own credentials. It carries none of the publisher's connection material,
+ * which is the point of the surface.
+ */
+export type BotRunEntryDecision =
+  | {
+      readonly outcome: "admitted";
+      readonly threadId: string;
+      readonly ownedByPrincipalId: string;
+      readonly credentials: readonly {
+        readonly ref: string;
+        readonly credentialId: string;
+        readonly classification: "personal";
+      }[];
+    }
+  | {
+      readonly outcome: "authorization-required";
+      readonly missing: readonly { readonly ref: string }[];
+    }
+  | {
+      readonly outcome: "deny";
+      readonly code:
+        | "RESOURCE_NOT_FOUND"
+        | "ACTION_FORBIDDEN"
+        | "DEPENDENCY_INVALID";
+      readonly dependencyKind?: "model" | "credential";
+      readonly dependencyRef?: string;
+    };
+
+/**
+ * The enterprise resource-action gate for this surface, wired by a deployment
+ * that runs the tenancy decision services.
+ *
+ * `null` from authorize/publish/unpublish is not a denial: it says the
+ * enterprise registry holds no fact about this Bot (or wired no scope for the
+ * request), and the route keeps its existing behavior for it. A decision —
+ * allow or deny — is the enterprise world's answer and comes first, before
+ * the profile store is asked anything.
+ *
+ * Structurally typed on purpose: this module does not import the tenancy
+ * module; the wired implementation satisfies the shape, the same way the
+ * BotCatalog facade extracts its scope type instead of importing it.
+ */
+export interface BotResourceActions {
+  /** Decides the detail read (`read`) or the edit (`edit`) for the caller. */
+  authorize(
+    request: Request,
+    agentId: string,
+    action: "read" | "edit",
+  ): Promise<BotResourceActionDecision | null>;
+  /** Publishes the Bot to the caller's team. null = not an enterprise Bot. */
+  publish(
+    request: Request,
+    agentId: string,
+  ): Promise<BotResourceActionDecision | null>;
+  /** Withdraws the team publication (idempotent). null = not an enterprise Bot. */
+  unpublish(
+    request: Request,
+    agentId: string,
+  ): Promise<BotResourceActionDecision | null>;
+  /**
+   * The team-public run entry. Throws `RESOURCE_ID_INVALID` or
+   * `THREAD_KEY_INVALID` for malformed input, which the route answers 400.
+   */
+  admitRun(
+    request: Request,
+    agentId: string,
+    input: { readonly threadKey: string },
+  ): Promise<BotRunEntryDecision>;
+}
+
 type AgentInputParseResult =
   | { ok: true; value: CreateAgentInput }
   | { ok: false; error: string };
@@ -299,6 +394,14 @@ export function createAgentRoutes(
    * already reports nothing rather than reach for a store that is not there.
    */
   sharedUse?: SharedUseStore,
+  /**
+   * The enterprise resource-action gate (T06.01): when a deployment wires its
+   * tenancy decision services through this port, Bot detail, edit, publish,
+   * and the team-public run ask them before — and in addition to — the legacy
+   * store. Absent, the default, every route below behaves exactly as before:
+   * an enterprise-less deployment never notices the port exists.
+   */
+  botResourceActions?: BotResourceActions,
 ) {
   /** The dto with the one fact only this closure knows: whether the coworker runs on our own Bot. */
   const dto = (actor: AgentActor, agent: AgentProfile) => ({
@@ -399,6 +502,22 @@ export function createAgentRoutes(
     // 400 for a malformed call. Existence stays a 404; shape is checked here.
     if (!context.req.param("agentId").trim()) {
       return context.json({ error: "A Bot id is required." }, 400);
+    }
+    if (botResourceActions) {
+      /*
+       * The enterprise answer first: a Bot the caller's company cannot see is
+       * the same not-found the store answers below, so the gate confirms
+       * nothing about which Bot ids exist. null = the registry holds no fact
+       * about this Bot, and the store's own answer stands.
+       */
+      const decision = await botResourceActions.authorize(
+        context.req.raw,
+        context.req.param("agentId"),
+        "read",
+      );
+      if (decision?.outcome === "deny") {
+        return context.json({ error: "Agent not found." }, 404);
+      }
     }
     try {
       const agent = await store.get(
@@ -537,6 +656,59 @@ export function createAgentRoutes(
       allowedHosts,
     );
     if (!parsed.ok) return context.json({ error: parsed.error }, 400);
+
+    if (botResourceActions) {
+      /*
+       * The enterprise gate on the edit itself, then — when the same edit moves
+       * visibility — the team publication or its withdrawal rides along. A Bot
+       * the caller cannot see is not-found; one they can see but do not own is
+       * the same refusal the store answers below for a non-manager. null means
+       * the registry holds no fact about this Bot and the legacy edit stands.
+       */
+      const decision = await botResourceActions.authorize(
+        context.req.raw,
+        context.req.param("agentId"),
+        "edit",
+      );
+      if (decision?.outcome === "deny") {
+        if (decision.code === "RESOURCE_NOT_FOUND") {
+          return context.json({ error: "Agent not found." }, 404);
+        }
+        return context.json(
+          { error: "You do not have permission to manage this agent." },
+          403,
+        );
+      }
+      if (decision) {
+        const publication =
+          parsed.value.visibility === "public"
+            ? await botResourceActions.publish(
+                context.req.raw,
+                context.req.param("agentId"),
+              )
+            : parsed.value.visibility === "private"
+              ? await botResourceActions.unpublish(
+                  context.req.raw,
+                  context.req.param("agentId"),
+                )
+              : null;
+        if (publication?.outcome === "deny") {
+          if (publication.code === "RESOURCE_NOT_FOUND") {
+            return context.json({ error: "Agent not found." }, 404);
+          }
+          if (publication.code === "ACTION_FORBIDDEN") {
+            return context.json(
+              { error: "You do not have permission to manage this agent." },
+              403,
+            );
+          }
+          return context.json(
+            { error: "Publishing to that audience isn't supported." },
+            400,
+          );
+        }
+      }
+    }
 
     try {
       const agent = await store.update(
@@ -756,6 +928,85 @@ export function createAgentRoutes(
       });
     } catch (error) {
       return mapStoreError(context, error);
+    }
+  });
+
+  /**
+   * Run a Bot the caller's team published (T06.01).
+   *
+   * The team-public use surface. The enterprise decision services decide the
+   * run, and the entry that comes back is the runner's own: their conversation
+   * thread and their own connections, never the publisher's. Without the
+   * enterprise port wired the surface does not exist on this deployment, which
+   * answers the same not-found this file gives for a Bot that is not there.
+   */
+  routes.post("/:agentId/run", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    if (!agentId.trim()) {
+      return context.json({ error: "A Bot id is required." }, 400);
+    }
+    if (!botResourceActions) {
+      return context.json({ error: "Agent not found." }, 404);
+    }
+    const body = (await context.req.json().catch(() => null)) as {
+      threadKey?: unknown;
+    } | null;
+    try {
+      const entry = await botResourceActions.admitRun(
+        context.req.raw,
+        agentId,
+        {
+          threadKey: typeof body?.threadKey === "string" ? body.threadKey : "",
+        },
+      );
+      if (entry.outcome === "admitted") {
+        return context.json({
+          run: {
+            threadId: entry.threadId,
+            ownedByPrincipalId: entry.ownedByPrincipalId,
+            credentials: entry.credentials,
+          },
+        });
+      }
+      if (entry.outcome === "authorization-required") {
+        return context.json(
+          {
+            error:
+              "This Bot uses apps you haven't connected. Connect them, then run it again.",
+            missing: entry.missing,
+          },
+          403,
+        );
+      }
+      if (entry.code === "RESOURCE_NOT_FOUND") {
+        return context.json({ error: "Agent not found." }, 404);
+      }
+      if (entry.code === "ACTION_FORBIDDEN") {
+        return context.json(
+          { error: "You can't run this Bot through the team surface." },
+          403,
+        );
+      }
+      return context.json(
+        {
+          error: "This Bot needs something that's no longer available.",
+          dependencyKind: entry.dependencyKind,
+          dependencyRef: entry.dependencyRef,
+        },
+        409,
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message === "RESOURCE_ID_INVALID" ||
+          error.message === "THREAD_KEY_INVALID")
+      ) {
+        return context.json(
+          { error: "A Bot id and a thread key are required." },
+          400,
+        );
+      }
+      throw error;
     }
   });
 

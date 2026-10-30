@@ -304,6 +304,7 @@ export function createGovernedModelExecution(
       if (
         !(cause instanceof Error && cause.message.startsWith("MODEL_ROUTE_"))
       ) {
+        // biome-ignore lint/suspicious/noConsole: stable-code operational log
         console.error({
           error: "MODEL_ROUTE_REBIND_INFRASTRUCTURE_FAILED",
           context: { routeRef, agentId: deps.agentId },

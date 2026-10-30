@@ -84,8 +84,10 @@ const isCanonicalNotFound = (value: unknown): boolean =>
   JSON.stringify(value) === serializeNotFoundVerdict(notFoundVerdict());
 
 let threadCounter = 0;
-const nextThread = () =>
-  `mt025-thread-${String((threadCounter += 1)).padStart(3, "0")}`;
+const nextThread = () => {
+  threadCounter += 1;
+  return `mt025-thread-${String(threadCounter).padStart(3, "0")}`;
+};
 
 describeDb("MT025 / Issue #68 — 事件流订阅与线程映射归属", () => {
   let fixture: StreamFixture;

@@ -328,7 +328,7 @@ describe("R4-03 built-in: a surface business tool call keeps its identity in gov
   });
 
   test("a detached run derives its chain — the call id lands, the execution is never claimed", async () => {
-    const { spans, stop } = recordedSpans();
+    const { stop } = recordedSpans();
     const facts: BuiltinToolStepFact[] = [];
     const countsBefore = builtinRunChainCounts();
     try {
@@ -463,7 +463,7 @@ describe("R4-03 built-in: a surface business tool call keeps its identity in gov
   });
 
   test("re-driving one run id roots each attempt its own chain — the wire runId cannot merge them (T-J #2)", async () => {
-    const { spans, stop } = recordedSpans();
+    const { stop } = recordedSpans();
     const facts: BuiltinToolStepFact[] = [];
     try {
       await withSseStub(async () => {

@@ -63,7 +63,7 @@ describe("probe e: the cycle grammar is one contract across three files", () => 
 describe("probe f: the boot cross-check", () => {
   test("a price disagreement refuses with both numbers, the plan and the cycle named", () => {
     expect(CONFIG).toContain(
-      'PAYMENT_PLAN_CATALOG plan "${planCode}" cycle "${cycleCode}" collects ${amountCents} but LAGO_PLAN_CATALOG shows ${shown}',
+      `PAYMENT_PLAN_CATALOG plan "\${planCode}" cycle "\${cycleCode}" collects \${amountCents} but LAGO_PLAN_CATALOG shows \${shown}`,
     );
     expect(CONFIG).toContain("for the same cycle");
   });

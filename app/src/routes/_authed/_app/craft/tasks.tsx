@@ -51,6 +51,7 @@ function CraftTasksPage() {
   const { t } = useTranslation("craft");
   const { new: isCreating, edit: editingId } = Route.useSearch();
   const navigate = Route.useNavigate();
+  const finish = () => navigate({ search: {} });
   // Creating wins if both are somehow set — the roster's rule, re-used verbatim.
   const showCreate = isCreating === true;
   const showEdit = !showCreate && editingId !== undefined;
@@ -59,7 +60,6 @@ function CraftTasksPage() {
   const queryClient = useQueryClient();
   const scope = useScopedCache();
   const tasks = useQuery(scopedScheduledTasksQueryOptions(queryClient, scope));
-  const finish = () => navigate({ search: {} });
 
   return (
     <div className="flex min-h-0 flex-1">

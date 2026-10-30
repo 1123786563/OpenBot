@@ -1,16 +1,52 @@
-import { registerHooks } from "node:module";
 import { inspect } from "node:util";
+/*
+ * `node:module` hooks exist only on Node. This layer is loaded there by the e2e runner, but a
+ * bun-driven suite can still reach it dynamically (SRA009's driver imports the native-tier
+ * `tool-selection.integration.test.ts` inside a `bun test` child to exercise the real fixture
+ * lifecycle) — and Bun's `node:module` has no `registerHooks` export, which used to abort that
+ * import with a SyntaxError. Resolved lazily instead: on Bun the value layer alone loads, and
+ * `installMockHooks` no-ops (bun:test's own mock registry is the one that runs there).
+ */
+let registerHooks: typeof import("node:module").registerHooks | undefined;
+try {
+  ({ registerHooks } = await import("node:module"));
+} catch {
+  // Not just Bun: any runtime without the hooks API keeps the value-only layer.
+}
 // Installed as a side effect: suites that probe the app the Bun way keep working on Node's runtime.
 import "./bun-compat";
 import {
-  afterAll as e2eAfterAll,
-  afterEach as e2eAfterEach,
-  beforeAll as e2eBeforeAll,
-  beforeEach as e2eBeforeEach,
-  describe as e2eDescribe,
+  afterAll as nodeAfterAll,
+  afterEach as nodeAfterEach,
+  beforeAll as nodeBeforeAll,
+  beforeEach as nodeBeforeEach,
+  describe as nodeDescribe,
   expect as e2eExpect,
-  test as e2eTest,
+  test as nodeTest,
 } from "e2e";
+
+/*
+ * Under the e2e runner the registration APIs come from the runner itself. A `bun test` process
+ * can still load this layer (SRA009's driver imports a native-tier suite file to exercise the
+ * real fixture lifecycle), and there the runner's registry has no collector — its test/describe/
+ * hook calls throw COLLECTION_ERROR on sight. On Bun they fall back to bun:test, whose registry
+ * IS the live one in that process; the value layer (expect and its matchers) is runner-free and
+ * stays shared so assertions mean the same thing in both processes.
+ */
+const bunTestApi = process.versions.bun
+  ? ((await import("bun:test")) as Any)
+  : null;
+const e2eAfterAll = (bunTestApi?.afterAll ??
+  nodeAfterAll) as typeof nodeAfterAll;
+const e2eAfterEach = (bunTestApi?.afterEach ??
+  nodeAfterEach) as typeof nodeAfterEach;
+const e2eBeforeAll = (bunTestApi?.beforeAll ??
+  nodeBeforeAll) as typeof nodeBeforeAll;
+const e2eBeforeEach = (bunTestApi?.beforeEach ??
+  nodeBeforeEach) as typeof nodeBeforeEach;
+const e2eDescribe = (bunTestApi?.describe ??
+  nodeDescribe) as typeof nodeDescribe;
+const e2eTest = (bunTestApi?.test ?? nodeTest) as typeof nodeTest;
 
 /*
  * Value-level compatibility layer for the tester-army `e2e` runner.
@@ -580,6 +616,9 @@ const SKIPPING = Symbol.for("openbot.e2e-compat.skipping-depth");
  */
 function installMockHooks(): void {
   if ((globalThis as Any)[HOOKS_INSTALLED]) return;
+  // Without Node's loader hooks (Bun, see the import above) there is nothing to install:
+  // bun:test's own registry is already in force in that process.
+  if (!registerHooks) return;
   (globalThis as Any)[HOOKS_INSTALLED] = true;
   registerHooks({
     resolve: (specifier: string, _context: Any, nextResolve: Any) => {
@@ -664,7 +703,9 @@ function installMockHooks(): void {
           // ...and a realm boundary for module mocks: `mock.module` is registry
           // level, so a suite's mocks must not reach the next suite's imports —
           // one suite mocking "./Problem" used to replace another suite's real
-          // import of it and abort the whole run's collection.
+          // import of it and abort the whole run's collection. A fixture that
+          // registers mocks at its own top level must therefore be imported by
+          // each suite that needs it, not relied on across this boundary.
           moduleMocks.clear();
           mocks.clear();
         }

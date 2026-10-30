@@ -107,6 +107,7 @@ function errorResponse(error: unknown) {
       status: 400,
       body: { error: { code: "invalid_request", message } },
     };
+  // biome-ignore lint/suspicious/noConsole: stable-code operational log
   console.error("Enterprise conversation request failed", error);
   return {
     status: 500,
