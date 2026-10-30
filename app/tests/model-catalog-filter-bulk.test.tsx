@@ -10,6 +10,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { cleanup, fireEvent, render } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Route as ModelCatalogRoute } from "@/routes/_authed/admin/model-catalog";
 import {
   afterAll,
@@ -86,7 +87,10 @@ beforeEach(() => {
         scopeWrites.push(body);
         if (body.model === refuseModel) {
           return Response.json(
-            { error: "model_scope_price_unknown", code: "model_scope_price_unknown" },
+            {
+              error: "model_scope_price_unknown",
+              code: "model_scope_price_unknown",
+            },
             { status: 409 },
           );
         }
@@ -145,11 +149,16 @@ test("搜索在分页前收窄列表，页脚报筛选后的数量", async () =>
   const view = renderModelCatalog();
   expect(await view.findByText("Page 1 of 2 · 60 models")).toBeTruthy();
 
-  fireEvent.change(
+  /*
+   * TYPED RATHER THAN SET. The search box is a React Aria input, which reads a keystroke
+   * and not a `change` event dispatched at the element, so `fireEvent.change` would move
+   * the DOM value and leave the page's own query where it was.
+   */
+  const user = userEvent.setup({ document: view.baseElement.ownerDocument });
+  await user.type(
     view.getByRole("textbox", { name: "Search models or providers" }),
-    { target: { value: "model-01" } },
+    "model-01",
   );
-  await settleReactWork();
 
   // The ten model-01x models are the whole filtered list, on one page.
   expect(view.getByText("Page 1 of 1 · 10 models")).toBeTruthy();
@@ -162,11 +171,11 @@ test("全选 + 共用一个原因批量开放：逐个写入，拒绝不中断�
   const view = renderModelCatalog();
   expect(await view.findByText("Page 1 of 2 · 60 models")).toBeTruthy();
 
-  fireEvent.change(
+  const user = userEvent.setup({ document: view.baseElement.ownerDocument });
+  await user.type(
     view.getByRole("textbox", { name: "Search models or providers" }),
-    { target: { value: "model-01" } },
+    "model-01",
   );
-  await settleReactWork();
   fireEvent.click(view.getByRole("button", { name: "Select all" }));
   await settleReactWork();
   expect(view.getByText("10 selected")).toBeTruthy();
@@ -177,18 +186,19 @@ test("全选 + 共用一个原因批量开放：逐个写入，拒绝不中断�
 
   // The one shared reason reaches every write the run makes.
   refuseModel = "model-013";
-  fireEvent.change(
+  await user.type(
     view.getByPlaceholderText("Why this model is being opened or closed"),
-    { target: { value: "reviewed pricing" } },
+    "reviewed pricing",
   );
   fireEvent.click(view.getByRole("button", { name: "Save" }));
-  expect(await view.findByText("1 models could not be opened:")).toBeTruthy();
+  // The run finishes all ten writes, then names the one it could not open.
+  const notice = await view.findByRole("alert");
+  expect(notice.textContent).toContain("1 model could not be opened:");
+  expect(notice.textContent).toContain("model-013");
 
   expect(scopeWrites).toHaveLength(10);
   expect(scopeWrites.every((write) => write.state === "open")).toBe(true);
   expect(
     scopeWrites.every((write) => write.reason === "reviewed pricing"),
   ).toBe(true);
-  // The refused model is named in the notice.
-  expect(view.getByText(/model-013/, { exact: false })).toBeTruthy();
 });

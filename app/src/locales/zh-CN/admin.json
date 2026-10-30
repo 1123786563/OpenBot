@@ -1170,6 +1170,7 @@
     "open": "开放",
     "close": "关闭",
     "searchPlaceholder": "搜索模型或提供商",
+    "stateFilter": "按状态筛选",
     "filter": {
       "all": "全部模型",
       "open": "已开放",
@@ -1185,7 +1186,7 @@
       "openTitle": "开放所选的 {{count}} 个模型",
       "description": "同一个原因会记到每个模型的开放记录上。",
       "progress": "正在开放 {{done}}/{{total}}…",
-      "someFailed": "{{count}} 个模型没有开放成功："
+      "someFailed_other": "{{count}} 个模型没有开放成功："
     },
     "dialog": {
       "openTitle": "开放该模型？",
