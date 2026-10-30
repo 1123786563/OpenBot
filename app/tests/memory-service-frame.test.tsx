@@ -42,6 +42,7 @@ function dispatch(options: {
 function mount(handlers: {
   onAuthRequired?: () => void;
   onLoggedOut?: () => void;
+  navigate?: (url: string) => void;
 } = {}) {
   const view = render(
     <MemoryServiceFrame
@@ -49,6 +50,8 @@ function mount(handlers: {
       allowedOrigin={ORIGIN}
       requestId={REQUEST}
       title="记忆"
+      authFailedText="无法建立登录会话。"
+      signedOutText="你已退出登录。"
       {...handlers}
     />,
   );
@@ -99,15 +102,32 @@ test("auth_message_cannot_choose_return_url_or_user", () => {
   expect(frame.getAttribute("sandbox")).not.toContain("allow-top-navigation");
 });
 
-test("logout_clears_embedded_state", () => {
+test("logout_clears_embedded_state", async () => {
   let loggedOut = 0;
-  const { frame } = mount({ onLoggedOut: () => (loggedOut += 1) });
+  const { view, frame } = mount({ onLoggedOut: () => (loggedOut += 1) });
   dispatch({ type: "memory.logged-out", source: frame.contentWindow });
   expect(loggedOut).toBe(1);
+  // 承载页被清掉：内嵌状态不留在页面上，而不是一个仍在显示的旧界面。
+  await waitFor(() => expect(view.queryByTitle("记忆")).toBeNull());
+  expect(view.getByText("你已退出登录。")).toBeTruthy();
   // 伪造来源的退出消息不清任何状态，也不能冒充登录。
   dispatch({ type: "memory.logged-out", origin: "https://evil.example", source: frame.contentWindow });
   dispatch({ type: "memory.logged-out", source: window });
   expect(loggedOut).toBe(1);
+});
+
+test("default_login_goes_top_level_once_and_stops_instead_of_reloading", async () => {
+  const navigations: string[] = [];
+  const { view, frame } = mount({ navigate: (url) => navigations.push(url) });
+  dispatch({ type: "memory.auth-required", source: frame.contentWindow });
+  // 默认分支（页面实际走的那条）去记忆服务登记的 /auth/login，不是任意地址。
+  expect(navigations).toEqual([`${ORIGIN}/auth/login`]);
+  await waitFor(() => expect(view.queryByTitle("记忆")).not.toBeNull());
+
+  // 会话仍建立不起来（存储受限等）：第二次只说明情况，不再重载宿主。
+  dispatch({ type: "memory.auth-required", source: frame.contentWindow });
+  expect(navigations).toHaveLength(1);
+  await waitFor(() => expect(view.getByText("无法建立登录会话。")).toBeTruthy());
 });
 
 test("frame_keeps_sidebar_and_has_no_second_navigation", () => {

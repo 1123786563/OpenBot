@@ -24,6 +24,12 @@ export type MemoryServiceFrameProps = {
   allowedOrigin: string;
   requestId: string;
   title: string;
+  /** 顶层登录无法建立会话时的说明（第二次要求登录即停，不再重载宿主）。 */
+  authFailedText: string;
+  /** 承载页回报已退出时的说明。 */
+  signedOutText: string;
+  /** 覆盖默认的顶层导航（测试与替代宿主）。 */
+  navigate?: (url: string) => void;
   onAuthRequired?: () => void;
   onLoggedOut?: () => void;
 };
@@ -37,11 +43,17 @@ export function MemoryServiceFrame({
   allowedOrigin,
   requestId,
   title,
+  authFailedText,
+  signedOutText,
+  navigate = (url) => window.location.assign(url),
   onAuthRequired,
   onLoggedOut,
 }: MemoryServiceFrameProps) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(MIN_HEIGHT);
+  const [authFailed, setAuthFailed] = useState(false);
+  const [signedOut, setSignedOut] = useState(false);
+  const loginStarted = useRef(false);
 
   useEffect(() => {
     const receive = (event: MessageEvent) => {
@@ -60,12 +72,23 @@ export function MemoryServiceFrame({
           }
           return;
         case "memory.auth-required":
-          // 顶层完成统一登录；回跳只到 OpenBot 登记的承载路由。
-          if (onAuthRequired) onAuthRequired();
-          else window.location.assign("/memory?login=1");
+          // 顶层完成统一登录：去记忆服务登记的 /auth/login，登录后由它回到
+          // 服务端配置的承载路由。第二次要求登录说明会话没能建立（跨站存储
+          // 被限制等）——停在这里说明情况，不再重载宿主（否则是无限循环）。
+          if (onAuthRequired) {
+            onAuthRequired();
+            return;
+          }
+          if (loginStarted.current) {
+            setAuthFailed(true);
+            return;
+          }
+          loginStarted.current = true;
+          navigate(`${allowedOrigin}/auth/login`);
           return;
         case "memory.logged-out":
           onLoggedOut?.();
+          setSignedOut(true);
           return;
         default:
           // memory.ready 只表示承载页已建立通道。
@@ -75,6 +98,14 @@ export function MemoryServiceFrame({
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
   }, [allowedOrigin, requestId, onAuthRequired, onLoggedOut]);
+
+  if (authFailed || signedOut) {
+    return (
+      <p className="text-muted-foreground text-sm">
+        {authFailed ? authFailedText : signedOutText}
+      </p>
+    );
+  }
 
   return (
     <iframe

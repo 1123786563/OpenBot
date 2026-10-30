@@ -26,6 +26,8 @@ function MemoryPage() {
           allowedOrigin={entry.data.allowedOrigin}
           requestId={entry.data.requestId}
           title={t("memory")}
+          authFailedText={t("memoryAuthFailed")}
+          signedOutText={t("memorySignedOut")}
         />
       ) : entry.isPending ? null : (
         <p className="text-muted-foreground text-sm">{t("memoryUnavailable")}</p>

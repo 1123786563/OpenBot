@@ -41,5 +41,7 @@
   "skipToContent": "Skip to content",
   "groupCapabilities": "Capabilities",
   "groupGovernance": "Oversight",
-  "memoryUnavailable": "Memory management isn't set up for this deployment."
+  "memoryUnavailable": "Memory management isn't set up for this deployment.",
+  "memoryAuthFailed": "Couldn't sign in to the memory service for this visit. Try again later.",
+  "memorySignedOut": "You're signed out."
 }
