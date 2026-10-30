@@ -63,12 +63,15 @@ describe("createAuth on the narrowed bootstrap config", () => {
 });
 
 describe("the legacy configuration path keeps its runtime validation", () => {
-  test("loadConfig still refuses an environment that has no Intelligence runtime", () => {
+  // ME15 (#487): a fully absent Intelligence block is the "none" runtime and
+  // loads; only a partially configured one is refused.
+  test("loadConfig still refuses a partially configured Intelligence runtime", () => {
     expect(() =>
       loadConfig({
         ...IDENTITY_ONLY,
         DATABASE_URL: "postgres://openbot:openbot@localhost:5432/openbot",
         KEY_ENCRYPTION_KEY: "b3BlbmJvdC1wcm9kdWN0aW9uLXRlc3Qta2V5LTMyMzI=",
+        INTELLIGENCE_API_URL: "https://intelligence.example.com",
       }),
     ).toThrow(/CopilotKit Intelligence is required/);
   });

@@ -181,6 +181,16 @@ const disagreements = (sql: string, before: Snapshot, after: Snapshot) => {
     sql,
     /ALTER TABLE "([^"]+)" DROP COLUMN (?:IF EXISTS )?"([^"]+)"/gi,
   );
+  /*
+   * A column added nullable and tightened in the same file ends the migration
+   * NOT NULL. The snapshot describes the state after the whole file, so it
+   * carries the tightened fact; demanding the ADD's own spelling there would
+   * ask the snapshot to describe a state the migration never leaves behind.
+   */
+  const columnsTightened = quoted(
+    sql,
+    /ALTER TABLE "([^"]+)" ALTER COLUMN "([^"]+)" SET NOT NULL/gi,
+  );
   const indexesCreated = quoted(
     sql,
     /CREATE (?:UNIQUE )?INDEX (?:IF NOT EXISTS )?"([^"]+)"/gi,
@@ -260,7 +270,13 @@ const disagreements = (sql: string, before: Snapshot, after: Snapshot) => {
         problems.push(
           `the migration adds "${table}"."${column}" as ${statement.type}, the snapshot calls it ${added.type}`,
         );
-      if ((added.notNull ?? false) !== statement.notNull)
+      if (
+        (added.notNull ?? false) !==
+        (statement.notNull ||
+          columnsTightened.some(
+            ([on, tightened]) => on === table && tightened === column,
+          ))
+      )
         problems.push(
           `the migration adds "${table}"."${column}" ${statement.notNull ? "NOT NULL" : "nullable"}, the snapshot says the opposite`,
         );

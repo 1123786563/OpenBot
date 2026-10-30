@@ -48,7 +48,9 @@ test("0218 reapplies the derived backfill for databases that already ran 0134", 
   const journal = JSON.parse(
     await readFile(new URL("meta/_journal.json", migrations), "utf8"),
   ) as { entries: { idx: number; tag: string }[] };
-  expect(journal.entries.at(-1)).toMatchObject({
+  expect(
+    journal.entries.find((entry) => entry.idx === 218),
+  ).toMatchObject({
     idx: 218,
     tag: "0218_price_status_backfill_repair",
   });

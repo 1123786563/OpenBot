@@ -151,7 +151,7 @@ function migrationSqlNames(sql: string): string[] {
 }
 
 test("migration_sql_identifier_names_fit_the_postgres_limit", () => {
-  // Only this delivery's unapplied migration group (journal idx >= 65):
+  // Only migrations no database has applied yet (journal idx >= 237):
   // committed migrations may already be applied, where a rename would
   // break name-keyed operations against live catalogs.
   const journal = JSON.parse(
@@ -159,7 +159,7 @@ test("migration_sql_identifier_names_fit_the_postgres_limit", () => {
   );
   const unapplied = new Set(
     journal.entries
-      .filter((entry: { idx: number }) => entry.idx >= 65)
+      .filter((entry: { idx: number }) => entry.idx >= 237)
       .map((entry: { tag: string }) => `${entry.tag}.sql`),
   );
   for (const file of readdirSync(drizzleDir)) {
