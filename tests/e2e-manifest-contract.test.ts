@@ -448,9 +448,9 @@ describe("e2e manifest contract", () => {
     expect(island.TEST_DATABASE_URL).toBe("postgres://billing/island");
     expect(island.DATABASE_URL).toBe("postgres://billing/island");
     // A shared-slice group never sees the island's URL…
-    expect(
-      bunSuiteEnv("server/tests part 14", { env }).TEST_DATABASE_URL,
-    ).toBe("postgres://shared/journal");
+    expect(bunSuiteEnv("server/tests part 14", { env }).TEST_DATABASE_URL).toBe(
+      "postgres://shared/journal",
+    );
     // …and without the override the island keeps the job's environment.
     expect(
       bunSuiteEnv("server/tests/billing island", {
@@ -488,9 +488,7 @@ describe("e2e manifest contract", () => {
       [...byName.values()].some((files: string[]) => files.includes(stranger)),
     ).toBe(true);
     expect(
-      [...byName.values()].some((files: string[]) =>
-        files.includes(member),
-      ),
+      [...byName.values()].some((files: string[]) => files.includes(member)),
       "an explicit member is scheduled exactly once",
     ).toBe(true);
   });

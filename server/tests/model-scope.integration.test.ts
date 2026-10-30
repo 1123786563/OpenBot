@@ -63,7 +63,9 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
 const database: Database = createDatabase(testDatabaseUrl(), TEST_POOL);
 
 // The AC4 seed rows, deleted again in afterAll (see there for why).
-let seededReservationRows: { customer: string; reservationId: string } | undefined;
+let seededReservationRows:
+  | { customer: string; reservationId: string }
+  | undefined;
 const catalogStore = createEnterpriseGatewayCatalogStore(database);
 const priceStore = createEnterpriseGatewayPriceSnapshotStore(database);
 const auditStore = createAuditStore(database);
@@ -225,9 +227,7 @@ afterAll(async () => {
       .where(eq(creditReservations.id, seededReservationRows.reservationId));
     await database
       .delete(billingCustomers)
-      .where(
-        eq(billingCustomers.externalId, seededReservationRows.customer),
-      );
+      .where(eq(billingCustomers.externalId, seededReservationRows.customer));
   }
   await database.$client.close();
 });

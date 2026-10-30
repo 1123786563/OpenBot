@@ -16,7 +16,9 @@ import { type SQL, sql } from "drizzle-orm";
 
 export async function truncateRateVersions(database: {
   transaction: (
-    body: (tx: { execute: (query: SQL) => Promise<unknown> }) => Promise<unknown>,
+    body: (tx: {
+      execute: (query: SQL) => Promise<unknown>;
+    }) => Promise<unknown>,
   ) => Promise<unknown>;
 }) {
   try {

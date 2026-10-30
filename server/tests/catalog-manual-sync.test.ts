@@ -586,7 +586,9 @@ describe("a broken audit trail refuses the trigger", () => {
     // surfaces the broken trail through the surface's tagged 503 boundary.
     expect(response.status).toBe(503);
     const body = (await response.json()) as { error: string };
-    expect(body.error).toBe("The gateway admin surface is unavailable. Try again.");
+    expect(body.error).toBe(
+      "The gateway admin surface is unavailable. Try again.",
+    );
     const rows = await auditRowsFor(who.userId);
     expect(rows).toHaveLength(0);
     await gateway.stop();

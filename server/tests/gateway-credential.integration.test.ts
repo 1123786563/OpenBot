@@ -422,7 +422,11 @@ test("a save whose stored reference names a missing credential rotates the live 
   expect(saved.ok).toBe(true);
   if (!saved.ok) return;
   expect(saved.status.configVersion).toBe(10);
-  expectClean(JSON.stringify(saved), [`tampered-${runId}`], "tampered-ref save");
+  expectClean(
+    JSON.stringify(saved),
+    [`tampered-${runId}`],
+    "tampered-ref save",
+  );
 
   const tamperEvents = await database
     .select({ payload: auditEvents.payload })
