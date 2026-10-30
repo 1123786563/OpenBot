@@ -65,7 +65,7 @@ function serviceFor(provider: PaymentProvider, planCode: string) {
     providers: new Map([[provider.id, provider]]),
     store,
     catalog: new Map([
-      [planCode, { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+      [planCode, { currency: "CNY", cycles: new Map([["monthly", 8800]]) }],
     ]),
     notifyBaseUrl: "https://qa.example",
     orderTtlMinutes: 15,

@@ -218,7 +218,18 @@ export function scopedComponentListQueryOptions(
               if (!response.ok) {
                 throw new Error("Components could not be read.");
               }
-              return (await response.json()) as ComponentRecord[];
+              /*
+               * The server answers in an envelope (`{ components: [...] }`), the way every list
+               * endpoint here does. Casting the whole body to an array handed the page an object
+               * where it expected a roster, and `components.data.map` was not a function.
+               */
+              const body = (await response.json().catch(() => null)) as {
+                components?: ComponentRecord[];
+              } | null;
+              if (body === null || !Array.isArray(body.components)) {
+                throw new Error("Components could not be read.");
+              }
+              return body.components;
             }),
   });
 }

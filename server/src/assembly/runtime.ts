@@ -2376,6 +2376,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
           pageFrames: pageFrameStore,
           allowPrivateHosts: config.computer?.allowPrivateHosts,
           token: config.computer?.token,
+          ...(config.computer?.provider === "shared" &&
+          config.computer.executionScope !== undefined
+            ? { executionScope: config.computer.executionScope }
+            : {}),
         })
       : undefined;
 

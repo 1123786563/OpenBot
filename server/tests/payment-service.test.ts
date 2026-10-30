@@ -448,7 +448,10 @@ function buildService(
     invalidateEntitlementCache?: () => void;
     catalog?: ReadonlyMap<
       string,
-      { amountCents: number; currency: "CNY"; periodMonths: number }
+      {
+        currency: "CNY";
+        cycles: ReadonlyMap<"monthly" | "recurring_monthly", number>;
+      }
     >;
     grantor?: {
       creditsFor: (planCode: string) => number | null;
@@ -477,7 +480,7 @@ function buildService(
     catalog:
       overrides.catalog ??
       new Map([
-        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+        ["pro", { currency: "CNY", cycles: new Map([["monthly", 8800]]) }],
       ]),
     notifyBaseUrl: "https://payments.openbot.example",
     orderTtlMinutes: 15,
@@ -520,6 +523,103 @@ describe("purchase ordering", () => {
     });
     expect(second.order.orderId).toBe(first.order.orderId);
     expect((await store.readOrder(first.order.orderId))?.version).toBe(0);
+  });
+
+  test("a cycle switch at the same channel replaces the order instead of replaying the old price", async () => {
+    const alipay = fakeProvider("alipay");
+    const { service } = buildService({
+      providers: [alipay],
+      catalog: new Map([
+        [
+          "pro",
+          {
+            currency: "CNY",
+            cycles: new Map([
+              ["monthly", 8800],
+              ["recurring_monthly", 7900],
+            ]),
+          },
+        ],
+      ]),
+    });
+    const first = await service.createPurchase({
+      planCode: "pro",
+      cycle: "monthly",
+      provider: "alipay",
+      createdBy: "admin-1",
+      ownerPayerRef: ref("admin-1"),
+    });
+    expect(first.order.amountCents).toBe(8800);
+    // Same plan, same channel, other cycle: per-cycle pricing collects a different number, so
+    // this is a switch (cancel and reopen), never a replay of the old price's order.
+    const second = await service.createPurchase({
+      planCode: "pro",
+      cycle: "recurring_monthly",
+      provider: "alipay",
+      createdBy: "admin-1",
+      ownerPayerRef: ref("admin-1"),
+    });
+    expect(second.order.orderId).not.toBe(first.order.orderId);
+    expect(second.order.amountCents).toBe(7900);
+    expect(alipay.closes).toEqual([first.order.orderId]);
+    expect((await service.readOrder(first.order.orderId)).order?.status).toBe(
+      "canceled",
+    );
+  });
+
+  test("a cycle the plan does not price refuses before any order exists", async () => {
+    const { service, store } = buildService();
+    await expect(
+      service.createPurchase({
+        planCode: "pro",
+        cycle: "recurring_monthly",
+        provider: "alipay",
+        createdBy: "admin-1",
+        ownerPayerRef: ref("admin-1"),
+      }),
+    ).rejects.toMatchObject({
+      refusal: {
+        reason: "unknown-cycle",
+        planCode: "pro",
+        cycle: "recurring_monthly",
+      },
+    });
+    expect(await store.readPendingPurchase()).toBeNull();
+  });
+
+  test("the catalog discloses each plan's priced cycles and the union as purchasable", () => {
+    const { service } = buildService({
+      catalog: new Map([
+        [
+          "pro",
+          {
+            currency: "CNY",
+            cycles: new Map([
+              ["monthly", 8800],
+              ["recurring_monthly", 7900],
+            ]),
+          },
+        ],
+        ["team", { currency: "CNY", cycles: new Map([["monthly", 17600]]) }],
+      ]),
+    });
+    const catalog = service.catalog(true, null);
+    expect(catalog.plans).toEqual([
+      {
+        planCode: "pro",
+        currency: "CNY",
+        cycles: [
+          { code: "monthly", amountCents: 8800 },
+          { code: "recurring_monthly", amountCents: 7900 },
+        ],
+      },
+      {
+        planCode: "team",
+        currency: "CNY",
+        cycles: [{ code: "monthly", amountCents: 17600 }],
+      },
+    ]);
+    expect(catalog.cycles).toEqual(["monthly", "recurring_monthly"]);
   });
 
   test("a store insert that loses the pending-pair race replays the winner's order", async () => {
@@ -586,8 +686,8 @@ describe("purchase ordering", () => {
       store,
       providers: [alipay, wechat],
       catalog: new Map([
-        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
-        ["team", { amountCents: 17600, currency: "CNY", periodMonths: 1 }],
+        ["pro", { currency: "CNY", cycles: new Map([["monthly", 8800]]) }],
+        ["team", { currency: "CNY", cycles: new Map([["monthly", 17600]]) }],
       ]),
     });
 
@@ -632,8 +732,8 @@ describe("purchase ordering", () => {
       store,
       providers: [wechat],
       catalog: new Map([
-        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
-        ["team", { amountCents: 17600, currency: "CNY", periodMonths: 1 }],
+        ["pro", { currency: "CNY", cycles: new Map([["monthly", 8800]]) }],
+        ["team", { currency: "CNY", cycles: new Map([["monthly", 17600]]) }],
       ]),
     });
 
@@ -1625,7 +1725,7 @@ describe("callback triage", () => {
     expect((await store.readOrder(order.id))?.status).toBe("paid");
   });
 
-  test("a plan with a longer catalog period keeps that fallback snapshot when Lago omits exact dates", async () => {
+  test("the paid fallback snapshots one month when Lago omits exact dates", async () => {
     const store = memoryStore();
     const { order } = await store.insertOrder({
       planCode: "pro",
@@ -1647,7 +1747,7 @@ describe("callback triage", () => {
       providers: [alipay],
       store,
       catalog: new Map([
-        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 12 }],
+        ["pro", { currency: "CNY", cycles: new Map([["monthly", 8800]]) }],
       ]),
       lago: fakeLago({
         async ensureSubscription() {
@@ -1662,7 +1762,7 @@ describe("callback triage", () => {
     const settled = await store.readOrder(order.id);
     expect(settled?.periodStart?.toISOString()).toBe(tick().toISOString());
     expect(settled?.periodEnd?.toISOString()).toBe(
-      addMonths(tick(), 12).toISOString(),
+      addMonths(tick(), 1).toISOString(),
     );
   });
 
@@ -1690,7 +1790,7 @@ describe("callback triage", () => {
       providers: [alipay],
       store,
       catalog: new Map([
-        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 12 }],
+        ["pro", { currency: "CNY", cycles: new Map([["monthly", 8800]]) }],
       ]),
       lago: fakeLago({
         async ensureSubscription() {

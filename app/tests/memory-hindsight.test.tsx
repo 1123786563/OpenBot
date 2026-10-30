@@ -97,6 +97,8 @@ let cleanupStatus: Record<string, unknown>;
 let seen: { method: string; url: string; headers: Record<string, string> }[];
 /** The memory rows the /api/memory face holds, for the cross-face settle assertions. */
 let memoryRows: Record<string, unknown>[];
+/** Whether the deployment mounts the Hindsight family at all — false answers every read 404. */
+let chainMounted = true;
 /** A refusal the next basis forget gets, or none — the silent-failure regression (FIX-OCR1). */
 let refuseForgetNext = false;
 /** FIX-OCR3 (O3-M4): the next confirm answers the sensitive gate's first refusal. */
@@ -181,6 +183,7 @@ function serving() {
   adopted = [];
   memoryEntries = [];
   memoryRows = [];
+  chainMounted = true;
   refuseForgetNext = false;
   refuseSensitiveConfirmNext = false;
   cleanupStatus = notCleared();
@@ -226,6 +229,17 @@ function serving() {
         { error: "Select the company and workspace first." },
         { status: 400 },
       );
+    }
+    // The deployment wiring no personal-memory chain answers the family's four reads 404 —
+    // an availability fact, not a fault (the same line the pause switches read beside them).
+    if (
+      !chainMounted &&
+      (url === "/api/hindsight/judgments/candidates" ||
+        url === "/api/hindsight/judgments/adopted" ||
+        url === "/api/hindsight/memories" ||
+        url === "/api/hindsight/cleanup")
+    ) {
+      return Response.json({ error: "Not found" }, { status: 404 });
     }
     if (url === "/api/hindsight/judgments/candidates") {
       return Response.json({ candidates });
@@ -390,6 +404,33 @@ test("with no company selected the surface answers the resolver's own sentence",
   expect(asked).toBeDefined();
   expect(asked?.headers["x-openbot-tenant"]).toBeUndefined();
   expect(asked?.headers["x-openbot-workspace"]).toBeUndefined();
+});
+
+/*
+ * A deployment without the personal-memory chain (#376): the family answers 404, and each
+ * section explains that fact in its own place instead of reporting a fault — the same
+ * treatment the pause switches beside these listings already get. "Check now" has no chain
+ * to probe, so the action stays off rather than failing on the person's click.
+ */
+test("a deployment without the chain explains itself instead of reporting faults", async () => {
+  serving();
+  chainMounted = false;
+  const view = draw(
+    <>
+      <MemoryAnswerBasisSection />
+      <JudgmentReviewSections />
+      <MemoryCleanupSection />
+    </>,
+  );
+  const notes = await view.findAllByText(
+    "Personal memory isn't available on this OpenBot.",
+  );
+  // One per section: answer basis, candidates, adopted, cleanup.
+  expect(notes).toHaveLength(4);
+  expect(view.queryByRole("alert")).toBeNull();
+  expect(
+    view.getByRole("button", { name: "Check now" }).hasAttribute("disabled"),
+  ).toBe(true);
 });
 
 test("a candidate shows its judgment text and where it came from", async () => {

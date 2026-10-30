@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { Button } from "@/components/ui/button";
@@ -205,13 +205,15 @@ export function ScheduledTaskEditor({
   taskId,
   onDone,
   draft,
+  draftDirty = false,
   onDraftChange,
 }: {
   /** Absent means creating. */
   taskId?: string;
   onDone: () => void;
   draft?: ScheduledTaskDraft;
-  onDraftChange?: (draft: ScheduledTaskDraft) => void;
+  draftDirty?: boolean;
+  onDraftChange?: (draft: ScheduledTaskDraft, dirty: boolean) => void;
 }) {
   const { t } = useTranslation("craft");
   const queryClient = useQueryClient();
@@ -235,12 +237,13 @@ export function ScheduledTaskEditor({
   const [seeded, setSeeded] = useState(
     () => draft !== undefined || taskId === undefined,
   );
+  const [dirty, setDirty] = useState(draftDirty);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
-    onDraftChange?.(form);
-  }, [form, onDraftChange]);
+    onDraftChange?.(form, dirty);
+  }, [form, dirty, onDraftChange]);
 
   // Seed once when the detail arrives (the panel mounts before the read resolves).
   if (taskId && detail.data && !seeded) {

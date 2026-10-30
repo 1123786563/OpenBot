@@ -350,6 +350,7 @@
       "readAria": "Read {{title}}"
     },
     "loadError": "Your memories could not be loaded.",
+    "unmounted": "Personal memory isn't available on this OpenBot.",
     "pause": {
       "title": "Pause memory",
       "description": "Pause your Bots' learning or recall whenever you need to.",

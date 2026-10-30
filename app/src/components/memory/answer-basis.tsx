@@ -112,6 +112,8 @@ function MemoryAnswerBasisListing() {
         <p role="alert" className="mt-4 text-destructive text-sm">
           {memories.error.message}
         </p>
+      ) : memories.data === null ? (
+        <PageEmpty>{t("memory.unmounted")}</PageEmpty>
       ) : memories.data.length ? (
         <PageRows>
           {memories.data.map((entry, index) => (

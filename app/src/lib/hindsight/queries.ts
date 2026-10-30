@@ -19,7 +19,7 @@
  */
 
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { ClientResponseError, client } from "@/lib/client";
 import { guarded } from "@/lib/enterprise/tenant/queries";
 import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
@@ -212,6 +212,21 @@ export const hindsightKeys = {
 const pending = (tail: readonly unknown[]) => [...tail, ":scope-pending"];
 
 /**
+ * The family's own absence (#376): a 404 is the deployment wiring no personal-memory chain —
+ * an availability fact rather than a fault, the same line the pause switches read beside
+ * these listings. Every read here answers `null` for it; every other refusal still raises.
+ */
+const orUnmounted = async <T>(read: () => Promise<T>): Promise<T | null> => {
+  try {
+    return await read();
+  } catch (error) {
+    if (error instanceof ClientResponseError && error.status === 404)
+      return null;
+    throw error;
+  }
+};
+
+/**
  * The review surface's data source (#389 AC2): open candidates, newest first, basis included.
  * Keyed under the scope's own prefix, answered through the generation guard, so one person's
  * two scopes never read one entry and a switch drops the old scope's candidates wholesale.
@@ -229,14 +244,16 @@ export function scopedJudgmentCandidatesQueryOptions(
     enabled: open !== null,
     queryFn:
       open === null
-        ? () => new Promise<JudgmentCandidate[]>(() => {})
-        : async ({ signal }): Promise<JudgmentCandidate[]> =>
+        ? () => new Promise<JudgmentCandidate[] | null>(() => {})
+        : async ({ signal }): Promise<JudgmentCandidate[] | null> =>
             guarded(queryClient, open.userId, () =>
-              client("/api/hindsight/judgments/candidates", "candidates", {
-                signal,
-                fallbackKey: "hindsight.loadCandidates",
-                ...(open.selection ?? {}),
-              }),
+              orUnmounted(() =>
+                client("/api/hindsight/judgments/candidates", "candidates", {
+                  signal,
+                  fallbackKey: "hindsight.loadCandidates",
+                  ...(open.selection ?? {}),
+                }),
+              ),
             ),
   });
 }
@@ -260,14 +277,16 @@ export function scopedAdoptedJudgmentsQueryOptions(
     enabled: open !== null,
     queryFn:
       open === null
-        ? () => new Promise<ReviewedJudgment[]>(() => {})
-        : async ({ signal }): Promise<ReviewedJudgment[]> =>
+        ? () => new Promise<ReviewedJudgment[] | null>(() => {})
+        : async ({ signal }): Promise<ReviewedJudgment[] | null> =>
             guarded(queryClient, open.userId, () =>
-              client("/api/hindsight/judgments/adopted", "adopted", {
-                signal,
-                fallbackKey: "hindsight.loadAdopted",
-                ...(open.selection ?? {}),
-              }),
+              orUnmounted(() =>
+                client("/api/hindsight/judgments/adopted", "adopted", {
+                  signal,
+                  fallbackKey: "hindsight.loadAdopted",
+                  ...(open.selection ?? {}),
+                }),
+              ),
             ),
   });
 }
@@ -300,14 +319,16 @@ export function scopedPersonalMemoriesQueryOptions(
     enabled: open !== null,
     queryFn:
       open === null
-        ? () => new Promise<PersonalMemoryEntry[]>(() => {})
-        : async ({ signal }): Promise<PersonalMemoryEntry[]> =>
+        ? () => new Promise<PersonalMemoryEntry[] | null>(() => {})
+        : async ({ signal }): Promise<PersonalMemoryEntry[] | null> =>
             guarded(queryClient, open.userId, () =>
-              client("/api/hindsight/memories", "memories", {
-                signal,
-                fallbackKey: "hindsight.loadMemories",
-                ...(open.selection ?? {}),
-              }),
+              orUnmounted(() =>
+                client("/api/hindsight/memories", "memories", {
+                  signal,
+                  fallbackKey: "hindsight.loadMemories",
+                  ...(open.selection ?? {}),
+                }),
+              ),
             ),
   });
 }
@@ -359,15 +380,19 @@ export function scopedCleanupStatusQueryOptions(
     enabled: open !== null,
     queryFn:
       open === null
-        ? () => new Promise<CleanupStatus>(() => {})
-        : async ({ signal }): Promise<CleanupStatus> =>
+        ? () => new Promise<CleanupStatus | null>(() => {})
+        : async ({ signal }): Promise<CleanupStatus | null> =>
             guarded(queryClient, open.userId, async () => {
-              const response = await client("/api/hindsight/cleanup", {
-                signal,
-                fallbackKey: "hindsight.loadCleanup",
-                ...(open.selection ?? {}),
-              });
-              return (await response.json()) as CleanupStatus;
+              const response = await orUnmounted(() =>
+                client("/api/hindsight/cleanup", {
+                  signal,
+                  fallbackKey: "hindsight.loadCleanup",
+                  ...(open.selection ?? {}),
+                }),
+              );
+              return response === null
+                ? null
+                : ((await response.json()) as CleanupStatus);
             }),
   });
 }

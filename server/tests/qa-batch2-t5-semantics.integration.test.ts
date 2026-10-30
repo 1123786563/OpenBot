@@ -75,7 +75,7 @@ function serviceFor(provider: PaymentProvider, planCode: string) {
     providers: new Map([[provider.id, provider]]),
     store,
     catalog: new Map([
-      [planCode, { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+      [planCode, { currency: "CNY", cycles: new Map([["monthly", 8800]]) }],
     ]),
     notifyBaseUrl: "https://qa.example",
     orderTtlMinutes: 15,
@@ -151,7 +151,7 @@ describe("probe g: failed activation revival through the real sweep query", () =
       ]),
       store,
       catalog: new Map([
-        [plan, { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+        [plan, { currency: "CNY", cycles: new Map([["monthly", 8800]]) }],
       ]),
       notifyBaseUrl: "https://qa.example",
       orderTtlMinutes: 15,
@@ -203,7 +203,7 @@ describe("probe g: failed activation revival through the real sweep query", () =
       ]),
       store,
       catalog: new Map([
-        [plan, { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+        [plan, { currency: "CNY", cycles: new Map([["monthly", 8800]]) }],
       ]),
       notifyBaseUrl: "https://qa.example",
       orderTtlMinutes: 15,
@@ -289,7 +289,7 @@ describe("probe i: the purchase guard's uncached projection read", () => {
       providers: new Map([["alipay", providerFor("po-none", {}, "alipay")]]),
       store,
       catalog: new Map([
-        [plan, { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+        [plan, { currency: "CNY", cycles: new Map([["monthly", 8800]]) }],
       ]),
       notifyBaseUrl: "https://qa.example",
       orderTtlMinutes: 15,
@@ -338,7 +338,7 @@ describe("probe i: the purchase guard's uncached projection read", () => {
       providers: new Map([["alipay", providerFor("po-none", {}, "alipay")]]),
       store,
       catalog: new Map([
-        [plan, { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+        [plan, { currency: "CNY", cycles: new Map([["monthly", 8800]]) }],
       ]),
       notifyBaseUrl: "https://qa.example",
       orderTtlMinutes: 15,

@@ -362,13 +362,18 @@ describe("MT094 AC1 — catalogue reads and install writes carry the pair", () =
 describe("MT094 AC2 — the component roster is the scope's own answer", () => {
   test("the roster read carries the pair and files under the scope's prefix", async () => {
     storeSelection(USER, ACME);
+    /*
+     * The server answers in an envelope, the way every list endpoint here does. The mock used to
+     * answer with a bare array, which the reader took at face value — so the page was handed an
+     * object where it expected a roster and `components.data.map` was not a function.
+     */
     serve((path) =>
       path === "/api/components"
-        ? jsonResponse(200, [component("spend-card", true)])
+        ? jsonResponse(200, { components: [component("spend-card", true)] })
         : undefined,
     );
     const queryClient = freshClient();
-    await queryClient.fetchQuery(
+    const roster = await queryClient.fetchQuery(
       scopedComponentListQueryOptions(queryClient, {
         status: "open",
         userId: USER,
@@ -382,6 +387,7 @@ describe("MT094 AC2 — the component roster is the scope's own answer", () => {
     const read = asked.find((ask) => ask.input === "/api/components");
     expect(read).toBeTruthy();
     expect(headerOf(read?.init, "x-openbot-tenant")).toBe("acme");
+    expect(roster.map((entry) => entry.name)).toEqual(["spend-card"]);
     expect(
       queryClient.getQueryData([
         ...scopedCachePrefix(USER, ACME),

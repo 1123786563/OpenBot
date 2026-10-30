@@ -1,11 +1,11 @@
 import "./preload";
+import { QueryClient } from "@tanstack/react-query";
 import {
   afterEach,
   describe,
   expect,
   test,
 } from "../../tests/support/bun-test-compat";
-import { QueryClient } from "@tanstack/react-query";
 import {
   cancelPurchase,
   createPurchase,
@@ -159,9 +159,11 @@ describe("purchaseCatalogQueryOptions", () => {
       plans: [
         {
           planCode: "pro",
-          amountCents: 8800,
           currency: "CNY",
-          periodMonths: 1,
+          cycles: [
+            { code: "recurring_monthly", amountCents: 7900 },
+            { code: "monthly", amountCents: 8800 },
+          ],
         },
       ],
       canPurchase: true,
@@ -175,9 +177,11 @@ describe("purchaseCatalogQueryOptions", () => {
       plans: [
         {
           planCode: "pro",
-          amountCents: 8800,
           currency: "CNY",
-          periodMonths: 1,
+          cycles: [
+            { code: "recurring_monthly", amountCents: 7900 },
+            { code: "monthly", amountCents: 8800 },
+          ],
         },
       ],
       canPurchase: true,

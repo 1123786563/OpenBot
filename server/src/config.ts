@@ -1161,10 +1161,8 @@ function namesNoDirectory(tenantId: string | undefined): boolean {
 }
 
 /**
- * Sign-in, if this deployment has an identity provider to sign people in with.
- *
- * Any one of the four turns authentication on. More than one is allowed and is the normal shape
- * for a company mid-migration, where some people are on Entra and some are still on Okta.
+ * 邮箱密码或任一身份提供方均可独立启用登录。
+ * 多个身份提供方可同时配置，支持公司迁移期间并用 Entra、Okta 等登录方式。
  *
  * Every combination that cannot work refuses at start-up rather than at somebody's first attempt to
  * sign in, which is the worst moment to discover it: a provider with half its credentials, a
@@ -1178,15 +1176,17 @@ function authConfig(
   const microsoft = microsoftAuth(environment);
   const okta = oktaAuth(environment);
   const casdoor = casdoorAuth(environment);
+  const emailPassword =
+    optional(environment, "OPENBOT_EMAIL_PASSWORD") === "true";
 
   const secret = optional(environment, "BETTER_AUTH_SECRET");
   const baseUrl = url(environment, "BETTER_AUTH_URL");
   const authSmtp = authSmtpSettings(environment);
 
-  if (!google && !microsoft && !okta && !casdoor) {
+  if (!google && !microsoft && !okta && !casdoor && !emailPassword) {
     if (secret || baseUrl) {
       throw new Error(
-        "BETTER_AUTH_SECRET or BETTER_AUTH_URL is set but no identity provider is. Configure GOOGLE_OAUTH_*, MICROSOFT_OAUTH_*, OKTA_OAUTH_* or CASDOOR_OAUTH_*, or unset both",
+        "BETTER_AUTH_SECRET or BETTER_AUTH_URL is set but no identity provider is. Configure GOOGLE_OAUTH_*, MICROSOFT_OAUTH_*, OKTA_OAUTH_* or CASDOOR_OAUTH_*, set OPENBOT_EMAIL_PASSWORD=true, or unset both",
       );
     }
     return undefined;
@@ -1298,7 +1298,7 @@ function authConfig(
     ...(microsoft ? { microsoft } : {}),
     ...(okta ? { okta } : {}),
     ...(casdoor ? { casdoor } : {}),
-    emailPassword: optional(environment, "OPENBOT_EMAIL_PASSWORD") === "true",
+    emailPassword,
     ...(authSmtp ? { authSmtp } : {}),
   };
 }
@@ -2657,10 +2657,10 @@ function billingPrivateHostsAllowed(environment: Environment): boolean {
 }
 
 /** One purchasable plan, as the payment catalog names it. */
+/** 收款目录一条：按周期计价的收款价。v1 仅月度拼写可入目录（激活只建月间隔 Lago 订阅）；currency 恒为 CNY。 */
 export type PaymentPlanConfig = {
-  amountCents: number;
   currency: "CNY";
-  periodMonths: number;
+  cycles: ReadonlyMap<"monthly" | "recurring_monthly", number>;
 };
 
 /** One collection channel, wholly configured or not present at all. */
@@ -3009,9 +3009,13 @@ function paymentsConfig(
     Array.isArray(catalogParsed)
   ) {
     throw new Error(
-      "PAYMENT_PLAN_CATALOG must be a JSON object of plan code to { amountCents, currency, periodMonths }",
+      "PAYMENT_PLAN_CATALOG must be a JSON object of plan code to { cycleCode: amountCents }",
     );
   }
+  // The only cycles v1 collects: both spellings are one month at the Lago side (the
+  // activation creates a monthly-interval subscription for either), so they may be priced
+  // differently but a yearly code cannot be collected until Lago carries a yearly plan.
+  const collectibleCycles = new Set(["monthly", "recurring_monthly"]);
   const planCatalog = new Map<string, PaymentPlanConfig>();
   for (const [planCode, entry] of Object.entries(
     catalogParsed as Record<string, unknown>,
@@ -3023,65 +3027,65 @@ function paymentsConfig(
     }
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
       throw new Error(
-        `PAYMENT_PLAN_CATALOG plan "${planCode}" must be an object with amountCents, currency and periodMonths`,
+        `PAYMENT_PLAN_CATALOG plan "${planCode}" must be an object of cycle code to amountCents`,
       );
     }
-    const { amountCents, currency, periodMonths } = entry as Record<
-      string,
-      unknown
-    >;
-    if (
-      typeof amountCents !== "number" ||
-      !Number.isInteger(amountCents) ||
-      amountCents <= 0
-    ) {
+    const cycles = new Map<"monthly" | "recurring_monthly", number>();
+    for (const [cycleCode, rawAmount] of Object.entries(
+      entry as Record<string, unknown>,
+    )) {
+      if (!collectibleCycles.has(cycleCode)) {
+        throw new Error(
+          `PAYMENT_PLAN_CATALOG plan "${planCode}" cycle "${cycleCode}" is not collectible in v1: only "monthly" and "recurring_monthly" may be priced (a yearly cycle needs a yearly Lago plan interval the activation does not create)`,
+        );
+      }
+      if (
+        typeof rawAmount !== "number" ||
+        !Number.isInteger(rawAmount) ||
+        rawAmount <= 0
+      ) {
+        throw new Error(
+          `PAYMENT_PLAN_CATALOG plan "${planCode}" cycle "${cycleCode}" amountCents must be a positive integer number of cents`,
+        );
+      }
+      cycles.set(cycleCode as "monthly" | "recurring_monthly", rawAmount);
+    }
+    if (cycles.size === 0) {
       throw new Error(
-        `PAYMENT_PLAN_CATALOG plan "${planCode}" amountCents must be a positive integer number of cents`,
+        `PAYMENT_PLAN_CATALOG plan "${planCode}" prices no cycle: an entry with nothing to collect must not exist`,
       );
     }
-    if (currency !== "CNY") {
-      throw new Error(
-        `PAYMENT_PLAN_CATALOG plan "${planCode}" currency must be "CNY": only CNY is collected in v1`,
-      );
-    }
-    if (periodMonths !== 1) {
-      throw new Error(
-        `PAYMENT_PLAN_CATALOG plan "${planCode}" periodMonths must be 1 (monthly): that is the Lago interval the activation creates`,
-      );
-    }
-    // THE PRICE CROSS-CHECK (P1-2's root cause, closed at boot): the collected price and the
-    // displayed price are two configs, and nothing else compares them — a deployment that
-    // raises LAGO_PLAN_CATALOG's monthly price but forgets PAYMENT_PLAN_CATALOG shows one
-    // number and collects another, which is the exact failure a person reads as being
-    // overcharged. Refuse to start; the monthly cycle is the only cycle v1 collects.
-    const displayed = billing.planCatalog
-      .get(planCode)
-      ?.pricing.filter(
-        (cycle) =>
-          cycle.code === "monthly" || cycle.code === "recurring_monthly",
-      );
-    // Every monthly-spelled cycle must agree with the amount: a find-first would let a
-    // mismatched second spelling pass checkout while the dialog shows the other price.
-    const mismatch = displayed?.find(
-      (cycle) => cycle.priceCents !== amountCents,
+    // THE PRICE CROSS-CHECK, per cycle (P1-2's root cause, closed at boot): the collected
+    // price and the displayed price are two configs, and nothing else compares them — a
+    // deployment that raises LAGO_PLAN_CATALOG's price for one cycle but forgets
+    // PAYMENT_PLAN_CATALOG shows one number and collects another, which is the exact failure
+    // a person reads as being overcharged. The two monthly spellings may now carry different
+    // prices (连续包月 vs 单月), so the comparison is cycle-by-cycle: every cycle the
+    // collector prices must agree with the display catalog's price for THE SAME cycle.
+    const displayed = new Map(
+      (billing.planCatalog.get(planCode)?.pricing ?? []).map((cycle) => [
+        cycle.code,
+        cycle.priceCents,
+      ]),
     );
-    if (mismatch) {
-      throw new Error(
-        `PAYMENT_PLAN_CATALOG plan "${planCode}" amountCents (${amountCents}) does not match LAGO_PLAN_CATALOG's monthly price (${mismatch.priceCents} on "${mismatch.code}"): the checkout would collect a different number than the dialog shows — align the two catalogs before starting`,
-      );
+    for (const [cycleCode, amountCents] of cycles) {
+      const shown = displayed.get(cycleCode);
+      if (shown === undefined) {
+        // Not a mismatch (the payment catalog is the collector's truth), but the upgrade
+        // dialog cannot offer this cycle — say so at boot rather than discovering a cycle
+        // nobody can click.
+        log.warn(
+          `PAYMENT_PLAN_CATALOG plan "${planCode}" cycle "${cycleCode}" has no such cycle in LAGO_PLAN_CATALOG: it is purchasable through the API but the upgrade dialog will not show it`,
+        );
+        continue;
+      }
+      if (shown !== amountCents) {
+        throw new Error(
+          `PAYMENT_PLAN_CATALOG plan "${planCode}" cycle "${cycleCode}" collects ${amountCents} but LAGO_PLAN_CATALOG shows ${shown} for the same cycle: the checkout would collect a different number than the dialog shows — align the two catalogs before starting`,
+        );
+      }
     }
-    if (!displayed) {
-      // Not a mismatch (the payment catalog is the collector's truth), but the upgrade dialog
-      // cannot offer it — say so at boot rather than discovering a plan nobody can click.
-      log.warn(
-        `PAYMENT_PLAN_CATALOG plan "${planCode}" has no monthly cycle in LAGO_PLAN_CATALOG: it is purchasable through the API but the upgrade dialog will not show it`,
-      );
-    }
-    planCatalog.set(planCode, {
-      amountCents,
-      currency: "CNY",
-      periodMonths: 1,
-    });
+    planCatalog.set(planCode, { currency: "CNY", cycles });
   }
 
   const notifyRaw =
@@ -3440,7 +3444,7 @@ export function loadConfig(
      */
     singleUser:
       !organizationAuthUrl &&
-      singleUserAllowed(environment, configuredAuthProviders(auth).length > 0),
+      singleUserAllowed(environment, auth !== undefined),
     accessibility: accessibilityEnabled(environment),
     generativeUi: generativeUiEnabled(environment),
     selfHostBanner: selfHostBannerEnabled(environment),

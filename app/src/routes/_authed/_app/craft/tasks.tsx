@@ -59,6 +59,7 @@ function CraftTasksPage() {
   const queryClient = useQueryClient();
   const scope = useScopedCache();
   const tasks = useQuery(scopedScheduledTasksQueryOptions(queryClient, scope));
+  const finish = () => navigate({ search: {} });
 
   return (
     <div className="flex min-h-0 flex-1">

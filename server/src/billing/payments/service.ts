@@ -75,6 +75,11 @@ export type PaymentLagoFacade = {
 /** Why a purchase request cannot proceed; the routes map these to 400/409. */
 export type PurchaseRefusal =
   | { reason: "unknown-plan" }
+  | {
+      reason: "unknown-cycle";
+      planCode: string;
+      cycle: "monthly" | "recurring_monthly";
+    }
   | { reason: "unknown-provider" }
   | { reason: "pending-purchase"; pendingPlanCode: string }
   | { reason: "active-subscription"; activePlanCode: string }
@@ -87,13 +92,15 @@ export class PurchaseError extends Error {
     super(
       refusal.reason === "unknown-plan"
         ? "That plan is not purchasable here."
-        : refusal.reason === "unknown-provider"
-          ? "That channel is not configured on this deployment."
-          : refusal.reason === "pending-purchase"
-            ? "Another purchase is already pending for this deployment."
-            : refusal.reason === "missing-owner"
-              ? "An order requires an owner resolved from the signed-in identity."
-              : "This deployment already has an active subscription.",
+        : refusal.reason === "unknown-cycle"
+          ? `Plan "${refusal.planCode}" is not priced for cycle "${refusal.cycle}" on this deployment.`
+          : refusal.reason === "unknown-provider"
+            ? "That channel is not configured on this deployment."
+            : refusal.reason === "pending-purchase"
+              ? "Another purchase is already pending for this deployment."
+              : refusal.reason === "missing-owner"
+                ? "An order requires an owner resolved from the signed-in identity."
+                : "This deployment already has an active subscription.",
     );
     this.refusal = refusal;
   }
@@ -181,8 +188,13 @@ export type PaymentService = {
   createPurchase(input: {
     planCode: string;
     provider: PaymentProviderId;
-    /** The billing cycle, already normalized to `monthly` by the routes (v1's only cycle). */
-    cycle: "monthly";
+    /**
+     * The billing cycle being bought — one of the two monthly spellings the routes' zod
+     * enum accepts. The price is read from the catalog's entry for THIS cycle (per-cycle
+     * pricing); both cycles activate the same one-month Lago interval, so the cycle's only
+     * other footprint is the amount charged.
+     */
+    cycle: "monthly" | "recurring_monthly";
     /** The audit actor who opened the order — not the payment subject (CONTEXT.md). */
     createdBy: string | null;
     /**
@@ -232,7 +244,11 @@ export function createPaymentService(deps: {
   store: PaymentStore;
   catalog: ReadonlyMap<
     string,
-    { amountCents: number; currency: "CNY"; periodMonths: number }
+    {
+      currency: "CNY";
+      /** 收款价按周期计价：cycleCode → amountCents。v1 仅两月度拼写可入目录。 */
+      cycles: ReadonlyMap<"monthly" | "recurring_monthly", number>;
+    }
   >;
   notifyBaseUrl: string;
   orderTtlMinutes: number;
@@ -840,8 +856,9 @@ export function createPaymentService(deps: {
     // The order snapshots a period the moment money lands, even if activation cannot reach Lago.
     // A successful activation later replaces this local fallback with the provider's exact period
     // when Lago answered one.
-    const fallbackPeriodMonths =
-      deps.catalog.get(order.planCode)?.periodMonths ?? 1;
+    // v1 collects the two monthly spellings only, so every priced cycle is one month — the
+    // fallback period is the one month the activation will create, whatever cycle priced it.
+    const fallbackPeriodMonths = 1;
     const fallbackPeriodStart = at;
     const fallbackPeriodEnd = addMonths(at, fallbackPeriodMonths);
     let result: { claimed: boolean; alreadyKnown: boolean };
@@ -901,9 +918,10 @@ export function createPaymentService(deps: {
       const plans: PaymentPlanEntry[] = [...deps.catalog.entries()].map(
         ([planCode, entry]) => ({
           planCode,
-          amountCents: entry.amountCents,
-          currency: "CNY",
-          periodMonths: entry.periodMonths,
+          currency: entry.currency,
+          cycles: [...entry.cycles.entries()]
+            .map(([code, amountCents]) => ({ code, amountCents }))
+            .sort((a, b) => a.code.localeCompare(b.code)),
         }),
       );
       plans.sort((a, b) => a.planCode.localeCompare(b.planCode));
@@ -914,9 +932,12 @@ export function createPaymentService(deps: {
         canPurchase,
         activePlanCode,
         providers,
-        // v1's purchasable cycles: the two monthly spellings (see PaymentCatalog.cycles). The
-        // routes' zod enum accepts exactly these; widening either side widens the other.
-        cycles: ["monthly", "recurring_monthly"],
+        // The cycles some plan actually prices — a purchase may name exactly these; each
+        // plan's own priced cycles ride on its plans[] entry (the dialog intersects with the
+        // display catalog's cycles per plan).
+        cycles: [
+          ...new Set(plans.flatMap((p) => p.cycles.map((c) => c.code))),
+        ].sort(),
       };
     },
 
@@ -930,6 +951,17 @@ export function createPaymentService(deps: {
       const entry = deps.catalog.get(input.planCode);
       if (!entry) {
         throw new PurchaseError({ reason: "unknown-plan" });
+      }
+      // Per-cycle pricing: the amount is the catalog's price for the cycle this request named.
+      // A plan whose catalog prices no such cycle (a cycle the display catalog offers but the
+      // collector does not) is refused before any order row exists.
+      const amountCents = entry.cycles.get(input.cycle);
+      if (amountCents === undefined) {
+        throw new PurchaseError({
+          reason: "unknown-cycle",
+          planCode: input.planCode,
+          cycle: input.cycle,
+        });
       }
       // The channel must be one this deployment configured — checked BEFORE the replay lookup
       // and the order row, so a wrong channel can neither strand a pending order no sweeper can
@@ -954,14 +986,17 @@ export function createPaymentService(deps: {
         });
       }
 
-      // Replay: the same plan on the same channel, still open, comes back untouched. The read
-      // is OWNER-SCOPED (AC14: another person's open order is neither replayed nor shown) and a
-      // fast path only — the pending-scope partial unique index and the store's conflict
-      // re-read below are the actual guarantee, so concurrent requests converge on one order.
+      // Replay: the same plan on the same channel at the SAME cycle's price, still open, comes
+      // back untouched. The read is OWNER-SCOPED (AC14: another person's open order is neither
+      // replayed nor shown) and a fast path only — the pending-scope partial unique index and
+      // the store's conflict re-read below are the actual guarantee, so concurrent requests
+      // converge on one order. A different amount is a cycle switch: it falls through to the
+      // cancel-and-reopen path below rather than replaying a price the caller did not name.
       const replayed = await deps.store
         .readPendingOrder(input.planCode, input.provider, input.ownerPayerRef)
         .catch(() => null);
-      if (replayed) return { order: toView(replayed) };
+      if (replayed && replayed.amountCents === amountCents)
+        return { order: toView(replayed) };
 
       const pending = await deps.store.readPendingPurchase().catch(() => null);
       if (pending) {
@@ -983,7 +1018,14 @@ export function createPaymentService(deps: {
             pendingPlanCode: pending.planCode,
           });
         }
-        if (pending.provider === input.provider) {
+        // Same plan, same channel, same cycle's price: replay. A different price means a
+        // different cycle (per-cycle pricing prices each cycle distinctly at boot's
+        // cross-check) — the switch reopens below, exactly like a channel switch, so changing
+        // 连续包月↔单月 mid-checkout replaces the order instead of replaying the wrong price.
+        if (
+          pending.provider === input.provider &&
+          pending.amountCents === amountCents
+        ) {
           return { order: toView(pending) };
         }
 
@@ -1019,7 +1061,7 @@ export function createPaymentService(deps: {
       const { order, conflict } = await deps.store.insertOrder({
         planCode: input.planCode,
         provider: input.provider,
-        amountCents: entry.amountCents,
+        amountCents,
         currency: "CNY",
         expiresAt,
         createdBy: input.createdBy,

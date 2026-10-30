@@ -2,6 +2,7 @@ import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import type { ComputerCapacity } from "../src/computer/capacity";
 import { computerCapacity } from "../src/computer/capacity";
+import type { ExecutionScope } from "@openbot/shared/execution-scope";
 import { StaleSnapshotError } from "../src/computer/client";
 import {
   ActionRefusedError,
@@ -211,6 +212,7 @@ async function gatewayWith(
     resetResult?: { cleared: boolean };
     locations?: ComputerLocation[];
     token?: string;
+    executionScope?: ExecutionScope | null;
     capacity?: ComputerCapacity;
     /** Endpoints the computer answers differently, for the calls that have to fail. */
     routes?: Record<
@@ -228,6 +230,9 @@ async function gatewayWith(
     auditStore: store,
     policy: () => policy,
     token: options?.token,
+    ...(options?.executionScope !== undefined
+      ? { executionScope: options.executionScope }
+      : {}),
     ...(options?.capacity ? { capacity: options.capacity } : {}),
   });
   // Every test acts on refs, so the server must hold a snapshot first, exactly as the real flow does.
@@ -1909,5 +1914,33 @@ describe("the write budget's refund direction", () => {
     ).rejects.toThrow();
     expect(charged).toEqual([4]);
     expect(refunded).toEqual([]);
+  });
+
+  test("states execution ownership on every dial when the deployment wired a scope", async () => {
+    const { gateway, requests } = await gatewayWith(PERMISSIVE, {
+      executionScope: { tenantId: "t1", workspaceId: "w1" },
+    });
+    await gateway.click("bot-1", ACTOR, { ref: "e9", snapshotId: 7 });
+    const headers = new Headers(requests[0]?.init?.headers);
+    expect(headers.get("x-openbot-tenant-id")).toBe("t1");
+    expect(headers.get("x-openbot-workspace-id")).toBe("w1");
+  });
+
+  test("a half-set scope refuses the dial before the computer is reached", async () => {
+    // No setup snapshot: the half-set scope refuses every dial, including the one the shared
+    // helper's setup makes, so this test wires the gateway without it.
+    const { provider, fetchImpl, requests } = fakeComputer({});
+    const { store } = fakeAudit();
+    const gateway = createComputerGateway({
+      provider,
+      fetchImpl,
+      auditStore: store,
+      policy: () => PERMISSIVE,
+      executionScope: null,
+    });
+    await expect(
+      gateway.click("bot-1", ACTOR, { ref: "e9", snapshotId: 7 }),
+    ).rejects.toThrow(/execution ownership/i);
+    expect(requests).toEqual([]);
   });
 });

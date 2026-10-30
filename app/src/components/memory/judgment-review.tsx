@@ -87,6 +87,8 @@ export function JudgmentReviewSections() {
           <p role="alert" className="mt-4 text-destructive text-sm">
             {candidates.error.message}
           </p>
+        ) : candidates.data === null ? (
+          <PageEmpty>{t("memory.unmounted")}</PageEmpty>
         ) : candidates.data.length ? (
           <PageRows>
             {candidates.data.map((candidate, index) => (
@@ -108,6 +110,8 @@ export function JudgmentReviewSections() {
           <p role="alert" className="mt-4 text-destructive text-sm">
             {adopted.error.message}
           </p>
+        ) : adopted.data === null ? (
+          <PageEmpty>{t("memory.unmounted")}</PageEmpty>
         ) : adopted.data.length ? (
           <PageRows>
             {adopted.data.map((judgment, index) => (

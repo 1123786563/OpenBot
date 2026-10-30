@@ -1139,6 +1139,10 @@
     {
       "name": "server/tests increment 3",
       "files": ["server/tests/opik-span-support.test.ts"]
+    },
+    {
+      "name": "app/tests increment 1",
+      "files": ["app/tests/admin-billing-route-render.test.tsx"]
     }
   ],
   "directoryIslands": ["server/tests/multitenancy", "app/tests/multitenancy"],
@@ -1157,6 +1161,7 @@
     "agent-sandbox/tests/sse.test.ts",
     "app/src/lib/i18n/ai-observability.test.ts",
     "app/tests/account-mode-dialog.test.tsx",
+    "app/tests/admin-billing-route-render.test.tsx",
     "app/tests/admin-catalog-sync-ui.test.tsx",
     "app/tests/admin-credit-grant-ui.test.tsx",
     "app/tests/admin-gateway-readiness.test.tsx",
@@ -2103,6 +2108,7 @@
     "server/tests/better-auth/password-recovery-not-wired.test.ts": "T05.14 r1 F2 (#570): pins the outbox:null fail-closed refusal (503 PASSWORD_RECOVERY_NOT_WIRED before any command transaction); imports password-recovery.ts whose chain loads the Bun runtime — Bun-only",
     "server/tests/db-query-failure-shape.test.ts": "runner named it: cannot load under Node: imports the bun:test layer",
     "server/tests/opik-default-bot-observation.test.ts": "runner named it: cannot load under Node: imports the bun:test layer",
-    "server/tests/opik-span-support.test.ts": "runner named it: cannot load under Node: imports the bun:test layer"
+    "server/tests/opik-span-support.test.ts": "runner named it: cannot load under Node: imports the bun:test layer",
+    "app/tests/admin-billing-route-render.test.tsx": "runner named it: Received protocol 'bun:' — the billing route pulls the bun-only client stack, same as admin-credit-grant-ui"
   }
 }

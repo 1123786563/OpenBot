@@ -1,7 +1,7 @@
-import { fileURLToPath } from "node:url";
-import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 
 const herePath = fileURLToPath(import.meta.url);
 const hereDir = dirname(herePath);
@@ -34,12 +34,19 @@ const CONFIG = readFileSync(join(hereDir, "../src/config.ts"), "utf8");
 describe("probe e: the cycle grammar is one contract across three files", () => {
   test("the routes accept exactly the two monthly spellings", () => {
     expect(ROUTES).toContain('cycle: z.enum(["monthly", "recurring_monthly"])');
-    // And the handler converges both to the one collected cycle.
-    expect(ROUTES).toContain('cycle: "monthly"');
+    // And the handler passes the named cycle through — per-cycle pricing charges the
+    // catalog's price for exactly the cycle the client chose.
+    expect(ROUTES).toContain("cycle: input.cycle");
   });
 
-  test("the catalog discloses exactly the same two spellings", () => {
-    expect(SERVICE).toContain('cycles: ["monthly", "recurring_monthly"]');
+  test("the catalog prices exactly the same two spellings", () => {
+    expect(SERVICE).toContain(
+      'ReadonlyMap<"monthly" | "recurring_monthly", number>',
+    );
+    // The offered cycles are derived from what the plans actually price, not a second list.
+    expect(SERVICE).toContain(
+      "plans.flatMap((p) => p.cycles.map((c) => c.code))",
+    );
     expect(TYPES).toContain(
       'cycles: readonly ("monthly" | "recurring_monthly")[]',
     );
@@ -48,31 +55,26 @@ describe("probe e: the cycle grammar is one contract across three files", () => 
   test("no yearly spelling exists on the server's purchase surface", () => {
     expect(ROUTES).not.toContain('"yearly"');
     expect(SERVICE).not.toContain('"yearly"');
-    // The service's createPurchase contract types the converged cycle.
-    expect(SERVICE).toContain('cycle: "monthly";');
+    // The service's createPurchase contract takes either monthly spelling.
+    expect(SERVICE).toContain('cycle: "monthly" | "recurring_monthly";');
   });
 });
 
 describe("probe f: the boot cross-check", () => {
-  test("a price disagreement refuses with both numbers and the plan named", () => {
+  test("a price disagreement refuses with both numbers, the plan and the cycle named", () => {
     expect(CONFIG).toContain(
-      'PAYMENT_PLAN_CATALOG plan "${planCode}" amountCents (${amountCents}) does not match',
+      'PAYMENT_PLAN_CATALOG plan "${planCode}" cycle "${cycleCode}" collects ${amountCents} but LAGO_PLAN_CATALOG shows ${shown}',
     );
-    expect(CONFIG).toContain(
-      "LAGO_PLAN_CATALOG's monthly price (${displayed.priceCents})",
-    );
+    expect(CONFIG).toContain("for the same cycle");
   });
 
-  test("the comparison reads the monthly cycle of the display catalog only", () => {
-    expect(CONFIG).toMatch(
-      /cycle\.code === "monthly" \|\| cycle\.code === "recurring_monthly"/,
-    );
+  test("the comparison prices only the monthly spellings, cycle by cycle", () => {
+    expect(CONFIG).toMatch(/new Set\(\["monthly", "recurring_monthly"\]\)/);
+    expect(CONFIG).toContain("collectibleCycles.has(cycleCode)");
   });
 
-  test("a plan without a display price warns, never refuses", () => {
-    const warnShape = CONFIG.includes(
-      "has no monthly cycle in LAGO_PLAN_CATALOG",
-    );
+  test("a priced cycle without a display price warns, never refuses", () => {
+    const warnShape = CONFIG.includes("has no such cycle in LAGO_PLAN_CATALOG");
     expect(warnShape).toBe(true);
   });
 });

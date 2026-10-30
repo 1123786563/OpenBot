@@ -179,12 +179,15 @@ export type PaymentOrderView = {
   createdAt: string;
 };
 
-/** One catalog price, as the HTTP surface spells it. */
+/** One catalog price, as the HTTP surface spells it: the collected amount per purchasable cycle. */
 export type PaymentPlanEntry = {
   planCode: string;
-  amountCents: number;
   currency: "CNY";
-  periodMonths: number;
+  /** 收款价按周期计价（v1 仅两月度拼写；年周期收款待 Lago 有年间隔套餐后再扩）。 */
+  cycles: readonly {
+    code: "monthly" | "recurring_monthly";
+    amountCents: number;
+  }[];
 };
 
 /** What the catalog endpoint answers: the prices plus who may buy and what is running. */

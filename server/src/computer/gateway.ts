@@ -27,6 +27,7 @@ import {
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { withUntrustedNotice } from "../untrusted-content";
 import { type ComputerCapacity, computerCapacity } from "./capacity";
+import type { ExecutionScope } from "@openbot/shared/execution-scope";
 import {
   ComputerStoppedError,
   ComputerUnavailableError,
@@ -131,6 +132,11 @@ export type ComputerGatewayOptions = {
   allowPrivateHosts?: boolean;
   /** The secret that agent-computer requires on each request. */
   token?: string;
+  /*
+   * The execution ownership every gateway dial states on the wire (MT050), passed to the
+   * transport: a scope injects the two headers, null refuses the dial, undefined skips.
+   */
+  executionScope?: ExecutionScope | null;
   /** An injectable fetch implementation for focused gateway tests. */
   fetchImpl?: typeof fetch;
   /**
@@ -310,6 +316,9 @@ export function createComputerGateway(
   const { provider, auditStore } = options;
   const transport = createComputerTransport({
     ...(options.token ? { token: options.token } : {}),
+    ...(options.executionScope !== undefined
+      ? { executionScope: options.executionScope }
+      : {}),
     ...(options.allowPrivateHosts !== undefined
       ? { allowPrivateHosts: options.allowPrivateHosts }
       : {}),

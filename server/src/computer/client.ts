@@ -1,4 +1,5 @@
 import type { HandoffRequest } from "@openbot/shared/computer-control";
+import { applyExecutionScopeHeaders, type ExecutionScope } from "@openbot/shared/execution-scope";
 import { injectTraceHeaders } from "@openbot/shared/trace";
 import type { NavigateResult } from "./schema";
 import { checkNavigationTarget } from "./target";
@@ -220,6 +221,12 @@ export class HandoffRequestError extends Error {
  */
 export type ComputerTransportOptions = {
   token?: string;
+  /*
+   * The execution ownership this deployment's computer calls state on the wire (MT050):
+   * a scope injects the two headers, null refuses the dial (half-set configuration),
+   * undefined skips injection — a deployment that wired no scope dials as it always did.
+   */
+  executionScope?: ExecutionScope | null;
   allowPrivateHosts?: boolean;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
@@ -294,16 +301,27 @@ export function createComputerTransport(
      */
     const timeoutMs = timeoutMsOverride ?? defaultTimeoutMs;
     const target = baseUrl.replace(/\/$/, "");
+    // Applied before the dial: a half-set scope is a configuration refusal, not a transport
+    // outcome, so it must not be re-wrapped by the transport failure handling below.
+    const scopedHeaders = applyExecutionScopeHeaders(
+      {
+        "x-openbot-bot-id": botId,
+        ...(options.token ? { "x-openbot-computer-token": options.token } : {}),
+      },
+      options.executionScope,
+      () => {
+        throw new ComputerUnavailableError(
+          "The computer requires execution ownership, and this deployment's scope is not usable: set both OPENBOT_COMPUTER_EXECUTION_TENANT_ID and OPENBOT_COMPUTER_EXECUTION_WORKSPACE_ID, or clear both.",
+        );
+      },
+    );
     let response: Response;
     try {
       response = await doFetch(`${target}${path}`, {
         ...init,
         headers: injectTraceHeaders({
           ...headerRecord(init?.headers),
-          "x-openbot-bot-id": botId,
-          ...(options.token
-            ? { "x-openbot-computer-token": options.token }
-            : {}),
+          ...scopedHeaders,
         }),
         signal: caller
           ? AbortSignal.any([caller, AbortSignal.timeout(timeoutMs)])
