@@ -34,9 +34,9 @@ function SetupHelp() {
     globalThis as { process?: { env?: Record<string, string | undefined> } }
   ).process?.env;
   const url =
-    (viteEnv?.VITE_OPENBOT_SUPPORT_URL ??
-      runtimeEnv?.VITE_OPENBOT_SUPPORT_URL)?.trim() ||
-    "https://github.com/CopilotKit/OpenBot/issues/new/choose";
+    (
+      viteEnv?.VITE_OPENBOT_SUPPORT_URL ?? runtimeEnv?.VITE_OPENBOT_SUPPORT_URL
+    )?.trim() || "https://github.com/CopilotKit/OpenBot/issues/new/choose";
   return (
     <ExternalLink className="setup-help" href={url}>
       Get setup help

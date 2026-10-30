@@ -63,7 +63,11 @@ const billingService = {
 const paymentService = {
   catalog: (canPurchase: boolean, activePlanCode: string | null) => ({
     plans: [
-      { planCode: "pro", currency: "CNY", cycles: [{ code: "monthly", amountCents: 8800 }] },
+      {
+        planCode: "pro",
+        currency: "CNY",
+        cycles: [{ code: "monthly", amountCents: 8800 }],
+      },
     ],
     canPurchase,
     activePlanCode,

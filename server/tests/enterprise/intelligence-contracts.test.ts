@@ -637,7 +637,11 @@ test("parser rejects maximum sparse arrays promptly", async () => {
 const result = parseMessageInput({ id: "sparse", role: "user", type: "text", content: new Array(2 ** 32 - 1) });
 console.log(JSON.stringify({ ok: result.ok, code: result.ok ? null : result.error.code }));`,
     ],
-    { cwd: fileURLToPath(new URL("../../", import.meta.url)), stdout: "pipe", stderr: "pipe" },
+    {
+      cwd: fileURLToPath(new URL("../../", import.meta.url)),
+      stdout: "pipe",
+      stderr: "pipe",
+    },
   );
   let timedOut = false;
   const timeout = new Promise<"timeout">((resolve) => {

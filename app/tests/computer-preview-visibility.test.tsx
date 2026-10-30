@@ -187,9 +187,11 @@ test("hidden live screen keeps the stream open and draws the latest hidden frame
       drawImage: () => (draws += 1),
     }) as unknown as CanvasRenderingContext2D) as unknown as typeof HTMLCanvasElement.prototype.getContext;
 
-  render(<QueryClientProvider client={seededClient()}>
-    <LiveScreen computerId="hidden-live" driving />
-  </QueryClientProvider>);
+  render(
+    <QueryClientProvider client={seededClient()}>
+      <LiveScreen computerId="hidden-live" driving />
+    </QueryClientProvider>,
+  );
   await waitFor(() => expect(SocketDouble.latest).toBeDefined());
   const socket = SocketDouble.latest as SocketDouble;
 
@@ -239,9 +241,11 @@ test("an older pending live screen decode cannot replace a newer frame", async (
       },
     }) as unknown as CanvasRenderingContext2D) as unknown as typeof HTMLCanvasElement.prototype.getContext;
 
-  render(<QueryClientProvider client={seededClient()}>
-    <LiveScreen computerId="pending-live" driving />
-  </QueryClientProvider>);
+  render(
+    <QueryClientProvider client={seededClient()}>
+      <LiveScreen computerId="pending-live" driving />
+    </QueryClientProvider>,
+  );
   await waitFor(() => expect(SocketDouble.latest).toBeDefined());
   const socket = SocketDouble.latest as SocketDouble;
 

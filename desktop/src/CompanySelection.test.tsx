@@ -50,8 +50,12 @@ mock.module("@tauri-apps/api/core", () => ({
 }));
 
 // The module is imported after the mock so its own tauri calls land in the double.
-const { companyChoiceState, CompanySelection, selectionOf, withWorkbenchSelection } =
-  await import("./CompanySelection");
+const {
+  companyChoiceState,
+  CompanySelection,
+  selectionOf,
+  withWorkbenchSelection,
+} = await import("./CompanySelection");
 
 const ROOT = "/fixtures/openbot";
 

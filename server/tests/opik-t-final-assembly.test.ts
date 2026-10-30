@@ -558,7 +558,9 @@ describe("T-final M1: the boot assembly reads the ambient scope", () => {
     const declaredAt = declarations.map((declaration) =>
       source.findIndex((line) => line.trimStart().startsWith(declaration)),
     );
-    for (const [declaration, declared] of declarations.map((d, i) => [d, declaredAt[i]] as const)) {
+    for (const [declaration, declared] of declarations.map(
+      (d, i) => [d, declaredAt[i]] as const,
+    )) {
       expect(declared, declaration).toBeGreaterThanOrEqual(0);
     }
     const firstAwaitInside = source.findIndex(

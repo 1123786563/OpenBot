@@ -533,7 +533,10 @@ test("an expired plan returns to preview with the non-secret configuration kept"
     }),
   );
   const user = userEvent.setup({ document: view.container.ownerDocument });
-  await user.type(within(dialog()).getByLabelText("Configuration key"), "region");
+  await user.type(
+    within(dialog()).getByLabelText("Configuration key"),
+    "region",
+  );
   await user.type(
     within(dialog()).getByLabelText("Configuration value"),
     "eu-central",
@@ -733,7 +736,10 @@ test("a failed preview keeps the configuration and a retry asks for a new plan",
     }),
   );
   const user = userEvent.setup({ document: view.container.ownerDocument });
-  await user.type(within(dialog()).getByLabelText("Configuration key"), "region");
+  await user.type(
+    within(dialog()).getByLabelText("Configuration key"),
+    "region",
+  );
   await user.type(
     within(dialog()).getByLabelText("Configuration value"),
     "eu-central",
@@ -766,7 +772,10 @@ test("a secret-looking configuration key is refused before a request leaves the 
     }),
   );
   const user = userEvent.setup({ document: view.container.ownerDocument });
-  await user.type(within(dialog()).getByLabelText("Configuration key"), "api_token");
+  await user.type(
+    within(dialog()).getByLabelText("Configuration key"),
+    "api_token",
+  );
   await user.type(
     within(dialog()).getByLabelText("Configuration value"),
     "do-not-send",
@@ -849,7 +858,10 @@ test("configuration fields are disabled while the apply is in flight", async () 
     within(dialog()).getByRole("button", { name: "Add configuration field" }),
   );
   const user = userEvent.setup({ document: view.container.ownerDocument });
-  await user.type(within(dialog()).getByLabelText("Configuration key"), "region");
+  await user.type(
+    within(dialog()).getByLabelText("Configuration key"),
+    "region",
+  );
   await user.type(
     within(dialog()).getByLabelText("Configuration value"),
     "eu-central",
@@ -915,7 +927,10 @@ test("a 409 conflict drops the spent preview but keeps the configuration, and re
     within(dialog()).getByRole("button", { name: "Add configuration field" }),
   );
   const user = userEvent.setup({ document: view.container.ownerDocument });
-  await user.type(within(dialog()).getByLabelText("Configuration key"), "region");
+  await user.type(
+    within(dialog()).getByLabelText("Configuration key"),
+    "region",
+  );
   await user.type(
     within(dialog()).getByLabelText("Configuration value"),
     "eu-central",
