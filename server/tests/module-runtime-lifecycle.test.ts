@@ -53,6 +53,7 @@ const FROZEN_STOP_ORDER = [
   "openMuseTaskSweep",
   "openMuseTaskReaper",
   "memorySweep",
+  "hindsightSyncSweep",
   "proactiveSweep",
   "approvalSweep",
   "personResponseSweep",
@@ -102,6 +103,7 @@ describe("MOD03 lifecycle registry semantics (real module)", () => {
     hold("openMuseTaskSweep");
     hold("openMuseTaskReaper");
     hold("memorySweep");
+    hold("hindsightSyncSweep");
     hold("proactiveSweep");
     hold("approvalSweep");
     hold("personResponseSweep");
@@ -132,7 +134,7 @@ describe("MOD03 lifecycle registry semantics (real module)", () => {
     });
 
     const completion = lifecycle.stopRegistered();
-    expect(events.slice(0, 23)).toEqual([
+    expect(events.slice(0, 24)).toEqual([
       "responsibilitySweep",
       "catalogSyncScheduler",
       "keyStateSyncScheduler",
@@ -145,6 +147,7 @@ describe("MOD03 lifecycle registry semantics (real module)", () => {
       "openMuseTaskSweep",
       "openMuseTaskReaper",
       "memorySweep",
+      "hindsightSyncSweep",
       "proactiveSweep",
       "approvalSweep",
       "personResponseSweep",
@@ -157,7 +160,7 @@ describe("MOD03 lifecycle registry semantics (real module)", () => {
       "billingSweep:1",
       "craftIdleReaper",
     ]);
-    expect(events.slice(23)).toEqual([
+    expect(events.slice(24)).toEqual([
       "channelActivityListener",
       "policyListener",
       "workOfferedListener",
@@ -377,19 +380,18 @@ describe("MOD03 runtime assembly (source pins)", () => {
     );
     // Between the import block and the interface there is nothing but
     // whitespace and the interface's doc comment.
-    const lifecycleImportEnd = RUNTIME_SOURCE.indexOf(
-      'import { createRuntimeLifecycle } from "./lifecycle";',
-    );
     const interfaceStart = RUNTIME_SOURCE.indexOf(
       "export interface RuntimeAssembly {",
     );
-    expect(lifecycleImportEnd).toBeGreaterThan(-1);
-    expect(interfaceStart).toBeGreaterThan(lifecycleImportEnd);
-    const between = RUNTIME_SOURCE.slice(
-      lifecycleImportEnd +
-        'import { createRuntimeLifecycle } from "./lifecycle";'.length,
-      interfaceStart,
-    );
+    expect(interfaceStart).toBeGreaterThan(-1);
+    // Anchor on the END of the import block, not on one import line: MOD03/M06
+    // added imports after ./lifecycle, and a new import must not move the pin.
+    const lastImport = [
+      ...RUNTIME_SOURCE.slice(0, interfaceStart).matchAll(/^import[\s\S]*?;/gm),
+    ].at(-1);
+    expect(lastImport).toBeDefined();
+    const importEnd = (lastImport?.index ?? 0) + (lastImport?.[0].length ?? 0);
+    const between = RUNTIME_SOURCE.slice(importEnd, interfaceStart);
     for (const line of between.split("\n")) {
       const trimmed = line.trim();
       expect(
@@ -433,7 +435,7 @@ describe("MOD03 runtime assembly (source pins)", () => {
   test("optional capabilities register only under their creation guard (acceptance 4)", () => {
     for (const name of GUARDED_OPTIONALS) {
       const guard = new RegExp(
-        `if \\(${name}\\) \\{\\s*\\n\\s*lifecycle\\.hold\\(\\{ name: "${name}"`,
+        `if \\(${name}\\) \\{\\s*\\n\\s*lifecycle\\.hold\\(\\{\\s*\\n\\s*name: "${name}",`,
       );
       expect(RUNTIME_SOURCE).toMatch(guard);
     }

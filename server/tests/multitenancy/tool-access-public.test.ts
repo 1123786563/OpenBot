@@ -557,6 +557,9 @@ describe("MOD12 D3/D6 源级钉: 秘密零泄漏面 + 迁移完整性冻结普�
         "openconnector",
         "openconnector-adapter",
       ],
+      // PKG10/T13 包派发：DEFAULT_VENDOR 经 transportFor("mcp") 拨号，授权门
+      // (toolInvocation/catalogDecisions/vault) 在构造参数上。
+      "server/src/enterprise/plugin-packages/dispatch.ts": ["transport"],
     };
     const pattern =
       /from "[^"]*plugins\/(composio-adapter|composio-vendor|composio-client|composio|openconnector-adapter|openconnector|mcp|builtin-routines|google-drive-rest|transport)(\/[^"]*)?"/g;
@@ -582,8 +585,13 @@ describe("MOD12 D3/D6 源级钉: 秘密零泄漏面 + 迁移完整性冻结普�
       "server/src/assembly/runtime.ts": 1,
       // 登记不迁移：记忆同步已走受管 store 门，整面迁移归 M10 记忆票。
       "server/src/memory/ingestion.ts": 1,
-      // 依赖注入：provider（runtime.ts）已改经门面。
-      "server/src/approvals/execute.ts": 1,
+      // 依赖注入：provider（runtime.ts）已改经门面；第二处是 PKG09 `pkg:` 包工具分支的
+      // 注入式 deps.callTool。
+      "server/src/approvals/execute.ts": 2,
+      // PKG10 包派发：DEFAULT_VENDOR 的 mcp 拨号（受 toolInvocation/vault 门）。
+      "server/src/enterprise/plugin-packages/dispatch.ts": 1,
+      // 评测夹具上下文（注入的 context.callTool，非 vendor 客户端）：
+      "server/src/ai-observability/execution-runner.ts": 2,
     };
     const found: Record<string, number> = {};
     for (const file of serverSources()) {

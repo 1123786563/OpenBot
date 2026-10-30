@@ -12,7 +12,7 @@ import {
   OpenMuseVendorUnavailableError,
 } from "../openmuse-connectors/google-oauth";
 import { OpenMuseFileQuotaError } from "../openmuse-files/store";
-import { OpenMuseTaskQuotaError } from "../openmuse-tasks/store";
+import { OpenMuseTaskQuotaError } from "../openmuse-tasks/public";
 import { OpenMuseMailVendorError } from "../openmuse-mail/client";
 import type { MobileBffActivityReader } from "./activity";
 import type { OpenMuseBotProvisioner } from "./openmuse-bot";

@@ -146,11 +146,11 @@ describe("MOD16 D3：验收① 源级钉——重复安装收敛 + 失败诚实�
   test("replay created:false 路径存在（HTTP 幂等键回放不二建）", () => {
     const service = readSrc("enterprise/plugin-packages/install-service.ts");
     const replays = [...service.matchAll(/created: false/g)];
-    expect(replays.length).toBe(2); // 幂等回执回放 + 已消费 plan 换键回放
+    expect(replays.length).toBe(4); // 回执回放 2 处 + 已安装 standing 回放(1047) + 升级回放(1388)
     expect(service).toContain("Idempotency receipt");
   });
 
-  test("changes 操作记录写入点全部在事务域内（源扫：零域外写入；install 路径恰 2 处成功回执）", () => {
+  test("changes 操作记录写入点全部在事务域内（源扫：零域外写入；install 路径恰 6 处成功回执）", () => {
     const dir = "enterprise/plugin-packages";
     const files = [
       "contracts.ts",
@@ -174,9 +174,10 @@ describe("MOD16 D3：验收① 源级钉——重复安装收敛 + 失败诚实�
           .length;
       }
     }
-    // install 路径恰 2 处：plan 幂等回执回放 + install 成功；另 2 处
-    // （experts.ts:444 回执、grants.ts:333 周期回执）同属事务内成功路径。
-    expect(installScoped).toBe(2);
+    // install-service 的 changes 写入恰 6 处，全在 tx 域内：已消费 plan 换键回执(1027)、
+    // 已安装 standing 回放(1147)、升级回放(1357)、首装成功回执(1524)、生命周期 no-op 回执(1750)、
+    // 生命周期状态变更回执(1827)；另 2 处（experts.ts:444、grants.ts:333）同属事务内成功路径。
+    expect(installScoped).toBe(6);
   });
 
   test("503 PACKAGE_STORAGE_UNAVAILABLE 合同在 routes 错误面上", () => {

@@ -469,8 +469,12 @@ describe("gateway readiness gate — the call-site inventory", () => {
         "#244/#245 key issuance reads the gateway endpoint at assembly",
       ],
       [
-        "/index.ts",
-        "startup wiring (#249 key-state sync and peers) hands controls to services",
+        "/assembly/http.ts",
+        "MOD17 split of app.ts: mounts the gateway routes and hands the resolved controls to them",
+      ],
+      [
+        "/assembly/runtime.ts",
+        "MOD03 split of index.ts: startup wiring (#249 key-state sync and peers) + the workbench dial reads the endpoint",
       ],
     ]);
     const offenders = listTypeScriptFiles(srcRoot)
