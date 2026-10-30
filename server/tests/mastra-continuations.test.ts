@@ -895,12 +895,15 @@ const probeToolCall = (id: string, args: string): unknown[] => [
 ];
 
 test("unparsable_suspension_args_fail_the_run_instead_of_saving", async () => {
-  // R3-10(c): the engine pauses on the proposal BEFORE parsing its arguments,
-  // so an unparsable args text reaches the save. Digesting the raw text would
-  // mint a digest the approval side (canonicalJson of parsed args) can never
+  // R3-10(c): a suspension saved over an unparsable args text would mint a
+  // digest the approval side (canonicalJson of parsed args) can never
   // reproduce — a suspension locked out of a legitimate approval forever.
-  // That is a save failure: named RUN_ERROR, no waiting publication, and the
-  // hook never fires.
+  // The pinned engine now validates the call's input ahead of the approval
+  // gate, so the hazard is structurally unreachable: the bad text is
+  // answered back to the model and the stream then fails loudly (its
+  // STREAM_ERROR; pre-1.80 the same hazard surfaced as RUN_ERROR from the
+  // save). What still must hold: the failure is loud, nothing is published
+  // as waiting, and the suspension hook never fires.
   const provider = await scriptedProvider([
     probeToolCall("call_bad", '{"value":'),
   ]);
@@ -932,12 +935,10 @@ test("unparsable_suspension_args_fail_the_run_instead_of_saving", async () => {
         signal: new AbortController().signal,
       }),
     );
-    const runError = events.find((e) => e.type === "RUN_ERROR");
-    expect(runError).toBeTruthy();
-    expect(JSON.stringify(runError)).toContain(
-      "MASTRA_CONTINUATION_SAVE_FAILED",
+    const loud = events.some(
+      (e) => e.type === "RUN_ERROR" || e.type === "STREAM_ERROR",
     );
-    expect(JSON.stringify(runError)).toContain("could not be parsed");
+    expect(loud).toBe(true);
     expect(events.some((e) => e.type === "RUN_FINISHED")).toBe(false);
     expect(facts).toEqual([]);
   } finally {
