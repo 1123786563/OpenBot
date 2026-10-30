@@ -183,9 +183,28 @@ beforeAll(async () => {
     throw new Error(`MT112 generate failed: ${JSON.stringify(generation)}`);
   }
   const manifestPath = join(dir, "MT112", "manifest.json");
+  // CI 供给时企业库还没有 users/deployment_packages：MT112 的两个数据步
+  // （锚点成员 + 部署映射）已被 journal 成 applied 且零行写入，journal
+  // 契约禁止重放。删掉这两个数据步的 journal 行令其按本轮已种数据重放
+  // （1/2 纯 DDL 不动，绕开脏库的 digest 漂移），并清最早用户的旧主体
+  // （跨轮脏库里它占着 enterprise_principal_user 唯一键，重放会撞）。
+  // apply 必须落 setup 读的企业库——MT 岛路由把 TEST_DATABASE_URL 换成
+  // 了岛库，默认 environment 会把锚点写去错误的库。
+  await setup.execute(
+    sql`delete from mt_task_migration_journal where task_id = 'MT112' and number >= 3`,
+  );
+  await setup.execute(
+    sql`delete from enterprise_principals where user_id = (select id from users order by created_at asc, id asc limit 1)`,
+  );
   const applied: RunOutcome = await runMigrateTest(
     ["migrate", "MT112", "--apply", "--manifest", manifestPath],
-    { environment: process.env, out: () => {} },
+    {
+      environment: {
+        ...process.env,
+        TEST_DATABASE_URL: enterpriseTestDatabaseUrlFrom(process.env),
+      },
+      out: () => {},
+    },
   );
   if (!["applied", "up-to-date"].includes(applied.kind)) {
     throw new Error(`MT112 apply failed: ${JSON.stringify(applied)}`);

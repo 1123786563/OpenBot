@@ -178,6 +178,18 @@ export const GLOBAL_EXCEPTION_ENTRIES: readonly GlobalExceptionEntry[] = [
       "the caller's own identity links/challenges — there is no administrator view and no linking on somebody else's behalf",
   },
   {
+    id: "company-auth",
+    methods: ["GET", "POST"],
+    pattern: "/api/enterprise/company-auth/*",
+    surface: "always",
+    context: "session",
+    reason:
+      "company-auth bridge: the challenge is issued to a signed-in member for a company named in the request body, and the OIDC/SAML completion binds to that challenge's own session and company — the protocol callbacks arrive without a fresh session but carry the challenge they complete, so no caller-supplied company selection decides the outcome",
+    ownerTicket: "MT030",
+    contentBoundary:
+      "challenge issuance and the completion redirect (303 to the challenge's site-local returnPath) — refusal bodies carry {error:{code, message}} only, never IdP or company detail",
+  },
+  {
     id: "desktop-connection-failure",
     methods: ["GET"],
     pattern: "/api/desktop/connection-failure",

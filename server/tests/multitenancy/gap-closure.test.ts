@@ -146,11 +146,17 @@ function probe<I extends readonly string[]>(
   command: string,
   args: I,
 ): { found: boolean } {
-  const proc = Bun.spawnSync([command, ...args], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  return { found: proc.exitCode === 0 };
+  // Bun.spawnSync 对 PATH 里不存在的二进制直接抛（ubuntu 上没有 xcrun），
+  // 探针只做记录，缺席与失败都归 found:false。
+  try {
+    const proc = Bun.spawnSync([command, ...args], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    return { found: proc.exitCode === 0 };
+  } catch {
+    return { found: false };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -326,8 +332,8 @@ describeDb("MT141 / Issue #184 — 已修复缺口真实重跑 + 未验证项重
       const emulator = probe("which", ["emulator"]);
       const adb = probe("which", ["adb"]);
       // 探针结果只影响记录，不影响通过：未验证项永不被计为通过。
-      // 本环境事实：iOS 模拟器运行时存在；Android 工具链缺席。
-      expect(simctl.found).toBe(true);
+      // 本环境事实：iOS 模拟器运行时只在 macOS 存在；Android 工具链缺席。
+      expect(simctl.found).toBe(process.platform === "darwin");
       expect(emulator.found).toBe(false);
       expect(adb.found).toBe(false);
       // 注册表里的两条未验证项与探针命令一一对应。

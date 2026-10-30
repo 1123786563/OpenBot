@@ -703,6 +703,7 @@ describe("MT030 全局端点内容边界：零公司私有内容", () => {
         "authProviders",
         "billing",
         "durableHistory",
+        "emailPassword",
         "generativeUi",
         "mode",
         "selfHostBanner",

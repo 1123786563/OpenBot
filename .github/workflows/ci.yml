@@ -479,6 +479,9 @@ jobs:
       # same initialize-the-pinned-submodule shape the submodule jobs use).
       - name: Initialize the pinned bifrost submodule
         run: git submodule update --init bifrost
+      # A10's mobile evidence suites live inside the pinned openmuse submodule.
+      - name: Initialize the pinned openmuse submodule
+        run: git submodule update --init apps/openmuse
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.3
