@@ -452,6 +452,9 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
+      # The bun-suites driver (node) accumulates junit reports for every group in one
+      # process; the default ~4GB heap died mid-run (Ineffective mark-compacts).
+      NODE_OPTIONS: --max-old-space-size=8192
       DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot_test
       TEST_DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot_test
       ENTERPRISE_TEST_SETUP_DATABASE_URL: postgres://enterprise_setup:enterprise-setup-only@127.0.0.1:5434/openbot_enterprise_r2_codex_20261009
