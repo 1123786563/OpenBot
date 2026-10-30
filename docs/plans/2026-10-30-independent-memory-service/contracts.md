@@ -111,6 +111,9 @@ type SweepResult = Readonly<{
 - `forget(context: AccessContext, memoryId: string): Promise<{ cleanupId: string }>`。
 - `share(context: AccessContext, input: { versionId: string; consumerAppId: string }): Promise<{ authorizationId: string }>`；`revokeShare(context, authorizationId): Promise<{ cleanupId: string }>`。
 - `revokeSource(context: AccessContext, source: SourceRef): Promise<{ cleanupId: string }>`。
+- `setPause(context: AccessContext, patch: Partial<PauseStateView>): Promise<PauseStateView>`、`getPause(subjectId): Promise<PauseStateView>`（#721 实现为 `src/memory/pause.ts` 的 `createPauseService`）。
+
+`PauseStateView` 为 `{ learningPaused: boolean; usagePaused: boolean }`。`GET /v1/pause` 返回当前本人两值（缺省全 false）；`POST /v1/pause` 接受 `Partial<PauseStateView>` 部分更新（未提供项保持原值，两项控制互不替代；空 patch 或非布尔 400）。两入口只接受本人受信会话（应用凭据 401 AUTH_REQUIRED），body 中的 `subjectId` 不被信任。learning 暂停阻断采集任务处理与候选形成（任务置 `pending/paused`，保留片段可重试；排队过期判定先于暂停，超期任务仍终态清片段）；本人显式 `/v1/remember` 与本人审核确认不受 learning 暂停阻断。usage 暂停立即阻断全部召回路径（本人会话、产生应用、跨应用共享、索引命中与降级），前置于索引检索与来源在线核验，结果 `{ state: "unavailable", memories: [], unavailableReasons: ["usage_paused"] }`，与"本人没有记忆"（`available`+空）可区分。暂停/恢复只写暂停状态，不改采集、读取、共享及来源授权。
 
 `GET /v1/me`、`/v1/delegations`、`/v1/jobs/:id`、`/v1/candidates`、`/v1/memories`、`/v1/cleanup/:id` 提供本人受控视图；写入用 `/v1/ingestions`、`/v1/candidates/:id/review`、`/v1/memories/:id/corrections`、`/v1/memories/:id/forget`、`/v1/shares`、`/v1/shares/:id/revoke`、`/v1/sources/revoke`。`/v1/pause` 分别保存 learning/usage 状态。管理应用调用与服务调用执行同一规则。
 
