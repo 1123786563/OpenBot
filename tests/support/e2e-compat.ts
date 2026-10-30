@@ -728,12 +728,32 @@ function installMockHooks(): void {
       const rest = url.slice("e2e-mock:".length);
       const key = decodeURIComponent(rest.slice(rest.indexOf(":") + 1));
       const names = Object.keys(moduleMocks.get(key)?.() ?? {});
+      /*
+       * Node keeps an importer for the life of the worker process, so the suite that first
+       * imported a component fixed which mock URL its binding points at: a later suite's
+       * `mock.module` registers a new version, but the cached importer never re-resolves (the
+       * desktop suites all mock @tauri-apps/api/core, and the second one's clicks reached the
+       * first one's invoke). Function exports therefore look the current registration up on
+       * every call, so whichever suite is running reaches its own mock. A non-function export
+       * cannot be made live this way and keeps the value it was generated with.
+       */
+      const entry = `globalThis[Symbol.for("openbot.e2e-compat.module-mocks")].get(${JSON.stringify(key)})`;
+      const generated = mocks.get(key) ?? [];
       const body = names
-        .map((name, index) =>
-          name === "default"
-            ? `export default __mocks__[${index}];`
-            : `export const ${identifier(name)} = __mocks__[${index}];`,
-        )
+        .map((name, index) => {
+          if (typeof generated[index] !== "function") {
+            return name === "default"
+              ? `export default __mocks__?.[${index}];`
+              : `export const ${identifier(name)} = __mocks__?.[${index}];`;
+          }
+          const forward =
+            `(...args) => { const live = ${entry}; ` +
+            `if (live === undefined) throw new Error(${JSON.stringify(`module mock for ${key} is not registered`)}); ` +
+            `return live[${index}](...args); }`;
+          return name === "default"
+            ? `export default ${forward};`
+            : `export const ${identifier(name)} = ${forward};`;
+        })
         .join("\n");
       return {
         format: "module",
