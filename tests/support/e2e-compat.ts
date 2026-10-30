@@ -1,4 +1,5 @@
 import { inspect } from "node:util";
+
 /*
  * `node:module` hooks exist only on Node. This layer is loaded there by the e2e runner, but a
  * bun-driven suite can still reach it dynamically (SRA009's driver imports the native-tier
@@ -13,15 +14,16 @@ try {
 } catch {
   // Not just Bun: any runtime without the hooks API keeps the value-only layer.
 }
+
 // Installed as a side effect: suites that probe the app the Bun way keep working on Node's runtime.
 import "./bun-compat";
 import {
+  expect as e2eExpect,
   afterAll as nodeAfterAll,
   afterEach as nodeAfterEach,
   beforeAll as nodeBeforeAll,
   beforeEach as nodeBeforeEach,
   describe as nodeDescribe,
-  expect as e2eExpect,
   test as nodeTest,
 } from "e2e";
 
@@ -598,6 +600,18 @@ const mocks: Map<string, unknown[]> = ((globalThis as Any)[MOCK_REGISTRY] ??=
   new Map());
 const moduleMocks: Map<string, () => Record<string, unknown>> = new Map();
 /*
+ * Node caches a module per URL for the LIFE OF THE PROCESS, so every registration of the same
+ * specifier must resolve to its own URL. With one `e2e-mock:<specifier>` URL the first suite's
+ * generated module stayed cached, and a later suite's `mock.module` was in force in the registry
+ * but not in what its imports saw: the desktop suites all mock `@tauri-apps/api/core`, so the
+ * second one's clicks reached a sibling's `invoke` and recorded nothing. The version is
+ * per-specifier and bumped on registration, which keeps one suite's repeated imports on one
+ * instance while giving the next suite a fresh one.
+ */
+const moduleMockVersions: Map<string, number> = new Map();
+const mockUrlFor = (specifier: string) =>
+  `e2e-mock:${moduleMockVersions.get(specifier) ?? 0}:${encodeURIComponent(specifier)}`;
+/*
  * The runner imports a suite file more than once per run (to list it, then to execute it), and a
  * second `module.registerHooks()` call or a second copy of the mock registry would make the two
  * passes disagree about what was registered. Both flags therefore live on globalThis, keyed by
@@ -647,7 +661,7 @@ function installMockHooks(): void {
       }
       if (moduleMocks.has(specifier)) {
         return {
-          url: `e2e-mock:${encodeURIComponent(specifier)}`,
+          url: mockUrlFor(specifier),
           format: "module",
           shortCircuit: true,
         };
@@ -711,7 +725,8 @@ function installMockHooks(): void {
         }
         return nextLoad(url, context);
       }
-      const key = decodeURIComponent(url.slice("e2e-mock:".length));
+      const rest = url.slice("e2e-mock:".length);
+      const key = decodeURIComponent(rest.slice(rest.indexOf(":") + 1));
       const names = Object.keys(moduleMocks.get(key)?.() ?? {});
       const body = names
         .map((name, index) =>
@@ -748,6 +763,10 @@ export const mock: MockFactory = Object.assign(makeSpy, {
     factory: () => Record<string, unknown>,
   ): () => void {
     installMockHooks();
+    moduleMockVersions.set(
+      specifier,
+      (moduleMockVersions.get(specifier) ?? 0) + 1,
+    );
     moduleMocks.set(specifier, factory);
     mocks.set(specifier, Object.values(factory()));
     return () => {
