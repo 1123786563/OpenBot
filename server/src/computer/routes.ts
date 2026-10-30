@@ -1,7 +1,7 @@
-import type { Context, MiddlewareHandler } from "hono";
-import { Hono } from "hono";
 import { downloadHeaders } from "@openbot/shared/file-download";
 import { getLogger } from "@openbot/shared/logger";
+import type { Context, MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import type { BotAccessCheck } from "../agents/profile-policy";
 import type { AuditReader } from "../audit";
 import type { AppVariables } from "../auth/guards";
@@ -472,6 +472,14 @@ export function createComputerRoutes(
        * ensuring, and the not-running case answers as the no-op it is.
        */
       const fleet = await gateway.computers();
+      /*
+       * A substrate that could not be asked is not a fleet with nothing running. Deciding on the
+       * degraded read would answer a successful no-op over a lease that was never checked, so the
+       * unreadable substrate is refused here the same way a legacy provider's failed list is.
+       */
+      if (fleet.unavailableReason) {
+        throw new ComputerUnavailableError(fleet.unavailableReason);
+      }
       if (!fleet.computers.some((c) => c.botId === botId && c.running)) {
         return { holder: "bot" };
       }

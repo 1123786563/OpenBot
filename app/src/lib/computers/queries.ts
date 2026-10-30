@@ -17,10 +17,18 @@ export type ComputerProfile = {
 /** Whether each Bot has a browser profile of its own, or they share one. */
 export type ComputerIsolation = "per-bot" | "shared";
 
-/** What the list endpoint answers: the computers, and how they are separated. */
+/** What the list endpoint answers: the computers, how they are separated, and on what. */
 export type ComputerFleet = {
   computers: ComputerProfile[];
   isolation?: ComputerIsolation;
+  /** Which substrate the computers run on; a string on the wire, not a nested object. */
+  substrate?: "legacy" | "openshell";
+  /** The guarantees a live probe signed off on, empty when none did. */
+  verifiedCapabilities?: string[];
+  /** True only when that list covers everything the substrate requires. */
+  verified?: boolean;
+  /** Why the substrate could not be asked for computers, when it refused. */
+  unavailableReason?: string;
 };
 
 /**

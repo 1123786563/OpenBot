@@ -128,10 +128,30 @@ export type SandboxComputerConfig = {
   policy?: ActionPolicy;
 };
 
+/**
+ * Computers as OpenShell sandboxes on a Kubernetes cluster.
+ *
+ * Selected by one value, `OPENBOT_SANDBOX_SUBSTRATE=openshell`, and only when the whole execution
+ * ownership is present: a deployment that names the substrate but cannot say which team its
+ * computers belong to is refused at boot rather than quietly falling back to a shared browser.
+ */
+export type OpenShellComputerConfig = {
+  provider: "openshell";
+  /** The gateway the restricted admin client dials. */
+  gatewayEndpoint: string;
+  /** The team half of every sandbox's execution ownership. */
+  executionScope: ExecutionScope;
+  /** The secret a direct computer call would carry; OpenShell reaches its sandboxes through the gateway. */
+  token?: string;
+  allowPrivateHosts: boolean;
+  policy?: ActionPolicy;
+};
+
 export type ComputerConfig =
   | DockerComputerConfig
   | SharedComputerConfig
-  | SandboxComputerConfig;
+  | SandboxComputerConfig
+  | OpenShellComputerConfig;
 
 /**
  * Who a deployment lets in, and through which front door.
@@ -1717,7 +1737,8 @@ function computerConfig(environment: Environment): ComputerConfig | undefined {
   const supervisorAddress = optional(environment, "COMPUTER_SUPERVISOR_URL");
   const sharedAddress = optional(environment, "AGENT_COMPUTER_URL");
   const sandboxNamespace = optional(environment, "COMPUTER_SANDBOX_NAMESPACE");
-  if (!supervisorAddress && !sharedAddress && !sandboxNamespace) {
+  const substrate = optional(environment, "OPENBOT_SANDBOX_SUBSTRATE");
+  if (!supervisorAddress && !sharedAddress && !sandboxNamespace && !substrate) {
     return undefined;
   }
 
@@ -1759,6 +1780,38 @@ function computerConfig(environment: Environment): ComputerConfig | undefined {
    * make the computers, and a stray `AGENT_COMPUTER_URL` left in an environment would otherwise
    * quietly put every Bot back on one shared browser.
    */
+  /*
+   * One value picks the substrate, and the deployment must be able to say where its computers belong
+   * before any of them exists. Half a scope is refused here, at boot, rather than at the first
+   * computer request where it would surface as a sandbox created for the wrong team.
+   */
+  if (substrate) {
+    if (substrate !== "openshell") {
+      throw new Error(
+        'OPENBOT_SANDBOX_SUBSTRATE must be "openshell" or unset',
+      );
+    }
+    const gatewayEndpoint = url(environment, "OPENSHELL_GATEWAY_ENDPOINT");
+    if (!gatewayEndpoint) {
+      throw new Error(
+        "OPENBOT_SANDBOX_SUBSTRATE=openshell requires OPENSHELL_GATEWAY_ENDPOINT",
+      );
+    }
+    if (!computerExecutionScope) {
+      throw new Error(
+        "OPENBOT_SANDBOX_SUBSTRATE=openshell requires both OPENBOT_COMPUTER_EXECUTION_TENANT_ID and OPENBOT_COMPUTER_EXECUTION_WORKSPACE_ID as plain scope ids",
+      );
+    }
+    return {
+      provider: "openshell",
+      gatewayEndpoint,
+      executionScope: computerExecutionScope,
+      allowPrivateHosts,
+      ...(computerToken ? { token: computerToken } : {}),
+      ...(policy ? { policy } : {}),
+    };
+  }
+
   if (sandboxNamespace) {
     return {
       provider: "sandbox",

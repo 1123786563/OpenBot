@@ -478,6 +478,39 @@ computers:
       enabled: true
       schedule: "*/5 * * * *"
 
+  # `mode: openshell` only. Computers as OpenShell sandboxes, one per Bot, placed through an
+  # OpenShell gateway the cluster already runs. The chart binds NO Kubernetes permission for this:
+  # the gateway owns the sandboxes, and this server's only credential is the client certificate
+  # below. See the OpenShell section of the README before turning this on.
+  openshell:
+    # All of these are required together. An install missing any one refuses, naming it, rather
+    # than succeeding and failing at the first computer request.
+    gatewayEndpoint: ""
+    tenantId: ""
+    workspaceId: ""
+    # The sandbox image, digest-pinned. Not defaulted: an unpinned image is a substrate nobody
+    # probed, and the provider refuses to place a computer on one.
+    sandboxImage: ""
+    # The deployment generation sandboxes are attributed to (the image tag or git sha you deploy).
+    generation: ""
+    # The JSON receipt the acceptance probe wrote for THIS gateway and THIS image (its report
+    # carries a `receipt` field; mount it verbatim). The receipt names the capabilities the probe
+    # actually proved, and the server refuses to place a computer until it lists all four:
+    # default-deny-network, policy-load-receipt, cross-workspace-denial, credential-boundary.
+    # Writing capability names here by hand verifies nothing — the receipt has to name this
+    # deployment's gateway and image or the server refuses it. A partial receipt still installs:
+    # the fleet reports the substrate as unverified and every computer request is refused.
+    probeReceipt: ""
+    # The TCP port the computer service listens on inside a sandbox. Empty means this deployment
+    # runs no in-sandbox service yet: sandboxes can be created and stopped, but none has an address
+    # to locate.
+    servicePort: ""
+    tls:
+      # A Secret you made, holding ca.crt, client.crt and client.key, minted from an OpenShell PKI
+      # that kept its CA key (the gateway chart's default PKI does not). Mounted read-only at
+      # /etc/openshell/tls.
+      existingSecret: ""
+
 # Standing instructions a Bot runs on a schedule. The sweep offers due routines to the shared work
 # queue and hands each firing to the API server, which runs the turn as the person who scheduled it.
 routines:
@@ -714,6 +747,14 @@ networkPolicy:
   # Where a Bot's computer may reach beyond the public internet. A deployment whose Bots must reach
   # an internal site adds it here, one address at a time, rather than reopening the private ranges.
   computerExtraEgress: []
+  # `computers.mode: openshell` only. How this server reaches the OpenShell gateway, as the
+  # NetworkPolicyPeers that name it. REQUIRED once `enabled` is true and the mode is openshell,
+  # because the gateway sits on the private network the internet rule cuts out and an empty peer
+  # list would either strand every computer request or permit more than the gateway. The usual
+  # shape is a namespaceSelector plus podSelector pair; see the README.
+  openShellGateway: []
+  # The port the OpenShell gateway listens on. 8080 is what its own chart serves.
+  openShellGatewayPort: 8080
   # Extra egress for the culler. Empty falls back to `extraEgress`, where an external database is
   # already named; set it to give the culler a narrower list.
   cullerExtraEgress: []

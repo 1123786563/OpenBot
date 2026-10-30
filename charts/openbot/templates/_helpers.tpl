@@ -356,6 +356,37 @@ and in whatever holds the release, which is not where `KEY_ENCRYPTION_KEY` belon
   value: {{ .Values.computers.sandbox.idleAfter | quote }}
 - name: COMPUTER_SANDBOX_TEMPLATE_FILE
   value: /etc/openbot/sandbox-template.json
+{{- else if eq .Values.computers.mode "openshell" }}
+{{- /*
+  Everything the OpenShell provider asks for at boot, and nothing it could guess. The certificate
+  paths are where the deployment below mounts the PKI Secret; the probe receipt is the acceptance
+  run's own record of what it proved on this gateway and image, and the provider refuses computers
+  on anything less than the whole of it.
+*/}}
+- name: OPENBOT_SANDBOX_SUBSTRATE
+  value: openshell
+- name: OPENSHELL_GATEWAY_ENDPOINT
+  value: {{ .Values.computers.openshell.gatewayEndpoint | quote }}
+- name: OPENBOT_COMPUTER_EXECUTION_TENANT_ID
+  value: {{ .Values.computers.openshell.tenantId | quote }}
+- name: OPENBOT_COMPUTER_EXECUTION_WORKSPACE_ID
+  value: {{ .Values.computers.openshell.workspaceId | quote }}
+- name: OPENSHELL_SANDBOX_IMAGE
+  value: {{ .Values.computers.openshell.sandboxImage | quote }}
+- name: OPENBOT_DEPLOYMENT_GENERATION
+  value: {{ .Values.computers.openshell.generation | quote }}
+- name: OPENSHELL_PROBE_RECEIPT
+  value: {{ .Values.computers.openshell.probeReceipt | quote }}
+{{- with .Values.computers.openshell.servicePort }}
+- name: OPENSHELL_SANDBOX_SERVICE_PORT
+  value: {{ . | quote }}
+{{- end }}
+- name: OPENSHELL_CA_CERT
+  value: /etc/openshell/tls/ca.crt
+- name: OPENSHELL_CLIENT_CERT
+  value: /etc/openshell/tls/client.crt
+- name: OPENSHELL_CLIENT_KEY
+  value: /etc/openshell/tls/client.key
 {{- end }}
 {{- /*
   How far one Bot may hand work to another.

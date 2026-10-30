@@ -89,12 +89,51 @@ This template renders nothing.
   `external` with no address is a deployment whose Bots have no computer at all, which fails at the
   first browser action rather than at install.
 */}}
-{{- if and (ne .Values.computers.mode "external") (not .Values.secrets.computerToken) (not .Values.computers.existingTokenSecret) (not .Values.secrets.existingSecret) (not .Values.externalSecrets.enabled) }}
+{{- if and (not (has .Values.computers.mode (list "external" "openshell"))) (not .Values.secrets.computerToken) (not .Values.computers.existingTokenSecret) (not .Values.secrets.existingSecret) (not .Values.externalSecrets.enabled) }}
 {{- fail "A computer needs a token, which is the only thing standing between it and anybody who can reach its port. Set secrets.computerToken. Generate one with: openssl rand -hex 32" }}
 {{- end }}
 
 {{- if and (eq .Values.computers.mode "external") (not .Values.computers.url) }}
 {{- fail "computers.mode is external but computers.url is empty, so no Bot would have a computer. Set the address, or use mode: shared to have this chart run one." }}
+{{- end }}
+
+{{- /*
+  An OpenShell mode that could not place a computer anyway.
+
+  Every value here is something the provider refuses a computer without at boot, so an install
+  missing one succeeds today and crash-loops on the first computer request tomorrow. The probe
+  receipt has to be the JSON the acceptance run wrote — it must parse, and it must name this
+  gateway and this image — but it does NOT have to prove all four capabilities to install: a
+  partial receipt is a substrate the fleet reports as unverified, which is a state an admin needs
+  to be able to see, not one the chart hides by refusing to render.
+*/}}
+{{- if eq .Values.computers.mode "openshell" }}
+{{- $os := .Values.computers.openshell }}
+{{- $required := dict "gatewayEndpoint" $os.gatewayEndpoint "tenantId" $os.tenantId "workspaceId" $os.workspaceId "sandboxImage" $os.sandboxImage "generation" $os.generation "probeReceipt" $os.probeReceipt "tls.existingSecret" $os.tls.existingSecret }}
+{{- range $key, $value := $required }}
+{{- if not $value }}
+{{- fail (printf "computers.mode is openshell but computers.openshell.%s is empty, and the OpenShell provider refuses a computer without it. Every value in computers.openshell is required together." $key) }}
+{{- end }}
+{{- end }}
+{{- if not (regexMatch "@sha256:[0-9a-f]{64}$" $os.sandboxImage) }}
+{{- fail (printf "computers.openshell.sandboxImage must be digest-pinned (…@sha256:<64 hex>), got %s. An unpinned image is a substrate nobody probed." $os.sandboxImage) }}
+{{- end }}
+{{- $receipt := dict }}
+{{- if $os.probeReceipt }}
+{{- $receipt = fromJson $os.probeReceipt }}
+{{- if not (kindIs "map" $receipt) }}
+{{- fail "computers.openshell.probeReceipt must be the JSON object the acceptance probe wrote (its report carries a `receipt` field)." }}
+{{- end }}
+{{- if not (kindIs "slice" $receipt.capabilities) }}
+{{- fail "computers.openshell.probeReceipt must list the capabilities the probe proved, as a JSON array of strings." }}
+{{- end }}
+{{- if or (not $receipt.gatewayEndpoint) (ne $receipt.gatewayEndpoint $os.gatewayEndpoint) }}
+{{- fail "computers.openshell.probeReceipt names another gateway than computers.openshell.gatewayEndpoint. The receipt is proof for the deployment it was written for." }}
+{{- end }}
+{{- if or (not $receipt.sandboxImage) (ne $receipt.sandboxImage $os.sandboxImage) }}
+{{- fail "computers.openshell.probeReceipt names another sandbox image than computers.openshell.sandboxImage. The receipt is proof for the image it was written for." }}
+{{- end }}
+{{- end }}
 {{- end }}
 
 {{- /*
@@ -136,8 +175,8 @@ This template renders nothing.
 {{- fail "computers.sandbox.warmPool.enabled is on, but nothing claims from the pool yet: the server creates a Sandbox per Bot and never a SandboxClaim, so the pool would run and bill without ever shortening a first action. Set computers.sandbox.warmPool.enabled=false until claiming ships." }}
 {{- end }}
 
-{{- if not (has .Values.computers.mode (list "shared" "sandbox" "external")) }}
-{{- fail "computers.mode must be one of: shared, sandbox, external." }}
+{{- if not (has .Values.computers.mode (list "shared" "sandbox" "external" "openshell")) }}
+{{- fail "computers.mode must be one of: shared, sandbox, external, openshell." }}
 {{- end }}
 
 {{- /*

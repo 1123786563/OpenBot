@@ -316,6 +316,10 @@
         "stopping": "Stopping folder work",
         "default": "Folder access awaiting approval"
       }
+    },
+    "substrate": {
+      "openshellVerified": "Computers are set to the OpenShell sandbox substrate. A recorded probe run verified its network rules, policy receipts, workspace isolation and credential boundary.",
+      "openshellUnverified": "Computers are set to the OpenShell sandbox substrate, but no probe receipt verifies it in full. No computer can run on it until one does."
     }
   },
   "credentials": {

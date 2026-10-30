@@ -4,6 +4,12 @@ import {
 } from "@openbot/shared/execution-scope";
 import type { ComputerConfig } from "../config";
 import {
+  createOpenShellComputerProvider,
+  OPEN_SHELL_REQUIRED_CAPABILITIES,
+  openShellProviderOptions,
+} from "./openshell";
+import { OPEN_SHELL_ENV, probeReceiptCapabilities } from "./openshell-client";
+import {
   createSandboxComputerProvider,
   inClusterConfig,
   readSandboxTemplate,
@@ -41,6 +47,21 @@ export type IsolationDescription = {
   isolation: "off" | "one computer per Bot" | "one shared computer";
   note: string;
   warning?: string;
+};
+
+/**
+ * Which substrate a deployment's computers run on, and what a live probe proved about it.
+ *
+ * `verifiedCapabilities` is the probe's word, never the configuration's: it lists exactly what the
+ * acceptance run signed off on, and an OpenShell deployment whose probe proved nothing lists nothing.
+ * `verified` says whether that covers everything the substrate requires, which is what the admin
+ * screen shows as verified or unverified. The legacy substrate needs no list; it is the mode the
+ * deployment already ran.
+ */
+export type ComputerSubstrateStatus = {
+  substrate: "legacy" | "openshell";
+  verifiedCapabilities: readonly string[];
+  verified: boolean;
 };
 
 /** An error from a computer provider. */
@@ -107,6 +128,12 @@ export interface ComputerProvider {
   update?(botId: string): Promise<ComputerUpdate>;
   /** Prepare provider resources before the first computer request. */
   warm?(): Promise<void>;
+  /**
+   * The substrate this provider places computers on, when it can say. Absent on every provider
+   * that runs the deployment's original mode: there is no second substrate to report. The
+   * `verified` verdict is not for a provider to claim — `describeComputerSubstrate` derives it.
+   */
+  substrate?: Omit<ComputerSubstrateStatus, "verified">;
   /**
    * Which run of this Bot's computer is current, if the provider can tell.
    *
@@ -312,6 +339,25 @@ export function createSharedComputerProvider(
   };
 }
 
+/** Report which substrate a provider places computers on; absence is the legacy mode. */
+export function describeComputerSubstrate(
+  provider?: Pick<ComputerProvider, "substrate">,
+): ComputerSubstrateStatus {
+  if (provider?.substrate?.substrate === "openshell") {
+    const verifiedCapabilities = provider.substrate.verifiedCapabilities;
+    return {
+      substrate: "openshell",
+      verifiedCapabilities,
+      // Configuration text cannot verify a substrate: only a probe that proved every required
+      // capability can, and a partial list is an unverified one.
+      verified: OPEN_SHELL_REQUIRED_CAPABILITIES.every((capability) =>
+        verifiedCapabilities.includes(capability),
+      ),
+    };
+  }
+  return { substrate: "legacy", verifiedCapabilities: [], verified: false };
+}
+
 /** Build the one computer provider selected by deployment configuration. */
 export function createComputerProvider(
   config: ComputerConfig,
@@ -339,6 +385,10 @@ export function createComputerProvider(
        * rather than the file being read on every call.
        */
       return createLazySandboxProvider(config);
+    case "openshell":
+      // Same reason as the sandbox branch: its credentials and the proven-capability report are read
+      // asynchronously, and a failure there must refuse the computer, not take the deployment down.
+      return createLazyOpenShellProvider(config);
     default:
       // Unreachable while the union above is exhaustive; a provider value added to
       // ComputerConfig before this build implements it must refuse, not fall through.
@@ -406,6 +456,54 @@ function createLazySandboxProvider(
         throw new Error("The sandbox computer provider cannot update.");
       return built.update(botId);
     },
+    sessionOf: async (botId) => (await provider()).sessionOf?.(botId),
+  };
+}
+
+/**
+ * The OpenShell provider, built on first use for the same reason as the sandbox one: its
+ * credentials are read asynchronously, and a failure is not remembered, so a deployment whose
+ * credentials arrive late recovers on the next request instead of needing a restart. The probe
+ * receipt is read once, when this wrapper is built, and one that arrives later changes nothing
+ * until a restart.
+ */
+function createLazyOpenShellProvider(
+  config: Extract<ComputerConfig, { provider: "openshell" }>,
+): ComputerProvider {
+  let built: Promise<ComputerProvider> | undefined;
+
+  const provider = async (): Promise<ComputerProvider> => {
+    built ??= openShellProviderOptions(config)
+      .then((options) => createOpenShellComputerProvider(options))
+      .catch((error: unknown) => {
+        built = undefined;
+        throw error;
+      });
+    return built;
+  };
+
+  return {
+    name: "OpenShell",
+    isolation: "per-bot",
+    // The capability list is the probe receipt's word, read here rather than after the lazy build:
+    // the fleet must be able to report an unverified substrate even when the provider refuses to
+    // place a computer on it. A receipt that does not parse, or belongs to another gateway or
+    // image, proves nothing and reads as no capabilities.
+    substrate: {
+      substrate: "openshell",
+      verifiedCapabilities: probeReceiptCapabilities(
+        process.env[OPEN_SHELL_ENV.receipt],
+        {
+          gatewayEndpoint: config.gatewayEndpoint,
+          sandboxImage: process.env[OPEN_SHELL_ENV.image] ?? "",
+        },
+      ),
+    },
+    locate: async (botId) => (await provider()).locate(botId),
+    status: async (botId) => (await provider()).status(botId),
+    stop: async (botId) => (await provider()).stop(botId),
+    reset: async (botId) => (await provider()).reset(botId),
+    list: async () => (await provider()).list(),
     sessionOf: async (botId) => (await provider()).sessionOf?.(botId),
   };
 }

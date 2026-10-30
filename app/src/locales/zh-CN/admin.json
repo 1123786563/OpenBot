@@ -316,6 +316,10 @@
         "stopping": "正在停止文件夹操作",
         "default": "等待批准的文件夹访问"
       }
+    },
+    "substrate": {
+      "openshellVerified": "计算机已选择 OpenShell 沙箱底座。一份已记录的探针实测验证了它的网络规则、策略回执、工作空间隔离和凭据边界。",
+      "openshellUnverified": "计算机已选择 OpenShell 沙箱底座，但还没有探针回执完整验证它。验证通过前，无法在其上运行计算机。"
     }
   },
   "credentials": {
