@@ -1,6 +1,7 @@
 import "./preload";
 // app/tests/plugin-package-dispatches.test.tsx
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { settleReactWork } from "./settle-react-work";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import type {
@@ -83,7 +84,10 @@ afterEach(() => {
   cleanup();
   void i18n.changeLanguage("en");
 });
-afterAll(() => GlobalRegistrator.unregister());
+afterAll(async () => {
+  await settleReactWork();
+  GlobalRegistrator.unregister();
+});
 
 beforeEach(() => {
   listed = [summary("unknown")];

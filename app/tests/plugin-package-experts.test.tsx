@@ -1,6 +1,7 @@
 import "./preload";
 // app/tests/plugin-package-experts.test.tsx
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { settleReactWork } from "./settle-react-work";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
@@ -211,7 +212,10 @@ const originalFetch = global.fetch;
 
 beforeAll(() => GlobalRegistrator.register());
 afterEach(cleanup);
-afterAll(() => GlobalRegistrator.unregister());
+afterAll(async () => {
+  await settleReactWork();
+  GlobalRegistrator.unregister();
+});
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
