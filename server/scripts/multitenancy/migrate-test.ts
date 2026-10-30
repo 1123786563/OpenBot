@@ -5018,19 +5018,21 @@ export function resolveTestDatabaseTarget(
 // 参数面：generate/migrate 之外的命令、旗标与未知 task id 一律拒绝
 // ---------------------------------------------------------------------------
 
-export type MigrationCommand = "generate" | "migrate";
+export type MigrationCommand = "generate" | "migrate" | "reconcile-drift";
 
 export interface ParsedArgs {
   readonly command: MigrationCommand;
-  readonly taskId: string;
+  /** reconcile-drift 覆盖注册表全部任务，不取单任务 id；migrate 的 "all" 为整链供给。 */
+  readonly taskId?: string;
   readonly outDir?: string;
   readonly apply: boolean;
   readonly manifestPath?: string;
 }
 
 const USAGE =
-  "usage: migrate-test.ts <generate|migrate> <taskId> " +
-  "[--out DIR (generate)] | [--apply --manifest FILE (migrate)]";
+  "usage: migrate-test.ts <generate|migrate> <taskId|all> " +
+  "[--out DIR (generate)] | [--apply --manifest FILE (migrate)] | " +
+  "[--apply (migrate all, whole-chain provisioning)] | reconcile-drift";
 
 export function parseArgs(
   argv: readonly string[],
@@ -5070,10 +5072,10 @@ export function parseArgs(
       positional.push(token);
     }
   }
-  if (positional.length < 2) {
+  if (positional.length < 1) {
     return {
       ok: false,
-      reason: `a command and a task id are required\n${USAGE}`,
+      reason: `a command is required\n${USAGE}`,
     };
   }
   if (positional.length > 2) {
@@ -5083,11 +5085,57 @@ export function parseArgs(
     };
   }
   const [command, taskId] = positional;
-  if (command !== "generate" && command !== "migrate") {
+  if (
+    command !== "generate" &&
+    command !== "migrate" &&
+    command !== "reconcile-drift"
+  ) {
     return {
       ok: false,
-      reason: `unknown command "${command}"; only generate and migrate are accepted\n${USAGE}`,
+      reason: `unknown command "${command}"; only generate, migrate and reconcile-drift are accepted\n${USAGE}`,
     };
+  }
+  if (command === "reconcile-drift") {
+    if (taskId) {
+      return {
+        ok: false,
+        reason: `reconcile-drift covers every registered task and takes no task id (got "${taskId}")\n${USAGE}`,
+      };
+    }
+    if (apply || manifestPath || outDir) {
+      return {
+        ok: false,
+        reason: `reconcile-drift takes no flags\n${USAGE}`,
+      };
+    }
+    return { ok: true, args: { command, apply: false } };
+  }
+  if (!taskId) {
+    return {
+      ok: false,
+      reason: `generate and migrate require a task id\n${USAGE}`,
+    };
+  }
+  if (taskId === "all") {
+    if (command === "generate") {
+      return {
+        ok: false,
+        reason: `generate takes a single task id, not "all"\n${USAGE}`,
+      };
+    }
+    if (!apply) {
+      return {
+        ok: false,
+        reason: `migrate all requires --apply: it is whole-chain provisioning, and there is no whole-chain dry-run\n${USAGE}`,
+      };
+    }
+    if (outDir || manifestPath) {
+      return {
+        ok: false,
+        reason: `migrate all takes no --out or --manifest: the registry is the source of truth for every task at once\n${USAGE}`,
+      };
+    }
+    return { ok: true, args: { command, taskId, apply: true } };
   }
   if (!TASKS.has(taskId)) {
     return {
@@ -5229,7 +5277,13 @@ export async function runMigrateTest(
     };
   }
   const target = resolved.target;
-  const plan = buildPlan(args.taskId);
+  if (args.command === "reconcile-drift") {
+    return runReconcileDrift(target, deps);
+  }
+  if (args.command === "migrate" && args.taskId === "all") {
+    return runMigrateAll(target, deps);
+  }
+  const plan = buildPlan(args.taskId ?? "");
   const numbering = validatePlanNumbering(plan.steps);
   if (!numbering.ok) {
     return { kind: "refused", stage: "numbering", reason: numbering.reason };
@@ -5238,6 +5292,357 @@ export async function runMigrateTest(
     return runGenerate(args, plan, target, deps);
   }
   return runMigrate(args, plan, target, deps);
+}
+
+// ---------------------------------------------------------------------------
+// 0163 漂移调和（自 server/tests/multitenancy/support/task-drift.ts 上移，
+// 原 T00 基线 B-1）：drizzle 全量迁移（0163 恢复 + 0209/0210/0215）会在测试库
+// 预建任务链要建的表/列/约束，且不带任务链的 RLS/FORCE/GRANT——未调和的库上
+// apply 撞 already exists，或让角色连接吃 aclcheck 假通过。规则：对未记
+// journal 的步骤，凡其声明要创建的对象已存在，即认定漂移残留，先删再让任务
+// 链按原文重建；已 journal 的一律不触碰。
+// ---------------------------------------------------------------------------
+
+/** 与 MigrationSql.unsafe 同形的最小客户端面（调和不需要 begin/end）。 */
+export interface TaskDriftSqlClient {
+  unsafe(query: string, params?: unknown[]): Promise<unknown>;
+}
+
+export interface TaskDriftReport {
+  readonly droppedTables: readonly string[];
+  readonly droppedColumns: readonly string[];
+  readonly droppedConstraints: readonly string[];
+  /** journal 已覆盖（视为任务链自有产物、未触碰）的任务 id。 */
+  readonly journaledTasks: readonly string[];
+}
+
+interface OwnedObject {
+  readonly taskId: string;
+  readonly stepNumber: number;
+  readonly kind: "table" | "column" | "constraint";
+  readonly table: string;
+  readonly column?: string;
+  readonly constraint?: string;
+}
+
+const DRIFT_TABLE_DDL = /^create table (?:if not exists )?"([^"]+)"/i;
+const DRIFT_COLUMN_DDL =
+  /^alter table (?:only )?"([^"]+)"\s+add column (?:if not exists )?"([^"]+)"/i;
+const DRIFT_CONSTRAINT_DDL =
+  /^alter table (?:only )?"([^"]+)"\s+add constraint "([^"]+)"/i;
+const DRIFT_DROP_CONSTRAINT_DDL =
+  /^alter table (?:only )?"([^"]+)"\s+drop constraint (?:if exists )?"([^"]+)"/i;
+
+interface OwnedObjects {
+  /** 未记 journal 的步骤声明要创建的 表/列/约束（漂移残留的预删候选）。 */
+  readonly objects: readonly OwnedObject[];
+  /** 这些待重放步骤里自己 `drop constraint` 的 `表.约束`：预删会让该步 DROP 撞不存在。 */
+  readonly selfDroppedConstraints: ReadonlySet<string>;
+}
+
+function ownedObjectsOf(
+  taskId: string,
+  appliedNumbers: ReadonlySet<number>,
+): OwnedObjects {
+  const objects: OwnedObject[] = [];
+  const selfDroppedConstraints = new Set<string>();
+  for (const step of buildPlan(taskId).steps) {
+    if (appliedNumbers.has(step.number)) continue;
+    for (const raw of step.statements) {
+      const statement = raw.trim().replace(/\s+/g, " ");
+      const dropped = DRIFT_DROP_CONSTRAINT_DDL.exec(statement);
+      if (dropped) {
+        selfDroppedConstraints.add(`${dropped[1]}.${dropped[2]}`);
+        continue;
+      }
+      const table = DRIFT_TABLE_DDL.exec(statement);
+      if (table) {
+        objects.push({
+          taskId,
+          stepNumber: step.number,
+          kind: "table",
+          table: table[1],
+        });
+        continue;
+      }
+      const column = DRIFT_COLUMN_DDL.exec(statement);
+      if (column) {
+        objects.push({
+          taskId,
+          stepNumber: step.number,
+          kind: "column",
+          table: column[1],
+          column: column[2],
+        });
+        continue;
+      }
+      const constraint = DRIFT_CONSTRAINT_DDL.exec(statement);
+      if (constraint) {
+        objects.push({
+          taskId,
+          stepNumber: step.number,
+          kind: "constraint",
+          table: constraint[1],
+          constraint: constraint[2],
+        });
+      }
+    }
+  }
+  return { objects, selfDroppedConstraints };
+}
+
+async function journalStepNumbers(
+  client: TaskDriftSqlClient,
+  taskId: string,
+): Promise<Set<number>> {
+  try {
+    const rows = (await client.unsafe(
+      `select number from ${JOURNAL_TABLE} where task_id = $1`,
+      [taskId],
+    )) as Array<{ number: number | string }>;
+    return new Set(rows.map((row) => Number(row.number)));
+  } catch (error) {
+    /*
+     * Bun SQL reports the SQLSTATE in `errno` (`code` is the client-level
+     * `ERR_POSTGRES_SERVER_ERROR`); postgres.js would put it in `code`. Both
+     * shapes mean "journal not created yet" for 42P01.
+     */
+    const failure = error as {
+      code?: string;
+      errno?: string;
+      sqlstate?: string;
+    };
+    const sqlState = failure.errno ?? failure.sqlstate ?? failure.code;
+    if (sqlState === "42P01") return new Set();
+    throw error;
+  }
+}
+
+async function driftObjectExists(
+  client: TaskDriftSqlClient,
+  kind: OwnedObject["kind"],
+  table: string,
+  name?: string,
+): Promise<boolean> {
+  if (kind === "table") {
+    const rows = (await client.unsafe(
+      `select 1 from information_schema.tables
+       where table_schema = 'public' and table_name = $1`,
+      [table],
+    )) as unknown[];
+    return rows.length > 0;
+  }
+  if (kind === "column") {
+    const rows = (await client.unsafe(
+      `select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = $1 and column_name = $2`,
+      [table, name ?? ""],
+    )) as unknown[];
+    return rows.length > 0;
+  }
+  const rows = (await client.unsafe(
+    `select 1 from pg_constraint c
+     join pg_class t on t.oid = c.conrelid
+     join pg_namespace n on n.oid = t.relnamespace
+     where c.conname = $1 and t.relname = $2 and n.nspname = 'public'`,
+    [name ?? "", table],
+  )) as unknown[];
+  return rows.length > 0;
+}
+
+/**
+ * 读取 journal 状态，删除给定任务链的未 journal 步骤所声明、且当前已存在的
+ * 表/列/约束（0163 漂移残留），返回删除清单。表先删（CASCADE，先到先得地
+ * 带走其上的策略/索引/外键），再删列，最后删约束；对象已随表消失时各自的
+ * 存在性检查天然跳过。
+ */
+export async function reconcileTaskDrift(
+  client: TaskDriftSqlClient,
+  taskIds: readonly string[],
+): Promise<TaskDriftReport> {
+  const droppedTables = new Set<string>();
+  const droppedColumns = new Set<string>();
+  const droppedConstraints = new Set<string>();
+  const journaledTasks: string[] = [];
+
+  const pending: OwnedObject[] = [];
+  const selfDroppedConstraints = new Set<string>();
+  for (const taskId of taskIds) {
+    const applied = await journalStepNumbers(client, taskId);
+    const plan = buildPlan(taskId);
+    if (applied.size >= plan.steps.length) {
+      journaledTasks.push(taskId);
+      continue;
+    }
+    const owned = ownedObjectsOf(taskId, applied);
+    pending.push(...owned.objects);
+    for (const key of owned.selfDroppedConstraints)
+      selfDroppedConstraints.add(key);
+  }
+
+  // 表优先：CASCADE 与 drop-0163 配方一致；同轮内不重复删同一张表。
+  for (const object of pending.filter((entry) => entry.kind === "table")) {
+    if (droppedTables.has(object.table)) continue;
+    if (!(await driftObjectExists(client, "table", object.table))) continue;
+    await client.unsafe(`drop table if exists "${object.table}" cascade`);
+    droppedTables.add(object.table);
+  }
+  for (const object of pending.filter((entry) => entry.kind === "column")) {
+    if (droppedTables.has(object.table)) continue; // 随表消失
+    if (
+      !(await driftObjectExists(client, "column", object.table, object.column))
+    )
+      continue;
+    await client.unsafe(
+      `alter table "${object.table}" drop column "${object.column}"`,
+    );
+    droppedColumns.add(`${object.table}.${object.column}`);
+  }
+  for (const object of pending.filter((entry) => entry.kind === "constraint")) {
+    if (droppedTables.has(object.table)) continue;
+    /*
+     * 该约束在同批待重放步骤里被 `drop constraint` 重建（PKG03/PKG04 的动作 CHECK
+     * 与主键都是 drop→add 同步骤）时不得预删：预删成功后重放到那一句 DROP 会报
+     * does not exist，该步永不入账，而下次已无约束可预删、DROP 依旧失败 —— 逐步
+     * 入账的断点续跑就此永久卡死。留着它，重放自己的 DROP 正好删掉漂移残留。
+     */
+    if (selfDroppedConstraints.has(`${object.table}.${object.constraint}`))
+      continue;
+    if (
+      !(await driftObjectExists(
+        client,
+        "constraint",
+        object.table,
+        object.constraint,
+      ))
+    )
+      continue;
+    await client.unsafe(
+      `alter table "${object.table}" drop constraint "${object.constraint}"`,
+    );
+    droppedConstraints.add(`${object.table}.${object.constraint}`);
+  }
+
+  return {
+    droppedTables: [...droppedTables].sort(),
+    droppedColumns: [...droppedColumns].sort(),
+    droppedConstraints: [...droppedConstraints].sort(),
+    journaledTasks,
+  };
+}
+
+/**
+ * `reconcile-drift` 命令：对注册表全部任务跑一遍调和。逐任务取与 apply 相同
+ * 的会话级 advisory lock（同一键空间），与在途 apply 串行；库上没有漂移时是
+ * 纯只读探查，输出零删除清单。
+ */
+async function runReconcileDrift(
+  target: DatabaseTarget,
+  deps: MigrateTestDeps,
+): Promise<RunOutcome> {
+  const out = deps.out ?? defaultOut;
+  const connect = deps.connect ?? defaultConnect;
+  const connection = connect(target.url);
+  const droppedTables = new Set<string>();
+  const droppedColumns = new Set<string>();
+  const droppedConstraints = new Set<string>();
+  const journaledTasks: string[] = [];
+  try {
+    for (const taskId of ALLOWED_TASK_IDS) {
+      // 与 runMigrate 的 apply 路径同一把锁：会话级，连接关闭时一并释放。
+      await connection.unsafe(
+        `SELECT pg_advisory_lock(hashtext(${sqlLiteral(`mt-migrate:${taskId}`)}))`,
+      );
+      const report = await reconcileTaskDrift(connection, [taskId]);
+      for (const table of report.droppedTables) droppedTables.add(table);
+      for (const column of report.droppedColumns) droppedColumns.add(column);
+      for (const constraint of report.droppedConstraints)
+        droppedConstraints.add(constraint);
+      if (report.journaledTasks.length) journaledTasks.push(taskId);
+    }
+  } catch (error) {
+    return {
+      kind: "refused",
+      stage: "execution",
+      reason: `reconcile-drift failed: ${(error as Error).message}`,
+    };
+  } finally {
+    await connection.end();
+  }
+  for (const line of [
+    `reconcile-drift @ ${target.databaseName}: dropped ${droppedTables.size} table(s), ${droppedColumns.size} column(s), ${droppedConstraints.size} constraint(s)`,
+    droppedTables.size
+      ? `  tables: ${[...droppedTables].sort().join(", ")}`
+      : "",
+    droppedColumns.size
+      ? `  columns: ${[...droppedColumns].sort().join(", ")}`
+      : "",
+    droppedConstraints.size
+      ? `  constraints: ${[...droppedConstraints].sort().join(", ")}`
+      : "",
+    journaledTasks.length
+      ? `  journaled (untouched): ${journaledTasks.join(", ")}`
+      : "",
+  ]) {
+    if (line) out(line);
+  }
+  return {
+    kind: "up-to-date",
+    taskId: "reconcile-drift",
+    databaseName: target.databaseName,
+    endpoint: target.endpoint,
+    appliedCount: 0,
+  };
+}
+
+/**
+ * `migrate all --apply` 命令：整链供给。供 CI 配给步使用——企业库的套件
+ * 不像 multitenancy 组那样在 fixture 里自 apply 任务链，库上必须预先有
+ * 整链的任务形表（带 RLS/GRANT）。逐任务走与单任务 apply 完全相同的
+ * runMigrate 路径（含 advisory lock 与 journal 记账），manifest 门禁按
+ * 供给语义省略：注册表即真源。任一任务拒绝即短路返回（reason 前缀任务
+ * id）；已应用任务的 journal 保留，重跑从断点续。
+ */
+async function runMigrateAll(
+  target: DatabaseTarget,
+  deps: MigrateTestDeps,
+): Promise<RunOutcome> {
+  const out = deps.out ?? defaultOut;
+  let appliedSteps = 0;
+  // 注册表插入序即依赖序（如 MT112 legacy-anchor 先于依赖它的 MT012）；
+  // ALLOWED_TASK_IDS 的字典序会破坏它。
+  const taskIds = [...TASKS.keys()];
+  for (const taskId of taskIds) {
+    const plan = buildPlan(taskId);
+    const numbering = validatePlanNumbering(plan.steps);
+    if (!numbering.ok) {
+      return {
+        kind: "refused",
+        stage: "numbering",
+        reason: `${taskId}: ${numbering.reason}`,
+      };
+    }
+    const outcome = await runMigrate(
+      { command: "migrate", taskId, apply: true },
+      plan,
+      target,
+      deps,
+    );
+    if (outcome.kind === "refused") {
+      return { ...outcome, reason: `${taskId}: ${outcome.reason}` };
+    }
+    if (outcome.kind === "applied") appliedSteps += outcome.appliedSteps.length;
+  }
+  out(
+    `migrate all @ ${target.databaseName}: ${taskIds.length} task(s), ${appliedSteps} step(s) applied`,
+  );
+  return {
+    kind: "up-to-date",
+    taskId: "all",
+    databaseName: target.databaseName,
+    endpoint: target.endpoint,
+    appliedCount: appliedSteps,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -5682,8 +6087,13 @@ async function runMigrate(
 // ---------------------------------------------------------------------------
 
 if (import.meta.main) {
+  // generate/migrate 的输出走下方 renderOutcome（命令内部 out 为静默，避免双打）；
+  // reconcile-drift 的删除清单只在命令内部经 out 流出。
+  const reconcile =
+    process.argv[2] === "reconcile-drift" ||
+    (process.argv[2] === "migrate" && process.argv[3] === "all");
   const outcome = await runMigrateTest(process.argv.slice(2), {
-    out: () => {},
+    out: reconcile ? (line) => console.log(line) : () => {},
   });
   if (outcome.kind === "refused") {
     console.error(renderOutcome(outcome)[0]);
