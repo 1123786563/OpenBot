@@ -1,20 +1,52 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
+import postgres from "postgres";
 
 /*
  * The shared test-Postgres container helper (R2-10, ME06 #478): ONE copy of
  * the `docker exec psql` plumbing and the disposable-database + restricted-
  * role bootstrap the ME01/ME03/ME05 fixtures each used to hand-copy.
  *
- * Everything here talks ONLY to the local test container named by
+ * Everything here talks ONLY to the local test Postgres named by
  * ME01_TEST_PG_CONTAINER (default `openbot-test-pg`) on host port
- * ME01_TEST_PG_PORT (default 5433). The dev DATABASE_URL is never read and no
- * .env is consulted — connection targets come only from what this module
- * bootstraps.
+ * ME01_TEST_PG_PORT (default 5433) — or, when ME01_TEST_PG_ADMIN_DSN is set,
+ * to whatever superuser DSN that names over the wire. The dev DATABASE_URL is
+ * never read and no .env is consulted — connection targets come only from what
+ * this module bootstraps.
  */
 
 const run = promisify(execFile);
+
+/** CI has no docker socket and no named container: statements go over the wire. */
+function adminDsn(): string | null {
+  return process.env.ME01_TEST_PG_ADMIN_DSN?.trim() || null;
+}
+
+/** The admin DSN retargeted at one database (CREATE DATABASE runs on `postgres`). */
+function dsnFor(database: string): string {
+  const url = new URL(adminDsn()!);
+  url.pathname = `/${database}`;
+  return url.toString();
+}
+
+/*
+ * `-tAc` semantics for the fixtures' scalar probes: first column of the first
+ * row as text, empty string when there is no row. Multi-statement strings use
+ * the simple protocol (no parameters), so ON_ERROR_STOP-like behavior is just
+ * "the first error throws".
+ */
+async function wireStatement(database: string, statement: string): Promise<string> {
+  const client = postgres(dsnFor(database), { max: 1 });
+  try {
+    const rows = (await client.unsafe(statement)) as Record<string, unknown>[];
+    if (rows.length === 0) return "";
+    const first = rows[0]!;
+    return String(first[Object.keys(first)[0]!]);
+  } finally {
+    await client.end();
+  }
+}
 
 /** The local test Postgres container every fixture shares. */
 export function testPgContainer(): string {
@@ -33,6 +65,7 @@ export function testPgPort(): string {
  * safe the same way it was in every fixture this replaces.
  */
 export function psql(database: string, sql: string): Promise<string> {
+  if (adminDsn()) return wireStatement(database, sql);
   return run(
     "docker",
     [
@@ -55,6 +88,10 @@ export async function psqlStrict(
   database: string,
   statement: string,
 ): Promise<void> {
+  if (adminDsn()) {
+    await wireStatement(database, statement);
+    return;
+  }
   await run(
     "docker",
     [
