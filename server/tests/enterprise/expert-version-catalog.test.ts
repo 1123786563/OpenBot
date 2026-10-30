@@ -1,6 +1,6 @@
-import { describe, expect, it } from "../../../tests/support/e2e-compat";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
+import { describe, expect, it } from "../../../tests/support/e2e-compat";
 import type { Database } from "../../src/db/client";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import {
@@ -51,6 +51,11 @@ async function trustedScope(): Promise<PlatformScope> {
                 tenantId: "tenant-a",
                 principalId: "principal-a",
                 tenantStatus: "active",
+                // The two scope resolvers read different halves of this one
+                // canned row (store.ts:285 workspaceStatus, store.ts:952 the
+                // bare team-membership status); carry all of them.
+                workspaceStatus: "active",
+                status: "active",
                 principalStatus: "active",
                 memberStatus: "active",
                 memberEpoch: 1,

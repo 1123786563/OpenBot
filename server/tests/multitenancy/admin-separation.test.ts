@@ -220,8 +220,15 @@ describe("management plane classification (closed rule table)", () => {
         "GET /api/enterprise/plugin-packages",
         "GET /api/enterprise/plugin-packages/catalogue/:publisher/:name",
         "GET /api/enterprise/plugin-packages/installs/:id",
+        // PKG10: the dispatch ledger and one dispatch's verification view are
+        // member reads; the verify POST is mediated by the original operation
+        // identity, never an admin action.
+        "GET /api/enterprise/plugin-packages/installs/:id/dispatches",
+        "GET /api/enterprise/plugin-packages/installs/:id/dispatches/:operationId",
+        "POST /api/enterprise/plugin-packages/installs/:id/dispatches/:operationId/verify",
         "POST /api/enterprise/plugin-packages/plans",
         "POST /api/enterprise/plugin-packages/plans/:id/apply",
+        "PATCH /api/enterprise/plugin-packages/installs/:id/status",
         "PUT /api/enterprise/plugin-packages/installs/:id/bots/:botId/grants",
         "DELETE /api/enterprise/plugin-packages/installs/:id/bots/:botId/grants",
         "POST /api/enterprise/plugin-packages/installs/:id/experts/:resourceId",
@@ -370,7 +377,10 @@ describe("management plane classification against the real MT001 inventory", () 
     const workspaceAdmin = inventory.entrances.filter((entry) =>
       entry.path.startsWith("/api/enterprise/workspace-scope"),
     );
-    expect(workspaceAdmin.length).toBe(5);
+    // 7 = the mount catch-all + GET / + POST /validate-selection + the four
+    // admin/teams entrances: the wrapper forwards the base's routes
+    // individually so the company admin plane is not folded into a blind spot.
+    expect(workspaceAdmin.length).toBe(7);
     for (const entry of workspaceAdmin) {
       expect(entry.businessClosure).toBe("workspace-admin");
     }

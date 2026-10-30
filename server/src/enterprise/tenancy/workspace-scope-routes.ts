@@ -12,6 +12,7 @@
 // 管理路由未装配 operator 通道时回答 503 unavailable（与 conversations 的
 // unavailable 模式一致），绝不以宽松替身放行。
 
+import type { Context } from "hono";
 import { Hono } from "hono";
 import { isCompanyAssuranceRefusal } from "../../auth/company-assurance";
 import { isAuthorityRefusal } from "../../auth/directory/authority";
@@ -482,6 +483,24 @@ export function createBaSelectionScopeMount(
       );
     }
   });
+
+  // The base's own routes stay individually visible on this wrapper's table
+  // (the MT001 inventory reads route tables, and a lone catch-all would fold
+  // the company admin entrances back into a blind spot). The specialised GET /
+  // and POST /validate-selection above were registered first, so they still
+  // win; every delegated entry forwards the untouched request like the
+  // catch-all below.
+  const delegateToBase = (context: Context) =>
+    base.fetch(innerRequestOf(context.req.raw, null));
+  for (const inner of base.routes) {
+    if (inner.path === "*") continue;
+    if (inner.method === "GET" && inner.path === "/") continue;
+    if (inner.method === "POST" && inner.path === "/validate-selection") {
+      continue;
+    }
+    if (inner.method === "ALL") routes.all(inner.path, delegateToBase);
+    else routes.on(inner.method, inner.path, delegateToBase);
+  }
 
   // Every other route is the base's own: delegated with the original request.
   // The one deliberate non-delegation: the inner root "/" of the catch-all —

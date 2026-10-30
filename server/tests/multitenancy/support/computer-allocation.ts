@@ -35,7 +35,10 @@ import {
   type ExecutionAuditSink,
 } from "../../../src/enterprise/tenancy/execution-artifacts";
 import { createScopeResolver } from "../../../src/enterprise/tenancy/store";
-import { enterpriseRuntimeDatabaseUrlFrom } from "../../support/enterprise-database";
+import {
+  enterpriseRuntimeDatabaseUrlFrom,
+  enterpriseTestDatabaseUrlFrom,
+} from "../../support/enterprise-database";
 import {
   createIsolationFixture,
   type FixtureIdentity,
@@ -252,7 +255,12 @@ export async function createComputerAllocationFixture(): Promise<ComputerAllocat
     enterpriseRuntimeDatabaseUrlFrom("directory" as const, process.env),
     verifyDirectoryDatabase,
   );
-  const setup = createDatabase(process.env.TEST_DATABASE_URL ?? "", { max: 2 });
+  // Same database the isolation fixture seeded (the setup channel): the MT
+  // island swaps TEST_DATABASE_URL for its own database, so reading it here
+  // would look for principals the fixture never created there.
+  const setup = createDatabase(enterpriseTestDatabaseUrlFrom(process.env), {
+    max: 2,
+  });
 
   const bots = createBotOwnershipService({ data, operator });
   const artifacts = createExecutionArtifactsService({

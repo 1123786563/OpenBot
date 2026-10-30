@@ -165,6 +165,7 @@ describeDb("MT058 AC1 the default audience is the owner's team", () => {
         channelId: arrangement.channelId,
         audience: "same-team",
         shareAction: "preview",
+        expiresInDays: 1,
       });
       if (issued.outcome !== "allow") throw new Error("ISSUE_FAILED");
       const foreigner = await fixture.scopeAs("b1-member", "team-b1");
@@ -244,6 +245,7 @@ describeDb("MT058 AC2 explicit cross-team shares carry their contract", () => {
             audience: "cross-team",
             audienceWorkspaceId: ownerScope.workspaceId,
             shareAction: "preview",
+            expiresInDays: 1,
           }),
         ),
       ).resolves.toContain("WORKSHOP_SHARE_AUDIENCE_INVALID");
@@ -254,6 +256,7 @@ describeDb("MT058 AC2 explicit cross-team shares carry their contract", () => {
             audience: "same-team",
             audienceWorkspaceId: "ws-anywhere",
             shareAction: "preview",
+            expiresInDays: 1,
           }),
         ),
       ).resolves.toContain("WORKSHOP_SHARE_AUDIENCE_INVALID");
@@ -308,6 +311,7 @@ describeDb(
               audience: "cross-team",
               audienceWorkspaceId: foreignTeam.workspaceId,
               shareAction: "preview",
+              expiresInDays: 1,
             }),
           ),
         ).resolves.toBe("WORKSHOP_SHARE_AUDIENCE_CROSS_COMPANY");
@@ -459,6 +463,7 @@ describeDb(
             channelId: arrangement.channelId,
             audience: "same-team",
             shareAction: "preview",
+            expiresInDays: 1,
           },
         );
         if (issued.outcome !== "allow") throw new Error("ISSUE_FAILED");
