@@ -5596,6 +5596,18 @@ async function runMigrate(
 
   const connection = connect(target.url);
   try {
+    /*
+     * 并发 apply 互斥：multitenancy 组在 e2e 调度下并行运行，各组 fixture 在自己的
+     * bun 进程里同时对同一测试库 apply——两个进程同时读 journal 会同时认定同一步
+     * 未做而双双建表，第二个撞 "relation already exists"。会话级 advisory lock 把
+     * apply 串行化：后来者阻塞，拿到锁后重读 journal，看到的是前者已记的完成步。
+     * 锁随连接关闭自动释放（含出错路径的 finally end），dry-run 不取锁。
+     */
+    if (args.apply) {
+      await connection.unsafe(
+        `SELECT pg_advisory_lock(hashtext(${sqlLiteral(`mt-migrate:${plan.taskId}`)}))`,
+      );
+    }
     const journalEntries = await readJournalEntries(connection, plan.taskId);
     // 编号前缀与逐步骤 digest 都必须与当前计划一致；漂移在 apply 前拒绝，
     // 且不自动修复/重放（人工审查后才可能继续）。
