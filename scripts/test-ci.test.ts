@@ -113,6 +113,7 @@ test("preserves the child stderr tail before returning the child status", async 
   expect(fixedWrapper.stderr).toBe("");
   expect(fixedWrapper.stdout).toContain(expectedTail);
   // The wrapper's own complaint rides the same pipe, so a reader of the log sees
-  // why the count was refused as well as what the child said.
-  expect(fixedWrapper.stdout).toContain("No readable .e2e/unit/report.json");
+  // why the count was refused as well as what the child said. Its path comes from
+  // E2E_UNIT_OUTPUT, which is the caller's — assert the sentence, not the path.
+  expect(fixedWrapper.stdout).toContain("Refusing to report a pass");
 });

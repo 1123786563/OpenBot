@@ -37,11 +37,10 @@ function appFor(
     issueChallenge: async () => ({ code: "code", expiresAt: new Date() }),
   };
   // createApp takes its services positionally. The coworker group keeps its slot (nothing is ever
-  // inserted before it), while the tail seats are counted from the end: the last seat is whatever
-  // optional was appended most recently (currently the bot service registry), and the identity
-  // store and the GitHub sign-in callback sit just before it — the file's own rule, optionals
-  // appended last — so a new tail parameter moves neither identity nor callback, only grows the
-  // array this fills.
+  // inserted before it), while the tail seats are counted from the end: appending an optional moves
+  // every offset below it by one. After the identity store and the GitHub sign-in callback come the
+  // bot service registry and then the workbench payer, so identity is four from the end and the
+  // callback three — the file's own rule, optionals appended last.
   const args: unknown[] = new Array(createApp.length).fill(undefined);
   args[0] = loadConfig(testEnvironment(environment));
   args[1] = {
@@ -51,8 +50,8 @@ function appFor(
   args[2] = { rolesForUser: async () => ["user"] };
   const COWORKER_ARG = 34;
   args[COWORKER_ARG] = options.coworker;
-  args[createApp.length - 3] = identity;
-  args[createApp.length - 2] = options.githubCallback;
+  args[createApp.length - 4] = identity;
+  args[createApp.length - 3] = options.githubCallback;
   return createApp(...(args as never[]));
 }
 

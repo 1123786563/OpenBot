@@ -1,7 +1,7 @@
-import { expect, test } from "../../../tests/support/e2e-compat";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { BaseEvent } from "@ag-ui/client";
+import { expect, test } from "../../../tests/support/e2e-compat";
 import type { RunnerEventRecord } from "../../src/enterprise/contracts";
 import type {
   RunnerEventRepository,
@@ -279,8 +279,14 @@ test("event_payload_canonicalization_is_key_order_independent", () => {
 });
 
 test("event_fk_requires_preexisting_owner_unique_key", () => {
+  // `import.meta.dir` is Bun-only; the suite is collected by the Node runner too.
   const migration = readFileSync(
-    join(import.meta.dir, "../../drizzle/0070_runner_event_attribution.sql"),
+    fileURLToPath(
+      new URL(
+        "../../drizzle/0070_runner_event_attribution.sql",
+        import.meta.url,
+      ),
+    ),
     "utf8",
   );
   const uniqueIndex = migration.indexOf(
@@ -310,7 +316,9 @@ test("event_append_serializes_with_cancel_and_lease_takeover", async () => {
 
 test("event_append_expiry_is_sampled_after_row_locks", () => {
   const source = readFileSync(
-    join(import.meta.dir, "../../src/enterprise/runs/events.ts"),
+    fileURLToPath(
+      new URL("../../src/enterprise/runs/events.ts", import.meta.url),
+    ),
     "utf8",
   );
   expect(source).toContain("clock_timestamp()");

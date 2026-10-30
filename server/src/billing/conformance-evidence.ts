@@ -890,8 +890,12 @@ export const DELIVERED_FINGERPRINTS: Readonly<Record<string, string>> = {
     "5721d17fe9b0fc34ab5867105b73880d88d97dc8c3d97b832eda074512e4dc78",
   "conformance.audio":
     "b6374bd7abe225da3efa59900ae44eb621db67b8dc72ce140a44e5bea97cf1d2",
+  // Re-recorded when the tool-selection diagnostics came back to copilot.ts
+  // (a failed skill read and a failed choice record log again, without the
+  // thrown value). The runtime lane's behavior — the receipt the funnel owes —
+  // did not change with it.
   "conformance.runtime":
-    "be3ce749752e678e3a61320bd200751dbe78d6149fb87b4167abec34dab0fc0b",
+    "4e664ed112f28e993ef02418d13e5393ff57847e27d148bc6289b3684f2372f8",
   "conformance.embedding":
     "b643f683c5ea20d9cc2f92b7ae62dad72e2984f0bb3ff44f3afabc690c87e4f4",
   "conformance.rerank":
