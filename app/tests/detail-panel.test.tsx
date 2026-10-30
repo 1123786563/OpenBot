@@ -9,6 +9,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { useEffect, useState } from "react";
+import { authKeys } from "@/lib/auth/queries";
 import { CraftTaskEditorPresenter } from "@/components/craft/scheduled-task-editor";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { SidebarShell } from "@/components/layout/sidebar-shell";
@@ -225,7 +226,7 @@ test("sidebar shell restores all preferences through compact mode and public tog
         "[data-slot='sidebar-wrapper']",
       );
       expect(wrapper?.style.getPropertyValue("--sidebar-width-icon")).toBe(
-        "64px",
+        "3.2rem",
       );
       expect(writes).toEqual([]);
       view.rerender(
@@ -398,6 +399,12 @@ test("editing task does not publish pending empty form and seeds after a breakpo
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  queryClient.setQueryData(authKeys.currentUser(), {
+    id: "detail-panel-user",
+    email: "person@example.test",
+    role: "user",
+    onboarding: null,
+  });
   function Harness({ compact }: { compact: boolean }) {
     return (
       <QueryClientProvider client={queryClient}>
@@ -471,6 +478,12 @@ test("failed task detail load shows an error instead of an empty editable form",
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  queryClient.setQueryData(authKeys.currentUser(), {
+    id: "detail-panel-user",
+    email: "person@example.test",
+    role: "user",
+    onboarding: null,
+  });
   const view = render(
     <QueryClientProvider client={queryClient}>
       <CraftTaskEditorPresenter
@@ -527,6 +540,12 @@ test("production task presenter retains dirty A across resize and isolates B", a
   }) as typeof fetch;
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
+  });
+  queryClient.setQueryData(authKeys.currentUser(), {
+    id: "detail-panel-user",
+    email: "person@example.test",
+    role: "user",
+    onboarding: null,
   });
   function Harness({ taskId }: { taskId: string }) {
     return (
@@ -609,6 +628,12 @@ test("production task presenter retains dirty A across resize and isolates B", a
 test("Craft task DetailPanel host grows after the fixed session roster", () => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
+  });
+  queryClient.setQueryData(authKeys.currentUser(), {
+    id: "detail-panel-user",
+    email: "person@example.test",
+    role: "user",
+    onboarding: null,
   });
   const view = render(
     <QueryClientProvider client={queryClient}>

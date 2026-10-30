@@ -11,6 +11,7 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SignInForm } from "@/components/passwords/sign-in-form";
 import { queryClient } from "@/query-client";
+import i18n from "@/lib/i18n";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -21,7 +22,10 @@ import { settleReactWork } from "./settle-react-work";
  * site sent a code (`code_required`) does it ask for that code, on its own, and send it on its own.
  */
 
-beforeAll(() => GlobalRegistrator.register());
+beforeAll(async () => {
+  GlobalRegistrator.register();
+  await i18n.changeLanguage("en");
+});
 afterEach(() => {
   cleanup();
   queryClient.clear();
@@ -109,7 +113,7 @@ test("asks for the login first, and for the code only once the site has sent one
   await user.click(tree.getByRole("button", { name: /^Sign in$/ }));
 
   await tree.findByText(
-    "The site sent a verification code. Enter it to finish signing in.",
+    "The site is asking for a verification code. Enter it to finish signing in.",
   );
   // The login form is gone, and its password with it; one field is left: the code.
   expect(tree.queryByLabelText("Password")).toBeNull();

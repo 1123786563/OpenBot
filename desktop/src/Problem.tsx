@@ -25,12 +25,17 @@ export function asProblem(thrown: unknown): Problem {
 
 function SetupHelp() {
   // Whitelabel builds can choose their own support page. Never prefill it with error data.
+  //
+  // `import.meta.env` is inlined by Vite and absent under Bun/Node; `process.env`
+  // is the other spelling the same setting arrives in. Either read is optional.
+  const viteEnv = (import.meta as { env?: Record<string, string | undefined> })
+    .env;
+  const runtimeEnv = (
+    globalThis as { process?: { env?: Record<string, string | undefined> } }
+  ).process?.env;
   const url =
-    // `import.meta.env` exists under Vite/Bun but not under the Node test runner;
-    // the optional read keeps both spellings of "no support URL configured".
-    (
-      import.meta as { env?: Record<string, string | undefined> }
-    ).env?.VITE_OPENBOT_SUPPORT_URL?.trim() ||
+    (viteEnv?.VITE_OPENBOT_SUPPORT_URL ??
+      runtimeEnv?.VITE_OPENBOT_SUPPORT_URL)?.trim() ||
     "https://github.com/CopilotKit/OpenBot/issues/new/choose";
   return (
     <ExternalLink className="setup-help" href={url}>

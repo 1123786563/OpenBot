@@ -114,7 +114,7 @@ test("a selector is refused for every path that is not a same-origin enterprise 
     tenantId: "acme",
   });
   // A relative path on our own origin that simply is not the enterprise API.
-  await client("/api/plugins/servers", { tenantId: "acme" });
+  await client("/api/me", { tenantId: "acme" });
 
   expect(selectorHeader(asked[0]?.init)).toBeUndefined();
   expect(selectorHeader(asked[1]?.init)).toBeUndefined();

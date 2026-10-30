@@ -9,6 +9,7 @@ import {
   render,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type {
   PackageCatalogueDetail,
   PackageGrantDTO,
@@ -337,11 +338,10 @@ async function fillGrantForm(
   resources: string[],
 ) {
   const dialog = view.getByRole("dialog");
-  fireEvent.change(within(dialog).getByLabelText("Bot ID"), {
-    target: { value: botId },
-  });
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.type(within(dialog).getByLabelText("Bot ID"), botId);
   for (const resource of resources) {
-    fireEvent.click(within(dialog).getByLabelText(resource));
+    await user.click(within(dialog).getByLabelText(resource));
   }
 }
 
@@ -365,8 +365,12 @@ test("an admin grant PUT carries the scope headers and exactly the contract body
 
   await settle(() => {
     expect(within(dialog()).getByText("bot-1")).toBeDefined();
-    // The grant row's revision chip beside the install facts' own r1 chip.
-    expect(within(dialog()).getAllByText("r1").length).toBe(2);
+    // The grant row carries its own revision chip.
+    expect(
+      within(
+        within(dialog()).getByRole("list", { name: "Bot grants" }),
+      ).getByText("r1"),
+    ).toBeDefined();
   });
   expect(within(dialog()).queryByText(EMPTY_NOTICE)).toBeNull();
   expect(grantRequests).toHaveLength(1);
@@ -536,9 +540,8 @@ test("the submit is disabled with no resources selected and while the grant is p
   expect((submit() as HTMLButtonElement).disabled).toBe(true);
 
   // A Bot id alone is still zero resources selected.
-  fireEvent.change(within(dialog()).getByLabelText("Bot ID"), {
-    target: { value: "bot-1" },
-  });
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.type(within(dialog()).getByLabelText("Bot ID"), "bot-1");
   expect((submit() as HTMLButtonElement).disabled).toBe(true);
 
   let release = (_response: Response) => {};

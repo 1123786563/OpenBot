@@ -21,6 +21,10 @@ import {
 import { companyReauthChallengeMutationOptions } from "../lib/auth/mutations";
 import { currentUserQueryOptions, needsOnboarding } from "../lib/auth/queries";
 import { CopilotProvider } from "../lib/copilot/provider";
+import {
+  adoptExplicitSelection,
+  selectionStorageKey,
+} from "../lib/enterprise/tenant/selection";
 import { AppHotkeys } from "../lib/hotkeys/app-hotkeys";
 
 export const Route = createFileRoute("/_authed")({
@@ -104,6 +108,7 @@ function CompanyReauthWall({
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { queryClient } = Route.useRouteContext();
   const location = useRouterState({ select: (state) => state.location });
   const challenge = useMutation(companyReauthChallengeMutationOptions());
 
@@ -149,7 +154,13 @@ function CompanyReauthWall({
         </Button>
         <Button
           onClick={() => {
-            if (userId !== undefined) dismissCompanyReauth(userId);
+            if (userId !== undefined) {
+              dismissCompanyReauth(userId);
+              // Leaving the paused company means leaving its selection too: the
+              // stored choice would otherwise re-enter the same wall.
+              window.localStorage.removeItem(selectionStorageKey(userId));
+              adoptExplicitSelection(queryClient, userId, null);
+            }
             void navigate({ to: "/tenant/selection" });
           }}
           variant="outline"

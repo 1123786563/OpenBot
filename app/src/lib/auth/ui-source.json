@@ -29,7 +29,7 @@
     {
       "path": "app/src/components/auth/provider.tsx",
       "upstream": "src/lib/auth-ui-provider.tsx",
-      "sha256": "099ae641797354c7fa59fe38cffc26694b7ffff47bd496b1940f3abe33c38334",
+      "sha256": "e834c1a05759eef6ec0d6c4fbf15128f1a416d7b644dee99b0a3435bacf5cffe",
       "note": "OpenBot wiring around the pinned AuthUIProvider: same auth client, existing TanStack router, declaration gate for organization components."
     },
     {

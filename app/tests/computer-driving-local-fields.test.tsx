@@ -142,6 +142,16 @@ beforeAll(async () => {
       url,
       body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
     });
+    if (url === "/api/me")
+      return Response.json({
+        user: {
+          id: "fields-test-user",
+          email: "person@example.test",
+          name: "Person",
+          role: "user",
+          onboarding: null,
+        },
+      });
     if (url.includes("/control"))
       return Response.json({ holder: "human", transitioning: false });
     if (url === "/api/channels")

@@ -8,6 +8,7 @@ import {
 } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 let invokeCalls: Array<{ command: string; args?: unknown }> = [];
 let invokeFailure: string | null = null;
@@ -86,13 +87,14 @@ for (const Component of [Failure, InlineFailure]) {
   });
 }
 
-test("setup help honors a branded support URL", () => {
+test("setup help honors a branded support URL", async () => {
   process.env.VITE_OPENBOT_SUPPORT_URL = "https://support.example.test/openbot";
   const view = render(<Failure problem={{ said: "Synthetic failure." }} />);
   expect(
     view.getByRole("link", { name: "Get setup help" }).getAttribute("href"),
   ).toBe("https://support.example.test/openbot");
-  fireEvent.click(view.getByRole("link", { name: "Get setup help" }));
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.click(view.getByRole("link", { name: "Get setup help" }));
   expect(invokeCalls).toEqual([
     {
       command: "plugin:opener|open_url",
@@ -106,8 +108,9 @@ test("setup help reports a failed browser open and allows retry", async () => {
   invokeFailure = "synthetic browser refusal";
   const view = render(<Failure problem={{ said: "Synthetic failure." }} />);
   const help = view.getByRole("link", { name: "Get setup help" });
+  const user = userEvent.setup({ document: view.container.ownerDocument });
 
-  fireEvent.click(help);
+  await user.click(help);
   const failure = await view.findByText(/Could not open your browser/);
   expect(failure.textContent).toContain("synthetic browser refusal");
   expect(failure.textContent).toContain(
@@ -115,7 +118,7 @@ test("setup help reports a failed browser open and allows retry", async () => {
   );
 
   invokeFailure = null;
-  fireEvent.click(help);
+  await user.click(help);
   await waitFor(() =>
     expect(view.queryByText(/Could not open your browser/) === null).toBe(true),
   );
