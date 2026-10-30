@@ -1,7 +1,7 @@
 # The main local stack. The optional stacks live in docker/compose/ — services.yml,
 # lago.yml, observability.yml, opik.yml — beside the support files they mount. Start this file
 # first; reference/compose.md carries the map, the start order and the --project-directory . invocation.
-# opik.yml — optional self-hosted AI observability and evaluation; see docs/opik.md. Its OTLP
+# opik.yml — optional self-hosted AI observability and evaluation; see reference/opik.md. Its OTLP
 # host ports are 5418/5417 because observability.yml already owns 4318/4317 for Tempo.
 services:
   postgres:

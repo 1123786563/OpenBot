@@ -24,7 +24,6 @@ import {
 } from "@copilotkit/runtime/v2";
 import { COMPUTER_GUIDANCE } from "@openbot/shared/bot-prompt";
 import { getLogger } from "@openbot/shared/logger";
-import { buildResponsibilityTurn } from "../../../shared/responsibility-turn";
 import {
   initProcessTracing,
   SERVER_TRACING_SERVICE_NAME,
@@ -35,6 +34,7 @@ import { createTurnRunner } from "@openbot/toolkit/run-turn";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { packageToolRefFor } from "../../../shared/enterprise/plugin-package-contracts";
+import { buildResponsibilityTurn } from "../../../shared/responsibility-turn";
 import { createActivityStore } from "../activity/activity";
 import {
   auditRoutineStore,
@@ -107,16 +107,16 @@ import { createOpikHealthService } from "../ai-observability/health";
 import { createIdLinkStore } from "../ai-observability/id-links";
 import { createModelSpanRecorder } from "../ai-observability/model-span";
 import {
-  createRemoteBudgetContractResolver,
-  createRemoteRunBudgetGate,
-  createRemoteRunRecorder,
-} from "../ai-observability/remote-run";
-import {
   modelSpanObserver,
   observationEnabled,
   toolStepObserver,
 } from "../ai-observability/public";
 import { createRunsQueryService } from "../ai-observability/queries/runs";
+import {
+  createRemoteBudgetContractResolver,
+  createRemoteRunBudgetGate,
+  createRemoteRunRecorder,
+} from "../ai-observability/remote-run";
 import {
   createObservationRetentionWorker,
   RETENTION_WORK_KIND,
@@ -136,8 +136,8 @@ import {
   createApprovedActionExecutor,
   proposalAttemptOf,
 } from "../approvals/execute";
-import { resumePersonQuestion } from "../approvals/question-resume";
 import { createApprovalsAccess } from "../approvals/public";
+import { resumePersonQuestion } from "../approvals/question-resume";
 import {
   type PersonQuestion,
   personQuestionSchema,
@@ -181,7 +181,6 @@ import {
   startUsageDeliverySweeps,
 } from "../billing/maintenance";
 import { checkOutboundUrl, createOutboundGuard } from "../billing/outbound";
-import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "../billing/types";
 import {
   CreditInsufficientError,
   currentPayerBinding,
@@ -203,6 +202,7 @@ import {
 } from "../billing/service";
 import { createBillingStatements } from "../billing/statements";
 import { createBillingStore } from "../billing/store";
+import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "../billing/types";
 import {
   createCreditUsageTarget,
   createLagoUsageTarget,
@@ -260,6 +260,7 @@ import { createStreamAuthorizer } from "../computer/stream-auth";
 import { loadConfig, trustedBrowserOrigins } from "../config";
 import {
   billingMethodForModel,
+  CreditGateFailureError,
   type IdentifyActor,
   type IdentifyUser,
   type ModelBillingAuditEvent,
@@ -267,7 +268,6 @@ import {
   normalizeModelBaseUrls,
   runtimeModelForEnvironment,
   setBuiltinExecutionEngine,
-  CreditGateFailureError,
   setBuiltinModelSpanObserver,
   setBuiltinRunLifecycleObserver,
   setBuiltinToolStepObserver,
@@ -295,12 +295,12 @@ import type {
 } from "../craft/opencode-config";
 import { createCraftPreview } from "../craft/preview";
 import { singleReplicaStartupNotice } from "../craft/preview-origin";
+import { createCraftSandboxPublic } from "../craft/public";
 import {
   type CraftRoutesFactory,
   createCraftRoutes,
   stopCraftIdleReaper,
 } from "../craft/routes";
-import { createCraftSandboxPublic } from "../craft/public";
 import { createCraftStore } from "../craft/store";
 import {
   createCredentialAdminService,
@@ -339,9 +339,9 @@ import type {
   RunnerRequestLease,
   RunService,
 } from "../enterprise/contracts";
-import { createUnavailableConversationRoutes } from "../enterprise/conversations/routes";
 import { createMastraStorageArm } from "../enterprise/conversations/integration";
 import { createConversationPublic } from "../enterprise/conversations/public";
+import { createUnavailableConversationRoutes } from "../enterprise/conversations/routes";
 import { createPackageDispatchService } from "../enterprise/plugin-packages/dispatch";
 import {
   createPackageEntrypoints,
@@ -350,11 +350,11 @@ import {
 import { createPackageService } from "../enterprise/plugin-packages/install-service";
 import { createMarketplaceGate } from "../enterprise/plugin-packages/marketplace-gate";
 import { createPackageMutationStore } from "../enterprise/plugin-packages/mutation-context";
-import { createPackageRuntime } from "../enterprise/plugin-packages/runtime";
 import {
   createPluginPackageRoutes,
   createUnavailablePluginPackageRoutes,
 } from "../enterprise/plugin-packages/routes";
+import { createPackageRuntime } from "../enterprise/plugin-packages/runtime";
 import { createPackageReadStore } from "../enterprise/plugin-packages/store";
 import { createRunContinuations } from "../enterprise/runs/continuations";
 import type { GovernedModelExecution } from "../enterprise/runs/governed-execution";
@@ -416,14 +416,14 @@ import {
   createPluginCatalogDecisionService,
 } from "../enterprise/tenancy/plugin-catalog";
 import {
+  applyReadinessEnforcementVerdict,
+  runReadinessEnforcement,
+} from "../enterprise/tenancy/readiness-enforcement";
+import {
   createSharedApprovalAdminService,
   createSharedApprovalService,
 } from "../enterprise/tenancy/shared-approvals";
 import { createCompanySsoScimConfigService } from "../enterprise/tenancy/sso-scim-config";
-import {
-  applyReadinessEnforcementVerdict,
-  runReadinessEnforcement,
-} from "../enterprise/tenancy/readiness-enforcement";
 import {
   applyStartupDefaultsVerdict,
   buildStartupDefaultsRecord,
@@ -482,12 +482,6 @@ import {
   createDrizzlePauseControls,
   createUserPauseGate,
 } from "../hindsight/pause-controls";
-// MOD15 (#635)：个人记忆语境的降级召回装配经 M10 具名臂（memory/integration.ts），
-// 个人记忆语境组合与渲染装载器收拢在臂内；此前内联于此的组合逐参数等价。
-import {
-  createHindsightRecallArm,
-  createHindsightSyncArm,
-} from "../memory/integration";
 import {
   createDrizzlePreferenceRecords,
   createPreferenceRecallService,
@@ -577,6 +571,12 @@ import { createMastraTools } from "../mastra/tools";
 import { resolveMemoryCompany } from "../memory/company";
 import { createMemoryDefaults } from "../memory/defaults";
 import { createMemoryIngestion } from "../memory/ingestion";
+// MOD15 (#635)：个人记忆语境的降级召回装配经 M10 具名臂（memory/integration.ts），
+// 个人记忆语境组合与渲染装载器收拢在臂内；此前内联于此的组合逐参数等价。
+import {
+  createHindsightRecallArm,
+  createHindsightSyncArm,
+} from "../memory/integration";
 import { createMemoryStore } from "../memory/store";
 import { memoryTools } from "../memory/tools";
 import { OPENMUSE_TEMPLATE_KEY } from "../mobile-bff/openmuse-bot";
@@ -2102,6 +2102,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     const computerProvider = config.computer
       ? withPolicyPushOnWake(createComputerProvider(config.computer), {
           policyForBot: (botId) => enterpriseControls()?.policyForBot(botId),
+          ...(config.computer.provider === "shared" &&
+          config.computer.executionScope !== undefined
+            ? { executionScope: config.computer.executionScope }
+            : {}),
           ...(config.computer.token ? { token: config.computer.token } : {}),
           ...(config.webBotAuth ? { webBotAuth: config.webBotAuth } : {}),
         })
@@ -6537,6 +6541,10 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
       ...(computerProvider ? { provider: computerProvider } : {}),
       ...(config.computer?.token
         ? { computerToken: config.computer.token }
+        : {}),
+      ...(config.computer?.provider === "shared" &&
+      config.computer.executionScope !== undefined
+        ? { computerExecutionScope: config.computer.executionScope }
         : {}),
       ...(config.webBotAuth ? { webBotAuth: config.webBotAuth } : {}),
       builtInModel: `${runtimeModel.provider}/${runtimeModel.defaultModel}`,

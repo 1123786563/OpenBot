@@ -18,6 +18,7 @@
  * never loaded refuses everything it is asked about. Every async check reads the database fresh.
  */
 
+import type { ExecutionScope } from "@openbot/shared/execution-scope";
 import { and, eq, inArray, like, sql } from "drizzle-orm";
 import postgres from "postgres";
 import { getLogger } from "../../../shared/logger";
@@ -85,6 +86,8 @@ export type EnterpriseDeps = {
   auditStore: AuditStore;
   provider?: ComputerProvider;
   computerToken?: string;
+  /** Execution ownership stated on every policy push (MT050): scope injects, null refuses, absent dials as before. */
+  computerExecutionScope?: ExecutionScope | null;
   /** Pushed to every computer with its policy; see `computer/policy-network.ts`. */
   webBotAuth?: WebBotAuth;
   /** `provider/model` the built-in Bot runs on, for the model allowlist and usage view. */
@@ -440,6 +443,9 @@ async function installEnterpriseControlsOnce(
         const report = await pushEgressPolicies({
           provider: deps.provider as ComputerProvider,
           token: deps.computerToken,
+          ...(deps.computerExecutionScope !== undefined
+            ? { executionScope: deps.computerExecutionScope }
+            : {}),
           policyForBot,
           ...(deps.webBotAuth ? { webBotAuth: deps.webBotAuth } : {}),
         });

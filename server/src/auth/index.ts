@@ -9,7 +9,7 @@ import { electron } from "@better-auth/electron";
 import { expo } from "@better-auth/expo";
 import { scim } from "@better-auth/scim";
 import { sso } from "@better-auth/sso";
-import { betterAuth } from "better-auth";
+import { type BetterAuthPlugin, betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { genericOAuth, okta } from "better-auth/plugins";
 import { eq, sql } from "drizzle-orm";
@@ -881,7 +881,14 @@ export function createAuth(
        */
       organizationProvisioning: { disabled: true },
     }),
-  ];
+  ] as BetterAuthPlugin[];
+  /*
+   * The package manager resolves @better-auth/sso's peer context separately from the
+   * better-auth core the plugins array otherwise shares, so its plugin type carries a
+   * second nominal copy of BetterAuthPlugin's private fields. Identical code at an
+   * identical version — the cast crosses that and nothing else, mirroring the
+   * @mastra/client-js bridge in copilot.ts.
+   */
 
   const options: Parameters<typeof betterAuth>[0] = {
     user: {

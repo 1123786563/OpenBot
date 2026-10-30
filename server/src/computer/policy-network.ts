@@ -14,6 +14,11 @@
  * (see `admin/controls.ts`) and on a short interval so a computer that started since the last push
  * catches up. The computer consults the pushed policy on its next connection, so nothing restarts.
  */
+
+import {
+  applyExecutionScopeHeaders,
+  type ExecutionScope,
+} from "@openbot/shared/execution-scope";
 import {
   DEFAULT_EGRESS_DESTINATIONS,
   type EgressPolicy,
@@ -79,6 +84,8 @@ export type EgressPushReport = {
 export async function pushEgressPolicies(options: {
   provider: ComputerProvider;
   token?: string;
+  /** Execution ownership stated on every push (MT050): scope injects, null refuses, undefined dials as before. */
+  executionScope?: ExecutionScope | null;
   policyForBot: (botId: string) => Promise<EgressPolicy>;
   webBotAuth?: WebBotAuth;
   fetchImpl?: typeof fetch;
@@ -95,6 +102,9 @@ export async function pushEgressPolicies(options: {
         const policy = await options.policyForBot(computer.botId);
         await pushEgressPolicy(computer.url, computer.botId, policy, {
           ...(options.token ? { token: options.token } : {}),
+          ...(options.executionScope !== undefined
+            ? { executionScope: options.executionScope }
+            : {}),
           ...(options.webBotAuth ? { webBotAuth: options.webBotAuth } : {}),
           fetchImpl,
         });
@@ -122,6 +132,8 @@ export async function pushEgressPolicy(
   policy: EgressPolicy,
   options: {
     token?: string;
+    /** Execution ownership stated on the push (MT050): scope injects, null refuses, undefined dials as before. */
+    executionScope?: ExecutionScope | null;
     webBotAuth?: WebBotAuth;
     fetchImpl?: typeof fetch;
   } = {},
@@ -130,11 +142,21 @@ export async function pushEgressPolicy(
     `${url.replace(/\/$/, "")}/egress-policy`,
     {
       method: "PUT",
-      headers: {
-        "content-type": "application/json",
-        "x-openbot-bot-id": botId,
-        ...(options.token ? { "x-openbot-computer-token": options.token } : {}),
-      },
+      headers: applyExecutionScopeHeaders(
+        {
+          "content-type": "application/json",
+          "x-openbot-bot-id": botId,
+          ...(options.token
+            ? { "x-openbot-computer-token": options.token }
+            : {}),
+        },
+        options.executionScope,
+        () => {
+          throw new Error(
+            "Execution ownership is required by this computer and the deployment's scope is not usable: set both OPENBOT_COMPUTER_EXECUTION_TENANT_ID and OPENBOT_COMPUTER_EXECUTION_WORKSPACE_ID, or clear both.",
+          );
+        },
+      ),
       body: JSON.stringify({
         policy: { mode: policy.mode, rules: policy.rules },
         ...(options.webBotAuth
@@ -178,6 +200,8 @@ export function withPolicyPushOnWake(
       botId: string,
     ) => Promise<EgressPolicy | undefined> | undefined;
     token?: string;
+    /** Execution ownership stated on every push (MT050): scope injects, null refuses, undefined dials as before. */
+    executionScope?: ExecutionScope | null;
     webBotAuth?: WebBotAuth;
     fetchImpl?: typeof fetch;
   },
@@ -200,6 +224,9 @@ export function withPolicyPushOnWake(
       if (!policy) return;
       await pushEgressPolicy(url, botId, policy, {
         ...(options.token ? { token: options.token } : {}),
+        ...(options.executionScope !== undefined
+          ? { executionScope: options.executionScope }
+          : {}),
         ...(options.webBotAuth ? { webBotAuth: options.webBotAuth } : {}),
         ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
       });

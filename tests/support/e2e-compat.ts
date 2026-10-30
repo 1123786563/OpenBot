@@ -709,8 +709,7 @@ function installMockHooks(): void {
           moduleMocks.clear();
           mocks.clear();
         }
-        const loaded = nextLoad(url, context);
-        return loaded;
+        return nextLoad(url, context);
       }
       const key = decodeURIComponent(url.slice("e2e-mock:".length));
       const names = Object.keys(moduleMocks.get(key)?.() ?? {});

@@ -48,7 +48,7 @@ test("ME01: fullStream shapes and suspend/resume API surface are pinned", async 
     resumeStream: true,
     approveToolCall: true,
   });
-  expect(report.packageVersions["@mastra/core"]).toBe("1.64.0");
+  expect(report.packageVersions["@mastra/core"]).toBe("1.80.0");
 });
 
 test("Hono adapter and self-hosted storage constructors are available", async () => {

@@ -4319,7 +4319,7 @@ async function remoteTransport(
      * The same class, twice, under two names.
      *
      * This server runs zod 4 and `@ag-ui/mastra` depends on zod 3, so the package manager resolves
-     * two peer variants of `@mastra/client-js` — identical code at identical version 1.43.0, but
+     * two peer variants of `@mastra/client-js` — identical code at identical version 1.57.0, but
      * two nominal types to TypeScript, which tells them apart by a private field. The cast crosses
      * that and nothing else. It is deliberately written against the bridge's own parameter type, so
      * the day the two versions really do diverge this stops compiling instead of lying.
