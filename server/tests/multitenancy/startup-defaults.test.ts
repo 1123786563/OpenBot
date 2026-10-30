@@ -41,6 +41,7 @@ import {
   type StartupDefaultsFacts,
   scopeThreadIdentity,
 } from "../../src/enterprise/tenancy/startup-defaults";
+import { enterpriseTestDatabaseUrlFrom } from "../support/enterprise-database";
 import { testEnvironment } from "../support/environment";
 import {
   createEntryContextFixture,
@@ -404,14 +405,15 @@ describeDb("MT123 运行时装配（专用库 + 受限角色 + RLS）", () => {
   });
 
   itDb(
-    "环境是专用企业测试库（TEST_DATABASE_URL 派生 + 受限 data 角色）",
+    "环境是专用企业测试库（企业 setup URL 派生 + 受限 data 角色）",
     async () => {
       const identity = await world?.fixture.probeIdentity();
-      // 库名 = TEST_DATABASE_URL 派生（波次 15 集成令牌根治同款：票面 w15d 令
-      // 牌在集成统一为 env 解析后断言，专库+受限 data 角色+绝不回退开发库的
-      // 断言语义不变，跨环境自适应）。
+      // 库名 = 企业 setup URL 派生。MT 组在专用 MT 库上跑（tests/bun-suites 把
+      // TEST_DATABASE_URL 换成 MT_TEST_DATABASE_URL），而夹具的 data 通道由
+      // enterpriseRuntimeDatabaseUrlFrom 校验为与企业 setup 同库——断言必须取
+      // 同一个真源，否则比较的是两个库名。
       expect(identity?.database).toBe(
-        new URL(process.env.TEST_DATABASE_URL ?? "").pathname.replace(
+        new URL(enterpriseTestDatabaseUrlFrom(process.env)).pathname.replace(
           /^\//,
           "",
         ),
