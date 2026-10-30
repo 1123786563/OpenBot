@@ -51,5 +51,5 @@ R5 将 8 张 UI 票（#8/#18/#19/#24/#27/#36/#37/#42）判 UNVERIFIABLE，依据
 
 1. 最终交付提交前全范围 OCR 一次（中间轮不跑，用户 2026-10-20 裁决）。
 2. GitHub 关票（#7–#43 批量 + 父 #4）需写入授权（fork 仓，`--repo 1123786563/OpenBot`），且以 main CI 转绿为 verified 门禁。
-3. T32/#38 接线立项：in-process ingest 路由或私有 API passthrough 二选一，属产品决策。
+3. T32/#38 接线立项：**已办结（2026-10-31）**——选定「进程内 ingest 路由 + 部署边界收口（停发 OTLP 宿主端口）+ authorizeControlPlane 规则席位，拒绝私有 API passthrough」，含 PR0–PR5 切片与 E1–E6 真机取证计划，见 [T32 接线立项书](2026-10-31-opik-issue4-t32-wiring-initiation.md)；实施待授权。
 4. R5 §7.2 后续票清单（R5-F1/F2/F3、F8D-3 等 low 项）待登记。
