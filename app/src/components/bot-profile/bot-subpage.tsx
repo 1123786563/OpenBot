@@ -62,7 +62,7 @@ export function BotSubpage({
   return (
     <PageShell
       backButton={{
-        label: agentData?.name ?? t("botSubpage.titleFallback"),
+        label: agent.data?.name ?? t("botSubpage.titleFallback"),
         linkProps: { params: { agentId }, to: "/bots/$agentId" },
       }}
       description={description}
