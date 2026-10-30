@@ -37,6 +37,12 @@ async function sendsSessionTo(auth: ReturnType<typeof createAuth>) {
   );
   return expoLoaded && context.isTrustedOrigin("openbotmobile://");
 }
+beforeEach(() => {
+  // The collector imports every suite into one process before forking
+  // workers; whatever a sibling left in EXPO_PROJECT_ID must not survive into
+  // this file's first case.
+  delete process.env.EXPO_PROJECT_ID;
+});
 afterEach(() => {
   delete process.env.EXPO_PROJECT_ID;
 });

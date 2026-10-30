@@ -556,7 +556,9 @@ export function createPaymentStore(database: Database): PaymentStore {
         .values(eventInput({ ...event, kind: "anomaly", state: undefined }))
         .onConflictDoNothing({
           target: [paymentEvents.orderId, paymentEvents.code],
-          where: eq(paymentEvents.kind, "anomaly"),
+          // The arbiter predicate must IMPLY the partial index's predicate (kind='anomaly'
+          // AND code<>'amount_unreadable') or Postgres rejects the statement outright (42P10).
+          where: sql`${paymentEvents.kind} = 'anomaly' AND ${paymentEvents.code} <> 'amount_unreadable'`,
         });
     },
 

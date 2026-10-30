@@ -436,6 +436,65 @@ describe("e2e manifest contract", () => {
     ).toBe("postgres://shared/journal");
   });
 
+  test("billing_island_carries_its_own_database_and_no_one_else_does", () => {
+    const env: Record<string, string> = {
+      TEST_DATABASE_URL: "postgres://shared/journal",
+      DATABASE_URL: "postgres://shared/journal",
+      BILLING_TEST_DATABASE_URL: "postgres://billing/island",
+      MT_TEST_DATABASE_URL: "postgres://mt/journal",
+    };
+    // The island group runs on its own database, inherited nowhere else.
+    const island = bunSuiteEnv("server/tests/billing island", { env });
+    expect(island.TEST_DATABASE_URL).toBe("postgres://billing/island");
+    expect(island.DATABASE_URL).toBe("postgres://billing/island");
+    // A shared-slice group never sees the island's URL…
+    expect(
+      bunSuiteEnv("server/tests part 14", { env }).TEST_DATABASE_URL,
+    ).toBe("postgres://shared/journal");
+    // …and without the override the island keeps the job's environment.
+    expect(
+      bunSuiteEnv("server/tests/billing island", {
+        env: { TEST_DATABASE_URL: "postgres://shared/journal" },
+      }).TEST_DATABASE_URL,
+    ).toBe("postgres://shared/journal");
+  });
+
+  test("explicit_groups_claim_their_members_out_of_the_directory_parts", () => {
+    // An explicit-group member never lands in its directory part: fresh, it is
+    // claimed by the island before any slicing; a non-member beside it still
+    // takes the ordinary part.
+    const member = "server/tests/payment-store.integration.test.ts";
+    const neighbour = "server/tests/plan-credits-personal.integration.test.ts";
+    const stranger = "server/tests/gateway-admin-routes.test.ts";
+    const target = tempManifest();
+    writeManifest(
+      { files: [member, neighbour, stranger], artifacts: [], causes: {} },
+      "explicit-group register",
+      target,
+    );
+    const groups = JSON.parse(readFileSync(target, "utf8")).groups;
+    const byName = new Map(
+      groups.map((group: { name: string; files: string[] }) => [
+        group.name,
+        group.files,
+      ]),
+    );
+    expect(byName.get("server/tests/billing island")).toEqual([
+      member,
+      neighbour,
+    ]);
+    // The stranger shares no explicit group, so its directory slice takes it.
+    expect(
+      [...byName.values()].some((files: string[]) => files.includes(stranger)),
+    ).toBe(true);
+    expect(
+      [...byName.values()].some((files: string[]) =>
+        files.includes(member),
+      ),
+      "an explicit member is scheduled exactly once",
+    ).toBe(true);
+  });
+
   test("bunSuiteSkipReason names an absent island, never a partial one", () => {
     // An environment with none of the five role URLs has no island: the reason to skip.
     expect(

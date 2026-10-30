@@ -61,6 +61,9 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  */
 
 const database: Database = createDatabase(testDatabaseUrl(), TEST_POOL);
+
+// The AC4 seed rows, deleted again in afterAll (see there for why).
+let seededReservationRows: { customer: string; reservationId: string } | undefined;
 const catalogStore = createEnterpriseGatewayCatalogStore(database);
 const priceStore = createEnterpriseGatewayPriceSnapshotStore(database);
 const auditStore = createAuditStore(database);
@@ -213,6 +216,19 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // The AC4 reservation must not outlive this file: on the shared test
+  // database its 60s expiry later names it to every recovery suite's scan,
+  // which rejects the `reservation-` id shape outright.
+  if (seededReservationRows) {
+    await database
+      .delete(creditReservations)
+      .where(eq(creditReservations.id, seededReservationRows.reservationId));
+    await database
+      .delete(billingCustomers)
+      .where(
+        eq(billingCustomers.externalId, seededReservationRows.customer),
+      );
+  }
   await database.$client.close();
 });
 
@@ -513,6 +529,7 @@ describe("a scope change does not touch locked snapshots or existing reservation
     // A live reservation on the locked account, as the billing tables hold it.
     const customer = nextId("reservation-customer");
     const reservationId = nextId("reservation");
+    seededReservationRows = { customer, reservationId };
     await database.insert(billingCustomers).values({ externalId: customer });
     await database.insert(creditReservations).values({
       id: reservationId,

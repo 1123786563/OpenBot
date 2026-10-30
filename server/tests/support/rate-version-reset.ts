@@ -15,26 +15,33 @@
 import { type SQL, sql } from "drizzle-orm";
 
 export async function truncateRateVersions(database: {
-  execute: (query: SQL) => Promise<unknown>;
+  transaction: (
+    body: (tx: { execute: (query: SQL) => Promise<unknown> }) => Promise<unknown>,
+  ) => Promise<unknown>;
 }) {
   try {
-    await database.execute(sql`begin`);
-    try {
+    // A transaction, not manual begin/commit: Bun's SQL client refuses raw `begin` on a pool
+    // with max > 1 ("Only use sql.begin, sql.reserved or max: 1"), and TEST_POOL is max: 2.
+    // An aborted transaction still rolls the DISABLE TRIGGER back, so the disabled window is
+    // never committed either way.
+    await database.transaction(async (tx) => {
       // ALTER TABLE ... DISABLE TRIGGER takes one name per statement.
-      await database.execute(
+      await tx.execute(
         sql`ALTER TABLE gateway_rate_versions DISABLE TRIGGER gateway_rate_versions_append_only`,
       );
-      await database.execute(
+      await tx.execute(
         sql`ALTER TABLE gateway_rate_versions DISABLE TRIGGER gateway_rate_versions_no_truncate`,
       );
-      await database.execute(sql`TRUNCATE gateway_rate_versions`);
-    } catch (error) {
-      // ROLLBACK re-enables the triggers: no manual ENABLE choreography, and the
-      // disabled window never committed.
-      await database.execute(sql`rollback`);
-      throw error;
-    }
-    await database.execute(sql`commit`);
+      await tx.execute(sql`TRUNCATE gateway_rate_versions`);
+      // Re-enable inside the same transaction: a committed reset must not leave the
+      // append-only protection off for the tests that assert it fires.
+      await tx.execute(
+        sql`ALTER TABLE gateway_rate_versions ENABLE TRIGGER gateway_rate_versions_append_only`,
+      );
+      await tx.execute(
+        sql`ALTER TABLE gateway_rate_versions ENABLE TRIGGER gateway_rate_versions_no_truncate`,
+      );
+    });
   } catch (error) {
     let message = String(error);
     let cause: unknown = error;

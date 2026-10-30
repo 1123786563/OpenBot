@@ -17,7 +17,9 @@ import {
  *   BA_TEST_* role URLs (mapped into the names the fixture reads), never
  *   inheriting the shared, MT, or job-level URLs — the branch is decided by the
  *   group name and wins over the multitenancy override;
- * - a directory-island group keeps its MT_TEST_DATABASE_URL override.
+ * - a directory-island group keeps its MT_TEST_DATABASE_URL override;
+ * - the billing island group carries BILLING_TEST_DATABASE_URL as its
+ *   TEST_DATABASE_URL/DATABASE_URL when the environment offers one.
  */
 export interface BunEnvOptions {
   env?: Record<string, string | undefined>;

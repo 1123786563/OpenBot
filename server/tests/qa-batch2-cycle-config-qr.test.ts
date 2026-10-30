@@ -59,7 +59,7 @@ describe("probe f: the boot cross-check", () => {
       `PAYMENT_PLAN_CATALOG plan "\${planCode}" amountCents (\${amountCents}) does not match`,
     );
     expect(CONFIG).toContain(
-      `LAGO_PLAN_CATALOG's monthly price (\${displayed.priceCents})`,
+      `LAGO_PLAN_CATALOG's monthly price (\${mismatch.priceCents} on "\${mismatch.code}")`,
     );
   });
 

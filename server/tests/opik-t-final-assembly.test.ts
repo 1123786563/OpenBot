@@ -545,7 +545,7 @@ describe("T-final M1: the boot assembly reads the ambient scope", () => {
     // top-level await, so no await window can catch any of them uninitialized.
     const source = indexSource.split("\n");
     const firstTopLevelAwait = source.findIndex((line) =>
-      /^await\s/.test(line),
+      /^ {4}await\s/.test(line),
     );
     expect(firstTopLevelAwait).toBeGreaterThan(0);
     for (const declaration of [
@@ -554,7 +554,9 @@ describe("T-final M1: the boot assembly reads the ambient scope", () => {
       "const aiObservabilityScopeEpoch = createAgentProfileScopeEpoch(database);",
       "const aiObservabilityRunScope = createBuiltinRunScopeResolver({",
     ]) {
-      const declared = source.findIndex((line) => line.startsWith(declaration));
+      const declared = source.findIndex((line) =>
+        line.startsWith("    " + declaration),
+      );
       expect(declared, declaration).toBeGreaterThanOrEqual(0);
       expect(declared, declaration).toBeLessThan(firstTopLevelAwait);
     }
