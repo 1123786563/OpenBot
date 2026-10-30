@@ -525,9 +525,13 @@ jobs:
           # fully migrated database — without their RLS/GRANT. Drop them so the task
           # system is the sole creator and every suite's apply lands on task-shaped
           # tables (the "relation already exists" wall and the aclcheck bleed share
-          # this root).
+          # this root). Dropping is only half: the suites that read those tables
+          # without applying the owning task need them back in task shape, so the
+          # whole chain is replayed here (same shape as the enterprise step below).
           DATABASE_URL="$MT_TEST_DATABASE_URL" TEST_DATABASE_URL="$MT_TEST_DATABASE_URL" \
             bun scripts/multitenancy/migrate-test.ts reconcile-drift
+          DATABASE_URL="$MT_TEST_DATABASE_URL" TEST_DATABASE_URL="$MT_TEST_DATABASE_URL" \
+            bun scripts/multitenancy/migrate-test.ts migrate all --apply
       # Same shape as the multitenancy step: the billing island's suites refuse
       # nothing on openbot_test, but a single leftover pending payment_orders row
       # (deployment-global guard, store.ts) reddens the whole family — give them
