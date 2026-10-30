@@ -16,14 +16,37 @@ try {
 // Installed as a side effect: suites that probe the app the Bun way keep working on Node's runtime.
 import "./bun-compat";
 import {
-  afterAll as e2eAfterAll,
-  afterEach as e2eAfterEach,
-  beforeAll as e2eBeforeAll,
-  beforeEach as e2eBeforeEach,
-  describe as e2eDescribe,
+  afterAll as nodeAfterAll,
+  afterEach as nodeAfterEach,
+  beforeAll as nodeBeforeAll,
+  beforeEach as nodeBeforeEach,
+  describe as nodeDescribe,
   expect as e2eExpect,
-  test as e2eTest,
+  test as nodeTest,
 } from "e2e";
+
+/*
+ * Under the e2e runner the registration APIs come from the runner itself. A `bun test` process
+ * can still load this layer (SRA009's driver imports a native-tier suite file to exercise the
+ * real fixture lifecycle), and there the runner's registry has no collector — its test/describe/
+ * hook calls throw COLLECTION_ERROR on sight. On Bun they fall back to bun:test, whose registry
+ * IS the live one in that process; the value layer (expect and its matchers) is runner-free and
+ * stays shared so assertions mean the same thing in both processes.
+ */
+const bunTestApi = process.versions.bun
+  ? ((await import("bun:test")) as Any)
+  : null;
+const e2eAfterAll = (bunTestApi?.afterAll ??
+  nodeAfterAll) as typeof nodeAfterAll;
+const e2eAfterEach = (bunTestApi?.afterEach ??
+  nodeAfterEach) as typeof nodeAfterEach;
+const e2eBeforeAll = (bunTestApi?.beforeAll ??
+  nodeBeforeAll) as typeof nodeBeforeAll;
+const e2eBeforeEach = (bunTestApi?.beforeEach ??
+  nodeBeforeEach) as typeof nodeBeforeEach;
+const e2eDescribe = (bunTestApi?.describe ??
+  nodeDescribe) as typeof nodeDescribe;
+const e2eTest = (bunTestApi?.test ?? nodeTest) as typeof nodeTest;
 
 /*
  * Value-level compatibility layer for the tester-army `e2e` runner.
@@ -686,26 +709,8 @@ function installMockHooks(): void {
           moduleMocks.clear();
           mocks.clear();
         }
-        // Bun mirrors `process.env` as `import.meta.env`; Node does not define it
-        // at all. A suite (or a component it renders) that reads `import.meta.env`
-        // therefore crashes under the Node runner, so a module that mentions it
-        // gets the same alias installed before its own code runs. A shebang, when
-        // present, has to stay the first line.
         const loaded = nextLoad(url, context);
-        if (
-          typeof loaded?.source !== "string" ||
-          !loaded.source.includes("import.meta.env")
-        ) {
-          return loaded;
-        }
-        const prelude = "import.meta.env ??= process.env;";
-        const source = loaded.source.startsWith("#!")
-          ? loaded.source.replace(
-              /^#![^\n]*\n/,
-              (m: string) => `${m}${prelude}\n`,
-            )
-          : `${prelude}\n${loaded.source}`;
-        return { ...loaded, source };
+        return loaded;
       }
       const key = decodeURIComponent(url.slice("e2e-mock:".length));
       const names = Object.keys(moduleMocks.get(key)?.() ?? {});
