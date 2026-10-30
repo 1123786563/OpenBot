@@ -1,5 +1,18 @@
-import { registerHooks } from "node:module";
 import { inspect } from "node:util";
+/*
+ * `node:module` hooks exist only on Node. This layer is loaded there by the e2e runner, but a
+ * bun-driven suite can still reach it dynamically (SRA009's driver imports the native-tier
+ * `tool-selection.integration.test.ts` inside a `bun test` child to exercise the real fixture
+ * lifecycle) — and Bun's `node:module` has no `registerHooks` export, which used to abort that
+ * import with a SyntaxError. Resolved lazily instead: on Bun the value layer alone loads, and
+ * `installMockHooks` no-ops (bun:test's own mock registry is the one that runs there).
+ */
+let registerHooks: typeof import("node:module").registerHooks | undefined;
+try {
+  ({ registerHooks } = await import("node:module"));
+} catch {
+  // Not just Bun: any runtime without the hooks API keeps the value-only layer.
+}
 // Installed as a side effect: suites that probe the app the Bun way keep working on Node's runtime.
 import "./bun-compat";
 import {
@@ -580,6 +593,9 @@ const SKIPPING = Symbol.for("openbot.e2e-compat.skipping-depth");
  */
 function installMockHooks(): void {
   if ((globalThis as Any)[HOOKS_INSTALLED]) return;
+  // Without Node's loader hooks (Bun, see the import above) there is nothing to install:
+  // bun:test's own registry is already in force in that process.
+  if (!registerHooks) return;
   (globalThis as Any)[HOOKS_INSTALLED] = true;
   registerHooks({
     resolve: (specifier: string, _context: Any, nextResolve: Any) => {

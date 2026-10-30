@@ -85,7 +85,7 @@ describe("indexArtifacts", () => {
       file("out.csv"),
       file("plot.png"),
     ]);
-    expect(result).toEqual({ indexed: 2, capped: false });
+    expect(result).toEqual({ indexed: 2, capped: false, failed: 0 });
     expect(inserted.map((row) => row.type)).toEqual(["csv", "chart"]);
     expect(inserted.every((row) => row.sessionId === "ws_1")).toBe(true);
   });
@@ -94,7 +94,7 @@ describe("indexArtifacts", () => {
     const { store, inserted } = recordingStore();
     const many = Array.from({ length: 130 }, (_, i) => file(`f${i}.csv`));
     const result = await indexArtifacts(store, "ws_1", many);
-    expect(result).toEqual({ indexed: 100, capped: true });
+    expect(result).toEqual({ indexed: 100, capped: true, failed: 0 });
     expect(inserted).toHaveLength(100);
     expect(inserted[0].path).toBe("f0.csv");
   });
@@ -112,7 +112,7 @@ describe("indexArtifacts", () => {
       file("b.csv"),
       file("c.csv"),
     ]);
-    expect(result).toEqual({ indexed: 2, capped: false });
+    expect(result).toEqual({ indexed: 2, capped: false, failed: 1 });
   });
 });
 

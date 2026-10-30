@@ -347,7 +347,9 @@ describe("MT085 AC2 — the audience select offers the design's ranges, and only
     const view = drawSharing(freshClient(), OWN_BOT);
     const user = userEvent.setup({ document });
     await user.click(await view.findByRole("button", { name: /Audience/ }));
-    await user.click(view.getByRole("combobox", { name: /^Published to/ }));
+    // HeroUI Select.Trigger is a plain button with aria-haspopup (see approval-team-settings):
+    // the combobox role the ui/select wrapper forwards does not survive the HeroUI render.
+    await user.click(view.getByRole("button", { name: /^Published to/ }));
     const offered = await view.findAllByRole("option");
     // The design's set, whole: two ranges, the team and named people — and nothing else. A
     // cross-company option is not a thing the server names, so it is not a thing this form
@@ -373,7 +375,9 @@ describe("MT085 AC2 — the audience select offers the design's ranges, and only
     const view = drawSharing(freshClient(), OWN_BOT);
     const user = userEvent.setup({ document });
     await user.click(await view.findByRole("button", { name: /Audience/ }));
-    await user.click(view.getByRole("combobox", { name: /^Published to/ }));
+    // HeroUI Select.Trigger is a plain button with aria-haspopup (see approval-team-settings):
+    // the combobox role the ui/select wrapper forwards does not survive the HeroUI render.
+    await user.click(view.getByRole("button", { name: /^Published to/ }));
     const offered = await view.findAllByRole("option");
     expect(offered.length).toBe(1);
     expect(offered[0]?.textContent).toBe("The whole team");

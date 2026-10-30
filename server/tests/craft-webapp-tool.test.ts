@@ -981,7 +981,9 @@ describe("buildWebappBootstrapScript (F5 F)", () => {
   });
 
   test("header carries SESSION_PATH and the reserved PORT (the plugin's parsePort source)", () => {
-    expect(script).toContain("SESSION_PATH=/workspace/sessions/cs-1");
+    // Single-quoted on purpose: bash word-splits an unquoted assignment whose
+    // value carries a space, so the session directory must reach bash quoted.
+    expect(script).toContain("SESSION_PATH='/workspace/sessions/cs-1'");
     expect(script.match(/^PORT=(\d+)$/m)?.[1]).toBe("3017");
   });
 

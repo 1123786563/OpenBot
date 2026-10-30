@@ -13,6 +13,7 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
+import { scopedCachePrefix } from "@/lib/enterprise/tenant/scoped-cache";
 import { Route as ChannelNewRoute } from "@/routes/_authed/_app/channel/new";
 import {
   afterAll,
@@ -22,7 +23,18 @@ import {
   test,
 } from "../../tests/support/bun-test-compat";
 
-beforeAll(() => GlobalRegistrator.register());
+beforeAll(() => {
+  GlobalRegistrator.register();
+  // The page's scoped reads wait on the signed-in user (MT084): without an /api/me answer
+  // `useScopedCache` stays pending and the route renders nothing at all. The roster data
+  // itself comes from setQueryData/queryDefaults below, so only this has to be answered.
+  global.fetch = (async (input: RequestInfo | URL) => {
+    if (String(input).includes("/api/me")) {
+      return Response.json({ user: { id: "u-1", name: "U" } });
+    }
+    return new Response(null, { status: 404 });
+  }) as unknown as typeof fetch;
+});
 
 afterEach(() => cleanup());
 
@@ -59,16 +71,28 @@ function queryClientWithAgents(agents: AgentProfile[]) {
       },
     },
   });
-  queryClient.setQueryData(agentKeys.list(false), agents);
+  queryClient.setQueryData(scopedAgentListKey(), agents);
   return queryClient;
 }
+
+/*
+ * MT084: the page reads its roster and detail through the scoped seam, so the seeds and
+ * defaults below have to file under the personal scope's prefix — a bare agentKeys key never
+ * matches and every case would run against a fetch instead of the fixture.
+ */
+const SCOPE_PREFIX = scopedCachePrefix("u-1", null);
+const scopedAgentListKey = () => [...SCOPE_PREFIX, ...agentKeys.list(false)];
+const scopedAgentDetailKey = (agentId: string) => [
+  ...SCOPE_PREFIX,
+  ...agentKeys.detail(agentId),
+];
 
 function queryClientWithFailingAgents() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  queryClient.setQueryData(agentKeys.list(false), undefined);
-  queryClient.setQueryDefaults(agentKeys.list(false), {
+  queryClient.setQueryData(scopedAgentListKey(), undefined);
+  queryClient.setQueryDefaults(scopedAgentListKey(), {
     queryFn: async () => {
       throw new Error("roster exploded");
     },
@@ -83,7 +107,7 @@ function queryClientWithHiddenDetail(
   queryFn: () => Promise<AgentProfile>,
 ) {
   const queryClient = queryClientWithAgents(agents);
-  queryClient.setQueryDefaults(agentKeys.detail(agentId), {
+  queryClient.setQueryDefaults(scopedAgentDetailKey(agentId), {
     queryFn,
     retry: false,
   });
@@ -232,7 +256,7 @@ test("/channel/new keeps a successful hidden URL recipient enabled", async () =>
     title: "Hidden Bot",
   });
   const queryClient = queryClientWithAgents([GENERAL_ASSISTANT]);
-  queryClient.setQueryData(agentKeys.detail("hidden-bot"), hiddenBot);
+  queryClient.setQueryData(scopedAgentDetailKey("hidden-bot"), hiddenBot);
   const view = renderChannelNew(queryClient, "/channel/new?agent=hidden-bot");
 
   expect(view.queryByRole("alert")).toBeNull();
@@ -253,7 +277,7 @@ test("/channel/new keeps a usable hidden detail when a background refetch fails"
       throw new Error("background detail exploded");
     },
   );
-  queryClient.setQueryData(agentKeys.detail("hidden-bot"), hiddenBot);
+  queryClient.setQueryData(scopedAgentDetailKey("hidden-bot"), hiddenBot);
   const view = renderChannelNew(queryClient, "/channel/new?agent=hidden-bot");
 
   expect(view.queryByRole("alert")).toBeNull();
@@ -273,7 +297,7 @@ test("adding a visible Bot preserves the fetched URL recipient, order, and URL",
     title: "Visible Bot",
   });
   const queryClient = queryClientWithAgents([visibleBot]);
-  queryClient.setQueryData(agentKeys.detail("hidden-bot"), hiddenBot);
+  queryClient.setQueryData(scopedAgentDetailKey("hidden-bot"), hiddenBot);
   const view = renderChannelNew(queryClient, "/channel/new?agent=hidden-bot");
 
   const trigger = await view.findByRole("button", {
