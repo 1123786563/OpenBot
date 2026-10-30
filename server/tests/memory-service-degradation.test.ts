@@ -297,39 +297,22 @@ describe("submit_retry", () => {
 });
 
 describe("no_legacy", () => {
-  test("旧记忆数据与缓存存在时不读取：只经记忆服务取得内容", async () => {
-    // 旧实现仍在盘上（candidates/缓存），计数桩证明降级路径一次都没碰它。
-    const legacyReads: string[] = [];
-    const legacyStore = {
-      async recall(subjectId: string) {
-        legacyReads.push(`store:${subjectId}`);
-        return ["旧记忆库里的正文"];
-      },
-    };
-    const legacyCache = {
-      async get(key: string) {
-        legacyReads.push(`cache:${key}`);
-        return "旧缓存正文";
-      },
-    };
-
+  test("故障与正常路径都只经记忆服务：装载器没有第二条本地读取", async () => {
+    // 旧实现仍在盘上、旧装载器可能已被装配。本票的"零读取"证据在真实装配层：
+    // server/tests/mastra-memory-service-degradation.test.ts 同时装上旧装载器与
+    // 新装载器，断言旧装载器调用计数为 0。这里只证明装载器自身没有本地来源。
     mode = "fault_503";
-    const loaded = await loader()(platformScope(), "bot-1");
-    expect(loaded.content).toBe("");
-    expect(loaded.result.unavailableReasons).toEqual(["memory_service_unavailable"]);
-    expect(loaded.content).not.toContain("旧记忆库里的正文");
-    expect(loaded.content).not.toContain("旧缓存正文");
+    const failed = await loader()(platformScope(), "bot-1");
+    expect(failed.content).toBe("");
+    expect(failed.result.unavailableReasons).toEqual(["memory_service_unavailable"]);
+    // 故障时只问一次服务，没有任何回填。
+    expect(seen.filter((request) => request.path === "/v1/recall")).toHaveLength(1);
 
-    // 服务正常时内容也只来自服务，不存在"先服务后本地"的回填。
     mode = "available";
     const available = await loader()(platformScope(), "bot-1");
     expect(available.content).toBe("- 用户偏好简洁回复");
-    expect(available.content).not.toContain("旧");
-
-    // 旧存储与缓存对象存在却从未被装载器读取。
-    expect(legacyReads).toEqual([]);
-    expect(available.result.memories[0].originAppId).toBe("app-a");
-    expect(legacyStore).toBeTruthy();
-    expect(legacyCache).toBeTruthy();
+    // 内容逐字来自服务响应：装载器没有第二条读取路径可回填。
+    expect(available.result.memories.map((memory) => memory.versionId)).toEqual(["version-1"]);
+    expect(seen.filter((request) => request.path === "/v1/recall")).toHaveLength(2);
   });
 });

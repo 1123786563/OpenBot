@@ -1565,6 +1565,8 @@
     "server/tests/mastra-intelligence-optional.test.ts",
     "server/tests/mastra-learned-skills.test.ts",
     "server/tests/mastra-legacy-import.test.ts",
+    "server/tests/mastra-memory-service-degradation.test.ts",
+    "server/tests/mastra-memory-service-degradation.test.ts",
     "server/tests/mastra-message-parts.test.ts",
     "server/tests/mastra-openmuse-entry.test.ts",
     "server/tests/mastra-personal-memory.test.ts",

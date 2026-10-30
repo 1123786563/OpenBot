@@ -3027,9 +3027,17 @@ function mastraAgentConfiguration(input: {
         // out by the module that rendered it — the id set this run's answers
         // carry to the person (see withAnswerMemoryBasis). One authority read,
         // zero second reads: what the model saw is what the answer cites.
-        const personalMemoryBasis = personalMemoryBlock
-          ? parsePersonalMemoryBasis(personalMemoryBlock)
-          : undefined;
+        //
+        // #729 review: only the legacy #395 block is written in that format. A
+        // memory-service block has no `kind` (MemoryView carries none) and its
+        // ids are not #387 evidence ids, so this seam stamps NO basis rather
+        // than a half-parse — an answer with no basis claims nothing, which is
+        // the honest direction. Giving service memories a basis is #733's
+        // decision (it needs a kind vocabulary and an evidence seam for them).
+        const personalMemoryBasis =
+          mastraMemoryContext === undefined && personalMemoryBlock
+            ? parsePersonalMemoryBasis(personalMemoryBlock)
+            : undefined;
         // ME03 production wiring: the engine path runs on the server-rebuilt
         // authorized history and persists its output through the conversation
         // runtime. Without one the run refuses rather than executing on the
