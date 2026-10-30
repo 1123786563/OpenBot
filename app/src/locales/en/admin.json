@@ -1149,6 +1149,7 @@
     "operation": "The model scope change could not be saved.",
     "empty": "The gateway has not synced any models yet. Check the gateway connection and its sync status.",
     "listTitle": "Models",
+    "pagerStatus": "Page {{page}} of {{totalPages}} · {{total}} models",
     "syncHint": "A model an administrator opened stays open across syncs; a model the gateway stops listing is no longer selectable, and a newly listed one starts closed.",
     "fields": {
       "reason": "Reason"

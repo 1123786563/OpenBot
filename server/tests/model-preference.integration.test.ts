@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   afterAll,
   beforeAll,
@@ -5,7 +6,6 @@ import {
   expect,
   test,
 } from "../../tests/support/bun-test-compat";
-import { randomUUID } from "node:crypto";
 import { createAuditStore } from "../src/audit";
 import { createDatabase, type Database } from "../src/db/client";
 import {
@@ -14,18 +14,18 @@ import {
   normalizeGatewayModelCatalog,
 } from "../src/gateway/catalog";
 import {
-  type EffectiveModelResolution,
-  type ModelPreferenceRecord,
-  MODEL_PREFERENCE_SCOPES,
-  createEnterpriseGatewayModelPreferenceStore,
-  createGatewayModelPreferenceService,
-  type GatewayModelPreferenceService,
-  type ModelPreferenceScope,
-} from "../src/gateway/model-preference";
-import {
   createGatewayModelCapabilityFilterService,
   type GatewayModelCapabilityFilterService,
 } from "../src/gateway/model-capability-filter";
+import {
+  createEnterpriseGatewayModelPreferenceStore,
+  createGatewayModelPreferenceService,
+  type EffectiveModelResolution,
+  type GatewayModelPreferenceService,
+  MODEL_PREFERENCE_SCOPES,
+  type ModelPreferenceRecord,
+  type ModelPreferenceScope,
+} from "../src/gateway/model-preference";
 import {
   createEnterpriseGatewayModelScopeStore,
   createGatewayModelScopeService,
@@ -33,9 +33,9 @@ import {
 } from "../src/gateway/model-scope";
 import {
   createEnterpriseGatewayPriceSnapshotStore,
+  mapPriceDims,
   type PriceSnapshotAppendInput,
   type PriceSnapshotDims,
-  mapPriceDims,
 } from "../src/gateway/price-snapshot";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 import { rejectionOf } from "./support/pg-errors";
@@ -267,6 +267,29 @@ describe("三层覆盖优先级 (全局默认 → 该 Bot 默认 → 当前会�
       userId: user,
       botId: "bot-1",
       conversationId: "conv-1",
+    });
+    const answered = sourceOf(resolution);
+    expect(answered.source).toBe("global");
+    expect(answered.ref).toEqual(chatRef(SELECTABLE_CHAT));
+  });
+
+  // The picker's read has no session: GET /api/model-selection passes no
+  // conversationId, and the route hands "" through. An empty session is "no
+  // conversation layer to read", never a malformed identity — asking the store
+  // for one throws and the route answers 503, which is how this screen died.
+  test("不带会话 id 时不读会话层，按下一层如实回答", async () => {
+    const user = nextId("user");
+    const service = preferenceService();
+    await service.setGlobalDefault({
+      userId: user,
+      ref: chatRef(SELECTABLE_CHAT),
+      botCapabilities: CHAT_BOT_CAPABILITIES,
+    });
+
+    const resolution = await service.resolveEffectiveModel({
+      userId: user,
+      botId: "bot-1",
+      conversationId: "",
     });
     const answered = sourceOf(resolution);
     expect(answered.source).toBe("global");

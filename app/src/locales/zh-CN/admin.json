@@ -1149,6 +1149,7 @@
     "operation": "模型开放状态保存失败。",
     "empty": "网关尚未同步任何模型。请检查网关连接与同步状态。",
     "listTitle": "模型",
+    "pagerStatus": "第 {{page}} / {{totalPages}} 页 · 共 {{total}} 个模型",
     "syncHint": "管理员开放的模型在同步后保持开放；网关不再列出的模型不可再被选择，新出现的模型默认关闭。",
     "fields": {
       "reason": "原因"

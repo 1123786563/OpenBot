@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { TFunction } from "i18next";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { BillingPager } from "@/components/billing/pager";
 import {
   PageEmpty,
   PageRows,
@@ -44,6 +45,9 @@ import { useDateTime } from "@/lib/i18n/datetime";
 export const Route = createFileRoute("/_authed/admin/model-catalog")({
   component: ModelCatalogPage,
 });
+
+/** How many models one page of the list holds. The catalog arrives whole; the pager walks it. */
+const PAGE_SIZE = 50;
 
 /**
  * The administrator's model catalog (Bifrost 03.7): every model the gateway's
@@ -97,6 +101,17 @@ function ModelCatalogPage() {
   } | null>(null);
   const [reason, setReason] = useState("");
   const [problem, setProblem] = useState<string | undefined>(undefined);
+  const [page, setPage] = useState(1);
+
+  // A sync can shrink the list under a page already turned to, so the clamp — not the
+  // state — decides which page is on screen (the pager clamps its own display the same way).
+  const models = catalog.data?.models ?? [];
+  const totalPages = Math.max(Math.ceil(models.length / PAGE_SIZE), 1);
+  const currentPage = Math.min(page, totalPages);
+  const pageModels = models.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
 
   const openDialog = (
     model: AdminModelCatalogModel,
@@ -173,12 +188,12 @@ function ModelCatalogPage() {
         {catalog.isError ? (
           <PageEmpty>{t("modelCatalog.loadError")}</PageEmpty>
         ) : null}
-        {catalog.data && catalog.data.models.length === 0 ? (
+        {catalog.data && models.length === 0 ? (
           <PageEmpty>{t("modelCatalog.empty")}</PageEmpty>
         ) : null}
-        {catalog.data && catalog.data.models.length > 0 ? (
+        {catalog.data && models.length > 0 ? (
           <PageRows>
-            {catalog.data.models.map((model, index) => (
+            {pageModels.map((model, index) => (
               <div key={modelKey(model)}>
                 {index > 0 ? <Separator /> : null}
                 <Item size="sm" className="py-3">
@@ -231,6 +246,16 @@ function ModelCatalogPage() {
               </div>
             ))}
           </PageRows>
+        ) : null}
+        {catalog.data && models.length > 0 ? (
+          <BillingPager
+            hasNext={currentPage < totalPages}
+            onPage={setPage}
+            page={currentPage}
+            statusTemplate={t("modelCatalog.pagerStatus")}
+            totalCount={models.length}
+            totalPages={totalPages}
+          />
         ) : null}
       </PageSection>
 

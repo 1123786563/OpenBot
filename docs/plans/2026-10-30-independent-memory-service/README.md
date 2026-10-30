@@ -97,3 +97,34 @@ flowchart LR
 | A17、A18 | M07、O03 |
 
 Z01 对全部 A01–A19 做组合验收。执行者逐项填写结果及证据，不用表中“有任务”替代真实验证。
+
+## 每个 Issue 的详细计划
+
+每票单独保留已发布验收、原生阻塞、文件与接口、测试步骤及失败处理；详细计划是本地规划，拟建仓库与命令尚未运行。实现使用已验证的前置检查点，不能将具名 fixture 通过当成跨仓库验收。
+
+| Issue | 详细计划 |
+| --- | --- |
+| [#714](https://github.com/1123786563/OpenBot/issues/714) | [[Memory 01] 独立身份中心登录](tickets/714.md) |
+| [#715](https://github.com/1123786563/OpenBot/issues/715) | [[Memory 02] 保留现有用户身份接入统一登录](tickets/715.md) |
+| [#716](https://github.com/1123786563/OpenBot/issues/716) | [[Memory 03] 接入应用登记与本人委托](tickets/716.md) |
+| [#717](https://github.com/1123786563/OpenBot/issues/717) | [[Memory 04] 从授权内容提交候选](tickets/717.md) |
+| [#718](https://github.com/1123786563/OpenBot/issues/718) | [[Memory 05] 审核候选形成个人记忆](tickets/718.md) |
+| [#719](https://github.com/1123786563/OpenBot/issues/719) | [[Memory 06] 明确记住与敏感内容保护](tickets/719.md) |
+| [#720](https://github.com/1123786563/OpenBot/issues/720) | [[Memory 07] 来源权限受控的记忆召回](tickets/720.md) |
+| [#721](https://github.com/1123786563/OpenBot/issues/721) | [[Memory 08] 暂停学习与暂停使用](tickets/721.md) |
+| [#722](https://github.com/1123786563/OpenBot/issues/722) | [[Memory 09] 更正记忆及历史有效时间](tickets/722.md) |
+| [#723](https://github.com/1123786563/OpenBot/issues/723) | [[Memory 10] 派生记忆与依据审核](tickets/723.md) |
+| [#724](https://github.com/1123786563/OpenBot/issues/724) | [[Memory 11] 逐条授权其他应用只读](tickets/724.md) |
+| [#725](https://github.com/1123786563/OpenBot/issues/725) | [[Memory 12] 撤销共享并跟踪应用副本清理](tickets/725.md) |
+| [#726](https://github.com/1123786563/OpenBot/issues/726) | [[Memory 13] 遗忘记忆与来源撤销](tickets/726.md) |
+| [#727](https://github.com/1123786563/OpenBot/issues/727) | [[Memory 14] 记忆处理预算与用量](tickets/727.md) |
+| [#728](https://github.com/1123786563/OpenBot/issues/728) | [[Memory 15] 内容保留期限与恢复](tickets/728.md) |
+| [#729](https://github.com/1123786563/OpenBot/issues/729) | [[Memory 16] 服务故障与授权降级](tickets/729.md) |
+| [#730](https://github.com/1123786563/OpenBot/issues/730) | [[Memory 17] OpenBot 来源授权与记忆接入](tickets/730.md) |
+| [#731](https://github.com/1123786563/OpenBot/issues/731) | [[Memory 18] OpenBot 内嵌记忆管理](tickets/731.md) |
+| [#732](https://github.com/1123786563/OpenBot/issues/732) | [[Memory 19] 切换全部入口并移除旧记忆路径](tickets/732.md) |
+| [#733](https://github.com/1123786563/OpenBot/issues/733) | [[Memory 20] 跨应用端到端验收](tickets/733.md) |
+
+共享文件交接：#714 先提供 OpenBot 身份客户端和 MEMORY 登录骨架，#715/#716 在检查点上扩展；#718→#719、#720→#721–#726 对同一审核/召回/共享文件按依赖集成。#725 与 #726 的清理回执共用逐项证据合同，#722 的历史召回共用 `RecallInput.asOf`；未部署的旧草案字段不得作为另一个兼容权威。
+
+技术集成交接：#729 的 MEMORY 降级部分可在 #720 后推进，其 OpenBot 调用方部分消费 #730 的真实客户端和装载器；#730 未交付时只能用合同夹具规划，不能将 #729 的真实组合验收标为完成。该交接不是现有 GitHub 原生阻塞边，实施摄取时须显式核对并在执行 DAG 中记录，不擅自改票。

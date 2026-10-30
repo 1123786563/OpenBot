@@ -58,6 +58,11 @@ type RecallResult = Readonly<{
   memories: readonly MemoryView[];
   unavailableReasons: readonly string[];
 }>;
+type RecallInput = Readonly<{
+  query?: string;
+  sourceRefs?: readonly SourceRef[];
+  asOf?: string; // ISO 8601 UTC；省略时按当前有效版本。
+}>;
 type SubmitInput = Readonly<{
   idempotencyKey: string;
   fragment: string;
@@ -66,8 +71,11 @@ type SubmitInput = Readonly<{
 type CleanupReceipt = Readonly<{
   notificationId: string;
   state: "completed" | "partial" | "failed";
-  controlledScopes: readonly string[];
-  unresolvedScopes: readonly string[];
+  items: readonly Readonly<{
+    scope: string;
+    state: "completed" | "failed" | "uncontrollable";
+    evidenceRef: string | null;
+  }>[];
 }>;
 type BudgetedCall<T> = Readonly<{
   appId: string;
@@ -88,12 +96,16 @@ type SweepResult = Readonly<{
 
 内部预算使用美元百万分之一的整数单位，bigint 不直接上 JSON wire；API 显示值用十进制字符串并锁定价格依据。BudgetedCall 的 execute 只能来自已装配网关适配，覆盖 Hindsight 内部模型调用，不能接受应用上传函数或自行声明低估费用。
 
+`RecallInput.asOf` 是明确的历史有效时间选择，不是身份或授权证明；服务仍按当前身份、委托、共享和来源权限检查。有效区间采用 `[effectiveFrom, effectiveUntil)`，UTC 时间不合法则拒绝；当前查询省略 `asOf`。
+
+`CleanupReceipt.items` 逐项声明接收应用控制的范围和结果；每项 `completed` 须有可核验 `evidenceRef`，`failed` 或 `uncontrollable` 不能算清理完成。整体 `completed` 必须与全部应清理范围的完成证据一致，空清单或回调 200 不证明清理；未回执表示待处理。计划中的旧 `controlledScopes` / `unresolvedScopes` 是未发布草案，不是已部署协议；首个实现统一发布此合同版本，真实适配接入前须经消费者合同测试。
+
 ## MEMORY 的逻辑服务接口与 wire
 
 `MemoryService` 定义于 `src/memory/service.ts`，方法均异步：
 
 - `submit(context: AccessContext, input: SubmitInput): Promise<JobView>`。
-- `recall(context: AccessContext, input: { query?: string; sourceRefs?: readonly SourceRef[] }): Promise<RecallResult>`。
+- `recall(context: AccessContext, input: RecallInput): Promise<RecallResult>`。
 - `review(context: AccessContext, input: { candidateId: string; decision: "confirm" | "edit" | "reject"; content?: string }): Promise<MemoryView | null>`。
 - `correct(context: AccessContext, input: { memoryId: string; content: string; effectiveFrom: string }): Promise<MemoryView>`。
 - `forget(context: AccessContext, memoryId: string): Promise<{ cleanupId: string }>`。
@@ -106,7 +118,7 @@ type SweepResult = Readonly<{
 
 异步提交只有在片段、归属、过期时间与任务原子持久化后返回 202。相同 `(appId, subjectId, idempotencyKey)` 与相同内容返回原任务；相同 key 内容不同返回冲突。其他写入也须有同等级幂等或版本前置条件。
 
-拒绝使用稳定错误 envelope `{ error: { code, requestId } }`，细节不给无权调用方泄露对象存在性。合同固定：400 `INVALID_REQUEST`、401 `AUTH_REQUIRED`、403 `APP_NOT_REGISTERED` / `DELEGATION_REQUIRED` / `SOURCE_DENIED`、404 `NOT_FOUND`、409 `VERSION_CONFLICT` / `IDEMPOTENCY_CONFLICT`、503 `DEPENDENCY_UNAVAILABLE`；无权得知存在性的对象统一 404。可靠接收后的预算不足是 JobView pending 原因，不伪装为同步成功记忆；来源无法核验不能伪装成空召回。M01/M02 与客户端合同测试共同锁定此映射。
+拒绝使用稳定错误 envelope `{ error: { code, requestId } }`，细节不给无权调用方泄露对象存在性。合同固定：400 `INVALID_REQUEST`、401 `AUTH_REQUIRED`、403 `APP_NOT_REGISTERED` / `DELEGATION_REQUIRED` / `SOURCE_DENIED`、404 `NOT_FOUND`、409 `VERSION_CONFLICT` / `IDEMPOTENCY_CONFLICT`、503 `DEPENDENCY_UNAVAILABLE`；无权得知存在性的对象统一 404。#722 历史查询能力接入前，#720 对带 `asOf` 的请求以 501 `HISTORICAL_QUERY_UNSUPPORTED` 拒绝，不能忽略时间并返回当前内容；能力交付后按历史时间合同处理。可靠接收后的预算不足是 JobView pending 原因，不伪装成同步成功记忆；来源无法核验不能伪装成空召回。M01/M02 与客户端合同测试共同锁定此映射。
 
 ## 来源与撤权
 
@@ -120,6 +132,6 @@ type SweepResult = Readonly<{
 
 MEMORY 提供 `createMemoryClient(options: { baseUrl: string; credentials: ServerCredentialProvider }): MemoryClient`；`MemoryClient.submit/recall` 的输入输出复用上述合同。OpenBot 的 ServerCredentialProvider 仅在服务器签发或取得已验证委托，客户端包不得包含服务秘密。
 
-`ServerCredentialProvider.forRequest(input: { subjectId: string; appId: string; requestId: string }): Promise<{ serviceCredential: string; userDelegation: string }>`；MemoryClient 的 `submit(input: SubmitInput)`、`recall(input: { query?: string; sourceRefs?: readonly SourceRef[] })` 分别返回 JobView、RecallResult，服务端消费时由 provider 绑定当前可信本人上下文。浏览器管理站使用本人会话客户端，不装配该服务秘密 provider。
+`ServerCredentialProvider.forRequest(input: { subjectId: string; appId: string; requestId: string }): Promise<{ serviceCredential: string; userDelegation: string }>`；MemoryClient 的 `submit(input: SubmitInput)`、`recall(input: RecallInput)` 分别返回 JobView、RecallResult，服务端消费时由 provider 绑定当前可信本人上下文。浏览器管理站使用本人会话客户端，不装配该服务秘密 provider。
 
 内嵌页面消息仅支持 `{ type: "memory.ready" | "memory.resize" | "memory.auth-required" | "memory.logged-out"; requestId: string; height?: number }`。消息不携带身份、公司选择或 bearer token，不触发权限变更；双方校验精确 Origin、source window 与关联 ID。auth-required 只要求顶层执行已登记回跳流程，不接受任意消息 URL。支持同站 HTTPS 部署作为首个集成 fixture；跨站拓扑须独立验证会话/存储合同，不能默默依赖第三方 cookie。
