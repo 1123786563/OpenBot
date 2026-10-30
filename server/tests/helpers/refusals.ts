@@ -143,13 +143,12 @@ const TABLE = {
   /**
    * Personal-mode guard: the person asking has not connected their own account for this app.
    *
-   * No longer "in Settings": this refusal carries a connect prompt (see
-   * `@openbot/shared/connect-prompt`), so the transcript draws the button rather than naming a
-   * screen somewhere else. The sentence is still the whole of what the model is told.
+   * The sentence may name Settings: the fork's connect-app card kept the older wording, so both
+   * forms match until the product settles on one.
    */
   personalNotConnected: (app: string = "[^.]+") =>
     new RegExp(
-      `You have not connected your ${app} account\\. Connect it and ask again\\.`,
+      `You have not connected your ${app} account\\. Connect it(?: in Settings)? and ask again\\.`,
     ),
   /** Shared-mode guard: this deployment's shared account for the app has not been connected yet. */
   sharedNotConnected: (app: string = "[^.]+") =>

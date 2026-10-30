@@ -1029,10 +1029,11 @@ describeDb("PKG11 legacy migration drill (real restricted roles)", () => {
       createMarketplaceRoutes({
         installs: createMarketplaceStore(setup),
         // Minimal agent seam: the route's own Bot-creation path is not under
-        // test; the RECEIPT write is. No skillWrites/grants: the route then
-        // only writes expert_installs — exactly the legacy-side writer.
+        // test; the RECEIPT write is. The skill/grants seams are present only
+        // so the skills guard lets the install through — their writes are
+        // legacy-side rows, never enterprise_package_*.
         agents: {
-          create: async (_actor, input: { name: string }) => {
+          createBot: async (_actor, input: { name: string }) => {
             const id = `pkg11-route-bot-${randomUUID()}`;
             await setup.$client.unsafe(
               `insert into agents (id, name, type, configuration)
@@ -1041,7 +1042,15 @@ describeDb("PKG11 legacy migration drill (real restricted roles)", () => {
             );
             return { id };
           },
-          softDelete: async () => {},
+          softDeleteBot: async () => {},
+        },
+        skillWrites: {
+          installSkill: async () => {},
+          uninstallSkill: async () => {},
+          skillOwner: async () => undefined,
+        },
+        grants: {
+          grant: async () => {},
         },
         requireUser: (async (context, next) => {
           context.set("actor", {

@@ -55,6 +55,10 @@ services:
       OPENBOT_TLS_WARN_DAYS: ${OPENBOT_TLS_WARN_DAYS:-30}
       OPENBOT_TLS_CRIT_DAYS: ${OPENBOT_TLS_CRIT_DAYS:-14}
       OPENBOT_TLS_ALERT_COOLDOWN_SECONDS: ${OPENBOT_TLS_ALERT_COOLDOWN_SECONDS:-86400}
+      # fix-ocr22 #5: the alert lock's acquire budget, an iteration count (50 ≈
+      # the 5s-then-degrade contract). Raise it on a fork-starved host so a
+      # waiter outlasts a legitimate holder instead of degrading mid-section.
+      OPENBOT_TLS_LOCK_SPINS: ${OPENBOT_TLS_LOCK_SPINS:-50}
       OPENBOT_TLS_ALERT_WEBHOOK: ${OPENBOT_TLS_ALERT_WEBHOOK:-}
       # The reload seam: a stamp file (tls/reload.stamp) always; an http(s) POST to
       # the reload endpoint of whatever terminates TLS when set. Never a container

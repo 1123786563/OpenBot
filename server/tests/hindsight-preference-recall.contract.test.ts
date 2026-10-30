@@ -71,7 +71,9 @@ async function live(): Promise<boolean> {
   }
 }
 
-const available = CONTRACT_API_KEY && CONTRACT_SECRET && (await live());
+// Boolean, never the && chain's undefined: the loud-skip guard asserts false
+// when the contract env is absent, so the missing-env case must read false.
+const available = Boolean(CONTRACT_API_KEY && CONTRACT_SECRET && (await live()));
 
 // The controlled-directory technique from hindsight-bank-scope.test.ts, so the scopes this
 // suite recalls through carry the real issuedScopes trust marker.

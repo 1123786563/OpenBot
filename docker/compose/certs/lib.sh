@@ -530,7 +530,14 @@ status_lock_acquire() {
   acl_file="$1"
   acl_lock="$(dirname "$acl_file")/.lock"
   acl_spins=0
-  while [ "$acl_spins" -lt 50 ]; do
+  # The budget is an ITERATION count, and an iteration forks (~4×): on a
+  # fork-starved runner the same 50 buys far less wall time than the 5s it
+  # nominalizes, so a legitimate holder's section (~200 forks) can outlast the
+  # waiter — which then degrades MID-SECTION and double-fires the very alert the
+  # lock exists to dedupe. The knob lets a slow runner wait longer; the default
+  # keeps the documented 5s-then-degrade contract.
+  acl_budget="$(tls_numeric "${OPENBOT_TLS_LOCK_SPINS:-50}" 50)"
+  while [ "$acl_spins" -lt "$acl_budget" ]; do
     if mkdir "$acl_lock" 2>/dev/null; then
       printf '%s\n' "$$" >"$acl_lock/owner" 2>/dev/null || true
       return 0

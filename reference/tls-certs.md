@@ -328,6 +328,7 @@ binds its own scratch dir as the TLS directory, and cleans the project up after.
 | `OPENBOT_TLS_WARN_DAYS` / `OPENBOT_TLS_CRIT_DAYS` | `30` / `14` | Health bands |
 | `OPENBOT_TLS_ALERT_WEBHOOK` | — | `https://…` POST or `file:/path` JSONL |
 | `OPENBOT_TLS_ALERT_COOLDOWN_SECONDS` | `86400` | Re-page interval while degraded |
+| `OPENBOT_TLS_LOCK_SPINS` | `50` | Alert-lock acquire budget in spin iterations (~0.1s each, so 50 is the 5s-then-degrade contract). Raise it on a fork-starved host so a waiter outlasts a legitimate holder instead of degrading mid-section and double-paging (fix-ocr22 #5 / fix-ocr26 #11) |
 | `OPENBOT_TLS_RELOAD_URL` | — | Optional reload POST to the **TLS terminator** (not the OpenBot server, which exposes no such endpoint) |
 | `OPENBOT_TLS_RENEW_INTERVAL_SECONDS` | `21600` | Renewal loop cadence (min 600) |
 | `OPENBOT_TLS_RENEW_CMD` | — | **Test seam — do not set in production.** Replaces the renewal command (`sh -c`); the failure drill (`drill-renewal-failure.sh`) and `scripts/tls-pipeline.test.ts` drive failure/recovery through it |
