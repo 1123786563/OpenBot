@@ -373,6 +373,8 @@ export function mapEntraProfile(profile: Record<string, unknown>) {
  * 1.7 ships no `casdoor()` preset, so this is the same five fields one would be. The trailing slash
  * is dropped the same way `okta()` drops it, because the discovery URL is built by joining.
  */
+import { identityCenter } from "./identity-center-client";
+
 function casdoor(options: {
   clientId: string;
   clientSecret: string;
@@ -683,6 +685,7 @@ export function createAuth(
         ]
       : []),
     ...(authConfig.casdoor ? [casdoor(authConfig.casdoor)] : []),
+    ...(authConfig.identityCenter ? [identityCenter(authConfig.identityCenter)] : []),
   ];
   /*
    * The transaction capture (T05.05): every transaction the fixed build opens

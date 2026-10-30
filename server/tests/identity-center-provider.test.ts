@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/e2e-compat";
 import { startIdentityCenter, type IdentityCenterProcess } from "./support/identity-center";
 import { identityCenter } from "../src/auth/identity-center-client";
+import { createAuth } from "../src/auth/index";
 
 /*
  * #714 OpenBot side: the RP entry points at a real, separately-deployed identity center.
@@ -41,6 +42,32 @@ describe("identity-center-provider", () => {
     expect(entry.accountIssuer).toBe(center.issuer);
     expect(entry.discoveryUrl).toBe(`${center.issuer}/.well-known/openid-configuration`);
     expect(entry.scopes).toContain("openid");
+  });
+
+  test("the RP entry rides the real auth assembly, not a dead module (#714)", () => {
+    // createAuth spreads configured providers into genericOAuth; a malformed
+    // entry is refused at assembly, so "assembles without throwing" is the
+    // cheapest proof the entry is wired. The browser-level handoff (authorize
+    // redirect, code exchange) is the #733 combined acceptance with a database.
+    process.env.EXPO_PROJECT_ID = "00000000-0000-0000-0000-000000000000";
+    const auth = createAuth(
+      {
+        auth: {
+          baseUrl: "https://openbot.test",
+          secret: "test-secret-that-is-long-enough",
+          trustedOrigins: ["https://app.openbot.test"],
+          initialAdminEmails: [],
+          identityCenter: {
+            clientId: center.clientId,
+            clientSecret: center.clientSecret,
+            issuer: center.issuer,
+          },
+        },
+        keyEncryptionKey: "A".repeat(44),
+      },
+      {} as never,
+    );
+    expect(typeof auth.handler).toBe("function");
   });
 
   test("未登记回调在授权端点被拒绝（400，不产生重定向）", async () => {

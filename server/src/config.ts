@@ -140,7 +140,7 @@ export type ComputerConfig =
  * has Google or Entra or Okta and is not going to acquire another, so the shape here is a set of
  * optional providers rather than one required one, and the deployment turns on whichever it has.
  */
-export type AuthProviderId = "google" | "microsoft" | "okta" | "casdoor";
+export type AuthProviderId = "google" | "microsoft" | "okta" | "casdoor" | "identity-center";
 
 /** An OAuth client, as every provider here needs one. */
 export type OAuthClient = { clientId: string; clientSecret: string };
@@ -178,6 +178,13 @@ export type AuthConfig = {
    */
   casdoor?: OAuthClient & { issuer: string };
   /**
+   * The independent identity center (ADR 0012), likewise an OIDC provider identified by its
+   * issuer. Unlike the provider entries above this is this deployment's own unified identity
+   * center rather than a third party: OpenBot signs in as a relying party over code+PKCE and
+   * never copies a session cookie across origins.
+   */
+  identityCenter?: OAuthClient & { issuer: string };
+  /**
    * Email + password sign-in (Better Auth's `emailAndPassword`), for clients
    * without a browser to run OAuth in — the OpenMuse mobile app. Off by
    * default: deployments that authenticate through a provider keep this
@@ -212,6 +219,7 @@ export function configuredAuthProviders(
   if (auth.microsoft) providers.push("microsoft");
   if (auth.okta) providers.push("okta");
   if (auth.casdoor) providers.push("casdoor");
+  if (auth.identityCenter) providers.push("identity-center");
   return providers;
 }
 
@@ -1096,7 +1104,7 @@ function remoteBudgetContractConfig(
 
 function oauthClient(
   environment: Environment,
-  provider: "GOOGLE" | "MICROSOFT" | "OKTA" | "CASDOOR",
+  provider: "GOOGLE" | "MICROSOFT" | "OKTA" | "CASDOOR" | "IDENTITY_CENTER",
 ): OAuthClient | undefined {
   const clientId = optional(environment, `${provider}_OAUTH_CLIENT_ID`);
   const clientSecret = optional(environment, `${provider}_OAUTH_CLIENT_SECRET`);
@@ -1176,6 +1184,7 @@ function authConfig(
   const microsoft = microsoftAuth(environment);
   const okta = oktaAuth(environment);
   const casdoor = casdoorAuth(environment);
+  const identityCenter = identityCenterAuth(environment);
   const emailPassword =
     optional(environment, "OPENBOT_EMAIL_PASSWORD") === "true";
 
@@ -1183,7 +1192,7 @@ function authConfig(
   const baseUrl = url(environment, "BETTER_AUTH_URL");
   const authSmtp = authSmtpSettings(environment);
 
-  if (!google && !microsoft && !okta && !casdoor && !emailPassword) {
+  if (!google && !microsoft && !okta && !casdoor && !identityCenter && !emailPassword) {
     if (secret || baseUrl) {
       throw new Error(
         "BETTER_AUTH_SECRET or BETTER_AUTH_URL is set but no identity provider is. Configure GOOGLE_OAUTH_*, MICROSOFT_OAUTH_*, OKTA_OAUTH_* or CASDOOR_OAUTH_*, set OPENBOT_EMAIL_PASSWORD=true, or unset both",
@@ -1298,6 +1307,7 @@ function authConfig(
     ...(microsoft ? { microsoft } : {}),
     ...(okta ? { okta } : {}),
     ...(casdoor ? { casdoor } : {}),
+    ...(identityCenter ? { identityCenter } : {}),
     emailPassword,
     ...(authSmtp ? { authSmtp } : {}),
   };
@@ -1427,6 +1437,27 @@ function casdoorAuth(
   if (!issuer) {
     throw new Error(
       "Casdoor sign-in requires CASDOOR_OAUTH_ISSUER, such as http://localhost:8000",
+    );
+  }
+  return { ...client, issuer };
+}
+
+function identityCenterAuth(
+  environment: Environment,
+): (OAuthClient & { issuer: string }) | undefined {
+  const client = oauthClient(environment, "IDENTITY_CENTER");
+  const issuer = url(environment, "IDENTITY_CENTER_OAUTH_ISSUER");
+  if (!client) {
+    if (issuer) {
+      throw new Error(
+        "IDENTITY_CENTER_OAUTH_ISSUER is set but IDENTITY_CENTER_OAUTH_CLIENT_ID and IDENTITY_CENTER_OAUTH_CLIENT_SECRET are not",
+      );
+    }
+    return undefined;
+  }
+  if (!issuer) {
+    throw new Error(
+      "Identity-center sign-in requires IDENTITY_CENTER_OAUTH_ISSUER, such as http://127.0.0.1:4210",
     );
   }
   return { ...client, issuer };
