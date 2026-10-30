@@ -11,6 +11,33 @@ import type { MemoryClient, RecallResult, SourceRef } from "./client";
  * RecallResult，让上层如实呈现"部分不可用"，其他仍授权的内容照常交付。
  */
 
+/**
+ * #729 降级提示：普通对话在记忆服务不可用时继续，但必须诚实说明本次没有使用
+ * 记忆——否则模型会顺口"记得"不存在的事。提示进的是模型上下文，不是身份事实。
+ */
+export const MEMORY_UNAVAILABLE_NOTICE =
+  "OpenBot memory is unavailable for this run. Do not claim to remember anything about this person; if asked, say memory is unavailable right now.";
+
+export type MemoryContextBlock =
+  | { blocked: false; block: string | undefined }
+  | { blocked: true; reason: "memory_unavailable" };
+
+/**
+ * #729 故障语义：服务故障时普通对话继续（注入诚实提示），依赖记忆的任务暂停。
+ * 未装配记忆服务不等于故障——与旧行为一致，不注入也不暂停。
+ */
+export function memoryContextBlock(
+  loaded: { content: string; result: RecallResult } | undefined,
+  options: { required: boolean },
+): MemoryContextBlock {
+  if (!loaded) return { blocked: false, block: undefined };
+  if (loaded.result.state !== "unavailable") {
+    return { blocked: false, block: loaded.content || undefined };
+  }
+  if (options.required) return { blocked: true, reason: "memory_unavailable" };
+  return { blocked: false, block: MEMORY_UNAVAILABLE_NOTICE };
+}
+
 export function createMemoryContextLoader(deps: {
   client: MemoryClient;
   /** 按运行归属签发来源引用（OpenBot 是唯一签发方）。 */

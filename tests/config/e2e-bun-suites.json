@@ -475,6 +475,7 @@
     {
       "name": "server/tests part 10",
       "files": [
+        "server/tests/mastra-memory-service-degradation.test.ts",
         "server/tests/mastra-openmuse-entry.test.ts",
         "server/tests/mastra-personal-memory.test.ts",
         "server/tests/mastra-stream-events.test.ts",

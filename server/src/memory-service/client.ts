@@ -64,6 +64,8 @@ export function createMemoryClient(options: {
   baseUrl: string;
   appId: string;
   credentials: ServerCredentialProvider;
+  /** 无答复就是故障：超时与连接中断同样按"没有可靠回执"处理。 */
+  timeoutMs?: number;
 }) {
   const base = options.baseUrl.replace(/\/$/, "");
   const call = async <T>(
@@ -88,6 +90,7 @@ export function createMemoryClient(options: {
         authorization: `Bearer ${credential.serviceCredential}`,
       },
       body: JSON.stringify(body),
+      ...(options.timeoutMs === undefined ? {} : { signal: AbortSignal.timeout(options.timeoutMs) }),
     });
     if (!response.ok) {
       const payload = (await response.json().catch(() => ({}))) as { error?: { code?: string } };
@@ -115,3 +118,30 @@ export function createMemoryClient(options: {
 }
 
 export type MemoryClient = ReturnType<typeof createMemoryClient>;
+
+/**
+ * #729 写路径的幂等重试：只有"没有可靠回执"的失败（网络错误/超时/5xx）才重试，
+ * 且每次都用同一个幂等 key——调用方在拿到 202 的 JobView 之前不能宣称"已接收"。
+ * 4xx 是确定答复，不重试也不改变结论。
+ */
+export async function submitWithIdempotentRetry(
+  client: MemoryClient,
+  input: { subjectId: string; requestId: string; idempotencyKey: string; fragment: string; sources: readonly SourceRef[] },
+  options: { attempts?: number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<JobView> {
+  const attempts = options.attempts ?? 3;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await client.submit(input);
+    } catch (error) {
+      lastError = error;
+      const ambiguous =
+        !(error instanceof MemoryServiceError) || error.status >= 500 || error.status === 429;
+      if (!ambiguous) throw error;
+      if (attempt + 1 < attempts) await sleep(50 * (attempt + 1));
+    }
+  }
+  throw lastError;
+}
