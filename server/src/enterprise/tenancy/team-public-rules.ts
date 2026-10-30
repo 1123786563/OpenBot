@@ -84,7 +84,7 @@ export const TEAM_PUBLIC_ACTION_IDS = [
 export type TeamResourceAction = (typeof TEAM_PUBLIC_ACTION_IDS)[number];
 
 /** 依赖种类：与 MT009 迁移的 CHECK 同域。 */
-export type ResourceDependencyKind = "model" | "credential";
+export type ResourceDependencyKind = "model" | "credential" | "knowledge";
 
 /**
  * 动作判定结果。
@@ -383,6 +383,7 @@ interface DependencyRow {
   readonly dependency_kind: string;
   readonly dependency_ref: string;
   readonly status: string;
+  readonly ref_alive: boolean;
 }
 
 /**
@@ -396,7 +397,19 @@ async function firstInvalidDependency(
   resourceId: string,
 ): Promise<{ kind: ResourceDependencyKind; ref: string } | null> {
   const result = (await tx.execute(sql`
-    select dependency_kind, dependency_ref, status
+    select
+      dependency_kind,
+      dependency_ref,
+      status,
+      case
+        when dependency_kind = 'knowledge' then exists (
+          select 1 from enterprise_resources
+          where enterprise_resources.tenant_id = enterprise_resource_dependencies.tenant_id
+            and enterprise_resources.id = enterprise_resource_dependencies.dependency_ref
+            and enterprise_resources.status = 'active'
+        )
+        else true
+      end as ref_alive
     from enterprise_resource_dependencies
     where tenant_id = ${tenantId} and resource_id = ${resourceId}
     order by dependency_kind asc, dependency_ref asc
@@ -405,7 +418,7 @@ async function firstInvalidDependency(
   // 直接 for...of {rows} 包装对象会 TypeError，判定入口直接 500。
   const dependencyRows = Array.isArray(result) ? result : (result?.rows ?? []);
   for (const row of dependencyRows) {
-    if (row.status !== "active") {
+    if (row.status !== "active" || !row.ref_alive) {
       return {
         kind: row.dependency_kind as ResourceDependencyKind,
         ref: row.dependency_ref,

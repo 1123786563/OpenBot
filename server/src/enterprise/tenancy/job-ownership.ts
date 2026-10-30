@@ -645,9 +645,6 @@ export function createJobOwnershipService(
             and(
               eq(leaseRow.kind, jobKind),
               eq(leaseRow.objectId, id),
-              // 已完结（finished_at 非空）的租约不得被扫描器静默认领复活：
-              // 重开只走 armRetry 的显式清标记路径。
-              sql`${jobLeases.finishedAt} is null`,
               sql`(${jobLeases.claimedBy} is null or ${jobLeases.leaseUntil} is null or ${jobLeases.leaseUntil} <= now())`,
             ),
           )
