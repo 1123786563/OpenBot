@@ -37,5 +37,5 @@ dependencies:
     # bus while OPENBOT_REDIS_URL is unset) — so this is for `server.replicas > 1`, and for
     # parity with docker-compose.yml's openbot-redis.
     version: "28.3.10"
-    repository: "oci://registry-1.docker.io/bitnamicharts"
+    repository: "https://charts.bitnami.com/bitnami"
     condition: redis.enabled
