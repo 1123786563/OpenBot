@@ -34,6 +34,32 @@ export type ThreadReader = (
 ) => Promise<"known" | "unknown">;
 
 /**
+ * The enterprise parent-root gate for this surface, wired by a deployment that
+ * runs the tenancy decision services (T06.02).
+ *
+ * A thread is a child object: it can only be asked about through the company
+ * its parent root (the conversation, or the channel that maps it) belongs to.
+ * `deny` must be answered before the reader is consulted — the check is the
+ * whole point, and an existence probe that reaches Intelligence has already
+ * leaked. `null` says the enterprise registry holds no parent fact for the
+ * thread (a scratch thread, or one a different deployment minted), and the
+ * route keeps its existing behavior for it.
+ *
+ * Structurally typed on purpose: this module does not import the tenancy
+ * module; the wired implementation satisfies the shape.
+ */
+export interface ThreadParentActions {
+  authorizeThread(
+    request: Request,
+    threadId: string,
+  ): Promise<ThreadParentDecision | null>;
+}
+
+export type ThreadParentDecision =
+  | { readonly outcome: "allow" }
+  | { readonly outcome: "deny"; readonly code: "RESOURCE_NOT_FOUND" };
+
+/**
  * A UUID-shaped string, nothing more. Not the format `thread-identity.ts` mints — this route also
  * has to answer for a thread a *different* deployment minted, or one minted before this deployment
  * had a name, and `identity.owns` is false for both of those without either meaning the thread is
@@ -53,6 +79,8 @@ export function createThreadRoutes(
    * `POST /mint` needs no reader and is unaffected either way.
    */
   readThread?: ThreadReader,
+  /** The enterprise parent-root gate; absent, this factory is exactly the legacy surface. */
+  threadActions?: ThreadParentActions,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -73,6 +101,26 @@ export function createThreadRoutes(
       const threadId = context.req.param("threadId");
       if (!PLAUSIBLE_THREAD_ID.test(threadId)) {
         return context.json({ error: "Not a thread id." }, 400);
+      }
+
+      /*
+       * The enterprise answer first, and before anything is asked upstream: a
+       * thread whose parent root belongs to another company (or to another
+       * person in the caller's own team) is the same not-found the reader
+       * below answers for a thread that is not there, so this route confirms
+       * nothing about which threads exist — and the reader is never consulted
+       * for it, which is the only way an existence probe is truly refused.
+       * null = the registry holds no parent fact for this thread, and the
+       * check below stands as-is.
+       */
+      if (threadActions) {
+        const decision = await threadActions.authorizeThread(
+          context.req.raw,
+          threadId,
+        );
+        if (decision?.outcome === "deny") {
+          return context.json({ error: "Thread not found." }, 404);
+        }
       }
 
       try {

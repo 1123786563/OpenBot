@@ -94,6 +94,43 @@ export type ChannelPage = {
 };
 
 /**
+ * The enterprise resource-action gate for this surface, wired by a deployment
+ * that runs the tenancy decision services (T06.02).
+ *
+ * A channel's conversation is judged by its stable root and its creator: a
+ * same-team member with no enterprise grant gets the same not-found the store
+ * answers below, and a channel rooted in another company is not this caller's
+ * at all. `null` from authorize is not a denial: it says the enterprise
+ * registry holds no root for this channel, and the route keeps its existing
+ * behavior for it. `ACTION_FORBIDDEN` is the visible-but-not-creator write.
+ *
+ * Structurally typed on purpose: this module does not import the tenancy
+ * module; the wired implementation satisfies the shape.
+ */
+export interface ChannelConversationActions {
+  /** Decides the detail read (`read`) or a mutation (`write`) for the caller. */
+  authorizeChannel(
+    request: Request,
+    channelId: string,
+    action: "read" | "write",
+  ): Promise<ChannelConversationDecision | null>;
+  /**
+   * The roster's visibility filter: which of these channels the caller may
+   * see. The store applies it while choosing the page, so a filtered channel
+   * never shortens a page or names itself in a cursor.
+   */
+  visibleChannelIds(
+    request: Request,
+    channelIds: readonly string[],
+  ): Promise<ReadonlySet<string>>;
+}
+
+export type ChannelConversationDecision =
+  | { readonly outcome: "allow" }
+  | { readonly outcome: "deny"; readonly code: "RESOURCE_NOT_FOUND" }
+  | { readonly outcome: "deny"; readonly code: "ACTION_FORBIDDEN" };
+
+/**
  * Which page of somebody's channels to read. `archived` selects the filing cabinet instead of
  * the desk: the same ordering, the same cursor discipline, over the archived partition only.
  */
@@ -201,7 +238,19 @@ export type ChannelStore = {
    */
   direct(actor: AgentActor, agentId: string): Promise<AgentChannel>;
   get(actor: AgentActor, channelId: string): Promise<AgentChannel | null>;
-  list(actor: AgentActor, query?: ChannelQuery): Promise<ChannelPage>;
+  /**
+   * One page of the caller's channels. The optional `visibleIds` filter
+   * (T06.02's enterprise gate) is applied while the page is chosen, so a
+   * channel it refuses neither appears nor shortens the page: filtering after
+   * the slice would tell the caller how many rows were dropped.
+   */
+  list(
+    actor: AgentActor,
+    query?: ChannelQuery,
+    visibleIds?: (
+      channelIds: readonly string[],
+    ) => Promise<ReadonlySet<string>>,
+  ): Promise<ChannelPage>;
   /** Pin or unpin the caller's own membership. Throws ChannelNotFoundError for a non-member. */
   setPinned(
     actor: AgentActor,
@@ -525,12 +574,12 @@ export function createChannelStore(
       };
     },
 
-    async list(actor, query = {}) {
+    async list(actor, query = {}, visibleIds) {
       const limit = Math.min(
         Math.max(query.limit ?? DEFAULT_CHANNEL_PAGE, 1),
         MAX_CHANNEL_PAGE,
       );
-      const cursor = decodeChannelCursor(query.cursor);
+      let cursor = decodeChannelCursor(query.cursor);
 
       /*
        * The page of channels is chosen first, and the agents are joined to that page.
@@ -538,59 +587,95 @@ export function createChannelStore(
        * The row set below is one row per channel-agent pair, so a limit on rows would cut a channel
        * in half: its second Bot would arrive on the next page as a separate entry with the same id.
        * Limiting the channels and then joining keeps a channel whole whatever it holds.
+       *
+       * With a visibility filter (T06.02), the page keeps being chosen until it holds `limit`
+       * channels the caller may see or the roster runs out: the filter rides inside the slice, so
+       * the page that goes back is full whenever the roster can fill it, and a refused channel
+       * reveals nothing — not a shortened page, not a cursor that names it. Each pass asks for one
+       * more candidate than it needs, so "is there another page" still needs no second count query.
        */
-      const page = await database
-        .select({
-          id: channels.id,
-          /*
-           * To the microsecond, as text, for the cursor only: the audit reader's fix, for the same
-           * fault. The column keeps microseconds and a `Date` keeps milliseconds, so a cursor made
-           * from a `Date` named a moment just before its own row, and any channel later in that
-           * millisecond compared as newer than the cursor and was on no page at all.
-           */
-          recency: sql<string>`to_char(${RECENCY} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
-          pinned: sql<boolean>`${channelMemberships.pinnedAt} is not null`,
-        })
-        .from(channels)
-        .innerJoin(
-          channelMemberships,
-          and(
-            eq(channelMemberships.channelId, channels.id),
-            eq(channelMemberships.userId, actor.id),
-          ),
-        )
-        .where(
-          and(
-            isNull(channels.deletedAt),
+      const pageQuery = (scan: {
+        readonly cursor: ChannelCursor | undefined;
+        readonly take: number;
+      }) =>
+        database
+          .select({
+            id: channels.id,
             /*
-             * The partition the caller asked for. Default is the desk: everything not filed away.
-             * `archived` reads the filing cabinet instead — the same ordering and cursor over a
-             * disjoint set, never the two mixed, so a page belongs to exactly one listing.
+             * To the microsecond, as text, for the cursor only: the audit reader's fix, for the same
+             * fault. The column keeps microseconds and a `Date` keeps milliseconds, so a cursor made
+             * from a `Date` named a moment just before its own row, and any channel later in that
+             * millisecond compared as newer than the cursor and was on no page at all.
              */
-            query.archived
-              ? isNotNull(channels.archivedAt)
-              : isNull(channels.archivedAt),
-            // One row comparison over the whole sort key, which only reads as "everything after the
-            // cursor" because every part of that key descends. See ROSTER_ORDER.
-            cursor
-              ? sql`(${PINNED_RANK}, ${RECENCY}, ${channels.id}) < (${cursor.pinned ? 1 : 0}::int, ${cursor.recency}::timestamptz, ${cursor.id})`
-              : undefined,
-          ),
-        )
-        .orderBy(...ROSTER_ORDER)
-        // One more than asked for, so "is there another page" needs no second count query.
-        .limit(limit + 1);
+            recency: sql<string>`to_char(${RECENCY} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+            pinned: sql<boolean>`${channelMemberships.pinnedAt} is not null`,
+          })
+          .from(channels)
+          .innerJoin(
+            channelMemberships,
+            and(
+              eq(channelMemberships.channelId, channels.id),
+              eq(channelMemberships.userId, actor.id),
+            ),
+          )
+          .where(
+            and(
+              isNull(channels.deletedAt),
+              /*
+               * The partition the caller asked for. Default is the desk: everything not filed away.
+               * `archived` reads the filing cabinet instead — the same ordering and cursor over a
+               * disjoint set, never the two mixed, so a page belongs to exactly one listing.
+               */
+              query.archived
+                ? isNotNull(channels.archivedAt)
+                : isNull(channels.archivedAt),
+              // One row comparison over the whole sort key, which only reads as "everything after the
+              // cursor" because every part of that key descends. See ROSTER_ORDER.
+              scan.cursor
+                ? sql`(${PINNED_RANK}, ${RECENCY}, ${channels.id}) < (${scan.cursor.pinned ? 1 : 0}::int, ${scan.cursor.recency}::timestamptz, ${scan.cursor.id})`
+                : undefined,
+            ),
+          )
+          .orderBy(...ROSTER_ORDER)
+          // One more than asked for, so "is there another page" needs no second count query.
+          .limit(scan.take + 1);
 
-      const wanted = page.slice(0, limit);
-      const last = wanted.at(-1);
-      const nextCursor =
-        page.length > limit && last
-          ? encodeChannelCursor({
-              pinned: last.pinned,
-              recency: last.recency,
-              id: last.id,
-            })
-          : null;
+      const wanted: {
+        id: string;
+        recency: string;
+        pinned: boolean;
+      }[] = [];
+      let nextCursor: string | null = null;
+      while (wanted.length < limit) {
+        const take = limit - wanted.length + 1;
+        const rows = await pageQuery({ cursor, take });
+        if (rows.length === 0) break;
+        // The candidate set is every row but the sentinel; the sentinel only
+        // says another page may follow.
+        let candidates = rows.slice(0, take);
+        if (visibleIds && candidates.length > 0) {
+          // Batched, one ask per pass: the filter is a set the store never
+          // second-guesses, and a refused channel is simply not a candidate.
+          const allowed = await visibleIds(candidates.map((row) => row.id));
+          candidates = candidates.filter((row) => allowed.has(row.id));
+        }
+        wanted.push(...candidates.slice(0, limit - wanted.length));
+        const scanned = rows.at(-1);
+        if (!scanned) break;
+        cursor = {
+          pinned: scanned.pinned,
+          recency: scanned.recency,
+          id: scanned.id,
+        };
+        if (rows.length < take) break;
+        // The page filled and a sentinel followed the last row taken: the
+        // cursor names that last returned row (keyset: the next page starts
+        // strictly after it), exactly as the unfiltered listing always did.
+        const last = wanted.at(-1);
+        if (last && wanted.length >= limit) {
+          nextCursor = encodeChannelCursor(last);
+        }
+      }
 
       if (wanted.length === 0) return { channels: [], nextCursor: null };
 
@@ -1386,8 +1471,47 @@ export function createChannelRoutes(
   events?: ChannelEventHub,
   /** Where a channel's removal is written. Absent in tests that do not care about the trail. */
   auditStore?: AuditStore,
+  /**
+   * The enterprise conversation-scope gate (T06.02). Absent, the default,
+   * every route below behaves exactly as before: an enterprise-less
+   * deployment never notices the port exists.
+   */
+  channelActions?: ChannelConversationActions,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
+
+  /**
+   * The enterprise answer for one channel, or null. A denial is answered in
+   * the surface's own not-found shape (or the visible-but-not-creator 403 for
+   * a write), before the store is asked anything — so the gate confirms
+   * nothing about which channels exist.
+   */
+  const enterpriseDecision = async (
+    request: Request,
+    channelId: string,
+    action: "read" | "write",
+  ): Promise<"allow" | "not-found" | "forbidden" | null> => {
+    if (!channelActions) return null;
+    const decision = await channelActions.authorizeChannel(
+      request,
+      channelId,
+      action,
+    );
+    if (!decision) return null;
+    if (decision.outcome === "allow") return "allow";
+    return decision.code === "ACTION_FORBIDDEN" ? "forbidden" : "not-found";
+  };
+
+  const refusedByEnterprise = (
+    context: Context<{ Variables: AppVariables }>,
+    refusal: "not-found" | "forbidden",
+  ): Response =>
+    refusal === "not-found"
+      ? context.json({ error: "Channel not found." }, 404)
+      : context.json(
+          { error: "You can see this channel, but it is not yours to change." },
+          403,
+        );
 
   /**
    * Write the one audit row this file ever writes, tolerantly.
@@ -1503,13 +1627,22 @@ export function createChannelRoutes(
           400,
         );
       }
-      const page = await store.list(context.var.actor, {
-        ...(url.searchParams.get("cursor")
-          ? { cursor: url.searchParams.get("cursor") as string }
-          : {}),
-        ...(parsed.limit !== undefined ? { limit: parsed.limit } : {}),
-        ...(archived === "true" ? { archived: true } : {}),
-      });
+      const page = await store.list(
+        context.var.actor,
+        {
+          ...(url.searchParams.get("cursor")
+            ? { cursor: url.searchParams.get("cursor") as string }
+            : {}),
+          ...(parsed.limit !== undefined ? { limit: parsed.limit } : {}),
+          ...(archived === "true" ? { archived: true } : {}),
+        },
+        // The enterprise visibility filter rides inside the page slice, so a
+        // refused channel neither appears nor shortens the page.
+        channelActions
+          ? (channelIds) =>
+              channelActions.visibleChannelIds(context.req.raw, channelIds)
+          : undefined,
+      );
 
       return context.json({
         channels: page.channels.map(channelSummaryDto),
@@ -1533,6 +1666,14 @@ export function createChannelRoutes(
     }
 
     try {
+      const refusal = await enterpriseDecision(
+        context.req.raw,
+        channelId,
+        "write",
+      );
+      if (refusal === "not-found" || refusal === "forbidden") {
+        return refusedByEnterprise(context, refusal);
+      }
       await store.recordActivity(context.var.actor, channelId, parsed.value);
       return context.body(null, 204);
     } catch (error) {
@@ -1552,6 +1693,14 @@ export function createChannelRoutes(
     }
 
     try {
+      const refusal = await enterpriseDecision(
+        context.req.raw,
+        context.req.param("channelId"),
+        "write",
+      );
+      if (refusal === "not-found" || refusal === "forbidden") {
+        return refusedByEnterprise(context, refusal);
+      }
       await store.signalChannelBusy(
         context.var.actor,
         context.req.param("channelId"),
@@ -1574,6 +1723,14 @@ export function createChannelRoutes(
     }
 
     try {
+      const refusal = await enterpriseDecision(
+        context.req.raw,
+        context.req.param("channelId"),
+        "write",
+      );
+      if (refusal === "not-found" || refusal === "forbidden") {
+        return refusedByEnterprise(context, refusal);
+      }
       await store.setPinned(
         context.var.actor,
         context.req.param("channelId"),
@@ -1587,6 +1744,14 @@ export function createChannelRoutes(
 
   routes.put("/:channelId/read", requireUser, async (context) => {
     try {
+      const refusal = await enterpriseDecision(
+        context.req.raw,
+        context.req.param("channelId"),
+        "write",
+      );
+      if (refusal === "not-found" || refusal === "forbidden") {
+        return refusedByEnterprise(context, refusal);
+      }
       await store.markRead(context.var.actor, context.req.param("channelId"));
       return context.body(null, 204);
     } catch (error) {
@@ -1597,6 +1762,14 @@ export function createChannelRoutes(
   routes.delete("/:channelId", requireUser, async (context) => {
     const channelId = context.req.param("channelId");
     try {
+      const refusal = await enterpriseDecision(
+        context.req.raw,
+        channelId,
+        "write",
+      );
+      if (refusal === "not-found" || refusal === "forbidden") {
+        return refusedByEnterprise(context, refusal);
+      }
       const deleted = await store.softDelete(context.var.actor, channelId);
       // A repeat is still 204, but it deleted nothing, and the trail records acts, not attempts.
       if (deleted !== false) await recordDeleted(context, channelId);
@@ -1611,6 +1784,14 @@ export function createChannelRoutes(
     if (!parsed.ok) return context.json({ error: parsed.error }, 400);
 
     try {
+      const refusal = await enterpriseDecision(
+        context.req.raw,
+        context.req.param("channelId"),
+        "write",
+      );
+      if (refusal === "not-found" || refusal === "forbidden") {
+        return refusedByEnterprise(context, refusal);
+      }
       const channel = await store.rename(
         context.var.actor,
         context.req.param("channelId"),
@@ -1624,6 +1805,14 @@ export function createChannelRoutes(
 
   routes.post("/:channelId/archive", requireUser, async (context) => {
     try {
+      const refusal = await enterpriseDecision(
+        context.req.raw,
+        context.req.param("channelId"),
+        "write",
+      );
+      if (refusal === "not-found" || refusal === "forbidden") {
+        return refusedByEnterprise(context, refusal);
+      }
       // A repeat archived nothing, and there is no trail to write: filing is not deletion.
       await store.archive(context.var.actor, context.req.param("channelId"));
       return context.body(null, 204);
@@ -1634,6 +1823,14 @@ export function createChannelRoutes(
 
   routes.post("/:channelId/unarchive", requireUser, async (context) => {
     try {
+      const refusal = await enterpriseDecision(
+        context.req.raw,
+        context.req.param("channelId"),
+        "write",
+      );
+      if (refusal === "not-found" || refusal === "forbidden") {
+        return refusedByEnterprise(context, refusal);
+      }
       await store.unarchive(context.var.actor, context.req.param("channelId"));
       return context.body(null, 204);
     } catch (error) {
@@ -1643,6 +1840,20 @@ export function createChannelRoutes(
 
   routes.get("/:channelId", requireUser, async (context) => {
     try {
+      /*
+       * The enterprise answer first: a channel the caller's company cannot see
+       * is the same not-found the store answers below, so the gate confirms
+       * nothing about which channels exist. null = the registry holds no root
+       * for this channel, and the store's own answer stands.
+       */
+      const refusal = await enterpriseDecision(
+        context.req.raw,
+        context.req.param("channelId"),
+        "read",
+      );
+      if (refusal === "not-found" || refusal === "forbidden") {
+        return refusedByEnterprise(context, refusal);
+      }
       const channel = await store.get(
         context.var.actor,
         context.req.param("channelId"),
