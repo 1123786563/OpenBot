@@ -159,7 +159,7 @@
 | message_origin | 通过 | 伪造 `{type:memory.auth-required, requestId:"forged", returnUrl:"https://evil.example/steal"}` 被忽略：URL 不变、iframe 不动、不跳转 |
 
 - **验收发现并修复真 bug（high）**：承载页入口 `/?embed=1&requestId=…` 由 `serveStatic` 直接命中根路径 index.html，绕过 SPA 回退里的 `<meta name="memory-embed-host">` 注入——白名单到不了页面，渠道建立不了，登录落回 iframe 内部跳转（浏览器首跑即暴露：iframe 里出现身份表单而顶层 URL 未动）。修复：`src/http/static.ts` 在 serveStatic 前显式应答 `GET /`（与回退同一份 `indexHtml()`）。回归测试 `tests/static-embed.test.ts`（2 用例；`hono/bun` 只有 Bun 运行时可导入，沿用 web-stack 先例 spawn bun 对真实路由顺序断言），先红后绿，移除修复行变异复红、还原复绿；MEMORY 全量 157/157。
-- 环境事实（非产品缺陷，部署须知）：①OpenBot 与身份中心都是 better-auth，cookie 同名 `better-auth.session_token` 且 cookie 不分端口——同 host 不同端口的本地拓扑里登身份中心会覆盖 OpenBot 会话；生产各服务独立主机（host-only cookie）不互踩。②`memory_session` 为 `SameSite=Lax`：承载页与记忆服务同站（同一注册域/同 host 不同端口）时会话可承载，跨站托管不在 v1 支持范围（与 restricted_storage 声明 blocked 一致）。
+- 环境事实（非产品缺陷，部署须知）：①OpenBot 与身份中心都是 better-auth，cookie 同名 `better-auth.session_token` 且 cookie 不分端口——同 host 不同端口的本地拓扑里登身份中心会覆盖 OpenBot 会话（双向互踩，静默 SSO 链随之失效）。**已修复（IDENTITY 47f3265）**：身份中心 better-auth 设 `advanced.cookiePrefix: "oba-identity"`，两会话罐不再相触；真实验证：登 OpenBot → 点记忆 → 首触输一次身份密码 → 回 `/memory` 带承载页且 OpenBot 会话不丢；仅退记忆会话 → 再点记忆 → 静默 authorize 全链无表单回 `/memory`。identity 套件 10/10。生产各服务独立主机（host-only cookie）本就不撞，该前缀对自托管单主机多端口部署是纯增益。②`memory_session` 为 `SameSite=Lax`：承载页与记忆服务同站（同一注册域/同 host 不同端口）时会话可承载，跨站托管不在 v1 支持范围（与 restricted_storage 声明 blocked 一致）。
 - 票面的浏览器版本与存储策略证据：Chrome（agent-browser CDP 驱动，Bun 1.4.2 环境报告）；存储策略=同站 Lax 会话 cookie + iframe sandbox `allow-scripts allow-same-origin allow-forms allow-popups`；restricted_storage（受限第三方存储）仍无夹具、维持 blocked。
 
 ## 7. 债与已知边界
