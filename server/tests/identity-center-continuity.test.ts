@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   afterAll,
   beforeAll,
@@ -5,26 +6,24 @@ import {
   expect,
   test,
 } from "../../tests/support/e2e-compat";
-import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import type { AuthService, RoleRepository } from "../src/auth/guards";
+import type { OpenBotRole } from "../src/auth/roles";
 import {
-  startIdentityCenter,
-  type IdentityCenterProcess,
-} from "./support/identity-center";
-import {
+  type CenterStatusReader,
+  createCenterStatusClient,
+  createSubjectProjection,
   SUBJECT_PROJECTION_DISABLED,
   SUBJECT_PROJECTION_GENERATION_CHANGED,
   SUBJECT_PROJECTION_UNKNOWN_SUBJECT,
   SubjectProjectionRefusal,
-  createCenterStatusClient,
-  createSubjectProjection,
-  type CenterStatusReader,
   type SubjectProjectionStore,
   type SubjectRef,
 } from "../src/auth/subject-projection";
-import type { AuthService, RoleRepository } from "../src/auth/guards";
-import type { OpenBotRole } from "../src/auth/roles";
+import {
+  type IdentityCenterProcess,
+  identityCenterAvailable,
+  startIdentityCenter,
+} from "./support/identity-center";
 
 /*
  * #715 OpenBot side. The center keeps the identity write authority; OpenBot
@@ -40,16 +39,14 @@ import type { OpenBotRole } from "../src/auth/roles";
 
 const INTERNAL_TOKEN = `itc-${randomUUID().replaceAll("-", "")}715`;
 
-// 与 startIdentityCenter 同一判定：兄弟仓库 openbot-identity 未 checkout 时
-// （CI 即如此）本套件整体跳过，而不是在 beforeAll 里失败。
-const identityCenterAvailable = existsSync(
-  join(process.cwd(), "..", "openbot-identity", "src", "index.ts"),
-);
+// CI has no sibling openbot-identity checkout (and no identity test database):
+// skip the whole suite there rather than fail hooks a red CI cannot act on.
+const centerAvailable = identityCenterAvailable();
 
-let center: IdentityCenterProcess;
+let center: IdentityCenterProcess | undefined;
 
 beforeAll(async () => {
-  if (!identityCenterAvailable) return;
+  if (!centerAvailable) return;
   center = await startIdentityCenter({
     port: 4210,
     env: { IDENTITY_INTERNAL_TOKEN: INTERNAL_TOKEN },
@@ -57,34 +54,30 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (!center) return;
-  await center.stop();
+  await center?.stop();
 });
 
-describe.skipIf(!identityCenterAvailable)(
-  "identity_center_internal_api",
-  () => {
-    test("未知主体返回 null；令牌错误按不可用拒绝（不猜测 active/generation）", async () => {
-      const client = createCenterStatusClient({
-        issuer: center.issuer,
-        internalToken: INTERNAL_TOKEN,
-      });
-      expect(await client.status(randomUUID())).toBeNull();
-
-      const unauthorized = createCenterStatusClient({
-        issuer: center.issuer,
-        internalToken: "itc-wrong-token-0000000000000000000000",
-      });
-      let threw = false;
-      try {
-        await unauthorized.status(randomUUID());
-      } catch {
-        threw = true;
-      }
-      expect(threw).toBe(true);
+describe.skipIf(!centerAvailable)("identity_center_internal_api", () => {
+  test("未知主体返回 null；令牌错误按不可用拒绝（不猜测 active/generation）", async () => {
+    const client = createCenterStatusClient({
+      issuer: center.issuer,
+      internalToken: INTERNAL_TOKEN,
     });
-  },
-);
+    expect(await client.status(randomUUID())).toBeNull();
+
+    const unauthorized = createCenterStatusClient({
+      issuer: center.issuer,
+      internalToken: "itc-wrong-token-0000000000000000000000",
+    });
+    let threw = false;
+    try {
+      await unauthorized.status(randomUUID());
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(true);
+  });
+});
 
 type FixtureOptions = {
   status?: (
@@ -177,7 +170,7 @@ async function refusalOf(run: () => Promise<unknown>): Promise<string> {
   throw new Error("expected a SubjectProjectionRefusal");
 }
 
-describe.skipIf(!identityCenterAvailable)("legacy_ids_and_resources", () => {
+describe("legacy_ids_and_resources", () => {
   test("投影沿用既有 userId 与 principalId，历史资源外键不变", async () => {
     const { projection } = projectionFixture({
       accounts: { "subject-legacy": "user-legacy" },

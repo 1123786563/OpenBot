@@ -77,14 +77,14 @@ test("the package mirror carries the authoritative R4 constraint alignments", ()
     (candidate) => candidate.name === "enterprise_package_change_action",
   );
   expect(action).toBeDefined();
-  const actionSql = dialect.sqlToQuery(action!.value).sql;
+  const actionSql = normalizedSql(dialect.sqlToQuery(action!.value).sql);
   for (const verb of [
     "'install'",
     "'upgrade'",
     "'rollback'",
     "'grant'",
     "'revoke'",
-    "'createExpert'",
+    "'createexpert'",
   ]) {
     expect(actionSql).toContain(verb);
   }
@@ -109,9 +109,12 @@ test("the mirror secret-carrier CHECKs stay case-insensitive (R5-4)", () => {
       (candidate) => candidate.name === constraintName,
     );
     expect(constraint).toBeDefined();
-    const rendered = dialect.sqlToQuery(constraint!.value).sql;
+    const rendered = normalizedSql(dialect.sqlToQuery(constraint!.value).sql);
+    // #672: match on shape, not on PgDialect's exact spacing/casing — a
+    // dialect patch that renders `like_regex` or the flag differently must not
+    // turn a semantic assertion into a false red.
     expect(rendered).toContain("like_regex");
-    expect(rendered).toContain('flag "i"');
+    expect(rendered).toMatch(/flag ['"]i['"]/);
   }
 });
 
@@ -152,6 +155,13 @@ const statementsOnly = (sql: string) =>
     .split("\n")
     .filter((line) => !line.trimStart().startsWith("--"))
     .join("\n");
+
+/**
+ * #672: whitespace-collapsed, lowercased SQL — assertions compare shape
+ * (keywords and literals), not the exact text PgDialect happens to render.
+ */
+const normalizedSql = (sql: string) =>
+  sql.replace(/\s+/g, " ").trim().toLowerCase();
 
 /**
  * The primary key each `CREATE TABLE` declares, as `table → constraint name`.
@@ -200,9 +210,13 @@ test("the eight package primary keys carry one name across authority, migration,
     ),
   );
   const migration = declaredPrimaryKeys(packageMigration);
-  const guard = readFileSync(
-    join(serverRoot, "drizzle/0216_enterprise_package_primary_key_names.sql"),
-    "utf8",
+  // #671: comment lines are stripped first — the guard is searched for a
+  // literal tuple, and a prose mention of that tuple must not satisfy it.
+  const guard = statementsOnly(
+    readFileSync(
+      join(serverRoot, "drizzle/0216_enterprise_package_primary_key_names.sql"),
+      "utf8",
+    ),
   );
 
   const mirrorTables = [

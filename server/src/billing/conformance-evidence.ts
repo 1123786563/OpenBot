@@ -893,9 +893,10 @@ export const DELIVERED_FINGERPRINTS: Readonly<Record<string, string>> = {
   // Re-recorded when the tool-selection diagnostics came back to copilot.ts
   // (a failed skill read and a failed choice record log again, without the
   // thrown value). The runtime lane's behavior — the receipt the funnel owes —
-  // did not change with it.
+  // did not change with it. Re-recorded again for a biome reformat of the same
+  // file (whitespace only; the runtime behavior the record receipts is untouched).
   "conformance.runtime":
-    "4e664ed112f28e993ef02418d13e5393ff57847e27d148bc6289b3684f2372f8",
+    "64e0e937e04ec4337445f8bcd71fb6c6f846029d29eb6af543b8ef11c9d2dfc6",
   "conformance.embedding":
     "b643f683c5ea20d9cc2f92b7ae62dad72e2984f0bb3ff44f3afabc690c87e4f4",
   "conformance.rerank":

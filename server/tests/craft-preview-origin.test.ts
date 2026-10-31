@@ -2876,7 +2876,13 @@ describe("#418 Option B: singleReplicaStartupNotice — the startup line the boo
       expect(text).toContain("ticket table");
       // The 401 failure shape is spelled out on the escalated arm, where an
       // operator is reading the line because the deployment is half-migrated.
-      if (redisUrl) expect(text).toContain("401");
+      // #662: it names BOTH sources of a lost index — a restart and the
+      // per-session ceiling — so "why did my pass 401" needs no code reading.
+      if (redisUrl) {
+        expect(text).toContain("401");
+        expect(text).toContain("restart clears the pass index");
+        expect(text).toContain("per-session ceiling evicts");
+      }
       info.mockRestore();
       warn.mockRestore();
     }

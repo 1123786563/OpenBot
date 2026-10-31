@@ -1,5 +1,5 @@
-import { createHash, generateKeyPairSync } from "node:crypto";
 import { spawn } from "node:child_process";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -34,6 +34,20 @@ export function identityTestDatabaseUrl(): string {
   throw new Error(
     "identity test database URL missing: set OPENBOT_IDENTITY_TEST_DATABASE_URL or create ../openbot-identity/.env.local",
   );
+}
+
+/**
+ * True when BOTH halves of the fixture exist: the sibling openbot-identity
+ * checkout (this repo's CI never clones it) and a test database URL. Suites
+ * built on startIdentityCenter skip on false instead of failing their hooks —
+ * the checkout is a developer-machine artifact, not something a red CI could
+ * act on (#755 CI baseline).
+ */
+export function identityCenterAvailable(): boolean {
+  const identityDir = join(process.cwd(), "..", "openbot-identity");
+  if (!existsSync(join(identityDir, "src", "index.ts"))) return false;
+  if (process.env.OPENBOT_IDENTITY_TEST_DATABASE_URL) return true;
+  return existsSync(join(identityDir, ".env.local"));
 }
 
 export type IdentityCenterProcess = {
@@ -91,7 +105,7 @@ export async function startIdentityCenter(
     env: { ...process.env, ...(env as Record<string, string>), ...options.env },
     stdio: ["ignore", "pipe", "pipe"],
   });
-  const stop = () =>
+  const _stop = () =>
     new Promise<void>((resolve) => {
       child.once("exit", () => resolve());
       child.kill("SIGTERM");

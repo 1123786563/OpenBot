@@ -9,6 +9,7 @@
  * Exit 0 only when both directions are empty.
  */
 import * as fs from "node:fs";
+import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import postgres from "postgres";
 
 const url = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -20,6 +21,16 @@ if (!url) {
 
 // 声明侧：表 → 列（DB 名），来自运行时 drizzle:Columns
 const declared = new Map<string, Set<string>>();
+// #675: 声明侧的主键约束名（只有显式命名的主键才登记——列级 .primaryKey() 用的是
+// Postgres 默认 <table>_pkey，没有可比的声明值）。匿名 PRIMARY KEY 在 0211 落地成
+// <table>_pkey，镜像却写着命名约束，结构比对看不见这类分叉。
+const declaredPk = new Map<string, string>();
+/**
+ * #675: PostgreSQL truncates identifiers at 63 bytes, silently — a declared constraint name
+ * longer than that lands shortened, so the comparison must ask what PG would actually store
+ * rather than flagging the declaration's tail as drift.
+ */
+const pgIdentifier = (name: string) => name.slice(0, 63);
 // Same base as the import below: a CWD-relative read entered a different
 // schema set than the one actually imported (and threw a bare ENOENT).
 const schemaDir = new URL("../src/db/schema/", import.meta.url);
@@ -43,6 +54,8 @@ for (const f of fs
         );
       }
       declared.set(name, new Set(Object.values(cols).map((c) => c.name)));
+      const pkName = getTableConfig(v as PgTable).primaryKeys[0]?.getName();
+      if (pkName) declaredPk.set(name, pkName);
     }
   }
 }
@@ -56,7 +69,7 @@ const rows = await sql`
   join information_schema.tables t
     on t.table_schema = c.table_schema and t.table_name = c.table_name
   where c.table_schema = 'public' and t.table_type = 'BASE TABLE'
-`.finally(() => sql.end({ timeout: 5 }).catch(() => undefined));
+`;
 const live = new Map<string, Set<string>>();
 for (const r of rows) {
   live.set(
@@ -64,6 +77,20 @@ for (const r of rows) {
     (live.get(r.table_name) ?? new Set()).add(r.column_name),
   );
 }
+// #675: what the migration chain actually NAMED each primary key. `contype = 'p'`
+// is the primary-key constraint; an anonymous `PRIMARY KEY (...)` clause lands as
+// `<table>_pkey`, so a declaration that names it differently is drift the column
+// comparison could never see.
+const pkRows = await sql`
+  select cl.relname as table_name, c.conname
+  from pg_constraint c
+  join pg_class cl on cl.oid = c.conrelid
+  join pg_namespace n on n.oid = cl.relnamespace
+  where n.nspname = 'public' and c.contype = 'p'
+`;
+await sql.end({ timeout: 5 }).catch(() => undefined);
+const livePk = new Map<string, string>();
+for (const r of pkRows) livePk.set(r.table_name, r.conname);
 
 let bad = 0;
 for (const [t, cols] of declared) {
@@ -96,6 +123,20 @@ for (const [t, cols] of live) {
       );
       bad++;
     }
+  }
+}
+for (const [t, expected] of declaredPk) {
+  const actual = livePk.get(t);
+  if (actual === undefined) {
+    console.error(
+      `declared primary key missing from migrations: ${t} (${expected})`,
+    );
+    bad++;
+  } else if (actual !== pgIdentifier(expected)) {
+    console.error(
+      `primary key name drift: ${t} declares "${pgIdentifier(expected)}", migrations created "${actual}"`,
+    );
+    bad++;
   }
 }
 if (bad > 0) {

@@ -362,8 +362,14 @@ itMigration(
 
 afterAll(async () => {
   // The per-test finally blocks already dropped their databases; this is the net for a test
-  // that failed between CREATE DATABASE and its own drop.
+  // that failed between CREATE DATABASE and its own drop. #674: `IF EXISTS` still emits
+  // `database "..." does not exist, skipping` as a NOTICE, so ask pg_database first — a green
+  // run stays silent, and a database that DID leak is still dropped (the safety net is intact).
   for (const name of scratchNames) {
+    const present = await administratorClient()
+      .unsafe("select 1 from pg_database where datname = $1", [name])
+      .catch(() => [] as unknown[]);
+    if (present.length === 0) continue;
     await administratorClient()
       .unsafe(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`)
       .catch(() => undefined);

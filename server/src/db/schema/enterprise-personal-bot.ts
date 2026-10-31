@@ -150,6 +150,11 @@ export const enterprisePersonalBotFieldOwnership = pgTable(
   },
   (table) => [
     primaryKey({
+      // #675: an explicit short name. The generated four-column name is 72 bytes, so
+      // PostgreSQL truncated it to `..._tenant_id_workspace_id_` — the exact name one of
+      // this table's foreign keys already occupies (63 bytes, same truncation). Naming it
+      // here is what keeps the primary key and the FK apart.
+      name: "enterprise_personal_bot_field_ownership_pk",
       columns: [
         table.tenantId,
         table.workspaceId,

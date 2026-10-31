@@ -7410,7 +7410,8 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     });
     /*
      * #418 Option B: the single-replica contract, stated at startup. The preview
-     * origin's label registry and the ticket table are in-process state, so the
+     * origin's label registry, the ticket table and the pass index are in-process
+     * state, so the
      * deployment shape this server supports is ONE replica — or sticky routing in
      * front of more. The notice is info on a plain single-replica boot and warn
      * when OPENBOT_REDIS_URL is set (the deployment's own multi-replica signal,
