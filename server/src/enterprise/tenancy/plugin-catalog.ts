@@ -33,6 +33,11 @@
 // 语句之后、返回之前——deny 后计数不变是模块自身效果的观测（比 MT027 的
 // 测试侧探针深一层）。
 //
+// T06.05（Issue #577）：describeTemplate 把「市场全局模板」与「已安装私有
+// 实例」分开——模板公共面对任何已认证 scope 可见，privateInstance 只按
+// describe 门对本范围可见（跨公司/跨团队 = null），查看模板不授实例/
+// 连接/执行（各自独立判定面不变）。
+//
 // 脱敏面：RedactedCatalogView / RedactedInstallView / RedactedConnectionView
 // 类型上没有 envelope/plaintext 字段；安装视图只暴露 hasSecret 存在性布尔。
 // 列表只含本范围（scope 团队成员资格内）的安装——计数与条目都不泄露跨范围
@@ -125,6 +130,21 @@ export type PluginInvokeResolution =
 
 export type PluginInstallResolution =
   | { readonly outcome: "allow"; readonly install: RedactedInstallView }
+  | ResourceNotFoundVerdict;
+
+/**
+ * 模板视图判定（T06.05/#577）：全局目录条目对任何已认证 scope 可见，
+ * 但视图绝不授私有安装——privateInstance 只在安装落于本 scope 的公司且
+ * 其团队对 scope 主体持有 active 成员资格时非空（describe 门：与
+ * describeInstall 同判；disabled 行对本范围属主如实可见）。跨公司/跨团队
+ * 安装对模板视图为 null：模板与私有实例结构性分开。
+ */
+export type PluginTemplateResolution =
+  | {
+      readonly outcome: "allow";
+      readonly template: RedactedCatalogView;
+      readonly privateInstance: RedactedInstallView | null;
+    }
   | ResourceNotFoundVerdict;
 
 const DENY_VERDICT: ResourceNotFoundVerdict = Object.freeze(notFoundVerdict());
@@ -538,6 +558,14 @@ function decideInstall(
 export interface PluginCatalogDecisionService {
   /** 公共目录（全局只读）：每家公司看到同一份公共条目。 */
   listCatalog(scope: PlatformScope): Promise<readonly RedactedCatalogView[]>;
+  /**
+   * 模板视图（T06.05）：公共模板面 + 本范围私有安装（无权/跨范围 =
+   * null——查看模板不授私有实例/连接/执行，那些走各自独立判定面）。
+   */
+  describeTemplate(
+    scope: PlatformScope,
+    catalogId: string,
+  ): Promise<PluginTemplateResolution>;
   /** 本范围安装列表（scope 团队成员资格内；计数不泄露跨范围存在性）。 */
   listInstalls(scope: PlatformScope): Promise<readonly RedactedInstallView[]>;
   /** 脱敏详情；跨范围/不存在 = canonical not-found。 */
@@ -577,6 +605,8 @@ async function pluginReadTransaction<T>(
       sql`select set_config('app.tenant_id', ${scope.tenantId}, true), set_config('app.principal_id', ${scope.principalId}, true), set_config('app.user_id', ${scope.actorId}, true), set_config('app.workspace_id', ${scope.workspaceId}, true)`,
     );
     // 锁序：tenant → principal → membership → workspace-membership → install
+    // （install 级共享锁在操作内取；同一事务取多把 install 锁时按 install id
+    // 排序，describeTemplate 的多安装读取即此款。）
     for (const key of [
       JSON.stringify(["enterprise", "tenant", scope.tenantId]),
       JSON.stringify(["enterprise", "principal", scope.principalId]),
@@ -769,6 +799,108 @@ export function createPluginCatalogDecisionService(
             ),
           }),
         );
+      });
+    },
+
+    async describeTemplate(scope, catalogId) {
+      assertTrustedScope(scope);
+      if (typeof catalogId !== "string" || !catalogId.trim()) {
+        return DENY_VERDICT;
+      }
+      return pluginReadTransaction(data, scope, async (tx) => {
+        const [template] = await tx
+          .select({
+            id: catalogRows.id,
+            kind: catalogRows.kind,
+            title: catalogRows.title,
+            vendor: catalogRows.vendor,
+            source: catalogRows.source,
+            metadata: catalogRows.metadata,
+          })
+          .from(catalogRows)
+          .where(eq(catalogRows.id, catalogId))
+          .limit(1);
+        if (!template) return DENY_VERDICT;
+        // 安装锁与 readInstallFacts 同族（共享锁）；候选集先按 id 预扫再
+        // 逐把获取，多把按 id 排序防交叉死锁。
+        const candidates = await tx
+          .select({ id: installRows.id })
+          .from(installRows)
+          .where(
+            and(
+              eq(installRows.tenantId, scope.tenantId),
+              eq(installRows.catalogId, catalogId),
+            ),
+          );
+        for (const id of candidates.map((row) => row.id).sort()) {
+          await tx.execute(
+            sql`select pg_advisory_xact_lock_shared(hashtextextended(${installLockKey(scope.tenantId, id)}, 0))`,
+          );
+        }
+        // 本范围私有安装（describe 门：公司 active+epoch 一致 + 安装所在
+        // 团队对 scope 主体 active；RLS 使跨公司安装行对本事务不可见——
+        // 判定内比对是第二道防线）。资格逐行评估，多条命中取最早已安装的
+        // 有资格行（确定性答案）：其他团队的更早安装不遮蔽本团队自己的。
+        const installs = await tx
+          .select({
+            id: installRows.id,
+            tenantId: installRows.tenantId,
+            catalogId: installRows.catalogId,
+            workspaceId: installRows.workspaceId,
+            config: installRows.config,
+            envelope: installRows.envelope,
+            status: installRows.status,
+            createdAt: installRows.createdAt,
+            membershipStatus: enterpriseMemberships.status,
+            membershipEpoch: enterpriseMemberships.epoch,
+            workspaceMembershipStatus: enterpriseWorkspaceMemberships.status,
+          })
+          .from(installRows)
+          .leftJoin(
+            enterpriseMemberships,
+            and(
+              eq(enterpriseMemberships.tenantId, installRows.tenantId),
+              eq(enterpriseMemberships.principalId, scope.principalId),
+            ),
+          )
+          .leftJoin(
+            enterpriseWorkspaceMemberships,
+            and(
+              eq(enterpriseWorkspaceMemberships.tenantId, installRows.tenantId),
+              eq(
+                enterpriseWorkspaceMemberships.workspaceId,
+                installRows.workspaceId,
+              ),
+              eq(enterpriseWorkspaceMemberships.principalId, scope.principalId),
+            ),
+          )
+          .where(
+            and(
+              eq(installRows.tenantId, scope.tenantId),
+              eq(installRows.catalogId, catalogId),
+            ),
+          )
+          .orderBy(asc(installRows.createdAt), asc(installRows.id));
+        const install = installs.find(
+          (row) =>
+            row.membershipStatus === "active" &&
+            row.membershipEpoch === scope.memberEpoch &&
+            row.workspaceMembershipStatus === "active",
+        );
+        return {
+          outcome: "allow" as const,
+          template: Object.freeze({
+            catalogId: template.id,
+            kind: template.kind as PluginCatalogKind,
+            title: template.title,
+            vendor: template.vendor,
+            source: template.source as PluginCatalogSource,
+            summary: String(
+              (template.metadata as { summary?: unknown }).summary ?? "",
+            ),
+          }),
+          privateInstance: install ? redactedInstallView(install) : null,
+        };
       });
     },
 

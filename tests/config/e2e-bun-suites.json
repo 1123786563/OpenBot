@@ -1,5 +1,5 @@
 {
-  "generatedBy": "router suites found by the CI collection run",
+  "generatedBy": "scripts/e2e-bun-manifest.mjs",
   "groups": [
     {
       "name": "agent-computer/tests",
@@ -1300,6 +1300,24 @@
         "app/tests/model-catalog-filter-bulk.test.tsx",
         "app/tests/model-catalog-route-pagination.test.tsx"
       ]
+    },
+    {
+      "name": "server/tests/better-auth:T06.02.01",
+      "files": [
+        "server/tests/better-auth/conversation-scope-actions.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests/better-auth:T06.03.01",
+      "files": [
+        "server/tests/better-auth/credential-source-generations.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests/better-auth:T06.05.01",
+      "files": [
+        "server/tests/better-auth/plugin-component-scope.test.ts"
+      ]
     }
   ],
   "directoryIslands": [
@@ -1507,6 +1525,8 @@
     "server/tests/better-auth/company-auth-saml.test.ts",
     "server/tests/better-auth/company-lifecycle.test.ts",
     "server/tests/better-auth/company-provision.test.ts",
+    "server/tests/better-auth/conversation-scope-actions.test.ts",
+    "server/tests/better-auth/credential-source-generations.test.ts",
     "server/tests/better-auth/directory-command.test.ts",
     "server/tests/better-auth/email-verification.test.ts",
     "server/tests/better-auth/fixture-contract.test.ts",
@@ -1528,6 +1548,7 @@
     "server/tests/better-auth/password-reset-request.test.ts",
     "server/tests/better-auth/personal-model-grants.test.ts",
     "server/tests/better-auth/personal-model-identity.test.ts",
+    "server/tests/better-auth/plugin-component-scope.test.ts",
     "server/tests/better-auth/principal-registry.test.ts",
     "server/tests/better-auth/provisioning-global-admin.test.ts",
     "server/tests/better-auth/remote-identity-binding.test.ts",
@@ -2276,6 +2297,8 @@
     "server/tests/better-auth/bot-resource-actions.test.ts": "BA island suite: five BA_TEST_* role URLs, real 0221-0226 stack plus the enterprise deltas its services read",
     "app/tests/craft-tasks-route-render.test.tsx": "suite imports tests/support/bun-test-compat (bun:test); e2e on Node cannot resolve the bun: specifier and aborts the whole run",
     "app/tests/model-catalog-filter-bulk.test.tsx": "suite imports tests/support/bun-test-compat (bun:test); e2e on Node cannot resolve the bun: specifier and aborts the whole run",
-    "app/tests/model-catalog-route-pagination.test.tsx": "suite imports tests/support/bun-test-compat (bun:test); e2e on Node cannot resolve the bun: specifier and aborts the whole run"
+    "app/tests/model-catalog-route-pagination.test.tsx": "suite imports tests/support/bun-test-compat (bun:test); e2e on Node cannot resolve the bun: specifier and aborts the whole run",
+    "server/tests/better-auth/credential-source-generations.test.ts": "runner named it: server/tests/better-auth island suite, five BA_TEST_* role URLs",
+    "server/tests/better-auth/conversation-scope-actions.test.ts": "needs the Bun runtime (bun-test-compat) and the five BA_TEST_* island role URLs"
   }
 }

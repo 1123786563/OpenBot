@@ -55,7 +55,8 @@
 //   - 本票不接路由：服务面供下游接线票复用（MT009/MT011/MT016/MT021 装配
 //     同例）。
 
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { intelligenceChannelMappings } from "../../db/schema";
 import {
   enterpriseConversations,
   enterpriseMessageParts,
@@ -63,16 +64,22 @@ import {
 } from "../../db/schema/enterprise-conversations";
 import {
   enterpriseMemberships,
+  enterpriseResources,
   enterpriseWorkspaceMemberships,
 } from "../../db/schema/enterprise-tenancy";
-import type { PlatformScope } from "../contracts";
+import type { PlatformScope, ScopeResolver } from "../contracts";
 import { messageDigest } from "../conversations/store";
 import { assertDataDatabase, type DataDatabase } from "./connections";
 import {
   notFoundVerdict,
   type ResourceNotFoundVerdict,
 } from "./not-found-semantics";
-import { workspaceMembershipLockKey } from "./scope-gate";
+import {
+  createResourcePolicyService,
+  createShippedResourcePolicyRegistry,
+  type ResourcePolicyDecisionService,
+} from "./resource-policy";
+import { type WorkspaceGate, workspaceMembershipLockKey } from "./scope-gate";
 import { assertTrustedScope } from "./store";
 
 // ---------------------------------------------------------------------------
@@ -694,6 +701,364 @@ export function createConversationActionsService(
           outcome: "allow" as const,
           conversation: rowToConversationView(conversation),
         });
+      });
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// T06.02（Issue #574）：channels/thread 路由面的会话作用域动作端口适配器
+// ---------------------------------------------------------------------------
+
+/*
+ * 会话/Channel/Thread 按稳定根归属、创建者及 read/write 等独立动作：
+ *
+ *   - Channel 面（detail/list/mutation 公共 route）：channel 的稳定根 =
+ *     enterprise_resources(kind='channel')（root-backfill 的注册面）。根
+ *     不在本公司（RLS 先行）或根本不存在 = 端口返回 null，遗留面行为原样
+ *     （未迁移部署）。根在：判定按「会话根归属」+「MT008 注册表」：
+ *       - 该 channel 下存在调用者自己的会话根（enterprise_conversations
+ *         principal/workspace 匹配）= 创建者/持有者：read 与 write 都
+ *         allow（会话元数据是本人的）；
+ *       - 否则 read 交给 T06.01 的 ResourcePolicyDecisionService（显式
+ *         read 授权或团队公共，版本由租户 policy_revision 决定）——同团队
+ *         成员资格本身不是授权；write 对「可见但非持有者」= ACTION_FORBIDDEN
+ *         （可读不派生可改，T06.01 同形 403），对不可见者与不存在同形
+ *         404（不泄露存在性）。
+ *   - Thread 面（thread-status route，子对象）：thread 的父根 = 它的
+ *     会话根（tenant+threadId）或它的 channel 映射。会话根属于他人 =
+ *     canonical not-found；映射存在但父 channel 根不在本公司 = not-found
+ *     ——子对象不能跨父租户，且拒绝发生在触碰外部 reader 操作之前（零
+ *     operation call）。无会话根也无映射 = 未治理的 thread（scratch/
+ *     外部部署），null 交回遗留检查。
+ *
+ * 判定全部经受限 data 角色与真实 RLS（跨公司行对本事务不可见），事务纪律
+ * 与本文件既有动作一致（read committed + timeout + set_config 事务本地 +
+ * advisory 共享锁，键序 tenant → principal → membership → workspace-
+ * membership → resource）。deny 唯一 404 形状；无默认身份、无异步补写。
+ */
+
+/** Resolver refusals that mean "no enterprise view for this caller". */
+const SCOPE_RESOLVER_REFUSALS = new Set([
+  "AUTH_REQUIRED",
+  "TENANT_REQUIRED",
+  "WORKSPACE_REQUIRED",
+  "TENANT_FORBIDDEN",
+  "WORKSPACE_FORBIDDEN",
+  "SCOPE_REVOKED",
+  "RESOURCE_NOT_FOUND",
+]);
+
+/** 端口判定形状（channels/routes.ts 与 thread-routes.ts 的结构孪生）。 */
+export type ConversationScopeDecision =
+  | { readonly outcome: "allow" }
+  | { readonly outcome: "deny"; readonly code: "RESOURCE_NOT_FOUND" }
+  | { readonly outcome: "deny"; readonly code: "ACTION_FORBIDDEN" };
+
+const SCOPE_ALLOW: ConversationScopeDecision = Object.freeze({
+  outcome: "allow",
+} as const);
+const SCOPE_NOT_FOUND: ConversationScopeDecision = Object.freeze({
+  outcome: "deny",
+  code: "RESOURCE_NOT_FOUND",
+} as const);
+const SCOPE_FORBIDDEN: ConversationScopeDecision = Object.freeze({
+  outcome: "deny",
+  code: "ACTION_FORBIDDEN",
+} as const);
+
+/**
+ * The port the channels/thread routes consume. `null` from authorize* is not
+ * a denial: it says the enterprise registry holds no root for the object, and
+ * the route keeps its existing behavior for it.
+ */
+export interface ConversationScopeActions {
+  /** Decides the channel detail read or a channel mutation for the caller. */
+  authorizeChannel(
+    request: Request,
+    channelId: string,
+    action: "read" | "write",
+  ): Promise<ConversationScopeDecision | null>;
+  /**
+   * The roster's visibility filter: which of these channels the caller may
+   * see. Ungoverned channels pass through (legacy stands); an unresolvable
+   * scope sees nothing.
+   */
+  visibleChannelIds(
+    request: Request,
+    channelIds: readonly string[],
+  ): Promise<ReadonlySet<string>>;
+  /**
+   * Decides whether the caller's company owns a thread's parent root. Deny
+   * must be answered before any external thread operation is attempted;
+   * null = ungoverned thread, the legacy check stands.
+   */
+  authorizeThread(
+    request: Request,
+    threadId: string,
+  ): Promise<ConversationScopeDecision | null>;
+}
+
+/** What the assembly wires: the real channels plus the T06.01 seams. */
+export interface ConversationScopeActionsDeps {
+  readonly data: DataDatabase;
+  /** The trusted-scope issuance (createBaScopeResolver / createScopeResolver). */
+  readonly resolveScope: Pick<ScopeResolver, "resolve">;
+  /** The live revalidation (createBaWorkspaceGate / createWorkspaceGate). */
+  readonly gate: Pick<WorkspaceGate, "transaction">;
+}
+
+export function createConversationScopeActions(
+  deps: ConversationScopeActionsDeps,
+): ConversationScopeActions {
+  assertDataDatabase(deps.data);
+  const policy: ResourcePolicyDecisionService = createResourcePolicyService(
+    deps.data,
+    createShippedResourcePolicyRegistry(),
+  );
+
+  /**
+   * Mint + live-revalidate, or null: a scope the resolver refuses or the gate
+   * revokes leaves the caller with no enterprise view — canonical not-found,
+   * never a fallback to some other identity.
+   */
+  const revalidatedScope = async (
+    request: Request,
+  ): Promise<PlatformScope | null> => {
+    let scope: PlatformScope;
+    try {
+      scope = await deps.resolveScope.resolve(request);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        SCOPE_RESOLVER_REFUSALS.has(error.message)
+      ) {
+        return null;
+      }
+      throw error;
+    }
+    try {
+      await deps.gate.transaction(scope, async () => undefined);
+      return scope;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message === "SCOPE_REVOKED" ||
+          error.message === "WORKSPACE_REVOKED")
+      ) {
+        return null;
+      }
+      throw error;
+    }
+  };
+
+  type ScopeTransaction = Parameters<
+    Parameters<DataDatabase["transaction"]>[0]
+  >[0];
+
+  /** 事务开场（本文件既有动作同一形状，resource 键随判定对象）。 */
+  const beginScopeContext = async (
+    tx: ScopeTransaction,
+    scope: PlatformScope,
+    resourceId: string,
+  ): Promise<void> => {
+    await tx.execute(sql`set transaction isolation level read committed`);
+    await tx.execute(sql`set local lock_timeout = '2s'`);
+    await tx.execute(sql`set local statement_timeout = '5s'`);
+    /* Transaction-local settings are defense in depth for RLS and are cleared on commit. */
+    await tx.execute(
+      sql`select set_config('app.tenant_id', ${scope.tenantId}, true), set_config('app.workspace_id', ${scope.workspaceId}, true), set_config('app.principal_id', ${scope.principalId}, true), set_config('app.user_id', ${scope.actorId}, true)`,
+    );
+    // 锁序：tenant → principal → membership → workspace-membership → resource
+    //（resource-policy.policyReadTransaction 的同一键族）。
+    for (const key of [
+      JSON.stringify(["enterprise", "tenant", scope.tenantId]),
+      JSON.stringify(["enterprise", "principal", scope.principalId]),
+      JSON.stringify([
+        "enterprise",
+        "membership",
+        scope.tenantId,
+        scope.principalId,
+      ]),
+      workspaceMembershipLockKey(
+        scope.tenantId,
+        scope.workspaceId,
+        scope.principalId,
+      ),
+      JSON.stringify(["enterprise", "resource", scope.tenantId, resourceId]),
+    ]) {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock_shared(hashtextextended(${key}, 0))`,
+      );
+    }
+  };
+
+  /** 调用者是否在该 channel 下持有自己的会话根（创建者/持有者事实）。 */
+  const ownsConversationIn = async (
+    tx: ScopeTransaction,
+    scope: PlatformScope,
+    channelIds: readonly string[],
+  ): Promise<ReadonlySet<string>> => {
+    if (channelIds.length === 0) return new Set();
+    const mappings = await tx
+      .select({
+        channelId: intelligenceChannelMappings.channelId,
+        threadId: intelligenceChannelMappings.threadId,
+      })
+      .from(intelligenceChannelMappings)
+      .where(inArray(intelligenceChannelMappings.channelId, [...channelIds]));
+    if (mappings.length === 0) return new Set();
+    const conversations = await tx
+      .select({
+        threadId: enterpriseConversations.threadId,
+        principalId: enterpriseConversations.principalId,
+        workspaceId: enterpriseConversations.workspaceId,
+      })
+      .from(enterpriseConversations)
+      .where(
+        and(
+          eq(enterpriseConversations.tenantId, scope.tenantId),
+          inArray(
+            enterpriseConversations.threadId,
+            mappings.map((row) => row.threadId),
+          ),
+        ),
+      );
+    const ownedThreads = new Set(
+      conversations
+        .filter(
+          (row) =>
+            row.principalId === scope.principalId &&
+            row.workspaceId === scope.workspaceId,
+        )
+        .map((row) => row.threadId),
+    );
+    return new Set(
+      mappings
+        .filter((row) => ownedThreads.has(row.threadId))
+        .map((row) => row.channelId),
+    );
+  };
+
+  /** 该 channel 在本公司是否有稳定根（RLS 租户臂先行）。 */
+  const channelRootExists = async (
+    tx: ScopeTransaction,
+    scope: PlatformScope,
+    channelId: string,
+  ): Promise<boolean> => {
+    const [root] = await tx
+      .select({ id: enterpriseResources.id })
+      .from(enterpriseResources)
+      .where(
+        and(
+          eq(enterpriseResources.tenantId, scope.tenantId),
+          eq(enterpriseResources.id, channelId),
+          eq(enterpriseResources.kind, "channel"),
+        ),
+      )
+      .limit(1);
+    return root != null;
+  };
+
+  /** read 判定折叠：策略 deny 与不可见同形。 */
+  const readDecision = (
+    verdict: Awaited<ReturnType<ResourcePolicyDecisionService["decide"]>>,
+  ): ConversationScopeDecision =>
+    verdict.outcome === "allow" ? SCOPE_ALLOW : SCOPE_NOT_FOUND;
+
+  return {
+    async authorizeChannel(request, channelId, action) {
+      const scope = await revalidatedScope(request);
+      if (!scope) return SCOPE_NOT_FOUND;
+      return deps.data.transaction(async (tx) => {
+        await beginScopeContext(tx, scope, channelId);
+        if (!(await channelRootExists(tx, scope, channelId))) return null;
+        const owned = await ownsConversationIn(tx, scope, [channelId]);
+        if (owned.has(channelId)) return SCOPE_ALLOW;
+        // 可见性交给 T06.01 的注册表（显式授权或团队公共）；write 对
+        // 「可见但非持有者」= ACTION_FORBIDDEN，不可见者与不存在同形。
+        const visible = await policy.decide(scope, channelId);
+        if (action === "read") return readDecision(visible);
+        return visible.outcome === "allow" ? SCOPE_FORBIDDEN : SCOPE_NOT_FOUND;
+      });
+    },
+
+    async visibleChannelIds(request, channelIds) {
+      if (channelIds.length === 0) return new Set();
+      const scope = await revalidatedScope(request);
+      // 无企业视图 = 无可见集（fail-closed，绝不回退默认身份）。
+      if (!scope) return new Set();
+      return deps.data.transaction(async (tx) => {
+        await beginScopeContext(tx, scope, channelIds[0]);
+        const roots = await tx
+          .select({ id: enterpriseResources.id })
+          .from(enterpriseResources)
+          .where(
+            and(
+              eq(enterpriseResources.tenantId, scope.tenantId),
+              eq(enterpriseResources.kind, "channel"),
+              inArray(enterpriseResources.id, [...channelIds]),
+            ),
+          );
+        const governed = new Set(roots.map((row) => row.id));
+        // 未治理的 channel 原样通过：端口对它没有企业事实。
+        const visible = new Set(channelIds.filter((id) => !governed.has(id)));
+        const owned = await ownsConversationIn(tx, scope, [...governed]);
+        const pending: string[] = [];
+        for (const id of governed) {
+          if (owned.has(id)) visible.add(id);
+          else pending.push(id);
+        }
+        for (const id of pending) {
+          const verdict = await policy.decide(scope, id);
+          if (verdict.outcome === "allow") visible.add(id);
+        }
+        return visible;
+      });
+    },
+
+    async authorizeThread(request, threadId) {
+      const scope = await revalidatedScope(request);
+      if (!scope) return SCOPE_NOT_FOUND;
+      return deps.data.transaction(async (tx) => {
+        await beginScopeContext(tx, scope, threadId);
+        // 父根之一：会话根（tenant+threadId）。属于他人 = 不可见。
+        const [conversation] = await tx
+          .select({
+            principalId: enterpriseConversations.principalId,
+            workspaceId: enterpriseConversations.workspaceId,
+          })
+          .from(enterpriseConversations)
+          .where(
+            and(
+              eq(enterpriseConversations.tenantId, scope.tenantId),
+              eq(enterpriseConversations.threadId, threadId),
+            ),
+          )
+          .limit(1);
+        if (conversation) {
+          return conversation.principalId === scope.principalId &&
+            conversation.workspaceId === scope.workspaceId
+            ? SCOPE_ALLOW
+            : SCOPE_NOT_FOUND;
+        }
+        // 父根之二：channel 映射。无映射 = 未治理 thread，遗留检查原样。
+        const [mapping] = await tx
+          .select({
+            userId: intelligenceChannelMappings.userId,
+            channelId: intelligenceChannelMappings.channelId,
+          })
+          .from(intelligenceChannelMappings)
+          .where(eq(intelligenceChannelMappings.threadId, threadId))
+          .limit(1);
+        if (!mapping) return null;
+        // 子对象不能跨父租户：父 channel 根不在本公司 = 不可见，且绝
+        // 不触碰外部 reader。
+        if (!(await channelRootExists(tx, scope, mapping.channelId))) {
+          return SCOPE_NOT_FOUND;
+        }
+        if (mapping.userId === scope.actorId) return SCOPE_ALLOW;
+        return readDecision(await policy.decide(scope, mapping.channelId));
       });
     },
   };
