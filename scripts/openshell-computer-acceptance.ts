@@ -82,15 +82,16 @@ const env = {
     10,
   ),
   /** The egress the run grants, as a deployment administrator's standing preconfiguration would. */
-  grantHosts: (
+  grantHosts:
     // example.com's own "More information…" link is the product phase's click target, so the
     // page it leads to is granted alongside the two example hosts.
-    process.env.OPENSHELL_ACCEPT_GRANT_HOSTS ??
-    "example.com,www.example.com,www.iana.org"
-  )
-    .split(",")
-    .map((host) => host.trim())
-    .filter(Boolean),
+    (
+      process.env.OPENSHELL_ACCEPT_GRANT_HOSTS ??
+      "example.com,www.example.com,www.iana.org"
+    )
+      .split(",")
+      .map((host) => host.trim())
+      .filter(Boolean),
 };
 if (env.phase !== "substrate" && env.phase !== "product") {
   console.error(
@@ -131,7 +132,8 @@ function record(
     id,
     claim,
     pass,
-    evidence: typeof evidence === "string" ? evidence : JSON.stringify(evidence),
+    evidence:
+      typeof evidence === "string" ? evidence : JSON.stringify(evidence),
     capability,
   });
   console.log(`${pass ? "PASS" : "FAIL"}  ${id} — ${claim}`);
@@ -325,7 +327,9 @@ async function main() {
   }
 
   const passed = new Set(
-    outcomes.filter((outcome) => outcome.pass && outcome.capability).map((o) => o.capability),
+    outcomes
+      .filter((outcome) => outcome.pass && outcome.capability)
+      .map((o) => o.capability),
   );
   const report = {
     run: "openshell-t02-computer-acceptance",
@@ -427,7 +431,9 @@ async function substratePhase(): Promise<void> {
       attributed?.scope.workspaceId === workspace &&
       attributed?.scope.environment === "computer" &&
       attributed?.scope.generation === env.generation &&
-      podImage.stdout.includes(env.image.split("@")[1]!.slice(0, 16)),
+      podImage.stdout.includes(
+        (env.image.split("@")[1] ?? env.image).slice(0, 16),
+      ),
     {
       name,
       attributed: attributed?.scope,
@@ -481,12 +487,10 @@ async function substratePhase(): Promise<void> {
     "managed-by": "t02-acceptance",
   });
   const clientB = clientFor(foreignWorkspace);
-  const foreign = await clientB
-    .inspectSandbox(scope)
-    .then(
-      (view) => `state=${view.state}`,
-      (error: unknown) => `error=${String(error).slice(0, 140)}`,
-    );
+  const foreign = await clientB.inspectSandbox(scope).then(
+    (view) => `state=${view.state}`,
+    (error: unknown) => `error=${String(error).slice(0, 140)}`,
+  );
   const listedB = await clientB.listSandboxes();
   record(
     "cross-workspace-denied",
@@ -615,6 +619,7 @@ async function substratePhase(): Promise<void> {
   // version in the image names the binary `headless_shell`, but the probe matches any Chromium
   // comm so a binary rename fails loudly instead of silently reading PID 1.
   const chrome = await sh(
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: ${d#/proc/} 等是 shell 插值，不是 JS 模板；改成模板会执行 JS 展开破坏探针。
     "for d in /proc/[0-9]*; do c=$(cat $d/comm 2>/dev/null); case $c in *chrome*|*headless*|*chromium*) echo PID=${d#/proc/} COMM=$c; tr '\\0' ' ' < $d/cmdline 2>/dev/null | head -c 400; echo;; esac; done",
   );
   const seccomp = await sh("grep -i '^Seccomp' /proc/self/status");
@@ -686,7 +691,10 @@ async function productPhase(): Promise<void> {
     "bots-created-through-api",
     "both probe Bots exist as real deployment records, created through the same API a person uses",
     madeA.id !== null && madeB.id !== null,
-    { botA: `${madeA.status} ${madeA.body.slice(0, 120)}`, botB: `${madeB.status} ${madeB.body.slice(0, 120)}` },
+    {
+      botA: `${madeA.status} ${madeA.body.slice(0, 120)}`,
+      botB: `${madeB.status} ${madeB.body.slice(0, 120)}`,
+    },
   );
   const botA = madeA.id ?? "no-bot-a";
   const botB = madeB.id ?? "no-bot-b";
@@ -772,11 +780,9 @@ async function productPhase(): Promise<void> {
   // 1 — a wake through the route: navigate starts the sandbox and the service; with no rule the
   // browser itself refuses, which is the deny a Bot meets before any administrator grants anything.
   const firstStatus = await json(`/api/computers/${botA}/status`, "GET");
-  const firstNavigate = await json(
-    `/api/computers/${botA}/navigate`,
-    "POST",
-    { url: `https://${env.grantHosts[0]}` },
-  );
+  const firstNavigate = await json(`/api/computers/${botA}/navigate`, "POST", {
+    url: `https://${env.grantHosts[0]}`,
+  });
   const statusAfter = await json(`/api/computers/${botA}/status`, "GET");
   record(
     "route-wakes-computer-and-denies-unlisted",
@@ -855,7 +861,7 @@ async function productPhase(): Promise<void> {
   });
   // Bot B's wake goes through the granted public page too (its own sandbox has no grant, so its
   // browser refuses it — the wake still happens, which is all the file reads below need).
-  const bWake = await json(`/api/computers/${botB}/navigate`, "POST", {
+  await json(`/api/computers/${botB}/navigate`, "POST", {
     url: `https://${env.grantHosts[0]}`,
   }).catch(() => undefined);
   const bList = await json(`/api/computers/${botB}/files/list`, "POST", {});
@@ -864,9 +870,7 @@ async function productPhase(): Promise<void> {
   });
   const sandboxes = await client.listSandboxes();
   const names = sandboxes
-    .filter(
-      (entry) => entry.scope.botId === botA || entry.scope.botId === botB,
-    )
+    .filter((entry) => entry.scope.botId === botA || entry.scope.botId === botB)
     .map((entry) => entry.view.name);
   record(
     "bots-are-separate-computers",
@@ -874,7 +878,11 @@ async function productPhase(): Promise<void> {
     new Set(names).size === 2 &&
       !bList.text.includes("a-marker") &&
       bRead.status >= 400,
-    { names, bList: bList.text.slice(0, 160), bRead: `${bRead.status} ${bRead.text.slice(0, 120)}` },
+    {
+      names,
+      bList: bList.text.slice(0, 160),
+      bRead: `${bRead.status} ${bRead.text.slice(0, 120)}`,
+    },
   );
 
   // 5 — stop stays stopped: a status read does not wake the computer.
@@ -926,7 +934,8 @@ async function productPhase(): Promise<void> {
     "/bin/sh",
     "-c",
     CREDENTIAL_PATHS.map(
-      (path) => `if head -c 1 ${path} >/dev/null 2>&1; then echo "OPENED:${path}"; fi`,
+      (path) =>
+        `if head -c 1 ${path} >/dev/null 2>&1; then echo "OPENED:${path}"; fi`,
     ).join("; "),
   ]);
   record(

@@ -38,10 +38,7 @@ import { join } from "node:path";
 import { type BrowserContext, chromium, type Page } from "playwright";
 import { profileDirectoryFor } from "./bot-id";
 import { chooseEvictions, chooseIdle } from "./browser-eviction";
-import {
-  type BrowserRuntime,
-  browserRuntimeFromEnv,
-} from "./browser-runtime";
+import { type BrowserRuntime, browserRuntimeFromEnv } from "./browser-runtime";
 import { egressFor, egressLabel } from "./egress";
 import { numberFromEnv, settleWithin } from "./env";
 import { chooseLivePage } from "./live-page";
@@ -103,8 +100,7 @@ const BROWSER_RUNTIME = browserRuntimeFromEnv(process.env);
 const LOCAL_CHROME = BROWSER_RUNTIME.backend === "local-chrome";
 // Native Chrome has no container boundary. Always retain its own process sandbox and OS keychain.
 const sandboxEnabledFor = (runtime: BrowserRuntime) =>
-  runtime.backend === "local-chrome" ||
-  process.env.COMPUTER_SANDBOX === "on";
+  runtime.backend === "local-chrome" || process.env.COMPUTER_SANDBOX === "on";
 const SANDBOX_ENABLED = sandboxEnabledFor(BROWSER_RUNTIME);
 
 /**

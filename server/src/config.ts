@@ -736,7 +736,8 @@ function memoryServiceConfig(environment: Environment):
   const appId = required(environment, "MEMORY_SERVICE_APP_ID");
   const appSecret = required(environment, "MEMORY_SERVICE_APP_SECRET");
   const sourceKey = required(environment, "MEMORY_SERVICE_SOURCE_KEY");
-  const sourceCheckToken = environment.MEMORY_SOURCE_CHECK_TOKEN?.trim() || undefined;
+  const sourceCheckToken =
+    environment.MEMORY_SOURCE_CHECK_TOKEN?.trim() || undefined;
   return {
     memoryService: {
       baseUrl: parsed.toString().replace(/\/$/, ""),

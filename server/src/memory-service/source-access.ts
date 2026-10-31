@@ -14,7 +14,9 @@ import type { IssuedScope, SourceAccess } from "./source-check";
  * 篱笥是"来源范围"级——scopeRef 是它签的；某个版本是否真的源于该范围由
  * MEMORY 自己的行集与交付前重读裁决，OpenBot 无法枚举他方版本号。
  */
-export function createOpenBotSourceAccess(deps: { database: Database }): SourceAccess {
+export function createOpenBotSourceAccess(deps: {
+  database: Database;
+}): SourceAccess {
   return {
     async resolve(scope: IssuedScope) {
       try {

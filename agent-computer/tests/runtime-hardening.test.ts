@@ -59,7 +59,10 @@ describe("hardened launch under an external isolation runtime", () => {
   test("chromium_hardened_launch_refuses_unsafe_fallback", async () => {
     const { browserRuntimeFromEnv } = await import("../src/browser-runtime");
     const external = browserRuntimeFromEnv(
-      { COMPUTER_ISOLATION_RUNTIME: "openshell", COMPUTER_BROWSER_MODE: "headless" },
+      {
+        COMPUTER_ISOLATION_RUNTIME: "openshell",
+        COMPUTER_BROWSER_MODE: "headless",
+      },
       "linux",
     );
     expect(external.isolation).toBe("external");

@@ -14,16 +14,22 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 const PORT = Number(process.env.EXTERNAL_APP_PORT ?? 4242);
 const TOKEN = process.env.EXTERNAL_APP_TOKEN ?? "";
-const SIGNING_KEY = process.env.EXTERNAL_APP_SCOPE_KEY ?? "external-demo-scope-key";
+const SIGNING_KEY =
+  process.env.EXTERNAL_APP_SCOPE_KEY ?? "external-demo-scope-key";
 // #733 A16：撤销状态必须跨重启存活（重启/重连不得复活已撤销来源）。
-const STATE_FILE = process.env.EXTERNAL_APP_STATE_FILE ?? "/tmp/mem733-external-state.json";
+const STATE_FILE =
+  process.env.EXTERNAL_APP_STATE_FILE ?? "/tmp/mem733-external-state.json";
 
 if (!TOKEN) {
   console.error("EXTERNAL_APP_TOKEN is required");
   process.exit(1);
 }
 
-type IssuedScope = { subjectId: string; note: string; revokedAt: string | null };
+type IssuedScope = {
+  subjectId: string;
+  note: string;
+  revokedAt: string | null;
+};
 type CallbackMode = "receipt" | "fail" | "silent";
 type Notification = {
   notificationId: string;
@@ -92,26 +98,29 @@ const json = (body: unknown, status = 200) =>
 
 async function submitReceipt(notification: Notification) {
   if (!state.memory) return;
-  await fetch(`${state.memory.baseUrl.replace(/\/$/, "")}/v1/cleanup-receipts`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-memory-app": state.memory.appId,
-      authorization: `Bearer ${state.memory.secret}`,
+  await fetch(
+    `${state.memory.baseUrl.replace(/\/$/, "")}/v1/cleanup-receipts`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-memory-app": state.memory.appId,
+        authorization: `Bearer ${state.memory.secret}`,
+      },
+      body: JSON.stringify({
+        notificationId: notification.notificationId,
+        state: "completed",
+        items: [
+          {
+            scope: `app:${state.memory.appId}`,
+            state: "completed",
+            evidenceRef: `external-demo://${notification.cleanupId}`,
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(5000),
     },
-    body: JSON.stringify({
-      notificationId: notification.notificationId,
-      state: "completed",
-      items: [
-        {
-          scope: `app:${state.memory.appId}`,
-          state: "completed",
-          evidenceRef: `external-demo://${notification.cleanupId}`,
-        },
-      ],
-    }),
-    signal: AbortSignal.timeout(5000),
-  }).catch(() => {});
+  ).catch(() => {});
 }
 
 const server = Bun.serve({
@@ -120,65 +129,105 @@ const server = Bun.serve({
   fetch: async (request) => {
     const url = new URL(request.url);
 
-    if (url.pathname === "/api/memory-service/source-check" && request.method === "POST") {
-      if (!authorized(request)) return json({ error: { code: "UNAUTHORIZED" } }, 401);
+    if (
+      url.pathname === "/api/memory-service/source-check" &&
+      request.method === "POST"
+    ) {
+      if (!authorized(request))
+        return json({ error: { code: "UNAUTHORIZED" } }, 401);
       if (state.sourceCheckFails) return new Response("down", { status: 503 });
       const body = (await request.json().catch(() => null)) as {
         subjectId?: string;
         source?: { scopeRef?: string };
       } | null;
-      const scope = body?.source?.scopeRef ? scopes.get(body.source.scopeRef) : undefined;
+      const scope = body?.source?.scopeRef
+        ? scopes.get(body.source.scopeRef)
+        : undefined;
       if (!scope || scope.subjectId !== body?.subjectId) {
         return json({ state: "denied", reason: "forged_scope" });
       }
-      if (scope.revokedAt) return json({ state: "denied", reason: "source_revoked" });
-      return json({ state: "allowed", revision: `ext-${scope.revokedAt ? "r" : "1"}` });
+      if (scope.revokedAt)
+        return json({ state: "denied", reason: "source_revoked" });
+      return json({
+        state: "allowed",
+        revision: `ext-${scope.revokedAt ? "r" : "1"}`,
+      });
     }
 
     if (url.pathname === "/callback" && request.method === "POST") {
-      const body = (await request.json().catch(() => null)) as Partial<Notification> | null;
-      if (!body?.notificationId || !body.cleanupId) return json({ error: "invalid" }, 400);
+      const body = (await request
+        .json()
+        .catch(() => null)) as Partial<Notification> | null;
+      if (!body?.notificationId || !body.cleanupId)
+        return json({ error: "invalid" }, 400);
       const notification: Notification = {
         notificationId: String(body.notificationId),
         cleanupId: String(body.cleanupId),
         consumerAppId: String(body.consumerAppId ?? ""),
         subjectId: String(body.subjectId ?? ""),
-        versionIds: Array.isArray(body.versionIds) ? body.versionIds.map(String) : [],
+        versionIds: Array.isArray(body.versionIds)
+          ? body.versionIds.map(String)
+          : [],
         receivedAt: new Date().toISOString(),
       };
-      const seen = notifications.some((it) => it.notificationId === notification.notificationId);
-      if (!seen) { notifications.push(notification); persist(); }
-      if (state.callbackMode === "fail") return new Response("injected failure", { status: 500 });
+      const seen = notifications.some(
+        (it) => it.notificationId === notification.notificationId,
+      );
+      if (!seen) {
+        notifications.push(notification);
+        persist();
+      }
+      if (state.callbackMode === "fail")
+        return new Response("injected failure", { status: 500 });
       if (state.callbackMode === "silent") return json({ ok: true });
       // 幂等：重复通知不重复回执副作用（回执本身在 MEMORY 侧幂等）。
       await submitReceipt(notification);
       return json({ ok: true });
     }
 
-    if (url.pathname === "/health") return json({ ok: true, station: "external-demo" });
+    if (url.pathname === "/health")
+      return json({ ok: true, station: "external-demo" });
 
     // ---- 站控面（仅本机验收栈） ----
     if (url.pathname === "/test/issue-scope" && request.method === "POST") {
-      const body = (await request.json().catch(() => ({}))) as { subjectId?: string; note?: string };
-      return json({ scopeRef: issue(String(body.subjectId ?? ""), String(body.note ?? "")) });
+      const body = (await request.json().catch(() => ({}))) as {
+        subjectId?: string;
+        note?: string;
+      };
+      return json({
+        scopeRef: issue(String(body.subjectId ?? ""), String(body.note ?? "")),
+      });
     }
     if (url.pathname === "/test/revoke-scope" && request.method === "POST") {
-      const body = (await request.json().catch(() => ({}))) as { scopeRef?: string };
+      const body = (await request.json().catch(() => ({}))) as {
+        scopeRef?: string;
+      };
       const scope = body.scopeRef ? scopes.get(body.scopeRef) : undefined;
       if (scope) scope.revokedAt = new Date().toISOString();
       persist();
       return json({ revoked: Boolean(scope) });
     }
     if (url.pathname === "/test/callback-mode" && request.method === "POST") {
-      const body = (await request.json().catch(() => ({}))) as { mode?: CallbackMode };
-      if (body.mode === "receipt" || body.mode === "fail" || body.mode === "silent") {
+      const body = (await request.json().catch(() => ({}))) as {
+        mode?: CallbackMode;
+      };
+      if (
+        body.mode === "receipt" ||
+        body.mode === "fail" ||
+        body.mode === "silent"
+      ) {
         state.callbackMode = body.mode;
         return json({ ok: true, mode: state.callbackMode });
       }
       return json({ error: "invalid mode" }, 400);
     }
-    if (url.pathname === "/test/source-check-fails" && request.method === "POST") {
-      const body = (await request.json().catch(() => ({}))) as { fails?: boolean };
+    if (
+      url.pathname === "/test/source-check-fails" &&
+      request.method === "POST"
+    ) {
+      const body = (await request.json().catch(() => ({}))) as {
+        fails?: boolean;
+      };
       state.sourceCheckFails = Boolean(body.fails);
       persist();
       return json({ ok: true, fails: state.sourceCheckFails });
@@ -201,7 +250,10 @@ const server = Bun.serve({
       return json({
         callbackMode: state.callbackMode,
         sourceCheckFails: state.sourceCheckFails,
-        scopes: [...scopes.entries()].map(([scopeRef, scope]) => ({ scopeRef, ...scope })),
+        scopes: [...scopes.entries()].map(([scopeRef, scope]) => ({
+          scopeRef,
+          ...scope,
+        })),
         notifications,
       });
     }

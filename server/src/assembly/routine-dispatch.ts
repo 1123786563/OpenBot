@@ -3,10 +3,7 @@ import { withUsageOrigin } from "../usage-origin";
 
 /** What the dispatch route needs from the runner it fires. */
 export interface RoutineDispatchRunner {
-  run: (
-    routineRunId: string,
-    firing?: { firingKey: string },
-  ) => unknown;
+  run: (routineRunId: string, firing?: { firingKey: string }) => unknown;
 }
 
 /** The structured logger surface this helper writes through. */

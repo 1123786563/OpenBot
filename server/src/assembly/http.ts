@@ -201,7 +201,10 @@ import { createMarketplaceRoutes } from "../marketplace/routes";
 import { createMastraContinuationRoutes } from "../mastra/continuation-routes";
 import { createMemoryServiceEntryRoutes } from "../memory-service/entry-routes";
 import { createMemoryConsumersRegistry } from "../memory-service/consumers-registry";
-import { createOpenBotMemorySourceCheck, type SourceAccess } from "../memory-service/source-check";
+import {
+  createOpenBotMemorySourceCheck,
+  type SourceAccess,
+} from "../memory-service/source-check";
 import { mountMemoryServiceRoutes } from "../memory-service/routes";
 import { createMobileBffActivity } from "../mobile-bff/activity";
 import {

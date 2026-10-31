@@ -330,7 +330,10 @@ export function createOpenShellGatewayClient(
   // the combination before a provider is built, so a real deployment never reaches this state.
   const serviceSpec =
     options.servicePort !== undefined && serviceToken !== undefined
-      ? computerServiceStartSpec({ token: serviceToken, port: options.servicePort })
+      ? computerServiceStartSpec({
+          token: serviceToken,
+          port: options.servicePort,
+        })
       : undefined;
 
   /**

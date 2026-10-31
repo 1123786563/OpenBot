@@ -638,15 +638,13 @@ describe("OpenShell substrate selection", () => {
     const deployment = { tenantId: "acme", workspaceId: "research" };
     const placed = createOpenShellComputerProvider({
       client,
-      scopeFor: trustedOpenShellScopeFor(
-        async (botId) => {
-          if (botId === "sales") return scope();
-          if (botId === "other-workspace") return scope({ workspaceId: "support" });
-          if (botId === "other-tenant") return scope({ tenantId: "globex" });
-          return null;
-        },
-        deployment,
-      ),
+      scopeFor: trustedOpenShellScopeFor(async (botId) => {
+        if (botId === "sales") return scope();
+        if (botId === "other-workspace")
+          return scope({ workspaceId: "support" });
+        if (botId === "other-tenant") return scope({ tenantId: "globex" });
+        return null;
+      }, deployment),
       capabilities: OPEN_SHELL_REQUIRED_CAPABILITIES,
     });
 

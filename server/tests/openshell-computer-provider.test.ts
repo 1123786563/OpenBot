@@ -2,9 +2,7 @@ import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { AuditStore } from "../src/audit";
 import { StaleSnapshotError } from "../src/computer/client";
 import { createComputerGateway } from "../src/computer/gateway";
-import {
-  createInMemorySnapshotStore,
-} from "../src/computer/snapshot-store";
+import { createInMemorySnapshotStore } from "../src/computer/snapshot-store";
 import {
   createOpenShellComputerProvider,
   OPEN_SHELL_REQUIRED_CAPABILITIES,
@@ -839,20 +837,28 @@ describe("OpenShell sessionOf fences replaced sandboxes", () => {
 
     // The snapshot is taken in the first run, so its row carries uid-run-1.
     const taken = await gateway.snapshot("sales");
-    await gateway.click("sales", { id: "dev-local-user" }, {
-      ref: "e9",
-      snapshotId: taken.snapshotId,
-    });
+    await gateway.click(
+      "sales",
+      { id: "dev-local-user" },
+      {
+        ref: "e9",
+        snapshotId: taken.snapshotId,
+      },
+    );
     expect(calls).toContain("/click");
 
     // The sandbox is replaced (image digest or generation moved on): a new uid, the name unchanged.
     run = "uid-run-2";
     calls.length = 0;
     const refusal = await gateway
-      .click("sales", { id: "dev-local-user" }, {
-        ref: "e9",
-        snapshotId: taken.snapshotId,
-      })
+      .click(
+        "sales",
+        { id: "dev-local-user" },
+        {
+          ref: "e9",
+          snapshotId: taken.snapshotId,
+        },
+      )
       .catch((error: unknown) => error);
 
     expect(refusal).toBeInstanceOf(StaleSnapshotError);
@@ -860,10 +866,14 @@ describe("OpenShell sessionOf fences replaced sandboxes", () => {
 
     // The control: a snapshot of the new run resolves again, so the fence refuses only the dead run.
     const fresh = await gateway.snapshot("sales");
-    await gateway.click("sales", { id: "dev-local-user" }, {
-      ref: "e9",
-      snapshotId: fresh.snapshotId,
-    });
+    await gateway.click(
+      "sales",
+      { id: "dev-local-user" },
+      {
+        ref: "e9",
+        snapshotId: fresh.snapshotId,
+      },
+    );
     expect(calls).toContain("/click");
   });
 });
@@ -927,14 +937,11 @@ describe("gateway TLS scoped fetch", () => {
       return new Response("{}");
     }) as unknown as typeof fetch;
     const scoped = caScopedFetch("-----BEGIN CERTIFICATE-----ca", inner);
-    await scoped(
-      "https://ws--sb--computer.openshell.localhost:8080/navigate",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: "{}",
-      },
-    );
+    await scoped("https://ws--sb--computer.openshell.localhost:8080/navigate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
     expect(seen.length).toBe(1);
     const [url, init] = seen[0] as [
       string,

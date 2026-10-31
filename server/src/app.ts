@@ -809,7 +809,11 @@ export function createApp(
     workbenchPayer,
     // #733：来源裁决的 Access 与部署库同源（billing 组携带的就是部署库本身）。
     ...(billing?.database
-      ? { memorySourceAccess: createOpenBotSourceAccess({ database: billing.database }) }
+      ? {
+          memorySourceAccess: createOpenBotSourceAccess({
+            database: billing.database,
+          }),
+        }
       : {}),
     createDeploymentRequireUser,
     credentialInput,
