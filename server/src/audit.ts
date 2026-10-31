@@ -1062,15 +1062,12 @@ n   * "which version lived when" without guessing. The payload carries a four-he
    * actor whose authority it borrowed, which is why `actorUserId` stays null.
    */
   "opik.retention_deleted",
-  /**
-   * The Hindsight chain refused to store a memory's content on its sensitivity class
-   * (audit F-G1-4): a credential is never remembered, and medical, financial or customer
-   * material needs the person's explicit second confirmation. The payload names the subject
-   * type and the refused CLASS only — never the content, so a refused secret leaves no copy
-   * in the trail. Recorded because a refusal is the interesting half: an attempted write of
-   * a credential is a fact about the caller, and the successful writes around it say nothing.
+  /*
+   * #732: `memory.sensitivity_refused` left the taxonomy with the old memory chain that wrote
+   * it. The rule stands (a credential is never remembered; medical, financial or customer
+   * material needs explicit confirmation) in the memory service's own write path, which does
+   * not audit into this deployment's trail.
    */
-  "memory.sensitivity_refused",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

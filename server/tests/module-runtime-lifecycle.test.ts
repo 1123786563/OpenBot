@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createRuntimeLifecycle } from "../src/assembly/lifecycle";
 
@@ -52,8 +52,6 @@ const FROZEN_STOP_ORDER = [
   "opikExecutionWorker",
   "openMuseTaskSweep",
   "openMuseTaskReaper",
-  "memorySweep",
-  "hindsightSyncSweep",
   "proactiveSweep",
   "approvalSweep",
   "personResponseSweep",
@@ -102,8 +100,6 @@ describe("MOD03 lifecycle registry semantics (real module)", () => {
     hold("opikExecutionWorker");
     hold("openMuseTaskSweep");
     hold("openMuseTaskReaper");
-    hold("memorySweep");
-    hold("hindsightSyncSweep");
     hold("proactiveSweep");
     hold("approvalSweep");
     hold("personResponseSweep");
@@ -134,7 +130,7 @@ describe("MOD03 lifecycle registry semantics (real module)", () => {
     });
 
     const completion = lifecycle.stopRegistered();
-    expect(events.slice(0, 24)).toEqual([
+    expect(events.slice(0, 22)).toEqual([
       "responsibilitySweep",
       "catalogSyncScheduler",
       "keyStateSyncScheduler",
@@ -146,8 +142,6 @@ describe("MOD03 lifecycle registry semantics (real module)", () => {
       "opikExecutionWorker",
       "openMuseTaskSweep",
       "openMuseTaskReaper",
-      "memorySweep",
-      "hindsightSyncSweep",
       "proactiveSweep",
       "approvalSweep",
       "personResponseSweep",
@@ -160,7 +154,7 @@ describe("MOD03 lifecycle registry semantics (real module)", () => {
       "billingSweep:1",
       "craftIdleReaper",
     ]);
-    expect(events.slice(24)).toEqual([
+    expect(events.slice(22)).toEqual([
       "channelActivityListener",
       "policyListener",
       "workOfferedListener",
@@ -459,6 +453,35 @@ describe("MOD03 runtime assembly (source pins)", () => {
     expect(listening).toBeGreaterThan(install);
   });
 
+  test("the research default stays wired: a person speaking in a solo conversation adopts (2026-10-31 decision)", () => {
+    // Source pin, because the hook lives in the runtime's channelStore wrapper: deleting
+    // any of these lines would silently turn the default off while every suite stays green.
+    const wrapper = RUNTIME_SOURCE.indexOf(
+      "if (activity.agentId === null) personSpoke?.(actor.id, channelId);",
+    );
+    const bound = RUNTIME_SOURCE.indexOf(
+      "personSpoke = researchDefaults.personSpoke;",
+    );
+    const gated = RUNTIME_SOURCE.indexOf(
+      "research: config.proactiveDefaults.research,",
+    );
+    const deliver = RUNTIME_SOURCE.indexOf(
+      "canDeliver: async (ownerUserId, channelId, agentId) =>",
+    );
+    expect(wrapper).toBeGreaterThan(-1);
+    expect(gated).toBeGreaterThan(-1);
+    expect(deliver).toBeGreaterThan(gated);
+    expect(bound).toBeGreaterThan(deliver);
+    // The wrapper must run before the binding is possible: the hook variable is declared
+    // beside the channel store it wraps.
+    const declared = RUNTIME_SOURCE.indexOf(
+      "| ((ownerUserId: string, channelId: string) => void)",
+    );
+    expect(declared).toBeGreaterThan(-1);
+    expect(wrapper).toBeGreaterThan(declared);
+    expect(bound).toBeGreaterThan(wrapper);
+  });
+
   test("startup failure rolls back via stopRegistered, then rethrows (W2 wiring)", () => {
     const catchBlock = RUNTIME_SOURCE.indexOf("  } catch (error) {");
     const rollback = RUNTIME_SOURCE.indexOf(
@@ -498,9 +521,15 @@ describe("MOD03 real boot smoke (env-adaptive, never faked)", () => {
         DATABASE_URL:
           process.env.TEST_DATABASE_URL ??
           "postgresql://postgres:openbot@127.0.0.1:5433/openbot_test",
-        KEY_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        // base64 of 32 bytes (Buffer.alloc(32, 1)): the previous literal decoded to
+        // 24 bytes, so loadConfig refused on the key before the agent-runtime gate and
+        // the refusal branch below was unreachable (the old wait then hung 120s).
+        KEY_ENCRYPTION_KEY: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
         OPENBOT_SINGLE_USER: "true",
         PORT: "39777",
+        // Neutralized like the Intelligence vars: a SERVER_PORT inherited from
+        // the host .env would disagree with PORT and refuse on that instead.
+        SERVER_PORT: undefined as unknown as string,
         INTELLIGENCE_API_URL: undefined as unknown as string,
         INTELLIGENCE_GATEWAY_WS_URL: undefined as unknown as string,
         INTELLIGENCE_API_KEY: undefined as unknown as string,
@@ -529,6 +558,20 @@ describe("MOD03 real boot smoke (env-adaptive, never faked)", () => {
     });
 
     const refused = await refusal;
+    if (!refused) {
+      // A child that died without the refusal (config error, missing DB) must
+      // fail fast with its output instead of waiting on an exit that already
+      // happened — the old Branch B wait hung 120s on exactly that.
+      const early = await Promise.race([
+        exited,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1_000)),
+      ]);
+      if (early !== null) {
+        expect(`child exited ${early} without the refusal: ${output}`).toBe(
+          "unreachable",
+        );
+      }
+    }
     if (refused) {
       // Branch A (this environment): the refusal must be the WHOLE story —
       // exit code 1, before any listener exists.

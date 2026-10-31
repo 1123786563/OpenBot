@@ -22,8 +22,8 @@ import { enterpriseMemberships, enterpriseTenants } from "./enterprise-tenancy";
 // deletion_state 只区分“远端删除未完成”（pending/failed）与“服务已确认删除”（confirmed，
 // 2xx 或 404）。#391 起 confirmed 之外还有缺席验证（verify_state）：一次 API 成功不是删除
 // 证明，验证要求服务现在回答该文档 404 且其记忆单元列表为空——“受控副本清除完成”的
-// 三条证据腿（活跃数据、已结束任务载荷、受控备份）在 cleanup-evidence.ts 组合，本表只
-// 存每文档的验证事实。
+// 三条证据腿（活跃数据、已结束任务载荷、受控备份）原在 cleanup-evidence.ts 组合
+// （该模块随 #732 退出；本表与行保留），本表只存每文档的验证事实。
 //
 // 恢复备份后的重放以本表为事实源：replayRevocations 按行幂等重放阻断（含授权禁用），
 // 重放完成前不重新开放召回。

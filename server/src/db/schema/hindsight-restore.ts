@@ -14,7 +14,7 @@ import { jsonb } from "./json";
 // 两张表都不带 tenant 归属，这是本表与 hindsight 其余表的唯一差别，理由写在数据本身：
 // 受控备份（deploy/hindsight/backup.sh）是整库 pg_dump，恢复也是整库事件——一份副本天然
 // 含所有公司所有 bank，给它一个 tenant 外键等于声明“这份副本只含一家公司”，是假精度。
-// 证据计算（cleanup-evidence.ts）按租户过滤台账后在全局副本登记上求交集，才是真实的
+// 证据计算（cleanup-evidence.ts，已随 #732 退出）按租户过滤台账后在全局副本登记上求交集，才是真实的
 // 含义：任何先于该租户删除确认时刻、且尚无清除证据的副本都使“受控副本清除完成”不成立。
 //
 // hindsight_backup_restores：一行 = 一次已发生的备份恢复。restore_key 唯一是去重身份——

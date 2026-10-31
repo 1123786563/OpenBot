@@ -147,6 +147,11 @@
       "kind": "business"
     },
     {
+      "path": "server/src/memory-service",
+      "module": "M10",
+      "kind": "business"
+    },
+    {
       "path": "server/src/hindsight",
       "module": "M10",
       "kind": "business"
@@ -1417,14 +1422,6 @@
     },
     {
       "source": "server/src/agents/agent-resolver.ts",
-      "target": "server/src/memory/public.ts",
-      "ticket": "#700",
-      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
-      "reason": "环边登记（#700 对账）：引入/闭合来源 16f97f260 MOD Run 自身 (#620 系)",
-      "category": "cycle"
-    },
-    {
-      "source": "server/src/agents/agent-resolver.ts",
       "target": "server/src/plugins/package-tools.ts",
       "ticket": "#700",
       "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
@@ -1657,19 +1654,19 @@
     },
     {
       "source": "server/src/agents/lifecycle-reset.ts",
-      "target": "server/src/memory/public.ts",
-      "ticket": "#700",
-      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
-      "reason": "环边登记（#700 对账）：引入/闭合来源 16f97f260 MOD Run 自身 (#620 系)",
-      "category": "cycle"
-    },
-    {
-      "source": "server/src/agents/lifecycle-reset.ts",
       "target": "server/src/proactive/engine.ts",
       "category": "cycle",
       "ticket": "MOD14 (S7 定时职责与 Worker)",
       "exit_condition": "AUTOMATION 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔AUTOMATION 单向化后移除此例外",
       "reason": "模块级环边 M03 -> AUTOMATION（M03 与 AUTOMATION 互相可达）"
+    },
+    {
+      "source": "server/src/agents/lifecycle-reset.ts",
+      "target": "server/src/proactive/public.ts",
+      "category": "cycle",
+      "ticket": "#732 恢复研究默认（proactive/defaults.ts）",
+      "exit_condition": "归属票将 Bot 重置对研究默认锁/退出的依赖经公开合同反转或下沉中立位置后移除（先例：#700 对 memory/public 的登记）",
+      "reason": "重置要在删除本人已关闭的研究设置前写入 default_opt_outs，并取与采用同一把锁；AUTOMATION→M03 反向可达使该公开出口边成环（#732 用户裁决恢复默认开启）"
     },
     {
       "source": "server/src/agents/lifecycle-routes.ts",
@@ -4818,114 +4815,98 @@
     {
       "source": "server/src/hindsight/answer-evidence.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
       "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变；#732 旧记忆实现退出后该边不再处于环上，按实际判定改类目。"
     },
     {
       "source": "server/src/hindsight/bank-scope.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
       "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变；#732 旧记忆实现退出后该边不再处于环上，按实际判定改类目。"
     },
     {
       "source": "server/src/hindsight/bank-scope.ts",
       "target": "server/src/enterprise/tenancy/store.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
       "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变；#732 旧记忆实现退出后该边不再处于环上，按实际判定改类目。"
     },
     {
       "source": "server/src/hindsight/degraded-recall.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
       "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变；#732 旧记忆实现退出后该边不再处于环上，按实际判定改类目。"
     },
     {
       "source": "server/src/hindsight/derived-judgments.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
       "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变；#732 旧记忆实现退出后该边不再处于环上，按实际判定改类目。"
     },
     {
       "source": "server/src/hindsight/judgment-review.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
       "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变；#732 旧记忆实现退出后该边不再处于环上，按实际判定改类目。"
     },
     {
       "source": "server/src/hindsight/ops-routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD15 (S7 记忆) 重类目（原 合并汇入 (#618/#376 经 main，#620 集成树) 环例外）",
       "exit_condition": "M-obs（hindsight/memory 路由层）建立公开出口并让消费者改走公开出口，使环单向化后移除此例（#620 收口合并汇入，closure-ocr 期登记）；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变；#732 旧记忆实现退出后该边不再处于环上，按实际判定改类目。"
     },
     {
       "source": "server/src/hindsight/ops-routes.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD15 (S7 记忆) 重类目（原 合并汇入 (#618/#376 经 main，#620 集成树) 环例外）",
       "exit_condition": "M-obs（hindsight/memory 路由层）建立公开出口并让消费者改走公开出口，使环单向化后移除此例（#620 收口合并汇入，closure-ocr 期登记）；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变；#732 旧记忆实现退出后该边不再处于环上，按实际判定改类目。"
     },
     {
       "source": "server/src/hindsight/pause-controls.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
       "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/hindsight/personal-memory-context.ts",
-      "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
-      "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变；#732 旧记忆实现退出后该边不再处于环上，按实际判定改类目。"
     },
     {
       "source": "server/src/hindsight/preference-recall.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
       "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变；#732 旧记忆实现退出后该边不再处于环上，按实际判定改类目。"
     },
     {
       "source": "server/src/hindsight/revocation.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
       "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/hindsight/routes.ts",
-      "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 合并汇入 (#618/#376 经 main，#620 集成树) 环例外）",
-      "exit_condition": "M-obs（hindsight/memory 路由层）建立公开出口并让消费者改走公开出口，使环单向化后移除此例（#620 收口合并汇入，closure-ocr 期登记）；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变；#732 旧记忆实现退出后该边不再处于环上，按实际判定改类目。"
     },
     {
       "source": "server/src/hindsight/scoped-recall.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD15 (S7 记忆) 重类目（原 MOD04 (S2 身份与 Access) 环例外）",
       "exit_condition": "M02 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M02 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变；#732 旧记忆实现退出后该边不再处于环上，按实际判定改类目。"
     },
     {
       "source": "server/src/host-access/broker.ts",
@@ -5400,76 +5381,20 @@
       "reason": "模块级环边 M05 -> M08（M05 与 M08 互相可达）"
     },
     {
-      "source": "server/src/memory/ingestion.ts",
-      "target": "server/src/plugins/access.ts",
-      "category": "cycle",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
-      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/memory/ingestion.ts",
-      "target": "server/src/plugins/broker.ts",
-      "category": "cycle",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
-      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/memory/ingestion.ts",
-      "target": "server/src/plugins/catalogue.ts",
-      "category": "cycle",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
-      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/memory/ingestion.ts",
-      "target": "server/src/plugins/composio.ts",
-      "category": "cycle",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
-      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/memory/ingestion.ts",
-      "target": "server/src/plugins/shared-accounts.ts",
-      "category": "cycle",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
-      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/memory/ingestion.ts",
-      "target": "server/src/plugins/store.ts",
-      "category": "cycle",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
-      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
-    },
-    {
-      "source": "server/src/memory/routes.ts",
-      "target": "server/src/auth/public.ts",
-      "ticket": "#700",
-      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
-      "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
-      "category": "cycle"
-    },
-    {
-      "source": "server/src/memory/routes.ts",
+      "source": "server/src/memory-service/context.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 合并汇入 (#618/#376 经 main，#620 集成树) 环例外）",
-      "exit_condition": "M-obs（hindsight/memory 路由层）建立公开出口并让消费者改走公开出口，使环单向化后移除此例（#620 收口合并汇入，closure-ocr 期登记）；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+      "category": "deep-reference",
+      "ticket": "#732 独立记忆服务接入（M10 消费 M02 合同）",
+      "exit_condition": "M02 建立契约公开出口并让 M10 改走公开出口后移除此例外；本边只消费 PlatformScope 类型",
+      "reason": "记忆服务上下文装载需要平台作用域类型，enterprise/contracts.ts 目前无公开出口，#732 范围不含 M02 出口迁移"
     },
     {
-      "source": "server/src/memory/routes.ts",
-      "target": "server/src/plugins/store.ts",
-      "category": "cycle",
-      "ticket": "MOD15 (S7 记忆) 重类目（原 MOD12 (S5 工具审批与恢复) 环例外）",
-      "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
-      "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+      "source": "server/src/memory-service/source-check.ts",
+      "target": "server/src/auth/signed-value.ts",
+      "category": "deep-reference",
+      "ticket": "#732 独立记忆服务接入（M10 消费 M01 签名原语）",
+      "exit_condition": "M01 在 auth/public.ts 暴露签名原语或改为公开出口后移除此例外",
+      "reason": "来源引用签验复用 auth 既有签名原语，auth/public.ts 未导出 sign/verify，#732 范围不含 M01 出口扩面"
     },
     {
       "source": "server/src/mobile-bff/activity.ts",
@@ -6001,14 +5926,6 @@
     },
     {
       "source": "server/src/proactive/engine.ts",
-      "target": "server/src/memory/public.ts",
-      "ticket": "#700",
-      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
-      "reason": "环边登记（#700 对账）：引入/闭合来源 16f97f260 MOD Run 自身 (#620 系)",
-      "category": "cycle"
-    },
-    {
-      "source": "server/src/proactive/engine.ts",
       "target": "server/src/plugins/tools.ts",
       "category": "cycle",
       "ticket": "MOD12 (S5 工具审批与恢复)",
@@ -6037,14 +5954,6 @@
       "ticket": "#700",
       "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
       "reason": "环边登记（#700 对账）：引入/闭合来源 a935883e2 MOD Run 自身 (#620 系)",
-      "category": "cycle"
-    },
-    {
-      "source": "server/src/proactive/store.ts",
-      "target": "server/src/memory/public.ts",
-      "ticket": "#700",
-      "exit_condition": "归属 epic（BA503/PKG/MOD 系后续票）将此依赖经公开合同反转或下沉中立位置后移除",
-      "reason": "环边登记（#700 对账）：引入/闭合来源 16f97f260 MOD Run 自身 (#620 系)",
       "category": "cycle"
     },
     {

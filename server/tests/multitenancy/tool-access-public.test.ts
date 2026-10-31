@@ -18,7 +18,7 @@
 //   D5 验收④供应商差异留 Adapter：public.ts 只 import 组内四文件
 //      （credentials/store/tools/selection），零 broker/Adapter/transport/vendor 面。
 //   D6 验收⑤迁移完整性：直调面冻结普查表——transport/vendor 深引用只剩
-//      {memory/ingestion（登记例外）, assembly/runtime（组合根 seam 安装）}；
+//      {assembly/runtime（组合根 seam 安装）}（#732 删除了 memory/ingestion 这一登记例外）；
 //      decryptCredentialForUse 在 plugins 外零导入；.callTool( 只剩冻结四点；
 //      copilot 经 public 出口；runtime/http 受管执行经 createToolAccess。
 //   D7 存量对照：plugin/credentials 套件两树对照与复跑见 reports/mod12-verification/
@@ -549,7 +549,6 @@ describe("MOD12 D3/D6 源级钉: 秘密零泄漏面 + 迁移完整性冻结普�
 
   test("transport/vendor deep imports outside the group are exactly the frozen census", () => {
     const expected: Record<string, string[]> = {
-      "server/src/memory/ingestion.ts": ["composio"],
       "server/src/assembly/runtime.ts": [
         "builtin-routines",
         "composio",
@@ -583,8 +582,6 @@ describe("MOD12 D3/D6 源级钉: 秘密零泄漏面 + 迁移完整性冻结普�
       // 受管门经门面（本票迁移）。
       "server/src/assembly/http.ts": 1,
       "server/src/assembly/runtime.ts": 1,
-      // 登记不迁移：记忆同步已走受管 store 门，整面迁移归 M10 记忆票。
-      "server/src/memory/ingestion.ts": 1,
       // 依赖注入：provider（runtime.ts）已改经门面；第二处是 PKG09 `pkg:` 包工具分支的
       // 注入式 deps.callTool。
       "server/src/approvals/execute.ts": 2,

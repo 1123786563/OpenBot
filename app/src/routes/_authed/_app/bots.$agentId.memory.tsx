@@ -1,7 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { BotSubpage } from "@/components/bot-profile/bot-subpage";
-import { MemorySources } from "@/components/memory/sources";
 import { ProactiveResearchSettings } from "@/components/suggestions/proactive-panel";
 
 export const Route = createFileRoute("/_authed/_app/bots/$agentId/memory")({
@@ -21,15 +20,11 @@ function MemoryPage() {
         <>
           <p className="mt-6 text-muted-foreground text-sm">
             {t("pages.memory.settingsIntro")}{" "}
-            <Link
-              className="underline underline-offset-4"
-              to="/memory"
-            >
+            <Link className="underline underline-offset-4" to="/memory">
               {t("pages.memory.settingsLink")}
             </Link>
             {t("pages.memory.settingsOutro")}
           </p>
-          <MemorySources agentId={agent.id} />
           <ProactiveResearchSettings agentId={agent.id} />
         </>
       )}

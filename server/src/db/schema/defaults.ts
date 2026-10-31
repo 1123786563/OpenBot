@@ -8,15 +8,22 @@ import {
 } from "drizzle-orm/pg-core";
 import { agents, users } from "./core";
 
+/*
+ * #732 + the 2026-10-31 user decision: background research is on by default again
+ * (`proactive/defaults.ts`), so `proactive_research` rows ARE written — by that module's
+ * `recordOptOut` (the proactive store's remove, a Bot reset). The `memory_source` half left
+ * with the old memory engine; its rows are historical and nothing writes them.
+ */
+
 /** What a person can switch off that OpenBot otherwise switches on for them. */
 export type DefaultFeature = "memory_source" | "proactive_research";
 
 /**
  * A default a person turned down, so OpenBot never switches it back on.
  *
- * Memory sources and background research are on by default (see `memory/defaults.ts`): a person who
- * talks to one of their Bots gets research from it, and each app they connected that the Bot can read
- * becomes a memory source. Turning one OFF keeps its row with `enabled = false`, and that row alone
+ * Background research is on by default (`proactive/defaults.ts` since the 2026-10-31 decision;
+ * memory sources' default left with the old engine in #732): a person who talks to one of their
+ * Bots gets research from it. Turning one OFF keeps its row with `enabled = false`, and that row alone
  * stops it coming back. REMOVING one deletes the row, so the removal is written here instead, and
  * adoption reads this table before it creates anything.
  *

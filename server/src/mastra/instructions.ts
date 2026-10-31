@@ -23,13 +23,13 @@ import { UNTRUSTED_GUIDANCE } from "../untrusted-content";
  *
  * ME07 (#479): the optional `memoryBlock` composes LAST — after the tail.
  * The legacy engine injected the personal-memory context as the head of the
- * run's message list (PersonalMemoryMiddleware), which lands after every
- * system-prompt part and before the conversation; on this engine the same
- * relative position is the end of the composed prompt. The block arrives
- * already rendered by the #395 consumer (`renderPersonalMemoryContext`), so
- * this composition never re-authors its untrusted-data discipline; an empty
- * string composes nothing, exactly like the legacy path that injected no
- * message when the person had no effective memory.
+ * run's message list, which lands after every system-prompt part and before
+ * the conversation; on this engine the same relative position is the end of
+ * the composed prompt. #732: the block now arrives already rendered by the
+ * memory-service loader (`memoryContextBlock`), so this composition never
+ * re-authors its untrusted-data discipline; an empty string composes nothing,
+ * exactly like the legacy path that injected no message when the person had no
+ * effective memory.
  */
 export function buildInstructions(
   parts: readonly string[],

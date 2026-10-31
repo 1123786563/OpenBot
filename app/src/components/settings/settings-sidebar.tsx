@@ -51,11 +51,11 @@ const ITEMS = [
     linkOptions: { to: "/settings/approvals" },
   },
   {
-    /* What your Bots know about you, across all of them. */
+    /* What your Bots know about you, across all of them — the memory service's own view (#732). */
     title: "sidebar.memory",
     icon: IconBrain,
     exact: false,
-    linkOptions: { to: "/settings/memory" },
+    linkOptions: { to: "/memory" },
   },
   {
     /*

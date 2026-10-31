@@ -17,13 +17,11 @@
 //       run 上下文只来自 packageRunFor（持久 Run 行重建），提案里反序列化
 //       的 runId/scope/target 字段一律不成为授权事实；无受管 Run → 固定
 //       拒绝句；未接线部署拒绝而不是猜上下文；legacy ref 不咨询恢复面。
-//   (e) memory ingestion —— 包来源在 authorize 被点名拒绝（PACKAGE_RUN_REQUIRED
-//       语义），不伪造 Run；eligibleSources 把该来源记为失败而不是放行。
 //   (f) dispatch 的「取消/重试不重置 operation identity」与审批期失效由
 //       multitenancy/package-entrypoints.test.ts（真实受限角色）证明。
 //
 // 本文件在 driven（Bun）层执行：store 为真实实现 + 真实审计面 + 真实测试库；
-// package seam / approved-action deps / memory store 为可控注入。
+// package seam / approved-action deps 为可控注入。
 
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -39,8 +37,6 @@ import { createDatabase } from "../src/db/client";
 import { auditEvents } from "../src/db/schema";
 import { packageRunForBinding } from "../src/enterprise/plugin-packages/entrypoints";
 import { createMastraTools, VALID_TOOL_NAME } from "../src/mastra/tools";
-import { createMemoryIngestion } from "../src/memory/ingestion";
-import { MemoryRefusedError } from "../src/memory/types";
 import type {
   PackageToolDescriptor,
   PackageToolSeam,
@@ -48,7 +44,7 @@ import type {
 } from "../src/plugins/package-tools";
 import type { BotAccessCheck } from "../src/plugins/routes";
 import { createPluginRoutes } from "../src/plugins/routes";
-import { createPluginStore, type PluginStore } from "../src/plugins/store";
+import { createPluginStore } from "../src/plugins/store";
 import {
   grantedTools,
   PACKAGE_TOOL_MODEL_PREFIX,
@@ -388,104 +384,6 @@ describe("plugins/routes /call (PKG09)", () => {
           "package_run_required",
       ),
     ).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// (e) memory ingestion
-// ---------------------------------------------------------------------------
-
-function memoryHarness(sources: unknown[] = []) {
-  const calls = { authorizePluginReads: 0, failSync: [] as string[] };
-  const plugins = {
-    agentOwner: async () => "person",
-    // `listForAgent` is also read by `formedFor` (the shape of a Bot's grants,
-    // which is not an authorization read): only the catalogue read below is
-    // the counter that proves `authorize` never got that far.
-    listForAgent: async () => ({ tools: [], skills: [] }),
-    listServers: async () => {
-      calls.authorizePluginReads += 1;
-      return [];
-    },
-    connectionsFor: async () => [],
-    brokeredConnectionsFor: async () => [],
-    deploymentConnectionFor: async () => null,
-    callTool: async () => {
-      throw new Error("memory ingestion must not call a package tool");
-    },
-  } as unknown as PluginStore;
-  const store = {
-    sources: async () => sources,
-    failSync: async (_owner: string, id: string) => {
-      calls.failSync.push(id);
-    },
-    getSource: async () => {
-      throw new Error("not used");
-    },
-    claimSync: async () => null,
-    createSource: async () => {
-      throw new Error("a refused source is never created");
-    },
-    completeSync: async () => undefined,
-    dueSources: async () => [],
-    retrieve: async () => [],
-  };
-  const ingestion = createMemoryIngestion({
-    store: store as never,
-    plugins,
-  });
-  return { ingestion, calls };
-}
-
-describe("memory ingestion (PKG09)", () => {
-  test("a package ref is refused by name before any grant read", async () => {
-    const harness = memoryHarness();
-    await expect(
-      harness.ingestion.createSource("person", {
-        agentId: "notes-bot",
-        toolRef: REF,
-        title: "Package notes",
-        args: {},
-      }),
-    ).rejects.toBeInstanceOf(MemoryRefusedError);
-    await expect(
-      harness.ingestion.createSource("person", {
-        agentId: "notes-bot",
-        toolRef: REF,
-        title: "Package notes",
-        args: {},
-      }),
-    ).rejects.toThrow(
-      "Package tools run only inside a managed run, so they cannot be memory sources.",
-    );
-    // The refusal is not the accidental "lost access" sentence, and no plugin
-    // read happened at all.
-    expect(harness.calls.authorizePluginReads).toBe(0);
-  });
-
-  test("an already-configured package source is excluded and marked failed, never synced", async () => {
-    const harness = memoryHarness([
-      {
-        id: "source-1",
-        ownerUserId: "person",
-        agentId: "notes-bot",
-        toolRef: REF,
-        title: "Package notes",
-        args: {},
-        enabled: true,
-        syncStatus: "succeeded",
-        lastSyncAt: new Date(),
-        syncError: null,
-      },
-    ]);
-    // Recall is the read that goes through eligibleSources: the package source
-    // must not be eligible, must be recorded as failed, and no plugin read may
-    // happen for it.
-    await expect(
-      harness.ingestion.recall("person", "notes-bot", "notes"),
-    ).resolves.toEqual([]);
-    expect(harness.calls.failSync).toEqual(["source-1"]);
-    expect(harness.calls.authorizePluginReads).toBe(0);
   });
 });
 

@@ -299,6 +299,13 @@ export type DeploymentConfig = {
    */
   learningAutoAssign: boolean;
   /**
+   * Background research OpenBot switches on for each person (proactive/defaults.ts). On unless
+   * OPENBOT_PROACTIVE_DEFAULTS is "false" or "0". Switching it off stops new defaults and leaves
+   * every existing row as it is. The memory-source half of the old default left with the old
+   * memory engine (#732).
+   */
+  proactiveDefaults: { research: boolean };
+  /**
    * A credential that can create Learning containers, for a deployment whose operator supplied one.
    *
    * The runtime key cannot: Intelligence creates containers for a person's session, a CopilotKit CLI
@@ -309,17 +316,18 @@ export type DeploymentConfig = {
    */
   learningSetup?: { serviceToken: string; projectId: string };
   /**
-   * Memory sources and background research OpenBot switches on for each person (memory/defaults.ts).
-   * Both on unless OPENBOT_MEMORY_SOURCE_DEFAULTS or OPENBOT_PROACTIVE_DEFAULTS is "false" or "0".
-   * Switching either off stops new defaults and leaves every existing row as it is.
+   * #731 the independent memory service's admin surface; #732 the run loader's
+   * deployment facts. Configured, OpenBot mounts the controlled embed entry AND
+   * loads every run's memory through the service client; unconfigured, the page
+   * says so and runs carry no memory block. The app identity and source-signing
+   * key arrive together with the URL or boot refuses (see memoryServiceConfig).
    */
-  memoryDefaults: { sources: boolean; research: boolean };
-  /**
-   * #731 the independent memory service's admin surface. Configured, OpenBot mounts
-   * the controlled embed entry and the sidebar page shows it; unconfigured, the
-   * page says so instead of framing a URL nobody supplied.
-   */
-  memoryService?: { baseUrl: string };
+  memoryService?: {
+    baseUrl: string;
+    appId: string;
+    appSecret: string;
+    sourceKey: string;
+  };
   /**
    * The multitenancy switch and its startup-validation inputs (MT013).
    *
@@ -691,21 +699,46 @@ function handoffCaps(environment: Environment): HandoffCaps {
   };
 }
 
-function memoryServiceConfig(
-  environment: Environment,
-): { memoryService: { baseUrl: string } } | Record<string, never> {
+function memoryServiceConfig(environment: Environment):
+  | {
+      memoryService: {
+        baseUrl: string;
+        appId: string;
+        appSecret: string;
+        sourceKey: string;
+      };
+    }
+  | Record<string, never> {
   const raw = optional(environment, "MEMORY_SERVICE_URL");
   if (!raw) return {};
   let parsed: URL;
   try {
     parsed = new URL(raw);
   } catch {
-    throw new Error(`MEMORY_SERVICE_URL must be an absolute URL: ${JSON.stringify(raw)}`);
+    throw new Error(
+      `MEMORY_SERVICE_URL must be an absolute URL: ${JSON.stringify(raw)}`,
+    );
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error(`MEMORY_SERVICE_URL must be http(s), not ${JSON.stringify(parsed.protocol)}`);
+    throw new Error(
+      `MEMORY_SERVICE_URL must be http(s), not ${JSON.stringify(parsed.protocol)}`,
+    );
   }
-  return { memoryService: { baseUrl: parsed.toString().replace(/\/$/, "") } };
+  // #732: the run loader and the source refs are one deployment fact — the app
+  // identity OpenBot presents to the memory service and the key its source scopes
+  // are signed with. Half-configured fails closed at boot instead of degrading
+  // into a client that can never be admitted.
+  const appId = required(environment, "MEMORY_SERVICE_APP_ID");
+  const appSecret = required(environment, "MEMORY_SERVICE_APP_SECRET");
+  const sourceKey = required(environment, "MEMORY_SERVICE_SOURCE_KEY");
+  return {
+    memoryService: {
+      baseUrl: parsed.toString().replace(/\/$/, ""),
+      appId,
+      appSecret,
+      sourceKey,
+    },
+  };
 }
 
 function required(environment: Environment, name: string): string {
@@ -1509,7 +1542,8 @@ function identityCenterAuth(
 ): (OAuthClient & { issuer: string; internalToken?: string }) | undefined {
   const client = oauthClient(environment, "IDENTITY_CENTER");
   const issuer = url(environment, "IDENTITY_CENTER_OAUTH_ISSUER");
-  const internalToken = environment.IDENTITY_CENTER_INTERNAL_TOKEN?.trim() || undefined;
+  const internalToken =
+    environment.IDENTITY_CENTER_INTERNAL_TOKEN?.trim() || undefined;
   if (internalToken && (!client || !issuer)) {
     throw new Error(
       "IDENTITY_CENTER_INTERNAL_TOKEN is set but identity-center sign-in (ISSUER/CLIENT_ID/CLIENT_SECRET) is not configured",
@@ -1528,7 +1562,9 @@ function identityCenterAuth(
       "Identity-center sign-in requires IDENTITY_CENTER_OAUTH_ISSUER, such as http://127.0.0.1:4210",
     );
   }
-  return internalToken ? { ...client, issuer, internalToken } : { ...client, issuer };
+  return internalToken
+    ? { ...client, issuer, internalToken }
+    : { ...client, issuer };
 }
 
 /**
@@ -1787,9 +1823,7 @@ function computerConfig(environment: Environment): ComputerConfig | undefined {
    */
   if (substrate) {
     if (substrate !== "openshell") {
-      throw new Error(
-        'OPENBOT_SANDBOX_SUBSTRATE must be "openshell" or unset',
-      );
+      throw new Error('OPENBOT_SANDBOX_SUBSTRATE must be "openshell" or unset');
     }
     const gatewayEndpoint = url(environment, "OPENSHELL_GATEWAY_ENDPOINT");
     if (!gatewayEndpoint) {
@@ -3558,11 +3592,8 @@ export function loadConfig(
     runtime: runtimeCapabilities(environment),
     learning: learningDefault(environment),
     learningAutoAssign: learningAutoAssignEnabled(environment),
+    proactiveDefaults: { research: researchDefaultEnabled(environment) },
     ...learningSetupCredential(environment),
-    memoryDefaults: {
-      sources: switchedOn(environment, "OPENBOT_MEMORY_SOURCE_DEFAULTS"),
-      research: switchedOn(environment, "OPENBOT_PROACTIVE_DEFAULTS"),
-    },
     ...memoryServiceConfig(environment),
     multitenancy: multitenancyConfig(environment),
     agentStallTimeoutMs: agentStallTimeoutMs(environment),
@@ -3608,15 +3639,15 @@ function learningAutoAssignEnabled(environment: Environment): boolean {
 }
 
 /** On unless the variable is "false" or "0", the rule every default-on switch here follows. */
-function switchedOn(environment: Environment, name: string): boolean {
-  const value = optional(environment, name);
+function researchDefaultEnabled(environment: Environment): boolean {
+  const value = optional(environment, "OPENBOT_PROACTIVE_DEFAULTS");
   return value !== "false" && value !== "0";
 }
 
 /**
  * The multitenancy mode switch: an explicit opt-in, never a default (MT013).
  *
- * A default-on rule like {@link switchedOn} would be exactly wrong here: multitenancy changes
+ * A default-on rule would be exactly wrong here: multitenancy changes
  * who the deployment serves, and its boot runs startup checks that can refuse to start. A
  * deployment must arrive at this mode by naming it, so the variable accepts an explicit value
  * on either side and refuses everything else — a typo must not silently become an opt-in any

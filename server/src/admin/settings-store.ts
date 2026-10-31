@@ -194,7 +194,7 @@ export function createEnterpriseStore(database: Database) {
      * "nothing" and both computed version 1 (the race review F1 reproduced). The advisory lock
      * covers every save — first and later alike — so every successful save observes the previous
      * committed version and hands out the next one. Same shape as the conversion rate store
-     * (gateway/conversion-rate-store.ts) and memory/defaults.ts.
+     * (gateway/conversion-rate-store.ts).
      *
      * The version is read from the stored row even when its address is broken
      * (`gatewayVersionFromStored`), so a corrupted row cannot drag the numbering backwards. The

@@ -23,8 +23,6 @@ import {
   expect,
   test,
 } from "../../../tests/support/bun-test-compat";
-import { MemoryList } from "../../src/components/memory/memories";
-import { MemorySources } from "../../src/components/memory/sources";
 import { RoutinesList } from "../../src/components/routines/routines-list";
 import {
   type ScopedCache,
@@ -37,13 +35,6 @@ import {
   selectWorkspaceScope,
   storeSelection,
 } from "../../src/lib/enterprise/tenant/selection";
-import {
-  type MemoryRecord,
-  type MemorySource,
-  memoryKeys,
-  scopedMemoriesQueryOptions,
-  scopedMemorySourcesQueryOptions,
-} from "../../src/lib/memory";
 import { setRoutineEnabledMutationOptions } from "../../src/lib/routines/mutations";
 import {
   type RoutinesPage,
@@ -52,18 +43,17 @@ import {
 } from "../../src/lib/routines/queries";
 
 /**
- * MT089 / Issue #132: the memory and routines pages are bound to the scope the screen holds. The
- * memories list, the sources list and the source picker carry the selection pair and file under
- * the scope's own cache prefix, so what is remembered is the server's answer under the scope in
- * force (AC1); the routines read and its enable/delete/run-now writes submit under the same scope
- * (AC2); a switch drops the old scope's memories, sources and routines wholesale — no residue
- * beside the scope that replaced it (AC3). The business regressions (AC4) run in their own suites
- * (bot-memory, memory-settings, routines).
+ * MT089 / Issue #132: the routines page is bound to the scope the screen holds. Its read and
+ * its enable/delete/run-now writes submit under the scope in force (AC2), and a switch drops
+ * the old scope's routines wholesale — no residue beside the scope that replaced it (AC3).
  *
- * THE HARNESS IS THE REAL PAGE AND THE REAL SEAM: `MemoryList`, `MemorySources` and
- * `RoutinesList` render as themselves inside a memory router, the selection is seeded from
- * storage exactly as production seeds it, and a switch goes through `selectWorkspaceScope`.
- * `fetch` records every request — the pair the client carried is the evidence.
+ * #732: this file used to carry the old memories and sources pages beside the routines ones.
+ * Those surfaces left with the old engine, so the suite keeps the routines half.
+ *
+ * THE HARNESS IS THE REAL PAGE AND THE REAL SEAM: `RoutinesList` renders as itself inside a
+ * memory router, the selection is seeded from storage exactly as production seeds it, and a
+ * switch goes through `selectWorkspaceScope`. `fetch` records every request — the pair the
+ * client carried is the evidence.
  */
 
 const USER = "user-1";
@@ -72,36 +62,6 @@ const GLOBEX: ScopeSelection = {
   tenantId: "globex",
   workspaceId: "globex-ops",
 };
-
-const MEMORY: MemoryRecord[] = [
-  {
-    id: "mem-1",
-    content: "Prefers invoices filed weekly",
-    provenance: "person",
-    sourceId: null,
-    enabled: true,
-    reviewState: "confirmed",
-    formedBy: "person",
-    formedByAgentId: null,
-    sourceApp: null,
-    sourceLink: null,
-    observedAt: null,
-    updatedAt: "2026-10-20T00:00:00.000Z",
-  },
-];
-
-const SOURCES: MemorySource[] = [
-  {
-    id: "src-1",
-    title: "Inbox actions",
-    agentId: "expenses",
-    toolRef: "gmail/list",
-    enabled: true,
-    syncStatus: "idle",
-    syncError: null,
-    lastSyncAt: null,
-  },
-];
 
 const ROUTINES: RoutinesPage = {
   routines: [
@@ -234,82 +194,6 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// AC1 — the memory list and the source picker only hold the scope's own answer
-// ---------------------------------------------------------------------------
-
-describe("MT089 AC1 — memories and sources are the scope's own answer", () => {
-  test("the memories read carries the pair and files under the scope's prefix", async () => {
-    storeSelection(USER, ACME);
-    serve((path) =>
-      path === "/api/memory"
-        ? jsonResponse(200, { memories: MEMORY })
-        : path.startsWith("/api/agents")
-          ? jsonResponse(200, { agents: [] })
-          : undefined,
-    );
-    const queryClient = freshClient();
-    const view = draw(queryClient, <MemoryList />);
-    await waitFor(() =>
-      expect(view.getByText("Prefers invoices filed weekly")).toBeTruthy(),
-    );
-
-    const read = asked.find((ask) => ask.input === "/api/memory");
-    expect(read).toBeTruthy();
-    expect(headerOf(read?.init, "x-openbot-tenant")).toBe("acme");
-    expect(headerOf(read?.init, "x-openbot-workspace")).toBe("acme-finance");
-    expect(
-      queryClient.getQueryData([
-        ...scopedCachePrefix(USER, ACME),
-        ...memoryKeys.all,
-      ]),
-    ).toMatchObject({ length: 1 });
-    // The unscoped entry stays untouched: no other surface reads this scope's row by accident.
-    expect(queryClient.getQueryData(memoryKeys.all)).toBeUndefined();
-  });
-
-  test("the sources list and the picker's tools carry the pair and file under the prefix", async () => {
-    storeSelection(USER, ACME);
-    serve((path) =>
-      path === "/api/memory/sources"
-        ? jsonResponse(200, { sources: SOURCES })
-        : path.startsWith("/api/memory/sources/available/")
-          ? jsonResponse(200, { tools: [] })
-          : path === "/api/agents"
-            ? jsonResponse(200, {
-                agents: [{ id: "expenses", name: "Acme Expenses" }],
-              })
-            : undefined,
-    );
-    const queryClient = freshClient();
-    draw(queryClient, <MemorySources agentId="expenses" />);
-    await waitFor(() =>
-      expect(
-        queryClient.getQueryData([
-          ...scopedCachePrefix(USER, ACME),
-          ...memoryKeys.sources,
-        ]),
-      ).toMatchObject({ length: 1 }),
-    );
-
-    const sources = asked.find((ask) => ask.input === "/api/memory/sources");
-    expect(sources).toBeTruthy();
-    expect(headerOf(sources?.init, "x-openbot-tenant")).toBe("acme");
-    expect(headerOf(sources?.init, "x-openbot-workspace")).toBe("acme-finance");
-
-    // The picker's candidate tools ride the same pair — the choices are the server's answer
-    // under the scope in force, so a tool of another scope is never offered.
-    await waitFor(() => {
-      const tools = asked.find((ask) =>
-        ask.input.startsWith("/api/memory/sources/available/"),
-      );
-      expect(tools).toBeTruthy();
-      expect(headerOf(tools?.init, "x-openbot-tenant")).toBe("acme");
-      expect(headerOf(tools?.init, "x-openbot-workspace")).toBe("acme-finance");
-    });
-  });
-});
-
-// ---------------------------------------------------------------------------
 // AC2 — the routines read and its writes submit the scope
 // ---------------------------------------------------------------------------
 
@@ -368,46 +252,23 @@ describe("MT089 AC2 — routines are read and changed under the scope", () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC3 — a switch leaves no old-scope task or memory behind
+// AC3 — a switch leaves no old-scope task behind
 // ---------------------------------------------------------------------------
 
-describe("MT089 AC3 — a switch drops the old scope's memories, sources and routines", () => {
-  test("the scoped entries for memories, sources and routines all go on the switch", async () => {
+describe("MT089 AC3 — a switch drops the old scope's routines", () => {
+  test("the scoped entries for routines go on the switch", async () => {
     storeSelection(USER, ACME);
     serve((path) =>
-      path === "/api/memory"
-        ? jsonResponse(200, { memories: MEMORY })
-        : path === "/api/memory/sources"
-          ? jsonResponse(200, { sources: SOURCES })
-          : path === "/api/routines"
-            ? jsonResponse(200, ROUTINES)
-            : path.startsWith("/api/agents")
-              ? jsonResponse(200, { agents: [] })
-              : undefined,
+      path === "/api/routines" ? jsonResponse(200, ROUTINES) : undefined,
     );
     const queryClient = freshClient();
-    // Fill all three scoped entries through the real factories, as the pages do.
+    // Fill the scoped entry through the real factory, as the page does.
     await act(async () => {
       await queryClient.fetchQuery(
-        scopedMemoriesQueryOptions(queryClient, await openScope(queryClient)),
-      );
-      await queryClient.fetchQuery(
-        scopedMemorySourcesQueryOptions(
-          queryClient,
-          await openScope(queryClient),
-        ),
-      );
-      await queryClient.fetchQuery(
-        scopedRoutinesQueryOptions(queryClient, await openScope(queryClient)),
+        scopedRoutinesQueryOptions(queryClient, await openScope()),
       );
     });
     const acmePrefix = scopedCachePrefix(USER, ACME);
-    expect(
-      queryClient.getQueryData([...acmePrefix, ...memoryKeys.all]),
-    ).toBeTruthy();
-    expect(
-      queryClient.getQueryData([...acmePrefix, ...memoryKeys.sources]),
-    ).toBeTruthy();
     expect(
       queryClient.getQueryData([...acmePrefix, ...routineKeys.list()]),
     ).toBeTruthy();
@@ -416,14 +277,8 @@ describe("MT089 AC3 — a switch drops the old scope's memories, sources and rou
       switchSelection(queryClient, ACME, GLOBEX);
     });
     await settle();
-    // The switch removed the whole subtree those entries lived under: no old-scope memory, no
-    // old-scope source, no old-scope schedule — nothing of Acme's sits beside Globex's answers.
-    expect(
-      queryClient.getQueryData([...acmePrefix, ...memoryKeys.all]),
-    ).toBeUndefined();
-    expect(
-      queryClient.getQueryData([...acmePrefix, ...memoryKeys.sources]),
-    ).toBeUndefined();
+    // The switch removed the whole subtree the entry lived under: no old-scope schedule sits
+    // beside Globex's answers.
     expect(
       queryClient.getQueryData([...acmePrefix, ...routineKeys.list()]),
     ).toBeUndefined();
@@ -435,7 +290,7 @@ describe("MT089 AC3 — a switch drops the old scope's memories, sources and rou
  * reads — the user from `/api/me` and the selection from storage — assembled the same way
  * `useScopedCache` assembles them, with the generation the switch seam advances.
  */
-async function openScope(_queryClient: QueryClient): Promise<ScopedCache> {
+async function openScope(): Promise<ScopedCache> {
   storeSelection(USER, ACME);
   return {
     status: "open",

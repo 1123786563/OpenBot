@@ -1,7 +1,7 @@
 /**
- * The person's Hindsight memory reads (#387/#389/#391, FR-4): the judgment candidates waiting
- * for review, the judgments they already adopted, the evidence chain behind a judgment or an
- * answer citation, and the cleanup progress of what the person forgot.
+ * The evidence chain behind an answer citation (#387, FR-4). #732 shrank this module to
+ * that one read: the judgment review, the memory listings and the cleanup progress were
+ * the old engine's surfaces and left with the old paths.
  *
  * Every call here rides `client` with the scope the screen holds (MT089's family, FIX-W12
  * FR2-1): the selection pair rides the request as the reviewed `x-openbot-tenant` /
@@ -19,7 +19,7 @@
  */
 
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
-import { ClientResponseError, client } from "@/lib/client";
+import { client } from "@/lib/client";
 import { guarded } from "@/lib/enterprise/tenant/queries";
 import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
@@ -156,188 +156,15 @@ export type EvidenceInspection =
     }
   | { state: "unavailable"; id: string };
 
-/**
- * The person's own cleanup progress (#391 AC3): the claim only when all three legs hold actual
- * evidence, each leg's own observation, and the separate external-model-logs note. The screen
- * renders the booleans; it never rewords a leg into a claim the server did not make.
- */
-export type CleanupStatus = {
-  controlledCopiesCleared: boolean;
-  summary: string | null;
-  externalModelLogs: { coveredByThisClaim: false; note: string };
-  activeData: {
-    cleared: boolean;
-    documents: number;
-    outstanding: number;
-    unverified: number;
-    resurrected: number;
-    observedAt: string | null;
-    blockedByOpenRestore: boolean;
-  };
-  finishedTaskPayloads: {
-    cleared: boolean;
-    checked: boolean;
-    retentionDays: number | null;
-    banksChecked: number;
-    beyondWindow: number | null;
-    reason: string | null;
-  };
-  controlledBackups: {
-    cleared: boolean;
-    registered: number;
-    outstanding: number | null;
-    oldestOutstandingTakenAt: string | null;
-  };
-  computedAt: string;
-};
-
-/** What a forget answers (#390 AC3): stopped using it now, remote cleanup tracked, never "cleared". */
-export type MemoryRevocation = {
-  stoppedUsingAt: string;
-  remoteDeletion: { attempted: boolean; outstanding: number };
-  summary: string;
-};
-
 export const hindsightKeys = {
   all: ["hindsight"] as const,
-  candidates: ["hindsight", "judgment-candidates"] as const,
-  adopted: ["hindsight", "judgments-adopted"] as const,
-  memories: ["hindsight", "memories"] as const,
   evidence: (ids: readonly string[]) =>
     ["hindsight", "evidence", ...ids] as const,
-  cleanup: ["hindsight", "cleanup"] as const,
 };
 
-/** The scope tail every factory below composes onto, or the pending placeholder beside. */
+/** The scope tail the evidence factory composes onto, or the pending placeholder beside. */
 const pending = (tail: readonly unknown[]) => [...tail, ":scope-pending"];
 
-/**
- * The family's own absence (#376): a 404 is the deployment wiring no personal-memory chain —
- * an availability fact rather than a fault, the same line the pause switches read beside
- * these listings. Every read here answers `null` for it; every other refusal still raises.
- */
-const orUnmounted = async <T>(read: () => Promise<T>): Promise<T | null> => {
-  try {
-    return await read();
-  } catch (error) {
-    if (error instanceof ClientResponseError && error.status === 404)
-      return null;
-    throw error;
-  }
-};
-
-/**
- * The review surface's data source (#389 AC2): open candidates, newest first, basis included.
- * Keyed under the scope's own prefix, answered through the generation guard, so one person's
- * two scopes never read one entry and a switch drops the old scope's candidates wholesale.
- */
-export function scopedJudgmentCandidatesQueryOptions(
-  queryClient: QueryClient,
-  scope: ScopedCache,
-) {
-  const open = scope.status === "open" ? scope : null;
-  return queryOptions({
-    queryKey:
-      open !== null
-        ? [...open.prefix, ...hindsightKeys.candidates]
-        : pending(hindsightKeys.candidates),
-    enabled: open !== null,
-    queryFn:
-      open === null
-        ? () => new Promise<JudgmentCandidate[] | null>(() => {})
-        : async ({ signal }): Promise<JudgmentCandidate[] | null> =>
-            guarded(queryClient, open.userId, () =>
-              orUnmounted(() =>
-                client("/api/hindsight/judgments/candidates", "candidates", {
-                  signal,
-                  fallbackKey: "hindsight.loadCandidates",
-                  ...(open.selection ?? {}),
-                }),
-              ),
-            ),
-  });
-}
-
-/**
- * What the person already adopted (#389, FIX-W12 FR2-3): the server's own adopted listing, so
- * the group survives a reload and a fresh session instead of living only in the page that
- * confirmed it. Each row arrived re-verified against current authorization, so what lists here
- * is exactly what the next answer may still use.
- */
-export function scopedAdoptedJudgmentsQueryOptions(
-  queryClient: QueryClient,
-  scope: ScopedCache,
-) {
-  const open = scope.status === "open" ? scope : null;
-  return queryOptions({
-    queryKey:
-      open !== null
-        ? [...open.prefix, ...hindsightKeys.adopted]
-        : pending(hindsightKeys.adopted),
-    enabled: open !== null,
-    queryFn:
-      open === null
-        ? () => new Promise<ReviewedJudgment[] | null>(() => {})
-        : async ({ signal }): Promise<ReviewedJudgment[] | null> =>
-            guarded(queryClient, open.userId, () =>
-              orUnmounted(() =>
-                client("/api/hindsight/judgments/adopted", "adopted", {
-                  signal,
-                  fallbackKey: "hindsight.loadAdopted",
-                  ...(open.selection ?? {}),
-                }),
-              ),
-            ),
-  });
-}
-
-/**
- * A memory entry the listing answers: one of the two raw kinds the person's answers read,
- * never a judgment — judgments have their own two listings on the same page.
- */
-export type PersonalMemoryEntry =
-  | Extract<JudgmentEvidenceView, { kind: "preference" }>
-  | Extract<JudgmentEvidenceView, { kind: "source_bound" }>;
-
-/**
- * The person's own Hindsight memory entries (FIX-W12 FR2-3, #387 AC1): the confirmed
- * preferences and source-bound facts a Bot's answers read, newest change first. Each row
- * arrived re-verified against current authorization, so the entry a person expands from here
- * is one the next answer may still use — the closed loop scenario 1 asks for: checkable,
- * correctable, forgettable.
- */
-export function scopedPersonalMemoriesQueryOptions(
-  queryClient: QueryClient,
-  scope: ScopedCache,
-) {
-  const open = scope.status === "open" ? scope : null;
-  return queryOptions({
-    queryKey:
-      open !== null
-        ? [...open.prefix, ...hindsightKeys.memories]
-        : pending(hindsightKeys.memories),
-    enabled: open !== null,
-    queryFn:
-      open === null
-        ? () => new Promise<PersonalMemoryEntry[] | null>(() => {})
-        : async ({ signal }): Promise<PersonalMemoryEntry[] | null> =>
-            guarded(queryClient, open.userId, () =>
-              orUnmounted(() =>
-                client("/api/hindsight/memories", "memories", {
-                  signal,
-                  fallbackKey: "hindsight.loadMemories",
-                  ...(open.selection ?? {}),
-                }),
-              ),
-            ),
-  });
-}
-
-/**
- * Expand basis ids into what the person is entitled to see NOW (#387 AC1/AC3). A POST because
- * the id list rides the body; still a cached read, invalidated by every write below so an
- * operation's effect shows on the next expansion without a manual reload.
- */
 export function scopedEvidenceInspectionQueryOptions(
   queryClient: QueryClient,
   scope: ScopedCache,
@@ -363,36 +190,5 @@ export function scopedEvidenceInspectionQueryOptions(
                 ...(open.selection ?? {}),
               }),
             ),
-  });
-}
-
-/** The cleanup picture as a pure read (#391 AC3): the claim, its legs, and the external note. */
-export function scopedCleanupStatusQueryOptions(
-  queryClient: QueryClient,
-  scope: ScopedCache,
-) {
-  const open = scope.status === "open" ? scope : null;
-  return queryOptions({
-    queryKey:
-      open !== null
-        ? [...open.prefix, ...hindsightKeys.cleanup]
-        : pending(hindsightKeys.cleanup),
-    enabled: open !== null,
-    queryFn:
-      open === null
-        ? () => new Promise<CleanupStatus | null>(() => {})
-        : async ({ signal }): Promise<CleanupStatus | null> =>
-            guarded(queryClient, open.userId, async () => {
-              const response = await orUnmounted(() =>
-                client("/api/hindsight/cleanup", {
-                  signal,
-                  fallbackKey: "hindsight.loadCleanup",
-                  ...(open.selection ?? {}),
-                }),
-              );
-              return response === null
-                ? null
-                : ((await response.json()) as CleanupStatus);
-            }),
   });
 }

@@ -1,9 +1,13 @@
 # Self-hosted Hindsight (personal memory)
 
-Deployment recipe for the private Hindsight instance that backs OpenBot's personal-memory
+Deployment recipe for the private Hindsight instance that backed OpenBot's personal-memory
 module. OpenBot remains the authority for review, permissions, corrections, and forgetting;
 this service only indexes and retrieves already-approved content (spec:
 `docs/specs/2026-10-15-hindsight-personal-memory-design.md`, ADR 0005).
+
+> **#732 后状态**：OpenBot 不再用 Hindsight 承载个人记忆，采集/召回/审核/遗忘与
+> `/api/hindsight/*` 运维端点均已退出（只保留只读证据 seam）。本目录保留自有实例的
+> 部署与数据保留配方，用于仍在运行该实例的部署；它不是 OpenBot 的必须依赖。
 
 ## Privacy posture (normative)
 
@@ -18,9 +22,9 @@ this service only indexes and retrieves already-approved content (spec:
 | Control-plane UI (9999) | **not published at all** | `docker-compose.yml` (no entry) |
 | API auth | required bearer key on every request | `HINDSIGHT_API_TENANT_EXTENSION` + `HINDSIGHT_API_TENANT_API_KEY` |
 
-OpenBot's compliance validation (`server/src/hindsight/config.ts`) reads the mirrored
-`HINDSIGHT_PRIVACY_*` block; a deployment that has not declared the privacy values
-explicitly is reported noncompliant, never assumed fine.
+OpenBot-side privacy validation (`hindsight/config.ts`) left with the old memory engine in
+#732 — nothing in OpenBot reads `HINDSIGHT_PRIVACY_*` any more. The block below stays this
+instance's own deployment facts.
 
 ## Layout
 
@@ -64,55 +68,10 @@ explicitly is reported noncompliant, never assumed fine.
 
 ## Controlled-backup manifests (`HINDSIGHT_BACKUP_MANIFEST_DIR`)
 
-The cleanup evidence OpenBot shows a person ("受控副本清除完成") stands on the manifests
-`backup.sh` writes beside each adopted archive. OpenBot only looks at them when the
-deployment declares where they are:
-
-| Item | Value |
-| --- | --- |
-| Key | `HINDSIGHT_BACKUP_MANIFEST_DIR` in the **OpenBot server's** environment |
-| Value | absolute path of the directory `backup.sh` writes into (default: `deploy/hindsight/backups`) |
-| Where it is read | `server/src/hindsight/backup-registry.ts` (`backupManifestDirFromEnv`), **once when the server assembles** (`server/src/index.ts`) — the routes close over that value, so a changed declaration takes effect on the next server restart, not the next request |
-| Not read by | `backup.sh`, `hindsight.env`, the compose stack — the key belongs to OpenBot only |
-
-- **Directory.** It must be the directory the backup job writes **archives and manifests** into
-  (they are always siblings: `hindsight-<stamp>.sql.gz` + `hindsight-<stamp>.manifest.json`).
-  When OpenBot runs in a container, bind-mount that host directory read-only into the server and
-  declare the path as the container sees it. A directory that does not exist yet answers "no
-  evidence", never "cleared"; one that is present but unreadable fails the reconcile pass loudly
-  (logged by the server) instead of passing for an empty directory.
-- **Permissions.** The backup job runs `umask 077`, so the directory and its files are owner-only
-  (`0700` / `0600`). The OpenBot server user must be able to traverse the directory and read the
-  manifests (and stat the archives); either run both as the same user, or give the server user a
-  group with `g+rx` on the directory and `g+r` on the files. OpenBot reads the manifest JSON and
-  checks archive presence — it never opens, copies or moves an archive.
-- **Single authoritative location.** The declared directory is the only place a controlled copy
-  may live or leave from. An archive that disappears while its manifest stays is indistinguishable
-  from the retention sweep's deletion and is recorded as purge evidence; moving an archive to cold
-  storage without moving its manifest therefore claims a purge that did not happen. If archives
-  are archived elsewhere, move the manifest with them (and the copy returns to "outstanding").
-  Conversely a purged archive that reappears in the directory (re-mounted volume, copy restored
-  back) has its purge evidence withdrawn on the next reconcile — the claim follows the last
-  reconcile pass, it is not a permanent latch.
-- **Reconciliation entry points.** `GET /api/hindsight/cleanup` is a pure read and reconciles
-  nothing; `POST /api/hindsight/cleanup/verify` (the person's own action) and
-  `POST /api/hindsight/ops/backups/reconcile` (admin) run the pass. The report returned to a
-  person carries counts only; the directory path appears on the admin route alone.
-- **Freshness: what the claim stands on.** The registry only changes when a pass runs, so the
-  backup leg speaks for the directory as the **last** pass saw it, and the status's `observedAt`
-  is the instant behind the observation it answers from (the last recorded probe on a pure read;
-  now, when the verify action re-probes). Two states follow. *Before any pass* the registry is
-  empty, and with a confirmed deletion that is "no evidence", never "cleared" (`outstanding:
-  null`). *Between a backup and the next pass* a copy taken **before** a deletion's confirmation
-  that no pass has registered yet is invisible — while the copies the last pass saw as purged are
-  already recorded — so the claim can read "cleared" one pass too early, and `registered`
-  under-counts.
-- **Who schedules the pass.** OpenBot schedules nothing; a deployment that never reconciles keeps
-  the optimistic window above open indefinitely. Registering a new copy is therefore the
-  deployment's job: run the admin-gated `POST /api/hindsight/ops/backups/reconcile` at least as
-  often as `backup.sh` (the daily cron) — from an operator, or from a job holding an admin
-  session. The person's own `POST /api/hindsight/cleanup/verify` also runs a pass, but only when
-  they ask, so it is an action and not a schedule.
+**已退出（#732）**：备份清单登记表与清理证据（`backup-registry.ts`、`cleanup-evidence.ts`）
+以及读取它们的 `/api/hindsight/cleanup`、`/api/hindsight/ops/backups/reconcile` 端点已随旧记忆
+引擎移除。`backup.sh` 仍按原样写档案与清单，供仍自行运行该实例的部署做数据保留；OpenBot
+不再读取 `HINDSIGHT_BACKUP_MANIFEST_DIR`，也不再展示“受控副本清除完成”。
 
 ## Operating
 
@@ -131,15 +90,9 @@ the name is provided natively. On engines or network setups without that mapping
 container (e.g. the `docker0` bridge IP). The mapping takes effect when the container is
 (re)created via `docker compose up -d`.
 
-Four-state health check (OpenBot side):
-
-```bash
-bun test server/tests/hindsight-health.test.ts
-```
-
-`checkHindsightHealth(loadHindsightConfig())` reports `service_up`, `gateway_down`,
-`config_noncompliant`, or `service_down` — states and rule names only, never memory
-content, tokens, or endpoints.
+OpenBot 侧的四态健康检查与隐私合规校验均已随 #732 退出
+（`server/src/hindsight/{health,config}.ts` 与对应测试已删除）；本目录不再声称 OpenBot
+在跑任何 Hindsight 校验，`hindsight.env` 里的隐私值只服务本实例自身。
 
 ## Verified image
 

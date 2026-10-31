@@ -1796,8 +1796,8 @@ export function ChatTranscript({
                   >
                     {/*
                      * The answer's own basis (FIX-W14, #387): one control under the turn's
-                     * final answer, expanding exactly the ids that answer carried — the
-                     * person can check, correct or forget from the answer itself.
+                     * final answer, expanding exactly the ids that answer carried, so the
+                     * person can check what the answer drew on.
                      */}
                     <MemoryAnswerBasisSection basis={item.basis} />
                   </Arriving>

@@ -3,7 +3,6 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   type AbstractAgent,
   type BaseEvent,
-  EventType,
   HttpAgent,
   type Message,
   type RunAgentInput,
@@ -57,7 +56,6 @@ import {
   filter,
   finalize,
   from,
-  map,
   Observable,
   switchMap,
   tap,
@@ -92,10 +90,6 @@ import {
   currentRunnerRequest,
   withRunnerRequestContext,
 } from "./enterprise/runs/request-context";
-import {
-  type PersonalMemoryBasisPointer,
-  parsePersonalMemoryBasis,
-} from "./hindsight/personal-memory-context";
 import { observeIntelligenceAuthentication } from "./intelligence-client";
 import {
   IntelligenceUnconfiguredError,
@@ -130,15 +124,11 @@ import type {
   ResumeDecision,
 } from "./mastra/execution-contracts";
 import { executeGovernedMastra } from "./mastra/governed-agent";
-import {
-  type LoadPersonalMemory,
-  PersonalMemoryMiddleware,
-} from "./memory/tools";
-import {
-  memoryContextBlock,
-  type MemoryContextBlock,
-} from "./memory-service/context";
 import type { RecallResult } from "./memory-service/client";
+import {
+  type MemoryContextBlock,
+  memoryContextBlock,
+} from "./memory-service/context";
 import {
   currentRunObservationScope,
   withRunObservationScope,
@@ -2723,40 +2713,11 @@ export function setMastraContinuations(
 }
 
 /**
- * ME07 (#479): the personal-memory loader the Mastra engine path composes its
- * context block from. The server assembly installs the ONE #395 consumer —
- * `createPersonalMemoryContext` over the production seams — wrapped so the
- * engine path receives only the RENDERED block (`renderPersonalMemoryContext`
- * already carries the untrusted-data discipline; this path never re-authors
- * it). Asked once per run, inside the factory, with the server-issued
- * admission facts (the trusted `PlatformScope` and the Bot id) — never a wire
- * field. UNWIRED the engine runs without a memory block, exactly like a
- * person with nothing confirmed: no block is assembled by any other means.
- *
- * A throw is a real failure of the read and fails the run before any model
- * call — the same discipline the legacy engine's `PersonalMemoryMiddleware`
- * set (its load error errored the run). The gates themselves (review,
- * tombstones, temporal validity, live authorizations, the pause switches, the
- * restore gate) stay inside the #395 seams; this path only relays the answer.
- */
-export type MastraPersonalMemoryLoader = (
-  scope: PlatformScope,
-  botId: string,
-) => Promise<string>;
-
-let mastraPersonalMemoryContext: MastraPersonalMemoryLoader | undefined;
-
-export function setMastraPersonalMemoryContext(
-  loader: MastraPersonalMemoryLoader | undefined,
-): void {
-  mastraPersonalMemoryContext = loader;
-}
-
-/**
- * #729 the memory-service loader (the #730 client over the single memory
- * authority) and its degradation rules. Installed, it REPLACES the legacy
- * #395 seam above — the old store is never read, not even as a fallback when
- * the service is down. Uninstalled, the legacy seam keeps its behaviour.
+ * ME07 (#479) → #732: the memory-service loader (the #730 client over the
+ * single memory authority) and its degradation rules — the ONLY memory seam.
+ * The legacy #395 loader was removed with the old store: a deployment without
+ * the memory service runs without a memory block, exactly like a person with
+ * nothing confirmed, and no other path assembles one.
  */
 export type MastraMemoryContextLoader = (
   scope: PlatformScope,
@@ -2807,55 +2768,6 @@ export async function resumeFromApprovalDecision(input: {
     },
     decision: input.decision,
   });
-}
-
-/**
- * FIX-W14 (FR3-1, #387): bind the answer's actual basis to the answer itself.
- *
- * The run's prompt carried the #395 block — the {id, kind} pointers of every memory and
- * judgment this run's answers may draw on — and this wrapper carries that same pointer set
- * out again on the run's assistant text messages, through the AG-UI event metadata the
- * client already reconstructs messages from. Server-composed only: the pointers come from
- * the block the loader rendered for THIS run's admitted scope, never from a client field,
- * and the client cannot widen, narrow or forge the set — the expansion re-verifies current
- * authorization anyway, and an id the person can no longer see answers unavailable there.
- *
- * Every assistant text message of the run carries the same set (one block per run, one read
- * of the authority), so live view and event-store replay agree on what an answer used. Since
- * FIX-OCR3 (O3-H1) the stamp also survives the store: the produced-message fold keeps the
- * START frame's metadata, the stored envelope carries the pointers, and a rebuilt history
- * (refresh included) re-attaches them — the person's basis rows no longer vanish on reload.
- *
- * SCOPE (O3-M7, disclosed): the wrap covers the FIRST-EXECUTION stream alone. A run that
- * pauses on a durable continuation and resumes goes through the resume driver's own event
- * drain, which never passes through this wrapper — its final answer carries no basis stamp,
- * on the live stream or in the store. The resume path would need the run's pointer set
- * persisted with the continuation and re-stamped at the drain's event exit; that seam is not
- * wired, and this comment says so rather than letting "replay agrees" be read wider than it
- * holds.
- *
- * An absent or empty basis wraps nothing: an answer with no memory behind it shows no basis.
- */
-function withAnswerMemoryBasis(
-  basis: readonly PersonalMemoryBasisPointer[] | undefined,
-  execute: ExecuteMastra,
-): ExecuteMastra {
-  if (basis === undefined || basis.length === 0) return execute;
-  return (request) =>
-    execute(request).pipe(
-      map((event) =>
-        event.type === EventType.TEXT_MESSAGE_START &&
-        (event.role === undefined || event.role === "assistant")
-          ? {
-              ...event,
-              metadata: {
-                ...event.metadata,
-                openbot: { personalMemoryBasis: basis },
-              },
-            }
-          : event,
-      ),
-    );
 }
 
 /**
@@ -3007,37 +2919,32 @@ function mastraAgentConfiguration(input: {
         // semantics — a plain conversation continues on an honest "no memory
         // used" notice, while a run whose tools are memory tools pauses
         // instead of improvising without memory.
-        const memoryOutcome: MemoryContextBlock | undefined = mastraMemoryContext
-          ? memoryContextBlock(await mastraMemoryContext(facts.scope, facts.botId), {
-              required: tools.some(
-                (tool) =>
-                  tool.name === "recall_personal_memory" ||
-                  tool.name === "forget_personal_memory",
-              ),
-            })
-          : undefined;
-        if (memoryOutcome?.blocked) throw new Error("MEMORY_UNAVAILABLE");
-        const personalMemoryBlock =
-          mastraMemoryContext !== undefined
-            ? memoryOutcome?.block
-            : mastraPersonalMemoryContext
-              ? await mastraPersonalMemoryContext(facts.scope, facts.botId)
-              : undefined;
-        // FIX-W14 (FR3-1): the same block's own {id, kind} pointers, read back
-        // out by the module that rendered it — the id set this run's answers
-        // carry to the person (see withAnswerMemoryBasis). One authority read,
-        // zero second reads: what the model saw is what the answer cites.
-        //
-        // #729 review: only the legacy #395 block is written in that format. A
-        // memory-service block has no `kind` (MemoryView carries none) and its
-        // ids are not #387 evidence ids, so this seam stamps NO basis rather
-        // than a half-parse — an answer with no basis claims nothing, which is
-        // the honest direction. Giving service memories a basis is #733's
-        // decision (it needs a kind vocabulary and an evidence seam for them).
-        const personalMemoryBasis =
-          mastraMemoryContext === undefined && personalMemoryBlock
-            ? parsePersonalMemoryBasis(personalMemoryBlock)
+        const memoryOutcome: MemoryContextBlock | undefined =
+          mastraMemoryContext
+            ? memoryContextBlock(
+                await mastraMemoryContext(facts.scope, facts.botId),
+                {
+                  // #732: the old memory tools are unregistered, so this arm is false until a
+                  // memory-service tool exists; #733 decides whether one does. It stays wired so
+                  // a memory-dependent task pauses instead of improvising without memory. A new
+                  // memory tool MUST join this list in the same change, or the pause never fires.
+                  required: tools.some(
+                    (tool) =>
+                      tool.name === "recall_personal_memory" ||
+                      tool.name === "forget_personal_memory",
+                  ),
+                },
+              )
             : undefined;
+        if (memoryOutcome?.blocked) throw new Error("MEMORY_UNAVAILABLE");
+        const personalMemoryBlock = memoryOutcome?.block;
+        // FIX-W14 (FR3-1): the legacy #395 block's {id, kind} pointers left with
+        // that block (#732). A memory-service block has no `kind` (MemoryView
+        // carries none) and its ids are not #387 evidence ids, so this seam
+        // stamps NO basis rather than a half-parse — an answer with no basis
+        // claims nothing, which is the honest direction. Giving service
+        // memories a basis is #733's decision (it needs a kind vocabulary and
+        // an evidence seam for them).
         // ME03 production wiring: the engine path runs on the server-rebuilt
         // authorized history and persists its output through the conversation
         // runtime. Without one the run refuses rather than executing on the
@@ -3103,14 +3010,12 @@ function mastraAgentConfiguration(input: {
             : [],
         );
         const executionAgent = createMastraAgUiAgent(
-          // FIX-W14 (FR3-1): the basis stamp rides INNERMOST, so persistence,
-          // the runner's event store and the live relay all see the stamped
-          // stream — the answer and its basis cannot disagree downstream.
-          withPersistedOutput(
-            withAnswerMemoryBasis(personalMemoryBasis, execute),
-            runtime,
-            binding,
-          ),
+          // FIX-W14 (FR3-1): the basis stamp used to ride INNERMOST so persistence,
+          // the runner's event store and the live relay all saw the stamped
+          // stream. #732 removed the legacy block that carried a basis; until
+          // service memories get their own basis vocabulary (#733), an answer
+          // stamps nothing — an answer with no basis claims nothing.
+          withPersistedOutput(execute, runtime, binding),
           binding,
           {
             instructions: instructionParts,
@@ -3587,7 +3492,6 @@ export async function buildAgents(
    */
   markAttachmentsSent?: MarkAttachmentsSent,
   acquireLearnedSkills?: AcquireLearnedSkills,
-  loadPersonalMemory?: LoadPersonalMemory,
   /** Present only inside a governed admission. See {@link builtInAgentConfiguration}. */
   governedModel?: GovernedModelRequest,
   /** Who this build's runs are for. See {@link builtInAgentConfiguration}. */
@@ -3687,25 +3591,6 @@ export async function buildAgents(
           pinnedPackageSkills,
           packageRun,
         );
-        // ME14 (carried ME07 review F1): the middleware is the LEGACY engine's
-        // personal-memory block. A build the selector routes to the Mastra
-        // engine renders its memory block server-side from the #395 seams
-        // (ME07) and never reads this loader — mounting it anyway left a dead
-        // read wired to the legacy store's availability on every
-        // Mastra-selected run. The mount is skipped exactly for that case; a
-        // governed build that stays on the legacy engine keeps it.
-        if (
-          loadPersonalMemory &&
-          !(built instanceof UnavailableAgent) &&
-          !(
-            governedModel !== undefined &&
-            builtinExecutionEngineFor?.({
-              botId: agent.id,
-              governed: true,
-            }) === "mastra"
-          )
-        )
-          built.use(new PersonalMemoryMiddleware(agent.id, loadPersonalMemory));
         return [agent.id, built];
       }),
     ),
@@ -6222,7 +6107,6 @@ export async function resolveRuntimeAgents(
    */
   markAttachmentsSent?: MarkAttachmentsSent,
   acquireLearnedSkills?: AcquireLearnedSkills,
-  loadPersonalMemory?: LoadPersonalMemory,
   /**
    * The server-only governed model collaborator, present only inside a
    * governed admission.
@@ -6310,7 +6194,6 @@ export async function resolveRuntimeAgents(
     loadAttachment,
     markAttachmentsSent,
     acquireLearnedSkills,
-    loadPersonalMemory,
     governedModel,
     attribution,
     gatewayModelDial,

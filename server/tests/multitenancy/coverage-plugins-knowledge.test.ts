@@ -1,12 +1,11 @@
 // server/tests/multitenancy/coverage-plugins-knowledge.test.ts
 // MT134（Issue #177）：覆盖证据——插件审批、知识与记忆。
 //
-// 用 MT132 身份矩阵 runner 为插件安装/卸载/调用、工具调用、共享审批与
-// 个人记忆（写入/检索/候选来源）的逐入口正向与越权证据；检索候选范围
-// 的证据在候选生成面（listMemorySources 的候选集本身不含无权资源——
-// 不止结果过滤）。每条场景骑真实域夹具（MT031/MT032/MT034/MT039 的真实
+// 用 MT132 身份矩阵 runner 为插件安装/卸载/调用、工具调用与共享审批的
+// 逐入口正向与越权证据。每条场景骑真实域夹具（MT031/MT032 的真实
 // 服务 + 真实受限角色 + 真实 RLS）；覆盖状态在矩阵 runner 输出中标记为
 // covered。夹具身份到 §11 矩阵类的等价在 ACTOR_CLASSES 表中逐条披露。
+// #732：旧个人记忆路由已退出，记忆域不再映射（见下方说明）。
 //
 // 环境契约：只认显式 TEST_DATABASE_URL（或 ENTERPRISE_TEST_SETUP_
 // DATABASE_URL）加三个受限角色 URL；缺配置时整套显式 skip（跳过原因写在
@@ -41,10 +40,6 @@ import {
   requireEntrance,
   type ScenarioMap,
 } from "./support/coverage-matrix";
-import {
-  createPersonalMemoryFixture,
-  type PersonalMemoryFixture,
-} from "./support/personal-memory";
 import type { IsolationObservation } from "./support/scenarios";
 import { registerIsolationDomain } from "./support/scenarios";
 import {
@@ -111,7 +106,7 @@ const ACTOR_CLASSES = {
 
 let approvals: SharedApprovalsFixture;
 let tools: ToolFixture;
-let memory: PersonalMemoryFixture;
+
 let companyA = "";
 let companyB = "";
 let teamA1 = "";
@@ -451,145 +446,8 @@ const pluginsScenarios: ScenarioMap = {
   },
 };
 
-// ---------------------------------------------------------------------------
-// 场景（knowledge-memory 域）：个人记忆写入/检索 + 候选来源范围
-// ---------------------------------------------------------------------------
-
-/** 记忆夹具自己的公司/团队拓扑（各夹具宇宙独立，绝不跨夹具取 id）。 */
-const memTopology = () => ({
-  companyA: memory.base.isolation.ids["company-a"],
-  companyB: memory.base.isolation.ids["company-b"],
-  teamA1: memory.base.isolation.ids["team-a1"],
-  teamA2: memory.base.isolation.ids["team-a2"],
-  teamB1: memory.base.isolation.ids["team-b1"],
-});
-const memoryScenarios: ScenarioMap = {
-  // POST /api/memory —— 写入个人记忆。
-  "memory.write.positive": async () => {
-    const topo = memTopology();
-    const scope = await memory.scopeAs("a1-member", topo.companyA, topo.teamA1);
-    const written = await memory.memory.writeMemory(scope, {
-      memoryKey: `mt134-${randomUUID().slice(0, 8)}`,
-      content: `mt134 secret ${randomUUID().slice(0, 8)}`,
-    });
-    return {
-      positiveControlPassed: written.outcome === "allow",
-      denied: false,
-      leakedRecords: [],
-      forbiddenEffects: [],
-    };
-  },
-  "memory.write.denial": async () => {
-    const topo = memTopology();
-    // 跨公司身份对公司 A 团队的 scope 签发被资格门拒绝（TENANT_FORBIDDEN）。
-    try {
-      await memory.scopeAs("b1-member", topo.companyA, topo.teamA1);
-      return denyObservation(false);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return denyObservation(/FORBIDDEN|REQUIRED/.test(message));
-    }
-  },
-
-  // GET /api/memory —— 检索个人记忆（同团队他人与跨公司同形空页）。
-  "memory.search.positive": async () => {
-    const topo = memTopology();
-    const secret = `mt134-secret-${randomUUID().slice(0, 8)}`;
-    const scope = await memory.scopeAs("a1-member", topo.companyA, topo.teamA1);
-    await memory.memory.writeMemory(scope, {
-      memoryKey: `mt134-${randomUUID().slice(0, 8)}`,
-      content: secret,
-    });
-    const hits = await memory.memory.searchMemories(scope, { query: secret });
-    return {
-      positiveControlPassed: hits.length === 1,
-      denied: false,
-      leakedRecords: [],
-      forbiddenEffects: [],
-    };
-  },
-  "memory.search.denial": async () => {
-    const topo = memTopology();
-    const secret = `mt134-secret-${randomUUID().slice(0, 8)}`;
-    const owner = await memory.scopeAs("a1-member", topo.companyA, topo.teamA1);
-    await memory.memory.writeMemory(owner, {
-      memoryKey: `mt134-${randomUUID().slice(0, 8)}`,
-      content: secret,
-    });
-    // 同团队另一人 + 跨公司：同内容查询全部空页（与"没有记忆"不可区分）。
-    const otherHits = await memory.memory.searchMemories(
-      await memory.scopeAs("a1-other", topo.companyA, topo.teamA1),
-      { query: secret },
-    );
-    const crossHits = await memory.memory.searchMemories(
-      await memory.scopeAs("b1-member", topo.companyB, topo.teamB1),
-      { query: secret },
-    );
-    const leaked = [...otherHits, ...crossHits];
-    return denyObservation(leaked.length === 0, leaked);
-  },
-
-  // GET /api/memory/sources/available/:botId —— 候选来源范围（候选面就不
-  // 含无权资源——不止结果过滤）。
-  "memory.sources.positive": async () => {
-    const topo = memTopology();
-    const publicKb = await memory.seedResource({
-      tenantId: topo.companyA,
-      workspaceId: topo.teamA1,
-      kind: "knowledge_base",
-      displayName: "MT134 public KB",
-      visibility: "workspace",
-    });
-    const sources = await memory.memory.listMemorySources(
-      await memory.scopeAs("a1-member", topo.companyA, topo.teamA1),
-    );
-    const ids = sources.map((row) => row.resourceId);
-    return {
-      positiveControlPassed: ids.includes(publicKb),
-      denied: false,
-      leakedRecords: [],
-      forbiddenEffects: [],
-    };
-  },
-  "memory.sources.denial": async () => {
-    const topo = memTopology();
-    const publicKb = await memory.seedResource({
-      tenantId: topo.companyA,
-      workspaceId: topo.teamA1,
-      kind: "knowledge_base",
-      displayName: "MT134 public KB deny",
-      visibility: "workspace",
-    });
-    const privateDoc = await memory.seedResource({
-      tenantId: topo.companyA,
-      workspaceId: topo.teamA1,
-      kind: "document",
-      displayName: "MT134 private doc",
-    });
-    // A2（同公司他团队）候选集不含 A1 的公共库；B（跨公司）一概不含；
-    // A1 无授权成员的候选集不含私有文档（候选面即无权资源不进清单）。
-    const a2Ids = (
-      await memory.memory.listMemorySources(
-        await memory.scopeAs("a2-member", topo.companyA, topo.teamA2),
-      )
-    ).map((row) => row.resourceId);
-    const bIds = (
-      await memory.memory.listMemorySources(
-        await memory.scopeAs("b1-member", topo.companyB, topo.teamB1),
-      )
-    ).map((row) => row.resourceId);
-    const a1Ids = (
-      await memory.memory.listMemorySources(
-        await memory.scopeAs("a1-member", topo.companyA, topo.teamA1),
-      )
-    ).map((row) => row.resourceId);
-    const leaked = [publicKb, privateDoc].filter(
-      (id) =>
-        a2Ids.includes(id) || bIds.includes(id) || a1Ids.includes(privateDoc),
-    );
-    return denyObservation(leaked.length === 0, leaked);
-  },
-};
+// #732：个人记忆路由（/api/memory 家族）已随旧实现退出，本套件不再映射该域；
+// 独立记忆服务的作用域验收在 #729/#733 的客户端与端到端套件中。
 
 /** 入口 → 场景映射（每入口两侧都必须在位；identity 为 §11 矩阵声明）。 */
 const PLAN: MatrixPlan = {
@@ -691,48 +549,6 @@ const PLAN: MatrixPlan = {
       matrixClass: "cross-company",
     },
   },
-  "GET /api/memory": {
-    positive: {
-      domain: "knowledge-memory",
-      scenarioId: "memory.search.positive",
-      identity: "a1-member",
-      matrixClass: "company-a-team-a1-only",
-    },
-    denial: {
-      domain: "knowledge-memory",
-      scenarioId: "memory.search.denial",
-      identity: "a1-other",
-      matrixClass: "same-team-other-person",
-    },
-  },
-  "POST /api/memory": {
-    positive: {
-      domain: "knowledge-memory",
-      scenarioId: "memory.write.positive",
-      identity: "a1-member",
-      matrixClass: "company-a-team-a1-only",
-    },
-    denial: {
-      domain: "knowledge-memory",
-      scenarioId: "memory.write.denial",
-      identity: "b1-member",
-      matrixClass: "cross-company",
-    },
-  },
-  "GET /api/memory/sources/available/:botId": {
-    positive: {
-      domain: "knowledge-memory",
-      scenarioId: "memory.sources.positive",
-      identity: "a1-member",
-      matrixClass: "company-a-team-a1-only",
-    },
-    denial: {
-      domain: "knowledge-memory",
-      scenarioId: "memory.sources.denial",
-      identity: "a2-member",
-      matrixClass: "company-a-team-a2-only",
-    },
-  },
 };
 
 for (const entranceId of Object.keys(PLAN)) {
@@ -797,19 +613,13 @@ beforeAll(async () => {
   }
   botB1 = createdB.bot.agentId;
   tools = await createToolFixture();
-  memory = await createPersonalMemoryFixture();
   registerIsolationDomain(
     "plugins-approvals",
     adapterFromScenarios(pluginsScenarios),
   );
-  registerIsolationDomain(
-    "knowledge-memory",
-    adapterFromScenarios(memoryScenarios),
-  );
 }, 300000);
 
 afterAll(async () => {
-  if (memory) await memory.dispose();
   if (tools) await tools.dispose();
   if (approvals) await approvals.dispose();
 }, 120000);
@@ -859,9 +669,6 @@ describeDb("MT134 / Issue #177 — 覆盖证据：插件审批、知识与记忆
         classes.get("same-team-other-person")?.entrancesCovered,
       ).toBeGreaterThan(0);
       expect(classes.get("cross-company")?.entrancesCovered).toBeGreaterThan(0);
-      expect(
-        classes.get("company-a-team-a2-only")?.entrancesCovered,
-      ).toBeGreaterThan(0);
       // 整库覆盖不因本票完成（未映射入口保持诚实 uncovered）。
       expect(report.overall).toBe("coverage-incomplete");
     },
@@ -878,7 +685,7 @@ describeDb("MT134 / Issue #177 — 覆盖证据：插件审批、知识与记忆
       }
       // 记忆与审批夹具创建时已对活体目录核验过受限角色登录（capability
       // 形如 ob_ent_*；登录名不含连接串）。
-      const roles = memory.base.isolation.restrictedRoles;
+      const roles = approvals.base.base.isolation.restrictedRoles;
       for (const role of ["directory", "data", "operator"] as const) {
         expect(roles[role].capability).toMatch(/^ob_ent_/);
       }
@@ -895,7 +702,6 @@ describeDb("MT134 / Issue #177 — 覆盖证据：插件审批、知识与记忆
       // 记忆删除——见报告诚实边界）。
       expect(gapIds.has("POST /api/components/:name/call")).toBe(true);
       expect(gapIds.has("GET /api/approvals/shared-use")).toBe(true);
-      expect(gapIds.has("DELETE /api/memory/:id")).toBe(true);
       for (const gap of report.gaps) {
         if (Object.hasOwn(PLAN, gap.entranceId)) {
           throw new Error(

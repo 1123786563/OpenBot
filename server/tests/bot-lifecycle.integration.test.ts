@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   afterAll,
   beforeAll,
@@ -5,8 +7,6 @@ import {
   expect,
   test,
 } from "../../tests/support/bun-test-compat";
-import { randomUUID } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
 import { createActivityStore } from "../src/activity/activity";
 import { HANDOFF_KIND } from "../src/agents/handoff";
 import {
@@ -497,8 +497,9 @@ describe("reset", () => {
     expect(plan).toMatchObject({
       conversations: 1,
       sharedConversationsKept: 1,
-      memorySources: 1,
-      memories: 1,
+      // #732: old memory rows are preserved data — the plan counts zero and deletes none.
+      memorySources: 0,
+      memories: 0,
       routines: 1,
       responsibilities: 1,
     });
@@ -515,10 +516,10 @@ describe("reset", () => {
       followUps: 0,
     });
 
-    // The other person's identical data survives, and so does the owner's own memory.
+    // The other person's identical data survives, and so do the owner's memory rows.
     expect(await reset.plan(other, bot)).toMatchObject({
       conversations: 1,
-      memories: 1,
+      memories: 0,
       routines: 1,
       responsibilities: 1,
     });
@@ -532,6 +533,12 @@ describe("reset", () => {
         ),
       );
     expect(kept).toHaveLength(1);
+    expect(
+      await database
+        .select({ id: memorySources.id })
+        .from(memorySources)
+        .where(eq(memorySources.ownerUserId, owner)),
+    ).toHaveLength(1);
     const [sharedRow] = await database
       .select({ deletedAt: channels.deletedAt })
       .from(channels)
@@ -550,7 +557,9 @@ describe("reset", () => {
     expect(remaining).toHaveLength(0);
   });
 
-  test("a reset also takes what the Bot formed, its research and the permissions it was given", async () => {
+  // #732: what the Bot formed is old memory data, so a reset leaves it; research and the
+  // permissions the person gave still go.
+  test("a reset leaves what the Bot formed, and takes its research and the permissions it was given", async () => {
     for (const person of [owner, other]) {
       await database.insert(personalMemories).values({
         id: `${prefix}-formed-${person}`,
@@ -601,7 +610,7 @@ describe("reset", () => {
 
     const plan = await reset.plan(owner, bot);
     expect(plan).toMatchObject({
-      formedMemories: 1,
+      formedMemories: 0,
       backgroundResearch: 1,
       standingApprovals: 1,
     });
@@ -635,7 +644,7 @@ describe("reset", () => {
                   sql`${approvalRules.revokedAt} is null`,
                 ),
               );
-    expect(await left("memory", owner)).toHaveLength(0);
+    expect(await left("memory", owner)).toHaveLength(1);
     expect(await left("research", owner)).toHaveLength(0);
     expect((await left("rules", owner)).map((row) => row.id)).toEqual([
       `${prefix}-ask-${owner}`,
@@ -645,15 +654,15 @@ describe("reset", () => {
     expect(await left("research", other)).toHaveLength(1);
     expect(await left("rules", other)).toHaveLength(2);
     expect(await reset.plan(other, bot)).toMatchObject({
-      formedMemories: 1,
+      formedMemories: 0,
       backgroundResearch: 1,
       standingApprovals: 1,
     });
   });
 
-  // Turning a default off protects the person, so starting fresh keeps it off rather than handing
-  // the Bot back what they took away (memory/defaults.ts adopts again on their next turn).
-  test("a reset keeps the person's no to a default, and only the no", async () => {
+  // The research default is back on (proactive/defaults.ts), so a reset that takes a setting the
+  // person had turned OFF writes their no first; memory sources are preserved data and untouched.
+  test("a reset keeps the person's no to research, and leaves memory sources alone", async () => {
     const person = `${prefix}-chooser`;
     await database
       .insert(users)
@@ -698,17 +707,22 @@ describe("reset", () => {
           eq(defaultOptOuts.agentId, bot),
         ),
       );
-    expect(declined.sort((a, b) => a.feature.localeCompare(b.feature))).toEqual(
-      [
-        { feature: "memory_source", scope: "mail" },
-        { feature: "proactive_research", scope: "" },
-      ],
-    );
+    expect(declined).toEqual([{ feature: "proactive_research", scope: "" }]);
+    expect(
+      (
+        await database
+          .select({ id: memorySources.id })
+          .from(memorySources)
+          .where(eq(memorySources.ownerUserId, person))
+      )
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual([`${prefix}-off-source`, `${prefix}-on-source`]);
     expect(
       await database
-        .select({ id: memorySources.id })
-        .from(memorySources)
-        .where(eq(memorySources.ownerUserId, person)),
+        .select({ id: proactiveSettings.id })
+        .from(proactiveSettings)
+        .where(eq(proactiveSettings.ownerUserId, person)),
     ).toEqual([]);
   });
 });

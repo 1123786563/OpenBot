@@ -25,7 +25,8 @@
 | #730 | OpenBot 来源应用接入（来源裁决/服务客户端/上下文装载） | OpenBot c3475e779 | server/tests/memory-service-source-check.test.ts（5）+ memory-service-runtime.test.ts（4） | 四条变异全杀；企业 Access 真实接线未做（5435 未运行） |
 | #729 | 服务故障与授权降级 | MEMORY fc7f9a6 + OpenBot e43f3a34a | tests/recall-fallback.test.ts（4，MEMORY）+ server/tests/memory-service-degradation.test.ts（4，原生）+ mastra-memory-service-degradation.test.ts（3，Bun 驱动） | 见 §6c |
 | #731 | OpenBot 内嵌记忆管理（承载页/顶层登录回跳/退出） | MEMORY ecdcc6f+feb8455+<static 修复> + OpenBot da8a46b0c+feba5c45a | app/tests/memory-service-frame.test.tsx（5）+ server/tests/memory-service-entry.test.ts（3）+ MEMORY tests/embed-channel.test.ts（3）+ tests/static-embed.test.ts（2）；浏览器五用例 2026-10-31 真实栈手工执行全过（见 §#731 浏览器验收） | 审核 9 confirmed（去重 6 类）→ 修复轮，六条变异全杀；浏览器验收发现 serveStatic 绕过 meta 注入的真 bug，已修复+回归测试（变异验证） |
-| #732–#733 | 待实施 / blocked（依赖 #731 浏览器验收与真实企业集成） | — | — | — |
+| #732 | 切换全部消费者并退出旧路径 | OpenBot 工作区 `memory-service-713`（未提交，见 §8） | server/tests/memory-service-no-legacy.test.ts（5）+ 受影响套件复验（见 §8 验证证据） | 实施完成；独立 reviewer 待安排（完整档要求未参与实施的会话） |
+| #733 | 端到端验收 | — | — | blocked：依赖 #732 审核与隔离四站环境 |
 
 **当前全量基线（MEMORY）**：单元 17 文件 / 152 用例全绿（含 #728/#729）；浏览器 e2e 1/1 绿；`bun run typecheck`（root+app）绿；`bun run build` 绿。
 
@@ -171,8 +172,11 @@
 - 浏览器 e2e 依赖 `app/dist` 最新构建；未 build 会静默跑旧界面（本轮曾踩，已记录）。
 - 环境事故（本轮）：42xx 端口泄漏 16 个残留 bun identity 进程（kill）；55470 测试库容器被连带清掉（openbot-test-pg/openbot-postgres-1/agent-computer 同批 Exited 255），已用 `docker run --name openbot-test-db-55470 -p 127.0.0.1:55470:5432 postgres:17-alpine` 重建并补建 `openbot_memory_test`/`openbot_identity_test`；`tests/oidc-provider.test.ts` 原用硬编码容器名 `memory713-pg` 已改为走连接串。
 - OpenBot 企业测试库 5435 当前未运行；依赖它的 server 集成套件本轮无法验证（#715 投影 store 因此改用合同夹具）。
+- `#732` 用户裁决（2026-10-31）：① 旧 `personal_memories`/`memory_sources` 行不提供导出/清理/自助更正入口，只读保留（除非另行授权的生产清理）；② 恢复默认开启，但只恢复后台研究：新 `server/src/proactive/defaults.ts`（采用/共享锁/退出行）、`config.proactiveDefaults`（`OPENBOT_PROACTIVE_DEFAULTS`，on-unless-off）、proactive store `remove` 与 Bot reset 恢复写 `default_opt_outs`；记忆源默认不恢复（`OPENBOT_MEMORY_SOURCE_DEFAULTS` 留在历史里）；③ 授权提交/推送/改票与 #733 四站环境。
+- 仍开放：`POST /api/memory-service/source-check` 已实现未挂载（服务令牌来源待与真实 MEMORY 实例对齐，#733 联调）。
+- 复审新增债（2026-10-31）：① `server/src/hindsight/degraded-recall.ts` 零生产 import，仅 `hindsight-degraded-recall.integration` 与 `hindsight-answer-evidence.integration`（facade 断言）引用，删除需先改写后者的 5 处 facade 调用；② `server/src/enterprise/tenancy/personal-memory.ts` 零生产 import（既有债，非 #732 回归），仅 multitenancy 测试消费；③ runtime 仍构造 `hindsightBudgetGate`/`hindsightSyncQueue` 并注入偏好/来源召回服务的写臂，evidence seam 只读路径不触发它们，属构造签名惯性；④ `docs/plans/2026-10-23-issue620-modular/MOD25-redirectable-set.json` 含已删 `memory/routes.ts` 的历史对（mod25 D1 只读排序后前 12 对未触发 ENOENT，勿再重排/前移）；⑤ copilot 的 `required` 名单（`recall_personal_memory`/`forget_personal_memory`）恒 false，#733 新增记忆工具必须同步该名单（已在代码注释钉住）。
 
-## 8. #732 / #733 状态：盘点已完成，切换与验收 blocked
+## 8. #732 实施完成 + 审核 finding 修复完成（待复审）；#733 blocked
 
 ### #732 消费者盘点（票面第一步，仅盘点，不构成行为证据）
 命令（仓库根，2026-10-31）：
@@ -187,14 +191,100 @@
 | 浏览器旧写入 | `app/src/lib/memory.ts`（`/api/memory`、`/api/memory/sources`、`/api/memory/pause-controls`、`/api/memory/hindsight/status/batch`）、`app/src/lib/hindsight/{queries,mutations}.ts` | 旧 settings/Bot 记忆界面 | 管理只经 #731 承载页 |
 | 后台作业 | `hindsightSyncArm.sweep`、`server/src/proactive/*`（`store.ts`/`engine.ts` 读记忆默认与共享限制）、`server/src/agents/lifecycle-reset.ts` | 记忆再索引 / 主动任务默认 / Bot 重置 | 记忆调度停用；proactive 非记忆行为保留（#732 `other_lifecycle`） |
 
-**判定：blocked**。票面要求逐入口行为断言（`all_surfaces`/`outage_no_legacy`/`worker_disabled`/`legacy_data_unchanged`/`other_lifecycle`）与"删除旧实现后证明只剩新客户端"。当前缺：
-1. 真实记忆服务实例与 `MEMORY_SERVICE_URL` 部署值——2026-10-31 起本地已有五进程真实栈可复现（见 §#731 浏览器验收），但 #732 要求的是**生产消费者切换**（OpenBot 运行路径整体接记忆服务），非仅承载页可达；
-2. 企业测试库 5435 未运行 → 记忆消费者涉及的 Access/租户集成无法验证；
-3. #731 浏览器验收已通过（2026-10-31），该项不再阻塞 #732。
-按票面"不可验证、依赖缺失均标 blocked，不能以 fixture 通过冒充集成通过"，本轮**不删除**任何旧记忆实现（`server/src/memory/`、`server/src/hindsight/` 原样保留），只交付上表盘点。
+### 实施结果（2026-10-31，本地工作区 `memory-service-713`，未提交）
+
+**服务端**
+- 删除旧实现：`server/src/memory/{tools,store,routes,public,integration,ingestion,defaults,company}.ts`、`server/src/hindsight/{legacy-migration,health,cleanup-evidence,backup-registry,ops-view,routes,personal-memory-context}.ts`。保留 `memory/{types,sensitivity}.ts`（schema 与 sensitivity-gate 依赖）与证据 seam 传递依赖的 hindsight 模块（`answer-evidence`、`bank-scope`、`judgment-review`、`derived-judgments`、`preference-recall`、`scoped-recall`、`sync-queue`、`revocation`、`revocation-ledger`、`budget-gate`、`restore-recovery`、`pause-controls`、`sensitivity-gate`），它们只被 `createAnswerEvidenceService` 的装配使用，不再挂路由/调度。复审后另删两个零生产消费者的孤儿：`hindsight/config.ts`（隐私校验，随 health 一起退出）与 `hindsight/health.ts`（前轮已删）；`degraded-recall.ts` 零生产 import、仅两个测试引用，见 §7 债条。
+- `copilot.ts`：唯一运行 seam 为 `setMastraMemoryContext`（记忆服务）；删除 `MastraPersonalMemoryLoader`/`setMastraPersonalMemoryContext`、旧中间件挂载与 answer-basis 写回。
+- `assembly/runtime.ts`：`/api/memory` 与旧 recall/sync 臂、记忆默认、`memory:` 工具目录与派发、coworker.memory 对象、sync/记忆 sweep 生命周期全部移除；新增 `MEMORY_SERVICE_*` 配置下装配 `createMemoryClient` + `createMemoryContextLoader` 并为 headless 面提供同一 loader；headless 面用 `memoryContextBlock({required:false})`（服务故障注入诚实提示，不失败回合）。
+- `assembly/http.ts`：不挂 `/api/memory`；`/api/hindsight` 仅保留 `POST /evidence`（证据巡检），其写入口与后台作业不再存在。
+- `agents/lifecycle-reset.ts`：reset 不再选择/删除 `memory_sources`、`personal_memories` 或写退出标记；计数保持 0，其余非记忆职责（会话、routines、职责、跟进、研究设置、常驻许可）行为不变。
+- `proactive/engine.ts`+`store.ts`：移除 `form_memory` 工具/提示/计数与记忆默认、共享限制读取；`agent-resolver.ts` 移除旧装载器参数；`audit.ts` 移除已无写入者的 `memory.sensitivity_refused`。
+- `config.ts`：`MEMORY_SERVICE_URL` 配置时 `MEMORY_SERVICE_APP_ID/APP_SECRET/SOURCE_KEY` 三者必填，缺一即拒绝启动（fail-closed）。**合同变化**：#731 部署契约由“仅 URL”收紧为四值同配。
+
+**浏览器**
+- 旧 settings 记忆页删除，`/settings/memory` 改为受控重定向到 `/memory`（#731 管理承载页），settings 侧栏“记忆”直达 `/memory`。
+- 删除旧写/读组件与客户端：`components/memory/{memories,pause-controls,sources,judgment-review,cleanup-progress}.tsx`、`lib/memory.ts`、`lib/hindsight/{mutations,sensitive-refusal}.ts`；`lib/hindsight/queries.ts` 收敛为证据巡检一项；`client.ts` 移除 `/api/memory` 作用域声明。
+- `components/memory/evidence.tsx` 改只读（保留按现行授权逐行复核的展开，移除更正/遗忘写入口及其确认对话）；`answer-basis.tsx` 只保留聊天回答面；聊天文案随 openbot-copy 改写。
+- Bot 记忆页移除来源列表，保留后台调研设置并指向 `/memory`；Bot 设置行摘要改为只反映后台调研。
+
+**测试与清单**
+- 新增 `server/tests/memory-service-no-legacy.test.ts`（5 用例）：证据巡检 200 且旧面孔 404、copilot 只导出新 seam、旧 store 模块不可装载、reset 保留旧记忆行并照常清 routines（plan 记 0）。
+- 删除旧行为套件 28 个（server 25 + app 3），裁剪 `package-entrypoints`（(e) 记忆采集）、`proactive-store`（两条记忆形成用例）、`proactive.test.ts`（form_memory 断言）、`web-memory-routines`（仅保留 routines）、`memory-answer-basis`（增加“只读，无更正/遗忘按钮”断言）、`mastra-memory-service-degradation`（去掉旧装载器对照臂）。
+- `tests/config/e2e-bun-suites.json` 同步删除对应 entries/causes；`memory-service-no-legacy` 独立成组（避免与 enterprise 库绑定的 24 文件切片同跑）。
+
+### 验证证据（2026-10-31，本机）
+
+| 套件 | 结果 |
+|---|---|
+| `E2E_BUN_ONLY=memory-service-no-legacy`（driven） | 1/1 组通过（内部 5/5 用例），退出码 0 |
+| `E2E_BUN_ONLY="app/tests part 1"` / `"app/tests part 3"` / `"app/tests/multitenancy"` | 3 组全绿（bot-memory 2、memory-answer-basis 6、web-memory-routines 3） |
+| `E2E_BUN_ONLY="server/tests part 7"`、`part 14`、`server/tests/package-entrypoints` | 全绿（含 answer-evidence、pause-controls、proactive-store、package-entrypoints） |
+| 原生：memory-service-{runtime,degradation,source-check,entry} | 16/16 通过 |
+| 原生：bot-lifecycle-{routes,audit,watcher}、proactive.test、audit.test、agent-routes、identity-app-wiring、self-host-banner、request-tracking、gateway-readiness-gate | 全绿（audit 首轮因 taxonomy 残留红 1 项，随 `memory.sensitivity_refused` 移除转绿） |
+| `mastra-memory-service-degradation`（bun 直跑，诊断） | 3/3 通过；其所属 part 10 受企业库 5435 未运行阻塞 |
+| `tests/e2e-manifest-contract.test.ts` | 10/10 通过（files==groups、分组不移动、BA 批次约束） |
+| `server` `tsc --noEmit`、`app` `tsc --noEmit`、`app` `vite build` | 全绿 |
+| Biome（本轮改动文件） | 0 error |
+
+未验证 / 阻塞：
+1. `server/tests part 2`（含 `attachment-routes`）与 `part 17`（含 `shared-wiring.integration`）分组运行耗时过长/未完成，按“不可验证不冒充实测”记为未完成；相关文件不在本轮删除清单内。
+2. 依赖企业测试库 5435 的套件（`part 10` 等）本轮不可运行。
+3. 独立 reviewer（未参与实施会话）的行为验收与 Spec/质量审核尚未进行——按完整档要求，冻结检查点后另行安排。
+4. `all_surfaces`/`outage_no_legacy` 的真实四站集成证据属于 #733 验收执行器范围；本轮以行为单测与装配事实为证据，不冒充端到端。
+
+### 8b. 独立审核 finding 与修复轮（2026-10-31）
+
+独立会话审核返回 13 条 finding（F1–F13）。逐条处置：
+
+| # | 结论 | 处置 | 证据 |
+|---|---|---|---|
+| F1 | 确认 | 清掉 `runtime.ts`/`copilot.ts`/`ops-routes.ts` 未用导入与变量（含 `HINDSIGHT_SYNC_DRAIN_INTERVAL_MS`、degraded 搜索构造、`hindsightJudgments`），修复被打乱的 biome-ignore 与注释 | 48 个改动文件 biome 0 error |
+| F2 | 确认 | Bot 设置行摘要改用 `researchSummary`（已在本轮前修复） | `bot-settings-rows` 7/7 |
+| F3 | 确认 | 工具访问普查去掉 `memory/ingestion.ts` 条目（已修） | `tool-access-public` 28/28 |
+| F4 | 确认 | web-copilot 普查去掉已删组件（已修） | `web-copilot-scope` 14/14 |
+| F5 | 确认 | 模块基线：新增 `server/src/memory-service` 为 M10 root；12 条边按实际判定由 `cycle` 改 `deep-reference`（旧环因删除而解开，条目原文已预言此迁移）；删除 15 条已删源的幻影；新增 2 条 `deep-reference`（`memory-service/context.ts → enterprise/contracts.ts` 只取 `PlatformScope` 类型；`memory-service/source-check.ts → auth/signed-value.ts`，`auth/public.ts` 未导出签验原语） | 702 例外 / 0 违规 / 0 幻影 / 59 环；`module-imports` 14/14 |
+| F6 | 确认 | 删除 `deploy/hindsight/test/verify-health.ts`（依赖已删的 `hindsight/health.ts`）；README/ENABLEMENT/backup.sh 的 ops/cleanup/备份登记表述改为 #732 后的真实状态 | 文件级核对 |
+| F7 | 确认 | `coverage-plugins-knowledge` 去掉 `/api/memory` 三个入口与整个记忆域映射；`gap-registry` 去掉 `/api/memory` 前缀并改述原因。企业库 5435 未运行，仅静态核对 + `tsc` | `tsc` 0、biome 0 |
+| F8 | 确认 | `tests/e2e/api.e2e.test.ts`：`GET /api/memory` 由 401 断言改为显式 404 断言（并保留注释说明 #732） | 未运行（需部署实例），静态核对 |
+| F9 | 决策 | 旧 `personal_memories` 数据原样保留、只读；旧行不再有本人自助更正/遗忘/暂停入口。**待用户决定**：是否需要为旧数据提供导出/清理路径 | 本条 + §7 |
+| F10 | 确认 | `createMemoryClient` 装配加 `timeoutMs: 5_000`；装载器把超时按 `memory_service_unavailable` 降级，不阻塞回合 | `context.ts` catch 分支 |
+| F11 | 决策 | 删除已死的 `config.memoryDefaults` 与 `OPENBOT_MEMORY_SOURCE_DEFAULTS`/`OPENBOT_PROACTIVE_DEFAULTS` 读取（原消费者 `memory/defaults.ts` 已删）。**行为变化**：新 Bot 不再自动获得后台调研/记忆来源默认。是否由记忆服务或 proactive 重新引入默认，待用户决定（#733） | `config.test.ts` 173/173 |
+| F12 | 确认 | copilot `required` 臂加注（旧记忆工具已注销，现恒 false，#733 决定是否重设）；`/api/memory-service/source-check` 的挂载点在 `http.ts` 注明仍不挂载（需真实 MEMORY 实例对齐服务令牌） | 静态核对 |
+| F13 | 确认 | 陈旧注释清理：`config.ts`、`assembly/http.ts`、`schema/{memory,defaults,proactive}.ts`、`untrusted-content.ts`、`mastra/instructions.ts`、`admin/settings-store.ts`、`assembly/runtime.ts`（旧写面/路由/扫掠描述） | biome 0 |
+
+附带修复（非 reviewer 条目）：`module-runtime-lifecycle` 的真实启动冒烟长期红——测试里的 `KEY_ENCRYPTION_KEY` 字面量解码为 24 字节，`loadConfig` 在 agent-runtime 门前就拒绝；随后 Branch B 等待一个已退出的子进程而挂到 120s。另有宿主 `.env` 的 `SERVER_PORT` 泄漏导致 PORT 冲突。改为合法 32 字节 key、中性化 `SERVER_PORT`、子进程早退时立刻带输出失败。该文件不在 `e2e-bun-suites.json` 清单内，属仓库既有红，非 #732 回归。现 11/11。
+
+复验轮另外发现并修复：`server/tests/bot-lifecycle.integration.test.ts`（在 `server/tests part 3` 清单内）仍按旧行为断言——reset 计划/执行期望 `memories/memorySources/formedMemories` 为 1、并期望 reset 写 `default_opt_outs`。按 #732 语义改为：记忆行保留（计划计 0、执行不删，含 Bot 自形成的行与禁用来源行），reset 不再写默认退出行；`formedMemories` 断言 0。现整文件 11/11，`bot-lifecycle-{audit,routes,watcher}` 23/23、9/9、3/3。
+
+修复后复验（2026-10-31 本机）：`config.test` 173/173、`audit.test` 8/8、`proactive.test` 7/7、`tool-access-public` 28/28、`module-runtime-lifecycle` 11/11、`module-imports` 14/14、`e2e-manifest-contract` 10/10、`bot-summaries` 7/7、`legacy-agent-routes` 5/5、`web-copilot-scope` 14/14；driven：`package-entrypoints`、`memory-service-no-legacy`、`mastra-memory-service-degradation`、`bot-memory`、`bot-settings-rows`、`memory-answer-basis`、`web-memory-routines` 全部通过；`bun run typecheck` 全绿；改动文件 biome 0 error。
+
+### 8c. 用户裁决落地（2026-10-31，同日实施）
+
+- **裁决①（旧数据无路径）**：不新增任何入口；reset/遗忘/更正对旧行均为"不存在该能力"。`memory-service-no-legacy` 与 `bot-lifecycle.integration` 已钉住"行原样保留"。
+- **裁决②（默认开启，research-only）**：
+  - 新 `server/src/proactive/defaults.ts`：`createResearchDefaults`（单人独聊采用、240 分钟间隔、首跑一个间隔后、try-lock + opt-out + `onConflictDoNothing`）、`lockResearchDefaults`、`recordOptOut`；`proactive/public.ts` 为 AUTOMATION 出口（M03 重置经它读锁与退出，环例外已登记 #732）。
+  - `config.proactiveDefaults.research`（`OPENBOT_PROACTIVE_DEFAULTS`，on unless "false"/"0"）；`OPENBOT_MEMORY_SOURCE_DEFAULTS` 不再存在。
+  - `proactive/store.remove` 恢复：锁 + 写 `default_opt_outs(proactive_research)`；`lifecycle-reset` 恢复：事务内先锁，删除"本人已关闭"的研究设置前写退出，记忆行仍不删。
+  - `assembly/runtime.ts`：恢复 `channelStore.recordActivity` 的 `personSpoke` 钩子并装配 `createResearchDefaults`（`canDeliver` 复用 `deliveryScopeFor`）。
+  - 新套件 `server/tests/proactive-defaults.integration.test.ts`（6 用例：采用一次/关掉不再开/删除记退出/锁互斥/投递与部署双门/群聊不采用），清单独立成组 `server/tests/proactive-defaults`；`bot-lifecycle.integration` 第三用例改为"reset 保留本人对研究的 no，记忆源不动"；`config.test` 增 `proactiveDefaults` 组（174/174）。
+- **裁决③（授权）**：本节落地后进行提交/推送/PR/#732 票面更新；#733 四站环境另行启动。
+
+### 8d. 复审（2026-10-31，workflow 32 agents：4 维度找 → 双怀疑者对抗验证）
+
+确认 7 条（2 major / 5 minor），处置：
+- **[major] mod25 簿记钉套件红**（`mod25-closure-seam.test.ts:152` 钉 715 → 实际 703）：改钉 703 并注明差额来源；现 15/15。
+- **[major] `hindsight/config.ts` 生产孤儿 + deploy 文档宣称仍在跑隐私校验**：删除该模块与 `hindsight-config.test.ts`（含清单 entry）；README/backup.sh/hindsight.env.example 的隐私校验表述改为"OpenBot 侧已随 #732 退出，HINDSIGHT_PRIVACY_* 只服务实例自身"。
+- **[minor] `schema/defaults.ts` 头注释称退出不再写**：改写为"proactive_research 行恢复写入（proactive/defaults.recordOptOut），memory_source 行为历史"。
+- **[minor] `config.ts` 孤儿墓碑注释与恢复的默认矛盾**：删除该注释块。
+- **[minor] runtime 陈旧注释与 personSpoke 矛盾**：改写为"会话现在翻开的正是后台研究（上钩子），记忆源采用与写路径已退出"。
+- **[minor] 生产 personSpoke 钩子无测试**：`module-runtime-lifecycle` 新增源码钉（wrapper 行/装配门/绑定顺序），12/12。
+- **[minor] `degraded-recall.ts` 死代码 + ledger 保留理由不实**：ledger §8 保留清单改为如实（零生产 import），删除与测试改写记 §7 债①。
+notes 落地：store.remove 注释改为与实现对齐（先读后锁，agentId 不可变）；copilot `required` 名单加"#733 新工具必须同步"注；`bot-settings-rows` 删除 `/api/memory/sources` 假 mock 分支；`proactive-defaults` 补两用例（`research=false` 时 personSpoke 不建行；退出只绑本 Bot、secondBot 照常采用）。
+被驳回但已知悉：`/api/memory` 404 仅活体 e2e 钉住（无部署实例不可跑）；`outage_no_legacy`/`all_surfaces` 属 #733 执行器（§8 已记）；`/api/memory-service` 前缀分类吞并（实际分类面无消费差异）。
 
 ### #733 判定：blocked
-`report_completeness` 要求 A01–A19 共 19 项真实组件执行并留证据，`version_manifest` 要求记录版本一致。当前缺隔离的 4 站（IDENTITY/MEMORY/OpenBot/外部应用）+ 浏览器 + 网关/Hindsight 运行环境，且 #733 原生 blocked_by 含 #732。未创建验收执行器，不声明任何 A 项通过。
+`report_completeness` 要求 A01–A19 共 19 项真实组件执行并留证据，`version_manifest` 要求记录版本一致。当前缺隔离的 4 站（IDENTITY/MEMORY/OpenBot/外部应用）+ 浏览器 + 网关/Hindsight 运行环境，且 #733 原生 blocked_by 含 #732（#732 自身尚待独立审核）。未创建验收执行器，不声明任何 A 项通过。
 
 ## 5. 剩余执行序
 

@@ -1,11 +1,4 @@
 import "./preload";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  expect,
-  test,
-} from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -17,6 +10,13 @@ import {
 import { cleanup, render } from "@testing-library/react";
 import { BotSettingsRows } from "@/components/bot-profile/settings-rows";
 import type { AgentProfile } from "@/lib/agents/queries";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { settleReactWork } from "./settle-react-work";
 
 /** The "Settings for this Bot" card: each row says its current answer and opens its page. */
@@ -87,11 +87,6 @@ function serving(
         devices: [],
         deliveries: [],
         available: { slack: true, teams: false, sms: true, push: false },
-      });
-    }
-    if (url === "/api/memory/sources") {
-      return Response.json({
-        sources: [{ id: "s1", agentId: "expenses", enabled: true }],
       });
     }
     if (url === "/api/proactive/settings") {
@@ -175,6 +170,6 @@ test("the rows for responsibilities, reach, memory and rules say what this Bot h
   };
   await row("Responsibilities", "1 active", "responsibilities");
   await row("Reaching you", "Slack", "reach");
-  await row("Memory", "1 source", "memory");
+  await row("Memory", "Background research off", "memory");
   await row("Approval rules", "1 rule", "approvals");
 });

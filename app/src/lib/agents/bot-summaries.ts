@@ -63,15 +63,11 @@ export function reachSummary(transports: readonly string[]): string {
   return places.length ? places.join(", ") : "Only in OpenBot";
 }
 
-/** The apps feeding this Bot facts, and whether it researches in the background. */
-export function memorySummary(sources: number, research: boolean): string {
-  const parts = [
-    sources ? countLabel(sources, "source", "sources", "") : "",
-    research
-      ? sources
-        ? "background research on"
-        : "Background research on"
-      : "",
-  ].filter(Boolean);
-  return parts.length ? parts.join(", ") : "Nothing connected";
+/**
+ * Whether the Bot researches in the background. #732: the source list left with the old
+ * memory pages, and the memory service owns what this Bot remembers, so this line states
+ * the one duty left on the Bot's memory page.
+ */
+export function researchSummary(research: boolean): string {
+  return research ? "Background research on" : "Background research off";
 }

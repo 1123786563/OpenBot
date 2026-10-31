@@ -189,7 +189,6 @@ import {
   installGatewayReadinessService,
 } from "../gateway/readiness";
 import { createHindsightRoutes } from "../hindsight/ops-routes";
-import { createHindsightMemoryRoutes } from "../hindsight/routes";
 import type { HostAccessBroker } from "../host-access/broker";
 import { createHostAccessRoutes } from "../host-access/routes";
 import { identityRoutes } from "../identity/routes";
@@ -200,7 +199,7 @@ import {
 } from "../learning/routes";
 import { createMarketplaceRoutes } from "../marketplace/routes";
 import { createMastraContinuationRoutes } from "../mastra/continuation-routes";
-import { createMemoryRoutes } from "../memory/routes";
+import { createMemoryServiceEntryRoutes } from "../memory-service/entry-routes";
 import { createMobileBffActivity } from "../mobile-bff/activity";
 import {
   createOpenMuseBotProvisioner,
@@ -253,7 +252,6 @@ import {
 import type { UserPreferencesStore } from "../user-preferences";
 import { userPreferencesRoutes } from "../user-preferences-routes";
 import { createVoiceProvider } from "../voice/provider";
-import { createMemoryServiceEntryRoutes } from "../memory-service/entry-routes";
 import { createVoiceRoutes } from "../voice/routes";
 import type { VoiceSessionServices } from "../voice/session-routes";
 import {
@@ -1270,6 +1268,11 @@ export function assembleHttpApp(
   /*
    * #731 内嵌管理入口：只返回部署配置的承载地址与本次装载的 requestId。
    * 未配置 MEMORY_SERVICE_URL 时不挂载，页面据此显示"未启用"。
+   *
+   * #730 的来源裁决入口（POST /api/memory-service/source-check，
+   * server/src/memory-service/routes.ts 已实现）暂不挂载：它需要与真实 MEMORY
+   * 实例对齐服务令牌来源，属 #733 的联调范围。未挂载时 MEMORY 的来源核验
+   * 只会得到 404，不会误判为允许。
    */
   if (config.memoryService) {
     app.route(
@@ -2945,40 +2948,6 @@ export function assembleHttpApp(
         requireUser,
       ),
     );
-  if (coworker?.memory)
-    app.route(
-      "/api/memory",
-      createMemoryRoutes(
-        coworker.memory.store,
-        coworker.memory.ingestion,
-        requireUser,
-        {
-          ...(coworker.memory.pauseControls
-            ? { pauseControls: coworker.memory.pauseControls }
-            : {}),
-          ...(coworker.memory.companyScope
-            ? { companyScope: coworker.memory.companyScope }
-            : {}),
-          // Built here, where the family's middleware lives: the chain's operations ride the
-          // same `requireUser` + body limit as the rest of `/api/memory`.
-          ...(coworker.memory.hindsight
-            ? {
-                hindsight: createHindsightMemoryRoutes(
-                  coworker.memory.hindsight,
-                ),
-              }
-            : {}),
-        },
-      ),
-    );
-  /*
-   * Hindsight's own family (#387–#391): the seams' identities arrive only as server-issued
-   * scopes from the deployment's resolver, which is why `requireUser` is added HERE (the
-   * middleware belongs to this assembly) and the operator routes re-check the administrator
-   * role themselves. Separate from `/api/memory`, whose connector-facing surface is a
-   * different audience; a deployment without the trusted tenancy connection mounts neither
-   * the routes nor a stand-in that guesses a scope.
-   */
   if (coworker?.hindsight)
     app.route(
       "/api/hindsight",

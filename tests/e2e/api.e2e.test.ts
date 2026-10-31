@@ -109,7 +109,6 @@ const PROTECTED_GET_PATHS: Array<[string, string]> = [
   ["/api/admin/people", "管理后台人员"],
   ["/api/settings/instructions", "app.ts 个人 standing instructions"],
   ["/api/computers/fleet", "computer/routes.ts 挂载 /api/computers"],
-  ["/api/memory", "挂载 /api/memory"],
   ["/api/bots/attention", "agents/lifecycle-routes.ts 挂载 /api/bots"],
   ["/api/bots/routing", "agents/lifecycle-routes.ts 挂载 /api/bots"],
   ["/api/responsibilities", "挂载 /api/responsibilities"],
@@ -153,6 +152,13 @@ describe("鉴权负路径（无 cookie，预期 401）", () => {
     });
     // 鉴权在业务处理之前：无论 body 合法与否，都先 401，且绝不创建任何资源。
     expect(res.status).toBe(401);
+  });
+
+  test("GET /api/memory → 404（#732 旧记忆路由已退出）", async () => {
+    // 旧记忆家族随 #732 退出：/api/memory 不再挂载，未登录访问也走到 404，
+    // 而不是曾经的 401。记忆改由独立记忆服务提供。
+    const res = await raw("/api/memory");
+    expect(res.status).toBe(404);
   });
 
   test("DELETE /api/admin/credentials → 404（该路由在当前代码中不存在）", async () => {

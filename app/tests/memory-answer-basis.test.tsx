@@ -151,6 +151,10 @@ test("expanding sends exactly the answer's own ids on the scoped contract", asyn
   ).toBeTruthy();
   expect(await view.findByText("Unavailable")).toBeTruthy();
   expect(view.queryByText(/Shared a doc titled/)).toBeNull();
+  // #732: the expansion is a read. Correcting and forgetting live in the memory service,
+  // so the dialog offers no action buttons.
+  expect(view.queryByRole("button", { name: "Correct" })).toBeNull();
+  expect(view.queryByRole("button", { name: "Forget" })).toBeNull();
 });
 
 test("an answer with no ids renders no basis", async () => {

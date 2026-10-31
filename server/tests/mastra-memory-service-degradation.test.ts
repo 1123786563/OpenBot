@@ -7,16 +7,17 @@ import {
   setBuiltinExecutionEngine,
   setMastraConversationRuntime,
   setMastraMemoryContext,
-  setMastraPersonalMemoryContext,
 } from "../src/copilot";
-import { MEMORY_UNAVAILABLE_NOTICE } from "../src/memory-service/context";
 import type { GovernedModelRequest } from "../src/enterprise/runs/governed-execution";
+import { MEMORY_UNAVAILABLE_NOTICE } from "../src/memory-service/context";
 import { carrier, sse } from "./support/me04-harness";
 
 /*
  * #729 接线：记忆服务装载器装上后，普通对话在服务故障时继续并提示未使用
- * 记忆，依赖记忆的任务暂停；旧 #395 装载器一次都不被读。纯函数语义在
- * memory-service-degradation.test.ts（node 原生）覆盖，这里证明工厂确实用它。
+ * 记忆，依赖记忆的任务暂停。纯函数语义在 memory-service-degradation.test.ts
+ * （node 原生）覆盖，这里证明工厂确实用它。#732：旧 #395 装载器已随旧引擎
+ * 退出，不再有"旧装载器不被读"的对照臂——该事实由 memory-service-no-legacy
+ * 套件的结构断言覆盖。
  */
 
 const MEMORY_TOOL: GrantedTool = {
@@ -42,7 +43,6 @@ function engineOff() {
   setBuiltinExecutionEngine(undefined);
   setMastraConversationRuntime(undefined);
   setMastraMemoryContext(undefined);
-  setMastraPersonalMemoryContext(undefined);
 }
 
 async function driveFactory(options: {
@@ -96,7 +96,10 @@ async function answerRunCarrier(dials: DialRecord[]) {
   return carrier({
     ceiling: 4096,
     onDial: (body) => {
-      const messages = (body.messages ?? []) as { role: string; content: unknown }[];
+      const messages = (body.messages ?? []) as {
+        role: string;
+        content: unknown;
+      }[];
       const system = messages.find((message) => message.role === "system");
       dials.push({
         systemText: typeof system?.content === "string" ? system.content : "",
@@ -121,23 +124,17 @@ const UNAVAILABLE = {
 };
 
 describe("memory service degradation on the Mastra execution path", () => {
-  it("plain_chat_continues_on_the_service_notice_and_the_old_store_is_never_read", async () => {
+  it("plain_chat_continues_on_the_service_notice", async () => {
     const dials: DialRecord[] = [];
     const harness = await answerRunCarrier(dials);
-    let legacyReads = 0;
     engineOn();
     try {
-      setMastraPersonalMemoryContext(async () => {
-        legacyReads += 1;
-        return "LEGACY-STORE-BLOCK";
-      });
       setMastraMemoryContext(async () => UNAVAILABLE);
-      const events = await driveFactory({ governedModel: harness.governedModel });
+      const events = await driveFactory({
+        governedModel: harness.governedModel,
+      });
       expect(events.map((event) => event.type).at(-1)).toBe("RUN_FINISHED");
       expect(dials[0]!.systemText).toContain(MEMORY_UNAVAILABLE_NOTICE);
-      expect(dials[0]!.systemText).not.toContain("LEGACY-STORE-BLOCK");
-      // 服务自报的身份字段不来自 wire：这里只验证装载器被问、旧存储没被问。
-      expect(legacyReads).toBe(0);
     } finally {
       engineOff();
     }
@@ -179,9 +176,13 @@ describe("memory service degradation on the Mastra execution path", () => {
           unavailableReasons: [],
         },
       }));
-      const events = await driveFactory({ governedModel: harness.governedModel });
+      const events = await driveFactory({
+        governedModel: harness.governedModel,
+      });
       expect(events.map((event) => event.type).at(-1)).toBe("RUN_FINISHED");
-      expect(dials[0]!.systemText).toContain("ME729-SERVICE prefers concise answers.");
+      expect(dials[0]!.systemText).toContain(
+        "ME729-SERVICE prefers concise answers.",
+      );
     } finally {
       engineOff();
     }

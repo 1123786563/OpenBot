@@ -646,8 +646,6 @@ const SCOPED_FACTORY_IMPORTERS = [
   "components/channels/recipient-field.tsx",
   "components/computer/demonstration-recorder.tsx",
   "components/delivery/reaching-you.tsx",
-  "components/memory/memories.tsx",
-  "components/memory/sources.tsx",
   "components/responsibilities/new-responsibility-dialog.tsx",
   "components/skills/skill-agents.tsx",
   "components/suggestions/proactive-panel.tsx",

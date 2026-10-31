@@ -286,16 +286,11 @@ export const ENTRANCE_BUCKETS: readonly EntranceBucket[] = [
   },
   {
     id: "EB-KNOWLEDGE-MEMORY-AUTOMATION",
-    prefixes: [
-      "/api/memory",
-      "/api/routines",
-      "/api/responsibilities",
-      "/api/proactive",
-    ],
+    prefixes: ["/api/routines", "/api/responsibilities", "/api/proactive"],
     disposition: "blocked-open",
     source: "§8 rows 6–7 (知识与文档处理；职责、定时任务、主动建议)",
     reason:
-      "MT136 mapped personal memory list/create/read/delete + sources-available; the automation family (routines, responsibilities, triggers, proactive) has fixture-level evidence only — entrance mapping is open",
+      "the automation family (routines, responsibilities, triggers, proactive) has fixture-level evidence only — entrance mapping is open; the /api/memory family and its MT136 entrances left with #732",
     domainEvidence: [
       "server/tests/multitenancy/coverage-craft-openmuse.test.ts",
       "server/tests/multitenancy/support/personal-memory.ts",

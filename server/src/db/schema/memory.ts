@@ -21,7 +21,8 @@ export const memorySources = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     /*
      * FIX-W13 (#376, FR2-2): the company this source belongs to, fixed at binding — the
-     * (person, Bot)'s own proven company (memory/company.ts), never the page's current
+     * (person, Bot)'s own proven company (memory/company.ts, removed with the engine in #732; the
+     * column and its rows stay), never the page's current
      * selection. NULL is an ISOLATED source (migration 0212 backfilled what it could prove
      * and left the rest NULL, 0211's discipline): no company's scope lists it, operates it
      * or syncs it in an enterprise deployment. A single-user deployment without the

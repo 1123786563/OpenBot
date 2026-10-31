@@ -862,9 +862,9 @@
     },
     "memory": {
       "title": "Memory",
-      "description": "Which connected apps feed this Bot facts, and the background research it does for you.",
-      "settingsIntro": "What your Bots remember about you is in",
-      "settingsLink": "Settings → Memory",
+      "description": "The background research this Bot does for you.",
+      "settingsIntro": "What your Bots remember is in",
+      "settingsLink": "Memory",
       "settingsOutro": "."
     },
     "reach": {

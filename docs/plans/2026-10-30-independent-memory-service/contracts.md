@@ -129,7 +129,7 @@ type SweepResult = Readonly<{
 
 ## 来源与撤权
 
-来源应用实现 `POST /api/memory-service/source-check`，消费 SourceCheck 并返回 SourceDecision。临时拒绝/不可用不等同持久来源撤销。来源引用必须由来源应用签发并能恢复原始业务范围，不可用任意传入 tenantId 或 workspaceId 选择其他人的资源。
+来源应用实现 `POST /api/memory-service/source-check`，消费 SourceCheck 并返回 SourceDecision。OpenBot 侧实现位于 `server/src/memory-service/routes.ts`（服务令牌鉴权、按合同形状校验）；#732 阶段尚未挂载——服务令牌来源须与真实 MEMORY 实例对齐，挂载进联调验收（#733），未挂载时该入口返回 404 而不是放行。临时拒绝/不可用不等同持久来源撤销。来源引用必须由来源应用签发并能恢复原始业务范围，不可用任意传入 tenantId 或 workspaceId 选择其他人的资源。
 
 服务内共享/遗忘/来源撤销使用单调权限版本。交付前回读最新服务版本并在线核验来源，核验成功的来源 revision 是此次读取的来源授权线性化点；其后的撤销不使已准入读取自动变成新调用，但来源最终撤销通知仍触发持久阻断和副本清理。实施者须用并发测试证明所选 fencing 与交付顺序，不承诺追回已交付字节。
 
@@ -142,5 +142,7 @@ type SweepResult = Readonly<{
 MEMORY 提供 `createMemoryClient(options: { baseUrl: string; credentials: ServerCredentialProvider }): MemoryClient`；`MemoryClient.submit/recall` 的输入输出复用上述合同。OpenBot 的 ServerCredentialProvider 仅在服务器签发或取得已验证委托，客户端包不得包含服务秘密。
 
 `ServerCredentialProvider.forRequest(input: { subjectId: string; appId: string; requestId: string }): Promise<{ serviceCredential: string; userDelegation: string }>`；MemoryClient 的 `submit(input: SubmitInput)`、`recall(input: RecallInput)` 分别返回 JobView、RecallResult，服务端消费时由 provider 绑定当前可信本人上下文。浏览器管理站使用本人会话客户端，不装配该服务秘密 provider。
+
+OpenBot 的部署配置在 `MEMORY_SERVICE_URL` 之外必须同时提供应用身份与来源签名键：`MEMORY_SERVICE_APP_ID`、`MEMORY_SERVICE_APP_SECRET`、`MEMORY_SERVICE_SOURCE_KEY`；缺一即拒绝启动（#732）。前三者对应上文的 appId/serviceCredential，`SOURCE_KEY` 用于 `issueSourceScope` 签发可核验的 SourceRef，来源应用据此裁决来源授权。管理承载页只读部署地址；运行装载器只在四值齐备时装配。
 
 内嵌页面消息仅支持 `{ type: "memory.ready" | "memory.resize" | "memory.auth-required" | "memory.logged-out"; requestId: string; height?: number }`。消息不携带身份、公司选择或 bearer token，不触发权限变更；双方校验精确 Origin、source window 与关联 ID。auth-required 只要求顶层执行已登记回跳流程，不接受任意消息 URL。支持同站 HTTPS 部署作为首个集成 fixture；跨站拓扑须独立验证会话/存储合同，不能默默依赖第三方 cookie。

@@ -415,6 +415,20 @@ describe("deployment configuration", () => {
     INITIAL_ADMIN_EMAILS: "admin@openbot.test",
   };
 
+  describe("background research default", () => {
+    test("is on for a fresh deployment, and OPENBOT_PROACTIVE_DEFAULTS switches it off", () => {
+      expect(loadConfig(baseEnvironment).proactiveDefaults).toEqual({
+        research: true,
+      });
+      for (const value of ["false", "0"]) {
+        expect(
+          loadConfig({ ...baseEnvironment, OPENBOT_PROACTIVE_DEFAULTS: value })
+            .proactiveDefaults,
+        ).toEqual({ research: false });
+      }
+    });
+  });
+
   /** What a deployment with no provider has to say before it is allowed to come up. */
   const OPEN = { OPENBOT_SINGLE_USER: "true" };
 
@@ -1276,26 +1290,6 @@ describe("automatic Learning container assignment", () => {
         INTELLIGENCE_PROJECT_ID: "my-project",
       }),
     ).toThrow("numeric ID");
-  });
-});
-
-describe("memory sources and background research", () => {
-  test("are on by default for a fresh deployment", () => {
-    expect(loadConfig(baseEnvironment).memoryDefaults).toEqual({
-      sources: true,
-      research: true,
-    });
-  });
-
-  test.each(["false", "0"])("each switches off on its own with %p", (value) => {
-    expect(
-      loadConfig({ ...baseEnvironment, OPENBOT_MEMORY_SOURCE_DEFAULTS: value })
-        .memoryDefaults,
-    ).toEqual({ sources: false, research: true });
-    expect(
-      loadConfig({ ...baseEnvironment, OPENBOT_PROACTIVE_DEFAULTS: value })
-        .memoryDefaults,
-    ).toEqual({ sources: true, research: false });
   });
 });
 
