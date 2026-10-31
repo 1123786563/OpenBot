@@ -368,14 +368,18 @@ async function refusalText(response: Response): Promise<string | null> {
 /** Every request in this app is authenticated, and every one of them is JSON or nothing. */
 async function send(path: string, options: ClientOptions): Promise<Response> {
   const selection = scopeSelection(path, options);
-  const merged =
-    options.body === undefined
-      ? { ...options.headers, ...selection }
-      : {
-          "content-type": "application/json",
-          ...options.headers,
-          ...selection,
-        };
+  // HTTP header names are case-insensitive; normalize caller keys so a
+  // "Content-Type"/"X-Openbot-Tenant" variant replaces into the same slot
+  // instead of riding beside the transport's own fact.
+  const caller: Record<string, string> = {};
+  for (const [name, value] of Object.entries(options.headers ?? {})) {
+    caller[name.toLowerCase()] = value;
+  }
+  const merged: Record<string, string> = { ...caller };
+  // The transport's own facts own their slots: a body is JSON whatever the
+  // caller said, and the selection pair outranks a forged scope header.
+  if (options.body !== undefined) merged["content-type"] = "application/json";
+  Object.assign(merged, selection);
   // An empty object would ride as `headers: {}` where the old call sent none at all.
   const headers = Object.keys(merged).length > 0 ? merged : undefined;
   return fetch(path, {

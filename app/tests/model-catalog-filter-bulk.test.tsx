@@ -9,7 +9,7 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, render } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route as ModelCatalogRoute } from "@/routes/_authed/admin/model-catalog";
 import {
@@ -147,18 +147,14 @@ function renderModelCatalog() {
 
 test("搜索在分页前收窄列表，页脚报筛选后的数量", async () => {
   const view = renderModelCatalog();
+  const user = userEvent.setup({ document: view.container.ownerDocument });
   expect(await view.findByText("Page 1 of 2 · 60 models")).toBeTruthy();
 
-  /*
-   * TYPED RATHER THAN SET. The search box is a React Aria input, which reads a keystroke
-   * and not a `change` event dispatched at the element, so `fireEvent.change` would move
-   * the DOM value and leave the page's own query where it was.
-   */
-  const user = userEvent.setup({ document: view.baseElement.ownerDocument });
   await user.type(
     view.getByRole("textbox", { name: "Search models or providers" }),
     "model-01",
   );
+  await settleReactWork();
 
   // The ten model-01x models are the whole filtered list, on one page.
   expect(view.getByText("Page 1 of 1 · 10 models")).toBeTruthy();
@@ -169,18 +165,19 @@ test("搜索在分页前收窄列表，页脚报筛选后的数量", async () =>
 
 test("全选 + 共用一个原因批量开放：逐个写入，拒绝不中断并点名", async () => {
   const view = renderModelCatalog();
+  const user = userEvent.setup({ document: view.container.ownerDocument });
   expect(await view.findByText("Page 1 of 2 · 60 models")).toBeTruthy();
 
-  const user = userEvent.setup({ document: view.baseElement.ownerDocument });
   await user.type(
     view.getByRole("textbox", { name: "Search models or providers" }),
     "model-01",
   );
-  fireEvent.click(view.getByRole("button", { name: "Select all" }));
+  await settleReactWork();
+  await user.click(view.getByRole("button", { name: "Select all" }));
   await settleReactWork();
   expect(view.getByText("10 selected")).toBeTruthy();
 
-  fireEvent.click(view.getByRole("button", { name: "Open selected" }));
+  await user.click(view.getByRole("button", { name: "Open selected" }));
   await settleReactWork();
   expect(view.getByText("Open 10 models")).toBeTruthy();
 
@@ -190,15 +187,19 @@ test("全选 + 共用一个原因批量开放：逐个写入，拒绝不中断�
     view.getByPlaceholderText("Why this model is being opened or closed"),
     "reviewed pricing",
   );
-  fireEvent.click(view.getByRole("button", { name: "Save" }));
-  // The run finishes all ten writes, then names the one it could not open.
-  const notice = await view.findByRole("alert");
-  expect(notice.textContent).toContain("1 model could not be opened:");
-  expect(notice.textContent).toContain("model-013");
+  await user.click(view.getByRole("button", { name: "Save" }));
+  // The notice names the refused models in the same paragraph as the count.
+  expect(
+    await view.findByText("1 model could not be opened:", { exact: false }),
+  ).toBeTruthy();
 
   expect(scopeWrites).toHaveLength(10);
   expect(scopeWrites.every((write) => write.state === "open")).toBe(true);
   expect(
     scopeWrites.every((write) => write.reason === "reviewed pricing"),
   ).toBe(true);
+  // The refused model is named in the notice, not merely absent from the writes.
+  const notice = view.getByRole("alert");
+  expect(notice.textContent).toContain("could not be opened");
+  expect(notice.textContent).toContain("model-013");
 });

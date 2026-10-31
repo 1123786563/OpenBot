@@ -6,7 +6,26 @@ import type { AuthProviderId } from "./queries";
  * The app's one Better Auth client. Its plugin composition — the preserved SSO client and
  * the fixed organization client — lives in auth-plugin.ts (T01.09, #521).
  */
-export const authClient = createAuthClient({ plugins: openBotClientPlugins() });
+export const authClient = createAuthClient({
+  plugins: openBotClientPlugins(),
+  // Better Auth keeps the fetch it is handed when the client is built. The browser suites swap
+  // `globalThis.fetch` for their own dispatcher per file, and a client built during an earlier
+  // file's swap kept calling that file's handler (or the real network, once it was restored), so
+  // the call has to read `globalThis.fetch` when it is made. In the browser this is the same
+  // function the client would have captured.
+  fetchOptions: {
+    customFetchImpl: (input, init) => globalThis.fetch(input, init),
+  },
+  // A document with no origin — `about:blank` in a test DOM, no window at all in the
+  // collector — has nothing for better-auth to resolve against, and it throws that at
+  // CONSTRUCTION time. A real page keeps its own origin; anything else gets a base URL
+  // that only matters if a call is actually made.
+  ...(typeof window === "undefined" ||
+  window.location?.origin == null ||
+  window.location.origin === "null"
+    ? { baseURL: "http://localhost:3010" }
+    : {}),
+});
 
 /** The pinned server enables these native endpoints, while their shapes are not part of the plugins. */
 export type RecoveryAuthClient = {

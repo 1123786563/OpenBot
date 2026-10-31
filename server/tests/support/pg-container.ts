@@ -36,7 +36,10 @@ function dsnFor(database: string): string {
  * the simple protocol (no parameters), so ON_ERROR_STOP-like behavior is just
  * "the first error throws".
  */
-async function wireStatement(database: string, statement: string): Promise<string> {
+async function wireStatement(
+  database: string,
+  statement: string,
+): Promise<string> {
   const client = postgres(dsnFor(database), { max: 1 });
   try {
     const rows = (await client.unsafe(statement)) as Record<string, unknown>[];

@@ -557,6 +557,7 @@ async function makeTrustedScope(): Promise<PlatformScope> {
                 principalStatus: "active",
                 memberStatus: "active",
                 memberEpoch: 1,
+                status: "active",
               },
             ],
           };

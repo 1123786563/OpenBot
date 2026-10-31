@@ -1,4 +1,3 @@
-import { describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AbstractAgent, RunAgentInput } from "@ag-ui/client";
@@ -9,6 +8,8 @@ import { PROVENANCE_GUIDANCE } from "@openbot/shared/bot-prompt";
 import { defaultModelFor } from "@openbot/shared/model-providers";
 import { EMPTY, lastValueFrom } from "rxjs";
 import { z } from "zod";
+import { getLogger } from "../../shared/logger";
+import { describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import { createActorAgentResolver } from "../src/agents/agent-resolver";
 import { MAX_INLINED_BYTES_PER_RUN } from "../src/channels/attachment-parts";
 import { loadConfig } from "../src/config";
@@ -372,25 +373,37 @@ describe("registered Copilot agents", () => {
   });
 
   test("configures an OpenAI built-in agent", () => {
-    expect(
-      builtInAgentConfiguration(
-        {
-          id: "general-assistant",
-          name: "General Assistant",
-          type: "built_in",
-          systemPrompt: "Be helpful.",
+    // `builtInAgentConfiguration` reads the endpoint out of the environment, so the
+    // test states the endpoint it expects rather than inheriting the runner's.
+    const previous = process.env.OPENAI_BASE_URL;
+    process.env.OPENAI_BASE_URL = "https://api.openai.example/v1";
+    try {
+      expect(
+        builtInAgentConfiguration(
+          {
+            id: "general-assistant",
+            name: "General Assistant",
+            type: "built_in",
+            systemPrompt: "Be helpful.",
+          },
+          { provider: "openai", defaultModel: "gpt-5.6-terra" },
+          "openai-secret",
+        ),
+      ).toMatchObject({
+        // The toolkit's agent carries an AI SDK v3 language model, not a provider-prefixed string.
+        model: {
+          modelId: "gpt-5.6-terra",
+          config: { provider: "openai.chat" },
         },
-        { provider: "openai", defaultModel: "gpt-5.6-terra" },
-        "openai-secret",
-      ),
-    ).toMatchObject({
-      // The toolkit's agent carries an AI SDK v3 language model, not a provider-prefixed string.
-      model: { modelId: "gpt-5.6-terra", config: { provider: "openai.chat" } },
-      // The provenance rule is unconditional, so even a Bot with no tools and no computer carries
-      // it. That Bot needs it most: nothing it says was read anywhere.
-      prompt: `Be helpful.\n\n${PROVENANCE_GUIDANCE}\n\n${UNTRUSTED_GUIDANCE}`,
-      apiKey: "openai-secret",
-    });
+        // The provenance rule is unconditional, so even a Bot with no tools and no computer carries
+        // it. That Bot needs it most: nothing it says was read anywhere.
+        prompt: `Be helpful.\n\n${PROVENANCE_GUIDANCE}\n\n${UNTRUSTED_GUIDANCE}`,
+        apiKey: "openai-secret",
+      });
+    } finally {
+      if (previous === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = previous;
+    }
   });
 
   test("fails an unavailable built-in agent through the AG-UI lifecycle", async () => {
@@ -1046,7 +1059,9 @@ describe("connected-vendor lookup diagnostics", () => {
   }
 
   test("reports a failed lookup once for the roster and still completes the run", async () => {
-    const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+    const diagnostic = spyOn(getLogger("server"), "error").mockImplementation(
+      () => {},
+    );
     try {
       await runWithVendors(async () => {
         throw new Error(
@@ -1512,7 +1527,9 @@ describe("a person's standing instructions", () => {
   }
 
   test("reports a failed instruction read once and still completes a built-in run", async () => {
-    const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+    const diagnostic = spyOn(getLogger("server"), "error").mockImplementation(
+      () => {},
+    );
     let reads = 0;
     try {
       const sent = await runWithInstructions(async () => {

@@ -510,7 +510,7 @@ describe("C3 acceptance 2: claim/retry/resume rebuild eligibility and Payer from
     // Responsibility: the run+goal+event rows joined NOW; only an actively
     // driven run may advance:
     expect(runtime).toContain(
-      'enabled: row.goalStatus === "active" && row.runStatus === "running",',
+      'row.goalStatus === "active" && row.runStatus === "running",',
     );
     // Delivery: the inbox row; a terminal inbox is a closed delivery:
     expect(runtime).toContain(
@@ -647,7 +647,8 @@ const BACKGROUND_ENTRY_CENSUS: ReadonlyArray<{
     id: "E02 routine manual run-now",
     form: "sync-http",
     file: "../../src/routines/routes.ts",
-    marker: "void runner.run(runId).catch(() => {});",
+    // 7e2d514e2：静默吞错改成记日志；禁止退回 `() => {}`。
+    marker: "void runner.run(runId).catch((error: unknown) => {",
     disposition: "unified",
   },
   {
@@ -724,7 +725,8 @@ const BACKGROUND_ENTRY_CENSUS: ReadonlyArray<{
     id: "E13 memory/hindsight maintenance",
     form: "server-loop",
     file: "../../src/assembly/runtime.ts",
-    marker: "hindsightSyncQueue.drain()",
+    // MOD15 (#635)：drain 由 createHindsightSyncArm 的具名段承载。
+    marker: "hindsightSyncArm.sweep",
     disposition: "no-run",
   },
   {

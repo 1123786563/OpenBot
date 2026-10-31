@@ -120,6 +120,32 @@ export type CredentialDetailResolution =
 
 const DENY_VERDICT: ResourceNotFoundVerdict = Object.freeze(notFoundVerdict());
 
+/** A comparable source version: a non-negative safe integer, never a default (T03.01). */
+function isComparableVersion(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+/**
+ * T06.03 (#575): the versions a ba-issued scope carries. Legacy and paused
+ * branches keep their original issuance (scopes without versions, T03.01), so
+ * their decisions stay byte for byte as before — a version that cannot be
+ * compared was never in this world, not a reason to default one.
+ */
+function sourceVersionsOf(
+  scope: PlatformScope,
+): { identity: number; company: number } | null {
+  if (
+    !isComparableVersion(scope.identityGeneration) ||
+    !isComparableVersion(scope.companyGeneration)
+  ) {
+    return null;
+  }
+  return {
+    identity: scope.identityGeneration,
+    company: scope.companyGeneration,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // 输入校验：拒绝只含代码与字段路径，绝不回显任何值
 // ---------------------------------------------------------------------------
@@ -173,6 +199,14 @@ export interface CredentialOwnershipAdminService {
     readonly target: string;
     readonly label: string;
     readonly plaintext: string;
+    /**
+     * T06.03 (#575): the personal owner's verified source generations at
+     * issuance (identity/company clock). Written together or not at all; the
+     * decision compares them live, and a credential that predates them (or
+     * whose pair drifted) is never restored from the current identity.
+     */
+    readonly ownerIdentityGeneration?: number;
+    readonly ownerCompanyGeneration?: number;
   }): Promise<{ readonly credentialId: string }>;
   /**
    * 本公司凭据名册（MT095 / Issue #138 AC2 的公司半边）：operator 通道、租户 pin 下的
@@ -195,6 +229,16 @@ export interface CredentialOwnershipAdminService {
     readonly principalId: string;
     readonly action: CredentialAction;
     readonly grantedBy: string;
+    /**
+     * T06.03 (#575): the grantee's verified source generations at issuance
+     * (identity/company pair, both or neither) and — for team-classified
+     * credentials — the source team's generation. The decision refuses a
+     * grant whose saved source is missing or has drifted, never stamping the
+     * current one (design F01).
+     */
+    readonly identityGeneration?: number;
+    readonly companyGeneration?: number;
+    readonly sourceTeamGeneration?: number;
   }): Promise<void>;
   /** 撤销一条动作行（删除行，立即失效）；行不存在时幂等返回 false。 */
   revokeAction(input: {
@@ -222,6 +266,8 @@ export function createCredentialOwnershipAdminService(
         "target",
         "label",
         "plaintext",
+        "ownerIdentityGeneration",
+        "ownerCompanyGeneration",
       ]);
       const tenantId = requireString(input.tenantId, "tenantId", 1, 128);
       if (!KINDS.includes(input.kind)) {
@@ -240,6 +286,37 @@ export function createCredentialOwnershipAdminService(
       );
       let workspaceId: string | null = null;
       let ownerPrincipalId: string | null = null;
+      let ownerIdentityGeneration: number | null = null;
+      let ownerCompanyGeneration: number | null = null;
+      if (
+        input.ownerIdentityGeneration !== undefined ||
+        input.ownerCompanyGeneration !== undefined
+      ) {
+        if (input.classification !== "personal") {
+          throw new Error(
+            "CREDENTIAL_REGISTER_INVALID: owner generations take personal credentials",
+          );
+        }
+        if (
+          input.ownerIdentityGeneration === undefined ||
+          input.ownerCompanyGeneration === undefined
+        ) {
+          // 一次重新核验是一个原子事实：两个版本同时写或同时缺失。
+          throw new Error(
+            "CREDENTIAL_REGISTER_INVALID: owner generations are written together",
+          );
+        }
+        if (
+          !isComparableVersion(input.ownerIdentityGeneration) ||
+          !isComparableVersion(input.ownerCompanyGeneration)
+        ) {
+          throw new Error(
+            "CREDENTIAL_REGISTER_INVALID: ownerIdentityGeneration/ownerCompanyGeneration",
+          );
+        }
+        ownerIdentityGeneration = input.ownerIdentityGeneration;
+        ownerCompanyGeneration = input.ownerCompanyGeneration;
+      }
       if (input.classification === "personal") {
         ownerPrincipalId = requireString(
           input.ownerPrincipalId,
@@ -277,18 +354,38 @@ export function createCredentialOwnershipAdminService(
         await tx.execute(
           sql`select set_config('app.tenant_id', ${tenantId}, true)`,
         );
-        await tx.insert(credentialRows).values({
-          tenantId,
-          id: credentialId,
-          kind: input.kind,
-          classification: input.classification,
-          workspaceId,
-          ownerPrincipalId,
-          target,
-          display: { label },
-          envelope,
-          status: "active",
-        });
+        await tx.insert(credentialRows).values(
+          ownerIdentityGeneration === null
+            ? {
+                tenantId,
+                id: credentialId,
+                kind: input.kind,
+                classification: input.classification,
+                workspaceId,
+                ownerPrincipalId,
+                target,
+                display: { label },
+                envelope,
+                status: "active",
+              }
+            : {
+                tenantId,
+                id: credentialId,
+                kind: input.kind,
+                classification: input.classification,
+                workspaceId,
+                ownerPrincipalId,
+                target,
+                display: { label },
+                envelope,
+                status: "active",
+                // T06.03: an island that predates the source-generation
+                // columns keeps the original INSERT shape; a versioned
+                // issuance writes the pair together.
+                ownerIdentityGeneration,
+                ownerCompanyGeneration,
+              },
+        );
       });
       return { credentialId };
     },
@@ -409,21 +506,83 @@ export function createCredentialOwnershipAdminService(
         128,
       );
       const grantedBy = requireString(input.grantedBy, "grantedBy", 1, 128);
+      let sourceVersions: { identity: number; company: number } | null = null;
+      if (
+        input.identityGeneration !== undefined ||
+        input.companyGeneration !== undefined
+      ) {
+        if (
+          input.identityGeneration === undefined ||
+          input.companyGeneration === undefined
+        ) {
+          throw new Error(
+            "CREDENTIAL_ACTION_INVALID: identity/company generations are written together",
+          );
+        }
+        if (
+          !isComparableVersion(input.identityGeneration) ||
+          !isComparableVersion(input.companyGeneration)
+        ) {
+          throw new Error(
+            "CREDENTIAL_ACTION_INVALID: identityGeneration/companyGeneration",
+          );
+        }
+        sourceVersions = {
+          identity: input.identityGeneration,
+          company: input.companyGeneration,
+        };
+      }
+      if (
+        input.sourceTeamGeneration !== undefined &&
+        !isComparableVersion(input.sourceTeamGeneration)
+      ) {
+        throw new Error("CREDENTIAL_ACTION_INVALID: sourceTeamGeneration");
+      }
       await operator.transaction(async (tx) => {
         await tx.execute(sql`set local lock_timeout = '2s'`);
         await tx.execute(sql`set local statement_timeout = '5s'`);
         await tx.execute(
           sql`select set_config('app.tenant_id', ${tenantId}, true)`,
         );
+        if (input.sourceTeamGeneration !== undefined) {
+          // 团队来源版本只对团队归属凭据有意义（配对由命令层保证，这里拒绝错配）。
+          const [credential] = await tx
+            .select({ classification: credentialRows.classification })
+            .from(credentialRows)
+            .where(
+              and(
+                eq(credentialRows.tenantId, tenantId),
+                eq(credentialRows.id, credentialId),
+              ),
+            )
+            .limit(1);
+          if (credential?.classification !== "team") {
+            throw new Error(
+              "CREDENTIAL_ACTION_INVALID: sourceTeamGeneration takes team credentials",
+            );
+          }
+        }
+        const baseValues = {
+          tenantId,
+          credentialId,
+          principalId,
+          action: input.action,
+          grantedBy,
+        };
         await tx
           .insert(enterpriseCredentialActions)
-          .values({
-            tenantId,
-            credentialId,
-            principalId,
-            action: input.action,
-            grantedBy,
-          })
+          .values(
+            sourceVersions === null
+              ? baseValues
+              : {
+                  ...baseValues,
+                  // T06.03: the grant saves the source versions it was issued
+                  // against; the decision compares them on every use/disclose.
+                  identityGeneration: sourceVersions.identity,
+                  companyGeneration: sourceVersions.company,
+                  sourceTeamGeneration: input.sourceTeamGeneration ?? null,
+                },
+          )
           .onConflictDoNothing();
       });
     },
@@ -486,6 +645,12 @@ interface CredentialFacts {
     readonly status: string;
     readonly envelope: string;
     readonly createdAt: Date;
+    /**
+     * T06.03 (#575): the personal owner's saved source generations. Only read
+     * under a versioned (ba-issued) scope; absent means "cannot compare".
+     */
+    readonly ownerIdentityGeneration?: number | null;
+    readonly ownerCompanyGeneration?: number | null;
   } | null;
   readonly companyMembership: {
     readonly status: string;
@@ -493,6 +658,13 @@ interface CredentialFacts {
   } | null;
   readonly workspaceMembershipStatus: string | null;
   readonly grants: { readonly use: boolean; readonly disclose: boolean };
+  /**
+   * True when the personal owner half is still current: the bare owner id
+   * match alone is not authority — under a versioned scope the saved owner
+   * pair must equal the caller's current versions, and the legacy/paused path
+   * (no versions to compare) keeps the original id-only decision.
+   */
+  readonly ownerCurrent: boolean;
 }
 
 function classificationOf(value: string): CredentialClassification {
@@ -527,7 +699,8 @@ function decideCredential(
   }
   const classification = classificationOf(credential.classification);
   if (classification === "personal") {
-    const isOwner = credential.ownerPrincipalId === scope.principalId;
+    const isOwner =
+      credential.ownerPrincipalId === scope.principalId && facts.ownerCurrent;
     return { allowed: isOwner, facts };
   }
   if (classification === "team") {
@@ -655,6 +828,74 @@ function credentialLockKey(tenantId: string, credentialId: string): string {
   return JSON.stringify(["enterprise", "credential", tenantId, credentialId]);
 }
 
+/** Drizzle execute results arrive as rows or wrapped rows depending on driver shape. */
+function rowsOfResult(result: unknown): Record<string, unknown>[] {
+  return Array.isArray(result)
+    ? (result as Record<string, unknown>[])
+    : ((result as { rows?: Record<string, unknown>[] }).rows ?? []);
+}
+
+/**
+ * T06.03 (#575): the use/disclose verdicts the versioned scope earns — an
+ * action row counts only while its saved source is the caller's current one,
+ * and for team-classified credentials its saved team generation is still the
+ * credential's own team clock generation. A missing or drifted version (or a
+ * missing clock) is "cannot compare", never valid: the row was granted
+ * against a source that no longer holds authority.
+ */
+async function readGrantSourceVerdicts(
+  tx: Parameters<Parameters<DataDatabase["transaction"]>[0]>[0],
+  scope: PlatformScope,
+  credentialId: string,
+  classification: CredentialClassification,
+  workspaceId: string | null,
+  versions: { identity: number; company: number },
+): Promise<{ use: boolean; disclose: boolean }> {
+  const rows = await tx
+    .select({
+      action: enterpriseCredentialActions.action,
+      identityGeneration: enterpriseCredentialActions.identityGeneration,
+      companyGeneration: enterpriseCredentialActions.companyGeneration,
+      sourceTeamGeneration: enterpriseCredentialActions.sourceTeamGeneration,
+    })
+    .from(enterpriseCredentialActions)
+    .where(
+      and(
+        eq(enterpriseCredentialActions.tenantId, scope.tenantId),
+        eq(enterpriseCredentialActions.credentialId, credentialId),
+        eq(enterpriseCredentialActions.principalId, scope.principalId),
+      ),
+    );
+  // 适用 team generation：凭据所属团队的实时 clock（scope 只携带所选团队）。
+  let teamGeneration: number | null = null;
+  if (classification === "team") {
+    const clocks = rowsOfResult(
+      await tx.execute(
+        sql`select scope_id, generation::text as generation, tombstone from auth_read_eligibility_clocks(${scope.tenantId}, ${scope.principalId}) where kind = 'team'`,
+      ),
+    );
+    const clock = clocks.find(
+      (entry) =>
+        String(entry.scope_id) === workspaceId && entry.tombstone !== true,
+    );
+    const generation = clock ? Number(clock.generation) : Number.NaN;
+    teamGeneration = isComparableVersion(generation) ? generation : null;
+  }
+  const current = (action: CredentialAction): boolean => {
+    const row = rows.find((entry) => entry.action === action);
+    if (!row) return false;
+    if (row.identityGeneration !== versions.identity) return false;
+    if (row.companyGeneration !== versions.company) return false;
+    if (classification !== "team") return true;
+    return (
+      teamGeneration !== null &&
+      row.sourceTeamGeneration !== null &&
+      row.sourceTeamGeneration === teamGeneration
+    );
+  };
+  return { use: current("use"), disclose: current("disclose") };
+}
+
 /**
  * 判定服务。事实读取全部经受限 data 角色与真实 RLS：跨公司凭据行对本事务
  * 不可见（事实即为「不存在」），判定内的租户/成员比对是第二道独立防线
@@ -672,6 +913,10 @@ export function createCredentialOwnershipDecisionService(
     credentialId: string,
     credentialKey: string,
   ): Promise<CredentialFacts> => {
+    // T06.03: only a versioned (ba-issued) scope can compare source
+    // generations; the legacy/paused issuance has none and keeps its original
+    // read/decision unchanged (including islands that predate the columns).
+    const versions = sourceVersionsOf(scope);
     await tx.execute(
       sql`select pg_advisory_xact_lock_shared(hashtextextended(${credentialKey}, 0))`,
     );
@@ -688,6 +933,12 @@ export function createCredentialOwnershipDecisionService(
         status: credentialRows.status,
         envelope: credentialRows.envelope,
         createdAt: credentialRows.createdAt,
+        ...(versions
+          ? {
+              ownerIdentityGeneration: credentialRows.ownerIdentityGeneration,
+              ownerCompanyGeneration: credentialRows.ownerCompanyGeneration,
+            }
+          : {}),
         membershipStatus: enterpriseMemberships.status,
         membershipEpoch: enterpriseMemberships.epoch,
         workspaceMembershipStatus: enterpriseWorkspaceMemberships.status,
@@ -738,8 +989,21 @@ export function createCredentialOwnershipDecisionService(
         companyMembership: null,
         workspaceMembershipStatus: null,
         grants: { use: false, disclose: false },
+        ownerCurrent: true,
       };
     }
+    const classification = classificationOf(row.classification);
+    const sourceCurrent =
+      versions === null
+        ? null
+        : await readGrantSourceVerdicts(
+            tx,
+            scope,
+            row.id,
+            classification,
+            row.workspaceId,
+            versions,
+          );
     return {
       credential: {
         tenantId: row.tenantId,
@@ -758,6 +1022,8 @@ export function createCredentialOwnershipDecisionService(
         status: row.status,
         envelope: row.envelope,
         createdAt: row.createdAt,
+        ownerIdentityGeneration: row.ownerIdentityGeneration ?? null,
+        ownerCompanyGeneration: row.ownerCompanyGeneration ?? null,
       },
       companyMembership:
         row.membershipStatus == null || row.membershipEpoch == null
@@ -765,9 +1031,17 @@ export function createCredentialOwnershipDecisionService(
           : { status: row.membershipStatus, epoch: row.membershipEpoch },
       workspaceMembershipStatus: row.workspaceMembershipStatus ?? null,
       grants: {
-        use: row.useGrant != null,
-        disclose: row.discloseGrant != null,
+        use:
+          row.useGrant != null && (sourceCurrent === null || sourceCurrent.use),
+        disclose:
+          row.discloseGrant != null &&
+          (sourceCurrent === null || sourceCurrent.disclose),
       },
+      ownerCurrent:
+        versions === null
+          ? true
+          : row.ownerIdentityGeneration === versions.identity &&
+            row.ownerCompanyGeneration === versions.company,
     };
   };
 
@@ -914,6 +1188,8 @@ export function createCredentialOwnershipDecisionService(
               use: row.useGrant != null,
               disclose: row.discloseGrant != null,
             },
+            // 读元数据不等于 use 或 disclose：列表可见性不消费来源代际。
+            ownerCurrent: true,
           };
           if (!visibleCredential(scope, facts) || !facts.credential) continue;
           views.push(redactedView(scope, facts.credential, facts.grants));

@@ -489,19 +489,29 @@ mod tests {
     fn mt100_retry_after_failure_reaches_a_complete_cleanup() {
         let root = root("mt100-retry");
         seed_org(&root, COMPANY_A, "a");
-        // A directory where a file must be: media removal fails because a FILE sits where
-        // the media directory's child should be removed — simulate by making the media
-        // directory's parent read-only instead, which fails remove_dir_all on macOS/Linux.
+        // Block the removal the way each platform blocks one: on Unix a non-writable directory
+        // refuses its children's removal; on Windows an open handle that shares no delete access
+        // refuses the file's. Rust's own `File::open` shares deletion, so the Windows handle asks
+        // for `share_mode(0)` and stays open until the first attempt has run.
         let media = org_media_dir(&root, COMPANY_A).unwrap();
         std::fs::create_dir_all(&media).unwrap();
         std::fs::write(media.join("stuck.bin"), b"stuck").unwrap();
-        let mut permissions = std::fs::metadata(&media).unwrap().permissions();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
+            let mut permissions = std::fs::metadata(&media).unwrap().permissions();
             permissions.set_mode(0o500);
+            std::fs::set_permissions(&media, permissions).unwrap();
         }
-        std::fs::set_permissions(&media, permissions).unwrap();
+        #[cfg(windows)]
+        let held = {
+            use std::os::windows::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(0)
+                .open(media.join("stuck.bin"))
+                .unwrap()
+        };
         let first = forget_organization_state(&root, COMPANY_A).unwrap();
         assert!(
             !first.completed,
@@ -519,14 +529,17 @@ mod tests {
                 .as_deref(),
             Some("cookie-a")
         );
-        // Unblock and retry: the whole call again, reaching a complete cleanup.
-        let mut permissions = std::fs::metadata(&media).unwrap().permissions();
+        // Unblock the way each platform was blocked, then retry: the whole call again,
+        // reaching a complete cleanup.
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
+            let mut permissions = std::fs::metadata(&media).unwrap().permissions();
             permissions.set_mode(0o700);
+            std::fs::set_permissions(&media, permissions).unwrap();
         }
-        std::fs::set_permissions(&media, permissions).unwrap();
+        #[cfg(windows)]
+        drop(held);
         let second = forget_organization_state(&root, COMPANY_A).unwrap();
         assert!(second.completed, "retry must finish every remaining step");
         assert_eq!(

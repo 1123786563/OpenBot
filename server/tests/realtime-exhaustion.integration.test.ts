@@ -1,17 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { describe, expect, test } from "../../tests/support/bun-test-compat";
-import { createRealtimeSessionService } from "../src/billing/realtime-session";
-import { createRealtimeUnitService } from "../src/billing/realtime-unit";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createCreditSettleService } from "../src/billing/credit-settle";
-import type { ConversionRate } from "../src/gateway/conversion-rate";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createPayerAccount } from "../src/billing/payer";
-import {
-  GATEWAY_PRICE_SNAPSHOT_SOURCE,
-  createEnterpriseGatewayPriceSnapshotStore,
-} from "../src/gateway/price-snapshot";
-import { PRICE_DIMENSIONS } from "../src/gateway/price-snapshot";
+import { createRealtimeSessionService } from "../src/billing/realtime-session";
+import { createRealtimeUnitService } from "../src/billing/realtime-unit";
 import { createDatabase } from "../src/db/client";
 import {
   accessGrants,
@@ -28,6 +27,12 @@ import {
 } from "../src/db/schema/credit-reservations";
 import { creditLedger } from "../src/db/schema/credits";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../src/gateway/catalog-sync";
+import type { ConversionRate } from "../src/gateway/conversion-rate";
+import {
+  createEnterpriseGatewayPriceSnapshotStore,
+  GATEWAY_PRICE_SNAPSHOT_SOURCE,
+  PRICE_DIMENSIONS,
+} from "../src/gateway/price-snapshot";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*

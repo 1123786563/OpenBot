@@ -416,8 +416,8 @@ describe("MOD15 D4：验收③降级同过滤", () => {
     expect(sweep).toContain('"hindsightSyncDrain"');
     expect(sweep).toContain('"hindsightDeletionRetry"');
     const runtime = codeOf(RUNTIME);
-    expect(runtime).toContain(
-      "hindsightSyncSweep = repeatAfterEach(\n    hindsightSyncArm.sweep,",
+    expect(runtime).toMatch(
+      /hindsightSyncSweep = repeatAfterEach\(\s*hindsightSyncArm\.sweep,/,
     );
   });
 });

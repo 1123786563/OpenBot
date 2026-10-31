@@ -15,10 +15,10 @@
 
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import {
-  PREVIEW_PASS_COOKIE_SHAPE,
-  PREVIEW_PASSES_PER_SESSION,
   createPreviewPassCodec,
   createPreviewPassIndex,
+  PREVIEW_PASS_COOKIE_SHAPE,
+  PREVIEW_PASSES_PER_SESSION,
   type PreviewPassCodec,
 } from "../src/craft/preview-pass";
 import {
@@ -179,9 +179,12 @@ describe("pass derivation", () => {
 
 describe("#427 rotation: the index binds each random token", () => {
   test("the cookie value carries no session id and no userId material — the index owns the binding", () => {
-    const pass = codec().issue(SESSION_ID, USER_ID);
+    // A userId long and distinctive enough that finding it is evidence, rather than
+    // the chance collision of a two-character substring in a random MAC.
+    const distinctUser = "user-427-binding-check";
+    const pass = codec().issue(SESSION_ID, distinctUser);
     expect(pass).not.toContain(SESSION_ID);
-    expect(pass).not.toContain(USER_ID);
+    expect(pass).not.toContain(distinctUser);
     // And a pass issued for a userId that never rides the wire still verifies
     // to it — the claim comes from the index, not from the cookie.
     const longUser = "u".repeat(256);

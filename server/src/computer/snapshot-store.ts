@@ -205,7 +205,8 @@ function objectFromElements(
   // to Object.prototype (which the JSON round trip then drops).
   const object: Record<string, SnapshotElement> = Object.create(null);
   for (const [ref, element] of elements) object[ref] = element;
-  return object;
+  // spread: drizzle's is() reads getPrototypeOf(value).constructor and crashes on a null prototype
+  return { ...object };
 }
 
 function elementsFromObject(

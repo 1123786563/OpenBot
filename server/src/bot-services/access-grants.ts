@@ -569,8 +569,9 @@ export function createAccessGrantService(
      * IDEMPOTENT: the flip is a conditional update (`status = 'active'` re-checked inside the
      * transaction, the database's own verdict under concurrency), so exactly one caller's update
      * lands; the second revocation finds the row already revoked and answers it unchanged —
-     * `revoked: false`, the same grantId, the same `revokedAt` — and writes no audit event,
-     * because nothing happened for it to record.
+     * `revoked: false`, the same grantId, the same `revokedAt` — and records its own audit
+     * event (`revoked: false` in the payload), because a retry is only a self-healing
+     * trail if it is recorded too.
      *
      * AND NOTHING ELSE MOVES — EXCEPT 05.7's RETIREMENT. Only this row and the grant's own
      * short-lived key records are written: no ledger entry, reservation or credit grant is

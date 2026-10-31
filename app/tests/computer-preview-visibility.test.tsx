@@ -7,9 +7,17 @@ import {
   test,
 } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { ComputerView } from "@/components/computer/computer-view";
 import { LiveScreen } from "@/components/computer/live-screen";
+import { authKeys } from "@/lib/auth/queries";
+
+function seededClient() {
+  const client = new QueryClient();
+  client.setQueryData(authKeys.currentUser(), { id: "preview-user" });
+  return client;
+}
 
 class SocketDouble {
   static readonly OPEN = 1;
@@ -179,7 +187,11 @@ test("hidden live screen keeps the stream open and draws the latest hidden frame
       drawImage: () => (draws += 1),
     }) as unknown as CanvasRenderingContext2D) as unknown as typeof HTMLCanvasElement.prototype.getContext;
 
-  render(<LiveScreen computerId="hidden-live" driving />);
+  render(
+    <QueryClientProvider client={seededClient()}>
+      <LiveScreen computerId="hidden-live" driving />
+    </QueryClientProvider>,
+  );
   await waitFor(() => expect(SocketDouble.latest).toBeDefined());
   const socket = SocketDouble.latest as SocketDouble;
 
@@ -229,7 +241,11 @@ test("an older pending live screen decode cannot replace a newer frame", async (
       },
     }) as unknown as CanvasRenderingContext2D) as unknown as typeof HTMLCanvasElement.prototype.getContext;
 
-  render(<LiveScreen computerId="pending-live" driving />);
+  render(
+    <QueryClientProvider client={seededClient()}>
+      <LiveScreen computerId="pending-live" driving />
+    </QueryClientProvider>,
+  );
   await waitFor(() => expect(SocketDouble.latest).toBeDefined());
   const socket = SocketDouble.latest as SocketDouble;
 

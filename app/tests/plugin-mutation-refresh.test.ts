@@ -26,6 +26,7 @@ import {
   registerOAuthClientMutationOptions,
   removePluginServerMutationOptions,
   removeSkillMutationOptions,
+  revealConnectionSecretMutationOptions,
   saveSkillMutationOptions,
   setAccountModeMutationOptions,
   setPluginGrantMutationOptions,
@@ -364,6 +365,8 @@ const NOT_A_MUTATION_FACTORY: Record<string, string> = {
     "The bare write, for a caller granting a batch and refreshing once at the end. It carries no refetch on purpose, and the mutation that wraps it is covered above.",
   accountModePreview:
     "The bare read: `confirm: false` on the same PUT the real switch sends, asked not to commit. Nothing changed, so there is nothing to refetch — and the switch that does commit is covered above.",
+  invalidatePluginsInScope:
+    "The scoped refetch helper (MT088): two invalidations, no write. Its unscoped sibling invalidatePlugins is already here above.",
 };
 
 /**
@@ -379,6 +382,8 @@ const NOT_A_REFUSABLE_WRITE: Record<string, string> = {
     "Asks an app what it wants typed in. `POST /connect` with no body writes nothing on either outcome, and the factory takes no QueryClient. Its own test is above.",
   connectAccountMutationOptions:
     "Starts a consent connection and hands back the vendor's URL for the browser to leave for. Nothing on this screen survives that navigation to be refetched, and this factory takes no QueryClient either — it takes which screen to come back to.",
+  revealConnectionSecretMutationOptions:
+    "Reads a secret once for the component that asked. NO QueryClient and NO invalidation — the revealTriggerSecret discipline: the answer changes nothing anybody refetches, and the plaintext never enters a cache.",
 };
 
 test("every mutation factory `mutations.ts` exports is answered for by this file", () => {
@@ -603,6 +608,12 @@ const ENCODED_REQUESTS: {
       kind: "mcp" as const,
       ref: HOSTILE_ID,
     },
+  },
+  {
+    name: "revealing a connection's secret",
+    url: `/api/plugins/servers/${ENCODED_ID}/connection/disclose`,
+    build: () => revealConnectionSecretMutationOptions(),
+    variables: HOSTILE_ID,
   },
 ];
 

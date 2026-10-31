@@ -540,7 +540,12 @@ describe("ME06 frontend_tool suspension kind (execution wiring)", () => {
     // "approval" kind on the same ledger — not the frontend_tool kind the
     // mounted bridges produce. The granted execute throws if it is ever
     // reached, so a pause that fails to fire fails the test loudly.
-    const provider = await startFrontendProvider(GRANTED_CLICK_TOOL.name);
+    const provider = await startFrontendProvider(
+      GRANTED_CLICK_TOOL.name,
+      // The granted tool's own schema, so the engine's input validation
+      // (which now runs before the approval gate) admits the call.
+      '{"selector":"#buy"}',
+    );
     try {
       const suspensions: MastraSuspensionFact[] = [];
       const request = requestWith({

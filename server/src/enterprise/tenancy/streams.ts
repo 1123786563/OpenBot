@@ -506,11 +506,9 @@ export function createStreamSubscriptionService(channels: {
         ]);
         // 推送面事实重验（AC1）：订阅行活跃 + 订阅者当前事实。
         const subscription = await readSubscription(tx, scope, subscriptionId);
-        if (!subscription) {
-          // 订阅行已取消/失效（private/非 active/已切范围）：契约语义是
-          //「停止推送并关闭」，与撤权同臂，不折叠为 canonical not-found。
-          return { outcome: "closed" } as const;
-        }
+        // 行对订阅者已不可见（已取消/已切范围）：MT011 canonical not-found；
+        // 行仍可见而事实已死（撤权）才走下面的 closed。
+        if (!subscription) return notFoundVerdict();
         const alive = await readSubscriberFacts(tx, scope);
         if (!alive) {
           // 撤权/停用：停止推送并关闭连接语义（判定面表达）。

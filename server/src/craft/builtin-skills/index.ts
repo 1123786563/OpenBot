@@ -105,6 +105,9 @@ async function loadBuiltinSkillTree(): Promise<BuiltinSkillTree> {
       },
     );
     for (const entry of entries) {
+      // Python bytecode caches are local build residue, not skill content:
+      // they are gitignored, differ per machine, and would perturb skillsHash.
+      if (entry.name === "__pycache__") continue;
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
       // Top-level files are this module's own source (index.ts), not skill
       // content — every shipped file lives under a skill directory.

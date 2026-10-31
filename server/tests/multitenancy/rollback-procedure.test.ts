@@ -49,6 +49,8 @@ const describeDb = ENV_OK ? describe : describe.skip;
 
 let setup: Database;
 let runTag = "";
+let fixtureTenantId = "";
+let fixtureWorkspaceId = "";
 
 beforeAll(async () => {
   if (!ENV_OK) return;
@@ -59,6 +61,21 @@ beforeAll(async () => {
     max: 2,
   });
   runTag = `mt121-${randomUUID().slice(0, 8)}`;
+  // 订阅夹具的公司/团队由本套件自种：CI 预迁移用 adopt-existing 把 MT112
+  // 数据步 journal 成 up-to-date，锚点行可能从未写入（零 users 时静态 SQL
+  // 不产行），不能拿 enterprise_deployment_anchors 当夹具来源。
+  fixtureTenantId = `${runTag}-fixture`;
+  fixtureWorkspaceId = `${runTag}-fixture-team`;
+  await setup.execute(sql`
+    insert into enterprise_tenants (id, name)
+    values (${fixtureTenantId}, 'MT121 Fixture Company')
+    on conflict (id) do nothing
+  `);
+  await setup.execute(sql`
+    insert into enterprise_workspaces (tenant_id, id, name)
+    values (${fixtureTenantId}, ${fixtureWorkspaceId}, 'MT121 Fixture Team')
+    on conflict (tenant_id, id) do nothing
+  `);
 });
 
 afterAll(async () => {
@@ -270,17 +287,9 @@ describeDb("MT121 rollback procedure (Issue #164)", () => {
       "in-flight work forces stop-first (no rollback over flying writes)",
       async () => {
         // 种一个活跃事件订阅（MT025 的订阅行形状）→ 停止前置未满足。
-        const anchor = (await setup.execute(
-          sql`select tenant_id from enterprise_deployment_anchors limit 1`,
-        )) as unknown as { tenant_id: string }[];
-        const tenantId = anchor[0]?.tenant_id ?? "";
-        expect(tenantId).toBeTruthy();
-        const workspace = (await setup.execute(sql`
-        select id from enterprise_workspaces where tenant_id = ${tenantId} limit 1
-      `)) as unknown as { id: string }[];
         await setup.execute(sql`
         insert into enterprise_resources (tenant_id, id, workspace_id, kind, display_name, status)
-        values (${tenantId}, ${`${runTag}-sub-live`}, ${workspace[0]?.id ?? ""}, 'event-subscription', ${`${runTag}-thread`}, 'active')
+        values (${fixtureTenantId}, ${`${runTag}-sub-live`}, ${fixtureWorkspaceId}, 'event-subscription', ${`${runTag}-thread`}, 'active')
         on conflict (tenant_id, id) do nothing
       `);
         try {
@@ -300,16 +309,9 @@ describeDb("MT121 rollback procedure (Issue #164)", () => {
       "both refusals are listed together (list-all discipline)",
       async () => {
         // 上一例已删订阅；再种回多公司事实并叠加订阅 → 两条理由一次列全。
-        const anchor = (await setup.execute(
-          sql`select tenant_id from enterprise_deployment_anchors limit 1`,
-        )) as unknown as { tenant_id: string }[];
-        const tenantId = anchor[0]?.tenant_id ?? "";
-        const workspace = (await setup.execute(sql`
-        select id from enterprise_workspaces where tenant_id = ${tenantId} limit 1
-      `)) as unknown as { id: string }[];
         await setup.execute(sql`
         insert into enterprise_resources (tenant_id, id, workspace_id, kind, display_name, status)
-        values (${tenantId}, ${`${runTag}-sub-live2`}, ${workspace[0]?.id ?? ""}, 'event-subscription', ${`${runTag}-thread-2`}, 'active')
+        values (${fixtureTenantId}, ${`${runTag}-sub-live2`}, ${fixtureWorkspaceId}, 'event-subscription', ${`${runTag}-thread-2`}, 'active')
         on conflict (tenant_id, id) do nothing
       `);
         try {

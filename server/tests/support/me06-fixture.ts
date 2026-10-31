@@ -60,6 +60,7 @@ export interface FrontendProvider {
  */
 export function startFrontendProvider(
   toolName = ME06_TOOL_NAME,
+  argsText = '{"url":"https://example.com"}',
 ): Promise<FrontendProvider> {
   const requests: FrontendProviderRequest[] = [];
   const server: Server = createServer((request, response) => {
@@ -116,7 +117,7 @@ export function startFrontendProvider(
                         {
                           index: 0,
                           function: {
-                            arguments: '{"url":"https://example.com"}',
+                            arguments: argsText,
                           },
                         },
                       ],

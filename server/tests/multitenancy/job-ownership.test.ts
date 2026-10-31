@@ -18,6 +18,7 @@
 // 环境契约：专用企业测试库，缺显式 env 整套显式 skip，绝不回退开发库、
 // skipped 不计通过。
 
+import { sql } from "drizzle-orm";
 import {
   afterAll,
   beforeAll,
@@ -25,7 +26,6 @@ import {
   expect,
   test,
 } from "../../../tests/support/bun-test-compat";
-import { sql } from "drizzle-orm";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import {
   createJobOwnershipService,
@@ -670,7 +670,11 @@ describeDb(
         },
         executor: WORKER,
       });
-      expect(finished.finishedAt.getTime()).toBeLessThanOrEqual(Date.now());
+      // finishedAt 来自数据库 now()，与测试进程的时钟不同源：毫秒级严格比较会被
+      // 两者之间的时钟抖动打红。断言只钉「不是明显未来时间」。
+      expect(finished.finishedAt.getTime()).toBeLessThanOrEqual(
+        Date.now() + 5_000,
+      );
     });
 
     itDb(
@@ -810,7 +814,11 @@ describeDb(
           },
           executor: WORKER,
         });
-        expect(finished.finishedAt.getTime()).toBeLessThanOrEqual(Date.now());
+        // finishedAt 来自数据库 now()，与测试进程的时钟不同源：毫秒级严格比较会被
+        // 两者之间的时钟抖动打红。断言只钉「不是明显未来时间」。
+        expect(finished.finishedAt.getTime()).toBeLessThanOrEqual(
+          Date.now() + 5_000,
+        );
         // Re-lease after finish: a new attempt, holder cleared by finish.
         const again = await service.claimJobLease({
           kind: pinned.kind,

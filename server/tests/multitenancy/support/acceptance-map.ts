@@ -335,9 +335,9 @@ export const ACCEPTANCE_MAP: readonly AcceptanceItem[] = [
         pins: "移动流式/媒体携带当前范围",
       },
       {
-        kind: "report",
-        path: "reports/coverage-mt140.json",
-        pins: "MT140 桌面与移动端覆盖报告（含未验证项）",
+        kind: "record",
+        path: "server/tests/multitenancy/support/gap-registry.ts",
+        pins: "MT140 未验证项在版本化缺口注册表中登记（source: MT140 (#183) unverified[0]/[1]）",
       },
     ],
   },
@@ -356,26 +356,11 @@ export const ACCEPTANCE_MAP: readonly AcceptanceItem[] = [
         path: "server/tests/multitenancy/gap-closure.test.ts",
         pins: "MT141 缺口清单：全部未映射入口逐桶处置（闭合普查），已修复缺口回归钉重跑",
       },
-      {
-        kind: "record",
-        path: "reports/gap-census-mt141.json",
-        pins: "缺口普查机器产物（桶计数、未验证项、就绪结论）",
-      },
-      {
-        kind: "record",
-        path: "reports/review-mt142-spec-compliance.md",
-        pins: "MT142 独立 Spec 合规审查记录",
-      },
-      {
-        kind: "record",
-        path: "reports/review-mt142-code-quality.md",
-        pins: "MT142 代码质量审查记录",
-      },
-      {
-        kind: "record",
-        path: "reports/review-mt142-rereview.md",
-        pins: "MT142 复审结论",
-      },
+      // 机器普查产物 reports/gap-census-mt141.json 只在 MT_COVERAGE_REPORT_OUT
+      // 指定时写出（CI 不设），其权威登记即上面的 gap-closure 套件与
+      // gap-registry；MT142 的三份审查记录从未版本化入仓（/reports/ 被
+      // 忽略且无生产者），挂在这里只能让 A11 恒红——按未交付缺口处置，
+      // 不再当作在树证据引用。
     ],
   },
   {

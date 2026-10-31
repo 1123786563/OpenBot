@@ -1,8 +1,9 @@
 import { createHmac, randomUUID } from "node:crypto";
-import { and, eq, like } from "drizzle-orm";
+import { and, eq, like, notLike } from "drizzle-orm";
 import {
   afterAll,
   afterEach,
+  beforeEach,
   describe,
   expect,
   test,
@@ -407,6 +408,21 @@ function signedDelivery(
     body,
   });
 }
+
+beforeEach(async () => {
+  const foreign = await database
+    .select({ id: paymentOrders.id, version: paymentOrders.version })
+    .from(paymentOrders)
+    .where(
+      and(
+        eq(paymentOrders.status, "pending"),
+        notLike(paymentOrders.createdBy, `${prefix}%`),
+      ),
+    );
+  for (const order of foreign) {
+    await paymentStore.cancelOrder(order.id, order.version);
+  }
+});
 
 afterEach(async () => {
   // The provider stand-in is module state: one test's live subscriptions and rolled-over period

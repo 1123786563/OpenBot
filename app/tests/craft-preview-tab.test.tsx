@@ -2468,6 +2468,7 @@ describe("fix-ocr15: the load handler and the frame wiring", () => {
       status: "running",
       ready: true,
     });
+    client.setQueryData(authKeys.currentUser(), { id: "user-1" });
     const view = render(
       <StrictMode>
         <QueryClientProvider client={client}>

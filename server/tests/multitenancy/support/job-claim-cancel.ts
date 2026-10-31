@@ -30,7 +30,10 @@ import {
   type JobOwnershipService,
   type JobRef,
 } from "../../../src/enterprise/tenancy/job-ownership";
-import { enterpriseRuntimeDatabaseUrlFrom } from "../../support/enterprise-database";
+import {
+  enterpriseRuntimeDatabaseUrlFrom,
+  enterpriseTestDatabaseUrlFrom,
+} from "../../support/enterprise-database";
 import {
   createJobOwnershipFixture,
   type JobOwnershipFixture,
@@ -86,7 +89,11 @@ export async function createJobClaimCancelFixture(): Promise<JobClaimCancelFixtu
     data: jobs.data,
     operator: jobs.operator,
   });
-  const setup = createDatabase(process.env.TEST_DATABASE_URL ?? "", { max: 2 });
+  // Same database as the service channels: under the MT island TEST_DATABASE_URL
+  // is the multitenancy database, not the enterprise one the services write to.
+  const setup = createDatabase(enterpriseTestDatabaseUrlFrom(process.env), {
+    max: 2,
+  });
   const raceCloseables: Array<{ close(): void | Promise<void> }> = [];
 
   /** execute() result rows: drizzle returns either a row array or { rows }. */

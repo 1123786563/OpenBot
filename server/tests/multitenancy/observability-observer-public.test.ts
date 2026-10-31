@@ -367,13 +367,13 @@ describe("D2 验收① 运行归属=服务器真实 Run/Attempt（源级钉）",
 // ---------------------------------------------------------------------------
 
 describe("D3 验收② 关闭/故障隔离+队列有界", () => {
-  test("装配：两 observer 注册均以 observationEnabled 为门（闭包已迁移）", () => {
+  test("装配：五个观察注册/接线点均以 observationEnabled 为门（闭包已迁移）", () => {
     const runtime = codeOf("../../src/assembly/runtime.ts");
     // 两个注册门各恰好一次，且两注册都在门内（闭包形态已消失）。
     const gates = [
       ...runtime.matchAll(/if \(observationEnabled\(opikBootConfig\)\) \{/g),
     ];
-    expect(gates.length).toBe(2);
+    expect(gates.length).toBe(5);
     const modelArm = sliceFrom(
       runtime,
       "if (observationEnabled(opikBootConfig)) {",
@@ -400,12 +400,10 @@ describe("D3 验收② 关闭/故障隔离+队列有界", () => {
     expect(runtime.includes("setBuiltinToolStepObserver((fact) =>")).toBe(
       false,
     );
-    // 装配不再触碰 ObservationScope（cast 已归 M11）。
-    expect(
-      runtime.includes(
-        'import type { ObservationScope } from "../ai-observability/contracts"',
-      ),
-    ).toBe(false);
+    // 装配对 ObservationScope 只剩三处：类型 import、run observer 的
+    // resolveRunObservationScope 回调名、observer fact 的 cast（M11 归口后新增的
+    // run lifecycle 观察点）；不得再出现 scope 构造。
+    expect((runtime.match(/ObservationScope/g) ?? []).length).toBe(3);
   });
 
   test("未注册=零记账：两观察点在 observer 缺席时早退（源级钉）", () => {
@@ -422,12 +420,12 @@ describe("D3 验收② 关闭/故障隔离+队列有界", () => {
     expect(copilot.includes("if (spanObserver !== undefined) {")).toBe(true);
   });
 
-  test("故障隔离在执行侧：观察异常被调用点 try/catch 包含，两处同词", () => {
+  test("故障隔离在执行侧：观察异常被调用点 try/catch 包含，五处同词", () => {
     const copilot = sourceOf("../../src/copilot.ts");
     const containment = copilot.match(
       /Observation never takes the product path down\./g,
     );
-    expect(containment?.length).toBe(2);
+    expect(containment?.length).toBe(5);
   });
 
   test("行为：真实 recorder+health 链路经门面 observe——容量 1、第三笔 dropped_full、调用亚 50ms 返回", async () => {
@@ -605,7 +603,7 @@ describe("D6 验收⑤ 负向：零新存储/页面/挂载", () => {
     ).toBeNull();
   });
 
-  test("门面 export 面=恰 3 能力+4 类型；零 Hono/路由/db/schema/队列面", () => {
+  test("门面 export 面=恰 3 能力+6 类型；零 Hono/路由/db/schema/队列面", () => {
     const fns = [...facadeSource.matchAll(/^export function (\w+)/gm)].map(
       (m) => m[1],
     );
@@ -620,6 +618,8 @@ describe("D6 验收⑤ 负向：零新存储/页面/挂载", () => {
     expect(types.sort()).toEqual([
       "BuiltinModelSpanFact",
       "BuiltinToolStepFact",
+      "EvaluationUsageOutbox",
+      "EvaluationUsageOutboxInput",
       "ModelSpanObserverSink",
       "ToolStepObserverSink",
     ]);
@@ -628,7 +628,7 @@ describe("D6 验收⑤ 负向：零新存储/页面/挂载", () => {
     expect(facadeSource.includes("createOpikHealthService")).toBe(false);
   });
 
-  test("迁移臂不新增存储/页面：全仓对门面的引用=定义+装配 import+两注册", () => {
+  test("迁移臂不新增存储/页面：全仓对门面的引用=定义+装配 import+五处注册/接线点", () => {
     // 装配面：import 一处 + 恰两调用；无路由挂载、无 schema、无新页字段。
     const runtime = codeOf("../../src/assembly/runtime.ts");
     expect(
@@ -639,6 +639,6 @@ describe("D6 验收⑤ 负向：零新存储/页面/挂载", () => {
     ).toBe(1);
     expect(
       (runtime.match(/observationEnabled\(opikBootConfig\)/g) ?? []).length,
-    ).toBe(2);
+    ).toBe(5);
   });
 });

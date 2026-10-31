@@ -740,8 +740,15 @@ export function createBotLifecycleService(channels: {
             .where(eq(enterpriseBotOwnership.agentId, agentId));
         }
         // external-notice：无状态变化（域内无事件表；效果面属后续票）。
-        // revision 只随真实写入推进——无写入时回读值，不虚增。
-        return { outcome: "allow" as const, revision: current.revision };
+        // revision 只随真实写入推进——无写入时回读值，不虚增；
+        // template-update 的写入把 revision 推进一档，verdict 报写入后的值。
+        return {
+          outcome: "allow" as const,
+          revision:
+            kind === "template-update"
+              ? current.revision + 1
+              : current.revision,
+        };
       });
     },
   };

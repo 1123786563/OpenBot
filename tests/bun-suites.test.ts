@@ -510,7 +510,7 @@ for (const group of groups) {
     const cap = 8;
     if (started.failingFiles.length > cap) {
       throw new Error(
-        `${group.name}: ${started.failures + started.errors} of ${started.tests} tests failed across ${started.failingFiles.length} files (more than the ${cap} the alone-re-run confirms); treated as a real failure\n${started.failed.slice(0, 4).join("\n")}${refusalNote}`,
+        `${group.name}: ${started.failures + started.errors} of ${started.tests} tests failed across ${started.failingFiles.length} files (more than the ${cap} the alone-re-run confirms); treated as a real failure\nfailing files:\n${started.failingFiles.map((file) => `  ${file}`).join("\n")}\n${started.failed.slice(0, 12).join("\n")}${refusalNote}`,
       );
     }
     const startedAt = Date.now();

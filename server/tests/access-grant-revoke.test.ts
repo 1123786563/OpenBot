@@ -215,7 +215,7 @@ test("revoking marks the grant revoked the instant the response returns, and the
   expect(listed?.status).toBe("revoked");
 });
 
-test("a repeated revocation is idempotent: the same revoked grant, no second audit event", async () => {
+test("a repeated revocation is idempotent: the same revoked grant, the no-op records its own payload.revoked=false event", async () => {
   const userId = `${prefix}-revoke-idem`;
   const grant = await confirmedGrant(userId, "idem", hint("idem"));
 
@@ -238,7 +238,8 @@ test("a repeated revocation is idempotent: the same revoked grant, no second aud
   expect(secondBody.accessGrant.grantId).toBe(grant.grantId);
   expect(secondBody.accessGrant.status).toBe("revoked");
 
-  // Exactly one revocation happened: exactly one audit event, and the revokedAt never moved.
+  // Exactly one revocation happened: the revokedAt never moved, and the audit trail
+  // tells the two answers apart by `payload.revoked` rather than by counting.
   const [row] = await database
     .select()
     .from(accessGrants)
@@ -255,7 +256,8 @@ test("a repeated revocation is idempotent: the same revoked grant, no second aud
         eq(auditEvents.targetId, grant.grantId),
       ),
     );
-  expect(events).toHaveLength(1);
+  expect(events).toHaveLength(2);
+  expect(events.filter((e) => e.payload?.revoked === true)).toHaveLength(1);
 });
 
 test("another person's grant is unrevokable and invisible: one uniform refusal", async () => {

@@ -520,18 +520,19 @@ describe("the deployment's own payer binding is made once, explicitly", () => {
 /*
  * F1 (review b5-219, Medium) — the behavior half of the fix. Everything above proves the
  * SEAM's contract; nothing before this block ever executed the gate itself — the
- * `setModelUsageGate(async (input) => {…})` closure index.ts registers — so an
- * AC13-forbidden fallback living inside that closure had no behavioral oracle (the
+ * `return async (input) => {…}` closure createModelUsageGate builds and runtime registers —
+ * so an AC13-forbidden fallback living inside that closure had no behavioral oracle (the
  * review's M6 mutation: re-reserve on the deployment binding inside the refusal branch
- * survived every earlier case). Here the gate's REAL source is extracted from index.ts,
- * transpiled and executed against the REAL collaborators: the real
+ * survived every earlier case). Here the gate's REAL source is extracted from
+ * assembly/model-budget.ts (where the assembly move left it), transpiled and executed
+ * against the REAL collaborators: the real
  * resolveConsumptionPayerBinding/currentPayerBinding (so withPayerBinding drives the
  * request binding through the real AsyncLocalStorage), the REAL credit writer on the
  * real test database — a hold anywhere is an observable row on some key — and capture
  * stubs only where the assertion IS the capture (which account the outbox and evidence
  * writes name). The database is the oracle; any account switch leaves a fingerprint.
  */
-describe("the consumption gate itself: extracted from index.ts and executed", () => {
+describe("the consumption gate itself: extracted from model-budget.ts and executed", () => {
   const gateModelId = "gate-model";
   const gateModelPolicy = {
     input: {
@@ -563,24 +564,31 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
         mode: "hard_cap" as const,
         models: new Map([[gateModelId, gateModelPolicy]]),
       },
-      runtimeModel: { defaultModel: gateModelId },
       /*
-       * The billing assembly's real shape (index.ts returns service/client/externalCustomerKey/
-       * customerName/deploymentPayerBinding/creditWriter): the stub carries every field a
-       * fallback mutation could reach for, so a forbidden second reserve cannot vanish into an
-       * undefined property read — with `externalCustomerKey` present, the M6b variant (fallback
-       * through the billing-held key, the shape the old inventory was blind to) leaves a real
-       * observable hold row on the deployment account, exactly as it would in production.
+       * The gate body reads its enclosing `deps` and the M06 `budgetPublic` facade, exactly
+       * as createModelUsageGate receives them: the deployment binding rides `deps`, so the
+       * M6b variant (a fallback through it outside the one resolve) leaves a real hold row on
+       * the deployment account, and the facade delegates 1:1 to the real credit writer.
        */
-      billing: {
-        creditWriter: writer,
+      deps: {
+        defaultModelId: gateModelId,
+        currentPayerBinding,
         deploymentPayerBinding: deploymentBinding,
-        externalCustomerKey: deploymentBinding.externalCustomerId,
-      },
-      usageOutbox: {
-        record: async (row: Record<string, unknown>) => {
-          outboxRecords.push(row);
+        usageOutbox: {
+          record: async (row: Record<string, unknown>) => {
+            outboxRecords.push(row);
+          },
         },
+        currentWorkbenchScope,
+      },
+      budgetPublic: {
+        reserveInvocationHold: (
+          input: Parameters<typeof writer.reserveCredits>[0],
+        ) => writer.reserveCredits(input),
+        releaseInvocationHold: (id: string, reason: string) =>
+          writer.releaseReservation(id, reason),
+        markInvocationHoldUnknown: (id: string, reason: string) =>
+          writer.markReservationUnknown(id, reason),
       },
       recordUnsettledUsage: async (row: Record<string, unknown>) => {
         unsettledRecords.push(row);
@@ -594,8 +602,6 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
       USAGE_IDEMPOTENCY_KEY_PREFIX,
       MODEL_RESERVATION_WINDOW_MS: 15 * 60_000,
       resolveConsumptionPayerBinding,
-      currentPayerBinding,
-      currentWorkbenchScope,
       CreditPolicyUnconfiguredError,
       ModelNotPricedError,
       CreditGateFailureError,
@@ -609,6 +615,7 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
         (error as { code?: string } | null)?.code ?? "outbox_write_failed",
       logUsageOutboxWriteFailure: () => {},
       logReservationReleaseFailure: () => {},
+      logReservationUnknownMarkFailure: () => {},
       isConfirmedNoCost,
     };
     const accessed = new Set<string>();
@@ -638,9 +645,10 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
   }
 
   /*
-   * Load the gate ONCE: the arrow body after `setModelUsageGate(` in index.ts, cut on the
-   * RAW source with a mode-aware walker (strings, both comment forms and template
-   * literals with nested `${…}` cannot unbalance the brace matching), then transpiled —
+   * Load the gate ONCE: the arrow body after `return async (input) =>` in
+   * assembly/model-budget.ts, cut on the RAW source with a mode-aware walker (strings,
+   * both comment forms and template literals with nested `${…}` cannot unbalance the brace
+   * matching), then transpiled —
    * the body is TypeScript like the rest of the file — and evaluated inside a sloppy-mode
    * AsyncFunction under `with (deps)`. The extracted code is the code that runs in
    * production, byte for byte; only its enclosing scope is the test's.
@@ -669,15 +677,15 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
       const { readFile } = await import("node:fs/promises");
       const join = (await import("node:path")).join;
       const source = await readFile(
-        join(hereDir, "..", "src", "index.ts"),
+        join(hereDir, "..", "src", "assembly", "model-budget.ts"),
         "utf8",
       );
 
-      const anchor = "setModelUsageGate(async";
+      const anchor = "return async (input) =>";
       const at = source.indexOf(anchor);
       if (at < 0 || source.indexOf(anchor, at + 1) >= 0) {
         throw new Error(
-          "setModelUsageGate(async …) must appear exactly once in index.ts",
+          "return async (input) => … must appear exactly once in model-budget.ts",
         );
       }
       let i = at + anchor.length;
@@ -742,7 +750,7 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
       }
       if (close < 0) {
         throw new Error(
-          "the gate's arrow body never closes; index.ts changed shape",
+          "the gate's arrow body never closes; model-budget.ts changed shape",
         );
       }
       const body = source.slice(open + 1, close);
@@ -979,8 +987,8 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
     // outside the union's reach); it rides deps below, where finish finds it.
     for (const core of [
       "resolveConsumptionPayerBinding",
-      "currentPayerBinding",
-      "billing",
+      "deps",
+      "budgetPublic",
       "creditPolicy",
       "USAGE_IDEMPOTENCY_KEY_PREFIX",
       "MODEL_RESERVATION_WINDOW_MS",
@@ -1031,15 +1039,18 @@ describe("the call-site inventory: the deployment key has no new paths", () => {
       .map((file) => file.replace(`${srcRoot}/`, ""))
       .sort();
     expect(names).toEqual([
+      "assembly/runtime.ts", // boot registration of the moved consumption entry
       "billing/payer-legacy.ts", // 02.2 legacy attribution
       "billing/payer.ts", // the payer layer's legacy_deployment branch
       "billing/service.ts", // the definition
-      "index.ts", // boot derivation + the consumption entry's binding wiring
     ]);
 
     // The consumption entry is binding-wired: the gate resolves a PayerBinding and
     // refuses through the billing-owned insufficient error — no bare deployment key.
-    const entry = await readFile(join(srcRoot, "index.ts"), "utf8");
+    const entry = await readFile(
+      join(srcRoot, "assembly", "model-budget.ts"),
+      "utf8",
+    );
     expect(entry).toContain("resolveConsumptionPayerBinding(");
     expect(entry).toContain("currentPayerBinding()");
     expect(entry).toContain("new CreditInsufficientError(");
@@ -1051,10 +1062,11 @@ describe("the call-site inventory: the deployment key has no new paths", () => {
    * same deployment key through `billing.externalCustomerKey` or `billing.deploymentPayerBinding`
    * — was invisible to it (the review's M6 mutation: a second reserve on the deployment binding
    * inside the refusal branch left all 23 cases green). This test closes that blind spot on the
-   * gate itself: it extracts the consumption-entry gate's function body from index.ts and pins
-   * the structural shape AC13 demands — the ONE payer-identity source is the single
-   * `resolveConsumptionPayerBinding` call, and the ONE hold attempt is the single `reserveCredits`
-   * call, so a refusal has nowhere to re-resolve to and nothing to retry on.
+   * gate itself: it extracts the consumption-entry gate's function body from
+   * assembly/model-budget.ts and pins the structural shape AC13 demands — the ONE
+   * payer-identity source is the single `resolveConsumptionPayerBinding` call, and the
+   * ONE hold attempt is the single `reserveInvocationHold` call, so a refusal has nowhere
+   * to re-resolve to and nothing to retry on.
    *
    * The extraction is a small scanner (not a full AST) that tracks strings, template literals
    * with their `${…}` interpolations, and both comment forms, so the assertions below see CODE,
@@ -1065,22 +1077,20 @@ describe("the call-site inventory: the deployment key has no new paths", () => {
     const { readFile } = await import("node:fs/promises");
     const join = (await import("node:path")).join;
     const source = await readFile(
-      join(hereDir, "..", "src", "index.ts"),
+      join(hereDir, "..", "src", "assembly", "model-budget.ts"),
       "utf8",
     );
 
     // Anchor on the raw source first (unique), then scan ONLY from there: the scanner
     // below is string/comment aware but not regex-literal aware, and the file above the
-    // gate is 3800 lines of assembly that owes the test nothing.
-    const anchor = "setModelUsageGate(async";
+    // gate is assembly wiring that owes the test nothing.
+    const anchor = "return async (input) =>";
     const anchorAt = source.indexOf(anchor);
     if (anchorAt < 0)
-      throw new Error(
-        "setModelUsageGate(async (input) => {…) not found in index.ts",
-      );
+      throw new Error("return async (input) => … not found in model-budget.ts");
     if (source.indexOf(anchor, anchorAt + 1) >= 0)
       throw new Error(
-        "setModelUsageGate(async appears more than once in index.ts",
+        "return async (input) => appears more than once in model-budget.ts",
       );
 
     /*
@@ -1202,10 +1212,10 @@ describe("the call-site inventory: the deployment key has no new paths", () => {
     expect(gateBody.match(/resolveConsumptionPayerBinding\(/g)).toHaveLength(1);
     expect(gateBody.match(/currentPayerBinding\(\)/g)).toHaveLength(1);
 
-    // ONE hold attempt: `reserveCredits` is called exactly once in the whole gate. The
+    // ONE hold attempt: `reserveInvocationHold` is called exactly once in the whole gate. The
     // AC13-forbidden shape is "insufficient → reserve again on another account" — a second
     // call site is that shape, whatever key it names.
-    expect(gateBody.match(/\.reserveCredits\(/g)).toHaveLength(1);
+    expect(gateBody.match(/\.reserveInvocationHold\(/g)).toHaveLength(1);
 
     // Excise the single resolve wiring (from the call's opening paren to its match),
     // because that wiring is the ONE legitimate place `billing.deploymentPayerBinding`
@@ -1273,7 +1283,7 @@ describe("the call-site inventory: the deployment key has no new paths", () => {
       gateOutsideResolve.slice(refusalAt),
       "if (!reservation.reserved)",
     );
-    expect(refusalBlock.match(/\.reserveCredits\(/g)).toBe(null);
+    expect(refusalBlock.match(/\.reserveInvocationHold\(/g)).toBe(null);
     expect(refusalBlock).toContain("throw new CreditInsufficientError(");
   });
 });

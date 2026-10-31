@@ -89,6 +89,12 @@ export interface MastraToolGuard {
     readonly threadId: string;
     readonly initiator?: AuditInitiator;
   };
+  /**
+   * ME05: the server-assembled names whose calls park for approval, mounted
+   * through `createTool({ requireApproval: true })` — the engine's
+   * authoritative per-tool option, carried on the built tool itself.
+   */
+  readonly requireApprovalFor?: readonly string[];
 }
 
 /**
@@ -312,6 +318,9 @@ export function createMastraTools(
     record[granted.name] = createTool({
       id: granted.name,
       description: granted.description,
+      ...(guard.requireApprovalFor?.includes(granted.name)
+        ? { requireApproval: true }
+        : {}),
       // The grant's own schema: the engine validates the model's arguments
       // against exactly what the grant declared, before anything executes.
       inputSchema: granted.parameters,

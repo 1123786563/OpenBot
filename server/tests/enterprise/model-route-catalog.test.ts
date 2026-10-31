@@ -54,6 +54,7 @@ async function trustedScope(): Promise<PlatformScope> {
                 principalStatus: "active",
                 memberStatus: "active",
                 memberEpoch: 1,
+                status: "active",
               },
             ],
           };

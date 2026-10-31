@@ -550,9 +550,10 @@ test("a supported endpoint dials under its contract, and only a checked receipt 
     expect(store.begun[0].capability).toBe("basic");
     expect(store.begun[0]).toMatchObject({
       runId: "dial-run",
-      attemptId: "dial-run",
       traceId: chain.traceId,
     });
+    // The attempt id is minted per attempt, not borrowed from the run.
+    expect(store.begun[0].attemptId).toMatch(/^[0-9a-f-]{36}$/);
     expect(createdTraces).toHaveLength(1);
     // Two writes of the SAME run root: the materialization's open row, then the terminal
     // close with the observed window (R3-03's remote half, OCR R5-297) — the second is

@@ -21,7 +21,9 @@
       "!.coordination",
       "!ocr-comments.json",
       "!server/assets/craft/web-template",
-      "!docs"
+      "!docs",
+      "!bifrost",
+      "!tests/config/e2e-bun-suites.json"
     ]
   },
   "vcs": {
