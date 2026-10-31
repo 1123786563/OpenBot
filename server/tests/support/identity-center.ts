@@ -91,7 +91,7 @@ export async function startIdentityCenter(
     env: { ...process.env, ...(env as Record<string, string>), ...options.env },
     stdio: ["ignore", "pipe", "pipe"],
   });
-  const _stop = () =>
+  const stop = () =>
     new Promise<void>((resolve) => {
       child.once("exit", () => resolve());
       child.kill("SIGTERM");
@@ -130,9 +130,6 @@ export async function startIdentityCenter(
     clientId,
     clientSecret,
     callbackUrl,
-    stop: async () => {
-      child.kill();
-      await child.exited;
-    },
+    stop,
   };
 }

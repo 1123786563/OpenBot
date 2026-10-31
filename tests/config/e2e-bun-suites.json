@@ -1,5 +1,5 @@
 {
-  "generatedBy": "T06.04 registration",
+  "generatedBy": "scripts/e2e-batch-drive-bun-test.mjs",
   "groups": [
     {
       "name": "agent-computer/tests",
@@ -490,7 +490,6 @@
     {
       "name": "server/tests part 10",
       "files": [
-        "server/tests/mastra-memory-service-degradation.test.ts",
         "server/tests/mastra-openmuse-entry.test.ts",
         "server/tests/mastra-personal-memory.test.ts",
         "server/tests/mastra-stream-events.test.ts",
@@ -1325,6 +1324,12 @@
       "files": [
         "server/tests/better-auth/memory-source-authorization.test.ts"
       ]
+    },
+    {
+      "name": "server/tests increment 4",
+      "files": [
+        "server/tests/mastra-memory-service-degradation.test.ts"
+      ]
     }
   ],
   "directoryIslands": [
@@ -1756,7 +1761,6 @@
     "server/tests/mastra-intelligence-optional.test.ts",
     "server/tests/mastra-learned-skills.test.ts",
     "server/tests/mastra-legacy-import.test.ts",
-    "server/tests/mastra-memory-service-degradation.test.ts",
     "server/tests/mastra-memory-service-degradation.test.ts",
     "server/tests/mastra-message-parts.test.ts",
     "server/tests/mastra-openmuse-entry.test.ts",
