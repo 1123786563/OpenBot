@@ -160,6 +160,25 @@ function evidenceFailure(
 }
 
 /**
+ * A fetch that trusts the OpenShell gateway's CA for its own connections, and nothing else.
+ *
+ * The URL a sandbox hands out is https signed by the gateway's PKI, so the server's plain fetch —
+ * which knows only the system's certificate store — refuses it as an unverified leaf. Bun's fetch
+ * takes the CA per request through `tls`; a runtime without that extension ignores it and behaves
+ * exactly as before, so the option is additive rather than a second TLS story.
+ */
+export function caScopedFetch(
+  ca: string,
+  fetchImpl: typeof fetch = fetch,
+): typeof fetch {
+  return ((input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+    fetchImpl(input, {
+      ...init,
+      tls: { ...(init as { tls?: object } | undefined)?.tls, ca },
+    } as RequestInit)) as typeof fetch;
+}
+
+/**
  * Computers as OpenShell sandboxes, one per Bot.
  *
  * Everything that decides whether a sandbox may exist happens here, before the client is called: a

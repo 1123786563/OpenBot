@@ -917,3 +917,37 @@ describe("OpenShell computer service launch", () => {
     ).toThrow(ProviderError);
   });
 });
+
+describe("gateway TLS scoped fetch", () => {
+  test("ca_scoped_fetch_adds_the_gateway_ca_without_touching_the_rest", async () => {
+    const { caScopedFetch } = await import("../src/computer/openshell");
+    const seen: unknown[] = [];
+    const inner = (async (...args: unknown[]) => {
+      seen.push(args);
+      return new Response("{}");
+    }) as unknown as typeof fetch;
+    const scoped = caScopedFetch("-----BEGIN CERTIFICATE-----ca", inner);
+    await scoped(
+      "https://ws--sb--computer.openshell.localhost:8080/navigate",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      },
+    );
+    expect(seen.length).toBe(1);
+    const [url, init] = seen[0] as [
+      string,
+      RequestInit & { tls?: { ca?: string } },
+    ];
+    expect(url).toBe(
+      "https://ws--sb--computer.openshell.localhost:8080/navigate",
+    );
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>)["content-type"]).toBe(
+      "application/json",
+    );
+    expect(init.body).toBe("{}");
+    expect(init.tls?.ca).toBe("-----BEGIN CERTIFICATE-----ca");
+  });
+});
