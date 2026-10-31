@@ -7,6 +7,7 @@ import {
   createOpenShellComputerProvider,
   OPEN_SHELL_REQUIRED_CAPABILITIES,
   openShellProviderOptions,
+  trustedOpenShellScopeFor,
 } from "./openshell";
 import { OPEN_SHELL_ENV, probeReceiptCapabilities } from "./openshell-client";
 import {
@@ -474,7 +475,20 @@ function createLazyOpenShellProvider(
 
   const provider = async (): Promise<ComputerProvider> => {
     built ??= openShellProviderOptions(config)
-      .then((options) => createOpenShellComputerProvider(options))
+      .then((options) =>
+        createOpenShellComputerProvider({
+          ...options,
+          /*
+           * T02: whatever resolver the options carry is bounded by the deployment's own scope
+           * facts here, at the assembly seam, so a resolver wired to an authenticated request path
+           * cannot place a sandbox in another team's tenant or workspace.
+           */
+          scopeFor: trustedOpenShellScopeFor(
+            options.scopeFor,
+            config.executionScope,
+          ),
+        }),
+      )
       .catch((error: unknown) => {
         built = undefined;
         throw error;

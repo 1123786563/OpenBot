@@ -10,6 +10,7 @@ import {
   type OpenShellAdminClient,
   type OpenShellSandboxView,
   type OpenShellScope,
+  trustedOpenShellScopeFor,
 } from "../src/computer/openshell";
 import {
   createComputerProvider,
@@ -623,5 +624,45 @@ describe("OpenShell substrate selection", () => {
     expect(salesUrl).not.toBe(supportUrl);
     expect(ensured.map((s) => s.workspaceId)).toEqual(["research", "support"]);
     expect(ensured.map((s) => s.tenantId)).toEqual(["acme", "acme"]);
+  });
+
+  test("openshell_computer_refuses_missing_or_foreign_execution_scope", async () => {
+    /*
+     * T02: the resolver a trusted assembly path may hand the provider is bounded by the deployment's
+     * own scope facts. A resolver that names another team's tenant or workspace — a forwarded header,
+     * a stale cache row, a mis-wired caller — resolves to no scope at all, and the refusal happens
+     * before the gateway is dialed: no sandbox is created or woken for a Bot this deployment cannot
+     * place. The control case is the resolver naming this deployment's own scope, which places.
+     */
+    const { client, ensured } = fakeClient();
+    const deployment = { tenantId: "acme", workspaceId: "research" };
+    const placed = createOpenShellComputerProvider({
+      client,
+      scopeFor: trustedOpenShellScopeFor(
+        async (botId) => {
+          if (botId === "sales") return scope();
+          if (botId === "other-workspace") return scope({ workspaceId: "support" });
+          if (botId === "other-tenant") return scope({ tenantId: "globex" });
+          return null;
+        },
+        deployment,
+      ),
+      capabilities: OPEN_SHELL_REQUIRED_CAPABILITIES,
+    });
+
+    await expect(placed.locate("sales")).resolves.toMatch(/^https:/);
+
+    await expect(placed.locate("other-workspace")).rejects.toThrow(
+      /no complete execution ownership/i,
+    );
+    await expect(placed.locate("other-tenant")).rejects.toThrow(
+      /no complete execution ownership/i,
+    );
+    await expect(placed.locate("nobody")).rejects.toThrow(
+      /no complete execution ownership/i,
+    );
+
+    // Only the Bot the deployment could place reached the gateway.
+    expect(ensured.map((s) => s.botId)).toEqual(["sales"]);
   });
 });

@@ -85,11 +85,12 @@ This template renders nothing.
   A computer nobody can reach, or one anybody can.
 
   `agent-computer` refuses every request without `COMPUTER_TOKEN` and permits only `/health`, so a
-  chart that created one without a token would create a process that answers nothing. And a mode of
-  `external` with no address is a deployment whose Bots have no computer at all, which fails at the
-  first browser action rather than at install.
+  chart that created one without a token would create a process that answers nothing. OpenShell mode
+  now starts that service inside every sandbox, so it needs the token too. And a mode of `external`
+  with no address is a deployment whose Bots have no computer at all, which fails at the first
+  browser action rather than at install.
 */}}
-{{- if and (not (has .Values.computers.mode (list "external" "openshell"))) (not .Values.secrets.computerToken) (not .Values.computers.existingTokenSecret) (not .Values.secrets.existingSecret) (not .Values.externalSecrets.enabled) }}
+{{- if and (ne .Values.computers.mode "external") (not .Values.secrets.computerToken) (not .Values.computers.existingTokenSecret) (not .Values.secrets.existingSecret) (not .Values.externalSecrets.enabled) }}
 {{- fail "A computer needs a token, which is the only thing standing between it and anybody who can reach its port. Set secrets.computerToken. Generate one with: openssl rand -hex 32" }}
 {{- end }}
 

@@ -37,6 +37,10 @@ COPY shared/file-download.ts shared/trace.ts shared/execution-scope.ts /shared/
 # (a spin, then a broken cached copy). One root-level symlink puts the workspace's
 # node_modules on that walk-up path.
 RUN ln -s /app/node_modules /node_modules
+# Under a sandbox runtime that allowlists paths (OpenShell's landlock), the walk-up
+# cannot even stat the root-level symlink, so the same shortcut is repeated inside
+# /shared, where the whole directory is already readable.
+RUN ln -s /app/node_modules /shared/node_modules
 
 # Durable working directory. Bot-produced files that must survive replacement live here.
 RUN mkdir -p /workspace

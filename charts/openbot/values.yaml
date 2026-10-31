@@ -501,10 +501,13 @@ computers:
     # deployment's gateway and image or the server refuses it. A partial receipt still installs:
     # the fleet reports the substrate as unverified and every computer request is refused.
     probeReceipt: ""
-    # The TCP port the computer service listens on inside a sandbox. Empty means this deployment
-    # runs no in-sandbox service yet: sandboxes can be created and stopped, but none has an address
-    # to locate.
-    servicePort: ""
+    # The TCP port the computer service listens on inside a sandbox. The provider starts the service
+    # in each sandbox once the gateway reports it ready and its policy loaded, and only hands out an
+    # address after the service answers its health check. The service authenticates its caller with
+    # `secrets.computerToken`, so OpenShell mode now needs that token like every other mode. Empty
+    # means sandboxes are created and stopped without a computer, and `locate` says it has no
+    # address rather than inventing one.
+    servicePort: 4100
     tls:
       # A Secret you made, holding ca.crt, client.crt and client.key, minted from an OpenShell PKI
       # that kept its CA key (the gateway chart's default PKI does not). Mounted read-only at

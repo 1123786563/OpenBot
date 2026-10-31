@@ -112,6 +112,32 @@ function isCompleteScope(scope: OpenShellScope): boolean {
 }
 
 /**
+ * The deployment's own scope facts bound whatever resolver the assembly hands the provider.
+ *
+ * T02: the resolver may come from an authenticated request path rather than the deployment's fixed
+ * closure. The tenant and workspace this deployment was started for are the authoritative facts, so
+ * a scope naming another team's tenant or workspace — a forwarded header, a stale cache row, a
+ * mis-wired caller — resolves to nothing and the provider refuses before the gateway is dialed. The
+ * Bot id check stays in `scopeOf`, which sees the request's own idea of the Bot.
+ */
+export function trustedOpenShellScopeFor(
+  resolve: (botId: string) => Promise<OpenShellScope | null>,
+  deployment: { tenantId: string; workspaceId: string },
+): (botId: string) => Promise<OpenShellScope | null> {
+  return async (botId) => {
+    const scope = await resolve(botId);
+    if (!scope) return null;
+    if (
+      scope.tenantId !== deployment.tenantId ||
+      scope.workspaceId !== deployment.workspaceId
+    ) {
+      return null;
+    }
+    return scope;
+  };
+}
+
+/**
  * Why a sandbox may not be used, in the words of the evidence that failed.
  *
  * A missing receipt is itself a failure: nothing proved the policy loaded, so the answer is the same
@@ -349,6 +375,13 @@ export async function openShellProviderOptions(
       `${OPEN_SHELL_ENV.receipt} must record every capability the live probe proved for this substrate; missing ${missing.join(", ")}.`,
     );
   }
+  if (inputs.servicePort !== undefined && config.token === undefined) {
+    // A computer service that cannot authenticate its caller is a sandbox nobody may drive: refuse
+    // at assembly rather than hand out an address that answers nothing.
+    throw new ProviderError(
+      `${OPEN_SHELL_ENV.servicePort} is set, so each sandbox must start a computer service, but COMPUTER_TOKEN is not set; refusing to place a computer whose service could not authenticate its caller.`,
+    );
+  }
   return {
     client: createOpenShellGatewayClient({
       endpoint: config.gatewayEndpoint,
@@ -360,6 +393,9 @@ export async function openShellProviderOptions(
       ...(inputs.servicePort !== undefined
         ? { servicePort: inputs.servicePort }
         : {}),
+      // The in-sandbox service authenticates its caller with the Bot-facing token; without one a
+      // sandbox has no computer, and the client refuses rather than placing an unauthenticated one.
+      ...(config.token !== undefined ? { computerToken: config.token } : {}),
     }),
     scopeFor: async (botId) => ({
       tenantId: config.executionScope.tenantId,
