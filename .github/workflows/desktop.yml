@@ -101,7 +101,11 @@ jobs:
       # `desktop/scripts`); a literal `bun test` line is an entry-point gap that `bun run test:ci`
       # fails on. `E2E_BUN_ONLY` names the one group, so the job stays seconds long.
       - name: Desktop version regressions
-        run: E2E_BUN_ONLY=desktop/scripts bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+        run: bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+        env:
+          # An `env:` key, not an inline `E2E_BUN_ONLY=…` prefix: the Windows runner's default
+          # shell is PowerShell, where that prefix is a command name rather than an assignment.
+          E2E_BUN_ONLY: desktop/scripts
       - name: Prepare internal build version
         run: bun scripts/desktop-version.ts internal
         working-directory: desktop
