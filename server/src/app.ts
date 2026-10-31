@@ -68,6 +68,7 @@ import type { LearningAdminDependencies } from "./learning/routes";
 import type { MarketplaceStore } from "./marketplace/store";
 import type { MastraContinuationInstall } from "./mastra/approvals";
 import type { MastraContinuationStore } from "./mastra/continuation-store";
+import { createOpenBotSourceAccess } from "./memory-service/source-access";
 import type { OpenMuseDeletionManifest } from "./openmuse-deletion/manifest";
 import type { OpenMuseFileBytePurgeReport } from "./openmuse-deletion/purge";
 import type { OpenMuseRelationalPurgeOutcome } from "./openmuse-deletion/purge-relational";
@@ -99,7 +100,6 @@ import type { PackageStatusReader } from "./tenant-package";
 import type { UserInstructionsStore } from "./user-instructions";
 import type { UserPreferencesStore } from "./user-preferences";
 import type { VoiceSessionServices } from "./voice/session-routes";
-import { createOpenBotSourceAccess } from "./memory-service/source-access";
 import type { createWorkshopPublicRoutes } from "./workshop/public-routes";
 import type { WorkshopRoutesFactory } from "./workshop/routes";
 
@@ -290,6 +290,14 @@ export interface CoworkerSeams {
   };
   groups?: GroupConversations;
   enterpriseConversations?: Hono;
+  /**
+   * T06.06 (#578): the pull-gated sensitive file download proxy
+   * (GET|HEAD /api/enterprise/files/:fileId/content from
+   * createSensitiveDownloadRoutes). Mounted only where a deployment wires it
+   * with its family source and object-store byte seam; absent mounts nothing
+   * and the legacy attachment surfaces are byte-for-byte what they were.
+   */
+  enterpriseSensitiveDownloads?: Hono;
   /** MT006 (issue #49): workspace scope listing + team administration routes. */
   enterpriseWorkspaceScope?: Hono;
   /** Plugin packages marketplace routes (#459); mounted only where a deployment wires them. */

@@ -1309,6 +1309,12 @@
       ]
     },
     {
+      "name": "server/tests/better-auth:T06.06.01",
+      "files": [
+        "server/tests/better-auth/download-revocation.test.ts"
+      ]
+    },
+    {
       "name": "server/tests increment 4",
       "files": [
         "server/tests/mastra-memory-service-degradation.test.ts"
@@ -1530,6 +1536,7 @@
     "server/tests/better-auth/company-lifecycle.test.ts",
     "server/tests/better-auth/company-provision.test.ts",
     "server/tests/better-auth/conversation-scope-actions.test.ts",
+    "server/tests/better-auth/download-revocation.test.ts",
     "server/tests/better-auth/credential-source-generations.test.ts",
     "server/tests/better-auth/directory-command.test.ts",
     "server/tests/better-auth/email-verification.test.ts",
@@ -2278,6 +2285,7 @@
     "app/tests/model-catalog-route-pagination.test.tsx": "suite imports tests/support/bun-test-compat (bun:test); e2e on Node cannot resolve the bun: specifier and aborts the whole run",
     "server/tests/better-auth/credential-source-generations.test.ts": "runner named it: server/tests/better-auth island suite, five BA_TEST_* role URLs",
     "server/tests/better-auth/conversation-scope-actions.test.ts": "needs the Bun runtime (bun-test-compat) and the five BA_TEST_* island role URLs",
-    "server/tests/better-auth/memory-source-authorization.test.ts": "needs the Bun runtime (bun-test-compat) and the five BA_TEST_* island role URLs"
+    "server/tests/better-auth/memory-source-authorization.test.ts": "needs the Bun runtime (bun-test-compat) and the five BA_TEST_* island role URLs",
+    "server/tests/better-auth/download-revocation.test.ts": "needs the Bun runtime (bun-test-compat) and the five BA_TEST_* island role URLs"
   }
 }
