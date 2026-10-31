@@ -96,12 +96,12 @@ jobs:
         working-directory: desktop
       - run: bun run typecheck
         working-directory: desktop
-      # `bun test`, not the e2e runner. This file is in the bun driver manifest
-      # (`tests/config/e2e-bun-suites.json`, group `desktop/scripts`), and `e2e.unit.config.ts`
-      # excludes driven files by design — an `e2e run` of it collects nothing and fails the job.
+      # Through the driver, not `bun test`. The suite imports `tests/support/bun-test-compat`, so
+      # e2e on Node cannot collect it and it lives in the bun driver manifest (group
+      # `desktop/scripts`); a literal `bun test` line is an entry-point gap that `bun run test:ci`
+      # fails on. `E2E_BUN_ONLY` names the one group, so the job stays seconds long.
       - name: Desktop version regressions
-        run: bun test scripts/desktop-version.test.ts
-        working-directory: desktop
+        run: E2E_BUN_ONLY=desktop/scripts bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
       - name: Prepare internal build version
         run: bun scripts/desktop-version.ts internal
         working-directory: desktop
