@@ -316,6 +316,20 @@ export function createExecutionArtifactsService(
     | { readonly outcome: "allow"; readonly bytes: Uint8Array }
     | ResourceNotFoundVerdict
   >;
+  /**
+   * T06.06（#578）：下载的准入半边——与 downloadExecutionArtifact 同一
+   * 判定（归属 verdict + 路径解析 + scope 归属 + botId 一致），但不取
+   * 字节、不落下载审计行。敏感下载代理的装配经它构造逐 pull 准入；
+   * 撤权/移除在每一次调用当场失效。
+   */
+  authorizeExecutionArtifactDownload(
+    scope: PlatformScope,
+    botId: string,
+    input: { readonly artifactPath: string; readonly root: string },
+  ): Promise<
+    | { readonly outcome: "allow"; readonly artifactPath: string }
+    | ResourceNotFoundVerdict
+  >;
   /** 取消传播（AC3，#86 的入口）：deny = 不传播；allow = 逐面 cancel + 审计。 */
   cancelExecution(
     scope: PlatformScope,
@@ -528,6 +542,29 @@ export function createExecutionArtifactsService(
     return { outcome: "allow", attempts };
   }
 
+  /**
+   * T06.06（#578）下载准入半边：与 downloadExecutionArtifact 同一判定
+   * （归属 verdict + 路径解析 + scope 归属 + botId 一致），不取字节、
+   * 不落审计。deny 时携带 pathInScope 供下载面区分审计 reason。
+   */
+  const authorizeArtifactDownload = async (
+    scope: PlatformScope,
+    botId: string,
+    input: { readonly artifactPath: string; readonly root: string },
+  ): Promise<
+    | { readonly outcome: "allow"; readonly artifactPath: string }
+    | { readonly outcome: "deny"; readonly pathInScope: boolean }
+  > => {
+    const verdict = await ownershipVerdict(scope, botId);
+    // 路径归属先行：一个解析到别家 scope 的路径不让 open 碰磁盘。
+    const parsed = parseExecutionArtifactPath(input.root, input.artifactPath);
+    const pathInScope = scopeOwnsArtifactPath(scope, parsed);
+    if (verdict.outcome === "deny" || !pathInScope || parsed?.botId !== botId) {
+      return { outcome: "deny", pathInScope };
+    }
+    return { outcome: "allow", artifactPath: input.artifactPath };
+  };
+
   return {
     async authorizeExecution(scope, botId) {
       const verdict = await ownershipVerdict(scope, botId);
@@ -567,15 +604,8 @@ export function createExecutionArtifactsService(
     },
 
     async downloadExecutionArtifact(scope, botId, input) {
-      const verdict = await ownershipVerdict(scope, botId);
-      // 路径归属先行：一个解析到别家 scope 的路径不让 open 碰磁盘。
-      const parsed = parseExecutionArtifactPath(input.root, input.artifactPath);
-      const pathInScope = scopeOwnsArtifactPath(scope, parsed);
-      if (
-        verdict.outcome === "deny" ||
-        !pathInScope ||
-        parsed?.botId !== botId
-      ) {
+      const admitted = await authorizeArtifactDownload(scope, botId, input);
+      if (admitted.outcome === "deny") {
         await audit.record({
           action: "execution.artifact_download",
           tenantId: scope.tenantId,
@@ -583,7 +613,7 @@ export function createExecutionArtifactsService(
           botId,
           principalId: scope.principalId,
           outcome: "denied",
-          ...(pathInScope
+          ...(admitted.pathInScope
             ? { reason: "not-found" as const }
             : { reason: "outside-scope" as const }),
         });
@@ -599,6 +629,13 @@ export function createExecutionArtifactsService(
         outcome: "allowed",
       });
       return { outcome: "allow", bytes };
+    },
+
+    async authorizeExecutionArtifactDownload(scope, botId, input) {
+      const admitted = await authorizeArtifactDownload(scope, botId, input);
+      return admitted.outcome === "allow"
+        ? { outcome: "allow", artifactPath: admitted.artifactPath }
+        : notFoundVerdict();
     },
 
     cancelExecution(scope, botId, input) {

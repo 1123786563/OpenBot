@@ -163,6 +163,15 @@ export interface AttachmentService {
     token: string,
   ): Promise<Verdict2<{ readonly storagePath: string }>>;
   /**
+   * T06.06（#578）：敏感下载代理的逐 pull 准入面——同一可见性判定
+   * （readAttachmentFacts），但不签 token、不取字节。撤权/撤销/移除在
+   * 每一次调用当场失效；字节读取发生在事务之外（deps.source.open）。
+   */
+  authorizeContent(
+    scope: PlatformScope,
+    attachmentId: string,
+  ): Promise<Verdict2<{ readonly storageKey: string }>>;
+  /**
    * 撤销上传：visibility → 'private'（此后一切入口 not-found；已签发
    * token 在代理点因可见性重验被拒）。
    */
@@ -545,6 +554,33 @@ export function createAttachmentService(channels: {
         return deepFreeze({
           outcome: "allow",
           storagePath: storagePathOf(
+            scope.tenantId,
+            facts.workspaceId,
+            attachmentId,
+          ),
+        });
+      });
+    },
+
+    async authorizeContent(scope, attachmentId) {
+      assertScopeContext(scope);
+      assertTrustedScope(scope);
+      // 与 resolveDownload 的重验同一形状：只判定，不取字节——T06.06 的
+      // 串行 pull 每批进来重验一次，撤权后的下一批在这里当场失效。
+      return data.transaction(async (tx) => {
+        await beginContext(tx, scope);
+        await takeLocks(tx, [
+          ...baseLockKeys(scope).map((key) => ({ key, exclusive: false })),
+          {
+            key: attachmentLockKey(scope.tenantId, attachmentId),
+            exclusive: false,
+          },
+        ]);
+        const facts = await readAttachmentFacts(tx, scope, attachmentId);
+        if (!facts) return notFoundVerdict();
+        return deepFreeze({
+          outcome: "allow",
+          storageKey: storagePathOf(
             scope.tenantId,
             facts.workspaceId,
             attachmentId,
