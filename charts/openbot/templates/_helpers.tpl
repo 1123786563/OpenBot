@@ -281,6 +281,40 @@ migrated one database while the API talked to another is a failure that looks li
 {{- end -}}
 
 {{/*
+Where the workshop's Redis is, when there is one.
+
+One definition for the same reason as `openbot.databaseUrlEnv` above: every pod that joins a turn
+must agree on where the lock lives. Emits NOTHING when redis is neither bundled nor pointed at —
+an unset OPENBOT_REDIS_URL is the single-replica deployment (server/src/redis.ts: null is a
+first-class answer), and handing that pod a URL to nothing would trade a supported mode for an
+error at the first lock.
+*/}}
+{{- define "openbot.redisUrlEnv" -}}
+{{- if .Values.redis.enabled -}}
+{{- /*
+  Declared first, for the same reason as POSTGRES_PASSWORD above: Kubernetes expands `$(VAR)` in
+  an env value only from variables defined earlier in the same list.
+*/}}
+- name: REDIS_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ printf "%s-redis" .Release.Name }}
+      key: redis-password
+- name: OPENBOT_REDIS_URL
+  value: redis://:$(REDIS_PASSWORD)@{{ .Release.Name }}-redis-master:6379
+{{- else if .Values.redis.existingSecret -}}
+- name: OPENBOT_REDIS_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.redis.existingSecret }}
+      key: {{ .Values.redis.existingSecretKey }}
+{{- else if .Values.redis.url -}}
+- name: OPENBOT_REDIS_URL
+  value: {{ .Values.redis.url | quote }}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Everything the API reads that is not the database.
 
 Secrets are referenced, never rendered: a value that appears here would appear in `helm get values`

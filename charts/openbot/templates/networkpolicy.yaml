@@ -54,6 +54,17 @@ spec:
         - port: 5432
           protocol: TCP
     {{- end }}
+    {{- if .Values.redis.enabled }}
+    {{- /* Only this policy: the CronJobs below are not handed OPENBOT_REDIS_URL, so they get no
+          egress to it either. */}}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - port: 6379
+          protocol: TCP
+    {{- end }}
     {{- if ne .Values.computers.mode "external" }}
     {{- /*
       A Bot's computer, which the API has to reach for every browser action.

@@ -14,9 +14,15 @@
  */
 import { execSync, spawn } from "node:child_process";
 import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
-import postgres from "postgres";
+import { SQL } from "bun";
 
 const RUN =
   process.env.MEM733_RUN_DIR ??
@@ -84,21 +90,14 @@ const sourceKey = secret(
   }
 })();
 
+const passwords = secret(
+  "person-passwords.txt",
+  () =>
+    `pw733a-${randomBytes(8).toString("hex")}\npw733b-${randomBytes(8).toString("hex")}`,
+).split("\n");
 const people = {
-  a: {
-    email: "m733-a@test.example",
-    password: secret(
-      "person-password-a.txt",
-      () => `pw733a-${randomBytes(8).toString("hex")}`,
-    ),
-  },
-  b: {
-    email: "m733-b@test.example",
-    password: secret(
-      "person-password-b.txt",
-      () => `pw733b-${randomBytes(8).toString("hex")}`,
-    ),
-  },
+  a: { email: "m733-a@test.example", password: passwords[0]?.trim() ?? "" },
+  b: { email: "m733-b@test.example", password: passwords[1]?.trim() ?? "" },
 };
 
 const identityClients = [
@@ -147,13 +146,15 @@ function up(
     ...(command.envFiles ?? []).flatMap((file) => ["--env-file", file]),
     ...command.args,
   ];
+  // 独立会话 + 日志落文件：站点不随本脚本或调用 shell 退出而死。
+  const logFile = openSync(join(LOGS, `${name}.log`), "a");
   const child = spawn("bun", args, {
     cwd: command.cwd,
     env: { ...process.env, ...(command.env ?? {}) },
-    stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
+    stdio: ["ignore", logFile, logFile],
   });
-  child.stdout.pipe(process.stdout);
-  child.stderr.pipe(process.stderr);
+  child.unref();
   const pid = child.pid;
   if (pid === null) throw new Error(`${name}: spawn failed`);
   writeFileSync(pidFile, `${pid}\n`);
@@ -340,24 +341,21 @@ const register = async (
   return body.secret;
 };
 const secretsFile = envFile("app-secrets.json");
-const appSecrets = (() => {
-  if (existsSync(secretsFile)) {
-    const saved = JSON.parse(readFileSync(secretsFile, "utf8")) as Record<
-      string,
-      string
-    >;
-    if (saved.openbot && saved["external-demo"]) return saved;
-  }
-  return null;
-})() ?? {
-  openbot: await register("openbot", ["collect", "recall"]),
-  "external-demo": await register(
-    "external-demo",
-    ["collect", "recall"],
-    `${EXTERNAL}/callback`,
-  ),
-};
-writeFileSync(envFile("app-secrets.json"), JSON.stringify(appSecrets, null, 2));
+const savedSecrets = existsSync(secretsFile)
+  ? (JSON.parse(readFileSync(secretsFile, "utf8")) as Record<string, string>)
+  : null;
+const appSecrets: Record<string, string> =
+  savedSecrets?.openbot && savedSecrets?.["external-demo"]
+    ? savedSecrets
+    : {
+        openbot: await register("openbot", ["collect", "recall"]),
+        "external-demo": await register(
+          "external-demo",
+          ["collect", "recall"],
+          `${EXTERNAL}/callback`,
+        ),
+      };
+writeFileSync(secretsFile, JSON.stringify(appSecrets, null, 2));
 await fetch(`${EXTERNAL}/test/memory`, {
   method: "POST",
   headers: { "content-type": "application/json" },
@@ -400,24 +398,29 @@ up("vite", {
 await waitFor("vite", "http://localhost:3010/");
 
 /* ---- 7. OpenBot 侧用户/Bot/会话（与身份中心 subject 同串，#715 连续性拓扑） ---- */
-const admin = postgres(`${DB}/openbot_733`, { max: 1 });
+const admin = new SQL(`${DB}/openbot_733`, { max: 1 });
 const sub = tokens.a.subjectId;
-await admin`
-  insert into users (id, email, name, email_verified, created_at, updated_at)
-  values (${sub}, ${people.a.email}, 'm733-a', true, now(), now()) on conflict (id) do nothing`;
-await admin`
-  insert into accounts (id, user_id, account_id, provider_id, created_at, updated_at)
-  values (gen_random_uuid()::text, ${sub}, ${sub}, 'identity-center', now(), now())`;
-await admin`
-  insert into sessions (id, user_id, token, expires_at, created_at, updated_at)
-  values ('sess733a', ${sub}, 'sess733a-token', now() + interval '12 hours', now(), now())`;
-await admin`
-  insert into agents (id, name, type, configuration, created_at, updated_at)
-  values ('bot733-a', 'm733 记忆验收 Bot', 'built_in', '{}', now(), now()) on conflict (id) do nothing`;
-await admin`
-  insert into agent_profiles (agent_id, owner_user_id, title, role_description, avatar_seed, visibility, created_at, updated_at)
-  values ('bot733-a', ${sub}, '记忆验收 Bot', 'Assist', 'seed733', 'private', now(), now()) on conflict (agent_id) do nothing`;
-await admin.end({ timeout: 5 });
+// 幂等：会话行存在即本轮已种过（重复插 sessions 会撞唯一键）。
+const seeded =
+  await admin`select count(*)::int as n from sessions where id = 'sess733a'`;
+if (Number((seeded[0] as { n: number } | undefined)?.n ?? 0) === 0) {
+  await admin`
+    insert into users (id, email, name, email_verified, created_at, updated_at)
+    values (${sub}, ${people.a.email}, 'm733-a', true, now(), now()) on conflict (id) do nothing`;
+  await admin`
+    insert into accounts (id, user_id, account_id, provider_id, created_at, updated_at)
+    values (gen_random_uuid()::text, ${sub}, ${sub}, 'identity-center', now(), now())`;
+  await admin`
+    insert into sessions (id, user_id, token, expires_at, created_at, updated_at)
+    values ('sess733a', ${sub}, 'sess733a-token', now() + interval '12 hours', now(), now())`;
+  await admin`
+    insert into agents (id, name, type, configuration, created_at, updated_at)
+    values ('bot733-a', 'm733 记忆验收 Bot', 'built_in', '{}', now(), now()) on conflict (id) do nothing`;
+  await admin`
+    insert into agent_profiles (agent_id, owner_user_id, title, role_description, avatar_seed, visibility, created_at, updated_at)
+    values ('bot733-a', ${sub}, '记忆验收 Bot', 'Assist', 'seed733', 'private', now(), now()) on conflict (agent_id) do nothing`;
+}
+await admin.end();
 
 /* ---- 8. facts.json（验收输入与版本清单） ---- */
 const facts = {

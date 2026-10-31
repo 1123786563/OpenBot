@@ -30,3 +30,12 @@ dependencies:
     version: "16.7.27"
     repository: "oci://registry-1.docker.io/bitnamicharts"
     condition: postgresql.enabled
+  - name: redis
+    # EXACT, NOT A RANGE, for the same reason as postgresql above: a subchart patch carries a new
+    # image tag, and Bitnami's free tags are a frozen mirror not gaining new pulls. OFF by
+    # default — one replica needs no redis (the server keeps an in-process lock and a polling
+    # bus while OPENBOT_REDIS_URL is unset) — so this is for `server.replicas > 1`, and for
+    # parity with docker-compose.yml's openbot-redis.
+    version: "28.3.10"
+    repository: "oci://registry-1.docker.io/bitnamicharts"
+    condition: redis.enabled

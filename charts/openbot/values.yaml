@@ -574,6 +574,31 @@ database:
   existingSecret: ""
   existingSecretKey: "database-url"
 
+# The workshop's Redis: turn locks and event fan-out across replicas. OFF by default, because one
+# replica needs none of it — with OPENBOT_REDIS_URL unset the server keeps an in-process lock and
+# a polling bus, which is a supported single-replica deployment, not a degraded one. Turn this on,
+# or point `redis.url` at your own (ElastiCache, MemoryStore), when `server.replicas` goes above
+# one.
+redis:
+  enabled: false
+  # Used when `redis.enabled` is false. A URL, or a Secret holding one:
+  #
+  #   redis://:password@host:6379    (rediss:// for a TLS one)
+  #
+  # Like `database.url` above, keep it in a Secret rather than here.
+  url: ""
+  existingSecret: ""
+  existingSecretKey: "redis-url"
+
+  # The bundled one mirrors docker-compose.yml's openbot-redis: standalone, pure memory
+  # (`--save '' --appendonly no` there; `persistence.enabled: false` here). Turn locks are
+  # short-lived and the bus carries recent events only, so a redis that lost everything on a
+  # restart is fine, and a volume would pin the pod to a node for nothing.
+  architecture: standalone
+  master:
+    persistence:
+      enabled: false
+
 # The bundled database. Off by default in favour of a managed one.
 # The bundled database.
 #
