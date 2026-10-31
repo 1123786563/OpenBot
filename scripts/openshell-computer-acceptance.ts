@@ -717,6 +717,13 @@ async function productPhase(): Promise<void> {
     .stdout.split("\n")
     .filter((line) => line.includes("openbot-server"))
     .map((line) => line.replace(/^pod\//, ""));
+  // …and the half Bun's shortcut needs: the exposed URLs all say :8080, which Bun's fetch sends to
+  // the pod's own loopback. A plain TCP bridge on that loopback port forwards the bytes — TLS
+  // included, so the gateway still routes by the real SNI and the credentials still end to end —
+  // to the gateway Service. This is the same bridge the T01 recipe ran; it changes no boundary.
+  // The LISTEN check keys on the zero remote address and the 0A state, because the server's own
+  // gRPC connection to the gateway also shows port 1F90 in /proc/net/tcp, as an ESTABLISHED line.
+  const bridgeCommand = `grep -q ':1F90 00000000:0000 0A ' /proc/net/tcp || nohup bun -e 'const net=require("net");const s=net.createServer((c)=>{const u=net.connect({host:"${gatewayIp}",port:8080});c.pipe(u);u.pipe(c);c.on("error",()=>u.destroy());u.on("error",()=>c.destroy());});s.listen(8080,"127.0.0.1");setInterval(()=>{},60000);' >/tmp/bridge.log 2>&1 & sleep 1; grep -c ':1F90 00000000:0000 0A ' /proc/net/tcp`;
   const patched = serverPods.map((pod) =>
     kubectl(
       "-n",
@@ -726,16 +733,16 @@ async function productPhase(): Promise<void> {
       "--",
       "sh",
       "-c",
-      `grep -q ${exposedHost(botA)} /etc/hosts || echo '${gatewayIp} ${hostsEntries[0]}' >> /etc/hosts; grep -c ${exposedHost(botA)} /etc/hosts`,
+      `grep -q ${exposedHost(botA)} /etc/hosts || echo '${gatewayIp} ${hostsEntries[0]}' >> /etc/hosts; ${bridgeCommand}`,
     ),
   );
   record(
     "server-pods-resolve-exposed-names",
-    "every server pod pins the deterministic exposed hostnames of both probe Bots to the gateway's Service IP, so the server's own fetches reach the gateway rather than its loopback",
+    "every server pod pins the deterministic exposed hostnames of both probe Bots to the gateway's Service IP and bridges the exposed port on its loopback to the gateway, so the server's own fetches reach the real gateway rather than its loopback",
     patched.length > 0 && patched.every((probe) => probe.stdout.trim() !== "0"),
     {
       gatewayIp,
-      pods: patched.map((probe) => probe.stdout.trim()),
+      bridgeListeners: patched.map((probe) => probe.stdout.trim()),
     },
   );
 
@@ -777,9 +784,11 @@ async function productPhase(): Promise<void> {
     firstStatus.status === 200 &&
       firstStatus.text.includes("absent") &&
       // The refusal has to be the browser's, not a wake failure: a service that never became
-      // healthy is also >=400, and counting it here would pass the case for the wrong reason.
+      // healthy or a computer the server could not reach are also >=400, and counting either
+      // here would pass the case for the wrong reason.
       firstNavigate.status >= 400 &&
       !firstNavigate.text.includes("became healthy") &&
+      !firstNavigate.text.includes("is not running") &&
       !firstNavigate.text.includes("Example Domain") &&
       statusAfter.text.includes("ready"),
     {
