@@ -49,10 +49,19 @@
 //     是发布/受众/版本/调用授权面，运行时接线票在传输层消费；
 //   - "可用不可改"指事实面不可原地修改（resources 列对 operator 只开
 //      INSERT 与 visibility）——作者的演进路径是升级新版本或撤销发布。
+//
+// T06.05（Issue #577）：invokeComponentFunction 增加门 3——执行声明的
+// 依赖项（包安装/连接/组件）逐项以调用者本人身份授权，任一项跨公司/
+// 跨团队/停用/不存在 = canonical not-found；onExecute 探针恰在全部
+// 通过的 allow 处触发一次（onVendorCall 同款观测纪律）。
 
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { enterpriseConversations } from "../../db/schema/enterprise-conversations";
+import {
+  enterprisePluginConnections,
+  enterprisePluginInstalls,
+} from "../../db/schema/enterprise-plugins";
 import {
   enterpriseMemberships,
   enterpriseResourceGrants,
@@ -124,6 +133,70 @@ export type SkillComponentUseDecision =
     }
   | ResourceNotFoundVerdict;
 
+/**
+ * 组件执行声明的依赖项（T06.05/#577）。依赖集是调用方（运行时装载器）
+ * 的意图：每一项都在服务端以调用者本人身份逐项重验——不因同 team、
+ * 目录 admin 或组件作者身份放大。shortcut: 依赖为声明制，本判定面
+ * 无法察觉漏声明；真实装载各自还走其独立判定面（authorizeInvoke 等），
+ * 本面是纵深防御的一层，不替代装载点门禁。
+ */
+export type ComponentDependencyRef =
+  | { readonly kind: "plugin-install"; readonly installId: string }
+  | { readonly kind: "plugin-connection"; readonly connectionId: string }
+  | { readonly kind: "component"; readonly name: string };
+
+function assertDependencyRef(value: unknown): ComponentDependencyRef {
+  if (!value || typeof value !== "object") {
+    throw new Error("COMPONENT_DEPENDENCY_INVALID");
+  }
+  const dep = value as Record<string, unknown>;
+  if (dep.kind === "plugin-install") {
+    rejectExtraKeys(dep, ["kind", "installId"], "COMPONENT_DEPENDENCY_INVALID");
+    return {
+      kind: "plugin-install",
+      installId: requireDependencyRef(dep.installId),
+    };
+  }
+  if (dep.kind === "plugin-connection") {
+    rejectExtraKeys(
+      dep,
+      ["kind", "connectionId"],
+      "COMPONENT_DEPENDENCY_INVALID",
+    );
+    return {
+      kind: "plugin-connection",
+      connectionId: requireDependencyRef(dep.connectionId),
+    };
+  }
+  if (dep.kind === "component") {
+    rejectExtraKeys(dep, ["kind", "name"], "COMPONENT_DEPENDENCY_INVALID");
+    if (typeof dep.name !== "string") {
+      throw new Error("COMPONENT_DEPENDENCY_INVALID: name");
+    }
+    return { kind: "component", name: assertName(dep.name) };
+  }
+  throw new Error("COMPONENT_DEPENDENCY_INVALID: kind");
+}
+
+function requireDependencyRef(value: unknown): string {
+  if (typeof value !== "string" || !value.trim() || value.length > 128) {
+    throw new Error("COMPONENT_DEPENDENCY_INVALID: ref");
+  }
+  return value;
+}
+
+function rejectExtraKeys(
+  input: Record<string, unknown>,
+  allowed: readonly string[],
+  code: string,
+): void {
+  for (const key of Object.keys(input)) {
+    if (!allowed.includes(key)) {
+      throw new Error(`${code}: unexpected field ${key}`);
+    }
+  }
+}
+
 function assertScopeContext(scope: PlatformScope): void {
   if (!scope.tenantId?.trim()) throw new Error("TENANT_REQUIRED");
   if (!scope.workspaceId?.trim()) throw new Error("WORKSPACE_REQUIRED");
@@ -193,6 +266,8 @@ export interface SkillComponentService {
       readonly name: string;
       readonly functionName: string;
       readonly threadId?: string;
+      /** 执行要装载的依赖项（声明制意图；逐项以调用者身份重验）。 */
+      readonly dependencies?: readonly ComponentDependencyRef[];
     },
   ): Promise<SkillComponentUseDecision>;
   /** 撤销发布（作者 ∨ admin；活跃行软删 → 成员立即失去）。 */
@@ -207,11 +282,26 @@ interface ActiveRowFacts {
   readonly revision: number;
 }
 
-export function createSkillComponentService(channels: {
-  readonly data: DataDatabase;
-  readonly operator: OperatorDatabase;
-}): SkillComponentService {
+export function createSkillComponentService(
+  channels: {
+    readonly data: DataDatabase;
+    readonly operator: OperatorDatabase;
+  },
+  /*
+   * T06.05 观测面（MT031 onVendorCall 同款纪律）：onExecute 恰在全部门
+   * （含逐项依赖授权）通过后的 allow 语句处触发一次——deny/错误路径绝不
+   * 触发；观测者故障绝不影响判定。
+   */
+  probes?: { readonly onExecute?: () => void },
+): SkillComponentService {
   const { data, operator } = channels;
+  const notifyExecute = (): void => {
+    try {
+      probes?.onExecute?.();
+    } catch {
+      // 探针是观测面不是判定面。
+    }
+  };
 
   const kindOf = (kind: "skill" | "component"): string =>
     kind === "skill" ? SKILL_RESOURCE_KIND : COMPONENT_RESOURCE_KIND;
@@ -514,6 +604,10 @@ export function createSkillComponentService(channels: {
       if (input.threadId !== undefined && !input.threadId.trim()) {
         throw new Error("THREAD_ID_INVALID");
       }
+      const dependencies =
+        input.dependencies === undefined
+          ? []
+          : input.dependencies.map(assertDependencyRef);
       return data.transaction(async (tx) => {
         await tx.execute(sql`set transaction isolation level read committed`);
         await tx.execute(sql`set local lock_timeout = '2s'`);
@@ -534,6 +628,37 @@ export function createSkillComponentService(channels: {
             input.name,
           ]),
         )) {
+          await tx.execute(
+            sql`select pg_advisory_xact_lock_shared(hashtextextended(${key}, 0))`,
+          );
+        }
+        // ---- 依赖项锁（共享；install 键族与 plugin-catalog 一致，键序在基础键之后）。 ----
+        for (const key of [
+          ...new Set(
+            dependencies.flatMap((dependency) =>
+              dependency.kind === "plugin-install"
+                ? [
+                    JSON.stringify([
+                      "enterprise",
+                      "plugin-install",
+                      scope.tenantId,
+                      dependency.installId,
+                    ]),
+                  ]
+                : dependency.kind === "component"
+                  ? [
+                      JSON.stringify([
+                        "enterprise",
+                        COMPONENT_RESOURCE_KIND,
+                        scope.tenantId,
+                        scope.workspaceId,
+                        dependency.name,
+                      ]),
+                    ]
+                  : [],
+            ),
+          ),
+        ].sort()) {
           await tx.execute(
             sql`select pg_advisory_xact_lock_shared(hashtextextended(${key}, 0))`,
           );
@@ -609,6 +734,97 @@ export function createSkillComponentService(channels: {
             .limit(1);
           if (!conversation) return notFoundVerdict();
         }
+
+        // ---- 门 3（T06.05/#577）：声明的依赖项逐项授权。每一项都以调用者
+        // 本人身份重验（公司成员资格已在门 0 过；安装项再验其所在团队
+        // active——与 plugin-catalog 的 invoke 判定同形）；任一项失败 =
+        // canonical not-found，不泄露失败在哪一项，也不因同 team、目录
+        // admin 或作者身份放大。 ----
+        const installLoadable = async (installId: string): Promise<boolean> => {
+          const [row] = await tx
+            .select({
+              status: enterprisePluginInstalls.status,
+              workspaceMembershipStatus: enterpriseWorkspaceMemberships.status,
+            })
+            .from(enterprisePluginInstalls)
+            .leftJoin(
+              enterpriseWorkspaceMemberships,
+              and(
+                eq(
+                  enterpriseWorkspaceMemberships.tenantId,
+                  enterprisePluginInstalls.tenantId,
+                ),
+                eq(
+                  enterpriseWorkspaceMemberships.workspaceId,
+                  enterprisePluginInstalls.workspaceId,
+                ),
+                eq(
+                  enterpriseWorkspaceMemberships.principalId,
+                  scope.principalId,
+                ),
+              ),
+            )
+            .where(
+              and(
+                eq(enterprisePluginInstalls.tenantId, scope.tenantId),
+                eq(enterprisePluginInstalls.id, installId),
+              ),
+            )
+            .limit(1);
+          // 跨公司安装行经 RLS 对本事务不可见（复合 FK 是结构兜底）。
+          return (
+            row?.status === "active" &&
+            row.workspaceMembershipStatus === "active"
+          );
+        };
+        for (const dependency of dependencies) {
+          if (dependency.kind === "plugin-install") {
+            if (!(await installLoadable(dependency.installId))) {
+              return notFoundVerdict();
+            }
+            continue;
+          }
+          if (dependency.kind === "plugin-connection") {
+            const [connection] = await tx
+              .select({
+                installId: enterprisePluginConnections.installId,
+              })
+              .from(enterprisePluginConnections)
+              .where(
+                and(
+                  eq(enterprisePluginConnections.tenantId, scope.tenantId),
+                  eq(enterprisePluginConnections.id, dependency.connectionId),
+                ),
+              )
+              .limit(1);
+            if (!connection) return notFoundVerdict();
+            // 连接的复合外键保证与安装同公司；装载闸门按其安装重验
+            // （plugin-catalog 的连接判定同款：以安装行为键）。
+            await tx.execute(
+              sql`select pg_advisory_xact_lock_shared(hashtextextended(${JSON.stringify(["enterprise", "plugin-install", scope.tenantId, connection.installId])}, 0))`,
+            );
+            if (!(await installLoadable(connection.installId))) {
+              return notFoundVerdict();
+            }
+            continue;
+          }
+          const [dependencyRow] = await tx
+            .select({ id: enterpriseResources.id })
+            .from(enterpriseResources)
+            .where(
+              and(
+                eq(enterpriseResources.tenantId, scope.tenantId),
+                eq(enterpriseResources.kind, COMPONENT_RESOURCE_KIND),
+                eq(enterpriseResources.workspaceId, scope.workspaceId),
+                eq(enterpriseResources.displayName, dependency.name),
+                sql`${enterpriseResources.visibility} = 'workspace'`,
+                sql`${enterpriseResources.status} = 'active'`,
+              ),
+            )
+            .limit(1);
+          if (!dependencyRow) return notFoundVerdict();
+        }
+        notifyExecute();
         return {
           outcome: "allow",
           name: input.name,

@@ -40,6 +40,11 @@
 // 边界（诚实披露）：
 //   - 技能/组件发布的通用规则在 MT033（Issue #76 handoff 同源）；本票
 //     目录条目 kind 闭集为 'expert'（产物 Bot），不承载技能安装。
+//
+// T06.05（Issue #577）：listInstalls 收紧到 plugin-catalog 的 listInstalls
+// 同款纪律——回执只含 scope 主体持有 active 团队成员资格的团队（同公司
+// 其他团队不再自动可见）；readCatalog 维持对任何已认证 scope 同一公共
+// 投影，全局模板与私有实例保持分开。
 //   - 版本单一事实源是产物行 revision（MT016 列级 UPDATE 授权覆盖
 //     default_config + revision）；回执行的 resources.revision 是初装
 //     记录，升级不改它——operator 对该列无授权，两行永不脱钩。
@@ -484,6 +489,7 @@ export function createMarketplaceInstallService(channels: {
             status: enterpriseResources.status,
             ownerPrincipalId: enterpriseBotOwnership.ownerPrincipalId,
             productRevision: enterpriseBotOwnership.revision,
+            workspaceMembershipStatus: enterpriseWorkspaceMemberships.status,
           })
           .from(enterpriseResources)
           .leftJoin(
@@ -491,6 +497,20 @@ export function createMarketplaceInstallService(channels: {
             and(
               eq(enterpriseBotOwnership.tenantId, enterpriseResources.tenantId),
               eq(enterpriseBotOwnership.agentId, enterpriseResources.id),
+            ),
+          )
+          .leftJoin(
+            enterpriseWorkspaceMemberships,
+            and(
+              eq(
+                enterpriseWorkspaceMemberships.tenantId,
+                enterpriseResources.tenantId,
+              ),
+              eq(
+                enterpriseWorkspaceMemberships.workspaceId,
+                enterpriseResources.workspaceId,
+              ),
+              eq(enterpriseWorkspaceMemberships.principalId, scope.principalId),
             ),
           )
           .where(
@@ -501,6 +521,10 @@ export function createMarketplaceInstallService(channels: {
           );
         const receipts = [];
         for (const row of rows) {
+          // T06.05（#577）：回执同 plugin-catalog 的 listInstalls 纪律——
+          // 只含 scope 主体持有 active 团队成员资格的团队的安装（同公司
+          // 其他团队的安装与跨公司安装同形不可见，计数也不泄露）。
+          if (row.workspaceMembershipStatus !== "active") continue;
           if (!row.ownerPrincipalId) continue;
           const receipt = receiptOfResourceRow({
             ...row,

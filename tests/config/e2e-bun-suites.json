@@ -1,5 +1,5 @@
 {
-  "generatedBy": "T06.01 registration",
+  "generatedBy": "T06.05 registration",
   "groups": [
     {
       "name": "agent-computer/tests",
@@ -1143,6 +1143,10 @@
     {
       "name": "server/tests/better-auth:T06.01.01",
       "files": ["server/tests/better-auth/bot-resource-actions.test.ts"]
+    },
+    {
+      "name": "server/tests/better-auth:T06.05.01",
+      "files": ["server/tests/better-auth/plugin-component-scope.test.ts"]
     }
   ],
   "directoryIslands": ["server/tests/multitenancy", "app/tests/multitenancy"],
@@ -1365,6 +1369,7 @@
     "server/tests/better-auth/password-reset-request.test.ts",
     "server/tests/better-auth/personal-model-grants.test.ts",
     "server/tests/better-auth/personal-model-identity.test.ts",
+    "server/tests/better-auth/plugin-component-scope.test.ts",
     "server/tests/better-auth/principal-registry.test.ts",
     "server/tests/better-auth/provisioning-global-admin.test.ts",
     "server/tests/better-auth/remote-identity-binding.test.ts",
