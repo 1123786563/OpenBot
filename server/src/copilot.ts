@@ -3007,15 +3007,19 @@ function mastraAgentConfiguration(input: {
         // semantics — a plain conversation continues on an honest "no memory
         // used" notice, while a run whose tools are memory tools pauses
         // instead of improvising without memory.
-        const memoryOutcome: MemoryContextBlock | undefined = mastraMemoryContext
-          ? memoryContextBlock(await mastraMemoryContext(facts.scope, facts.botId), {
-              required: tools.some(
-                (tool) =>
-                  tool.name === "recall_personal_memory" ||
-                  tool.name === "forget_personal_memory",
-              ),
-            })
-          : undefined;
+        const memoryOutcome: MemoryContextBlock | undefined =
+          mastraMemoryContext
+            ? memoryContextBlock(
+                await mastraMemoryContext(facts.scope, facts.botId),
+                {
+                  required: tools.some(
+                    (tool) =>
+                      tool.name === "recall_personal_memory" ||
+                      tool.name === "forget_personal_memory",
+                  ),
+                },
+              )
+            : undefined;
         if (memoryOutcome?.blocked) throw new Error("MEMORY_UNAVAILABLE");
         const personalMemoryBlock =
           mastraMemoryContext !== undefined

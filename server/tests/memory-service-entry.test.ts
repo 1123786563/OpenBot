@@ -12,12 +12,18 @@ import { createMemoryServiceEntryRoutes } from "../src/memory-service/entry-rout
 const BASE = "https://memory.example";
 
 function fixture(options: { signedIn: boolean }) {
-  const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (c, next) => {
+  const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
+    c,
+    next,
+  ) => {
     if (!options.signedIn) return c.json({ error: "Unauthorized" }, 401);
     return next();
   };
   const app = new Hono();
-  app.route("/api/memory-service/entry", createMemoryServiceEntryRoutes({ memoryBaseUrl: BASE, requireUser }));
+  app.route(
+    "/api/memory-service/entry",
+    createMemoryServiceEntryRoutes({ memoryBaseUrl: BASE, requireUser }),
+  );
   return app;
 }
 
@@ -34,12 +40,18 @@ describe("entry", () => {
     const app = fixture({ signedIn: true });
     const first = await get(app);
     expect(first.status).toBe(200);
-    const one = (await first.json()) as { entry: { src: string; allowedOrigin: string; requestId: string } };
+    const one = (await first.json()) as {
+      entry: { src: string; allowedOrigin: string; requestId: string };
+    };
     expect(one.entry.allowedOrigin).toBe(BASE);
     expect(one.entry.src.startsWith(`${BASE}/?embed=1&requestId=`)).toBe(true);
     expect(one.entry.src).toContain(one.entry.requestId);
     // 响应里没有令牌或服务秘密。
-    expect(Object.keys(one.entry).sort()).toEqual(["allowedOrigin", "requestId", "src"]);
+    expect(Object.keys(one.entry).sort()).toEqual([
+      "allowedOrigin",
+      "requestId",
+      "src",
+    ]);
 
     const second = await get(app);
     const two = (await second.json()) as { entry: { requestId: string } };
@@ -55,8 +67,12 @@ describe("entry", () => {
         requireUser: async (_c, next) => next(),
       }),
     );
-    const body = (await (await get(app)).json()) as { entry: { src: string; allowedOrigin: string } };
-    expect(body.entry.src).toBe(`https://memory.example/tenant-a/?embed=1&requestId=${body.entry.src.split("requestId=")[1]}`);
+    const body = (await (await get(app)).json()) as {
+      entry: { src: string; allowedOrigin: string };
+    };
+    expect(body.entry.src).toBe(
+      `https://memory.example/tenant-a/?embed=1&requestId=${body.entry.src.split("requestId=")[1]}`,
+    );
     expect(body.entry.allowedOrigin).toBe("https://memory.example");
   });
 });

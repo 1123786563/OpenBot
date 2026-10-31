@@ -10,7 +10,14 @@ export type SourceRef = Readonly<{ originAppId: string; scopeRef: string }>;
 
 export type JobView = Readonly<{
   id: string;
-  state: "accepted" | "processing" | "pending" | "review" | "completed" | "failed" | "expired";
+  state:
+    | "accepted"
+    | "processing"
+    | "pending"
+    | "review"
+    | "completed"
+    | "failed"
+    | "expired";
   reason: string | null;
   expiresAt: string;
 }>;
@@ -44,7 +51,11 @@ export type SubmitInput = Readonly<{
 }>;
 
 export type ServerCredentialProvider = Readonly<{
-  forRequest(input: { subjectId: string; appId: string; requestId: string }): Promise<{
+  forRequest(input: {
+    subjectId: string;
+    appId: string;
+    requestId: string;
+  }): Promise<{
     serviceCredential: string;
     userDelegation: string;
   }>;
@@ -90,29 +101,47 @@ export function createMemoryClient(options: {
         authorization: `Bearer ${credential.serviceCredential}`,
       },
       body: JSON.stringify(body),
-      ...(options.timeoutMs === undefined ? {} : { signal: AbortSignal.timeout(options.timeoutMs) }),
+      ...(options.timeoutMs === undefined
+        ? {}
+        : { signal: AbortSignal.timeout(options.timeoutMs) }),
     });
     if (!response.ok) {
-      const payload = (await response.json().catch(() => ({}))) as { error?: { code?: string } };
-      throw new MemoryServiceError(response.status, payload.error?.code ?? "UNKNOWN");
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: { code?: string };
+      };
+      throw new MemoryServiceError(
+        response.status,
+        payload.error?.code ?? "UNKNOWN",
+      );
     }
     return (await response.json()) as T;
   };
 
   return {
-    submit(input: { subjectId: string; requestId: string } & SubmitInput): Promise<JobView> {
+    submit(
+      input: { subjectId: string; requestId: string } & SubmitInput,
+    ): Promise<JobView> {
       return call<JobView>("/v1/ingestions", input.subjectId, input.requestId, {
         idempotencyKey: input.idempotencyKey,
         fragment: input.fragment,
         sources: input.sources,
       });
     },
-    recall(input: { subjectId: string; requestId: string } & RecallInput): Promise<RecallResult> {
-      return call<RecallResult>("/v1/recall", input.subjectId, input.requestId, {
-        ...(input.query === undefined ? {} : { query: input.query }),
-        ...(input.sourceRefs === undefined ? {} : { sourceRefs: input.sourceRefs }),
-        ...(input.asOf === undefined ? {} : { asOf: input.asOf }),
-      });
+    recall(
+      input: { subjectId: string; requestId: string } & RecallInput,
+    ): Promise<RecallResult> {
+      return call<RecallResult>(
+        "/v1/recall",
+        input.subjectId,
+        input.requestId,
+        {
+          ...(input.query === undefined ? {} : { query: input.query }),
+          ...(input.sourceRefs === undefined
+            ? {}
+            : { sourceRefs: input.sourceRefs }),
+          ...(input.asOf === undefined ? {} : { asOf: input.asOf }),
+        },
+      );
     },
   };
 }
@@ -126,11 +155,19 @@ export type MemoryClient = ReturnType<typeof createMemoryClient>;
  */
 export async function submitWithIdempotentRetry(
   client: MemoryClient,
-  input: { subjectId: string; requestId: string; idempotencyKey: string; fragment: string; sources: readonly SourceRef[] },
+  input: {
+    subjectId: string;
+    requestId: string;
+    idempotencyKey: string;
+    fragment: string;
+    sources: readonly SourceRef[];
+  },
   options: { attempts?: number; sleep?: (ms: number) => Promise<void> } = {},
 ): Promise<JobView> {
   const attempts = options.attempts ?? 3;
-  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const sleep =
+    options.sleep ??
+    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   let lastError: unknown;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
@@ -138,7 +175,9 @@ export async function submitWithIdempotentRetry(
     } catch (error) {
       lastError = error;
       const ambiguous =
-        !(error instanceof MemoryServiceError) || error.status >= 500 || error.status === 429;
+        !(error instanceof MemoryServiceError) ||
+        error.status >= 500 ||
+        error.status === 429;
       if (!ambiguous) throw error;
       if (attempt + 1 < attempts) await sleep(50 * (attempt + 1));
     }
