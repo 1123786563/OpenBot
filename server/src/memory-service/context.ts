@@ -67,7 +67,11 @@ export function createMemoryContextLoader(deps: {
       // 服务自身不可达/鉴权失败：与"来源不可核验"同样不注入内容。
       return {
         content: "",
-        result: { state: "unavailable", memories: [], unavailableReasons: ["memory_service_unavailable"] },
+        result: {
+          state: "unavailable",
+          memories: [],
+          unavailableReasons: ["memory_service_unavailable"],
+        },
       };
     }
     if (result.state === "unavailable") return { content: "", result };

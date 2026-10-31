@@ -21,10 +21,7 @@ function MemoryPage() {
         <>
           <p className="mt-6 text-muted-foreground text-sm">
             {t("pages.memory.settingsIntro")}{" "}
-            <Link
-              className="underline underline-offset-4"
-              to="/memory"
-            >
+            <Link className="underline underline-offset-4" to="/memory">
               {t("pages.memory.settingsLink")}
             </Link>
             {t("pages.memory.settingsOutro")}

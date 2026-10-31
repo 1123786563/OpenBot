@@ -72,7 +72,11 @@ const JOB: JobView = {
   expiresAt: "2026-11-02T00:00:00.000Z",
 };
 
-function reply(response: import("node:http").ServerResponse, status: number, body: unknown) {
+function reply(
+  response: import("node:http").ServerResponse,
+  status: number,
+  body: unknown,
+) {
   response.writeHead(status, { "content-type": "application/json" });
   response.end(JSON.stringify(body));
 }
@@ -110,9 +114,17 @@ beforeAll(async () => {
         }
         const body: RecallResult =
           mode === "unavailable"
-            ? { state: "unavailable", memories: [], unavailableReasons: ["recovery_replaying"] }
+            ? {
+                state: "unavailable",
+                memories: [],
+                unavailableReasons: ["recovery_replaying"],
+              }
             : mode === "partial"
-              ? { ...MEMORY, state: "partial", unavailableReasons: ["source:app-a:unavailable"] }
+              ? {
+                  ...MEMORY,
+                  state: "partial",
+                  unavailableReasons: ["source:app-a:unavailable"],
+                }
               : MEMORY;
         reply(response, 200, body);
       };
@@ -149,11 +161,18 @@ function platformScope(overrides: Partial<PlatformScope> = {}): PlatformScope {
 
 const credentials: ServerCredentialProvider = {
   async forRequest(input) {
-    return { serviceCredential: "svc-fixed", userDelegation: `deleg-${input.subjectId}` };
+    return {
+      serviceCredential: "svc-fixed",
+      userDelegation: `deleg-${input.subjectId}`,
+    };
   },
 };
 
-const issueScope = (input: { subjectId: string; botId: string; tenantId: string | null }) =>
+const issueScope = (input: {
+  subjectId: string;
+  botId: string;
+  tenantId: string | null;
+}) =>
   issueSourceScope(
     {
       originAppId: "app-a",
@@ -166,7 +185,12 @@ const issueScope = (input: { subjectId: string; botId: string; tenantId: string 
   );
 
 function loader(options: { timeoutMs?: number } = {}) {
-  const client = createMemoryClient({ baseUrl, appId: APP_ID, credentials, ...options });
+  const client = createMemoryClient({
+    baseUrl,
+    appId: APP_ID,
+    credentials,
+    ...options,
+  });
   return createMemoryContextLoader({ client, issueScope });
 }
 
@@ -176,7 +200,9 @@ describe("plain_chat_and_required_task", () => {
     const loaded = await loader()(platformScope(), "bot-1");
     expect(loaded.content).toBe("");
     expect(loaded.result.state).toBe("unavailable");
-    expect(loaded.result.unavailableReasons).toEqual(["memory_service_unavailable"]);
+    expect(loaded.result.unavailableReasons).toEqual([
+      "memory_service_unavailable",
+    ]);
 
     // 普通对话：不失败，注入诚实提示，模型不得冒充记得本人。
     const plain = memoryContextBlock(loaded, { required: false });
@@ -192,9 +218,13 @@ describe("plain_chat_and_required_task", () => {
     mode = "slow";
     const timedOut = await loader({ timeoutMs: 50 })(platformScope(), "bot-1");
     expect(timedOut.result.state).toBe("unavailable");
-    expect(timedOut.result.unavailableReasons).toEqual(["memory_service_unavailable"]);
+    expect(timedOut.result.unavailableReasons).toEqual([
+      "memory_service_unavailable",
+    ]);
     expect(memoryContextBlock(timedOut, { required: true }).blocked).toBe(true);
-    expect(memoryContextBlock(timedOut, { required: false }).blocked).toBe(false);
+    expect(memoryContextBlock(timedOut, { required: false }).blocked).toBe(
+      false,
+    );
 
     // 连接被丢弃（无答复）与超时同一结论。
     mode = "socket_drop";
@@ -213,8 +243,11 @@ describe("plain_chat_and_required_task", () => {
     const partial = await loader()(platformScope(), "bot-1");
     const partialBlock = memoryContextBlock(partial, { required: true });
     expect(partialBlock.blocked).toBe(false);
-    if (!partialBlock.blocked) expect(partialBlock.block).toBe("- 用户偏好简洁回复");
-    expect(partial.result.unavailableReasons).toEqual(["source:app-a:unavailable"]);
+    if (!partialBlock.blocked)
+      expect(partialBlock.block).toBe("- 用户偏好简洁回复");
+    expect(partial.result.unavailableReasons).toEqual([
+      "source:app-a:unavailable",
+    ]);
 
     // 未装配记忆服务（#730 seam 未接）：与旧行为一致，不注入也不暂停。
     const unwired = memoryContextBlock(undefined, { required: true });
@@ -249,10 +282,15 @@ describe("submit_retry", () => {
     expect(accepted).toHaveLength(1);
     expect(job.state).toBe("accepted");
     // 三次请求都用同一个幂等 key：重试不得换 key。
-    const ingestions = seen.filter((request) => request.path === "/v1/ingestions");
+    const ingestions = seen.filter(
+      (request) => request.path === "/v1/ingestions",
+    );
     expect(ingestions).toHaveLength(3);
     expect(
-      ingestions.map((request) => (request.body as { idempotencyKey: string }).idempotencyKey),
+      ingestions.map(
+        (request) =>
+          (request.body as { idempotencyKey: string }).idempotencyKey,
+      ),
     ).toEqual(["idem-729", "idem-729", "idem-729"]);
 
     // 明确答复（4xx）不重试：不是"无回执"，重试只会重复拒绝。
@@ -260,15 +298,21 @@ describe("submit_retry", () => {
     mode = "fault_403";
     let refusal: unknown = null;
     try {
-      await submitWithIdempotentRetry(createMemoryClient({ baseUrl, appId: APP_ID, credentials }), {
-        ...input(),
-        idempotencyKey: "idem-729-c",
-      }, { sleep: async () => {} });
+      await submitWithIdempotentRetry(
+        createMemoryClient({ baseUrl, appId: APP_ID, credentials }),
+        {
+          ...input(),
+          idempotencyKey: "idem-729-c",
+        },
+        { sleep: async () => {} },
+      );
     } catch (error) {
       refusal = error;
     }
     expect((refusal as { status: number }).status).toBe(403);
-    expect(seen.filter((request) => request.path === "/v1/ingestions")).toHaveLength(1);
+    expect(
+      seen.filter((request) => request.path === "/v1/ingestions"),
+    ).toHaveLength(1);
 
     // 持续无回执：抛错，调用方拿不到"已接收"。
     seen.length = 0;
@@ -277,10 +321,14 @@ describe("submit_retry", () => {
     let thrown: unknown = null;
     const outcomes: JobView[] = [];
     try {
-      const failed = await submitWithIdempotentRetry(createMemoryClient({ baseUrl, appId: APP_ID, credentials }), {
-        ...input(),
-        idempotencyKey: "idem-729-b",
-      }, { sleep: async () => {} });
+      const failed = await submitWithIdempotentRetry(
+        createMemoryClient({ baseUrl, appId: APP_ID, credentials }),
+        {
+          ...input(),
+          idempotencyKey: "idem-729-b",
+        },
+        { sleep: async () => {} },
+      );
       outcomes.push(failed);
     } catch (error) {
       thrown = error;
@@ -291,7 +339,10 @@ describe("submit_retry", () => {
     const retried = seen.filter((request) => request.path === "/v1/ingestions");
     expect(retried).toHaveLength(3);
     expect(
-      retried.map((request) => (request.body as { idempotencyKey: string }).idempotencyKey),
+      retried.map(
+        (request) =>
+          (request.body as { idempotencyKey: string }).idempotencyKey,
+      ),
     ).toEqual(["idem-729-b", "idem-729-b", "idem-729-b"]);
   });
 });
@@ -304,15 +355,23 @@ describe("no_legacy", () => {
     mode = "fault_503";
     const failed = await loader()(platformScope(), "bot-1");
     expect(failed.content).toBe("");
-    expect(failed.result.unavailableReasons).toEqual(["memory_service_unavailable"]);
+    expect(failed.result.unavailableReasons).toEqual([
+      "memory_service_unavailable",
+    ]);
     // 故障时只问一次服务，没有任何回填。
-    expect(seen.filter((request) => request.path === "/v1/recall")).toHaveLength(1);
+    expect(
+      seen.filter((request) => request.path === "/v1/recall"),
+    ).toHaveLength(1);
 
     mode = "available";
     const available = await loader()(platformScope(), "bot-1");
     expect(available.content).toBe("- 用户偏好简洁回复");
     // 内容逐字来自服务响应：装载器没有第二条读取路径可回填。
-    expect(available.result.memories.map((memory) => memory.versionId)).toEqual(["version-1"]);
-    expect(seen.filter((request) => request.path === "/v1/recall")).toHaveLength(2);
+    expect(available.result.memories.map((memory) => memory.versionId)).toEqual(
+      ["version-1"],
+    );
+    expect(
+      seen.filter((request) => request.path === "/v1/recall"),
+    ).toHaveLength(2);
   });
 });

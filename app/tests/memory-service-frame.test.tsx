@@ -32,18 +32,24 @@ function dispatch(options: {
   extra?: Record<string, unknown>;
 }) {
   const event = new MessageEvent("message", {
-    data: { type: options.type, requestId: options.requestId ?? REQUEST, ...options.extra },
+    data: {
+      type: options.type,
+      requestId: options.requestId ?? REQUEST,
+      ...options.extra,
+    },
     origin: options.origin ?? ORIGIN,
     source: options.source ?? null,
   });
   window.dispatchEvent(event);
 }
 
-function mount(handlers: {
-  onAuthRequired?: () => void;
-  onLoggedOut?: () => void;
-  navigate?: (url: string) => void;
-} = {}) {
+function mount(
+  handlers: {
+    onAuthRequired?: () => void;
+    onLoggedOut?: () => void;
+    navigate?: (url: string) => void;
+  } = {},
+) {
   const view = render(
     <MemoryServiceFrame
       src={SRC}
@@ -65,7 +71,11 @@ test("wrong_origin_or_window_is_ignored", async () => {
   const source = frame.contentWindow;
 
   // 未允许的宿主 Origin：即使 source/requestId 都对，也丢弃。
-  dispatch({ type: "memory.auth-required", origin: "https://evil.example", source });
+  dispatch({
+    type: "memory.auth-required",
+    origin: "https://evil.example",
+    source,
+  });
   // 别人的 window（不是本 iframe）：同样丢弃。
   dispatch({ type: "memory.auth-required", source: window });
   // 上一次装载的 requestId：丢弃。
@@ -80,22 +90,39 @@ test("wrong_origin_or_window_is_ignored", async () => {
 
   // resize 被夹在承载页的最小/最大高度内，且只接受数字。
   const { frame: sized } = mount();
-  dispatch({ type: "memory.resize", source: sized.contentWindow, extra: { height: 900 } });
+  dispatch({
+    type: "memory.resize",
+    source: sized.contentWindow,
+    extra: { height: 900 },
+  });
   await waitFor(() => expect(sized.style.height).toBe("900px"));
-  dispatch({ type: "memory.resize", source: sized.contentWindow, extra: { height: 10_000 } });
+  dispatch({
+    type: "memory.resize",
+    source: sized.contentWindow,
+    extra: { height: 10_000 },
+  });
   await waitFor(() => expect(sized.style.height).toBe("2400px"));
-  dispatch({ type: "memory.resize", source: sized.contentWindow, extra: { height: "tall" } });
+  dispatch({
+    type: "memory.resize",
+    source: sized.contentWindow,
+    extra: { height: "tall" },
+  });
   await waitFor(() => expect(sized.style.height).toBe("2400px"));
 });
 
 test("auth_message_cannot_choose_return_url_or_user", () => {
   const auth: unknown[] = [];
-  const { frame } = mount({ onAuthRequired: (...args: unknown[]) => auth.push(args) });
+  const { frame } = mount({
+    onAuthRequired: (...args: unknown[]) => auth.push(args),
+  });
   // 消息里塞了地址与身份：处理器不收任何参数，顶层回跳只到登记路由。
   dispatch({
     type: "memory.auth-required",
     source: frame.contentWindow,
-    extra: { returnUrl: "https://evil.example/steal", subjectId: "someone-else" },
+    extra: {
+      returnUrl: "https://evil.example/steal",
+      subjectId: "someone-else",
+    },
   });
   expect(auth).toEqual([[]]);
   // 承载页自身不接受顶层导航权限：导航只能由宿主发起。
@@ -111,7 +138,11 @@ test("logout_clears_embedded_state", async () => {
   await waitFor(() => expect(view.queryByTitle("记忆")).toBeNull());
   expect(view.getByText("你已退出登录。")).toBeTruthy();
   // 伪造来源的退出消息不清任何状态，也不能冒充登录。
-  dispatch({ type: "memory.logged-out", origin: "https://evil.example", source: frame.contentWindow });
+  dispatch({
+    type: "memory.logged-out",
+    origin: "https://evil.example",
+    source: frame.contentWindow,
+  });
   dispatch({ type: "memory.logged-out", source: window });
   expect(loggedOut).toBe(1);
 });
@@ -127,7 +158,9 @@ test("default_login_goes_top_level_once_and_stops_instead_of_reloading", async (
   // 会话仍建立不起来（存储受限等）：第二次只说明情况，不再重载宿主。
   dispatch({ type: "memory.auth-required", source: frame.contentWindow });
   expect(navigations).toHaveLength(1);
-  await waitFor(() => expect(view.getByText("无法建立登录会话。")).toBeTruthy());
+  await waitFor(() =>
+    expect(view.getByText("无法建立登录会话。")).toBeTruthy(),
+  );
 });
 
 test("frame_keeps_sidebar_and_has_no_second_navigation", () => {
@@ -136,7 +169,10 @@ test("frame_keeps_sidebar_and_has_no_second_navigation", () => {
   expect(view.container.querySelectorAll("nav, header, aside")).toHaveLength(0);
   expect(frame.getAttribute("src")).toBe(SRC);
   const sandbox = frame.getAttribute("sandbox") ?? "";
-  for (const disallowed of ["allow-top-navigation", "allow-popups-to-escape-sandbox"]) {
+  for (const disallowed of [
+    "allow-top-navigation",
+    "allow-popups-to-escape-sandbox",
+  ]) {
     expect(sandbox).not.toContain(disallowed);
   }
 });

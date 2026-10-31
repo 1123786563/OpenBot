@@ -27,7 +27,10 @@ const SUBJECT = "5f1b1f9a-2d63-4b1e-9c47-9a1a2f3de001";
 
 let server: Server;
 let baseUrl: string;
-let seen: { headers: Record<string, string | string[] | undefined>; body: unknown }[] = [];
+let seen: {
+  headers: Record<string, string | string[] | undefined>;
+  body: unknown;
+}[] = [];
 let behavior: "available" | "partial" | "unavailable" | "error" = "available";
 
 const MEMORY: RecallResult = {
@@ -53,17 +56,30 @@ beforeAll(async () => {
       raw += chunk;
     });
     request.on("end", () => {
-      seen.push({ headers: request.headers, body: raw ? JSON.parse(raw) : null });
+      seen.push({
+        headers: request.headers,
+        body: raw ? JSON.parse(raw) : null,
+      });
       if (behavior === "error") {
         response.writeHead(403, { "content-type": "application/json" });
-        response.end(JSON.stringify({ error: { code: "DELEGATION_REQUIRED" } }));
+        response.end(
+          JSON.stringify({ error: { code: "DELEGATION_REQUIRED" } }),
+        );
         return;
       }
       const body: RecallResult =
         behavior === "unavailable"
-          ? { state: "unavailable", memories: [], unavailableReasons: ["recovery_replaying"] }
+          ? {
+              state: "unavailable",
+              memories: [],
+              unavailableReasons: ["recovery_replaying"],
+            }
           : behavior === "partial"
-            ? { ...MEMORY, state: "partial", unavailableReasons: ["source_revoked"] }
+            ? {
+                ...MEMORY,
+                state: "partial",
+                unavailableReasons: ["source_revoked"],
+              }
             : MEMORY;
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify(body));
@@ -90,7 +106,9 @@ function platformScope(overrides: Partial<PlatformScope> = {}): PlatformScope {
   };
 }
 
-function countingProvider(): ServerCredentialProvider & { calls: { subjectId: string; appId: string }[] } {
+function countingProvider(): ServerCredentialProvider & {
+  calls: { subjectId: string; appId: string }[];
+} {
   const calls: { subjectId: string; appId: string }[] = [];
   return {
     calls,
@@ -109,7 +127,11 @@ describe("memory_client", () => {
     seen = [];
     const credentials = countingProvider();
     const client = createMemoryClient({ baseUrl, appId: APP_ID, credentials });
-    const result = await client.recall({ subjectId: SUBJECT, requestId: "req-1", query: "偏好" });
+    const result = await client.recall({
+      subjectId: SUBJECT,
+      requestId: "req-1",
+      query: "偏好",
+    });
     expect(result.state).toBe("available");
     expect(credentials.calls).toEqual([{ subjectId: SUBJECT, appId: APP_ID }]);
     expect(seen).toHaveLength(1);
@@ -119,14 +141,22 @@ describe("memory_client", () => {
     expect(seen[0].headers["x-request-id"]).toBe("req-1");
 
     seen = [];
-    await client.recall({ subjectId: SUBJECT, requestId: "req-2", query: "偏好" });
+    await client.recall({
+      subjectId: SUBJECT,
+      requestId: "req-2",
+      query: "偏好",
+    });
     expect(seen[0].headers.authorization).toBe("Bearer svc-2");
   });
 
   test("服务拒绝映射为带状态码的错误，不当作空结果", async () => {
     behavior = "error";
     try {
-      const client = createMemoryClient({ baseUrl, appId: APP_ID, credentials: countingProvider() });
+      const client = createMemoryClient({
+        baseUrl,
+        appId: APP_ID,
+        credentials: countingProvider(),
+      });
       let thrown: unknown = null;
       try {
         await client.recall({ subjectId: SUBJECT, requestId: "req-3" });
@@ -143,7 +173,11 @@ describe("memory_client", () => {
 });
 
 describe("memory_context_loader", () => {
-  const issueScope = (input: { subjectId: string; botId: string; tenantId: string | null }) =>
+  const issueScope = (input: {
+    subjectId: string;
+    botId: string;
+    tenantId: string | null;
+  }) =>
     issueSourceScope(
       {
         originAppId: "app-a",
@@ -158,10 +192,17 @@ describe("memory_context_loader", () => {
   test("三个入口都装载已授权内容，来源范围由服务器签发", async () => {
     behavior = "available";
     seen = [];
-    const client = createMemoryClient({ baseUrl, appId: APP_ID, credentials: countingProvider() });
+    const client = createMemoryClient({
+      baseUrl,
+      appId: APP_ID,
+      credentials: countingProvider(),
+    });
     const load = createMemoryContextLoader({ client, issueScope });
     for (const entrypoint of ["web", "schedule", "mobile"] as const) {
-      const { content, result } = await load(platformScope({ entrypoint }), "bot-1");
+      const { content, result } = await load(
+        platformScope({ entrypoint }),
+        "bot-1",
+      );
       expect(result.state).toBe("available");
       expect(content).toBe("- 用户偏好简洁回复");
     }
@@ -176,7 +217,11 @@ describe("memory_context_loader", () => {
   });
 
   test("来源失效的部分结果保留其他授权内容；恢复闸门/服务不可用不注入内容", async () => {
-    const client = createMemoryClient({ baseUrl, appId: APP_ID, credentials: countingProvider() });
+    const client = createMemoryClient({
+      baseUrl,
+      appId: APP_ID,
+      credentials: countingProvider(),
+    });
     const load = createMemoryContextLoader({ client, issueScope });
 
     behavior = "partial";
@@ -195,7 +240,9 @@ describe("memory_context_loader", () => {
       const failed = await load(platformScope(), "bot-1");
       expect(failed.content).toBe("");
       expect(failed.result.state).toBe("unavailable");
-      expect(failed.result.unavailableReasons).toEqual(["memory_service_unavailable"]);
+      expect(failed.result.unavailableReasons).toEqual([
+        "memory_service_unavailable",
+      ]);
     } finally {
       behavior = "available";
     }

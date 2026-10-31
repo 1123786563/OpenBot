@@ -96,7 +96,10 @@ async function answerRunCarrier(dials: DialRecord[]) {
   return carrier({
     ceiling: 4096,
     onDial: (body) => {
-      const messages = (body.messages ?? []) as { role: string; content: unknown }[];
+      const messages = (body.messages ?? []) as {
+        role: string;
+        content: unknown;
+      }[];
       const system = messages.find((message) => message.role === "system");
       dials.push({
         systemText: typeof system?.content === "string" ? system.content : "",
@@ -132,7 +135,9 @@ describe("memory service degradation on the Mastra execution path", () => {
         return "LEGACY-STORE-BLOCK";
       });
       setMastraMemoryContext(async () => UNAVAILABLE);
-      const events = await driveFactory({ governedModel: harness.governedModel });
+      const events = await driveFactory({
+        governedModel: harness.governedModel,
+      });
       expect(events.map((event) => event.type).at(-1)).toBe("RUN_FINISHED");
       expect(dials[0]!.systemText).toContain(MEMORY_UNAVAILABLE_NOTICE);
       expect(dials[0]!.systemText).not.toContain("LEGACY-STORE-BLOCK");
@@ -179,9 +184,13 @@ describe("memory service degradation on the Mastra execution path", () => {
           unavailableReasons: [],
         },
       }));
-      const events = await driveFactory({ governedModel: harness.governedModel });
+      const events = await driveFactory({
+        governedModel: harness.governedModel,
+      });
       expect(events.map((event) => event.type).at(-1)).toBe("RUN_FINISHED");
-      expect(dials[0]!.systemText).toContain("ME729-SERVICE prefers concise answers.");
+      expect(dials[0]!.systemText).toContain(
+        "ME729-SERVICE prefers concise answers.",
+      );
     } finally {
       engineOff();
     }
