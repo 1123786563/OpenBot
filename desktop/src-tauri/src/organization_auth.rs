@@ -671,16 +671,13 @@ mod tests {
             None,
             "the flat copy is retired once the namespace holds the session"
         );
-        assert_eq!(
-            crate::credential_namespace::org_recall(
-                &root,
-                authority,
-                crate::credential_namespace::SESSION_CREDENTIAL
-            )
-            .unwrap()
-            .is_some(),
-            true
-        );
+        assert!(crate::credential_namespace::org_recall(
+            &root,
+            authority,
+            crate::credential_namespace::SESSION_CREDENTIAL
+        )
+        .unwrap()
+        .is_some());
         // The next recovery reads the namespace copy.
         assert_eq!(
             recall_session(&root, authority).unwrap().unwrap().authority,
