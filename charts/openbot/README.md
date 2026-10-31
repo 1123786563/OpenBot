@@ -568,9 +568,12 @@ Before the mode can work, three things have to be true, and only the first is a 
 
 The remaining values are the digest-pinned sandbox image (`…@sha256:<64 hex>`; the install refuses
 a moving tag), the deployment generation sandboxes are attributed to, and `servicePort` — the port
-a computer service inside a sandbox listens on. Leave `servicePort` empty until you run such a
-service: sandboxes can then be created and stopped, but none has an address to locate, and the
-provider says so rather than inventing one.
+a computer service inside a sandbox listens on, 4100 by default. The provider starts that service in
+each sandbox once the gateway reports it ready and its policy loaded, and it hands out an address
+only after the service answers its health check; the service authenticates its caller with
+`secrets.computerToken`, which OpenShell mode now needs like every other mode. Set `servicePort`
+empty only to run sandboxes without a computer: they can then be created and stopped, but none has
+an address, and the provider says so rather than inventing one.
 
 With `networkPolicy.enabled`, name the gateway in `networkPolicy.openShellGateway` as the
 NetworkPolicyPeer that reaches it (a `namespaceSelector` plus `podSelector` pair is the usual

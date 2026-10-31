@@ -7,6 +7,12 @@ export type BrowserRuntime = {
   useVirtualDisplay: boolean;
   hostname?: "127.0.0.1";
   allowExec: boolean;
+  /**
+   * Who supplies the process boundary. `none` is the self-managed container, where Chromium keeps
+   * its own sandbox where the host allows it. `external` means the sandbox runtime (OpenShell's
+   * landlock/seccomp/network policy) is the boundary and Chromium's own sandbox is unavailable.
+   */
+  isolation: "none" | "external";
 };
 
 /** The same launch decision is used by profiles and the computer HTTP process. */
@@ -40,6 +46,17 @@ export function browserRuntimeFromEnv(
       "COMPUTER_BROWSER_BACKEND=local-chrome requires COMPUTER_BROWSER_MODE=headed.",
     );
   }
+  /*
+   * An isolation runtime is declared, never inferred. Unset means the self-managed container is the
+   * boundary; an unknown value is refused rather than read as "no isolation", so a typo cannot
+   * silently launch a browser with neither the runtime's boundary nor Chromium's own sandbox.
+   */
+  const declared = env.COMPUTER_ISOLATION_RUNTIME?.trim();
+  if (declared && declared !== "openshell") {
+    throw new Error(
+      "COMPUTER_ISOLATION_RUNTIME must name a supported runtime (openshell) when set.",
+    );
+  }
   return {
     backend,
     channel: local ? "chrome" : "chromium",
@@ -47,5 +64,6 @@ export function browserRuntimeFromEnv(
     useVirtualDisplay: platform === "linux" && mode === "headed",
     ...(local ? { hostname: "127.0.0.1" as const } : {}),
     allowExec: !local,
+    isolation: declared === "openshell" ? "external" : "none",
   };
 }

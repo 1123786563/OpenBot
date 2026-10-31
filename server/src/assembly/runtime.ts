@@ -2380,7 +2380,15 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
           pageFrames: pageFrameStore,
           allowPrivateHosts: config.computer?.allowPrivateHosts,
           token: config.computer?.token,
-          ...(config.computer?.provider === "shared" &&
+          /*
+           * T02: an OpenShell sandbox's agent-computer binds the execution ownership on the dial,
+           * so the transport must state it exactly as the shared provider does. The other two
+           * `executionScope` seams (policy push on wake, enterprise controls) stay shared-only:
+           * OpenShell's network policy lives in its gateway, and enterprise controls are outside
+           * this ticket's scope.
+           */
+          ...((config.computer?.provider === "shared" ||
+            config.computer?.provider === "openshell") &&
           config.computer.executionScope !== undefined
             ? { executionScope: config.computer.executionScope }
             : {}),

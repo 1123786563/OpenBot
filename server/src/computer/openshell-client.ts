@@ -46,7 +46,19 @@ const FILESYSTEM = {
     "/sbin",
     "/var/log",
     "/proc",
+    // Chromium reads /sys for CPU and GPU facts and aborts at start-up without it. The policy is
+    // fixed when the sandbox is created, so it has to be here from the first revision.
+    "/sys",
     "/dev/urandom",
+    // The image's own application directory: the service starts with `cd /app`, and a directory the
+    // policy cannot read is a service that cannot start.
+    "/app",
+    // The Playwright browser tree the image installs, outside /usr on purpose.
+    "/ms-playwright",
+    // The shared sources the image lays beside /app (../../shared/… imports) and the root-level
+    // node_modules symlink the image creates so those sources resolve their dependencies.
+    "/shared",
+    "/node_modules",
   ],
   readWrite: ["/tmp", "/dev/null"],
 };
@@ -62,11 +74,57 @@ const DENY_PROBE = { host: "one.one.one.one", port: 443, timeoutSeconds: 8 };
  * Control-plane material that must not be readable from a workload. The probe reads nothing: it
  * only asks the shell whether each path opens, which is exactly what a real workload would try.
  */
-const CREDENTIAL_PATHS = [
+export const CREDENTIAL_PATHS = [
   "/.openshell",
   "/var/run/secrets/kubernetes.io/serviceaccount/token",
   "/run/openshell-supervisor-ca/ca.crt",
 ];
+
+/**
+ * The command that starts the Bot's computer service inside its sandbox.
+ *
+ * The gateway's exec API has no environment map, so the launch is one shell command and everything
+ * the service needs is inline. The token is spliced as adjacent 16-character single-quoted segments:
+ * the gateway's log sentinel rewrites longer contiguous strings, and `sh` concatenates neighbours,
+ * so the service still reads the whole token. The token is charset-checked first and refused rather
+ * than escaped when it could break out of the quotes. Nothing from the control plane (Kubernetes
+ * service account, gateway PKI, OpenShell paths) appears here: the workload authenticates callers
+ * with the Bot's own token and nothing else.
+ */
+const SHELL_SAFE_TOKEN = /^[A-Za-z0-9._~+/=-]+$/;
+
+export function computerServiceStartSpec(input: {
+  token: string;
+  port?: number;
+  workdir?: string;
+}): { argv: string[]; healthUrl: string } {
+  if (!SHELL_SAFE_TOKEN.test(input.token)) {
+    throw new ProviderError(
+      "The computer token contains characters that cannot be placed in a shell command; refusing to start the in-sandbox service.",
+    );
+  }
+  const port = input.port ?? 4100;
+  const workdir = input.workdir ?? "/app";
+  const token = (input.token.match(/.{1,16}/g) ?? [])
+    .map((part) => `'${part}'`)
+    .join("");
+  const launch = [
+    `COMPUTER_TOKEN=${token}`,
+    `PORT=${port}`,
+    "HOME=/tmp",
+    "PLAYWRIGHT_BROWSERS_PATH=/ms-playwright",
+    "BUN_INSTALL_CACHE_DIR=/tmp/bun-cache",
+    "WORKSPACE_DIR=/tmp/workspace",
+    "PROFILES_DIR=/tmp/profiles",
+    "COMPUTER_BROWSER_MODE=headless",
+    "COMPUTER_ISOLATION_RUNTIME=openshell",
+    "nohup bun src/index.ts >/tmp/computer.log 2>&1 &",
+  ].join(" ");
+  return {
+    argv: ["/bin/sh", "-c", `cd ${workdir} && ${launch}`],
+    healthUrl: `http://127.0.0.1:${port}/health`,
+  };
+}
 
 /**
  * A sandbox named by its whole ownership, so one Bot cannot collide with another team's.
@@ -222,6 +280,12 @@ export type OpenShellGatewayClientOptions = {
    * guess at a URL.
    */
   servicePort?: number;
+  /**
+   * The Bot-facing secret the in-sandbox computer service authenticates its caller with. Required
+   * once `servicePort` is set: the service refuses to start without it, and a sandbox whose service
+   * cannot start is not a computer.
+   */
+  computerToken?: string;
   /** How long to wait for a sandbox to become ready and its policy to load. */
   settleMs?: number;
   /**
@@ -260,6 +324,14 @@ export function createOpenShellGatewayClient(
     ? options.dial()
     : dialMtlsGateway(options);
   const workspaceScope = () => ({ workspace: options.workspace });
+  const serviceToken = options.computerToken;
+  // A token is what lets the provider start the service; without one, `servicePort` only says a
+  // service may be exposed (the acceptance probe starts its own). The deployment assembly refuses
+  // the combination before a provider is built, so a real deployment never reaches this state.
+  const serviceSpec =
+    options.servicePort !== undefined && serviceToken !== undefined
+      ? computerServiceStartSpec({ token: serviceToken, port: options.servicePort })
+      : undefined;
 
   /**
    * One bounded unary RPC. grpc-js never times a call out on its own, so every wait this client
@@ -481,6 +553,51 @@ export function createOpenShellGatewayClient(
     }
   }
 
+  /**
+   * Start the Bot's computer service inside a ready sandbox and wait until it answers its health
+   * check. A service already running (a re-ensure, or a resume that kept it) is left alone, so this
+   * neither restarts a working browser nor fails on a second launch.
+   */
+  async function ensureService(
+    scope: OpenShellScope,
+    spec: { argv: string[]; healthUrl: string },
+  ): Promise<void> {
+    const healthy = async (): Promise<{ ok: boolean; detail: string }> => {
+      /*
+       * The gateway's exec stream carries stdout/stderr but no exit status (measured on v0.1.6), so
+       * the health check's own output is the verdict: `-w '%{http_code}'` prints 200 only when curl
+       * really spoke HTTP to a healthy service.
+       */
+      const probe = await exec(scope, [
+        "/bin/sh",
+        "-c",
+        `curl -fsS -m 5 -o /dev/null -w '%{http_code}' ${spec.healthUrl}`,
+      ]).catch((error: unknown) => ({
+        stdout: "",
+        stderr: describeError(error),
+      }));
+      return {
+        ok: probe.stdout.trim() === "200",
+        detail: `${probe.stderr}${probe.stdout}`.slice(0, 300),
+      };
+    };
+    if ((await healthy()).ok) return;
+    const started = await exec(scope, spec.argv);
+    const deadline = Date.now() + settleMs;
+    let detail = started.stderr;
+    for (;;) {
+      const health = await healthy();
+      if (health.ok) return;
+      detail = health.detail || detail;
+      if (Date.now() > deadline) {
+        throw new ProviderError(
+          `The computer service in the OpenShell sandbox ${JSON.stringify(sandboxName(scope))} did not become healthy within ${settleMs}ms: ${detail}`,
+        );
+      }
+      await sleep(2_000);
+    }
+  }
+
   async function waitUntilLoaded(
     scope: OpenShellScope,
   ): Promise<PolicyReading> {
@@ -675,6 +792,9 @@ export function createOpenShellGatewayClient(
       }
       await waitUntilReady(scope);
       const policy = await waitUntilLoaded(scope);
+      // The sandbox command is `sleep infinity`; the computer service is started inside it once the
+      // policy that permits it has loaded, and only handed out after it answers.
+      if (serviceSpec !== undefined) await ensureService(scope, serviceSpec);
       const settled = await rawSandbox(scope);
       return {
         ...viewOf(scope, settled),

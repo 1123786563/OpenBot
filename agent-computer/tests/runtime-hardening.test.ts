@@ -43,3 +43,50 @@ describe("control reason/label caps", () => {
     expect(state.secretWanted).toHaveLength(500);
   });
 });
+
+/**
+ * T02: the browser launch under an external isolation runtime.
+ *
+ * OpenShell is the boundary (landlock policy, seccomp, per-sandbox network policy), so Chromium's
+ * own process sandbox is unavailable there — exactly the compensating-control situation the image
+ * already documents for managed containers. Under that declared runtime the launch additionally
+ * needs `--no-zygote` (the sandbox's seccomp profile refuses zygote fork) and
+ * `--ignore-certificate-errors` (the supervisor's transparent proxy terminates TLS). Nothing may
+ * add those flags when no external runtime is declared: an unknown declaration is refused rather
+ * than silently treated as "no isolation".
+ */
+describe("hardened launch under an external isolation runtime", () => {
+  test("chromium_hardened_launch_refuses_unsafe_fallback", async () => {
+    const { browserRuntimeFromEnv } = await import("../src/browser-runtime");
+    const external = browserRuntimeFromEnv(
+      { COMPUTER_ISOLATION_RUNTIME: "openshell", COMPUTER_BROWSER_MODE: "headless" },
+      "linux",
+    );
+    expect(external.isolation).toBe("external");
+
+    const plain = browserRuntimeFromEnv(
+      { COMPUTER_BROWSER_MODE: "headless" },
+      "linux",
+    );
+    expect(plain.isolation).toBe("none");
+
+    // A typo or an unsupported runtime must not read as "no isolation".
+    expect(() =>
+      browserRuntimeFromEnv(
+        { COMPUTER_ISOLATION_RUNTIME: "best-effort" },
+        "linux",
+      ),
+    ).toThrow(/COMPUTER_ISOLATION_RUNTIME/);
+
+    const { launchArgs } = await import("../src/profiles");
+    const hardened = launchArgs(external);
+    expect(hardened).toContain("--no-zygote");
+    expect(hardened).toContain("--ignore-certificate-errors");
+
+    // The control: without the declaration neither flag appears, so a launch cannot quietly
+    // acquire sandbox-runtime flags the deployment never claimed.
+    const ordinary = launchArgs(plain);
+    expect(ordinary).not.toContain("--no-zygote");
+    expect(ordinary).not.toContain("--ignore-certificate-errors");
+  });
+});

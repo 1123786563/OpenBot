@@ -10,6 +10,7 @@ describe("the configured browser runtime", () => {
       mode: "headed",
       useVirtualDisplay: true,
       allowExec: true,
+      isolation: "none",
     });
   });
 
@@ -22,6 +23,7 @@ describe("the configured browser runtime", () => {
         mode: "headless",
         useVirtualDisplay: false,
         allowExec: true,
+        isolation: "none",
       });
     },
   );
@@ -60,6 +62,7 @@ describe("the configured browser runtime", () => {
         useVirtualDisplay: platform === "linux",
         hostname: "127.0.0.1",
         allowExec: false,
+        isolation: "none",
       });
     },
   );

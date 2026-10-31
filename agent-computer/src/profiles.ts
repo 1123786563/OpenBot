@@ -38,7 +38,10 @@ import { join } from "node:path";
 import { type BrowserContext, chromium, type Page } from "playwright";
 import { profileDirectoryFor } from "./bot-id";
 import { chooseEvictions, chooseIdle } from "./browser-eviction";
-import { browserRuntimeFromEnv } from "./browser-runtime";
+import {
+  type BrowserRuntime,
+  browserRuntimeFromEnv,
+} from "./browser-runtime";
 import { egressFor, egressLabel } from "./egress";
 import { numberFromEnv, settleWithin } from "./env";
 import { chooseLivePage } from "./live-page";
@@ -99,20 +102,40 @@ const SINGLETON_FILES = ["SingletonLock", "SingletonSocket", "SingletonCookie"];
 const BROWSER_RUNTIME = browserRuntimeFromEnv(process.env);
 const LOCAL_CHROME = BROWSER_RUNTIME.backend === "local-chrome";
 // Native Chrome has no container boundary. Always retain its own process sandbox and OS keychain.
-const SANDBOX_ENABLED = LOCAL_CHROME || process.env.COMPUTER_SANDBOX === "on";
+const sandboxEnabledFor = (runtime: BrowserRuntime) =>
+  runtime.backend === "local-chrome" ||
+  process.env.COMPUTER_SANDBOX === "on";
+const SANDBOX_ENABLED = sandboxEnabledFor(BROWSER_RUNTIME);
 
-const LAUNCH_ARGS = [
-  ...(SANDBOX_ENABLED ? [] : ["--no-sandbox"]),
-  "--disable-dev-shm-usage",
-  ...(LOCAL_CHROME ? [] : ["--password-store=basic"]),
-  // Drop the automation signals Chromium sets for itself, so a real person who takes the wheel can
-  // sign in to a site that refuses obvious automation (Google among them). This is the flag, not a
-  // JS patch of `navigator.webdriver`: the flag turns the property off at the source, where spoofing
-  // it from a script leaves the other tells a detector cross-checks. It does not change what the Bot
-  // may do; the governed path is unchanged. Full Chromium is selected explicitly in both modes;
-  // headed mode also provides a window a person can use on the native desktop or virtual display.
-  "--disable-blink-features=AutomationControlled",
-];
+/**
+ * Chromium's launch flags for a runtime.
+ *
+ * Under an external isolation runtime the launch additionally needs `--no-zygote` (the runtime's
+ * seccomp profile drops all capabilities and refuses zygote fork) and `--ignore-certificate-errors`
+ * (the runtime's supervisor terminates TLS with a certificate the sandbox has no reason to trust).
+ * Those flags are added only for that declared runtime: a deployment that never claimed an external
+ * boundary keeps Chromium's own error checking.
+ */
+export function launchArgs(
+  runtime: BrowserRuntime,
+  sandboxEnabled: boolean = sandboxEnabledFor(runtime),
+): string[] {
+  return [
+    ...(sandboxEnabled ? [] : ["--no-sandbox"]),
+    "--disable-dev-shm-usage",
+    ...(runtime.backend === "local-chrome" ? [] : ["--password-store=basic"]),
+    // Drop the automation signals Chromium sets for itself, so a real person who takes the wheel can
+    // sign in to a site that refuses obvious automation (Google among them). This is the flag, not a
+    // JS patch of `navigator.webdriver`: the flag turns the property off at the source, where spoofing
+    // it from a script leaves the other tells a detector cross-checks. It does not change what the Bot
+    // may do; the governed path is unchanged. Full Chromium is selected explicitly in both modes;
+    // headed mode also provides a window a person can use on the native desktop or virtual display.
+    "--disable-blink-features=AutomationControlled",
+    ...(runtime.isolation === "external"
+      ? ["--no-zygote", "--ignore-certificate-errors"]
+      : []),
+  ];
+}
 
 /**
  * WebRTC kept inside the proxy, written into the profile before Chromium reads it.
@@ -476,7 +499,7 @@ export function createProfiles(root: string, onClosed: BrowserClosed) {
         const context = await chromium.launchPersistentContext(dir, {
           channel: BROWSER_RUNTIME.channel,
           headless: BROWSER_RUNTIME.mode === "headless",
-          args: LAUNCH_ARGS,
+          args: launchArgs(BROWSER_RUNTIME),
           // Playwright launches with `--enable-automation`, which sets `navigator.webdriver` and the
           // "controlled by automated software" banner. Dropped for the same reason as the flag above:
           // a person who takes the wheel should be able to sign in. Named explicitly so the sandbox
