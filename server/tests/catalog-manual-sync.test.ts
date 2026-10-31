@@ -583,8 +583,12 @@ describe("a broken audit trail refuses the trigger", () => {
     const response = await app.request("/catalog/sync", { method: "POST" });
 
     // The sync ran, but an unaudited trigger is not a success: the route
-    // surfaces the broken trail instead of answering 200.
-    expect(response.status).toBe(500);
+    // surfaces the broken trail through the surface's tagged 503 boundary.
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(
+      "The gateway admin surface is unavailable. Try again.",
+    );
     const rows = await auditRowsFor(who.userId);
     expect(rows).toHaveLength(0);
     await gateway.stop();

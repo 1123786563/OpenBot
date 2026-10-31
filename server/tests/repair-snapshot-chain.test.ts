@@ -1,16 +1,17 @@
 import { spawnSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "../../tests/support/e2e-compat";
 
 const script = fileURLToPath(
   new URL("../scripts/repair-snapshot-chain.py", import.meta.url),
 );
-const migration = fileURLToPath(
-  new URL("../drizzle/0140_reservation_locked_basis.sql", import.meta.url),
-);
-
-test("unhandled SQL in the replay scope fails loudly", async () => {
+/*
+ * The rebuild models tables, columns, indexes and constraints it knows how to fold, and skips the
+ * statement shapes the journal test cannot see. Anything else must stop the rebuild rather than
+ * pass through unmodelled — a snapshot that quietly omits a statement is the drift this script
+ * exists to remove. A sequence is such a shape: nothing in the replay scope creates one.
+ */
+test("unhandled SQL in the replay scope fails loudly", () => {
   const result = spawnSync(
     "python3",
     [
@@ -25,11 +26,11 @@ test("unhandled SQL in the replay scope fails loudly", async () => {
     ],
     {
       encoding: "utf8",
-      input: await readFile(migration, "utf8"),
+      input: 'CREATE SEQUENCE "probe_sequence";',
     },
   );
 
   expect(result.status).toBe(1);
   expect(result.stderr).toContain("unhandled SQL statement");
-  expect(result.stderr).toContain("ADD CONSTRAINT");
+  expect(result.stderr).toContain("CREATE SEQUENCE");
 });

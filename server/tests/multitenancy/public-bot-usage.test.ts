@@ -20,6 +20,7 @@
 // （主体 = 使用者，data 角色 RLS INSERT）；凭据选择只认使用者本人个人凭据
 // （target=ref 精确匹配）；本票零新 schema 对象，既有文件零改动。
 
+import { randomUUID } from "node:crypto";
 import {
   afterAll,
   beforeAll,
@@ -27,14 +28,16 @@ import {
   expect,
   test,
 } from "../../../tests/support/bun-test-compat";
-import { randomUUID } from "node:crypto";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import {
   isResourceNotFoundVerdict,
   notFoundVerdict,
   serializeNotFoundVerdict,
 } from "../../src/enterprise/tenancy/not-found-semantics";
-import { enterpriseRuntimeDatabaseUrlFrom } from "../support/enterprise-database";
+import {
+  enterpriseRuntimeDatabaseUrlFrom,
+  enterpriseTestDatabaseUrlFrom,
+} from "../support/enterprise-database";
 import {
   createPublicBotUsageFixture,
   type PublicBotUsageFixture,
@@ -1040,8 +1043,12 @@ describeDb("MT018 信任边界、输入形状与存储契约", () => {
       expect(before.outcome).toBe("admitted");
       // 披露的 superuser stand-in（MT011/MT017 先例）：挂起团队成员关系。
       // 判定侧从不使用该通道。
+      // The fixture creates its tenants through the setup channel; a row written
+      // here has to land in that same database or its tenant FK fails. The MT
+      // island swaps TEST_DATABASE_URL for its own database, so reading it
+      // here would write to a database the fixture never populated.
       const { createDatabase } = await import("../../src/db/client");
-      const setup = createDatabase(process.env.TEST_DATABASE_URL as string, {
+      const setup = createDatabase(enterpriseTestDatabaseUrlFrom(process.env), {
         max: 1,
       });
       try {
@@ -1108,8 +1115,12 @@ describeDb("MT018 信任边界、输入形状与存储契约", () => {
       const expectedThread = `pubbot/${agentId}/${principalOf("a1-member")}/${threadKey}`;
       // 披露的 superuser stand-in：预置一行同 thread、异主体的会话（漂移态）。
       // 判定侧从不使用该通道。
+      // The fixture creates its tenants through the setup channel; a row written
+      // here has to land in that same database or its tenant FK fails. The MT
+      // island swaps TEST_DATABASE_URL for its own database, so reading it
+      // here would write to a database the fixture never populated.
       const { createDatabase } = await import("../../src/db/client");
-      const setup = createDatabase(process.env.TEST_DATABASE_URL as string, {
+      const setup = createDatabase(enterpriseTestDatabaseUrlFrom(process.env), {
         max: 1,
       });
       try {

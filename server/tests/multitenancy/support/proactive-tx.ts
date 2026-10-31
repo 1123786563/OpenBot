@@ -146,10 +146,13 @@ export async function createProactiveTxFixture(): Promise<ProactiveTxFixture> {
   const platform = createDatabase(enterpriseTestDatabaseUrlFrom(), {
     max: 2,
   }) as Database;
-  const setup = createDatabase(
-    process.env.TEST_DATABASE_URL ?? enterpriseTestDatabaseUrlFrom(),
-    { max: 2 },
-  );
+  // Same database as `platform`: the isolation fixture seeds principals
+  // through the setup channel, and the MT island swaps TEST_DATABASE_URL for
+  // its own database — preferring it here would look for rows the fixture
+  // never created there.
+  const setup = createDatabase(enterpriseTestDatabaseUrlFrom(), {
+    max: 2,
+  });
 
   const store = createProactiveStore(platform);
   const attribution = createProactiveAttributionService({

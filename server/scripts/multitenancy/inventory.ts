@@ -773,6 +773,9 @@ const CLOSURE_BY_PREFIX: Array<[string, string]> = [
   // 自己的闭环归属——管理面分类（platform/company）见
   // src/enterprise/tenancy/admin-separation.ts，随 summary.managementPlanes 回写。
   ["/api/enterprise/workspace-scope", "workspace-admin"],
+  // T05.01/#557：company-auth bridge（challenge、OIDC callback、SAML ACS）
+  // 是公司的身份认证面，归身份闭环——此前三条是清单的 unclassified 尾巴。
+  ["/api/enterprise/company-auth", "identity"],
   ["/api/admin/openmuse-deletion", "openmuse-deletion"],
   ["/api/admin/openmuse-template", "openmuse"],
   ["/api/admin/openmuse-ops", "openmuse"],

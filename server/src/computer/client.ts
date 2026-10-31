@@ -1,5 +1,8 @@
 import type { HandoffRequest } from "@openbot/shared/computer-control";
-import { applyExecutionScopeHeaders, type ExecutionScope } from "@openbot/shared/execution-scope";
+import {
+  applyExecutionScopeHeaders,
+  type ExecutionScope,
+} from "@openbot/shared/execution-scope";
 import { injectTraceHeaders } from "@openbot/shared/trace";
 import type { NavigateResult } from "./schema";
 import { checkNavigationTarget } from "./target";

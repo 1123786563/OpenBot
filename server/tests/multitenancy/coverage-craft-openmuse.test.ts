@@ -358,9 +358,11 @@ const craftWorkshopScenarios: ScenarioMap = {
       userId: fx.userA,
       name: "mt136 delete",
     });
-    const gone = await fx.crafts.deleteSession(row.id, fx.userA);
+    // 7e2d514e2 起 deleteSession 返回 { deleted, snapshots }（所有权校验内
+    // 先删快照再删会话），场景观察读 deleted，别把对象当布尔喂给评估器。
+    const { deleted } = await fx.crafts.deleteSession(row.id, fx.userA);
     return {
-      positiveControlPassed: gone,
+      positiveControlPassed: deleted,
       denied: false,
       leakedRecords: [],
       forbiddenEffects: [],
@@ -372,12 +374,15 @@ const craftWorkshopScenarios: ScenarioMap = {
       userId: fx.userA,
       name: "mt136 delete deny",
     });
-    const asB = await fx.crafts.deleteSession(row.id, fx.userB);
+    const { deleted: deletedByB } = await fx.crafts.deleteSession(
+      row.id,
+      fx.userB,
+    );
     const survivor = await fx.crafts.findSession(row.id, fx.userA);
     return denyObservation(
-      asB === false && survivor !== undefined,
+      deletedByB === false && survivor !== undefined,
       [],
-      asB ? [{ crossOwnerDelete: row.id }] : [],
+      deletedByB ? [{ crossOwnerDelete: row.id }] : [],
     );
   },
 

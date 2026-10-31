@@ -330,6 +330,17 @@ async function offerHop(key: string, work: Record<string, unknown>) {
   expect(offered).toBe("queued");
 }
 
+/**
+ * Stand in for the runner's queue claim: the hop's stable identity, written
+ * on THIS row. `queue.claim` is a kind-wide ordered draw, so it would advance
+ * whichever earlier row a prior test left unclaimed instead of this one.
+ */
+const claimHop = (key: string) =>
+  admin
+    .update(workItems)
+    .set({ claimedBy: "me11-runner" })
+    .where(eq(workItems.key, key));
+
 async function hopRow(key: string) {
   const [row] = await admin
     .select({ payload: workItems.payload, finishedAt: workItems.finishedAt })
@@ -594,6 +605,10 @@ test("AC6: a cross-company hop refuses from the directory before anything is adm
   const work = forwardWork({ actorId: otherActor });
   const hopKey = `hop:me11-cross-${randomUUID().slice(0, 8)}`;
   await offerHop(hopKey, work);
+  // The runner holds the queue claim before delivering: the queue claim is
+  // the hop's stable identity, and an unclaimed row refuses as not
+  // advanceable before the cross-company refusal can be exercised.
+  await claimHop(hopKey);
   let error: Error | undefined;
   try {
     await deliver(hop, work, hopKey);
@@ -617,6 +632,7 @@ test("AC6: a revoked member's queued hop refuses instead of running", async () =
   const work = forwardWork();
   const hopKey = `hop:me11-revoked-${randomUUID().slice(0, 8)}`;
   await offerHop(hopKey, work);
+  await claimHop(hopKey);
   // Revoked between offer and delivery: the membership is no longer active,
   // so the directory refuses to sign a scope and the hop never runs. The
   // membership is SUSPENDED rather than deleted because the control plane
@@ -709,6 +725,7 @@ test("AC5: a waiting target parks durably and the delivery reports waiting, neve
   const work = forwardWork();
   const hopKey = `hop:me11-wait-${randomUUID().slice(0, 8)}`;
   await offerHop(hopKey, work);
+  await claimHop(hopKey);
   let error: Error | undefined;
   try {
     await deliver(hop, work, hopKey);
@@ -741,6 +758,7 @@ test("AC6: the scratch conversation is principal-scoped — the other company re
   const work = forwardWork();
   const hopKey = `hop:me11-read-${randomUUID().slice(0, 8)}`;
   await offerHop(hopKey, work);
+  await claimHop(hopKey);
   await deliver(hop, work, hopKey);
   const row = await hopRow(hopKey);
   const scratchThreadId = (row?.payload as { scratchThreadId?: string })

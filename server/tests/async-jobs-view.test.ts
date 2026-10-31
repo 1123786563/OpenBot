@@ -1,21 +1,23 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
+import type { Context, MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import {
   afterAll,
   describe,
   expect,
   test,
 } from "../../tests/support/bun-test-compat";
-import { Hono } from "hono";
-import type { Context, MiddlewareHandler } from "hono";
+import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
+import { createAsyncCancelService } from "../src/billing/async-cancel";
+import { createAsyncSubmitService } from "../src/billing/async-job-submit";
 import {
   asyncJobDisplayStateOf,
   createAsyncJobsViewService,
 } from "../src/billing/async-jobs-view";
-import { createAsyncCancelService } from "../src/billing/async-cancel";
-import { createAsyncSubmitService } from "../src/billing/async-job-submit";
 import { createAsyncTerminalSettleService } from "../src/billing/async-terminal";
 import { createCreditReserveService } from "../src/billing/credit-reserve";
+import { createCredits } from "../src/billing/credits";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createPayerAccount } from "../src/billing/payer";
 import { resolveLockedReservationBasis } from "../src/billing/reserve-bound";
@@ -23,12 +25,6 @@ import {
   createBillingAdminRoutes,
   createBillingCreditRoutes,
 } from "../src/billing/routes";
-import { createCredits } from "../src/billing/credits";
-import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
-import {
-  GATEWAY_PRICE_SNAPSHOT_SOURCE,
-  createEnterpriseGatewayPriceSnapshotStore,
-} from "../src/gateway/price-snapshot";
 import { createDatabase, type Database } from "../src/db/client";
 import {
   accessGrants,
@@ -39,6 +35,10 @@ import {
 } from "../src/db/schema";
 import { asyncJobs } from "../src/db/schema/credit-reservations";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../src/gateway/catalog-sync";
+import {
+  createEnterpriseGatewayPriceSnapshotStore,
+  GATEWAY_PRICE_SNAPSHOT_SOURCE,
+} from "../src/gateway/price-snapshot";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -315,7 +315,14 @@ function actorOf(
 
 afterAll(async () => {
   // The run's own rows go, cancellation rows first (the FK's order); the shared pool
-  // stays for the process.
+  // stays for the process. The holds the run left `unknown` are handed back too: the
+  // recovery queue is global, and a later suite's scan would name them and claim them,
+  // reddening the suites that assert their own claim counts.
+  await database.execute(
+    sql`UPDATE credit_reservations SET status = 'released', terminal_at = now()
+        WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}
+          AND status = 'unknown'`,
+  );
   await database.execute(
     sql`DELETE FROM async_settle_triggers WHERE job_id IN (SELECT job_id FROM async_jobs WHERE grant_id LIKE ${`${prefix}%`})`,
   );

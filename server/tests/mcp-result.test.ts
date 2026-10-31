@@ -263,19 +263,23 @@ describe("a result too large to hand a model", () => {
     // to do with what the tool said. `extractDocumentText` guards the same cut on attachments.
     const emoji = "😀";
     expect(emoji.length).toBe(2);
-    const input = `${"a".repeat(MAX_RESULT_CHARS - 1)}${emoji}tail`;
+    // Long enough that the cut lands on the emoji's high surrogate even though
+    // the note eats part of the budget: the note is sized from `input.length`.
+    const input = `${"a".repeat(MAX_RESULT_CHARS - 50)}${emoji}${"t".repeat(60)}`;
     const { text, truncated } = resultText([{ type: "text", text: input }]);
     expect(truncated).toBe(true);
     expect(text).toBe(
-      `${"a".repeat(MAX_RESULT_CHARS - 1)}\n\n[truncated: the tool returned ${input.length} characters]`,
+      `${"a".repeat(MAX_RESULT_CHARS - 50)}\n\n[truncated: the tool returned ${input.length} characters]`,
     );
   });
 
   test("a cut that lands between characters still keeps the whole limit", () => {
-    const input = `${"a".repeat(MAX_RESULT_CHARS - 2)}😀tail`;
+    // The note is inside the cap, so the cut sits one character later than the
+    // naive limit: the emoji survives whole and the answer ends at MAX exactly.
+    const input = `${"a".repeat(MAX_RESULT_CHARS - 51)}😀${"t".repeat(60)}`;
     const { text } = resultText([{ type: "text", text: input }]);
     expect(text).toBe(
-      `${"a".repeat(MAX_RESULT_CHARS - 2)}😀\n\n[truncated: the tool returned ${input.length} characters]`,
+      `${"a".repeat(MAX_RESULT_CHARS - 51)}😀\n\n[truncated: the tool returned ${input.length} characters]`,
     );
   });
 });

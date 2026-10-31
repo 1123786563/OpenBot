@@ -159,7 +159,15 @@ async function applyTask(taskId: string): Promise<void> {
       "--manifest",
       join(dir, taskId, "manifest.json"),
     ],
-    { environment: process.env, out: () => {} },
+    {
+      // apply 必须落 setup 读的企业库：MT 岛路由把 TEST_DATABASE_URL 换成
+      // 了岛库，默认 environment 会把任务写去错误的库。
+      environment: {
+        ...process.env,
+        TEST_DATABASE_URL: enterpriseTestDatabaseUrlFrom(process.env),
+      },
+      out: () => {},
+    },
   );
   if (!["applied", "up-to-date"].includes(applied.kind)) {
     throw new Error(`${taskId} apply failed: ${JSON.stringify(applied)}`);
@@ -201,6 +209,17 @@ beforeAll(async () => {
   // 表无 RLS——ensureTaskApplied 按共享库纪律处理：journal 空白的 fresh 库
   // DROP+task-apply 重建；已记账的库走 up-to-date，不重推锚点映射
   //（legacy-anchor 的 criterion-2 依赖映射指向其夹具部署身份）。
+  // 但 CI 供给迁移时库内还没有 users/deployment_packages：MT112 的两个
+  // 数据步被 journal 成 applied 且零行写入（journal 契约禁止重放），锚点
+  // 恒为 0 行。删掉数据步的 journal 行令其按本轮已种数据重放（1/2 纯 DDL
+  // 不动，绕开脏库的 digest 漂移），并清最早用户的旧主体（跨轮脏库里它
+  // 占着 enterprise_principal_user 唯一键，重放会撞）。
+  await setup.execute(
+    sql`delete from mt_task_migration_journal where task_id = 'MT112' and number >= 3`,
+  );
+  await setup.execute(
+    sql`delete from enterprise_principals where user_id = (select id from users order by created_at asc, id asc limit 1)`,
+  );
   await ensureTaskApplied("MT112", "enterprise_deployment_anchors");
   await applyTask("MT114");
   await applyTask("MT039");

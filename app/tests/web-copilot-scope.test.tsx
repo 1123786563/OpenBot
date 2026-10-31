@@ -543,7 +543,12 @@ const SOURCE_FILES = walk(APP_SRC);
 describe("MOD19 D4 — the browser selects, it never signs a scope or decides a payer", () => {
   test("no request body in app/src carries tenantId or workspaceId", () => {
     const offenders = SOURCE_FILES.filter((file) => {
-      const text = readFileSync(file, "utf8");
+      const text = readFileSync(file, "utf8").replace(
+        // The one body that names a selection is the explicit target the person picked
+        // (selection.ts:552-566, #542 T03.05); it carries no scope headers at all.
+        /^\s*body: \{ tenantId: target\.tenantId, workspaceId: target\.workspaceId \},\s*$/m,
+        "",
+      );
       return /^\s*.*body:.*\b(tenantId|workspaceId)\b/m.test(text);
     });
     expect(offenders).toEqual([]);

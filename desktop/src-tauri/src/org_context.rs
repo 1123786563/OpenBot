@@ -223,7 +223,7 @@ pub struct RejectionRecord {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PersistedRecord {
     Absent,
-    Present(FrozenContext),
+    Present(Box<FrozenContext>),
     Corrupt,
 }
 
@@ -261,7 +261,7 @@ pub fn load_persisted(root: &Path) -> Result<PersistedRecord, Problem> {
         return Ok(PersistedRecord::Absent);
     };
     match serde_json::from_str::<FrozenContext>(&raw) {
-        Ok(context) => Ok(PersistedRecord::Present(context)),
+        Ok(context) => Ok(PersistedRecord::Present(Box::new(context))),
         Err(_) => Ok(PersistedRecord::Corrupt),
     }
 }
@@ -420,11 +420,17 @@ struct GateState {
 /// and refuses anything the context does not back: a foreign authority, a scope claim the
 /// freeze never made, a session that died, an identity that drifted. Every refusal is a code,
 /// is recorded in a bounded ring, and is printed for the operator — values are never echoed.
+/// The refresh hook a gate offers back once it re-verifies.
+///
+/// Named rather than repeated: `Gate` holds one and `Gate::load` accepts one, and a reader should
+/// not have to parse `Option<Box<dyn Fn…>>` to see that they are the same thing.
+type RefreshHook<'a> = Option<Box<dyn Fn(&FrozenContext) + 'a>>;
+
 pub struct Gate<'a> {
     /// Present exactly when the gate can re-verify. The sign-in gate runs on disk state
     /// alone and never checks commands, so it carries none.
     connection: Option<&'a dyn OrgConnection>,
-    on_refresh: Option<Box<dyn Fn(&FrozenContext) + 'a>>,
+    on_refresh: RefreshHook<'a>,
     state: Mutex<GateState>,
 }
 
@@ -441,7 +447,7 @@ impl<'a> Gate<'a> {
         match record {
             PersistedRecord::Absent => {}
             PersistedRecord::Corrupt => Self::record_into(&mut state, "ORG_CONTEXT_CORRUPT", 0),
-            PersistedRecord::Present(context) => state.context = Some(context),
+            PersistedRecord::Present(context) => state.context = Some(*context),
         }
         Gate {
             connection: None,
@@ -458,7 +464,7 @@ impl<'a> Gate<'a> {
     pub fn load(
         connection: &'a dyn OrgConnection,
         record: PersistedRecord,
-        on_refresh: Option<Box<dyn Fn(&FrozenContext) + 'a>>,
+        on_refresh: RefreshHook<'a>,
         now_ms: u64,
     ) -> Gate<'a> {
         let mut state = GateState {
@@ -477,7 +483,7 @@ impl<'a> Gate<'a> {
                     Self::record_into(&mut state, "ORG_CONTEXT_AUTHORITY_MISMATCH", now_ms);
                     None
                 } else {
-                    Some(persisted)
+                    Some(*persisted)
                 }
             }
         };
@@ -962,7 +968,12 @@ mod tests {
         let live = FakeConnection::new();
         let context = established(&live, NOW);
         let connection = FakeConnection::new().with_dead_session();
-        let gate = Gate::load(&connection, PersistedRecord::Present(context), None, NOW);
+        let gate = Gate::load(
+            &connection,
+            PersistedRecord::Present(Box::new(context)),
+            None,
+            NOW,
+        );
         let refusal = gate
             .check(
                 Requirement::Organization,
@@ -978,7 +989,12 @@ mod tests {
         let connection = FakeConnection::new();
         let context = established(&connection, NOW);
         let baseline = connection.verify_calls();
-        let gate = Gate::load(&connection, PersistedRecord::Present(context), None, NOW);
+        let gate = Gate::load(
+            &connection,
+            PersistedRecord::Present(Box::new(context)),
+            None,
+            NOW,
+        );
         let refusal = gate
             .check(
                 Requirement::Organization,
@@ -998,7 +1014,12 @@ mod tests {
     fn t12_a_company_claim_the_freeze_never_made_is_refused() {
         let connection = FakeConnection::new();
         let scoped = established_with(&connection, "tenant-1", None);
-        let gate = Gate::load(&connection, PersistedRecord::Present(scoped), None, NOW);
+        let gate = Gate::load(
+            &connection,
+            PersistedRecord::Present(Box::new(scoped)),
+            None,
+            NOW,
+        );
         let refusal = gate
             .check(
                 Requirement::Organization,
@@ -1010,7 +1031,12 @@ mod tests {
 
         // A context established without any company refuses every company claim.
         let bare = established(&connection, NOW);
-        let gate = Gate::load(&connection, PersistedRecord::Present(bare), None, NOW);
+        let gate = Gate::load(
+            &connection,
+            PersistedRecord::Present(Box::new(bare)),
+            None,
+            NOW,
+        );
         let refusal = gate
             .check(
                 Requirement::Organization,
@@ -1025,7 +1051,12 @@ mod tests {
     fn t13_a_team_claim_outside_the_freeze_is_refused() {
         let connection = FakeConnection::new();
         let scoped = established_with(&connection, "tenant-1", Some("team-1"));
-        let gate = Gate::load(&connection, PersistedRecord::Present(scoped), None, NOW);
+        let gate = Gate::load(
+            &connection,
+            PersistedRecord::Present(Box::new(scoped)),
+            None,
+            NOW,
+        );
         let refusal = gate
             .check(
                 Requirement::Organization,
@@ -1083,7 +1114,12 @@ mod tests {
         let connection = FakeConnection::new();
         let context = established_with(&connection, "tenant-1", Some("team-1"));
         let baseline = connection.verify_calls();
-        let gate = Gate::load(&connection, PersistedRecord::Present(context), None, NOW);
+        let gate = Gate::load(
+            &connection,
+            PersistedRecord::Present(Box::new(context)),
+            None,
+            NOW,
+        );
         let grant = gate
             .check(
                 Requirement::Team,
@@ -1119,7 +1155,12 @@ mod tests {
         let connection = FakeConnection::new();
         let context = established(&connection, NOW);
         let baseline = connection.verify_calls();
-        let gate = Gate::load(&connection, PersistedRecord::Present(context), None, NOW);
+        let gate = Gate::load(
+            &connection,
+            PersistedRecord::Present(Box::new(context)),
+            None,
+            NOW,
+        );
         let grant = gate
             .check(
                 Requirement::Organization,
@@ -1151,7 +1192,12 @@ mod tests {
         let connection = FakeConnection::new().with_drifted_identity();
         let context = established(&FakeConnection::new(), NOW);
         let baseline = connection.verify_calls();
-        let gate = Gate::load(&connection, PersistedRecord::Present(context), None, NOW);
+        let gate = Gate::load(
+            &connection,
+            PersistedRecord::Present(Box::new(context)),
+            None,
+            NOW,
+        );
         let refusal = gate
             .check(
                 Requirement::Organization,
@@ -1186,7 +1232,7 @@ mod tests {
         let sink = refreshes.clone();
         let gate = Gate::load(
             &connection,
-            PersistedRecord::Present(restored),
+            PersistedRecord::Present(Box::new(restored)),
             Some(Box::new(move |refreshed| {
                 sink.borrow_mut().push(refreshed.clone())
             })),
@@ -1212,7 +1258,12 @@ mod tests {
     fn t20_a_restart_with_a_dead_session_refuses_commands() {
         let connection = FakeConnection::new().with_dead_session();
         let context = established(&FakeConnection::new(), NOW);
-        let gate = Gate::load(&connection, PersistedRecord::Present(context), None, STALE);
+        let gate = Gate::load(
+            &connection,
+            PersistedRecord::Present(Box::new(context)),
+            None,
+            STALE,
+        );
         let refusal = gate
             .check(
                 Requirement::Organization,
@@ -1227,7 +1278,12 @@ mod tests {
     fn t21_a_restart_that_verifies_a_different_identity_refuses_commands() {
         let connection = FakeConnection::new().with_drifted_identity();
         let context = established(&FakeConnection::new(), NOW);
-        let gate = Gate::load(&connection, PersistedRecord::Present(context), None, STALE);
+        let gate = Gate::load(
+            &connection,
+            PersistedRecord::Present(Box::new(context)),
+            None,
+            STALE,
+        );
         let refusal = gate
             .check(
                 Requirement::Organization,
@@ -1242,7 +1298,12 @@ mod tests {
     fn t22_a_restart_during_an_outage_stays_stale_and_recovers_without_refreezing() {
         let connection = FakeConnection::new().with_unreachable_authority();
         let context = established(&FakeConnection::new(), NOW);
-        let gate = Gate::load(&connection, PersistedRecord::Present(context), None, STALE);
+        let gate = Gate::load(
+            &connection,
+            PersistedRecord::Present(Box::new(context)),
+            None,
+            STALE,
+        );
         let refusal = gate
             .check(
                 Requirement::Organization,
@@ -1284,7 +1345,12 @@ mod tests {
         let connection = FakeConnection::new();
         let mut context = established(&connection, NOW);
         context.authority = "https://other.example".to_string();
-        let gate = Gate::load(&connection, PersistedRecord::Present(context), None, NOW);
+        let gate = Gate::load(
+            &connection,
+            PersistedRecord::Present(Box::new(context)),
+            None,
+            NOW,
+        );
         let refusal = gate
             .check(
                 Requirement::Organization,
@@ -1359,7 +1425,7 @@ mod tests {
     fn t26_the_sign_in_gate_refuses_a_begin_declared_for_another_organization() {
         let connection = FakeConnection::new();
         let context = established(&connection, NOW);
-        let gate = Gate::from_persisted(PersistedRecord::Present(context));
+        let gate = Gate::from_persisted(PersistedRecord::Present(Box::new(context)));
         let refusal = gate
             .admit_sign_in("https://evil.example", NOW + 1_000)
             .expect_err("a client selector may not walk a live context to another authority");
@@ -1379,12 +1445,12 @@ mod tests {
             .expect("corrupt state admits a recovery sign-in");
         // A context stale on disk belongs to a past process; begin is the way back.
         let context = established(&connection, NOW);
-        let gate = Gate::from_persisted(PersistedRecord::Present(context));
+        let gate = Gate::from_persisted(PersistedRecord::Present(Box::new(context)));
         gate.admit_sign_in("https://evil.example", STALE)
             .expect("a stale context no longer pins the installation");
         // The same organization signing in again is a refresh, not a switch.
         let context = established(&connection, NOW);
-        let gate = Gate::from_persisted(PersistedRecord::Present(context));
+        let gate = Gate::from_persisted(PersistedRecord::Present(Box::new(context)));
         gate.admit_sign_in("https://company.example", NOW + 1_000)
             .expect("the same authority may begin again");
     }
@@ -1405,7 +1471,7 @@ mod tests {
     fn t29_a_gate_with_no_connection_cannot_prove_freshness_and_refuses() {
         let connection = FakeConnection::new();
         let context = established(&connection, NOW);
-        let gate = Gate::from_persisted(PersistedRecord::Present(context));
+        let gate = Gate::from_persisted(PersistedRecord::Present(Box::new(context)));
         let refusal = gate
             .check(
                 Requirement::Organization,
@@ -1426,7 +1492,7 @@ mod tests {
         persist(&root, &context).expect("the frozen context persists without secret values");
         assert_eq!(
             load_persisted(&root).unwrap(),
-            PersistedRecord::Present(context.clone())
+            PersistedRecord::Present(Box::new(context.clone()))
         );
         std::fs::remove_dir_all(&root).expect("remove owned persistence fixture");
 
@@ -1462,7 +1528,7 @@ mod tests {
         let sink = refreshes.clone();
         let gate = Gate::load(
             &connection,
-            PersistedRecord::Present(context),
+            PersistedRecord::Present(Box::new(context)),
             Some(Box::new(move |refreshed| {
                 sink.borrow_mut().push(refreshed.clone())
             })),

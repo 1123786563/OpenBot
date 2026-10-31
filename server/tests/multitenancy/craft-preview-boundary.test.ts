@@ -791,11 +791,11 @@ describe("D5 — B: the routes tree constructs no second sandbox gateway", () =>
     );
     // The seam's lazy acquisition and the routes dep both name the same
     // scope const — handlesFor's cache then guarantees one gateway.
-    expect(runtime).toContain(
-      "hmrGatewayFor: () =>\n    craftSandboxPublic.handlesFor({ scope: craftSandboxExecutionScope() })",
+    expect(runtime).toMatch(
+      /hmrGatewayFor: \(\) =>\s*\n\s*craftSandboxPublic\.handlesFor\(\{ scope: craftSandboxExecutionScope\(\) \}\),/,
     );
-    expect(runtime).toContain(
-      "gateway: craftSandboxPublic.handlesFor({\n              scope: craftSandboxExecutionScope(),\n            })",
+    expect(runtime).toMatch(
+      /gateway: craftSandboxPublic\.handlesFor\(\{\s*\n\s*scope: craftSandboxExecutionScope\(\),\s*\n\s*\}\),/,
     );
   });
 });

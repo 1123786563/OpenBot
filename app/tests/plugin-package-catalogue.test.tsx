@@ -9,6 +9,7 @@ import {
   render,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type {
   PackageCatalogueDetail,
   PackagePage,
@@ -504,9 +505,10 @@ test("a search term is sent to the server and replaces the previous page", async
     expect(view.getByText("Incident Triage Kit")).toBeDefined();
   });
 
-  fireEvent.change(view.getByLabelText("Search plugin packages"), {
-    target: { value: "release" },
-  });
+  // React 19 + happy-dom: a bare fireEvent.change never reaches the onChange.
+  await userEvent
+    .setup({ document: view.container.ownerDocument })
+    .type(view.getByLabelText("Search plugin packages"), "release");
 
   await settle(() => {
     expect(view.getByText("Release Notes Writer")).toBeDefined();

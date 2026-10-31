@@ -7,6 +7,7 @@ import {
   test,
 } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { settleReactWork } from "./settle-react-work";
 import { cleanup, render } from "@testing-library/react";
 import i18n from "@/lib/i18n";
 import { ModelBillingPaths } from "@/components/admin/model-billing-paths";
@@ -29,7 +30,8 @@ beforeAll(async () => {
   await i18n.changeLanguage("en");
 });
 afterEach(() => cleanup());
-afterAll(() => {
+afterAll(async () => {
+  await settleReactWork();
   void i18n.changeLanguage("en");
   GlobalRegistrator.unregister();
 });

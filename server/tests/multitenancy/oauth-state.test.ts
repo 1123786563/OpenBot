@@ -5,6 +5,8 @@
 // 三个受限角色 URL 缺一整套显式 skip（带理由），绝不回退开发库；
 // skipped 不计通过。全部断言跑在真实受限角色与真实 RLS 上。
 
+import { createHash } from "node:crypto";
+import { sql } from "drizzle-orm";
 import {
   afterAll,
   beforeAll,
@@ -12,8 +14,6 @@ import {
   expect,
   test,
 } from "../../../tests/support/bun-test-compat";
-import { createHash } from "node:crypto";
-import { sql } from "drizzle-orm";
 import {
   createOAuthStateFixture,
   type OAuthStateFixture,
@@ -527,7 +527,10 @@ describeDb(
         // credential/connection/plugin storage, so a failed callback cannot leave
         // a half-written connection behind it — the write does not exist here.
         const source = await Bun.file(
-          "src/enterprise/tenancy/oauth-state.ts",
+          new URL(
+            "../../src/enterprise/tenancy/oauth-state.ts",
+            import.meta.url,
+          ),
         ).text();
         expect(source).not.toMatch(
           /from\s+"[^"]*(enterprise-credentials|plugins\/|openmuse-connectors|passwords|shared-use)/,

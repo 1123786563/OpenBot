@@ -24,14 +24,7 @@ import {
 } from "@testing-library/react";
 import { within } from "@testing-library/react";
 
-import {
-  companyChoiceState,
-  CompanySelection,
-  type CompanyCatalog,
-  type OrgContextStatus,
-  selectionOf,
-  withWorkbenchSelection,
-} from "./CompanySelection";
+import type { CompanyCatalog, OrgContextStatus } from "./CompanySelection";
 
 type Recorded = { command: string; args?: unknown };
 
@@ -55,6 +48,14 @@ mock.module("@tauri-apps/api/core", () => ({
     throw new Error(`unexpected command: ${command}`);
   },
 }));
+
+// The module is imported after the mock so its own tauri calls land in the double.
+const {
+  companyChoiceState,
+  CompanySelection,
+  selectionOf,
+  withWorkbenchSelection,
+} = await import("./CompanySelection");
 
 const ROOT = "/fixtures/openbot";
 

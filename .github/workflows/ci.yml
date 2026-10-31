@@ -452,6 +452,9 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
+      # The bun-suites driver (node) accumulates junit reports for every group in one
+      # process; the default ~4GB heap died mid-run (Ineffective mark-compacts).
+      NODE_OPTIONS: --max-old-space-size=8192
       DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot_test
       TEST_DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot_test
       ENTERPRISE_TEST_SETUP_DATABASE_URL: postgres://enterprise_setup:enterprise-setup-only@127.0.0.1:5434/openbot_enterprise_r2_codex_20261009
@@ -460,6 +463,9 @@ jobs:
       ENTERPRISE_TEST_OPERATOR_DATABASE_URL: postgres://enterprise_operator_login:enterprise-test-only@127.0.0.1:5434/openbot_enterprise_r2_codex_20261009?options=-c%20role%3Dob_ent_operator
       # Handed only to the multitenancy groups by tests/bun-suites.test.ts; see the provisioning step below.
       MT_TEST_DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot_enterprise_mt_test
+      # The billing island's own database (see EXPLICIT_GROUPS in scripts/lib/e2e-manifest.mjs for
+      # why the payment/billing family cannot share openbot_test); provisioned in the step below.
+      BILLING_TEST_DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot_billing_test
       # Wire path for the ME fixtures' disposable-database bootstrap (see the
       # me-postgres service above); ME01_TEST_PG_PORT already defaults to 5433.
       ME01_TEST_PG_ADMIN_DSN: postgres://postgres:openbot@127.0.0.1:5433/postgres
@@ -468,6 +474,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The entrypoint enumeration's anchors are code evidence: they name lines
+      # inside the bifrost submodule, so this job holds its pinned commit (the
+      # same initialize-the-pinned-submodule shape the submodule jobs use).
+      - name: Initialize the pinned bifrost submodule
+        run: git submodule update --init bifrost
+      # A10's mobile evidence suites live inside the pinned openmuse submodule.
+      - name: Initialize the pinned openmuse submodule
+        run: git submodule update --init apps/openmuse
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.3
@@ -492,6 +506,11 @@ jobs:
       # pinned by the desktop lockfile rather than the root one.
       - run: bun install --frozen-lockfile
         working-directory: desktop
+      # The craft suites spawn the shipped pptx-skill python scripts
+      # (server/src/craft/builtin-skills/pptx/scripts). Install the three
+      # third-party packages those scripts import; `python` is the same
+      # interpreter spawnSync resolves.
+      - run: python -m pip install --disable-pip-version-check --break-system-packages defusedxml==0.7.1 lxml==6.1.1 Pillow==12.2.0
       # CI owns this disposable database and opts into the same role bootstrap as local Compose.
       - run: bun scripts/migrate.ts
         working-directory: server
@@ -513,15 +532,40 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE openbot_enterprise_mt_test'
           DATABASE_URL="$MT_TEST_DATABASE_URL" TEST_DATABASE_URL="$MT_TEST_DATABASE_URL" \
             OPENBOT_BOOTSTRAP_ENTERPRISE_ROLES=on bun scripts/migrate.ts
+          # The drizzle chain (0163/0209/0210/0215) pre-creates MT-task tables on a
+          # fully migrated database — without their RLS/GRANT. The task apply adopts
+          # those tables instead of refusing them (CREATE TABLE expands to per-column
+          # ADD COLUMN IF NOT EXISTS plus drop-then-add constraints; indexes, policies
+          # and constraints drop their same-named leftovers first), so the drizzle
+          # columns survive and the task shape fills in RLS/GRANT around them.
+          DATABASE_URL="$MT_TEST_DATABASE_URL" TEST_DATABASE_URL="$MT_TEST_DATABASE_URL" \
+            bun scripts/multitenancy/migrate-test.ts migrate all --apply --adopt-existing
+      # Same shape as the multitenancy step: the billing island's suites refuse
+      # nothing on openbot_test, but a single leftover pending payment_orders row
+      # (deployment-global guard, store.ts) reddens the whole family — give them
+      # a database no other suite touches.
+      - name: Provision the billing island test database
+        working-directory: server
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE openbot_billing_test'
+          DATABASE_URL="$BILLING_TEST_DATABASE_URL" TEST_DATABASE_URL="$BILLING_TEST_DATABASE_URL" \
+            OPENBOT_BOOTSTRAP_ENTERPRISE_ROLES=on bun scripts/migrate.ts
       - name: Enterprise migration preflight and role-safety fixture
         run: bunx e2e run --config e2e.unit.config.ts server/tests/enterprise/migration-role-preflight.integration.test.ts
         env:
           E2E_UNIT_SCOPE: server
           ENTERPRISE_TEST_PREFLIGHT_MODE: fresh
       - name: Prepare the enterprise test database
-        run: bun scripts/enterprise-test-db.ts migrate
-
         working-directory: server
+        run: |
+          bun scripts/enterprise-test-db.ts migrate
+          # Same shape as the multitenancy step above: the drizzle chain
+          # pre-creates the MT-task tables without their RLS/GRANT. The
+          # enterprise suites do NOT apply the task chain themselves (unlike
+          # the multitenancy groups), so provision the whole chain here,
+          # adopting the drizzle-created tables and filling in the task shape.
+          DATABASE_URL="$ENTERPRISE_TEST_SETUP_DATABASE_URL" TEST_DATABASE_URL="$ENTERPRISE_TEST_SETUP_DATABASE_URL" \
+            bun scripts/multitenancy/migrate-test.ts migrate all --apply --adopt-existing
       # A passing job must include the expected test floor. Import-time failures can otherwise skip
       # files before their tests are registered.
       - run: bun run test:ci

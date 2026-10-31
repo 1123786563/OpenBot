@@ -73,6 +73,8 @@ describe("server authorization", () => {
         // No store was passed, so this deployment tracks no onboarding and the app gates nobody.
         onboarding: null,
       },
+      /* singleUser: false — loadConfig(testEnvironment()) asks for no single-user deployment. */
+      singleUser: false,
     });
   });
 

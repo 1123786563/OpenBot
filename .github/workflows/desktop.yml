@@ -86,15 +86,26 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      # Twice, on purpose. The typecheck in this workspace reads `desktop/src/*.test.tsx`, whose
+      # first import is `../../tests/support/e2e-compat`: that needs `e2e` and `yaml`, which only
+      # the root manifest declares, so the install has to run from the root. The desktop packages
+      # themselves (`vite`, `bun-types`) are only linked into `desktop/node_modules` by an install
+      # run from there — from the root they are not linked at all, and `tsc` reports TS2688.
+      - run: bun install --frozen-lockfile
       - run: bun install --frozen-lockfile
         working-directory: desktop
       - run: bun run typecheck
         working-directory: desktop
+      # Through the driver, not `bun test`. The suite imports `tests/support/bun-test-compat`, so
+      # e2e on Node cannot collect it and it lives in the bun driver manifest (group
+      # `desktop/scripts`); a literal `bun test` line is an entry-point gap that `bun run test:ci`
+      # fails on. `E2E_BUN_ONLY` names the one group, so the job stays seconds long.
       - name: Desktop version regressions
-        run: bunx e2e run --config e2e.unit.config.ts scripts/desktop-version.test.ts
+        run: bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
         env:
-          E2E_UNIT_SCOPE: scripts
-        working-directory: desktop
+          # An `env:` key, not an inline `E2E_BUN_ONLY=…` prefix: the Windows runner's default
+          # shell is PowerShell, where that prefix is a command name rather than an assignment.
+          E2E_BUN_ONLY: desktop/scripts
       - name: Prepare internal build version
         run: bun scripts/desktop-version.ts internal
         working-directory: desktop

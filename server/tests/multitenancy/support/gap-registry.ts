@@ -185,6 +185,9 @@ export const ENTRANCE_BUCKETS: readonly EntranceBucket[] = [
       "/api/auth",
       "/api/sign-in-requests",
       "/api/identity",
+      // company-auth 桥（challenge/OIDC callback/SAML ACS，T05.01/#557）——
+      // 与 inventory CLOSURE_BY_PREFIX 的 identity 归属同一闭环。
+      "/api/enterprise/company-auth",
       "/api/me",
       "/api/desktop/connection-failure",
     ],
@@ -203,6 +206,9 @@ export const ENTRANCE_BUCKETS: readonly EntranceBucket[] = [
     prefixes: [
       "/api/agents",
       "/api/bots",
+      // coworker 意图路由挂载：POST /api/route 已被套件 PLAN 认领，
+      // ALL /api/route/* 是 bodyLimit use("*") 的登记形态，同一桶收口。
+      "/api/route",
       "/api/team-bots",
       "/api/bot-service",
       "/api/admin/bot-services",

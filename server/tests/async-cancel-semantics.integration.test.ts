@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   afterAll,
   describe,
@@ -332,6 +332,14 @@ function cancelWith(
 
 afterAll(async () => {
   // The pool lives for the process (TEST_POOL); nothing to close that the runner does not.
+  // The holds this file leaves `unknown` are handed back: the recovery queue is global, and
+  // a later suite's scan names and claims them, reddening the suites that assert their own
+  // claim counts.
+  await database.execute(
+    sql`UPDATE credit_reservations SET status = 'released', terminal_at = now()
+        WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}
+          AND status = 'unknown'`,
+  );
 });
 
 describe("17.7 AC-1 — a cancel that fails or cannot be confirmed keeps the full hold", () => {

@@ -120,6 +120,34 @@ export function createEnterpriseConversationEntryRoutes({
     }
   });
 
+  routes.get("/:threadId/answer-basis", async (context) => {
+    try {
+      const business = await establish(context.req.raw);
+      const threadId = context.req.param("threadId");
+      const basis: Record<string, { id: string; kind: string }[]> = {};
+      let beforeSeq: number | null = null;
+      // Same whole-history walk as the legacy conversations route
+      // (routes.ts:188): the restoring browser pairs these pointers by engine
+      // message id, and the walk is capped at the model context's ceiling.
+      for (let pages = 0; pages < 50; pages += 1) {
+        const page = await service.history(business.scope, {
+          threadId,
+          beforeSeq,
+          limit: 100,
+        });
+        for (const item of page.items) {
+          if (item.basis !== undefined && item.engineMessageId !== undefined)
+            basis[item.engineMessageId] = [...item.basis];
+        }
+        if (page.nextBeforeSeq === null) break;
+        beforeSeq = page.nextBeforeSeq;
+      }
+      return context.json({ basis });
+    } catch (error) {
+      return respond(context, error);
+    }
+  });
+
   routes.get("/:threadId/messages", async (context) => {
     try {
       const business = await establish(context.req.raw);
@@ -225,6 +253,14 @@ export const ENTERPRISE_ENTRY_DISPOSITIONS: readonly EnterpriseEntranceDispositi
     },
     {
       entrance: "POST /api/enterprise/conversations/:threadId/messages",
+      establishment: "unified-entry-context",
+      visibility: "service-authorized",
+      ownerTicket: "MT124",
+    },
+    {
+      // FIX-OCR3 (O3-H1): the answer-basis pointers a restoring browser reads
+      // ride the same unified conversation entrance as the messages pair.
+      entrance: "GET /api/enterprise/conversations/:threadId/answer-basis",
       establishment: "unified-entry-context",
       visibility: "service-authorized",
       ownerTicket: "MT124",

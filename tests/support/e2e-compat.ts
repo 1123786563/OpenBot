@@ -1,4 +1,5 @@
 import { inspect } from "node:util";
+
 /*
  * `node:module` hooks exist only on Node. This layer is loaded there by the e2e runner, but a
  * bun-driven suite can still reach it dynamically (SRA009's driver imports the native-tier
@@ -13,15 +14,16 @@ try {
 } catch {
   // Not just Bun: any runtime without the hooks API keeps the value-only layer.
 }
+
 // Installed as a side effect: suites that probe the app the Bun way keep working on Node's runtime.
 import "./bun-compat";
 import {
+  expect as e2eExpect,
   afterAll as nodeAfterAll,
   afterEach as nodeAfterEach,
   beforeAll as nodeBeforeAll,
   beforeEach as nodeBeforeEach,
   describe as nodeDescribe,
-  expect as e2eExpect,
   test as nodeTest,
 } from "e2e";
 
@@ -598,6 +600,18 @@ const mocks: Map<string, unknown[]> = ((globalThis as Any)[MOCK_REGISTRY] ??=
   new Map());
 const moduleMocks: Map<string, () => Record<string, unknown>> = new Map();
 /*
+ * Node caches a module per URL for the LIFE OF THE PROCESS, so every registration of the same
+ * specifier must resolve to its own URL. With one `e2e-mock:<specifier>` URL the first suite's
+ * generated module stayed cached, and a later suite's `mock.module` was in force in the registry
+ * but not in what its imports saw: the desktop suites all mock `@tauri-apps/api/core`, so the
+ * second one's clicks reached a sibling's `invoke` and recorded nothing. The version is
+ * per-specifier and bumped on registration, which keeps one suite's repeated imports on one
+ * instance while giving the next suite a fresh one.
+ */
+const moduleMockVersions: Map<string, number> = new Map();
+const mockUrlFor = (specifier: string) =>
+  `e2e-mock:${moduleMockVersions.get(specifier) ?? 0}:${encodeURIComponent(specifier)}`;
+/*
  * The runner imports a suite file more than once per run (to list it, then to execute it), and a
  * second `module.registerHooks()` call or a second copy of the mock registry would make the two
  * passes disagree about what was registered. Both flags therefore live on globalThis, keyed by
@@ -647,7 +661,7 @@ function installMockHooks(): void {
       }
       if (moduleMocks.has(specifier)) {
         return {
-          url: `e2e-mock:${encodeURIComponent(specifier)}`,
+          url: mockUrlFor(specifier),
           format: "module",
           shortCircuit: true,
         };
@@ -711,14 +725,35 @@ function installMockHooks(): void {
         }
         return nextLoad(url, context);
       }
-      const key = decodeURIComponent(url.slice("e2e-mock:".length));
+      const rest = url.slice("e2e-mock:".length);
+      const key = decodeURIComponent(rest.slice(rest.indexOf(":") + 1));
       const names = Object.keys(moduleMocks.get(key)?.() ?? {});
+      /*
+       * Node keeps an importer for the life of the worker process, so the suite that first
+       * imported a component fixed which mock URL its binding points at: a later suite's
+       * `mock.module` registers a new version, but the cached importer never re-resolves (the
+       * desktop suites all mock @tauri-apps/api/core, and the second one's clicks reached the
+       * first one's invoke). Function exports therefore look the current registration up on
+       * every call, so whichever suite is running reaches its own mock. A non-function export
+       * cannot be made live this way and keeps the value it was generated with.
+       */
+      const entry = `globalThis[Symbol.for("openbot.e2e-compat.module-mocks")].get(${JSON.stringify(key)})`;
+      const generated = mocks.get(key) ?? [];
       const body = names
-        .map((name, index) =>
-          name === "default"
-            ? `export default __mocks__[${index}];`
-            : `export const ${identifier(name)} = __mocks__[${index}];`,
-        )
+        .map((name, index) => {
+          if (typeof generated[index] !== "function") {
+            return name === "default"
+              ? `export default __mocks__?.[${index}];`
+              : `export const ${identifier(name)} = __mocks__?.[${index}];`;
+          }
+          const forward =
+            `(...args) => { const live = ${entry}; ` +
+            `if (live === undefined) throw new Error(${JSON.stringify(`module mock for ${key} is not registered`)}); ` +
+            `return live[${index}](...args); }`;
+          return name === "default"
+            ? `export default ${forward};`
+            : `export const ${identifier(name)} = ${forward};`;
+        })
         .join("\n");
       return {
         format: "module",
@@ -739,6 +774,8 @@ function identifier(name: string): string {
 
 installMockHooks();
 
+const liveSpies = new Set<Mock>();
+
 const makeSpy = (implementation?: (...args: any[]) => unknown): Mock =>
   makeMock(implementation ?? (() => undefined));
 
@@ -748,6 +785,10 @@ export const mock: MockFactory = Object.assign(makeSpy, {
     factory: () => Record<string, unknown>,
   ): () => void {
     installMockHooks();
+    moduleMockVersions.set(
+      specifier,
+      (moduleMockVersions.get(specifier) ?? 0) + 1,
+    );
     moduleMocks.set(specifier, factory);
     mocks.set(specifier, Object.values(factory()));
     return () => {
@@ -758,10 +799,13 @@ export const mock: MockFactory = Object.assign(makeSpy, {
   restore(): void {
     moduleMocks.clear();
     mocks.clear();
+    // Bun's `mock.restore()` also puts every `spyOn` target back. Without this, a suite whose
+    // last test spied on a global (`globalThis.fetch`) hands its stub to every later file in the
+    // same worker — one app suite's fake `/api/voice` answers were reaching a server suite's
+    // model calls.
+    for (const spy of [...liveSpies]) spy.mockRestore();
   },
 });
-
-const liveSpies = new Set<Mock>();
 
 export function spyOn(target: Any, key: string | symbol): Mock {
   const descriptor = Object.getOwnPropertyDescriptor(target, key);

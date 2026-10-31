@@ -1,4 +1,10 @@
-import { describe, expect, test } from "../../tests/support/e2e-compat";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 import { createAuth } from "../src/auth/index";
 
 /**
@@ -9,8 +15,6 @@ import { createAuth } from "../src/auth/index";
  * anything that is not a bare scheme is refused at boot rather than silently
  * widening the trust base.
  */
-
-process.env.EXPO_PROJECT_ID = "00000000-0000-0000-0000-000000000000";
 
 const config = {
   auth: {
@@ -27,6 +31,17 @@ function database() {
 }
 
 describe("createAuth native scheme", () => {
+  // The expo plugin (and with it the EXPO_APP_SCHEME validation these tests
+  // pin) only loads when EXPO_PROJECT_ID is set. Set and clear it per test: a
+  // module-scope write survives into every other suite the runner's collector
+  // imports this file alongside — auth-mobile-scheme's first case reads it.
+  beforeEach(() => {
+    process.env.EXPO_PROJECT_ID = "00000000-0000-0000-0000-000000000000";
+  });
+  afterEach(() => {
+    delete process.env.EXPO_PROJECT_ID;
+  });
+
   test("defaults to the built-in scheme when EXPO_APP_SCHEME is unset", () => {
     delete process.env.EXPO_APP_SCHEME;
     expect(() => createAuth(config, database())).not.toThrow();

@@ -19,15 +19,15 @@ const hereDir = dirname(herePath);
  */
 
 const SOURCE = readFileSync(
-  join(hereDir, "../src/assembly/runtime.ts"),
+  join(hereDir, "../src/assembly/model-budget.ts"),
   "utf8",
 );
 
-describe("probe f: the meter's outbox write (static contract, index.ts)", () => {
+describe("probe f: the meter's outbox write (static contract, assembly/model-budget.ts)", () => {
   test("the finish writes usage facts to the outbox, not directly to Lago or credits", () => {
     // b616ccaa made the write awaited inside a try; the remediation plan kept the await and
     // made the failure decisive — logged with both stable ids, then rethrown (see below).
-    expect(SOURCE).toMatch(/await usageOutbox\.record\(\{/);
+    expect(SOURCE).toMatch(/await (?:deps\.)?usageOutbox\.record\(\{/);
     expect(SOURCE).not.toMatch(/void billingService\s*\n?\s*\.recordUsage/);
     expect(SOURCE).not.toMatch(
       /void billing\.creditWriter\s*\n?\s*\.consumeCredits/,
@@ -49,7 +49,7 @@ describe("probe f: the meter's outbox write (static contract, index.ts)", () => 
   });
 
   test("a failed durable write fails the run instead of vanishing into a log line", () => {
-    expect(SOURCE).toMatch(/await usageOutbox\.record\(/);
+    expect(SOURCE).toMatch(/await (?:deps\.)?usageOutbox\.record\(/);
     // The catch logs through the runtime's established logger path AND propagates: a
     // completed billed stream may never be reported as successful when its finish usage
     // fact failed to persist.

@@ -62,7 +62,8 @@ beforeEach(() => {
       // The scope source (who is signed in) is what opens the scope; the roster and the list
       // are the reads that ride it. Both answer empty — states this page already draws.
       if (url === "/api/me") return Response.json({ user: { id: "user-1" } });
-      if (url === "/api/craft/scheduled-tasks") return Response.json({ items: [] });
+      if (url === "/api/craft/scheduled-tasks")
+        return Response.json({ items: [] });
       if (url === "/api/craft/sessions") return Response.json({ items: [] });
       return new Response(null, { status: 404 });
     },

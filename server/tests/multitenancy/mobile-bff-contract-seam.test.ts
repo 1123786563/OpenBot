@@ -87,10 +87,15 @@ type Identical<T, U> = [T] extends [U]
 // ---------------------------------------------------------------------------
 
 describe("D1 public exits re-export exactly the consumed symbols", () => {
-  test("openmuse-tasks/public.ts exports exactly the three task types", () => {
+  test("openmuse-tasks/public.ts exports exactly the three task types plus the quota error", () => {
     expect(
       reExportedNames(read("server/src/openmuse-tasks/public.ts")),
-    ).toEqual(["OpenMuseTaskStep", "OpenMuseTaskStore", "StoredOpenMuseTask"]);
+    ).toEqual([
+      "OpenMuseTaskQuotaError",
+      "OpenMuseTaskStep",
+      "OpenMuseTaskStore",
+      "StoredOpenMuseTask",
+    ]);
   });
 
   test("mobile-bff/public.ts exports exactly the seven provisioner symbols", () => {
@@ -427,9 +432,9 @@ describe("D5 acceptance ④⑤ no BA PKCE/handle work; the submodule stays un-cl
     })
       .toString()
       .trim();
-    // 160000 = gitlink：登记在库、内容未克隆（空目录）。
+    // 160000 = gitlink：登记在库。目录清单不属于合同——CI 的 tests job 有意
+    // git submodule update --init apps/openmuse。
     expect(listing.startsWith("160000 ")).toBe(true);
-    expect(readdirSync(join(REPO_ROOT, "apps/openmuse"))).toEqual([]);
   });
 });
 

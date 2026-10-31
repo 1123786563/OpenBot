@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,19 @@ async function createProjectWithFailingTest() {
   await writeFile(
     join(directory, "package.json"),
     JSON.stringify({ scripts: { test: "bun synthetic-child.ts" } }),
+  );
+  // The seams this script spawns, so the wrapper runs against the fixture rather
+  // than against this checkout's audit and runner.
+  await mkdir(join(directory, "scripts"), { recursive: true });
+  await writeFile(
+    join(directory, "scripts", "e2e-coverage-audit.mjs"),
+    "process.exit(0);\n",
+  );
+  await mkdir(join(directory, "node_modules", ".bin"), { recursive: true });
+  await writeFile(
+    join(directory, "node_modules", ".bin", "e2e"),
+    `#!/bin/sh\necho "${expectedTail}" >&2\nexit 7\n`,
+    { mode: 0o755 },
   );
   await writeFile(
     join(directory, "synthetic-child.ts"),
@@ -99,7 +112,8 @@ test("preserves the child stderr tail before returning the child status", async 
   expect(fixedWrapper.exitCode).toBe(7);
   expect(fixedWrapper.stderr).toBe("");
   expect(fixedWrapper.stdout).toContain(expectedTail);
-  expect(fixedWrapper.stdout).toContain(
-    'error: script "test" exited with code 7',
-  );
+  // The wrapper's own complaint rides the same pipe, so a reader of the log sees
+  // why the count was refused as well as what the child said. Its path comes from
+  // E2E_UNIT_OUTPUT, which is the caller's — assert the sentence, not the path.
+  expect(fixedWrapper.stdout).toContain("Refusing to report a pass");
 });

@@ -1,6 +1,7 @@
 import "./preload";
 // app/tests/plugin-package-install.test.tsx
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { settleReactWork } from "./settle-react-work";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
@@ -9,6 +10,7 @@ import {
   render,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type {
   PackageCatalogueDetail,
   PackageInstallDTO,
@@ -150,7 +152,10 @@ const originalFetch = global.fetch;
 
 beforeAll(() => GlobalRegistrator.register());
 afterEach(cleanup);
-afterAll(() => GlobalRegistrator.unregister());
+afterAll(async () => {
+  await settleReactWork();
+  GlobalRegistrator.unregister();
+});
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -531,12 +536,15 @@ test("an expired plan returns to preview with the non-secret configuration kept"
       name: "Add configuration field",
     }),
   );
-  fireEvent.change(within(dialog()).getByLabelText("Configuration key"), {
-    target: { value: "region" },
-  });
-  fireEvent.change(within(dialog()).getByLabelText("Configuration value"), {
-    target: { value: "eu-central" },
-  });
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.type(
+    within(dialog()).getByLabelText("Configuration key"),
+    "region",
+  );
+  await user.type(
+    within(dialog()).getByLabelText("Configuration value"),
+    "eu-central",
+  );
   // Editing after a preview discards the stale plan; a new preview is explicit.
   expect(
     within(dialog()).queryByRole("button", { name: "Confirm install" }),
@@ -697,7 +705,14 @@ test("the list and detail draw the installed version, revision, status, readines
       within(view.getByRole("dialog")).getByText("Installed"),
     ).toBeDefined();
   });
-  expect(within(view.getByRole("dialog")).getByText("r1")).toBeDefined();
+  // The install state's own chip; the upgrade section carries a second one.
+  expect(
+    within(
+      within(view.getByRole("dialog")).getByRole("region", {
+        name: "Installation",
+      }),
+    ).getByText("r1"),
+  ).toBeDefined();
 });
 
 test("a failed preview keeps the configuration and a retry asks for a new plan", async () => {
@@ -724,12 +739,15 @@ test("a failed preview keeps the configuration and a retry asks for a new plan",
       name: "Add configuration field",
     }),
   );
-  fireEvent.change(within(dialog()).getByLabelText("Configuration key"), {
-    target: { value: "region" },
-  });
-  fireEvent.change(within(dialog()).getByLabelText("Configuration value"), {
-    target: { value: "eu-central" },
-  });
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.type(
+    within(dialog()).getByLabelText("Configuration key"),
+    "region",
+  );
+  await user.type(
+    within(dialog()).getByLabelText("Configuration value"),
+    "eu-central",
+  );
 
   planFailure = null;
   // Editing discarded the failed preview; the same button now re-plans with the kept config.
@@ -757,12 +775,15 @@ test("a secret-looking configuration key is refused before a request leaves the 
       name: "Add configuration field",
     }),
   );
-  fireEvent.change(within(dialog()).getByLabelText("Configuration key"), {
-    target: { value: "api_token" },
-  });
-  fireEvent.change(within(dialog()).getByLabelText("Configuration value"), {
-    target: { value: "do-not-send" },
-  });
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.type(
+    within(dialog()).getByLabelText("Configuration key"),
+    "api_token",
+  );
+  await user.type(
+    within(dialog()).getByLabelText("Configuration value"),
+    "do-not-send",
+  );
   fireEvent.click(
     within(dialog()).getByRole("button", { name: "Preview install" }),
   );
@@ -840,12 +861,15 @@ test("configuration fields are disabled while the apply is in flight", async () 
   fireEvent.click(
     within(dialog()).getByRole("button", { name: "Add configuration field" }),
   );
-  fireEvent.change(within(dialog()).getByLabelText("Configuration key"), {
-    target: { value: "region" },
-  });
-  fireEvent.change(within(dialog()).getByLabelText("Configuration value"), {
-    target: { value: "eu-central" },
-  });
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.type(
+    within(dialog()).getByLabelText("Configuration key"),
+    "region",
+  );
+  await user.type(
+    within(dialog()).getByLabelText("Configuration value"),
+    "eu-central",
+  );
   fireEvent.click(
     within(dialog()).getByRole("button", { name: "Preview install" }),
   );
@@ -906,12 +930,15 @@ test("a 409 conflict drops the spent preview but keeps the configuration, and re
   fireEvent.click(
     within(dialog()).getByRole("button", { name: "Add configuration field" }),
   );
-  fireEvent.change(within(dialog()).getByLabelText("Configuration key"), {
-    target: { value: "region" },
-  });
-  fireEvent.change(within(dialog()).getByLabelText("Configuration value"), {
-    target: { value: "eu-central" },
-  });
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.type(
+    within(dialog()).getByLabelText("Configuration key"),
+    "region",
+  );
+  await user.type(
+    within(dialog()).getByLabelText("Configuration value"),
+    "eu-central",
+  );
   fireEvent.click(
     within(dialog()).getByRole("button", { name: "Preview install" }),
   );

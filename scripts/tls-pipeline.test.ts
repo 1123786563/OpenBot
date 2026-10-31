@@ -1218,6 +1218,11 @@ describe("guard alert critical section (fix-ocr22 #5: two concurrent --once fire
       OPENBOT_TLS_ALERT_WEBHOOK: `file:${alertsFile}`,
       OPENBOT_TLS_ALERT_COOLDOWN_SECONDS: "86400",
       OPENBOT_TLS_STATUS_SET_HOOK: hook,
+      // The waiter's acquire is iteration-bounded while the holder's section
+      // forks ~200× — on a fork-starved CI runner the default 50 expired
+      // mid-section and the waiter degraded into a SECOND alert. Wait the
+      // holder out; the default (5s) is unchanged for everything else.
+      OPENBOT_TLS_LOCK_SPINS: "1000",
     };
     const guardA = run([guard, "--once"], env);
     const guardB = run([guard, "--once"], env);
@@ -2458,6 +2463,11 @@ describe("guard alert critical section vs a slow webhook (fix-ocr26 #11)", () =>
       OPENBOT_TLS_ALERT_WEBHOOK: "https://slow-webhook.invalid/alert",
       OPENBOT_TLS_ALERT_COOLDOWN_SECONDS: "86400",
       PATH: `${shims}:${process.env.PATH ?? ""}`,
+      // Same as fix-ocr22 #5: a fork-starved runner must not let the waiter's
+      // iteration-bounded acquire expire while the holder is still inside the
+      // section (the 6s webhook is outside the lock now, the section itself
+      // may still outlast 50 forks on a thrashed CI box).
+      OPENBOT_TLS_LOCK_SPINS: "1000",
     };
     const [a, b] = await Promise.all([
       run([guard, "--once"], env),

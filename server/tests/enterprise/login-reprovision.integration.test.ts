@@ -67,15 +67,18 @@ test.skipIf(!enabled)(
           rolbypassrls: boolean;
           rolcanlogin: boolean;
         }[]
-      >(`
+      >(
+        `
       SELECT COALESCE(array_agg(parent.rolname ORDER BY parent.rolname), '{}') AS memberships,
         actor.rolsuper, actor.rolbypassrls, actor.rolcanlogin
       FROM pg_roles actor
       LEFT JOIN pg_auth_members membership ON membership.member = actor.oid
       LEFT JOIN pg_roles parent ON parent.oid = membership.roleid
-      WHERE actor.rolname = ${loginName}
+      WHERE actor.rolname = $1
       GROUP BY actor.rolsuper, actor.rolbypassrls, actor.rolcanlogin
-    `);
+    `,
+        [loginName],
+      );
       expect(state?.memberships).toEqual(["ob_ent_data"]);
       expect(state?.rolsuper).toBe(false);
       expect(state?.rolbypassrls).toBe(false);

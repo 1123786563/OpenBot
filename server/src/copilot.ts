@@ -27,14 +27,13 @@ import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
 import { PROVENANCE_GUIDANCE } from "@openbot/shared/bot-prompt";
 import { getLogger } from "@openbot/shared/logger";
 import { defaultModelFor } from "@openbot/shared/model-providers";
+import { runRootSpanId } from "@openbot/shared/run-identity";
 import {
   currentTraceContext,
   deriveTracesTarget,
   injectTraceHeaders,
   SERVER_TRACING_SERVICE_NAME,
 } from "@openbot/shared/trace";
-import { runRootSpanId } from "@openbot/shared/run-identity";
-import { parseHeaders } from "./telemetry/otel";
 import {
   BuiltInAgentWithSaneHistory,
   CloningRemoteAgent,
@@ -147,6 +146,7 @@ import {
   SELECTION_FLOOR,
   selectTools,
 } from "./plugins/public";
+import { parseHeaders } from "./telemetry/otel";
 import { UNTRUSTED_GUIDANCE } from "./untrusted-content";
 import { currentUsageOrigin, type UsageOrigin } from "./usage-origin";
 
@@ -3971,7 +3971,13 @@ async function buildAgent(
   if (selection) {
     try {
       skills = await selection.loadSkills(agent.id);
-    } catch {}
+    } catch {
+      // Never log the thrown value: database errors can contain connection details or row contents.
+      log.error(
+        { operation: "loadSkills", agentId: agent.id },
+        "tool_selection_skill_read_failed",
+      );
+    }
   }
   // PKG03B (T03-fix): the admitted run's pinned package skills join the
   // catalogue. They are pin ∩ active grant ∩ membership summaries revalidated
@@ -3988,7 +3994,19 @@ async function buildAgent(
       ? selection
       : undefined;
 
-  const diagnoseRecordFailure = (_chosen: Selection<GrantedTool>) => {};
+  const diagnoseRecordFailure = (chosen: Selection<GrantedTool>) => {
+    log.error(
+      {
+        operation: "record",
+        agentId: agent.id,
+        reason: chosen.reason,
+        granted: chosen.granted,
+        offered: chosen.offered.length,
+        skills: chosen.skills,
+      },
+      "tool_selection_record_failed",
+    );
+  };
 
   /** Pass one and pass two, for one run. Shared by both agent kinds; each applies it differently. */
   const offeredFor = async (

@@ -248,6 +248,13 @@ function buildAgent(request: ExecutionRequest): {
   // observer rides the same guard (R3-3: the real-engine identity probe).
   const tools = createMastraTools(request.tools, {
     signal: request.signal,
+    // ME05: the durable approval pause, mounted at tool construction — the
+    // engine's authoritative per-tool approval option. Opt-in stays per
+    // server-assembled name list, never per client field; the pause point is
+    // the engine's durable toolCallStep, before the granted execute can run.
+    ...(request.continuations?.durableToolNames?.length
+      ? { requireApprovalFor: request.continuations.durableToolNames }
+      : {}),
     // ME09: the unattended surface's live-lease probe (absent on the browser
     // path — the transport owns that stop wire).
     ...(request.leaseCurrent ? { leaseCurrent: request.leaseCurrent } : {}),
@@ -283,19 +290,6 @@ function buildAgent(request: ExecutionRequest): {
   const bridges = createFrontendBridgeTools(request.frontendTools ?? [], {
     grantedNames: Object.keys(tools),
   });
-  // ME05: the durable approval pause. The controlled wrapper's semantics are
-  // untouched — mounting the engine-level `requireApproval` on the ALREADY
-  // wrapped tool only moves the pause point earlier (the durable toolCallStep
-  // suspends before the granted execute can run), and it is opt-in per
-  // server-assembled name list, never per client field.
-  const durableNames = request.continuations?.durableToolNames;
-  if (durableNames?.length) {
-    for (const [name, tool] of Object.entries(tools)) {
-      if (durableNames.includes(name)) {
-        (tool as { requireApproval?: boolean }).requireApproval = true;
-      }
-    }
-  }
   const agent = new Agent({
     id: `openbot-${request.binding.botId}`,
     name: request.binding.botId,

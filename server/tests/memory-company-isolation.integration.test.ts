@@ -125,7 +125,7 @@ const SOURCE_TOOL = {
 const SOURCE_SERVER = {
   id: `notes_${run}`,
   title: "Notes",
-  provenance: "mcp",
+  provenance: "custom",
   url: `https://notes-${run}.example.invalid`,
   authScheme: null,
   accountMode: null,

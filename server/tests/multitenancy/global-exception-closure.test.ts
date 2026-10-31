@@ -75,7 +75,7 @@ function platformEntrance(
 // ---------------------------------------------------------------------------
 
 describe("MT127 例外登记闭合：登记与验证互相闭合", () => {
-  test("真实两表对业务清单成立：ok，verified 覆盖全部登记项（13 项逐个在册）", () => {
+  test("真实两表对业务清单成立：ok，verified 覆盖全部登记项（逐个在册）", () => {
     const evaluation = evaluateGlobalExceptionClosure({
       entries: GLOBAL_EXCEPTION_ENTRIES,
       verifications: GLOBAL_EXCEPTION_VERIFICATIONS,

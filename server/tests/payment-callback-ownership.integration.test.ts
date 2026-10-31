@@ -156,7 +156,10 @@ function buildService(providers: PaymentProvider[], keyDeployment: string) {
     providers: new Map(providers.map((provider) => [provider.id, provider])),
     store,
     catalog: new Map([
-      ["pro-default", { currency: "CNY", cycles: new Map([["monthly", 8800]]) }],
+      [
+        "pro-default",
+        { currency: "CNY", cycles: new Map([["monthly", 8800]]) },
+      ],
     ]),
     notifyBaseUrl: "https://payments.openbot.example",
     orderTtlMinutes: 15,

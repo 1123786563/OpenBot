@@ -15,6 +15,8 @@
 // 缺配置整套显式 skip（跳过原因写在用例名里，skipped 不计为通过），绝不回退
 // 开发库。真实 PostgreSQL（三受限角色 + RLS），零授权 mock。
 
+import { sql } from "drizzle-orm";
+import { Hono } from "hono";
 import {
   afterAll,
   beforeAll,
@@ -22,8 +24,6 @@ import {
   expect,
   test,
 } from "../../../tests/support/bun-test-compat";
-import { sql } from "drizzle-orm";
-import { Hono } from "hono";
 import {
   createDeploymentEntryContextFactory,
   createDeploymentEntryContextMiddleware,
@@ -34,6 +34,10 @@ import {
   assertTrustedScope,
   createScopeResolver,
 } from "../../src/enterprise/tenancy/store";
+import {
+  enterpriseTestDatabaseNameFrom,
+  enterpriseTestDatabaseUrlFrom,
+} from "../support/enterprise-database";
 import {
   createEntryContextFixture,
   type EntryContextFixture,
@@ -64,16 +68,14 @@ function probeEnvironment(): { ok: true } | { ok: false; reason: string } {
 const ENV = probeEnvironment();
 
 /**
- * 集成库名从 TEST_DATABASE_URL 派生（波次 15 集成整改：取代逐波次钉死的集
- * 成库名令牌——四票各自 RECTIFIED 的 w15d/w15e/w15b/w15c 在集成统一改为
- * env 解析后断言，专库+受限 data 角色+绝不回退开发库的断言语义不变，跨
- * 环境自适应）。仅在 ENV.ok 分支调用，此时 TEST_DATABASE_URL 必在。
+ * 集成库名从企业 setup URL 派生（MT 组路由把 TEST_DATABASE_URL 换成目录岛
+ * openbot_enterprise_mt_test，data 角色仍按 ENTERPRISE_TEST_DATA_DATABASE_URL
+ * 连企业库；两者同库由 enterpriseRuntimeDatabaseUrlFrom 强制，故期望值取
+ * setup URL 的库名。缺 SETUP_URL 时回退 TEST_DATABASE_URL，原断言语义不变）。
+ * 仅在 ENV.ok 分支调用。
  */
 function testDatabaseName(): string {
-  return new URL(process.env.TEST_DATABASE_URL ?? "").pathname.replace(
-    /^\//,
-    "",
-  );
+  return enterpriseTestDatabaseNameFrom(enterpriseTestDatabaseUrlFrom());
 }
 
 const itDb = ((name: string, fn: () => void | Promise<void>) =>
@@ -205,8 +207,7 @@ describeDb("MT122 deployment entry request context (issue #165)", () => {
 
   itDb("environment is the dedicated enterprise test database", async () => {
     const identity = await fixture.probeIdentity();
-    // 库名 = TEST_DATABASE_URL 派生（波次 15 集成令牌根治：专库+受限 data
-    // 角色+绝不回退开发库的断言语义不变，跨环境自适应——见 testDatabaseName）。
+    // 库名 = 企业 setup URL 派生（data 角色与其同库，见 testDatabaseName）。
     // 读取走受限 data 角色，绝不回退开发库。
     expect(identity.database).toBe(testDatabaseName());
     expect(identity.currentUser).toBe("ob_ent_data");

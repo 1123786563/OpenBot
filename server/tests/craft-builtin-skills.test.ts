@@ -63,10 +63,10 @@ describe("builtinSkillFilesFor", () => {
     // The module's own source never ships (smoke: index.ts once landed in a
     // session's skills directory).
     expect(files.has("index.ts")).toBe(false);
-    // The whole onyx pptx tree (83 files), not a trimmed stub.
+    // The whole onyx pptx tree (66 tracked files), not a trimmed stub.
     let pptxCount = 0;
     for (const path of files.keys()) if (path.startsWith("pptx/")) pptxCount++;
-    expect(pptxCount).toBe(83);
+    expect(pptxCount).toBe(66);
   });
 
   test("no connections ship no connector skills", async () => {

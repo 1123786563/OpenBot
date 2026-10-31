@@ -1,6 +1,7 @@
 import "./preload";
 // app/tests/plugin-package-experts.test.tsx
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { settleReactWork } from "./settle-react-work";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
@@ -9,6 +10,7 @@ import {
   render,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type {
   PackageCatalogueDetail,
   PackageExpertCreatedDTO,
@@ -210,7 +212,10 @@ const originalFetch = global.fetch;
 
 beforeAll(() => GlobalRegistrator.register());
 afterEach(cleanup);
-afterAll(() => GlobalRegistrator.unregister());
+afterAll(async () => {
+  await settleReactWork();
+  GlobalRegistrator.unregister();
+});
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -385,7 +390,8 @@ async function openDetail(view: ReturnType<typeof render>) {
  * wizard itself; before it opens the one dialog is the package detail.
  */
 function topDialog(view: ReturnType<typeof render>): HTMLElement {
-  return view.getByRole("dialog");
+  const dialogs = view.getAllByRole("dialog");
+  return dialogs[dialogs.length - 1]!;
 }
 
 async function openWizard(
@@ -425,7 +431,9 @@ test("an admin creation POSTs exactly the contract body and shows the created ag
   // The name draft is prefilled from the package identity and stays editable.
   const nameInput = within(dialog).getByLabelText("Expert name");
   expect((nameInput as HTMLInputElement).value).toBe("Release Notes Writer");
-  fireEvent.change(nameInput, { target: { value: "Meeting Assistant" } });
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.clear(nameInput);
+  await user.type(nameInput, "Meeting Assistant");
   // The profile block is sourced from the install detail's expertTemplate resource: it names
   // the exact ref (packageKey/resourceId) the server's provenance records when the creation
   // writes the profile from the VERIFIED template file. The list row's display copy is a
@@ -475,7 +483,7 @@ test("an admin creation POSTs exactly the contract body and shows the created ag
   // The app's Bot detail route exists, so success hands off with a real link. This app draws
   // links through the system Button's `render` prop, and Base UI exposes the result as a
   // button-role anchor (see button.tsx) — the assertion holds it to its href.
-  const link = within(topDialog(view)).getByRole("button", {
+  const link = within(topDialog(view)).getByRole("link", {
     name: "Open Bot",
   });
   expect(link.getAttribute("href")).toBe(`/bots/${EXPERT.agentId}`);
@@ -671,13 +679,13 @@ test("the submit is disabled with an empty name and while the creation is pendin
     within(topDialog(view)).getByRole("button", { name: "Create expert" });
 
   // No name, no creation.
-  fireEvent.change(within(dialog).getByLabelText("Expert name"), {
-    target: { value: "   " },
-  });
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  const nameInput = within(dialog).getByLabelText("Expert name");
+  await user.clear(nameInput);
+  await user.type(nameInput, "   ");
   expect((submit() as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.change(within(dialog).getByLabelText("Expert name"), {
-    target: { value: "Meeting Assistant" },
-  });
+  await user.clear(nameInput);
+  await user.type(nameInput, "Meeting Assistant");
   expect((submit() as HTMLButtonElement).disabled).toBe(false);
 
   let release = (_response: Response) => {};
@@ -792,10 +800,11 @@ test("the wizard lists the revision's skills as the superset and the receipt nam
   expect(within(dialog).getByText("notes-writer")).toBeDefined();
   expect(within(dialog).getByText("archive-reader")).toBeDefined();
 
-  fireEvent.change(within(dialog).getByLabelText("Expert name"), {
-    target: { value: "Meeting Assistant" },
-  });
-  fireEvent.click(
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  const nameInput = within(dialog).getByLabelText("Expert name");
+  await user.clear(nameInput);
+  await user.type(nameInput, "Meeting Assistant");
+  await user.click(
     within(dialog).getByRole("button", { name: "Create expert" }),
   );
 

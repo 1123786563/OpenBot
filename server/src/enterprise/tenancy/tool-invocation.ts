@@ -285,9 +285,8 @@ export function createToolInvocationService(channels: {
             ),
           )
           .limit(1);
-        // 个人凭据的属主与 decideCredential 同一语义（属主无需动作行）；
-        // team 凭据仍按 'use' 动作行判定（MT027：删除即撤销、立即失效）。
-        if (!ownConnection && !useGrant) {
+        // 本判定面只认 'use' 动作行（MT010：删除即撤销、立即失效），属主同样按行判定。
+        if (!useGrant) {
           // 本人（或本团队）的连接但使用授权已撤销：可解释的明确码
           // （对象对调用者可见，码不泄露他人事实）。
           return {

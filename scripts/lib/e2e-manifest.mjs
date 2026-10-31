@@ -176,6 +176,43 @@ export const EXPLICIT_GROUPS = {
   "server/tests/package-entrypoints": [
     "server/tests/package-entrypoints.test.ts",
   ],
+  /*
+   * The two estate-wide suites read every legacy key in the database and assert exact totals,
+   * so they only hold while nothing else is seeding at the same moment. Their own island is not
+   * enough: `bun test` runs the files it is handed concurrently, and the family's fixtures are
+   * live for the length of their tests — measured on a fresh billing database, the group goes
+   * 62/3, and both are green alone. Each gets its own group ahead of the island, so it is the
+   * only file in its process and runs before the family seeds anything. The name keeps the
+   * island prefix so BILLING_TEST_DATABASE_URL routing applies.
+   */
+  "server/tests/billing island: estate totals": [
+    "server/tests/cleanup-dry-run.integration.test.ts",
+  ],
+  "server/tests/billing island: legacy mapping": [
+    "server/tests/payer-legacy-mapping.integration.test.ts",
+  ],
+  /*
+   * The payment/billing family shares a deployment-global constraint on the
+   * shared test database: createPurchase's pending-purchase guard keys on
+   * DEPLOYMENT_SCOPE (store.ts), so ONE leftover pending payment_orders row —
+   * from any earlier failing suite in the same job — refuses every purchase
+   * in every one of these files. Measured on run 40994447447: parts
+   * 13/14/17 went red on rows no member of this family seeded. The family
+   * itself leaves zero pending rows behind (40 cases across these files, one
+   * process, fresh database), so one island database + one sequential process
+   * restores "the group's red means this file is red". The name carries the
+   * island so BILLING_TEST_DATABASE_URL routing applies
+   * (tests/bun-suites.test.ts).
+   */
+  "server/tests/billing island": [
+    "server/tests/payment-callback-ownership.integration.test.ts",
+    "server/tests/payment-store.integration.test.ts",
+    "server/tests/plan-credits-personal.integration.test.ts",
+    "server/tests/qa-batch1-payment-store.integration.test.ts",
+    "server/tests/qa-batch2-t5-semantics.integration.test.ts",
+    "server/tests/qa-batch2-unreadable-fourth.integration.test.ts",
+    "server/tests/subscription-ownership.integration.test.ts",
+  ],
 };
 
 /*
@@ -370,6 +407,25 @@ function readGroups(target) {
  */
 function freshGroups(fresh, task, taken, preserved) {
   const groups = [];
+  /*
+   * Explicit groups claim their members before any directory slicing — this is the seam the
+   * constant documents ("must share one named group regardless of their directory"), and the one
+   * a member move has to go through: preserved groups only keep members, so pulling a file out of
+   * its directory part is a remove-then-register through this branch. A member this increment
+   * does not bring in stays where it is (the historical package-chain groups claim nothing on an
+   * ordinary increment).
+   */
+  for (const [name, members] of Object.entries(EXPLICIT_GROUPS)) {
+    const claimed = fresh.filter((file) => members.includes(file));
+    if (!claimed.length) continue;
+    if (taken.has(name) || groups.some((group) => group.name === name))
+      throw new Error(
+        `explicit group "${name}" collides with an existing group name`,
+      );
+    taken.add(name);
+    groups.push({ name, files: [...claimed].sort() });
+    fresh = fresh.filter((file) => !claimed.includes(file));
+  }
   const baFiles = fresh.filter((file) => file.startsWith(`${BA_ISLAND_DIR}/`));
   const rest = fresh.filter((file) => !file.startsWith(`${BA_ISLAND_DIR}/`));
   if (baFiles.length) {
@@ -578,6 +634,17 @@ export function bunSuiteEnv(
       for (const target of targets) scoped[target] = env[source];
     }
     return scoped;
+  }
+  /*
+   * The billing island carries its own database override — same presence-only hand-through as
+   * the multitenancy one below, pointed at the payment/billing family's island (see
+   * EXPLICIT_GROUPS there for why the family cannot share openbot_test). Unset → fall through,
+   * so a runner without the island keeps the environment it always had.
+   */
+  if (groupName.startsWith("server/tests/billing island")) {
+    const billing = env.BILLING_TEST_DATABASE_URL;
+    if (billing)
+      return { ...env, TEST_DATABASE_URL: billing, DATABASE_URL: billing };
   }
   const override = env.MT_TEST_DATABASE_URL;
   if (!override) return env;

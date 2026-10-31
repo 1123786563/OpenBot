@@ -8,6 +8,7 @@ import {
   test,
 } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { settleReactWork } from "./settle-react-work";
 import { cleanup, render } from "@testing-library/react";
 import {
   InvoiceMethodLabel,
@@ -38,7 +39,10 @@ afterEach(() => {
   cleanup();
   void i18n.changeLanguage("en");
 });
-afterAll(() => GlobalRegistrator.unregister());
+afterAll(async () => {
+  await settleReactWork();
+  GlobalRegistrator.unregister();
+});
 
 /**
  * The pager's one real job is the clamp: a filter that shrank the list under a pager already on

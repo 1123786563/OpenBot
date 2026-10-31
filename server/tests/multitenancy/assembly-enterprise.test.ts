@@ -325,7 +325,7 @@ describe("MT124 entrance dispositions (Issue #167 AC4)", () => {
   test("the disposition table is internally coherent", () => {
     const ids = ENTERPRISE_ENTRY_DISPOSITIONS.map((row) => row.entrance);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.length).toBe(9);
+    expect(ids.length).toBe(10);
     for (const row of ENTERPRISE_ENTRY_DISPOSITIONS) {
       expect(["MT124", "MT075"]).toContain(row.ownerTicket);
       // entrance 形如 "METHOD path"：先剥 method 再看路径前缀。

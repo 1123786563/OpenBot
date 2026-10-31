@@ -214,7 +214,10 @@ describe("reservations", () => {
     );
     const id = reservedId(await reserve(customer, "span", 600));
     const allocations = await database.execute(
-      sql`SELECT grant_id, amount FROM credit_reservation_allocations WHERE reservation_id = ${id} ORDER BY amount DESC`,
+      // Both allocations are 300, so `amount DESC` alone leaves their order to the planner and
+      // the two grant ids can swap between runs. The contract this test names is earliest-expiry
+      // first, so order by the grants' own expiry — the fact the assertion is really about.
+      sql`SELECT a.grant_id, a.amount FROM credit_reservation_allocations a JOIN credit_grants g ON g.id = a.grant_id WHERE a.reservation_id = ${id} ORDER BY g.expires_at`,
     );
     expect(allocations.map((row) => [row.grant_id, row.amount])).toEqual([
       [soon, 300],

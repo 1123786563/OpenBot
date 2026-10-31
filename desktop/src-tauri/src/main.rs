@@ -2947,7 +2947,7 @@ async fn begin_claude_sign_in(app: tauri::AppHandle, root: String) -> Result<Str
         openbot_desktop_lib::plan::SigningIn::begin(&address, &image).map_err(Problem::from)
     })
     .await
-    .map_err(|error| sign_in::task_did_not_run(error))??;
+    .map_err(sign_in::task_did_not_run)??;
     *app.state::<Shell>().signing_in.lock().unwrap() = Some(signing);
 
     /*
@@ -3005,7 +3005,7 @@ async fn begin_chatgpt_sign_in(
         openbot_desktop_lib::plan::SigningInToChatGpt::begin(&address, &image)
     })
     .await
-    .map_err(|error| sign_in::task_did_not_run(error))??;
+    .map_err(sign_in::task_did_not_run)??;
     *app.state::<Shell>().signing_in_to_chatgpt.lock().unwrap() = Some(signing);
     let _ = tauri_plugin_opener::OpenerExt::opener(&app).open_url(&url, None::<&str>);
     Ok(url)
@@ -3161,7 +3161,7 @@ async fn finish_intelligence_sign_in(
         .ok_or_else(|| openbot_desktop_lib::problem::Problem::plain(sign_in::NO_LONGER_RUNNING))?;
     let (credential, projects) = tauri::async_runtime::spawn_blocking(move || signing.finish())
         .await
-        .map_err(|error| sign_in::did_not_finish(error))??;
+        .map_err(sign_in::did_not_finish)??;
     *app.state::<Shell>().intelligence_credential.lock().unwrap() = Some(credential);
     Ok(projects)
 }
@@ -3429,7 +3429,7 @@ async fn leave_organization(
                     .flatten()
             })
             .ok_or_else(|| Problem::plain("This installation is not in an organization."))?;
-        let mut receipt =
+        let receipt =
             openbot_desktop_lib::org_switch_cleanup::forget_organization_state(&root, &target)?;
         // The frozen context dies only with its own organization: a context belonging to
         // another authority (a stale one) is not this cleanup's to clear.

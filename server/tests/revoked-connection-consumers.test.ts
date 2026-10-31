@@ -26,7 +26,11 @@ import { fileURLToPath } from "node:url";
  */
 
 const hereDir = dirname(fileURLToPath(import.meta.url));
-const boot = readFileSync(join(hereDir, "..", "src", "index.ts"), "utf8");
+// MOD03 (#623): the assembly now lives in assembly/runtime.ts; index.ts is a shim.
+const boot = readFileSync(
+  join(hereDir, "..", "src", "assembly", "runtime.ts"),
+  "utf8",
+);
 
 describe("the craft resolvers' shared connection fact (#489 F01-01)", () => {
   test("counts a held row only while its credential is unrevoked; brokered rows always", () => {

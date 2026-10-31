@@ -135,6 +135,18 @@ export const GLOBAL_EXCEPTION_VERIFICATIONS: readonly GlobalExceptionVerificatio
       pin: "linked accounts and link challenges answer for the session's own actor only; anonymous callers get a bare 401 error shape with no existence leak",
     },
     {
+      entryId: "company-auth",
+      method:
+        "bun test server/tests/multitenancy/global-exception-closure.test.ts",
+      evidenceFiles: [
+        "server/tests/multitenancy/global-exception-closure.test.ts",
+        "server/tests/better-auth/company-auth-challenge.test.ts",
+        "server/tests/better-auth/company-auth-oidc.test.ts",
+        "server/tests/better-auth/company-auth-saml.test.ts",
+      ],
+      pin: "the challenge is issued for the session caller and the company it names, and each IdP completion (OIDC callback, SAML ACS) binds to its own challenge and the session it was issued to — never to a caller-supplied company selection",
+    },
+    {
       entryId: "desktop-connection-failure",
       method:
         "bun test server/tests/multitenancy/global-exception-closure.test.ts",

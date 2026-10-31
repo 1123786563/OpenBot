@@ -1,4 +1,5 @@
 import { describe, expect, jest, test } from "../../tests/support/e2e-compat";
+import { setTimeout as tick } from "node:timers/promises";
 import {
   reportIntelligenceEntitlement,
   type StartupCheckResult,
@@ -204,21 +205,17 @@ describe("scheduleStartupDiagnostics", () => {
     let releaseModel: ((value: { status: number }) => void) | undefined;
     let releaseRead: ((value: { active: boolean }) => void) | undefined;
     const returned = scheduleStartupDiagnostics({
-      model: () =>
-        new Promise((resolve) => {
-          setTimeout(
-            () =>
-              resolve({
-                enabled: true,
-                name: "gpt-5.6-terra",
-                lookup: () =>
-                  new Promise<{ status: number }>((resolve) => {
-                    releaseModel = resolve;
-                  }),
-              }),
-            0,
-          );
-        }),
+      model: async () => {
+        await tick(0);
+        return {
+          enabled: true,
+          name: "gpt-5.6-terra",
+          lookup: () =>
+            new Promise<{ status: number }>((resolve) => {
+              releaseModel = resolve;
+            }),
+        };
+      },
       entitlement: {
         enabled: true,
         read: () =>
@@ -231,13 +228,13 @@ describe("scheduleStartupDiagnostics", () => {
     // The scheduler gave the caller its answer before either diagnostic finished:
     // the statements after it ran while both probes were still unresolved.
     expect(returned).toBeUndefined();
-    await new Promise((resolve) => setTimeout(resolve, 1));
+    await tick(1);
     expect(releaseModel).toBeDefined();
     expect(releaseRead).toBeDefined();
     expect(calls).toEqual([]);
     releaseModel?.({ status: 404 });
     releaseRead?.({ active: false });
-    await new Promise((resolve) => setTimeout(resolve, 1));
+    await tick(1);
     await Promise.resolve();
     const model = calls.filter((call) => call.source === "model");
     const entitlement = calls.filter((call) => call.source === "entitlement");
@@ -263,7 +260,7 @@ describe("scheduleStartupDiagnostics", () => {
       },
       log,
     });
-    await new Promise((resolve) => setTimeout(resolve, 1));
+    await tick(1);
     await Promise.resolve();
     const model = calls.filter((call) => call.source === "model");
     const entitlement = calls.filter((call) => call.source === "entitlement");
@@ -296,7 +293,7 @@ describe("scheduleStartupDiagnostics", () => {
       },
       log,
     });
-    await new Promise((resolve) => setTimeout(resolve, 1));
+    await tick(1);
     await Promise.resolve();
     expect(lookups).toBe(1);
     expect(reads).toBe(1);
@@ -321,7 +318,7 @@ describe("scheduleStartupDiagnostics", () => {
         log,
       }),
     ).not.toThrow();
-    await new Promise((resolve) => setTimeout(resolve, 1));
+    await tick(1);
     await Promise.resolve();
     const model = calls.filter((call) => call.source === "model");
     expect(model).toHaveLength(1);
@@ -346,7 +343,7 @@ describe("scheduleStartupDiagnostics", () => {
         throw new Error("log sink is broken");
       },
     });
-    await new Promise((resolve) => setTimeout(resolve, 1));
+    await tick(1);
     await Promise.resolve();
     expect(lookups).toBe(1);
   });

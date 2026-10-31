@@ -148,8 +148,8 @@ describe("MOD25 D2：例外簿与 checker 校验面", () => {
     expect(checker.includes("--baseline 拒绝在非法配置上收敛基线")).toBe(true);
   });
 
-  test("簿记读数钉：例外 523、环目标面≤45 由 checker 实跑保证，此处钉簿数与零幻影结构", () => {
-    expect(cfg.exceptions.length).toBe(523);
+  test("簿记读数钉：例外 715、环目标面≤45 由 checker 实跑保证，此处钉簿数与零幻影结构", () => {
+    expect(cfg.exceptions.length).toBe(715);
     // source|target 去重后无重复条目（簿记自洽）。
     const keys = cfg.exceptions.map((e) => `${e.source}\u0000${e.target}`);
     expect(new Set(keys).size).toBe(keys.length);

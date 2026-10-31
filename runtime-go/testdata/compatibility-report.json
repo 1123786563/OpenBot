@@ -62,8 +62,8 @@
     ]
   },
   "document_baseline": {
-    "docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md": "3988f0a53a6f51c106ef34373a33b76ead6fa599f2af59b9db6a6a92682e9ce1",
-    "docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md": "805ca0d150b22d31a7ba63672951d770981006cde9afc095507e66348cd93d2e",
+    "docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md": "690a1f8f326050ef4ddc73a07fb3d50d97dafff5ccc0552227b06097f2d6b343",
+    "docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md": "b84384af3030a30746fca3bc4ce8350aa43ea7205df4283133fde10c473555ce",
     "runtime-go/cmd/runtime/main.go": "bd84b072e005941ccc9ab55cd8eb1aac80df49d263f41aea0f79f66248d5e7b0",
     "runtime-go/internal/adapter/agui_test.go": "550271dc6f56d5ffbb7274057f232dc1997b397ea4b136847f76734b6e681df7",
     "runtime-go/internal/adapter/agui.go": "3048e7b089444220c90f14c8f62b01dacfd31a2ed2f1a4b78d60d423da7565af",

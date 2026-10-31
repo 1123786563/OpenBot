@@ -18,6 +18,7 @@ import {
   enterpriseRuns,
   enterpriseSecurityEvents,
   enterpriseTenants,
+  enterpriseWorkspaceMemberships,
   enterpriseWorkspaces,
   users,
 } from "../../src/db/schema";
@@ -117,6 +118,13 @@ beforeAll(async () => {
     workspace: { id: workspaceId, name: "Synthetic run workspace" },
     members: [{ principalId, userId: actorId, role: "tenant_admin" }],
     resources: [],
+  });
+  // MT005: provisionDeployment seeds tenant-level memberships only; the
+  // workspace-level row is what resolveScope admits on.
+  await setup.insert(enterpriseWorkspaceMemberships).values({
+    tenantId,
+    workspaceId,
+    principalId,
   });
 
   const authenticated = new WeakMap<Request, AuthenticatedRequestIdentity>();
@@ -357,6 +365,11 @@ test("active thread lookup returns replacement attempt and fences stale stop", a
       principalId: otherPrincipal,
       role: "member",
     });
+    await setupDb().insert(enterpriseWorkspaceMemberships).values({
+      tenantId,
+      workspaceId,
+      principalId: otherPrincipal,
+    });
     const otherPrincipalScope = await createScopeResolver(directoryDatabase!, {
       authenticate: async () => ({ actorId: otherActor, entrypoint: "web" }),
       selectTenant: () => tenantId,
@@ -506,6 +519,12 @@ test("run lease access requires exact owner and renewal uses configured duration
     id: otherWorkspace,
     name: "Synthetic other lease workspace",
   });
+  await setupDb()
+    .insert(enterpriseWorkspaceMemberships)
+    .values([
+      { tenantId, workspaceId, principalId: otherPrincipal },
+      { tenantId, workspaceId: otherWorkspace, principalId },
+    ]);
   const otherPrincipalScope = await createScopeResolver(directoryDatabase!, {
     authenticate: async () => ({ actorId: otherActor, entrypoint: "web" }),
     selectTenant: () => tenantId,
@@ -783,6 +802,12 @@ test("budget reservation idempotency and mutations require exact owner scope", a
     id: otherWorkspace,
     name: "Synthetic other workspace",
   });
+  await setupDb()
+    .insert(enterpriseWorkspaceMemberships)
+    .values([
+      { tenantId, workspaceId, principalId: otherPrincipal },
+      { tenantId, workspaceId: otherWorkspace, principalId },
+    ]);
   const otherScopes = createScopeResolver(directoryDatabase!, {
     authenticate: async () => ({ actorId: otherActor, entrypoint: "web" }),
     selectTenant: () => tenantId,
