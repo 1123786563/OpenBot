@@ -20,8 +20,18 @@ export type PublicShareData = {
 };
 
 /**
- * Resolve a token to its share view. Every failure — wrong, expired, revoked, offline —
- * rejects identically; the page renders one miss page for all of them (see its head).
+ * The share itself could not be asked about: the network refused, or the server answered
+ * something other than 404. This is NOT a verdict on the token — only a 404 is (see
+ * {@link fetchPublicShare}) — so it may pass on retry and the page says so.
+ */
+export class ShareUnavailableError extends Error {}
+
+/**
+ * Resolve a token to its share view. A 404 is the uniform miss: wrong, expired, or revoked all
+ * read the same, so nothing about which it was leaks. Everything else — offline, DNS, 429, a
+ * 5xx — is {@link ShareUnavailableError} instead: it is a fact about the service, not the
+ * token, and telling a visitor their link is dead when the server is down sends them to blame
+ * the sender.
  */
 export async function fetchPublicShare(
   token: string,
@@ -29,10 +39,14 @@ export async function fetchPublicShare(
   const listResponse = await fetch(
     `/api/public/workshop/share/${encodeURIComponent(token)}/artifacts`,
     { credentials: "omit" },
-  );
+  ).catch(() => {
+    throw new ShareUnavailableError("share-unreachable");
+  });
   if (!listResponse.ok) {
-    // 404, 429, anything else: the same rejection, the same page.
-    throw new Error("share-miss");
+    if (listResponse.status === 404) {
+      throw new Error("share-miss");
+    }
+    throw new ShareUnavailableError(`share-status-${listResponse.status}`);
   }
   const list = (await listResponse.json()) as {
     scope: "preview" | "preview_download";

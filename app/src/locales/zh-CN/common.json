@@ -23,7 +23,8 @@
     "passwordLabel": "密码",
     "continuePassword": "使用邮箱密码继续",
     "signingIn": "正在登录…",
-    "passwordFailed": "登录失败，请检查邮箱和密码。"
+    "passwordFailed": "登录失败，请检查邮箱和密码。",
+    "invalidCredentials": "电子邮箱或密码不正确。"
   },
   "signInPage": {
     "title": "登录",
@@ -118,7 +119,7 @@
     "cancelled": "此邀请已被撤销。",
     "accepted": "此邀请已被接受。",
     "expired": "此邀请已过期。",
-    "settled": "此邀请已被处理。",
+    "settled": "此邀请已被处理。如果这不是你的操作，请联系公司管理员。",
     "unverified": "请先验证邮箱。打开发送到 {{email}} 的验证邮件后，再回到这里。",
     "wrongAccount": "你当前登录的是 {{email}}。此邀请发给另一个邮箱。",
     "wrongAccountHint": "切换账号后即可接受。",
@@ -129,18 +130,25 @@
     "paused": "暂时无法访问公司，请稍后再试。",
     "refused": "OpenBot 无法完成该操作。请重试，或联系公司处理。",
     "invalid": "操作未生效。请刷新页面后重试。",
-    "failed": "无法连接 OpenBot，请重试。"
+    "failed": "无法连接 OpenBot，请重试。",
+    "pageTitle": "接受邀请",
+    "retry": "重试",
+    "goHome": "回到首页"
   },
   "forgotIxdaxjzz": {
     "title": "重置密码",
-    "description": "输入你的电子邮箱。如果账号存在，我们会发送重置链接。",
+    "description": "输入你的电子邮箱，我们会发送重置链接。",
     "email": "电子邮箱",
     "send": "发送重置链接",
     "sending": "正在发送…",
-    "sent": "如果账号存在，重置邮件即将送达。",
+    "sent": "重置链接已发送至 {{email}}。",
     "closed": "此处未开放密码登录。请使用你的身份提供方登录。",
     "failed": "无法发送重置链接，请重试。",
-    "back": "返回登录"
+    "back": "返回登录",
+    "sentHint": "没有收到？请检查垃圾邮件文件夹。",
+    "resend": "重新发送",
+    "providersFailed": "无法确认登录方式，请重试。",
+    "retry": "重试"
   },
   "resetIxdaxjzz": {
     "title": "设置新密码",
@@ -152,7 +160,9 @@
     "invalid": "此链接已过期或已使用，请申请新链接。",
     "requestNew": "申请新的重置链接",
     "failed": "无法重置密码，请重试。",
-    "signIn": "登录"
+    "signIn": "登录",
+    "newIxdaxjzzHint": "至少 8 个字符",
+    "invalidTitle": "链接已失效"
   },
   "verifyEmail": {
     "title": "查看你的邮箱",
