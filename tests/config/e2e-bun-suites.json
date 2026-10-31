@@ -1,5 +1,5 @@
 {
-  "generatedBy": "T06.05 registration",
+  "generatedBy": "T06.03 registration",
   "groups": [
     {
       "name": "agent-computer/tests",
@@ -1147,6 +1147,12 @@
     {
       "name": "server/tests/better-auth:T06.05.01",
       "files": ["server/tests/better-auth/plugin-component-scope.test.ts"]
+    },
+    {
+      "name": "server/tests/better-auth:T06.03.01",
+      "files": [
+        "server/tests/better-auth/credential-source-generations.test.ts"
+      ]
     }
   ],
   "directoryIslands": ["server/tests/multitenancy", "app/tests/multitenancy"],
@@ -1348,6 +1354,7 @@
     "server/tests/better-auth/company-auth-saml.test.ts",
     "server/tests/better-auth/company-lifecycle.test.ts",
     "server/tests/better-auth/company-provision.test.ts",
+    "server/tests/better-auth/credential-source-generations.test.ts",
     "server/tests/better-auth/directory-command.test.ts",
     "server/tests/better-auth/email-verification.test.ts",
     "server/tests/better-auth/fixture-contract.test.ts",
@@ -2115,6 +2122,7 @@
     "server/tests/opik-default-bot-observation.test.ts": "runner named it: cannot load under Node: imports the bun:test layer",
     "server/tests/opik-span-support.test.ts": "runner named it: cannot load under Node: imports the bun:test layer",
     "app/tests/admin-billing-route-render.test.tsx": "runner named it: Received protocol 'bun:' — the billing route pulls the bun-only client stack, same as admin-credit-grant-ui",
-    "server/tests/better-auth/bot-resource-actions.test.ts": "BA island suite: five BA_TEST_* role URLs, real 0221-0226 stack plus the enterprise deltas its services read"
+    "server/tests/better-auth/bot-resource-actions.test.ts": "BA island suite: five BA_TEST_* role URLs, real 0221-0226 stack plus the enterprise deltas its services read",
+    "server/tests/better-auth/credential-source-generations.test.ts": "runner named it: server/tests/better-auth island suite, five BA_TEST_* role URLs"
   }
 }
