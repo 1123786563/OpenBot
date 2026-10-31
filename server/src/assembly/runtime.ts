@@ -255,6 +255,9 @@ import {
   createComputerProvider,
   describeComputerIsolation,
 } from "../computer/provider";
+import { caScopedFetch } from "../computer/openshell";
+import { OPEN_SHELL_ENV } from "../computer/openshell-client";
+import { readFileSync } from "node:fs";
 import { createSnapshotStore } from "../computer/snapshot-store";
 import { createStreamAuthorizer } from "../computer/stream-auth";
 import { loadConfig, trustedBrowserOrigins } from "../config";
@@ -1942,6 +1945,17 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         : undefined;
     // Each computer is pushed its network policy on the way to the action that woke it, because a
     // computer refuses every connection until one arrives (see `withPolicyPushOnWake`).
+    // OpenShell's computers answer on https signed by the gateway's own PKI, so every fetch the
+    // server makes to them — the policy push here, the action transport further down — carries that
+    // one CA and nothing wider.
+    const gatewayCaPath =
+      config.computer?.provider === "openshell"
+        ? process.env[OPEN_SHELL_ENV.ca]
+        : undefined;
+    const gatewayTlsFetch =
+      gatewayCaPath !== undefined && gatewayCaPath !== ""
+        ? caScopedFetch(readFileSync(gatewayCaPath, "utf8"))
+        : undefined;
     const computerProvider = config.computer
       ? withPolicyPushOnWake(createComputerProvider(config.computer), {
           policyForBot: (botId) => enterpriseControls()?.policyForBot(botId),
@@ -1951,6 +1965,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
             : {}),
           ...(config.computer.token ? { token: config.computer.token } : {}),
           ...(config.webBotAuth ? { webBotAuth: config.webBotAuth } : {}),
+          ...(gatewayTlsFetch ? { fetchImpl: gatewayTlsFetch } : {}),
         })
       : undefined;
 
@@ -2243,6 +2258,9 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
           config.computer.executionScope !== undefined
             ? { executionScope: config.computer.executionScope }
             : {}),
+          // Same CA, same reason as the policy push above: the action transport dials the same
+          // gateway-signed https URLs.
+          ...(gatewayTlsFetch ? { fetchImpl: gatewayTlsFetch } : {}),
         })
       : undefined;
 
