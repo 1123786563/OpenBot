@@ -387,12 +387,7 @@ import {
   verifyOperatorDatabase,
 } from "../enterprise/tenancy/connections";
 import {
-  createCredentialLeaseAdminService,
-  createCredentialLeaseService,
-} from "../enterprise/tenancy/credential-lease";
-import {
   createCredentialOwnershipAdminService,
-  createCredentialOwnershipDecisionService,
   type SecretVault,
 } from "../enterprise/tenancy/credential-ownership";
 import { createDeploymentEntryContextFactory } from "../enterprise/tenancy/entry-context";
@@ -401,16 +396,11 @@ import {
   createResourceInventoryService,
   type ResourceInventoryService,
 } from "../enterprise/tenancy/not-found-semantics";
-import { createOAuthStateService } from "../enterprise/tenancy/oauth-state";
 import {
   createOpenMuseVoiceMobileTenancyService,
   type OpenMuseVoiceMobileTenancyRows,
 } from "../enterprise/tenancy/openmuse-voice-mobile-tenancy";
 import { createCompanyPeopleLifecycleService } from "../enterprise/tenancy/people-lifecycle";
-import {
-  createPersonalShareAdminService,
-  createPersonalShareDecisionService,
-} from "../enterprise/tenancy/personal-share-rules";
 import {
   createPluginCatalogAdminService,
   createPluginCatalogDecisionService,
@@ -419,10 +409,6 @@ import {
   applyReadinessEnforcementVerdict,
   runReadinessEnforcement,
 } from "../enterprise/tenancy/readiness-enforcement";
-import {
-  createSharedApprovalAdminService,
-  createSharedApprovalService,
-} from "../enterprise/tenancy/shared-approvals";
 import { createCompanySsoScimConfigService } from "../enterprise/tenancy/sso-scim-config";
 import {
   applyStartupDefaultsVerdict,
@@ -1657,76 +1643,19 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
         }),
       };
     })();
-    // MT010 (Issue #53): personal-resource share rules. The decision half rides
-    // the already-verified restricted data channel; the owner-only share/revoke
-    // half needs the restricted operator channel and stays null — fail-closed,
-    // no share can ever be created or revoked — when that channel is not wired.
-    // Held here for the share-token and share-page entrypoints that land in
-    // MT058 and MT092; nothing in this assembly serves traffic with it yet.
-    // biome-ignore lint/correctness/noUnusedVariables: constructed for the MT058/MT092 share entrypoints that consume it downstream.
-    const personalShareRules = await (async () => {
-      if (!enterpriseCapabilities) return null;
-      const operatorUrl = config.enterpriseOperatorDatabaseUrl;
-      const operator = operatorUrl
-        ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
-            // Same discipline as the workspace-admin channel above: a failing
-            // operator verification leaves the write half unavailable, never
-            // permissive; no console here (server/src is noConsole-enforced).
-            () => null,
-          )
-        : null;
-      return {
-        decisions: createPersonalShareDecisionService(
-          enterpriseCapabilities.data,
-        ),
-        admin: operator ? createPersonalShareAdminService(operator) : null,
-      };
-    })();
-    // MT027 (Issue #70): credential ownership — usable is not readable. The use/
-    // disclose/list/describe decisions ride the already-verified restricted data
-    // channel; the ownership admin (register/revoke/grant) needs the restricted
-    // operator channel and stays null — fail-closed, no credential can ever be
-    // registered or granted — when that channel is not wired. The vault seam is
-    // the deployment's existing AES-GCM envelope (credentials.ts): plaintext is
-    // sealed on registration and only ever opened inside an authorized disclosure,
-    // which writes the append-only audit row in the same data transaction.
-    // biome-ignore lint/correctness/noUnusedVariables: #704 wires the credentialLease chain onto this.
-    const credentialOwnership = await (async () => {
-      if (!enterpriseCapabilities) return null;
-      const credentialOwnershipVault: SecretVault = {
-        seal: (plaintext) => encryptSecret(config.keyEncryptionKey, plaintext),
-        open: (envelope) => decryptSecret(config.keyEncryptionKey, envelope),
-      };
-      const operatorUrl = config.enterpriseOperatorDatabaseUrl;
-      const operator = operatorUrl
-        ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
-            // Same fail-closed discipline as the personalShareRules block above:
-            // a failing operator verification leaves the ownership admin
-            // unavailable, never permissive; no console here (server/src is
-            // noConsole-enforced).
-            () => null,
-          )
-        : null;
-      return {
-        decisions: createCredentialOwnershipDecisionService(
-          enterpriseCapabilities.data,
-          credentialOwnershipVault,
-        ),
-        admin: operator
-          ? createCredentialOwnershipAdminService(
-              operator,
-              credentialOwnershipVault,
-            )
-          : null,
-      };
-    })();
+    // #704 named removal: personalShareRules (MT010/#53) and credentialOwnership
+    // (MT027/#70) were migrated as assembly locals no code read — each block
+    // also opened an operator pool with no consumer. The seam services survive
+    // in server/src/enterprise/tenancy/; the owning ticket rebuilds the wiring
+    // when a consumer exists.
     // MT031 (Issue #74): plugin catalog & install ownership — the catalog is
     // read-only, installs are not global. Catalog browsing and install/connection
     // invocation decisions ride the already-verified restricted data channel; the
     // install admin (install/uninstall/enable/bind) needs the restricted operator
     // channel and stays null — fail-closed, no plugin can ever be installed —
     // when that channel is not wired. The vault seam is the deployment's existing
-    // AES-GCM envelope (same as credentialOwnership): an install secret is sealed
+    // AES-GCM envelope (same discipline the removed credentialOwnership seam
+    // used): an install secret is sealed
     // on install and never returned by any view; invocation hands the sealed
     // envelope only to the allow branch of the trusted execution plane.
     const pluginCatalog = await (async () => {
@@ -1738,7 +1667,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
       const operatorUrl = config.enterpriseOperatorDatabaseUrl;
       const operator = operatorUrl
         ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
-            // Same fail-closed discipline as the credentialOwnership block above:
+            // Same fail-closed discipline the removed credentialOwnership seam used:
             // a failing operator verification leaves the install admin
             // unavailable, never permissive; no console here (server/src is
             // noConsole-enforced).
@@ -1862,84 +1791,11 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
       return { runtime, dispatch, seam: packageToolSeam };
     })();
 
-    // MT028 (Issue #71): OAuth callback binding by server-held state. The whole
-    // service (initiate/consume/fail) rides the verified restricted operator
-    // channel: initiation happens inside a company/team session, but the callback
-    // is sessionless, so the persisted row is the only attribution source. When
-    // the operator channel is not wired the service stays null — fail-closed: no
-    // enterprise OAuth flow can be initiated (the legacy personal connect flow is
-    // unaffected), never a flow that could not be consumed or audited. Held here
-    // for the connector callback wiring that lands in the downstream ticket;
-    // nothing in this assembly serves traffic with it yet.
-    // biome-ignore lint/correctness/noUnusedVariables: the connector callback ticket consumes this; no route serves it yet.
-    const oauthState = await (async () => {
-      if (!enterpriseCapabilities) return null;
-      const operatorUrl = config.enterpriseOperatorDatabaseUrl;
-      const operator = operatorUrl
-        ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
-            // Same fail-closed discipline as the credentialOwnership block above:
-            // a failing operator verification leaves the OAuth state service
-            // unavailable, never permissive; no console here (server/src is
-            // noConsole-enforced).
-            () => null,
-          )
-        : null;
-      return operator ? createOAuthStateService(operator) : null;
-    })();
-    // MT029 (Issue #72): credential lease — fixed purpose, scope and revocable.
-    // The decision face (issue / validate) rides the verified restricted data
-    // channel; the admin face (revoke) rides the verified restricted operator
-    // channel. Either channel missing stays null — fail-closed: no lease can be
-    // issued or revoked, never a flow that could not be audited. Held here for
-    // the execution-chain wiring (MT046 onward re-validates the lease at
-    // sensitive actions); nothing in this assembly serves traffic with it yet.
-    const credentialLease = await (async () => {
-      if (!enterpriseCapabilities) return null;
-      const operatorUrl = config.enterpriseOperatorDatabaseUrl;
-      const operator = operatorUrl
-        ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
-            // Same fail-closed discipline as the credentialOwnership block above:
-            // a failing operator verification leaves the lease admin unavailable,
-            // never permissive; no console here (server/src is noConsole-enforced).
-            () => null,
-          )
-        : null;
-      return {
-        decisions: createCredentialLeaseService(enterpriseCapabilities.data),
-        admin: operator ? createCredentialLeaseAdminService(operator) : null,
-      };
-    })();
-    // MT034 (Issue #77): shared-account approvals — locked to the object pair,
-    // the server-computed params digest and the owning company team. Request /
-    // withdraw / use decisions ride the already-verified restricted data channel
-    // (the use gate consumes the REAL MT029 lease validator — when the lease
-    // channel above is not wired the validator is absent and any lease-carrying
-    // use is refused, fail-closed); approve / decline rides the restricted
-    // operator channel and stays null — fail-closed, no shared-account approval
-    // can ever be granted — when that channel is not wired. Held here for the
-    // execution-chain wiring (plugin/shared-account gates compose this at their
-    // checkpoints downstream); nothing in this assembly serves traffic with it
-    // yet.
-    // biome-ignore lint/correctness/noUnusedVariables: approval checkpoints downstream consume this; nothing serves it yet.
-    const sharedApprovals = await (async () => {
-      if (!enterpriseCapabilities) return null;
-      const operatorUrl = config.enterpriseOperatorDatabaseUrl;
-      const operator = operatorUrl
-        ? await verifyOperatorDatabase(createDatabase(operatorUrl)).catch(
-            // Same fail-closed discipline as the credentialOwnership block above:
-            // a failing operator verification leaves the approval admin
-            // unavailable, never permissive; no console here (server/src is
-            // noConsole-enforced).
-            () => null,
-          )
-        : null;
-      return {
-        decisions: createSharedApprovalService(enterpriseCapabilities.data, {
-          leaseValidator: credentialLease?.decisions,
-        }),
-        admin: operator ? createSharedApprovalAdminService(operator) : null,
-      };
-    })();
+    // #704 named removal: oauthState (MT028/#71), credentialLease
+    // (MT029/#72), and sharedApprovals (MT034/#77) — the same unreachable
+    // local with a dead operator pool (sharedApprovals consumed
+    // credentialLease's decisions, and nothing consumed sharedApprovals).
+    // Seam services survive in server/src/enterprise/tenancy/.
     const identityStore = createIdentityStore(database, credentialStore);
 
     const agentVault = {
