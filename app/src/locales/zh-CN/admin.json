@@ -316,6 +316,10 @@
         "stopping": "正在停止文件夹操作",
         "default": "等待批准的文件夹访问"
       }
+    },
+    "substrate": {
+      "openshellVerified": "计算机已选择 OpenShell 沙箱底座。一份已记录的探针实测验证了它的网络规则、策略回执、工作空间隔离和凭据边界。",
+      "openshellUnverified": "计算机已选择 OpenShell 沙箱底座，但还没有探针回执完整验证它。验证通过前，无法在其上运行计算机。"
     }
   },
   "credentials": {
@@ -1170,6 +1174,7 @@
     "open": "开放",
     "close": "关闭",
     "searchPlaceholder": "搜索模型或提供商",
+    "stateFilter": "按状态筛选",
     "filter": {
       "all": "全部模型",
       "open": "已开放",
@@ -1185,7 +1190,7 @@
       "openTitle": "开放所选的 {{count}} 个模型",
       "description": "同一个原因会记到每个模型的开放记录上。",
       "progress": "正在开放 {{done}}/{{total}}…",
-      "someFailed": "{{count}} 个模型没有开放成功："
+      "someFailed_other": "{{count}} 个模型没有开放成功："
     },
     "dialog": {
       "openTitle": "开放该模型？",

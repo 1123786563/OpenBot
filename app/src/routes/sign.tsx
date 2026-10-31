@@ -23,6 +23,15 @@ import {
 
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 
+/*
+ * Better Auth refusals carry a code; the ones a person can act on get translated copy. The raw
+ * server message stays the fallback for unknown codes — it beats a generic apology that hides
+ * what actually refused.
+ */
+const SIGN_IN_ERROR_KEYS: Record<string, string> = {
+  INVALID_EMAIL_OR_PASSWORD: "signIn.invalidCredentials",
+};
+
 const ENTRANCE_SECONDS = 0.4;
 const ENTRANCE_STAGGER_SECONDS = 0.08;
 const ENTRANCE_OFFSET = "translateY(12px)";
@@ -39,11 +48,21 @@ export const Route = createFileRoute("/sign")({
     // growing them, which reads as "no providers" for exactly as long as the request takes.
     await context.queryClient.ensureQueryData(authProvidersQueryOptions());
   },
+  pendingComponent: () => (
+    <div className="flex h-dvh w-full items-center justify-center">
+      <AgentOrb size="56px" />
+    </div>
+  ),
   component: SignScreen,
 });
 
 function SignScreen() {
   const { t } = useTranslation("common");
+  useEffect(() => {
+    document.title = t("signIn.title", {
+      product: appConfig.brand.productName,
+    });
+  }, [t]);
   // Which provider is being opened, rather than whether one is: with three buttons, a single
   // boolean would put "Opening…" on all of them.
   const [opening, setOpening] = useState<
@@ -55,6 +74,7 @@ function SignScreen() {
   const [email, setEmail] = useState("");
   const [passwordEmail, setPasswordEmail] = useState("");
   const [password, setPassword] = useState("");
+  const passwordRef = useRef<HTMLInputElement>(null);
 
   /*
    * A deployment with exactly one way in goes straight there.
@@ -131,12 +151,17 @@ function SignScreen() {
       await signInWithEmailPassword(passwordEmail, password);
       window.location.assign(window.location.origin);
     } catch (caughtError) {
+      const code = (caughtError as { code?: string } | null)?.code;
+      const key = code !== undefined ? SIGN_IN_ERROR_KEYS[code] : undefined;
       setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : t("signIn.passwordFailed"),
+        key === "signIn.invalidCredentials"
+          ? t("signIn.invalidCredentials")
+          : caughtError instanceof Error
+            ? caughtError.message
+            : t("signIn.passwordFailed"),
       );
       setOpening(null);
+      passwordRef.current?.focus();
     }
   }
 
@@ -315,21 +340,32 @@ function SignScreen() {
                 {t("signIn.passwordLabel")}
               </label>
               <Input
+                aria-describedby={error ? "sign-in-error" : undefined}
                 autoComplete="current-password"
                 className="mt-2"
                 id="sign-in-password"
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder={t("signIn.passwordLabel")}
+                ref={passwordRef}
                 required
                 type="password"
                 value={password}
               />
+              {/*
+               * The app's filled primary when this form is the only way in: with no providers
+               * and no SSO, an outline button leaves the screen's one action lighter than the
+               * inputs around it. With more than one way in, every way stays the same weight.
+               */}
               <Button
                 className="mt-2 h-10 w-full tracking-tight"
                 disabled={opening !== null}
                 size="lg"
                 type="submit"
-                variant="outline"
+                variant={
+                  providers.length === 0 && !options?.sso
+                    ? "default"
+                    : "outline"
+                }
               >
                 {opening === "password"
                   ? t("signIn.signingIn")
@@ -355,7 +391,11 @@ function SignScreen() {
             </details>
           ) : null}
           {error ? (
-            <p className="mt-3 text-sm text-destructive" role="alert">
+            <p
+              className="mt-3 text-sm text-destructive"
+              id="sign-in-error"
+              role="alert"
+            >
               {error}
             </p>
           ) : null}

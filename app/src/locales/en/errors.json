@@ -282,5 +282,8 @@
     "verify": "Could not check the cleanup status",
     "sensitiveRequired": "Medical, financial and customer information is remembered only when you ask for it yourself and confirm a second time.",
     "credential": "Credentials are never remembered. OpenBot refuses passwords, tokens, passphrases and keys even when asked to remember them."
+  },
+  "memoryService": {
+    "load": "Could not load memory management."
   }
 }

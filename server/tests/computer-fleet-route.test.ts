@@ -1,9 +1,11 @@
-import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { AppVariables } from "../src/auth/guards";
 import type { ComputerGateway } from "../src/computer/gateway";
 import type { PolicyStore } from "../src/computer/policy-store";
+import type { ComputerProvider } from "../src/computer/provider";
+import { describeComputerSubstrate } from "../src/computer/provider";
 import { createComputerRoutes } from "../src/computer/routes";
 
 /**
@@ -26,7 +28,10 @@ import { createComputerRoutes } from "../src/computer/routes";
 
 const ADMIN = { id: "u1", email: "admin@openbot.test", role: "admin" } as const;
 
-function app(role: "admin" | "user" = "admin") {
+function app(
+  role: "admin" | "user" = "admin",
+  fleetOverride?: Record<string, unknown>,
+) {
   const asActor: MiddlewareHandler<{ Variables: AppVariables }> = async (
     context,
     next,
@@ -42,6 +47,7 @@ function app(role: "admin" | "user" = "admin") {
         { botId: "risk-analyst", running: true, startedAt: null },
         { botId: "general-assistant", running: false, startedAt: null },
       ],
+      ...fleetOverride,
     }),
   } as unknown as ComputerGateway;
 
@@ -91,5 +97,110 @@ describe("listing every computer in the deployment", () => {
     );
 
     expect(response.status).toBe(404);
+  });
+});
+
+/**
+ * What the fleet says about the substrate, which is a fact the live probe proved — never a fact the
+ * configuration text can claim. An OpenShell deployment reports the capability list a probe actually
+ * signed off on; everything else reports the legacy substrate it always ran on.
+ */
+describe("the substrate the fleet reports", () => {
+  function providerWith(
+    overrides: Partial<ComputerProvider>,
+  ): ComputerProvider {
+    return {
+      name: "sandbox",
+      isolation: "per-bot",
+      locate: async () => "http://computer",
+      status: async () => ({ botId: "b", state: "ready" }),
+      stop: async () => ({ wasRunning: false }),
+      reset: async () => ({ cleared: false }),
+      list: async () => [],
+      ...overrides,
+    };
+  }
+
+  test("an OpenShell deployment reports openshell with exactly the proven capabilities", () => {
+    const proven = [
+      "default-deny-network",
+      "policy-load-receipt",
+      "cross-workspace-denial",
+      "credential-boundary",
+    ];
+    expect(
+      describeComputerSubstrate(
+        providerWith({
+          name: "OpenShell",
+          substrate: { substrate: "openshell", verifiedCapabilities: proven },
+        }),
+      ),
+    ).toEqual({
+      substrate: "openshell",
+      verifiedCapabilities: proven,
+      verified: true,
+    });
+  });
+
+  test("an unproven OpenShell deployment says so rather than claiming the list", () => {
+    // A partial list is unverified: the admin screen shows an unverified substrate instead of a
+    // capability nobody proved in full.
+    expect(
+      describeComputerSubstrate(
+        providerWith({
+          name: "OpenShell",
+          substrate: {
+            substrate: "openshell",
+            verifiedCapabilities: ["default-deny-network"],
+          },
+        }),
+      ),
+    ).toEqual({
+      substrate: "openshell",
+      verifiedCapabilities: ["default-deny-network"],
+      verified: false,
+    });
+    expect(
+      describeComputerSubstrate(
+        providerWith({
+          name: "OpenShell",
+          substrate: { substrate: "openshell", verifiedCapabilities: [] },
+        }),
+      ),
+    ).toEqual({
+      substrate: "openshell",
+      verifiedCapabilities: [],
+      verified: false,
+    });
+  });
+
+  test("every other provider is the legacy substrate, with no capability list to show", () => {
+    expect(describeComputerSubstrate(providerWith({}))).toEqual({
+      substrate: "legacy",
+      verifiedCapabilities: [],
+      verified: false,
+    });
+    expect(
+      describeComputerSubstrate(
+        providerWith({ name: "shared", isolation: "shared" }),
+      ),
+    ).toEqual({
+      substrate: "legacy",
+      verifiedCapabilities: [],
+      verified: false,
+    });
+  });
+
+  test("the fleet response carries the substrate through to the admin screen", async () => {
+    const response = await app("admin", {
+      substrate: "openshell",
+      verifiedCapabilities: ["default-deny-network"],
+    }).request("http://t/api/computers/fleet");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      substrate: "openshell",
+      verifiedCapabilities: ["default-deny-network"],
+    });
   });
 });

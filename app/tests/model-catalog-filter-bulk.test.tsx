@@ -190,7 +190,7 @@ test("全选 + 共用一个原因批量开放：逐个写入，拒绝不中断�
   await user.click(view.getByRole("button", { name: "Save" }));
   // The notice names the refused models in the same paragraph as the count.
   expect(
-    await view.findByText("1 models could not be opened:", { exact: false }),
+    await view.findByText("1 model could not be opened:", { exact: false }),
   ).toBeTruthy();
 
   expect(scopeWrites).toHaveLength(10);

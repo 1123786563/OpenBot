@@ -316,6 +316,10 @@
         "stopping": "Stopping folder work",
         "default": "Folder access awaiting approval"
       }
+    },
+    "substrate": {
+      "openshellVerified": "Computers are set to the OpenShell sandbox substrate. A recorded probe run verified its network rules, policy receipts, workspace isolation and credential boundary.",
+      "openshellUnverified": "Computers are set to the OpenShell sandbox substrate, but no probe receipt verifies it in full. No computer can run on it until one does."
     }
   },
   "credentials": {
@@ -1170,6 +1174,7 @@
     "open": "Open",
     "close": "Close",
     "searchPlaceholder": "Search models or providers",
+    "stateFilter": "Filter by state",
     "filter": {
       "all": "All models",
       "open": "Open",
@@ -1185,7 +1190,8 @@
       "openTitle": "Open {{count}} models",
       "description": "One reason is recorded on every model you open.",
       "progress": "Opening {{done}} of {{total}}…",
-      "someFailed": "{{count}} models could not be opened:"
+      "someFailed_one": "{{count}} model could not be opened:",
+      "someFailed_other": "{{count}} models could not be opened:"
     },
     "dialog": {
       "openTitle": "Open this model?",

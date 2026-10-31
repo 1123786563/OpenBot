@@ -40,5 +40,8 @@
   "unreadBadge": "有未读消息",
   "skipToContent": "跳转到主要内容",
   "groupCapabilities": "能力",
-  "groupGovernance": "治理"
+  "groupGovernance": "治理",
+  "memoryUnavailable": "记忆管理服务未启用。",
+  "memoryAuthFailed": "无法在这次访问中建立记忆服务的登录会话。请稍后重试。",
+  "memorySignedOut": "你已退出登录。"
 }

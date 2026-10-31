@@ -23,7 +23,8 @@
     "passwordLabel": "Password",
     "continuePassword": "Continue with email and password",
     "signingIn": "Signing in…",
-    "passwordFailed": "Sign-in failed. Check your email and password."
+    "passwordFailed": "Sign-in failed. Check your email and password.",
+    "invalidCredentials": "Incorrect email or password."
   },
   "signInPage": {
     "title": "Sign in",
@@ -118,7 +119,7 @@
     "cancelled": "This invitation was cancelled.",
     "accepted": "This invitation was already accepted.",
     "expired": "This invitation has expired.",
-    "settled": "This invitation was already answered.",
+    "settled": "This invitation was already answered. If that wasn't you, contact your company admin.",
     "unverified": "Verify your email first. Open the email sent to {{email}}, then come back here.",
     "wrongAccount": "You're signed in as {{email}}. This invitation is for another email address.",
     "wrongAccountHint": "Switch accounts to accept it.",
@@ -129,18 +130,25 @@
     "paused": "The company can't be reached right now. Try again later.",
     "refused": "OpenBot couldn't do that. Try again, or ask the company for help.",
     "invalid": "That didn't work. Reload the page and try again.",
-    "failed": "Couldn't reach OpenBot. Try again."
+    "failed": "Couldn't reach OpenBot. Try again.",
+    "pageTitle": "Accept invitation",
+    "retry": "Retry",
+    "goHome": "Back to the home page"
   },
   "forgotIxdaxjzz": {
     "title": "Reset your password",
-    "description": "Enter your email address. If you have an account, we’ll send a reset link.",
+    "description": "Enter your email address and we'll send you a reset link.",
     "email": "Email",
     "send": "Send reset link",
     "sending": "Sending…",
-    "sent": "If an account exists, an email is on its way.",
+    "sent": "We've sent a reset link to {{email}}.",
     "closed": "Password sign-in isn’t available here. Continue with your identity provider.",
     "failed": "Couldn’t send the reset link. Try again.",
-    "back": "Back to sign in"
+    "back": "Back to sign in",
+    "sentHint": "Didn't get it? Check your spam folder.",
+    "resend": "Resend",
+    "providersFailed": "Couldn't check the sign-in options. Try again.",
+    "retry": "Retry"
   },
   "resetIxdaxjzz": {
     "title": "Choose a new password",
@@ -152,7 +160,9 @@
     "invalid": "This link has expired or was already used. Request a new one.",
     "requestNew": "Request a new reset link",
     "failed": "Couldn’t reset your password. Try again.",
-    "signIn": "Sign in"
+    "signIn": "Sign in",
+    "newIxdaxjzzHint": "At least 8 characters",
+    "invalidTitle": "Link no longer valid"
   },
   "verifyEmail": {
     "title": "Check your email",

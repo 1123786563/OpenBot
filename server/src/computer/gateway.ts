@@ -18,16 +18,16 @@
  * The refs are opaque to the caller precisely so that the server holds the mapping.
  */
 
+import type { ExecutionScope } from "@openbot/shared/execution-scope";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { type ApprovalGate, currentApprovalContext } from "../approvals/types";
 import {
   type AuditInitiator,
   type AuditStore,
   recordAuditEvent,
 } from "../audit";
-import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { withUntrustedNotice } from "../untrusted-content";
 import { type ComputerCapacity, computerCapacity } from "./capacity";
-import type { ExecutionScope } from "@openbot/shared/execution-scope";
 import {
   ComputerStoppedError,
   ComputerUnavailableError,
@@ -63,7 +63,11 @@ import {
   type PolicyDecision,
   policyInitiator,
 } from "./policy";
-import type { ComputerProvider, ComputerUpdate } from "./provider";
+import {
+  type ComputerProvider,
+  type ComputerUpdate,
+  describeComputerSubstrate,
+} from "./provider";
 import type {
   ActionResult,
   ClickInput,
@@ -289,6 +293,14 @@ export interface ComputerGateway {
   ): Promise<SignInCodeResult>;
   humanInput(botId: string, input: HumanInput): Promise<HumanInputResult>;
   computers(): Promise<{
+    /** Which substrate the computers run on, flattened from the substrate reading. */
+    substrate: "legacy" | "openshell";
+    /** The guarantees a live probe signed off on, empty when none did. */
+    verifiedCapabilities: readonly string[];
+    /** True only when that list covers everything the substrate requires. */
+    verified: boolean;
+    /** Why the substrate could not be asked for computers, when it refused. */
+    unavailableReason?: string;
     isolation: "per-bot" | "shared";
     computers: {
       botId: string;
@@ -948,8 +960,26 @@ export function createComputerGateway(
 
     /** Return every computer that the configured provider owns. */
     async computers() {
-      const computers = await provider.list();
+      const substrate = describeComputerSubstrate(provider);
+      /*
+       * Only the OpenShell substrate degrades a listing failure into a reason on the fleet: its
+       * unverified state is something the admin screen must be able to see. The modes that came
+       * before keep the refusal they have always had, so their behaviour does not change under them.
+       */
+      let computers: Awaited<ReturnType<ComputerProvider["list"]>> = [];
+      let unavailableReason: string | undefined;
+      try {
+        computers = await provider.list();
+      } catch (error) {
+        if (substrate.substrate !== "openshell") throw error;
+        unavailableReason =
+          error instanceof Error && error.message.length > 0
+            ? error.message
+            : "The computer substrate could not be reached.";
+      }
       return {
+        ...substrate,
+        ...(unavailableReason ? { unavailableReason } : {}),
         isolation: provider.isolation,
         computers: computers.map((computer) => ({
           botId: computer.botId,

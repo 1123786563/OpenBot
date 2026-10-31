@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import AuthShell from "@/components/auth/auth-shell";
 import { ProviderLogo } from "@/components/auth/provider-logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -97,9 +98,17 @@ function AcceptInvitationPage() {
   const body = (() => {
     if (id === undefined) {
       return (
-        <p className="text-sm text-muted-foreground">
-          {t("acceptInvitation.linkMissing")}
-        </p>
+        <div className="space-y-4">
+          <h1 className="text-base font-medium">
+            {t("acceptInvitation.linkMissing")}
+          </h1>
+          <Link
+            className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+            to="/"
+          >
+            {t("acceptInvitation.goHome")}
+          </Link>
+        </div>
       );
     }
     if (session.isPending || invitation.isPending) {
@@ -111,9 +120,19 @@ function AcceptInvitationPage() {
     }
     if (invitation.isError) {
       return (
-        <p className="text-sm text-muted-foreground">
-          {t("acceptInvitation.failed")}
-        </p>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            {t("acceptInvitation.failed")}
+          </p>
+          <Button
+            disabled={invitation.isFetching}
+            onClick={() => void invitation.refetch()}
+            type="button"
+            variant="outline"
+          >
+            {t("acceptInvitation.retry")}
+          </Button>
+        </div>
       );
     }
     const read = invitation.data;
@@ -138,9 +157,9 @@ function AcceptInvitationPage() {
       if (who !== null) {
         return (
           <div className="space-y-3">
-            <p className="text-base font-medium">
+            <h1 className="text-base font-medium">
               {t("acceptInvitation.wrongAccount", { email: who.email })}
-            </p>
+            </h1>
             <p className="text-sm text-muted-foreground">
               {t("acceptInvitation.wrongAccountHint")}
             </p>
@@ -155,18 +174,26 @@ function AcceptInvitationPage() {
         );
       }
       return (
-        <p className="text-sm text-muted-foreground">
-          {t("acceptInvitation.unavailable")}
-        </p>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            {t("acceptInvitation.unavailable")}
+          </p>
+          <Link
+            className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+            to="/"
+          >
+            {t("acceptInvitation.goHome")}
+          </Link>
+        </div>
       );
     }
     if (read.kind === "landing") {
       if (read.status === "pending" && !read.expired) {
         return (
           <div className="space-y-4">
-            <p className="text-base font-medium">
+            <h1 className="text-base font-medium">
               {t("acceptInvitation.signInTitle")}
-            </p>
+            </h1>
             <p className="text-sm text-muted-foreground">
               {t("acceptInvitation.signInHint")}
             </p>
@@ -186,7 +213,19 @@ function AcceptInvitationPage() {
               : read.expired
                 ? t("acceptInvitation.expired")
                 : t("acceptInvitation.unavailable");
-      return <p className="text-sm text-muted-foreground">{sentence}</p>;
+      // Every settled landing sentence gets the same exit; a page that ends on its own
+      // news leaves the reader nowhere to go.
+      return (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">{sentence}</p>
+          <Link
+            className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+            to="/"
+          >
+            {t("acceptInvitation.goToApp")}
+          </Link>
+        </div>
+      );
     }
     return (
       <OwnInvitation
@@ -199,9 +238,9 @@ function AcceptInvitationPage() {
   })();
 
   return (
-    <main className="flex min-h-svh items-center justify-center p-6">
-      <div className="w-full max-w-sm space-y-4 text-center">{body}</div>
-    </main>
+    <AuthShell title={t("acceptInvitation.pageTitle")}>
+      <div className="w-full space-y-4 text-center">{body}</div>
+    </AuthShell>
   );
 }
 
@@ -221,6 +260,12 @@ function OwnInvitation({
   const navigate = useNavigate();
   const { formatDate } = useDateTime();
   const commands = invitationCommandAdapter();
+  // After accepting/declining/refusing, the answer replaces the buttons; focus moves with it
+  // so keyboard and screen-reader users land on the outcome instead of a vanished control.
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (outcome !== null) headingRef.current?.focus();
+  }, [outcome]);
   const answer = useMutation({
     mutationFn: (accept: boolean) =>
       accept ? commands.accept(id) : commands.decline(id),
@@ -262,9 +307,9 @@ function OwnInvitation({
   if (outcome?.kind === "joined") {
     return (
       <div className="space-y-3">
-        <p className="text-base font-medium">
+        <h1 className="text-base font-medium" ref={headingRef} tabIndex={-1}>
           {t("acceptInvitation.joined", { company: outcome.company })}
-        </p>
+        </h1>
         <p className="text-sm text-muted-foreground">
           {t("acceptInvitation.joinedHint")}
         </p>
@@ -276,9 +321,19 @@ function OwnInvitation({
   }
   if (outcome?.kind === "declined") {
     return (
-      <p className="text-sm text-muted-foreground">
-        {t("acceptInvitation.declinedNow")}
-      </p>
+      <div className="space-y-3">
+        <h1 className="text-base font-medium" ref={headingRef} tabIndex={-1}>
+          {t("acceptInvitation.declinedNow")}
+        </h1>
+        {/* Declining is an answer, not a dead end: the same exit accepting gets. */}
+        <Button
+          onClick={() => void navigate({ to: "/" })}
+          type="button"
+          variant="outline"
+        >
+          {t("acceptInvitation.goToApp")}
+        </Button>
+      </div>
     );
   }
 
@@ -286,8 +341,16 @@ function OwnInvitation({
   if (refused !== null && TERMINAL_REFUSALS.has(refused)) {
     return (
       <div className="space-y-3">
-        <p className="text-base font-medium">{read.organizationName}</p>
+        <h1 className="text-base font-medium" ref={headingRef} tabIndex={-1}>
+          {read.organizationName}
+        </h1>
         <p className="text-sm text-muted-foreground">{sentenceOf(refused)}</p>
+        <Link
+          className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+          to="/"
+        >
+          {t("acceptInvitation.goToApp")}
+        </Link>
       </div>
     );
   }
@@ -301,9 +364,9 @@ function OwnInvitation({
   return (
     <div className="space-y-4">
       <div className="space-y-1">
-        <p className="text-base font-medium">
+        <h1 className="text-base font-medium">
           {t("acceptInvitation.invitedTo", { company: read.organizationName })}
-        </p>
+        </h1>
       </div>
       <div className="space-y-1 text-sm">
         <div className="flex justify-between gap-4">

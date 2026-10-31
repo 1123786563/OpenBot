@@ -117,6 +117,20 @@ spec:
         - port: 6443
           protocol: TCP
     {{- end }}
+    {{- if eq .Values.computers.mode "openshell" }}
+    {{- if not .Values.networkPolicy.openShellGateway }}
+    {{- fail "networkPolicy.openShellGateway is required when networkPolicy.enabled is true and computers.mode is openshell. It is how this server reaches the OpenShell gateway, which sits on the private network the internet rule cuts out. Name the gateway's pod as a NetworkPolicyPeer, e.g. [{\"namespaceSelector\": {\"matchLabels\": {\"kubernetes.io/metadata.name\": \"openshell\"}}, \"podSelector\": {\"matchLabels\": {\"app.kubernetes.io/name\": \"openshell\"}}}]. Rendering without it would either strand every computer request or, worse, permit the private ranges the rule above excepts." }}
+    {{- end }}
+    {{- /*
+      The OpenShell gateway, and nothing wider. OpenShell mode holds no cluster permission: the
+      mTLS client certificate is the whole credential, and this rule is the whole network path.
+    */}}
+    - to:
+{{ toYaml .Values.networkPolicy.openShellGateway | indent 8 }}
+      ports:
+        - port: {{ .Values.networkPolicy.openShellGatewayPort | default 8080 }}
+          protocol: TCP
+    {{- end }}
     {{- with .Values.networkPolicy.extraEgress }}
 {{ toYaml . | indent 4 }}
     {{- end }}

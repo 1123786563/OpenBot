@@ -135,6 +135,11 @@ import {
   PersonalMemoryMiddleware,
 } from "./memory/tools";
 import {
+  memoryContextBlock,
+  type MemoryContextBlock,
+} from "./memory-service/context";
+import type { RecallResult } from "./memory-service/client";
+import {
   currentRunObservationScope,
   withRunObservationScope,
 } from "./observation-run-scope";
@@ -2748,6 +2753,25 @@ export function setMastraPersonalMemoryContext(
 }
 
 /**
+ * #729 the memory-service loader (the #730 client over the single memory
+ * authority) and its degradation rules. Installed, it REPLACES the legacy
+ * #395 seam above — the old store is never read, not even as a fallback when
+ * the service is down. Uninstalled, the legacy seam keeps its behaviour.
+ */
+export type MastraMemoryContextLoader = (
+  scope: PlatformScope,
+  botId: string,
+) => Promise<{ content: string; result: RecallResult }>;
+
+let mastraMemoryContext: MastraMemoryContextLoader | undefined;
+
+export function setMastraMemoryContext(
+  loader: MastraMemoryContextLoader | undefined,
+): void {
+  mastraMemoryContext = loader;
+}
+
+/**
  * ME05 fix-round-1: the ONE named entry the approvals HTTP route consumes to
  * apply an authenticated decision to a durable continuation. The
  * approvals-integration slice calls exactly this function from its handler;
@@ -2979,16 +3003,41 @@ function mastraAgentConfiguration(input: {
         // runs (the legacy middleware loaded memory before the agent too), so
         // a failed read fails the run instead of assembling an improvising
         // prompt. Unwired, no block is built at all.
-        const personalMemoryBlock = mastraPersonalMemoryContext
-          ? await mastraPersonalMemoryContext(facts.scope, facts.botId)
+        // #729: installed, the memory service owns the block and its failure
+        // semantics — a plain conversation continues on an honest "no memory
+        // used" notice, while a run whose tools are memory tools pauses
+        // instead of improvising without memory.
+        const memoryOutcome: MemoryContextBlock | undefined = mastraMemoryContext
+          ? memoryContextBlock(await mastraMemoryContext(facts.scope, facts.botId), {
+              required: tools.some(
+                (tool) =>
+                  tool.name === "recall_personal_memory" ||
+                  tool.name === "forget_personal_memory",
+              ),
+            })
           : undefined;
+        if (memoryOutcome?.blocked) throw new Error("MEMORY_UNAVAILABLE");
+        const personalMemoryBlock =
+          mastraMemoryContext !== undefined
+            ? memoryOutcome?.block
+            : mastraPersonalMemoryContext
+              ? await mastraPersonalMemoryContext(facts.scope, facts.botId)
+              : undefined;
         // FIX-W14 (FR3-1): the same block's own {id, kind} pointers, read back
         // out by the module that rendered it — the id set this run's answers
         // carry to the person (see withAnswerMemoryBasis). One authority read,
         // zero second reads: what the model saw is what the answer cites.
-        const personalMemoryBasis = personalMemoryBlock
-          ? parsePersonalMemoryBasis(personalMemoryBlock)
-          : undefined;
+        //
+        // #729 review: only the legacy #395 block is written in that format. A
+        // memory-service block has no `kind` (MemoryView carries none) and its
+        // ids are not #387 evidence ids, so this seam stamps NO basis rather
+        // than a half-parse — an answer with no basis claims nothing, which is
+        // the honest direction. Giving service memories a basis is #733's
+        // decision (it needs a kind vocabulary and an evidence seam for them).
+        const personalMemoryBasis =
+          mastraMemoryContext === undefined && personalMemoryBlock
+            ? parsePersonalMemoryBasis(personalMemoryBlock)
+            : undefined;
         // ME03 production wiring: the engine path runs on the server-rebuilt
         // authorized history and persists its output through the conversation
         // runtime. Without one the run refuses rather than executing on the

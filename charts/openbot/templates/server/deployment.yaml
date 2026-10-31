@@ -153,12 +153,19 @@ spec:
             timeoutSeconds: {{ .Values.server.livenessProbe.timeoutSeconds }}
             failureThreshold: {{ .Values.server.livenessProbe.failureThreshold }}
           {{- $sandbox := eq .Values.computers.mode "sandbox" }}
-          {{- if or $sandbox .Values.config.extraVolumeMounts }}
+          {{- $openshell := eq .Values.computers.mode "openshell" }}
+          {{- if or $sandbox $openshell .Values.config.extraVolumeMounts }}
           volumeMounts:
             {{- if $sandbox }}
             {{- /* The shape of a Bot's computer, as a file rather than as a permission to read one. */}}
             - name: sandbox-template
               mountPath: /etc/openbot
+              readOnly: true
+            {{- end }}
+            {{- if $openshell }}
+            {{- /* The gateway client certificate: the one credential OpenShell mode holds. */}}
+            - name: openshell-tls
+              mountPath: /etc/openshell/tls
               readOnly: true
             {{- end }}
             {{- with (include "openbot.extraVolumeMounts" . | trim) }}
@@ -169,12 +176,17 @@ spec:
           resources:
 {{ toYaml . | indent 12 }}
           {{- end }}
-      {{- if or (eq .Values.computers.mode "sandbox") .Values.config.extraVolumes }}
+      {{- if or (eq .Values.computers.mode "sandbox") $openshell .Values.config.extraVolumes }}
       volumes:
         {{- if eq .Values.computers.mode "sandbox" }}
         - name: sandbox-template
           configMap:
             name: {{ include "openbot.componentName" (dict "root" . "component" "computer-template") }}
+        {{- end }}
+        {{- if $openshell }}
+        - name: openshell-tls
+          secret:
+            secretName: {{ required "computers.openshell.tls.existingSecret names the Secret holding the OpenShell client certificate (ca.crt, client.crt, client.key)." .Values.computers.openshell.tls.existingSecret }}
         {{- end }}
         {{- with (include "openbot.extraVolumes" . | trim) }}
         {{- . | nindent 8 }}

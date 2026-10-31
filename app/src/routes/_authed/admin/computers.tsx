@@ -91,11 +91,15 @@ function ComputersPage() {
   }
   const computers = fleet.data?.computers ?? null;
   const isolation = fleet.data?.isolation ?? null;
+  const substrate = fleet.data?.substrate ?? null;
   /*
    * A list that could not be read. A refused stop, reset or update is said beside the buttons
-   * instead, because the top of this page is a long scroll away from them.
+   * instead, because the top of this page is a long scroll away from them. A substrate that
+   * refused to be asked lands here too: it is a fact about the deployment, not a broken screen.
    */
-  const problem = fleet.error ? t("computers.loadError") : null;
+  const problem = fleet.error
+    ? t("computers.loadError")
+    : (fleet.data?.unavailableReason ?? null);
   const hostProblem = hostAccess.error
     ? hostAccess.error.message
     : requestGrant.error
@@ -144,6 +148,23 @@ function ComputersPage() {
         </p>
       ) : null}
 
+      {substrate === "openshell" ? (
+        <p
+          className="mt-4 rounded-md border border-border bg-ob-muted-surface/40 px-3 py-2 text-muted-foreground text-sm"
+          data-testid="computers-substrate"
+        >
+          {fleet.data?.verified
+            ? t("computers.substrate.openshellVerified")
+            : t("computers.substrate.openshellUnverified")}
+          {!fleet.data?.verified &&
+          (fleet.data?.verifiedCapabilities?.length ?? 0) > 0 ? (
+            <span className="block">
+              {fleet.data?.verifiedCapabilities?.join(" · ")}
+            </span>
+          ) : null}
+        </p>
+      ) : null}
+
       <HostFoldersSection
         connected={hostAccess.data?.connected ?? false}
         grants={hostAccess.data?.grants ?? []}
@@ -174,7 +195,7 @@ function ComputersPage() {
             {setState.error.message}
           </p>
         ) : null}
-        {computers === null && problem ? (
+        {(computers === null || computers.length === 0) && problem ? (
           <PageEmpty>{t("computers.fleet.listError")}</PageEmpty>
         ) : computers === null ? null : computers.length === 0 ? (
           <PageEmpty>{t("computers.fleet.empty")}</PageEmpty>

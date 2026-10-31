@@ -5,6 +5,13 @@ import {
   test,
 } from "../../tests/support/bun-test-compat";
 import {
+  createOpenShellComputerProvider,
+  OPEN_SHELL_REQUIRED_CAPABILITIES,
+  type OpenShellAdminClient,
+  type OpenShellSandboxView,
+  type OpenShellScope,
+} from "../src/computer/openshell";
+import {
   createComputerProvider,
   createSharedComputerProvider,
   describeComputerIsolation,
@@ -488,5 +495,133 @@ describe("building the sandbox provider", () => {
       if (original === undefined) delete process.env.KUBERNETES_SERVICE_HOST;
       else process.env.KUBERNETES_SERVICE_HOST = original;
     }
+  });
+});
+
+/**
+ * The OpenShell substrate is chosen by one deployment value and nothing else, and only a complete
+ * execution ownership reaches a gateway: a half-set scope or an unproven capability must refuse,
+ * because the alternative is a sandbox created outside the team it belongs to.
+ */
+describe("OpenShell substrate selection", () => {
+  /** A client that answers from a table, so the test can see exactly which scope reached it. */
+  function fakeClient(options?: { capabilitiesOverride?: boolean }) {
+    const ensured: OpenShellScope[] = [];
+    const client: OpenShellAdminClient = {
+      hasServiceAddress() {
+        return true;
+      },
+      async ensureSandbox(scope): Promise<OpenShellSandboxView> {
+        ensured.push(scope);
+        return {
+          name: `${scope.tenantId}--${scope.workspaceId}--${scope.botId}--${scope.environment}`,
+          state: "ready",
+          url: `https://sandbox.internal/${scope.workspaceId}/${scope.botId}`,
+          generation: scope.generation,
+          // A sandbox is only usable with the receipts a live probe would have found; that rule is
+          // the whole of the next suite's subject, so this one answers with them good.
+          evidence: {
+            policy: "loaded",
+            isolation: "enforced",
+            credentials: "hidden",
+            unauthorizedDestination: "denied",
+          },
+        };
+      },
+      async inspectSandbox(scope): Promise<OpenShellSandboxView> {
+        return {
+          name: `${scope.tenantId}--${scope.workspaceId}--${scope.botId}--${scope.environment}`,
+          state: "ready",
+        };
+      },
+      async stopSandbox() {
+        return { wasRunning: true };
+      },
+      async resetSandbox() {
+        return { cleared: true };
+      },
+      async listSandboxes() {
+        return [];
+      },
+    };
+    void options;
+    return { client, ensured };
+  }
+
+  function scope(overrides: Partial<OpenShellScope> = {}): OpenShellScope {
+    return {
+      tenantId: "acme",
+      workspaceId: "research",
+      botId: "sales",
+      environment: "computer",
+      generation: "gen-1",
+      ...overrides,
+    };
+  }
+
+  test("openshell_selection_requires_complete_scope_and_verified_capabilities", async () => {
+    // The factory selects the OpenShell provider from the one deployment value, alongside the
+    // legacy branches, which keep their own providers.
+    const openshell: ComputerConfig = {
+      provider: "openshell",
+      gatewayEndpoint: "https://openshell.openshell.svc.cluster.local:8080",
+      executionScope: { tenantId: "acme", workspaceId: "research" },
+      allowPrivateHosts: false,
+    };
+    expect(createComputerProvider(openshell).name).toBe("OpenShell");
+    expect(createComputerProvider(openshell).isolation).toBe("per-bot");
+    expect(
+      createComputerProvider({
+        provider: "shared",
+        baseUrl: "http://computer:4100",
+        allowPrivateHosts: false,
+      }).name,
+    ).toBe("shared");
+    expect(
+      createComputerProvider({
+        provider: "docker",
+        baseUrl: "http://supervisor:4300",
+        allowPrivateHosts: false,
+      }).name,
+    ).toBe("Docker supervisor");
+
+    // A capability the live probe did not prove is refused outright: the provider never comes
+    // into existence, so no sandbox can be created on an unproven substrate.
+    expect(() =>
+      createOpenShellComputerProvider({
+        client: fakeClient().client,
+        scopeFor: async () => scope(),
+        capabilities: OPEN_SHELL_REQUIRED_CAPABILITIES.slice(0, 1),
+      }),
+    ).toThrow(ProviderError);
+
+    // A Bot the deployment cannot place in a complete team scope gets no sandbox at all.
+    const { client, ensured } = fakeClient();
+    const unscoped = createOpenShellComputerProvider({
+      client,
+      scopeFor: async (botId) =>
+        botId === "sales" ? null : scope({ workspaceId: "" }),
+      capabilities: OPEN_SHELL_REQUIRED_CAPABILITIES,
+    });
+    await expect(unscoped.locate("sales")).rejects.toThrow(ProviderError);
+    await expect(unscoped.locate("other")).rejects.toThrow(ProviderError);
+    expect(ensured).toEqual([]);
+
+    // Identity is the whole attribution, not the Bot id: the same Bot in two workspaces is two
+    // sandboxes, and two Bots in one workspace are two sandboxes.
+    const placed = createOpenShellComputerProvider({
+      client,
+      scopeFor: async (botId) =>
+        scope({
+          botId,
+          workspaceId: botId === "sales" ? "research" : "support",
+        }),
+      capabilities: OPEN_SHELL_REQUIRED_CAPABILITIES,
+    });
+    const salesUrl = await placed.locate("sales");
+    const supportUrl = await placed.locate("support");
+    expect(salesUrl).not.toBe(supportUrl);
+    expect(ensured.map((s) => s.workspaceId)).toEqual(["research", "support"]);
+    expect(ensured.map((s) => s.tenantId)).toEqual(["acme", "acme"]);
   });
 });

@@ -174,7 +174,9 @@
     "hint": "Read-only; downloads depend on the share's scope.",
     "missing": {
       "title": "This link does not exist or is no longer valid.",
-      "hint": "It may have expired or been revoked."
+      "hint": "It may have expired or been revoked.",
+      "next": "Ask the sender for a fresh link if you need access.",
+      "home": "Go to the home page"
     },
     "preview": {
       "aria": "Static preview"
@@ -187,6 +189,11 @@
     },
     "footer": "Read-only share · not indexed",
     "report": "Report",
-    "reported": "Reported"
+    "reported": "Reported",
+    "retry": "Retry",
+    "unavailable": {
+      "title": "Temporarily unavailable",
+      "hint": "The service can't be reached right now. Check your connection and try again."
+    }
   }
 }

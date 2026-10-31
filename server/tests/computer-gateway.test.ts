@@ -1,8 +1,8 @@
+import type { ExecutionScope } from "@openbot/shared/execution-scope";
 import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import type { ComputerCapacity } from "../src/computer/capacity";
 import { computerCapacity } from "../src/computer/capacity";
-import type { ExecutionScope } from "@openbot/shared/execution-scope";
 import { StaleSnapshotError } from "../src/computer/client";
 import {
   ActionRefusedError,
@@ -52,6 +52,10 @@ function fakeComputer(options?: {
   routes?: Record<string, (init?: RequestInit) => Response | Promise<Response>>;
   /** Which run of the computer this stands for. Absent means a provider that cannot say. */
   session?: () => string | undefined;
+  /** Makes `list` fail, for the fleet's refusal paths. */
+  listError?: unknown;
+  /** The substrate this double reports; absent is the legacy mode. */
+  substrate?: ComputerProvider["substrate"];
 }) {
   const calls: string[] = [];
   const addressedAs: string[] = [];
@@ -66,6 +70,7 @@ function fakeComputer(options?: {
   });
   const provider: ComputerProvider = {
     name: "test",
+    ...(options?.substrate ? { substrate: options.substrate } : {}),
     isolation: "per-bot",
     locate: async (botId) => {
       addressedAs.push(botId);
@@ -81,7 +86,10 @@ function fakeComputer(options?: {
       calls.push(`reset:${botId}`);
       return resetResult;
     },
-    list: async () => locations,
+    list: async () => {
+      if (options?.listError) throw options.listError;
+      return locations;
+    },
   };
   const fetchImpl = (async (url: string, init?: RequestInit) => {
     requests.push({ url, init });
@@ -219,6 +227,8 @@ async function gatewayWith(
       string,
       (init?: RequestInit) => Response | Promise<Response>
     >;
+    listError?: unknown;
+    substrate?: ComputerProvider["substrate"];
   },
 ) {
   const { provider, fetchImpl, calls, addressedAs, requests } =
@@ -815,6 +825,11 @@ describe("the computer gateway", () => {
     const result = await gateway.computers();
 
     expect(result).toEqual({
+      // The provider behind this gateway is a plain test double, so the substrate it reports is
+      // the legacy one every non-OpenShell provider reports.
+      substrate: "legacy",
+      verified: false,
+      verifiedCapabilities: [],
       isolation: "per-bot",
       computers: [
         {
@@ -837,6 +852,46 @@ describe("the computer gateway", () => {
         },
       ],
     });
+  });
+
+  test("a legacy provider that cannot list still refuses the whole fleet", async () => {
+    // Only the OpenShell substrate degrades a listing failure into a reason on the fleet: the modes
+    // that came before keep the refusal they always had.
+    const { gateway } = await gatewayWith(PERMISSIVE, {
+      listError: new Error("the supervisor is down"),
+    });
+    await expect(gateway.computers()).rejects.toThrow("the supervisor is down");
+  });
+
+  test("an openshell substrate that cannot list reports itself unavailable instead", async () => {
+    const { gateway } = await gatewayWith(PERMISSIVE, {
+      listError: new Error("the gateway is down"),
+      substrate: { substrate: "openshell", verifiedCapabilities: [] },
+    });
+    const fleet = await gateway.computers();
+    expect(fleet.substrate).toBe("openshell");
+    expect(fleet.computers).toEqual([]);
+    expect(String(fleet.unavailableReason)).toContain("the gateway is down");
+  });
+
+  test("an openshell fleet with every capability proven reports itself verified", async () => {
+    // The wiring this guards: the substrate reading's derived verdict reaches the fleet answer
+    // whole, so a gateway that flattened the wrong field or hardcoded the verdict fails here.
+    const { gateway } = await gatewayWith(PERMISSIVE, {
+      substrate: {
+        substrate: "openshell",
+        verifiedCapabilities: [
+          "default-deny-network",
+          "policy-load-receipt",
+          "cross-workspace-denial",
+          "credential-boundary",
+        ],
+      },
+    });
+    const fleet = await gateway.computers();
+    expect(fleet.substrate).toBe("openshell");
+    expect(fleet.verified).toBe(true);
+    expect(fleet.unavailableReason).toBeUndefined();
   });
 
   test("takes a screenshot through the located computer with its identity and token", async () => {

@@ -571,6 +571,44 @@ describe("deployment configuration", () => {
     ).toThrow("CASDOOR_OAUTH_CLIENT_ID");
   });
 
+  test("identity-center sign-in resolves its client and issuer together (#714)", () => {
+    const config = loadConfig({
+      ...withoutSignIn,
+      ...SESSION,
+      IDENTITY_CENTER_OAUTH_CLIENT_ID: "identity-center-client-id",
+      IDENTITY_CENTER_OAUTH_CLIENT_SECRET: "prlth-wnaio-fnfm",
+      IDENTITY_CENTER_OAUTH_ISSUER: "http://127.0.0.1:4210",
+    });
+
+    expect(config.auth?.identityCenter).toEqual({
+      clientId: "identity-center-client-id",
+      clientSecret: "prlth-wnaio-fnfm",
+      issuer: "http://127.0.0.1:4210",
+    });
+    expect(configuredAuthProviders(config.auth)).toEqual(["identity-center"]);
+  });
+
+  test("refuses identity-center credentials without an issuer", () => {
+    expect(() =>
+      loadConfig({
+        ...withoutSignIn,
+        ...SESSION,
+        IDENTITY_CENTER_OAUTH_CLIENT_ID: "identity-center-client-id",
+        IDENTITY_CENTER_OAUTH_CLIENT_SECRET: "prlth-wnaio-fnfm",
+      }),
+    ).toThrow("IDENTITY_CENTER_OAUTH_ISSUER");
+  });
+
+  test("refuses an identity-center issuer with no credentials behind it", () => {
+    expect(() =>
+      loadConfig({
+        ...withoutSignIn,
+        ...SESSION,
+        IDENTITY_CENTER_OAUTH_ISSUER: "http://127.0.0.1:4210",
+      }),
+    ).toThrow("IDENTITY_CENTER_OAUTH_CLIENT_ID");
+  });
+
   test("carries all four at once, in a fixed order", () => {
     const config = loadConfig({
       ...withoutSignIn,

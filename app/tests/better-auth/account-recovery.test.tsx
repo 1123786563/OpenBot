@@ -168,7 +168,7 @@ test("request_reset_receive_mail_set_password_then_sign_in", async () => {
   const screen = draw("/forgot-password");
   await user.type(await screen.findByLabelText("Email"), "person@example.test");
   await user.click(screen.getByRole("button", { name: "Send reset link" }));
-  await screen.findByText("If an account exists, an email is on its way.");
+  await screen.findByText("We've sent a reset link to person@example.test.");
   const request = requests.find(
     (item) => item.path === "/api/auth/request-password-reset",
   );
@@ -234,7 +234,7 @@ test("unknown_email_and_known_email_receive_the_same_answer", async () => {
   const screen = draw("/forgot-password");
   await user.type(await screen.findByLabelText("Email"), "nobody@example.test");
   await user.click(screen.getByRole("button", { name: "Send reset link" }));
-  await screen.findByText("If an account exists, an email is on its way.");
+  await screen.findByText("We've sent a reset link to nobody@example.test.");
 });
 
 test("pure_sso_deployment_closes_password_recovery", async () => {

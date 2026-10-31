@@ -1,5 +1,5 @@
-import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { MiddlewareHandler } from "hono";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import type { ComputerGateway } from "../src/computer/gateway";
 import type { PolicyStore } from "../src/computer/policy-store";
@@ -220,7 +220,12 @@ describe("human input", () => {
  * revoke is limited to the current holder (or an administrator) the same way.
  */
 describe("control revoke", () => {
-  function revokeApp(options: { holder?: string; actor: AuthenticatedActor }) {
+  function revokeApp(options: {
+    holder?: string;
+    actor: AuthenticatedActor;
+    /** Overrides what the fleet read answers, for the degraded-substrate case. */
+    fleet?: unknown;
+  }) {
     const revoked: string[] = [];
     const preconditions: Array<unknown> = [];
     const gateway = {
@@ -250,10 +255,11 @@ describe("control revoke", () => {
       },
       // The route asks the fleet before the lease: a computer that is not running holds no
       // live lease, and reading one would /ensure — start it just to be told nothing.
-      computers: async () => ({
-        isolation: "shared",
-        computers: [{ botId: "bot-1", running: true, startedAt: null }],
-      }),
+      computers: async () =>
+        (options.fleet as never) ?? {
+          isolation: "shared",
+          computers: [{ botId: "bot-1", running: true, startedAt: null }],
+        },
     } as unknown as ComputerGateway;
     const app = createComputerRoutes(
       gateway,
@@ -282,6 +288,26 @@ describe("control revoke", () => {
       { method: "POST", body: JSON.stringify({}) },
     );
     expect(response.status).toBe(409);
+    expect(revoked).toEqual([]);
+  });
+
+  test("refuses_over_a_substrate_the_fleet_could_not_be_asked,_not_an_empty_no-op", async () => {
+    const { app, revoked } = revokeApp({
+      actor: holder,
+      fleet: {
+        isolation: "shared",
+        substrate: "openshell",
+        verifiedCapabilities: [],
+        verified: false,
+        unavailableReason: "The OpenShell gateway could not be reached.",
+        computers: [],
+      },
+    });
+    const response = await app.request(
+      "http://openbot.test/bot-1/control/revoke",
+      { method: "POST", body: JSON.stringify({}) },
+    );
+    expect(response.status).toBe(503);
     expect(revoked).toEqual([]);
   });
 

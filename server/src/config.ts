@@ -128,10 +128,30 @@ export type SandboxComputerConfig = {
   policy?: ActionPolicy;
 };
 
+/**
+ * Computers as OpenShell sandboxes on a Kubernetes cluster.
+ *
+ * Selected by one value, `OPENBOT_SANDBOX_SUBSTRATE=openshell`, and only when the whole execution
+ * ownership is present: a deployment that names the substrate but cannot say which team its
+ * computers belong to is refused at boot rather than quietly falling back to a shared browser.
+ */
+export type OpenShellComputerConfig = {
+  provider: "openshell";
+  /** The gateway the restricted admin client dials. */
+  gatewayEndpoint: string;
+  /** The team half of every sandbox's execution ownership. */
+  executionScope: ExecutionScope;
+  /** The secret a direct computer call would carry; OpenShell reaches its sandboxes through the gateway. */
+  token?: string;
+  allowPrivateHosts: boolean;
+  policy?: ActionPolicy;
+};
+
 export type ComputerConfig =
   | DockerComputerConfig
   | SharedComputerConfig
-  | SandboxComputerConfig;
+  | SandboxComputerConfig
+  | OpenShellComputerConfig;
 
 /**
  * Who a deployment lets in, and through which front door.
@@ -140,7 +160,12 @@ export type ComputerConfig =
  * has Google or Entra or Okta and is not going to acquire another, so the shape here is a set of
  * optional providers rather than one required one, and the deployment turns on whichever it has.
  */
-export type AuthProviderId = "google" | "microsoft" | "okta" | "casdoor";
+export type AuthProviderId =
+  | "google"
+  | "microsoft"
+  | "okta"
+  | "casdoor"
+  | "identity-center";
 
 /** An OAuth client, as every provider here needs one. */
 export type OAuthClient = { clientId: string; clientSecret: string };
@@ -178,6 +203,20 @@ export type AuthConfig = {
    */
   casdoor?: OAuthClient & { issuer: string };
   /**
+   * The independent identity center (ADR 0012), likewise an OIDC provider identified by its
+   * issuer. Unlike the provider entries above this is this deployment's own unified identity
+   * center rather than a third party: OpenBot signs in as a relying party over code+PKCE and
+   * never copies a session cookie across origins.
+   */
+  identityCenter?: OAuthClient & {
+    issuer: string;
+    /**
+     * Service token for the center's internal subject API (#715). Without it the
+     * projection cannot verify a subject's current status and refuses (fail-closed).
+     */
+    internalToken?: string;
+  };
+  /**
    * Email + password sign-in (Better Auth's `emailAndPassword`), for clients
    * without a browser to run OAuth in — the OpenMuse mobile app. Off by
    * default: deployments that authenticate through a provider keep this
@@ -212,6 +251,7 @@ export function configuredAuthProviders(
   if (auth.microsoft) providers.push("microsoft");
   if (auth.okta) providers.push("okta");
   if (auth.casdoor) providers.push("casdoor");
+  if (auth.identityCenter) providers.push("identity-center");
   return providers;
 }
 
@@ -274,6 +314,12 @@ export type DeploymentConfig = {
    * Switching either off stops new defaults and leaves every existing row as it is.
    */
   memoryDefaults: { sources: boolean; research: boolean };
+  /**
+   * #731 the independent memory service's admin surface. Configured, OpenBot mounts
+   * the controlled embed entry and the sidebar page shows it; unconfigured, the
+   * page says so instead of framing a URL nobody supplied.
+   */
+  memoryService?: { baseUrl: string };
   /**
    * The multitenancy switch and its startup-validation inputs (MT013).
    *
@@ -643,6 +689,23 @@ function handoffCaps(environment: Environment): HandoffCaps {
     maxDepth: read("BOT_HANDOFF_MAX_DEPTH", 1),
     maxPerRun: read("BOT_HANDOFF_MAX_PER_RUN", 3),
   };
+}
+
+function memoryServiceConfig(
+  environment: Environment,
+): { memoryService: { baseUrl: string } } | Record<string, never> {
+  const raw = optional(environment, "MEMORY_SERVICE_URL");
+  if (!raw) return {};
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(`MEMORY_SERVICE_URL must be an absolute URL: ${JSON.stringify(raw)}`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`MEMORY_SERVICE_URL must be http(s), not ${JSON.stringify(parsed.protocol)}`);
+  }
+  return { memoryService: { baseUrl: parsed.toString().replace(/\/$/, "") } };
 }
 
 function required(environment: Environment, name: string): string {
@@ -1096,7 +1159,7 @@ function remoteBudgetContractConfig(
 
 function oauthClient(
   environment: Environment,
-  provider: "GOOGLE" | "MICROSOFT" | "OKTA" | "CASDOOR",
+  provider: "GOOGLE" | "MICROSOFT" | "OKTA" | "CASDOOR" | "IDENTITY_CENTER",
 ): OAuthClient | undefined {
   const clientId = optional(environment, `${provider}_OAUTH_CLIENT_ID`);
   const clientSecret = optional(environment, `${provider}_OAUTH_CLIENT_SECRET`);
@@ -1176,6 +1239,7 @@ function authConfig(
   const microsoft = microsoftAuth(environment);
   const okta = oktaAuth(environment);
   const casdoor = casdoorAuth(environment);
+  const identityCenter = identityCenterAuth(environment);
   const emailPassword =
     optional(environment, "OPENBOT_EMAIL_PASSWORD") === "true";
 
@@ -1183,7 +1247,14 @@ function authConfig(
   const baseUrl = url(environment, "BETTER_AUTH_URL");
   const authSmtp = authSmtpSettings(environment);
 
-  if (!google && !microsoft && !okta && !casdoor && !emailPassword) {
+  if (
+    !google &&
+    !microsoft &&
+    !okta &&
+    !casdoor &&
+    !identityCenter &&
+    !emailPassword
+  ) {
     if (secret || baseUrl) {
       throw new Error(
         "BETTER_AUTH_SECRET or BETTER_AUTH_URL is set but no identity provider is. Configure GOOGLE_OAUTH_*, MICROSOFT_OAUTH_*, OKTA_OAUTH_* or CASDOOR_OAUTH_*, set OPENBOT_EMAIL_PASSWORD=true, or unset both",
@@ -1298,6 +1369,7 @@ function authConfig(
     ...(microsoft ? { microsoft } : {}),
     ...(okta ? { okta } : {}),
     ...(casdoor ? { casdoor } : {}),
+    ...(identityCenter ? { identityCenter } : {}),
     emailPassword,
     ...(authSmtp ? { authSmtp } : {}),
   };
@@ -1430,6 +1502,33 @@ function casdoorAuth(
     );
   }
   return { ...client, issuer };
+}
+
+function identityCenterAuth(
+  environment: Environment,
+): (OAuthClient & { issuer: string; internalToken?: string }) | undefined {
+  const client = oauthClient(environment, "IDENTITY_CENTER");
+  const issuer = url(environment, "IDENTITY_CENTER_OAUTH_ISSUER");
+  const internalToken = environment.IDENTITY_CENTER_INTERNAL_TOKEN?.trim() || undefined;
+  if (internalToken && (!client || !issuer)) {
+    throw new Error(
+      "IDENTITY_CENTER_INTERNAL_TOKEN is set but identity-center sign-in (ISSUER/CLIENT_ID/CLIENT_SECRET) is not configured",
+    );
+  }
+  if (!client) {
+    if (issuer) {
+      throw new Error(
+        "IDENTITY_CENTER_OAUTH_ISSUER is set but IDENTITY_CENTER_OAUTH_CLIENT_ID and IDENTITY_CENTER_OAUTH_CLIENT_SECRET are not",
+      );
+    }
+    return undefined;
+  }
+  if (!issuer) {
+    throw new Error(
+      "Identity-center sign-in requires IDENTITY_CENTER_OAUTH_ISSUER, such as http://127.0.0.1:4210",
+    );
+  }
+  return internalToken ? { ...client, issuer, internalToken } : { ...client, issuer };
 }
 
 /**
@@ -1638,7 +1737,8 @@ function computerConfig(environment: Environment): ComputerConfig | undefined {
   const supervisorAddress = optional(environment, "COMPUTER_SUPERVISOR_URL");
   const sharedAddress = optional(environment, "AGENT_COMPUTER_URL");
   const sandboxNamespace = optional(environment, "COMPUTER_SANDBOX_NAMESPACE");
-  if (!supervisorAddress && !sharedAddress && !sandboxNamespace) {
+  const substrate = optional(environment, "OPENBOT_SANDBOX_SUBSTRATE");
+  if (!supervisorAddress && !sharedAddress && !sandboxNamespace && !substrate) {
     return undefined;
   }
 
@@ -1680,6 +1780,38 @@ function computerConfig(environment: Environment): ComputerConfig | undefined {
    * make the computers, and a stray `AGENT_COMPUTER_URL` left in an environment would otherwise
    * quietly put every Bot back on one shared browser.
    */
+  /*
+   * One value picks the substrate, and the deployment must be able to say where its computers belong
+   * before any of them exists. Half a scope is refused here, at boot, rather than at the first
+   * computer request where it would surface as a sandbox created for the wrong team.
+   */
+  if (substrate) {
+    if (substrate !== "openshell") {
+      throw new Error(
+        'OPENBOT_SANDBOX_SUBSTRATE must be "openshell" or unset',
+      );
+    }
+    const gatewayEndpoint = url(environment, "OPENSHELL_GATEWAY_ENDPOINT");
+    if (!gatewayEndpoint) {
+      throw new Error(
+        "OPENBOT_SANDBOX_SUBSTRATE=openshell requires OPENSHELL_GATEWAY_ENDPOINT",
+      );
+    }
+    if (!computerExecutionScope) {
+      throw new Error(
+        "OPENBOT_SANDBOX_SUBSTRATE=openshell requires both OPENBOT_COMPUTER_EXECUTION_TENANT_ID and OPENBOT_COMPUTER_EXECUTION_WORKSPACE_ID as plain scope ids",
+      );
+    }
+    return {
+      provider: "openshell",
+      gatewayEndpoint,
+      executionScope: computerExecutionScope,
+      allowPrivateHosts,
+      ...(computerToken ? { token: computerToken } : {}),
+      ...(policy ? { policy } : {}),
+    };
+  }
+
   if (sandboxNamespace) {
     return {
       provider: "sandbox",
@@ -3431,6 +3563,7 @@ export function loadConfig(
       sources: switchedOn(environment, "OPENBOT_MEMORY_SOURCE_DEFAULTS"),
       research: switchedOn(environment, "OPENBOT_PROACTIVE_DEFAULTS"),
     },
+    ...memoryServiceConfig(environment),
     multitenancy: multitenancyConfig(environment),
     agentStallTimeoutMs: agentStallTimeoutMs(environment),
     auditRetentionDays: auditRetentionDays(environment),

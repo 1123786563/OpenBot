@@ -485,6 +485,7 @@ race with, and this does not arise.
 | --- | --- | --- |
 | `shared` | One browser for every Bot, run by this chart. | Nothing. |
 | `sandbox` | A computer each, suspended when idle and resumed with its logins intact. | The `agent-sandbox` controller in the cluster. |
+| `openshell` | A computer each, as an OpenShell sandbox behind an OpenShell gateway. | An OpenShell gateway in the cluster, and a probe that verified it. |
 | `external` | Neither; `computers.url` points at one somebody else runs. | Nothing. |
 
 `shared` is what a first install should use. Sessions, files and logins are shared between Bots in
@@ -537,6 +538,50 @@ goes out, and the sweep asks only for unstamped rows. The window matters, though
 uploads a file, leaves it in the composer overnight and comes back to send it will find it gone.
 Raise `olderThanHours` if that is your deployment's shape, or set `attachments.culler.enabled:
 false` to keep every staged row for ever and reclaim them some other way.
+
+### OpenShell: a computer each, behind an OpenShell gateway
+
+`computers.mode: openshell` places every Bot's computer as a sandbox managed by an [OpenShell
+gateway](https://github.com/NVIDIA/OpenShell) the cluster already runs. The chart itself binds **no
+Kubernetes permission** for this: the gateway owns the sandboxes, and the OpenBot server's one
+credential is the mTLS client certificate mounted at `/etc/openshell/tls`.
+
+Before the mode can work, three things have to be true, and only the first is a chart value:
+
+1. **The gateway is installed and its boundary verified.** Install the OpenShell chart yourself,
+   from a release you have pinned, with mTLS auth on. The gateway chart's default PKI does not keep
+   its CA key, so mint your own PKI (`openshell-gateway generate-certs` in the gateway image does
+   this), keep the CA, and issue the server's client certificate from it. The Secret you hand this
+   chart (`computers.openshell.tls.existingSecret`) holds `ca.crt`, `client.crt` and `client.key`.
+2. **A probe verified the substrate.** `scripts/openshell-foundation-acceptance.ts` creates a
+   sandbox through this server's provider, reaches it, and checks that another workspace is
+   invisible, the network is denied unless a rule allows it, a loaded policy receipt matches real
+   behaviour, a sandbox whose deny was taken away is refused and stopped, and no control-plane
+   credential is readable inside the workload. The report it writes carries a `receipt` naming the
+   gateway, the image and exactly the capabilities it proved; mount that JSON verbatim in
+   `computers.openshell.probeReceipt`. Capability names typed into values verify nothing: the
+   server accepts a receipt only for this deployment's gateway and image, and refuses a computer
+   until the receipt proves all four capabilities. A partial receipt still installs — the fleet
+   page reports the substrate as unverified, which is a state an admin needs to see.
+3. **One workspace per team.** `computers.openshell.tenantId` and `workspaceId` are the execution
+   ownership every sandbox is attributed to. They are plain ids, not display names.
+
+The remaining values are the digest-pinned sandbox image (`…@sha256:<64 hex>`; the install refuses
+a moving tag), the deployment generation sandboxes are attributed to, and `servicePort` — the port
+a computer service inside a sandbox listens on. Leave `servicePort` empty until you run such a
+service: sandboxes can then be created and stopped, but none has an address to locate, and the
+provider says so rather than inventing one.
+
+With `networkPolicy.enabled`, name the gateway in `networkPolicy.openShellGateway` as the
+NetworkPolicyPeer that reaches it (a `namespaceSelector` plus `podSelector` pair is the usual
+shape). The install refuses without it: the gateway sits on the private network the internet rule
+cuts out, and a missing peer list would either strand every computer request or permit more than
+the gateway. `networkPolicy.openShellGatewayPort` is the port it listens on, 8080 by default.
+
+The fleet page shows the substrate and whether a probe receipt verifies it. Until the receipt
+proves all four capabilities it says unverified, and that is what it is: no computer runs on a
+substrate nobody probed.
+
 
 ## NetworkPolicy, and whether your cluster enforces one
 

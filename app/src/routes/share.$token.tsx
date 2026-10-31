@@ -1,18 +1,25 @@
 import { IconFlag } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import AuthShell from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
-import { workshopApi } from "@/lib/workshop/public-client";
+import { appConfig } from "@/lib/generated/application-config";
+import {
+  ShareUnavailableError,
+  workshopApi,
+} from "@/lib/workshop/public-client";
 
 /**
  * The public share page: what a token reaches, and nothing else.
  *
  * Anonymous by design (the token is the key), read-only by contract (the scope decides
  * downloads), and UNIFORM ON EVERY MISS: a wrong, expired, or revoked token renders the same
- * 404 this route answers with `notFound()` — no field, no hint, nothing about which it was.
- * The owner's identity never crosses this page: the API behind it answers artifacts and
- * previews, not sessions or Bots.
+ * 404 miss — no field, no hint, nothing about which it was. A service that cannot be asked
+ * (offline, 429, 5xx) is not a miss: it says so and offers a retry, because the token was
+ * never judged. The owner's identity never crosses this page: the API behind it answers
+ * artifacts and previews, not sessions or Bots.
  */
 function SharePage() {
   const { t } = useTranslation("workshop");
@@ -36,30 +43,64 @@ function SharePage() {
 
   const report = workshopApi.useReportShare();
 
+  // The panel's vocabulary for artifact types, when the type is one it knows.
+  const typeLabels = {
+    chart: t("artifacts.type.chart"),
+    csv: t("artifacts.type.csv"),
+    dataset: t("artifacts.type.dataset"),
+    file: t("artifacts.type.file"),
+    report: t("artifacts.type.report"),
+    webapp: t("artifacts.type.webapp"),
+  } as const;
+  const typeLabel = (type: string) =>
+    type in typeLabels ? typeLabels[type as keyof typeof typeLabels] : type;
+
+  // The live share's tab title; the miss/unavailable states set theirs through AuthShell.
+  const liveHeading = share.data ? t("sharePublic.heading") : null;
+  useEffect(() => {
+    if (liveHeading !== null) {
+      document.title = `${liveHeading} · ${appConfig.brand.productName}`;
+    }
+  }, [liveHeading]);
+
   if (share.isPending) {
     return (
-      <main className="flex min-h-svh items-center justify-center p-6">
+      <AuthShell title={t("sharePublic.loading")}>
         <p className="text-sm text-muted-foreground" role="status">
           {t("sharePublic.loading")}
         </p>
-      </main>
+      </AuthShell>
     );
   }
 
-  // Every failure shape is the same page — see the head.
+  // A miss is the server's verdict on the token; anything else is the service being unreachable.
   if (share.isError || !share.data) {
-    return (
-      <main className="flex min-h-svh items-center justify-center p-6">
-        <div className="max-w-sm space-y-2 text-center">
-          <p className="text-base font-medium">
-            {t("sharePublic.missing.title")}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            {t("sharePublic.missing.hint")}
-          </p>
-        </div>
-      </main>
-    );
+    const unavailable = share.error instanceof ShareUnavailableError;
+    if (unavailable) {
+      return (
+        <AuthShell title={t("sharePublic.unavailable.title")}>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <h1 className="text-2xl font-medium tracking-tight">
+                {t("sharePublic.unavailable.title")}
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                {t("sharePublic.unavailable.hint")}
+              </p>
+            </div>
+            <Button
+              disabled={share.isFetching}
+              onClick={() => void share.refetch()}
+              type="button"
+              variant="outline"
+            >
+              {t("sharePublic.retry")}
+            </Button>
+          </div>
+        </AuthShell>
+      );
+    }
+    return <ShareMiss />;
   }
 
   const { scope, artifacts, previewUrl } = share.data;
@@ -99,19 +140,22 @@ function SharePage() {
                 className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-xs font-medium">
+                  <p
+                    className="truncate text-xs font-medium"
+                    title={artifact.name}
+                  >
                     {artifact.name}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {artifact.type} · {(artifact.sizeBytes / 1024).toFixed(1)}{" "}
-                    KB
+                    {typeLabel(artifact.type)} ·{" "}
+                    {formatBytes(artifact.sizeBytes)}
                   </p>
                 </div>
                 {scope === "preview_download" && artifact.downloadUrl ? (
                   <a
-                    href={artifact.downloadUrl}
+                    className="shrink-0 rounded-md border border-border px-2 py-1.5 text-xs underline-offset-2 hover:bg-accent"
                     download={artifact.name}
-                    className="shrink-0 text-xs underline underline-offset-2"
+                    href={artifact.downloadUrl}
                   >
                     {t("sharePublic.artifacts.download")}
                   </a>
@@ -142,18 +186,44 @@ function SharePage() {
   );
 }
 
+/** The miss page a wrong, expired, or revoked token earns — brand, a heading, and one next step. */
+function ShareMiss() {
+  const { t } = useTranslation("workshop");
+  return (
+    <AuthShell title={t("sharePublic.missing.title")}>
+      <div className="space-y-2">
+        <h1 className="text-2xl font-medium tracking-tight">
+          {t("sharePublic.missing.title")}
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          {t("sharePublic.missing.hint")}
+        </p>
+        <p className="text-sm text-muted-foreground">
+          {t("sharePublic.missing.next")}
+        </p>
+      </div>
+      {/* The page's first focusable element: an exit, not a dead end. */}
+      <Link
+        className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+        to="/"
+      >
+        {t("sharePublic.missing.home")}
+      </Link>
+    </AuthShell>
+  );
+}
+
+function formatBytes(sizeBytes: number): string {
+  if (sizeBytes >= 1024 * 1024 * 1024) {
+    return `${(sizeBytes / 1024 ** 3).toFixed(1)} GB`;
+  }
+  if (sizeBytes >= 1024 * 1024) {
+    return `${(sizeBytes / 1024 ** 2).toFixed(1)} MB`;
+  }
+  return `${(sizeBytes / 1024).toFixed(1)} KB`;
+}
+
 export const Route = createFileRoute("/share/$token")({
   component: SharePage,
-  notFoundComponent: () => {
-    const { t } = useTranslation("workshop");
-    return (
-      <main className="flex min-h-svh items-center justify-center p-6">
-        <p className="text-base font-medium">
-          {t("sharePublic.missing.title")}
-        </p>
-      </main>
-    );
-  },
+  notFoundComponent: () => <ShareMiss />,
 });
-
-void notFound;

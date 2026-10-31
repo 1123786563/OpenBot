@@ -210,8 +210,13 @@ export async function signInWithEmailPassword(
   const result = await start({ email, password });
 
   if (result.error) {
-    throw new Error(
-      result.error.message || "Could not sign in with email and password.",
+    // The code rides along so screens can map known codes to translated copy; the raw
+    // server message is a last resort, not the primary voice (see sign.tsx's error mapping).
+    throw Object.assign(
+      new Error(
+        result.error.message || "Could not sign in with email and password.",
+      ),
+      { code: (result.error as { code?: string }).code },
     );
   }
 }

@@ -291,10 +291,12 @@ function ModelCatalogPage() {
                 value={filter}
               >
                 <SelectTrigger
-                  aria-label={t("modelCatalog.filter.all")}
+                  aria-label={t("modelCatalog.stateFilter")}
                   className="w-40"
                 >
-                  <SelectValue />
+                  <SelectValue>
+                    {t(`modelCatalog.filter.${filter}` as never)}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
