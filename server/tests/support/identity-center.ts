@@ -26,7 +26,9 @@ export function identityTestDatabaseUrl(): string {
   }
   const envFile = join(process.cwd(), "..", "openbot-identity", ".env.local");
   if (existsSync(envFile)) {
-    const match = readFileSync(envFile, "utf8").match(/TEST_IDENTITY_DATABASE_URL=(\S+)/);
+    const match = readFileSync(envFile, "utf8").match(
+      /TEST_IDENTITY_DATABASE_URL=(\S+)/,
+    );
     if (match) return match[1];
   }
   throw new Error(
@@ -42,17 +44,22 @@ export type IdentityCenterProcess = {
   stop: () => Promise<void>;
 };
 
-export async function startIdentityCenter(options: {
-  port?: number;
-  clientId?: string;
-  /** 额外环境变量（#715 内部主体 API 的服务令牌等）。 */
-  env?: Record<string, string>;
-} = {}): Promise<IdentityCenterProcess> {
+export async function startIdentityCenter(
+  options: {
+    port?: number;
+    clientId?: string;
+    /** 额外环境变量（#715 内部主体 API 的服务令牌等）。 */
+    env?: Record<string, string>;
+  } = {},
+): Promise<IdentityCenterProcess> {
   const port = options.port ?? 4210;
   const issuer = `http://127.0.0.1:${port}`;
   const clientId = options.clientId ?? "openbot-web";
-  const clientSecret = "itc-" + createHash("sha256").update(`itc-${port}`).digest("hex").slice(0, 24);
-  const callbackUrl = "http://127.0.0.1:3000/api/auth/oauth2/callback/identity-center";
+  const clientSecret =
+    "itc-" +
+    createHash("sha256").update(`itc-${port}`).digest("hex").slice(0, 24);
+  const callbackUrl =
+    "http://127.0.0.1:3000/api/auth/oauth2/callback/identity-center";
 
   const identityDir = join(process.cwd(), "..", "openbot-identity");
   if (!existsSync(join(identityDir, "src", "index.ts"))) {
@@ -63,7 +70,9 @@ export async function startIdentityCenter(options: {
     IDENTITY_ISSUER: issuer,
     IDENTITY_DATABASE_URL: identityTestDatabaseUrl(),
     IDENTITY_SIGNING_KEY_PEM: generateSigningKeyPem(),
-    IDENTITY_COOKIE_SECRET: "e2e-" + createHash("sha256").update(`secret-${port}`).digest("hex").slice(0, 32),
+    IDENTITY_COOKIE_SECRET:
+      "e2e-" +
+      createHash("sha256").update(`secret-${port}`).digest("hex").slice(0, 32),
     IDENTITY_PORT: String(port),
     IDENTITY_CLIENTS: JSON.stringify([
       {
@@ -79,7 +88,7 @@ export async function startIdentityCenter(options: {
   // e2e 的 node target 用 Node 执行测试进程，被测身份中心是 Bun 子进程。
   const child = spawn("bun", ["src/index.ts"], {
     cwd: identityDir,
-    env: { ...process.env, ...env as Record<string, string>, ...options.env },
+    env: { ...process.env, ...(env as Record<string, string>), ...options.env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   const stop = () =>
@@ -96,7 +105,9 @@ export async function startIdentityCenter(options: {
   let lastError = "";
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`${issuer}/.well-known/openid-configuration`);
+      const response = await fetch(
+        `${issuer}/.well-known/openid-configuration`,
+      );
       if (response.ok) {
         ready = true;
         break;
@@ -109,7 +120,9 @@ export async function startIdentityCenter(options: {
   }
   if (!ready) {
     child.kill();
-    throw new Error(`identity center did not become ready on ${issuer}: ${lastError}`);
+    throw new Error(
+      `identity center did not become ready on ${issuer}: ${lastError}`,
+    );
   }
 
   return {
@@ -117,9 +130,6 @@ export async function startIdentityCenter(options: {
     clientId,
     clientSecret,
     callbackUrl,
-    stop: async () => {
-      child.kill();
-      await child.exited;
-    },
+    stop,
   };
 }

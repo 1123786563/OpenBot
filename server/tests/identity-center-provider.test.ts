@@ -11,6 +11,8 @@ import {
 } from "./support/identity-center";
 import { identityCenter } from "../src/auth/identity-center-client";
 import { createAuth } from "../src/auth/index";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 /*
  * #714 OpenBot side: the RP entry points at a real, separately-deployed identity center.
@@ -18,17 +20,25 @@ import { createAuth } from "../src/auth/index";
  * so its availability here is process-level proof it does not ride on OpenBot.
  */
 
+// 与 startIdentityCenter 同一判定：兄弟仓库 openbot-identity 未 checkout 时
+// （CI 即如此）本套件整体跳过，而不是在 beforeAll 里失败。
+const identityCenterAvailable = existsSync(
+  join(process.cwd(), "..", "openbot-identity", "src", "index.ts"),
+);
+
 let center: IdentityCenterProcess;
 
 beforeAll(async () => {
+  if (!identityCenterAvailable) return;
   center = await startIdentityCenter({ port: 4210 });
 });
 
 afterAll(async () => {
+  if (!center) return;
   await center.stop();
 });
 
-describe("identity-center-provider", () => {
+describe.skipIf(!identityCenterAvailable)("identity-center-provider", () => {
   test("discovery 由独立进程提供，PKCE/S256 与登记端点齐备", async () => {
     const response = await fetch(
       `${center.issuer}/.well-known/openid-configuration`,

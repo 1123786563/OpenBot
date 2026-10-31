@@ -59,16 +59,24 @@ export function MemoryServiceFrame({
     const receive = (event: MessageEvent) => {
       if (event.origin !== allowedOrigin) return;
       if (event.source !== frame.current?.contentWindow) return;
-      const data = event.data as
-        | { type?: unknown; requestId?: unknown; height?: unknown }
-        | null;
+      const data = event.data as {
+        type?: unknown;
+        requestId?: unknown;
+        height?: unknown;
+      } | null;
       if (typeof data !== "object" || data === null) return;
-      if (typeof data.type !== "string" || !MESSAGE_TYPES.has(data.type)) return;
+      if (typeof data.type !== "string" || !MESSAGE_TYPES.has(data.type))
+        return;
       if (data.requestId !== requestId) return;
       switch (data.type) {
         case "memory.resize":
           if (typeof data.height === "number" && Number.isFinite(data.height)) {
-            setHeight(Math.min(Math.max(Math.ceil(data.height), MIN_HEIGHT), MAX_HEIGHT));
+            setHeight(
+              Math.min(
+                Math.max(Math.ceil(data.height), MIN_HEIGHT),
+                MAX_HEIGHT,
+              ),
+            );
           }
           return;
         case "memory.auth-required":
@@ -97,7 +105,7 @@ export function MemoryServiceFrame({
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [allowedOrigin, requestId, onAuthRequired, onLoggedOut]);
+  }, [allowedOrigin, requestId, onAuthRequired, onLoggedOut, navigate]);
 
   if (authFailed || signedOut) {
     return (

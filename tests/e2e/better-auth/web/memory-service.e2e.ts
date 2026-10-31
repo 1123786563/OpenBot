@@ -20,7 +20,10 @@ assertBaWebSuite(import.meta.url);
  * 这两项随 #731 记为 blocked。
  */
 
-test("sidebar_and_same_owner", { timeout: 120_000 }, async ({ app, screen }) => {
+test("sidebar_and_same_owner", { timeout: 120_000 }, async ({
+  app,
+  screen,
+}) => {
   await app.open("/memory");
   // 宿主侧栏保留：承载页不接管导航。
   await expect(screen.getByRole("link", { name: "Bots" })).toBeVisible();
@@ -28,7 +31,10 @@ test("sidebar_and_same_owner", { timeout: 120_000 }, async ({ app, screen }) => 
   await expect(frame).toBeVisible();
   // 承载页只指向部署配置的记忆服务 Origin（同站 HTTPS fixture）；缺配置即配置错误。
   const memoryOrigin = process.env.MEMORY_SERVICE_URL;
-  expect(memoryOrigin, "MEMORY_SERVICE_URL must be set for the embedded run").toBeTruthy();
+  expect(
+    memoryOrigin,
+    "MEMORY_SERVICE_URL must be set for the embedded run",
+  ).toBeTruthy();
   const src = await frame.getAttribute("src");
   expect(new URL(src ?? "").origin).toBe(new URL(memoryOrigin!).origin);
 });
@@ -51,7 +57,11 @@ test("deep_link", { timeout: 120_000 }, async ({ app, browser, screen }) => {
   expect(browser.url().pathname).toBe("/memory");
 });
 
-test("logout_revocation", { timeout: 120_000 }, async ({ app, browser, screen }) => {
+test("logout_revocation", { timeout: 120_000 }, async ({
+  app,
+  browser,
+  screen,
+}) => {
   await app.open("/memory");
   await expect(screen.getByTitle("记忆")).toBeVisible();
   // 记忆服务的退出清掉会话；再回承载页要求重新登录，且不恢复撤销的委托。
@@ -60,7 +70,11 @@ test("logout_revocation", { timeout: 120_000 }, async ({ app, browser, screen })
   await expect(screen.getByTitle("记忆")).not.toBeVisible();
 });
 
-test("message_origin", { timeout: 120_000 }, async ({ app, browser, screen }) => {
+test("message_origin", { timeout: 120_000 }, async ({
+  app,
+  browser,
+  screen,
+}) => {
   await app.open("/memory");
   const before = browser.url().href;
   // 伪造的 auth-required（带任意回跳地址与错误 requestId）被忽略：页面不跳走。

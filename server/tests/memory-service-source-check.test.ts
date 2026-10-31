@@ -1,10 +1,4 @@
-import {
-  afterAll,
-  beforeAll,
-  describe,
-  expect,
-  test,
-} from "../../tests/support/e2e-compat";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { Hono } from "hono";
 import {
   createOpenBotMemorySourceCheck,
@@ -39,16 +33,20 @@ const SCOPE: IssuedScope = {
 
 type AccessState = "allowed" | "denied" | "unavailable";
 
-function fixture(options: {
-  consumers?: Partial<MemoryConsumerRegistry>;
-  access?: Partial<SourceAccess> & { state?: AccessState };
-} = {}) {
+function fixture(
+  options: {
+    consumers?: Partial<MemoryConsumerRegistry>;
+    access?: Partial<SourceAccess> & { state?: AccessState };
+  } = {},
+) {
   const calls = { resolve: [] as IssuedScope[], versions: [] as string[] };
   const consumers: MemoryConsumerRegistry = {
-    isActive: options.consumers?.isActive ?? (async (appId) => appId === CONSUMER),
+    isActive:
+      options.consumers?.isActive ?? (async (appId) => appId === CONSUMER),
     delegated:
       options.consumers?.delegated ??
-      (async ({ consumerAppId, action }) => consumerAppId === CONSUMER && action !== "review"),
+      (async ({ consumerAppId, action }) =>
+        consumerAppId === CONSUMER && action !== "review"),
   };
   const access: SourceAccess = {
     resolve:
@@ -90,12 +88,22 @@ describe("forged_scope", () => {
   test("篡改本人、公司/团队、Bot、原始/接收应用、操作、版本或来源引用均拒绝且不进入 Access", async () => {
     const { check, calls } = fixture();
     // 基线允许：证明拒绝来自伪造而非默认关闭。
-    expect(await check.checkOpenBotMemorySource(input())).toEqual({ state: "allowed", revision: "rev-1" });
+    expect(await check.checkOpenBotMemorySource(input())).toEqual({
+      state: "allowed",
+      revision: "rev-1",
+    });
 
-    const forgedSource = issueSourceScope({ ...SCOPE, subjectId: "someone-else" }, KEY);
-    const tamperedRef = input().source.scopeRef.replace(/.$/, (ch) => (ch === "A" ? "B" : "A"));
+    const forgedSource = issueSourceScope(
+      { ...SCOPE, subjectId: "someone-else" },
+      KEY,
+    );
+    const tamperedRef = input().source.scopeRef.replace(/.$/, (ch) =>
+      ch === "A" ? "B" : "A",
+    );
     // 本范围的版本本身是允许的（版本归属也是裁决的一部分）。
-    expect(await check.checkOpenBotMemorySource(input({ versionId: "version-1" }))).toEqual({
+    expect(
+      await check.checkOpenBotMemorySource(input({ versionId: "version-1" })),
+    ).toEqual({
       state: "allowed",
       revision: "rev-1",
     });
@@ -112,7 +120,8 @@ describe("forged_scope", () => {
     for (const override of cases) {
       const decision = await check.checkOpenBotMemorySource(input(override));
       expect(decision.state).toBe("denied");
-      if (decision.state === "denied") expect(decision.reason).toBe("forged_scope");
+      if (decision.state === "denied")
+        expect(decision.reason).toBe("forged_scope");
     }
     // 伪造在本地即被拒绝：Access 只见过基线那一次。
     // 基线、本范围版本、他主版本三次进入 Access；其余伪造在本地被拒。
@@ -134,7 +143,9 @@ describe("forged_scope", () => {
 describe("unknown_consumer", () => {
   test("未登记的接收应用拒绝；登记但无委托另判 delegation_required", async () => {
     const { check } = fixture();
-    const unknown = await check.checkOpenBotMemorySource(input({ consumerAppId: "unregistered-app" }));
+    const unknown = await check.checkOpenBotMemorySource(
+      input({ consumerAppId: "unregistered-app" }),
+    );
     expect(unknown).toEqual({ state: "denied", reason: "unknown_consumer" });
 
     // 已登记（active）但本人没有对该动作的委托：身份与登记本身都不等于委托。
@@ -146,8 +157,13 @@ describe("unknown_consumer", () => {
       reason: "delegation_required",
     });
     // review 动作没有委托时同样拒绝。
-    const noReview = await fixture().check.checkOpenBotMemorySource(input({ action: "review" }));
-    expect(noReview).toEqual({ state: "denied", reason: "delegation_required" });
+    const noReview = await fixture().check.checkOpenBotMemorySource(
+      input({ action: "review" }),
+    );
+    expect(noReview).toEqual({
+      state: "denied",
+      reason: "delegation_required",
+    });
   });
 });
 
@@ -158,16 +174,20 @@ describe("headless_same_policy", () => {
     const decisions = await Promise.all(
       entrypoints.map(async () => check.checkOpenBotMemorySource(input())),
     );
-    for (const decision of decisions) expect(decision).toEqual({ state: "allowed", revision: "rev-1" });
+    for (const decision of decisions)
+      expect(decision).toEqual({ state: "allowed", revision: "rev-1" });
 
     // 撤权：三个入口同时拒绝，没有入口专属放宽。
     const revoked = fixture({ access: { state: "denied" } });
     const denied = await Promise.all(
-      entrypoints.map(async () => revoked.check.checkOpenBotMemorySource(input())),
+      entrypoints.map(async () =>
+        revoked.check.checkOpenBotMemorySource(input()),
+      ),
     );
     for (const decision of denied) {
       expect(decision.state).toBe("denied");
-      if (decision.state === "denied") expect(decision.reason).toBe("source_revoked");
+      if (decision.state === "denied")
+        expect(decision.reason).toBe("source_revoked");
     }
 
     // 团队变更：来源引用必须携带新团队并由 Access 重新裁决——旧引用还原的是
@@ -181,24 +201,35 @@ describe("headless_same_policy", () => {
       access: {
         resolve: async (scope) => {
           seen.push(scope);
-          return scope.tenantId === "tenant-2" ? { state: "allowed", revision: "rev-2" } : { state: "denied" };
+          return scope.tenantId === "tenant-2"
+            ? { state: "allowed", revision: "rev-2" }
+            : { state: "denied" };
         },
       },
     });
     expect(
-      (await strict.check.checkOpenBotMemorySource(input({ source: issueSourceScope(SCOPE, KEY) }))).state,
+      (
+        await strict.check.checkOpenBotMemorySource(
+          input({ source: issueSourceScope(SCOPE, KEY) }),
+        )
+      ).state,
     ).toBe("denied");
     expect(
       await strict.check.checkOpenBotMemorySource(input({ source: newRef })),
     ).toEqual({ state: "allowed", revision: "rev-2" });
-    expect(seen.map((scope) => scope.tenantId)).toEqual(["tenant-1", "tenant-2"]);
+    expect(seen.map((scope) => scope.tenantId)).toEqual([
+      "tenant-1",
+      "tenant-2",
+    ]);
   });
 });
 
 describe("source_outage", () => {
   test("来源无法核验返回 unavailable，不泄漏内容也不冒充 allowed", async () => {
     const { check } = fixture({ access: { state: "unavailable" } });
-    expect(await check.checkOpenBotMemorySource(input())).toEqual({ state: "unavailable" });
+    expect(await check.checkOpenBotMemorySource(input())).toEqual({
+      state: "unavailable",
+    });
     // 不可用与失权对外同样不交付；这里只断言裁决形状（内容面由 MEMORY 的
     // partial/unavailableReasons 承载，见 runtime 套件）。
     const { check: down } = fixture({
@@ -234,17 +265,38 @@ describe("source_check_endpoint", () => {
       );
 
     expect((await call({}, input())).status).toBe(401);
-    expect((await call({ authorization: `Bearer ${"x".repeat(SERVICE_TOKEN.length)}` }, input())).status).toBe(401);
     expect(
-      (await call({ authorization: `Bearer ${SERVICE_TOKEN}` }, { requestId: "only-this" })).status,
+      (
+        await call(
+          { authorization: `Bearer ${"x".repeat(SERVICE_TOKEN.length)}` },
+          input(),
+        )
+      ).status,
+    ).toBe(401);
+    expect(
+      (
+        await call(
+          { authorization: `Bearer ${SERVICE_TOKEN}` },
+          { requestId: "only-this" },
+        )
+      ).status,
     ).toBe(400);
-    const allowed = await call({ authorization: `Bearer ${SERVICE_TOKEN}` }, input());
+    const allowed = await call(
+      { authorization: `Bearer ${SERVICE_TOKEN}` },
+      input(),
+    );
     expect(allowed.status).toBe(200);
-    expect(await allowed.json()).toEqual({ state: "allowed", revision: "rev-1" });
+    expect(await allowed.json()).toEqual({
+      state: "allowed",
+      revision: "rev-1",
+    });
     const denied = await call(
       { authorization: `Bearer ${SERVICE_TOKEN}` },
       input({ consumerAppId: "unregistered-app" }),
     );
-    expect(await denied.json()).toEqual({ state: "denied", reason: "unknown_consumer" });
+    expect(await denied.json()).toEqual({
+      state: "denied",
+      reason: "unknown_consumer",
+    });
   });
 });

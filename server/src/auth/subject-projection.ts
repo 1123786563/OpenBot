@@ -20,11 +20,7 @@ import { and, eq } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { accounts } from "../db/schema";
 import { ensurePrincipal } from "./directory/principal-registry";
-import type {
-  AuthenticatedActor,
-  AuthService,
-  RoleRepository,
-} from "./guards";
+import type { AuthenticatedActor, AuthService, RoleRepository } from "./guards";
 import type { OpenBotRole } from "./roles";
 
 export type SubjectRef = Readonly<{
@@ -34,10 +30,13 @@ export type SubjectRef = Readonly<{
   generation: number;
 }>;
 
-export const SUBJECT_PROJECTION_UNKNOWN_ACCOUNT = "SUBJECT_PROJECTION_UNKNOWN_ACCOUNT";
-export const SUBJECT_PROJECTION_UNKNOWN_SUBJECT = "SUBJECT_PROJECTION_UNKNOWN_SUBJECT";
+export const SUBJECT_PROJECTION_UNKNOWN_ACCOUNT =
+  "SUBJECT_PROJECTION_UNKNOWN_ACCOUNT";
+export const SUBJECT_PROJECTION_UNKNOWN_SUBJECT =
+  "SUBJECT_PROJECTION_UNKNOWN_SUBJECT";
 export const SUBJECT_PROJECTION_DISABLED = "SUBJECT_PROJECTION_DISABLED";
-export const SUBJECT_PROJECTION_GENERATION_CHANGED = "SUBJECT_PROJECTION_GENERATION_CHANGED";
+export const SUBJECT_PROJECTION_GENERATION_CHANGED =
+  "SUBJECT_PROJECTION_GENERATION_CHANGED";
 
 export class SubjectProjectionRefusal extends Error {
   constructor(
@@ -51,13 +50,19 @@ export class SubjectProjectionRefusal extends Error {
 
 /** The center's current answer for one subject. Throwing means "unavailable". */
 export type CenterStatusReader = {
-  status(subjectId: string): Promise<{ active: boolean; generation: number } | null>;
+  status(
+    subjectId: string,
+  ): Promise<{ active: boolean; generation: number } | null>;
 };
 
 /** The local projection facts: the account the center issued, and the principal. */
 export type SubjectProjectionStore = {
-  accountForSubject: (subjectId: string) => Promise<{ userId: string } | undefined>;
-  subjectForUser: (userId: string) => Promise<{ subjectId: string } | undefined>;
+  accountForSubject: (
+    subjectId: string,
+  ) => Promise<{ userId: string } | undefined>;
+  subjectForUser: (
+    userId: string,
+  ) => Promise<{ subjectId: string } | undefined>;
   ensurePrincipal: (userId: string) => Promise<{ principalId: string }>;
 };
 
@@ -67,7 +72,10 @@ export function createCenterStatusClient(options: {
   internalToken: string;
 }): CenterStatusReader {
   const base = options.issuer.replace(/\/$/, "");
-  const call = async (path: string, body: unknown): Promise<Record<string, unknown>> => {
+  const call = async (
+    path: string,
+    body: unknown,
+  ): Promise<Record<string, unknown>> => {
     const response = await fetch(`${base}${path}`, {
       method: "POST",
       headers: {
@@ -85,7 +93,9 @@ export function createCenterStatusClient(options: {
       throw new Error(`identity center refused ${path} with 404`);
     }
     if (!response.ok) {
-      throw new Error(`identity center answered ${path} with ${response.status}`);
+      throw new Error(
+        `identity center answered ${path} with ${response.status}`,
+      );
     }
     return (await response.json()) as Record<string, unknown>;
   };
@@ -93,7 +103,10 @@ export function createCenterStatusClient(options: {
     async status(subjectId) {
       const body = await call("/internal/subjects/status", { subjectId });
       if (body.active === undefined) return null;
-      return { active: body.active === true, generation: Number(body.generation) };
+      return {
+        active: body.active === true,
+        generation: Number(body.generation),
+      };
     },
   };
 }
@@ -108,7 +121,12 @@ export function createDrizzleSubjectProjectionStore(
       const [row] = await database
         .select({ userId: accounts.userId })
         .from(accounts)
-        .where(and(eq(accounts.providerId, providerId), eq(accounts.accountId, subjectId)))
+        .where(
+          and(
+            eq(accounts.providerId, providerId),
+            eq(accounts.accountId, subjectId),
+          ),
+        )
         .limit(1);
       return row;
     },
@@ -116,7 +134,9 @@ export function createDrizzleSubjectProjectionStore(
       const [row] = await database
         .select({ subjectId: accounts.accountId })
         .from(accounts)
-        .where(and(eq(accounts.providerId, providerId), eq(accounts.userId, userId)))
+        .where(
+          and(eq(accounts.providerId, providerId), eq(accounts.userId, userId)),
+        )
         .limit(1);
       return row;
     },
@@ -135,7 +155,9 @@ export type SubjectProjection = {
    * `generation` comes from the verified token/ref; a different current
    * generation means the projection must be re-verified, not reused.
    */
-  projectVerifiedSubject(ref: SubjectRef): Promise<{ userId: string; principalId: string }>;
+  projectVerifiedSubject(
+    ref: SubjectRef,
+  ): Promise<{ userId: string; principalId: string }>;
   /** The actor of an identity-center session, or null when this request is not one. */
   resolveCenterActor(request: Request): Promise<AuthenticatedActor | null>;
 };
@@ -171,7 +193,10 @@ export function createSubjectProjection(deps: {
         `subject ${subjectId} is disabled at the identity center`,
       );
     }
-    if (expectedGeneration !== null && status.generation !== expectedGeneration) {
+    if (
+      expectedGeneration !== null &&
+      status.generation !== expectedGeneration
+    ) {
       throw new SubjectProjectionRefusal(
         SUBJECT_PROJECTION_GENERATION_CHANGED,
         `subject ${subjectId} is at generation ${status.generation}, not ${expectedGeneration}`,
@@ -182,7 +207,11 @@ export function createSubjectProjection(deps: {
   };
 
   const roleOf = (roles: OpenBotRole[]): OpenBotRole | undefined =>
-    roles.includes("admin") ? "admin" : roles.includes("user") ? "user" : undefined;
+    roles.includes("admin")
+      ? "admin"
+      : roles.includes("user")
+        ? "user"
+        : undefined;
 
   return {
     async projectVerifiedSubject(ref) {
@@ -203,7 +232,7 @@ export function createSubjectProjection(deps: {
       if (!subject) return null;
       // The center's current generation is the verified one for this request.
       const status = await deps.center.status(subject.subjectId);
-      if (!status || !status.active) return null;
+      if (!status?.active) return null;
       const roles = await deps.roles.rolesForUser(session.user.id);
       const role = roleOf(roles);
       if (!role) return null;
