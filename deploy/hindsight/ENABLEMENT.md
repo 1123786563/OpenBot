@@ -66,7 +66,7 @@ HINDSIGHT_BANK_ASSERTION_SECRET=<与第 3 步 ASSERTION_SECRET 相同>
 HINDSIGHT_PRIVACY_LLM_TRACE_ENABLED=false
 HINDSIGHT_PRIVACY_OPERATION_RETENTION_DAYS=1
 HINDSIGHT_PRIVACY_BACKUP_RETENTION_DAYS=30
-HINDSIGHT_BACKUP_MANIFEST_DIR=<deploy/hindsight/backups 的绝对路径>   # A-10：备份登记目录
+# HINDSIGHT_BACKUP_MANIFEST_DIR 自 #732 起不再被 OpenBot 读取，无需声明
 ```
 
 ## 6. 备份调度（A-10）
@@ -83,9 +83,8 @@ HINDSIGHT_BACKUP_MANIFEST_DIR=<deploy/hindsight/backups 的绝对路径>   # A-1
 ```bash
 # 按部署方式重启 OpenBot 服务后：
 curl -s http://127.0.0.1:$PORT/api/health 2>/dev/null || 按既有健康检查
-bun server/scripts 之外的健康四态：checkHindsightHealth(loadHindsightConfig()) → 期望 service_up
-# 管理员视图（不含内容）：GET /api/hindsight/ops/health → 仅计数
-# 冒烟：管理员账号确认一条记忆 → 列表可见 → 遗忘 → 下一次回答不再出现
+# 旧的四态健康检查与 /api/hindsight/ops/health 已随 #732 退出；
+# 记忆冒烟改在独立记忆服务与其客户端验收中完成（见 #733），本机 OpenBot 只保留证据 seam
 ```
 
 ## 8. 回滚
@@ -96,4 +95,4 @@ bun server/scripts 之外的健康四态：checkHindsightHealth(loadHindsightCon
 ## 9. 启用后义务
 
 - 备份 cron 运行监控（manifest 目录有新登记）；外部模型日志留存单独核验（网关侧）。
-- `HINDSIGHT_BACKUP_MANIFEST_DIR` 若服务与 OpenBot 不同主机，需共享挂载或登记同步（见 README）。
+- `HINDSIGHT_BACKUP_MANIFEST_DIR` 在 #732 后不再由 OpenBot 读取；备份 cron 仅为本实例自身的数据保留服务。

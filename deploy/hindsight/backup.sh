@@ -10,14 +10,11 @@
 # hindsight.env next to this script. There is no implicit default: if neither
 # layer declares the key, the run fails loudly (see below), because running on
 # an undeclared value would silently pick 30 days. Only 1..30 are valid; 0 is
-# rejected (see the validation comment below). The declaration layers of the two
-# components are NOT the same: this script reads the process environment and the
-# hindsight.env next to it, while OpenBot's privacy compliance validation
-# (server/src/hindsight/config.ts) reads HINDSIGHT_PRIVACY_* from the OpenBot
-# deployment environment only — never from hindsight.env. A declaration only in
-# hindsight.env therefore runs this script while the health check still reports
-# config_noncompliant; aligning both sides is a deployment-reconciliation task
-# (#391), so declare the same number in both layers.
+# rejected (see the validation comment below). This script reads the process
+# environment and the hindsight.env next to it — nothing else. #732: OpenBot no
+# longer reads HINDSIGHT_PRIVACY_* (its privacy validation left with the old memory
+# engine), so the declaration gates this script alone; declare it in whichever
+# layer drives your cron.
 #
 # Usage: ./backup.sh [backup-dir]      (default: ./backups next to this script)
 # Schedule with cron, e.g. daily at 03:00. The leading mkdir -p guards the log
@@ -29,12 +26,12 @@
 # exits 1 instead of racing the dump and the retention sweep. flock is used
 # where available; see the lock comment in the body for the no-flock fallback.
 #
-# Controlled-backup registration (#391, server/src/hindsight/backup-registry.ts):
+# Controlled-backup registration (#391; OpenBot side removed in #732):
 # every adopted archive gets one manifest beside it,
 # `hindsight-<stamp>.manifest.json`, holding
 # {"backupId":"hindsight-<stamp>.sql.gz","takenAt":"<ISO 8601 dump-start>"}.
-# OpenBot reconciles those manifests into its cleanup-evidence registry when the
-# deployment declares HINDSIGHT_BACKUP_MANIFEST_DIR pointing at this directory.
+# OpenBot no longer reads these manifests nor HINDSIGHT_BACKUP_MANIFEST_DIR; the
+# files stay as this instance's own record of when a copy was taken.
 # Manifests are deliberately NOT swept with the archives: the retention sweep
 # deleting an archive while its manifest remains is the purge evidence the
 # cleanup claim stands on. A run that kills before the manifest is written
@@ -87,7 +84,7 @@ fi
 # (backup_retention_days), the exact two-component drift this script refuses to
 # paper over.
 if [ -z "$RETENTION_DAYS" ]; then
-  echo "refusing to run: HINDSIGHT_PRIVACY_BACKUP_RETENTION_DAYS must be declared explicitly (1..30) in the process environment or in the hindsight.env next to this script. Note the two components read different layers: OpenBot's privacy health check (server/src/hindsight/config.ts) reads HINDSIGHT_PRIVACY_* from the OpenBot deployment environment only, never from hindsight.env, so a declaration only in hindsight.env runs this script yet still reports backup_retention_days noncompliant — aligning both sides is a deployment-reconciliation task (#391)" >&2
+  echo "refusing to run: HINDSIGHT_PRIVACY_BACKUP_RETENTION_DAYS must be declared explicitly (1..30) in the process environment or in the hindsight.env next to this script. (#732: OpenBot no longer reads HINDSIGHT_PRIVACY_*; the declaration now gates this script alone.)" >&2
   exit 1
 fi
 

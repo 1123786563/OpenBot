@@ -17,7 +17,6 @@ import {
 import type { GovernedModelRequest } from "../enterprise/runs/governed-execution";
 import type { AcquireLearnedSkills } from "../learning/public";
 // MOD15 (#635)：M10 出口段迁移——记忆装载器类型改经 M10 公开门面，环边落公开出口。
-import type { LoadPersonalMemory } from "../memory/public";
 import type { PackageToolRunContext } from "../plugins/package-tools";
 import type { SelectableSkill } from "../plugins/public";
 import type { AgentActor } from "./profile-types";
@@ -111,7 +110,6 @@ export type ActorAgentResolverDependencies = {
   loadAttachmentForActor?: (actorId: string) => LoadAttachment;
   markAttachmentsSentForActor?: (actorId: string) => MarkAttachmentsSent;
   acquireLearnedSkills?: AcquireLearnedSkills;
-  loadPersonalMemoryForActor?: (actorId: string) => LoadPersonalMemory;
   /**
    * The builtin run's trusted observation-scope resolver (T-final M1). Handed
    * through to the builtin agents, which ask it once per run; a null answer
@@ -180,7 +178,6 @@ export function createActorAgentResolver(
       deps.loadAttachmentForActor?.(actor.id),
       deps.markAttachmentsSentForActor?.(actor.id),
       deps.acquireLearnedSkills,
-      deps.loadPersonalMemoryForActor?.(actor.id),
       context?.governedModel,
       // The consumption attribution (09.1): who this build's runs are for. The Bot half is each
       // agent's own id, known where the model wrapper is built; the person is known here.

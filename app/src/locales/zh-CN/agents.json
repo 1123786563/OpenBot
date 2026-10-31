@@ -862,9 +862,9 @@
     },
     "memory": {
       "title": "记忆",
-      "description": "哪些已连接的应用为此 Bot 提供事实，以及它为你做的后台调研。",
-      "settingsIntro": "你的 Bots 关于你的记忆在",
-      "settingsLink": "设置 → 记忆",
+      "description": "此 Bot 为你做的后台调研。",
+      "settingsIntro": "你的 Bots 记住的内容在",
+      "settingsLink": "记忆",
       "settingsOutro": "。"
     },
     "reach": {

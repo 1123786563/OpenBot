@@ -1,13 +1,13 @@
 import "./preload";
-import { expect, test } from "../../tests/support/e2e-compat";
 import {
   accessSummary,
   countLabel,
-  memorySummary,
   reachSummary,
+  researchSummary,
   setupSummary,
   sharingSummary,
 } from "@/lib/agents/bot-summaries";
+import { expect, test } from "../../tests/support/e2e-compat";
 
 test("counts read as words", () => {
   expect(countLabel(0, "routine", "routines", "No routines")).toBe(
@@ -62,8 +62,6 @@ test("reach names the places a Bot continues the conversation", () => {
 });
 
 test("memory names the sources and whether research is on", () => {
-  expect(memorySummary(0, false)).toBe("Nothing connected");
-  expect(memorySummary(2, false)).toBe("2 sources");
-  expect(memorySummary(0, true)).toBe("Background research on");
-  expect(memorySummary(1, true)).toBe("1 source, background research on");
+  expect(researchSummary(false)).toBe("Background research off");
+  expect(researchSummary(true)).toBe("Background research on");
 });

@@ -250,17 +250,10 @@ export const SCOPE_HEADER_ALLOWED_PATHS: readonly ScopeHeaderPathEntry[] = [
     ownerTicket: "MT088",
   },
   {
-    id: "memory-rest",
-    prefix: "/api/memory",
-    reason:
-      "the memory surface — a person's memories and their sources are company/team business data, and the memory pages' reads and writes bind to the selection (MT089); the server consumes the pair when the legacy assembly reads it (MT125)",
-    ownerTicket: "MT089",
-  },
-  {
     id: "hindsight-rest",
     prefix: "/api/hindsight",
     reason:
-      "the personal-memory review surface — the judgment candidates, the adopted judgments, the basis behind an answer and the cleanup picture are the selected company and team's own Hindsight rows, and the settings memory page's reads and decisions bind to the selection the way the memory rows beside them do (MT089's family; #387/#389); every route resolves the pair through the same scope resolver the trusted seams read, refusing a request without one",
+      "the evidence seam — expanding the ids an answer cited re-decides availability against the selected company and team's own rows (#387; narrowed to that one read in #732), and the route resolves the pair through the same scope resolver the trusted seams read, refusing a request without one",
     ownerTicket: "MT089",
   },
   {

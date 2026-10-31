@@ -1,29 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useTranslation } from "react-i18next";
-import { PageShell } from "@/components/layout/page-shell";
-import { MemoryAnswerBasisSection } from "@/components/memory/answer-basis";
-import { MemoryCleanupSection } from "@/components/memory/cleanup-progress";
-import { JudgmentReviewSections } from "@/components/memory/judgment-review";
-import { MemoryList, RememberFact } from "@/components/memory/memories";
-import { MemoryPauseControlsSection } from "@/components/memory/pause-controls";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
+/**
+ * The old local-memory settings page (#732). The memory service owns the whole view now, so
+ * this address keeps working as a controlled entry to it — nothing here reads or writes the
+ * old tables.
+ */
 export const Route = createFileRoute("/_authed/settings/memory")({
-  component: MemorySettingsPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/memory", replace: true });
+  },
 });
-
-function MemorySettingsPage() {
-  const { t } = useTranslation("settings");
-  return (
-    <PageShell
-      action={<RememberFact />}
-      description={t("memoryPage.description")}
-      title={t("memoryPage.title")}
-    >
-      <MemoryPauseControlsSection />
-      <MemoryList />
-      <MemoryAnswerBasisSection />
-      <JudgmentReviewSections />
-      <MemoryCleanupSection />
-    </PageShell>
-  );
-}

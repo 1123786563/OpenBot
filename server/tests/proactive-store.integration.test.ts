@@ -1,11 +1,11 @@
+import { randomUUID } from "node:crypto";
+import { eq, inArray } from "drizzle-orm";
 import {
   afterAll,
   beforeAll,
   expect,
   test,
 } from "../../tests/support/bun-test-compat";
-import { randomUUID } from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
 import { createAuditStore } from "../src/audit";
 import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
@@ -13,9 +13,6 @@ import { agents, users } from "../src/db/schema/core";
 import { agentProfiles } from "../src/db/schema/coworker";
 import { mcpServers, mcpTools } from "../src/db/schema/plugins";
 import { proactiveSettings } from "../src/db/schema/proactive";
-import { createMemoryIngestion } from "../src/memory/ingestion";
-import { createMemoryStore } from "../src/memory/store";
-import { MemoryRefusedError } from "../src/memory/types";
 import { createPluginStore } from "../src/plugins/store";
 import { proactiveInitiator } from "../src/proactive/restriction";
 import { createProactiveStore } from "../src/proactive/store";
@@ -43,8 +40,6 @@ const plugins = createPluginStore({
   callVendor: async () => ({ text: "[]", isError: false }),
 });
 const proactive = createProactiveStore(database);
-const memory = createMemoryStore(database);
-const ingestion = createMemoryIngestion({ store: memory, plugins });
 
 beforeAll(async () => {
   await database.insert(users).values([
@@ -267,108 +262,4 @@ test("suggestions are delivered once, listed to their owner, and resolved once",
       (row) => row.id === suggestion.id,
     ),
   ).toBe(false);
-});
-
-test("Bot-formed memories carry provenance, await review, and never come back once forgotten", async () => {
-  const observedAt = new Date("2026-09-01T10:00:00Z");
-  const formed = await memory.formMemory(owner, {
-    agentId: bot,
-    content: "Owns the billing migration",
-    sourceApp: "Issue tracker",
-    sourceRef: ref,
-    sourceLink: "https://issues.example.test/42",
-    observedAt,
-  });
-  expect(formed.duplicate).toBe(false);
-  const [row] = (await memory.list(owner)).filter(
-    (entry) => entry.id === formed.id,
-  );
-  expect(row).toMatchObject({
-    formedBy: "bot",
-    formedByAgentId: bot,
-    reviewState: "unreviewed",
-    sourceApp: "Issue tracker",
-    sourceRef: ref,
-    sourceLink: "https://issues.example.test/42",
-    observedAt,
-    enabled: true,
-  });
-  expect(row?.provenance).toContain("2026-09-01T10:00:00.000Z");
-  expect(
-    await memory.formMemory(owner, {
-      agentId: bot,
-      content: "owns the billing migration",
-      sourceApp: "Issue tracker",
-    }),
-  ).toMatchObject({ id: formed.id, duplicate: true });
-  await expect(
-    memory.formMemory(owner, {
-      agentId: bot,
-      content: "Link",
-      sourceApp: "x",
-      sourceLink: "javascript:alert(1)",
-    }),
-  ).rejects.toBeInstanceOf(MemoryRefusedError);
-  expect(
-    (await memory.list(other)).some((entry) => entry.id === formed.id),
-  ).toBe(false);
-  // The person edits it: it stays theirs, now reviewed.
-  expect(
-    (await memory.update(owner, formed.id, { content: "Leads billing" }))
-      .reviewState,
-  ).toBe("edited");
-
-  const forgettable = await memory.formMemory(owner, {
-    agentId: bot,
-    content: "Prefers async updates",
-    sourceApp: "Issue tracker",
-    sourceRef: ref,
-  });
-  await memory.remove(owner, forgettable.id);
-  expect(
-    await memory.formMemory(owner, {
-      agentId: bot,
-      content: "Prefers async updates",
-      sourceApp: "Issue tracker",
-      sourceRef: ref,
-    }),
-  ).toMatchObject({ id: forgettable.id, duplicate: true, forgotten: true });
-  expect(
-    (await memory.list(owner)).some((entry) => entry.id === forgettable.id),
-  ).toBe(false);
-});
-
-test("a Bot-formed memory reaches only its Bot, only while it holds the source app", async () => {
-  const formed = await memory.formMemory(owner, {
-    agentId: bot,
-    content: "Launch review is on Thursdays",
-    sourceApp: "Issue tracker",
-    sourceRef: ref,
-  });
-  // An unreviewed candidate is invisible even to its own Bot; confirm it so this test keeps
-  // proving Bot-scoping, not the review gate.
-  await memory.update(owner, formed.id, { reviewState: "confirmed" });
-  const recalled = async (agentId: string) =>
-    (await ingestion.recall(owner, agentId)).some(
-      (row) => row.id === formed.id,
-    );
-  expect(await recalled(bot)).toBe(true);
-  expect(await ingestion.contextFor(owner, bot)).toContain(
-    "Launch review is on Thursdays",
-  );
-  expect(await recalled(secondBot)).toBe(false);
-  expect(
-    (await ingestion.recall(other, bot)).some((row) => row.id === formed.id),
-  ).toBe(false);
-  // Without the Bot's holdings, none are returned.
-  expect(
-    (await memory.retrieve(owner, [])).some((row) => row.id === formed.id),
-  ).toBe(false);
-  await memory.update(owner, formed.id, { enabled: false });
-  expect(await recalled(bot)).toBe(false);
-  await memory.update(owner, formed.id, { enabled: true });
-  await plugins.revoke("mcp", ref, bot, owner);
-  expect(await recalled(bot)).toBe(false);
-  await plugins.grant("mcp", ref, bot, owner);
-  expect(await recalled(bot)).toBe(true);
 });

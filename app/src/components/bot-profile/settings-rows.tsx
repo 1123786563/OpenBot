@@ -2,11 +2,11 @@ import {
   IconBrain,
   IconChecks,
   IconChevronRight,
-  IconDeviceMobile,
-  IconTargetArrow,
   IconClock,
+  IconDeviceMobile,
   IconPuzzle,
   IconSettings,
+  IconTargetArrow,
   IconUsersGroup,
 } from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -26,8 +26,8 @@ import { Separator } from "@/components/ui/separator";
 import {
   accessSummary,
   countLabel,
-  memorySummary,
   reachSummary,
+  researchSummary,
   setupSummary,
   sharingSummary,
 } from "@/lib/agents/bot-summaries";
@@ -36,10 +36,9 @@ import { ruleCoversBot, scopedApprovalInboxOptions } from "@/lib/approvals";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { deliveryQueryOptions } from "@/lib/delivery";
 import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
-import { memorySourcesQueryOptions } from "@/lib/memory";
+import { agentPluginsQueryOptions } from "@/lib/plugins/queries";
 import { proactiveSettingsQueryOptions } from "@/lib/proactive";
 import { responsibilitiesQueryOptions } from "@/lib/responsibilities";
-import { agentPluginsQueryOptions } from "@/lib/plugins/queries";
 import { routinesQueryOptions } from "@/lib/routines/queries";
 import { teamBotsQueryOptions } from "@/lib/team-bots";
 import { connectorCount } from "./access";
@@ -76,7 +75,6 @@ export function BotSettingsRows({ agent }: { agent: AgentProfile }) {
 
   const goals = useQuery(responsibilitiesQueryOptions());
   const reach = useQuery(deliveryQueryOptions());
-  const sources = useQuery(memorySourcesQueryOptions());
   const research = useQuery(proactiveSettingsQueryOptions());
   // The inbox count rides the scope the screen holds (MOD19 / Issue #639, T1b).
   const cache = useQueryClient();
@@ -117,16 +115,15 @@ export function BotSettingsRows({ agent }: { agent: AgentProfile }) {
       to: "/bots/$agentId/memory",
       title: t("botSettings.rows.memory"),
       icon: IconBrain,
-      summary:
-        sources.data && research.data
-          ? memorySummary(
-              sources.data.filter((source) => source.agentId === agent.id)
-                .length,
-              research.data.some(
-                (setting) => setting.agentId === agent.id && setting.enabled,
-              ),
-            )
-          : "",
+      // #732: the memory service owns what this Bot remembers; what stays here is its
+      // background-research setting, the one non-memory duty on this page.
+      summary: research.data
+        ? researchSummary(
+            research.data.some(
+              (setting) => setting.agentId === agent.id && setting.enabled,
+            ),
+          )
+        : "",
     },
     {
       to: "/bots/$agentId/approvals",

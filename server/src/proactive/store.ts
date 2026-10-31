@@ -6,8 +6,7 @@ import {
   proactiveSettings,
   proactiveSuggestions,
 } from "../db/schema/proactive";
-// MOD15 (#635)：M10 出口段迁移——defaults 两函数改经 M10 公开门面，环边落公开出口。
-import { lockDefaults, recordOptOut } from "../memory/public";
+import { lockResearchDefaults, recordOptOut } from "./defaults";
 import { PROACTIVE_INITIATOR_PREFIX } from "./restriction";
 import {
   ProactiveNotFoundError,
@@ -114,25 +113,26 @@ export function createProactiveStore(database: Database) {
     /** Removing research is turning it down for this Bot: OpenBot never switches it back on. */
     async remove(owner: string, id: string) {
       await database.transaction(async (transaction) => {
-        // The row is read under the same lock that guards the defaults: the agentId the
-        // opt-out names is the one the locked delete saw, not a pre-lock snapshot.
+        // The row is read before the lock; agentId is immutable on a settings row and the
+        // delete below is by id, so the opt-out names the same Bot the delete removed.
         const [row] = await transaction
           .select()
           .from(proactiveSettings)
           .where(owned(owner, id))
           .limit(1);
         if (!row) throw new ProactiveNotFoundError();
-        await lockDefaults(transaction, owner, row.agentId);
+        // The lock the research default's adoption takes, and the person's no: removing their
+        // research must not let the default switch it back on (proactive/defaults.ts).
+        await lockResearchDefaults(transaction, owner, row.agentId);
+        await recordOptOut(transaction, {
+          ownerUserId: owner,
+          agentId: row.agentId,
+        });
         const rows = await transaction
           .delete(proactiveSettings)
           .where(owned(owner, id))
           .returning({ id: proactiveSettings.id });
         if (!rows.length) throw new ProactiveNotFoundError();
-        await recordOptOut(transaction, {
-          ownerUserId: owner,
-          agentId: row.agentId,
-          feature: "proactive_research",
-        });
       });
     },
     /**

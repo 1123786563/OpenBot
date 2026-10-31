@@ -1,14 +1,16 @@
-import { describe, expect, test } from "../../tests/support/e2e-compat";
 import {
   type BaseEvent,
   EventType,
   HttpAgent,
   type RunAgentInput,
 } from "@ag-ui/client";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
+import { createTurnRunner, type RunnerLike } from "@openbot/toolkit/run-turn";
 import { Observable } from "rxjs";
 import { z } from "zod";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { serverTurnAdmission } from "../src/agents/turn-admission";
 import type { ApprovalRecord } from "../src/approvals/types";
-import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { createProactiveEngine } from "../src/proactive/engine";
 import { createPrivateShareCheck } from "../src/proactive/private-share";
 import {
@@ -20,9 +22,7 @@ import {
 } from "../src/proactive/restriction";
 import type { ProactiveStore } from "../src/proactive/store";
 import type { ProactiveSetting } from "../src/proactive/types";
-import { createTurnRunner, type RunnerLike } from "@openbot/toolkit/run-turn";
 import type { WorkQueue } from "../src/work/queue";
-import { serverTurnAdmission } from "../src/agents/turn-admission";
 
 const catalogue = (effects: Record<string, "read" | "write">) => ({
   listServers: async () => [
@@ -292,13 +292,6 @@ describe("proactive run", () => {
     const initiators: unknown[] = [];
     const engine = createProactiveEngine({
       store,
-      memory: {
-        formMemory: async () => ({
-          id: "m",
-          duplicate: false,
-          forgotten: false,
-        }),
-      },
       queue,
       owner: "worker",
       runTurn: createTurnRunner({
@@ -341,9 +334,10 @@ describe("proactive run", () => {
       { kind: "routine", id: expect.stringMatching(/^proactive:/) },
     ]);
     expect(writes).toEqual([]);
+    // #732: forming a memory from a run left with the old engine; the run's one tool is
+    // the suggestion it records.
     expect(requests[0]?.tools.map((tool) => tool.name)).toEqual([
       "suggest_next_step",
-      "form_memory",
     ]);
     const answer = requests[1]?.messages.find(
       (message) =>
@@ -353,122 +347,6 @@ describe("proactive run", () => {
     expect(suggestions).toHaveLength(1);
     expect(notified[0]).toContain("Reply to Sam");
     expect(statuses).toEqual(["running", "succeeded"]);
-  });
-
-  test("a memory is formed only from a read the run actually made", async () => {
-    const setting = {
-      id: "s",
-      ownerUserId: "owner",
-      agentId: "bot",
-    } as ProactiveSetting;
-    const formed: unknown[] = [];
-    const results: string[] = [];
-    // Drive one run through the queue path.
-    let given = false;
-    const queue = {
-      offer: async () => "queued",
-      claim: async ({ kind }: { kind: string }) => {
-        if (given || kind !== "proactive.run") return [];
-        given = true;
-        return [
-          {
-            kind,
-            key: "k",
-            payload: { settingId: "s", runId: "run" },
-            attempts: 1,
-          },
-        ];
-      },
-      renew: async () => true,
-      finish: async () => true,
-      release: async () => true,
-    };
-    const engineWithQueue = createProactiveEngine({
-      store: {
-        claimDue: async () => [],
-        byId: async () => ({ ...setting, enabled: true }),
-        recordRun: async () => undefined,
-        readsFor: async () => [{ ref: "linear/list_issues", at: new Date(0) }],
-        undelivered: async () => [],
-      } as unknown as ProactiveStore,
-      memory: {
-        formMemory: async (_owner, input) => {
-          formed.push(input);
-          return { id: "m", duplicate: false, forgotten: false };
-        },
-      },
-      queue: queue as unknown as WorkQueue,
-      owner: "worker",
-      runTurn: async () => {
-        const tools = await engineWithQueue.toolsForTurn({
-          ownerUserId: "owner",
-          agentId: "bot",
-          initiator: proactiveInitiator("run"),
-        });
-        const form = tools.find(
-          (tool) => tool.definition.name === "form_memory",
-        );
-        const signal = new AbortController().signal;
-        results.push(
-          String(
-            await form?.execute(
-              {
-                content: "Owns billing",
-                sourceTool: "mcp__linear__create_issue",
-              },
-              { toolCallId: "a", signal },
-            ),
-          ),
-          String(
-            await form?.execute(
-              {
-                content: "Owns billing",
-                sourceTool: "mcp__linear__list_issues",
-              },
-              { toolCallId: "b", signal },
-            ),
-          ),
-        );
-        return { replyText: "done" };
-      },
-      resolveScope: async () => ({
-        ownerUserId: "owner",
-        channelId: "c",
-        agentId: "bot",
-        threadId: "t",
-      }),
-      notify: async () => undefined,
-      startTask: async () => undefined,
-      catalogue: {
-        listServers: async () => [
-          {
-            id: "linear",
-            title: "Linear",
-            tools: [{ ref: "linear/list_issues" }],
-          },
-        ],
-      },
-      mintThreadId: () => "t",
-    });
-    await engineWithQueue.sweep();
-    expect(results[0]).toStartWith("Refused.");
-    expect(formed).toEqual([
-      {
-        agentId: "bot",
-        content: "Owns billing",
-        sourceApp: "Linear",
-        sourceRef: "linear/list_issues",
-        observedAt: new Date(0),
-      },
-    ]);
-    // Another person's or another Bot's turn gets none of the run's tools.
-    expect(
-      await engineWithQueue.toolsForTurn({
-        ownerUserId: "someone-else",
-        agentId: "bot",
-        initiator: proactiveInitiator("run"),
-      }),
-    ).toEqual([]);
   });
 });
 

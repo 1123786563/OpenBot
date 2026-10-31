@@ -299,6 +299,13 @@ export type DeploymentConfig = {
    */
   learningAutoAssign: boolean;
   /**
+   * Background research OpenBot switches on for each person (proactive/defaults.ts). On unless
+   * OPENBOT_PROACTIVE_DEFAULTS is "false" or "0". Switching it off stops new defaults and leaves
+   * every existing row as it is. The memory-source half of the old default left with the old
+   * memory engine (#732).
+   */
+  proactiveDefaults: { research: boolean };
+  /**
    * A credential that can create Learning containers, for a deployment whose operator supplied one.
    *
    * The runtime key cannot: Intelligence creates containers for a person's session, a CopilotKit CLI
@@ -309,17 +316,20 @@ export type DeploymentConfig = {
    */
   learningSetup?: { serviceToken: string; projectId: string };
   /**
-   * Memory sources and background research OpenBot switches on for each person (memory/defaults.ts).
-   * Both on unless OPENBOT_MEMORY_SOURCE_DEFAULTS or OPENBOT_PROACTIVE_DEFAULTS is "false" or "0".
-   * Switching either off stops new defaults and leaves every existing row as it is.
+   * #731 the independent memory service's admin surface; #732 the run loader's
+   * deployment facts. Configured, OpenBot mounts the controlled embed entry AND
+   * loads every run's memory through the service client; unconfigured, the page
+   * says so and runs carry no memory block. The app identity and source-signing
+   * key arrive together with the URL or boot refuses (see memoryServiceConfig).
    */
-  memoryDefaults: { sources: boolean; research: boolean };
-  /**
-   * #731 the independent memory service's admin surface. Configured, OpenBot mounts
-   * the controlled embed entry and the sidebar page shows it; unconfigured, the
-   * page says so instead of framing a URL nobody supplied.
-   */
-  memoryService?: { baseUrl: string };
+  memoryService?: {
+    baseUrl: string;
+    appId: string;
+    appSecret: string;
+    sourceKey: string;
+    /** #733 来源裁决入口的服务令牌：MEMORY 调 source-check 时出示。缺省不挂载（404）。 */
+    sourceCheckToken?: string;
+  };
   /**
    * The multitenancy switch and its startup-validation inputs (MT013).
    *
@@ -691,9 +701,18 @@ function handoffCaps(environment: Environment): HandoffCaps {
   };
 }
 
-function memoryServiceConfig(
-  environment: Environment,
-): { memoryService: { baseUrl: string } } | Record<string, never> {
+function memoryServiceConfig(environment: Environment):
+  | {
+      memoryService: {
+        baseUrl: string;
+        appId: string;
+        appSecret: string;
+        sourceKey: string;
+        /** #733 来源裁决入口的服务令牌：MEMORY 调 source-check 时出示。缺省不挂载（404）。 */
+        sourceCheckToken?: string;
+      };
+    }
+  | Record<string, never> {
   const raw = optional(environment, "MEMORY_SERVICE_URL");
   if (!raw) return {};
   let parsed: URL;
@@ -709,7 +728,24 @@ function memoryServiceConfig(
       `MEMORY_SERVICE_URL must be http(s), not ${JSON.stringify(parsed.protocol)}`,
     );
   }
-  return { memoryService: { baseUrl: parsed.toString().replace(/\/$/, "") } };
+  // #732: the run loader and the source refs are one deployment fact — the app
+  // identity OpenBot presents to the memory service and the key its source scopes
+  // are signed with. Half-configured fails closed at boot instead of degrading
+  // into a client that can never be admitted.
+  const appId = required(environment, "MEMORY_SERVICE_APP_ID");
+  const appSecret = required(environment, "MEMORY_SERVICE_APP_SECRET");
+  const sourceKey = required(environment, "MEMORY_SERVICE_SOURCE_KEY");
+  const sourceCheckToken = environment.MEMORY_SOURCE_CHECK_TOKEN?.trim() || undefined;
+  return {
+    memoryService: {
+      baseUrl: parsed.toString().replace(/\/$/, ""),
+      appId,
+      appSecret,
+      sourceKey,
+      // #733：可选——设了才挂 /api/memory-service/source-check，未设保持 404 fail-closed。
+      ...(sourceCheckToken ? { sourceCheckToken } : {}),
+    },
+  };
 }
 
 function required(environment: Environment, name: string): string {
@@ -3563,11 +3599,8 @@ export function loadConfig(
     runtime: runtimeCapabilities(environment),
     learning: learningDefault(environment),
     learningAutoAssign: learningAutoAssignEnabled(environment),
+    proactiveDefaults: { research: researchDefaultEnabled(environment) },
     ...learningSetupCredential(environment),
-    memoryDefaults: {
-      sources: switchedOn(environment, "OPENBOT_MEMORY_SOURCE_DEFAULTS"),
-      research: switchedOn(environment, "OPENBOT_PROACTIVE_DEFAULTS"),
-    },
     ...memoryServiceConfig(environment),
     multitenancy: multitenancyConfig(environment),
     agentStallTimeoutMs: agentStallTimeoutMs(environment),
@@ -3613,15 +3646,15 @@ function learningAutoAssignEnabled(environment: Environment): boolean {
 }
 
 /** On unless the variable is "false" or "0", the rule every default-on switch here follows. */
-function switchedOn(environment: Environment, name: string): boolean {
-  const value = optional(environment, name);
+function researchDefaultEnabled(environment: Environment): boolean {
+  const value = optional(environment, "OPENBOT_PROACTIVE_DEFAULTS");
   return value !== "false" && value !== "0";
 }
 
 /**
  * The multitenancy mode switch: an explicit opt-in, never a default (MT013).
  *
- * A default-on rule like {@link switchedOn} would be exactly wrong here: multitenancy changes
+ * A default-on rule would be exactly wrong here: multitenancy changes
  * who the deployment serves, and its boot runs startup checks that can refuse to start. A
  * deployment must arrive at this mode by naming it, so the variable accepts an explicit value
  * on either side and refuses everything else — a typo must not silently become an opt-in any

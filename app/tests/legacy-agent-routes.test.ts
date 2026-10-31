@@ -1,6 +1,6 @@
 import "./preload";
-import { expect, test } from "../../tests/support/e2e-compat";
 import { LEGACY_PAGES, legacyAgentsTarget } from "@/lib/agents/legacy-routes";
+import { expect, test } from "../../tests/support/e2e-compat";
 
 test("/agents?agent=<id> opens that Bot's page", () => {
   expect(legacyAgentsTarget({ agent: "agent_1" })).toEqual({
@@ -27,9 +27,10 @@ test("creating wins over opening, as it did on /agents", () => {
 });
 
 test("pages that left the sidebar send people to where their contents went", () => {
+  // /memory is not here: since #731 it is a real page (the memory service's own view),
+  // and #732 points the old /settings/memory address at it instead of the reverse.
   expect(LEGACY_PAGES).toEqual({
     "/approvals": "/settings/approvals",
-    "/memory": "/settings/memory",
     "/reachability": "/settings/notifications",
     "/responsibilities": "/bots",
     "/group/new": "/channel/new",

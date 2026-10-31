@@ -4,7 +4,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import { MemorySources } from "@/components/memory/sources";
 import { ProactiveResearchSettings } from "@/components/suggestions/proactive-panel";
 import {
   afterAll,
@@ -15,7 +14,10 @@ import {
 } from "../../tests/support/bun-test-compat";
 import { settleReactWork } from "./settle-react-work";
 
-/** A Bot's Memory page: the apps that feed it facts, and its background research. */
+/**
+ * A Bot's Memory page after #732: what the memory service knows is managed in the memory
+ * service, and the one duty left on this page is the Bot's background research.
+ */
 
 beforeAll(() => GlobalRegistrator.register());
 afterEach(cleanup);
@@ -27,17 +29,6 @@ afterAll(async () => {
 const originalFetch = global.fetch;
 afterEach(() => {
   global.fetch = originalFetch;
-});
-
-const source = (id: string, agentId: string, title: string) => ({
-  id,
-  title,
-  agentId,
-  toolRef: "mcp/drive/search",
-  enabled: true,
-  syncStatus: "succeeded",
-  syncError: null,
-  lastSyncAt: null,
 });
 
 const research = (id: string, agentId: string, focus: string) => ({
@@ -53,20 +44,14 @@ const research = (id: string, agentId: string, focus: string) => ({
   lastError: null,
 });
 
-const requested: string[] = [];
 /** A refusal the server gives the next write, or none. */
 let refuseWrite: string | null = null;
-/** The settings the Drive search action takes. */
-let searchSettings: Record<string, unknown> = {};
 function serving() {
-  requested.length = 0;
   refuseWrite = null;
-  searchSettings = {};
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    // The scoped sources read (MT089) waits for the scope source before it asks anything.
+    // The scoped reads wait for the scope source before they ask anything.
     if (url === "/api/me") return Response.json({ user: { id: "user-1" } });
-    requested.push(url);
     if (init?.method && init.method !== "GET") {
       if (refuseWrite) {
         const error = refuseWrite;
@@ -74,26 +59,6 @@ function serving() {
         return Response.json({ error }, { status: 400 });
       }
       return Response.json({ ok: true });
-    }
-    if (url === "/api/memory/sources") {
-      return Response.json({
-        sources: [
-          source("s1", "expenses", "Receipts folder"),
-          source("s2", "knowledge", "Wiki pages"),
-        ],
-      });
-    }
-    if (url.startsWith("/api/memory/sources/available/")) {
-      return Response.json({
-        tools: [
-          {
-            ref: "mcp/drive/search",
-            title: "Search Drive",
-            description: "",
-            inputSchema: { properties: searchSettings },
-          },
-        ],
-      });
     }
     if (url === "/api/proactive/settings") {
       return Response.json({
@@ -124,22 +89,6 @@ function draw(node: ReactNode) {
   );
 }
 
-test("only this Bot's sources are listed, and its app actions load without picking a Bot", async () => {
-  serving();
-  const view = draw(<MemorySources agentId="expenses" />);
-  expect(await view.findByText("Receipts folder")).toBeTruthy();
-  expect(view.queryByText("Wiki pages")).toBeNull();
-  /*
-   * HeroUI Select.Trigger is a plain button with aria-haspopup="listbox"; the
-   * role="combobox" the ui/select wrapper forwards is dropped by HeroUI (interface
-   * change request recorded in h04/REPORT.md). Address the trigger by role button.
-   */
-  expect(view.queryByRole("button", { name: /^Bot/ })).toBeNull();
-  await waitFor(() =>
-    expect(requested).toContain("/api/memory/sources/available/expenses"),
-  );
-});
-
 test("only this Bot's background research is listed, with no Bot to pick", async () => {
   serving();
   const view = draw(<ProactiveResearchSettings agentId="expenses" />);
@@ -151,50 +100,6 @@ test("only this Bot's background research is listed, with no Bot to pick", async
    * change request recorded in h04/REPORT.md). Address the trigger by role button.
    */
   expect(view.queryByRole("button", { name: /^Bot/ })).toBeNull();
-});
-
-/** Opens Add source for the Expenses Bot and chooses its one read action. */
-async function openAddSource(view: ReturnType<typeof draw>) {
-  const user = userEvent.setup({ document });
-  await view.findByText("Receipts folder");
-  await user.click(view.getByRole("button", { name: "Add source" }));
-  await user.click(
-    /*
-     * HeroUI Select.Trigger is a plain button with aria-haspopup="listbox"; the
-     * role="combobox" the ui/select wrapper forwards is dropped by HeroUI (interface
-     * change request recorded in h04/REPORT.md). Address the trigger by role button.
-     */
-    await view.findByRole("button", { name: "Connected app action" }),
-  );
-  await user.click(await view.findByRole("option", { name: "Search Drive" }));
-  return user;
-}
-
-test("an action setting called name is its own field, not the source name", async () => {
-  serving();
-  searchSettings = { name: { type: "string" } };
-  const view = draw(<MemorySources agentId="expenses" />);
-  await openAddSource(view);
-  const setting = await view.findByLabelText("name");
-  expect(setting).not.toBe(view.getByLabelText("Source name"));
-});
-
-test("reopening Add source after a failure keeps the draft but not the failure", async () => {
-  serving();
-  const view = draw(<MemorySources agentId="expenses" />);
-  const user = await openAddSource(view);
-  await user.type(view.getByLabelText("Source name"), "Invoices");
-  refuseWrite = "That folder cannot be read.";
-  await user.click(view.getByRole("button", { name: "Add and sync source" }));
-  expect((await view.findByRole("alert")).textContent).toBe(
-    "That folder cannot be read.",
-  );
-  await user.keyboard("{Escape}");
-  await waitFor(() => expect(view.queryByRole("dialog")).toBeNull());
-  await user.click(view.getByRole("button", { name: "Add source" }));
-  const name = (await view.findByLabelText("Source name")) as HTMLInputElement;
-  expect(name.value).toBe("Invoices");
-  expect(view.queryByRole("alert")).toBeNull();
 });
 
 test("reopening a research row after a failure starts without it", async () => {

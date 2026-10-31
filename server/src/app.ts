@@ -61,7 +61,6 @@ import type { DemonstrationStore } from "./demonstrations/store";
 import type { PlatformScope } from "./enterprise/contracts";
 import type { DeploymentEntryContextFactory } from "./enterprise/tenancy/entry-context";
 import type { HindsightRouteServices } from "./hindsight/ops-routes";
-import type { HindsightMemoryRoutesDeps } from "./hindsight/routes";
 import type { HostAccessBroker } from "./host-access/broker";
 import type { IdentityStore } from "./identity/store";
 import { lazyIntelligenceClient } from "./intelligence-optional";
@@ -69,9 +68,6 @@ import type { LearningAdminDependencies } from "./learning/routes";
 import type { MarketplaceStore } from "./marketplace/store";
 import type { MastraContinuationInstall } from "./mastra/approvals";
 import type { MastraContinuationStore } from "./mastra/continuation-store";
-import type { MemoryIngestion } from "./memory/ingestion";
-import type { MemoryPauseControlAccess } from "./memory/routes";
-import type { MemoryStore } from "./memory/store";
 import type { OpenMuseDeletionManifest } from "./openmuse-deletion/manifest";
 import type { OpenMuseFileBytePurgeReport } from "./openmuse-deletion/purge";
 import type { OpenMuseRelationalPurgeOutcome } from "./openmuse-deletion/purge-relational";
@@ -103,6 +99,7 @@ import type { PackageStatusReader } from "./tenant-package";
 import type { UserInstructionsStore } from "./user-instructions";
 import type { UserPreferencesStore } from "./user-preferences";
 import type { VoiceSessionServices } from "./voice/session-routes";
+import { createOpenBotSourceAccess } from "./memory-service/source-access";
 import type { createWorkshopPublicRoutes } from "./workshop/public-routes";
 import type { WorkshopRoutesFactory } from "./workshop/routes";
 
@@ -270,35 +267,12 @@ export interface CoworkerSeams {
     >;
     webhooks: Parameters<typeof createDeliveryWebhookRoutes>[0];
   };
-  memory?: {
-    store: MemoryStore;
-    ingestion: MemoryIngestion;
-    /**
-     * Hindsight 14 (#392, F-G1-1): the person's own two pause switches behind the
-     * deployment's trusted scope. Present only where a deployment can resolve one;
-     * absent, `/api/memory/pause-controls` is not mounted (no face that guesses identity).
-     */
-    pauseControls?: MemoryPauseControlAccess;
-    /**
-     * FIX-F1 (#376, FR-1): the whole old face's company pin, behind the same trusted
-     * scope resolver. Present only where a deployment can resolve one; absent, the
-     * family keeps the single-user behaviour unchanged.
-     */
-    companyScope?: {
-      resolveScope: (request: Request) => Promise<PlatformScope>;
-    };
-    /**
-     * The Hindsight chain's person-scoped confirm/edit/forget/status operations
-     * (#384/#385). Present only where both the chain is wired and a trusted-scope
-     * resolver exists; absent mounts no such routes.
-     */
-    hindsight?: HindsightMemoryRoutesDeps;
-  };
   /**
-   * The Hindsight memory surfaces (#387–#391): evidence, judgment review, revocation,
-   * cleanup progress and the operator restore/backup-registration routes. Present only
-   * where the assembly built the seams AND a trusted scope resolver exists; absent mounts
-   * nothing, the same "not configured, not broken" answer every optional neighbour gives.
+   * #732: what remains of the Hindsight surfaces (#387–#391) — the evidence seam the
+   * chat's answer basis inspects. The old memory operations left with the old paths.
+   * Present only where the assembly built the seams AND a trusted scope resolver
+   * exists; absent mounts nothing, the same "not configured, not broken" answer
+   * every optional neighbour gives.
    */
   hindsight?: HindsightRouteServices;
   proactive?: { store: ProactiveStore; engine: ProactiveEngine };
@@ -833,6 +807,10 @@ export function createApp(
     identityGithubCallback,
     botServices,
     workbenchPayer,
+    // #733：来源裁决的 Access 与部署库同源（billing 组携带的就是部署库本身）。
+    ...(billing?.database
+      ? { memorySourceAccess: createOpenBotSourceAccess({ database: billing.database }) }
+      : {}),
     createDeploymentRequireUser,
     credentialInput,
     recordPersonEvent,

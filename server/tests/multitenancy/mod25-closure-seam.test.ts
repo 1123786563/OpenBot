@@ -148,8 +148,11 @@ describe("MOD25 D2：例外簿与 checker 校验面", () => {
     expect(checker.includes("--baseline 拒绝在非法配置上收敛基线")).toBe(true);
   });
 
-  test("簿记读数钉：例外 715、环目标面≤45 由 checker 实跑保证，此处钉簿数与零幻影结构", () => {
-    expect(cfg.exceptions.length).toBe(715);
+  test("簿记读数钉：例外 703、环目标面≤45 由 checker 实跑保证，此处钉簿数与零幻影结构", () => {
+    // 703 = 715（#620 收口）− 15（#732 旧记忆路径删除后的幻影）+ 12（环解开改类 deep-reference）
+    // + 2（memory-service 新边）+ 1（#732 恢复研究默认的 M03→AUTOMATION 公开出口环边）；
+    // 真 0 违规/0 幻影由 scripts/check-module-imports.ts 与 tests/module-imports.test.ts 保证。
+    expect(cfg.exceptions.length).toBe(703);
     // source|target 去重后无重复条目（簿记自洽）。
     const keys = cfg.exceptions.map((e) => `${e.source}\u0000${e.target}`);
     expect(new Set(keys).size).toBe(keys.length);

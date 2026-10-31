@@ -12,18 +12,20 @@
  *
  * Conversations go the way every other deletion of them does, soft, through the channel store, so
  * every open tab is told and the thread survives on the platform as it would for a manual delete.
- * Routines, responsibilities and memory sources are deleted, and their runs and imported memories
- * with them through the foreign keys that already cascade.
+ * Routines and responsibilities are deleted, and their runs with them through the foreign keys
+ * that already cascade.
  *
- * "STARTS FRESH" ALSO MEANS what the Bot learned and was allowed on its own: memories it formed for
- * this person, the background research it runs for them (its suggestions go with it, and any run
- * already queued is cancelled), and the standing permissions they gave it ("Always allow" and
- * "pre-approved" rules, which include always sharing private information). Rules that make the Bot
- * ask first or hand work back protect the person, so a reset keeps those.
+ * "STARTS FRESH" ALSO MEANS what the Bot was allowed on its own: the background research it runs
+ * for them (its suggestions go with it, and any run already queued is cancelled), and the standing
+ * permissions they gave it ("Always allow" and "pre-approved" rules, which include always sharing
+ * private information). Rules that make the Bot ask first or hand work back protect the person, so
+ * a reset keeps those.
  *
- * For the same reason a reset keeps the person's "no" to a default: a memory source or background
- * research they had turned off is recorded as turned down (`memory/defaults.ts`), so starting fresh
- * never switches back on what they switched off. What they left on comes back on by default.
+ * #732: personal memory is the memory service's authority now, and the old rows are preserved
+ * data — a reset never deletes or migrates them, so the memory counts below stay at zero. The
+ * plan's shape keeps its fields so the person's notice stays honest about what WILL go. The
+ * research default is back on (proactive/defaults.ts), so a reset that takes a research setting
+ * the person had turned OFF writes their no first: starting fresh must not switch it back on.
  */
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
@@ -32,17 +34,14 @@ import {
   channelAgents,
   channelMemberships,
   channels,
-  memorySources,
-  personalMemories,
   proactiveSettings,
   proactiveSuggestions,
   responsibilities,
   routines,
   workItems,
 } from "../db/schema";
-// MOD15 (#635)：M10 出口段迁移——defaults 三函数改经 M10 公开门面，环边落公开出口。
-import { lockDefaults, recordOptOut, sourceServerId } from "../memory/public";
 import { PROACTIVE_RUN_KIND } from "../proactive/engine";
+import { lockResearchDefaults, recordOptOut } from "../proactive/public";
 import type { AgentActor } from "./profile-types";
 import { WAKE_UP_KIND } from "./wake-up";
 
@@ -115,14 +114,6 @@ export function createBotReset(options: {
       sql`${workItems.payload}->>'agentId' = ${agentId}`,
     );
 
-  const formedMemories = (ownerUserId: string, agentId: string) =>
-    and(
-      eq(personalMemories.ownerUserId, ownerUserId),
-      eq(personalMemories.formedByAgentId, agentId),
-      isNull(personalMemories.sourceId),
-      isNull(personalMemories.deletedAt),
-    );
-
   const research = (ownerUserId: string, agentId: string) =>
     and(
       eq(proactiveSettings.ownerUserId, ownerUserId),
@@ -148,38 +139,12 @@ export function createBotReset(options: {
     agentId: string,
   ): Promise<ResetPlan> {
     const conversationsFound = await conversations(ownerUserId, agentId);
-    const sources = await database
-      .select({ id: memorySources.id })
-      .from(memorySources)
-      .where(
-        and(
-          eq(memorySources.ownerUserId, ownerUserId),
-          eq(memorySources.agentId, agentId),
-        ),
-      );
     const total = sql<number>`count(*)::int`;
     return {
       conversations: conversationsFound.mine.length,
       sharedConversationsKept: conversationsFound.kept,
-      memorySources: sources.length,
-      memories:
-        sources.length === 0
-          ? 0
-          : await count(
-              database
-                .select({ total })
-                .from(personalMemories)
-                .where(
-                  and(
-                    eq(personalMemories.ownerUserId, ownerUserId),
-                    inArray(
-                      personalMemories.sourceId,
-                      sources.map((source) => source.id),
-                    ),
-                    isNull(personalMemories.deletedAt),
-                  ),
-                ),
-            ),
+      memorySources: 0,
+      memories: 0,
       routines: await count(
         database
           .select({ total })
@@ -208,12 +173,7 @@ export function createBotReset(options: {
           .from(workItems)
           .where(pendingFollowUps(ownerUserId, agentId)),
       ),
-      formedMemories: await count(
-        database
-          .select({ total })
-          .from(personalMemories)
-          .where(formedMemories(ownerUserId, agentId)),
-      ),
+      formedMemories: 0,
       backgroundResearch: await count(
         database
           .select({ total })
@@ -240,54 +200,9 @@ export function createBotReset(options: {
         await softDeleteChannel(actor, channelId);
 
       return database.transaction(async (transaction) => {
-        // The lock defaults adoption takes, so no default is adopted between these reads and the deletes.
-        await lockDefaults(transaction, ownerUserId, agentId);
-        const sources = await transaction
-          .select({
-            id: memorySources.id,
-            toolRef: memorySources.toolRef,
-            enabled: memorySources.enabled,
-          })
-          .from(memorySources)
-          .where(
-            and(
-              eq(memorySources.ownerUserId, ownerUserId),
-              eq(memorySources.agentId, agentId),
-            ),
-          );
-        for (const source of sources)
-          if (!source.enabled)
-            await recordOptOut(transaction, {
-              ownerUserId,
-              agentId,
-              feature: "memory_source",
-              scope: sourceServerId(source.toolRef),
-            });
-        const memories =
-          sources.length === 0
-            ? []
-            : await transaction
-                .select({ id: personalMemories.id })
-                .from(personalMemories)
-                .where(
-                  and(
-                    eq(personalMemories.ownerUserId, ownerUserId),
-                    inArray(
-                      personalMemories.sourceId,
-                      sources.map((source) => source.id),
-                    ),
-                    isNull(personalMemories.deletedAt),
-                  ),
-                );
-        // Memories go with their source through the foreign key.
-        await transaction
-          .delete(memorySources)
-          .where(
-            and(
-              eq(memorySources.ownerUserId, ownerUserId),
-              eq(memorySources.agentId, agentId),
-            ),
-          );
+        // The lock the research default's adoption takes, so nothing is adopted between the read
+        // and the delete; a setting the person had turned off keeps its no (default_opt_outs).
+        await lockResearchDefaults(transaction, ownerUserId, agentId);
         const deletedRoutines = await transaction
           .delete(routines)
           .where(
@@ -317,10 +232,6 @@ export function createBotReset(options: {
           })
           .where(pendingFollowUps(ownerUserId, agentId))
           .returning({ key: workItems.key });
-        const formed = await transaction
-          .delete(personalMemories)
-          .where(formedMemories(ownerUserId, agentId))
-          .returning({ id: personalMemories.id });
         const settings = await transaction
           .select({
             id: proactiveSettings.id,
@@ -329,11 +240,7 @@ export function createBotReset(options: {
           .from(proactiveSettings)
           .where(research(ownerUserId, agentId));
         if (settings.some((setting) => !setting.enabled))
-          await recordOptOut(transaction, {
-            ownerUserId,
-            agentId,
-            feature: "proactive_research",
-          });
+          await recordOptOut(transaction, { ownerUserId, agentId });
         if (settings.length > 0) {
           const ids = settings.map((setting) => setting.id);
           // A run already queued for the setting would find it gone; cancel it rather than fail it.
@@ -369,12 +276,12 @@ export function createBotReset(options: {
         return {
           conversations: found.mine.length,
           sharedConversationsKept: found.kept,
-          memorySources: sources.length,
-          memories: memories.length,
+          memorySources: 0,
+          memories: 0,
           routines: deletedRoutines.length,
           responsibilities: deletedGoals.length,
           followUps: followUps.length,
-          formedMemories: formed.length,
+          formedMemories: 0,
           backgroundResearch: settings.length,
           standingApprovals: revoked.length,
         };
