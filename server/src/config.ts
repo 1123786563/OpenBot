@@ -327,6 +327,8 @@ export type DeploymentConfig = {
     appId: string;
     appSecret: string;
     sourceKey: string;
+    /** #733 来源裁决入口的服务令牌：MEMORY 调 source-check 时出示。缺省不挂载（404）。 */
+    sourceCheckToken?: string;
   };
   /**
    * The multitenancy switch and its startup-validation inputs (MT013).
@@ -706,6 +708,8 @@ function memoryServiceConfig(environment: Environment):
         appId: string;
         appSecret: string;
         sourceKey: string;
+        /** #733 来源裁决入口的服务令牌：MEMORY 调 source-check 时出示。缺省不挂载（404）。 */
+        sourceCheckToken?: string;
       };
     }
   | Record<string, never> {
@@ -731,12 +735,15 @@ function memoryServiceConfig(environment: Environment):
   const appId = required(environment, "MEMORY_SERVICE_APP_ID");
   const appSecret = required(environment, "MEMORY_SERVICE_APP_SECRET");
   const sourceKey = required(environment, "MEMORY_SERVICE_SOURCE_KEY");
+  const sourceCheckToken = environment.MEMORY_SOURCE_CHECK_TOKEN?.trim() || undefined;
   return {
     memoryService: {
       baseUrl: parsed.toString().replace(/\/$/, ""),
       appId,
       appSecret,
       sourceKey,
+      // #733：可选——设了才挂 /api/memory-service/source-check，未设保持 404 fail-closed。
+      ...(sourceCheckToken ? { sourceCheckToken } : {}),
     },
   };
 }

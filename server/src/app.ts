@@ -99,6 +99,7 @@ import type { PackageStatusReader } from "./tenant-package";
 import type { UserInstructionsStore } from "./user-instructions";
 import type { UserPreferencesStore } from "./user-preferences";
 import type { VoiceSessionServices } from "./voice/session-routes";
+import { createOpenBotSourceAccess } from "./memory-service/source-access";
 import type { createWorkshopPublicRoutes } from "./workshop/public-routes";
 import type { WorkshopRoutesFactory } from "./workshop/routes";
 
@@ -806,6 +807,10 @@ export function createApp(
     identityGithubCallback,
     botServices,
     workbenchPayer,
+    // #733：来源裁决的 Access 与部署库同源（billing 组携带的就是部署库本身）。
+    ...(billing?.database
+      ? { memorySourceAccess: createOpenBotSourceAccess({ database: billing.database }) }
+      : {}),
     createDeploymentRequireUser,
     credentialInput,
     recordPersonEvent,

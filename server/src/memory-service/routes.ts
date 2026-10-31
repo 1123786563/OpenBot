@@ -8,8 +8,8 @@ import type { OpenBotMemorySourceCheck, SourceCheck } from "./source-check";
  * 通过——source check 用 OpenBot 自己签发的来源引用判定。
  */
 
-export function mountMemoryServiceRoutes(
-  app: Hono,
+export function mountMemoryServiceRoutes<E extends Record<string, unknown>>(
+  app: Hono<E>,
   deps: { check: OpenBotMemorySourceCheck; serviceToken: string },
 ): void {
   const authorized = (request: Request): boolean => {

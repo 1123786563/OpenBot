@@ -200,6 +200,9 @@ import {
 import { createMarketplaceRoutes } from "../marketplace/routes";
 import { createMastraContinuationRoutes } from "../mastra/continuation-routes";
 import { createMemoryServiceEntryRoutes } from "../memory-service/entry-routes";
+import { createMemoryConsumersRegistry } from "../memory-service/consumers-registry";
+import { createOpenBotMemorySourceCheck, type SourceAccess } from "../memory-service/source-check";
+import { mountMemoryServiceRoutes } from "../memory-service/routes";
 import { createMobileBffActivity } from "../mobile-bff/activity";
 import {
   createOpenMuseBotProvisioner,
@@ -587,6 +590,12 @@ export interface HttpAssemblyDependencies {
    */
   workbenchPayer?: { database: Database };
 
+  /**
+   * #733 来源裁决的 OpenBot Access：签发的来源范围（Bot 归属）到裁决时是否
+   * 仍成立。装配层用部署数据库构造；缺省时来源裁决入口不挂载（404）。
+   */
+  memorySourceAccess?: SourceAccess;
+
   /*
    * ── MOD02 explicitized dependencies ────────────────────────────────────────
    *
@@ -739,6 +748,7 @@ export function assembleHttpApp(
     onboardingStore,
     userInstructions,
     attachmentDatabase,
+    memorySourceAccess,
     hostAccessBroker,
     desktopHostToken,
     deploymentToolCaller,
@@ -1269,10 +1279,10 @@ export function assembleHttpApp(
    * #731 内嵌管理入口：只返回部署配置的承载地址与本次装载的 requestId。
    * 未配置 MEMORY_SERVICE_URL 时不挂载，页面据此显示"未启用"。
    *
-   * #730 的来源裁决入口（POST /api/memory-service/source-check，
-   * server/src/memory-service/routes.ts 已实现）暂不挂载：它需要与真实 MEMORY
-   * 实例对齐服务令牌来源，属 #733 的联调范围。未挂载时 MEMORY 的来源核验
-   * 只会得到 404，不会误判为允许。
+   * #733 来源裁决入口：MEMORY 在采集/召回/审核前回调。需要三件部署事实齐备
+   * 才挂载——MEMORY_SERVICE_*（客户端身份）、MEMORY_SOURCE_CHECK_TOKEN（MEMORY
+   * 出示的服务令牌）和装配层传入的来源 Access（数据库）。缺任一保持 404
+   * fail-closed：MEMORY 的来源核验得不到放行，只会得到"无法核验"。
    */
   if (config.memoryService) {
     app.route(
@@ -1282,6 +1292,20 @@ export function assembleHttpApp(
         requireUser,
       }),
     );
+    if (config.memoryService.sourceCheckToken && memorySourceAccess) {
+      mountMemoryServiceRoutes(app, {
+        check: createOpenBotMemorySourceCheck({
+          key: config.memoryService.sourceKey,
+          consumers: createMemoryConsumersRegistry({
+            baseUrl: config.memoryService.baseUrl,
+            appId: config.memoryService.appId,
+            appSecret: config.memoryService.appSecret,
+          }),
+          access: memorySourceAccess,
+        }),
+        serviceToken: config.memoryService.sourceCheckToken,
+      });
+    }
   }
   if (openMuseTemplateRevisions) {
     /*
