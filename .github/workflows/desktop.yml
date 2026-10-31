@@ -86,8 +86,11 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      # From the repository root, not `desktop`: the suites this workspace type-checks import
+      # `../../tests/support/*`, which reads `e2e` and `yaml` — two packages only the root manifest
+      # declares. Installing from `desktop` leaves both uninstalled and `tsc` reports TS2307 on
+      # every platform. The commands below stay in `desktop` because that is where the scripts live.
       - run: bun install --frozen-lockfile
-        working-directory: desktop
       - run: bun run typecheck
         working-directory: desktop
       - name: Desktop version regressions
