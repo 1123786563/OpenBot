@@ -45,11 +45,17 @@ export type IssuedScope = Readonly<{
 
 export function issueSourceScope(scope: IssuedScope, key: string): SourceRef {
   const payload = JSON.stringify(scope);
-  return { originAppId: scope.originAppId, scopeRef: sign(payload, key, LABEL) };
+  return {
+    originAppId: scope.originAppId,
+    scopeRef: sign(payload, key, LABEL),
+  };
 }
 
 /** 验签并还原原始范围；任何篡改返回 null。 */
-export function readSourceScope(ref: SourceRef, key: string): IssuedScope | null {
+export function readSourceScope(
+  ref: SourceRef,
+  key: string,
+): IssuedScope | null {
   const payload = verify(ref.scopeRef, key, LABEL);
   if (!payload) return null;
   try {
@@ -73,7 +79,13 @@ export function readSourceScope(ref: SourceRef, key: string): IssuedScope | null
 /** OpenBot 的 Access：来源是否仍可读、版本是否属于该范围。 */
 export type SourceAccess = {
   /** "denied" = 失权；"unavailable" = 无法核验（不区分对外呈现）。 */
-  resolve(scope: IssuedScope): Promise<{ state: "allowed"; revision: string } | { state: "denied" } | { state: "unavailable" }>;
+  resolve(
+    scope: IssuedScope,
+  ): Promise<
+    | { state: "allowed"; revision: string }
+    | { state: "denied" }
+    | { state: "unavailable" }
+  >;
   /** versionId 为空表示采集；否则版本必须属于该来源范围。 */
   ownsVersion(scope: IssuedScope, versionId: string): Promise<boolean>;
 };
@@ -94,12 +106,16 @@ export function createOpenBotMemorySourceCheck(deps: {
   access: SourceAccess;
 }) {
   return {
-    async checkOpenBotMemorySource(input: SourceCheck): Promise<SourceDecision> {
+    async checkOpenBotMemorySource(
+      input: SourceCheck,
+    ): Promise<SourceDecision> {
       const scope = readSourceScope(input.source, deps.key);
       // 篡改或伪造的来源引用：不区分字段，统一拒绝，不返回任何正文。
       if (!scope) return { state: "denied", reason: "forged_scope" };
-      if (scope.subjectId !== input.subjectId) return { state: "denied", reason: "forged_scope" };
-      if (scope.originAppId !== input.originAppId) return { state: "denied", reason: "forged_scope" };
+      if (scope.subjectId !== input.subjectId)
+        return { state: "denied", reason: "forged_scope" };
+      if (scope.originAppId !== input.originAppId)
+        return { state: "denied", reason: "forged_scope" };
 
       if (!(await deps.consumers.isActive(input.consumerAppId))) {
         return { state: "denied", reason: "unknown_consumer" };
@@ -112,10 +128,14 @@ export function createOpenBotMemorySourceCheck(deps: {
       if (!delegated) return { state: "denied", reason: "delegation_required" };
 
       const decision = await deps.access.resolve(scope);
-      if (decision.state === "denied") return { state: "denied", reason: "source_revoked" };
+      if (decision.state === "denied")
+        return { state: "denied", reason: "source_revoked" };
       if (decision.state === "unavailable") return { state: "unavailable" };
 
-      if (input.versionId !== null && !(await deps.access.ownsVersion(scope, input.versionId))) {
+      if (
+        input.versionId !== null &&
+        !(await deps.access.ownsVersion(scope, input.versionId))
+      ) {
         return { state: "denied", reason: "forged_scope" };
       }
       return { state: "allowed", revision: decision.revision };
@@ -123,4 +143,6 @@ export function createOpenBotMemorySourceCheck(deps: {
   };
 }
 
-export type OpenBotMemorySourceCheck = ReturnType<typeof createOpenBotMemorySourceCheck>;
+export type OpenBotMemorySourceCheck = ReturnType<
+  typeof createOpenBotMemorySourceCheck
+>;

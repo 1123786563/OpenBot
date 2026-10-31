@@ -513,7 +513,12 @@
         "server/tests/openmuse-activity.test.ts",
         "server/tests/openmuse-deletion.test.ts",
         "server/tests/openmuse-reviewed-actions-store.integration.test.ts",
-        "server/tests/opik-admin-contract.test.ts",
+        "server/tests/opik-admin-contract.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests part 10 cont 1",
+      "files": [
         "server/tests/opik-admin-summary.integration.test.ts"
       ]
     },
@@ -1749,7 +1754,6 @@
     "server/tests/mastra-intelligence-optional.test.ts",
     "server/tests/mastra-learned-skills.test.ts",
     "server/tests/mastra-legacy-import.test.ts",
-    "server/tests/mastra-memory-service-degradation.test.ts",
     "server/tests/mastra-memory-service-degradation.test.ts",
     "server/tests/mastra-message-parts.test.ts",
     "server/tests/mastra-openmuse-entry.test.ts",

@@ -700,10 +700,14 @@ function memoryServiceConfig(
   try {
     parsed = new URL(raw);
   } catch {
-    throw new Error(`MEMORY_SERVICE_URL must be an absolute URL: ${JSON.stringify(raw)}`);
+    throw new Error(
+      `MEMORY_SERVICE_URL must be an absolute URL: ${JSON.stringify(raw)}`,
+    );
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error(`MEMORY_SERVICE_URL must be http(s), not ${JSON.stringify(parsed.protocol)}`);
+    throw new Error(
+      `MEMORY_SERVICE_URL must be http(s), not ${JSON.stringify(parsed.protocol)}`,
+    );
   }
   return { memoryService: { baseUrl: parsed.toString().replace(/\/$/, "") } };
 }
@@ -1509,7 +1513,8 @@ function identityCenterAuth(
 ): (OAuthClient & { issuer: string; internalToken?: string }) | undefined {
   const client = oauthClient(environment, "IDENTITY_CENTER");
   const issuer = url(environment, "IDENTITY_CENTER_OAUTH_ISSUER");
-  const internalToken = environment.IDENTITY_CENTER_INTERNAL_TOKEN?.trim() || undefined;
+  const internalToken =
+    environment.IDENTITY_CENTER_INTERNAL_TOKEN?.trim() || undefined;
   if (internalToken && (!client || !issuer)) {
     throw new Error(
       "IDENTITY_CENTER_INTERNAL_TOKEN is set but identity-center sign-in (ISSUER/CLIENT_ID/CLIENT_SECRET) is not configured",
@@ -1528,7 +1533,9 @@ function identityCenterAuth(
       "Identity-center sign-in requires IDENTITY_CENTER_OAUTH_ISSUER, such as http://127.0.0.1:4210",
     );
   }
-  return internalToken ? { ...client, issuer, internalToken } : { ...client, issuer };
+  return internalToken
+    ? { ...client, issuer, internalToken }
+    : { ...client, issuer };
 }
 
 /**
@@ -1787,9 +1794,7 @@ function computerConfig(environment: Environment): ComputerConfig | undefined {
    */
   if (substrate) {
     if (substrate !== "openshell") {
-      throw new Error(
-        'OPENBOT_SANDBOX_SUBSTRATE must be "openshell" or unset',
-      );
+      throw new Error('OPENBOT_SANDBOX_SUBSTRATE must be "openshell" or unset');
     }
     const gatewayEndpoint = url(environment, "OPENSHELL_GATEWAY_ENDPOINT");
     if (!gatewayEndpoint) {

@@ -24,14 +24,18 @@ export function mountMemoryServiceRoutes(
     if (!authorized(c.req.raw)) {
       return c.json({ error: { code: "UNAUTHORIZED" } }, 401);
     }
-    const body = (await c.req.json().catch(() => null)) as Partial<SourceCheck> | null;
+    const body = (await c.req
+      .json()
+      .catch(() => null)) as Partial<SourceCheck> | null;
     const wellFormed =
       body !== null &&
       typeof body.requestId === "string" &&
       typeof body.subjectId === "string" &&
       typeof body.originAppId === "string" &&
       typeof body.consumerAppId === "string" &&
-      (body.action === "collect" || body.action === "recall" || body.action === "review") &&
+      (body.action === "collect" ||
+        body.action === "recall" ||
+        body.action === "review") &&
       (body.versionId === null || typeof body.versionId === "string") &&
       body.source !== undefined &&
       typeof body.source.originAppId === "string" &&
@@ -47,7 +51,10 @@ export function mountMemoryServiceRoutes(
         consumerAppId: body.consumerAppId,
         action: body.action,
         versionId: body.versionId ?? null,
-        source: { originAppId: body.source.originAppId, scopeRef: body.source.scopeRef },
+        source: {
+          originAppId: body.source.originAppId,
+          scopeRef: body.source.scopeRef,
+        },
       }),
     );
   });

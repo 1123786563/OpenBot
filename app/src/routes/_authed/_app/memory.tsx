@@ -30,7 +30,9 @@ function MemoryPage() {
           signedOutText={t("memorySignedOut")}
         />
       ) : entry.isPending ? null : (
-        <p className="text-muted-foreground text-sm">{t("memoryUnavailable")}</p>
+        <p className="text-muted-foreground text-sm">
+          {t("memoryUnavailable")}
+        </p>
       )}
     </PageShell>
   );
