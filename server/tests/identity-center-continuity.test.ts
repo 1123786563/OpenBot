@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   afterAll,
   beforeAll,
@@ -5,24 +6,24 @@ import {
   expect,
   test,
 } from "../../tests/support/e2e-compat";
-import { randomUUID } from "node:crypto";
+import type { AuthService, RoleRepository } from "../src/auth/guards";
+import type { OpenBotRole } from "../src/auth/roles";
 import {
-  startIdentityCenter,
-  type IdentityCenterProcess,
-} from "./support/identity-center";
-import {
+  type CenterStatusReader,
+  createCenterStatusClient,
+  createSubjectProjection,
   SUBJECT_PROJECTION_DISABLED,
   SUBJECT_PROJECTION_GENERATION_CHANGED,
   SUBJECT_PROJECTION_UNKNOWN_SUBJECT,
   SubjectProjectionRefusal,
-  createCenterStatusClient,
-  createSubjectProjection,
-  type CenterStatusReader,
   type SubjectProjectionStore,
   type SubjectRef,
 } from "../src/auth/subject-projection";
-import type { AuthService, RoleRepository } from "../src/auth/guards";
-import type { OpenBotRole } from "../src/auth/roles";
+import {
+  type IdentityCenterProcess,
+  identityCenterAvailable,
+  startIdentityCenter,
+} from "./support/identity-center";
 
 /*
  * #715 OpenBot side. The center keeps the identity write authority; OpenBot
@@ -38,9 +39,14 @@ import type { OpenBotRole } from "../src/auth/roles";
 
 const INTERNAL_TOKEN = `itc-${randomUUID().replaceAll("-", "")}715`;
 
-let center: IdentityCenterProcess;
+// CI has no sibling openbot-identity checkout (and no identity test database):
+// skip the whole suite there rather than fail hooks a red CI cannot act on.
+const centerAvailable = identityCenterAvailable();
+
+let center: IdentityCenterProcess | undefined;
 
 beforeAll(async () => {
+  if (!centerAvailable) return;
   center = await startIdentityCenter({
     port: 4210,
     env: { IDENTITY_INTERNAL_TOKEN: INTERNAL_TOKEN },
@@ -48,10 +54,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await center.stop();
+  await center?.stop();
 });
 
-describe("identity_center_internal_api", () => {
+describe.skipIf(!centerAvailable)("identity_center_internal_api", () => {
   test("未知主体返回 null；令牌错误按不可用拒绝（不猜测 active/generation）", async () => {
     const client = createCenterStatusClient({
       issuer: center.issuer,

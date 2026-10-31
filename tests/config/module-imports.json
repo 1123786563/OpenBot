@@ -492,6 +492,11 @@
       "kind": "infrastructure"
     },
     {
+      "path": "server/src/memory-service",
+      "module": "TECH",
+      "kind": "infrastructure"
+    },
+    {
       "path": "server/src/intelligence-entitlement-check.ts",
       "module": "TECH",
       "kind": "infrastructure"

@@ -5,12 +5,13 @@ import {
   expect,
   test,
 } from "../../tests/support/e2e-compat";
-import {
-  startIdentityCenter,
-  type IdentityCenterProcess,
-} from "./support/identity-center";
 import { identityCenter } from "../src/auth/identity-center-client";
 import { createAuth } from "../src/auth/index";
+import {
+  type IdentityCenterProcess,
+  identityCenterAvailable,
+  startIdentityCenter,
+} from "./support/identity-center";
 
 /*
  * #714 OpenBot side: the RP entry points at a real, separately-deployed identity center.
@@ -18,17 +19,22 @@ import { createAuth } from "../src/auth/index";
  * so its availability here is process-level proof it does not ride on OpenBot.
  */
 
-let center: IdentityCenterProcess;
+// CI has no sibling openbot-identity checkout (and no identity test database):
+// skip the whole suite there rather than fail hooks a red CI cannot act on.
+const centerAvailable = identityCenterAvailable();
+
+let center: IdentityCenterProcess | undefined;
 
 beforeAll(async () => {
+  if (!centerAvailable) return;
   center = await startIdentityCenter({ port: 4210 });
 });
 
 afterAll(async () => {
-  await center.stop();
+  await center?.stop();
 });
 
-describe("identity-center-provider", () => {
+describe.skipIf(!centerAvailable)("identity-center-provider", () => {
   test("discovery 由独立进程提供，PKCE/S256 与登记端点齐备", async () => {
     const response = await fetch(
       `${center.issuer}/.well-known/openid-configuration`,
