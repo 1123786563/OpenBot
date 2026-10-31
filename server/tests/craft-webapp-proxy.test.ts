@@ -1157,7 +1157,13 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     // failure or expiry) carries a burst across one probe. RED: the second
     // request dialed the probe again.
     const { dialed, fetchImpl } = recordingUpstream();
-    const serve = createPreviewProxy(previewProxyDeps({ fetchImpl }));
+    // #673: a frozen clock, not the real one — the assertion below is about the
+    // memo carrying the second call, and a slow CI box must not expire the TTL
+    // between two awaits and turn that into a false red.
+    const clock = 1_000_000;
+    const serve = createPreviewProxy(
+      previewProxyDeps({ fetchImpl, now: () => clock }),
+    );
     const call = () =>
       serve({
         sessionId: PREVIEW_SESSION,

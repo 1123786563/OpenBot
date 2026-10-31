@@ -993,6 +993,33 @@ jobs:
           echo "::error::agent-computer did not answer /health"
           docker logs computer-ci || true
           exit 1
+      # #669: the same defect class as #698 above, for the image the craft sessions actually
+      # run in — a Dockerfile that builds but cannot start (a runtime import it never copied,
+      # a missing required env) went unnoticed until a real session failed. /health answers
+      # before the token gate, so the probe needs no credential, but the boot itself requires
+      # the four SANDBOX_* envs (env.ts `required`), which is exactly what this proves.
+      - name: The agent-sandbox image starts
+        run: |
+          set -euo pipefail
+          docker buildx build --file agent-sandbox/Dockerfile --platform linux/amd64 --load \
+            --tag openbot-agent-sandbox:ci .
+          docker run -d --name sandbox-ci \
+            -e SANDBOX_TOKEN=ci-sandbox-cxydz-0764568851uljwpr \
+            -e SANDBOX_PROVIDER_BASE_URL=http://127.0.0.1:9 \
+            -e SANDBOX_PROVIDER_API_KEY=ci-placeholder \
+            -e SANDBOX_MODEL=ci-placeholder \
+            -p 127.0.0.1:4300:4300 openbot-agent-sandbox:ci
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:4300/health >/dev/null; then
+              echo "agent-sandbox answered /health"
+              exit 0
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' sandbox-ci)" != "true" ]; then break; fi
+            sleep 1
+          done
+          echo "::error::agent-sandbox did not answer /health"
+          docker logs sandbox-ci || true
+          exit 1
 
   # #416: the nightly full-stack craft-preview e2e (same-site topology + HMR +
   # Server Actions) re-run — the one job the schedule exists for. Every other

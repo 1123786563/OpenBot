@@ -28,6 +28,17 @@ COPY agent-sandbox/src ./src
 # the image unstartable: "Cannot find module '../../shared/execution-scope'", FT-1). This
 # mirrors the repo-root bind mount shared/ → /shared:ro the FinalTest run needed before the
 # fix. .dockerignore's **/node_modules keeps shared/node_modules out of the layer.
+#
+# #667, three things this line implies and nothing states:
+# 1. COPY is RECURSIVE — it takes the top-level entries AND everything under them
+#    (shared/enterprise/**, shared/src/**), so the layer holds more files than an `ls` of
+#    shared/ shows (the count drifts with the tree; the rule is directory-copy, not a list).
+# 2. /shared stays root-owned and world-readable. The container drops to UID 1000, but this
+#    is a read-only module mount (the /workspace and /config chown below is for VOLUMES), so
+#    a --chown here would only widen write access to code nobody writes at runtime.
+# 3. shared/tsconfig.json extends ../tsconfig.base.json, which does not exist at / — the
+#    reference is dangling INSIDE the image and harmless: the image runs no tsc, and the
+#    repo-side type gate (bun run typecheck) resolves it from the checkout.
 COPY shared /shared
 
 # Sessions' files and the generated opencode config live on volumes, not in the image.

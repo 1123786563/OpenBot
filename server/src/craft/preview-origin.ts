@@ -133,7 +133,7 @@ export function singleReplicaStartupNotice(deps: {
         form,
         ...stats,
       },
-      "single-replica contract: the preview origin's in-process registries/indexes (label registry, ticket table and pass index) are in-process, but OPENBOT_REDIS_URL is set (a multi-replica deployment signal) — route preview traffic with sticky routing or previews will 404 'Unknown preview host.' on the instances that never saw the label (and an outstanding pass 401s after a restart clears the pass index: MAC ok, index miss — never a pass-through)",
+      "single-replica contract: the preview origin's label registry, ticket table and pass index live in THIS process, but OPENBOT_REDIS_URL is set (a multi-replica deployment signal) — route preview traffic with sticky routing or previews will 404 'Unknown preview host.' on the instances that never saw the label. An outstanding pass also 401s once a restart clears the pass index, and a session's oldest passes 401 once the per-session ceiling evicts them: in both cases the MAC still verifies, the lookup misses — a lost index, never a pass-through",
     );
     return;
   }

@@ -11,7 +11,10 @@
  * key (killing every pass) or deleting the session row (killing the session).
  * #427 supplies that missing rotation ability with the design the module's own
  * ponytail note anticipated: a random token in the v1 MAC frame, plus a
- * token → (sessionId, userId) index that is the binding authority.
+ * token → (sessionId, userId) index that is the binding authority. This index is
+ * the third of the preview origin's three in-process families — alongside the
+ * label registry and the ticket table — and carries the same single-replica
+ * contract they do (#418).
  *
  * Shape: `v1.<base64url(token)>.<base64url(mac)>`, where the token is 16 bytes
  * (128 bits) of `crypto.randomBytes` minted fresh at every redemption. The MAC
@@ -151,7 +154,9 @@ export const PREVIEW_PASSES_PER_SESSION = 8;
  * each session's live tokens in MINT order (a token is appended when remembered
  * and spliced out when forgotten/evicted), which is what makes "evict the
  * oldest of THIS session" an O(1) shift instead of a scan. They are only ever
- * mutated together, so a queue slot never outlives its map entry.
+ * mutated together, so a queue slot never outlives its map entry. A rebind onto
+ * the SAME session only rewrites the map entry and keeps its original slot: the
+ * queue is mint order, not recency order.
  *
  * `perSessionCapacity` is a parameter so tests can drive the bound with a small
  * N; production takes the default.
@@ -455,12 +460,12 @@ export function createPreviewPassCodec(
       if (version !== PREVIEW_PASS_VERSION) return false;
       if (!/^[A-Za-z0-9_-]+$/.test(token)) return false;
       // #650: the charset test above is a SHAPE bound, not a length bound —
-      // a 43-char base64url string is only 32 bytes when it is the
-      // canonical encoding, and Node's decoder silently accepts hostile
-      // trailing bits ("_"*43 decodes to a different length, "-"*43 does
-      // not round-trip at all). verify therefore ran the same charset
-      // test and then pinned the bytes with decodeStrict + MAC_BYTES;
-      // revoke now runs the identical pair. Behavior is unchanged for
+      // a 43-char base64url string always decodes to 32 bytes (Node drops the
+      // two trailing bits that do not fit), so length alone cannot tell a
+      // canonical encoding from a hostile one: "_"*43 and "-"*43 both yield
+      // 32 bytes but neither re-encodes to itself. verify therefore ran the
+      // same charset test and then pinned the round-trip with decodeStrict +
+      // MAC_BYTES; revoke now runs the identical pair. Behavior is unchanged for
       // every value a mint can produce (canonically encoded, exactly 32
       // bytes), and the two gates now refuse exactly the same frames —
       // which is what lets the sentence below be TRUE rather than merely

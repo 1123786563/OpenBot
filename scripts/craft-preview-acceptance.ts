@@ -490,7 +490,10 @@ async function step(
   }
 }
 
-function assert(condition: unknown, message: string): void {
+// #666: `asserts condition` is what lets tsc see the narrowing every caller
+// already relies on (assert(x) then use x) — without it the file could not
+// join the type gate at all.
+function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
@@ -816,7 +819,11 @@ const api = {
     const second = await attempt();
     // 重放臂容忍（#659 辅方向）：首击已 2xx 完成而重放遇 404/410——幂等请求
     // 重放时资源已不在（RFC 7231 §4.2.2），按首击成功返回，不产假 FAIL。
+    // #665：只对幂等方法生效——重放一次 POST 可能真的建出第二份资源，把它的
+    // 404/410 折成首击成功会掩盖这个缺陷；method 缺省即 fetch 的默认 GET。
+    const replayMethod = (init?.method ?? "GET").toUpperCase();
     if (
+      ["GET", "HEAD", "DELETE"].includes(replayMethod) &&
       first.status >= 200 &&
       first.status < 300 &&
       (second.status === 404 || second.status === 410)
@@ -1097,7 +1104,7 @@ async function markSessionNonEmpty(
   // messageMetadata Json 形状）。任一侧演进（加列、改 check、改 metadata
   // 形状）必须同步本 SQL —— 漂移不会在编译期暴露，只在运行期以 SQL 错误或
   // 脏数据的形式出现。
-  const sql = new Bun.sql(url);
+  const sql = new Bun.SQL(url);
   try {
     await sql`insert into craft_messages (id, session_id, turn_index, type, message_metadata)
       values (${`cm-accept-${tag.toLowerCase()}-${RUN_STAMP}`}, ${sessionId}, 0, 'user',
@@ -1257,9 +1264,11 @@ try {
         listed.status === 200 && listed.body !== null,
         `GET /sessions → ${listed.status}${listed.body === null ? "，响应体为空" : ""}（清理步骤拿不到会话列表）`,
       );
-      const stale = (listed.body?.sessions ?? []).filter(
-        (s: { name?: string }) =>
-          String(s.name ?? "").startsWith(SESSION_PREFIX),
+      const listedSessions = Array.isArray(listed.body?.sessions)
+        ? listed.body.sessions
+        : [];
+      const stale = listedSessions.filter((s: { name?: string }) =>
+        String(s.name ?? "").startsWith(SESSION_PREFIX),
       );
       const notes: string[] = [];
       for (const s of stale as Array<{ id: string }>) {
@@ -1715,19 +1724,23 @@ try {
         // failed; no valid credentials available」中止——这是 401 被浏览器网络栈
         // 译成认证失败的证据。双信号捕获：握手状态（浏览器若给出）或 FrameError
         // 文案，断言其一命中 401 语义；浏览器侧 outcome「不 open」兜底。
-        let wsStatus: number | null = null;
-        let wsFrameError: string | null = null;
+        // #666: an object, not two `let`s — tsc narrows a closure-assigned `let`
+        // back to its `null` initializer, which made the evidence branch `never`.
+        const wsSignal = {
+          status: null as number | null,
+          frameError: null as string | null,
+        };
         const cdp = await fpage.context().newCDPSession(fpage);
         cdp.on(
           "Network.webSocketHandshakeResponseReceived",
           (event: { response: { status: number } }) => {
-            wsStatus = event.response.status;
+            wsSignal.status = event.response.status;
           },
         );
         cdp.on(
           "Network.webSocketFrameError",
           (event: { errorMessage: string }) => {
-            wsFrameError = event.errorMessage;
+            wsSignal.frameError = event.errorMessage;
           },
         );
         await cdp.send("Network.enable");
@@ -1759,15 +1772,15 @@ try {
           `伪造 cookie 的 HMR 升级被接受（outcome=${hmrOutcome}）—— CSWSH 面未封住`,
         );
         const wsEvidence =
-          wsStatus === 401
+          wsSignal.status === 401
             ? `握手=401`
-            : wsFrameError !== null &&
-                /authentication failed|credentials/i.test(wsFrameError)
-              ? `握手拒（FrameError：${wsFrameError.slice(0, 80)}）`
+            : wsSignal.frameError !== null &&
+                /authentication failed|credentials/i.test(wsSignal.frameError)
+              ? `握手拒（FrameError：${wsSignal.frameError.slice(0, 80)}）`
               : null;
         assert(
           wsEvidence !== null,
-          `HMR 升级未见 401 拒绝证据：outcome=${hmrOutcome}，握手状态=${wsStatus ?? "无事件"}，frameError=${wsFrameError ?? "无事件"}`,
+          `HMR 升级未见 401 拒绝证据：outcome=${hmrOutcome}，握手状态=${wsSignal.status ?? "无事件"}，frameError=${wsSignal.frameError ?? "无事件"}`,
         );
         await shot("02b-forged-cookie-refused", fpage);
         return `导航=${navStatus}；HTTP=${probed.status}；HMR=${hmrOutcome}/${wsEvidence}`;
@@ -2608,8 +2621,10 @@ try {
     "webapp 工具 attach：停 dev server → 预览 503 not-running → 重拉 → 同一预览地址恢复 200",
     async () => {
       assert(previewPage, "前置失败");
+      // #666: bind first — an `asserts` narrowing does not reach into a closure.
+      const previewPageNow = previewPage;
       const probeThroughPreview = () =>
-        previewPage.evaluate(async (probeUrl) => {
+        previewPageNow.evaluate(async (probeUrl) => {
           const r = await fetch(probeUrl, { credentials: "include" });
           return { status: r.status, body: await r.text().catch(() => "") };
         }, `${sessionA.origin}/api/probe`);

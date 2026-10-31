@@ -74,7 +74,7 @@ CREATE TABLE "openmuse_document_actions" (
   "user_id" text NOT NULL,
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
   "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-  PRIMARY KEY ("file_id", "action_kind")
+  CONSTRAINT "openmuse_document_actions_pk" PRIMARY KEY ("file_id", "action_kind")
 );
 
 
@@ -105,7 +105,7 @@ CREATE TABLE "openmuse_personal_scopes" (
   "attribution" text NOT NULL,
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
   "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-  PRIMARY KEY ("object_type", "object_id")
+  CONSTRAINT "openmuse_personal_scopes_pk" PRIMARY KEY ("object_type", "object_id")
 );
 
 

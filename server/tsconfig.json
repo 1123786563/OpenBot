@@ -61,6 +61,10 @@
     // file-scoped like composio-smoke above.
     "../scripts/plugin-packages/export-builtin.ts",
     "../scripts/plugin-packages/migrate-legacy.ts",
-    "../scripts/plugin-packages/migrate-legacy-apply.ts"
+    "../scripts/plugin-packages/migrate-legacy-apply.ts",
+    // #666: the craft-preview acceptance harness is product-shaped operator
+    // tooling (it speaks the server's own API and is the only executable proof
+    // of the preview ACs), and it sat outside every workspace's type gate.
+    "../scripts/craft-preview-acceptance.ts"
   ]
 }
