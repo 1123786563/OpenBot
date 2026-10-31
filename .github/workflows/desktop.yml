@@ -86,11 +86,14 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      # From the repository root, not `desktop`: the suites this workspace type-checks import
-      # `../../tests/support/*`, which reads `e2e` and `yaml` — two packages only the root manifest
-      # declares. Installing from `desktop` leaves both uninstalled and `tsc` reports TS2307 on
-      # every platform. The commands below stay in `desktop` because that is where the scripts live.
+      # Twice, on purpose. The typecheck in this workspace reads `desktop/src/*.test.tsx`, whose
+      # first import is `../../tests/support/e2e-compat`: that needs `e2e` and `yaml`, which only
+      # the root manifest declares, so the install has to run from the root. The desktop packages
+      # themselves (`vite`, `bun-types`) are only linked into `desktop/node_modules` by an install
+      # run from there — from the root they are not linked at all, and `tsc` reports TS2688.
       - run: bun install --frozen-lockfile
+      - run: bun install --frozen-lockfile
+        working-directory: desktop
       - run: bun run typecheck
         working-directory: desktop
       - name: Desktop version regressions
