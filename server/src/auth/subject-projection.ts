@@ -232,7 +232,7 @@ export function createSubjectProjection(deps: {
       if (!subject) return null;
       // The center's current generation is the verified one for this request.
       const status = await deps.center.status(subject.subjectId);
-      if (!status || !status.active) return null;
+      if (!status?.active) return null;
       const roles = await deps.roles.rolesForUser(session.user.id);
       const role = roleOf(roles);
       if (!role) return null;

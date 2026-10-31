@@ -36,7 +36,7 @@ import type { OpenBotRole } from "../src/auth/roles";
  * projection's decisions, not about PostgreSQL.
  */
 
-const INTERNAL_TOKEN = "itc-" + randomUUID().replaceAll("-", "") + "715";
+const INTERNAL_TOKEN = `itc-${randomUUID().replaceAll("-", "")}715`;
 
 let center: IdentityCenterProcess;
 
