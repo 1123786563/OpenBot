@@ -7,7 +7,9 @@ assertBaWebSuite(import.meta.url);
 /*
  * #731 承载页的真实浏览器验收。preflight（BA_E2E_APP_ORIGIN / BA_E2E_API_ORIGIN /
  * 身份）不满足时本配置在加载处零导航退出，所以没有 Better Auth 栈的环境不会执行
- * 这些用例；本会话该栈未运行，ledger 将 #731 的浏览器验收记为 blocked。
+ * 这些用例；2026-10-31 这五个用例已在本地五进程真实栈（IDENTITY/MEMORY/OpenBot
+ * server/vite + Chrome）上逐条手工执行通过，证据与环境事实记录在
+ * docs/plans/2026-10-30-independent-memory-service/ledger.md 的「#731 浏览器验收」。
  *
  * 断言限制在宿主页面能直接观察的事实：侧栏仍在、iframe 存在且只指向部署配置的
  * 记忆服务 Origin、登录走顶层记忆服务 /auth/login 并回到登记的 /memory、深链刷新

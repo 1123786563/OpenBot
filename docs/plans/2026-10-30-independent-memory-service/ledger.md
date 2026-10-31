@@ -24,7 +24,7 @@
 | #715 | 保留现有用户身份接入统一登录 | IDENTITY 514143c + OpenBot 4e52125b6 | tests/issue-715.test.ts（6 用例，IDENTITY）+ server/tests/identity-center-continuity.test.ts（6 用例，OpenBot） | 七条变异全杀（IDENTITY 5 + OpenBot 3 中重复计 2）；OpenBot 投影用合同夹具（企业测试库未运行） |
 | #730 | OpenBot 来源应用接入（来源裁决/服务客户端/上下文装载） | OpenBot c3475e779 | server/tests/memory-service-source-check.test.ts（5）+ memory-service-runtime.test.ts（4） | 四条变异全杀；企业 Access 真实接线未做（5435 未运行） |
 | #729 | 服务故障与授权降级 | MEMORY fc7f9a6 + OpenBot e43f3a34a | tests/recall-fallback.test.ts（4，MEMORY）+ server/tests/memory-service-degradation.test.ts（4，原生）+ mastra-memory-service-degradation.test.ts（3，Bun 驱动） | 见 §6c |
-| #731 | OpenBot 内嵌记忆管理（承载页/顶层登录回跳/退出） | MEMORY ecdcc6f+feb8455 + OpenBot da8a46b0c+feba5c45a | app/tests/memory-service-frame.test.tsx（5）+ server/tests/memory-service-entry.test.ts（3）+ MEMORY tests/embed-channel.test.ts（3）；浏览器套件 5 用例已收集未执行 | 审核 9 confirmed（去重 6 类）→ 修复轮，六条变异全杀；浏览器验收 blocked（BA 栈未运行） |
+| #731 | OpenBot 内嵌记忆管理（承载页/顶层登录回跳/退出） | MEMORY ecdcc6f+feb8455+<static 修复> + OpenBot da8a46b0c+feba5c45a | app/tests/memory-service-frame.test.tsx（5）+ server/tests/memory-service-entry.test.ts（3）+ MEMORY tests/embed-channel.test.ts（3）+ tests/static-embed.test.ts（2）；浏览器五用例 2026-10-31 真实栈手工执行全过（见 §#731 浏览器验收） | 审核 9 confirmed（去重 6 类）→ 修复轮，六条变异全杀；浏览器验收发现 serveStatic 绕过 meta 注入的真 bug，已修复+回归测试（变异验证） |
 | #732–#733 | 待实施 / blocked（依赖 #731 浏览器验收与真实企业集成） | — | — | — |
 
 **当前全量基线（MEMORY）**：单元 17 文件 / 152 用例全绿（含 #728/#729）；浏览器 e2e 1/1 绿；`bun run typecheck`（root+app）绿；`bun run build` 绿。
@@ -147,6 +147,21 @@
 - 修复轮变异（已还原，全部杀死）：去掉宿主白名单（MEMORY 1 红）、去掉登录循环保护（app 1 红）。
 - 修复轮复验：app 5/5、server entry 3/3、MEMORY 全量 155/155、app/server/MEMORY typecheck 与 app/MEMORY build 全绿。
 
+### #731 浏览器验收（2026-10-31，五进程真实栈，blocked → 通过）
+栈：IDENTITY `:4210`（RS256 + better-auth 表单，`/tmp/731-identity.env`）+ MEMORY `:4230`（`/tmp/731-memory.env`，OIDC 指向身份中心，`MEMORY_EMBED_HOST_ORIGIN=http://localhost:3010`、`MEMORY_EMBED_RETURN_URI=http://localhost:3010/memory`）+ OpenBot server `:3002`（`.env` + 覆盖层 `MEMORY_SERVICE_URL=http://localhost:4230`）+ vite `:3010`（`SERVER_PORT=3002`）+ agent-browser（Chrome 1.4.2 CDP）。浏览器逐用例执行 `tests/e2e/better-auth/web/memory-service.e2e.ts` 的五个用例（引擎套件本身仍需 BA 栈才可运行，此处为同一断言集的手工真实浏览器执行）：
+
+| 用例 | 结果 | 证据 |
+|---|---|---|
+| sidebar_and_same_owner | 通过 | 侧栏 Bots/技能/插件包/Craft/记忆 全在；iframe `title=记忆` 可见；`src=http://localhost:4230/?embed=1&requestId=<uuid>`，Origin 等于 MEMORY_SERVICE_URL；iframe 内渲染记忆管理界面（暂停控制/待审核候选/已确认记忆/清理状态） |
+| return_url | 通过 | 未登录记忆服务时 auth-required → 顶层 `/auth/login` → `:4210/oauth2/authorize`（PKCE S256）→ 身份表单 → callback 置 `memory_session` → 302 returnUri 回 `/memory`（回跳后 OpenBot 自身门禁因下述 cookie 撞名跳 `/sign`，重登 OpenBot 后 `/memory` 显示带会话的承载页——回跳到达与终态均有实证） |
+| deep_link | 通过 | 刷新 `/memory` 后 URL 不变、iframe 仍在，高度 595px（`memory.resize` 通道生效，MIN 480 之上按内容调高） |
+| logout_revocation | 通过 | `:4230/auth/logout` 后 `memory_session` 消失；回 `/memory` → iframe 401 → auth-required → 顶层要求重新登录，承载页不再可见 |
+| message_origin | 通过 | 伪造 `{type:memory.auth-required, requestId:"forged", returnUrl:"https://evil.example/steal"}` 被忽略：URL 不变、iframe 不动、不跳转 |
+
+- **验收发现并修复真 bug（high）**：承载页入口 `/?embed=1&requestId=…` 由 `serveStatic` 直接命中根路径 index.html，绕过 SPA 回退里的 `<meta name="memory-embed-host">` 注入——白名单到不了页面，渠道建立不了，登录落回 iframe 内部跳转（浏览器首跑即暴露：iframe 里出现身份表单而顶层 URL 未动）。修复：`src/http/static.ts` 在 serveStatic 前显式应答 `GET /`（与回退同一份 `indexHtml()`）。回归测试 `tests/static-embed.test.ts`（2 用例；`hono/bun` 只有 Bun 运行时可导入，沿用 web-stack 先例 spawn bun 对真实路由顺序断言），先红后绿，移除修复行变异复红、还原复绿；MEMORY 全量 157/157。
+- 环境事实（非产品缺陷，部署须知）：①OpenBot 与身份中心都是 better-auth，cookie 同名 `better-auth.session_token` 且 cookie 不分端口——同 host 不同端口的本地拓扑里登身份中心会覆盖 OpenBot 会话；生产各服务独立主机（host-only cookie）不互踩。②`memory_session` 为 `SameSite=Lax`：承载页与记忆服务同站（同一注册域/同 host 不同端口）时会话可承载，跨站托管不在 v1 支持范围（与 restricted_storage 声明 blocked 一致）。
+- 票面的浏览器版本与存储策略证据：Chrome（agent-browser CDP 驱动，Bun 1.4.2 环境报告）；存储策略=同站 Lax 会话 cookie + iframe sandbox `allow-scripts allow-same-origin allow-forms allow-popups`；restricted_storage（受限第三方存储）仍无夹具、维持 blocked。
+
 ## 7. 债与已知边界
 
 - `#726 观察范围`：memory_cleanups.scopes 暂无 `observe:` 段，待 #730 真实索引接入后补录。
@@ -173,9 +188,9 @@
 | 后台作业 | `hindsightSyncArm.sweep`、`server/src/proactive/*`（`store.ts`/`engine.ts` 读记忆默认与共享限制）、`server/src/agents/lifecycle-reset.ts` | 记忆再索引 / 主动任务默认 / Bot 重置 | 记忆调度停用；proactive 非记忆行为保留（#732 `other_lifecycle`） |
 
 **判定：blocked**。票面要求逐入口行为断言（`all_surfaces`/`outage_no_legacy`/`worker_disabled`/`legacy_data_unchanged`/`other_lifecycle`）与"删除旧实现后证明只剩新客户端"。当前缺：
-1. 真实记忆服务实例与 `MEMORY_SERVICE_URL` 部署值（本地只有协议级测试夹具）；
+1. 真实记忆服务实例与 `MEMORY_SERVICE_URL` 部署值——2026-10-31 起本地已有五进程真实栈可复现（见 §#731 浏览器验收），但 #732 要求的是**生产消费者切换**（OpenBot 运行路径整体接记忆服务），非仅承载页可达；
 2. 企业测试库 5435 未运行 → 记忆消费者涉及的 Access/租户集成无法验证；
-3. #731 的浏览器验收本身 blocked（BA 栈未运行），而 #732 原生 blocked_by 含 #731。
+3. #731 浏览器验收已通过（2026-10-31），该项不再阻塞 #732。
 按票面"不可验证、依赖缺失均标 blocked，不能以 fixture 通过冒充集成通过"，本轮**不删除**任何旧记忆实现（`server/src/memory/`、`server/src/hindsight/` 原样保留），只交付上表盘点。
 
 ### #733 判定：blocked
