@@ -27,6 +27,26 @@
 //      驼峰与下划线拼写）一律响亮拒绝（ATTRIBUTION_NOT_CLIENT_DECLARABLE，
 //      MT019/MT028 同源：服务端持久状态优先于客户端选择）。
 //
+//   5. T06.04（#576，原任务 P14）：读入口维持 company/team/principal 来源，
+//      派生结果逐来源现读授权。
+//      - list（searchMemories）/ recall（resolveMemoriesForPublicBot）/
+//        confirm（confirmMemory）/ forget（forgetMemory）四处读与确认都只认
+//        本 scope 的 (tenant, workspace, principal) 三元组：同一个人在另一个
+//        团队开会话时读不到、也忘不掉本团队的行（已确认不等于向团队公开）。
+//      - kb/document 来源的记忆在每次读取时实时重新推导来源授权：
+//        enterprise_resources 该行仍 active、kind 与来源类型一致，且调用者仍
+//        有显式 read 授权，或资源 workspace 公共且调用者在该团队的有效成员
+//        关系仍 active。授权撤销（删 grant 行/成员关系失效）在下一次读取即
+//        生效——比较本身就是撤销，无需外部 cleanup 改写记忆行；来源离线的
+//        KB 不复活（不恢复 KB）。无授权的来源行结构性不进任何结果。
+//      - Bot 面只见来源类型：resolveMemoriesForPublicBot 的视图把 sourceRef
+//        （调用者私有来源定位符）脱敏为 null；本人列表仍带自己的 sourceRef。
+//      - 确认只重证来源授权、不改归属：来源已撤销的确认抛
+//        PERSONAL_MEMORY_SOURCE_REVOKED；跨团队 id 一律
+//        PERSONAL_MEMORY_NOT_FOUND。
+//      - memoryCacheKey 维持 company/team/principal 三段与 memory:v1 命名
+//        空间；代际版本由消费者按 scope 另派生，不在键里猜。
+//
 // 事务纪律与 MT019/MT034/MT035 完全一致：受信 Scope（assertTrustedScope）
 // → read committed + lock/statement timeout → set_config('app.*', …, true)
 // 事务本地 → advisory 锁（tenant → principal → membership）。
@@ -37,7 +57,7 @@
 //     匹配，向量检索属 Intelligence 域后续票。
 
 import { randomUUID } from "node:crypto";
-import { and, eq, ilike, or, type SQL, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, or, type SQL, sql } from "drizzle-orm";
 import { enterprisePersonalMemories } from "../../db/schema/enterprise-personal-memory";
 import {
   enterpriseMemberships,
@@ -98,6 +118,21 @@ export interface PersonalMemoryService {
     scope: PlatformScope,
     input: { readonly query: string },
   ): Promise<readonly MemoryView[]>;
+  /**
+   * 本人确认（T06.04）：只在本 scope 的 (tenant, workspace, principal)
+   * 内找到行，并实时重证 kb/document 来源授权；确认不改归属、不扩大来源
+   * 范围。来源已撤销 → PERSONAL_MEMORY_SOURCE_REVOKED；跨团队/不存在 →
+   * PERSONAL_MEMORY_NOT_FOUND。
+   */
+  confirmMemory(
+    scope: PlatformScope,
+    input: { readonly memoryId: string },
+  ): Promise<MemoryView>;
+  /** 本人遗忘（T06.04）：只删本 scope 三元组内的行，跨团队不可达。 */
+  forgetMemory(
+    scope: PlatformScope,
+    input: { readonly memoryId: string },
+  ): Promise<{ readonly outcome: "forgotten"; readonly memoryId: string }>;
   /** 来源选择：只列调用者有权访问的库与文档。 */
   listMemorySources(scope: PlatformScope): Promise<readonly MemorySourceView[]>;
   /**
@@ -196,9 +231,16 @@ export function createPersonalMemoryService(channels: {
     }
   };
 
+  /*
+   * T06.04: the read provenance is the FULL owner triple — company, team and
+   * principal. The same person scoped to another team reads none of this
+   * team's rows (a confirmed memory never becomes another team's to see), and
+   * a memory written for one team is not re-read through another selection.
+   */
   const ownRowsPredicate = (scope: PlatformScope) =>
     and(
       eq(enterprisePersonalMemories.tenantId, scope.tenantId),
+      eq(enterprisePersonalMemories.workspaceId, scope.workspaceId),
       eq(enterprisePersonalMemories.principalId, scope.principalId),
     );
 
@@ -214,13 +256,9 @@ export function createPersonalMemoryService(channels: {
       .from(enterprisePersonalMemories)
       .where(extra);
 
-  const toView = (row: {
-    id: string;
-    memoryKey: string;
-    content: string;
-    sourceKind: string;
-    sourceRef: string | null;
-  }): MemoryView =>
+  type MemoryRow = Awaited<ReturnType<typeof selectOwnRows>>[number];
+
+  const toView = (row: MemoryRow): MemoryView =>
     deepFreeze({
       memoryId: row.id,
       memoryKey: row.memoryKey,
@@ -228,6 +266,121 @@ export function createPersonalMemoryService(channels: {
       sourceKind: row.sourceKind as MemorySourceKind,
       sourceRef: row.sourceRef,
     });
+
+  /*
+   * T06.04: the Bot face learns the source KIND, never the person's private
+   * source locator — sourceRef is masked (null), and no other source-private
+   * field is exposed.
+   */
+  const toBotView = (row: MemoryRow): MemoryView =>
+    deepFreeze({
+      memoryId: row.id,
+      memoryKey: row.memoryKey,
+      content: row.content,
+      sourceKind: row.sourceKind as MemorySourceKind,
+      sourceRef: null,
+    });
+
+  const SOURCE_RESOURCE_KIND = {
+    kb: "knowledge_base",
+    document: "document",
+  } as const;
+
+  /*
+   * T06.04: derived (kb/document) memories are authorized PER SOURCE, live, on
+   * every read — never from a cached or previously-stamped grant:
+   *
+   *   - the source resource still exists in this company and is active (an
+   *     offline KB is not restored: its derived memory stops answering);
+   *   - its kind matches the memory's source kind (a document reference never
+   *     borrows a KB's authorization);
+   *   - the caller holds an explicit `read` grant on it, or it is
+   *     workspace-public in THIS team and the caller's membership there is
+   *     still active (leaving the source team ends the ability to recall).
+   *
+   * The comparison IS the revocation: removing the grant row or suspending the
+   * membership takes effect at the very next read, with no cleanup rewriting
+   * memory rows. Manual memories carry no source and always pass.
+   */
+  const filterSourceAuthorized = async (
+    tx: Tx,
+    scope: PlatformScope,
+    rows: readonly MemoryRow[],
+  ): Promise<MemoryRow[]> => {
+    const sourceRefs = [
+      ...new Set(
+        rows.flatMap((row) =>
+          row.sourceKind === "manual" || !row.sourceRef ? [] : [row.sourceRef],
+        ),
+      ),
+    ];
+    if (sourceRefs.length === 0) return [...rows];
+
+    const resources = await tx
+      .select({
+        id: enterpriseResources.id,
+        kind: enterpriseResources.kind,
+        workspaceId: enterpriseResources.workspaceId,
+        visibility: enterpriseResources.visibility,
+      })
+      .from(enterpriseResources)
+      .where(
+        and(
+          eq(enterpriseResources.tenantId, scope.tenantId),
+          inArray(enterpriseResources.id, sourceRefs),
+          eq(enterpriseResources.status, "active"),
+        ),
+      );
+    const sourceById = new Map(resources.map((row) => [row.id, row]));
+
+    const grants = await tx
+      .select({ resourceId: enterpriseResourceGrants.resourceId })
+      .from(enterpriseResourceGrants)
+      .where(
+        and(
+          eq(enterpriseResourceGrants.tenantId, scope.tenantId),
+          inArray(enterpriseResourceGrants.resourceId, sourceRefs),
+          eq(enterpriseResourceGrants.principalId, scope.principalId),
+          eq(enterpriseResourceGrants.action, "read"),
+        ),
+      );
+    const grantedSources = new Set(grants.map((row) => row.resourceId));
+
+    const memberships = await tx
+      .select({
+        workspaceId: enterpriseWorkspaceMemberships.workspaceId,
+      })
+      .from(enterpriseWorkspaceMemberships)
+      .where(
+        and(
+          eq(enterpriseWorkspaceMemberships.tenantId, scope.tenantId),
+          eq(enterpriseWorkspaceMemberships.principalId, scope.principalId),
+          eq(enterpriseWorkspaceMemberships.status, "active"),
+        ),
+      );
+    const activeWorkspaces = new Set(memberships.map((row) => row.workspaceId));
+
+    return rows.filter((row) => {
+      if (row.sourceKind === "manual") return true;
+      // The row-shape CHECK makes this unreachable; fail closed if it is not.
+      if (!row.sourceRef) return false;
+      const source = sourceById.get(row.sourceRef);
+      if (!source) return false;
+      if (
+        source.kind !==
+        SOURCE_RESOURCE_KIND[
+          row.sourceKind as keyof typeof SOURCE_RESOURCE_KIND
+        ]
+      )
+        return false;
+      if (grantedSources.has(row.sourceRef)) return true;
+      return (
+        source.visibility === "workspace" &&
+        source.workspaceId === scope.workspaceId &&
+        activeWorkspaces.has(source.workspaceId)
+      );
+    });
+  };
 
   return {
     async writeMemory(scope, input) {
@@ -279,8 +432,57 @@ export function createPersonalMemoryService(channels: {
             ),
           ),
         ).limit(100);
-        return rows.map(toView);
+        // T06.04: the list is the person's own review surface, so the source
+        // locator stays visible to them — but a derived memory whose source
+        // authorization is gone is not listed either.
+        const authorized = await filterSourceAuthorized(tx, scope, rows);
+        return authorized.map(toView);
       });
+    },
+
+    async confirmMemory(scope, input) {
+      assertScopeShape(scope);
+      const memoryId = assertPlainString(input?.memoryId, "memoryId", 256);
+      return data.transaction(async (tx) => {
+        await beginContext(tx, scope);
+        await takeLocks(tx, scope);
+        // T06.04: confirmation only reaches this scope's own row — the owner
+        // triple is company + team + principal, so another team's selection
+        // cannot confirm (or widen) it.
+        const [row] = await selectOwnRows(
+          tx,
+          and(
+            ownRowsPredicate(scope),
+            eq(enterprisePersonalMemories.id, memoryId),
+          ),
+        ).limit(1);
+        if (!row) throw new Error("PERSONAL_MEMORY_NOT_FOUND");
+        // Confirmation re-derives the source authorization and changes no
+        // provenance: a revoked source cannot be re-affirmed.
+        const [authorized] = await filterSourceAuthorized(tx, scope, [row]);
+        if (!authorized) throw new Error("PERSONAL_MEMORY_SOURCE_REVOKED");
+        return toView(row);
+      });
+    },
+
+    async forgetMemory(scope, input) {
+      assertScopeShape(scope);
+      const memoryId = assertPlainString(input?.memoryId, "memoryId", 256);
+      await data.transaction(async (tx) => {
+        await beginContext(tx, scope);
+        await takeLocks(tx, scope);
+        const removed = await tx
+          .delete(enterprisePersonalMemories)
+          .where(
+            and(
+              ownRowsPredicate(scope),
+              eq(enterprisePersonalMemories.id, memoryId),
+            ),
+          )
+          .returning({ id: enterprisePersonalMemories.id });
+        if (removed.length === 0) throw new Error("PERSONAL_MEMORY_NOT_FOUND");
+      });
+      return Object.freeze({ outcome: "forgotten" as const, memoryId });
     },
 
     async listMemorySources(scope) {
@@ -398,7 +600,10 @@ export function createPersonalMemoryService(channels: {
         const rows = await selectOwnRows(tx, ownRowsPredicate(scope)).limit(
           100,
         );
-        return rows.map(toView);
+        // T06.04: the recall is per source (a revoked source's memories are
+        // gone) and the Bot view masks the private source locator.
+        const authorized = await filterSourceAuthorized(tx, scope, rows);
+        return authorized.map(toBotView);
       });
     },
   };
