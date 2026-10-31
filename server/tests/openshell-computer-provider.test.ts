@@ -483,7 +483,7 @@ describe("OpenShell gateway client sequencing", () => {
     environment: "computer",
     generation: "gen-2",
   };
-  const image = "nvcr.io/nvidia/base/ubuntu@sha256:" + "1".repeat(64);
+  const image = `nvcr.io/nvidia/base/ubuntu@sha256:${"1".repeat(64)}`;
   const ownershipLabels = {
     "managed-by": "openbot",
     tenant: scope.tenantId,
@@ -734,7 +734,7 @@ describe("OpenShell gateway dial shape", () => {
     const client = createOpenShellGatewayClient({
       endpoint: "https://127.0.0.1:1",
       workspace: "shape-check",
-      image: "nvcr.io/nvidia/base/ubuntu@sha256:" + "1".repeat(64),
+      image: `nvcr.io/nvidia/base/ubuntu@sha256:${"1".repeat(64)}`,
       caPath: "",
       certPath: "",
       keyPath: "",

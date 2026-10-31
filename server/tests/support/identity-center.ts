@@ -91,7 +91,7 @@ export async function startIdentityCenter(
     env: { ...process.env, ...(env as Record<string, string>), ...options.env },
     stdio: ["ignore", "pipe", "pipe"],
   });
-  const stop = () =>
+  const _stop = () =>
     new Promise<void>((resolve) => {
       child.once("exit", () => resolve());
       child.kill("SIGTERM");

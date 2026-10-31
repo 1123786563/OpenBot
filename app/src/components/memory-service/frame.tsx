@@ -105,7 +105,7 @@ export function MemoryServiceFrame({
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [allowedOrigin, requestId, onAuthRequired, onLoggedOut]);
+  }, [allowedOrigin, requestId, onAuthRequired, onLoggedOut, navigate]);
 
   if (authFailed || signedOut) {
     return (
