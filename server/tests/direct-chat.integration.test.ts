@@ -2424,6 +2424,27 @@ async function exerciseLearning(scheduled: boolean) {
         (await bobLearning.request(permission, grantLearning)).status,
       ).toBe(200);
 
+      const recordingOnly = await aliceLearning.request(
+        path,
+        post({ evidence: [recording] }),
+      );
+      expect(recordingOnly.status).toBe(202);
+      const recordingProposal = (await waitFor("proposed")).proposals[0];
+      expect(recordingProposal).toMatchObject({
+        state: "pending_review",
+        evidence: [{ source: recording, excerpt: "click: Open packing list" }],
+      });
+      const reviewFor = (id: string) =>
+        path.replace("/learn?", `/learn/proposals/${id}?`);
+      expect(
+        (
+          await aliceLearning.request(
+            reviewFor(recordingProposal.id),
+            post({ decision: "reject", scope }),
+          )
+        ).status,
+      ).toBe(200);
+
       const started = await aliceLearning.request(path, both);
       expect(await started.json()).toMatchObject({
         latest: { state: "running" },
@@ -2435,19 +2456,17 @@ async function exerciseLearning(scheduled: boolean) {
         evidence: [
           {
             source: recording,
-            prompt: "click: Open packing list",
-            reply: "Pack a shipment",
+            excerpt: "click: Open packing list",
+            title: "Pack a shipment",
           },
-          { source: conversation, prompt: "Bot: Check the shipping label." },
+          { source: conversation, excerpt: "Bot: Check the shipping label." },
           {
             source: directSource,
-            prompt:
+            excerpt:
               "Person: Check the address before packing.\nBot: Offline answer.",
           },
         ],
       });
-      const reviewFor = (id: string) =>
-        path.replace("/learn?", `/learn/proposals/${id}?`);
       expect(
         (await aliceLearning.request(reviewFor(mixed.id), approve)).status,
       ).toBe(200);
@@ -2469,11 +2488,19 @@ async function exerciseLearning(scheduled: boolean) {
           expect.objectContaining({
             id: mixed.id,
             state: "paused",
-            evidence: [expect.objectContaining({ source: conversation })],
+            evidence: [
+              expect.objectContaining({ source: conversation }),
+              expect.objectContaining({ source: directSource }),
+            ],
           }),
           expect.objectContaining({
             id: pending.id,
             state: "revision_required",
+          }),
+          expect.objectContaining({
+            id: recordingProposal.id,
+            state: "rejected",
+            evidence: [],
           }),
         ]),
       );
@@ -2487,11 +2514,18 @@ async function exerciseLearning(scheduled: boolean) {
         mixed.id,
       );
 
+      const memory = createMemoryStore(database);
+      const kept = await memory.create(alice.id, {
+        content: "Independently retained packing preference.",
+      });
       const deleteSource = await aliceChat.request(
         `/api/channels/${sourceChannel.id}`,
         { method: "DELETE" },
       );
       expect(deleteSource.ok).toBe(true);
+      expect(await memory.list(alice.id)).toContainEqual(
+        expect.objectContaining({ id: kept.id }),
+      );
       expect(JSON.stringify(await read())).not.toContain(
         "Check the address before packing.",
       );

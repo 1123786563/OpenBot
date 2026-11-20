@@ -411,35 +411,36 @@ export function DirectChatLearning({
                   {proposal.evidence.length === 1 ? "turn" : "turns"})
                 </summary>
                 <ol className="mt-2 space-y-3">
-                  {proposal.evidence.map(({ runId, prompt, reply, source }) => (
-                    <li
-                      key={runId}
-                      className="space-y-1 border-l pl-3 break-words"
-                    >
-                      {source ? (
-                        <>
-                          <p>
-                            <strong>
-                              {source.kind === "recording"
-                                ? "Recording"
-                                : "Conversation"}
-                            </strong>{" "}
-                            · {reply}
-                          </p>
-                          <p className="whitespace-pre-wrap">{prompt}</p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="whitespace-pre-wrap">
-                            <strong>You</strong> · {prompt}
-                          </p>
-                          <p className="whitespace-pre-wrap">
-                            <strong>Bot</strong> · {reply}
-                          </p>
-                        </>
-                      )}
-                    </li>
-                  ))}
+                  {proposal.evidence.map((item) =>
+                    "source" in item ? (
+                      <li
+                        key={`${item.source.kind}:${item.source.id}`}
+                        className="space-y-1 border-l pl-3 break-words"
+                      >
+                        <p>
+                          <strong>
+                            {item.source.kind === "recording"
+                              ? "Recording"
+                              : "Conversation"}
+                          </strong>{" "}
+                          · {item.title}
+                        </p>
+                        <p className="whitespace-pre-wrap">{item.excerpt}</p>
+                      </li>
+                    ) : (
+                      <li
+                        key={item.runId}
+                        className="space-y-1 border-l pl-3 break-words"
+                      >
+                        <p className="whitespace-pre-wrap">
+                          <strong>You</strong> · {item.prompt}
+                        </p>
+                        <p className="whitespace-pre-wrap">
+                          <strong>Bot</strong> · {item.reply}
+                        </p>
+                      </li>
+                    ),
+                  )}
                 </ol>
               </details>
               {(proposal.state === "paused" ||

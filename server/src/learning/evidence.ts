@@ -170,20 +170,21 @@ async function conversationEvidence(
       .limit(4);
     return turns.length
       ? {
-          prompt: turns
+          excerpt: turns
             .reverse()
             .map(
               ({ prompt, reply }) =>
                 `Person: ${prompt.slice(0, 300)}\nBot: ${(reply ?? "").slice(0, 300)}`,
             )
             .join("\n"),
-          reply: channel.name,
+          title: channel.name,
         }
       : null;
   }
 
   if (members.some(({ learningEvidenceAllowed }) => !learningEvidenceAllowed))
     return null;
+  // Bot replies can repeat earlier turns, including turns by a person who has left.
   const authors = await tx
     .select({ id: groupMessages.ownerUserId })
     .from(groupMessages)
@@ -211,14 +212,14 @@ async function conversationEvidence(
     .limit(8);
   if (!messages.some(({ agentId }) => agentId === scope.botId)) return null;
   return {
-    prompt: messages
+    excerpt: messages
       .reverse()
       .map(
         ({ text, agentId }) =>
           `${agentId ? "Bot" : "Person"}: ${text.slice(0, 300)}`,
       )
       .join("\n"),
-    reply: channel.name,
+    title: channel.name,
   };
 }
 
@@ -268,7 +269,7 @@ async function recordingEvidence(
     .limit(12);
   if (!steps.length) return null;
   return {
-    prompt: steps
+    excerpt: steps
       .map(({ event }) => {
         const { label, tagName, target } = event.value;
         const parsed = recordingTarget.safeParse(target).data;
@@ -284,7 +285,7 @@ async function recordingEvidence(
           : event.name;
       })
       .join("\n"),
-    reply: recording.title ?? "Recording",
+    title: recording.title ?? "Recording",
   };
 }
 
@@ -300,12 +301,11 @@ export async function readLearningSource(
       : await conversationEvidence(tx, scope, source.id, cutoff);
   if (!text) return null;
   return {
-    digest: createHash("sha256").update(JSON.stringify(text)).digest("hex"),
+    digest: createHash("sha256")
+      .update(source.kind === "recording" ? JSON.stringify(text) : text.excerpt)
+      .digest("hex"),
     evidence: {
       source: { kind: source.kind, id: source.id },
-      runId: `${source.kind}:${source.id}`,
-      userMessageId: "",
-      assistantMessageId: "",
       ...text,
     },
   };

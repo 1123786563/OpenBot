@@ -101,14 +101,20 @@ export const directChatLearning = z.object({
       review: directChatReview.nullable(),
       revisionSubmitted: z.boolean().optional(),
       evidence: z.array(
-        z.object({
-          source: learningEvidenceSelection.optional(),
-          runId: z.string(),
-          userMessageId: z.string(),
-          assistantMessageId: z.string(),
-          prompt: z.string(),
-          reply: z.string(),
-        }),
+        z.union([
+          z.object({
+            source: learningEvidenceSelection,
+            title: z.string(),
+            excerpt: z.string(),
+          }),
+          z.object({
+            runId: z.string(),
+            userMessageId: z.string(),
+            assistantMessageId: z.string(),
+            prompt: z.string(),
+            reply: z.string(),
+          }),
+        ]),
       ),
     }),
   ),
