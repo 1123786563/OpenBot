@@ -36,7 +36,7 @@ assert.equal(accepted.runId, runId);
 const deadline = Date.now() + 20_000;
 let events;
 do {
-  const response = await fetch(`http://fixture:4200/events/${encodeURIComponent(accepted.threadId)}`, { signal: AbortSignal.timeout(5_000) });
+  const response = await fetch(`http://fixture:4200/events/${encodeURIComponent(runId)}`, { signal: AbortSignal.timeout(5_000) });
   assert.equal(response.status, 200);
   events = await response.json();
   if (events.some((event) => event.type === "RUN_FINISHED" && event.runId === runId)) break;

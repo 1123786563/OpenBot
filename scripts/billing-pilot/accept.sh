@@ -23,6 +23,10 @@ mkdir -m 700 -- "$output"
 printf '%s\n' "$project" > "$output/project.txt"
 compose=(docker compose --env-file /dev/null -f "$script_dir/compose.yml" -p "$project")
 cleanup() {
+  local status=$?
+  if [[ $status != 0 ]]; then
+    "${compose[@]}" logs --no-color > "$output/failure.log" 2>&1 || true
+  fi
   "${compose[@]}" down --volumes > "$output/cleanup.log" 2>&1
 }
 trap cleanup EXIT

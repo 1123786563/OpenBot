@@ -1,4 +1,4 @@
-const eventsByTopic = new Map();
+const eventsByRun = new Map();
 const reply = "Offline pilot Bot reply.";
 
 Bun.serve({
@@ -12,8 +12,8 @@ Bun.serve({
       return new Response(null, { status: 400 });
     }
     if (path.startsWith("/events/") && method === "GET") {
-      const topic = `thread:${decodeURIComponent(path.slice("/events/".length))}`;
-      return Response.json(eventsByTopic.get(topic) ?? []);
+      const runId = decodeURIComponent(path.slice("/events/".length));
+      return Response.json(eventsByRun.get(runId) ?? []);
     }
     if (path === "/ag-ui" && method === "POST") {
       if (request.headers.get("x-openbot-agent-token") !== "pilot-offline-agent") {
@@ -55,7 +55,12 @@ Bun.serve({
       const [joinRef, ref, topic, event, payload] = JSON.parse(String(message));
       if (event === "event" || event === "events") {
         const entries = event === "event" ? [payload] : payload.events;
-        eventsByTopic.set(topic, [...(eventsByTopic.get(topic) ?? []), ...entries]);
+        for (const entry of entries) {
+          if (typeof entry.runId !== "string") continue;
+          const events = eventsByRun.get(entry.runId) ?? [];
+          events.push(entry);
+          eventsByRun.set(entry.runId, events);
+        }
       }
       socket.send(JSON.stringify([joinRef, ref, topic, "phx_reply", { status: "ok", response: {} }]));
     },
