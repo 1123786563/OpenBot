@@ -15,6 +15,7 @@ export * from "./learning";
 export * from "./lifecycle";
 export * from "./memory";
 export * from "./passwords";
+export * from "./personal-saas";
 export * from "./plugins";
 export * from "./proactive";
 export * from "./recorder";
