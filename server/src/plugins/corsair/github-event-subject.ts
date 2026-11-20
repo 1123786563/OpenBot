@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { githubId } from "./github";
 
+export const githubPilotEventType = z.enum([
+  "issues.opened",
+  "issues.closed",
+  "issue_comment.created",
+]);
+
 const subject = z.object({
   id: githubId,
   number: githubId,

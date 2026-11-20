@@ -295,7 +295,10 @@ export function createCorsairEventOperations(
     },
     async legacyDispatchable(receiptId: string) {
       const rows = await database
-        .select({ triggerId: dispatches.triggerId })
+        .select({
+          triggerId: dispatches.triggerId,
+          outcome: dispatches.outcome,
+        })
         .from(dispatches)
         .where(
           and(
@@ -303,12 +306,12 @@ export function createCorsairEventOperations(
             inArray(dispatches.outcome, ["pending", "retry", "queued"]),
           ),
         );
-      return new Set(rows.map((row) => row.triggerId));
+      return new Map(rows.map((row) => [row.triggerId, row.outcome]));
     },
     async finishLegacy(
       receiptId: string,
       triggerId: string,
-      result: DeliveryOutcome,
+      result: DeliveryOutcome | { status: "review"; reason: string },
     ) {
       const runId = result.status === "queued" ? result.runIds[0] : undefined;
       await database.transaction(async (tx) => {
@@ -329,7 +332,7 @@ export function createCorsairEventOperations(
           .set({
             outcome: runId
               ? "queued"
-              : result.status === "queued"
+              : result.status === "queued" || result.status === "review"
                 ? "review"
                 : "ineligible",
             runId,

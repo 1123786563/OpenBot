@@ -29,11 +29,7 @@ const headers = z.object({
   event: z.string().regex(/^[a-z_]{1,64}$/),
 });
 
-export const githubPilotEventType = z.enum([
-  "issues.opened",
-  "issues.closed",
-  "issue_comment.created",
-]);
+export { githubPilotEventType } from "./github-event-subject";
 
 export type GithubEventScope = { workspaceId: string; registration: string };
 

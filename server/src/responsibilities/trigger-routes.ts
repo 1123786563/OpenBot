@@ -17,7 +17,10 @@ import { bodyLimit } from "hono/body-limit";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { CorsairEventOperations } from "../plugins/corsair/event-operations";
 import { githubId } from "../plugins/corsair/github";
-import { githubEventSubject } from "../plugins/corsair/github-event-subject";
+import {
+  githubEventSubject,
+  githubPilotEventType,
+} from "../plugins/corsair/github-event-subject";
 import {
   linearTimestampFresh,
   verifyBearer,
@@ -325,11 +328,10 @@ export function createTriggerIngressRoutes(deps: TriggerIngressDeps) {
             reason: "Corsair owns this source.",
           });
         if (receipt && deps.corsairEvents) {
-          if (
-            !(await deps.corsairEvents.legacyDispatchable(receipt.id)).has(
-              trigger.id,
-            )
-          )
+          const state = (
+            await deps.corsairEvents.legacyDispatchable(receipt.id)
+          ).get(trigger.id);
+          if (!state)
             return context.json({
               accepted: true,
               queued: false,
@@ -346,6 +348,24 @@ export function createTriggerIngressRoutes(deps: TriggerIngressDeps) {
               outcome,
             );
             return context.json(outcomeBody(outcome));
+          }
+          if (
+            state !== "queued" &&
+            githubPilotEventType.safeParse(eventType).success &&
+            (!occurredAt ||
+              (await deps.corsairEvents.requiresReplayEvidence(
+                receipt.id,
+                trigger.id,
+                occurredAt,
+                new Date(now()),
+              )))
+          ) {
+            const reason = "Historical Trigger eligibility requires review.";
+            await deps.corsairEvents.finishLegacy(receipt.id, trigger.id, {
+              status: "review",
+              reason,
+            });
+            return context.json({ accepted: true, queued: false, reason });
           }
         }
         return deliver(
