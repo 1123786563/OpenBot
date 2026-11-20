@@ -8,7 +8,7 @@ import {
   type ApprovalRecord,
   currentApprovalContext,
 } from "../../../approvals/types";
-import { recordAuditEvent, type AuditEventInput } from "../../../audit";
+import { type AuditEventInput, recordAuditEvent } from "../../../audit";
 import {
   githubPilotEventOutcomes,
   responsibilities,
@@ -22,6 +22,7 @@ import {
   GITHUB_EVENT_ACCESS_ENDED,
   githubQueuedRunAuthorization,
 } from "../event-run-access";
+import { dispatchWhileConnected, RevocationRefusal } from "../revocation";
 import { SlackPilotRefusal } from "./accounts";
 import {
   createSlackWriteAccess,
@@ -183,18 +184,24 @@ export function createSlackGoalAction(
           const input = { ...pinned.data, ...args.data, botId: action.botId };
           const timestamp = await (async () => {
             const actor = await actorFor(owner);
-            const { token, userId } = await access.verifiedTarget(
+            const { token, userId, revision } = await access.verifiedTarget(
               actor,
               input,
               action,
             );
-            return provider.findGoalMessage({
-              token,
-              userId,
-              channel: input.channelId,
-              delivery: approvalId,
-              startedAt,
-            });
+            return dispatchWhileConnected(
+              database,
+              input.connectionId,
+              revision,
+              () =>
+                provider.findGoalMessage({
+                  token,
+                  userId,
+                  channel: input.channelId,
+                  delivery: approvalId,
+                  startedAt,
+                }),
+            );
           })().catch(() => undefined);
           if (timestamp) return confirmed(input.channelId, timestamp, true);
         }
@@ -245,7 +252,7 @@ export function createSlackGoalAction(
           });
           if (source.kind === "denied")
             throw new SlackPilotRefusal(GITHUB_EVENT_ACCESS_ENDED, 403);
-          const { token, userId } = await access.verifiedTarget(
+          const { token, userId, revision } = await access.verifiedTarget(
             actor,
             input,
             action,
@@ -259,7 +266,13 @@ export function createSlackGoalAction(
             action.actionDigest,
             async (tx) => {
               // Use the same local source lock as queued Run authorization.
-              if (!(await source.check(tx, source.origin.outcome.triggerId, owner)))
+              if (
+                !(await source.check(
+                  tx,
+                  source.origin.outcome.triggerId,
+                  owner,
+                ))
+              )
                 throw new SlackPilotRefusal(GITHUB_EVENT_ACCESS_ENDED, 403);
               const [goal] = await tx
                 .select({ id: responsibilities.id })
@@ -293,19 +306,32 @@ export function createSlackGoalAction(
           await log("corsair.slack.write_started");
           let message: Awaited<ReturnType<typeof provider.postMessage>>;
           try {
-            message = await provider.postMessage({
-              token,
-              userId,
-              channel: input.channelId,
-              text,
-              delivery: approvalId,
-            });
-          } catch {
+            message = await dispatchWhileConnected(
+              database,
+              input.connectionId,
+              revision,
+              () =>
+                provider.postMessage({
+                  token,
+                  userId,
+                  channel: input.channelId,
+                  text,
+                  delivery: approvalId,
+                }),
+            );
+          } catch (error) {
+            if (error instanceof RevocationRefusal) throw error;
             return reconcile(startedAt);
           }
           return confirmed(message.channel, message.timestamp);
         } catch (error) {
-          if (!(error instanceof SlackPilotRefusal)) throw error;
+          if (
+            !(
+              error instanceof SlackPilotRefusal ||
+              error instanceof RevocationRefusal
+            )
+          )
+            throw error;
           await log("corsair.slack.write_refused", { reason: error.message });
           return { content: error.message, error: error.message };
         }

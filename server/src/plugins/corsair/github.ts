@@ -128,6 +128,37 @@ export function createGithubPilotProvider(
         expiresAt: new Date(Date.now() + token.expires_in * 1000),
       };
     },
+    async revokeAccess(token: string) {
+      const response = await transport(
+        `https://api.github.com/applications/${encodeURIComponent(clientId)}/token`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+            Accept: "application/vnd.github+json",
+            "Content-Type": "application/json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "OpenBot",
+          },
+          body: JSON.stringify({ access_token: token }),
+          redirect: "error",
+          signal: AbortSignal.timeout(10_000),
+        },
+      );
+      if (response.status === 204) return true;
+      // An earlier deletion can succeed even if its response never reached OpenBot.
+      const probe = await transport("https://api.github.com/user", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": "OpenBot",
+        },
+        redirect: "error",
+        signal: AbortSignal.timeout(10_000),
+      });
+      return probe.status === 401;
+    },
     identity(token: string) {
       return githubApi("/user", token, githubIdentity);
     },

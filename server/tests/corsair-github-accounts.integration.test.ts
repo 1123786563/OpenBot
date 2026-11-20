@@ -97,6 +97,9 @@ async function fixture() {
           ? new Date(expiresAt.getTime() + 3_600_000)
           : expiresAt,
     }),
+    revokeAccess: async () => {
+      throw new Error("Unexpected GitHub revocation");
+    },
     identity: async (token) => identity(token),
     repository: async () => ({
       id: 23,

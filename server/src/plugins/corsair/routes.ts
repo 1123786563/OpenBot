@@ -23,10 +23,21 @@ import {
   githubPilotRepositories,
   githubPilotStates,
 } from "../../db/schema/corsair";
+import { corsairAccounts } from "../../db/schema/corsair-storage";
 import { brokeredAccounts, pluginGrants } from "../../db/schema/plugins";
 import { type GithubPilotProvider, githubId } from "./github";
 import { corsairGrantRef } from "./grants";
 import type { VerifiedLegacyGithubDefault } from "./legacy-defaults";
+
+import {
+  canReconnect,
+  clearRevocation,
+  createRevocation,
+  derivedAccountKeys,
+  dispatchWhileConnected,
+  personalRevocationRoutes,
+  RevocationRefusal,
+} from "./revocation";
 
 const tool = {
   ref: "corsair/github.create_issue",
@@ -106,7 +117,7 @@ export function createGithubPilotRoutes({
     await next();
   });
   routes.onError((error, context) => {
-    if (error instanceof PilotRefusal)
+    if (error instanceof PilotRefusal || error instanceof RevocationRefusal)
       return context.json({ error: error.message }, error.status);
     if (error instanceof ApprovalNotFoundError)
       return context.json({ error: "Approval unavailable." }, 404);
@@ -122,6 +133,27 @@ export function createGithubPilotRoutes({
       500,
     );
   });
+
+  routes.route(
+    "/connections",
+    personalRevocationRoutes(
+      createRevocation({
+        database,
+        clock,
+        async verify(account, capability) {
+          if (capability === "refresh" || !account.credential) return false;
+          return provider.revokeAccess(
+            await decryptSecret(encryptionKey, account.credential),
+          );
+        },
+      }),
+      and(
+        eq(corsairAccounts.kind, "github-personal"),
+        eq(corsairAccounts.workspaceId, workspaceId),
+        eq(corsairAccounts.registration, registration),
+      ),
+    ),
+  );
 
   const connectionScope = (personId: string) =>
     and(
@@ -216,14 +248,25 @@ export function createGithubPilotRoutes({
     const connection = await credential(personId, connectionId);
     try {
       const token = await decryptSecret(encryptionKey, connection.credential);
-      const identity = await provider.identity(token);
+      const identity = await dispatchWhileConnected(
+        database,
+        connection.id,
+        connection.revision,
+        () => provider.identity(token),
+      );
       if (String(identity.id) !== connection.githubUserId)
         throw new Error("GitHub identity changed.");
-      const repo = await provider.repository({
-        token,
-        installationId,
-        repositoryId,
-      });
+      const repo = await dispatchWhileConnected(
+        database,
+        connection.id,
+        connection.revision,
+        () =>
+          provider.repository({
+            token,
+            installationId,
+            repositoryId,
+          }),
+      );
       return { connection, token, repo };
     } catch {
       throw new PilotRefusal(
@@ -283,7 +326,10 @@ export function createGithubPilotRoutes({
           gt(githubPilotStates.expiresAt, clock()),
         ),
       )
-      .returning({ verifier: githubPilotStates.verifier });
+      .returning({
+        verifier: githubPilotStates.verifier,
+        expiresAt: githubPilotStates.expiresAt,
+      });
     if (!pending)
       throw new PilotRefusal(
         "This authorization attempt is invalid, expired, or already used.",
@@ -303,7 +349,7 @@ export function createGithubPilotRoutes({
     }
     const { token, identity, expiresAt } = verified;
     const update = {
-      login: identity.login,
+      label: identity.login,
       credential: await encryptSecret(encryptionKey, token),
       expiresAt,
       revision: randomUUID(),
@@ -320,27 +366,37 @@ export function createGithubPilotRoutes({
     const { connection, inheritedFrom } = await database.transaction(
       async (tx) => {
         const [connection] = await tx
-          .insert(githubPilotConnections)
+          .insert(corsairAccounts)
           .values({
+            ...derivedAccountKeys,
+            kind: "github-personal",
+            subjectScope: "",
             workspaceId,
             registration,
             personId,
-            githubUserId,
+            userId: githubUserId,
             ...update,
           })
           .onConflictDoUpdate({
             target: [
-              githubPilotConnections.storageKind,
-              githubPilotConnections.subjectScope,
-              githubPilotConnections.workspaceId,
-              githubPilotConnections.personId,
-              githubPilotConnections.registration,
-              githubPilotConnections.githubUserId,
+              corsairAccounts.kind,
+              corsairAccounts.workspaceId,
+              corsairAccounts.registration,
+              corsairAccounts.personId,
+              corsairAccounts.subjectScope,
+              corsairAccounts.userId,
             ],
-            set: update,
+            set: { ...update, config: clearRevocation },
+            setWhere: canReconnect(
+              new Date(pending.expiresAt.getTime() - 600_000),
+            ),
           })
-          .returning(publicIdentity);
-        if (!connection) throw new Error("Connection was not saved.");
+          .returning({ id: corsairAccounts.id });
+        if (!connection)
+          throw new PilotRefusal(
+            "Finish the pending revocation before reconnecting.",
+            409,
+          );
         if (conflictingEvidence || evidence?.githubUserId !== identity.id)
           return { connection };
         const [legacy] = await tx
@@ -759,15 +815,33 @@ export function createGithubPilotRoutes({
     await trail("corsair.github.write_started", evidence);
     let result: Awaited<ReturnType<GithubPilotProvider["createIssue"]>>;
     try {
-      result = await provider.createIssue({
-        token: verified.token,
-        repositoryNodeId: verified.repo.node_id,
-        title: input.title,
-        body: input.body,
-      });
+      result = await dispatchWhileConnected(
+        database,
+        verified.connection.id,
+        verified.connection.revision,
+        () =>
+          provider.createIssue({
+            token: verified.token,
+            repositoryNodeId: verified.repo.node_id,
+            title: input.title,
+            body: input.body,
+          }),
+      );
       if (String(result.user.id) !== verified.connection.githubUserId)
         throw new Error("GitHub returned an unexpected operator.");
-    } catch {
+    } catch (error) {
+      if (error instanceof RevocationRefusal) {
+        await trail("corsair.github.write_refused", {
+          ...evidence,
+          reason: error.message,
+        });
+        await approvals.saveResult(actor.id, approvalId, {
+          content: error.message,
+          error: error.message,
+        });
+        await approvals.finish(actor.id, approvalId);
+        throw error;
+      }
       const reason =
         "GitHub did not confirm the write and its operator. Check the repository before requesting another Approval.";
       await trail("corsair.github.write_unconfirmed", evidence);

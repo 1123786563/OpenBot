@@ -8,6 +8,11 @@ import {
 import { type AuditEventInput, recordAuditEvent } from "../../../audit";
 import { type AppVariables, requireAdmin } from "../../../auth/guards";
 import { pluginGrants as grants } from "../../../db/schema/plugins";
+import {
+  dispatchWhileConnected,
+  personalRevocationRoutes,
+  RevocationRefusal,
+} from "../revocation";
 import { SlackPilotRefusal } from "./accounts";
 import { slackChannel } from "./provider";
 
@@ -59,7 +64,10 @@ export function createSlackPilotRoutes({
     await next();
   });
   routes.onError((error, c) => {
-    if (error instanceof SlackPilotRefusal)
+    if (
+      error instanceof SlackPilotRefusal ||
+      error instanceof RevocationRefusal
+    )
       return c.json({ error: error.message }, error.status);
     if (error instanceof ApprovalNotFoundError)
       return c.json({ error: "Approval unavailable." }, 404);
@@ -86,6 +94,11 @@ export function createSlackPilotRoutes({
       targetId,
       payload: { workspaceId, registration, ...payload },
     });
+
+  routes.route(
+    "/connections",
+    personalRevocationRoutes(accounts.revocation, accounts.revocationScope),
+  );
 
   routes.post("/connect", async (c) =>
     c.json({ authorizationUrl: await accounts.start(c.var.actor.id) }, 201),
@@ -237,7 +250,7 @@ export function createSlackPilotRoutes({
         target: record.action.target,
         ...details,
       });
-    let token: string;
+    let target: Awaited<ReturnType<typeof verifiedTarget>>;
     try {
       if (record.status !== "approved" || record.decision !== "allow_once")
         throw new SlackPilotRefusal(
@@ -252,7 +265,7 @@ export function createSlackPilotRoutes({
           "The Slack Connection no longer matches its Approval.",
           409,
         );
-      ({ token } = await verifiedTarget(actor, input, record.action));
+      target = await verifiedTarget(actor, input, record.action);
       await checkBinding(actor, input, record.action);
       if (
         !(await approvals.consume(
@@ -277,13 +290,28 @@ export function createSlackPilotRoutes({
     await log("corsair.slack.write_started");
     let message: Awaited<ReturnType<typeof provider.postMessage>>;
     try {
-      message = await provider.postMessage({
-        token,
-        channel: input.channelId,
-        text: input.text,
-        userId: pinned.userId,
-      });
-    } catch {
+      message = await dispatchWhileConnected(
+        database,
+        input.connectionId,
+        target.revision,
+        () =>
+          provider.postMessage({
+            token: target.token,
+            channel: input.channelId,
+            text: input.text,
+            userId: pinned.userId,
+          }),
+      );
+    } catch (error) {
+      if (error instanceof RevocationRefusal) {
+        await log("corsair.slack.write_refused", { reason: error.message });
+        await approvals.saveResult(actor.id, approvalId, {
+          content: error.message,
+          error: error.message,
+        });
+        await approvals.finish(actor.id, approvalId);
+        throw error;
+      }
       const reason =
         "Slack did not confirm the channel and user for this write. Check Slack before requesting another Approval.";
       await log("corsair.slack.write_unconfirmed");

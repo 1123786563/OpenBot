@@ -12,6 +12,7 @@ import {
 import { responsibilities } from "../../db/schema/responsibilities";
 import { type GithubEventScope, githubPilotEventType } from "./event-ingress";
 import { githubId } from "./github";
+import { dispatchWhileConnected, RevocationRefusal } from "./revocation";
 
 export type EventTransaction = Parameters<
   Parameters<Database["transaction"]>[0]
@@ -111,14 +112,25 @@ export function createGithubEventTriggers({
     record: NonNullable<Awaited<ReturnType<typeof local>>>,
   ): Promise<GithubReadAccess> {
     try {
-      return await checkRepository({
-        token: await decryptSecret(encryptionKey, record.connection.credential),
-        userId: record.connection.githubUserId,
-        installationId: record.repository.installationId,
-        repositoryId: record.repository.repositoryId,
-        nodeId: record.repository.nodeId,
-      });
-    } catch {
+      const token = await decryptSecret(
+        encryptionKey,
+        record.connection.credential,
+      );
+      return await dispatchWhileConnected(
+        database,
+        record.connection.id,
+        record.connection.revision,
+        () =>
+          checkRepository({
+            token,
+            userId: record.connection.githubUserId,
+            installationId: record.repository.installationId,
+            repositoryId: record.repository.repositoryId,
+            nodeId: record.repository.nodeId,
+          }),
+      );
+    } catch (error) {
+      if (error instanceof RevocationRefusal) return "denied";
       return "retry";
     }
   }

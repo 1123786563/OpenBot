@@ -9,7 +9,8 @@ import type { AuditStore } from "../../../audit";
 import type { AppVariables } from "../../../auth/guards";
 import { pluginGrants as grants } from "../../../db/schema/plugins";
 import { corsairGrantRef } from "../grants";
-import { slackAccounts, SlackPilotRefusal } from "./accounts";
+import { dispatchWhileConnected } from "../revocation";
+import { SlackPilotRefusal, slackAccounts } from "./accounts";
 import { SlackWritePermissionUnavailable, slackChannel } from "./provider";
 
 export const tool = {
@@ -155,12 +156,18 @@ export function createSlackWriteAccess({
       connection.revision,
     );
     try {
-      await provider.checkChannel({
-        token,
-        channelId: input.channelId,
-        userId: connection.userId,
-        verifyWriteScope,
-      });
+      await dispatchWhileConnected(
+        database,
+        connection.id,
+        connection.revision,
+        () =>
+          provider.checkChannel({
+            token,
+            channelId: input.channelId,
+            userId: connection.userId,
+            verifyWriteScope,
+          }),
+      );
     } catch (error) {
       if (error instanceof SlackWritePermissionUnavailable)
         throw new SlackPilotRefusal(
@@ -172,7 +179,7 @@ export function createSlackWriteAccess({
         403,
       );
     }
-    return { token, userId: connection.userId };
+    return { token, userId: connection.userId, revision: connection.revision };
   }
 
   async function checkBinding(

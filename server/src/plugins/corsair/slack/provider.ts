@@ -1,5 +1,6 @@
 import { createCorsair } from "corsair";
 import { z } from "zod";
+import { revokeSlackToken } from "./revoke-token";
 
 export const slackTeam = z.string().regex(/^T[A-Z0-9]+$/);
 const enterprise = z.string().regex(/^E[A-Z0-9]+$/);
@@ -153,6 +154,7 @@ export function createSlackPilotProvider(
   return {
     subjectScope,
     teamId,
+    revoke: (token: string) => revokeSlackToken(transport, token),
     authorizationUrl(state: string) {
       const url = new URL("https://slack.com/oauth/v2/authorize");
       url.search = new URLSearchParams({

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import type { BotAccessCheck } from "../../../agents/profile-policy";
@@ -20,6 +20,7 @@ import {
   slackSharedBotAccess as access,
   slackSharedInstallations as installations,
 } from "../../../db/schema/corsair-slack";
+import { corsairAccounts as accounts } from "../../../db/schema/corsair-storage";
 import {
   responsibilities,
   responsibilityEvents,
@@ -32,6 +33,12 @@ import {
   SHARED_AUDIENCES,
 } from "../../shared-use";
 import type { SharedUseStore } from "../../shared-use-store";
+import {
+  createRevocation,
+  dispatchWhileConnected,
+  RevocationRefusal,
+  revocationState,
+} from "../revocation";
 import { slackChannel } from "./provider";
 import {
   type SharedSlackProvider,
@@ -131,7 +138,10 @@ export function createSharedSlackPilot({
     await next();
   });
   routes.onError((error, c) => {
-    if (error instanceof SharedSlackRefusal)
+    if (
+      error instanceof SharedSlackRefusal ||
+      error instanceof RevocationRefusal
+    )
       return c.json({ error: error.message }, error.status);
     if (error instanceof ApprovalNotFoundError)
       return c.json({ error: "Approval unavailable." }, 404);
@@ -145,6 +155,71 @@ export function createSharedSlackPilot({
     );
   });
   const workspace = eq(installations.workspaceId, workspaceId);
+  const sharedAccount = and(
+    eq(accounts.kind, "slack-shared"),
+    eq(accounts.sharedWorkspaceId, workspaceId),
+  );
+  type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+  // Shared enrollments and impact confirmation must see the same set of installations.
+  const lockEnrollments = (tx: Transaction) =>
+    tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext('openbot.corsair.slack.shared-enrollment'))`,
+    );
+  const revocation = createRevocation({
+    database,
+    refreshApplicable: false,
+    verify: (row) =>
+      matches(row) ? provider.revoke() : Promise.resolve(false),
+  });
+
+  async function affectedAccounts(
+    row: typeof accounts.$inferSelect,
+    tx?: Transaction,
+  ) {
+    const { appId, teamId, botId, botUserId } = row;
+    if (!appId || !teamId || !botId || !botUserId)
+      throw new RevocationRefusal(
+        "The Slack installation identity is unavailable.",
+        409,
+      );
+    const query = (tx ?? database)
+      .select()
+      .from(accounts)
+      .where(
+        and(
+          eq(accounts.kind, "slack-shared"),
+          eq(accounts.appId, appId),
+          eq(accounts.teamId, teamId),
+          eq(accounts.botId, botId),
+          eq(accounts.botUserId, botUserId),
+        ),
+      )
+      .orderBy(accounts.id);
+    return tx ? query.for("update") : query;
+  }
+
+  function impact(rows: Awaited<ReturnType<typeof affectedAccounts>>) {
+    const installations = rows.map((row) => ({
+      installationId: row.id,
+      workspaceId: row.sharedWorkspaceId,
+      channelIds: row.channelIds,
+      status: revocationState(row.config).status,
+    }));
+    const confirmation = createHash("sha256")
+      .update(
+        JSON.stringify(
+          rows.map(({ id, revision, channelIds, config }) => [
+            id,
+            revision,
+            channelIds,
+            revocationState(config).status,
+          ]),
+        ),
+      )
+      .digest("hex");
+    return { installations, confirmation };
+  }
+
   async function installation() {
     const [record] = await database
       .select()
@@ -167,7 +242,12 @@ export function createSharedSlackPilot({
   }: typeof installations.$inferSelect) {
     return { id, channelIds, identity: { appId, teamId, botId, botUserId } };
   }
-  function matches(record: typeof installations.$inferSelect) {
+  function matches(
+    record: Pick<
+      typeof accounts.$inferSelect,
+      "appId" | "teamId" | "botId" | "botUserId"
+    >,
+  ) {
     const { appId, teamId, botId, botUserId } = provider.identity;
     return (
       record.appId === appId &&
@@ -178,7 +258,15 @@ export function createSharedSlackPilot({
   }
   routes.get("/installation", async (c) => {
     const forbidden = requireAdmin(c);
-    return forbidden ?? c.json(view(await installation()));
+    if (forbidden) return forbidden;
+    const row = await revocation.find(sharedAccount);
+    const { id, channelIds, appId, teamId, botId, botUserId } = row;
+    return c.json({
+      id,
+      channelIds,
+      identity: { appId, teamId, botId, botUserId },
+      revocation: revocationState(row.config),
+    });
   });
   routes.put("/installation", async (c) => {
     const forbidden = requireAdmin(c);
@@ -198,6 +286,22 @@ export function createSharedSlackPilot({
       );
     }
     const record = await database.transaction(async (tx) => {
+      await lockEnrollments(tx);
+      const [prior] = await tx
+        .select()
+        .from(accounts)
+        .where(sharedAccount)
+        .for("update");
+      if (prior) {
+        const state = revocationState(prior.config);
+        if (state.status === "pending")
+          throw new RevocationRefusal(
+            "Finish the pending installation revocation before enrolling.",
+            409,
+          );
+        if (state.status === "revoked")
+          await tx.delete(accounts).where(eq(accounts.id, prior.id));
+      }
       const values = { workspaceId, ...provider.identity, channelIds };
       const [inserted] = await tx
         .insert(installations)
@@ -260,16 +364,58 @@ export function createSharedSlackPilot({
   routes.delete("/installation", async (c) => {
     const forbidden = requireAdmin(c);
     if (forbidden) return forbidden;
-    await database.delete(installations).where(workspace);
-    await trail(
-      c.var.actor,
-      "corsair.slack.shared_enrollment_changed",
-      "workspace",
-      workspaceId,
-      { removed: true },
-    );
-    return c.body(null, 204);
+    return c.json(await revocation.disconnect(sharedAccount, c.var.actor.id));
   });
+
+  routes.get("/installation/revocation/impact", async (c) => {
+    const forbidden = requireAdmin(c);
+    if (forbidden) return forbidden;
+    const row = await revocation.find(sharedAccount);
+    return c.json(impact(await affectedAccounts(row)));
+  });
+
+  routes.post("/installation/revocation", async (c) => {
+    const forbidden = requireAdmin(c);
+    if (forbidden) return forbidden;
+    const { confirmation } = z
+      .strictObject({
+        confirmation: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .parse(await c.req.json());
+    const current = await revocation.find(sharedAccount);
+    return c.json(
+      await revocation.retry(
+        and(sharedAccount, eq(accounts.id, current.id)),
+        c.var.actor.id,
+        async (tx) => {
+          await lockEnrollments(tx);
+          const rows = await affectedAccounts(current, tx);
+          if (
+            !rows.some(({ id }) => id === current.id) ||
+            impact(rows).confirmation !== confirmation
+          )
+            throw new RevocationRefusal(
+              "The installation impact changed. Review it again.",
+              409,
+            );
+          return rows;
+        },
+      ),
+    );
+  });
+
+  routes.put("/installation/revocation/evidence", async (c) => {
+    const forbidden = requireAdmin(c);
+    if (forbidden) return forbidden;
+    return c.json(
+      await revocation.recordManualEvidence(
+        sharedAccount,
+        c.var.actor.id,
+        revocation.manualEvidence.parse(await c.req.json()),
+      ),
+    );
+  });
+
   const held = (installationId: string, bot: string) =>
     and(eq(access.installationId, installationId), eq(access.botId, bot));
   async function setBotAccess(
@@ -586,8 +732,18 @@ export function createSharedSlackPilot({
         );
       await checkBinding();
       try {
-        await provider.verifyIdentity();
-        await provider.checkChannel(input.channelId);
+        await dispatchWhileConnected(
+          database,
+          pinned.installationId,
+          undefined,
+          () => provider.verifyIdentity(),
+        );
+        await dispatchWhileConnected(
+          database,
+          pinned.installationId,
+          undefined,
+          () => provider.checkChannel(input.channelId),
+        );
       } catch {
         throw new SharedSlackRefusal(
           "Slack could not verify the Bot identity and channel membership.",
@@ -605,9 +761,24 @@ export function createSharedSlackPilot({
       throw error;
     }
     await log("corsair.slack.write_started");
-    const message = await provider
-      .postMessage({ channel: input.channelId, text: input.text })
-      .catch(() => null);
+    const message = await dispatchWhileConnected(
+      database,
+      pinned.installationId,
+      undefined,
+      () =>
+        provider
+          .postMessage({ channel: input.channelId, text: input.text })
+          .catch(() => null),
+    ).catch(async (error: unknown) => {
+      if (!(error instanceof RevocationRefusal)) throw error;
+      await log("corsair.slack.write_refused", { reason: error.message });
+      await approvals.saveResult(actor.id, approvalId, {
+        content: error.message,
+        error: error.message,
+      });
+      await approvals.finish(actor.id, approvalId);
+      throw error;
+    });
     if (!message) {
       const error =
         "Slack did not confirm this write. Check Slack before requesting another Approval.";
