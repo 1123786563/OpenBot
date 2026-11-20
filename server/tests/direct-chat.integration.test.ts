@@ -408,7 +408,14 @@ test("a disconnected direct chat resumes after its last delivered event", async 
     );
     expect(replay.status).toBe(200);
     expect(header?.[1]).toBe("1");
-    expect(events(await replay.text()).map((event) => event.type)).toEqual([
+    const replayed = await replay.text();
+    expect(replayed.match(/^id: (\d+)$/gm)).toEqual([
+      "id: 2",
+      "id: 3",
+      "id: 4",
+      "id: 5",
+    ]);
+    expect(events(replayed).map((event) => event.type)).toEqual([
       EventType.TEXT_MESSAGE_START,
       EventType.TEXT_MESSAGE_CONTENT,
       EventType.TEXT_MESSAGE_END,
@@ -594,5 +601,64 @@ test("expired replay uses an authorized snapshot boundary and retains history an
     await database.delete(agents).where(eq(agents.id, bot.id));
     await database.delete(users).where(eq(users.id, actor.id));
     await database.delete(users).where(eq(users.id, stranger.id));
+  }
+});
+
+test("an open replay stream closes when the reader loses access", async () => {
+  const actor = await person();
+  const bot = await profiles.create(actor, {
+    name: "Replay authorization Bot",
+    title: "Bot",
+    roleDescription: "Answers locally.",
+    visibility: "private",
+  });
+  const release = Promise.withResolvers<void>();
+  const app = web(database, actor, bot.id, () => release.promise);
+  const { channel } = await (
+    await app.request("/api/channels", post({ agentIds: [bot.id] }))
+  ).json();
+  const key = { threadId: channel.threadId, runId: crypto.randomUUID() };
+  const base = `/api/copilotkit/agent/${bot.id}`;
+  try {
+    const first = await app.request(
+      `${base}/run`,
+      post({
+        ...key,
+        messages: [{ role: "user", id: "prompt", content: "Hello" }],
+      }),
+    );
+    const reader = first.body?.getReader();
+    if (!reader) throw new Error("Missing Run stream");
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain(
+      "id: 1\n",
+    );
+    await reader.cancel();
+
+    const resumed = await app.request(
+      `${base}/resume`,
+      post({ ...key, cursor: 1 }),
+    );
+    expect(resumed.status).toBe(200);
+
+    await database
+      .delete(channelMemberships)
+      .where(
+        and(
+          eq(channelMemberships.channelId, channel.id),
+          eq(channelMemberships.userId, actor.id),
+        ),
+      );
+    release.resolve();
+    expect(events(await resumed.text())).toEqual([
+      {
+        type: EventType.RUN_ERROR,
+        message: "The Bot run is unavailable.",
+      },
+    ]);
+  } finally {
+    release.resolve();
+    await database.delete(channels).where(eq(channels.id, channel.id));
+    await database.delete(agents).where(eq(agents.id, bot.id));
+    await database.delete(users).where(eq(users.id, actor.id));
   }
 });
