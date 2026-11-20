@@ -1,5 +1,6 @@
 import type { Message } from "@ag-ui/core";
 import { MessageSchema } from "@ag-ui/core/schemas";
+import { z } from "zod";
 import { tryClient } from "@/lib/client";
 
 /**
@@ -40,8 +41,24 @@ import { tryClient } from "@/lib/client";
  * worse than a visible failure — it is a conversation that reads as though it never had that message,
  * with nothing to say otherwise. The caller is expected to say so on screen.
  */
+const storedRuns = z.array(
+  z.object({
+    id: z.string(),
+    userMessageId: z.string(),
+    status: z.enum(["running", "completed", "failed"]),
+    waitingForApproval: z.boolean().optional(),
+    externalOutcome: z
+      .enum(["dispatching", "unknown", "executed", "not_dispatched"])
+      .optional(),
+    stopReason: z.enum(["stopped", "access_revoked"]).optional(),
+  }),
+);
+
+export type StoredRun = z.infer<typeof storedRuns>[number];
+
 export type StoredThread = {
   messages: Message[];
+  runs?: StoredRun[];
   /** Zero on every ordinary read. Above zero means the history store holds something unreadable. */
   unreadable: number;
   /**
@@ -244,6 +261,28 @@ function argumentsOf(args: unknown): string {
   }
 }
 
+function threadPath(threadId: string) {
+  return `/api/copilotkit/threads/${encodeURIComponent(threadId)}`;
+}
+
+export async function controlThreadRun({
+  threadId,
+  agentId,
+  runId,
+  action,
+}: {
+  threadId: string;
+  agentId: string;
+  runId: string;
+  action: "stop" | "reconcile";
+}) {
+  const response = await tryClient(
+    `${threadPath(threadId)}/runs/${encodeURIComponent(runId)}/${action}?agentId=${encodeURIComponent(agentId)}`,
+    { method: "POST", signal: AbortSignal.timeout(10_000) },
+  );
+  if (!response.ok) throw new Error("The conversation run is unavailable.");
+}
+
 export async function readThreadMessages(
   threadId: string,
   agentId: string,
@@ -256,7 +295,7 @@ export async function readThreadMessages(
   try {
     const read = async () => {
       const response = await tryClient(
-        `/api/copilotkit/threads/${encodeURIComponent(threadId)}/messages?agentId=${encodeURIComponent(agentId)}`,
+        `${threadPath(threadId)}/messages?agentId=${encodeURIComponent(agentId)}`,
         { signal: controller.signal },
       );
       if (!response.ok) return UNAVAILABLE_THREAD;
@@ -265,7 +304,14 @@ export async function readThreadMessages(
         typeof body === "object" && body !== null && "messages" in body
           ? body.messages
           : null;
-      return Array.isArray(stored) ? readableTurns(stored) : UNAVAILABLE_THREAD;
+      if (!Array.isArray(stored)) return UNAVAILABLE_THREAD;
+      const thread = readableTurns(stored);
+      const runs = storedRuns.safeParse(
+        typeof body === "object" && body !== null && "runs" in body
+          ? body.runs
+          : undefined,
+      );
+      return runs.success ? { ...thread, runs: runs.data } : thread;
     };
 
     const deadline = new Promise<StoredThread>((resolve) => {
