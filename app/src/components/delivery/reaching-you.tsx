@@ -9,15 +9,17 @@ import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment, useEffect, useId, useState } from "react";
 import {
+  ConnectionAction,
+  ConnectionDialogContent,
+} from "@/components/connections/connection-surface";
+import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogBody,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -216,14 +218,13 @@ export function ReachingYou({ agentId: fixedBot }: { agentId?: string }) {
                       </ItemDescription>
                     </ItemContent>
                     <ItemActions>
-                      <Button
+                      <ConnectionAction
                         disabled={remove.isPending}
                         onClick={() => remove.mutate(binding.id)}
-                        size="sm"
                         variant="outline"
                       >
                         Disconnect
-                      </Button>
+                      </ConnectionAction>
                     </ItemActions>
                   </Item>
                 </Fragment>
@@ -359,7 +360,7 @@ function ConnectDialog({
 
   return (
     <Dialog onOpenChange={(next) => !next && onClose()} open>
-      <DialogContent>
+      <ConnectionDialogContent>
         <DialogHeader>
           <DialogTitle>{TRANSPORT[transport].link}</DialogTitle>
           <DialogDescription>
@@ -423,14 +424,13 @@ function ConnectDialog({
             </Field>
           ) : null}
           {channels.hasNextPage ? (
-            <Button
+            <ConnectionAction
               className="justify-self-start"
               onClick={() => channels.fetchNextPage()}
-              size="sm"
               variant="outline"
             >
               Load more conversations
-            </Button>
+            </ConnectionAction>
           ) : null}
           {transport === "sms" ? (
             <>
@@ -457,14 +457,13 @@ function ConnectDialog({
                       type="tel"
                       value={phone}
                     />
-                    <Button
+                    <ConnectionAction
                       disabled={!chosen || !available.sms || sms.isPending}
-                      size="sm"
                       type="submit"
                       variant={challengeId ? "outline" : "default"}
                     >
                       Send verification code
-                    </Button>
+                    </ConnectionAction>
                   </div>
                 </Field>
               </form>
@@ -496,13 +495,12 @@ function ConnectDialog({
                         required
                         value={code}
                       />
-                      <Button
+                      <ConnectionAction
                         disabled={confirm.isPending}
-                        size="sm"
                         type="submit"
                       >
                         Confirm phone
-                      </Button>
+                      </ConnectionAction>
                     </div>
                   </Field>
                 </form>
@@ -522,16 +520,15 @@ function ConnectDialog({
                 </ItemTitle>
               </ItemContent>
               <ItemActions>
-                <Button
+                <ConnectionAction
                   onClick={async () => {
                     await navigator.clipboard.writeText(linked.command);
                     setCopied(true);
                   }}
-                  size="sm"
                   variant="outline"
                 >
                   {copied ? "Copied" : "Copy"}
-                </Button>
+                </ConnectionAction>
               </ItemActions>
             </Item>
           ) : null}
@@ -542,21 +539,20 @@ function ConnectDialog({
           ) : null}
         </DialogBody>
         <DialogFooter className="mt-4">
-          <Button onClick={onClose} size="sm" variant="outline">
+          <ConnectionAction onClick={onClose} variant="outline">
             Close
-          </Button>
+          </ConnectionAction>
           {/* A phone's two steps each submit their own field, beside it. */}
           {transport === "sms" ? null : (
-            <Button
+            <ConnectionAction
               disabled={!chosen || !available[transport] || link.isPending}
               onClick={() => startLink(transport)}
-              size="sm"
             >
               {TRANSPORT[transport].link}
-            </Button>
+            </ConnectionAction>
           )}
         </DialogFooter>
-      </DialogContent>
+      </ConnectionDialogContent>
     </Dialog>
   );
 }

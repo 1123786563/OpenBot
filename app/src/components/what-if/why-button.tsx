@@ -2,6 +2,7 @@ import { whatIfExplainable } from "@openbot/shared/what-if";
 import { IconHelpCircle } from "@tabler/icons-react";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { governanceOverlay } from "@/components/astryx-pilot/governance";
 import type { AuditEvent } from "@/components/audit/audit-cells";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,8 +14,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { explainAuditEvent, type WhatIfExplained } from "@/lib/what-if/check";
 import { cn } from "@/lib/utils";
+import { explainAuditEvent, type WhatIfExplained } from "@/lib/what-if/check";
 import { OUTCOMES, WhatIfResultView } from "./what-if-result";
 
 /** Whether "Why did this happen?" can answer for a row: one OpenBot's controls decided. */
@@ -75,7 +76,10 @@ export function WhyButton({ event }: { event: AuditEvent }) {
         Why?
       </Button>
       <Dialog onOpenChange={setOpen} open={open}>
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent
+          {...governanceOverlay}
+          className={cn(governanceOverlay.className, "sm:max-w-xl")}
+        >
           <DialogHeader>
             <DialogTitle>Why did this happen?</DialogTitle>
             <DialogDescription>

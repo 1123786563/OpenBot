@@ -1,7 +1,7 @@
 import {
   AbstractAgent,
-  EventType,
   type BaseEvent,
+  EventType,
   type RunAgentInput,
 } from "@ag-ui/client";
 import { from, lastValueFrom, toArray } from "rxjs";
@@ -56,7 +56,7 @@ export async function observedProductRun(
     state: {},
     tools: [],
     context: [],
-    forwardedProps: { openbotTelemetry: receipt },
+    forwardedProps: { openbotTelemetry: receipt?.context },
   };
   const events = options.events ?? [
     { type: EventType.RUN_STARTED, threadId, runId },

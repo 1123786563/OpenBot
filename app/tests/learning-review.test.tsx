@@ -17,6 +17,12 @@ import {
   QueryClientProvider,
   QueryObserver,
 } from "@tanstack/react-query";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { LearningReview } from "@/components/settings/learning-review";
 import {
@@ -446,6 +452,18 @@ test("evidence names the recording by its title", async () => {
   expect(view.getAllByText("Open the order, Click Refund")).toHaveLength(2);
 });
 
+function drawSettings() {
+  const router = createRouter({
+    routeTree: createRootRoute({ component: LearningSettingsPage }),
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+}
+
 test("the personal edition shows Learning with automatic approval on and no sharing", async () => {
   const base = body(true);
   review = {
@@ -453,11 +471,7 @@ test("the personal edition shows Learning with automatic approval on and no shar
     autoApprove: true,
     sources: base.sources.map((source) => ({ ...source, proposals: [] })),
   };
-  const view = render(
-    <QueryClientProvider client={queryClient}>
-      <LearningSettingsPage />
-    </QueryClientProvider>,
-  );
+  const view = drawSettings();
   const approve = await view.findByRole("switch", {
     name: "Approve new skills automatically",
   });
@@ -490,11 +504,7 @@ test("Waiting for your review shows only once a skill is waiting, not while Lear
     proposals,
   });
   review = { ...base, sources: [source([], "batching")] };
-  const view = render(
-    <QueryClientProvider client={queryClient}>
-      <LearningSettingsPage />
-    </QueryClientProvider>,
-  );
+  const view = drawSettings();
   await view.findByRole("button", { name: "Learning in progress…" });
   await view.findByText("Your skills");
   expect(view.queryByText("Waiting for your review")).toBeNull();

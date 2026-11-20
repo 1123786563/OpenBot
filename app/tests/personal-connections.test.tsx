@@ -98,6 +98,7 @@ function server(key: string): PluginServer {
 let servers: PluginServer[] = [];
 let connected: string[] = [];
 let composio = false;
+let connectionsUnavailable = false;
 const writes: string[] = [];
 
 function page(): PluginsPage {
@@ -117,6 +118,7 @@ beforeEach(() => {
   servers = [server("notion")];
   connected = [];
   composio = false;
+  connectionsUnavailable = false;
   writes.length = 0;
   global.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -132,6 +134,8 @@ beforeEach(() => {
         return Response.json({ ok: true });
       }
       if (path === "/api/plugins") return Response.json(page());
+      if (path === "/api/plugins/connections" && connectionsUnavailable)
+        return new Response(null, { status: 503 });
       if (path === "/api/plugins/connections")
         return Response.json({
           connections: connected.map((serverId) => ({
@@ -159,7 +163,9 @@ function draw(edition: "team" | "personal", at = "/connections") {
     edition,
   });
   client.setQueryData(pluginKeys.page(), page());
-  client.setQueryData(pluginKeys.connections(), { connections: [] });
+  if (!connectionsUnavailable) {
+    client.setQueryData(pluginKeys.connections(), { connections: [] });
+  }
   client.setQueryData(identityKeys.links(), []);
   client.setQueryData(identityKeys.providers(), {
     slack: false,
@@ -357,4 +363,21 @@ test("the team edition's app under Connections is still only your account", asyn
   const { view } = draw("team", "/connections/notion");
   await view.findAllByText("Notion");
   expect(view.queryByText("Turned on")).toBeNull();
+});
+
+test("retrying a failed Connections read restores discovery in place", async () => {
+  connectionsUnavailable = true;
+  const { view, user, history } = draw("personal");
+  const failure = await view.findByText(/^Couldn't load your connections/);
+  expect(failure.getAttribute("role")).toBe("alert");
+  expect(
+    view.queryByRole("textbox", { name: "Search connections" }),
+  ).toBeNull();
+  connectionsUnavailable = false;
+  await user.click(view.getByRole("button", { name: "Retry" }));
+  expect(
+    await view.findByRole("textbox", { name: "Search connections" }),
+  ).toBeTruthy();
+  expect(view.queryByText(/^Couldn't load your connections/)).toBeNull();
+  expect(history.location.pathname).toBe("/connections");
 });

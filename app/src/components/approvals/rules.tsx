@@ -7,6 +7,7 @@ import {
 } from "@tabler/icons-react";
 import { type UseMutationResult, useQuery } from "@tanstack/react-query";
 import { useId, useState } from "react";
+import { governanceOverlay } from "@/components/astryx-pilot/governance";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -91,7 +92,7 @@ export function LabelSelect<T extends string>({
       <SelectTrigger aria-label={label} id={id}>
         <SelectValue>{labels[value]}</SelectValue>
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent {...governanceOverlay}>
         {(Object.keys(labels) as T[]).map((key) => (
           <SelectItem key={key} value={key}>
             {labels[key]}
@@ -306,7 +307,7 @@ export function RuleForm({
         </ItemActions>
       </Item>
       <Dialog onOpenChange={(next) => (next ? show() : close())} open={open}>
-        <DialogContent>
+        <DialogContent {...governanceOverlay}>
           <DialogHeader>
             <DialogTitle>{label}</DialogTitle>
             <DialogDescription>

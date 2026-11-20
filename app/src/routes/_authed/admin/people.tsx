@@ -9,14 +9,17 @@ import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
+  GovernanceAction,
+  GovernancePage,
+  GovernanceSearch,
+} from "@/components/astryx-pilot/governance";
+import {
   PageEmpty,
   PageRows,
   PageSection,
-  PageShell,
 } from "@/components/layout/page-shell";
 import { StaggerItem } from "@/components/layout/stagger";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Item,
   ItemActions,
@@ -94,7 +97,7 @@ function PeoplePage() {
   const failure = setRole.error ?? setAccess.error ?? terminate.error;
 
   return (
-    <PageShell
+    <GovernancePage
       description="Manage access for people who have signed in. Only admins can access the Admin pages."
       title="People"
     >
@@ -121,8 +124,8 @@ function PeoplePage() {
           Server-side search. Filtering what already arrived would only search the first page, which
           is the opposite of what somebody looking for a colleague needs.
         */}
-        <Input
-          aria-label="Search people"
+        <GovernanceSearch
+          label="Search people"
           className="mt-4"
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Search by name or address"
@@ -150,7 +153,7 @@ function PeoplePage() {
 
               return (
                 <StaggerItem index={index} key={person.id}>
-                  <Item size="sm">
+                  <Item data-governance-people-row size="sm">
                     <ItemMedia variant="icon">
                       {person.revoked ? (
                         <IconLock />
@@ -173,15 +176,14 @@ function PeoplePage() {
                        * second switch: two switches on one row invites somebody to flip the wrong
                        * one, and these two do very different things.
                        */}
-                      <Button
+                      <GovernanceAction
+                        label="Stop computers"
                         disabled={terminate.isPending}
                         onClick={() => terminate.mutate(person.id)}
-                        size="sm"
                         variant="outline"
-                      >
-                        Stop computers
-                      </Button>
-                      <Button
+                      />
+                      <GovernanceAction
+                        label={person.revoked ? "Restore" : "Remove"}
                         disabled={busy || isSelf || person.configuredAdmin}
                         onClick={() =>
                           setAccess.mutate({
@@ -189,11 +191,8 @@ function PeoplePage() {
                             revoked: !person.revoked,
                           })
                         }
-                        size="sm"
                         variant={person.revoked ? "outline" : "destructive"}
-                      >
-                        {person.revoked ? "Restore" : "Remove"}
-                      </Button>
+                      />
                       <Switch
                         aria-label={`Admin: ${person.email}`}
                         checked={person.role === "admin"}
@@ -230,6 +229,6 @@ function PeoplePage() {
           </Button>
         ) : null}
       </PageSection>
-    </PageShell>
+    </GovernancePage>
   );
 }

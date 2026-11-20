@@ -102,7 +102,11 @@ test("pings get their own row, Something needs you", async () => {
   );
   expect(await view.findByText("Something needs you")).toBeTruthy();
   const sms = view.getByRole("switch", { name: "Something needs you by SMS" });
-  expect(sms.getAttribute("aria-checked")).toBe("false");
+  expect(
+    sms instanceof HTMLInputElement
+      ? sms.checked
+      : sms.getAttribute("aria-checked") === "true",
+  ).toBe(false);
   fireEvent.click(sms);
   await waitFor(() => expect(writes).toHaveLength(1));
   expect(writes[0]).toEqual({

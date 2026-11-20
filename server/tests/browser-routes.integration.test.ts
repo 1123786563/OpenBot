@@ -482,7 +482,7 @@ function build(
     native: config.browser !== undefined,
     allowPrivateHosts: false,
     openbotUrls: [config.publicUrl, config.appUrl],
-    gatewayUrl: config.runtime.intelligence.gatewayWsUrl,
+    gatewayUrl: config.runtime.intelligence?.gatewayWsUrl ?? "",
   });
   const provider = withPolicyPushOnWake(
     withPersonBrowsers(

@@ -1,12 +1,15 @@
 import { IconArrowUpRight, IconUser } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ConnectionAction,
+  ConnectionDialogContent,
+} from "@/components/connections/connection-surface";
 import { ConnectionFields } from "@/components/plugins/connection-fields";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogBody,
-  DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -1297,15 +1300,14 @@ export function BrokeredAccountRow({
                 ) : null}
                 {/* With several accounts each has its own Disconnect, in its row below. */}
                 {several ? null : (
-                  <Button
+                  <ConnectionAction
                     disabled={account.disconnecting}
                     onClick={account.disconnect}
-                    size="sm"
                     type="button"
                     variant="outline"
                   >
                     Disconnect
-                  </Button>
+                  </ConnectionAction>
                 )}
               </>
             ) : (
@@ -1313,7 +1315,7 @@ export function BrokeredAccountRow({
                 <NotConnected />
                 {/* The arrow says this leaves OpenBot for the vendor's consent page. It does, for
                  every app but a key app. */}
-                <Button
+                <ConnectionAction
                   disabled={account.connecting}
                   onClick={() => {
                     /*
@@ -1328,14 +1330,16 @@ export function BrokeredAccountRow({
                     }
                     account.connect();
                   }}
-                  size="sm"
                   type="button"
                   variant="outline"
+                  endContent={
+                    account.kind === "fields" ? null : (
+                      <IconArrowUpRight aria-hidden />
+                    )
+                  }
                 >
                   Connect
-                  {/* A key app opens a form here and leaves for nowhere, so no arrow. */}
-                  {account.kind === "fields" ? null : <IconArrowUpRight />}
-                </Button>
+                </ConnectionAction>
               </>
             )}
           </ItemActions>
@@ -1361,7 +1365,7 @@ export function BrokeredAccountRow({
         : null}
 
       <Dialog onOpenChange={setAsking} open={asking}>
-        <DialogContent>
+        <ConnectionDialogContent>
           <DialogHeader>
             {/* The title the row above cannot have: this exists only while the account is not
                 connected, so it is free to name the act rather than the subject. */}
@@ -1437,7 +1441,7 @@ export function BrokeredAccountRow({
               </p>
             ) : null}
           </DialogBody>
-        </DialogContent>
+        </ConnectionDialogContent>
       </Dialog>
     </>
   );
@@ -1488,15 +1492,14 @@ function AccountListRow({
               Make default
             </Button>
           )}
-          <Button
+          <ConnectionAction
             disabled={changing}
             onClick={onDisconnect}
-            size="sm"
             type="button"
             variant="outline"
           >
             Disconnect
-          </Button>
+          </ConnectionAction>
         </ItemActions>
       </Item>
     </>

@@ -1,6 +1,7 @@
 import type { NarrationPreference } from "@openbot/shared/user-preferences";
 import { IconMicrophone } from "@tabler/icons-react";
 import { useMutation } from "@tanstack/react-query";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -99,7 +100,7 @@ export function NarrationChoiceDialog({
 }) {
   return (
     <Dialog onOpenChange={(next) => (next ? null : onClose())} open={open}>
-      <DialogContent>
+      <DialogContent {...astryxScope}>
         <DialogHeader>
           <DialogTitle>Narrate while you record?</DialogTitle>
           <DialogDescription>

@@ -1044,6 +1044,13 @@ export function createApp(
     const denied = requireAdmin(context);
     return denied ?? context.json({ status: "ok" });
   });
+  app.get("/api/admin/audit-events/openobserve", requireUser, (context) => {
+    const denied = requireAdmin(context);
+    if (denied) return denied;
+
+    context.header("Cache-Control", "no-store");
+    return context.json({ url: config.openObserveUrl ?? null });
+  });
   app.get("/api/admin/audit-events", requireUser, async (context) => {
     const denied = requireAdmin(context);
     if (denied) {
@@ -2299,14 +2306,10 @@ export function createApp(
       createThreadRoutes(
         threadIdentity,
         requireUser,
-        // config.ts refuses to boot without the full Intelligence contract (see copilot.ts's
-        // header comment), so `config.runtime.intelligence` is never missing here. Built from it
-        // rather than assumed, though: this is the one place besides the runtime mount itself that
-        // needs to reach Intelligence, and it should keep working unmodified if that guarantee ever
-        // loosens and a deployment can legitimately have no reader to build.
-        createThreadReader(
-          createIntelligenceClient(config.runtime.intelligence),
-        ),
+        config.runtime.intelligence &&
+          createThreadReader(
+            createIntelligenceClient(config.runtime.intelligence),
+          ),
       ),
     );
   }
