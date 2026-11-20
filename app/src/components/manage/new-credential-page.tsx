@@ -53,7 +53,7 @@ function CredentialInput({
         label={label}
         onChange={(_, event) => onChange?.(event)}
         status={props["aria-invalid"] ? { type: "error" } : undefined}
-        type={type === "password" ? type : "text"}
+        type={type === "password" ? "password" : "text"}
         value={typeof value === "string" ? value : ""}
         width="100%"
       />

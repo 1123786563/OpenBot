@@ -34,10 +34,10 @@ export function DeviceAction({
       </LegacyButton>
     );
   }
+  const nativeButtonProps = { ...props, disabled };
   return (
     <Button
-      {...props}
-      disabled={disabled}
+      {...nativeButtonProps}
       isDisabled={disabled}
       label={children}
       size={size}
