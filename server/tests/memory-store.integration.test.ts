@@ -790,10 +790,16 @@ test("Hindsight Recall ranks approved current memories and falls back after with
       metadata: { openbot_version: expect.any(String) },
       tags: [expect.any(String)],
     });
+    if (
+      !projection ||
+      typeof projection !== "object" ||
+      !("metadata" in projection)
+    ) {
+      throw new Error("Missing projected version metadata");
+    }
     hit = {
       document_id: formed.id,
-      metadata:
-        projection && "metadata" in projection ? projection.metadata : null,
+      metadata: projection.metadata,
       type: "world",
     };
     expect(
@@ -918,10 +924,16 @@ test.skipIf(!hindsightTestUrl)(
     if (!recall) throw new Error("Missing Recall tool");
     expect(await ingestion.recall(owner, bot, search)).toEqual([]);
     expect(await recall.execute({ search })).toContain(approved.id);
+    // The bytes can stay the same even though the review revision changes.
+    await store.update(owner, approved.id, { content: reviewed.content });
+    expect(await recall.execute({ search })).not.toContain(approved.id);
+    await memory.syncHindsight();
+    expect(await recall.execute({ search })).toContain(approved.id);
     expect(await memory.recall(owner, secondBot, search)).toEqual([]);
     await store.create(other, {
       content: "A synthetic Earth observatory uses flashlights.",
     });
+    await memory.syncHindsight();
     expect(
       (await memory.recall(other, otherBot, search)).map((row) => row.id),
     ).not.toContain(approved.id);

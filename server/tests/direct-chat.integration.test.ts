@@ -32,9 +32,12 @@ import {
   channelMemberships,
   channels,
   directChatRunEvents,
+  learningSettings,
   opikRuns,
   users,
 } from "../src/db/schema";
+import { createLearningRoutes } from "../src/learning/routes";
+import { createLearningSettingsStore } from "../src/learning/settings";
 import { createMemoryStore } from "../src/memory/store";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
@@ -1271,5 +1274,236 @@ test("Web turns share Test Credits, reconcile uncertain dispatch on replay, and 
     for (const id of bots)
       await database.delete(agents).where(eq(agents.id, id));
     await database.delete(users).where(eq(users.id, alice.id));
+  }
+});
+
+test("Learn now coalesces reservations, snapshots completed evidence, and discards results after a pause", async () => {
+  const alice = await person();
+  const bob = await person();
+  const bot = await profiles.create(alice, {
+    name: "Learning Bot",
+    title: "Bot",
+    roleDescription: "Answers locally.",
+    visibility: "private",
+  });
+  const reservations: unknown[] = [];
+  let insufficient = false;
+  let dispatched = Promise.withResolvers<void>();
+  let release = Promise.withResolvers<void>();
+  let reconciled = Promise.withResolvers<void>();
+  const store = createLearningSettingsStore(database);
+  const hadSavedSettings = await store.saved();
+  const previousSettings = await store.read();
+  function settingsApp(actor: AuthenticatedActor) {
+    return createLearningRoutes({ store }, async (context, next) => {
+      context.set("actor", actor);
+      await next();
+    });
+  }
+  const admin = settingsApp({ ...alice, role: "admin" });
+  const settings = (enabled: boolean) => ({
+    ...post({ ...previousSettings, enabled }),
+    method: "PUT",
+  });
+
+  const control = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      switch (new URL(request.url).pathname) {
+        case "/v1/reserve":
+          reservations.push(await request.json());
+          return insufficient
+            ? Response.json({ state: "denied", reason: "insufficient_credits" })
+            : Response.json({ state: "reserved", permit: "learn-permit" });
+        case "/v1/dispatch":
+          dispatched.resolve();
+          await release.promise;
+          return Response.json({
+            state: "completed",
+            text: JSON.stringify({
+              title: "Prepare a checklist",
+              instructions: "List the steps in order.",
+            }),
+          });
+        case "/v1/reconcile":
+          reconciled.resolve();
+          return Response.json({ state: "settled" });
+        default:
+          return new Response(null, { status: 404 });
+      }
+    },
+  });
+  const deployment = {
+    ...config,
+    managedModelTrial: {
+      url: control.url,
+      token: "test-token",
+      route: "pilot-text-v1",
+    },
+  };
+  const aliceChat = web(database, alice, bot.id, async () => {});
+  const aliceLearning = web(database, alice, bot.id, async () => {}, {
+    deployment,
+  });
+  const bobLearning = web(database, bob, bot.id, async () => {}, {
+    deployment,
+  });
+  let channelId: string | undefined;
+  try {
+    const opened = await aliceChat.request(
+      "/api/channels",
+      post({ agentIds: [bot.id] }),
+    );
+    expect(opened.status).toBe(201);
+    const { channel } = await opened.json();
+    channelId = channel.id;
+    async function send(runId: string, prompt: string) {
+      const turn = await aliceChat.request(
+        `/api/copilotkit/agent/${bot.id}/run`,
+        post({
+          threadId: channel.threadId,
+          runId,
+          messages: [
+            { id: `question-${runId}`, role: "user", content: prompt },
+          ],
+        }),
+      );
+      expect(await turn.text()).toContain("Offline answer.");
+    }
+    const path = `/api/copilotkit/threads/${channel.threadId}/learn?agentId=${bot.id}`;
+    const empty = await aliceLearning.request(path, post({}));
+    expect(await empty.json()).toMatchObject({
+      latest: { state: "skipped", reason: "no_evidence", evidenceCount: 0 },
+    });
+    expect(reservations).toHaveLength(0);
+    await send("learn-source", "How should I prepare?");
+    const concurrentClient = web(database, alice, bot.id, async () => {}, {
+      deployment,
+    });
+    expect((await bobLearning.request(path)).status).toBe(404);
+    expect((await bobLearning.request(path, post({}))).status).toBe(404);
+    expect(
+      (await settingsApp(bob).request("/settings", settings(false))).status,
+    ).toBe(403);
+
+    const read = async () => (await concurrentClient.request(path)).json();
+    async function waitFor(state: string) {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const status = await read();
+        if (status.latest?.state === state) return status;
+        await Bun.sleep(20);
+      }
+      throw new Error(`Learning did not reach ${state}.`);
+    }
+    const starts = await Promise.all([
+      aliceLearning.request(path, post({})),
+      concurrentClient.request(path, post({})),
+    ]);
+    expect(starts.map(({ status }) => status)).toEqual([202, 202]);
+    const [first, joined] = await Promise.all(
+      starts.map((response) => response.json()),
+    );
+    expect(joined.latest).toEqual(first.latest);
+    expect(first.latest).toMatchObject({ state: "running", evidenceCount: 1 });
+    await dispatched.promise;
+    await send("later-evidence", "What should happen next?");
+    expect((await read()).latest).toEqual(first.latest);
+    release.resolve();
+    await waitFor("proposed");
+    expect(await (await aliceLearning.request(path)).json()).toMatchObject({
+      latest: { state: "proposed" },
+      proposals: [
+        {
+          state: "pending_review",
+          title: "Prepare a checklist",
+          evidence: [
+            {
+              runId: "learn-source",
+              prompt: "How should I prepare?",
+              reply: "Offline answer.",
+            },
+          ],
+        },
+      ],
+    });
+    expect(reservations).toEqual([
+      expect.objectContaining({
+        creditType: "test",
+        scope: expect.objectContaining({
+          personId: alice.id,
+          conversationId: channel.id,
+          source: "learning",
+        }),
+      }),
+    ]);
+    insufficient = true;
+    expect((await aliceLearning.request(path, post({}))).status).toBe(202);
+    const skipped = await waitFor("skipped");
+    expect(skipped.latest).toMatchObject({
+      state: "skipped",
+      reason: "insufficient_credits",
+      evidenceCount: 1,
+    });
+    expect(skipped.proposals).toHaveLength(1);
+
+    insufficient = false;
+    dispatched = Promise.withResolvers<void>();
+    release = Promise.withResolvers<void>();
+    reconciled = Promise.withResolvers<void>();
+    const oldAnalysis = await (
+      await aliceLearning.request(path, post({}))
+    ).json();
+    expect(oldAnalysis.lastResult).toEqual(skipped.latest);
+    await dispatched.promise;
+    expect((await admin.request("/settings", settings(false))).status).toBe(
+      200,
+    );
+    expect((await aliceLearning.request(path, post({}))).status).toBe(409);
+    expect((await admin.request("/settings", settings(true))).status).toBe(200);
+    release.resolve();
+    await reconciled.promise;
+    const afterPause = await waitFor("cancelled");
+    expect(afterPause.latest).toMatchObject({
+      id: oldAnalysis.latest.id,
+      reason: "learning_disabled",
+    });
+    expect(afterPause.proposals).toHaveLength(1);
+    const restarted = await (
+      await aliceLearning.request(path, post({}))
+    ).json();
+    expect(restarted.latest.id).not.toBe(oldAnalysis.latest.id);
+    expect(restarted.lastResult).toEqual(afterPause.latest);
+    const completed = await waitFor("proposed");
+    expect(completed.proposals).toHaveLength(2);
+    expect(completed.proposals[0]).toMatchObject({
+      id: restarted.latest.id,
+      evidence: [{ runId: "later-evidence" }],
+    });
+    const repeated = await (await aliceLearning.request(path, post({}))).json();
+    expect(repeated.latest).toEqual(completed.latest);
+    expect(reservations).toHaveLength(4);
+
+    expect(
+      (
+        await aliceChat.request(`/api/channels/${channel.id}`, {
+          method: "DELETE",
+        })
+      ).ok,
+    ).toBe(true);
+    expect((await aliceLearning.request(path)).status).toBe(404);
+  } finally {
+    release.resolve();
+    if (hadSavedSettings) await store.write(previousSettings);
+    else
+      await database
+        .delete(learningSettings)
+        .where(eq(learningSettings.id, "current"));
+    await control.stop(true);
+    if (channelId)
+      await database.delete(channels).where(eq(channels.id, channelId));
+    await database.delete(agents).where(eq(agents.id, bot.id));
+    await database.delete(users).where(eq(users.id, alice.id));
+    await database.delete(users).where(eq(users.id, bob.id));
   }
 });

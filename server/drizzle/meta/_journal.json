@@ -670,8 +670,15 @@
     {
       "idx": 95,
       "version": "7",
-      "when": 1795181045459,
-      "tag": "0095_hindsight_memory",
+      "when": 1795180537112,
+      "tag": "0095_direct_chat_learning",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1795181153289,
+      "tag": "0096_hindsight_memory",
       "breakpoints": true
     }
   ]
