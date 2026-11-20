@@ -14,6 +14,13 @@ export const Route = createFileRoute("/_authed/_app/s/$screen")({
       throw redirect({ to: "/routines", replace: true });
     if (params.screen === "tasks")
       throw redirect({ to: "/tasks", replace: true });
+    if (params.screen === "goals") {
+      throw redirect({
+        to: "/responsibilities",
+        search: { view: "goals" },
+        replace: true,
+      });
+    }
   },
   component: RouteComponent,
 });

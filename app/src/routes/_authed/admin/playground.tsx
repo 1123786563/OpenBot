@@ -2,6 +2,9 @@ import { OpenGenerativeUIActivityRenderer } from "@copilotkit/react-core/v2";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useId, useState } from "react";
+import { cn } from "@/lib/utils";
+import "@/components/astryx-pilot/capability-surface.css";
+import { astryxPilot, astryxScope } from "@/components/astryx-pilot/theme";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { Button } from "@/components/ui/button";
 import {
@@ -198,7 +201,13 @@ function PlaygroundPage() {
      * standard prose column and it lands below the fold, so you would be typing at something you
      * cannot see. It takes the header and the controls, and keeps the two panes.
      */
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div
+      {...astryxScope}
+      className={cn(
+        "flex min-h-0 flex-1 flex-col",
+        astryxPilot && "astryx-capability-surface",
+      )}
+    >
       <header className="flex flex-wrap items-start justify-between gap-4 border-border border-b px-6 py-4">
         {/* Inline rather than in a band of its own: this screen is an editor beside a live preview
             and every 48px of height is taken from the thing being previewed. */}
@@ -246,7 +255,7 @@ function PlaygroundPage() {
       ) : null}
       {notice ? (
         <div
-          className="border-border border-b bg-emerald-50 px-6 py-2 text-emerald-700 text-sm"
+          className="astryx-playground-notice border-border border-b bg-emerald-50 px-6 py-2 text-emerald-700 text-sm"
           role="status"
         >
           {notice}
@@ -301,8 +310,13 @@ function PlaygroundPage() {
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-lg border p-4">
-            <div className="mb-2 text-sm font-medium">Preview</div>
+          <section
+            aria-labelledby="playground-preview"
+            className="astryx-playground-preview min-w-0 rounded-lg border p-4"
+          >
+            <h2 className="mb-2 text-sm font-medium" id="playground-preview">
+              Preview
+            </h2>
             {sample === null ? (
               <p className="text-sm text-destructive">
                 {validation.ok
@@ -328,7 +342,7 @@ function PlaygroundPage() {
                 message={null}
               />
             )}
-          </div>
+          </section>
 
           <div className="rounded-lg border border-border bg-card">
             <div className="border-border border-b px-4 py-2 font-medium text-sm">
@@ -396,7 +410,7 @@ function PlaygroundPage() {
         }}
         open={deleting !== null}
       >
-        <DialogContent>
+        <DialogContent {...astryxScope}>
           <DialogHeader>
             <DialogTitle>Delete {deleting}?</DialogTitle>
             <DialogDescription>
