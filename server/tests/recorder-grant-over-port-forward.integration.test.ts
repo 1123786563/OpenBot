@@ -109,7 +109,7 @@ beforeAll(async () => {
   });
   expect(config.singleUser).toBe(true);
   expect(config.publicUrl).toBeUndefined();
-  expect(config.runtime.intelligence.browserGatewayWsUrl).toBe(
+  expect(config.runtime.intelligence?.browserGatewayWsUrl).toBe(
     INTELLIGENCE_CLIENT_SOCKET_PATH,
   );
 

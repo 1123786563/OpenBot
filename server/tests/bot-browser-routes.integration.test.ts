@@ -453,7 +453,7 @@ const config = loadConfig(
 const duringRecording = botBrowserNetwork({
   connections,
   openbotUrls: [config.publicUrl, config.appUrl],
-  gatewayUrl: config.runtime.intelligence.gatewayWsUrl,
+  gatewayUrl: config.runtime.intelligence?.gatewayWsUrl ?? "",
 });
 const policyForBot = (botId: string) => duringRecording(botId, OWN_POLICY);
 const sharedComputer = createSharedComputerProvider({
