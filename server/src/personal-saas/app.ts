@@ -197,7 +197,7 @@ export function createPersonalSaasApp(
 
   app.route("/", native.routes);
   app.get("/auth/casdoor/start", (context) => startBrowser(context));
-  app.get("/auth/native/start", (context) => {
+  app.get("/auth/native/start", async (context) => {
     const request = native.attempt.safeParse(context.req.query());
     if (!request.success)
       return context.text("Invalid native sign-in request", 400);
