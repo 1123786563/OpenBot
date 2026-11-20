@@ -103,6 +103,12 @@ unless you rely on task threads.
   scaled back to zero. It now checks the version, distribution, repository and channel, with the
   image digest the server Deployment is pinned to, as before.
 
+### API
+
+- **Search an organization's members.** `listOrganizationMembers` takes `search`, which narrows the
+  list to the members whose name or address starts with it or holds it, ignoring case, best
+  matches first. Only that organization's current members are ever listed.
+
 ## 1.1.1
 
 **Before upgrading.** Read these first: several change what a Helm values file, a Compose override
