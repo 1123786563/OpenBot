@@ -1020,35 +1020,44 @@ describe("group conversations in PostgreSQL", () => {
       .where(eq(groupBotThreads.channelId, channel.id));
     if (!thread) throw new Error("missing group Bot thread");
     const approvals = createApprovalStore(database);
-    const open = () =>
-      approvals.open(
-        approvalAction({
-          actorId: owner.id,
-          botId: thread.agentId,
-          toolRef: "computer_write_file",
-          effect: "write",
-          scope: "project",
+    const action = () =>
+      approvalAction({
+        actorId: owner.id,
+        botId: thread.agentId,
+        toolRef: "computer_write_file",
+        effect: "write",
+        scope: "project",
+        args: { path: "notes.txt" },
+        target: { filePath: "notes.txt" },
+        continuation: {
+          runId: `${prefix}-run`,
+          threadId: thread.threadId,
+          toolCallId: randomUUID(),
+          toolName: "computer_write_file",
           args: { path: "notes.txt" },
-          target: { filePath: "notes.txt" },
-          continuation: {
-            runId: `${prefix}-run`,
-            threadId: thread.threadId,
-            toolCallId: randomUUID(),
-            toolName: "computer_write_file",
-            args: { path: "notes.txt" },
-            messages: [],
-            state: {},
-            context: [],
-            forwardedProps: {},
-          },
-        }),
-      );
-    const pending = await open();
-    const granted = await open();
+          messages: [],
+          state: {},
+          context: [],
+          forwardedProps: {},
+        },
+      });
+    const grantedAction = action();
+    const controlAction = action();
+    const pending = await approvals.open(action());
+    const granted = await approvals.open(grantedAction);
+    const control = await approvals.open(controlAction);
     try {
       expect(
         (await approvals.decide(owner.id, granted.id, "allow_once")).status,
       ).toBe("approved");
+      await approvals.decide(owner.id, control.id, "allow_once");
+      expect(
+        await approvals.consume(
+          owner.id,
+          control.id,
+          controlAction.actionDigest,
+        ),
+      ).toBe(true);
       await conversations.removeMember(owner.id, channel.id, owner.id);
       await expect(
         approvals.decide(owner.id, pending.id, "allow_once"),
@@ -1057,7 +1066,11 @@ describe("group conversations in PostgreSQL", () => {
         "pending",
       );
       expect(
-        await approvals.consume(owner.id, granted.id, granted.actionDigest),
+        await approvals.consume(
+          owner.id,
+          granted.id,
+          grantedAction.actionDigest,
+        ),
       ).toBe(false);
       expect((await approvals.get(owner.id, granted.id)).status).toBe(
         "approved",
@@ -1065,7 +1078,7 @@ describe("group conversations in PostgreSQL", () => {
     } finally {
       await database
         .delete(workItems)
-        .where(inArray(workItems.key, [pending.id, granted.id]));
+        .where(inArray(workItems.key, [pending.id, granted.id, control.id]));
     }
   });
 
