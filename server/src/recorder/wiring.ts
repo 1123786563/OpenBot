@@ -199,18 +199,22 @@ export function createRecorderExtension(deps: {
         }
       : async () => null;
 
-  const { apiUrl, apiKey } = config.runtime.intelligence;
+  const intelligence = config.runtime.intelligence;
   const recordings = createRecordings({
     pageForUser: trajectoryBindings.pageForUser,
     isBoundTo: trajectoryBindings.isBoundTo,
     boundTo: trajectoryBindings.boundTo,
     summaries: (ids) =>
-      fetchTrajectorySummaries({
-        apiUrl,
-        apiKey,
-        fetch: deps.intelligenceFetch ?? fetch,
-        ids,
-      }),
+      intelligence
+        ? fetchTrajectorySummaries({
+            apiUrl: intelligence.apiUrl,
+            apiKey: intelligence.apiKey,
+            fetch: deps.intelligenceFetch ?? fetch,
+            ids,
+          })
+        : Promise.reject(
+            new Error("Recording summaries require Intelligence."),
+          ),
   });
 
   return {

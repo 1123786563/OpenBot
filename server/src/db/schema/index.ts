@@ -8,6 +8,7 @@ export * from "./core";
 export * from "./coworker";
 export * from "./defaults";
 export * from "./delivery";
+export * from "./direct-chat";
 export * from "./demonstrations";
 export * from "./group";
 export * from "./identity";

@@ -1,8 +1,3 @@
-/**
- * What the runtime can do. There is exactly one answer because CopilotKit Intelligence is required
- * for durable threads and memory. Configuration the product cannot function without belongs at the
- * boot boundary.
- */
 import { intelligenceApiKey } from "@openbot/shared/intelligence-key";
 import {
   isLearningContainerId,
@@ -30,11 +25,13 @@ import type { BrokerProvider } from "./plugins/access";
 import { type VoiceConfig, voiceConfig } from "./voice/config";
 import { type WebBotAuth, webBotAuthFromEnv } from "./web-bot-auth";
 
-export type RuntimeCapabilities = {
-  mode: "intelligence";
-  durableHistory: true;
-  intelligence: IntelligenceSettings;
-};
+export type RuntimeCapabilities =
+  | {
+      mode: "intelligence";
+      durableHistory: true;
+      intelligence: IntelligenceSettings;
+    }
+  | { mode: "openbot"; durableHistory: true; intelligence?: undefined };
 
 /**
  * The Intelligence contract. Three values are required; see runtimeCapabilities.
@@ -1163,19 +1160,7 @@ function oktaAuth(
   return { ...client, issuer };
 }
 
-/**
- * Resolve the Intelligence contract, or refuse to start.
- *
- * The three addressing values are required together. A partial set is the more dangerous shape than
- * none at all: it means somebody intended to configure Intelligence and got it wrong, so failing on
- * the partial set alone (as this did) let a completely unconfigured deployment through as if that
- * were a choice.
- *
- * COPILOTKIT_LICENSE_TOKEN IS NO LONGER ONE OF THEM. Managed Intelligence issues a single project
- * key and derives entitlement from it, and requiring a second credential here sent people hunting
- * for a token the platform had stopped handing out. It is still read and still forwarded when a
- * deployment sets one, which is what a self-hosted Intelligence with its own licence needs.
- */
+/** Keep the configured legacy runtime available while direct conversations migrate. */
 function runtimeCapabilities(environment: Environment): RuntimeCapabilities {
   const settings = {
     apiUrl: url(environment, "INTELLIGENCE_API_URL"),
@@ -1192,6 +1177,14 @@ function runtimeCapabilities(environment: Environment): RuntimeCapabilities {
     .filter(([, value]) => !value)
     .map(([name]) => name);
 
+  if (
+    missing.length === 3 &&
+    !settings.licenseToken &&
+    !optional(environment, "INTELLIGENCE_BROWSER_GATEWAY_WS_URL") &&
+    !onOrOff(environment, "INTELLIGENCE_GATEWAY_PROXY")
+  ) {
+    return { mode: "openbot", durableHistory: true };
+  }
   if (missing.length > 0) {
     throw new Error(
       `CopilotKit Intelligence is required and is not configured. Missing: ${missing.join(", ")}`,
