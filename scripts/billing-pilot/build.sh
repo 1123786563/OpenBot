@@ -38,8 +38,12 @@ BUILDX_METADATA_PROVENANCE=max docker buildx build --load --platform "$platform"
   --build-arg OPENBOT_BUILD_DISTRIBUTION_ID=openbot-billing-pilot \
   --build-arg OPENBOT_BUILD_CHANNEL=pilot \
   --label "org.opencontainers.image.revision=$commit" \
+  --label "org.opencontainers.image.source=https://github.com/$repository" \
   - < "$context" 2>&1 | tee "$evidence/build.log"
 image_id=$(docker image inspect "$image" --format '{{.Id}}')
-jq -e --arg id "$image_id" '."containerimage.config.digest" == $id' "$evidence/buildx.json" >/dev/null
-docker image inspect "$image_id" | jq '.[0] | {Id, RepoDigests, Os, Architecture, Variant, Labels:.Config.Labels}' \
+jq -e --arg id "$image_id" '[."containerimage.digest", ."containerimage.config.digest"] | index($id) != null' "$evidence/buildx.json" >/dev/null
+docker image inspect "$image_id" | jq '.[0] | {Id, Descriptor, RepoDigests, Os, Architecture, Variant, Labels:.Config.Labels}' \
   > "$evidence/image.json"
+manifest=$(docker image inspect --platform "$platform" "$image" --format '{{.Descriptor.Digest}}')
+[[ $manifest =~ ^sha256:[0-9a-f]{64}$ ]]
+printf '%s\n' "$manifest" > "$evidence/platform-manifest.txt"
