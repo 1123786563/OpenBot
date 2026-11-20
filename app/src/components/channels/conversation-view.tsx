@@ -28,6 +28,7 @@ import { newId } from "../../lib/new-id";
 
 export function ConversationView({
   messages,
+  focusMessageId,
   threadId,
   busy = false,
   notice,
@@ -53,6 +54,7 @@ export function ConversationView({
   routine,
 }: {
   messages: readonly Message[];
+  focusMessageId?: string;
   threadId?: string;
   busy?: boolean;
   /** Shown above the composer. An error, or why this conversation is read-only. */
@@ -459,6 +461,7 @@ export function ConversationView({
          * conversation to change nothing.
          */}
         <ChatTranscript
+          focusMessageId={focusMessageId}
           threadId={threadId}
           busy={busy}
           commandLabels={skillLabels(commands ?? [])}

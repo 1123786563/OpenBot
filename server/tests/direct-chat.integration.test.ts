@@ -16,6 +16,13 @@ import {
 } from "../../app/src/lib/voice/agent-bridge";
 import { VoiceSession } from "../../app/src/lib/voice/session";
 import type { VoiceEvent } from "../../app/src/lib/voice/types";
+import { createHandoffDesk, HANDOFF_KIND } from "../src/agents/handoff";
+import { createHandoffRunner } from "../src/agents/handoff-runner";
+import { handoffTool } from "../src/agents/handoff-tool";
+import { withApprovalContext } from "../src/approvals/types";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
+import { createOpenBotHandoffDelivery } from "../src/agents/handoff-wiring";
+import { answerMessageId } from "@openbot/shared/handoff-markers";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createApprovalRoutes } from "../src/approvals/routes";
 import { createApprovalService } from "../src/approvals/service";
@@ -49,8 +56,10 @@ import {
   learningSettings,
   opikRuns,
   recorderConnections,
+  revokedAccess,
   userRoles,
   users,
+  workItems,
 } from "../src/db/schema";
 import { createLearningRoutes } from "../src/learning/routes";
 import { createLearningSettingsStore } from "../src/learning/settings";
@@ -58,6 +67,10 @@ import { createMemoryStore } from "../src/memory/store";
 import { createRecorderConnectionStore } from "../src/recorder/connections";
 import { createOpenBotRecordings } from "../src/recorder/openbot-recordings";
 import { createRecorderRoutes } from "../src/recorder/routes";
+import { createRoutineRoutes } from "../src/routines/routes";
+import { createRoutineRunner, createRoutineTurn } from "../src/routines/runner";
+import { createRoutineStore } from "../src/routines/store";
+import { createWorkQueue } from "../src/work/queue";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const databaseUrl = testDatabaseUrl();
@@ -207,9 +220,365 @@ function web(
       requireUser,
     ),
   );
+  const routineStore = createRoutineStore(db);
+  const routineRunner = createRoutineRunner({
+    routineStore,
+    channelStore,
+    runTurn: createRoutineTurn(
+      copilot.runBackground ??
+        (() =>
+          Promise.reject(new Error("OpenBot background runs unavailable."))),
+      async () => {
+        if (authorized?.() === false) throw new Error("Account disabled.");
+        return actor;
+      },
+    ),
+  });
+  app.route(
+    "/api/routines",
+    createRoutineRoutes(routineStore, requireUser, { runner: routineRunner }),
+  );
   app.route("/", copilot.handler);
-  return Object.assign(app, { sweepLearning: copilot.sweepLearning });
+  return Object.assign(app, {
+    sweepLearning: copilot.sweepLearning,
+    routineRunner,
+    runBackground: copilot.runBackground,
+    channelStore,
+  });
 }
+
+test("Run now has the same Conversation Run after redelivery to a restarted worker", async () => {
+  const actor = await person();
+  const bot = await profiles.create(actor, {
+    name: "Routine Bot",
+    title: "Bot",
+    roleDescription: "Reports on demand.",
+    visibility: "private",
+  });
+  let dispatches = 0;
+  const answer = async () => {
+    dispatches++;
+  };
+  const preparing = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const app = web(database, actor, bot.id, answer, {
+    prepare: async () => {
+      preparing.resolve();
+      await release.promise;
+    },
+  });
+  const response = await app.request(
+    "/api/channels",
+    post({ agentIds: [bot.id] }),
+  );
+  expect(response.status).toBe(201);
+  const { channel } = await response.json();
+  const store = createRoutineStore(database);
+  const routine = await store.create({
+    ownerUserId: actor.id,
+    agentId: bot.id,
+    channelId: channel.id,
+    instruction: "Send the status report.",
+    cron: "0 9 * * *",
+  });
+  const fired = await app.request(`/api/routines/${routine.id}/run`, post({}));
+  expect(fired.status).toBe(202);
+  const { runId } = await fired.json();
+  const history = async () =>
+    (await app.request(`/api/routines/${routine.id}/runs`)).json();
+  const restarted = web(database, actor, bot.id, answer);
+  try {
+    await preparing.promise;
+    expect(await history()).toMatchObject({
+      runs: [{ id: runId, status: "running", conversationRunId: runId }],
+    });
+    await restarted.routineRunner.run(runId);
+    expect(await history()).toMatchObject({
+      runs: [{ id: runId, status: "succeeded", conversationRunId: runId }],
+    });
+  } finally {
+    release.resolve();
+    await app.routineRunner.run(runId);
+  }
+  await restarted.routineRunner.run(runId);
+  expect(dispatches).toBe(1);
+  const conversation = await restarted.request(
+    `/api/copilotkit/threads/${channel.threadId}/messages?agentId=${bot.id}`,
+  );
+  const transcript = await conversation.json();
+  expect(transcript.runs).toMatchObject([{ id: runId, status: "completed" }]);
+  expect(transcript.messages).toContainEqual({
+    id: `reply-${runId}`,
+    role: "assistant",
+    content: "Offline answer.",
+  });
+}, 60_000);
+
+test("Routine recovery checks an unknown model outcome without dispatching again", async () => {
+  const actor = await person();
+  const bot = await profiles.create(actor, {
+    name: "Routine Recovery",
+    title: "Bot",
+    roleDescription: "Reports.",
+    visibility: "private",
+  });
+  const paths: string[] = [];
+  let reconciledOperation: string | undefined;
+  const control = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const path = new URL(request.url).pathname;
+      paths.push(path);
+      const call = await request.json();
+      if (path === "/v1/reserve") {
+        expect(call.scope.personId).toBe(actor.id);
+        reconciledOperation = call.operationId;
+        return Response.json({ state: "reserved", permit: "test-permit" });
+      }
+      expect(call.operationId).toBe(reconciledOperation);
+      if (path === "/v1/dispatch") return new Response(null, { status: 504 });
+      return Response.json({ state: "pending" });
+    },
+  });
+  try {
+    const deployment = loadConfig({
+      DATABASE_URL: databaseUrl,
+      OPENBOT_ORGANIZATION_AUTH_URL: "https://example.test",
+      KEY_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      OPENBOT_MANAGED_MODEL_TRIAL_URL: control.url.href,
+      OPENBOT_MANAGED_MODEL_TRIAL_TOKEN: "test-token",
+      OPENBOT_MANAGED_MODEL_TRIAL_ROUTE: "pilot-text-v1",
+    });
+    const legacy = async () => {
+      throw new Error("Unexpected legacy model call.");
+    };
+    const options = { deployment };
+    const app = web(database, actor, bot.id, legacy, options);
+    const response = await app.request(
+      "/api/channels",
+      post({ agentIds: [bot.id] }),
+    );
+    expect(response.status).toBe(201);
+    const { channel } = await response.json();
+    const store = createRoutineStore(database);
+    const routine = await store.create({
+      ownerUserId: actor.id,
+      agentId: bot.id,
+      channelId: channel.id,
+      instruction: "Send the report.",
+      cron: "0 9 * * *",
+    });
+    const fire = () => app.request(`/api/routines/${routine.id}/run`, post({}));
+    const fired = await fire();
+    expect(fired.status).toBe(202);
+    const { runId } = await fired.json();
+    await app.routineRunner.run(runId);
+    const restarted = web(database, actor, bot.id, legacy, options);
+    await restarted.routineRunner.run(runId);
+    expect(paths).toEqual([
+      "/v1/reserve",
+      "/v1/dispatch",
+      "/v1/reconcile",
+      "/v1/reconcile",
+    ]);
+    const historyResponse = await restarted.request(
+      `/api/copilotkit/threads/${channel.threadId}/messages?agentId=${bot.id}`,
+    );
+    expect(await historyResponse.json()).toMatchObject({
+      runs: [{ id: runId, status: "failed", externalOutcome: "unknown" }],
+    });
+    await database.insert(revokedAccess).values({
+      email: actor.email,
+      revokedBy: "scim:directory",
+    });
+    const blocked = await fire();
+    expect(blocked.status).toBe(202);
+    const blockedRun = await blocked.json();
+    await app.routineRunner.run(blockedRun.runId);
+    const routineHistory = await app.request(
+      `/api/routines/${routine.id}/runs`,
+    );
+    expect(await routineHistory.json()).toMatchObject({
+      runs: [
+        {
+          id: blockedRun.runId,
+          status: "failed",
+          error: expect.stringContaining("cannot run"),
+        },
+        { id: runId, status: "failed", conversationRunId: runId },
+      ],
+    });
+    expect(paths.filter((path) => path === "/v1/reserve")).toHaveLength(1);
+  } finally {
+    control.stop(true);
+  }
+}, 60_000);
+
+test("a redelivered handoff appears once under the answering Bot in its original conversation", async () => {
+  const actor = await person();
+  const asker = await profiles.create(actor, {
+    name: "Asker",
+    title: "Bot",
+    roleDescription: "Coordinates work.",
+    visibility: "private",
+  });
+  const target = await profiles.create(actor, {
+    name: "Answerer",
+    title: "Bot",
+    roleDescription: "Answers handoffs.",
+    visibility: "private",
+  });
+  let dispatches = 0;
+  const answer = async () => {
+    dispatches++;
+  };
+  const app = web(database, actor, target.id, answer);
+  const created = await app.request(
+    "/api/channels",
+    post({ agentIds: [asker.id] }),
+  );
+  expect(created.status).toBe(201);
+  const { channel } = await created.json();
+  const queue = createWorkQueue(database);
+  const auditStore = createAuditStore(database);
+  const actorFor = async () => actor;
+  const mayAddress = async (from: string, to: string) =>
+    from === asker.id && to === target.id;
+  const desk = createHandoffDesk({
+    queue,
+    profiles,
+    actorFor,
+    mayAddress,
+    auditStore,
+    caps: { maxDepth: 2, maxPerRun: 3 },
+  });
+  const approvalStore = createApprovalStore(database);
+  const approvalService = createApprovalService(approvalStore);
+  await approvalStore.setEnabled(actor.id, true);
+  const askingRunId = crypto.randomUUID();
+  const tool = handoffTool({
+    desk,
+    from: {
+      actorId: actor.id,
+      botId: asker.id,
+      threadId: channel.threadId,
+      runId: askingRunId,
+    },
+    hasSomebodyToAsk: true,
+    maxDepth: 2,
+    maxPerRun: 3,
+    approvalGate: approvalService.gate,
+  });
+  if (!tool) throw new Error("Handoff tool unavailable.");
+  const args = { bot: target.id, task: "Find the status." };
+  const send = () => tool.execute(args);
+  const waiting = await withApprovalContext(
+    {
+      runId: askingRunId,
+      threadId: channel.threadId,
+      toolCallId: crypto.randomUUID(),
+      toolName: "message_bot",
+      args,
+      messages: [
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          content: "Ask Answerer for the status.",
+        },
+      ],
+      state: {},
+      context: [],
+      forwardedProps: {},
+    },
+    send,
+  ).catch((error: unknown) => error);
+  expect(waiting).toBeInstanceOf(HeadlessToolSuspension);
+  const [approval] = await approvalStore.list(actor.id);
+  if (!approval) throw new Error("Handoff approval was not requested.");
+  const approved = await app.request(
+    `/api/approvals/${approval.id}/decision`,
+    post({ decision: "allow_once" }),
+  );
+  expect(approved.status).toBe(200);
+  const continued: string[] = [];
+  const resume = () =>
+    approvalService.resume(actor.id, approval.id, {
+      validate: (action) => approvalService.validateReentry(action, send),
+      execute: send,
+      continue: async ({ result }) => {
+        continued.push(result.content);
+      },
+    });
+  await resume();
+  await resume();
+  expect(continued).toHaveLength(1);
+  expect(continued[0]).toContain("Handed to Answerer.");
+  const [offered] = await database
+    .select()
+    .from(workItems)
+    .where(
+      and(
+        eq(workItems.kind, HANDOFF_KIND),
+        sql`${workItems.payload}->>'actorId' = ${actor.id}`,
+      ),
+    );
+  if (!offered || !app.runBackground)
+    throw new Error("Handoff was not offered.");
+  const delivery = (mounted: typeof app) => {
+    if (!mounted.runBackground) throw new Error("Missing OpenBot runtime.");
+    return createOpenBotHandoffDelivery({
+      runBackground: mounted.runBackground,
+      channelStore: mounted.channelStore,
+      actorFor,
+      mayAddress,
+    });
+  };
+  const runner = createHandoffRunner({
+    queue,
+    auditStore,
+    owner: "first",
+    sign: () => "",
+    delivery: delivery(app),
+  });
+  expect((await runner.sweep()).delivered).toEqual([target.id]);
+
+  // Restore the delivery the queue would reclaim if the first worker died before acknowledging it.
+  await database
+    .delete(workItems)
+    .where(
+      and(eq(workItems.kind, HANDOFF_KIND), eq(workItems.key, offered.key)),
+    );
+  await queue.offer({
+    kind: HANDOFF_KIND,
+    key: offered.key,
+    payload: offered.payload,
+  });
+  const restarted = web(database, actor, target.id, answer);
+  const recovered = createHandoffRunner({
+    queue,
+    auditStore,
+    owner: "restarted",
+    sign: () => "",
+    delivery: delivery(restarted),
+  });
+  expect((await recovered.sweep()).delivered).toEqual([target.id]);
+  expect(dispatches).toBe(1);
+  const history = await restarted.request(
+    `/api/copilotkit/threads/${channel.threadId}/messages?agentId=${asker.id}`,
+  );
+  const body = await history.json();
+  expect(body.runs).toHaveLength(1);
+  expect(body.runs[0]).toMatchObject({
+    status: "completed",
+    externalOutcome: "executed",
+  });
+  expect(body.messages).toContainEqual({
+    id: answerMessageId(target.id, body.runs[0].id),
+    role: "assistant",
+    content: "Offline answer.",
+  });
+}, 60_000);
 
 function events(sse: string) {
   return sse

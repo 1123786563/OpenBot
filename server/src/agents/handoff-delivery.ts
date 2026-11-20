@@ -207,7 +207,11 @@ export function createHandoffDelivery(options: {
   botNames?: (
     botIds: readonly string[],
   ) => Promise<ReadonlyMap<string, string>>;
-}): HandoffDelivery {
+}): {
+  deliver(
+    input: Omit<Parameters<HandoffDelivery["deliver"]>[0], "key">,
+  ): Promise<{ answer: string | null }>;
+} {
   const {
     admission,
     agentFor,

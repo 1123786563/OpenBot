@@ -84,6 +84,9 @@ export function createRoutineRoutes(
       return context.json({
         runs: runs.map((run) => ({
           id: run.id,
+          ...(run.conversationRunId && {
+            conversationRunId: run.conversationRunId,
+          }),
           status: run.status ?? "running",
           startedAt: run.startedAt.toISOString(),
           finishedAt: run.finishedAt?.toISOString() ?? null,

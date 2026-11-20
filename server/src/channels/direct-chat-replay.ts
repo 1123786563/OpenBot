@@ -13,6 +13,14 @@ const retentionMs = 60 * 60_000;
 const cutoff = () => sql`now() - ${retentionMs} * interval '1 millisecond'`;
 export const directChatRunTimeoutMs = 5 * 60_000;
 
+const backgroundMessagePrefix = "openbot-background:";
+export const backgroundMessageId = (
+  source: "routine" | "handoff",
+  runId: string,
+) => `${backgroundMessagePrefix}${source}:${runId}`;
+export const isBackgroundMessage = (id: string) =>
+  id.startsWith(backgroundMessagePrefix);
+
 type Run = typeof directChatRuns.$inferSelect;
 export type RunKey = { threadId: string; runId: string };
 export const matchingRun = ({ threadId, runId }: RunKey) =>

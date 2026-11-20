@@ -89,7 +89,8 @@ export type HandoffDelivery = {
     shown?: string;
     /** The signed statement of the run it is starting, carrying its depth. */
     assertion: string;
-  }) => Promise<{ answer: string | null }>;
+    key: string;
+  }) => Promise<{ answer: string | null; conversationRunId?: string }>;
 };
 
 export type HandoffRunReport = {
@@ -454,7 +455,8 @@ export function createHandoffRunner(options: {
 
           try {
             const shown = summarise(work);
-            const { answer } = await delivery.deliver({
+            const { answer, conversationRunId } = await delivery.deliver({
+              key: item.key,
               work,
               message: attribute(work),
               ...(shown ? { shown } : {}),
@@ -503,7 +505,7 @@ export function createHandoffRunner(options: {
              * ever. Only for a forward hop with words to carry — a relay of a relay is the loop the
              * `answerIn` check exists to stop, and a wordless turn has nothing to say.
              */
-            if (!work.answerIn && answer) {
+            if (!work.answerIn && answer && !conversationRunId) {
               await relay(work, item.key, answer).catch((failure) => {
                 // The turn happened and is on record; a relay that cannot be queued must not undo
                 // that by failing the hop into a retry and a second turn.
@@ -529,6 +531,7 @@ export function createHandoffRunner(options: {
                 to: work.toBotId,
                 run: work.runId,
                 depth: work.depth,
+                ...(conversationRunId && { conversationRunId }),
                 ms: Date.now() - startedAt,
               },
             });

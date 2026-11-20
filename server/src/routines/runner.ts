@@ -22,14 +22,45 @@
  * within a firing never sees the routine that fails cleanly, once, every single night.
  */
 
+import { frameFiring } from "@openbot/shared/routine-firing";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { BOT_PAUSED_REASON, isBotPaused } from "../agents/lifecycle";
 import type { AgentActor } from "../agents/profile-types";
+import type { mountCopilotRuntime } from "../copilot";
 import type { ChannelStore } from "../channels/routes";
 import type { RoutineStore } from "./store";
 
 export type RoutineRunner = { run(routineRunId: string): Promise<void> };
+
+export function createRoutineTurn(
+  runBackground: NonNullable<
+    ReturnType<typeof mountCopilotRuntime>["runBackground"]
+  >,
+  actorFor: (personId: string) => Promise<AgentActor>,
+): TurnRunner {
+  return ({
+    ownerUserId,
+    routineId,
+    runId,
+    agentId,
+    threadId,
+    instruction,
+  }) => {
+    if (!runId) throw new Error("A Routine firing requires a Run ID.");
+    return runBackground({
+      source: "routine",
+      id: runId,
+      threadId,
+      conversationBotId: agentId,
+      personId: ownerUserId,
+      agentId,
+      prompt: frameFiring(instruction),
+      authorize: () => actorFor(ownerUserId).catch(() => null),
+      initiator: { kind: "routine", id: routineId },
+    });
+  };
+}
 
 /**
  * How much of a failure's reason the channel notification carries.
@@ -72,7 +103,7 @@ export function createRoutineRunner(options: {
      * with it, and there is no row left to finish — so there is nothing to record and nothing to
      * say to anybody. The firing is dropped on the floor deliberately.
      */
-    if (!context) return;
+    if (!context || context.status) return;
     /*
      * PAUSED NEVER RUNS, checked here at the moment of running rather than only when the firing was
      * offered: a person who switched the routine off after the dispatch, or a Run now that raced a
@@ -159,6 +190,7 @@ export function createRoutineRunner(options: {
       try {
         ({ replyText } = await runTurn({
           ownerUserId,
+          runId: routineRunId,
           telemetry: {
             trigger: source === "run_now" ? "human" : "routine",
             surface: source === "run_now" ? "web" : "unknown",
@@ -228,8 +260,13 @@ export function createRoutineRunner(options: {
     }
   }
 
+  const running = new Map<string, Promise<void>>();
   return {
     async run(routineRunId) {
+      const existing = running.get(routineRunId);
+      if (existing) return existing;
+      const turn = runOnce(routineRunId);
+      running.set(routineRunId, turn);
       /*
        * `run` never throws. Every outcome a routine can have — a gone channel, a refused model, a
        * routine deleted underneath the firing — is recorded on the run row above rather than raised
@@ -238,7 +275,7 @@ export function createRoutineRunner(options: {
        * alternative is a firing that vanishes without a line anywhere.
        */
       try {
-        await runOnce(routineRunId);
+        await turn;
       } catch (error) {
         console.error(
           JSON.stringify({
@@ -247,6 +284,8 @@ export function createRoutineRunner(options: {
             reason: reasonOf(error),
           }),
         );
+      } finally {
+        running.delete(routineRunId);
       }
     },
   };

@@ -3303,6 +3303,9 @@ export function mountCopilotRuntime(
   });
 
   const handler = intelligence ? sdkHandler : new Hono();
+  let runBackground:
+    | ReturnType<typeof createDirectChatRoutes>["runBackground"]
+    | undefined;
   let sweepLearning: (() => Promise<void>) | undefined;
   if (!intelligence) {
     if (!options.directChat)
@@ -3317,8 +3320,10 @@ export function mountCopilotRuntime(
       traceRuns: Boolean(config.opik),
       singleUser: config.singleUser,
       identifyActor,
-      agentFor: (actor, botId) => agentFor({ actor, botId, textOnly: true }),
+      agentFor: (actor, botId, initiator) =>
+        agentFor({ actor, botId, initiator, textOnly: true }),
     });
+    runBackground = directChat.runBackground;
     handler.route(basePath, directChat.routes);
     if (trial) sweepLearning = directChat.sweepLearning;
     handler.get(`${basePath}/info`, (context) =>
@@ -3328,6 +3333,7 @@ export function mountCopilotRuntime(
 
   return {
     handler,
+    runBackground,
     sweepLearning,
     learning,
     /**

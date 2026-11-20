@@ -7,14 +7,18 @@ import {
   learningRequest,
   learningScheduleSettings,
 } from "@openbot/shared/direct-chat-learning";
+import { answerMessageId } from "@openbot/shared/handoff-markers";
+import type { AuditInitiator } from "../audit";
 import { DIRECT_CHAT_REPLAY_HEADER } from "@openbot/shared/direct-chat-replay";
-import { and, eq, exists, isNull, ne, notExists } from "drizzle-orm";
+import { and, eq, exists, isNull, ne, notExists, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 import type {
   AgentProfileStore,
   ProfileReadExecutor,
 } from "../agents/profile-store";
+import { isBotPaused } from "../agents/lifecycle";
+import { headlessTurnRefusal } from "../admin/controls";
 import type { AgentActor } from "../agents/profile-types";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import { createRoleRepository } from "../auth/guards";
@@ -27,6 +31,8 @@ import {
   directChatRuns,
   groupBotThreads,
   intelligenceChannelMappings,
+  revokedAccess,
+  users,
 } from "../db/schema";
 import {
   createDirectChatLearning,
@@ -39,6 +45,8 @@ import { reflectCommand } from "./direct-chat-command";
 
 import {
   appendDirectChatEvent,
+  backgroundMessageId,
+  isBackgroundMessage,
   directChatRunTimeoutMs,
   expireDirectChatRuns,
   directChatHistory as history,
@@ -92,6 +100,33 @@ export type DirectChatReflect = (input: {
   runId: string;
   canContinue: () => Promise<boolean>;
 }) => Promise<string>;
+
+type BackgroundTurn = {
+  source: "routine" | "handoff";
+  id: string;
+  threadId: string;
+  conversationBotId: string;
+  personId: string;
+  agentId: string;
+  prompt: string;
+  shown?: string;
+  literalAnswer?: { botId: string; text: string };
+  authorize: () => Promise<AgentActor | null>;
+  initiator: AuditInitiator;
+};
+
+export class BackgroundConversationBusy extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BackgroundConversationBusy";
+  }
+}
+
+function backgroundRefusal(message: string) {
+  const error = new Error(message);
+  error.name = "CapabilityRefusedError";
+  return error;
+}
 
 type Emit = (event: BaseEvent, cursor?: number) => void;
 
@@ -165,6 +200,7 @@ export function createDirectChatRoutes(deps: {
   agentFor: (
     actor: AgentActor,
     agentId: string,
+    initiator?: AuditInitiator,
   ) => Promise<AbstractAgent | null>;
 }) {
   const { database, profiles, traceRuns } = deps;
@@ -577,7 +613,7 @@ export function createDirectChatRoutes(deps: {
           .set({
             externalOutcome: evidence.outcome,
             ...(evidence.outcome === "executed" && {
-              assistantMessageId: crypto.randomUUID(),
+              assistantMessageId: run.assistantMessageId ?? crypto.randomUUID(),
               reply: evidence.text,
             }),
           })
@@ -798,7 +834,7 @@ export function createDirectChatRoutes(deps: {
     if (!body.success)
       return context.json({ error: "A text message is required." }, 400);
     const prompt = promptMessage.safeParse(body.data.messages.at(-1));
-    if (!prompt.success)
+    if (!prompt.success || isBackgroundMessage(prompt.data.id))
       return context.json({ error: "A text message is required." }, 400);
     const { threadId, runId } = body.data;
     const { id: messageId, content } = prompt.data;
@@ -905,56 +941,263 @@ export function createDirectChatRoutes(deps: {
     agentId: string,
     run: typeof directChatRuns.$inferSelect,
   ) {
-    if (run.status !== "running" || run.dispatchedAt) return;
+    if (
+      run.status !== "running" ||
+      run.dispatchedAt ||
+      isBackgroundMessage(run.userMessageId)
+    )
+      return;
     const workerId = workerKey(key);
     if (workers.has(workerId)) return;
     const controller = new AbortController();
     workers.set(workerId, controller);
-    void execute(request, key, agentId, controller.signal)
+    void execute(() => actorFor(request), key, agentId, controller.signal)
       .catch(() => {})
       .finally(() => workers.delete(workerId));
   }
 
+  async function runBackground(
+    input: BackgroundTurn,
+  ): Promise<{ replyText: string }> {
+    const key = { threadId: input.threadId, runId: input.id };
+    const messageId = backgroundMessageId(input.source, input.id);
+    const scopeBot = input.conversationBotId;
+    const authorize = async () => {
+      const actor = await input.authorize();
+      if (
+        actor?.id !== input.personId ||
+        (await isBotPaused(actor.id, input.agentId))
+      )
+        return null;
+      if (!deps.singleUser) {
+        const [person] = await database
+          .select({ id: users.id })
+          .from(users)
+          .where(
+            and(
+              eq(users.id, actor.id),
+              notExists(
+                database
+                  .select({ email: revokedAccess.email })
+                  .from(revokedAccess)
+                  .where(
+                    eq(revokedAccess.email, sql`lower(trim(${users.email}))`),
+                  ),
+              ),
+            ),
+          )
+          .limit(1);
+        if (!person) return null;
+      }
+      const refusal = await headlessTurnRefusal({
+        ownerUserId: actor.id,
+        agentId: input.agentId,
+        threadId: input.threadId,
+      });
+      return refusal ? null : actor;
+    };
+
+    for (;;) {
+      const actor = await authorize();
+      if (!actor) {
+        await database.transaction(async (tx) => {
+          const [owned] = await tx
+            .select({ id: directChatRuns.id })
+            .from(directChatRuns)
+            .innerJoin(
+              intelligenceChannelMappings,
+              eq(intelligenceChannelMappings.threadId, directChatRuns.threadId),
+            )
+            .where(
+              and(
+                matchingRun(key),
+                eq(directChatRuns.userMessageId, messageId),
+                eq(intelligenceChannelMappings.userId, input.personId),
+              ),
+            );
+          if (owned)
+            await stopDirectChatRun(tx, key, "access_revoked", traceRuns);
+        });
+        throw backgroundRefusal("This account or Bot cannot run this work.");
+      }
+      const run = await database.transaction(async (tx) => {
+        if (
+          !(await threadFor(tx, actor, key.threadId, scopeBot, true)) ||
+          !(await profiles.getWithin(tx, actor, input.agentId))
+        ) {
+          throw backgroundRefusal("This conversation or Bot is unavailable.");
+        }
+        await expireDirectChatRuns(tx, key.threadId, traceRuns);
+        const previous = await history(tx, key.threadId);
+        const existing = previous.find(({ id }) => id === key.runId);
+        if (existing) {
+          if (existing.userMessageId !== messageId)
+            throw backgroundRefusal("The Run ID is already in use.");
+          return existing;
+        }
+        if (previous.some(({ status }) => status === "running"))
+          throw new BackgroundConversationBusy(
+            "This conversation already has a running Bot.",
+          );
+        if (
+          previous.some(({ externalOutcome }) => externalOutcome === "unknown")
+        )
+          throw backgroundRefusal(
+            "The previous Run has an unverified external outcome.",
+          );
+        const [created] = await tx
+          .insert(directChatRuns)
+          .values({
+            threadId: key.threadId,
+            id: key.runId,
+            userMessageId: messageId,
+            prompt: input.shown ?? input.prompt,
+            status: "running",
+            ...(input.source === "handoff" && {
+              assistantMessageId: answerMessageId(
+                input.literalAnswer?.botId ?? input.agentId,
+                key.runId,
+              ),
+            }),
+          })
+          .returning();
+        if (!created) throw new Error("Background Run was not created.");
+        return created;
+      });
+      if (
+        run.reply !== null &&
+        (run.status === "completed" || run.externalOutcome === "executed")
+      )
+        return { replyText: run.reply };
+      if (run.status !== "running") {
+        if (
+          run.externalOutcome === "unknown" &&
+          deps.trial &&
+          !input.literalAnswer
+        ) {
+          const evidence = await deps.trial.model
+            .reconcileOutcome(operationFor(key, scopeBot, actor.id))
+            .catch(() => undefined);
+          if (
+            (evidence?.outcome === "executed" ||
+              evidence?.outcome === "not_dispatched") &&
+            (await authorize())?.id === actor.id
+          ) {
+            await database.transaction(async (tx) => {
+              if (!(await threadFor(tx, actor, key.threadId, scopeBot, true)))
+                return;
+              await tx
+                .update(directChatRuns)
+                .set({
+                  externalOutcome: evidence.outcome,
+                  ...(evidence.outcome === "executed" && {
+                    assistantMessageId:
+                      input.source === "handoff"
+                        ? answerMessageId(input.agentId, key.runId)
+                        : crypto.randomUUID(),
+                    reply: evidence.text,
+                  }),
+                })
+                .where(
+                  and(
+                    matchingRun(key),
+                    eq(directChatRuns.externalOutcome, "unknown"),
+                  ),
+                );
+            });
+            continue;
+          }
+        }
+        throw backgroundRefusal(
+          run.externalOutcome === "unknown"
+            ? "The Run has an unverified external outcome."
+            : "The Bot Run failed. See the conversation for its status.",
+        );
+      }
+      if (!run.dispatchedAt) {
+        const controller = new AbortController();
+        const workerId = workerKey(key);
+        if (!workers.has(workerId)) {
+          workers.set(workerId, controller);
+          try {
+            await execute(
+              authorize,
+              key,
+              input.agentId,
+              controller.signal,
+              input,
+            );
+          } finally {
+            workers.delete(workerId);
+          }
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+  }
+
   async function execute(
-    request: Request,
+    authorize: () => Promise<AgentActor | null>,
     key: RunKey,
     agentId: string,
     signal: AbortSignal,
+    background?: BackgroundTurn,
   ) {
     const { threadId } = key;
-    const trial = deps.trial;
-    const actor = await actorFor(request);
-    if (!actor || !(await threadFor(database, actor, threadId, agentId)))
+    const trial = background?.literalAnswer ? undefined : deps.trial;
+    const scopeBot = background?.conversationBotId ?? agentId;
+    const actor = await authorize();
+    if (!actor || !(await threadFor(database, actor, threadId, scopeBot)))
       return;
-    const operation = operationFor(key, agentId, actor.id);
-    const currentGuidance = async () =>
-      learning.guidance(
+    const operation = operationFor(key, scopeBot, actor.id);
+    const currentGuidance = async () => {
+      const currentActor = await authorize();
+      return learning.guidance(
         learningScope(threadId, agentId, actor.id),
-        await learningAuthorization(request, threadId, agentId, actor.id)(),
+        (tx) =>
+          currentActor?.id === actor.id
+            ? threadFor(tx, currentActor, threadId, scopeBot, true)
+            : Promise.resolve(null),
       );
+    };
     const previous = await history(database, threadId);
     const currentRun = previous.find(({ id }) => id === key.runId);
     const reflectQuery =
-      deps.reflect && currentRun && reflectCommand(currentRun.prompt);
+      !background &&
+      deps.reflect &&
+      currentRun &&
+      reflectCommand(currentRun.prompt);
     // Reflection stays in the visible transcript. A later Bot call must not
     // receive a historical inference whose Memory sources may have been revoked.
-    const messages = messagesFor(
-      previous.filter(
-        ({ id, prompt }) => id === key.runId || !reflectCommand(prompt),
-      ),
-      { includePartial: !trial },
-    );
+    const messages =
+      background?.source === "handoff"
+        ? [
+            {
+              id: `prompt-${key.runId}`,
+              role: "user" as const,
+              content: background.prompt,
+            },
+          ]
+        : messagesFor(
+            previous.filter(
+              ({ id, prompt }) => id === key.runId || !reflectCommand(prompt),
+            ),
+            { includePartial: !trial },
+          );
     const agent =
-      trial || reflectQuery
+      trial || reflectQuery || background?.literalAnswer
         ? null
-        : await deps.agentFor(actor, agentId).catch(() => null);
+        : await deps
+            .agentFor(actor, agentId, background?.initiator)
+            .catch(() => null);
     let runnable = true;
     const shouldContinue = async () => {
       if (!runnable || signal.aborted) return false;
-      const currentActor = await actorFor(request);
+      const currentActor = await authorize();
       if (
         currentActor?.id === actor.id &&
-        (await threadFor(database, currentActor, threadId, agentId))
+        (await threadFor(database, currentActor, threadId, scopeBot)) &&
+        (!background || Boolean(await profiles.get(currentActor, agentId)))
       ) {
         const [current] = await database
           .select({ status: directChatRuns.status })
@@ -972,7 +1215,7 @@ export function createDirectChatRoutes(deps: {
       .update(directChatRuns)
       .set({
         dispatchedAt: new Date(),
-        ...(trial &&
+        ...((trial || (background && !background.literalAnswer)) &&
           !reflectQuery && { externalOutcome: "dispatching" as const }),
       })
       .where(
@@ -1030,7 +1273,20 @@ export function createDirectChatRoutes(deps: {
         });
         return;
       }
-      const skills = await currentGuidance();
+      if (background?.literalAnswer) {
+        if (!(await shouldContinue())) return;
+        await appendDirectChatEvent(database, key, terminal(key, "completed"), {
+          traceRuns,
+          reply: {
+            id: answerMessageId(background.literalAnswer.botId, key.runId),
+            content: background.literalAnswer.text,
+          },
+          streamReply: true,
+        });
+        return;
+      }
+      const skills =
+        background?.source === "handoff" ? [] : await currentGuidance();
       if (!skills) {
         await shouldContinue();
         return;
@@ -1076,7 +1332,13 @@ export function createDirectChatRoutes(deps: {
             terminal(key, "completed"),
             {
               traceRuns,
-              reply: { id: crypto.randomUUID(), content: result.text },
+              reply: {
+                id:
+                  background?.source === "handoff"
+                    ? answerMessageId(agentId, key.runId)
+                    : crypto.randomUUID(),
+                content: result.text,
+              },
               streamReply: true,
               externalOutcome: "executed",
             },
@@ -1170,14 +1432,22 @@ export function createDirectChatRoutes(deps: {
         throw new Error("Bot returned no text.");
       await appendDirectChatEvent(database, key, terminal(key, "completed"), {
         traceRuns,
-        reply: { id: reply.id, content: reply.content },
+        reply: {
+          id:
+            background?.source === "handoff"
+              ? answerMessageId(agentId, key.runId)
+              : reply.id,
+          content: reply.content,
+        },
+        ...(background && { externalOutcome: "executed" as const }),
       });
     } catch {
       await writes;
       if (!(await shouldContinue())) return;
       await appendDirectChatEvent(database, key, terminal(key, "failed"), {
         traceRuns,
-        ...(trial && !reflectQuery && { externalOutcome: "unknown" }),
+        ...((trial || background) &&
+          !reflectQuery && { externalOutcome: "unknown" }),
       });
     } finally {
       finished = true;
@@ -1189,6 +1459,7 @@ export function createDirectChatRoutes(deps: {
 
   return {
     routes,
+    runBackground,
     sweepLearning: () =>
       learning.sweep(({ personId, threadId, botId: agentId }) => async (tx) => {
         if (deps.singleUser && personId === DEV_ACTOR.id)

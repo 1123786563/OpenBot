@@ -339,7 +339,7 @@ import { useTriggerTools } from "./responsibilities/trigger-tools";
 import { createTriggerStore } from "./responsibilities/triggers";
 import type { Responsibility } from "./responsibilities/types";
 import { createServerResponsibilityEngine } from "./responsibilities/wiring";
-import { createRoutineRunner } from "./routines/runner";
+import { createRoutineRunner, createRoutineTurn } from "./routines/runner";
 import { createRoutineStore } from "./routines/store";
 import { createIntentRouter } from "./routing/classify";
 import {
@@ -1462,19 +1462,16 @@ useGoalTools({
  * that, because the Bot being addressed will very likely run on a different pod from the Bot that
  * addressed it, and a hop held in memory is lost the moment either is rescheduled.
  */
+const mayAddressBot = async (fromBotId: string, toBotId: string) =>
+  (
+    await pluginStore.botsReachableFrom(fromBotId).catch((): string[] => [])
+  ).includes(toBotId);
 const handoffDesk = createHandoffDesk({
   queue: createWorkQueue(database),
   profiles: agentProfileStore,
   // Read per hop and never held, so revoking a grant applies to the next hop rather than after a
   // restart.
-  mayAddress: async (fromBotId, toBotId) =>
-    (
-      await pluginStore
-        .botsReachableFrom(fromBotId)
-        // A grant that cannot be read is not a grant. Failing closed here costs a hop; failing open
-        // would let a Bot address one nobody gave it because the database blinked.
-        .catch(() => [] as string[])
-    ).includes(toBotId),
+  mayAddress: mayAddressBot,
   // The same grants, listed, so a name that matches no Bot is answered with the ones it may ask.
   addressable: (fromBotId) => pluginStore.botsReachableFrom(fromBotId),
   /*
@@ -2207,33 +2204,40 @@ const routineAgentRunner = new IntelligenceAgentRunner({
 const routineRunner = createRoutineRunner({
   routineStore,
   channelStore,
-  runTurn: createTurnRunner({
-    prepareRunInput: prepareProductRunInput,
-    onKnownStop: productTelemetry.stopKnown,
-    admission: serverTurnAdmission,
-    intelligence: routineIntelligence,
-    runner: routineAgentRunner,
-    components: componentCatalog,
-    buildAgentFor,
-    toolsForTurn: async ({ ownerUserId, agentId, initiator }) => {
-      if (!computerGateway) return [];
-      const actor = await actorFor(ownerUserId);
-      const profile = await agentProfileStore.get(actor, agentId);
-      if (!profile) throw new Error("That Bot is not available to this owner.");
-      // A Team Bot's teammate uses the Bot, not its owner's signed-in computer.
-      if (!canUseComputer(profile, actor)) return [];
-      return createHeadlessComputerTools({
-        gateway: computerGateway,
-        seat: await computerGateway.seatFor(agentId, actor.id),
-        actor: { id: actor.id, userId: actor.id, initiator },
-        auditStore: bootAuditStore,
-        ...(signInService ? { signIn: signInService } : {}),
-      });
-    },
-    learningContainerForThread: (input) =>
-      copilotRuntime.learning?.containerForThread(input) ??
-      Promise.resolve(undefined),
-  }),
+  runTurn: !config.runtime.intelligence
+    ? (input) => {
+        if (!copilotRuntime.runBackground)
+          throw new Error("OpenBot background Runs unavailable.");
+        return createRoutineTurn(copilotRuntime.runBackground, actorFor)(input);
+      }
+    : createTurnRunner({
+        prepareRunInput: prepareProductRunInput,
+        onKnownStop: productTelemetry.stopKnown,
+        admission: serverTurnAdmission,
+        intelligence: routineIntelligence,
+        runner: routineAgentRunner,
+        components: componentCatalog,
+        buildAgentFor,
+        toolsForTurn: async ({ ownerUserId, agentId, initiator }) => {
+          if (!computerGateway) return [];
+          const actor = await actorFor(ownerUserId);
+          const profile = await agentProfileStore.get(actor, agentId);
+          if (!profile)
+            throw new Error("That Bot is not available to this owner.");
+          // A Team Bot's teammate uses the Bot, not its owner's signed-in computer.
+          if (!canUseComputer(profile, actor)) return [];
+          return createHeadlessComputerTools({
+            gateway: computerGateway,
+            seat: await computerGateway.seatFor(agentId, actor.id),
+            actor: { id: actor.id, userId: actor.id, initiator },
+            auditStore: bootAuditStore,
+            ...(signInService ? { signIn: signInService } : {}),
+          });
+        },
+        learningContainerForThread: (input) =>
+          copilotRuntime.learning?.containerForThread(input) ??
+          Promise.resolve(undefined),
+      }),
 });
 
 /**
@@ -2381,6 +2385,22 @@ const copilotRuntime = mountCopilotRuntime(
     trajectoryCapture: recorderExtension.trajectoryCapture,
   },
 );
+
+if (copilotRuntime.runBackground) {
+  repeatAfterEach(async () => {
+    try {
+      const runs = await routineStore.openRunsForRecovery();
+      await Promise.all(runs.map(({ id }) => routineRunner.run(id)));
+    } catch (error) {
+      console.warn(
+        JSON.stringify({
+          type: "routine-run-recovery-failed",
+          reason: String(error),
+        }),
+      );
+    }
+  }, 5_000);
+}
 
 /** Reads one named skill from a container; throws when the runtime or the read is unavailable, null when absent. */
 const skillIn = async (containerId: string, name: string) => {
@@ -2936,6 +2956,7 @@ if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
     database,
     bootAuditStore,
     actorFor,
+    mayAddress: mayAddressBot,
     copilotRuntime,
     threadIdentity,
     groupConversations,
