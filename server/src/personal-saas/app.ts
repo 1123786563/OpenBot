@@ -1,9 +1,10 @@
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { html } from "hono/html";
 import { seal, unseal } from "../auth/signed-value";
 import type { Database } from "../db/client";
 import { browserAttempt, type CasdoorConfig, casdoor } from "./casdoor";
+import { bearerSession, type NativeAttempt, nativeAuth } from "./native-auth";
 import { personalSaasStore, sessionSeconds } from "./store";
 
 const sessionCookie = "__Host-openbot-personal";
@@ -78,6 +79,32 @@ export function createPersonalSaasApp(
     new URL(callbackPath, config.origin).href,
   );
   const store = personalSaasStore(database);
+  const native = nativeAuth({ database, encryptionKey: config.encryptionKey });
+  const browserLogin = browserAttempt.extend({
+    native: native.attempt.optional(),
+  });
+
+  function bearer(context: Context) {
+    return bearerSession(context.req.header("authorization"));
+  }
+
+  function requestSession(context: Context) {
+    return context.req.header("authorization") === undefined
+      ? getCookie(context, sessionCookie)
+      : bearer(context);
+  }
+
+  function acceptsNativePost(context: Context) {
+    switch (context.req.path) {
+      case "/api/auth/native/exchange":
+        return true;
+      case "/auth/sign-out":
+      case "/workspace/prepare":
+        return Boolean(bearer(context));
+      default:
+        return false;
+    }
+  }
 
   app.use("*", async (context, next) => {
     context.header("Cache-Control", "no-store");
@@ -87,10 +114,15 @@ export function createPersonalSaasApp(
     );
     context.header("Referrer-Policy", "same-origin");
     context.header("X-Content-Type-Options", "nosniff");
+    const origin = context.req.header("origin");
+    const isPost = context.req.method === "POST";
     if (
-      context.req.method === "POST" &&
-      context.req.header("origin") !== config.origin
+      origin !== undefined &&
+      origin !== config.origin &&
+      (isPost || context.req.header("authorization") !== undefined)
     )
+      return context.text("Invalid request origin", 403);
+    if (isPost && origin === undefined && !acceptsNativePost(context))
       return context.text("Invalid request origin", 403);
     await next();
   });
@@ -151,18 +183,35 @@ export function createPersonalSaasApp(
     );
   });
 
-  app.get("/auth/casdoor/start", async (context) => {
+  app.route("/", native.routes);
+  app.get("/auth/casdoor/start", (context) => startBrowser(context));
+  app.get("/auth/native/start", (context) => {
+    const request = native.attempt.safeParse(context.req.query());
+    if (!request.success)
+      return context.text("Invalid native sign-in request", 400);
+    return startBrowser(context, request.data);
+  });
+
+  async function startBrowser(context: Context, nativeAttempt?: NativeAttempt) {
     try {
       const { authorization, state, attempt } = await provider.start();
       setCookie(
         context,
         `${attemptPrefix}${state}`,
-        await seal(JSON.stringify(attempt), config.encryptionKey, state),
+        await seal(
+          JSON.stringify({ ...attempt, native: nativeAttempt }),
+          config.encryptionKey,
+          state,
+        ),
         { ...cookieOptions, maxAge: 600 },
       );
       return context.redirect(authorization.href);
     } catch {
       reportFailure("casdoor-discovery");
+      if (nativeAttempt)
+        return context.redirect(
+          native.fail(nativeAttempt, "sign_in_incomplete"),
+        );
       return context.html(
         statusPage(
           "Sign-in unavailable",
@@ -171,7 +220,7 @@ export function createPersonalSaasApp(
         503,
       );
     }
-  });
+  }
 
   app.get(callbackPath, async (context) => {
     const state = context.req.query("state");
@@ -186,18 +235,32 @@ export function createPersonalSaasApp(
     const encrypted = getCookie(context, cookieName);
     deleteCookie(context, cookieName, cookieOptions);
     const attempt = await unseal(encrypted, config.encryptionKey, state);
+    if (!attempt) return context.html(retry, 400);
+    const result = browserLogin.safeParse(JSON.parse(attempt));
+    if (!result.success) return context.html(retry, 400);
+    const parsed = result.data;
+    const nativeAttempt = parsed.native;
+    if (nativeAttempt) context.header("Referrer-Policy", "no-referrer");
     if (
       !code ||
-      !attempt ||
+      context.req.query("error") !== undefined ||
+      parsed.expiresAt <= Date.now() ||
       (issuer !== undefined && issuer !== config.casdoor.issuer)
-    )
+    ) {
+      if (nativeAttempt)
+        return context.redirect(
+          native.fail(nativeAttempt, "sign_in_incomplete"),
+        );
       return context.html(retry, 400);
-    const parsed = browserAttempt.parse(JSON.parse(attempt));
-    if (parsed.expiresAt <= Date.now()) return context.html(retry, 400);
+    }
 
     try {
       const identity = await provider.authenticate(code, parsed);
-      if (identity.kind === "unverified")
+      if (identity.kind === "unverified") {
+        if (nativeAttempt)
+          return context.redirect(
+            native.fail(nativeAttempt, "email_unverified"),
+          );
         return context.html(
           statusPage(
             "Verify your email",
@@ -205,7 +268,12 @@ export function createPersonalSaasApp(
           ),
           403,
         );
-      if (identity.kind === "inactive")
+      }
+      if (identity.kind === "inactive") {
+        if (nativeAttempt)
+          return context.redirect(
+            native.fail(nativeAttempt, "account_unavailable"),
+          );
         return context.html(
           statusPage(
             "Account unavailable",
@@ -213,14 +281,22 @@ export function createPersonalSaasApp(
           ),
           403,
         );
-      const token = await store.signIn({
-        ...identity,
+      }
+      const sessionIdentity = {
+        issuer: identity.issuer,
+        subject: identity.subject,
+        email: identity.email,
         encryptedAccessToken: await seal(
           identity.accessToken,
           config.encryptionKey,
           sessionSeal,
         ),
-      });
+      };
+      if (nativeAttempt)
+        return context.redirect(
+          await native.complete(nativeAttempt, sessionIdentity),
+        );
+      const token = await store.signIn(sessionIdentity);
       setCookie(context, sessionCookie, token, {
         ...cookieOptions,
         maxAge: sessionSeconds,
@@ -228,6 +304,10 @@ export function createPersonalSaasApp(
       return context.redirect("/workspace", 303);
     } catch {
       reportFailure("sign-in");
+      if (nativeAttempt)
+        return context.redirect(
+          native.fail(nativeAttempt, "sign_in_incomplete"),
+        );
       return context.html(
         statusPage(
           "Sign-in unavailable",
@@ -289,22 +369,32 @@ export function createPersonalSaasApp(
   });
 
   app.post("/workspace/prepare", async (context) => {
-    const session = await authorize(getCookie(context, sessionCookie));
+    const isNative = context.req.header("authorization") !== undefined;
+    const session = await authorize(requestSession(context));
+    if (isNative) {
+      if (session.kind === "unconfirmed")
+        return context.json({ error: "account_status_unconfirmed" }, 503);
+      if (session.kind === "signed-out")
+        return context.json({ error: "sign_in_required" }, 401);
+    }
     if (session.kind === "unconfirmed")
       return context.html(preparePage(true), 503);
     if (session.kind === "signed-out")
       return context.redirect("/workspace", 303);
     try {
       await store.provision(session.accountId);
+      if (isNative) return context.body(null, 204);
       return context.redirect("/workspace", 303);
     } catch {
       reportFailure("workspace-setup");
+      if (isNative)
+        return context.json({ error: "workspace_unavailable" }, 503);
       return context.html(preparePage(true), 503);
     }
   });
 
   app.get("/api/workspace", async (context) => {
-    const session = await authorize(getCookie(context, sessionCookie));
+    const session = await authorize(requestSession(context));
     if (session.kind === "unconfirmed")
       return context.json({ error: "account_status_unconfirmed" }, 503);
     if (session.kind === "signed-out")
@@ -316,8 +406,10 @@ export function createPersonalSaasApp(
   });
 
   app.post("/auth/sign-out", async (context) => {
-    const token = getCookie(context, sessionCookie);
+    const token = requestSession(context);
     if (token) await store.signOut(token);
+    if (context.req.header("authorization") !== undefined)
+      return context.body(null, 204);
     deleteCookie(context, sessionCookie, cookieOptions);
     return context.redirect("/", 303);
   });

@@ -1,4 +1,11 @@
-import { pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import {
+  index,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { agentProfiles } from "./coworker";
 
 export const personalSaasAccounts = pgTable(
@@ -40,4 +47,17 @@ export const personalWorkspaceDefaultBots = pgTable(
       .unique()
       .references(() => agentProfiles.agentId),
   },
+);
+
+export const personalSaasNativeCodes = pgTable(
+  "personal_saas_native_codes",
+  {
+    codeHash: text("code_hash").primaryKey(),
+    client: text().notNull(),
+    state: text().notNull(),
+    challenge: text().notNull(),
+    identity: text().notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("personal_saas_native_codes_expiry").on(table.expiresAt)],
 );

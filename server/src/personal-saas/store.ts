@@ -5,8 +5,8 @@ import { agents } from "../db/schema/core";
 import { agentProfiles } from "../db/schema/coworker";
 import {
   personalSaasAccounts,
-  personalWorkspaceDefaultBots,
   personalSaasSessions,
+  personalWorkspaceDefaultBots,
   personalWorkspaces,
 } from "../db/schema/personal-saas";
 
@@ -16,7 +16,9 @@ function digest(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export function personalSaasStore(database: Database) {
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+export function personalSaasStore(database: Database | Transaction) {
   return {
     async signIn(input: {
       issuer: string;

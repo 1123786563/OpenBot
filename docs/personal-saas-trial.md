@@ -27,3 +27,11 @@ bun run --filter server start:personal-saas
 The landing page sends participants to Casdoor for registration, verification, sign-in and account recovery. OpenBot uses the issuer and stable subject to retain ownership after a verified email change. Returning participants see their existing workspace. An interrupted setup can be retried from the preparation page. First entry creates the workspace and its default Personal Assistant Bot in one transaction. The workspace owns the Bot through `personal_workspace_default_bots`, and `/api/workspace` returns the canonical Bot ID. Bot execution, Connections, and Computers remain disabled in this trial entry point.
 
 Use the existing deployment commands for enterprise or local Personal edition. This entry point only exposes the trial workspace, sign-in and sign-out. The Web trial checks Casdoor status for each protected request. Cross-client revocation, durable disablement history and execution cutoff are separate rollout requirements.
+
+## iOS and Android trial builds
+
+Set `EXPO_PUBLIC_OPENBOT_MODE=personal-saas` and `EXPO_PUBLIC_SERVER_URL` to the trial HTTPS origin in `mobile/.env` before building the native app. Use an installed development or release build that registers `openbotmobile`. The existing Casdoor HTTPS callback serves both Web and mobile. The app opens the system browser and returns through `openbotmobile://auth/personal-saas`.
+
+Keep the HTTPS origin reachable from the system browser and the app's API client. For a restricted trial, use network-level access that both clients can reach. App API requests authenticate with their own OpenBot Application Session and do not share the system browser's cookies.
+
+Each client uses the same workspace and default Assistant identifiers. The trial has no Personal Workspace conversation-history or Bot resource API. The mobile build displays the workspace identity and the default Assistant.
