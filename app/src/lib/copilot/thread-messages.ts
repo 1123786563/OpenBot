@@ -60,6 +60,7 @@ export type StoredRun = z.infer<typeof storedRuns>[number];
 export type StoredThread = {
   messages: Message[];
   runs?: StoredRun[];
+  accessDenied?: true;
   /** Zero on every ordinary read. Above zero means the history store holds something unreadable. */
   unreadable: number;
   /**
@@ -294,12 +295,16 @@ export async function readThreadMessages(
   const deadlineMs = options.deadlineMs ?? THREAD_MESSAGES_DEADLINE_MS;
 
   try {
-    const read = async () => {
+    const read = async (): Promise<StoredThread> => {
       const response = await tryClient(
         `${threadPath(threadId)}/messages?agentId=${encodeURIComponent(agentId)}`,
         { signal: controller.signal },
       );
-      if (!response.ok) return UNAVAILABLE_THREAD;
+      if (!response.ok) {
+        return [401, 403, 404].includes(response.status)
+          ? { ...UNAVAILABLE_THREAD, accessDenied: true }
+          : UNAVAILABLE_THREAD;
+      }
       const body: unknown = await response.json();
       const stored =
         typeof body === "object" && body !== null && "messages" in body
