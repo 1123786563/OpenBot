@@ -8,6 +8,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { astryxPilot } from "@/components/astryx-pilot/theme";
 import { DemoStage } from "@/components/onboarding/demo-stage";
 import { StepIntro } from "@/components/onboarding/onboarding-frame";
 import {
@@ -252,9 +253,14 @@ test("an optional step says Continue, with Not now beside it, the same size", ()
       continueButton.compareDocumentPosition(notNow) &
         Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-  for (const shape of ["h-[52px]", "w-full", "rounded-full"]) {
-    expect(continueButton?.className).toContain(shape);
-    expect(notNow?.className).toContain(shape);
+  if (astryxPilot) {
+    expect(continueButton?.getAttribute("data-size")).toBe("lg");
+    expect(notNow?.getAttribute("data-size")).toBe("lg");
+  } else {
+    for (const shape of ["h-[52px]", "w-full", "rounded-full"]) {
+      expect(continueButton?.className).toContain(shape);
+      expect(notNow?.className).toContain(shape);
+    }
   }
 });
 
@@ -328,7 +334,7 @@ test("a move handed out on one step does nothing once somebody has left it", asy
   expect(view.getByRole("heading", { name: "One" })).toBeTruthy();
 });
 
-test("a done primary reads green with a check", () => {
+test("a done primary shows a check", () => {
   const view = draw({
     initialStepId: "apps",
     steps: [
@@ -345,8 +351,11 @@ test("a done primary reads green with a check", () => {
   const [done] = footerButtons(view);
   expect(footerButtons(view)).toHaveLength(1);
   expect(done?.textContent).toBe("Notifications on");
-  expect(done?.hasAttribute("data-done")).toBe(true);
-  expect(done?.className).toContain("bg-emerald-500/10");
+  expect(done?.querySelector("svg")).toBeTruthy();
+  if (!astryxPilot) {
+    expect(done?.hasAttribute("data-done")).toBe(true);
+    expect(done?.className).toContain("bg-emerald-500/10");
+  }
 });
 
 test("an optional step keeps Not now's place when it goes, so the primary doesn't move", () => {
@@ -387,8 +396,12 @@ test("a waiting primary shows a spinner, says it is busy, and can't be pressed a
 
   const waiting = primary(view);
   expect(waiting.getAttribute("aria-busy")).toBe("true");
-  expect(waiting.disabled).toBe(true);
-  expect(waiting.querySelector(".animate-spin")).not.toBeNull();
+  expect(
+    waiting.disabled || waiting.getAttribute("aria-disabled") === "true",
+  ).toBe(true);
+  expect(
+    waiting.querySelector(astryxPilot ? "svg" : ".animate-spin"),
+  ).not.toBeNull();
 });
 
 test("a step with a form submits it from the frame's primary, with Back beside it as anywhere else", () => {
