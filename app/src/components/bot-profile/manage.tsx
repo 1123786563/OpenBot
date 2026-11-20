@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogBody,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -46,6 +45,7 @@ import {
   useOffersMemory,
 } from "@/lib/deployment/queries";
 import { queryClient } from "@/query-client";
+import { BotDetailDialog } from "./detail-surface";
 
 /**
  * Whether this is the personal edition, where one person uses OpenBot. Nobody else has a Bots list
@@ -94,7 +94,7 @@ function ResetDialog({
   const lines = plan.data ? resetLines(plan.data) : [];
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent>
+      <BotDetailDialog>
         <DialogHeader>
           <DialogTitle>Reset {agent.name}?</DialogTitle>
           <DialogDescription>
@@ -164,7 +164,7 @@ function ResetDialog({
             </Button>
           )}
         </DialogFooter>
-      </DialogContent>
+      </BotDetailDialog>
     </Dialog>
   );
 }
@@ -335,7 +335,7 @@ export function ManageSection({
       </PageRows>
       <ResetDialog agent={agent} onOpenChange={setResetOpen} open={resetOpen} />
       <Dialog onOpenChange={setDeleteOpen} open={deleteOpen}>
-        <DialogContent>
+        <BotDetailDialog>
           <DialogHeader>
             <DialogTitle>Delete {agent.name}?</DialogTitle>
             <DialogDescription>
@@ -371,7 +371,7 @@ export function ManageSection({
               {remove.isPending ? "Deleting…" : "Delete"}
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </BotDetailDialog>
       </Dialog>
     </PageSection>
   );
