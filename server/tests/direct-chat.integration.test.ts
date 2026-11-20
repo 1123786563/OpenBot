@@ -10,21 +10,30 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { Observable } from "rxjs";
 import { createAgentProfileStore } from "../src/agents/profile-store";
+import { createAuditStore } from "../src/audit";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
+import {
+  createAttachmentRoutes,
+  createChannelAttachmentRoutes,
+} from "../src/channels/attachments";
+import { expireDirectChatEvents } from "../src/channels/direct-chat-replay";
 import {
   createChannelRoutes,
   createChannelStore,
 } from "../src/channels/routes";
 import { createThreadIdentity } from "../src/channels/thread-identity";
-import { createAuditStore } from "../src/audit";
-import {
-  createAttachmentRoutes,
-  createChannelAttachmentRoutes,
-} from "../src/channels/attachments";
 import { loadConfig } from "../src/config";
 import { mountCopilotRuntime } from "../src/copilot";
 import { createDatabase } from "../src/db/client";
-import { agents, auditEvents, channels, users } from "../src/db/schema";
+import {
+  agents,
+  approvalRequests,
+  auditEvents,
+  channelMemberships,
+  channels,
+  directChatRunEvents,
+  users,
+} from "../src/db/schema";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const databaseUrl = testDatabaseUrl();
@@ -53,7 +62,10 @@ const post = (body: unknown) => ({
 });
 
 class AnsweringAgent extends AbstractAgent {
-  constructor(private readonly answer: () => Promise<void>) {
+  constructor(
+    private readonly answer: () => Promise<void>,
+    private readonly partial?: string,
+  ) {
     super();
   }
 
@@ -61,7 +73,6 @@ class AnsweringAgent extends AbstractAgent {
     return new Observable((observer) => {
       const messageId = `reply-${runId}`;
       const events: BaseEvent[] = [
-        { type: EventType.RUN_STARTED, threadId, runId },
         { type: EventType.TEXT_MESSAGE_START, messageId, role: "assistant" },
         {
           type: EventType.TEXT_MESSAGE_CONTENT,
@@ -71,6 +82,20 @@ class AnsweringAgent extends AbstractAgent {
         { type: EventType.TEXT_MESSAGE_END, messageId },
         { type: EventType.RUN_FINISHED, threadId, runId },
       ];
+      observer.next({ type: EventType.RUN_STARTED, threadId, runId });
+      if (this.partial !== undefined) {
+        observer.next({
+          type: EventType.TEXT_MESSAGE_START,
+          messageId,
+          role: "assistant",
+        });
+        observer.next({
+          type: EventType.TEXT_MESSAGE_CONTENT,
+          messageId,
+          delta: this.partial,
+        });
+        events.shift();
+      }
       void this.answer().then(
         () => {
           for (const event of events) observer.next(event);
@@ -87,6 +112,7 @@ function web(
   actor: AuthenticatedActor,
   botId: string,
   answer: () => Promise<void>,
+  partial?: string,
 ) {
   const store = createAgentProfileStore(db, endpoint);
   const channelStore = createChannelStore(
@@ -96,7 +122,7 @@ function web(
   );
   const agentFor = async (_actor: unknown, id: string) => {
     if (id !== botId) throw new Error("Unexpected Bot.");
-    return new AnsweringAgent(answer);
+    return new AnsweringAgent(answer, partial);
   };
   const copilot = mountCopilotRuntime(
     config,
@@ -417,6 +443,18 @@ test("archiving hides only the list entry; deletion withdraws direct history, at
     reply.resolve();
     expect(await run.text()).not.toContain("Offline answer.");
     expect((await app.request(history)).status).toBe(404);
+    expect(
+      (
+        await app.request(
+          `/api/copilotkit/agent/${bot.id}/resume`,
+          post({
+            threadId: channel.threadId,
+            runId: "withdrawn-run",
+            cursor: 0,
+          }),
+        )
+      ).status,
+    ).toBe(404);
     expect((await app.request(url)).status).toBe(404);
     expect((await app.request(detail, { method: "DELETE" })).status).toBe(204);
     expect(
@@ -436,6 +474,307 @@ test("archiving hides only the list entry; deletion withdraws direct history, at
     expect(withdrawals).toHaveLength(1);
   } finally {
     reply.resolve();
+    await database.delete(channels).where(eq(channels.id, channel.id));
+    await database.delete(agents).where(eq(agents.id, bot.id));
+    await database.delete(users).where(eq(users.id, actor.id));
+  }
+});
+
+test("a disconnected direct chat resumes after its last delivered event", async () => {
+  const actor = await person();
+  const bot = await profiles.create(actor, {
+    name: "Replay Bot",
+    title: "Bot",
+    roleDescription: "Answers locally.",
+    visibility: "private",
+  });
+  const release = Promise.withResolvers<void>();
+  const started = Promise.withResolvers<void>();
+  let dispatches = 0;
+  const app = web(database, actor, bot.id, async () => {
+    dispatches++;
+    started.resolve();
+    await release.promise;
+  });
+  const create = await app.request(
+    "/api/channels",
+    post({ agentIds: [bot.id] }),
+  );
+  expect(create.status).toBe(201);
+  const { channel } = await create.json();
+  try {
+    const path = `/api/copilotkit/agent/${bot.id}`;
+    const input = { threadId: channel.threadId, runId: "replay-run" };
+    const first = await app.request(
+      `${path}/run`,
+      post({
+        ...input,
+        messages: [
+          { role: "user", id: "replay-message", content: "Replay this." },
+        ],
+      }),
+    );
+    const reader = first.body?.getReader();
+    await started.promise;
+    const frame = await reader?.read();
+    await reader?.cancel();
+    release.resolve();
+    const header = new TextDecoder().decode(frame?.value).match(/^id: (\d+)$/m);
+    const replay = await app.request(
+      `${path}/resume`,
+      post({ ...input, cursor: Number(header?.[1] ?? 1) }),
+    );
+    expect(replay.status).toBe(200);
+    expect(header?.[1]).toBe("1");
+    const replayed = await replay.text();
+    expect(replayed.match(/^id: (\d+)$/gm)).toEqual([
+      "id: 2",
+      "id: 3",
+      "id: 4",
+      "id: 5",
+    ]);
+    expect(events(replayed).map((event) => event.type)).toEqual([
+      EventType.TEXT_MESSAGE_START,
+      EventType.TEXT_MESSAGE_CONTENT,
+      EventType.TEXT_MESSAGE_END,
+      EventType.RUN_FINISHED,
+    ]);
+    expect(dispatches).toBe(1);
+  } finally {
+    release.resolve();
+    await database.delete(channels).where(eq(channels.id, channel.id));
+    await database.delete(agents).where(eq(agents.id, bot.id));
+    await database.delete(users).where(eq(users.id, actor.id));
+  }
+});
+
+test("expired replay uses an authorized snapshot boundary and retains history and audit", async () => {
+  const actor = await person();
+  const stranger = await person();
+  const bot = await profiles.create(actor, {
+    name: "Snapshot Bot",
+    title: "Bot",
+    roleDescription: "Answers locally.",
+    visibility: "private",
+  });
+  const release = Promise.withResolvers<void>();
+  const app = web(database, actor, bot.id, () => release.promise, "Partial: ");
+  const other = web(database, stranger, bot.id, async () => {});
+  const { channel } = await (
+    await app.request("/api/channels", post({ agentIds: [bot.id] }))
+  ).json();
+  const base = `/api/copilotkit/agent/${bot.id}`;
+  const key = { threadId: channel.threadId, runId: crypto.randomUUID() };
+  const userMessage = {
+    role: "user",
+    id: "snapshot-message",
+    content: "Show current output.",
+  };
+  const approvalId = crypto.randomUUID();
+  const resume = `${base}/resume`;
+  const history = `/api/copilotkit/threads/${key.threadId}/messages?agentId=${bot.id}`;
+  try {
+    const first = await app.request(
+      `${base}/run`,
+      post({ ...key, messages: [userMessage] }),
+    );
+    const reader = first.body?.getReader();
+    if (!reader) throw new Error("Missing Run stream");
+    let received = "";
+    while (!received.includes("Partial: ")) {
+      const next = await reader.read();
+      if (next.done) throw new Error("Run closed before partial output");
+      received += new TextDecoder().decode(next.value);
+    }
+    await reader.cancel();
+    expect(received).toContain("id: 3\n");
+    await database.insert(approvalRequests).values({
+      id: approvalId,
+      ownerUserId: actor.id,
+      runId: key.runId,
+      toolCallId: "approval-call",
+      actionDigest: "fixture-digest",
+      action: {
+        ...key,
+        toolCallId: "approval-call",
+        actionDigest: "fixture-digest",
+        actorId: actor.id,
+        botId: bot.id,
+        toolRef: "fixture",
+        scope: "fixture",
+        effect: "fixture",
+        args: {},
+      },
+    });
+    const [audit] = await database
+      .insert(auditEvents)
+      .values({
+        actorUserId: actor.id,
+        eventType: "test.direct_chat_replay",
+        targetType: "run",
+        targetId: key.runId,
+        payload: {},
+      })
+      .returning({ id: auditEvents.id });
+    await database
+      .update(directChatRunEvents)
+      .set({ createdAt: sql`now() - interval '2 hours'` })
+      .where(
+        and(
+          eq(directChatRunEvents.threadId, key.threadId),
+          eq(directChatRunEvents.runId, key.runId),
+        ),
+      );
+    await expireDirectChatEvents(database);
+    expect(
+      await database
+        .select()
+        .from(directChatRunEvents)
+        .where(eq(directChatRunEvents.runId, key.runId)),
+    ).toEqual([]);
+    expect(
+      (
+        await database
+          .select()
+          .from(auditEvents)
+          .where(eq(auditEvents.id, audit.id))
+      ).length,
+    ).toBe(1);
+    expect(
+      (await other.request(resume, post({ ...key, cursor: 1 }))).status,
+    ).toBe(404);
+    expect(
+      (await other.request(resume, post({ ...key, cursor: 3 }))).status,
+    ).toBe(404);
+    expect(
+      (await app.request(resume, post({ ...key, cursor: 4 }))).status,
+    ).toBe(400);
+    const response = await app.request(resume, post({ ...key, cursor: 1 }));
+    expect(response.status).toBe(200);
+    const resumed = response.body?.getReader();
+    if (!resumed) throw new Error("Missing replay stream");
+    let snapshot = "";
+    while (!snapshot.includes("openbot.run.snapshot")) {
+      const next = await resumed.read();
+      if (next.done) throw new Error("Run closed before snapshot");
+      snapshot += new TextDecoder().decode(next.value);
+    }
+    expect(events(snapshot)).toEqual([
+      {
+        type: EventType.MESSAGES_SNAPSHOT,
+        messages: [
+          userMessage,
+          { role: "assistant", id: `reply-${key.runId}`, content: "Partial: " },
+        ],
+      },
+      {
+        type: EventType.CUSTOM,
+        name: "openbot.run.snapshot",
+        value: {
+          ...key,
+          cursor: 3,
+          status: "running",
+          pendingApprovals: [{ id: approvalId, toolCallId: "approval-call" }],
+        },
+      },
+    ]);
+    release.resolve();
+    let tail = "";
+    for (
+      let next = await resumed.read();
+      !next.done;
+      next = await resumed.read()
+    ) {
+      tail += new TextDecoder().decode(next.value);
+    }
+    expect(tail.match(/^id: (\d+)$/gm)).toEqual(["id: 4", "id: 5", "id: 6"]);
+    expect(events(tail).map((event) => event.type)).toEqual([
+      EventType.TEXT_MESSAGE_CONTENT,
+      EventType.TEXT_MESSAGE_END,
+      EventType.RUN_FINISHED,
+    ]);
+    expect(
+      (await (await app.request(history)).json()).messages.map(
+        (message: { content: string }) => message.content,
+      ),
+    ).toEqual([userMessage.content, "Partial: Offline answer."]);
+    await database
+      .delete(channelMemberships)
+      .where(
+        and(
+          eq(channelMemberships.channelId, channel.id),
+          eq(channelMemberships.userId, actor.id),
+        ),
+      );
+    expect(
+      (await app.request(resume, post({ ...key, cursor: 1 }))).status,
+    ).toBe(404);
+    expect(
+      (await app.request(resume, post({ ...key, cursor: 3 }))).status,
+    ).toBe(404);
+    expect((await app.request(history)).status).toBe(404);
+  } finally {
+    release.resolve();
+    await database.delete(channels).where(eq(channels.id, channel.id));
+    await database.delete(agents).where(eq(agents.id, bot.id));
+    await database.delete(users).where(eq(users.id, actor.id));
+    await database.delete(users).where(eq(users.id, stranger.id));
+  }
+});
+
+test("an open replay stream closes when the reader loses access", async () => {
+  const actor = await person();
+  const bot = await profiles.create(actor, {
+    name: "Replay authorization Bot",
+    title: "Bot",
+    roleDescription: "Answers locally.",
+    visibility: "private",
+  });
+  const release = Promise.withResolvers<void>();
+  const app = web(database, actor, bot.id, () => release.promise);
+  const { channel } = await (
+    await app.request("/api/channels", post({ agentIds: [bot.id] }))
+  ).json();
+  const key = { threadId: channel.threadId, runId: crypto.randomUUID() };
+  const base = `/api/copilotkit/agent/${bot.id}`;
+  try {
+    const first = await app.request(
+      `${base}/run`,
+      post({
+        ...key,
+        messages: [{ role: "user", id: "prompt", content: "Hello" }],
+      }),
+    );
+    const reader = first.body?.getReader();
+    if (!reader) throw new Error("Missing Run stream");
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain(
+      "id: 1\n",
+    );
+    await reader.cancel();
+
+    const resumed = await app.request(
+      `${base}/resume`,
+      post({ ...key, cursor: 1 }),
+    );
+    expect(resumed.status).toBe(200);
+
+    await database
+      .delete(channelMemberships)
+      .where(
+        and(
+          eq(channelMemberships.channelId, channel.id),
+          eq(channelMemberships.userId, actor.id),
+        ),
+      );
+    release.resolve();
+    expect(events(await resumed.text())).toEqual([
+      {
+        type: EventType.RUN_ERROR,
+        message: "The Bot run is unavailable.",
+      },
+    ]);
+  } finally {
+    release.resolve();
     await database.delete(channels).where(eq(channels.id, channel.id));
     await database.delete(agents).where(eq(agents.id, bot.id));
     await database.delete(users).where(eq(users.id, actor.id));

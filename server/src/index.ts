@@ -32,7 +32,6 @@ import {
   readRunAssertion,
 } from "./agents/callback-token";
 import { canUseComputer } from "./agents/computer-access";
-import { isUnattended, runModeOf } from "./agents/run-mode";
 import { wireCoordination } from "./agents/coordination-wiring";
 import { createAgentFetch } from "./agents/endpoint";
 import { createHandoffDesk } from "./agents/handoff";
@@ -46,6 +45,7 @@ import {
 import { createBotReset } from "./agents/lifecycle-reset";
 import { createAgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
+import { isUnattended, runModeOf } from "./agents/run-mode";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
 import { createSubagents, SUBAGENT_HANDED_BACK } from "./agents/subagent";
 import { toolLimitRecorder } from "./agents/tool-limit";
@@ -104,6 +104,7 @@ import {
   loadAttachmentForTurn,
   markAttachmentsSent,
 } from "./channels/attachments";
+import { expireDirectChatEvents } from "./channels/direct-chat-replay";
 import {
   createChannelEventHub,
   startChannelActivityListener,
@@ -218,12 +219,12 @@ import {
   createLearningModelCalls,
   learningModelEndpointFor,
 } from "./learning/model-endpoint";
-import { learningModelUnavailable } from "./learning/routes";
 import { createLearningPeople } from "./learning/people";
 import {
   createPersonalLearningSpaces,
   createPersonSpaceStore,
 } from "./learning/personal-space";
+import { learningModelUnavailable } from "./learning/routes";
 import { clearLearningRevisionFallback } from "./learning/runtime";
 import { learningScopes } from "./learning/scopes";
 import {
@@ -975,7 +976,10 @@ const retentionSweeps = startRetentionSweeps(
   config.databaseUrl,
   config.auditRetentionDays,
   pageFrameStore,
-  { proactive: proactiveStore },
+  {
+    proactive: proactiveStore,
+    pruneDirectChatEvents: () => expireDirectChatEvents(database),
+  },
 );
 /**
  * Whose computer a Bot runs on: the person it acts for, unless the Bot is isolated and its owner
