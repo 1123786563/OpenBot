@@ -98,6 +98,7 @@ export function createHindsight({
       }
     },
     async sync(canProject: (row: MemoryRow) => Promise<boolean>) {
+      const startedAt = new Date(now());
       // Commit the cleanup ledger before sending content. It also covers writes
       // whose acknowledgement was lost and records removed by a cascade.
       await database
@@ -111,7 +112,10 @@ export function createHindsight({
               firstDeletedAt: sql<null>`null::timestamptz`.as(
                 "first_deleted_at",
               ),
-              nextCheckAt: sql<Date>`now()`.as("next_check_at"),
+              nextCheckAt:
+                sql<Date>`${startedAt.toISOString()}::timestamptz`.as(
+                  "next_check_at",
+                ),
             })
             .from(personalMemories)
             .leftJoin(
@@ -133,7 +137,7 @@ export function createHindsight({
         )
         .where(
           or(
-            lte(projections.nextCheckAt, new Date(now())),
+            lte(projections.nextCheckAt, startedAt),
             and(
               sql`${projections.projectedVersion} IS NOT NULL`,
               sql`${personalMemories.version} IS DISTINCT FROM ${projections.projectedVersion}`,

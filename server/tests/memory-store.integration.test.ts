@@ -731,7 +731,7 @@ test("Hindsight Recall ranks approved current memories and falls back after with
   let recallBody: unknown;
   let beforeRecallResponse: (() => Promise<unknown>) | undefined;
   let available = true;
-  let clockOffset = 0;
+  let clock = Date.now();
   const deleted: string[] = [];
   const fixture = Bun.serve({
     hostname: "127.0.0.1",
@@ -757,7 +757,7 @@ test("Hindsight Recall ranks approved current memories and falls back after with
       database,
       url: fixture.url,
       recallTimeoutMs: 100,
-      now: () => Date.now() + clockOffset,
+      now: () => clock,
     });
     const memory = createMemoryIngestion({
       store,
@@ -844,7 +844,7 @@ test("Hindsight Recall ranks approved current memories and falls back after with
     available = true;
     // A later sweep retries retirement even after the local record is withdrawn.
     await store.remove(owner, formed.id);
-    clockOffset += 60_000;
+    clock += 60_000;
     await memory.syncHindsight();
     expect(deleted).toContain(formed.id);
   } finally {
