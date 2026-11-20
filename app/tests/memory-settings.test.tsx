@@ -31,6 +31,7 @@ const memory = (overrides: Record<string, unknown>) => ({
   formedBy: "person",
   formedByAgentId: null,
   sourceApp: null,
+  sourceRef: null,
   sourceLink: null,
   observedAt: null,
   updatedAt: "2026-10-09T10:00:00Z",
@@ -152,4 +153,14 @@ test("reopening Remember a fact after a failure starts clean", async () => {
   })) as HTMLTextAreaElement;
   expect(field.value).toBe("");
   expect(view.queryByRole("alert")).toBeNull();
+});
+
+test("Memory settings explain why a Bot record without a verified source stays out of its context", async () => {
+  serving();
+  const view = draw(<MemoryList />);
+  expect(
+    await view.findByText(
+      "Bots can’t use this memory because its source can’t be verified.",
+    ),
+  ).toBeTruthy();
 });

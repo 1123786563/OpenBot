@@ -14,6 +14,7 @@ import {
   sql,
 } from "drizzle-orm";
 import type { Database } from "../db/client";
+import { auditEvents } from "../db/schema/core";
 import { memorySources, personalMemories } from "../db/schema/memory";
 import { lockDefaults, recordOptOut, sourceServerId } from "./defaults";
 import type {
@@ -286,23 +287,18 @@ export function createMemoryStore(
   function eligibleRows(
     ownerUserId: string,
     eligibleSourceIds: string[],
-    formed: { botId: string; heldServerIds: ReadonlySet<string> } | undefined,
+    formed: { botId: string; heldSourceRefs: ReadonlySet<string> } | undefined,
     narrow: { term?: string; intelligenceIds?: string[] },
   ) {
-    const held = [...(formed?.heldServerIds ?? [])];
+    const held = [...(formed?.heldSourceRefs ?? [])];
     const formedByThisBot = formed
       ? and(
           eq(personalMemories.formedBy, "bot"),
           eq(personalMemories.formedByAgentId, formed.botId),
-          or(
-            isNull(personalMemories.sourceRef),
-            held.length > 0
-              ? inArray(
-                  sql<string>`split_part(${personalMemories.sourceRef}, '/', 1)`,
-                  held,
-                )
-              : sql`false`,
-          ),
+          // Legacy Bot records without a verifiable source stay visible for review only.
+          held.length > 0
+            ? inArray(personalMemories.sourceRef, held)
+            : sql`false`,
         )
       : undefined;
     const personOrSource = and(
@@ -506,22 +502,45 @@ export function createMemoryStore(
           content: patch.content,
         });
       }
-      const [row] = await database
-        .update(personalMemories)
-        .set({
-          ...patch,
-          ...(patch.content ? { reviewState: "edited" as const } : {}),
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(personalMemories.id, id),
-            eq(personalMemories.ownerUserId, ownerUserId),
-            isNull(personalMemories.deletedAt),
-          ),
-        )
-        .returning();
-      if (!row) throw new MemoryNotFoundError();
+      const row = await database.transaction(async (transaction) => {
+        const [row] = await transaction
+          .update(personalMemories)
+          .set({
+            ...patch,
+            ...(patch.content ? { reviewState: "edited" as const } : {}),
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(personalMemories.id, id),
+              eq(personalMemories.ownerUserId, ownerUserId),
+              isNull(personalMemories.deletedAt),
+            ),
+          )
+          .returning();
+        if (!row) throw new MemoryNotFoundError();
+        const changes = [
+          ...(patch.content ? ["memory_edited"] : []),
+          ...(patch.reviewState && !patch.content ? ["memory_reviewed"] : []),
+          ...(patch.enabled === undefined
+            ? []
+            : [patch.enabled ? "memory_enabled" : "memory_disabled"]),
+        ];
+        await transaction.insert(auditEvents).values(
+          changes.map((change) => ({
+            eventType: "configuration.changed",
+            targetType: "personal_memory",
+            targetId: row.id,
+            actorUserId: ownerUserId,
+            payload: {
+              change,
+              enabled: row.enabled,
+              reviewState: row.reviewState,
+            },
+          })),
+        );
+        return row;
+      });
       await mirror(ownerUserId, row.id);
       return row;
     },
@@ -539,23 +558,33 @@ export function createMemoryStore(
         return;
       }
       // Imported tombstones prevent the next sync from resurrecting a fact the person deleted.
-      const [row] = await database
-        .update(personalMemories)
-        .set({
-          deletedAt: new Date(),
-          enabled: false,
-          content: "",
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(personalMemories.id, id),
-            eq(personalMemories.ownerUserId, ownerUserId),
-            isNull(personalMemories.deletedAt),
-          ),
-        )
-        .returning({ id: personalMemories.id });
-      if (!row) throw new MemoryNotFoundError();
+      const row = await database.transaction(async (transaction) => {
+        const [row] = await transaction
+          .update(personalMemories)
+          .set({
+            deletedAt: new Date(),
+            enabled: false,
+            content: "",
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(personalMemories.id, id),
+              eq(personalMemories.ownerUserId, ownerUserId),
+              isNull(personalMemories.deletedAt),
+            ),
+          )
+          .returning({ id: personalMemories.id });
+        if (!row) throw new MemoryNotFoundError();
+        await transaction.insert(auditEvents).values({
+          eventType: "configuration.changed",
+          targetType: "personal_memory",
+          targetId: row.id,
+          actorUserId: ownerUserId,
+          payload: { change: "memory_deleted" },
+        });
+        return row;
+      });
       await mirror(ownerUserId, row.id);
     },
     /**
@@ -780,7 +809,7 @@ export function createMemoryStore(
        * only to the Bot that formed them, and only while it still holds their source app; without
        * this argument none are returned.
        */
-      formed?: { botId: string; heldServerIds: ReadonlySet<string> },
+      formed?: { botId: string; heldSourceRefs: ReadonlySet<string> },
     ): Promise<MemoryRecord[]> {
       const term = search.trim();
       const local = await eligibleRows(ownerUserId, eligibleSourceIds, formed, {
