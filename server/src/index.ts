@@ -257,6 +257,11 @@ import {
   githubPilotRegistration,
 } from "./plugins/corsair/github";
 import { readVerifiedLegacyGithubDefaults } from "./plugins/corsair/legacy-defaults";
+import { readSlackLegacyDefaults } from "./plugins/corsair/slack/accounts";
+import {
+  createSlackPilotProvider,
+  slackPilotRegistration,
+} from "./plugins/corsair/slack/provider";
 import { backfillBrokeredLogos } from "./plugins/logos";
 import { redirectUriFor } from "./plugins/oauth";
 import {
@@ -3026,6 +3031,7 @@ const identityGithubCallback =
     : undefined;
 
 const githubPilot = githubPilotRegistration(process.env, config.publicUrl);
+const slackPilot = slackPilotRegistration(process.env, config.publicUrl);
 const app = createApp(
   config,
   auth,
@@ -3171,6 +3177,23 @@ const app = createApp(
             provider: createGithubPilotProvider(githubPilot),
             legacyDefaults: readVerifiedLegacyGithubDefaults(
               process.env.CORSAIR_GITHUB_VERIFIED_LEGACY_DEFAULTS,
+            ),
+            database,
+            approvals: storedApprovals,
+            audit: bootAuditStore,
+            encryptionKey: config.keyEncryptionKey,
+          },
+        }
+      : {}),
+    ...(slackPilot
+      ? {
+          slackPilot: {
+            workspaceId: deploymentId,
+            registration: slackPilot.registration,
+            allowedChannels: slackPilot.allowedChannels,
+            provider: createSlackPilotProvider(slackPilot.config),
+            legacyDefaults: readSlackLegacyDefaults(
+              process.env.CORSAIR_SLACK_VERIFIED_LEGACY_DEFAULTS,
             ),
             database,
             approvals: storedApprovals,

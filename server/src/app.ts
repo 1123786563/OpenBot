@@ -139,6 +139,7 @@ import type { BrokerProvider } from "./plugins/access";
 import type { AccountModeSwitch } from "./plugins/account-mode";
 import type { ComposioBroker } from "./plugins/broker";
 import { createGithubPilotRoutes } from "./plugins/corsair/routes";
+import { createSlackPilotRoutes } from "./plugins/corsair/slack/routes";
 import { createAppGrantDraftRoutes } from "./plugins/grant-translate";
 import { createPluginRoutes } from "./plugins/routes";
 import { createSharedUseRoutes } from "./plugins/shared-use-routes";
@@ -455,6 +456,10 @@ export function createApp(
     approvals?: ApprovalService;
     githubPilot?: Omit<
       Parameters<typeof createGithubPilotRoutes>[0],
+      "requireUser" | "canUseBot"
+    >;
+    slackPilot?: Omit<
+      Parameters<typeof createSlackPilotRoutes>[0],
       "requireUser" | "canUseBot"
     >;
     /** The Recorder extension's routes and guards (recorder/wiring.ts). Absent, nothing about it is mounted. */
@@ -1623,6 +1628,17 @@ export function createApp(
       "/api/corsair/github",
       createGithubPilotRoutes({
         ...coworker.githubPilot,
+        requireUser,
+        canUseBot,
+      }),
+    );
+  }
+
+  if (coworker?.slackPilot && agentProfileStore) {
+    app.route(
+      "/api/corsair/slack",
+      createSlackPilotRoutes({
+        ...coworker.slackPilot,
         requireUser,
         canUseBot,
       }),
