@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Database } from "../db/client";
+import { auditEvents } from "../db/schema/core";
+import { githubPilotEventTriggers } from "../db/schema/corsair";
 import { routines } from "../db/schema/coworker";
 import {
   responsibilities,
@@ -9,6 +11,11 @@ import {
   responsibilityTriggers,
 } from "../db/schema/responsibilities";
 import { workItems } from "../db/schema/work";
+import {
+  GITHUB_EVENT_ACCESS_ENDED,
+  GITHUB_EVENT_PREFIX,
+  githubQueuedRunAuthorization,
+} from "../plugins/corsair/event-run-access";
 import { RESPONSIBILITY_RUN_KIND } from "./engine";
 import {
   type GoalRepeats,
@@ -33,7 +40,12 @@ export type ResponsibilityTargetResolver = (
 
 export function createResponsibilityStore(
   database: Database,
-  options: { resolveTarget: ResponsibilityTargetResolver },
+  options: {
+    resolveTarget: ResponsibilityTargetResolver;
+    githubEventAccess?: Parameters<
+      typeof githubQueuedRunAuthorization
+    >[0]["service"];
+  },
 ): ResponsibilityStore {
   async function owned(
     connection: Connection,
@@ -106,7 +118,18 @@ export function createResponsibilityStore(
         ),
       )
       .limit(1);
-    return trigger ? "event" : null;
+    if (trigger) return "event";
+    const [githubTrigger] = await connection
+      .select({ id: githubPilotEventTriggers.id })
+      .from(githubPilotEventTriggers)
+      .where(
+        and(
+          eq(githubPilotEventTriggers.goalId, goal.id),
+          isNull(githubPilotEventTriggers.disabledAt),
+        ),
+      )
+      .limit(1);
+    return githubTrigger ? "event" : null;
   }
   const store: ResponsibilityStore = {
     async create(ownerUserId, input) {
@@ -353,8 +376,16 @@ export function createResponsibilityStore(
       // actor/Bot/channel stores; running it inside two simultaneous transactions on a pool of
       // two would deadlock both while each waited for a third connection.
       const [reference] = await database
-        .select({ responsibilityId: responsibilityRuns.responsibilityId })
+        .select({
+          responsibilityId: responsibilityRuns.responsibilityId,
+          status: responsibilityRuns.status,
+          externalId: responsibilityEvents.externalId,
+        })
         .from(responsibilityRuns)
+        .innerJoin(
+          responsibilityEvents,
+          eq(responsibilityEvents.id, responsibilityRuns.eventId),
+        )
         .where(eq(responsibilityRuns.id, runId));
       if (!reference) return null;
       const [targetGoal] = await database
@@ -370,6 +401,16 @@ export function createResponsibilityStore(
               targetGoal.channelId,
             )
           : null;
+      const githubEvent =
+        reference.status === "queued" &&
+        reference.externalId.startsWith(GITHUB_EVENT_PREFIX)
+          ? await githubQueuedRunAuthorization({
+              database,
+              service: options.githubEventAccess,
+              runId,
+              personId: targetGoal.ownerUserId,
+            })
+          : undefined;
       const repeats =
         targetGoal.status === "active"
           ? await repeatsOf(database, targetGoal)
@@ -428,6 +469,38 @@ export function createResponsibilityStore(
           .from(responsibilityEvents)
           .where(eq(responsibilityEvents.id, run.eventId));
         if (!event) throw new Error("Responsibility run has no event.");
+        if (
+          event.externalId.startsWith(GITHUB_EVENT_PREFIX) &&
+          (githubEvent?.kind !== "allowed" ||
+            !(await githubEvent.check(
+              transaction,
+              githubEvent.origin.outcome.triggerId,
+              goal.ownerUserId,
+            )))
+        ) {
+          await transaction
+            .update(responsibilityRuns)
+            .set({
+              status: "skipped",
+              error: GITHUB_EVENT_ACCESS_ENDED,
+              finishedAt: new Date(),
+            })
+            .where(eq(responsibilityRuns.id, runId));
+          const origin = githubEvent?.origin?.outcome;
+          await transaction.insert(auditEvents).values({
+            eventType: "corsair.github.event_run_skipped",
+            actorUserId: goal.ownerUserId,
+            initiatorKind: "system",
+            targetType: "github_event_receipt",
+            targetId: origin?.receiptId,
+            payload: {
+              triggerId: origin?.triggerId,
+              runId,
+              outcome: "authorization_ended",
+            },
+          });
+          return null;
+        }
         await transaction
           .update(responsibilityRuns)
           .set({ status: "running", startedAt: new Date(), finishedAt: null })

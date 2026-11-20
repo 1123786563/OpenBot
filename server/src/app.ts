@@ -138,6 +138,8 @@ import { MAX_PAGE, type PeopleStore } from "./people/store";
 import type { BrokerProvider } from "./plugins/access";
 import type { AccountModeSwitch } from "./plugins/account-mode";
 import type { ComposioBroker } from "./plugins/broker";
+import { createGithubEventIngress } from "./plugins/corsair/event-ingress";
+import { createGithubEventTriggerRoutes } from "./plugins/corsair/event-triggers";
 import { createGithubPilotRoutes } from "./plugins/corsair/routes";
 import { createAppGrantDraftRoutes } from "./plugins/grant-translate";
 import { createPluginRoutes } from "./plugins/routes";
@@ -453,6 +455,8 @@ export function createApp(
   coworker?: {
     productTelemetry?: ProductTelemetry;
     approvals?: ApprovalService;
+    githubEvents?: Parameters<typeof createGithubEventIngress>[0] &
+      Pick<Parameters<typeof createGithubEventTriggerRoutes>[0], "triggers">;
     githubPilot?: Omit<
       Parameters<typeof createGithubPilotRoutes>[0],
       "requireUser" | "canUseBot"
@@ -1617,6 +1621,20 @@ export function createApp(
     ? async (actor, botId) =>
         (await agentProfileStore.get(actor, botId)) !== null
     : async () => true;
+
+  if (coworker?.githubEvents) {
+    app.route(
+      "/api/corsair/github",
+      createGithubEventIngress(coworker.githubEvents),
+    );
+    app.route(
+      "/api/corsair/github",
+      createGithubEventTriggerRoutes({
+        triggers: coworker.githubEvents.triggers,
+        requireUser,
+      }),
+    );
+  }
 
   if (coworker?.githubPilot && agentProfileStore) {
     app.route(

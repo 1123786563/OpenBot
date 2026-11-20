@@ -1,5 +1,8 @@
+import { sql } from "drizzle-orm";
 import {
+  boolean,
   foreignKey,
+  index,
   pgTable,
   primaryKey,
   text,
@@ -8,6 +11,8 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { agents, users } from "./core";
+import { jsonb } from "./json";
+import { responsibilities, responsibilityRuns } from "./responsibilities";
 
 export const githubPilotStates = pgTable("github_pilot_states", {
   stateHash: text("state_hash").primaryKey(),
@@ -92,5 +97,95 @@ export const githubPilotGrants = pgTable(
     primaryKey({
       columns: [t.workspaceId, t.registration, t.botId, t.toolRef],
     }),
+  ],
+);
+
+export const githubPilotEventReceipts = pgTable(
+  "github_pilot_event_receipts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    registration: text("registration").notNull(),
+    deliveryId: text("delivery_id").notNull(),
+    bodyHash: text("body_hash").notNull(),
+    eventType: text("event_type").notNull(),
+    installationId: text("installation_id"),
+    repositoryId: text("repository_id"),
+    pilotDispatch: boolean("pilot_dispatch").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }),
+    payload: jsonb("payload").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    disposition: text("disposition").$type<
+      "planned" | "observed" | "unenrolled" | "review"
+    >(),
+    fanoutAt: timestamp("fanout_at", { withTimezone: true }),
+  },
+  (t) => [
+    unique().on(t.workspaceId, t.registration, t.deliveryId),
+    unique().on(t.workspaceId, t.registration, t.bodyHash),
+    index("github_pilot_receipts_pending_idx")
+      .on(t.workspaceId, t.registration, t.receivedAt)
+      .where(sql`${t.fanoutAt} is null`),
+  ],
+);
+
+export const githubPilotEventTriggers = pgTable(
+  "github_pilot_event_triggers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    registration: text("registration").notNull(),
+    goalId: text("goal_id")
+      .notNull()
+      .references(() => responsibilities.id, { onDelete: "cascade" }),
+    connectionId: uuid("connection_id").notNull(),
+    connectionRevision: uuid("connection_revision").notNull(),
+    installationId: text("installation_id").notNull(),
+    repositoryId: text("repository_id").notNull(),
+    repositoryNodeId: text("repository_node_id").notNull(),
+    eventTypes: text("event_types").array().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    disabledAt: timestamp("disabled_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("github_pilot_event_triggers_source_idx").on(
+      t.workspaceId,
+      t.registration,
+      t.installationId,
+      t.repositoryId,
+    ),
+    index("github_pilot_event_triggers_goal_idx").on(t.goalId),
+  ],
+);
+
+export const githubPilotEventOutcomes = pgTable(
+  "github_pilot_event_outcomes",
+  {
+    receiptId: uuid("receipt_id")
+      .notNull()
+      .references(() => githubPilotEventReceipts.id, { onDelete: "cascade" }),
+    triggerId: uuid("trigger_id").notNull(),
+    outcome: text("outcome")
+      .$type<
+        "pending" | "retry" | "queued" | "denied" | "ineligible" | "review"
+      >()
+      .notNull(),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    runId: text("run_id").references(() => responsibilityRuns.id, {
+      onDelete: "set null",
+    }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.receiptId, t.triggerId] }),
+    unique().on(t.runId),
+    index("github_pilot_event_outcomes_pending_idx")
+      .on(t.nextAttemptAt)
+      .where(sql`${t.outcome} in ('pending', 'retry')`),
   ],
 );

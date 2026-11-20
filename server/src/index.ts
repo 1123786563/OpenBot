@@ -252,6 +252,9 @@ import { assertActivatable, providerDecision } from "./plugins/broker";
 import { useRoutineTools } from "./plugins/builtin-routines";
 import { useComposioClient } from "./plugins/composio";
 import { createComposioClient } from "./plugins/composio-adapter";
+import { createGithubEventDispatch } from "./plugins/corsair/event-dispatch";
+import { createGithubEventReader } from "./plugins/corsair/event-reader";
+import { createGithubEventTriggers } from "./plugins/corsair/event-triggers";
 import {
   createGithubPilotProvider,
   githubPilotRegistration,
@@ -1330,7 +1333,47 @@ startPersonalDefaultApps(
  * above, and it keeps trying until every app is listed.
  */
 startBrokeredRelist(pluginStore);
+const githubPilot = githubPilotRegistration(process.env, config.publicUrl);
+const githubEventSecret = process.env.CORSAIR_GITHUB_WEBHOOK_SECRET?.trim();
+const githubEventScope =
+  githubPilot && githubEventSecret
+    ? {
+        workspaceId: deploymentId,
+        registration: `${githubPilot.appId}/${githubPilot.clientId}`,
+      }
+    : null;
+const githubEventTriggers =
+  githubEventScope && githubPilot
+    ? createGithubEventTriggers({
+        ...githubEventScope,
+        database,
+        encryptionKey: config.keyEncryptionKey,
+        checkRepository: createGithubEventReader(githubPilot.appId),
+      })
+    : undefined;
+const githubIsolatedSources = (
+  process.env.CORSAIR_GITHUB_ISOLATED_EVENT_SOURCES ?? ""
+)
+  .split(",")
+  .map((source) => source.trim())
+  .filter(Boolean);
+if (
+  githubIsolatedSources.some((source) => !/^[1-9]\d*\/[1-9]\d*$/.test(source))
+)
+  throw new Error(
+    "CORSAIR_GITHUB_ISOLATED_EVENT_SOURCES requires installationId/repositoryId pairs.",
+  );
+const githubEventDispatch =
+  githubEventScope && githubEventTriggers
+    ? createGithubEventDispatch({
+        ...githubEventScope,
+        database,
+        triggers: githubEventTriggers,
+        isolatedSources: new Set(githubIsolatedSources),
+      })
+    : null;
 const responsibilityStore = createResponsibilityStore(database, {
+  githubEventAccess: githubEventTriggers,
   resolveTarget: async (ownerUserId, agentId, channelId) => {
     const actor = await actorFor(ownerUserId);
     const [bot, channel] = await Promise.all([
@@ -2387,6 +2430,20 @@ const responsibilityAnswerTurn = ({
       Promise.resolve(undefined),
   });
 };
+const githubEventSweep = githubEventDispatch
+  ? repeatAfterEach(async () => {
+      try {
+        await githubEventDispatch.sweep();
+      } catch (error) {
+        console.warn(
+          JSON.stringify({
+            type: "corsair-github-event-dispatch-failed",
+            errorType: error instanceof Error ? error.name : "unknown",
+          }),
+        );
+      }
+    }, 2_000)
+  : null;
 const responsibilitySweep = repeatAfterEach(async () => {
   try {
     const report = await responsibilityEngine.dispatch({
@@ -3025,7 +3082,6 @@ const identityGithubCallback =
       })
     : undefined;
 
-const githubPilot = githubPilotRegistration(process.env, config.publicUrl);
 const app = createApp(
   config,
   auth,
@@ -3163,6 +3219,17 @@ const app = createApp(
   {
     productTelemetry,
     approvals: approvalService,
+    ...(githubEventScope && githubEventSecret && githubEventTriggers
+      ? {
+          githubEvents: {
+            ...githubEventScope,
+            database,
+            secret: githubEventSecret,
+            isolatedSources: new Set(githubIsolatedSources),
+            triggers: githubEventTriggers,
+          },
+        }
+      : {}),
     ...(githubPilot
       ? {
           githubPilot: {
@@ -3416,6 +3483,7 @@ if (config.singleUser) {
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     responsibilitySweep.stop();
+    githubEventSweep?.stop();
     wakeUpSweep.stop();
     wakeUpReaper.stop();
     memorySweep.stop();

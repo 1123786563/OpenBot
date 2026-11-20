@@ -59,3 +59,25 @@ The published npm artifacts `corsair@0.2.15` and `@corsair-dev/github@0.1.20` we
 Upstream references are the [Corsair SDK](https://www.npmjs.com/package/corsair/v/0.2.15), [Corsair GitHub plugin](https://www.npmjs.com/package/@corsair-dev/github/v/0.1.20), GitHub's [App user authorization](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app), [installation access endpoints](https://docs.github.com/en/rest/apps/installations), and [`createIssue` schema](https://docs.github.com/en/graphql/reference/issues#createissue).
 
 The automated checks use a disposable PostgreSQL database and GitHub HTTP fixtures. Live acceptance still needs two configured OpenBot workspaces, a controlled GitHub App and pilot repository, and a real Person authorization flow. Verify PKCE code mismatch handling, access-token expiry, the minimum App permissions for the GraphQL mutation, one remote issue attributed to the authorized person, the corresponding OpenBot audit events, and zero remote writes for a denied, repointed, revoked, or inaccessible action. The operator API is the #19 pilot entry point. Connections UI and general Bot runtime tool exposure require separate integration work.
+
+## GitHub App events for Goals
+
+Set `CORSAIR_GITHUB_WEBHOOK_SECRET` to the webhook secret configured for the same GitHub App. In the App settings, set the webhook URL to `<OpenBot public URL>/api/corsair/github/webhook` and subscribe to **Issues** and **Issue comment** events. The pilot dispatches `issues.opened`, `issues.closed`, and `issue_comment.created`. It records a signed receipt for other delivered events and leaves events with uncertain timing for review.
+
+By default, the new endpoint records receipts for comparison while the existing path dispatches. To exercise dispatch on an isolated pilot repository with no legacy Trigger, set `CORSAIR_GITHUB_ISOLATED_EVENT_SOURCES` to its numeric `installationId/repositoryId` pair. Separate multiple pairs with commas. Keep this setting scoped to isolated repositories. The handoff and reconciliation workflow for existing sources is tracked in #27. Receipts accepted in observation mode stay in observation history when you change the setting, even if fan-out has yet to inspect them.
+
+A Goal owner can manage pilot Triggers with the authenticated API below. The Connection must belong to the owner, the installation and repository must be enrolled, and GitHub must confirm access using that Connection. Changing the default Connection leaves the Trigger binding intact. Replace the Trigger when you intend to bind another Connection or authorization revision.
+
+| Request | Body or result |
+| --- | --- |
+| `POST /triggers` | Send `goalId`, explicit `connectionId`, numeric `installationId` and `repositoryId`, and an `eventTypes` array. Returns the Trigger ID and binding. |
+| `GET /triggers?goalId=<id>` | Lists the Goal owner's pilot Triggers and their bindings. |
+| `DELETE /triggers/:id` | Disables the Trigger and preserves its dispatch history. |
+
+`POST /webhook` uses GitHub's signature over the original request bytes. A `202` confirms that the receipt was committed. If GitHub shows a failed delivery, restore service, open the failed entry in the GitHub App's **Advanced** delivery history, and select **Redeliver**. A redelivery recovers a failed receipt write or returns the existing receipt. OpenBot resumes accepted fan-out from PostgreSQL after restart and retries temporary access-check failures. Receipts store a digest, provider identities, scoped source, timestamps, and a Goal payload limited to repository and issue/comment references.
+
+Use `corsair.github.event_delivery` audit rows to correlate the GitHub delivery ID, receipt, Trigger, and queued Run. A Run skipped at start after the source authorization ends produces `corsair.github.event_run_skipped`. Tool calls within a Goal remain subject to their own authorization and Approval rules. The event source recheck before resuming an approved tool action is tracked in #25.
+
+Live acceptance uses an isolated GitHub App and repository. Capture a real delivery, a failed delivery followed by redelivery, and a duplicate after recovery. Confirm one Run per eligible Trigger, a denial for an unenrolled source or insufficient read access, and a queued Run skipped after removing the bound authorization. Exercise a default Connection change with a second authorized account and verify that the Trigger still uses the original authorization.
+
+The local migration sequence is `0090_github_pilot_defaults` followed by `0091_corsair_github_events`. The `0091` snapshot was generated from the `0090` snapshot and includes both sets of tables. Keep that order and parent link if the integration branch adds migrations before this one.
