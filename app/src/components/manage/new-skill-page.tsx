@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { PageShell } from "@/components/layout/page-shell";
+import { CapabilityPage } from "@/components/astryx-pilot/capability-surface";
 import { SkillFields } from "@/components/skills/skill-fields";
 import { Button } from "@/components/ui/button";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
@@ -25,7 +25,7 @@ export function NewSkillPage() {
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
 
   return (
-    <PageShell
+    <CapabilityPage
       backButton={{ label: "Skills", linkProps: paths.skills() }}
       description={
         personal
@@ -55,6 +55,6 @@ export function NewSkillPage() {
         }}
         submitLabel="Save skill"
       />
-    </PageShell>
+    </CapabilityPage>
   );
 }

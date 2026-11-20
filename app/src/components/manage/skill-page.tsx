@@ -7,11 +7,12 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { CapabilityPage } from "@/components/astryx-pilot/capability-surface";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
   PageSection,
-  PageShell,
 } from "@/components/layout/page-shell";
 import { SkillFields } from "@/components/skills/skill-fields";
 import { Button } from "@/components/ui/button";
@@ -80,30 +81,30 @@ export function SkillPage({ slug }: { slug: string }) {
   /* Nothing rather than a placeholder, so no sentence asserts anything while the fetch is open. */
   if (plugins.isPending) {
     return (
-      <PageShell backButton={back} title="Skill">
+      <CapabilityPage backButton={back} title="Skill">
         {null}
-      </PageShell>
+      </CapabilityPage>
     );
   }
 
   /* A list that could not be read is not a missing skill: `isPending` goes false on a failure too. */
   if (!plugins.data) {
     return (
-      <PageShell backButton={back} title="Skill">
+      <CapabilityPage backButton={back} title="Skill">
         <p className="text-destructive text-sm" role="alert">
           Couldn't load this skill. Reload the page.
         </p>
-      </PageShell>
+      </CapabilityPage>
     );
   }
 
   if (!skill) {
     return (
-      <PageShell backButton={back} title="Skill">
+      <CapabilityPage backButton={back} title="Skill">
         <PageEmpty icon={IconFileOff} title="Skill not found">
           It may have been deleted. Go back to Skills to see the ones there are.
         </PageEmpty>
-      </PageShell>
+      </CapabilityPage>
     );
   }
 
@@ -114,7 +115,7 @@ export function SkillPage({ slug }: { slug: string }) {
   });
 
   return (
-    <PageShell
+    <CapabilityPage
       backButton={back}
       {...(skill.summary ? { description: skill.summary } : {})}
       title={skill.title}
@@ -234,7 +235,7 @@ export function SkillPage({ slug }: { slug: string }) {
       </PageSection>
 
       <Dialog onOpenChange={setRemoving} open={removing}>
-        <DialogContent>
+        <DialogContent {...astryxScope}>
           <DialogHeader>
             <DialogTitle>Delete {skill.title}?</DialogTitle>
             <DialogDescription>
@@ -270,6 +271,6 @@ export function SkillPage({ slug }: { slug: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </PageShell>
+    </CapabilityPage>
   );
 }

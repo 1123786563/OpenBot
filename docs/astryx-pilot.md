@@ -1,6 +1,6 @@
 # Astryx Web preview
 
-The preview opens the Astryx Neutral shell, home, Bots list, and Create Bot sheet at their existing URLs. Create Bot still opens from the Bots list and the recipient picker in a new conversation. Other app pages keep their existing content under the preview shell. Settings, Admin, and skin-specific screens keep their existing frames during the transition.
+The preview opens the Astryx Neutral shell, home, Bots list, and Create Bot sheet at their existing URLs. Create Bot still opens from the Bots list and the recipient picker in a new conversation. The preview also applies Astryx Neutral to Capabilities, Skills, Bot access, both component galleries, and Playground. Settings, Admin, and skin-specific screens keep their existing frames during the transition.
 
 ## Run the preview
 
