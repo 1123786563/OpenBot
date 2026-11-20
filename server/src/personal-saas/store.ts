@@ -18,6 +18,13 @@ function digest(token: string) {
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
+function liveSession(token: string) {
+  return and(
+    eq(personalSaasSessions.tokenHash, digest(token)),
+    gt(personalSaasSessions.expiresAt, new Date()),
+  );
+}
+
 export function personalSaasStore(database: Database | Transaction) {
   return {
     async signIn(input: {
@@ -63,18 +70,46 @@ export function personalSaasStore(database: Database | Transaction) {
           personalSaasAccounts,
           eq(personalSaasSessions.accountId, personalSaasAccounts.id),
         )
-        .where(
-          and(
-            eq(personalSaasSessions.tokenHash, digest(token)),
-            gt(personalSaasSessions.expiresAt, new Date()),
-          ),
-        );
+        .where(liveSession(token));
       return session;
+    },
+    async isSessionLive(token: string) {
+      const [session] = await database
+        .select({ tokenHash: personalSaasSessions.tokenHash })
+        .from(personalSaasSessions)
+        .where(liveSession(token));
+      return session !== undefined;
     },
     async signOut(token: string) {
       await database
         .delete(personalSaasSessions)
         .where(eq(personalSaasSessions.tokenHash, digest(token)));
+    },
+    async revokeAllSessions(input: { token: string; accountId: string }) {
+      return database.transaction(async (tx) => {
+        // Sign-in's account upsert and all-device revocation serialize on this row.
+        const [account] = await tx
+          .select({ id: personalSaasAccounts.id })
+          .from(personalSaasAccounts)
+          .where(eq(personalSaasAccounts.id, input.accountId))
+          .for("update");
+        if (!account) return false;
+        const [current] = await tx
+          .select({ tokenHash: personalSaasSessions.tokenHash })
+          .from(personalSaasSessions)
+          .where(
+            and(
+              eq(personalSaasSessions.accountId, account.id),
+              liveSession(input.token),
+            ),
+          )
+          .for("update");
+        if (!current) return false;
+        await tx
+          .delete(personalSaasSessions)
+          .where(eq(personalSaasSessions.accountId, account.id));
+        return true;
+      });
     },
     async workspace(accountId: string) {
       const [workspace] = await database
