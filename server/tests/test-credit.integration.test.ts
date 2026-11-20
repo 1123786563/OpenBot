@@ -34,23 +34,37 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
   let token = firstToken;
   const secondToken = crypto.randomUUID();
   let sends = 0;
+  const sent: { model: string; max_tokens: number }[] = [];
+  const externalGateway = process.env.OPENBOT_TEST_BIFROST_FIXTURE_URL;
   let lastOperationId: string | null = null;
   let lastDispatchAccountId: string | undefined;
   const gateway = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    fetch(request) {
+    hostname: externalGateway ? "0.0.0.0" : "127.0.0.1",
+    port: externalGateway ? 33125 : 0,
+    async fetch(request) {
+      const input = await request.json();
+      sent.push(input);
       sends++;
       lastOperationId = request.headers.get("x-openbot-operation-id");
       if (sends === 2) return new Response(null, { status: 502 });
       return Response.json({
-        choices: [{ message: { content: "answer" } }],
+        id: "fixture-completion",
+        object: "chat.completion",
+        created: 1,
+        model: input.model,
+        choices: [
+          {
+            index: 0,
+            finish_reason: "stop",
+            message: { role: "assistant", content: "answer" },
+          },
+        ],
         usage: { prompt_tokens: 1, completion_tokens: 1 },
       });
     },
   });
   const execute = createBifrostCreditExecutor({
-    endpoint: new URL("/v1/chat/completions", gateway.url),
+    endpoint: new URL("/v1/chat/completions", externalGateway ?? gateway.url),
     gatewayRevision: "a",
     meteringRevision: "a",
     countInputTokens: async (_route, messages) =>
@@ -126,8 +140,8 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
   try {
     const harnessImage = `agent-langgraph-agui@sha256:${"b".repeat(64)}`;
     const route = {
-      provider: "openai",
-      model: "fixture-a",
+      provider: "fixture-a",
+      model: "model-a",
       gatewayRevision: "a",
       meteringRevision: "a",
       maxInputTokens: 3,
@@ -137,7 +151,10 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     };
     const catalog = configure(emptyCatalog, {
       harnessImage,
-      routes: { pilot: route },
+      routes: {
+        pilot: route,
+        alternate: { ...route, provider: "fixture-b", model: "model-b" },
+      },
     });
     const verified = verify(
       catalog,
@@ -178,13 +195,52 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
       },
       "fixture",
     );
-    const { catalog: published, release } = publish(
+    const primaryEvidence = verified.routes.pilot?.verification?.report;
+    const alternate = verified.routes.alternate;
+    if (!primaryEvidence || !alternate)
+      throw new Error("Missing fixture route");
+    const bothVerified = verify(
       verified,
-      ["pilot"],
+      "alternate",
+      {
+        ...primaryEvidence,
+        revision: alternate.revision,
+        provider: alternate.provider,
+        model: alternate.model,
+      },
+      "fixture",
+    );
+    const { catalog: published, release } = publish(
+      bothVerified,
+      ["pilot", "alternate"],
       "pilot",
       "fixture",
     );
     await saveCatalog(published);
+    const pick = { id: "alternate", revision: alternate.revision };
+    expect(await ledger.resolveQuote({})).toMatchObject({
+      source: "harness",
+      quote: { route: "pilot" },
+    });
+    expect(await ledger.resolveQuote({ bot: pick })).toMatchObject({
+      source: "bot",
+      quote: { route: "alternate", provider: "fixture-b", model: "model-b" },
+    });
+    expect(
+      await ledger.resolveQuote({
+        bot: pick,
+        conversation: { id: "pilot", revision: primaryEvidence.revision },
+      }),
+    ).toMatchObject({ source: "conversation", quote: { route: "pilot" } });
+    expect(
+      await ledger.resolveQuote({
+        bot: pick,
+        conversation: { ...pick, revision: crypto.randomUUID() },
+      }),
+    ).toMatchObject({
+      source: "conversation",
+      reason: expect.stringContaining("Choose another"),
+    });
     await Promise.all([
       ledger.enroll({ identity: first, batchId, amount: 2n }),
       ledger.enroll({ identity: second, batchId, amount: 2n }),
@@ -273,6 +329,9 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
       "fixture",
     );
     await saveCatalog(repriced.catalog);
+    expect(await ledger.resolveQuote({})).toMatchObject({
+      quote: { priceVersion: repriced.release.id, maxChargeMicrocredits: "4" },
+    });
     expect((await reserve(crypto.randomUUID())).body.reason).toBe(
       "route_unavailable",
     );
@@ -288,6 +347,8 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     expect((await request(`/operations/${operationId}`)).body).toMatchObject({
       state: "settled",
       priceVersion: release.id,
+      price: route.price,
+      reservedMicrocredits: "2",
       chargedMicrocredits: "1",
       releasedMicrocredits: "1",
     });
@@ -542,6 +603,10 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     const withdrawnOperationId = crypto.randomUUID();
     const reserved = await reserve(withdrawnOperationId);
     await saveCatalog(configure(published, { harnessImage, routes: {} }));
+    expect(await ledger.resolveQuote({ conversation: pick })).toMatchObject({
+      source: "conversation",
+      reason: expect.stringContaining("no longer verified"),
+    });
     expect(
       (
         await request("/v1/dispatch", {
@@ -648,6 +713,40 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
       );
     }
     expect(sends).toBe(3);
+    await saveCatalog(published);
+    const selected = await ledger.resolveQuote({ bot: pick });
+    if (!selected.quote) throw new Error(selected.reason);
+    const alternateId = crypto.randomUUID();
+    const reservedAlternate = await request("/v1/reserve", {
+      operationId: alternateId,
+      route: selected.quote.route,
+      priceVersion: selected.quote.priceVersion,
+    });
+    expect(
+      (
+        await request("/v1/dispatch", {
+          ...consumed,
+          operationId: alternateId,
+          permit: reservedAlternate.body.permit,
+        })
+      ).body,
+    ).toMatchObject({
+      state: "completed",
+      operation: {
+        route: "alternate",
+        provider: "fixture-b",
+        model: "model-b",
+      },
+    });
+    expect(sent).toHaveLength(4);
+    expect(sent[0]).toMatchObject({
+      model: externalGateway ? "model-a" : "fixture-a/model-a",
+      max_tokens: 3,
+    });
+    expect(sent[3]).toMatchObject({
+      model: externalGateway ? "model-b" : "fixture-b/model-b",
+      max_tokens: 3,
+    });
     expect(await createTestCreditLedger(database).balance(first)).toEqual(
       await ledger.balance(first),
     );

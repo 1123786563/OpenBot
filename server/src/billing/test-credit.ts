@@ -1,5 +1,11 @@
 import { and, eq, isNull, lte, sql } from "drizzle-orm";
-import { catalogSchema, pilotCatalogKey, view } from "../admin/bifrost-catalog";
+import { z } from "zod";
+import {
+  catalogSchema,
+  pilotCatalogKey,
+  type ReleasedBifrostRoute,
+  view,
+} from "../admin/bifrost-catalog";
 import type { Database } from "../db/client";
 import {
   testCreditAccounts as accounts,
@@ -40,6 +46,43 @@ async function activeRoutes(database: Database | Transaction, lock = false) {
   const [row] = await (lock ? query.for("share") : query);
   return row && view(catalogSchema.parse(row.value));
 }
+
+// Pin compatibility independently of price. Reusing a route ID for an unverified
+// or different deployment must never silently change the meaning of a saved choice.
+export const testCreditModelPick = z.strictObject({
+  id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
+  revision: z.uuid(),
+});
+type ModelPick = z.infer<typeof testCreditModelPick>;
+type ModelPreferences = {
+  conversation?: ModelPick | null;
+  bot?: ModelPick | null;
+};
+
+function modelOption(route: ReleasedBifrostRoute) {
+  return {
+    id: route.id,
+    revision: route.revision,
+    provider: route.provider,
+    model: route.model,
+  };
+}
+
+function quoteFor(route: ReleasedBifrostRoute, priceVersion: string) {
+  return {
+    creditType: "test" as const,
+    priceVersion,
+    route: route.id,
+    provider: route.provider,
+    model: route.model,
+    price: route.price,
+    maxChargeMicrocredits: route.maxChargeMicrocredits,
+    usageDisclosure:
+      "Interrupted, cancelled, or failed requests may still use Test Credits.",
+  };
+}
+
+export type TestCreditQuote = ReturnType<typeof quoteFor>;
 
 async function totals(database: Database | Transaction, accountId: string) {
   // PostgreSQL sums bigint values as numeric. Parse its exact decimal output.
@@ -106,6 +149,8 @@ function operationReceipt(operation: Operation, verified?: Evidence) {
     state,
     priceVersion,
     route: route.id,
+    provider: route.provider,
+    model: route.model,
     creditType: "test",
     price: route.price,
     reservedMicrocredits: reserved.toString(),
@@ -305,21 +350,42 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       });
     },
 
+    async modelOptions() {
+      const active = await activeRoutes(database);
+      return active?.options.map(modelOption) ?? [];
+    },
+
+    async resolveQuote(
+      preferences: ModelPreferences,
+      executor: Database | Transaction = database,
+    ) {
+      const active = await activeRoutes(executor);
+      const source = preferences.conversation
+        ? "conversation"
+        : preferences.bot
+          ? "bot"
+          : "harness";
+      const saved = preferences.conversation ?? preferences.bot;
+      const route = active?.options.find(({ id, revision }) =>
+        saved
+          ? id === saved.id && revision === saved.revision
+          : id === active.defaultRoute,
+      );
+      if (route && active?.priceVersion)
+        return { source, quote: quoteFor(route, active.priceVersion) } as const;
+      const reason = saved
+        ? `Saved ${source === "bot" ? "Bot default" : "Conversation override"} is no longer verified for this Harness. Choose another verified model or clear the saved selection.`
+        : "No verified administrator default is available for this Harness. Ask an administrator to publish a default.";
+      return { source, reason } as const;
+    },
+
     async quote() {
       const active = await activeRoutes(database);
       const route = active?.options.find(
         ({ id }) => id === active.defaultRoute,
       );
-      if (!active?.priceVersion || !route) return undefined;
-      return {
-        creditType: "test" as const,
-        priceVersion: active.priceVersion,
-        route: route.id,
-        price: route.price,
-        maxChargeMicrocredits: route.maxChargeMicrocredits,
-        usageDisclosure:
-          "Interrupted, cancelled, or failed requests may still use Test Credits.",
-      };
+      if (route && active?.priceVersion)
+        return quoteFor(route, active.priceVersion);
     },
 
     async balance(identity: VerifiedBillingIdentity) {
