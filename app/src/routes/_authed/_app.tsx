@@ -1,8 +1,4 @@
-import {
-  createFileRoute,
-  Outlet,
-  useRouterState,
-} from "@tanstack/react-router";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { AppSidebar } from "@/components/app-sidebar/app-sidebar";
 import { astryxPilot } from "@/components/astryx-pilot/theme";
 import { AstryxWebShell } from "@/components/astryx-pilot/web-shell";
@@ -19,14 +15,7 @@ export const Route = createFileRoute("/_authed/_app")({
 function RouteComponent() {
   const { Frame } = useActiveSkin();
 
-  const skinScreen = useRouterState({
-    select: (state) =>
-      state.matches.some(
-        (match) => match.routeId === "/_authed/_app/s/$screen",
-      ),
-  });
-
-  if (astryxPilot && !skinScreen) {
+  if (astryxPilot) {
     return (
       <AstryxWebShell>
         <Outlet />
