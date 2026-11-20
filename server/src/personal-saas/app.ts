@@ -19,6 +19,10 @@ import {
 import { personalSaasStore, sessionSeconds } from "./store";
 import { workspaceBotRoutes } from "./workspace-bot-routes";
 import { workspaceBots } from "./workspace-bots";
+import {
+  type WorkspaceComputerConfig,
+  workspaceComputer,
+} from "./workspace-computer";
 
 import {
   pausedWorkspace,
@@ -41,6 +45,7 @@ export type PersonalSaasConfig = {
   now?: () => number;
   suspensionOperator?: SuspensionOperator;
   suspensionSupport?: string;
+  computer?: WorkspaceComputerConfig;
   encryptionKey: string;
   casdoor: CasdoorConfig;
 };
@@ -95,6 +100,9 @@ export function createPersonalSaasApp(
     provider.accountStatus,
     now,
   );
+  const computer =
+    config.computer &&
+    workspaceComputer(config.computer, database, accountAccess, now);
   const native = nativeAuth({
     database,
     encryptionKey: config.encryptionKey,
@@ -122,6 +130,7 @@ export function createPersonalSaasApp(
         return true;
       case "/auth/sign-out":
       case "/workspace/prepare":
+      case "/api/workspace/computer/start":
         return Boolean(bearer(context));
       default:
         return false;
@@ -448,6 +457,47 @@ export function createPersonalSaasApp(
     ),
   );
 
+  app.on(
+    ["GET", "POST"],
+    ["/api/workspace/computer", "/api/workspace/computer/start"],
+    async (context) => {
+      const start = context.req.method === "POST";
+      if (start !== context.req.path.endsWith("/start"))
+        return context.notFound();
+      const token = requestSession(context);
+      const session = await authorize(token);
+      if (session.kind === "signed-out")
+        return context.json({ error: "sign_in_required" }, 401);
+      if (
+        session.kind !== "authorized" ||
+        (await accountAccess.verify(session.grant)).kind !== "active"
+      ) {
+        return context.json({ error: "workspace_access_denied" }, 403);
+      }
+      if (!computer)
+        return context.json({ error: "computer_unavailable" }, 503);
+      const workspace = await store.workspace(session.grant.accountId);
+      if (!workspace)
+        return context.json({ error: "workspace_preparing" }, 409);
+      if (start) {
+        if (!(await stillAuthorized(token, session.grant)))
+          return context.json({ error: "authorization_changed" }, 403);
+        if (!(await computer.start(workspace.id, session.grant)))
+          return context.json({ error: "computer_start_not_accepted" }, 409);
+        if (context.req.header("accept")?.includes("text/html"))
+          return context.redirect("/workspace", 303);
+        return context.body(null, 202);
+      }
+      const status = await computer.status(workspace.id);
+      if (
+        !(await stillAuthorized(token, session.grant)) ||
+        (await accountAccess.verify(session.grant)).kind !== "active"
+      )
+        return context.json({ error: "authorization_changed" }, 403);
+      return context.json(status);
+    },
+  );
+
   app.get("/workspace", async (context) => {
     const token = getCookie(context, sessionCookie);
     const session = await authorize(token);
@@ -472,6 +522,11 @@ export function createPersonalSaasApp(
     if (!(await stillAuthorized(token, session.grant)))
       return context.redirect("/workspace");
     if (!workspace) return context.html(preparePage());
+    const computerStatus = await computer
+      ?.status(workspace.id)
+      .catch(() => undefined);
+    if (computer && !(await stillAuthorized(token, session.grant)))
+      return context.redirect("/workspace");
     return context.html(
       page(
         "Personal Workspace",
@@ -486,6 +541,28 @@ export function createPersonalSaasApp(
               )}</ul>`
         }
       </section>
+      ${
+        computerStatus
+          ? html`<section aria-labelledby="computer"><h2 id="computer">Computer</h2>
+        <p>${
+          {
+            not_started: "Ready to set up",
+            starting: "Starting. Refresh this page to check progress.",
+            running: "Running",
+            stopping: "Stopping. Refresh this page to check progress.",
+            restart_required:
+              "Stopped. Your saved files and settings are kept.",
+          }[computerStatus.status]
+        }</p>
+        ${computerStatus.cutoff === "failed" ? html`<p>Computer exit could not be confirmed by the authorization deadline.</p>` : ""}
+        ${
+          ["not_started", "restart_required"].includes(computerStatus.status)
+            ? html`<form method="post" action="/api/workspace/computer/start"><button type="submit">Start Computer</button></form>`
+            : ""
+        }
+      </section>`
+          : ""
+      }
       <form method="post" action="/auth/sign-out"><button type="submit">Sign out</button></form>
       <form method="post" action="/auth/sign-out-all">
         <p>Verify your identity with Casdoor to require every device to sign in again.</p>
@@ -571,6 +648,8 @@ export function createPersonalSaasApp(
   });
 
   return Object.assign(app, {
+    accessWorkspaceComputerForTask: computer?.accessForTask,
+    renewWorkspaceComputers: computer?.renew,
     refreshAccounts: () => accountAccess.refreshAccounts(config.casdoor.issuer),
   });
 }

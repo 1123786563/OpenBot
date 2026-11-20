@@ -292,6 +292,8 @@ async function inspectOwned(names: ComputerNames): Promise<{
   image?: string;
   startedAt?: string;
   token?: string;
+  health?: Docker.ContainerInspectInfo["State"]["Health"];
+  finishedAt?: string;
   shortId?: string;
   packageCapabilities: boolean;
   /** The id of each network it is attached to, by name. See `onLiveNetwork`. */
@@ -305,6 +307,8 @@ async function inspectOwned(names: ComputerNames): Promise<{
     const port = parseHostPort(published);
     return {
       status: info.State?.Status ?? "unknown",
+      finishedAt: info.State?.FinishedAt,
+      health: info.State?.Health,
       ...(port !== undefined ? { port } : {}),
       // The resolved image, not the tag it was started from. A tag moves when the image is
       // rebuilt; this is what the container is actually running.
@@ -517,6 +521,7 @@ export type EnsureOptions = {
    * a test that wants an answer in seconds.
    */
   readyTimeoutMs?: number;
+  mayStart?: () => boolean;
   pidsLimit?: number;
   /**
    * The volume holding the SPIRE agent's Workload API socket, mounted read-only into each computer
@@ -559,7 +564,9 @@ function hostConfig(names: ComputerNames, options: EnsureOptions) {
             [COMPUTER_PORT]: [{ HostIp: "127.0.0.1", HostPort: "" }],
           },
         }),
-    RestartPolicy: { Name: "unless-stopped" },
+    RestartPolicy: {
+      Name: names.kind === "workspace" ? "no" : "unless-stopped",
+    },
     ...(options.network ? { NetworkMode: options.network } : {}),
     ...(options.runtime ? { Runtime: options.runtime } : {}),
 
@@ -693,6 +700,9 @@ export async function ensure(
 
     if (existing?.status !== "running") {
       try {
+        if (options.mayStart && !options.mayStart()) {
+          throw new Error("Computer execution grant expired before start");
+        }
         await docker.getContainer(names.container).start();
       } catch (error) {
         const status = statusOf(error);
@@ -720,7 +730,9 @@ export async function ensure(
     }
 
     const settled = await inspectOwned(names);
-    await waitUntilAnswering(names.container, options.readyTimeoutMs);
+    if (names.kind !== "workspace") {
+      await waitUntilAnswering(names.container, options.readyTimeoutMs);
+    }
 
     return {
       kind: names.kind,
@@ -751,7 +763,9 @@ export async function stop(names: ComputerNames): Promise<boolean> {
   if (!(await inspectOwned(names))) return false;
   try {
     // Long enough for Chromium to flush its profile, matching the compose grace period.
-    await docker.getContainer(names.container).stop({ t: 30 });
+    await docker
+      .getContainer(names.container)
+      .stop({ t: names.kind === "workspace" ? 1 : 30 });
   } catch (error) {
     const status = (error as { statusCode?: number }).statusCode;
     if (status !== 304 && status !== 404) {
@@ -1051,4 +1065,27 @@ export async function carryOverProfile(
     if (carrying.get(key) === attempt) carrying.delete(key);
   });
   return attempt;
+}
+
+export async function inspectWorkspaceProcess(
+  names: ComputerNames,
+  network?: string,
+) {
+  const process = await inspectOwned(names);
+  if (!process) return null;
+  const status =
+    process.status === "running" && process.health?.Status !== "healthy"
+      ? "starting"
+      : process.status;
+  const address = network
+    ? `http://${networkHostFor(names.container, process.shortId)}:4100`
+    : process.port
+      ? `http://127.0.0.1:${process.port}`
+      : undefined;
+  return {
+    status,
+    address,
+    token: process.token,
+    finishedAt: Date.parse(process.finishedAt ?? ""),
+  };
 }

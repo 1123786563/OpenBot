@@ -30,6 +30,14 @@ const trial = z.object({
     .regex(/^[A-Za-z0-9_-]{43}$/)
     .optional(),
   OPENBOT_SUSPENSION_SUPPORT_EMAIL: z.email().optional(),
+  OPENBOT_WORKSPACE_COMPUTER_SUPERVISOR_URL: z
+    .url({ protocol: /^https?$/ })
+    .optional(),
+  OPENBOT_WORKSPACE_COMPUTER_SUPERVISOR_TOKEN: z
+    .string()
+    .trim()
+    .min(1)
+    .optional(),
   DATABASE_URL: z.string().min(1),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
 });
@@ -52,6 +60,13 @@ if (
     "Configure the suspension operator ID, token and support email together",
   );
 
+const supervisorUrl = env.OPENBOT_WORKSPACE_COMPUTER_SUPERVISOR_URL;
+const supervisorToken = env.OPENBOT_WORKSPACE_COMPUTER_SUPERVISOR_TOKEN;
+if (Boolean(supervisorUrl) !== Boolean(supervisorToken))
+  throw new Error(
+    "Configure the workspace Computer supervisor URL and token together",
+  );
+
 const app = createPersonalSaasApp(
   {
     origin: new URL(env.OPENBOT_PERSONAL_SAAS_URL).origin,
@@ -61,6 +76,10 @@ const app = createPersonalSaasApp(
         ? { id: operatorId, token: operatorToken }
         : undefined,
     suspensionSupport,
+    computer:
+      supervisorUrl && supervisorToken
+        ? { supervisorUrl, supervisorToken }
+        : undefined,
     casdoor: {
       issuer: env.CASDOOR_ISSUER,
       discoveryUrl: new URL(env.CASDOOR_DISCOVERY_URL),
@@ -97,3 +116,19 @@ async function refreshAccounts() {
 }
 
 void refreshAccounts();
+
+const renewComputers = app.renewWorkspaceComputers;
+if (renewComputers) {
+  async function maintainComputerLeases() {
+    try {
+      await renewComputers?.();
+    } catch {
+      console.warn(
+        JSON.stringify({ type: "workspace-computer-lease-renewal-failure" }),
+      );
+    } finally {
+      setTimeout(maintainComputerLeases, 1_000);
+    }
+  }
+  void maintainComputerLeases();
+}

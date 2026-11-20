@@ -20,6 +20,7 @@ import { createPersonalSaasApp } from "../src/personal-saas/app";
 import { workspaceIntegrationGrants } from "../src/personal-saas/integration-grants";
 import { personalSaasStore } from "../src/personal-saas/store";
 import { workspaceBots } from "../src/personal-saas/workspace-bots";
+import type { WorkspaceComputerConfig } from "../src/personal-saas/workspace-computer";
 import { createWorkQueue } from "../src/work/queue";
 import { testDatabaseUrl } from "./support/database";
 import { assertWorkspaceIsolation } from "./support/workspace-isolation";
@@ -179,11 +180,12 @@ beforeAll(() => {
   app = newApp();
 });
 
-function newApp(db = database) {
+function newApp(db = database, computer?: WorkspaceComputerConfig) {
   return createPersonalSaasApp(
     {
       origin,
       now,
+      computer,
       suspensionOperator: { id: "trial-operator", token: operatorToken },
       suspensionSupport: "support@example.com",
       encryptionKey: Buffer.alloc(32, 7).toString("base64"),
@@ -1858,4 +1860,106 @@ test("native verified handoffs return only the signed-in owner's suspension stat
   expect((await exchangeNative({ ...oldProof, code: oldCode })).status).toBe(
     400,
   );
+});
+
+test("managed Computer owner status and explicit start are scoped to the signed-in workspace", async () => {
+  const priorApp = app;
+  const starts: string[] = [];
+  const renewed: string[] = [];
+  const computers: Array<{ id: string; epoch: number }> = [];
+  app = newApp(database, {
+    supervisorUrl: "http://supervisor.example",
+    supervisorToken: "fixture-supervisor-token",
+    async fetch(input, init) {
+      const req = new Request(input, init);
+      const path = new URL(req.url).pathname;
+      expect(req.headers.get("authorization")).toBe(
+        "Bearer fixture-supervisor-token",
+      );
+      if (path === "/workspace-computers") return Response.json({ computers });
+      if (req.method === "POST") {
+        if (path.endsWith("/renew")) {
+          renewed.push(path);
+        } else {
+          starts.push(path);
+          const grant = (await req.json()) as { epoch: number };
+          computers.push({ id: path.split("/")[2], epoch: grant.epoch });
+        }
+        return new Response(null, { status: 204 });
+      }
+      return Response.json({
+        status: starts.includes(`${path}/start`) ? "running" : "not_started",
+        address: "http://private-computer:4100",
+      });
+    },
+  });
+  try {
+    const signIn = async () => {
+      const response = await authenticate({
+        sub: crypto.randomUUID(),
+        email: "managed-computer@example.com",
+        verified: true,
+        active: true,
+      });
+      const session = cookie(response, "__Host-openbot-personal=");
+      await enter(session);
+      return { session, workspaceId: (await workspace(session)).id };
+    };
+    const owner = await signIn();
+    const other = await signIn();
+    const computer = "/api/workspace/computer";
+    const headers = { cookie: owner.session, origin };
+    expect((await send(computer)).status).toBe(401);
+    expect(await (await send(computer, { headers })).json()).toEqual({
+      status: "not_started",
+    });
+    expect(starts).toEqual([]);
+    expect(
+      (
+        await send(`${computer}/start`, {
+          method: "POST",
+          headers: { cookie: owner.session },
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (await send(`${computer}/start`, { method: "POST", headers })).status,
+    ).toBe(202);
+    expect(starts).toEqual([`/workspace-computers/${owner.workspaceId}/start`]);
+    expect(await (await send(computer, { headers })).json()).toEqual({
+      status: "running",
+    });
+    expect(
+      await (
+        await send(computer, { headers: { cookie: other.session } })
+      ).json(),
+    ).toEqual({ status: "not_started" });
+    await app.renewWorkspaceComputers?.();
+    expect(renewed).toEqual([
+      `/workspace-computers/${owner.workspaceId}/renew`,
+    ]);
+    const paused = await send(
+      `/api/operator/workspaces/${owner.workspaceId}/suspension`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${operatorToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "pause",
+          reason: "Computer cutoff fixture",
+        }),
+      },
+    );
+    expect(paused.status).toBe(201);
+    expect(
+      (await send(`${computer}/start`, { method: "POST", headers })).status,
+    ).toBe(401);
+    expect(starts).toHaveLength(1);
+    await app.renewWorkspaceComputers?.();
+    expect(renewed).toHaveLength(1);
+  } finally {
+    app = priorApp;
+  }
 });
