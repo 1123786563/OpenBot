@@ -21,6 +21,7 @@ import { Route as AuthedAppApprovalsRouteImport } from './routes/_authed/_app/ap
 import { Route as AuthedAppBotRouteImport } from './routes/_authed/_app/bot'
 import { Route as AuthedAppBrowserRouteImport } from './routes/_authed/_app/browser'
 import { Route as AuthedAppCapabilitiesRouteImport } from './routes/_authed/_app/capabilities'
+import { Route as AuthedAppIdeasRouteImport } from './routes/_authed/_app/ideas'
 import { Route as AuthedAppMemoryRouteImport } from './routes/_authed/_app/memory'
 import { Route as AuthedAppReachabilityRouteImport } from './routes/_authed/_app/reachability'
 import { Route as AuthedAppResponsibilitiesRouteImport } from './routes/_authed/_app/responsibilities'
@@ -167,6 +168,11 @@ const AuthedAppBrowserRoute = AuthedAppBrowserRouteImport.update({
 const AuthedAppCapabilitiesRoute = AuthedAppCapabilitiesRouteImport.update({
   id: '/capabilities',
   path: '/capabilities',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppIdeasRoute = AuthedAppIdeasRouteImport.update({
+  id: '/ideas',
+  path: '/ideas',
   getParentRoute: () => AuthedAppRoute,
 } as any)
 const AuthedAppMemoryRoute = AuthedAppMemoryRouteImport.update({
@@ -672,6 +678,7 @@ export interface FileRoutesByFullPath {
   '/bot': typeof AuthedAppBotRoute
   '/browser': typeof AuthedAppBrowserRoute
   '/capabilities': typeof AuthedAppCapabilitiesRouteWithChildren
+  '/ideas': typeof AuthedAppIdeasRoute
   '/memory': typeof AuthedAppMemoryRoute
   '/reachability': typeof AuthedAppReachabilityRoute
   '/responsibilities': typeof AuthedAppResponsibilitiesRoute
@@ -769,6 +776,7 @@ export interface FileRoutesByTo {
   '/approvals': typeof AuthedAppApprovalsRoute
   '/bot': typeof AuthedAppBotRoute
   '/browser': typeof AuthedAppBrowserRoute
+  '/ideas': typeof AuthedAppIdeasRoute
   '/memory': typeof AuthedAppMemoryRoute
   '/reachability': typeof AuthedAppReachabilityRoute
   '/responsibilities': typeof AuthedAppResponsibilitiesRoute
@@ -871,6 +879,7 @@ export interface FileRoutesById {
   '/_authed/_app/bot': typeof AuthedAppBotRoute
   '/_authed/_app/browser': typeof AuthedAppBrowserRoute
   '/_authed/_app/capabilities': typeof AuthedAppCapabilitiesRouteWithChildren
+  '/_authed/_app/ideas': typeof AuthedAppIdeasRoute
   '/_authed/_app/memory': typeof AuthedAppMemoryRoute
   '/_authed/_app/reachability': typeof AuthedAppReachabilityRoute
   '/_authed/_app/responsibilities': typeof AuthedAppResponsibilitiesRoute
@@ -975,6 +984,7 @@ export interface FileRouteTypes {
     | '/bot'
     | '/browser'
     | '/capabilities'
+    | '/ideas'
     | '/memory'
     | '/reachability'
     | '/responsibilities'
@@ -1072,6 +1082,7 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/bot'
     | '/browser'
+    | '/ideas'
     | '/memory'
     | '/reachability'
     | '/responsibilities'
@@ -1173,6 +1184,7 @@ export interface FileRouteTypes {
     | '/_authed/_app/bot'
     | '/_authed/_app/browser'
     | '/_authed/_app/capabilities'
+    | '/_authed/_app/ideas'
     | '/_authed/_app/memory'
     | '/_authed/_app/reachability'
     | '/_authed/_app/responsibilities'
@@ -1354,6 +1366,13 @@ declare module '@tanstack/react-router' {
       path: '/capabilities'
       fullPath: '/capabilities'
       preLoaderRoute: typeof AuthedAppCapabilitiesRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/ideas': {
+      id: '/_authed/_app/ideas'
+      path: '/ideas'
+      fullPath: '/ideas'
+      preLoaderRoute: typeof AuthedAppIdeasRouteImport
       parentRoute: typeof AuthedAppRoute
     }
     '/_authed/_app/memory': {
@@ -2150,6 +2169,7 @@ interface AuthedAppRouteChildren {
   AuthedAppBotRoute: typeof AuthedAppBotRoute
   AuthedAppBrowserRoute: typeof AuthedAppBrowserRoute
   AuthedAppCapabilitiesRoute: typeof AuthedAppCapabilitiesRouteWithChildren
+  AuthedAppIdeasRoute: typeof AuthedAppIdeasRoute
   AuthedAppMemoryRoute: typeof AuthedAppMemoryRoute
   AuthedAppReachabilityRoute: typeof AuthedAppReachabilityRoute
   AuthedAppResponsibilitiesRoute: typeof AuthedAppResponsibilitiesRoute
@@ -2189,6 +2209,7 @@ const AuthedAppRouteChildren: AuthedAppRouteChildren = {
   AuthedAppBotRoute: AuthedAppBotRoute,
   AuthedAppBrowserRoute: AuthedAppBrowserRoute,
   AuthedAppCapabilitiesRoute: AuthedAppCapabilitiesRouteWithChildren,
+  AuthedAppIdeasRoute: AuthedAppIdeasRoute,
   AuthedAppMemoryRoute: AuthedAppMemoryRoute,
   AuthedAppReachabilityRoute: AuthedAppReachabilityRoute,
   AuthedAppResponsibilitiesRoute: AuthedAppResponsibilitiesRoute,
