@@ -103,7 +103,14 @@ import type { DeploymentConfig } from "./config";
 import { observeModelConnection } from "./desktop-connection-failure";
 import { desktopTelemetryProperties } from "./desktop-telemetry";
 import { currentEdition } from "./edition";
-import { observeIntelligenceAuthentication } from "./intelligence-client";
+import { Hono } from "hono";
+import type { AgentProfileStore } from "./agents/profile-store";
+import { createDirectChatRoutes } from "./channels/direct-chat";
+import type { Database } from "./db/client";
+import {
+  createIntelligenceClient,
+  observeIntelligenceAuthentication,
+} from "./intelligence-client";
 import { capturePassOrigin } from "./intelligence-gateway-proxy";
 import {
   LEARNED_SKILL_TOOL_COUNT,
@@ -122,6 +129,7 @@ import {
   type LoadPersonalMemory,
   PersonalMemoryMiddleware,
 } from "./memory/tools";
+import { createManagedModel } from "./managed-model";
 import { providerName } from "./model-billing";
 import { modelSourceFor, type RunChoice } from "./model-catalogue";
 import { pickedSkillGuidance } from "./plugins/picked-skill";
@@ -3020,6 +3028,7 @@ export function mountCopilotRuntime(
   identifyActor: IdentifyActor,
   options: {
     productTelemetry?: ProductTelemetry;
+    directChat?: { database: Database; profiles: AgentProfileStore };
     /**
      * Where the cards a Bot asks with in the conversation are saved while they wait on the person,
      * so the Bot is under Needs you for them. See approvals/decision-waits.ts.
@@ -3079,10 +3088,12 @@ export function mountCopilotRuntime(
     actor: AgentActor;
     botId: string;
     initiator?: AuditInitiator;
+    textOnly?: boolean;
   }): Promise<AbstractAgent | null> => {
     try {
       return await resolver.resolveAgentForActor(input.actor, input.botId, {
         initiator: input.initiator,
+        ...(input.textOnly ? { holdsTools: () => false } : {}),
       });
     } catch (error) {
       if (error instanceof CoworkerUnavailableError) return null;
@@ -3094,52 +3105,54 @@ export function mountCopilotRuntime(
    * One client, used by the runtime and by anything reading a thread beside it, so a hop reads the
    * history a person's run would read rather than a second view of it that could disagree.
    */
-  const intelligenceClient: CopilotKitIntelligence =
-    observeIntelligenceAuthentication(
-      new IntelligenceKnowingANewThread({
-        apiUrl: intelligence.apiUrl,
-        wsUrl: intelligence.gatewayWsUrl,
-        browserWsUrl: intelligence.browserGatewayWsUrl,
-        // Where the browser's address is a path (this server carries the socket, and has no public
-        // URL), the Recorder's capture pass is handed it whole. See intelligence-gateway-proxy.ts.
-        ownOrigin: capturePassOrigin,
-        apiKey: intelligence.apiKey,
-        getLearningContainerId: async ({
-          agentId,
-          input,
-          user,
-        }): Promise<string | undefined> => {
-          if (!user)
-            throw new Error(
-              "Learning Thread assignment requires a verified user.",
-            );
-          return learning?.containerForThread({
+  const intelligenceClient: CopilotKitIntelligence = intelligence
+    ? observeIntelligenceAuthentication(
+        new IntelligenceKnowingANewThread({
+          apiUrl: intelligence.apiUrl,
+          wsUrl: intelligence.gatewayWsUrl,
+          browserWsUrl: intelligence.browserGatewayWsUrl,
+          // Where the browser's address is a path (this server carries the socket, and has no public
+          // URL), the Recorder's capture pass is handed it whole. See intelligence-gateway-proxy.ts.
+          ownOrigin: capturePassOrigin,
+          apiKey: intelligence.apiKey,
+          getLearningContainerId: async ({
             agentId,
-            threadId: input.threadId,
-            userId: user.id,
-          });
-        },
-        ...(trajectoryCapture
-          ? {
-              getTrajectoryLearningContainerIds:
-                trajectoryCapture.selectLearningContainers,
-            }
-          : {}),
-      }),
-    );
+            input,
+            user,
+          }): Promise<string | undefined> => {
+            if (!user)
+              throw new Error(
+                "Learning Thread assignment requires a verified user.",
+              );
+            return learning?.containerForThread({
+              agentId,
+              threadId: input.threadId,
+              userId: user.id,
+            });
+          },
+          ...(trajectoryCapture
+            ? {
+                getTrajectoryLearningContainerIds:
+                  trajectoryCapture.selectLearningContainers,
+              }
+            : {}),
+        }),
+      )
+    : createIntelligenceClient();
 
-  const learning: LearningRuntime | undefined = learningSettings
-    ? createLearningRuntime({
-        store: learningSettings,
-        client: intelligenceClient,
-        ...(personalSkills ? { people: personalSkills } : {}),
-        ...(learningContainerForgotten
-          ? { forgotten: learningContainerForgotten }
-          : {}),
-      })
-    : undefined;
+  const learning: LearningRuntime | undefined =
+    intelligence && learningSettings
+      ? createLearningRuntime({
+          store: learningSettings,
+          client: intelligenceClient,
+          ...(personalSkills ? { people: personalSkills } : {}),
+          ...(learningContainerForgotten
+            ? { forgotten: learningContainerForgotten }
+            : {}),
+        })
+      : undefined;
 
-  const runtime = new CopilotRuntime({
+  const runtimeOptions = {
     // `mode` is inferred from the presence of `intelligence`; passing it is a type error.
     //
     // identifyUser is NOT optional in practice. Threads and memory are scoped to the user it
@@ -3148,7 +3161,6 @@ export function mountCopilotRuntime(
     identifyUser,
     // The subclass, not the base: a thread nobody has run yet reads as empty rather than as a 500.
     // See IntelligenceKnowingANewThread.
-    intelligence: intelligenceClient,
     /*
      * NO TITLE RUNS. On a thread's first run the runtime would name it by running the same Bot again
      * on a title prompt, beside the person's run. On a harness that was a second run on the
@@ -3158,8 +3170,6 @@ export function mountCopilotRuntime(
      * the title people see. The runtime's name only ever reached a Learning proposal's evidence,
      * whose title is optional and now empty for a conversation.
      */
-    generateThreadNames: false,
-    licenseToken: intelligence.licenseToken,
     // Carried on the events the runtime already sends, so OpenBot's traffic is separable from any
     // other deployment's. Adds no events of its own.
     telemetryProperties: {
@@ -3204,7 +3214,18 @@ export function mountCopilotRuntime(
     // `identifyUser` is the Intelligence projection of the same person `identifyActor` returns:
     // one resolver decides both whose threads these are and whose coworkers exist.
     agents: createRequestAgents(identifyActor, resolver) as never,
-  });
+  };
+  const runtime = intelligence
+    ? new CopilotRuntime({
+        ...runtimeOptions,
+        intelligence: intelligenceClient,
+        generateThreadNames: false,
+        licenseToken: intelligence.licenseToken,
+      })
+    : new CopilotRuntime({
+        ...runtimeOptions,
+        ɵtelemetry: { capture: async () => {} },
+      });
 
   /*
    * A person's Stop on a browser run, as this server learns of it: Intelligence relays the Stop to
@@ -3241,38 +3262,62 @@ export function mountCopilotRuntime(
   if (options.decisionWaits)
     watchDecisionWaits(runtime.runner, options.decisionWaits);
 
-  return {
-    handler: createCopilotHonoHandler({
-      runtime,
-      basePath,
-      /*
-       * This deployment's own origins and the Recorder, and nobody else.
-       *
-       * Left out, the runtime answers `Access-Control-Allow-Origin: *` on every response and 204 to
-       * every preflight, so any website the person visited could read their threads and messages
-       * here. The app calls the runtime on its own origin and needs no CORS at all; the Recorder is
-       * an extension, which its host permission lets past CORS anyway, and is named so that stays
-       * true whatever Chrome decides. An origin it does not name gets no CORS headers and the
-       * browser keeps the answer from the page.
-       */
-      cors: { origin: corsOrigin(config) },
-      hooks: {
-        onBeforeHandler: async (context) => {
-          const gated = await trajectoryCapture?.gate(context);
-          const prepared = options.productTelemetry
-            ? ((await productRuntimeHook(
-                options.productTelemetry,
-                identifyActor,
-              )({ ...context, request: gated ?? context.request })) ?? gated)
-            : gated;
-          // Last, so nothing after it can drop the mark. See `isAskedRun`.
-          return (
-            (await markAskedRun(prepared ?? context.request, context.route)) ??
-            prepared
-          );
-        },
+  const sdkHandler = createCopilotHonoHandler({
+    runtime,
+    basePath,
+    /*
+     * This deployment's own origins and the Recorder, and nobody else.
+     *
+     * Left out, the runtime answers `Access-Control-Allow-Origin: *` on every response and 204 to
+     * every preflight, so any website the person visited could read their threads and messages
+     * here. The app calls the runtime on its own origin and needs no CORS at all; the Recorder is
+     * an extension, which its host permission lets past CORS anyway, and is named so that stays
+     * true whatever Chrome decides. An origin it does not name gets no CORS headers and the
+     * browser keeps the answer from the page.
+     */
+    cors: { origin: corsOrigin(config) },
+    hooks: {
+      onBeforeHandler: async (context) => {
+        const gated = await trajectoryCapture?.gate(context);
+        const prepared = options.productTelemetry
+          ? ((await productRuntimeHook(
+              options.productTelemetry,
+              identifyActor,
+            )({ ...context, request: gated ?? context.request })) ?? gated)
+          : gated;
+        // Last, so nothing after it can drop the mark. See `isAskedRun`.
+        return (
+          (await markAskedRun(prepared ?? context.request, context.route)) ??
+          prepared
+        );
       },
-    }),
+    },
+  });
+
+  const handler = intelligence ? sdkHandler : new Hono();
+  if (!intelligence) {
+    if (!options.directChat)
+      throw new Error("OpenBot chat requires its database and Bot profiles.");
+    const trial = config.managedModelTrial;
+    handler.route(
+      basePath,
+      createDirectChatRoutes({
+        ...options.directChat,
+        trial: trial && {
+          route: trial.route,
+          model: createManagedModel(trial),
+        },
+        identifyActor,
+        agentFor: (actor, botId) => agentFor({ actor, botId, textOnly: true }),
+      }),
+    );
+    handler.get(`${basePath}/info`, (context) =>
+      sdkHandler.fetch(context.req.raw),
+    );
+  }
+
+  return {
+    handler,
     learning,
     /**
      * How to reach the platform's runner, exactly as the runtime reaches it.
