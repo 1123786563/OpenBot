@@ -27,19 +27,15 @@ import {
 } from "@opentelemetry/sdk-logs";
 import type { AuditTapEvent } from "../audit";
 import {
+  auditExportDiagnostic,
   identifierOf,
-  projectAuditEvent,
   type OpenBotAuditRecord,
   type OpenBotScalar,
+  projectAuditEvent,
 } from "./observability-projection";
 
-export type ExportedEvent = AuditTapEvent & {
-  /** Overrides the surface derived from the event type. */
-  surface?: string;
-};
-
 export type EventExporter = {
-  emit: (event: ExportedEvent) => void;
+  emit: (event: AuditTapEvent) => void;
   shutdown: () => Promise<void>;
 };
 
@@ -95,7 +91,7 @@ export function otelConfigured(
   if (env.OPENBOT_OTEL_EXPORT?.trim().toLowerCase() === "off") return false;
   return Boolean(
     env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT?.trim() ||
-    env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim(),
+      env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim(),
   );
 }
 
@@ -115,12 +111,8 @@ function attributesOf(
     "openbot.event_type": record.event_type,
     "openbot.target_type": record.target_type,
     "openbot.initiator_kind": record.initiator_kind,
-    ...(record.audit_event_id
-      ? { "openbot.audit_event_id": record.audit_event_id }
-      : {}),
-    ...(record.occurred_at
-      ? { "openbot.occurred_at": record.occurred_at }
-      : {}),
+    "openbot.audit_event_id": record.audit_event_id,
+    "openbot.occurred_at": record.occurred_at,
     ...(record.target_id ? { "openbot.target_id": record.target_id } : {}),
     ...(record.actor_user_id
       ? { "openbot.actor_user_id": record.actor_user_id }
@@ -182,31 +174,30 @@ export function createOtelEventExporter(
     emit(event) {
       try {
         const record = projectAuditEvent(event, deploymentId);
-        const severity = severityOf(record.event_type);
+        if (!record) return;
+        const failed = record.projection_status === "failed";
+        if (failed) {
+          console.info(
+            JSON.stringify(
+              auditExportDiagnostic(deploymentId, "audit_projection_failed"),
+            ),
+          );
+        }
+        const severity = failed
+          ? SeverityNumber.WARN
+          : severityOf(record.event_type);
         logger.emit({
-          severityNumber:
-            record.projection_status === "failed"
-              ? SeverityNumber.WARN
-              : severity,
-          severityText:
-            record.projection_status === "failed" ||
-            severity === SeverityNumber.WARN
-              ? "WARN"
-              : "INFO",
+          severityNumber: severity,
+          severityText: severity === SeverityNumber.WARN ? "WARN" : "INFO",
           body: record.event_type,
           eventName: record.event_type,
-          attributes: attributesOf(
-            record,
-            event.surface ?? surfaceOf(record.event_type),
-          ),
+          attributes: attributesOf(record, surfaceOf(record.event_type)),
         });
-      } catch (error) {
-        console.error(
-          JSON.stringify({
-            type: "otel-export-failed",
-            eventType: event.eventType,
-            error: String(error),
-          }),
+      } catch {
+        console.info(
+          JSON.stringify(
+            auditExportDiagnostic(deploymentId, "audit_export_failed"),
+          ),
         );
       }
     },

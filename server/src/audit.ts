@@ -1095,31 +1095,26 @@ export function createAuditStore(database: Database): AuditStore {
               ? run.forwardedProps.openbotTelemetry
               : undefined;
           const context =
-            telemetry && "parent_run_id" in telemetry
-              ? {
-                  parentRunId: telemetry.parent_run_id,
-                  rootTaskId:
-                    "root_task_id" in telemetry
-                      ? telemetry.root_task_id
-                      : undefined,
-                  attemptId:
-                    "attempt_id" in telemetry
-                      ? telemetry.attempt_id
-                      : undefined,
-                }
+            telemetry &&
+            "run_id" in telemetry &&
+            telemetry.run_id === run?.runId
+              ? telemetry
               : {};
           tap({
             ...row,
             ...persisted,
             ...(run ? { runId: run.runId, threadId: run.threadId } : {}),
-            ...(typeof context.parentRunId === "string"
-              ? { parentRunId: context.parentRunId }
+            ...("parent_run_id" in context &&
+            typeof context.parent_run_id === "string"
+              ? { parentRunId: context.parent_run_id }
               : {}),
-            ...(typeof context.rootTaskId === "string"
-              ? { rootTaskId: context.rootTaskId }
+            ...("root_task_id" in context &&
+            typeof context.root_task_id === "string"
+              ? { rootTaskId: context.root_task_id }
               : {}),
-            ...(typeof context.attemptId === "string"
-              ? { attemptId: context.attemptId }
+            ...("attempt_id" in context &&
+            typeof context.attempt_id === "string"
+              ? { attemptId: context.attempt_id }
               : {}),
           });
         } catch (error) {

@@ -504,16 +504,6 @@ export async function installEnterpriseControls(
             }),
           ),
         );
-      exporter?.emit({
-        eventType: "action.recorded",
-        targetType: "computer",
-        targetId: botId,
-        actorUserId: event.actorUserId ?? null,
-        initiatorKind: event.initiatorKind,
-        initiatorId: event.initiatorId,
-        payload: { bot: botId, tool: toolName, command: scrubbed, outcome },
-        surface: "bot",
-      });
     }),
   );
 
