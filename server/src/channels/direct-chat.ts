@@ -54,17 +54,27 @@ function replyFor(run: Run): Message[] {
 }
 
 function eventStream(
+  authorize: () => Promise<boolean>,
   work: (emit: (event: BaseEvent) => void) => Promise<void>,
 ) {
   const encoder = new TextEncoder();
   let open = true;
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
+      let writes = Promise.resolve();
       const emit = (event: BaseEvent) => {
-        if (open)
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
-          );
+        writes = writes.then(async () => {
+          if (!open) return;
+          if (!(await authorize().catch(() => false))) {
+            if (open) controller.close();
+            open = false;
+            return;
+          }
+          if (open)
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
+            );
+        });
       };
       void work(emit)
         .catch(() => {
@@ -73,6 +83,7 @@ function eventStream(
             message: "Could not load the Bot run.",
           });
         })
+        .then(() => writes)
         .finally(() => {
           if (open) controller.close();
         });
@@ -163,7 +174,7 @@ export function createDirectChatRoutes(deps: {
         ),
       );
     const [row] = lock
-      ? await query.for("update", { of: mapping })
+      ? await query.for("update", { of: [channels, mapping] })
       : await query;
     if (!row) return null;
     const profile = lock
@@ -213,19 +224,18 @@ export function createDirectChatRoutes(deps: {
     if (!parsed.success)
       return context.json({ error: "A thread is required." }, 400);
     const { threadId } = parsed.data;
+    const agentId = context.req.param("agentId");
     const actor = await actorFor(context.req.raw);
-    if (
-      !actor ||
-      !(await threadFor(
-        database,
-        actor,
-        threadId,
-        context.req.param("agentId"),
-      ))
-    )
+    if (!actor || !(await threadFor(database, actor, threadId, agentId)))
       return context.json(absent, 404);
     const messages = messagesFor(await history(database, threadId));
-    return eventStream(async (emit) => {
+    const stream = (work: Parameters<typeof eventStream>[1]) =>
+      eventStream(
+        async () =>
+          Boolean(await threadFor(database, actor, threadId, agentId)),
+        work,
+      );
+    return stream(async (emit) => {
       emit({ type: EventType.MESSAGES_SNAPSHOT, messages });
     });
   });
@@ -299,7 +309,13 @@ export function createDirectChatRoutes(deps: {
       eq(directChatRuns.id, run.id),
     );
 
-    return eventStream(async (emit) => {
+    const stream = (work: Parameters<typeof eventStream>[1]) =>
+      eventStream(
+        async () =>
+          Boolean(await threadFor(database, actor, threadId, agentId)),
+        work,
+      );
+    return stream(async (emit) => {
       if (claim.kind === "repeat") {
         let outcome = run;
         const deadline = Date.now() + DUPLICATE_WAIT_MS;

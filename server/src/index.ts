@@ -114,7 +114,11 @@ import {
   groupSourceForRun,
 } from "./channels/group";
 import { createModelChoices } from "./channels/model-choice";
-import { type ChannelStore, createChannelStore } from "./channels/routes";
+import {
+  type ChannelStore,
+  createChannelStore,
+  currentChannelEventMembers,
+} from "./channels/routes";
 import { createStallGuard } from "./channels/stall-guard";
 import {
   forgetSettledSummaries,
@@ -529,6 +533,7 @@ const componentStore = createComponentStore(database);
 const channelActivityListener = await startChannelActivityListener(
   config.databaseUrl,
   channelEvents,
+  (event) => currentChannelEventMembers(database, event),
 );
 const roleRepository = createRoleRepository(database);
 const loadAgentsForActor = createRuntimeAgentLoader(
@@ -734,12 +739,15 @@ let deliveryNotifications: (
  * sitting in front of them in chat. This asks the same repository the request path asks, so a routine
  * sees exactly the coworkers its owner sees.
  */
-const actorFor = async (ownerUserId: string): Promise<AgentActor> => {
+const actorFor = async (
+  ownerUserId: string,
+  rolesFrom = roleRepository,
+): Promise<AgentActor> => {
   // One person, and they are an administrator. The id stays the routine owner's rather than being
   // rewritten to DEV_ACTOR's: in this mode they are the same person, and if they ever were not,
   // silently borrowing the dev actor's identity would be worse than finding nothing.
   if (config.singleUser) return { id: ownerUserId, role: DEV_ACTOR.role };
-  const roles = await roleRepository.rolesForUser(ownerUserId);
+  const roles = await rolesFrom.rolesForUser(ownerUserId);
   if (!roles.includes("admin") && !roles.includes("user")) {
     throw new Error("A routine requires an authorized owner.");
   }
@@ -802,7 +810,17 @@ const authoriseQuestion = async (question: PersonQuestion) => {
   )
     throw new ApprovalRefusedError("That Bot is no longer available to you.");
 };
-const storedApprovals = createApprovalStore(database);
+const storedApprovals = createApprovalStore(
+  database,
+  async (tx, owner, botId) =>
+    Boolean(
+      await agentProfileStore.getWithin(
+        tx,
+        await actorFor(owner, createRoleRepository(tx)),
+        botId,
+      ),
+    ),
+);
 // Before anything reads the model environment: blank base URLs removed, Anthropic given its `/v1`.
 normalizeModelBaseUrls();
 const runtimeModel = runtimeModelForEnvironment(tenantPackage.model);

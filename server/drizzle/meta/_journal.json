@@ -631,6 +631,13 @@
       "when": 1795157993281,
       "tag": "0089_direct_chat_runs",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1795162646705,
+      "tag": "0090_conversation_lifecycle",
+      "breakpoints": true
     }
   ]
 }

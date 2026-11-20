@@ -5,7 +5,7 @@ import {
   EventType,
   type RunAgentInput,
 } from "@ag-ui/client";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { Observable } from "rxjs";
@@ -16,10 +16,15 @@ import {
   createChannelStore,
 } from "../src/channels/routes";
 import { createThreadIdentity } from "../src/channels/thread-identity";
+import { createAuditStore } from "../src/audit";
+import {
+  createAttachmentRoutes,
+  createChannelAttachmentRoutes,
+} from "../src/channels/attachments";
 import { loadConfig } from "../src/config";
 import { mountCopilotRuntime } from "../src/copilot";
 import { createDatabase } from "../src/db/client";
-import { agents, channels, users } from "../src/db/schema";
+import { agents, auditEvents, channels, users } from "../src/db/schema";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const databaseUrl = testDatabaseUrl();
@@ -115,7 +120,17 @@ function web(
     await next();
   };
   const app = new Hono<{ Variables: AppVariables }>();
-  app.route("/api/channels", createChannelRoutes(channelStore, requireUser));
+  app.route(
+    "/api/channels",
+    createChannelRoutes(
+      channelStore,
+      requireUser,
+      undefined,
+      createAuditStore(db),
+    ),
+  );
+  app.route("/api/channels", createChannelAttachmentRoutes(db, requireUser));
+  app.route("/api/attachments", createAttachmentRoutes(db, requireUser));
   app.route("/", copilot.handler);
   return app;
 }
@@ -333,5 +348,96 @@ test("Web direct chat persists messages and one run per send, with only its Pers
       await database.delete(agents).where(eq(agents.id, id));
     for (const id of [alice.id, bob.id])
       await database.delete(users).where(eq(users.id, id));
+  }
+});
+
+test("archiving hides only the list entry; deletion withdraws direct history, attachments and an active stream", async () => {
+  const actor = await person();
+  const bot = await profiles.create(actor, {
+    name: "Lifecycle Bot",
+    title: "Bot",
+    roleDescription: "Answers locally.",
+    visibility: "private",
+  });
+  const started = Promise.withResolvers<void>();
+  const reply = Promise.withResolvers<void>();
+  const app = web(database, actor, bot.id, async () => {
+    started.resolve();
+    await reply.promise;
+  });
+  const { channel } = await (
+    await app.request("/api/channels", post({ agentIds: [bot.id] }))
+  ).json();
+  const detail = `/api/channels/${channel.id}`;
+  const history = `/api/copilotkit/threads/${channel.threadId}/messages?agentId=${bot.id}`;
+  try {
+    const form = new FormData();
+    form.set(
+      "file",
+      new File(["source text"], "source.txt", { type: "text/plain" }),
+    );
+    const uploaded = await app.request(`${detail}/attachments`, {
+      method: "POST",
+      body: form,
+    });
+    expect(uploaded.status).toBe(201);
+    const attachment = await uploaded.json();
+    const url = `/api/attachments/${attachment.id}`;
+    expect((await app.request(url)).status).toBe(200);
+    const run = await app.request(
+      `/api/copilotkit/agent/${bot.id}/run`,
+      post({
+        threadId: channel.threadId,
+        runId: "withdrawn-run",
+        messages: [
+          { id: "source", role: "user", content: "Retain the audit only." },
+        ],
+      }),
+    );
+    expect(run.status).toBe(200);
+    await started.promise;
+    expect(
+      (await app.request(`${detail}/archive`, { method: "PUT" })).status,
+    ).toBe(204);
+    expect(
+      (await (await app.request("/api/channels")).json()).channels,
+    ).toEqual([]);
+    expect((await app.request(history)).status).toBe(200);
+    expect((await app.request(url)).status).toBe(200);
+    expect((await (await app.request(detail)).json()).channel.archived).toBe(
+      true,
+    );
+    expect(
+      (await app.request(`${detail}/archive`, { method: "DELETE" })).status,
+    ).toBe(204);
+    expect(
+      (await (await app.request("/api/channels")).json()).channels,
+    ).toHaveLength(1);
+    expect((await app.request(detail, { method: "DELETE" })).status).toBe(204);
+    reply.resolve();
+    expect(await run.text()).not.toContain("Offline answer.");
+    expect((await app.request(history)).status).toBe(404);
+    expect((await app.request(url)).status).toBe(404);
+    expect((await app.request(detail, { method: "DELETE" })).status).toBe(204);
+    expect(
+      await database
+        .select()
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.eventType, "channel.deleted"),
+            eq(auditEvents.targetId, channel.id),
+          ),
+        ),
+    ).toHaveLength(1);
+    const withdrawals = await database.execute(
+      sql`select channel_id from conversation_evidence_withdrawals where channel_id = ${channel.id} and processed_at is null`,
+    );
+    expect(withdrawals).toHaveLength(1);
+  } finally {
+    reply.resolve();
+    await database.delete(channels).where(eq(channels.id, channel.id));
+    await database.delete(agents).where(eq(agents.id, bot.id));
+    await database.delete(users).where(eq(users.id, actor.id));
   }
 });

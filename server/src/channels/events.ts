@@ -153,6 +153,7 @@ export type ChannelActivityListener = { stop: () => Promise<void> };
 export async function startChannelActivityListener(
   databaseUrl: string,
   hub: ChannelEventHub,
+  currentMembers?: (event: ChannelActivityEvent) => Promise<string[]>,
 ): Promise<ChannelActivityListener> {
   const connection = postgres(databaseUrl, { max: 1 });
 
@@ -174,11 +175,21 @@ export async function startChannelActivityListener(
     hub.resyncAll();
   };
 
+  let delivery = Promise.resolve();
   await connection.listen(
     CHANNEL_ACTIVITY_TOPIC,
     (payload) => {
       try {
-        hub.deliver(JSON.parse(payload) as ChannelActivityEvent);
+        const event: ChannelActivityEvent = JSON.parse(payload);
+        delivery = delivery
+          .then(async () => {
+            const memberIds =
+              currentMembers && !event.deleted
+                ? await currentMembers(event)
+                : event.memberIds;
+            hub.deliver({ ...event, memberIds });
+          })
+          .catch(() => hub.resyncAll());
       } catch {
         // A payload we cannot read is not a reason to tear down the subscription: the roster query
         // is still correct, and the next refetch shows whatever this event would have.
