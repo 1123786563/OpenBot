@@ -12,7 +12,11 @@ import {
   signInWith,
   signInWithEmailDomain,
 } from "@/lib/auth/client";
-import { resumeUrlFor, verifierPathFor } from "@/lib/auth/resume";
+import {
+  openFuseResumePath,
+  resumeUrlFor,
+  verifierPathFor,
+} from "@/lib/auth/resume";
 import { appConfig } from "@/lib/generated/application-config";
 import { searchTextEntry } from "@/lib/search-text";
 import {
@@ -41,8 +45,12 @@ export const Route = createFileRoute("/sign")({
    * gives for `?connected=`: present-but-undefined makes `search` a required prop on every Link to
    * this route, which is a lot of ripple for a parameter only the verifier sets.
    */
-  validateSearch: (search: Record<string, unknown>): { flow_id?: string } =>
-    searchTextEntry("flow_id", search.flow_id),
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { flow_id?: string; openfuse_request?: string } => ({
+    ...searchTextEntry("flow_id", search.flow_id),
+    ...searchTextEntry("openfuse_request", search.openfuse_request),
+  }),
   beforeLoad: async ({ context, search }) => {
     const user = await context.queryClient.ensureQueryData(
       currentUserQueryOptions(),
@@ -61,7 +69,9 @@ export const Route = createFileRoute("/sign")({
        * the verifier was ever made. `reloadDocument` makes this a document navigation, which is
        * the only kind that leaves the app and therefore the only kind that arrives.
        */
-      const verifier = verifierPathFor(search.flow_id);
+      const verifier =
+        openFuseResumePath(search.openfuse_request) ??
+        verifierPathFor(search.flow_id);
       throw verifier
         ? redirect({ href: verifier, reloadDocument: true })
         : redirect({ to: "/" });
@@ -74,7 +84,8 @@ export const Route = createFileRoute("/sign")({
 });
 
 function SignScreen() {
-  const { flow_id: flowId } = Route.useSearch();
+  const { flow_id: flowId, openfuse_request: openFuseRequest } =
+    Route.useSearch();
   // Which provider is being opened, rather than whether one is: with three buttons, a single
   // boolean would put "Opening…" on all of them.
   const [opening, setOpening] = useState<AuthProviderId | "sso" | null>(null);
@@ -98,7 +109,7 @@ function SignScreen() {
       await signInWithEmailDomain(
         email,
         undefined,
-        resumeUrlFor(window.location.origin, flowId),
+        resumeUrlFor(window.location.origin, flowId, openFuseRequest),
       );
     } catch (caughtError) {
       setError(
@@ -118,7 +129,7 @@ function SignScreen() {
       await signInWith(
         provider,
         undefined,
-        resumeUrlFor(window.location.origin, flowId),
+        resumeUrlFor(window.location.origin, flowId, openFuseRequest),
       );
     } catch (caughtError) {
       setError(

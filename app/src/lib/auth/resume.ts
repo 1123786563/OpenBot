@@ -41,10 +41,17 @@ export function verifierPathFor(flowId: string | undefined): string | null {
  * Where sign-in should send the browser back to: the verifier carrying the handle, or the origin
  * itself when there is none. Pure, so the resume is pinned without a DOM, a router or Better Auth.
  */
+export function openFuseResumePath(handle: string | undefined): string | null {
+  if (!handle || !/^[a-f0-9]{64}$/.test(handle)) return null;
+  const query = new URLSearchParams({ request: handle });
+  return `/api/auth/openfuse/continue?${query}`;
+}
+
 export function resumeUrlFor(
   origin: string,
   flowId: string | undefined,
+  openFuseRequest?: string,
 ): string {
-  const path = verifierPathFor(flowId);
+  const path = openFuseResumePath(openFuseRequest) ?? verifierPathFor(flowId);
   return path === null ? origin : `${origin}${path}`;
 }
