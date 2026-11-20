@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: openbot
       POSTGRES_PASSWORD: pilot-only
     healthcheck:
-      test: [CMD, pg_isready, -U, openbot, -d, openbot]
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, openbot, -d, openbot]
       interval: 2s
       timeout: 2s
       retries: 20
