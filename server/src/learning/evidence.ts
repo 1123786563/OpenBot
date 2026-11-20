@@ -37,7 +37,7 @@ type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 export async function withdrawLearningEvidence(
   tx: Transaction,
-  actorUserId: string,
+  actorUserId: string | null,
   source: LearningEvidenceSelection,
   includeDestination = false,
 ) {

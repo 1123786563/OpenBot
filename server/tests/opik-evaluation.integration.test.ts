@@ -5,6 +5,7 @@ import { z } from "zod";
 import { type AppVariables, createRequireUser } from "../src/auth/guards";
 import { createDatabase } from "../src/db/client";
 import { opikEvaluations, personalMemories, users } from "../src/db/schema";
+import { sweepEvaluationCleanup } from "../src/opik/evaluation-cleanup";
 import { createOpikEvaluationRoutes } from "../src/opik/evaluation-routes";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
@@ -187,14 +188,35 @@ test.skipIf(!realOpik)(
 test("only the owner can authorize an exact memory snapshot and revocation records an attempted sample for cleanup", async () => {
   const calls: { path: string; body: unknown }[] = [];
   let failUpload = false;
-  const fixture = Bun.serve({
-    port: 0,
-    hostname: "127.0.0.1",
-    fetch: async (req) => {
-      calls.push({ path: new URL(req.url).pathname, body: await req.json() });
-      return new Response(null, { status: failUpload ? 503 : 204 });
-    },
-  });
+  const traces = new Map<string, unknown>();
+  const fetchFixture = async (req: Request) => {
+    const path = new URL(req.url).pathname;
+    const id = path.split("/").at(-1) ?? "";
+    if (req.method === "DELETE") {
+      traces.delete(id);
+      return new Response(null, { status: 204 });
+    }
+    if (req.method === "GET") {
+      return traces.has(id)
+        ? Response.json(traces.get(id))
+        : new Response(null, { status: 404 });
+    }
+    const body = await req.json();
+    calls.push({ path, body });
+    if (path.endsWith("/traces/batch")) {
+      for (const trace of z
+        .object({
+          traces: z.array(z.object({ id: z.uuid(), input: z.unknown() })),
+        })
+        .parse(body).traces) {
+        traces.set(trace.id, trace.input);
+      }
+    }
+    return new Response(null, { status: failUpload ? 503 : 204 });
+  };
+  const start = (port: number) =>
+    Bun.serve({ port, hostname: "127.0.0.1", fetch: fetchFixture });
+  let fixture = start(0);
   try {
     await database.insert(users).values(
       [owner, outsider].map((id) => ({
@@ -307,6 +329,37 @@ test("only the owner can authorize an exact memory snapshot and revocation recor
         ]),
       }),
     );
+    const destination = {
+      apiUrl: new URL("/api/", fixture.url),
+      project: "private-eval",
+    };
+    const port = fixture.port;
+    if (!port) throw new Error("Missing test Opik port");
+    fixture.stop(true);
+    const at = Date.now();
+    await sweepEvaluationCleanup(database, destination, () => at);
+    expect(traces.has(traceId)).toBe(true);
+    expect(traces.has(failedTraceId)).toBe(true);
+    fixture = start(port);
+    await sweepEvaluationCleanup(database, destination, () => at + 60_000);
+    expect(traces.size).toBe(0);
+    // Simulate a late write from the acknowledged-lost upload.
+    traces.set(failedTraceId, { text: content });
+    await sweepEvaluationCleanup(database, destination, () => at + 660_000);
+    expect(traces.size).toBe(0);
+    const verified = await restarted.request(
+      "/admin/cleanup",
+      request("GET", operator),
+    );
+    expect(await verified.json()).toMatchObject({
+      samples: expect.arrayContaining([
+        expect.objectContaining({ traceId, completedAt: expect.any(String) }),
+        expect.objectContaining({
+          traceId: failedTraceId,
+          completedAt: expect.any(String),
+        }),
+      ]),
+    });
   } finally {
     fixture.stop(true);
     await database

@@ -33,6 +33,7 @@ import { createDatabase } from "../src/db/client";
 import {
   agents,
   approvalRequests,
+  attachments,
   auditEvents,
   channelMemberships,
   channels,
@@ -750,6 +751,24 @@ test("archiving hides only the list entry; deletion withdraws direct history, at
       sql`select channel_id from conversation_evidence_withdrawals where channel_id = ${channel.id} and processed_at is null`,
     );
     expect(withdrawals).toHaveLength(1);
+    const { purgeDeletedConversations } = await import(
+      "../src/channels/deletion-cleanup"
+    );
+    await purgeDeletedConversations(database);
+    expect(
+      await database
+        .select()
+        .from(attachments)
+        .where(eq(attachments.channelId, channel.id)),
+    ).toEqual([]);
+    expect(
+      await database
+        .select()
+        .from(directChatRuns)
+        .where(eq(directChatRuns.threadId, channel.threadId)),
+    ).toEqual([]);
+    expect((await app.request(history)).status).toBe(404);
+    expect((await app.request(detail, { method: "DELETE" })).status).toBe(204);
   } finally {
     reply.resolve();
     await database.delete(channels).where(eq(channels.id, channel.id));

@@ -69,6 +69,13 @@ export const opikEvaluations = pgTable(
       .default("synthetic"),
     target: text("target"),
     workspace: text("workspace"),
+    cleanupDueAt: timestamp("cleanup_due_at", { withTimezone: true }),
+    cleanupFirstDeletedAt: timestamp("cleanup_first_deleted_at", {
+      withTimezone: true,
+    }),
+    cleanupCompletedAt: timestamp("cleanup_completed_at", {
+      withTimezone: true,
+    }),
     cases: integer("cases").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

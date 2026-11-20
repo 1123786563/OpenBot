@@ -55,6 +55,28 @@ function visible(userId: string) {
   );
 }
 
+export async function purgeRecording(
+  tx: Transaction,
+  id: string,
+  userId: string,
+  deletedAt = new Date(),
+) {
+  await withdrawLearningEvidence(tx, userId, { kind: "recording", id });
+  await tx.delete(events).where(eq(events.recordingId, id));
+  // The retained row is both the revocation marker and the completion record for the online content copy.
+  await tx
+    .update(recordings)
+    .set({
+      title: null,
+      reason: null,
+      outcome: null,
+      outcomeSeq: null,
+      deletedAt,
+      cleanupCompletedAt: sql`now()`,
+    })
+    .where(eq(recordings.id, id));
+}
+
 export function createOpenBotRecordings(database: Database, secret: string) {
   function signature(scope: Scope, expiresAt: number) {
     return createHmac("sha256", secret)
@@ -96,23 +118,6 @@ export function createOpenBotRecordings(database: Database, secret: string) {
       )
       .for("share");
     return row !== undefined;
-  }
-
-  async function purge(tx: Transaction, id: string, userId: string) {
-    await withdrawLearningEvidence(tx, userId, { kind: "recording", id });
-    await tx.delete(events).where(eq(events.recordingId, id));
-    // The retained row is both the revocation marker and the completion record for the online content copy.
-    await tx
-      .update(recordings)
-      .set({
-        title: null,
-        reason: null,
-        outcome: null,
-        outcomeSeq: null,
-        deletedAt: sql`now()`,
-        cleanupCompletedAt: sql`now()`,
-      })
-      .where(eq(recordings.id, id));
   }
 
   return {
@@ -214,7 +219,7 @@ export function createOpenBotRecordings(database: Database, secret: string) {
             phase === "failed" &&
             (reason === "discarded" || reason === "restarted")
           ) {
-            await purge(tx, record.id, scope.userId);
+            await purgeRecording(tx, record.id, scope.userId);
           } else {
             await tx
               .update(recordings)
@@ -311,7 +316,7 @@ export function createOpenBotRecordings(database: Database, secret: string) {
           .where(and(visible(userId), eq(recordings.id, id)))
           .for("update");
         if (!row) return false;
-        await purge(tx, id, userId);
+        await purgeRecording(tx, id, userId);
         return true;
       });
     },

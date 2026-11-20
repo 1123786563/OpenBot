@@ -131,6 +131,9 @@ export const hindsightMemoryProjections = pgTable(
     memoryId: text("memory_id").primaryKey(),
     ownerUserId: text("owner_user_id").notNull(),
     projectedVersion: uuid("projected_version"),
+    cleanupCompletedAt: timestamp("cleanup_completed_at", {
+      withTimezone: true,
+    }),
     firstDeletedAt: timestamp("first_deleted_at", { withTimezone: true }),
     nextCheckAt: timestamp("next_check_at", { withTimezone: true })
       .notNull()

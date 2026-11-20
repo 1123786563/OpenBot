@@ -25,7 +25,11 @@ export function opikFetch(
   if (config.workspace) headers.set("Comet-Workspace", config.workspace);
   if (config.apiKey) headers.set("Authorization", config.apiKey);
 
-  return (path: string, method: "GET" | "POST" | "PUT", body?: unknown) =>
+  return (
+    path: string,
+    method: "GET" | "POST" | "PUT" | "DELETE",
+    body?: unknown,
+  ) =>
     fetch(new URL(`v1/private/${path}`, base), {
       method,
       headers,

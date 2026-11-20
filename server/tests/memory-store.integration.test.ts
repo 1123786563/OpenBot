@@ -846,9 +846,22 @@ test("Hindsight Recall ranks approved current memories and falls back after with
     available = true;
     // A later sweep retries retirement even after the local record is withdrawn.
     await store.remove(owner, formed.id);
+    recallBody = undefined;
+    expect(
+      (await memory.recall(owner, bot, term)).map((row) => row.id),
+    ).toEqual([local.id]);
+    expect(recallBody).toBeUndefined();
+
     clock += 60_000;
     await memory.syncHindsight();
     expect(deleted).toContain(formed.id);
+    clock += 600_000;
+    await memory.syncHindsight();
+    expect(deleted.filter((id) => id === formed.id)).toHaveLength(2);
+    expect(
+      (await memory.recall(owner, bot, term)).map((row) => row.id),
+    ).toEqual([local.id]);
+    expect(recallBody).toBeDefined();
   } finally {
     fixture.stop(true);
   }
@@ -861,7 +874,13 @@ test.skipIf(!hindsightTestUrl)(
     if (!hindsightTestUrl)
       throw new Error("TEST_HINDSIGHT_API_URL is required");
     const url = new URL(hindsightTestUrl);
-    const client = createHindsight({ database, url, recallTimeoutMs: 5000 });
+    let clock = Date.now();
+    const client = createHindsight({
+      database,
+      url,
+      recallTimeoutMs: 5000,
+      now: () => clock,
+    });
     const memory = createMemoryIngestion({
       store,
       plugins,
@@ -956,6 +975,9 @@ test.skipIf(!hindsightTestUrl)(
     expect((await fetch(importedDocument)).status).toBe(404);
     await store.remove(owner, approved.id);
     expect(await memory.recall(owner, bot, search)).toEqual([]);
+    await memory.syncHindsight();
+    expect((await fetch(document)).status).toBe(404);
+    clock += 600_000;
     await memory.syncHindsight();
     expect((await fetch(document)).status).toBe(404);
   },

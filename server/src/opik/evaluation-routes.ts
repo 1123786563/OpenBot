@@ -133,6 +133,7 @@ export function createOpikEvaluationRoutes({
         apiUrl: opikEvaluations.target,
         workspace: opikEvaluations.workspace,
         requestedAt: opikEvaluationGrants.revokedAt,
+        completedAt: opikEvaluations.cleanupCompletedAt,
       })
       .from(opikEvaluationGrants)
       .innerJoin(

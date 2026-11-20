@@ -1,5 +1,16 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/client";
 import {
@@ -80,7 +91,40 @@ export function createHindsight({
     });
   }
 
+  async function hasPendingDeletion(owner: string) {
+    const [pending] = await database
+      .select({ id: projections.memoryId })
+      .from(projections)
+      .leftJoin(personalMemories, eq(personalMemories.id, projections.memoryId))
+      .where(
+        and(
+          eq(projections.ownerUserId, owner),
+          isNull(projections.cleanupCompletedAt),
+          or(
+            isNull(personalMemories.id),
+            isNotNull(personalMemories.deletedAt),
+          ),
+        ),
+      )
+      .limit(1);
+    return pending !== undefined;
+  }
+
+  async function deleteDocument(owner: string, id: string) {
+    const response = await request(
+      owner,
+      `documents/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+      5000,
+    );
+    if (!response.ok && response.status !== 404)
+      throw new Error("Hindsight delete failed");
+    if (response.ok) successResponse.parse(await response.json());
+    else await response.body?.cancel();
+  }
+
   return {
+    deleteDocument,
     reflectEnabled: reflect,
     async reflect(
       owner: string,
@@ -89,6 +133,7 @@ export function createHindsight({
     ) {
       if (!reflect || !candidates.length) return null;
       try {
+        if (await hasPendingDeletion(owner)) return null;
         const response = await request(
           owner,
           "reflect",
@@ -132,6 +177,7 @@ export function createHindsight({
     async recall(owner: string, query: string, candidates: Version[]) {
       if (!candidates.length) return [];
       try {
+        if (await hasPendingDeletion(owner)) return [];
         const response = await request(
           owner,
           "memories/recall",
@@ -173,6 +219,9 @@ export function createHindsight({
               memoryId: personalMemories.id,
               ownerUserId: personalMemories.ownerUserId,
               projectedVersion: sql<null>`null::uuid`.as("projected_version"),
+              cleanupCompletedAt: sql<null>`null::timestamptz`.as(
+                "cleanup_completed_at",
+              ),
               firstDeletedAt: sql<null>`null::timestamptz`.as(
                 "first_deleted_at",
               ),
@@ -200,11 +249,14 @@ export function createHindsight({
           eq(personalMemories.id, projections.memoryId),
         )
         .where(
-          or(
-            lte(projections.nextCheckAt, startedAt),
-            and(
-              sql`${projections.projectedVersion} IS NOT NULL`,
-              sql`${personalMemories.version} IS DISTINCT FROM ${projections.projectedVersion}`,
+          and(
+            isNull(projections.cleanupCompletedAt),
+            or(
+              lte(projections.nextCheckAt, startedAt),
+              and(
+                sql`${projections.projectedVersion} IS NOT NULL`,
+                sql`${personalMemories.version} IS DISTINCT FROM ${projections.projectedVersion}`,
+              ),
             ),
           ),
         )
@@ -218,7 +270,7 @@ export function createHindsight({
             .from(projections)
             .where(eq(projections.memoryId, id))
             .for("update", { skipLocked: true });
-          if (!job) return;
+          if (!job || job.cleanupCompletedAt) return;
           const [row] = await tx
             .select()
             .from(personalMemories)
@@ -261,20 +313,11 @@ export function createHindsight({
               (!firstDeletedAt ||
                 now() - firstDeletedAt.getTime() >= retirementGraceMs)
             ) {
-              const response = await request(
-                job.ownerUserId,
-                `documents/${encodeURIComponent(id)}`,
-                {
-                  method: "DELETE",
-                },
-                5000,
-              );
-              if (!response.ok && response.status !== 404)
-                throw new Error("Hindsight delete failed");
-              if (response.ok) successResponse.parse(await response.json());
+              await deleteDocument(job.ownerUserId, id);
               if ((!row || row.deletedAt) && firstDeletedAt) {
                 await tx
-                  .delete(projections)
+                  .update(projections)
+                  .set({ cleanupCompletedAt: new Date(now()) })
                   .where(eq(projections.memoryId, id));
                 return;
               }

@@ -104,6 +104,7 @@ import {
   loadAttachmentForTurn,
   markAttachmentsSent,
 } from "./channels/attachments";
+import { purgeDeletedConversations } from "./channels/deletion-cleanup";
 import type { DirectChatReflect } from "./channels/direct-chat";
 import { expireDirectChatEvents } from "./channels/direct-chat-replay";
 import {
@@ -250,6 +251,7 @@ import { offeredMemoryTools } from "./memory/tools";
 import { reportModelAvailability } from "./model-availability-check";
 import { createModelCatalogue } from "./model-catalogue";
 import { createOpikDelivery } from "./opik/delivery";
+import { sweepEvaluationCleanup } from "./opik/evaluation-cleanup";
 import { createSignInNotifier, createSignInResumer } from "./passwords/resume";
 import { createSignInService } from "./passwords/service";
 import { createPasswordStore } from "./passwords/store";
@@ -3471,6 +3473,25 @@ startHttpServer({
   app,
 });
 
+const conversationCleanup = repeatAfterEach(async () => {
+  try {
+    while ((await purgeDeletedConversations(database)) > 0) {}
+  } catch {
+    console.error(JSON.stringify({ type: "conversation_cleanup_failed" }));
+  }
+}, 60_000);
+
+const realEvaluation = config.opikEvaluation?.real;
+const evaluationCleanup =
+  realEvaluation &&
+  repeatAfterEach(async () => {
+    try {
+      await sweepEvaluationCleanup(database, realEvaluation);
+    } catch {
+      console.error(JSON.stringify({ type: "opik_evaluation_cleanup_failed" }));
+    }
+  }, 60_000);
+
 const opikDelivery =
   config.opik && createOpikDelivery(database, config.opik).start();
 
@@ -3525,6 +3546,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     personResponseSweep.stop();
     groupSweep.stop();
     recorderExpirySweep.stop();
+    conversationCleanup.stop();
+    evaluationCleanup?.stop();
     stopScheduledLearning?.();
     if (firstAutoApproveSweep) clearTimeout(firstAutoApproveSweep);
     if (autoApproveTimer) clearInterval(autoApproveTimer);
