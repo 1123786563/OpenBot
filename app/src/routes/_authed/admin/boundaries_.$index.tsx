@@ -7,17 +7,17 @@ import {
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
+  GovernancePage,
+  governanceOverlay,
+} from "@/components/astryx-pilot/governance";
+import {
   DescribeRule,
   type WrittenRule,
 } from "@/components/boundaries/describe-rule";
 import { DryRunChanges } from "@/components/boundaries/dry-run-changes";
 import { RulePreview } from "@/components/boundaries/rule-preview";
 import { RuleReading } from "@/components/boundaries/rule-reading";
-import {
-  PageCard,
-  PageSection,
-  PageShell,
-} from "@/components/layout/page-shell";
+import { PageCard, PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -67,22 +67,22 @@ function RulePage() {
 
   if (!policy) {
     return (
-      <PageShell backButton={BACK} title="Rule">
+      <GovernancePage backButton={BACK} title="Rule">
         {stored.error ? (
           <p className="text-destructive text-sm" role="alert">
             {stored.error.message}
           </p>
         ) : null}
-      </PageShell>
+      </GovernancePage>
     );
   }
   if (rule === undefined) {
     return (
-      <PageShell backButton={BACK} title="Rule">
+      <GovernancePage backButton={BACK} title="Rule">
         <p className="text-muted-foreground text-sm">
           This rule isn't in place anymore. It may have been removed.
         </p>
-      </PageShell>
+      </GovernancePage>
     );
   }
   // Keyed by the rule, so a saved change starts the editor and its preview afresh from what is stored.
@@ -109,7 +109,7 @@ function RuleDetail({ policy, rule }: { policy: ActionPolicy; rule: string }) {
     });
 
   return (
-    <PageShell
+    <GovernancePage
       backButton={BACK}
       description={label.description || undefined}
       title={label.name}
@@ -170,7 +170,7 @@ function RuleDetail({ policy, rule }: { policy: ActionPolicy; rule: string }) {
       </PageSection>
 
       <Dialog onOpenChange={setRemoving} open={removing}>
-        <DialogContent>
+        <DialogContent {...governanceOverlay}>
           <DialogHeader>
             <DialogTitle>Remove “{label.name}”?</DialogTitle>
             <DialogDescription>
@@ -201,7 +201,7 @@ function RuleDetail({ policy, rule }: { policy: ActionPolicy; rule: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </PageShell>
+    </GovernancePage>
   );
 }
 

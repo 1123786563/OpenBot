@@ -18,6 +18,7 @@ import {
 } from "@tanstack/react-table";
 import type * as React from "react";
 import { useMemo, useState } from "react";
+import { astryxPilot, astryxScope } from "@/components/astryx-pilot/theme";
 import { PageEmpty } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -93,6 +94,24 @@ const FACETS = [
   { id: "bot", title: "Bot" },
   { id: "startedBy", title: "Started by" },
 ] as const;
+
+function renderEventLog(table: React.ReactNode, hasRows: boolean) {
+  if (!astryxPilot) return table;
+  return (
+    <section
+      {...astryxScope}
+      aria-label="Audit events"
+      className={cn(
+        "min-w-0 overflow-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
+        hasRows && "min-h-0 flex-1",
+      )}
+      // biome-ignore lint/a11y/noNoninteractiveTabindex: the overflowing table needs a keyboard scroll target.
+      tabIndex={0}
+    >
+      {table}
+    </section>
+  );
+}
 
 export function AuditTable({
   deploymentName = "this deployment",
@@ -173,77 +192,86 @@ export function AuditTable({
           );
         }),
       })}
-      <Table
-        containerClassName={rows.length > 0 ? "min-h-0 flex-1" : undefined}
-      >
-        <TableHeader>
-          {table.getHeaderGroups().map((group) => (
-            <TableRow className="hover:bg-transparent" key={group.id}>
-              {group.headers
-                .filter((header) => !UNDRAWN.has(header.column.id))
-                .map((header) => (
-                  <TableHead
-                    className={cn(
-                      header.column.id === "mark" && "w-8 pr-0 pl-4",
-                    )}
-                    key={header.id}
-                  >
-                    {header.isPlaceholder ? null : (
-                      <table.FlexRender header={header} />
-                    )}
-                  </TableHead>
-                ))}
-            </TableRow>
-          ))}
-        </TableHeader>
-        <TableBody>
-          {rows.map((row) => {
-            const outcome = outcomeOf(row.original);
-            return (
-              <TableRow
-                className={OUTCOME_ROW[outcome]}
-                data-outcome={outcome}
-                key={row.id}
-              >
-                {row
-                  .getAllCells()
-                  .filter((cell) => !UNDRAWN.has(cell.column.id))
-                  .map((cell) => (
-                    <TableCell
+      {renderEventLog(
+        <Table
+          containerClassName={
+            astryxPilot
+              ? "overflow-visible"
+              : rows.length > 0
+                ? "min-h-0 flex-1"
+                : undefined
+          }
+        >
+          <TableHeader>
+            {table.getHeaderGroups().map((group) => (
+              <TableRow className="hover:bg-transparent" key={group.id}>
+                {group.headers
+                  .filter((header) => !UNDRAWN.has(header.column.id))
+                  .map((header) => (
+                    <TableHead
                       className={cn(
-                        cell.column.id === "mark" && "w-8 pr-0 pl-4",
-                        cell.column.id === "when" &&
-                          "whitespace-nowrap font-mono text-muted-foreground text-xs tabular-nums",
-                        // Room for a Bot's name and "Started by a person" on a line each; a longer
-                        // name wraps. Without it the column gave way to Decision's longer lines.
-                        cell.column.id === "bot" && "min-w-40",
-                        // Room for a reason line such as "Stopped by: Bots may not visit social
-                        // media sites" on a line or two. Without it the column got what What, whose
-                        // longest rows never wrap, left over: about 150px at 1280, and the rule's
-                        // name ran to three lines.
-                        cell.column.id === "decision" && "min-w-64",
+                        header.column.id === "mark" && "w-8 pr-0 pl-4",
                       )}
-                      data-column={cell.column.id}
-                      key={cell.id}
+                      key={header.id}
                     >
-                      <table.FlexRender cell={cell} />
-                    </TableCell>
+                      {header.isPlaceholder ? null : (
+                        <table.FlexRender header={header} />
+                      )}
+                    </TableHead>
                   ))}
               </TableRow>
-            );
-          })}
-          {footer && rows.length > 0 ? (
-            <TableRow className="hover:bg-transparent">
-              <TableCell
-                className="p-0"
-                colSpan={columns.length - UNDRAWN.size}
-              >
-                {footer}
-              </TableCell>
-            </TableRow>
-          ) : null}
-        </TableBody>
-      </Table>
+            ))}
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => {
+              const outcome = outcomeOf(row.original);
+              return (
+                <TableRow
+                  className={OUTCOME_ROW[outcome]}
+                  data-outcome={outcome}
+                  key={row.id}
+                >
+                  {row
+                    .getAllCells()
+                    .filter((cell) => !UNDRAWN.has(cell.column.id))
+                    .map((cell) => (
+                      <TableCell
+                        className={cn(
+                          cell.column.id === "mark" && "w-8 pr-0 pl-4",
+                          cell.column.id === "when" &&
+                            "whitespace-nowrap font-mono text-muted-foreground text-xs tabular-nums",
+                          // Room for a Bot's name and "Started by a person" on a line each; a longer
+                          // name wraps. Without it the column gave way to Decision's longer lines.
+                          cell.column.id === "bot" && "min-w-40",
+                          // Room for a reason line such as "Stopped by: Bots may not visit social
+                          // media sites" on a line or two. Without it the column got what What, whose
+                          // longest rows never wrap, left over: about 150px at 1280, and the rule's
+                          // name ran to three lines.
+                          cell.column.id === "decision" && "min-w-64",
+                        )}
+                        data-column={cell.column.id}
+                        key={cell.id}
+                      >
+                        <table.FlexRender cell={cell} />
+                      </TableCell>
+                    ))}
+                </TableRow>
+              );
+            })}
+            {footer && rows.length > 0 ? (
+              <TableRow className="hover:bg-transparent">
+                <TableCell
+                  className="p-0"
+                  colSpan={columns.length - UNDRAWN.size}
+                >
+                  {footer}
+                </TableCell>
+              </TableRow>
+            ) : null}
+          </TableBody>
+        </Table>,
+        rows.length > 0,
+      )}
       {events.length > 0 && rows.length === 0 ? (
         <div className="px-4">
           <PageEmpty icon={IconSearch} title="No matches">

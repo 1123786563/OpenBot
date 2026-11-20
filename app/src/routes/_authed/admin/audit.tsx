@@ -5,6 +5,7 @@ import {
 } from "@tanstack/react-router";
 import { z } from "zod";
 import { RecordingSection } from "@/components/admin/controls/recording-section";
+import { GovernanceSurface } from "@/components/astryx-pilot/governance";
 import { AuditPage } from "@/components/manage/audit-page";
 
 /**
@@ -26,12 +27,14 @@ function AdminAuditPage() {
   const { bot } = useSearch({ strict: false }) as { bot?: string };
   const navigate = useNavigate();
   return (
-    <AuditPage
-      ask
-      bot={bot}
-      onClearBot={() => navigate({ to: "/admin/audit" })}
-    >
-      <RecordingSection />
-    </AuditPage>
+    <GovernanceSurface>
+      <AuditPage
+        ask
+        bot={bot}
+        onClearBot={() => navigate({ to: "/admin/audit" })}
+      >
+        <RecordingSection />
+      </AuditPage>
+    </GovernanceSurface>
   );
 }

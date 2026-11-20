@@ -5,9 +5,10 @@ import {
   RuleRowsEditor,
   RulesBacktest,
 } from "@/components/approvals/describe-rules";
+import { GovernancePage } from "@/components/astryx-pilot/governance";
 import { DescribeField } from "@/components/boundaries/describe-rule";
 import { ReadingStatus } from "@/components/boundaries/rule-reading";
-import { PageCard, PageShell } from "@/components/layout/page-shell";
+import { PageCard } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { FieldGroup } from "@/components/ui/field";
 import { saveTeamRulesMutationOptions } from "@/lib/approval-rules/mutations";
@@ -88,7 +89,7 @@ function DescribeTeamRulesPage() {
   };
 
   return (
-    <PageShell
+    <GovernancePage
       backButton={BACK}
       description="Say what Bots should do before an action, and your model writes the team rules. Nothing changes until you save them."
       title="Describe team rules"
@@ -178,6 +179,6 @@ function DescribeTeamRulesPage() {
           ) : null}
         </PageCard>
       </form>
-    </PageShell>
+    </GovernancePage>
   );
 }
