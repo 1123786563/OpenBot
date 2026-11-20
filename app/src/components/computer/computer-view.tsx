@@ -3,6 +3,7 @@ import { IconLock, IconWorld, IconX } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { astryxPilot, astryxScope } from "@/components/astryx-pilot/theme";
 import { useFittedWidth } from "@/components/browser/fitted-window";
 import {
   botBrowserKeys,
@@ -368,6 +369,8 @@ export function ComputerView({
   const [expanded, setExpanded] = useState(false);
   /** The full-size view's live screen, which the bar hands the keyboard back to once an address goes. */
   const screen = useRef<LiveScreenHandle>(null);
+  const expandTrigger = useRef<HTMLButtonElement>(null);
+  const closeControl = useRef<HTMLButtonElement>(null);
   const [streamProblem, setStreamProblem] = useState<string | null>(null);
   /** A dropped live stream being retried on its own. A badge, never the overlay. */
   const [reconnecting, setReconnecting] = useState(false);
@@ -585,15 +588,24 @@ export function ComputerView({
     return () => clearTimeout(timer);
   }, [waitingForFrame, startupGraceMs]);
 
-  // Input forwarding lives in LiveScreen on the socket.
-  // Escape is bound to the window so it works regardless of overlay focus.
+  useEffect(() => {
+    if (!astryxPilot || !expanded) return;
+    const trigger = expandTrigger.current;
+    closeControl.current?.focus();
+    return () => trigger?.focus();
+  }, [expanded]);
+
+  // Close the full-size screen before Escape reaches the Computer sheet underneath.
   useEffect(() => {
     if (!expanded) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setExpanded(false);
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setExpanded(false);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [expanded]);
 
   /*
@@ -731,6 +743,7 @@ export function ComputerView({
       {/* A container, so the status over the picture can be compact in the narrow side panel (a glimpse) and roomy
           where the card is wide in the conversation. */}
       <figure
+        {...astryxScope}
         ref={previewRef}
         className="@container overflow-hidden rounded-2xl border bg-background"
       >
@@ -793,6 +806,7 @@ export function ComputerView({
             className="relative block w-full cursor-pointer bg-muted"
             style={frameStyle}
             aria-label="Open the Bot's screen full size"
+            ref={expandTrigger}
           >
             {polledScreen}
 
@@ -1004,6 +1018,7 @@ export function ComputerView({
                 past it and the view scrolls, so Record is always reachable.
               */}
               <div
+                {...astryxScope}
                 className={`relative m-auto flex w-full min-w-0 shrink-0 flex-col rounded-2xl bg-background shadow-2xl ring-1 ring-black/5 dark:ring-white/10 ${settled ? "max-w-[70vw] p-4" : "min-h-[calc(100svh-1rem)] gap-4 p-3 sm:min-h-[calc(100svh-2rem)] lg:h-[calc(100svh-2rem)] lg:flex-row"}`}
               >
                 {/*
@@ -1021,6 +1036,7 @@ export function ComputerView({
                     type="button"
                     onClick={() => setExpanded(false)}
                     aria-label="Close the Bot's screen"
+                    ref={closeControl}
                     title="Close (Esc)"
                     className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >

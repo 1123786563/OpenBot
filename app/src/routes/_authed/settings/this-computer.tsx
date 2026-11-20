@@ -16,11 +16,11 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import * as React from "react";
+import { DevicePage } from "@/components/astryx-pilot/device-page";
 import {
   PageEmpty,
   PageRows,
   PageSection,
-  PageShell,
 } from "@/components/layout/page-shell";
 import { RowMark } from "@/components/layout/row-mark";
 import { describe } from "@/components/layout/update-banner";
@@ -82,7 +82,7 @@ const READINESS: Record<IntelligenceReadiness, string> = {
 function ComputerPage() {
   const inDesktop = desktopShell() !== null;
   return (
-    <PageShell
+    <DevicePage
       description="See what OpenBot runs on this computer and how much memory it uses. Restart a part when it gets stuck."
       title="This computer"
     >
@@ -93,7 +93,7 @@ function ComputerPage() {
           <PageEmpty>This page is only in the OpenBot desktop app.</PageEmpty>
         </PageSection>
       )}
-    </PageShell>
+    </DevicePage>
   );
 }
 

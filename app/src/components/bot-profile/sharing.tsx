@@ -8,6 +8,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment, useId, useState } from "react";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
@@ -18,7 +19,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogBody,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -54,6 +54,7 @@ import {
   unpublishTeamBotMutationOptions,
 } from "@/lib/team-bots";
 import { queryClient } from "@/query-client";
+import { BotDetailDialog, BotDetailFormAction } from "./detail-surface";
 
 const list = (value: string) =>
   value
@@ -250,7 +251,7 @@ function PublishDialog({
   const [groups, setGroups] = useState((current?.groups ?? []).join(", "));
   return (
     <Dialog onOpenChange={(next) => !next && onClose()} open>
-      <DialogContent>
+      <BotDetailDialog>
         <DialogHeader>
           <DialogTitle>
             {current ? "Who it is published to" : "Publish"}
@@ -295,7 +296,7 @@ function PublishDialog({
                   <SelectTrigger className="w-full" id={`${formId}-audience`}>
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent {...astryxScope}>
                     {(Object.keys(AUDIENCES) as (keyof typeof AUDIENCES)[]).map(
                       (value) => (
                         <SelectItem key={value} value={value}>
@@ -340,19 +341,22 @@ function PublishDialog({
           ) : null}
         </DialogBody>
         <DialogFooter className="mt-4">
-          <Button onClick={onClose} size="sm" type="button" variant="outline">
+          <BotDetailFormAction
+            onClick={onClose}
+            type="button"
+            variant="outline"
+          >
             Cancel
-          </Button>
-          <Button
+          </BotDetailFormAction>
+          <BotDetailFormAction
             disabled={publish.isPending}
             form={formId}
-            size="sm"
             type="submit"
           >
             {current ? "Update" : "Publish to team"}
-          </Button>
+          </BotDetailFormAction>
         </DialogFooter>
-      </DialogContent>
+      </BotDetailDialog>
     </Dialog>
   );
 }
@@ -431,7 +435,7 @@ function AssignDialog({ bot, onClose }: { bot: TeamBot; onClose: () => void }) {
   const [group, setGroup] = useState("");
   return (
     <Dialog onOpenChange={(next) => !next && onClose()} open>
-      <DialogContent>
+      <BotDetailDialog>
         <DialogHeader>
           <DialogTitle>Assign {bot.name} to a group</DialogTitle>
           <DialogDescription>
@@ -463,19 +467,22 @@ function AssignDialog({ bot, onClose }: { bot: TeamBot; onClose: () => void }) {
           ) : null}
         </DialogBody>
         <DialogFooter className="mt-4">
-          <Button onClick={onClose} size="sm" type="button" variant="outline">
+          <BotDetailFormAction
+            onClick={onClose}
+            type="button"
+            variant="outline"
+          >
             Cancel
-          </Button>
-          <Button
+          </BotDetailFormAction>
+          <BotDetailFormAction
             disabled={!group.trim() || assign.isPending}
             form={formId}
-            size="sm"
             type="submit"
           >
             Assign
-          </Button>
+          </BotDetailFormAction>
         </DialogFooter>
-      </DialogContent>
+      </BotDetailDialog>
     </Dialog>
   );
 }
