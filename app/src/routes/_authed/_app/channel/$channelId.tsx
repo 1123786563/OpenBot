@@ -9,6 +9,7 @@ import { BotPausedBanner } from "@/components/bot-profile/pause-banner";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { ChannelChat } from "@/components/channels/channel-chat";
 import { ConversationActions } from "@/components/channels/conversation-actions";
+import { DirectChatLearning } from "@/components/channels/direct-chat-learning";
 import { ComputerChatControls } from "@/components/computer/computer-controls";
 import { ComputerViewPanel } from "@/components/computer/computer-panel";
 import { useAutoWatchScreen } from "@/components/computer/use-auto-watch-screen";
@@ -164,6 +165,15 @@ function RouteComponent() {
             </motion.span>
           </div>
           <div className="flex flex-row gap-1.5">
+            {agentId &&
+            channel.data?.active &&
+            channel.data.agentIds.length === 1 ? (
+              <DirectChatLearning
+                key={channel.data.threadId}
+                threadId={channel.data.threadId}
+                agentId={agentId}
+              />
+            ) : null}
             <ComputerChatControls
               computerId={agentId}
               open={isWatching}

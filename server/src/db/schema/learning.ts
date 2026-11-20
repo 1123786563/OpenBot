@@ -2,6 +2,10 @@ import type {
   LearningSettings,
   LearningSharingMode,
 } from "@openbot/shared/learning";
+import type {
+  directChatLearning,
+  directChatProposal,
+} from "@openbot/shared/direct-chat-learning";
 import { sql } from "drizzle-orm";
 import {
   check,
@@ -10,8 +14,11 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
-import { users } from "./core";
+import type { z } from "zod";
+import { intelligenceChannelMappings, users } from "./core";
 import { jsonb } from "./json";
 
 export const learningSettings = pgTable("learning_settings", {
@@ -127,6 +134,51 @@ export const learningSkillApprovals = pgTable(
     check(
       "learning_skill_approvals_sharing_check",
       sql`${table.sharing} IN ('none', 'requested', 'approved', 'declined')`,
+    ),
+  ],
+);
+
+type DirectChatAnalysisState = NonNullable<
+  z.infer<typeof directChatLearning>["latest"]
+>["state"];
+
+export const directChatAnalyses = pgTable(
+  "direct_chat_analyses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    threadId: text("thread_id")
+      .notNull()
+      .references(() => intelligenceChannelMappings.threadId, {
+        onDelete: "cascade",
+      }),
+    botId: text("bot_id").notNull(),
+    state: text("state").$type<DirectChatAnalysisState>().notNull(),
+    reason: text("reason"),
+    evidenceRunIds: jsonb("evidence_run_ids").$type<string[]>().notNull(),
+    proposal: jsonb("proposal").$type<z.infer<typeof directChatProposal>>(),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("direct_chat_analyses_history_idx").on(
+      table.threadId,
+      table.startedAt,
+      table.id,
+    ),
+    uniqueIndex("direct_chat_analyses_active_idx")
+      .on(table.threadId)
+      .where(sql`${table.state} in ('running', 'reconciling')`),
+    check(
+      "direct_chat_analyses_state_check",
+      sql`${table.state} in ('running', 'reconciling', 'proposed', 'skipped', 'failed', 'cancelled')`,
+    ),
+    check(
+      "direct_chat_analyses_proposal_check",
+      sql`(${table.state} = 'proposed') = (${table.proposal} is not null)`,
     ),
   ],
 );
