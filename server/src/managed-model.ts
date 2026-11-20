@@ -18,9 +18,19 @@ const dispatch = z.discriminatedUnion("state", [
   denied,
   z.object({ state: z.literal("reconciling") }),
 ]);
-const reconciliation = z.object({
-  state: z.enum(["pending", "settled", "released", "absent"]),
-});
+const settlement = z.enum(["pending", "settled", "released", "absent"]);
+const reconciliation = z.union([
+  z.object({
+    state: z.literal("settled"),
+    outcome: z.literal("executed"),
+    text: z.string().trim().min(1),
+  }),
+  z.object({
+    state: z.enum(["released", "absent"]),
+    outcome: z.literal("not_dispatched"),
+  }),
+  z.object({ state: settlement, outcome: z.undefined().optional() }),
+]);
 
 type ModelScope = {
   source: "direct-chat" | "learning" | "hindsight";
@@ -89,17 +99,23 @@ export function createManagedModel({
     return response.json();
   }
 
-  async function reconcile(operation: ModelOperation) {
+  async function reconcileOutcome(operation: ModelOperation) {
     return reconciliation.parse(
       await post("reconcile", { operationId: operationId(operation) }, 5_000),
-    ).state;
+    );
+  }
+
+  async function reconcile(operation: ModelOperation) {
+    return (await reconcileOutcome(operation)).state;
   }
 
   return {
     reconcile,
+    reconcileOutcome,
     async complete(
       input: ModelOperation & {
         route: string;
+        beforeDispatch?: () => Promise<boolean>;
         messages: readonly ModelMessage[];
       },
     ): Promise<ManagedModelResult> {
@@ -134,6 +150,8 @@ export function createManagedModel({
       }
 
       try {
+        if (input.beforeDispatch && !(await input.beforeDispatch()))
+          return { state: "not_authorized" };
         const result = dispatch.parse(
           await post(
             "dispatch",

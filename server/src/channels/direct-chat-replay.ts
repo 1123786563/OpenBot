@@ -15,7 +15,7 @@ export const directChatRunTimeoutMs = 5 * 60_000;
 
 type Run = typeof directChatRuns.$inferSelect;
 export type RunKey = { threadId: string; runId: string };
-const matchingRun = ({ threadId, runId }: RunKey) =>
+export const matchingRun = ({ threadId, runId }: RunKey) =>
   and(eq(directChatRuns.threadId, threadId), eq(directChatRuns.id, runId));
 
 export function expireDirectChatEvents(database: Database) {
@@ -59,12 +59,15 @@ export async function expireDirectChatRuns(
 ) {
   const expired = tx
     .update(directChatRuns)
-    .set({ status: "failed" })
+    .set({
+      status: "failed",
+      externalOutcome: sql`case when ${directChatRuns.externalOutcome} = 'dispatching' then 'unknown' else ${directChatRuns.externalOutcome} end`,
+    })
     .where(
       and(
         eq(directChatRuns.threadId, threadId),
         eq(directChatRuns.status, "running"),
-        sql`${directChatRuns.startedAt} < now() - ${directChatRunTimeoutMs} * interval '1 millisecond'`,
+        sql`${directChatRuns.dispatchedAt} < now() - ${directChatRunTimeoutMs} * interval '1 millisecond'`,
       ),
     );
   if (traceRuns) {
@@ -113,6 +116,39 @@ function partialUpdate(event: BaseEvent): Partial<Run> {
   return {};
 }
 
+export async function stopDirectChatRun(
+  tx: RunTransaction,
+  key: RunKey,
+  reason: NonNullable<Run["stopReason"]>,
+  traceRuns: boolean,
+) {
+  const [run] = await tx
+    .update(directChatRuns)
+    .set({
+      status: "failed",
+      stopReason: reason,
+      eventCursor: sql`${directChatRuns.eventCursor} + 1`,
+      externalOutcome: sql`case when ${directChatRuns.externalOutcome} = 'dispatching' then 'unknown' else ${directChatRuns.externalOutcome} end`,
+    })
+    .where(and(matchingRun(key), eq(directChatRuns.status, "running")))
+    .returning({ cursor: directChatRuns.eventCursor, ...traceFields });
+  if (!run) return false;
+  await tx.insert(directChatRunEvents).values({
+    ...key,
+    cursor: run.cursor,
+    event: {
+      type: EventType.RUN_ERROR,
+      code: reason,
+      message:
+        reason === "stopped"
+          ? "The Bot run was stopped."
+          : "The Bot run lost access.",
+    } satisfies BaseEvent,
+  });
+  if (traceRuns) await queueRunTraces(tx, [run], "failed");
+  return true;
+}
+
 export async function appendDirectChatEvent(
   database: Database,
   key: RunKey,
@@ -121,10 +157,12 @@ export async function appendDirectChatEvent(
     reply,
     traceRuns,
     streamReply,
+    externalOutcome,
   }: {
     reply?: { id: string; content: string };
     traceRuns?: boolean;
     streamReply?: boolean;
+    externalOutcome?: Run["externalOutcome"];
   } = {},
 ) {
   const events: BaseEvent[] =
@@ -176,6 +214,7 @@ export async function appendDirectChatEvent(
             }
           : {}),
         ...(status ? { status } : {}),
+        ...(externalOutcome !== undefined ? { externalOutcome } : {}),
       })
       .where(running)
       .returning({ cursor: directChatRuns.eventCursor, ...traceFields });
@@ -240,6 +279,7 @@ export async function readDirectChatReplay(
         eq(approvalRequests.ownerUserId, ownerUserId),
         eq(approvalRequests.runId, key.runId),
         eq(approvalRequests.status, "pending"),
+        sql`${run.status} = 'running'`,
         sql`${approvalRequests.action} ->> 'threadId' = ${key.threadId}`,
       ),
     )
