@@ -75,12 +75,21 @@ export function createCorsairEventOperations(
     db: Database | EventTransaction,
     key: Source,
     time: Date,
+    installationId?: string | null,
   ) => {
     const [handoff] = await db
-      .select({ cutoff: events.occurredAt })
+      .select({ cutoff: events.occurredAt, payload: events.payload })
       .from(events)
       .where(eq(events.id, handoffId(key)));
-    return handoff?.cutoff && time >= handoff.cutoff ? "corsair" : "legacy";
+    return handoff?.cutoff &&
+      time >= handoff.cutoff &&
+      (key.provider !== "github" ||
+        (installationId &&
+          z
+            .object({ installationId: z.literal(installationId) })
+            .safeParse(handoff.payload).success))
+      ? "corsair"
+      : "legacy";
   };
   const lockSource = (tx: EventTransaction, key: Source) =>
     tx.execute(
@@ -215,6 +224,7 @@ export function createCorsairEventOperations(
       key: Source,
       occurredAt: Date | null,
       eventKey?: string,
+      installationId?: string | null,
     ) {
       if (!occurredAt) return "legacy";
       await lockSource(tx, key);
@@ -226,7 +236,7 @@ export function createCorsairEventOperations(
         if (legacy && journalPayload.parse(legacy.payload).owner === "legacy")
           return "legacy";
       }
-      return sourceOwner(tx, key, occurredAt);
+      return sourceOwner(tx, key, occurredAt, installationId);
     },
     async receiveLegacy(
       input: EventKey & {
@@ -234,6 +244,7 @@ export function createCorsairEventOperations(
         triggerIds: string[];
         occurredAt?: Date | null;
         corsairEligible?: boolean;
+        installationId?: string;
         receivedAt?: Date;
       },
     ) {
@@ -255,7 +266,12 @@ export function createCorsairEventOperations(
             : provider === "github" &&
                 (!occurredAt || input.corsairEligible === false)
               ? "legacy"
-              : await sourceOwner(tx, key, occurredAt ?? receivedAt);
+              : await sourceOwner(
+                  tx,
+                  key,
+                  occurredAt ?? receivedAt,
+                  input.installationId,
+                );
         const [inserted] = await tx
           .insert(events)
           .values({
@@ -509,7 +525,14 @@ export function createCorsairEventOperations(
             eventType: handoffType,
             status: "completed",
             occurredAt: sql`date_trunc('second', clock_timestamp()) + interval '1 second'`,
-            payload: { ...key, actorId, ...evidence },
+            payload: {
+              ...key,
+              actorId,
+              ...evidence,
+              ...(key.provider === "github"
+                ? { installationId: [...installations][0] }
+                : {}),
+            },
           })
           .returning({ cutoff: events.occurredAt });
         return record.cutoff;

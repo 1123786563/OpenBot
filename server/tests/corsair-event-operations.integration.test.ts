@@ -322,6 +322,7 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
         eventKey: postKey,
         eventType: "issues.opened",
         occurredAt: cutoff,
+        installationId: "654",
         triggerIds: [legacyTrigger],
       })
     ).owner,
@@ -385,7 +386,7 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
 
   legacyNow = cutoff.getTime() + 1000;
   for (const [action, id, timestamp, installation] of [
-    ["opened", 5, {}, { id: 654 }],
+    ["opened", 5, { created_at: cutoff.toISOString() }, { id: 655 }],
     ["edited", 6, { created_at: cutoff.toISOString() }, { id: 654 }],
     ["opened", 7, { created_at: cutoff.toISOString() }, undefined],
   ] as const) {
@@ -406,6 +407,17 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
       duplicate: true,
     });
   }
+
+  const missingTimestamp = JSON.stringify({
+    action: "opened",
+    repository: { id: 321, full_name: "owner/repo" },
+    installation: { id: 654 },
+    issue: { id: 8, number: 8 },
+  });
+  expect(await (await sendLegacy(missingTimestamp)).json()).toMatchObject({
+    queued: false,
+    reason: "Historical Trigger eligibility requires review.",
+  });
 
   legacyNow += 6 * 60_000;
   const unverifiedLegacyEvent = body.replace(

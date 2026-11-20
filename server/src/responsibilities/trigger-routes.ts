@@ -325,6 +325,10 @@ export function createTriggerIngressRoutes(deps: TriggerIngressDeps) {
                 eventType,
                 occurredAt,
                 corsairEligible,
+                installationId:
+                  envelope.success && envelope.data.installation
+                    ? String(envelope.data.installation.id)
+                    : undefined,
                 receivedAt: new Date(now()),
                 triggerIds: [trigger.id],
               })
@@ -360,13 +364,13 @@ export function createTriggerIngressRoutes(deps: TriggerIngressDeps) {
           if (
             state !== "queued" &&
             githubPilotEventType.safeParse(eventType).success &&
-            occurredAt &&
-            (await deps.corsairEvents.requiresReplayEvidence(
-              receipt.id,
-              trigger.id,
-              occurredAt,
-              new Date(now()),
-            ))
+            (!occurredAt ||
+              (await deps.corsairEvents.requiresReplayEvidence(
+                receipt.id,
+                trigger.id,
+                occurredAt,
+                new Date(now()),
+              )))
           ) {
             const reason = "Historical Trigger eligibility requires review.";
             await deps.corsairEvents.finishLegacy(receipt.id, trigger.id, {

@@ -92,6 +92,7 @@ export function createGithubEventIngress({
               { provider: "github", source: String(repository.id) },
               occurredAt,
               bodyHash,
+              String(installation.id),
             )
           : "legacy";
       const inserted = await tx

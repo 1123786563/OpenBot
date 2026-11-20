@@ -119,6 +119,8 @@ export function createGithubEventDispatch({
           tx,
           { provider: "github", source: receipt.repositoryId },
           receipt.occurredAt,
+          undefined,
+          receipt.installationId,
         )) === "corsair");
     const candidates = await tx
       .select({ trigger: bindings, personId: responsibilities.ownerUserId })
@@ -214,6 +216,8 @@ export function createGithubEventDispatch({
               tx,
               { provider: "github", source: receipt.repositoryId },
               receipt.occurredAt,
+              undefined,
+              receipt.installationId,
             )) === "corsair"))
       );
       let result: Outcome["outcome"] = isolated ? "denied" : "ineligible";
