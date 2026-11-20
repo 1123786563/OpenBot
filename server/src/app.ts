@@ -2212,25 +2212,31 @@ export function createApp(
 
       try {
         const { run } = verdict;
-        if (run.threadId) {
-          const pauseReason = await pluginStore?.marketRunPauseReason?.({
-            ...run,
-            threadId: run.threadId,
+        const pauseReason = run.threadId
+          ? await pluginStore?.marketRunPauseReason?.({
+              ...run,
+              threadId: run.threadId,
+            })
+          : null;
+        if (
+          pauseReason &&
+          (!pluginStore || !parsedCall.value.ref.includes("/"))
+        )
+          return context.json({
+            text: `${REFUSAL_MARKER} ${pauseReason}`,
+            isError: true,
           });
-          if (pauseReason)
-            return context.json({
-              text: `${REFUSAL_MARKER} ${pauseReason}`,
-              isError: true,
+        // The plugin store records its own refusal for a signed MCP call.
+        const deploymentResult = pauseReason
+          ? null
+          : await deploymentToolCaller?.({
+              name: parsedCall.value.ref,
+              args: parsedCall.value.args,
+              botId: verdict.botId,
+              actorId: verdict.actorId,
+              initiator: verdict.initiator,
+              run: verdict.run,
             });
-        }
-        const deploymentResult = await deploymentToolCaller?.({
-          name: parsedCall.value.ref,
-          args: parsedCall.value.args,
-          botId: verdict.botId,
-          actorId: verdict.actorId,
-          initiator: verdict.initiator,
-          run: verdict.run,
-        });
         if (deploymentResult) return context.json(deploymentResult);
 
         if (!pluginStore) {

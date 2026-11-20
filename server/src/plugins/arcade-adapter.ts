@@ -1,4 +1,5 @@
 import Arcade, { APIError } from "@arcadeai/arcadejs";
+import { withMarketFetch } from "../skill-market/disablements";
 import {
   type ArcadeActions,
   type ArcadeFailure,
@@ -1859,13 +1860,15 @@ export function createArcadeClient(
       );
       return total === undefined ? { items } : { items, total_count: total };
     },
-    execute: async (r) =>
-      vendorCall(`running ${r.tool_name}`, () =>
-        client.tools.execute({
-          tool_name: r.tool_name,
-          input: r.input,
-          user_id: r.user_id,
-        }),
+    execute: (request, dispatch) =>
+      vendorCall(`running ${request.tool_name}`, () =>
+        dispatch
+          ? withMarketFetch(dispatch, (fetch) =>
+              client
+                .withOptions({ fetch, maxRetries: 0 })
+                .tools.execute(request),
+            )
+          : client.tools.execute(request),
       ),
   };
   const broker: ConnectedAppBroker = {

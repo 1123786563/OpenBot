@@ -127,6 +127,31 @@ export async function marketRunPauseReason(
 
 export type MarketDispatch = <T>(start: () => Promise<T>) => Promise<T>;
 
+/** SDKs wrap failures from custom fetch in their own connection errors. */
+export async function withMarketFetch<T>(
+  dispatch: MarketDispatch,
+  request: (fetch: typeof globalThis.fetch) => Promise<T>,
+): Promise<T> {
+  const baseFetch = globalThis.fetch;
+  let refused: MarketRunPaused | undefined;
+  const fetch = Object.assign(
+    async (...args: Parameters<typeof baseFetch>) => {
+      try {
+        return await dispatch(() => baseFetch(...args));
+      } catch (error) {
+        if (error instanceof MarketRunPaused) refused = error;
+        throw error;
+      }
+    },
+    { preconnect: baseFetch.preconnect },
+  );
+  try {
+    return await request(fetch);
+  } catch (error) {
+    throw refused ?? error;
+  }
+}
+
 const activeDispatch = new AsyncLocalStorage<MarketDispatch>();
 
 export function withMarketDispatch<T>(
@@ -139,6 +164,18 @@ export function withMarketDispatch<T>(
 export function startMarketRequest<T>(start: () => Promise<T>): Promise<T> {
   const dispatch = activeDispatch.getStore();
   return dispatch ? dispatch(start) : start();
+}
+
+export async function registeredMarketDispatch(
+  database: Database,
+  run: MarketRunScope,
+) {
+  const [saved] = await database
+    .select({ pauseReason: skillMarketRuns.pauseReason })
+    .from(skillMarketRuns)
+    .where(matchesRun(run));
+  if (saved?.pauseReason) throw new MarketRunPaused(saved.pauseReason);
+  return saved && marketDispatchFor(database, run);
 }
 
 export function marketDispatchFor(

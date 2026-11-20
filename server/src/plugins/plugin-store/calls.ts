@@ -21,8 +21,7 @@ import {
 import { isProactiveInitiator } from "../../proactive/initiator";
 import {
   MarketRunPaused,
-  marketDispatchFor,
-  marketRunPauseReason,
+  registeredMarketDispatch,
 } from "../../skill-market/disablements";
 import { accountArgumentFor } from "../account-argument";
 import {
@@ -145,6 +144,37 @@ export function callMethods(context: StoreContext) {
        * name to is not the deployment having acted.
        */
       const auditActor = input.actorId || UNATTRIBUTED_ACTOR;
+
+      const continuation = currentApprovalContext();
+      const threadId = input.threadId ?? continuation?.threadId;
+      const runId = input.runId ?? continuation?.runId;
+      const scope =
+        threadId && runId
+          ? { actorId: input.actorId, botId: input.botId, threadId, runId }
+          : undefined;
+      let marketDispatch: Awaited<ReturnType<typeof registeredMarketDispatch>>;
+      if (scope) {
+        try {
+          marketDispatch = await registeredMarketDispatch(database, scope);
+        } catch (error) {
+          if (!(error instanceof MarketRunPaused)) throw error;
+          await recordAuditEvent(auditStore, {
+            eventType: "mcp.call_rejected",
+            targetType: "mcp_tool",
+            targetId: input.ref,
+            ...(input.initiator ? { initiator: input.initiator } : {}),
+            payload: {
+              actor: auditActor,
+              bot: input.botId,
+              server: serverId,
+              tool: toolName,
+              refusal: "market_run_paused",
+              reason: error.message,
+            },
+          });
+          throw new PluginRefusedError(error.message, null);
+        }
+      }
 
       const decision = await this.decide("mcp", input.ref, input.botId);
       if (!decision.allowed) {
@@ -722,24 +752,11 @@ export function callMethods(context: StoreContext) {
          * the whole call, so the grant, the policy and the approval above are settled once, and the
          * trail gets one row for what finally happened. See `../transient`.
          */
-        const callVendor = async () => {
-          const continuation = currentApprovalContext();
-          const threadId = input.threadId ?? continuation?.threadId;
-          const runId = input.runId ?? continuation?.runId;
-          const scope =
-            threadId && runId
-              ? { actorId: input.actorId, botId: input.botId, threadId, runId }
-              : undefined;
-          if (scope) {
-            const reason = await marketRunPauseReason(database, scope);
-            if (reason) throw new PluginRefusedError(reason, null);
-          }
-          return vendor(
+        const callVendor = () =>
+          vendor(
             {
               url: effectiveUrl(row, entry),
-              ...(scope
-                ? { marketDispatch: marketDispatchFor(database, scope) }
-                : {}),
+              ...(marketDispatch ? { marketDispatch } : {}),
               token,
               tokenHeader: tokenHeaderFor(entry),
               actorId: runsAs ?? input.credentialActorId ?? input.actorId,
@@ -765,10 +782,13 @@ export function callMethods(context: StoreContext) {
             advertised[0]?.vendorName ?? toolName,
             vendorArgs,
           );
-        };
         const result =
           effect === "read"
-            ? await withReadRetries(callVendor)
+            ? await withReadRetries(
+                callVendor,
+                undefined,
+                (error) => error instanceof MarketRunPaused,
+              )
             : await callVendor();
         await recordAuditEvent(auditStore, {
           eventType: result.isError ? "mcp.call_failed" : "mcp.call_succeeded",
@@ -805,10 +825,20 @@ export function callMethods(context: StoreContext) {
         refused = result.accountGone ? "account" : "action";
         reachedVendorAs = runsAs;
       } catch (error) {
-        const failure =
-          error instanceof MarketRunPaused
-            ? new PluginRefusedError(error.message, null)
-            : error;
+        if (error instanceof MarketRunPaused) {
+          await recordAuditEvent(auditStore, {
+            eventType: "mcp.call_rejected",
+            targetType: "mcp_tool",
+            targetId: input.ref,
+            ...(input.initiator ? { initiator: input.initiator } : {}),
+            payload: {
+              ...decided,
+              refusal: "market_run_paused",
+              reason: error.message,
+            },
+          });
+          throw new PluginRefusedError(error.message, null);
+        }
         /*
          * Recorded, then rethrown unchanged. The caller's behaviour is unaffected — what changes is
          * that the failure now exists in the trail, which is where somebody asking "is this connector
@@ -841,7 +871,7 @@ export function callMethods(context: StoreContext) {
             ).slice(0, 400),
           },
         });
-        throw failure;
+        throw error;
       }
       /*
        * WHETHER THE ACCOUNT IS GONE, OR ONLY THIS ACTION, AND ONLY THE FIRST ENDS THE ROW.

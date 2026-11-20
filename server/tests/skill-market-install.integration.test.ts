@@ -44,6 +44,7 @@ import { createDatabase } from "../src/db/client";
 import {
   agentProfiles,
   agents,
+  auditEvents,
   mcpServers,
   mcpTools,
   skillMarketSources,
@@ -1700,7 +1701,21 @@ for (const duringHandshake of [false, true]) {
         isError: true,
         text: expect.stringContaining("Review in progress"),
       });
-      expect(dispatch).toHaveBeenCalledTimes(relay ? 1 : 0);
+      expect(dispatch).toHaveBeenCalledTimes(1);
+      const rejected = await database
+        .select()
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.eventType, "mcp.call_rejected"),
+            eq(auditEvents.targetId, relay ? ungrantedTool : protectedTool),
+          ),
+        );
+      expect(rejected).toContainEqual(
+        expect.objectContaining({
+          payload: expect.objectContaining({ refusal: "market_run_paused" }),
+        }),
+      );
       if (relay) {
         expect(relay.initialized()).toBe(1);
         expect(relay.dispatched()).toBe(0);
