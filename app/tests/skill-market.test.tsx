@@ -153,3 +153,90 @@ test("installs the previewed version only on a Bot the server offers to manage",
   await owner.findByText("Installed 1.0.0. Use /summarize on Managed Bot.");
   expect(installs).toEqual([{ agentId: "managed" }]);
 });
+
+test("lets only the administrator resolve a command conflict and retry a taken name", async () => {
+  const skill = {
+    slug: "summarize",
+    namespace: "catalog",
+    title: "Summarize",
+    latestVersion: "1.0.0",
+  };
+  let admin = false;
+  let command: string | undefined;
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const { pathname } = new URL(String(input), "http://localhost");
+      switch (pathname) {
+        case "/api/skill-market":
+          return Response.json({ items: [skill], hasMore: false });
+        case "/api/skill-market/catalog/summarize":
+          return Response.json({ versions: ["1.0.0"], hasMore: false });
+        case "/api/skill-market/catalog/summarize/versions/1.0.0":
+          return Response.json({
+            ...skill,
+            version: "1.0.0",
+            source: "https://registry.example",
+            instructions: "Summarize in three bullets.",
+            installable: command !== undefined,
+            canAssignCommand: admin && command === undefined,
+            command,
+            reasons: command
+              ? []
+              : ["An administrator must assign an unused command."],
+          });
+        case "/api/skill-market/catalog/summarize/command": {
+          expect(init?.method).toBe("POST");
+          const body = JSON.parse(String(init?.body));
+          if (body.command === "taken") {
+            return Response.json(
+              { error: "That slash command is already in use." },
+              { status: 409 },
+            );
+          }
+          expect(body).toEqual({ command: "market-notes" });
+          command = body.command;
+          return Response.json({ command }, { status: 201 });
+        }
+        case "/api/skill-market/install-targets":
+          return Response.json({
+            bots: [{ id: "managed", title: "Managed Bot" }],
+          });
+        default:
+          return new Response(null, { status: 404 });
+      }
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+
+  async function openPreview() {
+    const view = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SkillMarket />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(
+      await view.findByRole("button", { name: "Preview Summarize" }),
+    );
+    await view.findByText("An administrator must assign an unused command.");
+    return view;
+  }
+
+  const member = await openPreview();
+  expect(member.queryByRole("button", { name: "Assign command" })).toBeNull();
+  expect(member.queryByRole("button", { name: "Install on Bot" })).toBeNull();
+  member.unmount();
+
+  admin = true;
+  const view = await openPreview();
+  const input = view.getByRole("textbox", { name: "New slash command" });
+  fireEvent.input(input, { target: { value: "taken" } });
+  fireEvent.click(view.getByRole("button", { name: "Assign command" }));
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "That slash command is already in use.",
+  );
+  fireEvent.input(input, { target: { value: "market-notes" } });
+  fireEvent.click(view.getByRole("button", { name: "Assign command" }));
+  await view.findByRole("button", { name: "Install on Bot" });
+  expect(view.getByText("/market-notes")).toBeTruthy();
+  expect(view.queryByRole("button", { name: "Assign command" })).toBeNull();
+});

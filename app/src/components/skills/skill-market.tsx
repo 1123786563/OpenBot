@@ -23,6 +23,7 @@ type VersionPreview = Skill & {
   reasons: string[];
   installable: boolean;
   command?: string;
+  canAssignCommand?: boolean;
 };
 
 async function load<T>(path: string, signal: AbortSignal): Promise<T> {
@@ -259,6 +260,9 @@ function MarketPreview({
               </>
             )}
           </div>
+          {preview.data.canAssignCommand && (
+            <MarketCommandAssignment path={path} />
+          )}
           {preview.data.installable && preview.data.command && (
             <MarketInstall
               key={versionPath}
@@ -275,6 +279,62 @@ function MarketPreview({
         </>
       )}
     </section>
+  );
+}
+
+function MarketCommandAssignment({ path }: { path: string }) {
+  const inputId = useId();
+  const helpId = useId();
+  const queryClient = useQueryClient();
+  const assign = useMutation({
+    mutationFn: (command: string) =>
+      client(`/api/skill-market${path}/command`, {
+        method: "POST",
+        body: { command },
+        fallback: "Couldn't assign the slash command.",
+      }),
+    onSettled: () =>
+      queryClient.invalidateQueries({
+        queryKey: ["skill-market", path, "version"],
+      }),
+  });
+
+  return (
+    <form
+      className="grid gap-2 text-sm"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const command = new FormData(event.currentTarget).get("command");
+        if (typeof command === "string" && !assign.isPending)
+          assign.mutate(command);
+      }}
+    >
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="grid gap-1" htmlFor={inputId}>
+          New slash command
+          <Input
+            id={inputId}
+            aria-describedby={helpId}
+            name="command"
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            maxLength={40}
+            pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+            required
+            disabled={assign.isPending}
+          />
+        </label>
+        <Button type="submit" size="sm" disabled={assign.isPending}>
+          {assign.isPending ? "Assigning…" : "Assign command"}
+        </Button>
+      </div>
+      <p className="text-muted-foreground" id={helpId}>
+        Use lowercase letters or digits with single hyphens between groups. All
+        Bots that install this skill will use this command.
+      </p>
+      {assign.error && <p role="alert">{assign.error.message}</p>}
+    </form>
   );
 }
 
