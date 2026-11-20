@@ -47,6 +47,23 @@ async function activeRoutes(database: Database | Transaction, lock = false) {
   return row && view(catalogSchema.parse(row.value));
 }
 
+function routeEligible(
+  active: Awaited<ReturnType<typeof activeRoutes>>,
+  frozen: ReleasedBifrostRoute,
+) {
+  return (
+    active?.options.some(
+      ({ id, revision, verification }) =>
+        id === frozen.id &&
+        revision === frozen.revision &&
+        verification.report.artifactDigest ===
+          frozen.verification.report.artifactDigest &&
+        verification.report.gatewayImageDigest ===
+          frozen.verification.report.gatewayImageDigest,
+    ) ?? false
+  );
+}
+
 // Pin compatibility independently of price. Reusing a route ID for an unverified
 // or different deployment must never silently change the meaning of a saved choice.
 export const testCreditModelPick = z.strictObject({
@@ -498,6 +515,10 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       });
     },
 
+    async routeStillEligible(route: ReleasedBifrostRoute) {
+      return routeEligible(await activeRoutes(database), route);
+    },
+
     async beginDispatch(
       identity: VerifiedBillingIdentity,
       input: { operationId: string; permit: string },
@@ -515,10 +536,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             operation: operationReceipt(row, await eligibleEvidence(tx, row)),
           } as const;
         const active = await activeRoutes(tx, true);
-        const eligible = active?.options.some(
-          ({ id, revision }) =>
-            id === row.route.id && revision === row.route.revision,
-        );
+        const eligible = routeEligible(active, row.route);
         const filter = operationFilter(row.accountId, row.id);
         const dispatchedAt = await currentTime(tx);
         if (

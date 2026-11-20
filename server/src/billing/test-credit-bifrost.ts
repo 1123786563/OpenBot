@@ -64,10 +64,12 @@ export function createBifrostCreditExecutor({
     route,
     messages,
     operationId,
+    recheckRoute,
   }: {
     route: Route;
     messages: Messages;
     operationId?: string;
+    recheckRoute?: () => Promise<boolean>;
   }) => {
     if (
       route.gatewayRevision !== gatewayRevision ||
@@ -81,6 +83,10 @@ export function createBifrostCreditExecutor({
     if (!counted.success) throw new UnsentBifrostRequest("route_unavailable");
     if (counted.data > route.maxInputTokens) {
       throw new UnsentBifrostRequest("execution_limit");
+    }
+
+    if (recheckRoute && !(await recheckRoute().catch(() => false))) {
+      throw new UnsentBifrostRequest("route_unavailable");
     }
 
     // The isolated gateway deployment for this revision must disable retries, routing fallbacks

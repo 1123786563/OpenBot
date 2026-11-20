@@ -50,6 +50,7 @@ type Dependencies = {
     accountId: string;
     route: ReleasedBifrostRoute;
     messages: z.infer<typeof messages>;
+    recheckRoute(): Promise<boolean>;
   }): Promise<unknown>;
 };
 
@@ -154,6 +155,7 @@ export function createTestCreditRoutes({
           accountId: admission.accountId,
           operationId: input.data.operationId,
           route: admission.route,
+          recheckRoute: () => ledger.routeStillEligible(admission.route),
           messages: input.data.messages,
         }),
       );

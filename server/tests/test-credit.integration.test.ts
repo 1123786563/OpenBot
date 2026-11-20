@@ -38,6 +38,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
   const externalGateway = process.env.OPENBOT_TEST_BIFROST_FIXTURE_URL;
   let lastOperationId: string | null = null;
   let lastDispatchAccountId: string | undefined;
+  let duringMetering: (() => Promise<void>) | undefined;
   let afterAlternateDispatch: (() => Promise<void>) | undefined;
   const gateway = Bun.serve({
     hostname: externalGateway ? "0.0.0.0" : "127.0.0.1",
@@ -71,8 +72,11 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     endpoint: new URL("/v1/chat/completions", externalGateway ?? gateway.url),
     gatewayRevision: "a",
     meteringRevision: "a",
-    countInputTokens: async (_route, messages) =>
-      messages[0]?.content === "oversized" ? 4 : 1,
+    countInputTokens: async (_route, messages) => {
+      if (messages[0]?.content === "withdraw-while-metering")
+        await duringMetering?.();
+      return messages[0]?.content === "oversized" ? 4 : 1;
+    },
   });
   const api = createTestCreditRoutes({
     ledger,
@@ -787,6 +791,39 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     expect(sent[3]).toMatchObject({
       model: externalGateway ? "model-b" : "fixture-b/model-b",
       [externalGateway ? "max_completion_tokens" : "max_tokens"]: 16,
+    });
+    const emergencyBatch = crypto.randomUUID();
+    await ledger.enroll({
+      identity: first,
+      batchId: emergencyBatch,
+      amount: 2n,
+    });
+    await request("/claim", { batchId: emergencyBatch });
+    const emergencyId = crypto.randomUUID();
+    const heldDuringMetering = await request("/v1/reserve", {
+      operationId: emergencyId,
+      route: "pilot",
+      priceVersion: updatedAlternate.release.id,
+    });
+    expect(heldDuringMetering.body.state).toBe("reserved");
+    duringMetering = () =>
+      saveCatalog(
+        configure(updatedAlternate.catalog, { harnessImage, routes: {} }),
+      );
+    expect(
+      (
+        await request("/v1/dispatch", {
+          operationId: emergencyId,
+          permit: heldDuringMetering.body.permit,
+          messages: [{ role: "user", content: "withdraw-while-metering" }],
+        })
+      ).body,
+    ).toEqual({ state: "denied", reason: "route_unavailable" });
+    expect(sends).toBe(4);
+    expect((await request(`/operations/${emergencyId}`)).body).toMatchObject({
+      state: "released",
+      dispatchedAt: null,
+      releasedMicrocredits: "2",
     });
     expect(await createTestCreditLedger(database).balance(first)).toEqual(
       await ledger.balance(first),
