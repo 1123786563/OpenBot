@@ -82,4 +82,26 @@ Send an HTTPS `POST /api/operator/workspaces/{workspaceId}/suspension` with that
 
 Pause revokes OpenBot sessions and Assistant integration credentials for that workspace in the same transaction as the audit record. Live Web sessions recheck server-side and close on revocation. Mobile and Desktop periodically recheck access and clear displayed workspace content when access ends. A new Casdoor sign-in while paused returns the owner's published reason, support email, and operation ID through the same sign-in flow. Native clients receive those fields through the one-time exchange without a workspace session. Resume requires a later active Casdoor observation and a new sign-in started after the resume took effect. Workspace suspension leaves the Casdoor account and other applications' permissions under their own policies.
 
-Before deployment, apply the suspension migration, provision the operator secret and support address, and verify session closure and offline or foreground behavior on installed builds. Personal SaaS worker dispatch, export, and account deletion are separate trial capabilities. Verify their integration and cutoff before enabling them.
+Before deployment, apply the suspension migration, provision the operator secret and support address, and verify session closure and offline or foreground behavior on installed builds. Personal SaaS worker dispatch and account deletion are separate trial capabilities. Verify their integration and cutoff before enabling them.
+
+## Workspace export
+
+Select **Download workspace data** in the Web workspace. API clients can POST
+to `/api/workspaces/{workspaceId}/exports` to get a relative download URL and
+expiry. Use the existing cookie or native Application Session on both requests.
+The URL expires after 15 minutes and requires current ownership of the issuing
+workspace. Suspension blocks both requests and invalidates links issued before
+the pause.
+
+The download is a readable JSON snapshot taken when the link is opened. It
+includes the Assistant's readable configuration, stored conversation records,
+committed attachments with Base64 content, Personal Memory, Routine
+configuration, and Connection metadata. The trial's conversation records
+contain stored titles, opening messages, and last-message previews. Full
+transcripts in external Intelligence threads are outside the trial scope.
+
+Personal workspace resource writers can use `workspaceResourceOwner` for
+user-owned Memory, Routine, and Connection rows. Existing local or enterprise
+accounts have separate storage ownership. The trial does not currently expose
+creation flows for those resources. Export artifacts are generated from the
+workspace data on demand, with no separate copies to remove during closure.
