@@ -38,6 +38,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
   const externalGateway = process.env.OPENBOT_TEST_BIFROST_FIXTURE_URL;
   let lastOperationId: string | null = null;
   let lastDispatchAccountId: string | undefined;
+  let afterAlternateDispatch: (() => Promise<void>) | undefined;
   const gateway = Bun.serve({
     hostname: externalGateway ? "0.0.0.0" : "127.0.0.1",
     port: externalGateway ? 33139 : 0,
@@ -110,8 +111,11 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
             outcome: "cancelled",
             usage: { inputTokens: 16, outputTokens: 0 },
           };
-        default:
-          return execute(input);
+        default: {
+          const result = await execute(input);
+          if (input.route.id === "alternate") await afterAlternateDispatch?.();
+          return result;
+        }
       }
     },
   });
@@ -720,6 +724,28 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     await saveCatalog(published);
     const selected = await ledger.resolveQuote({ bot: pick });
     if (!selected.quote) throw new Error(selected.reason);
+    const updatedAlternatePrice = {
+      inputPerMillion: 500_000,
+      outputPerMillion: 250_000,
+    };
+    const updatedAlternate = publish(
+      configure(bothVerified, {
+        harnessImage,
+        routes: {
+          pilot: route,
+          alternate: {
+            ...route,
+            provider: alternate.provider,
+            model: alternate.model,
+            price: updatedAlternatePrice,
+          },
+        },
+      }),
+      ["pilot", "alternate"],
+      "pilot",
+      "fixture",
+    );
+    afterAlternateDispatch = () => saveCatalog(updatedAlternate.catalog);
     const alternateId = crypto.randomUUID();
     const reservedAlternate = await request("/v1/reserve", {
       operationId: alternateId,
@@ -740,6 +766,17 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
         route: "alternate",
         provider: "fixture-b",
         model: "model-b",
+        priceVersion: release.id,
+        price: route.price,
+        reservedMicrocredits: "2",
+        chargedMicrocredits: "1",
+      },
+    });
+    expect(await ledger.resolveQuote({ bot: pick })).toMatchObject({
+      quote: {
+        priceVersion: updatedAlternate.release.id,
+        price: updatedAlternatePrice,
+        maxChargeMicrocredits: "6",
       },
     });
     expect(sent).toHaveLength(4);
