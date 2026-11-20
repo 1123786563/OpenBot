@@ -408,6 +408,21 @@ test("passes OTLP controls and headers to the API and identity to runtime log pr
   ).toBeUndefined();
 }, 20_000);
 
+test("passes the optional OpenObserve browser URL only to the API server", () => {
+  const url = "https://observe.example.test/ops/";
+  const services = runComposeConfig({ OPENBOT_OPENOBSERVE_URL: url }).services;
+  expect(services.server.environment.OPENBOT_OPENOBSERVE_URL).toBe(url);
+  for (const [name, service] of Object.entries(services)) {
+    if (name !== "server") {
+      expect(service.environment?.OPENBOT_OPENOBSERVE_URL).toBeUndefined();
+    }
+  }
+  expect(
+    runComposeConfig({}).services.server.environment.OPENBOT_OPENOBSERVE_URL ??
+      undefined,
+  ).toBeUndefined();
+}, 20_000);
+
 test("leaves optional telemetry settings absent for ordinary Compose startup", () => {
   const env = runComposeConfig({}).services.server.environment;
   for (const key of [
