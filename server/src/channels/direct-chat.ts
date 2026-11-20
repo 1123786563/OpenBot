@@ -23,6 +23,7 @@ import {
   groupBotThreads,
   intelligenceChannelMappings,
 } from "../db/schema";
+import type { ManagedModel, ManagedModelResult } from "../managed-model";
 
 const id = z.string().min(1).max(256);
 const runBody = z.object({
@@ -39,6 +40,21 @@ const joinBody = z.object({ threadId: id });
 type Run = typeof directChatRuns.$inferSelect;
 const RUN_TIMEOUT_MS = 5 * 60_000;
 const DUPLICATE_WAIT_MS = 30_000;
+
+const managedRunError: Record<
+  Exclude<ManagedModelResult["state"], "completed">,
+  string
+> = {
+  insufficient_credits: "This account does not have enough Test Credits.",
+  execution_limit: "This run reached its Test Credit limit.",
+  not_authorized:
+    "This account is not authorized to spend Test Credits on this run.",
+  route_unavailable: "This model route is unavailable.",
+  reconciling: "The model outcome is being reconciled.",
+  unavailable: "Test Credit admission is temporarily unavailable.",
+  settled: "The previous model call settled, but its reply is unavailable.",
+  released: "The previous model call ended and its reservation was released.",
+};
 
 function messagesFor(runs: Run[]): Message[] {
   return runs.flatMap((run): Message[] => [
@@ -95,6 +111,7 @@ export function createDirectChatRoutes(deps: {
   database: Database;
   profiles: AgentProfileStore;
   identifyActor: IdentifyActor;
+  trial?: { route: string; model: ManagedModel };
   agentFor: (
     actor: AgentActor,
     agentId: string,
@@ -299,6 +316,17 @@ export function createDirectChatRoutes(deps: {
       eq(directChatRuns.id, run.id),
     );
 
+    const operation = {
+      scope: {
+        source: "direct-chat" as const,
+        personId: actor.id,
+        botId: agentId,
+        conversationId: threadId,
+        runId: run.id,
+      },
+      step: "direct-chat-answer",
+    };
+    const trial = deps.trial;
     return eventStream(async (emit) => {
       if (claim.kind === "repeat") {
         let outcome = run;
@@ -325,6 +353,20 @@ export function createDirectChatRoutes(deps: {
           });
           emit({ type: EventType.RUN_FINISHED, threadId, runId: run.id });
         } else {
+          if (outcome.status === "failed" && trial) {
+            const state = await trial.model
+              .reconcile(operation)
+              .catch(() => undefined);
+            const code = state === "pending" ? "reconciling" : state;
+            if (code && code !== "absent") {
+              emit({
+                type: EventType.RUN_ERROR,
+                code,
+                message: managedRunError[code],
+              });
+              return;
+            }
+          }
           emit({
             type: EventType.RUN_ERROR,
             message:
@@ -337,8 +379,61 @@ export function createDirectChatRoutes(deps: {
       }
 
       const running = and(runKey, eq(directChatRuns.status, "running"));
+      async function finish(reply: { id: string; content: string }) {
+        const [saved] = await database
+          .update(directChatRuns)
+          .set({
+            status: "completed",
+            assistantMessageId: reply.id,
+            reply: reply.content,
+          })
+          .where(running)
+          .returning({ id: directChatRuns.id });
+        if (!saved) throw new Error("The Bot run has expired.");
+      }
+
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
+        if (trial) {
+          emit({ type: EventType.RUN_STARTED, threadId, runId: run.id });
+          const result = await trial.model.complete({
+            ...operation,
+            route: trial.route,
+            messages: claim.messages.flatMap(({ role, content }) =>
+              (role === "user" || role === "assistant") &&
+              typeof content === "string"
+                ? [{ role, content }]
+                : [],
+            ),
+          });
+          if (result.state === "completed") {
+            const reply = { id: crypto.randomUUID(), content: result.text };
+            await finish(reply);
+            emit({
+              type: EventType.TEXT_MESSAGE_START,
+              messageId: reply.id,
+              role: "assistant",
+            });
+            emit({
+              type: EventType.TEXT_MESSAGE_CONTENT,
+              messageId: reply.id,
+              delta: reply.content,
+            });
+            emit({ type: EventType.TEXT_MESSAGE_END, messageId: reply.id });
+            emit({ type: EventType.RUN_FINISHED, threadId, runId: run.id });
+          } else {
+            await database
+              .update(directChatRuns)
+              .set({ status: "failed" })
+              .where(running);
+            emit({
+              type: EventType.RUN_ERROR,
+              code: result.state,
+              message: managedRunError[result.state],
+            });
+          }
+          return;
+        }
         const agent = await deps.agentFor(actor, agentId);
         if (!agent) throw new Error("Bot unavailable.");
         agent.threadId = threadId;
@@ -385,16 +480,7 @@ export function createDirectChatRoutes(deps: {
           );
         if (failure || !reply || typeof reply.content !== "string")
           throw new Error("Bot returned no text.");
-        const [saved] = await database
-          .update(directChatRuns)
-          .set({
-            status: "completed",
-            assistantMessageId: reply.id,
-            reply: reply.content,
-          })
-          .where(running)
-          .returning({ id: directChatRuns.id });
-        if (!saved) throw new Error("The Bot run has expired.");
+        await finish({ id: reply.id, content: reply.content });
         emit({ type: EventType.RUN_FINISHED, threadId, runId: run.id });
       } catch {
         await database

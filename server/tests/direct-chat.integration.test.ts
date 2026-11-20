@@ -82,6 +82,7 @@ function web(
   actor: AuthenticatedActor,
   botId: string,
   answer: () => Promise<void>,
+  deployment = config,
 ) {
   const store = createAgentProfileStore(db, endpoint);
   const channelStore = createChannelStore(
@@ -94,7 +95,7 @@ function web(
     return new AnsweringAgent(answer);
   };
   const copilot = mountCopilotRuntime(
-    config,
+    deployment,
     {
       resolveAgentsForActor: async () => ({
         [botId]: await agentFor(actor, botId),
@@ -333,5 +334,130 @@ test("Web direct chat persists messages and one run per send, with only its Pers
       await database.delete(agents).where(eq(agents.id, id));
     for (const id of [alice.id, bob.id])
       await database.delete(users).where(eq(users.id, id));
+  }
+});
+
+test("normal Web turns share Test Credits across conversations and keep history readable during a billing outage", async () => {
+  const alice = await person();
+  const bots: string[] = [];
+  const conversations: string[] = [];
+  const ids = new Set<string>();
+  let available = true;
+  let dispatches = 0;
+  let legacyCalls = 0;
+  let outage = false;
+  const control = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const path = new URL(request.url).pathname;
+      expect(request.headers.get("authorization")).toBe("Bearer test-token");
+      const call = await request.json();
+      if (path === "/v1/reserve") {
+        expect(call.scope.personId).toBe(alice.id);
+        expect(call.route).toBe("pilot-text-v1");
+        expect(call.creditType).toBe("test");
+        if (outage) return new Response(null, { status: 503 });
+        if (!available)
+          return Response.json({
+            state: "denied",
+            reason: "insufficient_credits",
+          });
+        available = false;
+        ids.add(call.operationId);
+        return Response.json({ state: "reserved", permit: "one-call" });
+      }
+      expect(ids.has(call.operationId)).toBe(true);
+      if (path === "/v1/dispatch") {
+        expect(call.permit).toBe("one-call");
+        dispatches++;
+        return Response.json({ state: "completed", text: "Managed answer." });
+      }
+      expect(path).toBe("/v1/reconcile");
+      return Response.json({ state: "settled" });
+    },
+  });
+  const deployment = loadConfig({
+    DATABASE_URL: databaseUrl,
+    OPENBOT_ORGANIZATION_AUTH_URL: "https://example.test",
+    KEY_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    OPENBOT_MANAGED_MODEL_TRIAL_URL: control.url.href,
+    OPENBOT_MANAGED_MODEL_TRIAL_TOKEN: "test-token",
+    OPENBOT_MANAGED_MODEL_TRIAL_ROUTE: "pilot-text-v1",
+  });
+  try {
+    const product = await Promise.all(
+      ["One", "Two"].map(async (name) => {
+        const bot = await profiles.create(alice, {
+          name,
+          title: "Bot",
+          roleDescription: "Answers questions.",
+          visibility: "private",
+        });
+        bots.push(bot.id);
+        const app = web(
+          database,
+          alice,
+          bot.id,
+          async () => {
+            legacyCalls++;
+          },
+          deployment,
+        );
+        const opened = await app.request(
+          "/api/channels",
+          post({ agentIds: [bot.id] }),
+        );
+        expect(opened.status).toBe(201);
+        const { channel } = await opened.json();
+        conversations.push(channel.id);
+        return {
+          run: async (id: string) =>
+            (
+              await app.request(
+                `/api/copilotkit/agent/${bot.id}/run`,
+                post({
+                  threadId: channel.threadId,
+                  runId: id,
+                  messages: [{ role: "user", id, content: "A question." }],
+                  personId: "forged-person",
+                  model: "forged-route",
+                }),
+              )
+            ).text(),
+          history: () =>
+            app.request(
+              `/api/copilotkit/threads/${channel.threadId}/messages?agentId=${bot.id}`,
+            ),
+        };
+      }),
+    );
+    const replies = await Promise.all(
+      product.map((entry) => entry.run("same-browser-id")),
+    );
+    expect(
+      replies.filter((reply) => reply.includes("Managed answer.")),
+    ).toHaveLength(1);
+    expect(
+      replies.filter((reply) => reply.includes("insufficient_credits")),
+    ).toHaveLength(1);
+    expect(dispatches).toBe(1);
+    expect(legacyCalls).toBe(0);
+    outage = true;
+    const winner =
+      product[replies.findIndex((reply) => reply.includes("Managed answer."))];
+    if (!winner) throw new Error("No managed answer.");
+    expect(await winner.run("same-browser-id")).toContain("Managed answer.");
+    expect(await winner.run("new-id")).toContain("unavailable");
+    expect(await (await winner.history()).text()).toContain("Managed answer.");
+    expect(dispatches).toBe(1);
+    expect(legacyCalls).toBe(0);
+  } finally {
+    await control.stop(true);
+    for (const id of conversations)
+      await database.delete(channels).where(eq(channels.id, id));
+    for (const id of bots)
+      await database.delete(agents).where(eq(agents.id, id));
+    await database.delete(users).where(eq(users.id, alice.id));
   }
 });

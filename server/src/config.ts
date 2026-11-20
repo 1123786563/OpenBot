@@ -366,6 +366,7 @@ export type DeploymentConfig = {
   appUrl: string | undefined;
   tenantPackageDirectory: string;
   runtime: RuntimeCapabilities;
+  managedModelTrial?: { url: URL; token: string; route: string };
   /**
    * How long a Bot's stream may say nothing before this deployment ends the turn, in milliseconds.
    *
@@ -1609,6 +1610,38 @@ function serverPort(environment: Environment): number {
   return port ?? serverPort ?? DEFAULT_PORT;
 }
 
+function managedModelTrial(
+  environment: Environment,
+  runtime: RuntimeCapabilities,
+): DeploymentConfig["managedModelTrial"] {
+  const name = "OPENBOT_MANAGED_MODEL_TRIAL_URL";
+  const origin = optionalHttpUrl(environment, name);
+  const token = optional(environment, "OPENBOT_MANAGED_MODEL_TRIAL_TOKEN");
+  const route = optional(environment, "OPENBOT_MANAGED_MODEL_TRIAL_ROUTE");
+  if (!origin && !token && !route) return undefined;
+  if (!origin || !token || !route || runtime.mode !== "openbot") {
+    throw new Error(
+      "The managed model trial requires URL, TOKEN, ROUTE, and the OpenBot runtime.",
+    );
+  }
+  const loopback = ["127.0.0.1", "[::1]", "localhost"].includes(
+    origin.hostname,
+  );
+  if (
+    (origin.protocol !== "https:" && !loopback) ||
+    origin.username ||
+    origin.password ||
+    origin.pathname !== "/" ||
+    origin.search ||
+    origin.hash
+  ) {
+    throw new Error(
+      `${name} must be an HTTPS origin (HTTP allowed for loopback tests).`,
+    );
+  }
+  return { url: origin, token, route };
+}
+
 export function loadConfig(
   environment: Environment = process.env,
 ): DeploymentConfig {
@@ -1647,6 +1680,7 @@ export function loadConfig(
   )?.replace(/\/+$/, "");
 
   const edition = parseEdition(optional(environment, "OPENBOT_EDITION"));
+  const runtime = runtimeCapabilities(environment);
 
   // Built first and checked after, so every refusal the team edition gives keeps its order.
   const loaded = {
@@ -1671,7 +1705,8 @@ export function loadConfig(
     appUrl,
     tenantPackageDirectory:
       optional(environment, "TENANT_PACKAGE_DIR") ?? "../examples/fintech",
-    runtime: runtimeCapabilities(environment),
+    runtime,
+    managedModelTrial: managedModelTrial(environment, runtime),
     recorder: { extraExtensionIds: recorderExtraExtensionIds(environment) },
     learning: learningDefault(environment),
     learningAutoAssign: learningAutoAssignEnabled(environment),

@@ -129,6 +129,7 @@ import {
   type LoadPersonalMemory,
   PersonalMemoryMiddleware,
 } from "./memory/tools";
+import { createManagedModel } from "./managed-model";
 import { providerName } from "./model-billing";
 import { modelSourceFor, type RunChoice } from "./model-catalogue";
 import { pickedSkillGuidance } from "./plugins/picked-skill";
@@ -3297,10 +3298,15 @@ export function mountCopilotRuntime(
   if (!intelligence) {
     if (!options.directChat)
       throw new Error("OpenBot chat requires its database and Bot profiles.");
+    const trial = config.managedModelTrial;
     handler.route(
       basePath,
       createDirectChatRoutes({
         ...options.directChat,
+        trial: trial && {
+          route: trial.route,
+          model: createManagedModel(trial),
+        },
         identifyActor,
         agentFor: (actor, botId) => agentFor({ actor, botId, textOnly: true }),
       }),
