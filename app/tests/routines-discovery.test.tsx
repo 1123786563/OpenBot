@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, fireEvent, render, within } from "@testing-library/react";
 import type * as React from "react";
+import { astryxPilot } from "@/components/astryx-pilot/theme";
 import { RoutineComposerButton } from "@/components/routines/new-routine-button";
 import { RoutinesConnectionPage } from "@/components/routines/routines-connection-page";
 import { RoutinesList } from "@/components/routines/routines-list";
@@ -84,6 +85,7 @@ function draw(element: React.ReactNode, page: RoutinesPage) {
   );
 }
 
+const newRoutineRole = astryxPilot ? "link" : "button";
 const SWEEP = { lastSweptAt: new Date().toISOString(), working: true };
 
 test("Connections > Routines says what Routines is and leads to the Routines page", async () => {
@@ -100,7 +102,9 @@ test("Connections > Routines says what Routines is and leads to the Routines pag
   expect(row.getAttribute("href")).toBe("/routines");
   expect(await within(row).findByText("2 routines, 1 on.")).toBeTruthy();
   expect(
-    view.getByRole("button", { name: "New routine" }).getAttribute("href"),
+    view
+      .getByRole(newRoutineRole, { name: "New routine" })
+      .getAttribute("href"),
   ).toBe("/routines/new");
   // No tools listing: nothing here is a tool to grant.
   expect(view.queryByText(/create_routine/)).toBeNull();
@@ -110,9 +114,9 @@ test("an empty Routines page offers New routine, and a Bot's own page starts it 
   const empty = { routines: [], sweep: SWEEP };
   const page = draw(<RoutinesList />, empty);
   expect(
-    (await page.findByRole("button", { name: "New routine" })).getAttribute(
-      "href",
-    ),
+    (
+      await page.findByRole(newRoutineRole, { name: "New routine" })
+    ).getAttribute("href"),
   ).toBe("/routines/new");
   cleanup();
   queryClient.clear();
@@ -120,9 +124,9 @@ test("an empty Routines page offers New routine, and a Bot's own page starts it 
   const botPage = draw(<RoutinesList agentId="lead-desk" />, empty);
   expect(await botPage.findByText("No routines for this Bot yet")).toBeTruthy();
   expect(
-    (await botPage.findByRole("button", { name: "New routine" })).getAttribute(
-      "href",
-    ),
+    (
+      await botPage.findByRole(newRoutineRole, { name: "New routine" })
+    ).getAttribute("href"),
   ).toBe("/routines/new?agentId=lead-desk");
 });
 
