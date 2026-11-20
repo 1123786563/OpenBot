@@ -1475,3 +1475,31 @@ test("Opik delivery is opt-in and loads the self-hosted API configuration", () =
     }),
   ).toThrow("OPENBOT_OPIK_API_URL");
 });
+
+test("platform evaluation requires an operator allowlist, a budget, and a private real endpoint", () => {
+  expect(loadConfig(baseEnvironment).opikEvaluation).toBeUndefined();
+  const setup = {
+    ...baseEnvironment,
+    OPENBOT_OPIK_EVAL_API_URL: "http://opik:5173/api/",
+    OPENBOT_OPIK_EVAL_OPERATORS: "op1, op2, op1",
+    OPENBOT_OPIK_EVAL_DAILY_CASE_LIMIT: "10",
+    OPENBOT_OPIK_REAL_EVAL_API_URL: "http://private-opik:5173/api/",
+  };
+  expect(loadConfig(setup).opikEvaluation).toMatchObject({
+    operators: new Set(["op1", "op2"]),
+    dailyCaseLimit: 10,
+    real: { apiUrl: new URL("http://private-opik:5173/api/") },
+  });
+  expect(() =>
+    loadConfig({ ...setup, OPENBOT_OPIK_EVAL_OPERATORS: " " }),
+  ).toThrow("OPENBOT_OPIK_EVAL_OPERATORS");
+  expect(() =>
+    loadConfig({ ...setup, OPENBOT_OPIK_EVAL_DAILY_CASE_LIMIT: "0" }),
+  ).toThrow("OPENBOT_OPIK_EVAL_DAILY_CASE_LIMIT");
+  expect(() =>
+    loadConfig({
+      ...setup,
+      OPENBOT_OPIK_REAL_EVAL_API_URL: "http://opik:5173/another/api/",
+    }),
+  ).toThrow("dedicated origin");
+});

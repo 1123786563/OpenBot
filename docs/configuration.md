@@ -852,6 +852,26 @@ An authenticated direct-chat participant can submit feedback with `POST /api/cop
 
 For acceptance against a disposable development Opik, set `TEST_OPIK_API_URL` to its API base and run `server/tests/direct-chat.integration.test.ts` with a freshly migrated disposable `TEST_DATABASE_URL`. The test creates a separate project and forwards synthetic trace and score requests to Opik after simulating an outage. It reads back both trace types and the recovered score. Delete the resulting `openbot-acceptance-*` project after inspection.
 
+### Platform evaluation
+
+Set `OPENBOT_OPIK_EVAL_API_URL` to a self-hosted Opik API base. Set `OPENBOT_OPIK_EVAL_OPERATORS` to the comma-separated OpenBot user IDs of platform operators who also hold the admin role. Set `OPENBOT_OPIK_EVAL_DAILY_CASE_LIMIT` to a positive integer. The shared platform budget counts admitted cases per UTC day, including failed or uncertain dispatches. Synthetic runs use two cases and real runs use one. Both use a deterministic scorer and consume zero user credits.
+
+Use optional `OPENBOT_OPIK_EVAL_PROJECT`, `OPENBOT_OPIK_EVAL_WORKSPACE`, and `OPENBOT_OPIK_EVAL_API_KEY` to configure the synthetic destination. The project defaults to `openbot-synthetic-evaluations`. Keep Opik ingress private. If operators need the native Opik console, gate it with the platform operator identity policy.
+
+With an operator session, post `{"requestId":"<new UUID>"}` as JSON to `/api/opik-evaluation/admin/synthetic`. Open `/api/opik-evaluation/admin/synthetic/<id>` with the returned ID to view both case results and the aggregate read back from Opik. Refresh the page if Opik is still indexing the experiment. Reuse the request ID to check a submission without consuming more budget.
+
+### Authorized real samples
+
+Enable `OPENBOT_OPIK_REAL_EVAL_API_URL` only after provisioning a separate Opik instance with private network access limited to OpenBot and the cleanup service. Use a dedicated origin and keep its native console out of the operator-facing ingress. Configure optional `OPENBOT_OPIK_REAL_EVAL_PROJECT`, `OPENBOT_OPIK_REAL_EVAL_WORKSPACE`, and `OPENBOT_OPIK_REAL_EVAL_API_KEY`. The project defaults to `openbot-authorized-evaluations`.
+
+1. As the Memory owner, post `memoryId`, `contentSha256`, and `purpose: "normalization-fidelity"` as JSON to `/api/opik-evaluation/grants`. Hash the exact UTF-8 content, including whitespace. The sample must be an enabled, confirmed or edited, person-authored Personal Memory with no external source.
+2. Give the operator the grant ID and scope. The operator posts that scope plus `grantId` to `/api/opik-evaluation/admin/real`. Only the authorized snapshot goes to private Opik. The scorer checks whether whitespace normalization changes the sample.
+3. To revoke, call `DELETE /api/opik-evaluation/grants/<grant-id>` as the owner. Changing or deleting the source also revokes its existing grants. The server serializes revocation with a dispatch already in progress. After revocation commits, the grant cannot be reused.
+
+OpenBot records the cleanup intent in PostgreSQL even if an attempted export timed out. Read it from `GET /api/opik-evaluation/admin/cleanup` using an operator session. Follow the `next` cursor through `?after=<cursor>` and start each sweep from the first page. The cleanup service must delete and verify the listed trace IDs at the recorded destinations within 24 hours while Opik is available. Keep recovered real Opik data private until cleanup has been replayed and verified. Retain backups for at most 30 days and preserve the revocation ledger through restore. The platform operates the deletion service.
+
+Run `server/tests/opik-evaluation.integration.test.ts` with a migrated disposable `TEST_DATABASE_URL` and set `TEST_OPIK_API_URL` to a disposable self-hosted Opik. The live test reads back the synthetic experiment and verifies an aggregate `exact_match` score of `0.5`.
+
 ## Computer and supervisor
 
 | Variable                             | Meaning                                                                                   |

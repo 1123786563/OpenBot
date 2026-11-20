@@ -15,28 +15,40 @@ type Trace = {
   incomplete: boolean;
 };
 
-export function createOpikClient(config: OpikConfig) {
+export function opikFetch(
+  config: OpikConfig,
+  timeoutMs = OPIK_REQUEST_TIMEOUT_MS,
+) {
   const base = new URL(config.apiUrl);
   if (!base.pathname.endsWith("/")) base.pathname += "/";
   const headers = new Headers({ "content-type": "application/json" });
   if (config.workspace) headers.set("Comet-Workspace", config.workspace);
   if (config.apiKey) headers.set("Authorization", config.apiKey);
 
-  async function send(path: string, method: "POST" | "PUT", body: unknown) {
-    const response = await fetch(new URL(`v1/private/traces/${path}`, base), {
+  return (path: string, method: "GET" | "POST" | "PUT", body?: unknown) =>
+    fetch(new URL(`v1/private/${path}`, base), {
       method,
       headers,
-      body: JSON.stringify(body),
+      body: body === undefined ? undefined : JSON.stringify(body),
       redirect: "error",
-      signal: AbortSignal.timeout(OPIK_REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
+}
+
+export function opikWriter(config: OpikConfig, timeoutMs?: number) {
+  const request = opikFetch(config, timeoutMs);
+  return async (path: string, method: "POST" | "PUT", body: unknown) => {
+    const response = await request(path, method, body);
     await response.body?.cancel();
     if (!response.ok) throw new Error(`Opik HTTP ${response.status}`);
-  }
+  };
+}
 
+export function createOpikClient(config: OpikConfig) {
+  const send = opikWriter(config);
   return {
     trace: ({ id, startedAt, finishedAt, status, incomplete }: Trace) =>
-      send("batch", "POST", {
+      send("traces/batch", "POST", {
         traces: [
           {
             id,
@@ -56,7 +68,7 @@ export function createOpikClient(config: OpikConfig) {
         ],
       }),
     score: ({ traceId, score }: { traceId: string; score: number }) =>
-      send("feedback-scores", "PUT", {
+      send("traces/feedback-scores", "PUT", {
         scores: [
           {
             id: traceId,
