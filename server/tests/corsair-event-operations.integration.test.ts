@@ -220,7 +220,9 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
   const store = createResponsibilityStore(database, {
     resolveTarget: async () => ({ threadId: "fixture" }),
   });
+  let legacyNow = Date.now();
   const legacyRoute = createTriggerIngressRoutes({
+    now: () => legacyNow,
     corsairEvents: operations,
     ingest: store.ingestEvent,
     directory: {
@@ -324,6 +326,37 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
   expect(await (await deliver(postCutoffEvent)).json()).toMatchObject({
     duplicate: true,
     receiptId,
+  });
+  const suspendedEvent = postCutoffEvent.replace(
+    '"id":2,"number":2',
+    '"id":3,"number":3',
+  );
+  const suspendedResponse = await deliver(suspendedEvent);
+  expect(suspendedResponse.status).toBe(202);
+  const skippedReceipt = (await suspendedResponse.json()).receiptId;
+  expect(
+    await operations.replay(key, "operator", {
+      ...recovery,
+      receiptId: skippedReceipt,
+      decision: "account-inactive",
+    }),
+  ).toBe(true);
+  expect(
+    await operations.replay(key, "operator", {
+      ...recovery,
+      receiptId: skippedReceipt,
+    }),
+  ).toBe(false);
+  await dispatcher.sweep();
+
+  legacyNow += 6 * 60_000;
+  const unverifiedLegacyEvent = body.replace(
+    '"id":1,"number":1',
+    '"id":4,"number":4',
+  );
+  expect(await (await sendLegacy(unverifiedLegacyEvent)).json()).toMatchObject({
+    queued: false,
+    reason: "Historical Trigger eligibility requires review.",
   });
   expect(
     await database
