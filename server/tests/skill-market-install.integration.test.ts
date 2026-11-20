@@ -1863,15 +1863,10 @@ for (const afterPreparation of [false, true]) {
         expect((await changeDisablement("PUT")).status).toBe(204);
         expect((await changeDisablement("DELETE")).status).toBe(204);
       }
-      const approvalApp = createApprovalRoutes(
-        serverApprovals,
-        async (context, next) => {
-          context.set("actor", { id: member, role: "user" });
-          await next();
-        },
-      );
+      const approvalApp = createApprovalRoutes(serverApprovals, requireUser);
       const check = await approvalApp.request(
         `http://openbot.local/threads/${threadId}?${new URLSearchParams({ botId: bot, toolCallId: callId })}`,
+        { headers: { "x-user": member } },
       );
       expect(await check.json()).toMatchObject({ requiresRunContext: true });
       await expect(

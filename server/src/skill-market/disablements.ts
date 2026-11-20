@@ -169,13 +169,13 @@ export function startMarketRequest<T>(start: () => Promise<T>): Promise<T> {
 export async function registeredMarketDispatch(
   database: Database,
   run: MarketRunScope,
-) {
+): Promise<MarketDispatch | undefined> {
   const [saved] = await database
     .select({ pauseReason: skillMarketRuns.pauseReason })
     .from(skillMarketRuns)
     .where(matchesRun(run));
   if (saved?.pauseReason) throw new MarketRunPaused(saved.pauseReason);
-  return saved && marketDispatchFor(database, run);
+  return saved ? marketDispatchFor(database, run) : undefined;
 }
 
 export function marketDispatchFor(

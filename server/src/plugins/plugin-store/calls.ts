@@ -865,9 +865,9 @@ export function callMethods(context: StoreContext) {
              * an operator and exported. A dump in the row that records a failed call is the same
              * disclosure the tool-list replace was fixed for, in the trail rather than on a page.
              */
-            failure: (failure instanceof Error
-              ? withoutStatement(failure)
-              : String(failure)
+            failure: (error instanceof Error
+              ? withoutStatement(error)
+              : String(error)
             ).slice(0, 400),
           },
         });
