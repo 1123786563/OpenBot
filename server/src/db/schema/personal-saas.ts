@@ -22,7 +22,8 @@ export type ExecutionCutoff = {
   reason:
     | "account_disabled"
     | "account_status_unconfirmed"
-    | "workspace_paused";
+    | "workspace_paused"
+    | "workspace_closed";
   cutoffAt: number;
 };
 
@@ -176,4 +177,23 @@ export const personalWorkspaceSuspensions = pgTable(
     effectiveAt: timestamp("effective_at", { withTimezone: true }).notNull(),
   },
   (table) => [index().on(table.workspaceId, table.sequence)],
+);
+
+export const personalWorkspaceClosures = pgTable(
+  "personal_workspace_closures",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .notNull()
+      .unique()
+      .references(() => personalSaasAccounts.id),
+    // Preserve the operation after online workspace deletion.
+    workspaceId: uuid("workspace_id").notNull().unique(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }).notNull(),
+    cutoffDeadline: timestamp("cutoff_deadline", {
+      withTimezone: true,
+    }).notNull(),
+    computerCutoff: text("computer_cutoff", { enum: ["confirmed", "failed"] }),
+    workCutoff: text("work_cutoff", { enum: ["confirmed", "failed"] }),
+  },
 );

@@ -3,7 +3,7 @@ import { fetch } from "expo/fetch";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { openAuthSessionAsync } from "expo-web-browser";
-import { Platform } from "react-native";
+import { Linking, Platform } from "react-native";
 import { serverUrl } from "./auth";
 import {
   nativeExchange,
@@ -38,6 +38,14 @@ function request(path: string, init?: Parameters<typeof fetch>[1]) {
     headers,
     redirect: "error",
   });
+}
+
+export async function openWorkspaceClosure() {
+  if (!serverUrl.startsWith("https://"))
+    throw new PersonalSaasActionError(
+      "Personal SaaS requires an HTTPS deployment URL.",
+    );
+  await Linking.openURL(new URL("/auth/closure/start", serverUrl).href);
 }
 
 export async function signInPersonalSaas() {

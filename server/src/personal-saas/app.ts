@@ -60,6 +60,8 @@ import {
   type WorkspaceComputerConfig,
   workspaceComputer,
 } from "./workspace-computer";
+import { workspaceClosureRoutes } from "./workspace-closure";
+import { workspaceClosure } from "./workspace-closure-record";
 import { workspaceExportRoutes } from "./workspace-export-routes";
 
 import {
@@ -76,6 +78,7 @@ const recoveryReason = {
   account_status_unconfirmed: "Account status could not be confirmed.",
   workspace_paused: "The workspace was paused.",
   user_stopped: "You stopped this Bot run.",
+  workspace_closed: "The workspace was closed.",
   worker_lost: "The worker lost its lease.",
   run_interrupted: "The run was interrupted.",
   computer_unavailable:
@@ -175,6 +178,14 @@ export function createPersonalSaasApp(
     quotas,
     computer?.accessForTask,
   );
+  const closure = workspaceClosureRoutes({
+    database,
+    accounts: accountAccess,
+    encryptionKey: config.encryptionKey,
+    now,
+    computer,
+    page,
+  });
   const native = nativeAuth({
     database,
     encryptionKey: config.encryptionKey,
@@ -183,6 +194,7 @@ export function createPersonalSaasApp(
   });
   const browserLogin = browserAttempt.extend({
     native: native.attempt.optional(),
+    closure: z.literal(true).optional(),
   });
 
   const automation = personalAutomation(database, now, quotas, runPersonalBot);
@@ -344,6 +356,9 @@ export function createPersonalSaasApp(
 
   app.route("/", native.routes);
   app.get("/auth/casdoor/start", (context) => startBrowser(context));
+  app.get("/auth/closure/start", (context) =>
+    startBrowser(context, undefined, true),
+  );
   app.get("/auth/native/start", async (context) => {
     const request = native.attempt.safeParse(context.req.query());
     if (!request.success)
@@ -351,14 +366,22 @@ export function createPersonalSaasApp(
     return startBrowser(context, request.data);
   });
 
-  async function startBrowser(context: Context, nativeAttempt?: NativeAttempt) {
+  async function startBrowser(
+    context: Context,
+    nativeAttempt?: NativeAttempt,
+    closureRequested?: true,
+  ) {
     try {
       const { authorization, state, attempt } = await provider.start();
       setCookie(
         context,
         `${attemptPrefix}${state}`,
         await seal(
-          JSON.stringify({ ...attempt, native: nativeAttempt }),
+          JSON.stringify({
+            ...attempt,
+            native: nativeAttempt,
+            closure: closureRequested,
+          }),
           config.encryptionKey,
           state,
         ),
@@ -447,7 +470,13 @@ export function createPersonalSaasApp(
       const suspension = nativeAttempt
         ? undefined
         : await pausedWorkspace(database, accountId, config.suspensionSupport);
+      if (!nativeAttempt && (await workspaceClosure(database, accountId))) {
+        deleteCookie(context, sessionCookie, cookieOptions);
+        await closure.issueStatusCookie(context, accountId);
+        return context.redirect("/workspace/closure/progress", 303);
+      }
       if (suspension) {
+        await closure.issueStatusCookie(context, accountId);
         deleteCookie(context, sessionCookie, cookieOptions);
         return context.html(
           page(
@@ -456,6 +485,7 @@ export function createPersonalSaasApp(
               ${suspension.reason ? html`<p>${suspension.reason}</p>` : ""}
               <p>Operation ID <code>${suspension.operationId}</code></p>
               ${suspension.supportEmail ? html`<p>Contact support at <a href="mailto:${suspension.supportEmail}">${suspension.supportEmail}</a>.</p>` : ""}
+              <p><a href="/workspace/closure">Close my workspace</a></p>
               <a href="/auth/casdoor/start">Sign in again</a>`,
           ),
           403,
@@ -476,11 +506,15 @@ export function createPersonalSaasApp(
         );
       const token = await store.signIn(sessionIdentity);
       if (!token) throw new Error("Account admission changed");
+      closure.clearCookies(context);
       setCookie(context, sessionCookie, token, {
         ...cookieOptions,
         maxAge: sessionSeconds,
       });
-      return context.redirect("/workspace", 303);
+      return context.redirect(
+        parsed.closure ? "/workspace/closure" : "/workspace",
+        303,
+      );
     } catch {
       reportFailure("sign-in");
       if (nativeAttempt)
@@ -561,10 +595,11 @@ export function createPersonalSaasApp(
     sessionRevocationRoutes({
       ...config,
       store,
+      closure,
       failurePage: async (status) =>
         new Response(
           await statusPage(
-            "Couldn't sign out all devices",
+            "Identity verification incomplete",
             "OpenBot couldn't verify your identity. Return to your workspace to try again.",
             "/workspace",
             "Back to workspace",
@@ -573,6 +608,7 @@ export function createPersonalSaasApp(
         ),
     }),
   );
+  app.route("/", closure.routes);
   app.route(
     "/",
     sessionEventRoutes({
@@ -853,6 +889,7 @@ export function createPersonalSaasApp(
           : ""
       }
       <p><a href="/api/workspaces/${workspace.id}/support-requests/view">Support access</a></p>
+      <p><a href="/workspace/closure">Close my workspace</a></p>
       <form method="post" action="/auth/sign-out"><button type="submit">Sign out</button></form>
       <form method="post" action="/auth/sign-out-all">
         <p>Verify your identity with Casdoor to require every device to sign in again.</p>
@@ -1295,6 +1332,7 @@ export function createPersonalSaasApp(
     if (token) await store.signOut(token);
     if (context.req.header("authorization") !== undefined)
       return context.body(null, 204);
+    closure.clearCookies(context);
     deleteCookie(context, sessionCookie, cookieOptions);
     return context.redirect("/", 303);
   });
@@ -1302,6 +1340,7 @@ export function createPersonalSaasApp(
   return Object.assign(app, {
     accessWorkspaceComputerForTask: computer?.accessForTask,
     renewWorkspaceComputers: computer?.renew,
+    sweepWorkspaceClosures: closure.sweep,
     sweepBotWork: () => botWork.sweep(runPersonalBot),
     sweepBotDecisions: () => config.botRuntime?.sweepDecisions(quotas),
     offerAutomationSchedules: automation.offerSchedules,

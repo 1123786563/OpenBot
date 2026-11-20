@@ -3,13 +3,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, AppState, Button, ScrollView, Text, View } from "react-native";
 import {
   openPersonalWorkspace,
+  openWorkspaceClosure,
   PersonalSaasActionError,
   recoverPersonalWork,
   signInPersonalSaas,
   signOutPersonalSaas,
 } from "./personal-saas";
 
-import type { PausedWorkspace } from "./personal-saas-contract";
+import type {
+  ClosedWorkspace,
+  PausedWorkspace,
+} from "./personal-saas-contract";
 
 type Screen =
   | { kind: "loading" | "preparing" | "signed-out" }
@@ -18,7 +22,8 @@ type Screen =
       workspace: NonNullable<Awaited<ReturnType<typeof openPersonalWorkspace>>>;
     }
   | { kind: "workspace-error" }
-  | { kind: "paused"; status: PausedWorkspace };
+  | { kind: "paused"; status: PausedWorkspace }
+  | { kind: "closed"; status: ClosedWorkspace };
 
 export function PersonalSaasHome() {
   const [screen, setScreen] = useState<Screen>({ kind: "loading" });
@@ -181,7 +186,9 @@ export function PersonalSaasHome() {
           ? "Sign in to OpenBot"
           : screen.kind === "paused"
             ? "Personal Workspace paused"
-            : "Personal Workspace"}
+            : screen.kind === "closed"
+              ? "Workspace closure progress"
+              : "Personal Workspace"}
       </Text>
       {screen.kind === "loading" && (
         <Text accessibilityLiveRegion="polite">Checking your workspace…</Text>
@@ -201,6 +208,32 @@ export function PersonalSaasHome() {
           )}
         </>
       )}
+      {screen.kind === "closed" && (
+        <>
+          <Text>Operation ID {screen.status.operationId}</Text>
+          <Text>Application sessions revoked</Text>
+          <Text>Work cutoff · {screen.status.executionCutoff.work}</Text>
+          <Text>Computer exit · {screen.status.executionCutoff.computer}</Text>
+          <Text>Online data cleanup · {screen.status.onlineCleanup}</Text>
+          <Text>Third-party revocation · {screen.status.remoteRevocation}</Text>
+          <Text>Backup expiration · {screen.status.backups}</Text>
+        </>
+      )}
+      {(screen.kind === "paused" ||
+        screen.kind === "ready" ||
+        screen.kind === "closed") && (
+        <Button
+          disabled={busy}
+          title={
+            screen.kind === "closed"
+              ? "Check progress in browser"
+              : "Close workspace in browser"
+          }
+          onPress={() => {
+            void act(openWorkspaceClosure);
+          }}
+        />
+      )}
       {(screen.kind === "signed-out" || screen.kind === "paused") && (
         <Button
           disabled={busy}
@@ -210,7 +243,10 @@ export function PersonalSaasHome() {
           onPress={() => {
             void act(async () => {
               const status = await signInPersonalSaas();
-              if (status) setScreen({ kind: "paused", status });
+              if (status?.status === "paused")
+                setScreen({ kind: "paused", status });
+              else if (status?.status === "closed")
+                setScreen({ kind: "closed", status });
               else await load();
             });
           }}

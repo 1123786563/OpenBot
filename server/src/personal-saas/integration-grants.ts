@@ -14,6 +14,7 @@ import {
   assistantTarget,
 } from "./workspace-bots";
 
+import { workspaceClosure } from "./workspace-closure-record";
 import { latestSuspension } from "./workspace-suspension";
 
 const readAction = "assistant.read";
@@ -48,6 +49,7 @@ export function workspaceIntegrationGrants(database: Database) {
           .for("share");
         if (
           !owner ||
+          (await workspaceClosure(tx, owner.id)) ||
           (await latestSuspension(tx, owner.id))?.action === "pause"
         )
           return;

@@ -8,6 +8,7 @@ import {
 } from "../db/schema/personal-saas";
 
 import { reconcileDecisionHistory } from "./decision-access";
+import { workspaceClosure } from "./workspace-closure-record";
 import { latestSuspension } from "./workspace-suspension";
 
 const cutoffMs = 60_000;
@@ -72,6 +73,13 @@ export async function readExecutionAccess(
     .where(eq(personalSaasAccounts.id, accountId))
     .for("share", skipLocked ? { skipLocked: true } : {});
   if (!account) return null;
+  const closure = await workspaceClosure(tx, accountId);
+  if (closure)
+    return {
+      kind: "denied",
+      reason: "workspace_closed",
+      cutoffAt: closure.acceptedAt.getTime(),
+    } as const;
   const suspension = await latestSuspension(tx, accountId);
   const invalidation = account.status?.executionCutoffs?.find(
     (event) => epoch !== undefined && event.epoch > epoch,

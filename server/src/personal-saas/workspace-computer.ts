@@ -13,6 +13,7 @@ const status = z.object({
     "restart_required",
   ]),
   cutoff: z.enum(["confirmed", "failed"]).optional(),
+  stopped: z.boolean().optional(),
   address: z.url({ protocol: /^http$/ }).optional(),
   token: z.string().min(1).optional(),
 });
@@ -23,6 +24,7 @@ const storage = z.object({
 const running = z.object({
   computers: z.array(z.object({ id: z.uuid(), epoch: z.number().int() })),
 });
+export const workspaceComputerLeaseMs = 15_000;
 type Workspace = { id: string; ownerId: string };
 
 export type WorkspaceComputerConfig = {
@@ -88,6 +90,15 @@ export function workspaceComputer(
       const current = await read(workspaceId);
       return { status: current.status, cutoff: current.cutoff };
     },
+    async stopped(workspaceId: string) {
+      const current = await read(workspaceId);
+      return (
+        current.stopped ??
+        (current.status === "not_started" ||
+          (current.status === "restart_required" &&
+            current.cutoff === "confirmed"))
+      );
+    },
     async storageUsage(workspaceId: string, storageBytes: number) {
       const response = await call(`/${workspaceId}/storage`);
       if (!response.ok) throw new Error("Managed Computer storage unavailable");
@@ -109,7 +120,10 @@ export function workspaceComputer(
         storageBytes,
         epoch: grant.epoch,
         issuedAt,
-        expiresAt: Math.min(grant.expiresAt, issuedAt + 15_000),
+        expiresAt: Math.min(
+          grant.expiresAt,
+          issuedAt + workspaceComputerLeaseMs,
+        ),
       });
       if (response.status === 409) return false;
       if (!response.ok) throw new Error("Managed Computer start unavailable");
@@ -183,7 +197,10 @@ export function workspaceComputer(
           const result = await call(`/${id}/renew`, {
             epoch,
             issuedAt,
-            expiresAt: Math.min(grant.expiresAt, issuedAt + 15_000),
+            expiresAt: Math.min(
+              grant.expiresAt,
+              issuedAt + workspaceComputerLeaseMs,
+            ),
           });
           if (!result.ok && result.status !== 409)
             throw new Error("Lease renewal unavailable");

@@ -26,7 +26,25 @@ const pausedWorkspace = z.strictObject({
   supportEmail: z.email().nullable(),
 });
 export type PausedWorkspace = z.infer<typeof pausedWorkspace>;
-export const nativeExchange = z.union([nativeSession, pausedWorkspace]);
+const cutoffState = z.enum(["pending", "confirmed", "failed"]);
+const closedWorkspace = z.object({
+  status: z.literal("closed"),
+  operationId: z.uuid(),
+  executionCutoff: z.object({
+    sessions: z.literal("revoked"),
+    work: cutoffState,
+    computer: cutoffState,
+  }),
+  onlineCleanup: z.literal("pending"),
+  remoteRevocation: z.literal("pending"),
+  backups: z.literal("pending"),
+});
+export type ClosedWorkspace = z.infer<typeof closedWorkspace>;
+export const nativeExchange = z.union([
+  nativeSession,
+  pausedWorkspace,
+  closedWorkspace,
+]);
 export const workspaceAccessMs = z
   .string()
   .regex(/^\d+$/)

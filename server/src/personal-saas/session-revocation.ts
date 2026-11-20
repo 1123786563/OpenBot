@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
 import { seal, unseal } from "../auth/signed-value";
@@ -18,6 +18,7 @@ const callbackPath = "/auth/casdoor/reverify/callback";
 const attemptPrefix = "__Host-openbot-reverify-";
 const revocationAttempt = browserAttempt.extend({
   sessionHash: z.string().length(43),
+  purpose: z.enum(["revocation", "closure"]).default("revocation"),
   authenticatedAfter: z.number().int(),
 });
 
@@ -33,6 +34,22 @@ export function sessionRevocationRoutes(options: {
     ReturnType<typeof personalSaasStore>,
     "session" | "revokeAllSessions"
   >;
+  closure: {
+    subject: (context: Context) => Promise<
+      | {
+          token: string;
+          accountId: string;
+          issuer: string;
+          subject: string;
+          epoch: number;
+        }
+      | undefined
+    >;
+    verified: (
+      context: Context,
+      proof: { accountId: string; token: string; epoch: number },
+    ) => Promise<Response>;
+  };
   failurePage: (status: 403 | 503) => Response | Promise<Response>;
 }) {
   const app = new Hono();
@@ -42,61 +59,76 @@ export function sessionRevocationRoutes(options: {
   );
   const { store } = options;
 
-  app.post("/auth/sign-out-all", async (context) => {
-    const token = getCookie(context, sessionCookie);
-    if (!token || !(await store.session(token)))
-      return context.redirect("/workspace", 303);
-    try {
-      const { authorization, state, attempt } = await provider.start({
-        forceLogin: true,
-      });
-      const cookieName = `${attemptPrefix}${state}`;
-      const pending = {
-        ...attempt,
-        sessionHash: hashSession(token),
-        // auth_time has whole-second precision. Require proof from a later second.
-        authenticatedAfter: Math.floor(Date.now() / 1_000),
-      };
-      setCookie(
-        context,
-        cookieName,
-        await seal(JSON.stringify(pending), options.encryptionKey, cookieName),
-        { ...cookieOptions, maxAge: 600 },
-      );
-      return context.redirect(authorization.href, 303);
-    } catch {
-      return options.failurePage(503);
-    }
-  });
+  app.on(
+    "POST",
+    ["/auth/sign-out-all", "/auth/verify-closure"],
+    async (context) => {
+      const purpose =
+        context.req.path === "/auth/verify-closure" ? "closure" : "revocation";
+      const token =
+        purpose === "closure"
+          ? (await options.closure.subject(context))?.token
+          : getCookie(context, sessionCookie);
+      if (!token || (purpose === "revocation" && !(await store.session(token))))
+        return context.redirect("/workspace", 303);
+      try {
+        const { authorization, state, attempt } = await provider.start({
+          forceLogin: true,
+        });
+        const cookieName = `${attemptPrefix}${state}`;
+        const pending = {
+          ...attempt,
+          purpose,
+          sessionHash: hashSession(token),
+          // auth_time has whole-second precision. Require proof from a later second.
+          authenticatedAfter: Math.floor(Date.now() / 1_000),
+        };
+        setCookie(
+          context,
+          cookieName,
+          await seal(
+            JSON.stringify(pending),
+            options.encryptionKey,
+            cookieName,
+          ),
+          { ...cookieOptions, maxAge: 600 },
+        );
+        return context.redirect(authorization.href, 303);
+      } catch {
+        return options.failurePage(503);
+      }
+    },
+  );
 
   app.get(callbackPath, async (context) => {
     const state = context.req.query("state");
     const code = context.req.query("code");
     const issuer = context.req.query("iss");
-    const token = getCookie(context, sessionCookie);
     if (!state || !/^[\w-]{32}$/.test(state)) return options.failurePage(403);
 
     const cookieName = `${attemptPrefix}${state}`;
     const encrypted = getCookie(context, cookieName);
     deleteCookie(context, cookieName, cookieOptions);
-    if (
-      !token ||
-      !code ||
-      (issuer !== undefined && issuer !== options.casdoor.issuer)
-    )
+    if (!code || (issuer !== undefined && issuer !== options.casdoor.issuer))
       return options.failurePage(403);
 
     const sealed = await unseal(encrypted, options.encryptionKey, cookieName);
     if (!sealed) return options.failurePage(403);
     const result = revocationAttempt.safeParse(JSON.parse(sealed));
-    if (
-      !result.success ||
-      result.data.sessionHash !== hashSession(token) ||
-      result.data.expiresAt <= Date.now()
-    )
+    if (!result.success || result.data.expiresAt <= Date.now())
       return options.failurePage(403);
     const attempt = result.data;
-    const session = await store.session(token);
+    const closure =
+      attempt.purpose === "closure"
+        ? await options.closure.subject(context)
+        : undefined;
+    const token =
+      attempt.purpose === "closure"
+        ? closure?.token
+        : getCookie(context, sessionCookie);
+    if (!token || attempt.sessionHash !== hashSession(token))
+      return options.failurePage(403);
+    const session = closure ?? (await store.session(token));
     if (!session || session.issuer !== options.casdoor.issuer)
       return options.failurePage(403);
 
@@ -109,11 +141,15 @@ export function sessionRevocationRoutes(options: {
       identity?.kind !== "verified" ||
       identity.issuer !== session.issuer ||
       identity.subject !== session.subject ||
-      attempt.expiresAt <= Date.now() ||
-      !(await store.revokeAllSessions({ token, accountId: session.accountId }))
+      attempt.expiresAt <= Date.now()
     )
       return options.failurePage(403);
 
+    if (closure) return options.closure.verified(context, closure);
+    if (
+      !(await store.revokeAllSessions({ token, accountId: session.accountId }))
+    )
+      return options.failurePage(403);
     deleteCookie(context, sessionCookie, cookieOptions);
     return context.redirect("/", 303);
   });

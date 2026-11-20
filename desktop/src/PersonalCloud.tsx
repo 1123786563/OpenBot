@@ -11,6 +11,14 @@ export type CloudView =
   | { kind: "signInFailed"; message: string }
   | { kind: "preparing" }
   | {
+      kind: "closed";
+      operationId: string;
+      executionCutoff: { sessions: string; work: string; computer: string };
+      onlineCleanup: string;
+      remoteRevocation: string;
+      backups: string;
+    }
+  | {
       kind: "paused";
       operationId: string;
       reason: string | null;
@@ -37,7 +45,13 @@ export type CloudView =
       conversations: { id: string; title: string; preview: string | null }[];
     };
 
-export type CloudAction = "status" | "start" | "cancel" | "prepare" | "signOut";
+export type CloudAction =
+  | "status"
+  | "start"
+  | "cancel"
+  | "prepare"
+  | "signOut"
+  | "closure";
 
 const cloudRequest = (action: CloudAction) =>
   invoke<CloudView>("personal_cloud_action", { action });
@@ -303,6 +317,46 @@ export function PersonalCloud({
               Sign in again
             </button>
           </>
+        )}
+        {view?.kind === "closed" && (
+          <>
+            <h2>Workspace closure progress</h2>
+            <p>
+              Operation ID <code>{view.operationId}</code>
+            </p>
+            <dl>
+              <dt>Application sessions</dt>
+              <dd>{view.executionCutoff.sessions}</dd>
+              <dt>Work cutoff</dt>
+              <dd>{view.executionCutoff.work}</dd>
+              <dt>Computer exit</dt>
+              <dd>{view.executionCutoff.computer}</dd>
+              <dt>Online data cleanup</dt>
+              <dd>{view.onlineCleanup}</dd>
+              <dt>Third-party revocation</dt>
+              <dd>{view.remoteRevocation}</dd>
+              <dt>Backup expiration</dt>
+              <dd>{view.backups}</dd>
+            </dl>
+          </>
+        )}
+        {(view?.kind === "paused" ||
+          view?.kind === "workspace" ||
+          view?.kind === "closed") && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              void run(
+                "closure",
+                "Could not open workspace closure. Try again.",
+              )
+            }
+          >
+            {view.kind === "closed"
+              ? "Check progress in browser"
+              : "Close workspace in browser"}
+          </button>
         )}
         {view?.kind === "waiting" && (
           <>

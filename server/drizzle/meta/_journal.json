@@ -687,6 +687,13 @@
       "when": 1795178829465,
       "tag": "0097_personal_saas_automation_resume",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1795181383402,
+      "tag": "0098_personal_workspace_closure",
+      "breakpoints": true
     }
   ]
 }

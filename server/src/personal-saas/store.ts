@@ -28,6 +28,7 @@ import {
 } from "../db/schema/personal-saas";
 import { type AccountGrant, accountDecision } from "./account-access";
 
+import { workspaceClosure } from "./workspace-closure-record";
 import { latestSuspension } from "./workspace-suspension";
 
 export const sessionSeconds = 8 * 60 * 60;
@@ -202,6 +203,7 @@ export function personalSaasStore(
         const disabledAt = account?.status?.disablements.at(-1)?.effectiveAt;
         if (
           access.kind === "denied" ||
+          (await workspaceClosure(tx, input.accountId)) ||
           (suspension &&
             (suspension.action === "pause" ||
               input.loginStartedAt <= suspension.effectiveAt.getTime() ||

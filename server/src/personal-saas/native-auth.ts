@@ -4,9 +4,14 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { seal, unseal } from "../auth/signed-value";
 import type { Database } from "../db/client";
-import { personalSaasNativeCodes as codes } from "../db/schema/personal-saas";
+import {
+  personalSaasAccounts,
+  personalSaasNativeCodes as codes,
+} from "../db/schema/personal-saas";
 import { personalSaasStore, sessionSeconds } from "./store";
 
+import { accountDecision } from "./account-access";
+import { closureProgress, workspaceClosure } from "./workspace-closure-record";
 import { pausedWorkspace } from "./workspace-suspension";
 
 const client = z.enum(["ios", "android", "desktop"]);
@@ -95,6 +100,23 @@ export function nativeAuth({
       if (!identity) throw new Error("Could not decrypt native handoff");
       const verified = sessionIdentity.safeParse(JSON.parse(identity));
       if (!verified.success) return null;
+      // Read restricted status under the same account lock used by closure.
+      // A handoff issued before closure must never create a workspace session.
+      const [account] = await tx
+        .select({ status: personalSaasAccounts.status })
+        .from(personalSaasAccounts)
+        .where(eq(personalSaasAccounts.id, verified.data.accountId))
+        .for("update");
+      const active = accountDecision(account?.status ?? null, now());
+      const disabledAt = account?.status?.disablements.at(-1)?.effectiveAt;
+      if (
+        active.kind !== "active" ||
+        (disabledAt !== undefined && verified.data.loginStartedAt <= disabledAt)
+      )
+        return null;
+      const closure = await workspaceClosure(tx, verified.data.accountId);
+      if (closure)
+        return { status: "closed" as const, ...closureProgress(closure) };
       const paused = await pausedWorkspace(
         tx,
         verified.data.accountId,

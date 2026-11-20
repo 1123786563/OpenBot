@@ -138,6 +138,7 @@ enum SignIn {
     Waiting(Attempt),
     Failed(SignInFailure),
     Paused(PausedWorkspace),
+    Closed(ClosedWorkspace),
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -148,6 +149,7 @@ pub enum Action {
     Cancel,
     Prepare,
     SignOut,
+    Closure,
 }
 
 #[derive(Serialize)]
@@ -161,6 +163,7 @@ pub enum View {
     },
     Preparing,
     Paused(PausedWorkspace),
+    Closed(ClosedWorkspace),
     Workspace {
         id: String,
         #[serde(rename = "personalAssistant")]
@@ -245,6 +248,12 @@ struct ConversationHistory {
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum Exchange {
+    Closed {
+        #[serde(rename = "status")]
+        _status: ClosedStatus,
+        #[serde(flatten)]
+        details: ClosedWorkspace,
+    },
     Paused {
         #[serde(rename = "status")]
         _status: PauseStatus,
@@ -268,6 +277,29 @@ pub struct PausedWorkspace {
     operation_id: String,
     reason: Option<String>,
     support_email: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ClosedStatus {
+    Closed,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClosedWorkspace {
+    operation_id: String,
+    execution_cutoff: ClosureCutoff,
+    online_cleanup: String,
+    remote_revocation: String,
+    backups: String,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+struct ClosureCutoff {
+    sessions: String,
+    work: String,
+    computer: String,
 }
 
 pub struct Cloud {
@@ -295,7 +327,7 @@ impl Cloud {
     fn action(
         &self,
         action: Action,
-        open: impl FnOnce(Url) -> Result<(), &'static str>,
+        open: impl Fn(Url) -> Result<(), &'static str>,
     ) -> Result<View, &'static str> {
         let Some(origin) = &self.origin else {
             return Ok(View::Unavailable);
@@ -317,6 +349,15 @@ impl Cloud {
             });
         }
 
+        let action = if matches!(action, Action::Closure) {
+            open(endpoint(origin, "/auth/closure/start"))?;
+            Action::Status
+        } else {
+            action
+        };
+        if let (Action::Status, SignIn::Closed(details)) = (action, &*sign_in) {
+            return Ok(View::Closed(details.clone()));
+        }
         if let (Action::Status, SignIn::Paused(details)) = (action, &*sign_in) {
             return Ok(View::Paused(details.clone()));
         }
@@ -353,8 +394,7 @@ impl Cloud {
         *sign_in = match result {
             Return::Failed(failure) => SignIn::Failed(failure),
             Return::Code(code) => match exchange_and_store(origin, attempt, &code) {
-                Ok(Some(details)) => SignIn::Paused(details),
-                Ok(None) => SignIn::Idle,
+                Ok(state) => state,
                 Err(failure) => SignIn::Failed(failure),
             },
         };
@@ -377,16 +417,20 @@ fn exchange_and_store(
     origin: &Url,
     attempt: &Attempt,
     code: &str,
-) -> Result<Option<PausedWorkspace>, SignInFailure> {
+) -> Result<SignIn, SignInFailure> {
     let api = Api::new(origin).map_err(|_| SignInFailure::Incomplete)?;
     let store = credential(origin).map_err(|_| SignInFailure::StoreUnavailable)?;
     let token = match api
         .exchange(attempt, code)
         .map_err(|_| SignInFailure::Incomplete)?
     {
+        Exchange::Closed { details, .. } => {
+            clear_credential(&store).map_err(|_| SignInFailure::StoreUnavailable)?;
+            return Ok(SignIn::Closed(details));
+        }
         Exchange::Paused { details, .. } => {
             clear_credential(&store).map_err(|_| SignInFailure::StoreUnavailable)?;
-            return Ok(Some(details));
+            return Ok(SignIn::Paused(details));
         }
         Exchange::Session { token } if !token.is_empty() => token,
         Exchange::Session { .. } => return Err(SignInFailure::Incomplete),
@@ -395,7 +439,7 @@ fn exchange_and_store(
         let _ = api.end_session(&token);
         return Err(SignInFailure::StoreUnavailable);
     }
-    Ok(None)
+    Ok(SignIn::Idle)
 }
 
 fn endpoint(origin: &Url, path: &str) -> Url {

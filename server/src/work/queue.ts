@@ -357,6 +357,23 @@ export function createWorkQueue(
       .where(and(keyed(row.kind, row.key), unfinished));
   }
 
+  // Closure fences the row immediately but retains the claim until its runner returns.
+  async function acknowledgeClosedWork(input: HeldWork, endedAt: number) {
+    await database
+      .update(workItems)
+      .set({
+        claimedBy: null,
+        leaseUntil: null,
+        interruption: sql`${workItems.interruption} || jsonb_build_object('endedAt', ${endedAt}::bigint)`,
+      })
+      .where(
+        and(
+          heldBy(input),
+          sql`${workItems.interruption}->>'reason' = 'workspace_closed'`,
+        ),
+      );
+  }
+
   async function authorize(tx: Transaction, row: WorkRow, skipLocked = false) {
     if (row.accountId === null || row.accountEpoch === null) return;
     const access = await readExecutionAccess(
@@ -687,6 +704,7 @@ export function createWorkQueue(
     },
 
     async finish({ kind, key, owner }) {
+      const endedAt = now();
       const [finished] =
         (await underClaim({ kind, key, owner }, (tx) =>
           tx
@@ -705,10 +723,12 @@ export function createWorkQueue(
             .where(ours(kind, key, owner))
             .returning({ key: workItems.key }),
         )) ?? [];
+      if (!finished) await acknowledgeClosedWork({ kind, key, owner }, endedAt);
       return Boolean(finished);
     },
 
     async release({ kind, key, owner, delayMs, reason, uncounted, payload }) {
+      const endedAt = now();
       // Freed and pushed out, rather than finished: the work still wants doing, just not immediately
       // and not by whoever just gave up on it. The reason stays on the row so an item that runs out
       // of attempts says why rather than simply stopping.
@@ -736,6 +756,7 @@ export function createWorkQueue(
             .where(ours(kind, key, owner))
             .returning({ key: workItems.key }),
         )) ?? [];
+      if (!released) await acknowledgeClosedWork({ kind, key, owner }, endedAt);
       return Boolean(released);
     },
 

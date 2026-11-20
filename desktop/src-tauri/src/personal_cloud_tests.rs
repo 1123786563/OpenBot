@@ -106,13 +106,18 @@ fn signed_in_cloud_view_loads_workspace_and_owner_history_with_the_same_session(
                 1_000,
             ),
         ] {
-            let (stream, _) = listener.accept().unwrap();
-            stream
-                .set_read_timeout(Some(Duration::from_secs(5)))
-                .unwrap();
-            let mut reader = BufReader::new(stream);
-            let mut request = String::new();
-            reader.read_line(&mut request).unwrap();
+            let (mut reader, request) = loop {
+                let (stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut reader = BufReader::new(stream);
+                let mut request = String::new();
+                // The HTTP client can discard a speculative TCP connection before writing.
+                if reader.read_line(&mut request).unwrap() != 0 {
+                    break (reader, request);
+                }
+            };
             assert_eq!(request, format!("GET {path} HTTP/1.1\r\n"));
             let headers: Vec<_> = (&mut reader)
                 .lines()
@@ -143,6 +148,8 @@ fn signed_in_cloud_view_loads_workspace_and_owner_history_with_the_same_session(
         serde_json::json!({
             "kind": "workspace",
             "accessMs": 1000,
+            "recovery": [],
+            "recoveryCanRetry": false,
             "id": "workspace-1",
             "personalAssistant": {"id": "bot-1", "name": "My Assistant"},
             "quotas": {
@@ -181,5 +188,37 @@ fn paused_exchange_projects_only_public_status_to_the_cloud_view() {
             "reason": "Trial paused for review.",
             "supportEmail": "support@example.com",
         })
+    );
+}
+
+#[test]
+fn closed_exchange_opens_browser_progress_and_exposes_only_the_operation() {
+    let reply = serde_json::json!({
+        "status": "closed",
+        "operationId": "closure-1",
+        "executionCutoff": { "sessions": "revoked", "work": "pending", "computer": "failed" },
+        "onlineCleanup": "pending",
+        "remoteRevocation": "pending",
+        "backups": "pending",
+    });
+    let Exchange::Closed { details, .. } = serde_json::from_value(reply.clone()).unwrap() else {
+        panic!("expected a restricted closure exchange");
+    };
+    let cloud = Cloud {
+        origin: parse_origin("https://personal.example"),
+        sign_in: Mutex::new(SignIn::Closed(details)),
+    };
+    let view = cloud
+        .action(Action::Closure, |url| {
+            assert_eq!(url.as_str(), "https://personal.example/auth/closure/start");
+            Ok(())
+        })
+        .unwrap();
+    let mut expected = reply.as_object().unwrap().clone();
+    expected.remove("status");
+    expected.insert("kind".into(), "closed".into());
+    assert_eq!(
+        serde_json::to_value(view).unwrap(),
+        serde_json::Value::Object(expected)
     );
 }

@@ -187,6 +187,11 @@ export function workspaceComputers(runtime: {
               ? "restart_required"
               : "not_started",
         cutoff: run?.cutoff,
+        stopped:
+          !run?.launching &&
+          (!process ||
+            process.status === "created" ||
+            process.status === "exited"),
       };
     },
     active() {

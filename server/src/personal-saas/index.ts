@@ -168,6 +168,13 @@ if (renewComputers) {
 }
 repeatAfterEach(async () => {
   try {
+    await app.sweepWorkspaceClosures();
+  } catch {
+    console.warn(JSON.stringify({ type: "workspace-closure-sweep-failure" }));
+  }
+}, 1_000);
+repeatAfterEach(async () => {
+  try {
     await app.sweepBotWork();
   } catch {
     console.warn(

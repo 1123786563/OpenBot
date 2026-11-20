@@ -26,6 +26,7 @@ test("a disconnected control plane cannot renew a run or wake it after local exi
   expect(await computers.status("workspace")).toMatchObject({
     status: "restart_required",
     cutoff: "confirmed",
+    stopped: true,
   });
   expect(
     computers.renew("workspace", {
@@ -75,6 +76,7 @@ test("a launch that crosses cutoff is rejected and a late exit is recorded as fa
     expiresAt: 25_000,
   });
   await started.promise;
+  expect((await computers.status("workspace")).stopped).not.toBe(true);
   now = 25_001;
   await computers.sweep();
   release.resolve();
@@ -83,6 +85,7 @@ test("a launch that crosses cutoff is rejected and a late exit is recorded as fa
   expect(await computers.status("workspace")).toMatchObject({
     status: "restart_required",
     cutoff: "failed",
+    stopped: true,
   });
 });
 
