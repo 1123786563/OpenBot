@@ -9,6 +9,8 @@ import {
   MarketVersionAdministration,
   MarketVersionControl,
   type MarketVersionIdentity,
+  marketSkillPath,
+  marketVersionQueryKey,
 } from "./market-version-administration";
 
 type Skill = {
@@ -179,7 +181,7 @@ function MarketPreview({
   isAdmin: boolean;
 }) {
   const [page, setPage] = useState(0);
-  const path = `/${encodeURIComponent(skill.namespace)}/${encodeURIComponent(skill.slug)}`;
+  const path = marketSkillPath(skill);
   const detail = useQuery({
     queryKey: ["skill-market", path, page],
     queryFn: ({ signal }) =>
@@ -191,7 +193,7 @@ function MarketPreview({
   });
   const versionPath = `${path}/versions/${encodeURIComponent(version)}`;
   const preview = useQuery({
-    queryKey: ["skill-market", path, "version", version],
+    queryKey: marketVersionQueryKey(path, version),
     queryFn: ({ signal }) => load<VersionPreview>(versionPath, signal),
     retry: false,
   });
@@ -332,7 +334,7 @@ function MarketCommandAssignment({ path }: { path: string }) {
       }),
     onSettled: () =>
       queryClient.invalidateQueries({
-        queryKey: ["skill-market", path, "version"],
+        queryKey: marketVersionQueryKey(path),
       }),
   });
 

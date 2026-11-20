@@ -13,6 +13,18 @@ export type MarketVersionIdentity = {
   versionId: number;
 };
 
+export function marketSkillPath({
+  namespace,
+  slug,
+}: Pick<MarketVersionIdentity, "namespace" | "slug">) {
+  return `/${encodeURIComponent(namespace)}/${encodeURIComponent(slug)}`;
+}
+
+export function marketVersionQueryKey(path: string, version?: string) {
+  const prefix = ["skill-market", path, "version"];
+  return version === undefined ? prefix : [...prefix, version];
+}
+
 const disablementsPath = "/version-disablements";
 
 export function MarketVersionAdministration() {
@@ -106,12 +118,10 @@ export function MarketVersionControl({
           queryKey: ["skill-market", "version-disablements"],
         }),
         queryClient.invalidateQueries({
-          queryKey: [
-            "skill-market",
-            `/${encodeURIComponent(namespace)}/${encodeURIComponent(slug)}`,
-            "version",
+          queryKey: marketVersionQueryKey(
+            marketSkillPath({ namespace, slug }),
             version,
-          ],
+          ),
         }),
       ]),
   });
