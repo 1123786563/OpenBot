@@ -414,6 +414,13 @@ export function createPersonalSaasApp(
     );
   }
 
+  async function stillAuthorized(
+    token: string | undefined,
+    grant: AccountGrant,
+  ) {
+    return (await remainingAccess(token, grant)) > 0;
+  }
+
   function workspaceViewBinding(token: string, { epoch }: AccountGrant) {
     return createHmac("sha256", config.encryptionKey)
       .update(`personal-saas-workspace-view:${token}:${epoch}`)
@@ -458,7 +465,7 @@ export function createPersonalSaasApp(
       database,
       (context) => authorize(getCookie(context, sessionCookie)),
       (context, grant) =>
-        remainingAccess(getCookie(context, sessionCookie), grant).then(Boolean),
+        stillAuthorized(getCookie(context, sessionCookie), grant),
       async (context, grant, input) => {
         const token = getCookie(context, sessionCookie);
         if (!token) return { authorized: false };
@@ -478,7 +485,7 @@ export function createPersonalSaasApp(
       authorize: (context) => authorize(requestSession(context)),
       stillAuthorized: async (context, grant) =>
         (await accountAccess.verify(grant)).kind === "active" &&
-        (await remainingAccess(requestSession(context), grant)) > 0,
+        stillAuthorized(requestSession(context), grant),
     }),
   );
 
