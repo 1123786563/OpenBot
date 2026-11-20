@@ -214,6 +214,11 @@ function MemoryRow({
         <ItemDescription className="line-clamp-none">
           {memory.provenance} · {status}
         </ItemDescription>
+        {memory.formedBy === "bot" && !memory.sourceRef && (
+          <ItemDescription className="line-clamp-none">
+            Bots can’t use this memory because its source can’t be verified.
+          </ItemDescription>
+        )}
         {memory.formedBy === "bot" && (
           <ItemDescription className="line-clamp-none">
             From {memory.sourceApp ?? "a conversation"}

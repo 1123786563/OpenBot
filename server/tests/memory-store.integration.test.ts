@@ -1,9 +1,13 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { connectAppRefusal } from "@openbot/shared/connect-prompt";
+import { betterAuth } from "better-auth";
+import { memoryAdapter } from "better-auth/adapters/memory";
 import { and, eq, inArray } from "drizzle-orm";
+import { Hono } from "hono";
 import { createBotReset } from "../src/agents/lifecycle-reset";
-import { createAuditStore } from "../src/audit";
+import { createAuditReader, createAuditStore } from "../src/audit";
+import { type AppVariables, createRequireUser } from "../src/auth/guards";
 import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
 import { agents, users } from "../src/db/schema/core";
@@ -11,6 +15,8 @@ import { agentProfiles } from "../src/db/schema/coworker";
 import { memorySources, personalMemories } from "../src/db/schema/memory";
 import { mcpServers, mcpTools } from "../src/db/schema/plugins";
 import { createMemoryIngestion } from "../src/memory/ingestion";
+import { createMemoryRoutes } from "../src/memory/routes";
+import { createMemoryRuntime } from "../src/memory/runtime";
 import { createMemoryStore } from "../src/memory/store";
 import { MemoryNotFoundError, MemoryRefusedError } from "../src/memory/types";
 import { createPluginStore, PluginRefusedError } from "../src/plugins/store";
@@ -22,6 +28,7 @@ const owner = `${prefix}-owner`;
 const other = `${prefix}-other`;
 const bot = `${prefix}-bot`;
 const otherBot = `${prefix}-other-bot`;
+const secondBot = `${prefix}-second-bot`;
 const server = `${prefix}-connector`;
 const ref = `${server}/read_documents`;
 let vendorText =
@@ -44,13 +51,26 @@ const plugins = createPluginStore({
   },
 });
 const store = createMemoryStore(database);
-const ingestion = createMemoryIngestion({ store, plugins });
+const ingestion = createMemoryIngestion({
+  store,
+  plugins,
+  // The two Bots available to the owner and the private Bot belonging to the other person.
+  canUseBot: async (person, agentId) =>
+    (person === owner && agentId === secondBot) ||
+    (await plugins.agentOwner(agentId)) === person,
+});
 beforeAll(async () => {
   await database.insert(users).values([
     { id: owner, email: `${owner}@example.test` },
     { id: other, email: `${other}@example.test` },
   ]);
   await database.insert(agents).values([
+    {
+      id: secondBot,
+      name: "Second Memory Bot",
+      type: "built_in",
+      configuration: {},
+    },
     { id: bot, name: "Memory Bot", type: "built_in", configuration: {} },
     {
       id: otherBot,
@@ -105,7 +125,9 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await database.delete(users).where(inArray(users.id, [owner, other]));
-  await database.delete(agents).where(inArray(agents.id, [bot, otherBot]));
+  await database
+    .delete(agents)
+    .where(inArray(agents.id, [bot, otherBot, secondBot]));
   await database.delete(mcpServers).where(eq(mcpServers.id, server));
   await database.$client.close();
 });
@@ -337,6 +359,7 @@ test("recall reaches this Bot's memories however many other Bots' are newer", as
     provenance: "Read from Docs",
     formedBy: "bot",
     formedByAgentId: bot,
+    sourceRef: ref,
   });
   // Six hundred newer memories formed by another Bot for the same person.
   await database.insert(personalMemories).values(
@@ -392,16 +415,19 @@ test("the same fact formed at once by two runs is stored once", async () => {
 
 test("the same fact formed by two Bots is kept for each, and each recalls only its own", async () => {
   const content = `Two-Bot fact ${randomUUID()}`;
+  await plugins.grant("mcp", ref, secondBot, owner);
   try {
     const first = await store.formMemory(owner, {
       agentId: bot,
       content,
       sourceApp: "Docs",
+      sourceRef: ref,
     });
     const second = await store.formMemory(owner, {
-      agentId: otherBot,
+      agentId: secondBot,
       content,
       sourceApp: "Docs",
+      sourceRef: ref,
     });
     expect(first.duplicate).toBe(false);
     expect(second).toMatchObject({ duplicate: false, forgotten: false });
@@ -409,9 +435,10 @@ test("the same fact formed by two Bots is kept for each, and each recalls only i
     // The same Bot forming it again is still a duplicate of its own row.
     expect(
       await store.formMemory(owner, {
-        agentId: otherBot,
+        agentId: secondBot,
         content,
         sourceApp: "Docs",
+        sourceRef: ref,
       }),
     ).toEqual({ id: second.id, duplicate: true, forgotten: false });
     const term = content.slice(-12);
@@ -419,9 +446,10 @@ test("the same fact formed by two Bots is kept for each, and each recalls only i
       (await ingestion.recall(owner, bot, term)).map((row) => row.id),
     ).toEqual([first.id]);
     expect(
-      (await ingestion.recall(owner, otherBot, term)).map((row) => row.id),
+      (await ingestion.recall(owner, secondBot, term)).map((row) => row.id),
     ).toEqual([second.id]);
   } finally {
+    await plugins.revoke("mcp", ref, secondBot, owner);
     await database
       .delete(personalMemories)
       .where(eq(personalMemories.content, content));
@@ -490,4 +518,207 @@ test("resetting one Bot leaves another Bot's copy of the same fact", async () =>
       .delete(personalMemories)
       .where(eq(personalMemories.content, content));
   }
+});
+
+test("a pending Bot memory disappears when its exact read grant is revoked, even with another grant to the app", async () => {
+  const content = "Stored exact-grant review fixture";
+  const formed = await store.formMemory(owner, {
+    agentId: bot,
+    content,
+    sourceApp: "Memory connector",
+    sourceRef: ref,
+  });
+  await plugins.grant("mcp", ref, bot, owner);
+  await plugins.grant("mcp", `${server}/write_document`, bot, owner);
+  try {
+    expect(await ingestion.contextFor(owner, bot)).toContain(content);
+    await plugins.revoke("mcp", ref, bot, owner);
+    expect(await ingestion.contextFor(owner, bot)).not.toContain(content);
+    expect(await ingestion.recall(owner, bot, "exact-grant")).toEqual([]);
+  } finally {
+    await plugins.grant("mcp", ref, bot, owner);
+    await store.remove(owner, formed.id);
+  }
+});
+
+test("a foreign Bot cannot assemble even the person's own manual memory", async () => {
+  await store.create(owner, { content: "Private cross-Bot fixture" });
+  expect(await ingestion.contextFor(owner, otherBot)).toBe("");
+});
+
+test("signed-in people manage separate local Memory settings and revocation reaches the next Bot context with an audit record", async () => {
+  const auth = betterAuth({
+    baseURL: "http://localhost:39091",
+    secret: "memory-acceptance-local-fixture-signing-secret",
+    database: memoryAdapter({
+      user: [],
+      session: [],
+      account: [],
+      verification: [],
+    }),
+    emailAndPassword: { enabled: true },
+  });
+  async function signIn(person: string) {
+    const response = await auth.api.signUpEmail({
+      body: {
+        email: `${person}@example.test`,
+        password: "local-fixture-password",
+        name: person,
+      },
+      asResponse: true,
+    });
+    expect(response.ok).toBe(true);
+    return response.headers
+      .getSetCookie()
+      .map((cookie) => cookie.split(";")[0])
+      .join("; ");
+  }
+  const [ownerCookie, otherCookie] = await Promise.all([
+    signIn(owner),
+    signIn(other),
+  ]);
+  const requireUser = createRequireUser(
+    {
+      handler: auth.handler,
+      api: {
+        async getSession(input) {
+          const session = await auth.api.getSession(input);
+          if (!session) return null;
+          const person = [owner, other].find(
+            (id) => session.user.email === `${id}@example.test`,
+          );
+          if (!person) return null;
+          return { user: { ...session.user, id: person } };
+        },
+      },
+    },
+    { rolesForUser: async () => ["user"] },
+  );
+  const app = new Hono<{ Variables: AppVariables }>();
+  app.route("/api/memory", createMemoryRoutes(store, ingestion, requireUser));
+  const runtime = createMemoryRuntime({
+    edition: "team",
+    defaults: { botTurn() {} },
+    ingestion,
+    store,
+  });
+  const load = runtime.loadForActor;
+  if (!load) throw new Error("Cloud Memory must be enabled.");
+  const settings = (cookie: string, method: string, id = "", body?: unknown) =>
+    app.request(`/api/memory${id ? `/${id}` : ""}`, {
+      method,
+      headers: { cookie, "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  expect((await settings("", "GET")).status).toBe(401);
+  const startCalls = calls.length;
+  const importedSource = await store.createSource(owner, {
+    agentId: bot,
+    toolRef: ref,
+    title: "Local imported fixture",
+  });
+  await store.completeSync(owner, importedSource.id, [
+    {
+      externalId: "acceptance-39",
+      digest: "fixture-v1",
+      content: "Paper crane imported fixture",
+      provenance: "Read-only records",
+    },
+  ]);
+  const pending = await store.formMemory(owner, {
+    agentId: bot,
+    content: "Paper crane pending Bot fixture",
+    sourceApp: "Memory connector",
+    sourceRef: ref,
+  });
+  const unattributed = await store.formMemory(owner, {
+    agentId: bot,
+    content: "Unverified app provenance fixture",
+    sourceApp: "Memory connector",
+  });
+  const content = "Private signed-in Memory fixture";
+  const created = await settings(otherCookie, "POST", "", { content });
+  expect(created.status).toBe(201);
+  const second = await created.json();
+  expect(await load(other)(otherBot)).toContain(content);
+  expect(await load(owner)(bot)).not.toContain(content);
+  expect(await load(owner)(bot)).not.toContain(
+    "Unverified app provenance fixture",
+  );
+  expect(await load(owner)(bot)).toContain("Paper crane pending Bot fixture");
+  expect(await load(owner)(bot)).toContain("Paper crane imported fixture");
+  expect(await load(owner)(secondBot)).not.toContain("Paper crane");
+  expect(await load(other)(otherBot)).not.toContain("Paper crane");
+  expect(
+    (await ingestion.recall(owner, bot, "PAPER CRANE"))
+      .map((row) => row.formedBy)
+      .sort(),
+  ).toEqual(["bot", "import"]);
+  expect(await (await settings(ownerCookie, "GET")).text()).toContain(
+    pending.id,
+  );
+  expect(await (await settings(otherCookie, "GET")).text()).not.toContain(
+    pending.id,
+  );
+  expect(
+    (await settings(otherCookie, "PATCH", pending.id, { enabled: false }))
+      .status,
+  ).toBe(404);
+  expect((await settings(otherCookie, "DELETE", pending.id)).status).toBe(404);
+  const confirm = await (
+    await settings(ownerCookie, "PATCH", pending.id, {
+      reviewState: "confirmed",
+    })
+  ).json();
+  expect(confirm.memory.reviewState).toBe("confirmed");
+  const edit = await (
+    await settings(ownerCookie, "PATCH", pending.id, {
+      content: "Edited crane fixture",
+    })
+  ).json();
+  expect(edit.memory.reviewState).toBe("edited");
+  expect(await load(owner)(bot)).toContain("Edited crane fixture");
+  expect(await load(owner)(bot)).not.toContain(
+    "Paper crane pending Bot fixture",
+  );
+  expect(
+    (await settings(ownerCookie, "PATCH", pending.id, { enabled: false }))
+      .status,
+  ).toBe(200);
+  expect(await load(owner)(bot)).not.toContain("Edited crane fixture");
+  expect(
+    (await settings(ownerCookie, "PATCH", pending.id, { enabled: true }))
+      .status,
+  ).toBe(200);
+  expect(await load(owner)(bot)).toContain("Edited crane fixture");
+  expect((await settings(ownerCookie, "DELETE", pending.id)).status).toBe(204);
+  expect(await load(owner)(bot)).not.toContain("Edited crane fixture");
+  expect(await (await settings(ownerCookie, "GET")).text()).not.toContain(
+    pending.id,
+  );
+  expect(
+    (await settings(ownerCookie, "PATCH", pending.id, { enabled: true }))
+      .status,
+  ).toBe(404);
+  expect((await settings(otherCookie, "DELETE", second.memory.id)).status).toBe(
+    204,
+  );
+  expect(await load(other)(otherBot)).not.toContain(content);
+  const { events } = await createAuditReader(database).list({
+    limit: 20,
+    targetType: "personal_memory",
+    targetId: pending.id,
+  });
+  expect(events.map((event) => event.payload.change).sort()).toEqual([
+    "memory_deleted",
+    "memory_disabled",
+    "memory_edited",
+    "memory_enabled",
+    "memory_reviewed",
+  ]);
+  expect(events.every((event) => event.actorUserId === owner)).toBe(true);
+  expect(JSON.stringify(events)).not.toContain("crane fixture");
+  expect(calls).toHaveLength(startCalls);
+  await store.remove(owner, unattributed.id);
+  await store.removeSource(owner, importedSource.id);
 });
