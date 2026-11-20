@@ -3632,7 +3632,9 @@ test("the mounted workspace recovers each stopped background capability as fresh
   const { createResponsibilityStore } = await import(
     "../src/responsibilities/store"
   );
-  const { pluginGrants } = await import("../src/db/schema");
+  const { intelligenceChannelMappings, pluginGrants } = await import(
+    "../src/db/schema"
+  );
   const account: Account = {
     sub: crypto.randomUUID(),
     email: "background-recovery@example.com",
@@ -3649,6 +3651,8 @@ test("the mounted workspace recovers each stopped background capability as fresh
   const channelId = crypto.randomUUID();
   const groupId = crypto.randomUUID();
   const sourceBotId = crypto.randomUUID();
+  const directChannelId = crypto.randomUUID();
+  const directThreadId = crypto.randomUUID();
   await database
     .insert(users)
     .values({ id: ownerUserId, email: `${target.id}@workspace.example` });
@@ -3661,11 +3665,17 @@ test("the mounted workspace recovers each stopped background capability as fresh
   await database.insert(channels).values([
     { id: channelId, name: "Private conversation", description: "" },
     { id: groupId, name: "Private group", description: "" },
+    {
+      id: directChannelId,
+      name: "Original handoff conversation",
+      description: "",
+    },
   ]);
   await database.insert(channelAgents).values([
     { channelId, agentId },
     { channelId: groupId, agentId },
     { channelId: groupId, agentId: sourceBotId },
+    { channelId: directChannelId, agentId: sourceBotId },
   ]);
   const { agentProfiles } = await import("../src/db/schema");
   await database.insert(agentProfiles).values({
@@ -3675,9 +3685,15 @@ test("the mounted workspace recovers each stopped background capability as fresh
     avatarSeed: sourceBotId,
     visibility: "private",
   });
-  await database
-    .insert(channelMemberships)
-    .values({ channelId: groupId, userId: ownerUserId });
+  await database.insert(channelMemberships).values([
+    { channelId: groupId, userId: ownerUserId },
+    { channelId: directChannelId, userId: ownerUserId },
+  ]);
+  await database.insert(intelligenceChannelMappings).values({
+    channelId: directChannelId,
+    userId: ownerUserId,
+    threadId: directThreadId,
+  });
   await database
     .insert(pluginGrants)
     .values({ kind: "bot", agentId: sourceBotId, ref: agentId });
@@ -3761,6 +3777,23 @@ test("the mounted workspace recovers each stopped background capability as fresh
     )[0]?.key,
   ).toBe(handoff);
 
+  const directHandoff = `hop:${crypto.randomUUID()}:${crypto.randomUUID()}`;
+  expect(
+    await queue.offer({
+      kind: "bot.message",
+      key: directHandoff,
+      payload: {
+        actorId: ownerUserId,
+        fromBotId: sourceBotId,
+        toBotId: agentId,
+        threadId: directThreadId,
+        runId: crypto.randomUUID(),
+        depth: 1,
+        task: "Check the direct handoff",
+      },
+    }),
+  ).toBe("queued");
+
   const calls: string[] = [];
   const runApp = newApp(database, async ({ routineId, beforeDispatch }) => {
     await beforeDispatch?.();
@@ -3813,7 +3846,7 @@ test("the mounted workspace recovers each stopped background capability as fresh
     state.interruptedBackgroundWork
       .map((item: { key: string }) => item.key)
       .sort(),
-  ).toEqual([checkIn, responsibility, group, handoff].sort());
+  ).toEqual([checkIn, responsibility, group, handoff, directHandoff].sort());
   await sweep();
   expect(calls).toEqual([]);
   expect((await retry(handoff, restored)).status).toBe(409);
@@ -3822,30 +3855,43 @@ test("the mounted workspace recovers each stopped background capability as fresh
     "__Host-openbot-personal=",
   );
   expect((await retry(handoff, other, true)).status).toBe(404);
+  await database
+    .delete(pluginGrants)
+    .where(
+      and(eq(pluginGrants.kind, "bot"), eq(pluginGrants.agentId, sourceBotId)),
+    );
+  expect((await retry(handoff, restored, true)).status).toBe(403);
+  await database
+    .insert(pluginGrants)
+    .values({ kind: "bot", agentId: sourceBotId, ref: agentId });
   const fresh = new Map<string, string>();
-  for (const key of [checkIn, responsibility, group, handoff]) {
+  for (const key of [checkIn, responsibility, group, handoff, directHandoff]) {
     const response = await retry(key, restored, true);
     expect(response.status).toBe(200);
     const recovery = await response.json();
-    expect(recovery).toMatchObject({
-      action: "retry",
-      key: expect.any(String),
-    });
-    expect(recovery.key).not.toBe(key);
+    expect(recovery.action).toBe("retry");
+    const newKey = recovery.key;
+    if (typeof newKey !== "string") throw new Error("Expected a fresh work ID");
+    expect(newKey).not.toBe(key);
     expect(await (await retry(key, restored, true)).json()).toEqual(recovery);
-    fresh.set(key, recovery.key);
+    fresh.set(key, newKey);
   }
   await sweep();
+  const recoveredHandoff = fresh.get(handoff);
+  const recoveredDirectHandoff = fresh.get(directHandoff);
+  if (!recoveredHandoff || !recoveredDirectHandoff)
+    throw new Error("Expected fresh handoff IDs");
   expect(calls.sort()).toEqual(
     [
       `proactive:${setting.id}`,
       goal.id,
       `group:${groupId}`,
-      fresh.get(handoff),
+      recoveredHandoff,
+      recoveredDirectHandoff,
     ].sort(),
   );
   await sweep();
-  expect(calls).toHaveLength(4);
+  expect(calls).toHaveLength(5);
   const after = await (await request("/api/workspace", restored)).json();
   expect(after.interruptedBackgroundWork).toEqual(
     expect.arrayContaining(
