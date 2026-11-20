@@ -271,6 +271,7 @@ export function AppSidebar({
           {
             label: "Goals",
             to: "/responsibilities",
+            search: { view: "goals" },
             params: undefined,
             icon: IconTarget,
           },
@@ -288,11 +289,11 @@ export function AppSidebar({
             icon: IconActivity,
           },
         ] as const
-      ).map(({ label, to, params, icon: Icon }) => (
+      ).map(({ label, icon: Icon, ...options }) => (
         <SidebarMenuItem key={label}>
           <SidebarMenuButton
             className="h-10"
-            render={(props) => <Link {...props} to={to} params={params} />}
+            render={(props) => <Link {...props} {...options} />}
           >
             <div className="size-[28px] flex items-center justify-center">
               <Icon aria-hidden />

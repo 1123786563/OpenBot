@@ -1,11 +1,11 @@
-import { Button } from "@astryxdesign/core/Button";
-import { IconLayoutSidebar } from "@tabler/icons-react";
 import { type ReactNode, useId, useRef } from "react";
 import { AppSidebar } from "@/components/app-sidebar/app-sidebar";
+import { AttentionNotifier } from "@/components/bot-profile/attention";
 import { SelfHostBanner } from "@/components/layout/self-host-banner";
 import { SidebarShell } from "@/components/layout/sidebar-shell";
 import { UpdateBanner } from "@/components/layout/update-banner";
 import { SidebarInset, useSidebar } from "@/components/ui/sidebar";
+import { AstryxNavigationToggle } from "./navigation-toggle";
 import { AstryxBrand, astryxScope } from "./theme";
 
 export function AstryxWebShell({ children }: { children: ReactNode }) {
@@ -24,26 +24,16 @@ export function AstryxWebShell({ children }: { children: ReactNode }) {
 function AstryxWebFrame({ children }: { children: ReactNode }) {
   const navId = useId();
   const trigger = useRef<HTMLButtonElement>(null);
-  const { isMobile, open, openMobile, toggleSidebar } = useSidebar();
-  const expanded = isMobile ? openMobile : open;
+  const { isMobile, open } = useSidebar();
 
   return (
     <>
+      <AttentionNotifier />
       <AppSidebar navId={navId} returnFocus={trigger} />
       <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
         <div {...astryxScope} className="astryx-web-bar">
-          <Button
-            aria-controls={isMobile && !expanded ? undefined : navId}
-            aria-expanded={expanded}
-            aria-haspopup={isMobile ? "dialog" : undefined}
-            icon={<IconLayoutSidebar aria-hidden size={20} />}
-            isIconOnly
-            label={expanded ? "Close navigation" : "Open navigation"}
-            onClick={toggleSidebar}
-            ref={trigger}
-            variant="ghost"
-          />
-          {isMobile || !expanded ? <AstryxBrand /> : null}
+          <AstryxNavigationToggle navId={navId} trigger={trigger} />
+          {isMobile || !open ? <AstryxBrand /> : null}
         </div>
         <UpdateBanner />
         <SelfHostBanner />

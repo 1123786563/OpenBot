@@ -4,6 +4,7 @@ import {
   beforeAll,
   beforeEach,
   expect,
+  spyOn,
   test,
 } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
@@ -21,7 +22,10 @@ import userEvent from "@testing-library/user-event";
 import { TeamFeaturesDialog } from "@/components/edition/team-features-dialog";
 import { agentKeys } from "@/lib/agents/queries";
 import { authKeys } from "@/lib/auth/queries";
-import { botLifecycleKeys } from "@/lib/bot-lifecycle/queries";
+import {
+  type BotAttention,
+  botLifecycleKeys,
+} from "@/lib/bot-lifecycle/queries";
 import { browserKeys } from "@/lib/browser/queries";
 import { type ChannelSummary, channelKeys } from "@/lib/channels/queries";
 import { deploymentKeys } from "@/lib/deployment/queries";
@@ -194,6 +198,7 @@ function renderNarrowApp(start = "/channel/models") {
   const user = userEvent.setup({ document });
   return {
     view,
+    queryClient,
     user,
     router,
     /** Opens the sheet as a person does, and answers with it. */
@@ -383,5 +388,63 @@ test("Goals opens Responsibilities from narrow navigation", async () => {
   );
   await app.user.click(navigation.getByRole("link", { name: "Goals" }));
   await app.view.findByRole("heading", { name: "/responsibilities" });
+  expect(app.router.state.location.searchStr).toBe("?view=goals");
   await app.view.findByRole("button", { name: "Open navigation" });
+});
+
+test("new attention and check-ins notify once while narrow navigation is closed", async () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, "Notification");
+  const hasFocus = spyOn(document, "hasFocus").mockReturnValue(false);
+  const notices: string[] = [];
+  class GrantedNotification {
+    static permission = "granted";
+
+    constructor(_title: string, options: NotificationOptions) {
+      notices.push(options.tag ?? "");
+    }
+  }
+  Object.defineProperty(globalThis, "Notification", {
+    configurable: true,
+    value: GrantedNotification,
+  });
+  const bot: BotAttention = {
+    agentId: "assistant",
+    name: "Assistant",
+    questions: 1,
+    approvals: 0,
+    handoffs: 0,
+    unread: 0,
+    paused: false,
+    notify: "all",
+    items: 1,
+    tasks: { needsInput: 0, ready: 0, failed: 0 },
+  };
+  try {
+    const app = renderNarrowApp("/");
+    await app.view.findByRole("button", { name: "Open navigation" });
+    await app.sheetCloses();
+    await settleReactWork();
+    app.queryClient.setQueryData(botLifecycleKeys.attention, {
+      bots: [bot],
+      lastPingId: "new-ping",
+    });
+    await waitFor(() =>
+      expect(notices.toSorted()).toEqual([
+        "openbot-attention-assistant",
+        "openbot-ping-new-ping",
+      ]),
+    );
+    const sheet = await app.openSheet();
+    expect(
+      within(sheet).getByRole("img", { name: "1 thing needs you" }),
+    ).toBeTruthy();
+    await app.user.keyboard("{Escape}");
+    await app.sheetCloses();
+    await settleReactWork();
+    expect(notices).toHaveLength(2);
+  } finally {
+    hasFocus.mockRestore();
+    if (original) Object.defineProperty(globalThis, "Notification", original);
+    else Reflect.deleteProperty(globalThis, "Notification");
+  }
 });

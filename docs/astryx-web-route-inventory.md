@@ -15,7 +15,7 @@ All four expose home and conversation history, New conversation, Bots, Routines,
 | `opendots` | New chat, coworker tiles and history, Bot profile and add Bot | `/`, `/channel/new?agent=…`, Conversation routes, `/bots/$agentId`, `/bots?new=true` |
 | `opendots` | Routines at `/s/routines` | `/routines` |
 | `opendots` | Memories at `/s/memories` | `/capabilities/memory` where offered. Personal falls back to `/bots`. |
-| `opendots` | Selected Bot's computer pane, pause, settings and breadcrumbs | Conversation computer with `?watch=true` where available, Bot profile actions and tabs, unified navigation |
+| `opendots` | Selected Bot's computer pane, pause, settings and breadcrumbs | On an eligible Bot profile, **Open Computer** opens `/bot?agent=…&watch=true` without a saved Conversation. Conversation computer links also retain `?watch=true`. Pause and settings are on the profile. |
 | `openmuse` (shown as OpenFuse) | Chat tab, main chat, side chat, Bot chooser and add Bot | Conversation roster, `/channel/new?agent=…`, `/bots` and `/bots?new=true`; choose a recipient from the composer |
 | `openmuse` | Activity tab and Bot attention at `/s/activity` | Same URL in the Astryx shell for any profile. Shows the saved eligible Bot or the default Bot. Includes Needs you, activity sections and a Bot profile link. |
 | `openmuse` | Ideas and selected Bot's check-ins at `/s/ideas` | `/ideas` with Bot selection and check-in settings |
