@@ -521,10 +521,9 @@ test("disconnect wins if an approved Slack write has been consumed but has not r
     ).status,
   ).toBe(200);
   const count = writes.length;
-  const executing = call(a, `/approvals/${id}/execute`, {
-    method: "POST",
-    body: input,
-  });
+  const executing = Promise.resolve(
+    call(a, `/approvals/${id}/execute`, { method: "POST", body: input }),
+  );
   try {
     await Promise.race([
       began.promise,
