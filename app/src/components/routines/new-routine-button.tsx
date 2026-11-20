@@ -1,5 +1,8 @@
+import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import { IconClock, IconPlus } from "@tabler/icons-react";
 import { Link, useRouter } from "@tanstack/react-router";
+import { type ComponentProps, useCallback } from "react";
+import { astryxPilot } from "@/components/astryx-pilot/theme";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -20,8 +23,30 @@ export function NewRoutineButton({
   agentId?: string;
   variant?: "ghost" | "outline";
 }) {
+  const RoutineLink = useCallback(
+    ({ href: _href, ...props }: ComponentProps<"a">) => (
+      <Link {...props} search={agentId ? { agentId } : {}} to="/routines/new" />
+    ),
+    [agentId],
+  );
   // A list drawn with no router around it, as a skin's own tests draw it, has nowhere to link to.
   if (!useRouter({ warn: false })) return null;
+  if (astryxPilot) {
+    return (
+      <AstryxButton
+        as={RoutineLink}
+        href={
+          agentId
+            ? `/routines/new?agentId=${encodeURIComponent(agentId)}`
+            : "/routines/new"
+        }
+        icon={<IconPlus aria-hidden />}
+        label="New routine"
+        size="sm"
+        variant="primary"
+      />
+    );
+  }
   return (
     <Button
       render={(props) => (
