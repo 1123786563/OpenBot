@@ -11,12 +11,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
   createRootRoute,
+  createRoute,
   createRouter,
+  Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
 import { cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AppSidebar } from "@/components/app-sidebar/app-sidebar";
+import { astryxPilot } from "@/components/astryx-pilot/theme";
 import { TeamFeaturesDialog } from "@/components/edition/team-features-dialog";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -27,6 +30,7 @@ import { browserKeys } from "@/lib/browser/queries";
 import { type ChannelSummary, channelKeys } from "@/lib/channels/queries";
 import { deploymentKeys } from "@/lib/deployment/queries";
 import { userPreferencesQueryOptions } from "@/lib/settings/message-list";
+import { Route as AppRoute } from "@/routes/_authed/_app";
 import { settleReactWork } from "./settle-react-work";
 
 /*
@@ -98,7 +102,7 @@ function conversation(id: string, summary: string): ChannelSummary {
   };
 }
 
-function renderNarrowApp(start = "/channel/models") {
+function renderNarrowApp(start = "/channel/models", preview = false) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
@@ -153,9 +157,14 @@ function renderNarrowApp(start = "/channel/models") {
     ],
     pageParams: [""],
   });
-  const router = createRouter({
-    routeTree: createRootRoute({
-      component: () => (
+  const root = createRootRoute({
+    component: () =>
+      preview ? (
+        <>
+          <Outlet />
+          <TeamFeaturesDialog />
+        </>
+      ) : (
         <SidebarProvider>
           <AppSidebar />
           {/* The page's own Show sidebar button, which is how a narrow window opens the sheet. */}
@@ -163,7 +172,21 @@ function renderNarrowApp(start = "/channel/models") {
           <TeamFeaturesDialog />
         </SidebarProvider>
       ),
+  });
+  const shell = createRoute({
+    id: "_app",
+    getParentRoute: () => root,
+    component: AppRoute.options.component,
+  });
+  const routes = ["/", "/bots", "/channel/new", "/settings"].map((path) =>
+    createRoute({
+      path,
+      getParentRoute: () => shell,
+      component: () => <h1>{path}</h1>,
     }),
+  );
+  const router = createRouter({
+    routeTree: preview ? root.addChildren([shell.addChildren(routes)]) : root,
     history: createMemoryHistory({ initialEntries: [start] }),
   });
   const view = render(
@@ -263,3 +286,101 @@ test("searching the sheet keeps it open", async () => {
   ).toHaveProperty("value", "hacker");
   expect(app.router.state.location.pathname).toBe("/channel/models");
 });
+
+test.skipIf(!astryxPilot)(
+  "preview navigation can be opened, dismissed, and followed with the keyboard",
+  async () => {
+    const app = renderNarrowApp("/", true);
+    const toggle = await app.view.findByRole("button", {
+      name: "Open navigation",
+    });
+    toggle.focus();
+    await app.user.keyboard("{Enter}");
+    await app.view.findByRole("dialog", { name: "Navigation" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    await app.user.keyboard("{Escape}");
+    await waitFor(() => expect(document.activeElement).toBe(toggle));
+    await app.user.keyboard("{Enter}");
+    const nav = within(
+      await app.view.findByRole("navigation", { name: "Main navigation" }),
+    );
+    nav.getByRole("link", { name: "Bots" }).focus();
+    await app.user.keyboard("{Enter}");
+    await app.view.findByRole("heading", { name: "/bots" });
+    await waitFor(() => {
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(document.activeElement).toBe(toggle);
+    });
+    await app.user.keyboard("{Enter}");
+    const current = within(
+      await app.view.findByRole("navigation", { name: "Main navigation" }),
+    );
+    expect(
+      current
+        .getByRole("link", { name: "Bots", current: "page" })
+        .getAttribute("href"),
+    ).toBe("/bots");
+  },
+);
+
+test.skipIf(!astryxPilot)(
+  "an initial Bots deep link is active in desktop navigation",
+  async () => {
+    const initialWidth = window.innerWidth;
+    window.innerWidth = 1200;
+    try {
+      const app = renderNarrowApp("/bots", true);
+      await app.view.findByRole("heading", { name: "/bots" });
+      const navigation = within(
+        await app.view.findByRole("navigation", { name: "Main navigation" }),
+      );
+      expect(
+        navigation
+          .getByRole("link", { name: "Bots", current: "page" })
+          .getAttribute("href"),
+      ).toBe("/bots");
+      expect(app.view.queryByRole("link", { name: "Capabilities" })).toBeNull();
+      expect(
+        app.view
+          .getByRole("button", { name: "Close navigation" })
+          .getAttribute("aria-expanded"),
+      ).toBe("true");
+    } finally {
+      window.innerWidth = initialWidth;
+    }
+  },
+);
+
+test.skipIf(!astryxPilot)(
+  "preview narrow navigation preserves conversation search and Settings",
+  async () => {
+    const app = renderNarrowApp("/", true);
+    await app.user.click(
+      await app.view.findByRole("button", { name: "Open navigation" }),
+    );
+    const sheet = within(
+      await app.view.findByRole("dialog", { name: "Navigation" }),
+    );
+    await app.user.type(
+      sheet.getByRole("textbox", { name: "Search conversations" }),
+      "hacker",
+    );
+    expect(
+      sheet.getByRole("link", { name: /Hacker News Top Stories/ }),
+    ).toBeTruthy();
+    await app.user.type(
+      sheet.getByRole("textbox", { name: "Search conversations" }),
+      "-no-match",
+    );
+    await sheet.findByText("No conversations match your search");
+    await app.user.click(sheet.getByRole("button", { name: /Dana Fresh/ }));
+    const menu = within(await app.view.findByRole("menu"));
+    expect(
+      menu.getByRole("menuitem", { name: "OpenBot for Business" }),
+    ).toBeTruthy();
+    expect(menu.queryByRole("menuitem", { name: "Admin" })).toBeNull();
+    await app.user.click(menu.getByRole("menuitem", { name: "Settings" }));
+    await app.view.findByRole("heading", { name: "/settings" });
+    await app.view.findByRole("button", { name: "Open navigation" });
+  },
+);

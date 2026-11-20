@@ -13,6 +13,7 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { astryxPilot } from "@/components/astryx-pilot/theme";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
 import { takeFailedStart } from "@/lib/channels/pending-start";
 import { pluginKeys } from "@/lib/plugins/queries";
@@ -83,6 +84,16 @@ function renderHome(queryClient: QueryClient, entry = "/") {
       path: "/",
       validateSearch: HomeRoute.options.validateSearch,
       component: HomeRoute.options.component,
+    }),
+    createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/bots",
+      component: () => <h1>Bots</h1>,
+    }),
+    createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/channel/new",
+      component: () => <h1>New conversation</h1>,
     }),
     createRoute({
       getParentRoute: () => rootRoute,
@@ -423,3 +434,20 @@ for (const status of [409, 500]) {
     ).toContain("/first");
   });
 }
+
+test.skipIf(!astryxPilot).each([
+  ["Browse Bots", "/bots", "Bots"],
+  ["New conversation", "/channel/new", "New conversation"],
+])(
+  "preview home opens %s through its existing route",
+  async (label, path, heading) => {
+    const client = queryClientWithAgents([]);
+    const view = renderHome(client);
+    const user = userEvent.setup({ document });
+    const link = await view.findByRole("link", { name: label });
+    expect(link.getAttribute("href")).toBe(path);
+    await user.click(link);
+    await view.findByRole("heading", { name: heading });
+    expect(view.router.state.location.pathname).toBe(path);
+  },
+);

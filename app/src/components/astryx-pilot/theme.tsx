@@ -21,12 +21,12 @@ const light = accent(
   "#5148ae",
 );
 const dark = accent(import.meta.env.VITE_OPENBOT_ASTRYX_ACCENT_DARK, "#bab7ff");
-const brandStyle = {
+const brandStyle: CSSProperties & Record<`--${string}`, string> = {
   "--pilot-accent-light": light.fill,
   "--pilot-on-accent-light": light.text,
   "--pilot-accent-dark": dark.fill,
   "--pilot-on-accent-dark": dark.text,
-} as CSSProperties;
+};
 
 export const astryxScope = astryxPilot
   ? {
@@ -36,13 +36,16 @@ export const astryxScope = astryxPilot
     }
   : {};
 
-export function AstryxBotsSurface({ children }: { children: ReactNode }) {
+export function AstryxSurface({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className: string;
+}) {
   if (!astryxPilot) return children;
   return (
-    <div
-      {...astryxScope}
-      className="astryx-bots-surface flex min-h-0 min-w-0 flex-1 flex-col"
-    >
+    <div {...astryxScope} className={className}>
       {children}
     </div>
   );
@@ -51,9 +54,9 @@ export function AstryxBotsSurface({ children }: { children: ReactNode }) {
 export function AstryxBrand() {
   const brandLogo = import.meta.env.VITE_OPENBOT_ASTRYX_BRAND_LOGO || logo;
   return (
-    <span className="astryx-bots-brand">
+    <span className="astryx-brand">
       <img alt="" height={20} src={brandLogo} width={20} />
-      {appConfig.brand.productName}
+      <span>{appConfig.brand.productName}</span>
     </span>
   );
 }

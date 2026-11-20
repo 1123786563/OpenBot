@@ -5,11 +5,7 @@ import { type MouseEventHandler, useRef } from "react";
 import { z } from "zod";
 import { NewBotSheet } from "@/components/agents/new-bot-sheet";
 import { NewBotAction } from "@/components/astryx-pilot/bot-actions";
-import {
-  AstryxBotsSurface,
-  AstryxBrand,
-  astryxPilot,
-} from "@/components/astryx-pilot/theme";
+import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { BotRoster } from "@/components/bots/bot-roster";
 import {
   PageRows,
@@ -53,7 +49,7 @@ function BotsPage() {
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
   return (
-    <AstryxBotsSurface>
+    <AstryxSurface className="astryx-bots-surface flex min-h-0 min-w-0 flex-1 flex-col">
       <PageShell
         action={<NewBotAction onClick={rememberCreateTrigger} primary />}
         description={
@@ -62,7 +58,6 @@ function BotsPage() {
             : "Manage your Bots and access those shared with you."
         }
         title="Bots"
-        eyebrow={astryxPilot ? <AstryxBrand /> : undefined}
       >
         <BotRoster onNewBotClick={rememberCreateTrigger} />
         {personal ? <WhatYourBotsKnow /> : null}
@@ -97,7 +92,7 @@ function BotsPage() {
           }}
         />
       </PageShell>
-    </AstryxBotsSurface>
+    </AstryxSurface>
   );
 }
 

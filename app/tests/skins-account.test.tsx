@@ -19,6 +19,7 @@ import {
 } from "@tanstack/react-router";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { astryxPilot } from "@/components/astryx-pilot/theme";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { authKeys } from "@/lib/auth/queries";
 import { appConfig } from "@/lib/generated/application-config";
@@ -371,10 +372,21 @@ test("a skin switched while on a screen only the old skin has lands on home, dra
   await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   expect(getSkinId()).toBe("opendots");
   expect(document.querySelector("[data-openduet-frame]")).toBeNull();
-  // Home, inside the new skin's frame, with something on it.
+  // Home uses the current build's frame after the skin-specific screen redirects.
   expect(
     // Home draws its composer; its greeting is personal, so it is not what this waits for.
     await view.findByRole("textbox", { name: "Message" }, HOME),
   ).toBeTruthy();
-  expect(document.querySelector("[data-opendots-main]")).not.toBeNull();
+  expect(
+    document.querySelector(
+      astryxPilot ? ".astryx-web-shell" : "[data-opendots-main]",
+    ),
+  ).not.toBeNull();
+  if (astryxPilot) {
+    expect(
+      view
+        .getByRole("link", { name: "OpenDots Routines" })
+        .getAttribute("href"),
+    ).toBe("/s/routines");
+  }
 });
