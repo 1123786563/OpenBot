@@ -6,10 +6,6 @@ import { html } from "hono/html";
 import { z } from "zod";
 import { createApprovalRoutes } from "../approvals/routes";
 import { createApprovalStore } from "../approvals/store";
-import {
-  personalBackgroundWorkers,
-  retryBackgroundWork,
-} from "./background-work";
 import { seal, unseal } from "../auth/signed-value";
 import type { Database } from "../db/client";
 import { createWorkQueue, unattendedWorkLabels } from "../work/queue";
@@ -25,6 +21,10 @@ import {
   inboundRelayPath,
   workspaceAutomationRoutes,
 } from "./automation-routes";
+import {
+  personalBackgroundWorkers,
+  retryBackgroundWork,
+} from "./background-work";
 import type { createPersonalBotRuntime } from "./bot-runtime";
 import {
   botWorkInput,

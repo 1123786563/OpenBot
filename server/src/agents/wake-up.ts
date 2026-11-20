@@ -25,8 +25,8 @@ import type { AgentChannel } from "../channels/routes";
 import type { Database } from "../db/client";
 import { workItems } from "../db/schema/work";
 import { REFUSAL_MARKER } from "../plugins/tools";
-import { createWorkQueue, type WorkQueue } from "../work/queue";
 import { runAuthorizedWork } from "../work/execution";
+import { createWorkQueue, type WorkQueue } from "../work/queue";
 import { BotPausedError } from "./lifecycle";
 import type { AgentActor } from "./profile-types";
 

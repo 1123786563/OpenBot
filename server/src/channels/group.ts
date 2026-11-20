@@ -1,4 +1,3 @@
-import { runAuthorizedWork } from "../work/execution";
 /**
  * One conversation with several Bots.
  *
@@ -46,6 +45,7 @@ import {
 import { groupBotThreads, groupMessages } from "../db/schema/group";
 import { leadingSkillCommand } from "../plugins/picked-skill";
 import type { CheckPrivateShare } from "../proactive/private-share";
+import { runAuthorizedWork } from "../work/execution";
 import { createWorkQueue, type WorkQueue } from "../work/queue";
 
 export const GROUP_TURN_KIND = "group.turn";

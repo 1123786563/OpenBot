@@ -29,8 +29,9 @@ import {
   channelMemberships,
   channels,
   groupBotThreads,
-  responsibilities as responsibilityRows,
+  intelligenceChannelMappings,
   pluginGrants,
+  responsibilities as responsibilityRows,
   responsibilityRuns,
 } from "../db/schema";
 import { personalWorkspaces } from "../db/schema/personal-saas";
@@ -53,9 +54,9 @@ import {
 import { markUntrusted } from "../untrusted-content";
 import { currentWorkGrant } from "../work/execution";
 import { createWorkQueue } from "../work/queue";
-import { workspaceConversations, type Transaction } from "./store";
-import { workspaceResourceOwner } from "./workspace-principal";
+import { type Transaction, workspaceConversations } from "./store";
 import { workspaceBots } from "./workspace-bots";
+import { workspaceResourceOwner } from "./workspace-principal";
 
 const wakeUpRequest = z.object({
   ownerUserId: z.string(),
@@ -112,7 +113,7 @@ async function ownsConversation(
   return Boolean(channel);
 }
 
-async function privateGroupBot(
+async function privateChannelBot(
   database: Connection,
   owner: string,
   channelId: string,
@@ -161,7 +162,7 @@ async function handoffChannel(
   if (work.answerIn || work.fromBotId === work.toBotId) return;
   if (!(await authorizedBot(database, accountId, work.actorId, work.toBotId)))
     return;
-  const [source] = await database
+  const [group] = await database
     .select({ channelId: groupBotThreads.channelId })
     .from(groupBotThreads)
     .where(
@@ -171,18 +172,34 @@ async function handoffChannel(
         eq(groupBotThreads.agentId, work.fromBotId),
       ),
     );
+  const [direct] = group
+    ? []
+    : await database
+        .select({ channelId: intelligenceChannelMappings.channelId })
+        .from(intelligenceChannelMappings)
+        .where(
+          and(
+            eq(intelligenceChannelMappings.threadId, work.threadId),
+            eq(intelligenceChannelMappings.userId, work.actorId),
+          ),
+        );
+  const source = group ?? direct;
   if (
     !source ||
-    !(await privateGroupBot(
+    !(await privateChannelBot(
       database,
       work.actorId,
       source.channelId,
       work.fromBotId,
-    )) ||
-    !(await privateGroupBot(
+    ))
+  )
+    return;
+  if (
+    group &&
+    !(await privateChannelBot(
       database,
       work.actorId,
-      source.channelId,
+      group.channelId,
       work.toBotId,
     ))
   )
@@ -197,7 +214,7 @@ async function handoffChannel(
         eq(pluginGrants.ref, work.toBotId),
       ),
     );
-  return grant && source.channelId;
+  return grant && { channelId: source.channelId, group: Boolean(group) };
 }
 
 function checkIns(
@@ -330,7 +347,7 @@ export async function retryBackgroundWork(
         for (const botId of agentIds) {
           if (
             !(await authorizedBot(tx, accountId, ownerUserId, botId)) ||
-            !(await privateGroupBot(tx, ownerUserId, channelId, botId))
+            !(await privateChannelBot(tx, ownerUserId, channelId, botId))
           )
             return;
         }
@@ -527,7 +544,7 @@ export function personalBackgroundWorkers(
     caps: { maxDepth: 0, maxPerRun: 0 },
     publishProgress: false,
     privateShare: async ({ ownerUserId, botId, audience }) =>
-      (await privateGroupBot(database, ownerUserId, audience.id, botId))
+      (await privateChannelBot(database, ownerUserId, audience.id, botId))
         ? { status: "allowed", reason: "Only the workspace owner can read it." }
         : {
             status: "denied",
@@ -547,7 +564,7 @@ export function personalBackgroundWorkers(
         const bot = await authorizedBot(database, accountId, ownerUserId, id);
         if (
           bot &&
-          (await privateGroupBot(database, ownerUserId, channelId, id))
+          (await privateChannelBot(database, ownerUserId, channelId, id))
         )
           bots.push(bot);
       }
@@ -566,16 +583,17 @@ export function personalBackgroundWorkers(
     delivery: {
       deliver: async ({ work, message, signal, beforeDispatch, onText }) => {
         const accountId = accountFor();
-        const channelId =
+        const source =
           accountId && (await handoffChannel(database, accountId, work));
-        if (!accountId || !channelId)
+        if (!accountId || !source)
           throw new Error("This handoff is unavailable to the workspace.");
+        const threadId = crypto.randomUUID();
         const result = await checkedTurn({
           ownerUserId: work.actorId,
           agentId: work.toBotId,
           routineId: work.runId,
           runId: work.runId,
-          threadId: crypto.randomUUID(),
+          threadId,
           instruction: message,
           initiator: { kind: "handoff", id: work.fromBotId },
           signal,
@@ -583,18 +601,43 @@ export function personalBackgroundWorkers(
           onText,
         });
         await beforeDispatch?.();
+        const current = await handoffChannel(database, accountId, work);
         if (
-          result.replyText &&
-          (await handoffChannel(database, accountId, work)) === channelId
-        ) {
+          !current ||
+          current.channelId !== source.channelId ||
+          !result.replyText
+        )
+          return { answer: null };
+        if (current.group) {
           await groupStore.append({
             id: `handoff:${work.runId}`,
             ownerUserId: work.actorId,
-            channelId,
+            channelId: current.channelId,
             agentId: work.toBotId,
-            threadId: work.threadId,
+            threadId,
             text: result.replyText,
             details: {},
+          });
+        } else {
+          await database.transaction(async (tx) => {
+            const bot = await authorizedBot(
+              tx,
+              accountId,
+              work.actorId,
+              work.toBotId,
+            );
+            if (!bot) return;
+            await tx.insert(channels).values({
+              id: threadId,
+              name: bot.name,
+              description: "",
+              lastMessage: result.replyText.slice(0, 500),
+              lastMessageAgentId: bot.id,
+              lastMessageAt: new Date(),
+            });
+            await tx
+              .insert(channelAgents)
+              .values({ channelId: threadId, agentId: bot.id });
           });
         }
         return { answer: null };
