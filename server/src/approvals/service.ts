@@ -309,7 +309,12 @@ export function createApprovalService(
           authority.owner === approved.actorId &&
           authority.digest === approved.actionDigest
         )
-          return;
+          return candidate.requireOneTime
+            ? {
+                approvalId: authority.approvalId,
+                complete: async () => undefined,
+              }
+            : undefined;
       }
       /*
        * The person's own earlier answer in this conversation comes first, before any policy that
@@ -391,17 +396,28 @@ export function createApprovalService(
        * withdraw what the task is waiting on. Only a stricter answer, a hand-off or a refusal,
        * keeps its own source.
        */
-      const outcome: ApprovalPolicyOutcome | undefined =
-        taskAsks &&
+      let outcome = evaluated;
+      if (
         evaluated?.behaviour !== "hand_off" &&
         evaluated?.behaviour !== "deny"
-          ? {
-              behaviour: "ask",
-              source: "task",
-              reason: TASK_ASKS,
-              ...(evaluated?.review ? { review: evaluated.review } : {}),
-            }
-          : evaluated;
+      ) {
+        if (candidate.requireOneTime) {
+          outcome = {
+            behaviour: "ask",
+            source: "safety",
+            closed: true,
+            reason: "This Corsair action requires one-time Approval.",
+            ...(evaluated?.review ? { review: evaluated.review } : {}),
+          };
+        } else if (taskAsks) {
+          outcome = {
+            behaviour: "ask",
+            source: "task",
+            reason: TASK_ASKS,
+            ...(evaluated?.review ? { review: evaluated.review } : {}),
+          };
+        }
+      }
       if (outcome) {
         if (outcome.behaviour === "allow") return;
       } else if (
@@ -434,9 +450,11 @@ export function createApprovalService(
         throw new ApprovalAlreadyAnsweredError(DECLINED_BY_PERSON);
       if (
         request.status === "approved" &&
+        (!candidate.requireOneTime || request.decision === "allow_once") &&
         (await store.consume(action.actorId, request.id, action.actionDigest))
       )
         return {
+          ...(candidate.requireOneTime ? { approvalId: request.id } : {}),
           complete: async (output) => {
             const content =
               typeof output === "string" ? output : JSON.stringify(output);
@@ -688,6 +706,13 @@ export function createApprovalService(
           let current: ApprovalAction | undefined;
           let refusal: string | undefined;
           try {
+            if (
+              request.action.requireOneTime &&
+              request.decision !== "allow_once"
+            )
+              throw new ApprovalRefusedError(
+                "This Corsair action requires one-time Approval.",
+              );
             current = await dependencies.validate(request.action);
             if (
               current.actorId !== ownerUserId ||

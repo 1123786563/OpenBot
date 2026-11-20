@@ -6,7 +6,11 @@ import { auditEvents } from "../../db/schema";
 import { dispatchWhileConnected, RevocationRefusal } from "./revocation";
 
 export const corsairApp = z.enum(["github", "slack"]);
-type Scope = { workspaceId: string; app: z.infer<typeof corsairApp> };
+export type CorsairScope = {
+  workspaceId: string;
+  app: z.infer<typeof corsairApp>;
+};
+type Scope = CorsairScope;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Path = "legacy" | "corsair";
 
@@ -248,7 +252,49 @@ export function corsairWriteKey(
     .digest("hex");
 }
 
+export const legacyOperationVerifiedEvent =
+  "corsair.migration_legacy_operation_verified";
 export const writeReconciledEvent = "corsair.migration_write_reconciled";
+function attemptIdentity(
+  alias:
+    | "s"
+    | "u"
+    | "outcome"
+    | "current_attempt"
+    | "previous"
+    | "review"
+    | "started"
+    | "attempt"
+    | "equivalence",
+) {
+  const payload = sql`${sql.identifier(alias)}.payload`;
+  return sql`coalesce(${payload}->>'writeAttemptId', ${payload}->>'approvalId')`;
+}
+
+function terminalWrite(
+  app: Scope["app"],
+  started: "s" | "previous",
+  mayRetry: boolean,
+) {
+  return sql`exists (
+    select 1 from audit_events outcome
+    where ${attemptIdentity("outcome")} = ${attemptIdentity(started)}
+      and outcome.created_at >= ${sql.identifier(started)}.created_at
+      and (
+        outcome.event_type = ${`corsair.${app}.write_succeeded`}
+        or (outcome.event_type = ${writeReconciledEvent}
+          and (not ${mayRetry} or outcome.payload->>'outcome' = 'not_applied'))
+        or (outcome.event_type = ${`corsair.${app}.write_refused`}
+          and outcome.payload->>'dispatchRefused' = 'true' and not exists (
+            select 1 from audit_events u
+            where u.event_type = ${`corsair.${app}.write_unconfirmed`}
+              and ${attemptIdentity("u")} = ${attemptIdentity(started)}
+              and u.created_at >= ${sql.identifier(started)}.created_at
+        ))
+      )
+  )`;
+}
+
 export function readUnknownWrites(
   db: Pick<Database, "execute">,
   { workspaceId, app }: Scope,
@@ -264,39 +310,30 @@ export function readUnknownWrites(
 ) {
   return db.execute<{
     approvalId: string;
+    attemptId: string;
     startedAt: Date;
     route: "legacy" | "corsair";
     targetId: string;
     canReconcile: boolean;
   }>(sql`
-      select s.payload->>'approvalId' as "approvalId", s.created_at as "startedAt",
+      select coalesce(s.payload->>'approvalId', ${attemptIdentity("s")}) as "approvalId",
+        ${attemptIdentity("s")} as "attemptId", s.created_at as "startedAt",
         coalesce(s.payload->>'route', 'corsair') as route,
         s.target_id as "targetId",
         (s.created_at <= clock_timestamp() - interval '30 seconds' or exists (
           select 1 from audit_events u
           where u.event_type = ${`corsair.${app}.write_unconfirmed`}
-            and u.payload->>'approvalId' = s.payload->>'approvalId'
+            and ${attemptIdentity("u")} = ${attemptIdentity("s")}
+            and u.created_at >= s.created_at
         )) as "canReconcile"
       from audit_events s
       where s.event_type = ${`corsair.${app}.write_started`}
         and coalesce(s.payload->>'workspaceId', s.payload->'target'->>'workspaceId') = ${workspaceId}
         and (not ${legacyOnly} or s.payload->>'route' = 'legacy')
-        and (${approvalId ?? null}::text is null or s.payload->>'approvalId' = ${approvalId ?? null})
-        and s.payload->>'approvalId' is distinct from ${excludeAttemptId ?? null}
-        and not exists (
-          select 1 from audit_events r
-          where r.payload->>'approvalId' = s.payload->>'approvalId'
-            and r.created_at >= s.created_at
-            and (
-              r.event_type in (${`corsair.${app}.write_succeeded`}, ${writeReconciledEvent})
-              or (r.event_type = ${`corsair.${app}.write_refused`} and r.payload->>'dispatchRefused' = 'true' and not exists (
-                select 1 from audit_events u
-                where u.event_type = ${`corsair.${app}.write_unconfirmed`}
-                  and u.payload->>'approvalId' = s.payload->>'approvalId'
-                  and u.created_at >= s.created_at
-              ))
-            )
-        )
+        and (${approvalId ?? null}::text is null or ${attemptIdentity("s")} = ${approvalId ?? null}
+          or s.payload->>'approvalId' = ${approvalId ?? null})
+        and ${attemptIdentity("s")} is distinct from ${excludeAttemptId ?? null}
+        and not ${terminalWrite(app, "s", false)}
       order by s.created_at desc
       limit 100
     `);
@@ -319,13 +356,14 @@ export async function dispatchTrackedLegacyWrite<
     accountId?: string;
     credentialActorId: string;
     argumentDigest: string;
+    vendorAction?: string;
   },
   send: (
     tx: Transaction,
     invoke: (vendor: () => Promise<T>) => Promise<T>,
   ) => Promise<T>,
 ): Promise<T> {
-  const approvalId = randomUUID();
+  const writeAttemptId = randomUUID();
   const { actorId, ref, ...details } = attempt;
   const log = (outcome: string, extra = {}) =>
     database.insert(auditEvents).values({
@@ -337,7 +375,7 @@ export async function dispatchTrackedLegacyWrite<
       payload: {
         workspaceId: scope.workspaceId,
         route: "legacy",
-        approvalId,
+        writeAttemptId,
         ...details,
         ...extra,
       },
@@ -359,9 +397,13 @@ export async function dispatchTrackedLegacyWrite<
       `);
         if (
           !lock?.acquired ||
-          (await readUnknownWrites(tx, scope, { excludeAttemptId: approvalId }))
-            .length ||
-          !(await readUnknownWrites(tx, scope, { approvalId })).length
+          (
+            await readUnknownWrites(tx, scope, {
+              excludeAttemptId: writeAttemptId,
+            })
+          ).length ||
+          !(await readUnknownWrites(tx, scope, { approvalId: writeAttemptId }))
+            .length
         )
           throw new RevocationRefusal(
             "A write may already have reached the provider. Check its outcome before retrying.",
@@ -372,7 +414,7 @@ export async function dispatchTrackedLegacyWrite<
             select 1 from audit_events started
             join audit_events review
               on review.event_type = ${writeReconciledEvent}
-              and review.payload->>'approvalId' = started.payload->>'approvalId'
+              and ${attemptIdentity("review")} = ${attemptIdentity("started")}
               and review.created_at >= started.created_at
               and review.target_id = ${JSON.stringify([scope.workspaceId, scope.app])}
             where started.event_type = ${`corsair.${scope.app}.write_started`}
@@ -411,10 +453,15 @@ export function dispatchCorsairWrite<T>(
     | (Scope & {
         botId: string;
         registration: string;
-        grant: string;
+        grant: string | { toolRef: string };
         approvalId: string;
+        writeAttemptId?: string;
         writeKey: string;
         binding: "personal" | "shared";
+        validate?: (
+          db: Pick<Database, "execute">,
+          excluded: readonly string[],
+        ) => Promise<void>;
       })
     | undefined,
   connectionId: string,
@@ -433,8 +480,18 @@ export function dispatchCorsairWrite<T>(
           and target_type = 'corsair_migration_policy'
           and target_id = ${JSON.stringify([scope.workspaceId, scope.app, scope.registration, scope.botId, scope.binding])}
       `);
+        const grant =
+          typeof scope.grant === "string"
+            ? scope.grant
+            : (
+                await tx.execute<{ key: string }>(sql`
+          select 'grant:' || ${scope.botId}::text || ':' ||
+            jsonb_build_array(${scope.workspaceId}::text, ${scope.registration}::text, ${scope.grant.toolRef}::text)::text as key
+        `)
+              )[0]?.key;
         if (
-          excluded.includes(scope.grant) ||
+          !grant ||
+          excluded.includes(grant) ||
           (mapping?.legacyTool &&
             (excluded.includes(`tool:${mapping.legacyTool}`) ||
               excluded.includes(`audit:${mapping.legacyTool}`)))
@@ -449,10 +506,34 @@ export function dispatchCorsairWrite<T>(
           "A broker write may already have reached the provider. Check its outcome before retrying.",
           409,
         );
+      const [legacyApplied] = await tx.execute<{ blocked: boolean }>(sql`
+        select exists (
+          select 1 from audit_events attempt
+          where attempt.event_type = ${`corsair.${scope.app}.write_started`}
+            and attempt.payload->>'workspaceId' = ${scope.workspaceId}
+            and attempt.payload->>'route' = 'legacy'
+            and exists (
+              select 1 from audit_events review
+              where review.event_type = ${writeReconciledEvent}
+                and review.target_id = ${JSON.stringify([scope.workspaceId, scope.app])}
+                and ${attemptIdentity("review")} = ${attemptIdentity("attempt")}
+                and review.payload->>'outcome' = 'applied'
+            )
+            and not exists (
+              select 1 from audit_events equivalence
+              where equivalence.event_type = ${legacyOperationVerifiedEvent}
+                and equivalence.target_id = ${JSON.stringify([scope.workspaceId, scope.app])}
+                and ${attemptIdentity("equivalence")} = ${attemptIdentity("attempt")}
+                and equivalence.payload->>'writeKey' <> ${scope.writeKey}
+            )
+        ) as blocked
+      `);
+      if (legacyApplied?.blocked)
+        throw new RevocationRefusal(
+          "A broker write was confirmed applied. Check its operation equivalence before retrying.",
+          409,
+        );
       const started = `corsair.${scope.app}.write_started`;
-      const succeeded = `corsair.${scope.app}.write_succeeded`;
-      const refused = `corsair.${scope.app}.write_refused`;
-      const unconfirmed = `corsair.${scope.app}.write_unconfirmed`;
       const [lock] = await tx.execute<{ acquired: boolean }>(sql`
       select pg_try_advisory_xact_lock(hashtextextended(
         ${JSON.stringify(["corsair-write", scope.workspaceId, scope.app, scope.writeKey])}, 0
@@ -471,24 +552,11 @@ export function dispatchCorsairWrite<T>(
           and coalesce(previous.payload->>'workspaceId', previous.payload->'target'->>'workspaceId') = ${scope.workspaceId}
           and (previous.created_at, previous.id) < (current_attempt.created_at, current_attempt.id)
         where current_attempt.event_type = ${started}
-          and current_attempt.payload->>'approvalId' = ${scope.approvalId}
-          and not exists (
-            select 1 from audit_events outcome
-            where outcome.payload->>'approvalId' = previous.payload->>'approvalId'
-              and outcome.created_at >= previous.created_at
-              and (
-                outcome.event_type = ${succeeded}
-                or (outcome.event_type = ${writeReconciledEvent} and outcome.payload->>'outcome' = 'not_applied')
-                or (outcome.event_type = ${refused} and outcome.payload->>'dispatchRefused' = 'true' and not exists (
-                  select 1 from audit_events uncertain
-                  where uncertain.event_type = ${unconfirmed}
-                    and uncertain.payload->>'approvalId' = previous.payload->>'approvalId'
-                ))
-              )
-          )
+          and ${attemptIdentity("current_attempt")} = ${scope.writeAttemptId ?? scope.approvalId}
+          and not ${terminalWrite(scope.app, "previous", true)}
       ) or exists (
         select 1 from audit_events review where review.event_type = ${writeReconciledEvent}
-          and review.payload->>'approvalId' = ${scope.approvalId}
+          and ${attemptIdentity("review")} = ${scope.writeAttemptId ?? scope.approvalId}
       ) as blocked
     `);
       if (earlier?.blocked)
@@ -496,7 +564,16 @@ export function dispatchCorsairWrite<T>(
           "Review the outcome of the matching write before retrying.",
           409,
         );
-      return dispatchWhileConnected(database, connectionId, revision, send, tx);
+      return dispatchWhileConnected(
+        database,
+        connectionId,
+        revision,
+        async () => {
+          await scope.validate?.(tx, excluded);
+          return send();
+        },
+        tx,
+      );
     },
   );
 }

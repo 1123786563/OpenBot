@@ -134,6 +134,8 @@ export type ApprovalCandidate = {
    * Not part of what the person approves, so not in the action's digest.
    */
   ownConnectionRead?: true;
+  /** The caller requires a fresh one-time answer even when a standing rule would allow the write. */
+  requireOneTime?: true;
   /**
    * The app marks this tool as destroying something: MCP's `destructiveHint`, or a broker's
    * destructive flag, as recorded when the app was listed (`mcpTools.destructive`). It asks as
@@ -378,6 +380,7 @@ export type ApprovalPolicyStore = {
   }): Promise<void>;
 };
 export type ApprovalPermit = {
+  approvalId?: string;
   replay?: unknown;
   complete(result: unknown): Promise<void>;
 };
@@ -596,6 +599,7 @@ export function approvalAction(candidate: ApprovalCandidate): ApprovalAction {
         scope: candidate.scope,
         args: candidate.args,
         target: candidate.target,
+        ...(candidate.requireOneTime ? { requireOneTime: true } : {}),
         // Only where there is one, so a request opened before accounts were named keeps its digest.
         ...(candidate.account ? { account: candidate.account } : {}),
       }),

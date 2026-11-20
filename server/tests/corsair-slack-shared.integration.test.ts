@@ -1,3 +1,9 @@
+import { mintRunAssertion } from "../src/agents/callback-token";
+import { createApprovalService } from "../src/approvals/service";
+import { withApprovalContext } from "../src/approvals/types";
+import { createCredentialStore } from "../src/credentials";
+import { createCorsairCutover } from "../src/plugins/corsair/cutover";
+import { createPluginStore } from "../src/plugins/store";
 import { beforeAll, expect, test } from "bun:test";
 import { randomBytes, randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -11,13 +17,20 @@ import {
   agentProfiles,
   agents,
   auditEvents,
+  brokeredConnections,
+  mcpServers,
+  mcpTools,
+  slackSharedInstallations,
   responsibilities,
   responsibilityEvents,
   responsibilityRuns,
   users,
 } from "../src/db/schema";
 import { createSharedSlackProvider } from "../src/plugins/corsair/slack/shared-provider";
-import { createSharedUseStore } from "../src/plugins/shared-use-store";
+import {
+  createSharedUseGate,
+  createSharedUseStore,
+} from "../src/plugins/shared-use-store";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 import { testEnvironment } from "./support/environment";
@@ -430,4 +443,235 @@ test("Shared Slack disconnect is local and remote revocation requires a current 
   expect(await status.json()).toMatchObject({
     revocation: { status: "pending" },
   });
+});
+
+test("normal Slack Shared Bot calls use the reviewed installation and still enforce its audience", async () => {
+  const workspaceId = randomUUID();
+  const serverId = randomUUID();
+  const sharedVendorUserId = randomUUID();
+  const registration = provider.identity.appId;
+  const token = "shared-slack-agent-fixture-token";
+  const encryptionKey = randomBytes(32).toString("base64");
+  const config = loadConfig(
+    testEnvironment({
+      AGENT_TOOL_TOKEN: token,
+      KEY_ENCRYPTION_KEY: encryptionKey,
+    }),
+  );
+  const stored = createApprovalStore(db);
+  const approvals = createApprovalService(stored);
+  const audit = createAuditStore(db);
+  const policy = () => ({
+    mode: "enforce" as const,
+    allow: ["true"],
+    deny: [],
+  });
+  const sharedUse = createSharedUseStore(db, "composio");
+  const pluginStore = createPluginStore({
+    database: db,
+    deploymentId: workspaceId,
+    brokerProvider: "composio",
+    policy,
+    approvalGate: approvals.gate,
+    auditStore: audit,
+    sharedUse: createSharedUseGate(sharedUse, audit),
+    credentials: createCredentialStore(db),
+    encryptionKey,
+    callVendor: async () => {
+      throw new Error("Unexpected Broker dispatch");
+    },
+  });
+  const args: Parameters<typeof createApp> = [
+    config,
+    {
+      handler: () => new Response(null, { status: 204 }),
+      api: { getSession: async () => ({ user: admin }) },
+    },
+    { rolesForUser: async (id) => (id === admin.id ? ["admin"] : ["user"]) },
+  ];
+  args[9] = createAgentProfileStore(db);
+  args[14] = pluginStore;
+  args[34] = {
+    approvals,
+    corsairReadiness: {
+      database: db,
+      workspaceId,
+      includeDeploymentLegacy: true,
+      registrations: {},
+      sharedSlackRegistration: registration,
+    },
+    sharedSlackPilot: {
+      workspaceId,
+      database: db,
+      provider,
+      approvals: stored,
+      audit,
+      sharedUse,
+      legacyPolicy: policy,
+      enforceCutover: true,
+    },
+  };
+  const mounted = createApp(...args);
+  const migration = "/api/corsair/migration/slack";
+  const post = (path: string, data: unknown) =>
+    mounted.request(migration + path, {
+      method: "POST",
+      headers: { "X-OpenBot-Pilot": "slack" },
+      body: JSON.stringify(data),
+    });
+  const name = "SLACK_CHAT_POST_MESSAGE";
+  const ref = `${serverId}/${name}`;
+  try {
+    await enroll(mounted);
+    const [installation] = await db
+      .select({ id: slackSharedInstallations.id })
+      .from(slackSharedInstallations)
+      .where(eq(slackSharedInstallations.workspaceId, workspaceId));
+    if (!installation) throw new Error("Missing Slack installation");
+    await db.insert(mcpServers).values({
+      id: serverId,
+      url: "composio://slack",
+      vendor: "Slack",
+      title: "Brokered Shared Slack",
+      provenance: "composio",
+      accountMode: "shared",
+      sharedVendorUserId,
+    });
+    await db.insert(mcpTools).values({ serverId, name, effect: "write" });
+    await pluginStore.grant("mcp", ref, botId, admin.id);
+    await db.insert(brokeredConnections).values({
+      provider: "composio",
+      app: "slack",
+      holder: "deployment",
+      vendorUserId: sharedVendorUserId,
+      verified: true,
+    });
+    await sharedUse.setApproval({
+      botId,
+      serverId,
+      by: admin.id,
+      as: "admin",
+      approval: { audience: "owner", outsideInput: false, members: [] },
+    });
+    const { inventoryRevision, capabilities } = await (
+      await mounted.request(migration)
+    ).json();
+    for (const { key } of capabilities) {
+      const binding = key === "legacy-account:composio:";
+      const decision =
+        key === `tool:${ref}` || binding
+          ? {
+              kind: "verified",
+              inventoryRevision,
+              targetId: binding ? installation.id : undefined,
+              addedPermissions: [],
+              checks: {
+                identity: "fixture/identity",
+                resourceScope: "fixture/channel",
+                approval: "fixture/approval",
+                event: "fixture/event",
+                revocation: "fixture/revocation",
+              },
+            }
+          : {
+              kind: "disabled",
+              inventoryRevision,
+              reason: "Outside fixture scope",
+            };
+      expect(
+        (await post("/decisions", { capability: key, decision })).status,
+      ).toBe(204);
+    }
+    expect(
+      (
+        await post("/policies", {
+          legacyTool: ref,
+          botId,
+          inventoryRevision,
+          binding: { kind: "shared", installationId: installation.id },
+          resources: ["C123"],
+          evidence: {
+            equivalentAppAndAction: "fixture/action",
+            identityAndResources: "fixture/identity",
+            preservedRestrictions: "fixture/policy",
+            sharedAudienceAndOutsideInput: "fixture/audience",
+          },
+        })
+      ).status,
+    ).toBe(204);
+    const ready = await (await mounted.request(migration)).json();
+    expect(ready).toMatchObject({ ready: true, inventoryRevision });
+    await createCorsairCutover(db, { workspaceId, app: "slack" }).activate(
+      admin.id,
+      async () =>
+        ready.capabilities
+          .filter(({ status }: { status: string }) => status === "disabled")
+          .map(({ key }: { key: string }) => key),
+    );
+    const toolName = `mcp__${serverId}__${name}`;
+    const callArgs = { channel: "C123", text: "Normal shared Bot post" };
+    const invoke = (run: {
+      actorId: string;
+      botId: string;
+      runId: string;
+      threadId: string;
+    }) =>
+      withApprovalContext(
+        {
+          ...run,
+          toolName,
+          toolCallId: "shared-fixture-call",
+          args: callArgs,
+          messages: [],
+          context: [],
+          state: {},
+          forwardedProps: {},
+        },
+        () =>
+          mounted.request("/api/agent-tools/call", {
+            method: "POST",
+            headers: {
+              "x-openbot-agent-token": token,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              name: toolName,
+              args: callArgs,
+              run: mintRunAssertion(run, encryptionKey),
+            }),
+          }),
+      );
+    const run = {
+      actorId: admin.id,
+      botId,
+      runId: randomUUID(),
+      threadId: randomUUID(),
+    };
+    const count = writes.length;
+    expect(
+      await (await invoke({ ...run, actorId: member.id })).json(),
+    ).toMatchObject({ isError: true });
+    expect(await (await invoke(run)).json()).toMatchObject({
+      isError: true,
+      text: expect.stringContaining("waiting for your approval"),
+    });
+    const approval = (await stored.list(admin.id)).find(
+      ({ action }) => action.toolRef === ref,
+    );
+    expect(approval?.action.target).toMatchObject({
+      corsair: { installationId: installation.id },
+    });
+    expect(writes).toHaveLength(count);
+    if (!approval) throw new Error("Missing Slack Shared approval");
+    await stored.decide(admin.id, approval.id, "allow_once");
+    expect(await (await invoke(run)).json()).toMatchObject({ isError: false });
+    expect(writes.slice(count)).toMatchObject([
+      { channel: callArgs.channel, text: callArgs.text },
+    ]);
+  } finally {
+    await db
+      .delete(brokeredConnections)
+      .where(eq(brokeredConnections.vendorUserId, sharedVendorUserId));
+    await db.delete(mcpServers).where(eq(mcpServers.id, serverId));
+  }
 });

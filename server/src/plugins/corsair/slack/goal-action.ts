@@ -1,4 +1,3 @@
-import { corsairGrantRef } from "../grants";
 import { corsairWriteKey, dispatchCorsairWrite } from "../cutover";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { and, eq, sql } from "drizzle-orm";
@@ -325,7 +324,7 @@ export function createSlackGoalAction(
                     binding: "personal",
                     approvalId,
                     writeKey,
-                    grant: `grant:${action.botId}:${corsairGrantRef(options.workspaceId, options.registration, tool.ref)}`,
+                    grant: { toolRef: tool.ref },
                   }
                 : undefined,
               input.connectionId,

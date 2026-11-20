@@ -1,3 +1,6 @@
+import { eq } from "drizzle-orm";
+import { users } from "./db/schema";
+import { createCorsairBotWrites } from "./plugins/corsair/bot-write";
 import { MAX_IMAGE_BYTES } from "@openbot/shared/attachments";
 import type { WhatIfVocabulary } from "@openbot/shared/what-if";
 import type { Hono as HonoApp, MiddlewareHandler } from "hono";
@@ -46,7 +49,7 @@ import {
   recordAuditEvent,
 } from "./audit";
 import { type AuditVocabulary, createAuditAskRoutes } from "./audit-ask";
-import { createDevRequireUser } from "./auth/dev-actor";
+import { createDevRequireUser, DEV_ACTOR } from "./auth/dev-actor";
 import {
   type AppVariables,
   type AuthService,
@@ -1716,39 +1719,61 @@ export function createApp(
     );
   }
 
-  if (coworker?.githubPilot && agentProfileStore) {
-    app.route(
-      "/api/corsair/github",
-      createGithubPilotRoutes({
-        ...coworker.githubPilot,
-        requireUser,
-        canUseBot,
-      }),
-    );
-  }
+  const githubRoutes =
+    coworker?.githubPilot && agentProfileStore
+      ? createGithubPilotRoutes({
+          ...coworker.githubPilot,
+          requireUser,
+          canUseBot,
+        })
+      : undefined;
+  const sharedSlackRoutes =
+    coworker?.sharedSlackPilot && agentProfileStore
+      ? createSharedSlackPilot({
+          ...coworker.sharedSlackPilot,
+          requireUser,
+          canUseBot,
+        })
+      : undefined;
+  const slackRoutes =
+    coworker?.slackPilot && agentProfileStore
+      ? createSlackPilotRoutes({
+          ...coworker.slackPilot,
+          requireUser,
+          canUseBot,
+        })
+      : undefined;
 
+  if (githubRoutes) app.route("/api/corsair/github", githubRoutes);
   if (coworker?.slackEventRoutes)
     app.route("/api/corsair/slack", coworker.slackEventRoutes);
+  if (sharedSlackRoutes)
+    app.route("/api/corsair/slack/shared", sharedSlackRoutes);
+  if (slackRoutes) app.route("/api/corsair/slack", slackRoutes);
 
-  if (coworker?.sharedSlackPilot && agentProfileStore) {
-    app.route(
-      "/api/corsair/slack/shared",
-      createSharedSlackPilot({
-        ...coworker.sharedSlackPilot,
-        requireUser,
-        canUseBot,
-      }),
-    );
-  }
-
-  if (coworker?.slackPilot && agentProfileStore) {
-    app.route(
-      "/api/corsair/slack",
-      createSlackPilotRoutes({
-        ...coworker.slackPilot,
-        requireUser,
-        canUseBot,
-      }),
+  const readiness = coworker?.corsairReadiness;
+  if (readiness?.includeDeploymentLegacy && pluginStore) {
+    pluginStore.configureCorsairBotWrites(
+      createCorsairBotWrites(
+        readiness,
+        {
+          github: githubRoutes?.prepareBotWrite,
+          slack: slackRoutes?.prepareBotWrite,
+          sharedSlack: sharedSlackRoutes?.prepareBotWrite,
+        },
+        async (id) => {
+          if (config.singleUser && id === DEV_ACTOR.id) return DEV_ACTOR;
+          const [user] = await readiness.database
+            .select({ id: users.id, email: users.email })
+            .from(users)
+            .where(eq(users.id, id));
+          if (!user) return null;
+          const roles = await roleRepository?.rolesForUser(id);
+          if (roles?.includes("admin")) return { ...user, role: "admin" };
+          if (roles?.includes("user")) return { ...user, role: "user" };
+          return null;
+        },
+      ),
     );
   }
 

@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { MCPMock } from "@copilotkit/aimock/mcp";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { mintRunAssertion } from "../src/agents/callback-token";
 import { createApp } from "../src/app";
 import { createAuditStore } from "../src/audit";
@@ -11,10 +11,14 @@ import { createDatabase } from "../src/db/client";
 import {
   agents,
   brokeredConnections,
+  githubPilotConnections,
+  githubPilotRepositories,
   mcpServers,
   mcpTools,
+  users,
 } from "../src/db/schema";
 import {
+  corsairWriteKey,
   createCorsairCutover,
   cutoverRefusal,
   dispatchCorsairWrite,
@@ -169,6 +173,7 @@ test("an active GitHub cutover leaves a direct MCP session and tool call availab
     });
   const url = await mock.start();
   const workspaceId = randomUUID();
+  const legacyId = randomUUID();
   const serverId = randomUUID();
   const botId = randomUUID();
   const actorId = randomUUID();
@@ -200,10 +205,28 @@ test("an active GitHub cutover leaves a direct MCP session and tool call availab
     await store.refreshTools(serverId);
     const ref = `${serverId}/list_issues`;
     await store.grant("mcp", ref, botId, actorId);
+    await database.insert(mcpServers).values({
+      id: legacyId,
+      title: "Brokered GitHub",
+      vendor: "GitHub",
+      url: "composio://github",
+      provenance: "composio",
+      accountMode: "personal",
+    });
+    await database.insert(mcpTools).values({
+      serverId: legacyId,
+      name: "UNSUPPORTED",
+      effect: "write",
+    });
+    await store.grant("mcp", `${legacyId}/UNSUPPORTED`, botId, actorId);
+    expect(
+      (await store.listForAgent(botId)).tools.map(({ ref }) => ref),
+    ).toEqual([ref]);
     const outcome = await store.callTool({ ref, botId, actorId, args: {} });
     expect(outcome).toEqual({ text: "fixture issue #123", isError: false });
     expect(reached).toBe(1);
   } finally {
+    await database.delete(mcpServers).where(eq(mcpServers.id, legacyId));
     await database.delete(mcpServers).where(eq(mcpServers.id, serverId));
     await database.delete(agents).where(eq(agents.id, botId));
     await mock.stop();
@@ -246,7 +269,7 @@ test.each(["applied", "not_applied"] as const)(
     const migration = createCorsairReadinessRoutes({
       database,
       workspaceId,
-      registrations: {},
+      registrations: { github: "fixture" },
       includeDeploymentLegacy: true,
       requireUser: async (c, next) => {
         c.set("actor", {
@@ -372,6 +395,79 @@ test.each(["applied", "not_applied"] as const)(
           )
         ).status,
       ).toBe(204);
+      await database
+        .insert(users)
+        .values({ id: actorId, email: `${actorId}@example.test` });
+      const connectionId = randomUUID();
+      await database.insert(githubPilotConnections).values({
+        id: connectionId,
+        workspaceId,
+        registration: "fixture",
+        personId: actorId,
+        githubUserId: "12",
+        login: "person",
+        credential: "fixture",
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      await database.insert(githubPilotRepositories).values({
+        workspaceId,
+        registration: "fixture",
+        repositoryId: "23",
+        installationId: "819",
+        nodeId: "fixture",
+        name: "team/project",
+      });
+      const native = (title: string) =>
+        dispatchCorsairWrite(
+          database,
+          {
+            ...scope,
+            botId,
+            registration: "fixture",
+            grant: "fixture",
+            approvalId: randomUUID(),
+            writeKey: corsairWriteKey(actorId, "12", "23", { title }),
+            binding: "personal",
+          },
+          connectionId,
+          undefined,
+          async () => "native write",
+        );
+      const evidence = (title: string) =>
+        migration.request(
+          `/github/unknown-writes/${pending.attemptId}/operation`,
+          {
+            method: "PUT",
+            headers: { "X-OpenBot-Pilot": "github" },
+            body: JSON.stringify({
+              providerSubject: "12",
+              resourceId: "23",
+              brokerArgs: { owner: "team", repo: "project", title },
+              evidenceRef: "fixture/provider-operation",
+            }),
+          },
+        );
+      if (outcome === "applied") {
+        await expect(native("fixture")).rejects.toThrow(
+          "operation equivalence",
+        );
+        expect((await evidence("different")).status).toBe(409);
+        expect((await evidence("fixture")).status).toBe(204);
+        expect((await evidence("different")).status).toBe(409);
+        await expect(native("fixture")).rejects.toThrow(
+          "operation equivalence",
+        );
+        await expect(native("different")).resolves.toBe("native write");
+      } else {
+        expect((await evidence("fixture")).status).toBe(409);
+        await expect(native("fixture")).resolves.toBe("native write");
+      }
+      await database
+        .delete(githubPilotRepositories)
+        .where(eq(githubPilotRepositories.workspaceId, workspaceId));
+      await database
+        .delete(githubPilotConnections)
+        .where(eq(githubPilotConnections.id, connectionId));
       await cutover.rollback(actorId, {}, async () => true);
       if (outcome === "applied") {
         expect(await write()).toMatchObject({
@@ -387,6 +483,7 @@ test.each(["applied", "not_applied"] as const)(
         expect(sends).toBe(2);
       }
     } finally {
+      await database.delete(users).where(eq(users.id, actorId));
       await database
         .delete(brokeredConnections)
         .where(eq(brokeredConnections.userId, actorId));
@@ -395,3 +492,36 @@ test.each(["applied", "not_applied"] as const)(
     }
   },
 );
+
+test("an applied historical Broker attempt with no equivalence proof fences Corsair writes", async () => {
+  const scope = { workspaceId: randomUUID(), app: "github" as const };
+  const actorId = randomUUID();
+  const attemptId = randomUUID();
+  await database.execute(sql`
+    insert into audit_events (event_type, target_type, target_id, actor_user_id, payload)
+    values ('corsair.github.write_started', 'mcp_tool', 'fixture/unknown_action', ${actorId},
+      jsonb_build_object('workspaceId', ${scope.workspaceId}::text, 'approvalId', ${attemptId}::text, 'route', 'legacy')),
+      ('corsair.migration_write_reconciled', 'corsair_migration_scope', ${JSON.stringify([scope.workspaceId, scope.app])},
+        ${actorId}, jsonb_build_object('approvalId', ${attemptId}::text, 'outcome', 'applied'))
+  `);
+  await createCorsairCutover(database, scope).activate(actorId, async () => []);
+  await expect(
+    dispatchCorsairWrite(
+      database,
+      {
+        ...scope,
+        botId: randomUUID(),
+        registration: "fixture",
+        grant: "fixture",
+        approvalId: randomUUID(),
+        writeKey: "different current action",
+        binding: "personal",
+      },
+      randomUUID(),
+      undefined,
+      async () => {
+        throw new Error("Unexpected provider dispatch");
+      },
+    ),
+  ).rejects.toThrow("operation equivalence");
+});

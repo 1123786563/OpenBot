@@ -1,3 +1,5 @@
+import { PluginRefusedError } from "../plugin-store/model";
+import type { BotWrite } from "./bot-write";
 import { finishExplicitWrite } from "./write-completion";
 import { corsairWriteKey, dispatchCorsairWrite } from "./cutover";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -755,19 +757,53 @@ export function createGithubPilotRoutes({
     const invocationArgs = invocation.parse(await c.req.json());
     const actor = c.var.actor;
     const record = await ownedApproval(actor.id, approvalId);
+    const pinned = z.object({ connectionId: id }).parse(record.action.target);
+    const input = { ...invocationArgs, connectionId: pinned.connectionId };
+    return c.json(
+      await execute(
+        actor,
+        input,
+        record.action,
+        approvalId,
+        async () => {
+          if (record.status !== "approved" || record.decision !== "allow_once")
+            throw new PilotRefusal(
+              "A current one-time Approval is required.",
+              409,
+            );
+          return approvals.consume(
+            actor.id,
+            approvalId,
+            record.action.actionDigest,
+          );
+        },
+        invocationArgs.connectionId,
+      ),
+    );
+  });
+
+  async function execute(
+    actor: AppVariables["actor"],
+    input: Invocation,
+    action: ApprovalAction,
+    approvalId: string,
+    consume: () => Promise<boolean>,
+    suppliedConnectionId?: string,
+    bot?: Parameters<BotWrite["send"]>[1],
+  ) {
     const pinned = z
       .object({
         connectionId: id,
         repositoryId: z.string(),
         githubUserId: z.string(),
       })
-      .parse(record.action.target);
-    const input = { ...invocationArgs, connectionId: pinned.connectionId };
+      .parse(action.target);
+    const writeAttemptId = randomUUID();
     const writeKey = corsairWriteKey(
       actor.id,
       pinned.githubUserId,
       pinned.repositoryId,
-      record.action.args,
+      action.args,
     );
     const trail = (
       eventType: AuditEventInput["eventType"],
@@ -781,7 +817,8 @@ export function createGithubPilotRoutes({
         payload: {
           workspaceId,
           approvalId,
-          botId: record.action.botId,
+          writeAttemptId,
+          botId: action.botId,
           tool: tool.ref,
           connectionId: input.connectionId,
           ...payload,
@@ -789,11 +826,9 @@ export function createGithubPilotRoutes({
       });
     let verified: Awaited<ReturnType<typeof verifiedRepository>>;
     try {
-      if (record.status !== "approved" || record.decision !== "allow_once")
-        throw new PilotRefusal("A current one-time Approval is required.", 409);
       if (
-        invocationArgs.connectionId !== undefined &&
-        invocationArgs.connectionId !== pinned.connectionId
+        suppliedConnectionId !== undefined &&
+        suppliedConnectionId !== pinned.connectionId
       )
         throw new PilotRefusal(
           "The GitHub Connection no longer matches its Approval.",
@@ -801,8 +836,8 @@ export function createGithubPilotRoutes({
         );
       const current = await permitted(actor, input);
       if (
-        actionFor(actor.id, input, current, record.action.runId)
-          .actionDigest !== record.action.actionDigest
+        actionFor(actor.id, input, current, action.runId).actionDigest !==
+        action.actionDigest
       )
         throw new PilotRefusal(
           "The GitHub action no longer matches its Approval.",
@@ -818,17 +853,11 @@ export function createGithubPilotRoutes({
       if (
         verified.repo.node_id !== recheck.repository.nodeId ||
         verified.connection.revision !== recheck.connection.revision ||
-        actionFor(actor.id, input, recheck, record.action.runId)
-          .actionDigest !== record.action.actionDigest
+        actionFor(actor.id, input, recheck, action.runId).actionDigest !==
+          action.actionDigest
       )
         throw new PilotRefusal("The GitHub authorization changed.", 409);
-      if (
-        !(await approvals.consume(
-          actor.id,
-          approvalId,
-          record.action.actionDigest,
-        ))
-      )
+      if (!(await consume()))
         throw new PilotRefusal("This Approval is no longer available.", 409);
     } catch (error) {
       await trail("corsair.github.write_refused", {
@@ -836,12 +865,12 @@ export function createGithubPilotRoutes({
           error instanceof PilotRefusal
             ? error.message
             : "Authorization could not be verified.",
-        target: record.action.target,
+        target: action.target,
       });
       throw error;
     }
     const evidence = {
-      target: record.action.target,
+      target: action.target,
       githubUserId: verified.connection.githubUserId,
     };
     await trail("corsair.github.write_started", { ...evidence, writeKey });
@@ -849,7 +878,7 @@ export function createGithubPilotRoutes({
     try {
       result = await dispatchCorsairWrite(
         database,
-        enforceCutover
+        enforceCutover || bot
           ? {
               workspaceId,
               app: "github",
@@ -858,7 +887,9 @@ export function createGithubPilotRoutes({
               binding: "personal",
               approvalId,
               writeKey,
-              grant: `grant:${input.botId}:${grantRef}`,
+              writeAttemptId,
+              validate: bot,
+              grant: { toolRef: tool.ref },
             }
           : undefined,
         verified.connection.id,
@@ -880,19 +911,21 @@ export function createGithubPilotRoutes({
           reason: error.message,
           dispatchRefused: true,
         });
-        await finishExplicitWrite(approvals, actor.id, approvalId, {
-          content: error.message,
-          error: error.message,
-        });
+        if (!bot)
+          await finishExplicitWrite(approvals, actor.id, approvalId, {
+            content: error.message,
+            error: error.message,
+          });
         throw error;
       }
       const reason =
         "GitHub did not confirm the write and its operator. Check the repository before requesting another Approval.";
       await trail("corsair.github.write_unconfirmed", evidence);
-      await finishExplicitWrite(approvals, actor.id, approvalId, {
-        content: reason,
-        error: reason,
-      });
+      if (!bot)
+        await finishExplicitWrite(approvals, actor.id, approvalId, {
+          content: reason,
+          error: reason,
+        });
       throw new PilotRefusal(reason, 502);
     }
     await trail("corsair.github.write_succeeded", {
@@ -901,10 +934,45 @@ export function createGithubPilotRoutes({
       issueNumber: result.number,
       url: result.htmlUrl,
     });
-    await finishExplicitWrite(approvals, actor.id, approvalId, {
-      content: result.htmlUrl,
-    });
-    return c.json({ issue: result });
+    if (!bot)
+      await finishExplicitWrite(approvals, actor.id, approvalId, {
+        content: result.htmlUrl,
+      });
+    return { issue: result };
+  }
+
+  function refuseBotWrite(error: unknown): never {
+    if (error instanceof PilotRefusal && error.status !== 502)
+      throw new PluginRefusedError(error.message, null);
+    throw error;
+  }
+  return Object.assign(routes, {
+    // Keep the explicit pilot refusal distinct from the normal Bot's approval lifecycle.
+    async prepareBotWrite(
+      actor: AppVariables["actor"],
+      raw: unknown,
+      connectionId: string,
+    ): Promise<BotWrite> {
+      const input = { ...invocation.parse(raw), connectionId };
+      const action = actionFor(
+        actor.id,
+        input,
+        await permitted(actor, input).catch(refuseBotWrite),
+        randomUUID(),
+      );
+      return {
+        action,
+        send: (approvalId, validate) =>
+          execute(
+            actor,
+            input,
+            action,
+            approvalId,
+            async () => true,
+            undefined,
+            validate,
+          ),
+      };
+    },
   });
-  return routes;
 }

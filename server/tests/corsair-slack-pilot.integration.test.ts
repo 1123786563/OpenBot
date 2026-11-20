@@ -1,3 +1,13 @@
+import { eq } from "drizzle-orm";
+import { mintRunAssertion } from "../src/agents/callback-token";
+import { createAgentProfileStore } from "../src/agents/profile-store";
+import { createApp } from "../src/app";
+import { createApprovalService } from "../src/approvals/service";
+import { withApprovalContext } from "../src/approvals/types";
+import { loadConfig } from "../src/config";
+import { createCredentialStore } from "../src/credentials";
+import { createPluginStore } from "../src/plugins/store";
+import { testEnvironment } from "./support/environment";
 import { createCorsairCutover } from "../src/plugins/corsair/cutover";
 import { createCorsairReadinessRoutes } from "../src/plugins/corsair/readiness";
 import { beforeAll, expect, test } from "bun:test";
@@ -5,7 +15,15 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { createApprovalStore } from "../src/approvals/store";
 import { type AuditStore, createAuditStore } from "../src/audit";
 import { createDatabase } from "../src/db/client";
-import { agents, brokeredAccounts, users } from "../src/db/schema";
+import {
+  agents,
+  agentProfiles,
+  brokeredAccounts,
+  brokeredConnections,
+  mcpServers,
+  mcpTools,
+  users,
+} from "../src/db/schema";
 import type { SlackLegacyDefault } from "../src/plugins/corsair/slack/accounts";
 import { createSlackPilotProvider } from "../src/plugins/corsair/slack/provider";
 import { createSlackPilotRoutes } from "../src/plugins/corsair/slack/routes";
@@ -643,4 +661,277 @@ test("a lost Slack response is queryable and a second approval cannot duplicate 
   ).toEqual([]);
   expect((await execute(await approve())).status).toBe(409);
   expect(writes).toHaveLength(count + 1);
+});
+
+test("normal Slack Bot writes use the verified Broker account mapping instead of the Corsair default", async () => {
+  const workspaceId = randomUUID();
+  const serverId = randomUUID();
+  const botId = randomUUID();
+  const brokerAccountId = randomUUID();
+  const actorId = outsider;
+  const registration = "A123/client/T123";
+  const token = "fixture-slack-normal-bot-token";
+  const config = loadConfig(
+    testEnvironment({
+      AGENT_TOOL_TOKEN: token,
+      KEY_ENCRYPTION_KEY: encryptionKey,
+    }),
+  );
+  const stored = createApprovalStore(db);
+  const approvals = createApprovalService(stored);
+  const audit = createAuditStore(db);
+  const policy = () => ({
+    mode: "enforce" as const,
+    allow: ["true"],
+    deny: [],
+  });
+  const pluginStore = createPluginStore({
+    database: db,
+    deploymentId: workspaceId,
+    brokerProvider: "composio",
+    policy,
+    approvalGate: approvals.gate,
+    auditStore: audit,
+    credentials: createCredentialStore(db),
+    encryptionKey,
+    callVendor: async () => {
+      throw new Error("Unexpected Broker dispatch");
+    },
+  });
+  const args: Parameters<typeof createApp> = [
+    config,
+    {
+      handler: () => new Response(null, { status: 204 }),
+      api: {
+        getSession: async () => ({
+          user: { id: actorId, email: `${actorId}@example.test` },
+        }),
+      },
+    },
+    { rolesForUser: async () => ["admin"] },
+  ];
+  args[9] = createAgentProfileStore(db);
+  args[14] = pluginStore;
+  args[34] = {
+    approvals,
+    corsairReadiness: {
+      database: db,
+      workspaceId,
+      includeDeploymentLegacy: true,
+      slackChannels: ["C123"],
+      registrations: { slack: registration },
+    },
+    slackPilot: {
+      workspaceId,
+      database: db,
+      registration,
+      provider,
+      allowedChannels: new Set(["C123"]),
+      approvals: stored,
+      audit,
+      encryptionKey,
+      legacyPolicy: policy,
+      enforceCutover: true,
+    },
+  };
+  const mounted = createApp(...args);
+  const request = (path: string, method = "GET", body?: unknown) =>
+    mounted.request(path, {
+      method,
+      headers: {
+        "X-OpenBot-Pilot": "slack",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  const native = "/api/corsair/slack";
+  const migration = "/api/corsair/migration/slack";
+  const name = "SLACK_CHAT_POST_MESSAGE";
+  const ref = `${serverId}/${name}`;
+  async function connect(code: string): Promise<string> {
+    const started = await request(`${native}/connect`, "POST");
+    expect(started.status).toBe(201);
+    const { authorizationUrl } = await started.json();
+    const state = new URL(authorizationUrl).searchParams.get("state");
+    const callback = await request(
+      `${native}/callback?code=${code}&state=${state}`,
+    );
+    expect(callback.status).toBe(200);
+    return (await callback.json()).connection.id;
+  }
+  await db.insert(agents).values({
+    id: botId,
+    name: "Slack migrated Bot",
+    type: "built_in",
+    configuration: {},
+  });
+  try {
+    await db.insert(agentProfiles).values({
+      agentId: botId,
+      title: "Slack migrated Bot",
+      roleDescription: "",
+      avatarSeed: botId,
+      visibility: "public",
+    });
+    await db.insert(mcpServers).values({
+      id: serverId,
+      url: "composio://slack",
+      vendor: "Slack",
+      title: "Brokered Slack",
+      provenance: "composio",
+      accountMode: "personal",
+    });
+    await db.insert(mcpTools).values({ serverId, name, effect: "write" });
+    await pluginStore.grant("mcp", ref, botId, actorId);
+    await db.insert(brokeredConnections).values({
+      provider: "composio",
+      app: "slack",
+      holder: "person",
+      userId: actorId,
+      vendorUserId: actorId,
+      verified: true,
+    });
+    await db.insert(brokeredAccounts).values({
+      id: brokerAccountId,
+      provider: "composio",
+      app: "slack",
+      userId: actorId,
+      vendorUserId: actorId,
+      accountId: "verified-broker-account",
+      isDefault: true,
+    });
+    const defaultId = await connect("first");
+    const mappedId = await connect("second");
+    expect(
+      (
+        await request(`${native}/connections/default`, "PUT", {
+          connectionId: defaultId,
+        })
+      ).status,
+    ).toBe(200);
+    const { inventoryRevision, capabilities } = await (
+      await request(migration)
+    ).json();
+    for (const { key } of capabilities) {
+      const binding = key === `legacy-account:${brokerAccountId}`;
+      const decision =
+        key === `tool:${ref}` || binding
+          ? {
+              kind: "verified",
+              inventoryRevision,
+              targetId: binding ? mappedId : undefined,
+              addedPermissions: [],
+              checks: {
+                identity: "fixture/identity",
+                resourceScope: "fixture/channel",
+                approval: "fixture/approval",
+                event: "fixture/event",
+                revocation: "fixture/revocation",
+              },
+            }
+          : {
+              kind: "disabled",
+              inventoryRevision,
+              reason: "Outside fixture scope",
+            };
+      expect(
+        (
+          await request(`${migration}/decisions`, "POST", {
+            capability: key,
+            decision,
+          })
+        ).status,
+      ).toBe(204);
+    }
+    expect(
+      (
+        await request(`${migration}/policies`, "POST", {
+          legacyTool: ref,
+          botId,
+          inventoryRevision,
+          binding: { kind: "personal", connections: [mappedId] },
+          resources: ["C123"],
+          evidence: {
+            equivalentAppAndAction: "fixture/action",
+            identityAndResources: "fixture/identity",
+            preservedRestrictions: "fixture/policy",
+          },
+        })
+      ).status,
+    ).toBe(204);
+    const ready = await (await request(migration)).json();
+    expect(ready).toMatchObject({ ready: true, inventoryRevision });
+    const route = await createCorsairCutover(db, {
+      workspaceId,
+      app: "slack",
+    }).activate(actorId, async () =>
+      ready.capabilities
+        .filter(({ status }: { status: string }) => status === "disabled")
+        .map(({ key }: { key: string }) => key),
+    );
+    expect(route?.kind).toBe("observing");
+    expect(
+      (await pluginStore.listForAgent(botId)).tools.map((tool) => tool.ref),
+    ).toEqual([ref]);
+    const toolName = `mcp__${serverId}__${name}`;
+    const run = { actorId, botId, runId: randomUUID(), threadId: randomUUID() };
+    const input = { channel: "C123", text: "Normal Slack Bot write" };
+    const invoke = (callArgs: Record<string, unknown>) =>
+      withApprovalContext(
+        {
+          ...run,
+          toolName,
+          toolCallId: "fixture-call",
+          args: callArgs,
+          messages: [],
+          context: [],
+          state: {},
+          forwardedProps: {},
+        },
+        () =>
+          mounted.request("/api/agent-tools/call", {
+            method: "POST",
+            headers: {
+              "x-openbot-agent-token": token,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              name: toolName,
+              args: callArgs,
+              run: mintRunAssertion(run, encryptionKey),
+            }),
+          }),
+      );
+    const count = writes.length;
+    expect(
+      await (await invoke({ ...input, channel: "C999" })).json(),
+    ).toMatchObject({ isError: true });
+    expect(await (await invoke(input)).json()).toMatchObject({
+      isError: true,
+      text: expect.stringContaining("waiting for your approval"),
+    });
+    const approval = (await stored.list(actorId)).find(
+      ({ action }) => action.toolRef === ref,
+    );
+    expect(approval?.action.target).toMatchObject({
+      corsair: { connectionId: mappedId, userId: "U222" },
+    });
+    if (!approval) throw new Error("Missing Slack approval");
+    await stored.decide(actorId, approval.id, "allow_once");
+    expect(await (await invoke(input)).json()).toMatchObject({
+      isError: false,
+    });
+    expect(writes.slice(count)).toEqual([
+      { text: input.text, channel: "C123", user: "U222" },
+    ]);
+  } finally {
+    await db
+      .delete(brokeredAccounts)
+      .where(eq(brokeredAccounts.id, brokerAccountId));
+    await db
+      .delete(brokeredConnections)
+      .where(eq(brokeredConnections.userId, actorId));
+    await db.delete(mcpServers).where(eq(mcpServers.id, serverId));
+    await db.delete(agents).where(eq(agents.id, botId));
+  }
 });

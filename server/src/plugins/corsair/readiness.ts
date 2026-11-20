@@ -4,7 +4,9 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { type AppVariables, requireAdmin } from "../../auth/guards";
 import type { Database } from "../../db/client";
-import { auditEvents } from "../../db/schema";
+import { auditEvents, githubPilotRepositories } from "../../db/schema";
+import { VERSION_ARG } from "../composio";
+import { issueArgs, messageArgs, supportedBrokerAction } from "./broker-action";
 
 import {
   corsairApp as apps,
@@ -12,6 +14,8 @@ import {
   cutoverObservationMs,
   readUnknownWrites,
   writeReconciledEvent,
+  legacyOperationVerifiedEvent,
+  corsairWriteKey,
 } from "./cutover";
 import {
   cleanupCommand,
@@ -175,7 +179,8 @@ export async function readCorsairReadiness(
           )
         union all
         select 'legacy-account:' || provider || ':' || coalesce(user_id, ''), 'account',
-          jsonb_build_object('personId', user_id, 'provider', provider, 'revision', updated_at),
+          jsonb_build_object('personId', user_id, 'provider', provider, 'revision', updated_at,
+            'vendorUserId', vendor_user_id, 'verified', verified),
           case when holder = 'deployment' then 'shared' else 'personal' end
         from brokered_connections b where ${includeDeploymentLegacy} and lower(btrim(app)) = ${app}
           and (holder = 'deployment' or not exists (select 1 from brokered_accounts a
@@ -183,7 +188,7 @@ export async function readCorsairReadiness(
         union all
         select 'legacy-account:' || id, 'account',
           jsonb_build_object('personId', user_id, 'provider', provider, 'accountId', id,
-            'default', is_default), 'personal'
+            'default', is_default, 'vendorUserId', vendor_user_id, 'externalAccountId', account_id), 'personal'
         from brokered_accounts where ${includeDeploymentLegacy} and lower(btrim(app)) = ${app}
       )
       select key, source, detail, needs from inventory order by key, detail
@@ -245,7 +250,9 @@ export async function readCorsairReadiness(
     .update(
       JSON.stringify({
         inventory,
-        accounts,
+        accounts: accounts.map(
+          ({ expiresAt: _expiresAt, ...account }) => account,
+        ),
         repositories,
         defaults,
         registration,
@@ -707,13 +714,141 @@ export function createCorsairReadinessRoutes(options: Options) {
         targetType: "corsair_migration_scope",
         targetId: JSON.stringify([options.workspaceId, app]),
         actorUserId: actorId,
-        payload: { approvalId: approval.data, ...review.data },
+        payload: {
+          approvalId: write.approvalId,
+          writeAttemptId: write.attemptId,
+          ...review.data,
+        },
       });
       return true;
     });
     return reviewed
       ? c.body(null, 204)
       : c.json({ error: "Write is unavailable for reconciliation." }, 409);
+  });
+  routes.put("/:app/unknown-writes/:approvalId/operation", async (c) => {
+    const parsed = apps.safeParse(c.req.param("app"));
+    if (!parsed.success)
+      return c.json({ error: "Unknown Corsair pilot app." }, 404);
+    const app = parsed.data;
+    if (c.req.header("X-OpenBot-Pilot") !== app)
+      return c.json({ error: "The pilot request header is required." }, 403);
+    const attemptId = z.uuid().safeParse(c.req.param("approvalId"));
+    const operation = z
+      .strictObject({
+        providerSubject:
+          app === "github"
+            ? z.string().regex(/^[1-9]\d*$/)
+            : z.string().regex(/^[UW][A-Z0-9]+$/),
+        resourceId:
+          app === "github"
+            ? z.string().regex(/^[1-9]\d*$/)
+            : z.string().regex(/^[CG][A-Z0-9]+$/),
+        brokerArgs: z.record(z.string(), z.unknown()),
+        evidenceRef: reference,
+      })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!attemptId.success || !operation.success)
+      return c.json({ error: "Invalid operation equivalence evidence." }, 400);
+    const scopeKey = JSON.stringify([options.workspaceId, app]);
+    const cutover = createCorsairCutover(options.database, {
+      workspaceId: options.workspaceId,
+      app,
+    });
+    const verified = await cutover.review(c.var.actor.id, async (tx) => {
+      const [attempt] = await tx.execute<{
+        actor: string;
+        vendorUserId: string;
+        argumentDigest: string;
+        ref: string;
+        vendorAction: string | null;
+      }>(sql`
+        select s.actor_user_id as actor, s.target_id as ref,
+          s.payload->>'vendorUserId' as "vendorUserId",
+          s.payload->>'argumentDigest' as "argumentDigest",
+          s.payload->>'vendorAction' as "vendorAction"
+        from audit_events s
+        where s.event_type = ${`corsair.${app}.write_started`}
+          and s.payload->>'route' = 'legacy'
+          and s.payload->>'workspaceId' = ${options.workspaceId}
+          and coalesce(s.payload->>'writeAttemptId', s.payload->>'approvalId') = ${attemptId.data}
+          and exists (
+            select 1 from audit_events r
+            where r.event_type = ${writeReconciledEvent} and r.target_id = ${scopeKey}
+              and coalesce(r.payload->>'writeAttemptId', r.payload->>'approvalId') = ${attemptId.data}
+              and r.payload->>'outcome' = 'applied'
+          )
+          and not exists (
+            select 1 from audit_events v
+            where v.event_type = ${legacyOperationVerifiedEvent} and v.target_id = ${scopeKey}
+              and coalesce(v.payload->>'writeAttemptId', v.payload->>'approvalId') = ${attemptId.data}
+          )
+      `);
+      const { providerSubject, resourceId, brokerArgs, evidenceRef } =
+        operation.data;
+      if (
+        !attempt?.actor ||
+        !supportedBrokerAction(
+          app,
+          attempt.vendorAction ?? attempt.ref.split("/").slice(1).join("/"),
+        ) ||
+        corsairWriteKey(
+          attempt.actor,
+          attempt.vendorUserId,
+          attempt.ref,
+          brokerArgs,
+        ) !== attempt.argumentDigest
+      )
+        return false;
+      const { [VERSION_ARG]: _version, ...sourceArgs } = brokerArgs;
+      let args: { title: string; body?: string } | { text: string };
+      if (app === "github") {
+        const issue = issueArgs.safeParse(sourceArgs);
+        if (!issue.success) return false;
+        const [repo] = await tx.execute<{ valid: boolean }>(sql`
+          select exists (
+            select 1 from ${githubPilotRepositories}
+            where workspace_id = ${options.workspaceId} and registration = ${options.registrations.github ?? null}
+              and repository_id = ${resourceId}
+              and lower(name) = lower(${`${issue.data.owner}/${issue.data.repo}`})
+          ) as valid
+        `);
+        if (!repo?.valid) return false;
+        const { title, body } = issue.data;
+        args = { title, ...(body === undefined ? {} : { body }) };
+      } else {
+        const message = messageArgs.safeParse(sourceArgs);
+        if (!message.success || message.data.channel !== resourceId)
+          return false;
+        args = { text: message.data.text };
+      }
+      await tx.insert(auditEvents).values({
+        eventType: legacyOperationVerifiedEvent,
+        targetType: "corsair_migration_scope",
+        targetId: scopeKey,
+        actorUserId: c.var.actor.id,
+        payload: {
+          writeAttemptId: attemptId.data,
+          evidenceRef,
+          writeKey: corsairWriteKey(
+            attempt.actor,
+            providerSubject,
+            resourceId,
+            args,
+          ),
+        },
+      });
+      return true;
+    });
+    return verified
+      ? c.body(null, 204)
+      : c.json(
+          {
+            error:
+              "An applied broker attempt awaiting operation evidence is required.",
+          },
+          409,
+        );
   });
   routes.get("/:app", async (c) => {
     const app = apps.safeParse(c.req.param("app"));
@@ -730,23 +865,36 @@ export function createCorsairReadinessRoutes(options: Options) {
       .safeParse(await c.req.json().catch(() => null));
     if (!body.success)
       return c.json({ error: "Invalid readiness decision." }, 400);
-    const report = await readCorsairReadiness(options, app.data);
-    if (
-      report.inventoryRevision !== body.data.decision.inventoryRevision ||
-      !report.capabilities.some(({ key }) => key === body.data.capability)
-    )
-      return c.json(
-        { error: "Reload the capability inventory before deciding." },
-        409,
-      );
-    await options.database.insert(auditEvents).values({
-      eventType: decisionEvent,
-      targetType: "corsair_migration_scope",
-      targetId: JSON.stringify([options.workspaceId, app.data]),
-      actorUserId: c.var.actor.id,
-      payload: body.data,
+    const actorId = c.var.actor.id;
+    const cutover = createCorsairCutover(options.database, {
+      workspaceId: options.workspaceId,
+      app: app.data,
     });
-    return c.body(null, 204);
+    const result = await cutover.review(actorId, async (tx) => {
+      const report = await readCorsairReadiness(
+        { ...options, database: tx },
+        app.data,
+      );
+      if (
+        report.inventoryRevision !== body.data.decision.inventoryRevision ||
+        !report.capabilities.some(({ key }) => key === body.data.capability)
+      )
+        return false;
+      await tx.insert(auditEvents).values({
+        eventType: decisionEvent,
+        targetType: "corsair_migration_scope",
+        targetId: JSON.stringify([options.workspaceId, app.data]),
+        actorUserId: actorId,
+        payload: body.data,
+      });
+      return true;
+    });
+    return result
+      ? c.body(null, 204)
+      : c.json(
+          { error: "Reload the capability inventory before deciding." },
+          409,
+        );
   });
   routes.post("/:app/policies", async (c) => {
     const app = apps.safeParse(c.req.param("app"));

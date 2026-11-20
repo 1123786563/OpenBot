@@ -1,3 +1,12 @@
+import { mintRunAssertion } from "../src/agents/callback-token";
+import { createAgentProfileStore } from "../src/agents/profile-store";
+import { createApp } from "../src/app";
+import { createApprovalService } from "../src/approvals/service";
+import { withApprovalContext } from "../src/approvals/types";
+import { loadConfig } from "../src/config";
+import { createCredentialStore } from "../src/credentials";
+import { createPluginStore } from "../src/plugins/store";
+import { testEnvironment } from "./support/environment";
 import { expect, test } from "bun:test";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -6,7 +15,12 @@ import { createAuditReader, createAuditStore } from "../src/audit";
 import { createDatabase } from "../src/db/client";
 import {
   agents,
+  agentProfiles,
   corsairAccounts,
+  brokeredAccounts,
+  brokeredConnections,
+  mcpServers,
+  mcpTools,
   githubPilotRepositories,
   users,
 } from "../src/db/schema";
@@ -293,7 +307,7 @@ test("a reviewed GitHub write needs a live Bot Grant, selected repository, match
     },
     { preconnect: fetch.preconnect },
   );
-  const routes = createGithubPilotRoutes({
+  const deps = {
     workspaceId,
     registration,
     database,
@@ -309,6 +323,9 @@ test("a reviewed GitHub write needs a live Bot Grant, selected repository, match
     approvals: createApprovalStore(database),
     audit: createAuditStore(database),
     encryptionKey: randomBytes(32).toString("base64"),
+  };
+  const routes = createGithubPilotRoutes({
+    ...deps,
     canUseBot: async (_, id) => id === bot,
     requireUser: async (c, next) => {
       c.set("actor", {
@@ -329,6 +346,8 @@ test("a reviewed GitHub write needs a live Bot Grant, selected repository, match
       },
       body: JSON.stringify(value),
     });
+  const serverId = randomUUID();
+  const normalBot = randomUUID();
   try {
     const start = await send("/connect", {});
     const { authorizationUrl } = await start.json();
@@ -460,10 +479,253 @@ test("a reviewed GitHub write needs a live Bot Grant, selected repository, match
         issueNumber: 7,
       },
     });
+    await database.insert(agents).values({
+      id: normalBot,
+      name: "Normal Bot",
+      type: "built_in",
+      configuration: {},
+    });
+    await database.insert(agentProfiles).values({
+      agentId: normalBot,
+      title: "Normal Bot",
+      roleDescription: "",
+      avatarSeed: normalBot,
+      visibility: "public",
+    });
+    expect(
+      (await send(`/bots/${bot}/grant`, { enabled: false }, "PUT", true))
+        .status,
+    ).toBe(200);
+    const name = "GITHUB_CREATE_AN_ISSUE";
+    const ref = `${serverId}/${name}`;
+    const token = "fixture-corsair-agent-token";
+    const config = loadConfig(
+      testEnvironment({
+        AGENT_TOOL_TOKEN: token,
+        KEY_ENCRYPTION_KEY: deps.encryptionKey,
+      }),
+    );
+    const approvals = createApprovalService(deps.approvals);
+    const store = createPluginStore({
+      database,
+      deploymentId: workspaceId,
+      brokerProvider: "composio",
+      approvalGate: approvals.gate,
+      auditStore: deps.audit,
+      credentials: createCredentialStore(database),
+      encryptionKey: deps.encryptionKey,
+      policy: () => ({ mode: "enforce", allow: ["true"], deny: [] }),
+      callVendor: async () => {
+        throw new Error("Broker write must not run after cutover");
+      },
+    });
+    await database.insert(mcpServers).values({
+      id: serverId,
+      title: "Brokered GitHub",
+      vendor: "GitHub",
+      url: "composio://github",
+      provenance: "composio",
+      accountMode: "personal",
+    });
+    await database.insert(mcpTools).values({ serverId, name, effect: "write" });
+    await store.grant("mcp", ref, normalBot, person);
+    await database.insert(brokeredConnections).values({
+      provider: "composio",
+      app: "github",
+      holder: "person",
+      userId: person,
+      vendorUserId: person,
+      verified: true,
+    });
+    const appArgs: Parameters<typeof createApp> = [
+      config,
+      {
+        handler: () => new Response(null, { status: 204 }),
+        api: {
+          getSession: async () => ({
+            user: { id: person, email: `${person}@example.test` },
+          }),
+        },
+      },
+      { rolesForUser: async () => ["admin"] },
+    ];
+    appArgs[9] = createAgentProfileStore(database);
+    appArgs[14] = store;
+    appArgs[34] = {
+      approvals,
+      githubPilot: {
+        ...deps,
+        enforceCutover: true,
+        legacyPolicy: () => ({ mode: "enforce", allow: ["true"], deny: [] }),
+      },
+      corsairReadiness: {
+        database,
+        workspaceId,
+        includeDeploymentLegacy: true,
+        registrations: { github: registration },
+      },
+    };
+    const app = createApp(...appArgs);
+    const migrationPath = "/api/corsair/migration/github";
+    const migrate = (path: string, data: unknown) =>
+      app.request(migrationPath + path, {
+        method: "POST",
+        headers: { "X-OpenBot-Pilot": "github" },
+        body: JSON.stringify(data),
+      });
+    const { inventoryRevision } = await (
+      await app.request(migrationPath)
+    ).json();
+    for (const [capability, targetId] of [
+      [`tool:${ref}`, undefined],
+      [`legacy-account:composio:${person}`, connectionId],
+    ]) {
+      expect(
+        (
+          await migrate("/decisions", {
+            capability,
+            decision: {
+              kind: "verified",
+              inventoryRevision,
+              targetId,
+              addedPermissions: [],
+              checks: {
+                identity: "fixture/identity",
+                resourceScope: "fixture/repo",
+                approval: "fixture/approval",
+                event: "fixture/event",
+                revocation: "fixture/revoke",
+              },
+            },
+          })
+        ).status,
+      ).toBe(204);
+    }
+    const copied = await migrate("/policies", {
+      legacyTool: ref,
+      botId: normalBot,
+      inventoryRevision,
+      binding: { kind: "personal", connections: [connectionId] },
+      resources: ["23"],
+      evidence: {
+        equivalentAppAndAction: "fixture/action",
+        identityAndResources: "fixture/identity",
+        preservedRestrictions: "fixture/restrictions",
+      },
+    });
+    expect(await copied.text()).toBe("");
+    expect(copied.status).toBe(204);
+    expect(
+      (await migrate("/cutover", { kind: "activate", inventoryRevision }))
+        .status,
+    ).toBe(200);
+    expect(
+      (await store.listForAgent(normalBot)).tools.map((tool) => tool.ref),
+    ).toContain(ref);
+
+    const toolName = `mcp__${serverId}__${name}`;
+    const callArgs = {
+      owner: "acme",
+      repo: "pilot",
+      title: "Normal Bot issue",
+    };
+    const run = {
+      actorId: person,
+      botId: normalBot,
+      runId: randomUUID(),
+      threadId: randomUUID(),
+    };
+    const continuation = {
+      ...run,
+      toolName,
+      args: callArgs,
+      toolCallId: randomUUID(),
+      messages: [],
+      context: [],
+      state: {},
+      forwardedProps: {},
+    };
+    const invoke = (args: Record<string, unknown>, conversational = true) => {
+      const request = () =>
+        app.request("/api/agent-tools/call", {
+          method: "POST",
+          headers: {
+            "x-openbot-agent-token": token,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            name: toolName,
+            args,
+            run: mintRunAssertion(run, config.keyEncryptionKey),
+          }),
+        });
+      return conversational
+        ? withApprovalContext(continuation, request)
+        : request();
+    };
+    expect(await (await invoke(callArgs, false)).json()).toMatchObject({
+      isError: true,
+    });
+    expect(
+      await (await invoke({ ...callArgs, labels: ["ignored"] })).json(),
+    ).toMatchObject({ isError: true });
+    expect(await (await invoke(callArgs)).json()).toMatchObject({
+      isError: true,
+      text: expect.stringContaining("waiting for your approval"),
+    });
+    const pending = (await deps.approvals.list(person)).find(
+      ({ action }) => action.toolRef === ref,
+    );
+    expect(pending?.action.target).toMatchObject({
+      corsair: { connectionId, repositoryId: "23" },
+    });
+    expect(pending?.action.policy).toMatchObject({ closed: true });
+    expect(writes).toHaveLength(1);
+    if (!pending) throw new Error("Missing normal Bot Approval");
+    await deps.approvals.decide(person, pending.id, "allow_once");
+    const executeApproved = async () => {
+      const result = await store.callTool({
+        ref,
+        botId: normalBot,
+        actorId: person,
+        args: callArgs,
+      });
+      return result.text;
+    };
+    const outcomes: string[] = [];
+    await approvals.resume(person, pending.id, {
+      validate: (action) => approvals.validateReentry(action, executeApproved),
+      execute: executeApproved,
+      continue: async ({ result }) => {
+        outcomes.push(result.content);
+      },
+    });
+    expect(outcomes).toEqual([expect.stringContaining("/acme/pilot/issues/7")]);
+    expect(await (await invoke(callArgs)).json()).toMatchObject({
+      isError: false,
+      text: expect.stringContaining("/acme/pilot/issues/7"),
+    });
+    expect(writes).toHaveLength(2);
+    await database
+      .update(brokeredConnections)
+      .set({ verified: false })
+      .where(eq(brokeredConnections.userId, person));
+    expect(await (await invoke(callArgs)).json()).toMatchObject({
+      isError: true,
+    });
+    expect(writes).toHaveLength(2);
   } finally {
+    await database
+      .delete(brokeredAccounts)
+      .where(eq(brokeredAccounts.userId, person));
+    await database
+      .delete(brokeredConnections)
+      .where(eq(brokeredConnections.userId, person));
+    await database.delete(mcpServers).where(eq(mcpServers.id, serverId));
     await database
       .delete(githubPilotRepositories)
       .where(eq(githubPilotRepositories.workspaceId, workspaceId));
+    await database.delete(agents).where(eq(agents.id, normalBot));
     await database.delete(agents).where(eq(agents.id, bot));
     await database.delete(users).where(eq(users.id, person));
   }

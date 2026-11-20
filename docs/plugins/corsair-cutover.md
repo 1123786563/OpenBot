@@ -1,11 +1,18 @@
 # Cut over GitHub or Slack tools
 
 A deployment administrator controls the tool route independently for each
-workspace and app. Existing Broker calls use legacy until activation. The
-destination is the existing Corsair GitHub, Slack Personal or Slack Shared
-approval and execution endpoint. Update callers to use that endpoint after
-activation and open a fresh one-time Approval. Direct MCP servers use their
-existing connection and call entry points.
+workspace and app. Existing Broker calls use legacy until activation. After
+activation, a Bot keeps its reviewed tool reference and uses the corresponding
+Corsair GitHub, Slack Personal or Slack Shared action. Writes need a fresh
+one-time Approval in a conversation that can ask. The Approval pins the
+reviewed Broker account, Corsair Connection and provider resource.
+
+The Bot catalogue offers verified GitHub issue creation and Slack channel
+posting with the arguments supported by the Corsair action. Choose the Broker
+account as usual when more than one is connected. OpenBot checks the exact
+account mapping and current resource access before dispatch. Other scopes and
+direct MCP servers continue to use their existing connection and call entry
+points.
 
 1. Review the current [readiness inventory](corsair-readiness.md). Copy the
    reviewed policy and decide every capability at the reported revision. A
@@ -39,11 +46,35 @@ attempt becomes reviewable when marked unconfirmed or after 30 seconds. If
 evidence is inconclusive, leave it open.
 
 A legacy Broker write with an unknown outcome appears in the same list with
-`route: "legacy"`. The entry ID identifies the attempt. Use the audit record to
-identify the Broker account, action and originating Person. While the attempt is
-unresolved, both routes for that workspace and app refuse additional writes.
-Broker and Corsair identities and argument formats can differ across the two routes.
-Reconcile each attempt against provider history before resubmitting.
+`route: "legacy"`. Use `attemptId` to identify the dispatch. Use the audit record
+to identify the Broker account, action and originating Person. While the
+attempt is unresolved, both routes for that workspace and app refuse writes.
+
+After reconciling a Broker write as applied, verify the provider operator and
+resource in the same provider history. Submit the stable provider operator ID,
+the numeric GitHub repository ID or Slack channel ID, and the exact Broker
+arguments to `PUT /api/corsair/migration/:app/unknown-writes/:attemptId/operation`.
+Include the recorded argument order and Broker tool version when present, plus
+an evidence reference. For example, an issue uses the following request:
+
+```json
+{
+  "providerSubject": "12",
+  "resourceId": "23",
+  "brokerArgs": {
+    "owner": "team",
+    "repo": "project",
+    "title": "Reconcile a write"
+  },
+  "evidenceRef": "provider-history/review-42"
+}
+```
+
+OpenBot checks the arguments against the original attempt digest and verifies
+the resource mapping before recording a digest of the equivalent Corsair
+operation. An equivalent write remains blocked. An applied Broker attempt
+without sufficient evidence fences Corsair writes for its workspace and app.
+A `not_applied` verdict permits a fresh Approval.
 
 A consumed Approval cannot dispatch again. A matching Corsair action for the
 same Person and target is blocked while the first result is unknown or has

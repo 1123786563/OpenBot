@@ -1,3 +1,5 @@
+import { PluginRefusedError } from "../../plugin-store/model";
+import type { BotWrite } from "../bot-write";
 import { finishExplicitWrite } from "../write-completion";
 import { corsairWriteKey, dispatchCorsairWrite } from "../cutover";
 import { createHash, randomUUID } from "node:crypto";
@@ -714,6 +716,28 @@ export function createSharedSlackPilot({
       channelId: pinned.channelId,
       text,
     });
+    return c.json(
+      await execute(actor, input, action, approvalId, async () => {
+        if (status !== "approved" || decision !== "allow_once")
+          throw new SharedSlackRefusal(
+            "A current one-time Approval is required.",
+            409,
+          );
+        return approvals.consume(actor.id, approvalId, action.actionDigest);
+      }),
+    );
+  });
+
+  async function execute(
+    actor: Actor,
+    input: Invocation,
+    action: ApprovalAction,
+    approvalId: string,
+    consume: () => Promise<boolean>,
+    bot?: Parameters<BotWrite["send"]>[1],
+  ) {
+    const pinned = target.parse(action.target);
+    const writeAttemptId = randomUUID();
     const writeKey = corsairWriteKey(
       actor.id,
       pinned.identity.botUserId,
@@ -731,6 +755,7 @@ export function createSharedSlackPilot({
         pinned.channelId,
         {
           approvalId,
+          writeAttemptId,
           botId: input.botId,
           tool: tool.ref,
           target: pinned,
@@ -754,11 +779,6 @@ export function createSharedSlackPilot({
         );
     }
     try {
-      if (status !== "approved" || decision !== "allow_once")
-        throw new SharedSlackRefusal(
-          "A current one-time Approval is required.",
-          409,
-        );
       await checkBinding();
       try {
         await dispatchWhileConnected(
@@ -780,7 +800,7 @@ export function createSharedSlackPilot({
         );
       }
       await checkBinding();
-      if (!(await approvals.consume(actor.id, approvalId, action.actionDigest)))
+      if (!(await consume()))
         throw new SharedSlackRefusal(
           "This Approval is no longer available.",
           409,
@@ -792,7 +812,7 @@ export function createSharedSlackPilot({
     await log("corsair.slack.write_started", { writeKey });
     const message = await dispatchCorsairWrite(
       database,
-      enforceCutover
+      enforceCutover || bot
         ? {
             workspaceId,
             app: "slack",
@@ -801,6 +821,8 @@ export function createSharedSlackPilot({
             binding: "shared",
             approvalId,
             writeKey,
+            writeAttemptId,
+            validate: bot,
             grant: `shared-grant:${input.botId}:${pinned.installationId}`,
           }
         : undefined,
@@ -816,30 +838,61 @@ export function createSharedSlackPilot({
         reason: error.message,
         dispatchRefused: true,
       });
-      await finishExplicitWrite(approvals, actor.id, approvalId, {
-        content: error.message,
-        error: error.message,
-      });
+      if (!bot)
+        await finishExplicitWrite(approvals, actor.id, approvalId, {
+          content: error.message,
+          error: error.message,
+        });
       throw error;
     });
     if (!message) {
       const error =
         "Slack did not confirm this write. Check Slack before requesting another Approval.";
       await log("corsair.slack.write_unconfirmed");
-      await finishExplicitWrite(approvals, actor.id, approvalId, {
-        content: error,
-        error,
-      });
+      if (!bot)
+        await finishExplicitWrite(approvals, actor.id, approvalId, {
+          content: error,
+          error,
+        });
       throw new SharedSlackRefusal(error, 502);
     }
     await log("corsair.slack.write_succeeded", {
       timestamp: message.timestamp,
     });
-    await approvals.saveResult(actor.id, approvalId, {
-      content: `Slack message ${message.channel}/${message.timestamp}`,
-    });
-    await approvals.finish(actor.id, approvalId);
-    return c.json({ message });
+    if (!bot)
+      await finishExplicitWrite(approvals, actor.id, approvalId, {
+        content: `Slack message ${message.channel}/${message.timestamp}`,
+      });
+    return { message };
+  }
+
+  function refuseBotWrite(error: unknown): never {
+    if (error instanceof SharedSlackRefusal && error.status !== 502)
+      throw new PluginRefusedError(error.message, null);
+    throw error;
+  }
+  return Object.assign(routes, {
+    // Keep the explicit pilot refusal distinct from the normal Bot's approval lifecycle.
+    async prepareBotWrite(
+      actor: Actor,
+      raw: unknown,
+      connectionId: string,
+    ): Promise<BotWrite> {
+      const input = invocation.parse(raw);
+      const pinned = await permitted(actor, input, { kind: "person" }).catch(
+        refuseBotWrite,
+      );
+      if (pinned.installationId !== connectionId)
+        throw new SharedSlackRefusal(
+          "The verified Slack installation changed.",
+          409,
+        );
+      const action = actionFor(actor, input, pinned, randomUUID());
+      return {
+        action,
+        send: (approvalId, validate) =>
+          execute(actor, input, action, approvalId, async () => true, validate),
+      };
+    },
   });
-  return routes;
 }

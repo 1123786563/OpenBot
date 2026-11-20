@@ -1,5 +1,7 @@
+import { PluginRefusedError } from "../../plugin-store/model";
+import type { BotWrite } from "../bot-write";
+import type { ApprovalAction } from "../../../approvals/types";
 import { finishExplicitWrite } from "../write-completion";
-import { corsairGrantRef } from "../grants";
 import { corsairWriteKey, dispatchCorsairWrite } from "../cutover";
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
@@ -238,11 +240,47 @@ export function createSlackPilotRoutes({
     const actor = c.var.actor;
     const { record, pinned } = await ownedApproval(actor.id, approvalId);
     const input = { ...supplied, connectionId: pinned.connectionId };
+    return c.json(
+      await execute(
+        actor,
+        input,
+        record.action,
+        approvalId,
+        async () => {
+          if (record.status !== "approved" || record.decision !== "allow_once")
+            throw new SlackPilotRefusal(
+              "A current one-time Approval is required.",
+              409,
+            );
+          return approvals.consume(
+            actor.id,
+            approvalId,
+            record.action.actionDigest,
+          );
+        },
+        supplied.connectionId,
+      ),
+    );
+  });
+
+  async function execute(
+    actor: AppVariables["actor"],
+    input: z.infer<typeof invocation> & { connectionId: string },
+    action: ApprovalAction,
+    approvalId: string,
+    consume: () => Promise<boolean>,
+    suppliedConnectionId?: string,
+    bot?: Parameters<BotWrite["send"]>[1],
+  ) {
+    const pinned = z
+      .object({ connectionId: id, channelId: slackChannel, userId: z.string() })
+      .parse(action.target);
+    const writeAttemptId = randomUUID();
     const writeKey = corsairWriteKey(
       actor.id,
       pinned.userId,
       pinned.channelId,
-      record.action.args,
+      action.args,
     );
     const log = (
       event: AuditEventInput["eventType"],
@@ -250,35 +288,25 @@ export function createSlackPilotRoutes({
     ) =>
       trail(actor.id, event, "slack_channel", pinned.channelId, {
         approvalId,
-        botId: record.action.botId,
+        writeAttemptId,
+        botId: action.botId,
         tool: tool.ref,
-        target: record.action.target,
+        target: action.target,
         ...details,
       });
     let target: Awaited<ReturnType<typeof verifiedTarget>>;
     try {
-      if (record.status !== "approved" || record.decision !== "allow_once")
-        throw new SlackPilotRefusal(
-          "A current one-time Approval is required.",
-          409,
-        );
       if (
-        supplied.connectionId !== undefined &&
-        supplied.connectionId !== pinned.connectionId
+        suppliedConnectionId !== undefined &&
+        suppliedConnectionId !== pinned.connectionId
       )
         throw new SlackPilotRefusal(
           "The Slack Connection no longer matches its Approval.",
           409,
         );
-      target = await verifiedTarget(actor, input, record.action);
-      await checkBinding(actor, input, record.action);
-      if (
-        !(await approvals.consume(
-          actor.id,
-          approvalId,
-          record.action.actionDigest,
-        ))
-      )
+      target = await verifiedTarget(actor, input, action);
+      await checkBinding(actor, input, action);
+      if (!(await consume()))
         throw new SlackPilotRefusal(
           "This Approval is no longer available.",
           409,
@@ -297,7 +325,7 @@ export function createSlackPilotRoutes({
     try {
       message = await dispatchCorsairWrite(
         database,
-        options.enforceCutover
+        options.enforceCutover || bot
           ? {
               workspaceId,
               app: "slack",
@@ -306,7 +334,9 @@ export function createSlackPilotRoutes({
               binding: "personal",
               approvalId,
               writeKey,
-              grant: `grant:${input.botId}:${corsairGrantRef(workspaceId, registration, tool.ref)}`,
+              writeAttemptId,
+              validate: bot,
+              grant: { toolRef: tool.ref },
             }
           : undefined,
         input.connectionId,
@@ -325,29 +355,65 @@ export function createSlackPilotRoutes({
           reason: error.message,
           dispatchRefused: true,
         });
-        await finishExplicitWrite(approvals, actor.id, approvalId, {
-          content: error.message,
-          error: error.message,
-        });
+        if (!bot)
+          await finishExplicitWrite(approvals, actor.id, approvalId, {
+            content: error.message,
+            error: error.message,
+          });
         throw error;
       }
       const reason =
         "Slack did not confirm the channel and user for this write. Check Slack before requesting another Approval.";
       await log("corsair.slack.write_unconfirmed");
-      await finishExplicitWrite(approvals, actor.id, approvalId, {
-        content: reason,
-        error: reason,
-      });
+      if (!bot)
+        await finishExplicitWrite(approvals, actor.id, approvalId, {
+          content: reason,
+          error: reason,
+        });
       throw new SlackPilotRefusal(reason, 502);
     }
     await log("corsair.slack.write_succeeded", {
       timestamp: message.timestamp,
     });
-    await approvals.saveResult(actor.id, approvalId, {
-      content: `Slack message ${message.channel}/${message.timestamp}`,
-    });
-    await approvals.finish(actor.id, approvalId);
-    return c.json({ message });
+    if (!bot)
+      await finishExplicitWrite(approvals, actor.id, approvalId, {
+        content: `Slack message ${message.channel}/${message.timestamp}`,
+      });
+    return { message };
+  }
+
+  function refuseBotWrite(error: unknown): never {
+    if (error instanceof SlackPilotRefusal && error.status !== 502)
+      throw new PluginRefusedError(error.message, null);
+    throw error;
+  }
+  return Object.assign(routes, {
+    async prepareBotWrite(
+      actor: AppVariables["actor"],
+      raw: unknown,
+      connectionId: string,
+    ): Promise<BotWrite> {
+      const input = { ...invocation.parse(raw), connectionId };
+      const action = actionFor(
+        actor.id,
+        input,
+        await permitted(actor, input).catch(refuseBotWrite),
+        randomUUID(),
+      );
+      await checkBinding(actor, input, action).catch(refuseBotWrite);
+      return {
+        action,
+        send: (approvalId, validate) =>
+          execute(
+            actor,
+            input,
+            action,
+            approvalId,
+            async () => true,
+            undefined,
+            validate,
+          ),
+      };
+    },
   });
-  return routes;
 }

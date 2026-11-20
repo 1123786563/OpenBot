@@ -1,3 +1,4 @@
+import type { CorsairBotWrites } from "../corsair/bot-write";
 import { isOpenBotActor } from "@openbot/shared/openbot-actor";
 import { and, eq, sql } from "drizzle-orm";
 import type { ApprovalGate } from "../../approvals/types";
@@ -1239,6 +1240,7 @@ export type AccessToken = {
 
 export type PluginStoreOptions = {
   approvalGate?: ApprovalGate;
+  corsairBotWrites?: CorsairBotWrites;
   /**
    * The owner's permission before a connector call sends content to other people.
    * See plugins/share-target.ts and proactive/private-share.ts. Absent asks nothing.

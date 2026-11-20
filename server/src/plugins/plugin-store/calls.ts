@@ -36,7 +36,9 @@ import {
   dispatchTrackedLegacyWrite,
   createCorsairCutover,
   legacyCorsairScope,
+  cutoverRefusal,
 } from "../corsair/cutover";
+import type { CorsairBotWrites } from "../corsair/bot-write";
 import { withReadRetries } from "../transient";
 import { withVendorDeadline } from "../vendor-deadline";
 import { accountBook, type PinnedAccount } from "./accounts";
@@ -67,6 +69,9 @@ export function callMethods(context: StoreContext) {
   } = context;
   const accounts = accountBook(context);
   return {
+    configureCorsairBotWrites(writes: CorsairBotWrites) {
+      options.corsairBotWrites = writes;
+    },
     /**
      * May this Bot use this plugin?
      *
@@ -617,6 +622,150 @@ export function callMethods(context: StoreContext) {
           reason,
         },
       });
+      const transport = access.transport;
+      const scope = legacyCorsairScope(
+        options.deploymentId,
+        transport,
+        row.url,
+      );
+      if (
+        scope &&
+        (await createCorsairCutover(database, scope).read()).kind !== "legacy"
+      ) {
+        const continuation = currentApprovalContext();
+        const source = input.initiator ?? continuation?.initiator;
+        if (
+          !options.corsairBotWrites ||
+          !options.approvalGate ||
+          !gatedMode ||
+          !advertised[0] ||
+          effect !== "write" ||
+          advertised[0].destructive ||
+          advertised[0].unclassified ||
+          opensAs !== input.actorId ||
+          (source && source.kind !== "person") ||
+          (transport !== "arcade" && transport !== "composio")
+        ) {
+          throw new PluginRefusedError(
+            "This tool has no current verified Corsair mapping.",
+            null,
+          );
+        }
+        const { vendorUserId } = await connectionTokenFor(
+          row,
+          entry,
+          opensAs,
+          access,
+          gatedMode,
+        );
+        if (
+          !vendorUserId ||
+          (pinned && !filedUnderPerson(pinned.vendorUserId, vendorUserId))
+        )
+          throw new PluginRefusedError(
+            "This tool requires a verified broker account binding.",
+            null,
+          );
+        const mapRefusal = (error: unknown): never => {
+          if (error instanceof cutoverRefusal)
+            throw new PluginRefusedError(error.message, null);
+          throw error;
+        };
+        const write = await options.corsairBotWrites
+          .prepare({
+            scope,
+            ref: input.ref,
+            botId: input.botId,
+            actorId: input.actorId,
+            kind: gatedMode,
+            provider: transport,
+            vendorUserId,
+            pinned: pinned ?? undefined,
+            vendorName: advertised[0].vendorName ?? toolName,
+            args: modelArgs,
+          })
+          .catch(mapRefusal);
+        const approval = await options.approvalGate({
+          actorId: input.actorId,
+          botId: input.botId,
+          toolRef: input.ref,
+          effect,
+          scope: gateApp?.id ?? serverId,
+          args: input.args,
+          target: {
+            legacyRef: input.ref,
+            accountBinding: corsairWriteKey(
+              input.actorId,
+              vendorUserId,
+              input.ref,
+              [
+                transport,
+                gatedMode,
+                pinned?.id,
+                pinned?.vendorUserId,
+                pinned?.accountId,
+              ],
+            ),
+            corsair: write.action.target,
+          },
+          account: write.action.account,
+          requireOneTime: true,
+          continuation,
+          declined: write.action.declined,
+        });
+        if (approval && "replay" in approval) {
+          const replay = approval.replay;
+          if (
+            typeof replay === "object" &&
+            replay !== null &&
+            "text" in replay &&
+            typeof replay.text === "string" &&
+            "isError" in replay &&
+            typeof replay.isError === "boolean"
+          )
+            return { text: replay.text, isError: replay.isError };
+          return {
+            text: typeof replay === "string" ? replay : JSON.stringify(replay),
+            isError: false,
+          };
+        }
+        if (!approval?.approvalId)
+          throw new PluginRefusedError(
+            "This Corsair action requires one-time Approval.",
+            null,
+          );
+        const trail = (
+          eventType: "mcp.call_succeeded" | "mcp.call_failed",
+          detail = {},
+        ) =>
+          recordAuditEvent(auditStore, {
+            eventType,
+            targetType: "mcp_tool",
+            targetId: input.ref,
+            ...(input.initiator ? { initiator: input.initiator } : {}),
+            payload: {
+              ...decided,
+              workspaceId: scope.workspaceId,
+              route: "corsair",
+              ...detail,
+            },
+          });
+        const result = await write
+          .send(approval.approvalId)
+          .catch(async (error: unknown) => {
+            await trail("mcp.call_failed", {
+              failure: (error instanceof Error
+                ? withoutStatement(error)
+                : String(error)
+              ).slice(0, 400),
+            });
+            return mapRefusal(error);
+          });
+        const answer = { text: JSON.stringify(result), isError: false };
+        await trail("mcp.call_succeeded");
+        await approval.complete(answer);
+        return answer;
+      }
       const approval = await options
         .approvalGate?.({
           actorId: input.actorId,
@@ -750,12 +899,6 @@ export function callMethods(context: StoreContext) {
             advertised[0]?.vendorName ?? toolName,
             vendorArgs,
           );
-        const transport = access.transport;
-        const scope = legacyCorsairScope(
-          options.deploymentId,
-          transport,
-          row.url,
-        );
         const dispatch = async (
           tx?: Parameters<Parameters<typeof database.transaction>[0]>[0],
           invoke = (vendor: typeof callVendor) => vendor(),
@@ -824,6 +967,7 @@ export function callMethods(context: StoreContext) {
                   provider: transport,
                   vendorUserId: runsAs ?? vendorUserId,
                   accountId: pinned?.accountId ?? undefined,
+                  vendorAction: advertised[0]?.vendorName ?? toolName,
                   argumentDigest: corsairWriteKey(
                     input.actorId,
                     runsAs ?? vendorUserId,
