@@ -1452,7 +1452,7 @@ async function buildAgent(
         )
       : undefined;
   const pickedSkillFor =
-    selection || marketSkill
+    selection || marketSkill !== undefined
       ? (input: RunAgentInput) =>
           admitPickedSkill(
             input,
