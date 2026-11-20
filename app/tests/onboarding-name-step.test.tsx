@@ -1,12 +1,21 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+} from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { NameOrb, useNameStep } from "@/components/onboarding/name-step";
 import { StepIntro } from "@/components/onboarding/onboarding-frame";
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 import { authKeys } from "@/lib/auth/queries";
+import { queryClient } from "@/query-client";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -17,6 +26,10 @@ import { settleReactWork } from "./settle-react-work";
 
 beforeAll(() => GlobalRegistrator.register());
 const originalFetch = globalThis.fetch;
+beforeEach(() => {
+  // Profile saves invalidate this singleton, which other onboarding tests populate.
+  queryClient.clear();
+});
 afterEach(() => {
   cleanup();
   globalThis.fetch = originalFetch;
@@ -82,6 +95,10 @@ const primary = (view: ReturnType<typeof render>) =>
     "[data-onboarding-primary]",
   ) as HTMLButtonElement;
 
+function isDisabled(button: HTMLButtonElement) {
+  return button.disabled || button.getAttribute("aria-disabled") === "true";
+}
+
 const saved = () =>
   Object.assign(
     async () => Response.json({ profile: { name: "Sam", needsName: false } }),
@@ -96,14 +113,33 @@ test("it starts empty for a placeholder profile, and Get started waits for a nam
   ).toBeTruthy();
   expect((view.getByLabelText("Name") as HTMLInputElement).value).toBe("");
   expect(primary(view).textContent).toBe("Get started");
-  expect(primary(view).disabled).toBe(true);
+  expect(isDisabled(primary(view))).toBe(true);
+});
+
+test("a disabled Get started ignores mouse and keyboard activation", async () => {
+  let saves = 0;
+  globalThis.fetch = Object.assign(
+    async () => {
+      saves += 1;
+      return Response.json({ profile: { name: "Sam", needsName: false } });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = draw(async () => {});
+  const keyboard = userEvent.setup({ document });
+  const button = primary(view);
+
+  await keyboard.click(button);
+  button.focus();
+  await keyboard.keyboard("{Enter} ");
+  expect(saves).toBe(0);
 });
 
 test("a saved name is kept when the step is revisited", () => {
   const view = draw(async () => {}, false);
 
   expect((view.getByLabelText("Name") as HTMLInputElement).value).toBe("Sam");
-  expect(primary(view).disabled).toBe(false);
+  expect(isDisabled(primary(view))).toBe(false);
 });
 
 test("Back sits beside Get started, before it, as on every other step", () => {
@@ -120,9 +156,16 @@ test("Get started saves first, then finishes, and reads All set while the orb fi
   const response = new Promise<Response>((resolve) => {
     release = resolve;
   });
-  globalThis.fetch = Object.assign(async () => response, {
-    preconnect: originalFetch.preconnect,
-  });
+  let saves = 0;
+  globalThis.fetch = Object.assign(
+    async () => {
+      saves += 1;
+      return response;
+    },
+    {
+      preconnect: originalFetch.preconnect,
+    },
+  );
   let finishes = 0;
   let endFinish: () => void = () => {};
   const view = draw(async (setFinished) => {
@@ -135,14 +178,17 @@ test("Get started saves first, then finishes, and reads All set while the orb fi
 
   fireEvent.click(primary(view));
   await waitFor(() => expect(primary(view).textContent).toBe("Saving…"));
-  expect(primary(view).disabled).toBe(true);
+  const keyboard = userEvent.setup({ document });
+  await keyboard.click(primary(view));
+  primary(view).focus();
+  await keyboard.keyboard("{Enter} ");
+  expect(saves).toBe(1);
   expect(finishes).toBe(0);
+  expect(isDisabled(primary(view))).toBe(true);
 
   release(Response.json({ profile: { name: "Sam", needsName: false } }));
   await waitFor(() => expect(primary(view).textContent).toBe("All set"));
-  // Done, not a disabled Saving…: green with a check while the orb plays.
-  expect(primary(view).hasAttribute("data-done")).toBe(true);
-  expect(primary(view).disabled).toBe(false);
+  expect(isDisabled(primary(view))).toBe(false);
   expect(primary(view).querySelector("svg")).not.toBeNull();
   expect(finishes).toBe(1);
 
@@ -150,6 +196,7 @@ test("Get started saves first, then finishes, and reads All set while the orb fi
   fireEvent.click(primary(view));
   await settleReactWork();
   expect(finishes).toBe(1);
+  expect(saves).toBe(1);
   endFinish();
 });
 

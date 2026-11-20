@@ -1,5 +1,7 @@
+import { Switch as AstryxSwitch } from "@astryxdesign/core/Switch";
 import { IconRadar } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { astryxPilot } from "@/components/astryx-pilot/theme";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import {
   Item,
@@ -47,6 +49,8 @@ export function CheckInsSection() {
     preferences.data?.proactive;
   const byAdmin = allowed.data === false;
   const on = chosen === "on" && !byAdmin;
+  const setCheckIns = (next: boolean) =>
+    save.mutate({ proactive: next ? "on" : "off" });
   return (
     <PageSection
       description="Your Bots check the apps they can read and tell you when something needs you, at most once an hour. They never act without asking."
@@ -73,14 +77,26 @@ export function CheckInsSection() {
               </ItemDescription>
             </ItemContent>
             <ItemActions>
-              <Switch
-                aria-label="Check-ins for all your Bots"
-                checked={on}
-                disabled={byAdmin || save.isPending}
-                onCheckedChange={(next) =>
-                  save.mutate({ proactive: next ? "on" : "off" })
-                }
-              />
+              {astryxPilot ? (
+                <AstryxSwitch
+                  disabledMessage={
+                    byAdmin ? "Turned off by your admin." : undefined
+                  }
+                  isDisabled={byAdmin}
+                  isLabelHidden
+                  isLoading={save.isPending}
+                  label="Check-ins for all your Bots"
+                  onChange={setCheckIns}
+                  value={on}
+                />
+              ) : (
+                <Switch
+                  aria-label="Check-ins for all your Bots"
+                  checked={on}
+                  disabled={byAdmin || save.isPending}
+                  onCheckedChange={setCheckIns}
+                />
+              )}
             </ItemActions>
           </Item>
         </PageRows>

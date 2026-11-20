@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { BotLookProvider } from "../components/agents/bot-look";
 import { TeamFeaturesDialog } from "../components/edition/team-features-dialog";
 import { currentUserQueryOptions, needsOnboarding } from "../lib/auth/queries";
+import { appReturnPath } from "../lib/auth/resume";
 import { CopilotProvider } from "../lib/copilot/provider";
 import { AppHotkeys } from "../lib/hotkeys/app-hotkeys";
 import { SkinAccountSync } from "../skins/account-sync";
@@ -13,8 +14,13 @@ export const Route = createFileRoute("/_authed")({
     const user = await context.queryClient.ensureQueryData(
       currentUserQueryOptions(),
     );
+    const returnTo = appReturnPath(location.href);
     if (!user) {
-      throw redirect({ to: "/sign" });
+      throw redirect({
+        to: "/sign",
+        search: returnTo ? { returnTo } : {},
+        replace: true,
+      });
     }
     /*
      * Somebody who has not finished onboarding goes there and nowhere else. Here rather than in
@@ -22,7 +28,11 @@ export const Route = createFileRoute("/_authed")({
      * the onboarding route itself stays reachable.
      */
     if (needsOnboarding(user) && location.pathname !== "/onboarding") {
-      throw redirect({ to: "/onboarding" });
+      throw redirect({
+        to: "/onboarding",
+        search: { returnTo },
+        replace: true,
+      });
     }
   },
   // Mounted INSIDE the authed boundary, not at the root: the runtime endpoint requires a session, so
