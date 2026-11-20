@@ -8,6 +8,7 @@ import {
   carryOverProfile,
   DockerUnavailableError,
   ensure,
+  inspectWorkspaceProcess,
   listOwned,
   NameHeldError,
   reachable,
@@ -19,6 +20,7 @@ import { environmentFor } from "./environment";
 import { registerEntry } from "./identity";
 import { listenPort } from "./listen-port";
 import { legacyNamesFor, namesFor } from "./names";
+import { workspaceComputers } from "./workspace-computers";
 
 /**
  * The container supervisor: the only thing here that holds the Docker socket.
@@ -98,7 +100,7 @@ app.get("/health", async (context) =>
  * `/computers/bot/<id>` is an isolated Bot's own.
  */
 function resolve(kind: string, id: string) {
-  return namesFor(kind, id);
+  return namesFor(kind === "workspace" ? undefined : kind, id);
 }
 
 /**
@@ -223,13 +225,132 @@ app.post("/computers/:kind/:id/reset", async (context) => {
 
 app.get("/computers", async (context) => {
   try {
-    return context.json({ computers: await listOwned() });
+    return context.json({
+      computers: (await listOwned()).filter(({ kind }) => kind !== "workspace"),
+    });
   } catch (error) {
     if (error instanceof DockerUnavailableError) {
       return context.json({ error: error.message }, 503);
     }
     throw error;
   }
+});
+
+function workspaceNames(id: string) {
+  const result = namesFor("workspace", id);
+  if (!result.ok) throw new Error(result.reason);
+  return result.names;
+}
+
+const managed = workspaceComputers({
+  now: Date.now,
+  inspect: (id) => inspectWorkspaceProcess(workspaceNames(id), network),
+  async launch(id, mayStart) {
+    const names = workspaceNames(id);
+    await ensure(names, {
+      image,
+      environment: [
+        ...environmentFor(names),
+        `COMPUTER_TOKEN=${crypto.randomUUID()}${crypto.randomUUID()}`,
+      ],
+      network,
+      runtime,
+      memoryBytes,
+      mayStart,
+    });
+  },
+  async stop(id) {
+    await stop(workspaceNames(id));
+  },
+});
+
+let workspaceReadyAt = Number.POSITIVE_INFINITY;
+async function recoverWorkspaces() {
+  try {
+    const existing = await listOwned();
+    await Promise.all(
+      existing
+        .filter(
+          ({ kind, status }) =>
+            kind === "workspace" && !["exited", "created"].includes(status),
+        )
+        .map(async ({ id }) => {
+          console.error(
+            JSON.stringify({
+              type: "workspace-computer-cutoff-unconfirmed-after-supervisor-restart",
+              workspaceId: id,
+            }),
+          );
+          await stop(workspaceNames(id));
+          const result = await inspectWorkspaceProcess(
+            workspaceNames(id),
+            network,
+          );
+          if (result?.status !== "exited")
+            throw new Error("Computer exit unconfirmed");
+        }),
+    );
+    workspaceReadyAt = Date.now();
+  } catch {
+    setTimeout(recoverWorkspaces, 1_000);
+  }
+}
+void recoverWorkspaces();
+
+// This watchdog runs with the Docker engine access, independently of the API server.
+setInterval(() => void managed.sweep(), 250);
+
+app.get("/workspace-computers", (context) =>
+  context.json({ computers: managed.active() }),
+);
+app.get("/workspace-computers/:id", async (context) => {
+  const id = context.req.param("id");
+  if (!namesFor("workspace", id).ok) return context.body(null, 400);
+  if (!Number.isFinite(workspaceReadyAt)) return context.body(null, 503);
+  const epoch = context.req.query("epoch");
+  const authorizedAt = context.req.query("authorizedAt");
+  return context.json(
+    await managed.status(
+      id,
+      epoch === undefined || authorizedAt === undefined
+        ? undefined
+        : {
+            epoch: Number(epoch),
+            authorizedAt: Number(authorizedAt),
+          },
+    ),
+  );
+});
+app.post("/workspace-computers/:id/:operation", async (context) => {
+  const id = context.req.param("id");
+  const operation = context.req.param("operation");
+  if (!namesFor("workspace", id).ok || !["start", "renew"].includes(operation))
+    return context.body(null, 400);
+  if (!Number.isFinite(workspaceReadyAt) || !process.env.COMPUTER_TOKEN?.trim())
+    return context.body(null, 503);
+  const body: unknown = await context.req.json().catch(() => null);
+  if (
+    !body ||
+    typeof body !== "object" ||
+    !("epoch" in body) ||
+    typeof body.epoch !== "number" ||
+    !("issuedAt" in body) ||
+    typeof body.issuedAt !== "number" ||
+    !("expiresAt" in body) ||
+    typeof body.expiresAt !== "number"
+  )
+    return context.body(null, 400);
+  const grant = {
+    epoch: body.epoch,
+    issuedAt: body.issuedAt,
+    expiresAt: body.expiresAt,
+  };
+  if (grant.issuedAt < workspaceReadyAt) return context.body(null, 409);
+  const accepted =
+    operation === "start"
+      ? await managed.start(id, grant)
+      : managed.renew(id, grant);
+  return context.body(null, accepted ? 204 : 409);
 });
 
 /*
