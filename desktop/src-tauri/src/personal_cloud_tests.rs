@@ -3,8 +3,8 @@ use super::*;
 #[test]
 fn browser_start_uses_s256_and_fresh_state_without_selecting_a_redirect() {
     let origin = parse_origin("https://personal.example").unwrap();
-    let (first, start) = Attempt::new(&origin);
-    let (second, _) = Attempt::new(&origin);
+    let (first, start) = Attempt::new(&origin).unwrap();
+    let (second, _) = Attempt::new(&origin).unwrap();
     assert_ne!(first.state, second.state);
     assert_ne!(first.verifier, second.verifier);
     for value in [&first.state, &first.verifier] {
@@ -25,7 +25,7 @@ fn browser_start_uses_s256_and_fresh_state_without_selecting_a_redirect() {
 #[test]
 fn callback_requires_exact_uri_single_result_and_current_state() {
     let origin = parse_origin("https://personal.example").unwrap();
-    let (attempt, _) = Attempt::new(&origin);
+    let (attempt, _) = Attempt::new(&origin).unwrap();
     for link in [
         "openbot://auth/wrong",
         "openbot://other/auth/personal-saas",
