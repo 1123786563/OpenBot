@@ -2,6 +2,8 @@
 
 This runbook is for platform administrators operating an OpenBot deployment with a self-hosted OpenObserve query platform. OpenObserve is a derived query surface. PostgreSQL audit records, OpenBot Activity records, and Opik traces remain the canonical sources for their own domains.
 
+The [external platform handoff](openobserve-platform-handoff.md) provides the Collector configuration and deployment acceptance procedure.
+
 ## Components
 
 The deployment contains four separate responsibilities.
