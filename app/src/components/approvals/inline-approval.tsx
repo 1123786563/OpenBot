@@ -148,7 +148,18 @@ export function InlineApproval({
           </motion.section>
         ) : null}
       </AnimatePresence>
-      {pending ? null : fallback}
+      {request?.result?.pauseReason ? (
+        <section aria-label="Paused action">
+          <p>{request.result.pauseReason}</p>
+          {request.result.content && (
+            <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+              {request.result.content}
+            </p>
+          )}
+        </section>
+      ) : pending ? null : (
+        fallback
+      )}
     </>
   );
 }
@@ -191,7 +202,10 @@ export function PendingApprovals({
   const inbox = useQuery(approvalInboxOptions());
   const waiting = new Set(
     (inbox.data?.requests ?? [])
-      .filter((request) => request.status === "pending")
+      .filter(
+        (request) =>
+          request.status === "pending" || Boolean(request.result?.pauseReason),
+      )
       .flatMap((request) =>
         request.action.toolCallId ? [request.action.toolCallId] : [],
       ),

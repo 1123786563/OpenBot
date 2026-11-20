@@ -245,6 +245,8 @@ export function createServerApprovalService(deps: {
     {
       review: deps.review,
       marketPause: (action) => marketRunPauseReason(database, action),
+      marketComputerCall: async ({ callId, ...scope }) =>
+        Boolean(await marketRunForComputerCall(database, scope, callId)),
     },
   );
 }

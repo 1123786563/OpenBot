@@ -160,6 +160,12 @@ export function createApprovalService(
     /** The deployment's configured model, for auto-review and pre-approval checks. */
     review?: ReviewModel;
     marketPause?: (action: ApprovalAction) => Promise<string | null>;
+    marketComputerCall?: (input: {
+      actorId: string;
+      botId: string;
+      threadId: string;
+      callId: string;
+    }) => Promise<boolean>;
   } = {},
 ) {
   /**
@@ -244,6 +250,7 @@ export function createApprovalService(
      * same one (./reviewer-guidance.ts). Absent where none is configured, and then the gate fails closed.
      */
     reviewer: options.review,
+    marketComputerCall: options.marketComputerCall,
     async frontendAction(ownerUserId: string, botId: string, input: unknown) {
       if (!frontend)
         throw new ApprovalRefusedError(
@@ -524,7 +531,16 @@ export function createApprovalService(
         : [undefined, undefined, []];
       return {
         enabled: await store.enabled(ownerUserId),
-        requests: requests.map(publicApproval),
+        requests: await Promise.all(
+          requests.map(async (request) =>
+            publicApproval(
+              request,
+              request.result && request.action.continuation?.marketSkill
+                ? await options.marketPause?.(request.action)
+                : undefined,
+            ),
+          ),
+        ),
         rules: await store.rules(ownerUserId),
         teamRules,
         conversationGrants: (
@@ -847,11 +863,23 @@ function publicGrant(grant: ApprovalConversationGrant) {
     createdAt: grant.createdAt,
   };
 }
-function publicApproval(request: ApprovalRecord) {
+function publicApproval(request: ApprovalRecord, pauseReason?: string | null) {
   const { action, ...record } = request;
   return {
     ...record,
-    result: request.result ? { error: request.result.error } : null,
+    result: request.result
+      ? {
+          error: request.result.error,
+          ...(pauseReason
+            ? {
+                pauseReason,
+                ...(request.result.content === pauseReason
+                  ? {}
+                  : { content: request.result.content }),
+              }
+            : {}),
+        }
+      : null,
     action: {
       botId: action.botId,
       toolRef: action.toolRef,

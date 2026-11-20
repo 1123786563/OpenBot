@@ -1434,6 +1434,15 @@ for (const phase of ["before approval", "initialize", "tools/call"] as const) {
             ? { content: "done" }
             : { error: expect.stringContaining("Review in progress") },
         });
+        const inbox = await guardedApprovals.inbox(member);
+        expect(
+          inbox.requests.find((row) => row.id === request.id),
+        ).toMatchObject({
+          result: {
+            ...(afterDispatch ? { content: "done" } : {}),
+            pauseReason: expect.stringContaining("Review in progress"),
+          },
+        });
       } finally {
         dispatch.mockRestore();
       }
@@ -1734,8 +1743,10 @@ for (const afterPreparation of [false, true]) {
     expect([200, 201]).toContain((await install(bot)).status);
     const callId = randomUUID();
     const threadId = randomUUID();
-    const name = "computer_click";
-    const args = { x: 10, y: 10 };
+    const name = afterPreparation ? "computer_navigate" : "computer_click";
+    const args = afterPreparation
+      ? { url: "https://example.test" }
+      : { x: 10, y: 10 };
     const transport = spyOn(HttpAgent.prototype, "run").mockImplementation(
       (input) =>
         of(
@@ -1776,7 +1787,7 @@ for (const afterPreparation of [false, true]) {
       expect(afterPreparation).toBe(true);
       expect((await changeDisablement("PUT")).status).toBe(204);
       expect((await changeDisablement("DELETE")).status).toBe(204);
-      return computer.post("http://computer.test", bot, "/click", args);
+      return computer.post("http://computer.test", bot, "/navigate", args);
     };
     const serverApprovals = createServerApprovalService({
       storedApprovals: approvals,
@@ -1852,6 +1863,17 @@ for (const afterPreparation of [false, true]) {
         expect((await changeDisablement("PUT")).status).toBe(204);
         expect((await changeDisablement("DELETE")).status).toBe(204);
       }
+      const approvalApp = createApprovalRoutes(
+        serverApprovals,
+        async (context, next) => {
+          context.set("actor", { id: member, role: "user" });
+          await next();
+        },
+      );
+      const check = await approvalApp.request(
+        `http://openbot.local/threads/${threadId}?${new URLSearchParams({ botId: bot, toolCallId: callId })}`,
+      );
+      expect(await check.json()).toMatchObject({ requiresRunContext: true });
       await expect(
         serverApprovals.frontendAction(member, bot, {
           runId: randomUUID(),
