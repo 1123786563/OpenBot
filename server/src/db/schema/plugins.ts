@@ -957,6 +957,24 @@ export const skillMarketInstallations = pgTable(
   (table) => [primaryKey({ columns: [table.agentId, table.command] })],
 );
 
+export const skillMarketVersionDisablements = pgTable(
+  "skill_market_version_disablements",
+  {
+    source: text("registry").notNull(),
+    namespace: text("namespace").notNull(),
+    slug: text("slug").notNull(),
+    registrySkillId: integer("registry_skill_id").notNull(),
+    versionId: integer("version_id").notNull(),
+    version: text("version").notNull(),
+    reason: text("reason").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.source, table.registrySkillId, table.versionId],
+    }),
+  ],
+);
+
 /**
  * The tools a skill says it needs. A row is a declaration, and a declaration is not a grant.
  *

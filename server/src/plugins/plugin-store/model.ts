@@ -1,3 +1,4 @@
+import type { PickableSkill } from "../picked-skill";
 import { isOpenBotActor } from "@openbot/shared/openbot-actor";
 import { and, eq, sql } from "drizzle-orm";
 import type { ApprovalGate } from "../../approvals/types";
@@ -304,6 +305,7 @@ export type GrantedPlugins = {
     title: string;
     summary: string;
     instructions: string;
+    marketVersion?: PickableSkill["marketVersion"];
     /**
      * What this skill says it needs, as refs. Never a superset of `tools` above in effect: selection
      * intersects the two, because a skill naming a tool the Bot lacks must load nothing rather than

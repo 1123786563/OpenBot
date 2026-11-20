@@ -14,8 +14,18 @@
  * prompt, or the standing role a remote Bot is sent. Nothing a request carries becomes an
  * instruction; a command only chooses among what the Bot already holds, as typing it does.
  */
-import type { RunAgentInput } from "@ag-ui/client";
+import { AbstractAgent, type RunAgentInput } from "@ag-ui/client";
+import {
+  EventType,
+  type RunErrorEvent,
+  type RunStartedEvent,
+} from "@ag-ui/core";
 import { PICKED_SKILL_PROP } from "@openbot/toolkit/run-turn";
+import { of } from "rxjs";
+import {
+  marketVersionDisabledMessage,
+  type MarketVersionIdentity,
+} from "../skill-market/disablements";
 import { latestUserText } from "./selection";
 
 export { PICKED_SKILL_PROP };
@@ -25,6 +35,10 @@ export type PickableSkill = {
   slug: string;
   title: string;
   instructions?: string;
+  marketVersion?: {
+    identity: MarketVersionIdentity & { fingerprint: string };
+    disableReason: string | null;
+  };
 };
 
 /**
@@ -51,21 +65,71 @@ export function pickedSkillCommand(
   return leadingSkillCommand(latestUserText(input.messages));
 }
 
-/**
- * What the Bot is told for the skill this run picked among the ones it holds, or undefined when it
- * picked none, picked one the Bot does not hold, or one with no instructions.
- */
-export function pickedSkillGuidance(
+export type PickedSkillAdmission =
+  | { kind: "none" }
+  | { kind: "refused"; reason: string }
+  | {
+      kind: "admitted";
+      guidance: string;
+      marketVersion?: NonNullable<PickableSkill["marketVersion"]>["identity"];
+    };
+
+/** Resolve the picked skill from the Bot's current holdings and local version status. */
+export async function admitPickedSkill(
   input: Pick<RunAgentInput, "messages" | "forwardedProps">,
-  held: readonly PickableSkill[],
-): string | undefined {
+  loadSkills: () => Promise<readonly PickableSkill[]>,
+): Promise<PickedSkillAdmission> {
   const command = pickedSkillCommand(input);
-  if (!command) return undefined;
+  if (!command) return { kind: "none" };
+  const held = await loadSkills().catch(() => null);
+  if (!held)
+    return {
+      kind: "refused",
+      reason:
+        "OpenBot couldn't check whether this skill is available. Try again.",
+    };
   const skill = held.find((candidate) => candidate.slug === command);
-  const instructions = skill?.instructions?.trim();
-  if (!skill || !instructions) return undefined;
-  return [
-    `The person picked the skill "${skill.title || skill.slug}" (/${skill.slug}) for their latest message. Follow its instructions for this reply:`,
-    instructions,
-  ].join("\n\n");
+  if (!skill) return { kind: "none" };
+  const version = skill.marketVersion;
+  if (version && version.disableReason !== null) {
+    return {
+      kind: "refused",
+      reason: marketVersionDisabledMessage(
+        version.identity.version,
+        version.disableReason,
+      ),
+    };
+  }
+
+  const instructions = skill.instructions?.trim();
+  if (!instructions) return { kind: "none" };
+  return {
+    kind: "admitted",
+    guidance: [
+      `The person picked the skill "${skill.title || skill.slug}" (/${skill.slug}) for their latest message. Follow its instructions for this reply:`,
+      instructions,
+    ].join("\n\n"),
+    ...(version ? { marketVersion: version.identity } : {}),
+  };
+}
+
+export class PickedSkillRefusal extends AbstractAgent {
+  constructor(private readonly reason: string) {
+    super();
+  }
+
+  run(input: RunAgentInput) {
+    return of<[RunStartedEvent, RunErrorEvent]>(
+      {
+        type: EventType.RUN_STARTED,
+        threadId: input.threadId,
+        runId: input.runId,
+      },
+      {
+        type: EventType.RUN_ERROR,
+        code: "PICKED_SKILL_UNAVAILABLE",
+        message: this.reason,
+      },
+    );
+  }
 }

@@ -263,7 +263,9 @@ function SkillsPage() {
          * the real one now. `SkillRow` below is still parked, because its per-Bot grant toggles have
          * no equivalent in the redesigned rows yet.
          */}
-        {deploymentCapabilities?.skillMarket && <SkillMarket />}
+        {deploymentCapabilities?.skillMarket && (
+          <SkillMarket isAdmin={me?.role === "admin"} />
+        )}
       </CapabilitiesShell>
     </DetailPanel>
   );

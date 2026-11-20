@@ -5,6 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { client } from "@/lib/client";
 import { pluginKeys } from "@/lib/plugins/queries";
+import {
+  MarketVersionAdministration,
+  MarketVersionControl,
+  type MarketVersionIdentity,
+} from "./market-version-administration";
 
 type Skill = {
   namespace: string;
@@ -15,21 +20,21 @@ type Skill = {
   latestVersion: string;
 };
 
-type VersionPreview = Skill & {
-  source: string;
-  version: string;
-  instructions: string;
-  runtimeRequirements: string | null;
-  reasons: string[];
-  installable: boolean;
-  command?: string;
-};
+type VersionPreview = Skill &
+  MarketVersionIdentity & {
+    disableReason?: string;
+    instructions: string;
+    runtimeRequirements: string | null;
+    reasons: string[];
+    installable: boolean;
+    command?: string;
+  };
 
 async function load<T>(path: string, signal: AbortSignal): Promise<T> {
   return (await client(`/api/skill-market${path}`, { signal })).json();
 }
 
-export function SkillMarket() {
+export function SkillMarket({ isAdmin = false }: { isAdmin?: boolean }) {
   const searchId = useId();
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
@@ -51,6 +56,7 @@ export function SkillMarket() {
       title="Skill market"
       description="Browse skills curated by your deployment administrator."
     >
+      {isAdmin && <MarketVersionAdministration />}
       <form
         className="mt-3 flex flex-wrap items-end gap-2"
         onSubmit={(event) => {
@@ -148,6 +154,7 @@ export function SkillMarket() {
           skill={selected}
           version={version}
           selectVersion={setVersion}
+          isAdmin={isAdmin}
         />
       )}
     </PageSection>
@@ -158,10 +165,12 @@ function MarketPreview({
   skill,
   version,
   selectVersion,
+  isAdmin,
 }: {
   skill: Skill;
   version: string;
   selectVersion: (version: string) => void;
+  isAdmin: boolean;
 }) {
   const [page, setPage] = useState(0);
   const path = `/${encodeURIComponent(skill.namespace)}/${encodeURIComponent(skill.slug)}`;
@@ -259,6 +268,13 @@ function MarketPreview({
               </>
             )}
           </div>
+          {isAdmin && (
+            <MarketVersionControl
+              key={versionPath}
+              version={preview.data}
+              disableReason={preview.data.disableReason ?? null}
+            />
+          )}
           {preview.data.installable && preview.data.command && (
             <MarketInstall
               key={versionPath}
