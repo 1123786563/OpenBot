@@ -15,6 +15,7 @@ export const Route = createFileRoute("/_authed/_app/group/$channelId")({
 
 function RouteComponent() {
   const { channelId } = Route.useParams();
+  const navigate = Route.useNavigate();
   const channel = useQuery(channelQueryOptions(channelId));
   useMarkOpenChannelRead(channelId);
   return (
@@ -31,7 +32,10 @@ function RouteComponent() {
         <span className="min-w-0 truncate text-sm tracking-tight">
           {channel.data?.name ?? "Group"}
         </span>
-        <GroupPeopleButton channelId={channelId} />
+        <GroupPeopleButton
+          channelId={channelId}
+          onLeave={() => void navigate({ to: "/" })}
+        />
       </div>
       {(channel.data?.agentIds ?? []).map((agentId) => (
         <BotPausedBanner agentId={agentId} key={agentId} />

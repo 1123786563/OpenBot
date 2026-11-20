@@ -13,6 +13,7 @@ import { BotTools } from "./bot-tools";
 import { CheckInOfferTool } from "./check-in-offer-tool";
 import { CodingTools } from "./coding-tools";
 import { ComputerTools } from "./computer-tools";
+import { DirectChatReconnect } from "./direct-chat-reconnect";
 import { EscalationTool } from "./escalation-tool";
 import { GalleryTools } from "./gallery-tools";
 import { GENERATIVE_UI_DESIGN_SKILL } from "./generative-ui";
@@ -64,6 +65,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         ? { openGenerativeUI: { designSkill: GENERATIVE_UI_DESIGN_SKILL } }
         : {})}
     >
+      <DirectChatReconnect />
       {/* Computer tools act on the Bot that made the call, which is usually the one on screen. */}
       <ActiveBotProvider>
         {/* Each run is offered its own Bot's tools, never the screen's; see bot-offer.ts. */}

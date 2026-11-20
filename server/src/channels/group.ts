@@ -43,6 +43,7 @@ import {
   users,
 } from "../db/schema/core";
 import { groupBotThreads, groupMessages } from "../db/schema/group";
+import { CHANNEL_ACTIVITY_TOPIC } from "./events";
 import { workItems } from "../db/schema/work";
 import { leadingSkillCommand } from "../plugins/picked-skill";
 import type { CheckPrivateShare } from "../proactive/private-share";
@@ -149,7 +150,11 @@ export type GroupStore = {
     details: Record<string, unknown>;
   }): Promise<boolean>;
   /** Add a person who has signed in here to the group, as the channel's own membership. */
-  addMember(channelId: string, email: string): Promise<{ userId: string }>;
+  addMember(
+    owner: string,
+    channelId: string,
+    email: string,
+  ): Promise<{ userId: string }>;
   /** Everyone who can read this group's transcript. */
   members(channelId: string): Promise<string[]>;
   /** The people in the group, first member (who made it) first. */
@@ -157,7 +162,7 @@ export type GroupStore = {
     channelId: string,
   ): Promise<{ userId: string; email: string; name: string | null }[]>;
   /** Take a person out of the group: their membership and their mapping to it. */
-  removeMember(channelId: string, userId: string): Promise<void>;
+  removeMember(owner: string, channelId: string, userId: string): Promise<void>;
 };
 
 export function createGroupStore(
@@ -315,8 +320,21 @@ export function createGroupStore(
         .where(eq(channelMemberships.channelId, channelId))
         .orderBy(asc(channelMemberships.createdAt), asc(users.email));
     },
-    async removeMember(channelId, userId) {
+    async removeMember(owner, channelId, userId) {
       await database.transaction(async (tx) => {
+        await lockGroupMembership(tx, { channelId, userId: owner });
+        const members = await tx
+          .select({ userId: channelMemberships.userId })
+          .from(channelMemberships)
+          .innerJoin(users, eq(users.id, channelMemberships.userId))
+          .where(eq(channelMemberships.channelId, channelId))
+          .orderBy(asc(channelMemberships.createdAt), asc(users.email));
+        if (owner !== userId && owner !== members[0]?.userId)
+          throw new GroupRefusedError(
+            "Only the first remaining member can remove other people.",
+          );
+        if (!members.some((member) => member.userId === userId))
+          throw new GroupNotFoundError();
         await tx
           .delete(channelMemberships)
           .where(
@@ -333,9 +351,19 @@ export function createGroupStore(
               eq(intelligenceChannelMappings.userId, userId),
             ),
           );
+        await tx.execute(
+          sql`select pg_notify(${CHANNEL_ACTIVITY_TOPIC}, ${JSON.stringify({
+            channelId,
+            memberIds: [userId],
+            lastMessage: null,
+            lastMessageAt: null,
+            lastMessageAgentId: null,
+            deleted: true,
+          })})`,
+        );
       });
     },
-    async addMember(channelId, email) {
+    async addMember(owner, channelId, email) {
       const [person] = await database
         .select({ id: users.id })
         .from(users)
@@ -346,6 +374,7 @@ export function createGroupStore(
           "Nobody with that email has signed in to this deployment yet.",
         );
       await database.transaction(async (tx) => {
+        await lockGroupMembership(tx, { channelId, userId: owner });
         await tx
           .insert(channelMemberships)
           .values({ channelId, userId: person.id })
@@ -363,6 +392,28 @@ export function createGroupStore(
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
+async function lockGroupMembership(
+  tx: Transaction,
+  input: { channelId: string; userId: string },
+) {
+  const [member] = await tx
+    .select({ id: channels.id })
+    .from(channels)
+    .innerJoin(
+      channelMemberships,
+      eq(channelMemberships.channelId, channels.id),
+    )
+    .where(
+      and(
+        eq(channels.id, input.channelId),
+        eq(channelMemberships.userId, input.userId),
+        isNull(channels.deletedAt),
+      ),
+    )
+    .for("update", { of: [channels, channelMemberships] });
+  if (!member) throw new GroupNotFoundError();
+}
+
 /**
  * A person's message to the group, and the turn that answers it, inside the caller's transaction.
  *
@@ -372,6 +423,10 @@ type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
  * never closed without its answer being posted.
  */
 export async function submitGroupTurn(tx: Transaction, turn: GroupTurn) {
+  await lockGroupMembership(tx, {
+    channelId: turn.channelId,
+    userId: turn.ownerUserId,
+  });
   await tx.execute(
     sql`select pg_advisory_xact_lock(hashtext(${`group:${turn.messageId}`}))`,
   );
@@ -1011,24 +1066,12 @@ export function createGroupConversations(deps: {
         .strictObject({ email: z.string().trim().email().max(320) })
         .parse(input);
       await roster(owner, channel);
-      return deps.store.addMember(channel, body.email);
+      return deps.store.addMember(owner, channel, body.email);
     },
     /** Leave a group, or (the person who made it) take someone else out of it. */
     async removeMember(owner: string, channel: string, userId: string) {
       await roster(owner, channel);
-      const people = await deps.store.people(channel);
-      const creator = people[0]?.userId;
-      if (userId !== owner && owner !== creator)
-        throw new GroupRefusedError(
-          "Only the person who started this group can take others out of it.",
-        );
-      if (userId === creator && people.length > 1)
-        throw new GroupRefusedError(
-          "The person who started this group cannot leave while others are in it.",
-        );
-      if (!people.some((person) => person.userId === userId))
-        throw new GroupNotFoundError();
-      await deps.store.removeMember(channel, userId);
+      await deps.store.removeMember(owner, channel, userId);
     },
     /**
      * An approval that paused a group turn was decided: run the continuation, then write what the Bot
@@ -1041,6 +1084,14 @@ export function createGroupConversations(deps: {
       const row = await deps.store.waitingFor(approvalId);
       if (!row?.agentId) return run();
       const agentId = row.agentId;
+      const accessibleBots = await orderedRoster(
+        row.ownerUserId,
+        row.channelId,
+      );
+      if (!accessibleBots?.some((bot) => bot.id === agentId)) {
+        await deps.store.finish(row.id, "", "failed");
+        return { replyText: "" };
+      }
       const held = row.details.privateShare as
         | { text?: unknown; continuation?: ApprovalContinuation }
         | undefined;

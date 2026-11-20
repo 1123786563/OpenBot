@@ -635,8 +635,22 @@
     {
       "idx": 90,
       "version": "7",
-      "when": 1795162256991,
-      "tag": "0090_openbot_recordings",
+      "when": 1795161859942,
+      "tag": "0090_direct_chat_replay",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1795172513486,
+      "tag": "0091_conversation_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1795173315650,
+      "tag": "0092_openbot_recordings",
       "breakpoints": true
     }
   ]

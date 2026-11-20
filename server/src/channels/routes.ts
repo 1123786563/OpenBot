@@ -30,6 +30,8 @@ import {
   channelAgents,
   channelMemberships,
   channels,
+  conversationEvidenceWithdrawals,
+  groupBotThreads,
   intelligenceChannelMappings,
   users,
 } from "../db/schema";
@@ -56,6 +58,7 @@ export type AgentChannel = {
   agentIds: string[];
   threadId: string;
   active: boolean;
+  archived?: boolean;
   /**
    * When something was last said here, or null for a conversation nobody has used.
    *
@@ -228,6 +231,11 @@ export type ChannelStore = {
   ): Promise<void>;
   /** Stamp the caller's own membership as read now. Throws ChannelNotFoundError for a non-member. */
   markRead(actor: AgentActor, channelId: string): Promise<void>;
+  setArchived(
+    actor: AgentActor,
+    channelId: string,
+    archived: boolean,
+  ): Promise<void>;
   /**
    * Name the conversation, or clear the name with null, for every member.
    *
@@ -373,6 +381,24 @@ function starterOf(channelId: typeof channels.id) {
 export const conversationCalled = sql<
   string | null
 >`coalesce(${channels.title}, ${channels.summary})`;
+
+export async function currentChannelEventMembers(
+  database: Database,
+  event: ChannelActivityEvent,
+) {
+  const rows = await database
+    .select({ id: channelMemberships.userId })
+    .from(channelMemberships)
+    .innerJoin(channels, eq(channels.id, channelMemberships.channelId))
+    .where(
+      and(
+        eq(channels.id, event.channelId),
+        isNull(channels.deletedAt),
+        inArray(channelMemberships.userId, event.memberIds),
+      ),
+    );
+  return rows.map(({ id }) => id);
+}
 
 export function createChannelStore(
   database: Database,
@@ -596,6 +622,7 @@ export function createChannelStore(
           threadId: intelligenceChannelMappings.threadId,
           lastMessageAt: channels.lastMessageAt,
           deletedAt: agentProfiles.deletedAt,
+          archivedAt: channelMemberships.archivedAt,
         })
         .from(channels)
         .innerJoin(
@@ -629,6 +656,7 @@ export function createChannelStore(
         agentIds: rows.map((row) => row.agentId),
         threadId: first.threadId,
         active: rows.every((row) => row.deletedAt === null),
+        ...(first.archivedAt ? { archived: true } : {}),
         lastMessageAt: first.lastMessageAt,
       };
     },
@@ -670,6 +698,7 @@ export function createChannelStore(
         .where(
           and(
             isNull(channels.deletedAt),
+            isNull(channelMemberships.archivedAt),
             // One row comparison over the whole sort key, which only reads as "everything after the
             // cursor" because every part of that key descends. See ROSTER_ORDER.
             cursor
@@ -916,6 +945,28 @@ export function createChannelStore(
       );
     },
 
+    async setArchived(actor, channelId, archived) {
+      const [membership] = await database
+        .update(channelMemberships)
+        .set({ archivedAt: archived ? new Date() : null })
+        .where(
+          and(
+            eq(channelMemberships.channelId, channelId),
+            eq(channelMemberships.userId, actor.id),
+            exists(
+              database
+                .select({ id: channels.id })
+                .from(channels)
+                .where(
+                  and(eq(channels.id, channelId), isNull(channels.deletedAt)),
+                ),
+            ),
+          ),
+        )
+        .returning({ id: channelMemberships.channelId });
+      if (!membership) throw new ChannelNotFoundError(channelId);
+    },
+
     async softDelete(actor, channelId, discardFailedStart = false) {
       return await database.transaction(
         async (transaction) => {
@@ -929,13 +980,20 @@ export function createChannelStore(
                 eq(channelMemberships.userId, actor.id),
               ),
             )
-            .where(eq(channels.id, channelId));
+            .where(eq(channels.id, channelId))
+            .for("update", { of: channels });
           // Not a member, or no such channel: the same answer either way.
           if (!row) throw new ChannelNotFoundError(channelId);
           // Package channels are configuration; the sync that wrote them owns them.
           if (row.packageId !== null) {
             throw new ChannelPackageOwnedError(channelId);
           }
+          const [shared] = await transaction
+            .select({ id: groupBotThreads.channelId })
+            .from(groupBotThreads)
+            .where(eq(groupBotThreads.channelId, channelId))
+            .limit(1);
+          if (shared) throw new ChannelSharedDeletionError(channelId);
           // The guard on deletedAt is what makes a repeat call a no-op rather than a new stamp.
           const stamped = await transaction
             .update(channels)
@@ -951,6 +1009,10 @@ export function createChannelStore(
            * `channel.deleted` row to an append-only trail for a deletion that had not happened.
            */
           if (stamped.length === 0) return false;
+          await transaction
+            .insert(conversationEvidenceWithdrawals)
+            .values({ channelId })
+            .onConflictDoNothing();
 
           // A failed start can delete its newly created, still-empty conversation.
           // Release only that account's matching claim, never a used tour.
@@ -1236,6 +1298,8 @@ export function createChannelStore(
   };
   return store;
 }
+
+class ChannelSharedDeletionError extends Error {}
 
 export class ChannelNotFoundError extends Error {
   constructor(id: string) {
@@ -1628,6 +1692,21 @@ export function createChannelRoutes(
     }
   });
 
+  for (const method of ["PUT", "DELETE"]) {
+    routes.on(method, "/:channelId/archive", requireUser, async (context) => {
+      try {
+        await store.setArchived(
+          context.var.actor,
+          context.req.param("channelId"),
+          method === "PUT",
+        );
+        return context.body(null, 204);
+      } catch (error) {
+        return mapStoreError(context, error);
+      }
+    });
+  }
+
   routes.delete("/:channelId", requireUser, async (context) => {
     const channelId = context.req.param("channelId");
     try {
@@ -1680,6 +1759,7 @@ function channelDto(channel: AgentChannel): ChannelWire {
     agentIds: channel.agentIds,
     threadId: channel.threadId,
     active: channel.active,
+    ...(channel.archived ? { archived: true } : {}),
     // ISO-8601 so the browser gets a string it can compare, like the roster's copy.
     lastMessageAt: channel.lastMessageAt?.toISOString() ?? null,
   };
@@ -1723,6 +1803,12 @@ function mapStoreError(context: Context, error: unknown): Response {
         error: "Only the person who started this conversation can rename it.",
       },
       403,
+    );
+  }
+  if (error instanceof ChannelSharedDeletionError) {
+    return context.json(
+      { error: "Leave this shared conversation to remove your access." },
+      409,
     );
   }
   if (error instanceof ChannelPackageOwnedError) {
