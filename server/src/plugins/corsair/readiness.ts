@@ -6,12 +6,12 @@ import { type AppVariables, requireAdmin } from "../../auth/guards";
 import type { Database } from "../../db/client";
 import { auditEvents } from "../../db/schema";
 
+import { corsairApp as apps, createCorsairCutover } from "./cutover";
 import { copyVerifiedPolicy, migrationRequest } from "./migration-policy";
 import { githubPilotTool } from "./routes";
 import { sharedSlackTool } from "./slack/shared-provider";
 import { tool as slackPilotTool } from "./slack/write-access";
 
-const apps = z.enum(["github", "slack"]);
 type App = z.infer<typeof apps>;
 type Options = {
   database: Database;
@@ -435,6 +435,234 @@ export function createCorsairReadinessRoutes(options: Options) {
     const denied = requireAdmin(c);
     if (denied) return denied;
     await next();
+  });
+  const transitionRequest = z.discriminatedUnion("kind", [
+    z.strictObject({
+      kind: z.literal("activate"),
+      inventoryRevision: verification.shape.inventoryRevision,
+    }),
+    z.strictObject({
+      kind: z.literal("rollback"),
+      inventoryRevision: verification.shape.inventoryRevision,
+      legacyAuthorizationRef: reference,
+      currentPermissionsRef: reference,
+    }),
+    z.strictObject({
+      kind: z.literal("begin_cleanup"),
+      evidenceRef: reference,
+    }),
+  ]);
+  routes.get("/:app/cutover", async (c) => {
+    const app = apps.safeParse(c.req.param("app"));
+    if (!app.success)
+      return c.json({ error: "Unknown Corsair pilot app." }, 404);
+    return c.json(
+      await createCorsairCutover(options.database, {
+        workspaceId: options.workspaceId,
+        app: app.data,
+      }).read(),
+    );
+  });
+  routes.post("/:app/cutover", async (c) => {
+    const parsed = apps.safeParse(c.req.param("app"));
+    if (!parsed.success)
+      return c.json({ error: "Unknown Corsair pilot app." }, 404);
+    const app = parsed.data;
+    if (c.req.header("X-OpenBot-Pilot") !== app)
+      return c.json({ error: "The pilot request header is required." }, 403);
+    const request = transitionRequest.safeParse(
+      await c.req.json().catch(() => null),
+    );
+    if (!request.success)
+      return c.json({ error: "Invalid route transition." }, 400);
+    const change = request.data;
+    const cutover = createCorsairCutover(options.database, {
+      workspaceId: options.workspaceId,
+      app,
+    });
+    const actorId = c.var.actor.id;
+    const state =
+      change.kind === "activate"
+        ? await cutover.activate(actorId, async (tx) => {
+            await tx.execute(sql`
+            select id from corsair_accounts
+            where (workspace_id = ${options.workspaceId} and openbot_kind = ${`${app}-personal`})
+              or (${app} = 'slack' and shared_workspace_id = ${options.workspaceId} and openbot_kind = 'slack-shared')
+            order by id for share
+          `);
+            const report = await readCorsairReadiness(
+              { ...options, database: tx },
+              app,
+            );
+            if (
+              report.inventoryRevision !== change.inventoryRevision ||
+              !report.ready ||
+              !report.capabilities.some(({ status }) => status === "ready")
+            )
+              return null;
+            const triggers = report.capabilities.filter(({ key }) =>
+              key.startsWith("trigger:"),
+            );
+            for (const trigger of triggers) {
+              if (trigger.status !== "ready") return null;
+              const [handoff] = await tx.execute<{ found: boolean }>(sql`
+              select exists (
+                select 1 from corsair_events e
+                cross join lateral jsonb_array_elements(e.payload->'triggerPairs') as mapping(pair)
+                where e.workspace_id = ${options.workspaceId} and e.event_type = 'openbot.events.handoff'
+                  and e.payload->>'provider' = ${app} and e.occurred_at <= clock_timestamp()
+                  and mapping.pair->>'legacy' = ${trigger.key.slice("trigger:".length)}
+                  and ( ${app} = 'slack' or mapping.pair->>'corsair' =
+                    ${trigger.decision?.kind === "verified" ? (trigger.decision.targetId ?? null) : null} )
+              ) as found
+            `);
+              if (!handoff?.found) return null;
+            }
+            return report.capabilities
+              .filter(({ status }) => status === "disabled")
+              .map(({ key }) => key);
+          })
+        : change.kind === "rollback"
+          ? await cutover.rollback(
+              actorId,
+              {
+                legacyAuthorizationRef: change.legacyAuthorizationRef,
+                currentPermissionsRef: change.currentPermissionsRef,
+              },
+              async (tx) => {
+                const report = await readCorsairReadiness(
+                  { ...options, database: tx },
+                  app,
+                );
+                if (
+                  !options.includeDeploymentLegacy ||
+                  report.inventoryRevision !== change.inventoryRevision
+                )
+                  return false;
+                const [accounts] = await tx.execute<{ verified: boolean }>(sql`
+              with connections as (
+                select provider, user_id, verified
+                from brokered_connections
+                where lower(btrim(app)) = ${app}
+                for share
+              ), accounts as (
+                select provider, user_id
+                from brokered_accounts
+                where lower(btrim(app)) = ${app}
+                for share
+              )
+              select exists (select 1 from connections)
+                and not exists (select 1 from connections where not verified)
+                and not exists (
+                  select 1 from accounts a where not exists (
+                    select 1 from connections c
+                    where c.provider = a.provider and c.user_id = a.user_id and c.verified
+                  )
+                ) as verified
+            `);
+                return accounts?.verified === true;
+              },
+            )
+          : await cutover.beginCleanup(actorId, change.evidenceRef);
+    return state
+      ? c.json(state)
+      : c.json(
+          {
+            error:
+              "Route transition refused. Check readiness, event handoff, legacy evidence, or in-flight calls.",
+          },
+          409,
+        );
+  });
+  const outcomeReview = z.strictObject({
+    outcome: z.enum(["applied", "not_applied"]),
+    evidenceRef: reference,
+  });
+  const resolutionEvent = "corsair.migration_write_reconciled";
+  async function unknownWrites(
+    db: Pick<Database, "execute">,
+    app: App,
+    approvalId?: string,
+  ) {
+    return db.execute<{
+      approvalId: string;
+      startedAt: Date;
+      targetId: string;
+      canReconcile: boolean;
+    }>(sql`
+      select s.payload->>'approvalId' as "approvalId", s.created_at as "startedAt",
+        s.target_id as "targetId",
+        (s.created_at <= clock_timestamp() - interval '30 seconds' or exists (
+          select 1 from audit_events u
+          where u.event_type = ${`corsair.${app}.write_unconfirmed`}
+            and u.payload->>'approvalId' = s.payload->>'approvalId'
+        )) as "canReconcile"
+      from audit_events s
+      where s.event_type = ${`corsair.${app}.write_started`}
+        and coalesce(s.payload->>'workspaceId', s.payload->'target'->>'workspaceId') = ${options.workspaceId}
+        and (${approvalId ?? null}::text is null or s.payload->>'approvalId' = ${approvalId ?? null})
+        and not exists (
+          select 1 from audit_events r
+          where r.payload->>'approvalId' = s.payload->>'approvalId'
+            and r.created_at >= s.created_at
+            and (
+              r.event_type in (${`corsair.${app}.write_succeeded`}, ${resolutionEvent})
+              or (r.event_type = ${`corsair.${app}.write_refused`} and r.payload->>'dispatchRefused' = 'true' and not exists (
+                select 1 from audit_events u
+                where u.event_type = ${`corsair.${app}.write_unconfirmed`}
+                  and u.payload->>'approvalId' = s.payload->>'approvalId'
+                  and u.created_at >= s.created_at
+              ))
+            )
+        )
+      order by s.created_at desc
+      limit 100
+    `);
+  }
+  routes.get("/:app/unknown-writes", async (c) => {
+    const app = apps.safeParse(c.req.param("app"));
+    if (!app.success)
+      return c.json({ error: "Unknown Corsair pilot app." }, 404);
+    const approval = z.uuid().optional().safeParse(c.req.query("approvalId"));
+    if (!approval.success)
+      return c.json({ error: "Invalid Approval ID." }, 400);
+    return c.json(
+      await unknownWrites(options.database, app.data, approval.data),
+    );
+  });
+  routes.put("/:app/unknown-writes/:approvalId", async (c) => {
+    const parsed = apps.safeParse(c.req.param("app"));
+    if (!parsed.success)
+      return c.json({ error: "Unknown Corsair pilot app." }, 404);
+    const app = parsed.data;
+    if (c.req.header("X-OpenBot-Pilot") !== app)
+      return c.json({ error: "The pilot request header is required." }, 403);
+    const approval = z.uuid().safeParse(c.req.param("approvalId"));
+    const review = outcomeReview.safeParse(
+      await c.req.json().catch(() => null),
+    );
+    if (!approval.success || !review.success)
+      return c.json({ error: "Invalid write reconciliation evidence." }, 400);
+    const actorId = c.var.actor.id;
+    const cutover = createCorsairCutover(options.database, {
+      workspaceId: options.workspaceId,
+      app,
+    });
+    const reviewed = await cutover.review(actorId, async (tx) => {
+      const [write] = await unknownWrites(tx, app, approval.data);
+      if (!write?.canReconcile) return false;
+      await tx.insert(auditEvents).values({
+        eventType: resolutionEvent,
+        targetType: "corsair_migration_scope",
+        targetId: JSON.stringify([options.workspaceId, app]),
+        actorUserId: actorId,
+        payload: { approvalId: approval.data, ...review.data },
+      });
+      return true;
+    });
+    return reviewed
+      ? c.body(null, 204)
+      : c.json({ error: "Write is unavailable for reconciliation." }, 409);
   });
   routes.get("/:app", async (c) => {
     const app = apps.safeParse(c.req.param("app"));

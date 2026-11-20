@@ -1,3 +1,4 @@
+import { corsairWriteKey, dispatchCorsairWrite } from "../cutover";
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
@@ -117,6 +118,7 @@ export function createSharedSlackPilot({
   sharedUse,
   canUseBot,
   legacyPolicy,
+  enforceCutover,
 }: {
   database: Database;
   workspaceId: string;
@@ -124,6 +126,7 @@ export function createSharedSlackPilot({
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
   canUseBot: BotAccessCheck;
   legacyPolicy?: () => ActionPolicy;
+  enforceCutover?: boolean;
   approvals: Pick<
     ApprovalStore,
     "open" | "get" | "decide" | "consume" | "saveResult" | "finish"
@@ -710,6 +713,12 @@ export function createSharedSlackPilot({
       channelId: pinned.channelId,
       text,
     });
+    const writeKey = corsairWriteKey(
+      actor.id,
+      pinned.identity.botUserId,
+      pinned.channelId,
+      action.args,
+    );
     const log = (
       event: AuditEventInput["eventType"],
       details: Record<string, unknown> = {},
@@ -779,9 +788,21 @@ export function createSharedSlackPilot({
       await log("corsair.slack.write_refused", { reason: reason(error) });
       throw error;
     }
-    await log("corsair.slack.write_started");
-    const message = await dispatchWhileConnected(
+    await log("corsair.slack.write_started", { writeKey });
+    const message = await dispatchCorsairWrite(
       database,
+      enforceCutover
+        ? {
+            workspaceId,
+            app: "slack",
+            botId: input.botId,
+            registration: provider.identity.appId,
+            binding: "shared",
+            approvalId,
+            writeKey,
+            grant: `shared-grant:${input.botId}:${pinned.installationId}`,
+          }
+        : undefined,
       pinned.installationId,
       undefined,
       () =>
@@ -790,7 +811,10 @@ export function createSharedSlackPilot({
           .catch(() => null),
     ).catch(async (error: unknown) => {
       if (!(error instanceof RevocationRefusal)) throw error;
-      await log("corsair.slack.write_refused", { reason: error.message });
+      await log("corsair.slack.write_refused", {
+        reason: error.message,
+        dispatchRefused: true,
+      });
       await approvals.saveResult(actor.id, approvalId, {
         content: error.message,
         error: error.message,

@@ -66,8 +66,9 @@ export async function dispatchWhileConnected<T>(
   id: string,
   revision: string | undefined,
   dispatch: () => Promise<T>,
+  transaction?: Transaction,
 ) {
-  return database.transaction(async (tx) => {
+  const send = async (tx: Transaction) => {
     const [account] = await tx
       .select({ id: accounts.id })
       .from(accounts)
@@ -85,7 +86,8 @@ export async function dispatchWhileConnected<T>(
         409,
       );
     return dispatch();
-  });
+  };
+  return transaction ? send(transaction) : database.transaction(send);
 }
 
 export function createRevocation({

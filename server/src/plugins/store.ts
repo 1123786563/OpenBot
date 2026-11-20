@@ -1,3 +1,6 @@
+import { RevocationRefusal } from "./corsair/revocation";
+import { withLegacyCorsairDisconnect } from "./corsair/cutover";
+import { PluginRefusedError } from "./plugin-store/model";
 import { accountMethods } from "./plugin-store/accounts";
 import { appAccessMethods } from "./plugin-store/app-access";
 import { callMethods } from "./plugin-store/calls";
@@ -48,16 +51,47 @@ export {
 
 export function createPluginStore(options: PluginStoreOptions) {
   const context = createStoreContext(options);
+  const connections = connectionMethods(context);
+  const accounts = accountMethods(context);
+  const disconnect = <T>(
+    input: { toolkit: string; by: string },
+    run: () => Promise<T>,
+  ) =>
+    withLegacyCorsairDisconnect(
+      options.database,
+      options.deploymentId,
+      input.toolkit,
+      input.by,
+      run,
+    ).catch((error: unknown) => {
+      if (error instanceof RevocationRefusal)
+        throw new PluginRefusedError(error.message, null);
+      throw error;
+    });
   // In the order the methods were always declared. Each group's methods call each other through
   // `this`, which is the whole store when a method is called on it.
   return {
     ...serverMethods(context),
     ...skillMethods(context),
     ...grantMethods(context),
-    ...connectionMethods(context),
+    ...connections,
     ...callMethods(context),
     ...appAccessMethods(context),
-    ...accountMethods(context),
+    ...accounts,
+    disconnectBrokered(
+      input: Parameters<typeof connections.disconnectBrokered>[0],
+    ) {
+      return disconnect(input, () =>
+        connections.disconnectBrokered.call(this, input),
+      );
+    },
+    disconnectBrokeredAccount(
+      input: Parameters<typeof accounts.disconnectBrokeredAccount>[0],
+    ) {
+      return disconnect(input, () =>
+        accounts.disconnectBrokeredAccount.call(this, input),
+      );
+    },
   };
 }
 

@@ -158,6 +158,8 @@ export const auditEventTypes = [
   "corsair.authorization.disconnected",
   "corsair.authorization.revocation_checked",
   "corsair.migration_readiness_decided",
+  "corsair.migration_route_changed",
+  "corsair.migration_write_reconciled",
   "corsair.migration_policy_copied",
   "corsair.github.connected",
   "corsair.slack.connected",

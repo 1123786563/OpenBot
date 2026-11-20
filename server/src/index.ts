@@ -2428,6 +2428,7 @@ const slackPilotOptions = slackPilot
       registration: slackPilot.registration,
       allowedChannels: slackPilot.allowedChannels,
       legacyPolicy: () => policyStore.get(),
+      enforceCutover: true,
       provider: createSlackPilotProvider({
         ...slackPilot.config,
         reconcileGoalWrites: !!githubEventTriggers,
@@ -3384,6 +3385,7 @@ const app = createApp(
             workspaceId: deploymentId,
             registration: `${githubPilot.appId}/${githubPilot.clientId}`,
             provider: createGithubPilotProvider(githubPilot),
+            enforceCutover: true,
             legacyPolicy: () => policyStore.get(),
             legacyDefaults: readVerifiedLegacyGithubDefaults(
               process.env.CORSAIR_GITHUB_VERIFIED_LEGACY_DEFAULTS,
@@ -3407,6 +3409,7 @@ const app = createApp(
           sharedSlackPilot: {
             workspaceId: deploymentId,
             provider: sharedSlackProvider,
+            enforceCutover: true,
             legacyPolicy: () => policyStore.get(),
             database,
             approvals: storedApprovals,

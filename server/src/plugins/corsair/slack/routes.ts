@@ -1,3 +1,5 @@
+import { corsairGrantRef } from "../grants";
+import { corsairWriteKey, dispatchCorsairWrite } from "../cutover";
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -8,11 +10,7 @@ import {
 import { type AuditEventInput, recordAuditEvent } from "../../../audit";
 import { type AppVariables, requireAdmin } from "../../../auth/guards";
 import { pluginGrants as grants } from "../../../db/schema/plugins";
-import {
-  dispatchWhileConnected,
-  personalRevocationRoutes,
-  RevocationRefusal,
-} from "../revocation";
+import { personalRevocationRoutes, RevocationRefusal } from "../revocation";
 import { SlackPilotRefusal } from "./accounts";
 import { slackChannel } from "./provider";
 
@@ -239,6 +237,12 @@ export function createSlackPilotRoutes({
     const actor = c.var.actor;
     const { record, pinned } = await ownedApproval(actor.id, approvalId);
     const input = { ...supplied, connectionId: pinned.connectionId };
+    const writeKey = corsairWriteKey(
+      actor.id,
+      pinned.userId,
+      pinned.channelId,
+      record.action.args,
+    );
     const log = (
       event: AuditEventInput["eventType"],
       details: Record<string, unknown> = {},
@@ -287,11 +291,23 @@ export function createSlackPilotRoutes({
       });
       throw error;
     }
-    await log("corsair.slack.write_started");
+    await log("corsair.slack.write_started", { writeKey });
     let message: Awaited<ReturnType<typeof provider.postMessage>>;
     try {
-      message = await dispatchWhileConnected(
+      message = await dispatchCorsairWrite(
         database,
+        options.enforceCutover
+          ? {
+              workspaceId,
+              app: "slack",
+              botId: input.botId,
+              registration,
+              binding: "personal",
+              approvalId,
+              writeKey,
+              grant: `grant:${input.botId}:${corsairGrantRef(workspaceId, registration, tool.ref)}`,
+            }
+          : undefined,
         input.connectionId,
         target.revision,
         () =>
@@ -304,7 +320,10 @@ export function createSlackPilotRoutes({
       );
     } catch (error) {
       if (error instanceof RevocationRefusal) {
-        await log("corsair.slack.write_refused", { reason: error.message });
+        await log("corsair.slack.write_refused", {
+          reason: error.message,
+          dispatchRefused: true,
+        });
         await approvals.saveResult(actor.id, approvalId, {
           content: error.message,
           error: error.message,

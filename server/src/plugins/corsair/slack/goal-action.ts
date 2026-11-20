@@ -1,3 +1,5 @@
+import { corsairGrantRef } from "../grants";
+import { corsairWriteKey, dispatchCorsairWrite } from "../cutover";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -303,11 +305,29 @@ export function createSlackGoalAction(
             },
           );
           if (!consumed) return;
-          await log("corsair.slack.write_started");
+          const writeKey = corsairWriteKey(
+            owner,
+            userId,
+            input.channelId,
+            action.args,
+          );
+          await log("corsair.slack.write_started", { writeKey });
           let message: Awaited<ReturnType<typeof provider.postMessage>>;
           try {
-            message = await dispatchWhileConnected(
+            message = await dispatchCorsairWrite(
               database,
+              options.enforceCutover
+                ? {
+                    workspaceId: options.workspaceId,
+                    app: "slack",
+                    botId: action.botId,
+                    registration: options.registration,
+                    binding: "personal",
+                    approvalId,
+                    writeKey,
+                    grant: `grant:${action.botId}:${corsairGrantRef(options.workspaceId, options.registration, tool.ref)}`,
+                  }
+                : undefined,
               input.connectionId,
               revision,
               () =>
@@ -320,7 +340,13 @@ export function createSlackGoalAction(
                 }),
             );
           } catch (error) {
-            if (error instanceof RevocationRefusal) throw error;
+            if (error instanceof RevocationRefusal) {
+              await log("corsair.slack.write_refused", {
+                reason: error.message,
+                dispatchRefused: true,
+              });
+              return { content: error.message, error: error.message };
+            }
             return reconcile(startedAt);
           }
           return confirmed(message.channel, message.timestamp);

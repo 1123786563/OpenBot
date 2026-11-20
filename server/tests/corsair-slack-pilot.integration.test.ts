@@ -1,3 +1,5 @@
+import { createCorsairCutover } from "../src/plugins/corsair/cutover";
+import { createCorsairReadinessRoutes } from "../src/plugins/corsair/readiness";
 import { beforeAll, expect, test } from "bun:test";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createApprovalStore } from "../src/approvals/store";
@@ -107,6 +109,8 @@ const provider = createSlackPilotProvider(
       if (url.pathname.endsWith("/chat.postMessage")) {
         const { channel, text } = await request.json();
         writes.push({ user, channel, text });
+        if (text === "committed without a response")
+          throw new Error("connection closed");
         return Response.json({
           ok: true,
           channel,
@@ -124,9 +128,11 @@ const routes = (
   workspace: string,
   legacyDefaults: SlackLegacyDefault[] = [],
   audit: AuditStore = createAuditStore(db),
+  enforceCutover = false,
 ) =>
   createSlackPilotRoutes({
     database: db,
+    enforceCutover,
     legacyDefaults,
     workspaceId: workspace,
     registration: "A123/client/T123",
@@ -483,15 +489,25 @@ test("disconnect wins if an approved Slack write has been consumed but has not r
   const began = Promise.withResolvers<void>();
   const resume = Promise.withResolvers<void>();
   const audit = createAuditStore(db);
-  const a = routes(randomUUID(), [], {
-    async insert(event) {
-      await audit.insert(event);
-      if (event.eventType === "corsair.slack.write_started") {
-        began.resolve();
-        await resume.promise;
-      }
+  const workspace = randomUUID();
+  await createCorsairCutover(db, {
+    workspaceId: workspace,
+    app: "slack",
+  }).activate(person, async () => []);
+  const a = routes(
+    workspace,
+    [],
+    {
+      async insert(event) {
+        await audit.insert(event);
+        if (event.eventType === "corsair.slack.write_started") {
+          began.resolve();
+          await resume.promise;
+        }
+      },
     },
-  });
+    true,
+  );
   const linked = await call(a, await start(a, "first"));
   const { connection } = await linked.json();
   const input = {
@@ -542,4 +558,89 @@ test("disconnect wins if an approved Slack write has been consumed but has not r
   }
   expect((await executing).status).toBe(409);
   expect(writes).toHaveLength(count);
+});
+
+test("a lost Slack response is queryable and a second approval cannot duplicate the remote write", async () => {
+  const workspace = randomUUID();
+  await createCorsairCutover(db, {
+    workspaceId: workspace,
+    app: "slack",
+  }).activate(person, async () => []);
+  const a = routes(workspace, [], createAuditStore(db), true);
+  const administration = createCorsairReadinessRoutes({
+    database: db,
+    workspaceId: workspace,
+    registrations: { slack: "A123/client/T123" },
+    includeDeploymentLegacy: false,
+    requireUser: async (c, next) => {
+      c.set("actor", {
+        id: person,
+        email: "fixture@example.test",
+        role: "admin",
+      });
+      await next();
+    },
+  });
+  const linked = await call(a, await start(a, "first"));
+  const { connection } = await linked.json();
+  const input = {
+    botId: bot,
+    connectionId: connection.id,
+    channelId: "C123",
+    text: "committed without a response",
+  };
+  expect(
+    (
+      await call(a, `/bots/${bot}/grant`, {
+        method: "PUT",
+        body: { enabled: true },
+        admin: true,
+      })
+    ).status,
+  ).toBe(200);
+  async function approve() {
+    const opened = await call(a, "/approvals", { method: "POST", body: input });
+    expect(opened.status).toBe(201);
+    const { id } = await opened.json();
+    expect(
+      (
+        await call(a, `/approvals/${id}/decision`, {
+          method: "POST",
+          body: { decision: "allow_once" },
+        })
+      ).status,
+    ).toBe(200);
+    return id;
+  }
+  const execute = (id: string) =>
+    call(a, `/approvals/${id}/execute`, { method: "POST", body: input });
+  const id = await approve();
+  const count = writes.length;
+  expect((await execute(id)).status).toBe(502);
+  expect((await execute(id)).status).toBe(409);
+  expect((await execute(await approve())).status).toBe(409);
+  expect(writes).toHaveLength(count + 1);
+  expect(
+    await (await administration.request("/slack/unknown-writes")).json(),
+  ).toMatchObject([{ approvalId: id, targetId: "C123", canReconcile: true }]);
+  // This is the provider-side history in the fixture. Reconcile the recorded write as applied.
+  expect(writes[count]).toEqual({
+    user: "U111",
+    channel: "C123",
+    text: input.text,
+  });
+  const resolved = await administration.request(`/slack/unknown-writes/${id}`, {
+    method: "PUT",
+    headers: { "X-OpenBot-Pilot": "slack", "Content-Type": "application/json" },
+    body: JSON.stringify({
+      outcome: "applied",
+      evidenceRef: "fixture/slack/history/1",
+    }),
+  });
+  expect(resolved.status).toBe(204);
+  expect(
+    await (await administration.request("/slack/unknown-writes")).json(),
+  ).toEqual([]);
+  expect((await execute(await approve())).status).toBe(409);
+  expect(writes).toHaveLength(count + 1);
 });

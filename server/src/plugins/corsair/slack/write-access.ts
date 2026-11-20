@@ -41,6 +41,7 @@ export type Options = Omit<
 > & {
   clock?: () => Date;
   legacyPolicy?: () => ActionPolicy;
+  enforceCutover?: boolean;
   legacyDefaults?: Parameters<typeof slackAccounts>[0]["legacyDefaults"];
   allowedChannels: ReadonlySet<string>;
   approvals: Pick<

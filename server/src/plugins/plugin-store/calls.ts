@@ -1,6 +1,6 @@
 import { DECLINED_BY_PERSON } from "@openbot/shared/approval-outcomes";
 import { connectAppRefusal } from "@openbot/shared/connect-prompt";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { safetyRequirement } from "../../approvals/policy";
 import {
   ApprovalAlreadyAnsweredError,
@@ -31,6 +31,7 @@ import { inspectToolArguments } from "../content-governance";
 import { shareTargetOf } from "../share-target";
 import { type AccountMode, filedUnderPerson } from "../shared-accounts";
 import { transportFor } from "../transport";
+import { withLegacyCorsairRoute } from "../corsair/cutover";
 import { withReadRetries } from "../transient";
 import { withVendorDeadline } from "../vendor-deadline";
 import { accountBook, type PinnedAccount } from "./accounts";
@@ -744,10 +745,69 @@ export function callMethods(context: StoreContext) {
             advertised[0]?.vendorName ?? toolName,
             vendorArgs,
           );
-        const result =
-          effect === "read"
-            ? await withReadRetries(callVendor)
-            : await callVendor();
+        const result = await withLegacyCorsairRoute(
+          database,
+          options.deploymentId,
+          access.transport,
+          row.url,
+          async (tx) => {
+            const transport = access.transport;
+            const toolkit = access.toolkit;
+            if (
+              tx &&
+              toolkit &&
+              vendorUserId &&
+              (transport === "arcade" || transport === "composio")
+            ) {
+              const credentialActorId =
+                input.credentialActorId ?? input.actorId;
+              const [current] = await tx
+                .select({ connected: brokeredConnections.app })
+                .from(brokeredConnections)
+                .where(
+                  and(
+                    eq(brokeredConnections.app, toolkit),
+                    eq(brokeredConnections.provider, transport),
+                    eq(brokeredConnections.vendorUserId, vendorUserId),
+                    gatedMode === "shared"
+                      ? isNull(brokeredConnections.userId)
+                      : eq(brokeredConnections.userId, credentialActorId),
+                  ),
+                )
+                .for("share");
+              const [selected] =
+                pinned && current
+                  ? await tx
+                      .select({ id: brokeredAccounts.id })
+                      .from(brokeredAccounts)
+                      .where(
+                        and(
+                          eq(brokeredAccounts.app, toolkit),
+                          eq(brokeredAccounts.provider, transport),
+                          eq(brokeredAccounts.userId, credentialActorId),
+                          eq(
+                            brokeredAccounts.vendorUserId,
+                            pinned.vendorUserId,
+                          ),
+                          eq(
+                            brokeredAccounts.accountId,
+                            pinned.accountId ?? "",
+                          ),
+                        ),
+                      )
+                      .for("share")
+                  : [];
+              if (!current || (pinned && !selected))
+                throw new PluginRefusedError(
+                  "The broker connection changed before dispatch.",
+                  null,
+                );
+            }
+            return effect === "read"
+              ? withReadRetries(callVendor)
+              : callVendor();
+          },
+        );
         await recordAuditEvent(auditStore, {
           eventType: result.isError ? "mcp.call_failed" : "mcp.call_succeeded",
           targetType: "mcp_tool",

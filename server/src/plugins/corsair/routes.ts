@@ -1,3 +1,4 @@
+import { corsairWriteKey, dispatchCorsairWrite } from "./cutover";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, eq, gt, lt } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
@@ -90,6 +91,7 @@ type Deps = {
   canUseBot: BotAccessCheck;
   clock?: () => Date;
   legacyPolicy?: () => ActionPolicy;
+  enforceCutover?: boolean;
   legacyDefaults?: readonly VerifiedLegacyGithubDefault[];
 };
 
@@ -105,6 +107,7 @@ export function createGithubPilotRoutes({
   canUseBot,
   clock = () => new Date(),
   legacyPolicy,
+  enforceCutover,
   legacyDefaults = [],
 }: Deps) {
   const routes = new Hono<{ Variables: AppVariables }>();
@@ -752,9 +755,19 @@ export function createGithubPilotRoutes({
     const actor = c.var.actor;
     const record = await ownedApproval(actor.id, approvalId);
     const pinned = z
-      .object({ connectionId: id, repositoryId: z.string() })
+      .object({
+        connectionId: id,
+        repositoryId: z.string(),
+        githubUserId: z.string(),
+      })
       .parse(record.action.target);
     const input = { ...invocationArgs, connectionId: pinned.connectionId };
+    const writeKey = corsairWriteKey(
+      actor.id,
+      pinned.githubUserId,
+      pinned.repositoryId,
+      record.action.args,
+    );
     const trail = (
       eventType: AuditEventInput["eventType"],
       payload: Record<string, unknown>,
@@ -830,11 +843,23 @@ export function createGithubPilotRoutes({
       target: record.action.target,
       githubUserId: verified.connection.githubUserId,
     };
-    await trail("corsair.github.write_started", evidence);
+    await trail("corsair.github.write_started", { ...evidence, writeKey });
     let result: Awaited<ReturnType<GithubPilotProvider["createIssue"]>>;
     try {
-      result = await dispatchWhileConnected(
+      result = await dispatchCorsairWrite(
         database,
+        enforceCutover
+          ? {
+              workspaceId,
+              app: "github",
+              botId: input.botId,
+              registration,
+              binding: "personal",
+              approvalId,
+              writeKey,
+              grant: `grant:${input.botId}:${grantRef}`,
+            }
+          : undefined,
         verified.connection.id,
         verified.connection.revision,
         () =>
@@ -852,6 +877,7 @@ export function createGithubPilotRoutes({
         await trail("corsair.github.write_refused", {
           ...evidence,
           reason: error.message,
+          dispatchRefused: true,
         });
         await approvals.saveResult(actor.id, approvalId, {
           content: error.message,

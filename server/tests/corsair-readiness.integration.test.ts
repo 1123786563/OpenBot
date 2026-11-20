@@ -542,3 +542,76 @@ test("Slack shared migration requires separate review and preserves the approved
     await database.delete(agents).where(eq(agents.id, botId));
   }
 });
+
+test("activation rereads current readiness and switches only the reviewed app", async () => {
+  const workspaceId = randomUUID();
+  const botId = randomUUID();
+  const installationId = randomUUID();
+  const app = routes(workspaceId);
+  const post = (path: string, body: unknown) =>
+    app.request(path, {
+      method: "POST",
+      headers: { "X-OpenBot-Pilot": "slack" },
+      body: JSON.stringify(body),
+    });
+  await database.insert(agents).values({
+    id: botId,
+    name: botId,
+    type: "built_in",
+    configuration: {},
+  });
+  try {
+    await database.insert(slackSharedInstallations).values({
+      id: installationId,
+      workspaceId,
+      appId: "AFIXTURE",
+      teamId: "TFIXTURE",
+      botId: "BFIXTURE",
+      botUserId: "UFIXTURE",
+      channelIds: ["CFIXTURE"],
+    });
+    await database.insert(corsairSharedAccess).values({
+      installationId,
+      botId,
+      granted: true,
+    });
+    const { inventoryRevision } = await (await app.request("/slack")).json();
+    const activate = (revision: string) =>
+      post("/slack/cutover", { kind: "activate", inventoryRevision: revision });
+    expect((await activate(inventoryRevision)).status).toBe(409);
+    expect(
+      (
+        await post("/slack/decisions", {
+          capability: `shared-grant:${botId}:${installationId}`,
+          decision: {
+            kind: "verified",
+            inventoryRevision,
+            checks: {
+              identity: "fixture/identity",
+              resourceScope: "fixture/scope",
+              approval: "fixture/approval",
+              event: "fixture/event",
+              revocation: "fixture/revocation",
+            },
+            addedPermissions: [],
+          },
+        })
+      ).status,
+    ).toBe(204);
+    expect((await activate("0".repeat(64))).status).toBe(409);
+    const activated = await activate(inventoryRevision);
+    expect(activated.status).toBe(200);
+    expect(await activated.json()).toMatchObject({
+      kind: "observing",
+      excluded: [],
+    });
+    expect(await (await app.request("/github/cutover")).json()).toEqual({
+      kind: "legacy",
+    });
+  } finally {
+    await database
+      .delete(corsairAccounts)
+      .where(eq(corsairAccounts.id, installationId));
+    await database.delete(agents).where(eq(agents.id, botId));
+  }
+});
