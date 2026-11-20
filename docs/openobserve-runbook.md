@@ -50,7 +50,9 @@ The Collector must provide two pipelines.
 
 Collect stdout and stderr from OpenBot API, worker, migration, retention, routine, and other included server-side workloads. Normalize records into the runtime schema and route them to `openbot_runtime`. Drop raw request bodies, user messages, prompts, tool arguments, tool results, file contents, credentials, authorization headers, and arbitrary serialized objects.
 
-A legacy line that cannot yet be migrated to a structured event is marked `legacy_unstructured`, bounded, and treated as a migration signal. It is not permission to forward arbitrary objects or unbounded text.
+The runtime writer marks transitional startup notices with `event_category=legacy_unstructured` and `projection_status=unknown`. The `legacy_event` field identifies the notice. The diagnostic comes from the application catalogue and is capped at 160 bytes.
+
+For any remaining raw console line, including dependency and process errors, the deployment-managed Collector should emit one `legacy_unstructured` marker with `projection_status=unknown`. Set deployment and component from trusted workload metadata and use the fixed diagnostic `Unmigrated process log line.` Discard the original body and its parsed fields before export. Keep raw troubleshooting output in the deployment's existing local logs.
 
 ### Audit pipeline
 
