@@ -833,6 +833,27 @@ is still the record.
 | `OTEL_SERVICE_NAME`                | The `service.name` on every record. Defaults to `openbot`.                                             |
 | `OPENBOT_OTEL_EXPORT`              | `off` turns export off while an endpoint is still set.                                                 |
 
+## Personal Memory Recall
+
+Set `OPENBOT_HINDSIGHT_API_URL` to the HTTP(S) origin of a private, dedicated
+self-hosted Hindsight service. Set `OPENBOT_HINDSIGHT_API_KEY` when the
+service requires a bearer token. Keep its API, MCP endpoint, and control
+plane on private ingress.
+
+Use Hindsight 1.2 with `HINDSIGHT_API_LLM_PROVIDER=none`,
+`HINDSIGHT_API_ENABLE_AUTO_CONSOLIDATION=false`,
+`HINDSIGHT_API_EMBEDDINGS_PROVIDER=local`, and
+`HINDSIGHT_API_RERANKER_PROVIDER=local`. Keep bank overrides and hosted
+decision models disabled. This configuration indexes approved memory text
+in chunks and runs Recall without metered model calls.
+
+OpenBot updates its search projections in the Memory background sweep and
+checks current Memory versions and permissions at retrieval. Without the
+service or a verifiable hit, the recall tool uses OpenBot's local search.
+Keep the service reachable for deletion retries. After restoring a
+Hindsight backup, reconcile withdrawals against OpenBot before opening
+the service to application traffic.
+
 ## Self-hosted Opik for Web direct-chat Runs
 
 Deploy Opik using the [official self-hosted instructions](https://www.comet.com/docs/opik/self-host/local_deployment/). Run the OpenBot database migrations before starting the API. Set these variables on the OpenBot server. Docker Compose reads them from `.env`. With Helm, use `config.extraEnv` and reference a Kubernetes Secret for the key. The URL must be reachable **from the server** and end at Opik's API base, for example `http://opik-frontend:5173/api/`.

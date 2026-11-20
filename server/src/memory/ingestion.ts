@@ -6,9 +6,11 @@ import { catalogueEntry } from "../plugins/catalogue";
 import { asksForArguments } from "../plugins/composio";
 import { type AccountAnswer, accountFor } from "../plugins/shared-accounts";
 import { PluginRefusedError, type PluginStore } from "../plugins/store";
+import type { Hindsight } from "./hindsight";
 import type { MemoryStore } from "./store";
 import {
   type ImportedMemory,
+  MemoryNotFoundError,
   MemoryRefusedError,
   type MemorySource,
   parseMemorySourceInput,
@@ -180,6 +182,10 @@ export function defaultSourceTool<T extends SourceTool>(tools: T[]): T | null {
 export function createMemoryIngestion(options: {
   store: MemoryStore;
   plugins: PluginStore;
+  hindsight?: {
+    client: Hindsight;
+    canUseMemory: (ownerUserId: string) => Promise<boolean>;
+  };
   /**
    * Whether this person may use the Bot: their own, or a shared deployment Bot they can see. A
    * source's facts are always the owner's own, so a shared Bot is fine. Without it, only an owned
@@ -187,7 +193,7 @@ export function createMemoryIngestion(options: {
    */
   canUseBot?: (ownerUserId: string, botId: string) => Promise<boolean>;
 }) {
-  const { store, plugins } = options;
+  const { store, plugins, hindsight } = options;
   const mayUse = async (ownerUserId: string, botId: string) =>
     options.canUseBot
       ? options.canUseBot(ownerUserId, botId)
@@ -344,20 +350,20 @@ export function createMemoryIngestion(options: {
     }
   }
 
-  async function recall(ownerUserId: string, botId: string, search = "") {
-    if (!(await mayUse(ownerUserId, botId))) return [];
+  const sourceReady = (source: MemorySource) =>
+    source.enabled &&
+    // Keep the last successful sync visible while a healthy source re-syncs.
+    (source.syncStatus === "succeeded" ||
+      (source.syncStatus === "running" &&
+        source.lastSyncAt !== null &&
+        !source.syncError));
+
+  async function recallScope(ownerUserId: string, botId: string) {
+    if (hindsight && !(await hindsight.canUseMemory(ownerUserId))) return null;
+    if (!(await mayUse(ownerUserId, botId))) return null;
     const authorization = await sourceAuthorization(ownerUserId, botId);
     const sources = (await store.sources(ownerUserId)).filter(
-      (source) =>
-        source.enabled &&
-        source.agentId === botId &&
-        // A scheduled resync of a healthy source keeps what its last good sync read: the facts
-        // would otherwise vanish for as long as the vendor takes to answer. A source whose last
-        // sync failed stays hidden while it retries (`syncError` is cleared only by a success).
-        (source.syncStatus === "succeeded" ||
-          (source.syncStatus === "running" &&
-            source.lastSyncAt !== null &&
-            !source.syncError)),
+      (source) => source.agentId === botId && sourceReady(source),
     );
     const eligible: string[] = [];
     for (const source of sources) {
@@ -388,11 +394,53 @@ export function createMemoryIngestion(options: {
           throw error;
       }
     }
-    return store.retrieve(ownerUserId, eligible, search.slice(0, 200), {
-      botId,
-      heldSourceRefs,
-    });
+    return { eligible, formed: { botId, heldSourceRefs } };
   }
+
+  async function recall(ownerUserId: string, botId: string, search = "") {
+    let scope = await recallScope(ownerUserId, botId);
+    if (!scope) return [];
+    const term = search.slice(0, 200).trim();
+    const candidates =
+      hindsight && term
+        ? await store.recallCandidates(
+            ownerUserId,
+            scope.eligible,
+            scope.formed,
+          )
+        : [];
+    const hits =
+      hindsight && candidates.length
+        ? await hindsight.client.recall(ownerUserId, term, candidates)
+        : [];
+    if (candidates.length) scope = await recallScope(ownerUserId, botId);
+    if (!scope) return [];
+
+    const local = await store.retrieve(
+      ownerUserId,
+      scope.eligible,
+      term,
+      scope.formed,
+    );
+    if (!hits.length) return local;
+    const current = await store.recallCandidates(
+      ownerUserId,
+      scope.eligible,
+      scope.formed,
+      hits.map((hit) => hit.id),
+    );
+    const byId = new Map(current.map((row) => [row.id, row]));
+    const ranked = new Map<string, (typeof current)[number]>();
+    for (const hit of hits) {
+      const row = byId.get(hit.id);
+      if (row?.version === hit.version) ranked.set(row.id, row);
+    }
+    return [
+      ...ranked.values(),
+      ...local.filter((row) => !ranked.has(row.id)),
+    ].slice(0, 40);
+  }
+
   return {
     authorize,
     async createSource(ownerUserId: string, input: unknown) {
@@ -402,6 +450,37 @@ export function createMemoryIngestion(options: {
       return sync(ownerUserId, source.id);
     },
     sync,
+    async syncHindsight() {
+      await hindsight?.client.sync(async (row) => {
+        if (!(await hindsight.canUseMemory(row.ownerUserId))) return false;
+        try {
+          if (row.formedBy === "person") return true;
+          if (row.formedBy === "import" && row.sourceId) {
+            const source = await store.getSource(row.ownerUserId, row.sourceId);
+            if (!sourceReady(source)) return false;
+            await authorize(source);
+            return true;
+          }
+          if (row.formedBy === "bot" && row.formedByAgentId && row.sourceRef) {
+            await authorize({
+              ownerUserId: row.ownerUserId,
+              agentId: row.formedByAgentId,
+              toolRef: row.sourceRef,
+            });
+            return true;
+          }
+          return false;
+        } catch (error) {
+          if (
+            error instanceof MemoryNotFoundError ||
+            error instanceof MemoryRefusedError ||
+            error instanceof PluginRefusedError
+          )
+            return false;
+          throw error;
+        }
+      });
+    },
     async syncDue() {
       for (const source of await store.dueSources()) {
         try {

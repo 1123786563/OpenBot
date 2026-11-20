@@ -15,7 +15,11 @@ import {
 } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { auditEvents } from "../db/schema/core";
-import { memorySources, personalMemories } from "../db/schema/memory";
+import {
+  hindsightMemoryProjections,
+  memorySources,
+  personalMemories,
+} from "../db/schema/memory";
 import { lockDefaults, recordOptOut, sourceServerId } from "./defaults";
 import type {
   IntelligenceMemory,
@@ -288,7 +292,11 @@ export function createMemoryStore(
     ownerUserId: string,
     eligibleSourceIds: string[],
     formed: { botId: string; heldSourceRefs: ReadonlySet<string> } | undefined,
-    narrow: { term?: string; intelligenceIds?: string[] },
+    narrow: {
+      term?: string;
+      intelligenceIds?: string[];
+      hindsight?: { ids?: string[] };
+    },
   ) {
     const held = [...(formed?.heldSourceRefs ?? [])];
     const formedByThisBot = formed
@@ -324,6 +332,19 @@ export function createMemoryStore(
           narrow.term
             ? sql`strpos(lower(${personalMemories.content}), lower(${narrow.term})) > 0`
             : undefined,
+          narrow.hindsight
+            ? and(
+                mirrorEligible,
+                sql`exists (
+                select 1 from ${hindsightMemoryProjections}
+                where ${hindsightMemoryProjections.memoryId} = ${personalMemories.id}
+                  and ${hindsightMemoryProjections.projectedVersion} = ${personalMemories.version}
+              )`,
+              )
+            : undefined,
+          narrow.hindsight?.ids
+            ? inArray(personalMemories.id, narrow.hindsight.ids)
+            : undefined,
           narrow.intelligenceIds
             ? narrow.intelligenceIds.length > 0
               ? inArray(
@@ -335,10 +356,21 @@ export function createMemoryStore(
         ),
       )
       .orderBy(desc(personalMemories.updatedAt))
-      .limit(40);
+      .limit(narrow.hindsight ? 500 : 40);
   }
 
   return {
+    async recallCandidates(
+      ownerUserId: string,
+      eligibleSourceIds: string[],
+      formed: { botId: string; heldSourceRefs: ReadonlySet<string> },
+      ids?: string[],
+    ) {
+      if (ids?.length === 0) return [];
+      return eligibleRows(ownerUserId, eligibleSourceIds, formed, {
+        hindsight: { ids },
+      });
+    },
     async list(ownerUserId: string): Promise<MemoryRecord[]> {
       const rows = await database
         .select()
@@ -507,6 +539,7 @@ export function createMemoryStore(
           .update(personalMemories)
           .set({
             ...patch,
+            version: randomUUID(),
             ...(patch.content ? { reviewState: "edited" as const } : {}),
             updatedAt: new Date(),
           })
@@ -565,6 +598,7 @@ export function createMemoryStore(
             deletedAt: new Date(),
             enabled: false,
             content: "",
+            version: randomUUID(),
             updatedAt: new Date(),
           })
           .where(
@@ -781,6 +815,8 @@ export function createMemoryStore(
                 content: sql`CASE WHEN ${personalMemories.reviewState} = 'edited' OR ${personalMemories.deletedAt} IS NOT NULL THEN ${personalMemories.content} ELSE ${record.content} END`,
                 provenance: `${source.title}: ${record.provenance}`,
                 importDigest: record.digest,
+                reviewState: sql`CASE WHEN ${personalMemories.reviewState} = 'edited' OR ${personalMemories.deletedAt} IS NOT NULL THEN ${personalMemories.reviewState} ELSE 'unreviewed' END`,
+                version: randomUUID(),
                 updatedAt: new Date(),
               },
               setWhere: sql`${personalMemories.importDigest} IS DISTINCT FROM ${record.digest}`,
@@ -797,7 +833,7 @@ export function createMemoryStore(
           })
           .where(eq(memorySources.id, sourceId));
       });
-      // A confirmed import whose content changed upstream is out of step now; mirror it.
+      // A changed upstream import needs review again. Retire its previously accepted copy.
       await mirror(ownerUserId);
     },
     async retrieve(

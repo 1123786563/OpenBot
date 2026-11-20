@@ -1,5 +1,5 @@
 {
-  "id": "5f88ee4f-a476-43ba-a626-fd4a96bc8d11",
+  "id": "30b149ca-58b3-424e-90cf-adbdb7349b24",
   "prevId": "d83607de-2471-463b-a362-9f9656d1e9fa",
   "version": "7",
   "dialect": "postgresql",
@@ -4597,45 +4597,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.direct_chat_proposal_reviews": {
-      "name": "direct_chat_proposal_reviews",
-      "schema": "",
-      "columns": {
-        "proposal_id": {
-          "name": "proposal_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "review": {
-          "name": "review",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "direct_chat_proposal_reviews_proposal_id_direct_chat_analyses_id_fk": {
-          "name": "direct_chat_proposal_reviews_proposal_id_direct_chat_analyses_id_fk",
-          "tableFrom": "direct_chat_proposal_reviews",
-          "tableTo": "direct_chat_analyses",
-          "columnsFrom": [
-            "proposal_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.learning_open_skills": {
       "name": "learning_open_skills",
       "schema": "",
@@ -4968,45 +4929,6 @@
           ]
         }
       },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.personal_learning_auto_approval": {
-      "name": "personal_learning_auto_approval",
-      "schema": "",
-      "columns": {
-        "person_id": {
-          "name": "person_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "enabled": {
-          "name": "enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "personal_learning_auto_approval_person_id_users_id_fk": {
-          "name": "personal_learning_auto_approval_person_id_users_id_fk",
-          "tableFrom": "personal_learning_auto_approval",
-          "tableTo": "users",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -6323,6 +6245,66 @@
       },
       "isRLSEnabled": false
     },
+    "public.hindsight_memory_projections": {
+      "name": "hindsight_memory_projections",
+      "schema": "",
+      "columns": {
+        "memory_id": {
+          "name": "memory_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "owner_user_id": {
+          "name": "owner_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "projected_version": {
+          "name": "projected_version",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "first_deleted_at": {
+          "name": "first_deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_check_at": {
+          "name": "next_check_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "hindsight_memory_projections_due_idx": {
+          "name": "hindsight_memory_projections_due_idx",
+          "columns": [
+            {
+              "expression": "next_check_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.memory_sources": {
       "name": "memory_sources",
       "schema": "",
@@ -6598,6 +6580,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
         },
         "created_at": {
           "name": "created_at",
