@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { configureBotLifecycle } from "../agents/lifecycle";
 import { createDatabase } from "../db/client";
 import { repeatAfterEach } from "../work/loop";
 import { createPersonalSaasApp } from "./app";
@@ -79,6 +80,7 @@ if (Boolean(supervisorUrl) !== Boolean(supervisorToken))
   );
 
 const database = createDatabase(env.DATABASE_URL);
+configureBotLifecycle({ database });
 const botRuntime =
   process.env.OPENBOT_PERSONAL_SAAS_BOT_EXECUTION === "on"
     ? await import("eventsource").then(async () =>

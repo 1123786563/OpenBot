@@ -181,6 +181,7 @@ export function createWakeUpStore(
         scheduledAt: now().toISOString(),
       };
       await database.transaction(async (transaction) => {
+        // Offer first so Personal SaaS scheduling and recovery both lock the account before the cap.
         const offered = await createWorkQueue(transaction, () =>
           now().getTime(),
         ).offer({
