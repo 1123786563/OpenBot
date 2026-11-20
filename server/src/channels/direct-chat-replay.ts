@@ -259,7 +259,11 @@ export async function readDirectChatReplay(
     .orderBy(asc(directChatRunEvents.cursor))
     .limit(128);
   const hasGap = events.some((row, index) => row.cursor !== cursor + index + 1);
+  // A verified result can amend a failed Run after its terminal event was recorded.
+  const recovered =
+    run.status === "failed" && run.externalOutcome === "executed";
   if (
+    !recovered &&
     !hasGap &&
     (events.length || (cursor === run.eventCursor && run.status === "running"))
   ) {
@@ -268,7 +272,19 @@ export async function readDirectChatReplay(
   // The same database snapshot supplies both the materialized state and its event boundary.
   // A run from before replay or a stale run closed by the timeout may lack a terminal event.
   const messages = messagesFor(await directChatHistory(tx, key.threadId));
-  const pendingApprovals = await tx
+  const pendingApprovals =
+    run.status === "running"
+      ? await pendingRunApprovals(tx, key, ownerUserId)
+      : [];
+  return { kind: "snapshot", run, messages, pendingApprovals } as const;
+}
+
+export function pendingRunApprovals(
+  tx: ProfileReadExecutor,
+  key: RunKey,
+  ownerUserId: string,
+) {
+  return tx
     .select({
       id: approvalRequests.id,
       toolCallId: approvalRequests.toolCallId,
@@ -279,10 +295,8 @@ export async function readDirectChatReplay(
         eq(approvalRequests.ownerUserId, ownerUserId),
         eq(approvalRequests.runId, key.runId),
         eq(approvalRequests.status, "pending"),
-        sql`${run.status} = 'running'`,
         sql`${approvalRequests.action} ->> 'threadId' = ${key.threadId}`,
       ),
     )
     .orderBy(asc(approvalRequests.createdAt), asc(approvalRequests.id));
-  return { kind: "snapshot", run, messages, pendingApprovals } as const;
 }

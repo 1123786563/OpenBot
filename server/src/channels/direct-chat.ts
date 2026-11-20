@@ -31,6 +31,7 @@ import {
   messagesFor,
   type RunKey,
   readDirectChatReplay,
+  pendingRunApprovals,
   stopDirectChatRun,
 } from "./direct-chat-replay";
 
@@ -208,17 +209,30 @@ export function createDirectChatRoutes(deps: {
       !(await threadFor(database, actor, threadId, agentId))
     )
       return context.json(absent, 404);
-    const runs = await database.transaction(async (tx) => {
+    const result = await database.transaction(async (tx) => {
       if (!(await threadFor(tx, actor, threadId, agentId, true))) return null;
       await expireDirectChatRuns(tx, threadId, traceRuns);
-      return history(tx, threadId);
+      const runs = await history(tx, threadId);
+      const active = runs.find((run) => run.status === "running");
+      const waitingForApproval = active
+        ? (
+            await pendingRunApprovals(
+              tx,
+              { threadId, runId: active.id },
+              actor.id,
+            )
+          ).length > 0
+        : false;
+      return { runs, active, waitingForApproval };
     });
-    if (!runs) return context.json(absent, 404);
+    if (!result) return context.json(absent, 404);
+    const { runs, active, waitingForApproval } = result;
     return context.json({
       messages: messagesFor(runs),
       runs: runs.map((run) => ({
         id: run.id,
         status: run.status,
+        ...(run === active && waitingForApproval && { waitingForApproval }),
         userMessageId: run.userMessageId,
         assistantMessageId: run.assistantMessageId,
         ...(run.externalOutcome && { externalOutcome: run.externalOutcome }),
@@ -270,10 +284,15 @@ export function createDirectChatRoutes(deps: {
       !(await threadFor(database, actor, key.threadId, agentId))
     )
       return context.json(absent, 404);
-    const [run] = await database
-      .select()
-      .from(directChatRuns)
-      .where(matchingRun(key));
+    const run = await database.transaction(async (tx) => {
+      if (!(await threadFor(tx, actor, key.threadId, agentId, true))) return;
+      await expireDirectChatRuns(tx, key.threadId, traceRuns);
+      const [current] = await tx
+        .select()
+        .from(directChatRuns)
+        .where(matchingRun(key));
+      return current;
+    });
     if (!run) return context.json(absent, 404);
     if (run.externalOutcome !== "unknown" || !deps.trial)
       return context.json({ externalOutcome: run.externalOutcome });
@@ -352,10 +371,18 @@ export function createDirectChatRoutes(deps: {
     const actor = await actorFor(context.req.raw);
     if (!actor || !(await threadFor(database, actor, threadId, agentId)))
       return context.json(absent, 404);
-    const messages = messagesFor(await history(database, threadId));
+    const runs = await history(database, threadId);
     return eventStream(async (emit) => {
       if (!(await threadFor(database, actor, threadId, agentId))) return;
-      emit({ type: EventType.MESSAGES_SNAPSHOT, messages });
+      emit({ type: EventType.MESSAGES_SNAPSHOT, messages: messagesFor(runs) });
+      const active = runs.find((run) => run.status === "running");
+      if (active)
+        startWorker(
+          context.req.raw,
+          { threadId, runId: active.id },
+          agentId,
+          active,
+        );
     });
   });
 
@@ -434,7 +461,21 @@ export function createDirectChatRoutes(deps: {
             cursor,
           );
           if (result.run.status !== "running") {
-            const event = terminal(key, result.run.status);
+            const event = result.run.stopReason
+              ? ({
+                  type: EventType.RUN_ERROR,
+                  code: result.run.stopReason,
+                  message:
+                    result.run.stopReason === "stopped"
+                      ? "The Bot run was stopped."
+                      : "The Bot run lost access.",
+                } satisfies BaseEvent)
+              : terminal(
+                  key,
+                  result.run.externalOutcome === "executed"
+                    ? "completed"
+                    : result.run.status,
+                );
             emit(
               event.type === EventType.RUN_ERROR && reconcileFailure
                 ? await reconcileFailure(event)

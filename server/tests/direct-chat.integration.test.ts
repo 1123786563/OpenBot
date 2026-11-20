@@ -10,6 +10,8 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { Observable } from "rxjs";
 import { createAgentProfileStore } from "../src/agents/profile-store";
+import { createApprovalRoutes } from "../src/approvals/routes";
+import { createApprovalService } from "../src/approvals/service";
 import { createApprovalStore } from "../src/approvals/store";
 import { createAuditStore } from "../src/audit";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
@@ -173,6 +175,13 @@ function web(
   );
   app.route("/api/channels", createChannelAttachmentRoutes(db, requireUser));
   app.route("/api/attachments", createAttachmentRoutes(db, requireUser));
+  app.route(
+    "/api/approvals",
+    createApprovalRoutes(
+      createApprovalService(createApprovalStore(db)),
+      requireUser,
+    ),
+  );
   app.route("/", copilot.handler);
   return app;
 }
@@ -1295,6 +1304,19 @@ test("Web turns share Test Credits, reconcile uncertain dispatch on replay, and 
       settlement: "settled",
     });
     expect(await (await winner.history()).text()).toContain(verifiedText);
+    const recovered = await winner.resume("uncertain-message", 1);
+    const recoveredEvents = events(await recovered.text());
+    expect(recoveredEvents).toContainEqual(
+      expect.objectContaining({
+        type: EventType.MESSAGES_SNAPSHOT,
+        messages: expect.arrayContaining([
+          expect.objectContaining({ role: "assistant", content: verifiedText }),
+        ]),
+      }),
+    );
+    expect(recoveredEvents.at(-1)).toMatchObject({
+      type: EventType.RUN_FINISHED,
+    });
     expect(dispatches).toBe(2);
     available = true;
     verifiedText = undefined;
@@ -1309,8 +1331,12 @@ test("Web turns share Test Credits, reconcile uncertain dispatch on replay, and 
     expect(dispatches).toBe(3);
     expect(await winner.run("uncertain-unsent")).toContain("released");
     expect(dispatches).toBe(3);
-    available = true;
     loseDispatchResponse = false;
+    expect(await winner.run("retry-without-credits")).toContain(
+      "insufficient_credits",
+    );
+    expect(dispatches).toBe(3);
+    available = true;
     expect(await winner.run("explicit-resend")).toContain("Managed answer.");
     expect(dispatches).toBe(4);
     expect(legacyCalls).toBe(0);
@@ -1357,7 +1383,17 @@ test("another worker resumes a persisted Run before dispatch and the original wo
     );
     await entered.promise;
     await first.body?.cancel();
-    const replacement = web(database, actor, bot.id, answer);
+    const resumed = Promise.withResolvers<void>();
+    const replacement = web(database, actor, bot.id, async () => {
+      await answer();
+      resumed.resolve();
+    });
+    const opened = await replacement.request(
+      `${base}/connect`,
+      post({ threadId: key.threadId }),
+    );
+    expect(await opened.text()).toContain(message.content);
+    await resumed.promise;
     const reattached = await replacement.request(
       `${base}/resume`,
       post({ ...key, cursor: 0 }),
@@ -1433,14 +1469,26 @@ test("only the owner can stop an active Run and the stopped Run rejects a late a
       effect: "fixture",
       args: {},
     });
+    const waiting = await (
+      await app.request(`${thread}/messages?agentId=${bot.id}`)
+    ).json();
+    expect(waiting.runs).toContainEqual(
+      expect.objectContaining({
+        id: key.runId,
+        status: "running",
+        waitingForApproval: true,
+      }),
+    );
     expect((await send("next")).status).toBe(409);
     expect((await other.request(stop, post({}))).status).toBe(404);
     expect(await (await app.request(stop, post({}))).json()).toEqual({
       stopped: true,
     });
-    await expect(
-      approvals.decide(actor.id, request.id, "allow_once"),
-    ).rejects.toThrow();
+    const lateDecision = await app.request(
+      `/api/approvals/${request.id}/decision`,
+      post({ decision: "allow_once" }),
+    );
+    expect(lateDecision.status).toBe(404);
     release.resolve();
     let tail = "";
     for (
