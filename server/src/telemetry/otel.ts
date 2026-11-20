@@ -3,14 +3,13 @@
  *
  * Every row `createAuditStore` writes is emitted as an OTLP log record over HTTP, through the
  * official `@opentelemetry/sdk-logs` batch processor and `@opentelemetry/exporter-logs-otlp-http`.
- * A SIEM that speaks OTLP (or an OpenTelemetry Collector in front of Splunk, Datadog, Sentinel or
- * Elastic) receives the same events the Audit page shows, sanitised the same way, as they happen.
+ * The PostgreSQL row remains authoritative. The exported record is a bounded audit projection for
+ * platform administration and carries no generic audit payload.
  *
  * Configured with the standard OpenTelemetry environment variables, read by the SDK itself:
- * `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`
- * (for a collector's API key), `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`. Nothing set means
- * nothing is exported and nothing is loaded. `OPENBOT_OTEL_EXPORT=off` turns it off with an endpoint
- * still configured.
+ * `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`,
+ * `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`. Nothing set means nothing is exported and
+ * nothing is loaded. `OPENBOT_OTEL_EXPORT=off` turns it off with an endpoint still configured.
  *
  * Every record carries `openbot.surface`, the counterpart of Grok Bot's `cursor.surface=grok_bot`:
  * `bot` for something a Bot did (computer actions, tool calls, handoffs), `identity` for sign-in and
@@ -26,16 +25,15 @@ import {
   BatchLogRecordProcessor,
   LoggerProvider,
 } from "@opentelemetry/sdk-logs";
-import { scrubCommand } from "./scrub";
+import type { AuditTapEvent } from "../audit";
+import {
+  identifierOf,
+  projectAuditEvent,
+  type OpenBotAuditRecord,
+  type OpenBotScalar,
+} from "./observability-projection";
 
-export type ExportedEvent = {
-  eventType: string;
-  targetType: string;
-  targetId?: string | null;
-  actorUserId?: string | null;
-  initiatorKind: string;
-  initiatorId?: string | null;
-  payload: Record<string, unknown>;
+export type ExportedEvent = AuditTapEvent & {
   /** Overrides the surface derived from the event type. */
   surface?: string;
 };
@@ -79,42 +77,6 @@ function severityOf(eventType: string): SeverityNumber {
   return SeverityNumber.INFO;
 }
 
-/**
- * Every `command` in a payload, at any depth, scrubbed the way Action Recording scrubs it.
- *
- * The audit trail keeps the command a Bot ran in full, because a command is the action; a copy that
- * leaves the deployment for a collector must not take the credentials typed into it with it.
- */
-function scrubCommands(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(scrubCommands);
-  if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(
-    Object.entries(value).map(([key, nested]) => [
-      key,
-      key === "command" && typeof nested === "string"
-        ? scrubCommand(nested)
-        : scrubCommands(nested),
-    ]),
-  );
-}
-
-/** OTLP attributes are flat primitives; nested values go in as JSON. */
-function flatten(
-  payload: Record<string, unknown>,
-): Record<string, string | number | boolean> {
-  const out: Record<string, string | number | boolean> = {};
-  for (const [key, value] of Object.entries(payload)) {
-    if (value === undefined || value === null) continue;
-    out[`openbot.payload.${key}`] =
-      typeof value === "string" ||
-      typeof value === "number" ||
-      typeof value === "boolean"
-        ? value
-        : JSON.stringify(value);
-  }
-  return out;
-}
-
 /** `key1=value1,key2=value2`, percent-decoded, as the OpenTelemetry specification defines it. */
 export function parseHeaders(raw: string | undefined): Record<string, string> {
   const headers: Record<string, string> = {};
@@ -133,14 +95,63 @@ export function otelConfigured(
   if (env.OPENBOT_OTEL_EXPORT?.trim().toLowerCase() === "off") return false;
   return Boolean(
     env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT?.trim() ||
-      env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim(),
+    env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim(),
   );
+}
+
+function attributesOf(
+  record: OpenBotAuditRecord,
+  surface: string,
+): Record<string, OpenBotScalar> {
+  return {
+    "openbot.stream": record.stream,
+    "openbot.schema_version": record.schema_version,
+    "openbot.source": record.source,
+    "openbot.canonical_source": record.canonical_source,
+    "openbot.data_class": record.data_class,
+    "openbot.projection_status": record.projection_status,
+    "openbot.deployment_id": record.deployment_id,
+    "openbot.surface": surface,
+    "openbot.event_type": record.event_type,
+    "openbot.target_type": record.target_type,
+    "openbot.initiator_kind": record.initiator_kind,
+    ...(record.audit_event_id
+      ? { "openbot.audit_event_id": record.audit_event_id }
+      : {}),
+    ...(record.occurred_at
+      ? { "openbot.occurred_at": record.occurred_at }
+      : {}),
+    ...(record.target_id ? { "openbot.target_id": record.target_id } : {}),
+    ...(record.actor_user_id
+      ? { "openbot.actor_user_id": record.actor_user_id }
+      : {}),
+    ...(record.initiator_id
+      ? { "openbot.initiator_id": record.initiator_id }
+      : {}),
+    ...(record.run_id ? { "openbot.run_id": record.run_id } : {}),
+    ...(record.parent_run_id
+      ? { "openbot.parent_run_id": record.parent_run_id }
+      : {}),
+    ...(record.root_task_id
+      ? { "openbot.root_task_id": record.root_task_id }
+      : {}),
+    ...(record.attempt_id ? { "openbot.attempt_id": record.attempt_id } : {}),
+    ...(record.thread_id ? { "openbot.thread_id": record.thread_id } : {}),
+    ...Object.fromEntries(
+      Object.entries(record.facets).map(([key, value]) => [
+        `openbot.facet.${key}`,
+        value,
+      ]),
+    ),
+  };
 }
 
 export function createOtelEventExporter(
   env: Record<string, string | undefined> = process.env,
 ): EventExporter | undefined {
   if (!otelConfigured(env)) return undefined;
+  const deploymentId = identifierOf(env.DEPLOYMENT_ID);
+  if (!deploymentId) return undefined;
 
   /*
    * The endpoint and headers are read from `env` and passed explicitly, so the configuration this
@@ -161,6 +172,7 @@ export function createOtelEventExporter(
   const provider = new LoggerProvider({
     resource: resourceFromAttributes({
       "service.name": env.OTEL_SERVICE_NAME?.trim() || "openbot",
+      "openbot.deployment_id": deploymentId,
     }),
     processors: [new BatchLogRecordProcessor({ exporter })],
   });
@@ -169,28 +181,24 @@ export function createOtelEventExporter(
   return {
     emit(event) {
       try {
+        const record = projectAuditEvent(event, deploymentId);
+        const severity = severityOf(record.event_type);
         logger.emit({
-          severityNumber: severityOf(event.eventType),
+          severityNumber:
+            record.projection_status === "failed"
+              ? SeverityNumber.WARN
+              : severity,
           severityText:
-            severityOf(event.eventType) === SeverityNumber.WARN
+            record.projection_status === "failed" ||
+            severity === SeverityNumber.WARN
               ? "WARN"
               : "INFO",
-          body: event.eventType,
-          eventName: event.eventType,
-          attributes: {
-            "openbot.surface": event.surface ?? surfaceOf(event.eventType),
-            "openbot.event_type": event.eventType,
-            "openbot.target_type": event.targetType,
-            ...(event.targetId ? { "openbot.target_id": event.targetId } : {}),
-            ...(event.actorUserId
-              ? { "openbot.actor_user_id": event.actorUserId }
-              : {}),
-            "openbot.initiator_kind": event.initiatorKind,
-            ...(event.initiatorId
-              ? { "openbot.initiator_id": event.initiatorId }
-              : {}),
-            ...flatten(scrubCommands(event.payload) as Record<string, unknown>),
-          },
+          body: record.event_type,
+          eventName: record.event_type,
+          attributes: attributesOf(
+            record,
+            event.surface ?? surfaceOf(record.event_type),
+          ),
         });
       } catch (error) {
         console.error(

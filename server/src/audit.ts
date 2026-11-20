@@ -1041,6 +1041,9 @@ export type AuditTapEvent = {
   createdAt?: Date;
   /** Trusted native/headless action scope; never read from an analytics client. */
   runId?: string;
+  parentRunId?: string;
+  rootTaskId?: string;
+  attemptId?: string;
   threadId?: string;
   eventType: string;
   targetType: string;
@@ -1081,10 +1084,43 @@ export function createAuditStore(database: Database): AuditStore {
       for (const tap of auditTaps) {
         try {
           const run = currentApprovalContext();
+          const telemetry =
+            run?.forwardedProps &&
+            typeof run.forwardedProps === "object" &&
+            !Array.isArray(run.forwardedProps) &&
+            "openbotTelemetry" in run.forwardedProps &&
+            run.forwardedProps.openbotTelemetry &&
+            typeof run.forwardedProps.openbotTelemetry === "object" &&
+            !Array.isArray(run.forwardedProps.openbotTelemetry)
+              ? run.forwardedProps.openbotTelemetry
+              : undefined;
+          const context =
+            telemetry && "parent_run_id" in telemetry
+              ? {
+                  parentRunId: telemetry.parent_run_id,
+                  rootTaskId:
+                    "root_task_id" in telemetry
+                      ? telemetry.root_task_id
+                      : undefined,
+                  attemptId:
+                    "attempt_id" in telemetry
+                      ? telemetry.attempt_id
+                      : undefined,
+                }
+              : {};
           tap({
             ...row,
             ...persisted,
             ...(run ? { runId: run.runId, threadId: run.threadId } : {}),
+            ...(typeof context.parentRunId === "string"
+              ? { parentRunId: context.parentRunId }
+              : {}),
+            ...(typeof context.rootTaskId === "string"
+              ? { rootTaskId: context.rootTaskId }
+              : {}),
+            ...(typeof context.attemptId === "string"
+              ? { attemptId: context.attemptId }
+              : {}),
           });
         } catch (error) {
           console.error(
