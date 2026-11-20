@@ -83,7 +83,10 @@ export function suspensionRoutes(
 
     const result = await database.transaction(async (tx) => {
       const [workspace] = await tx
-        .select({ ownerId: personalWorkspaces.ownerId })
+        .select({
+          ownerId: personalWorkspaces.ownerId,
+          status: personalSaasAccounts.status,
+        })
         .from(personalWorkspaces)
         .innerJoin(
           personalSaasAccounts,
@@ -111,19 +114,28 @@ export function suspensionRoutes(
       if (!event) throw new Error("Suspension operation was not recorded");
 
       if (input.data.action === "pause") {
-        await tx
-          .update(personalSaasAccounts)
-          .set({
-            status: sql`${personalSaasAccounts.status} || jsonb_build_object(
-              'epoch', (${personalSaasAccounts.status}->>'epoch')::int + 1,
-              'executionCutoffs', coalesce(${personalSaasAccounts.status}->'executionCutoffs', '[]'::jsonb)
-                || jsonb_build_array(jsonb_build_object(
-                  'epoch', (${personalSaasAccounts.status}->>'epoch')::int + 1,
-                  'reason', 'workspace_paused', 'cutoffAt', ${effectiveAt.getTime()}
-                ))
-            )`,
-          })
-          .where(eq(personalSaasAccounts.id, workspace.ownerId));
+        if (workspace.status) {
+          // Write through the same JSON mapping as provider refresh. Concatenating JSON
+          // in SQL can turn a driver-encoded JSON string into a JSON array.
+          const epoch = workspace.status.epoch + 1;
+          await tx
+            .update(personalSaasAccounts)
+            .set({
+              status: {
+                ...workspace.status,
+                epoch,
+                executionCutoffs: [
+                  ...(workspace.status.executionCutoffs ?? []),
+                  {
+                    epoch,
+                    reason: "workspace_paused",
+                    cutoffAt: effectiveAt.getTime(),
+                  },
+                ],
+              },
+            })
+            .where(eq(personalSaasAccounts.id, workspace.ownerId));
+        }
         await tx
           .delete(personalSaasSessions)
           .where(eq(personalSaasSessions.accountId, workspace.ownerId));

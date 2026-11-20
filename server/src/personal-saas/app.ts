@@ -12,6 +12,13 @@ import {
   accountDecision,
   createAccountAccess,
 } from "./account-access";
+import { personalAutomation } from "./automation";
+import {
+  automationPath,
+  inboundRelay,
+  inboundRelayPath,
+  workspaceAutomationRoutes,
+} from "./automation-routes";
 import {
   botWorkInput,
   PERSONAL_BOT_WORK,
@@ -67,6 +74,7 @@ export type PersonalSaasConfig = {
   supportSubjects?: readonly string[];
   now?: () => number;
   runPersonalBot?: TurnRunner;
+  inboundRelayToken?: string;
   suspensionOperator?: SuspensionOperator;
   suspensionSupport?: string;
   computer?: WorkspaceComputerConfig;
@@ -138,6 +146,8 @@ export function createPersonalSaasApp(
     native: native.attempt.optional(),
   });
 
+  const automation = personalAutomation(database, now, config.runPersonalBot);
+
   function bearer(context: Context) {
     return bearerSession(context.req.header("authorization"));
   }
@@ -156,6 +166,9 @@ export function createPersonalSaasApp(
     )
       return Boolean(bearer(context));
     if (context.req.path.startsWith("/api/operator/workspaces/")) return true;
+    if (context.req.path === inboundRelayPath) return true;
+    if (context.req.path.startsWith(`${automationPath}/`))
+      return Boolean(bearer(context));
     if (/^\/api\/workspaces\/[^/]+\/exports$/.test(context.req.path))
       return Boolean(bearer(context));
     if (
@@ -632,6 +645,7 @@ export function createPersonalSaasApp(
       <a id="workspace-retry" href="/workspace" hidden>Retry</a>
       <noscript>Enable JavaScript to verify workspace access.</noscript>
       <div id="protected-workspace" hidden>
+      <p><a href="${automationPath}">Routines and inbound bindings</a></p>
       <section aria-labelledby="assistant"><h2 id="assistant">${workspace.personalAssistant.name}</h2></section>
       <section aria-labelledby="conversations"><h2 id="conversations">Recent conversations</h2>
         ${
@@ -781,6 +795,29 @@ export function createPersonalSaasApp(
       : context.json({ status: "preparing" }, 202);
   });
 
+  const automationSession = async (context: Context) => {
+    const token = requestSession(context);
+    const session = await authorize(token);
+    return token && session.kind === "authorized"
+      ? { token, grant: session.grant }
+      : null;
+  };
+  app.route(
+    automationPath,
+    workspaceAutomationRoutes({
+      automation,
+      executionEnabled: Boolean(config.runPersonalBot),
+      getSession: automationSession,
+      withAuthorizedSession: store.withAuthorizedSession,
+      page,
+    }),
+  );
+  if (config.inboundRelayToken)
+    app.route(
+      inboundRelayPath,
+      inboundRelay(automation, config.inboundRelayToken, now),
+    );
+
   app.post("/api/workspace/bot-runs", async (context) => {
     const token = requestSession(context);
     const session = await authorize(token);
@@ -927,6 +964,9 @@ export function createPersonalSaasApp(
   return Object.assign(app, {
     accessWorkspaceComputerForTask: computer?.accessForTask,
     renewWorkspaceComputers: computer?.renew,
+    offerAutomationSchedules: automation.offerSchedules,
+    sweepAutomationRoutines: automation.sweepRoutines,
+    sweepAutomationInbound: automation.sweepInbound,
     sweepBotWork: () => botWork.sweep(config.runPersonalBot),
     refreshAccounts: () => accountAccess.refreshAccounts(config.casdoor.issuer),
   });

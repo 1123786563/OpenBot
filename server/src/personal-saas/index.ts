@@ -91,6 +91,7 @@ const app = createPersonalSaasApp(
     encryptionKey: env.KEY_ENCRYPTION_KEY,
     supportSubjects: env.OPENBOT_SUPPORT_SUBJECTS,
     runPersonalBot,
+    inboundRelayToken: process.env.OPENBOT_PERSONAL_SAAS_INBOUND_RELAY_TOKEN,
     suspensionOperator:
       operatorId && operatorToken
         ? { id: operatorId, token: operatorToken }
@@ -161,3 +162,22 @@ repeatAfterEach(async () => {
     );
   }
 }, 1_000);
+
+for (const [task, sweep] of [
+  ["schedule", app.offerAutomationSchedules],
+  ["routine", app.sweepAutomationRoutines],
+  ["inbound", app.sweepAutomationInbound],
+] as const) {
+  repeatAfterEach(async () => {
+    try {
+      await sweep();
+    } catch {
+      console.warn(
+        JSON.stringify({
+          type: "personal-saas-automation-sweep-failure",
+          task,
+        }),
+      );
+    }
+  }, 1_000);
+}

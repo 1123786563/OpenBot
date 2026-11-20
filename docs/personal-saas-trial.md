@@ -127,3 +127,16 @@ The private trial can run the default Personal Assistant through the OpenBot hea
 An authorized client can create a run with `POST /api/workspace/bot-runs` using the workspace ID, Bot ID, and instruction. The response contains a run ID for `GET /api/workspace/bot-runs/{key}`. The same service process polls the durable queue. Work is bound to the account authorization epoch that admitted it, independent of the lifetime of any Application Session. The worker checks that epoch again before dispatch and while running, and enforces expiry locally. A run submitted with `requiresComputer: true` also requires a managed Computer that accepts the task’s original authorization time. If the Computer is unavailable or has since restarted, start it manually and retry to create a new authorization.
 
 After restoring workspace access, Web, mobile, and Desktop Cloud show stopped work with its reason, original input and available output. Cancel or requeue each item independently. A claimed item may have reached an external service, so retry requires acknowledging that the external actions were checked. Requeue and retry produce new queue and run IDs and preserve the stopped record. Keep this capability restricted until cutoff timing on the deployed Intelligence and model services and the recovery flow on installed clients have been verified.
+
+## Routine and inbound automation
+
+The workspace’s **Routines and inbound bindings** page lists existing items and their history. The same owner-scoped API accepts a session cookie or native bearer session.
+
+- `GET /api/workspace/automation` lists the items and their current cutoff or resume status.
+- `GET /api/workspace/automation/{routines|bindings}/{id}/runs` returns recent history for one item.
+- `POST /api/workspace/automation/routines/{id}/run` queues **Run now**.
+- `POST /api/workspace/automation/{routines|bindings}/{id}/resume` resumes one item after workspace access returns.
+
+A cutoff leaves Routine configuration and delivery bindings in place. History records the cutoff reason for skipped work. If a Bot turn had started when access ended, its external actions may already have taken effect. Resume schedules the Routine’s next occurrence and accepts inbound messages sent after the binding was resumed. Queued work from an earlier authorization epoch cannot run after access returns.
+
+Inbound delivery uses a trusted provider relay. Set `OPENBOT_PERSONAL_SAAS_INBOUND_RELAY_TOKEN` to enable `POST /api/webhooks/personal-inbound`. The relay verifies the provider event before forwarding it over HTTPS with the configured bearer token. The JSON body contains `transport` (`sms`, `slack`, or `teams`), `realm`, `identity`, `externalId`, `sentAt`, and `text`. Use the provider’s original event ID and send time for every retry. `sentAt` is an ISO 8601 timestamp with a time zone. A valid relay request returns `204`, including when an event is skipped or already recorded. The relay resolves provider identities against existing Personal Workspace delivery bindings.
