@@ -1,5 +1,9 @@
 import { afterAll, expect, test } from "bun:test";
+import { type BaseEvent, EventType } from "@ag-ui/client";
+import { LLMock } from "@copilotkit/aimock";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
+import { createActivityStore } from "../src/activity/activity";
 import { installEnterpriseControls } from "../src/admin/controls";
 import { createApprovalStore } from "../src/approvals/store";
 import { approvalAction, withApprovalContext } from "../src/approvals/types";
@@ -9,6 +13,7 @@ import {
   createAuditReader,
   createAuditStore,
 } from "../src/audit";
+import { buildAgents } from "../src/copilot";
 import { createDatabase } from "../src/db/client";
 import { approvalRequests } from "../src/db/schema/approvals";
 import { users } from "../src/db/schema/core";
@@ -29,6 +34,19 @@ const reader = createAuditReader(database);
 afterAll(() => database.$client.end());
 
 const deployment = { DEPLOYMENT_ID: "audit-integration" };
+
+const privatePayload = {
+  token: "private-token",
+  nested: { password: "private-password", authorization: "private-bearer" },
+  inputs: [{ prompt: "private-prompt", content: "private-content" }],
+  tool_arguments: { path: "private-tool-argument" },
+  tool_result: ["private-tool-result"],
+  note: "private-ordinary-user-message",
+};
+
+function stringAttribute(key: string, stringValue: string) {
+  return { key, value: { stringValue } };
+}
 
 function eventFor(targetId: string): Parameters<AuditStore["insert"]>[0] {
   return {
@@ -108,10 +126,6 @@ test("the installed audit tap exports only a successful PostgreSQL row as a boun
       },
     ]);
     const wire = requests.map((request) => request.wire).join("");
-    const stringAttribute = (key: string, stringValue: string) => ({
-      key,
-      value: { stringValue },
-    });
     expect(JSON.parse(wire)).toEqual({
       resourceLogs: [
         expect.objectContaining({
@@ -458,4 +472,322 @@ test.each([
       await exporter?.shutdown();
     }
   },
+);
+
+test("unknown and failed projections retain their public envelope across deployments", async () => {
+  const requests: string[] = [];
+  using collector = serveCollector(async (request) => {
+    requests.push(await request.text());
+    return Response.json({});
+  });
+  for (const [deploymentId, eventType, status] of [
+    ["first-installation", "mcp.call_succeeded", "unknown"],
+    ["second-installation", "computer.action_allowed", "failed"],
+  ] as const) {
+    const targetId = crypto.randomUUID();
+    const actorUserId = crypto.randomUUID();
+    const controls = await installEnterpriseControls({
+      database,
+      databaseUrl,
+      auditStore,
+      env: {
+        DEPLOYMENT_ID: deploymentId,
+        OTEL_EXPORTER_OTLP_ENDPOINT: collector.url.href,
+      },
+    });
+    try {
+      await auditStore.insert({
+        ...eventFor(targetId),
+        actorUserId,
+        eventType,
+        payload: { ...privatePayload, action: "private invalid action" },
+      });
+    } finally {
+      await controls.stop();
+    }
+    const {
+      events: [row],
+    } = await reader.list({ targetId, limit: 10 });
+    if (!row) throw new Error("Missing persisted audit event");
+    const wire = requests.at(-1);
+    expect(wire).toBeDefined();
+    expect(JSON.parse(wire ?? "")).toMatchObject({
+      resourceLogs: [
+        {
+          resource: {
+            attributes: expect.arrayContaining([
+              stringAttribute("openbot.deployment_id", deploymentId),
+            ]),
+          },
+          scopeLogs: [
+            {
+              logRecords: [
+                {
+                  body: { stringValue: eventType },
+                  attributes: expect.arrayContaining(
+                    Object.entries({
+                      stream: "openbot_audit",
+                      canonical_source: "postgresql.audit_events",
+                      data_class: "audit",
+                      deployment_id: deploymentId,
+                      projection_status: status,
+                      audit_event_id: row.id,
+                      target_type: "computer",
+                      target_id: targetId,
+                      actor_user_id: actorUserId,
+                      initiator_kind: "person",
+                      occurred_at: new Date(row.createdAt).toISOString(),
+                    }).map(([key, value]) =>
+                      stringAttribute(`openbot.${key}`, value),
+                    ),
+                  ),
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    expect(wire).not.toMatch(/private[ -]|payload\.|openbot\.facet\./);
+  }
+  expect(requests).toHaveLength(2);
+});
+
+test.each(["enabled", "paused", "offline", "rejected", "retry exhausted"])(
+  "a Bot run reaches the model, executes its tool and produces Activity and audit with export %s",
+  async (mode) => {
+    const requests: string[] = [];
+    const rejectionStarted = Promise.withResolvers<void>();
+    const releaseRejection = Promise.withResolvers<void>();
+    using collector = serveCollector(async (request) => {
+      requests.push(await request.text());
+      if (mode === "rejected") {
+        rejectionStarted.resolve();
+        await releaseRejection.promise;
+        return Response.json({}, { status: 400 });
+      }
+      return mode === "retry exhausted"
+        ? Response.json(
+            {},
+            {
+              status: 503,
+              headers: { "retry-after": new Date(0).toUTCString() },
+            },
+          )
+        : Response.json({});
+    });
+    const endpoint = collector.url.href;
+
+    const owner = crypto.randomUUID();
+    const runId = crypto.randomUUID();
+    const threadId = crypto.randomUUID();
+    const llm = new LLMock({ host: "127.0.0.1", port: 0 });
+    let modelStep = 0;
+    llm.on({ predicate: () => true }, () =>
+      ++modelStep === 1
+        ? {
+            toolCalls: [
+              {
+                name: "mcp__fixture__request_review",
+                arguments: JSON.stringify({ note: "private-model-tool-args" }),
+              },
+            ],
+          }
+        : { content: "Review queued." },
+    );
+    const originalBase = process.env.OPENAI_BASE_URL;
+    let controls:
+      | Awaited<ReturnType<typeof installEnterpriseControls>>
+      | undefined;
+    let approvalId: string | undefined;
+    const receivedArgs: unknown[] = [];
+    try {
+      process.env.OPENAI_BASE_URL = `${await llm.start()}/v1`;
+      if (mode === "offline") {
+        await collector.stop(true);
+        await expect(fetch(endpoint)).rejects.toHaveProperty(
+          "code",
+          "ECONNREFUSED",
+        );
+      }
+      controls = await installEnterpriseControls({
+        database,
+        databaseUrl,
+        auditStore,
+        env: {
+          ...deployment,
+          OTEL_EXPORTER_OTLP_ENDPOINT: endpoint,
+          OPENBOT_OTEL_EXPORT: mode === "paused" ? "off" : "on",
+        },
+      });
+      await database
+        .insert(users)
+        .values({ id: owner, email: `${owner}@example.test` });
+      if (mode === "rejected") {
+        // Keep a batch in flight while the Bot calls the model and runs the tool.
+        await auditStore.insert(eventFor(crypto.randomUUID()));
+        await rejectionStarted.promise;
+      }
+      const approvals = createApprovalStore(database);
+      const { reviewer } = await buildAgents(
+        [
+          {
+            id: "reviewer",
+            name: "Reviewer",
+            type: "built_in",
+            systemPrompt: "Request review.",
+          },
+        ],
+        { provider: "openai", defaultModel: "gpt-5.5" },
+        "synthetic-fixture-key",
+        undefined,
+        async () => [
+          {
+            name: "mcp__fixture__request_review",
+            ref: "fixture/request_review",
+            description: "Request review of a note.",
+            parameters: z.object({ note: z.string() }),
+            execute: async (args) => {
+              receivedArgs.push(args);
+              const approval = await approvals.open(
+                approvalAction({
+                  actorId: owner,
+                  botId: "reviewer",
+                  continuation: {
+                    runId,
+                    threadId,
+                    toolCallId: "review-call",
+                    toolName: "mcp__fixture__request_review",
+                    args,
+                    messages: [],
+                    state: {},
+                    context: [],
+                    forwardedProps: {},
+                  },
+                  toolRef: "computer_write_file",
+                  effect: "write",
+                  scope: "project",
+                  args,
+                  target: {},
+                }),
+              );
+              approvalId = approval.id;
+              await auditStore.insert(eventFor(runId));
+              return "private-model-tool-result";
+            },
+          },
+        ],
+      );
+      if (!reviewer) throw new Error("Missing fixture Bot");
+      const events: string[] = [];
+      await new Promise<void>((resolve, reject) => {
+        reviewer
+          .clone()
+          .run({
+            threadId,
+            runId,
+            messages: [
+              { id: "user", role: "user", content: "private-model-prompt" },
+            ],
+            tools: [],
+            state: {},
+            context: [],
+            forwardedProps: {},
+          })
+          .subscribe({
+            next: (event: BaseEvent) => events.push(event.type),
+            error: reject,
+            complete: resolve,
+          });
+      });
+      expect(receivedArgs).toEqual([{ note: "private-model-tool-args" }]);
+      const modelRequests = llm.getRequests();
+      expect(modelRequests).toHaveLength(2);
+      expect(JSON.stringify(modelRequests[0]?.body)).toContain(
+        "private-model-prompt",
+      );
+      expect(JSON.stringify(modelRequests[1]?.body)).toContain(
+        "private-model-tool-result",
+      );
+      expect(events).toContain(EventType.TOOL_CALL_RESULT);
+      expect(events.at(-1)).toBe(EventType.RUN_FINISHED);
+      const activity = createActivityStore(database);
+      const beforeStop = await activity.forBot(owner, "reviewer");
+      expect(beforeStop.inProgress).toContainEqual(
+        expect.objectContaining({
+          id: `approval:${approvalId}`,
+          kind: "approval",
+          status: "waiting for you",
+        }),
+      );
+      const { events: rows } = await reader.list({
+        targetId: runId,
+        limit: 10,
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.payload).toEqual(eventFor(runId).payload);
+
+      // A rejected HTTP response exercises the real flush. Inject a rejection after that
+      // flush to also exercise the controls' handling of a rejected shutdown promise.
+      let shutdownFailed = false;
+      if (mode === "rejected") {
+        const exporter = controls.exporter;
+        if (!exporter) throw new Error("Missing fixture exporter");
+        const shutdown = exporter.shutdown;
+        exporter.shutdown = async () => {
+          await shutdown();
+          shutdownFailed = true;
+          throw new Error("fixture shutdown failure");
+        };
+      }
+
+      releaseRejection.resolve();
+      await controls.stop();
+      controls = undefined;
+      if (mode === "rejected") expect(shutdownFailed).toBe(true);
+      expect(await activity.forBot(owner, "reviewer")).toEqual(beforeStop);
+      expect(
+        (await reader.list({ targetId: runId, limit: 10 })).events,
+      ).toEqual(rows);
+      if (mode !== "paused" && mode !== "offline") {
+        const runRequests = mode === "rejected" ? requests.slice(1) : requests;
+        if (mode === "rejected") expect(requests).toHaveLength(2);
+        expect(runRequests).toHaveLength(mode === "retry exhausted" ? 6 : 1);
+        const expectedId = rows[0]?.id;
+        if (!expectedId) throw new Error("Missing persisted audit ID");
+        for (const wire of runRequests) {
+          expect(wire).toContain(
+            JSON.stringify(
+              stringAttribute("openbot.audit_event_id", expectedId),
+            ),
+          );
+          expect(wire).not.toMatch(/private-|payload\./);
+        }
+      } else {
+        expect(requests).toEqual([]);
+      }
+      if (!approvalId) throw new Error("Missing fixture approval");
+      await approvals.decide(owner, approvalId, "deny");
+      expect((await activity.forBot(owner, "reviewer")).inProgress).toEqual([]);
+      expect(
+        (await reader.list({ targetId: approvalId, limit: 10 })).events.map(
+          ({ eventType }) => eventType,
+        ),
+      ).toEqual(["approval.person_decided"]);
+    } finally {
+      releaseRejection.resolve();
+      if (originalBase === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = originalBase;
+      await llm.stop();
+      await controls?.stop();
+      if (approvalId) {
+        await database
+          .delete(approvalRequests)
+          .where(eq(approvalRequests.id, approvalId));
+        await database.delete(workItems).where(eq(workItems.key, approvalId));
+      }
+      await database.delete(users).where(eq(users.id, owner));
+    }
+  },
+  15_000,
 );

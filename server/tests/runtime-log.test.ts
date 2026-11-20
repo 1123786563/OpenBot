@@ -176,6 +176,15 @@ test("startup still announces its wait once and emits only private, bounded lega
         reads++;
         throw Object.assign(new Error("PRIVATE UPSTREAM BODY".repeat(1000)), {
           status: 503,
+          cause: {
+            authorization: "PRIVATE BEARER",
+            token: "PRIVATE TOKEN",
+            context: [{ password: "PRIVATE PASSWORD", prompt: "PRIVATE PROMPT" }],
+            content: "PRIVATE CONTENT",
+            tool_arguments: ["PRIVATE TOOL ARGUMENT"],
+            tool_result: { note: "PRIVATE TOOL RESULT" },
+            ordinary: "PRIVATE USER TEXT",
+          },
           toJSON() { throw new Error("must not serialize errors"); },
         });
       },
@@ -191,7 +200,7 @@ test("startup still announces its wait once and emits only private, bounded lega
   expect(result.exitCode).toBe(0);
   const stdout = result.stdout.toString();
   const stderr = result.stderr.toString();
-  expect(stdout + stderr).not.toContain("PRIVATE UPSTREAM BODY");
+  expect(stdout + stderr).not.toContain("PRIVATE ");
   expect(JSON.parse(stdout)).toMatchObject({
     deployment_id: "startup-test",
     component: "api",
