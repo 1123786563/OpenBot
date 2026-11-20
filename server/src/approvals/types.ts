@@ -375,6 +375,7 @@ export type ApprovalPolicyStore = {
      * the one action they are (approvals/rule-backtest.ts).
      */
     call?: { runId: string; toolCallId: string };
+    continuation?: ApprovalContinuation;
   }): Promise<void>;
 };
 export type ApprovalPermit = {

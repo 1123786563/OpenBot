@@ -106,6 +106,8 @@ export type TurnRunner = (input: {
     rootTaskId?: string;
     /** The root task this turn works for, as its parent run's context already states it. */
     inheritedRootTaskId?: string;
+    /** The inherited root independently verified for the audit copy. */
+    auditRootTaskId?: string | null;
     parentRunId?: string;
     attempt?: number;
   };

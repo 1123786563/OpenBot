@@ -1,12 +1,22 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { withApprovalContext } from "@openbot/toolkit/continuation";
 import { eq } from "drizzle-orm";
 import {
+  addAuditTap,
   auditQueryFromUrl,
   createAuditReader,
   createAuditStore,
 } from "../src/audit";
 import { createDatabase } from "../src/db/client";
 import { auditEvents } from "../src/db/schema";
+import {
+  AUDIT_RUN_PROOF_KEY,
+  signAuditRun,
+} from "../src/telemetry/audit-run-proof";
+import {
+  type OpenBotAuditRecord,
+  projectAuditEvent,
+} from "../src/telemetry/observability-projection";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const databaseUrl = testDatabaseUrl();
@@ -294,4 +304,65 @@ describe("what started a run", () => {
 
 afterAll(async () => {
   await database.$client.close();
+});
+
+test("the audit replica uses the inserted row identity and captures lineage with no parent", async () => {
+  const targetId = target();
+  const actorId = "audit-fixture-actor";
+  const proofKey = "audit-fixture-key";
+  const received: OpenBotAuditRecord[] = [];
+  const removeTap = addAuditTap((event) => {
+    if (event.targetId !== targetId) return;
+    const replica = projectAuditEvent(event, "test-deployment", proofKey);
+    if (replica) received.push(replica);
+  });
+  try {
+    await withApprovalContext(
+      {
+        runId: "run-1",
+        threadId: "thread-1",
+        toolCallId: "call-1",
+        toolName: "list_tools",
+        args: {},
+        messages: [],
+        state: {},
+        context: [],
+        forwardedProps: {
+          [AUDIT_RUN_PROOF_KEY]: signAuditRun(
+            {
+              runId: "run-1",
+              threadId: "thread-1",
+              rootTaskId: "task-1",
+              attemptId: "attempt-1",
+            },
+            actorId,
+            proofKey,
+          ),
+        },
+      },
+      () =>
+        store.insert({
+          eventType: "mcp.call_succeeded",
+          targetType: "mcp_tool",
+          targetId,
+          actorUserId: actorId,
+          payload: {},
+        }),
+    );
+    const [row] = await rowsFor(targetId);
+    expect(row).toBeDefined();
+    expect(received).toEqual([
+      expect.objectContaining({
+        audit_event_id: row?.id,
+        occurred_at: new Date(row?.createdAt ?? NaN).toISOString(),
+        run_id: "run-1",
+        root_task_id: "task-1",
+        attempt_id: "attempt-1",
+        thread_id: "thread-1",
+      }),
+    ]);
+    expect(received[0]).not.toHaveProperty("parent_run_id");
+  } finally {
+    removeTap();
+  }
 });

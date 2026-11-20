@@ -1033,6 +1033,13 @@ export function createApp(
     const denied = requireAdmin(context);
     return denied ?? context.json({ status: "ok" });
   });
+  app.get("/api/admin/audit-events/openobserve", requireUser, (context) => {
+    const denied = requireAdmin(context);
+    if (denied) return denied;
+
+    context.header("Cache-Control", "no-store");
+    return context.json({ url: config.openObserveUrl ?? null });
+  });
   app.get("/api/admin/audit-events", requireUser, async (context) => {
     const denied = requireAdmin(context);
     if (denied) {

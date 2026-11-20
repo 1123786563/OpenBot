@@ -22,6 +22,7 @@ import {
   offerDueRoutines,
   ROUTINE_FIRE_KIND,
 } from "../src/routines/sweep";
+import { writeRuntimeLog } from "../src/telemetry/runtime-log";
 import { createWorkQueue } from "../src/work/queue";
 
 const config = loadConfig(process.env);
@@ -95,6 +96,7 @@ async function dispatch(routineRunId: string): Promise<void> {
   }
 }
 
+const startedAt = performance.now();
 try {
   const options = { routineStore, queue, dispatch, owner };
   /*
@@ -118,16 +120,19 @@ try {
     kind: ROUTINE_FIRE_KIND,
     olderThanMs: 24 * 60 * 60 * 1000,
   });
-  console.info(
-    JSON.stringify({
-      type: "routine-sweep",
-      offered,
-      considered: report.considered,
-      fired: report.fired,
-      skipped: report.skipped,
-      purged,
-    }),
-  );
+  writeRuntimeLog("routine_sweep_completed", {
+    offered: offered.length,
+    considered: report.considered,
+    fired: report.fired.length,
+    skipped: report.skipped.length,
+    purged,
+    duration_ms: performance.now() - startedAt,
+  });
+} catch (failure) {
+  writeRuntimeLog("routine_sweep_failed", {
+    duration_ms: performance.now() - startedAt,
+  });
+  throw failure;
 } finally {
   await database.$client.end({ timeout: 5 });
 }

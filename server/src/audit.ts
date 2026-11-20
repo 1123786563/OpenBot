@@ -1,4 +1,7 @@
-import { currentApprovalContext } from "@openbot/toolkit/continuation";
+import {
+  type ApprovalContinuation,
+  currentApprovalContext,
+} from "@openbot/toolkit/continuation";
 import type { AuditInitiator } from "@openbot/toolkit/initiator";
 import {
   and,
@@ -27,6 +30,7 @@ import {
 import type { Database } from "./db/client";
 import { auditEvents } from "./db/schema";
 import { parsePageLimit } from "./paging";
+import { auditRunProofOf } from "./telemetry/audit-run-proof";
 
 const sensitiveKeys = new Set([
   "access_token",
@@ -889,8 +893,19 @@ export type AuditEventInput = {
   payload: Record<string, unknown>;
 };
 
+type AuditRunContext = Pick<ApprovalContinuation, "runId" | "threadId"> &
+  Partial<Pick<ApprovalContinuation, "forwardedProps">>;
+
+type AuditCorrelation = {
+  run?: AuditRunContext;
+  workItemKey?: string;
+};
+
 export type AuditStore = {
-  insert: (event: AuditEventInput) => Promise<void>;
+  insert: (
+    event: AuditEventInput,
+    correlation?: AuditCorrelation,
+  ) => Promise<void>;
 };
 
 export type AuditEvent = {
@@ -1004,11 +1019,15 @@ export function redactAuditPayload(value: unknown): unknown {
 export async function recordAuditEvent(
   store: AuditStore,
   event: AuditEventInput,
+  correlation?: AuditCorrelation,
 ) {
-  await store.insert({
-    ...event,
-    payload: redactAuditPayload(event.payload) as Record<string, unknown>,
-  });
+  await store.insert(
+    {
+      ...event,
+      payload: redactAuditPayload(event.payload) as Record<string, unknown>,
+    },
+    correlation,
+  );
 }
 
 /**
@@ -1041,6 +1060,10 @@ export type AuditTapEvent = {
   createdAt?: Date;
   /** Trusted native/headless action scope; never read from an analytics client. */
   runId?: string;
+  /** Original approval run, when the audit write occurs outside that run. */
+  approvalRun?: Pick<ApprovalContinuation, "runId" | "threadId">;
+  workItemKey?: string;
+  runLineageProof?: string;
   threadId?: string;
   eventType: string;
   targetType: string;
@@ -1058,7 +1081,7 @@ const auditTaps = new Set<AuditTap>();
 /**
  * Hear every row after it is written: the OpenTelemetry/SIEM exporter and Action Recording.
  *
- * After the insert, and only when it succeeded, so nothing is streamed that the trail does not hold.
+ * Taps run after PostgreSQL commits the insert.
  * A tap that throws is logged and ignored: streaming a row must never fail writing it.
  */
 export function addAuditTap(tap: AuditTap): () => void {
@@ -1066,9 +1089,41 @@ export function addAuditTap(tap: AuditTap): () => void {
   return () => auditTaps.delete(tap);
 }
 
-export function createAuditStore(database: Database): AuditStore {
+type AuditTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+type DeferAuditTap = (publish: () => void) => void;
+
+export type TransactionAuditStore = (
+  transaction: AuditTransaction,
+  deferTap: DeferAuditTap,
+) => AuditStore;
+
+/** Keep the audit insert atomic with the business write and publish taps after commit. */
+export async function withAuditTransaction<T>(
+  database: Database,
+  write: (transaction: AuditTransaction, deferTap: DeferAuditTap) => Promise<T>,
+): Promise<T> {
+  const pendingTaps: Array<() => void> = [];
+  const result = await database.transaction((transaction) =>
+    write(transaction, (publish) => pendingTaps.push(publish)),
+  );
+  for (const publish of pendingTaps) publish();
+  return result;
+}
+
+export function createAuditStore(database: Database): AuditStore;
+export function createAuditStore(
+  transaction: AuditTransaction,
+  deferTap: DeferAuditTap,
+): AuditStore;
+export function createAuditStore(
+  database: Database | AuditTransaction,
+  deferTap?: DeferAuditTap,
+): AuditStore {
   return {
-    insert: async ({ initiator, ...event }) => {
+    insert: async (
+      { initiator, ...event },
+      { run: approvalRun, workItemKey } = {},
+    ) => {
       const row = {
         ...event,
         ...initiatorColumns(initiator),
@@ -1078,24 +1133,41 @@ export function createAuditStore(database: Database): AuditStore {
         .insert(auditEvents)
         .values(row)
         .returning({ id: auditEvents.id, createdAt: auditEvents.createdAt });
-      for (const tap of auditTaps) {
-        try {
-          const run = currentApprovalContext();
-          tap({
-            ...row,
-            ...persisted,
-            ...(run ? { runId: run.runId, threadId: run.threadId } : {}),
-          });
-        } catch (error) {
-          console.error(
-            JSON.stringify({
-              type: "audit-tap-failed",
-              eventType: row.eventType,
-              error: String(error),
-            }),
-          );
+      if (!persisted || auditTaps.size === 0) return;
+
+      const run = currentApprovalContext();
+      const tapped: AuditTapEvent = {
+        ...row,
+        ...persisted,
+        ...(run ? { runId: run.runId, threadId: run.threadId } : {}),
+        ...(approvalRun
+          ? {
+              approvalRun: {
+                runId: approvalRun.runId,
+                threadId: approvalRun.threadId,
+              },
+            }
+          : {}),
+        ...(workItemKey ? { workItemKey } : {}),
+        runLineageProof: auditRunProofOf((approvalRun ?? run)?.forwardedProps),
+      };
+      const publish = () => {
+        for (const tap of auditTaps) {
+          try {
+            tap(tapped);
+          } catch (error) {
+            console.error(
+              JSON.stringify({
+                type: "audit-tap-failed",
+                eventType: row.eventType,
+                error: String(error),
+              }),
+            );
+          }
         }
-      }
+      };
+      if (deferTap) deferTap(publish);
+      else publish();
     },
   };
 }

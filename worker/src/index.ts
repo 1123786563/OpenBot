@@ -25,11 +25,9 @@ import {
   ROUTINE_FIRE_KIND,
   type RoutineSweepOptions,
 } from "../../server/src/routines/sweep";
+import { writeRuntimeLog } from "../../server/src/telemetry/runtime-log";
 import { createWorkQueue } from "../../server/src/work/queue";
 import { loadWorkerEnv, routineRunUrl } from "./env";
-import { workerStatus } from "./status";
-
-console.info(`OpenBot worker status: ${workerStatus().status}`);
 
 /*
  * The worker's three settings, parsed and validated in one place (`./env`).
@@ -48,12 +46,20 @@ console.info(`OpenBot worker status: ${workerStatus().status}`);
  * `loadConfig(process.env)` here would refuse to start over settings this loop has no
  * opinion about and does not need.
  */
+let environment: ReturnType<typeof loadWorkerEnv>;
+try {
+  environment = loadWorkerEnv();
+} catch {
+  writeRuntimeLog("worker_configuration_failed");
+  process.exit(1);
+}
 const { workerSharedSecret, serverInternalUrl, databaseUrl, owner } =
-  loadWorkerEnv();
+  environment;
 
 const database = createDatabase(databaseUrl);
 const queue = createWorkQueue(database);
 const routineStore = createRoutineStore(database);
+writeRuntimeLog("worker_started");
 
 /**
  * Hand one opened run to the server, which owns everything about running it.
@@ -117,25 +123,21 @@ async function runOneTick(): Promise<void> {
    * failed tick is still due on the next one; nothing about being late loses it (see `DEFAULT_GRACE_MS`
    * in `../../server/src/routines/sweep.ts`).
    */
+  const startedAt = performance.now();
   try {
     const { offered } = await offerDueRoutines(options);
     const report = await dispatchClaimedRoutines(options);
-    console.info(
-      JSON.stringify({
-        type: "routine-sweep",
-        offered,
-        considered: report.considered,
-        fired: report.fired,
-        skipped: report.skipped,
-      }),
-    );
-  } catch (error) {
-    console.warn(
-      JSON.stringify({
-        type: "routine-sweep-tick-failed",
-        reason: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    writeRuntimeLog("routine_sweep_completed", {
+      offered: offered.length,
+      considered: report.considered,
+      fired: report.fired.length,
+      skipped: report.skipped.length,
+      duration_ms: performance.now() - startedAt,
+    });
+  } catch {
+    writeRuntimeLog("routine_sweep_failed", {
+      duration_ms: performance.now() - startedAt,
+    });
   }
 
   // The purge phase, on its own much longer cadence and its own try/catch: a purge failure this hour
@@ -148,14 +150,9 @@ async function runOneTick(): Promise<void> {
         kind: ROUTINE_FIRE_KIND,
         olderThanMs: PURGE_OLDER_THAN_MS,
       });
-      console.info(JSON.stringify({ type: "routine-sweep-purge", purged }));
-    } catch (error) {
-      console.warn(
-        JSON.stringify({
-          type: "routine-sweep-purge-failed",
-          reason: error instanceof Error ? error.message : String(error),
-        }),
-      );
+      writeRuntimeLog("routine_queue_purged", { purged });
+    } catch {
+      writeRuntimeLog("routine_queue_purge_failed");
     }
   }
 }

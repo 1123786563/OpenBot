@@ -1,3 +1,5 @@
+import { IconExternalLink } from "@tabler/icons-react";
+import { useQuery } from "@tanstack/react-query";
 import {
   createFileRoute,
   useNavigate,
@@ -6,6 +8,8 @@ import {
 import { z } from "zod";
 import { RecordingSection } from "@/components/admin/controls/recording-section";
 import { AuditPage } from "@/components/manage/audit-page";
+import { buttonVariants } from "@/components/ui/button";
+import { client } from "@/lib/client";
 
 /**
  * Read surface for policy, computer, component, MCP, and credential audit events. `bot` narrows it
@@ -25,8 +29,30 @@ export const Route = createFileRoute("/_authed/admin/audit")({
 function AdminAuditPage() {
   const { bot } = useSearch({ strict: false }) as { bot?: string };
   const navigate = useNavigate();
+  const openObserve = useQuery({
+    queryKey: ["admin", "audit", "openobserve"],
+    queryFn: ({ signal }) =>
+      client<string | null>("/api/admin/audit-events/openobserve", "url", {
+        signal,
+      }),
+    gcTime: 0,
+    retry: false,
+  });
   return (
     <AuditPage
+      action={
+        openObserve.isSuccess && openObserve.data ? (
+          <a
+            className={buttonVariants({ variant: "outline" })}
+            href={openObserve.data}
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            Open in OpenObserve
+            <IconExternalLink aria-hidden="true" />
+          </a>
+        ) : null
+      }
       ask
       bot={bot}
       onClearBot={() => navigate({ to: "/admin/audit" })}

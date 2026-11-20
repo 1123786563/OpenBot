@@ -1,4 +1,11 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+} from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -26,13 +33,39 @@ import { settleReactWork } from "./settle-react-work";
  */
 
 beforeAll(() => GlobalRegistrator.register());
-afterEach(() => cleanup());
+const openObserveUrl = "https://observe.example.test/ops/";
+let configuredUrl: string | null = null;
+const requests: string[] = [];
+let originalFetch: typeof fetch;
+beforeEach(() => {
+  originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL) => {
+      const path = String(input);
+      requests.push(path);
+      return path === "/api/admin/audit-events/openobserve"
+        ? Response.json({ url: configuredUrl })
+        : new Response(null, { status: 404 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+});
+afterEach(() => {
+  cleanup();
+  globalThis.fetch = originalFetch;
+  requests.length = 0;
+  configuredUrl = null;
+});
 afterAll(async () => {
   await settleReactWork();
   await GlobalRegistrator.unregister();
 });
 
-async function renderAs(edition: "team" | "personal", Page: ComponentType) {
+async function renderAs(
+  edition: "team" | "personal",
+  Page: ComponentType,
+  entry = "/",
+) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
@@ -54,7 +87,7 @@ async function renderAs(edition: "team" | "personal", Page: ComponentType) {
   queryClient.setQueryData(agentKeys.list(true), []);
   const router = createRouter({
     routeTree: createRootRoute({ component: () => <Page /> }),
-    history: createMemoryHistory({ initialEntries: ["/"] }),
+    history: createMemoryHistory({ initialEntries: [entry] }),
   });
   const view = render(
     <QueryClientProvider client={queryClient}>
@@ -66,6 +99,7 @@ async function renderAs(edition: "team" | "personal", Page: ComponentType) {
 }
 
 test("the personal edition's page is titled as its Settings entry, and says nothing of a deployment", async () => {
+  configuredUrl = openObserveUrl;
   const entry = settingsSidebarItems("personal").find(
     (item) => (item.linkOptions as { to?: string }).to === "/settings/activity",
   );
@@ -79,6 +113,8 @@ test("the personal edition's page is titled as its Settings entry, and says noth
   const header = heading.closest("header") as HTMLElement;
   expect(header.textContent).not.toContain("deployment");
   expect(header.textContent).toContain("See what your Bots did");
+  expect(view.queryByRole("link", { name: "Open in OpenObserve" })).toBeNull();
+  expect(requests).not.toContain("/api/admin/audit-events/openobserve");
 });
 
 test("Admin keeps Audit, the name an admin reviews policy under", async () => {
@@ -87,6 +123,23 @@ test("Admin keeps Audit, the name an admin reviews policy under", async () => {
     AdminAuditRoute.options.component as ComponentType,
   );
   expect(view.getByRole("heading", { level: 1 }).textContent).toBe("Audit");
+  expect(view.queryByRole("link", { name: "Open in OpenObserve" })).toBeNull();
+});
+
+test("Admin Audit offers plain external navigation without passing audit search", async () => {
+  configuredUrl = openObserveUrl;
+  const view = await renderAs(
+    "team",
+    AdminAuditRoute.options.component as ComponentType,
+    "/?query=private",
+  );
+  expect(requests).toContain("/api/admin/audit-events/openobserve");
+  const link = await view.findByRole("link", { name: "Open in OpenObserve" });
+  expect(link.getAttribute("href")).toBe(openObserveUrl);
+  expect(link.getAttribute("target")).toBe("_blank");
+  expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+  expect(view.container.querySelector("iframe")).toBeNull();
+  expect(requests).not.toContain(openObserveUrl);
 });
 
 test("pages that send a person to the trail call it what the trail is called", () => {
