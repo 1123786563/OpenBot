@@ -12,6 +12,26 @@ An operation a Bot can call to affect the world or retrieve information.
 
 Reusable instructions or learned behavior that gives a Bot a repeatable way to perform work.
 
+## Skill registry
+
+A service that catalogs published Skill versions and makes them available for installation.
+
+## Skill version
+
+A fixed release of a market Skill that a person can choose to install.
+
+## Skill installation
+
+A Bot's selection of a specific Skill version from the market.
+
+## Skill version withdrawal
+
+The removal of a Skill version from availability for new installations.
+
+## Skill version disablement
+
+An administrator's decision to block new invocations of a Skill version and pause Bot runs that have already loaded it.
+
 ## Component
 
 A registered interactive or executable capability that the workspace can expose to a Bot or person.
