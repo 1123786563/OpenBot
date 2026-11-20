@@ -9,6 +9,7 @@ import { type AuditInitiator, PERSON_INITIATOR } from "../audit";
 import type { DeploymentConfig } from "../config";
 import type { Database } from "../db/client";
 import type { DeliveryScope } from "../delivery/types";
+import type { BrowserMarketCalls } from "./browser-market-calls";
 import type { ReviewModel } from "./policy";
 import { createApprovalQuestions, type PersonQuestion } from "./questions";
 import { createApprovalService } from "./service";
@@ -70,6 +71,7 @@ export async function savedToolCall(
  */
 export function createServerApprovalService(deps: {
   storedApprovals: ApprovalStore;
+  browserMarketCalls: BrowserMarketCalls;
   config: Pick<DeploymentConfig, "keyEncryptionKey">;
   sourceForCoordinationRun: (
     run: RunAssertion,
@@ -179,6 +181,18 @@ export function createServerApprovalService(deps: {
         throw new ApprovalRefusedError(
           "That unanswered tool call is not saved in this conversation.",
         );
+      const marketCall = await deps.browserMarketCalls.find({
+        ownerUserId,
+        botId,
+        threadId: snapshot.threadId,
+        toolCallId: snapshot.toolCallId,
+      });
+      if (marketCall) {
+        if (marketCall.toolName !== snapshot.toolName)
+          throw new ApprovalRefusedError("That browser tool call has changed.");
+        snapshot.marketSkill = marketCall.snapshot;
+        snapshot.runId = marketCall.runId;
+      }
       const tools = await approvalComputerTools(
         ownerUserId,
         botId,

@@ -1,9 +1,11 @@
+import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
 import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
   index,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -16,7 +18,7 @@ import type {
   HostCommandPolicy,
   RuleBehaviour,
 } from "../../approvals/types";
-import { users } from "./core";
+import { agents, users } from "./core";
 import { jsonb } from "./json";
 export const approvalPreferences = pgTable(
   "approval_preferences",
@@ -232,5 +234,33 @@ export const approvalConversationGrants = pgTable(
       table.ownerUserId,
       table.threadId,
     ),
+  ],
+);
+
+/** The server's market selection for a computer call that the browser will route to approvals. */
+export const browserMarketApprovalCalls = pgTable(
+  "browser_market_approval_calls",
+  {
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    botId: text("bot_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    threadId: text("thread_id").notNull(),
+    toolCallId: text("tool_call_id").notNull(),
+    toolName: text("tool_name").notNull(),
+    runId: text("run_id").notNull(),
+    snapshot: jsonb("snapshot").$type<MarketSkillSnapshot>().notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.ownerUserId,
+        table.botId,
+        table.threadId,
+        table.toolCallId,
+      ],
+    }),
   ],
 );

@@ -1,6 +1,7 @@
 import type { AbstractAgent } from "@ag-ui/client";
 import type { ComputerGuidance } from "@openbot/shared/bot-prompt";
 import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
+import type { BrowserMarketCalls } from "../approvals/browser-market-calls";
 import type { AuditInitiator } from "../audit";
 import type { AgentFetch, StallGuard } from "../channels/stall-guard";
 import {
@@ -58,6 +59,7 @@ export type ActorAgentResolver = {
 };
 
 export type ActorAgentResolverDependencies = {
+  browserMarketCalls?: BrowserMarketCalls;
   productTelemetry?: Pick<ProductTelemetry, "middleware">;
   loadNameForActor?: (actorId: string) => Promise<string | null>;
   loadAgents: LoadAgentsForActor;
@@ -192,6 +194,10 @@ export function createActorAgentResolver(
         for (const agent of Object.values(agents)) {
           agent.use(deps.productTelemetry.middleware(actor.id));
         }
+      const browserMarketCalls = deps.browserMarketCalls;
+      if (context?.holdsTools && browserMarketCalls)
+        for (const [botId, agent] of Object.entries(agents))
+          agent.use(browserMarketCalls.middleware(actor.id, botId));
       return agents;
     });
   };

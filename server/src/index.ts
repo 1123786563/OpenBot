@@ -57,6 +57,7 @@ import {
   wakeUpTools,
 } from "./agents/wake-up";
 import { createApp } from "./app";
+import { createBrowserMarketCalls } from "./approvals/browser-market-calls";
 import { createDecisionWaits } from "./approvals/decision-waits";
 import { createApprovedActionExecutor } from "./approvals/execute";
 import { createPersonResponseTick } from "./approvals/person-response-sweep";
@@ -930,7 +931,9 @@ const approvalComputerTools = async (
     : [];
 };
 
+const browserMarketCalls = createBrowserMarketCalls(database);
 const approvalService = createServerApprovalService({
+  browserMarketCalls,
   storedApprovals,
   config,
   sourceForCoordinationRun,
@@ -2202,6 +2205,7 @@ const subagents = createSubagents({
  * is talking to.
  */
 const actorAgentResolver = createActorAgentResolver({
+  browserMarketCalls,
   productTelemetry,
   loadAgents: loadAgentsForActor,
   model: runtimeModel,

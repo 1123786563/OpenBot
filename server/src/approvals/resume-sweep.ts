@@ -31,10 +31,10 @@ export function createApprovalResumeTick(deps: {
   approvalService: ApprovalService;
   executeApprovedAction: ApprovalResumeDependencies["execute"];
   database: Database;
-  responsibilityStore: ResponsibilityStore;
+  responsibilityStore: Pick<ResponsibilityStore, "resumeWaiting">;
   groupConversations: Pick<GroupConversations, "continueWaiting">;
   approvalContinuationRunner: TurnRunner;
-  channelStore: ChannelStore;
+  channelStore: Pick<ChannelStore, "recordActivity">;
   actorFor: (ownerUserId: string) => Promise<AgentActor>;
   notify: (
     scope: DeliveryScope,

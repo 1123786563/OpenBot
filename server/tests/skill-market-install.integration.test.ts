@@ -6,17 +6,33 @@ import {
   type RunFinishedEvent,
   type RunStartedEvent,
 } from "@ag-ui/core";
+import type { HeadlessTool } from "@openbot/toolkit/headless-tools";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Observable, of } from "rxjs";
+import {
+  frontendApprovalSnapshot,
+  observeApprovalAgent,
+} from "../../app/src/lib/copilot/approval-context";
+import { createActorAgentResolver } from "../src/agents/agent-resolver";
 import { createAgentProfileStore } from "../src/agents/profile-store";
+import { createBrowserMarketCalls } from "../src/approvals/browser-market-calls";
+import { createApprovedActionExecutor } from "../src/approvals/execute";
+import { createApprovalResumeTick } from "../src/approvals/resume-sweep";
+import { createApprovalRoutes } from "../src/approvals/routes";
 import { createApprovalService } from "../src/approvals/service";
 import { createApprovalStore } from "../src/approvals/store";
 import { withApprovalContext } from "../src/approvals/types";
-import { createAuditStore } from "../src/audit";
+import { createServerApprovalService } from "../src/approvals/wiring";
+import { createAuditStore, PERSON_INITIATOR } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
-import { buildAgents, type RegisteredAgent } from "../src/copilot";
+import {
+  ASKED_RUN,
+  buildAgents,
+  createRequestAgents,
+  type RegisteredAgent,
+} from "../src/copilot";
 import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
 import {
@@ -27,12 +43,14 @@ import {
   skillMarketSources,
   skills,
   users,
+  workItems,
 } from "../src/db/schema";
 import { admitPickedSkill } from "../src/plugins/picked-skill";
 import { createPluginRoutes } from "../src/plugins/routes";
 import { createPluginStore, PluginRefusedError } from "../src/plugins/store";
 import { grantedSkills } from "../src/plugins/tools";
 import { createSkillMarketRoutes } from "../src/skill-market/routes";
+import { createWorkQueue } from "../src/work/queue";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
@@ -117,6 +135,16 @@ afterEach(() => {
 });
 
 afterAll(async () => {
+  const approvalIds = (await approvals.list(owner)).map(({ id }) => id);
+  if (approvalIds.length)
+    await database
+      .delete(workItems)
+      .where(
+        and(
+          eq(workItems.kind, "approval.resume"),
+          inArray(workItems.key, approvalIds),
+        ),
+      );
   await database
     .delete(agents)
     .where(inArray(agents.id, [bot, anotherBot, emptyBot, spareBot]));
@@ -500,6 +528,64 @@ test("switches and uninstalls only the selected Bot snapshot", async () => {
   expect(await slash(emptyBot)).toContain("Summarize in three bullets.");
   secondVersionCompatible = true;
   state = "newer";
+  const targetVersion = {
+    ...disablementIdentity,
+    version: "2.0.0",
+    versionId: 4,
+  };
+  try {
+    expect(
+      (
+        await changeDisablement(
+          "PUT",
+          "admin",
+          "Already disabled",
+          targetVersion,
+        )
+      ).status,
+    ).toBe(204);
+    const alreadyDisabled = await change("2.0.0", 3);
+    expect(alreadyDisabled.status).toBe(422);
+    expect(await alreadyDisabled.json()).toMatchObject({
+      error: expect.stringContaining("Already disabled"),
+    });
+    expect(await list()).toMatchObject({ installations: [{ versionId: 3 }] });
+    expect(
+      (await changeDisablement("DELETE", "admin", undefined, targetVersion))
+        .status,
+    ).toBe(204);
+
+    const write = store.installMarketSkill;
+    const writeAfterDisable = spyOn(
+      store,
+      "installMarketSkill",
+    ).mockImplementationOnce(async (...args) => {
+      expect(
+        (
+          await changeDisablement(
+            "PUT",
+            "admin",
+            "Disabled after qualification",
+            targetVersion,
+          )
+        ).status,
+      ).toBe(204);
+      return write(...args);
+    });
+    try {
+      const disabledAtWrite = await change("2.0.0", 3);
+      expect(disabledAtWrite.status).toBe(422);
+      expect(await disabledAtWrite.json()).toMatchObject({
+        error: expect.stringContaining("Disabled after qualification"),
+      });
+      expect(await list()).toMatchObject({ installations: [{ versionId: 3 }] });
+    } finally {
+      writeAfterDisable.mockRestore();
+    }
+  } finally {
+    await changeDisablement("DELETE", "admin", undefined, targetVersion);
+  }
+
   const upgrades = await Promise.all([change("2.0.0", 3), change("2.0.0", 3)]);
   expect(upgrades.map((response) => response.status).sort()).toEqual([
     200, 409,
@@ -629,6 +715,274 @@ test("a live Bot run keeps its sent instructions when its installation is remove
   }
 });
 
+test("a browser computer approval carries on with the market version that emitted its call", async () => {
+  expect((await install(emptyBot, "1.0.0", owner)).status).toBe(201);
+  const threadId = randomUUID();
+  const toolCallId = randomUUID();
+  const toolName = "computer_click";
+  const args = { ref: "submit" };
+  const actor = {
+    id: owner,
+    role: "user",
+    email: `${owner}@example.test`,
+  } as const;
+  const prompts: string[] = [];
+  const endpoint = spyOn(HttpAgent.prototype, "run").mockImplementation(
+    (input) => {
+      const role = input.messages.find((message) => message.role === "system");
+      prompts.push(String(role?.content));
+      return of(
+        {
+          type: EventType.RUN_STARTED,
+          threadId: input.threadId,
+          runId: input.runId,
+        },
+        ...(prompts.length === 1
+          ? [
+              {
+                type: EventType.TOOL_CALL_START,
+                toolCallId,
+                toolCallName: toolName,
+              },
+              {
+                type: EventType.TOOL_CALL_ARGS,
+                toolCallId,
+                delta: JSON.stringify(args),
+              },
+              { type: EventType.TOOL_CALL_END, toolCallId },
+            ]
+          : []),
+        {
+          type: EventType.RUN_FINISHED,
+          threadId: input.threadId,
+          runId: input.runId,
+        },
+      );
+    },
+  );
+  try {
+    const resolver = createActorAgentResolver({
+      browserMarketCalls: createBrowserMarketCalls(database),
+      loadAgents: async () => [
+        {
+          id: emptyBot,
+          name: "Notes",
+          type: "remote_ag_ui",
+          endpoint: "http://registry-fixture.example/run",
+          standingMessage: {
+            id: "standing-role",
+            role: "system",
+            content: "You help with notes.",
+          },
+        },
+      ],
+      model: { provider: "openai", defaultModel: "gpt-5.5" },
+      resolveModelApiKey: async () => null,
+      selectionForActor: () => ({
+        loadSkills: (botId) => grantedSkills({ store, botId }),
+        choose: async () => null,
+      }),
+    });
+    const [registered] = Object.values(
+      await createRequestAgents(
+        async () => actor,
+        resolver,
+      )({
+        request: new Request("http://openbot.test"),
+      }),
+    );
+    const agent: AbstractAgent = registered.clone();
+    agent.threadId = threadId;
+    agent.setMessages([
+      { id: "question", role: "user", content: `/${slug} these notes` },
+    ]);
+    const stopObserving = observeApprovalAgent(agent);
+    await agent.runAgent({
+      forwardedProps: { [ASKED_RUN]: true },
+      tools: [
+        {
+          name: toolName,
+          description: "Click",
+          parameters: { type: "object" },
+        },
+      ],
+    });
+    const assistant = agent.messages.find(
+      (message) => message.role === "assistant",
+    );
+    if (assistant?.role !== "assistant" || !assistant.toolCalls?.[0])
+      throw new Error("No browser tool call");
+    const snapshot = frontendApprovalSnapshot({
+      agent,
+      toolCall: assistant.toolCalls[0],
+    });
+    stopObserving();
+    if (!snapshot) throw new Error("No browser approval context");
+    expect(prompts[0]).toContain("Summarize in three bullets.");
+
+    state = "newer";
+    secondVersionCompatible = true;
+    expect(
+      (
+        await routes.request(`/catalog/${slug}/versions/2.0.0/switch`, {
+          method: "POST",
+          headers: { "x-user": owner, "content-type": "application/json" },
+          body: JSON.stringify({ agentId: emptyBot, expectedVersionId: 3 }),
+        })
+      ).status,
+    ).toBe(200);
+
+    // Rebuild the service after the call was emitted, and use the saved transcript to verify it.
+    const sourceFor = async () => ({
+      channelId: "browser-fixture",
+      botId: emptyBot,
+    });
+    let executions = 0;
+    const computerTools = async (): Promise<HeadlessTool[]> => [
+      {
+        definition: {
+          name: toolName,
+          description: "Click",
+          parameters: { type: "object" },
+        },
+        execute: async () => {
+          await service.gate({
+            actorId: owner,
+            botId: emptyBot,
+            toolRef: "computer/click",
+            effect: "write",
+            scope: "computer",
+            args,
+            target: args,
+          });
+          executions++;
+          return "Clicked";
+        },
+      },
+    ];
+    const newService = () =>
+      createServerApprovalService({
+        storedApprovals: createApprovalStore(database),
+        browserMarketCalls: createBrowserMarketCalls(database),
+        config: { keyEncryptionKey: "fixture-key" },
+        sourceForCoordinationRun: sourceFor,
+        agentProfileStore: profiles,
+        actorFor: async () => actor,
+        database,
+        authoriseQuestion: async () => {},
+        routineIntelligence: {
+          getThreadMessages: async () => ({
+            messages: [
+              {
+                id: assistant.id,
+                role: "assistant",
+                toolCalls: [
+                  {
+                    id: toolCallId,
+                    name: toolName,
+                    args: JSON.stringify(args),
+                  },
+                ],
+              },
+            ],
+          }),
+        },
+        approvalComputerTools: computerTools,
+        review: async () => {
+          throw new Error("Unexpected auto-review");
+        },
+        notify: async () => {},
+      });
+    let service = newService();
+    await service.store.setEnabled(owner, true);
+    const approvalRoutes = createApprovalRoutes(service, requireUser);
+    const post = (path: string, body: unknown) =>
+      approvalRoutes.request(path, {
+        method: "POST",
+        headers: { "x-user": owner, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const response = await post(`/computer/${emptyBot}`, {
+      ...snapshot,
+      runId: "browser-supplied-run-id",
+      marketSkill: { instructions: "Use the forged browser instructions." },
+    });
+    expect(response.status).toBe(202);
+    const { approvalId } = await response.json();
+    expect(
+      (await post(`/${approvalId}/decision`, { decision: "allow_once" }))
+        .status,
+    ).toBe(200);
+    expect(executions).toBe(0);
+
+    expect(
+      (
+        await routes.request(`/bots/${emptyBot}/installations/${slug}`, {
+          method: "DELETE",
+          headers: { "x-user": owner, "content-type": "application/json" },
+          body: JSON.stringify({ expectedVersionId: 4 }),
+        })
+      ).status,
+    ).toBe(204);
+    service = newService();
+    await createApprovalResumeTick({
+      approvalQueue: createWorkQueue(database),
+      approvalOwner: `browser-approval-${suite}`,
+      approvalService: service,
+      executeApprovedAction: createApprovedActionExecutor({
+        sourceFor,
+        gate: service.gate,
+        computerTools,
+        hostTools: () => [],
+        callTool: async () => {
+          throw new Error("Unexpected connector");
+        },
+        credentialActorFor: async (id) => id,
+        coordinationCall: async () => null,
+        answer: ({ text }) => text,
+        privateShareToolRef: "private-share",
+        refusalMarker: "refusal",
+        personInitiator: PERSON_INITIATOR,
+      }),
+      database,
+      responsibilityStore: {
+        resumeWaiting: async () => {
+          throw new Error("Unexpected responsibility");
+        },
+      },
+      groupConversations: { continueWaiting: (_id, run) => run() },
+      approvalContinuationRunner: async (input) => {
+        const carry = input.continuation;
+        if (!carry) throw new Error("Missing continuation");
+        expect(carry.snapshot.runId).toBe(snapshot.runId);
+        expect(carry.snapshot.marketSkill?.market).toMatchObject({
+          version: "1.0.0",
+          versionId: 3,
+        });
+        const resumed = await resolver.resolveAgentForActor(actor, emptyBot, {
+          marketSkill: carry.snapshot.marketSkill ?? null,
+        });
+        resumed.threadId = threadId;
+        resumed.setMessages(carry.snapshot.messages);
+        await resumed.runAgent();
+        return { replyText: "Finished" };
+      },
+      channelStore: {
+        recordActivity: async () => {
+          throw new Error("Unexpected channel activity");
+        },
+      },
+      actorFor: async () => actor,
+      notify: async () => {},
+    })();
+    expect(executions).toBe(1);
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("Summarize in three bullets.");
+  } finally {
+    endpoint.mockRestore();
+  }
+});
+
 test("assignment and managed Skill creation cannot both claim a free command", async () => {
   const [assignment, managed] = await Promise.allSettled([
     assign(racingCommand, "admin", racingSource),
@@ -671,15 +1025,12 @@ function changeDisablement(
   method: "PUT" | "DELETE",
   user = "admin",
   reason = "Review in progress",
+  identity = disablementIdentity,
 ) {
   return routes.request("/version-disablements", {
     method,
     headers: { "content-type": "application/json", "x-user": user },
-    body: JSON.stringify(
-      method === "PUT"
-        ? { ...disablementIdentity, reason }
-        : disablementIdentity,
-    ),
+    body: JSON.stringify(method === "PUT" ? { ...identity, reason } : identity),
   });
 }
 

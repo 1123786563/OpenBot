@@ -638,6 +638,13 @@
       "when": 1795185049024,
       "tag": "0090_skill_market_version_disablements",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1795186506061,
+      "tag": "0091_browser_market_approval_calls",
+      "breakpoints": true
     }
   ]
 }
