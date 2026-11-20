@@ -489,7 +489,7 @@ test("normal Slack Shared Bot calls use the reviewed installation and still enfo
     },
     { rolesForUser: async (id) => (id === admin.id ? ["admin"] : ["user"]) },
   ];
-  args[9] = createAgentProfileStore(db);
+  args[9] = createAgentProfileStore(db, undefined);
   args[14] = pluginStore;
   args[34] = {
     approvals,
@@ -627,7 +627,7 @@ test("normal Slack Shared Bot calls use the reviewed installation and still enfo
           state: {},
           forwardedProps: {},
         },
-        () =>
+        async () =>
           mounted.request("/api/agent-tools/call", {
             method: "POST",
             headers: {

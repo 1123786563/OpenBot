@@ -212,7 +212,7 @@ async function eventFixture() {
       connectionId,
       installationId: 20,
       repositoryId: 30,
-      eventTypes: ["issues.opened"],
+      eventTypes: ["issues.opened" as const],
     },
     async switchDefault() {
       const id = randomUUID();

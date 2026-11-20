@@ -710,7 +710,7 @@ test("normal Slack Bot writes use the verified Broker account mapping instead of
     },
     { rolesForUser: async () => ["admin"] },
   ];
-  args[9] = createAgentProfileStore(db);
+  args[9] = createAgentProfileStore(db, undefined);
   args[14] = pluginStore;
   args[34] = {
     approvals,
@@ -888,7 +888,7 @@ test("normal Slack Bot writes use the verified Broker account mapping instead of
           state: {},
           forwardedProps: {},
         },
-        () =>
+        async () =>
           mounted.request("/api/agent-tools/call", {
             method: "POST",
             headers: {

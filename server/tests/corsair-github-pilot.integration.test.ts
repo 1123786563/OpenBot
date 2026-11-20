@@ -549,7 +549,7 @@ test("a reviewed GitHub write needs a live Bot Grant, selected repository, match
       },
       { rolesForUser: async () => ["admin"] },
     ];
-    appArgs[9] = createAgentProfileStore(database);
+    appArgs[9] = createAgentProfileStore(database, undefined);
     appArgs[14] = store;
     appArgs[34] = {
       approvals,
@@ -646,7 +646,7 @@ test("a reviewed GitHub write needs a live Bot Grant, selected repository, match
       forwardedProps: {},
     };
     const invoke = (args: Record<string, unknown>, conversational = true) => {
-      const request = () =>
+      const request = async () =>
         app.request("/api/agent-tools/call", {
           method: "POST",
           headers: {

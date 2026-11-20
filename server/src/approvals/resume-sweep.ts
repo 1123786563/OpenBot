@@ -38,7 +38,7 @@ export function createApprovalResumeTick(deps: {
   responsibilityStore: ResponsibilityStore;
   groupConversations: Pick<GroupConversations, "continueWaiting">;
   approvalContinuationRunner: TurnRunner;
-  channelStore: ChannelStore;
+  channelStore: Pick<ChannelStore, "recordActivity">;
   actorFor: (ownerUserId: string) => Promise<AgentActor>;
   notify: (
     scope: DeliveryScope,
