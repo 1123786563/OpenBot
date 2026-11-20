@@ -1,6 +1,21 @@
 # Corsair storage in PostgreSQL
 
-Migration `0094_corsair_shared_storage` replaces 14 provider pilot tables with the five Corsair core tables and four OpenBot extension tables. The runtime migrator applies it after `0093_corsair_slack_shared`. The migration copies rows before it drops the pilot tables. It keeps connection, installation, trigger, receipt, and run identifiers, along with credential revisions and the data they pin.
+The published migration `0094_corsair_shared_storage` replaces 14 provider pilot tables
+with five Corsair core tables and four OpenBot extension tables. The runtime migrator
+applies it after `0093_corsair_slack_shared`. The historical migration combines generated
+DDL, a data backfill and the drop of the pilot tables in one PostgreSQL transaction.
+It retains connection, installation, Trigger, receipt and Run IDs, credential
+revisions and the data they pin.
+
+Stop all API and worker replicas running code that reads the pilot tables before
+applying the migration. Start all replicas with the matching runtime after the
+migration succeeds. The old runtime requires the dropped tables, and the new runtime
+requires the migrated records and compatibility views.
+
+Keep the published migration intact for installations that have already applied it.
+For future schema changes, generate DDL and put backfills or other custom SQL in
+separate migrations as described in the [development guide](../development.md).
+
 
 The core columns follow the [Corsair LangChain example](https://github.com/corsairdev/corsair/blob/main/demo/langchain/db.ts) and the `corsair@0.2.15` PostgreSQL ORM. PostgreSQL stores timestamps as `timestamptz` and config, entity data, and event payloads as `jsonb`. IDs and permission expiry remain text. Use a version such as `1.0.0` for entities. The pinned ORM applies JSON decoding to text fields and interprets a version like `"1"` as a number. The OpenBot views read digit-only GitHub repository IDs as exact text without passing them through that decoder.
 

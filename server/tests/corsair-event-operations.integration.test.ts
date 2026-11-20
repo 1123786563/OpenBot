@@ -137,7 +137,7 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
     config: {
       kind: "github",
       repository: "owner/repo",
-      filter: { eventTypes: [] },
+      filter: { eventTypes: ["issues.opened", "issues.edited"] },
     },
     createdAt: new Date(occurredAt.getTime() - 1000),
   });
@@ -247,7 +247,7 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
         config: {
           kind: "github",
           repository: "owner/repo",
-          filter: { eventTypes: [] },
+          filter: { eventTypes: ["issues.opened", "issues.edited"] },
         },
       }),
     },
@@ -266,6 +266,32 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
     queued: true,
     duplicate: false,
   });
+  await database
+    .update(responsibilityTriggers)
+    .set({
+      config: {
+        kind: "github",
+        repository: "owner/repo",
+        filter: {
+          eventTypes: ["issues.opened", "issues.edited"],
+          field: { path: "issue.title", equals: "fixture" },
+        },
+      },
+    })
+    .where(eq(responsibilityTriggers.id, legacyTrigger));
+  expect(await operations.handoff(key, "operator", proof)).toBeNull();
+  await database
+    .update(responsibilityTriggers)
+    .set({
+      config: {
+        kind: "github",
+        repository: "owner/repo",
+        filter: {
+          eventTypes: ["issues.opened", "issues.edited"],
+        },
+      },
+    })
+    .where(eq(responsibilityTriggers.id, legacyTrigger));
   const cutoff = await operations.handoff(key, "operator", proof);
   expect(cutoff).toBeInstanceOf(Date);
   if (!cutoff) throw new Error("Missing cutoff");
@@ -357,6 +383,30 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
   ).toBe(false);
   await dispatcher.sweep();
 
+  legacyNow = cutoff.getTime() + 1000;
+  for (const [action, id, timestamp, installation] of [
+    ["opened", 5, {}, { id: 654 }],
+    ["edited", 6, { created_at: cutoff.toISOString() }, { id: 654 }],
+    ["opened", 7, { created_at: cutoff.toISOString() }, undefined],
+  ] as const) {
+    const raw = JSON.stringify({
+      action,
+      repository: { id: 321, full_name: "owner/repo" },
+      installation,
+      issue: { id, number: id, ...timestamp },
+    });
+    expect(await (await sendLegacy(raw)).json()).toMatchObject({
+      queued: true,
+      duplicate: false,
+    });
+    expect((await deliver(raw)).status).toBe(202);
+    await dispatcher.sweep();
+    expect(await (await sendLegacy(raw)).json()).toMatchObject({
+      queued: true,
+      duplicate: true,
+    });
+  }
+
   legacyNow += 6 * 60_000;
   const unverifiedLegacyEvent = body.replace(
     '"id":1,"number":1',
@@ -371,7 +421,7 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
       .select()
       .from(responsibilityRuns)
       .where(eq(responsibilityRuns.responsibilityId, goal)),
-  ).toHaveLength(2);
+  ).toHaveLength(5);
 });
 
 test("captures only selected signed deliveries and expires private evidence after seven days", async () => {

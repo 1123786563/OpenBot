@@ -10,6 +10,14 @@ Keep both signed endpoints active during observation. The legacy GitHub webhook 
 4. Call `POST /api/corsair/events/handoff` with `provider`, `source`, the reconciled `eventKeys`, the `triggerPairs` array of `{ legacy, corsair }` IDs, and `providerHistoryRef`. The server requires matching persisted receipts, accounting for each Trigger, and at least one legacy Run. A `409` leaves dispatch on the legacy path. A successful request returns the UTC cutoff.
 5. Compare receipts immediately before and after the cutoff. Ask GitHub to redeliver a failed webhook to the path that owned it. Redeliver a successful event to both paths and verify the existing Run count. Verify OpenTag replies separately from Goal dispatch.
 
+GitHub source handoff requires a repository-bound legacy Trigger and a Corsair
+Trigger for the same Goal, repository and installation. Their event-type filters
+must agree for `issues.opened`, `issues.closed` and `issue_comment.created`.
+Legacy field filters have no Corsair equivalent and block handoff. Unsupported
+deliveries, deliveries without a trustworthy occurrence timestamp and deliveries
+without a usable installation identity stay on legacy and use its Trigger filters
+and deduplication.
+
 ## Recover delivery
 
 Corsair retries transient authorization or dispatch failures through the existing sweeps. Events first received more than five minutes after occurrence require corroborating historical evidence. Use `POST /api/corsair/events/replay` with `provider`, `source`, `receiptId`, `triggerId`, and `historyRef` after confirming that the Trigger and account qualified at occurrence. The existing dispatcher rechecks current access and Goal state. Set `decision` to `account-inactive`, `authorization-revoked`, or `trigger-created-after-event` when the evidence establishes a skip. Use `unknown` to leave the dispatch in review. An unresolved change in eligibility remains in review. The legacy GitHub webhook has no Personal Connection for verifying historical read access. It leaves delayed supported events in review when their eligibility cannot be established. A terminal skip or a queued Run cannot be requeued by this operation.

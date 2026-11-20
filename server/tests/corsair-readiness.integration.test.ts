@@ -25,6 +25,7 @@ import {
   users,
   workItems,
 } from "../src/db/schema";
+import { createCorsairCutover } from "../src/plugins/corsair/cutover";
 import { corsairGrantRef } from "../src/plugins/corsair/grants";
 import { createCorsairReadinessRoutes } from "../src/plugins/corsair/readiness";
 import { createRevocation } from "../src/plugins/corsair/revocation";
@@ -148,6 +149,69 @@ test("reviews are scoped and stale evidence cannot enable a policy copy", async 
       a.request(url, { method: "POST", body: JSON.stringify(input) });
     const report = await (await a.request("/github")).json();
     expect(report.ready).toBe(false);
+    const cutover = createCorsairCutover(database, {
+      workspaceId: workspace,
+      app: "github",
+    });
+    const observing = await cutover.activate("migration-admin", async () => []);
+    if (observing?.kind !== "observing")
+      throw new Error("Expected observing route");
+    await database.insert(brokeredConnections).values({
+      provider: "composio",
+      app: "github",
+      holder: "person",
+      userId: person,
+      vendorUserId: person,
+      verified: true,
+    });
+    const rollbackReport = await (await a.request("/github")).json();
+    const rollback = (body: unknown) =>
+      a.request("/github/cutover", {
+        method: "POST",
+        headers: { "X-OpenBot-Pilot": "github" },
+        body: JSON.stringify(body),
+      });
+    const refs = {
+      legacyAuthorizationRef: "broker/live",
+      currentPermissionsRef: "policy/live",
+    };
+    expect(
+      (
+        await rollback({
+          kind: "rollback",
+          inventoryRevision: rollbackReport.inventoryRevision,
+          ...refs,
+        })
+      ).status,
+    ).toBe(400);
+    const evidence = {
+      ...refs,
+      workspaceId: workspace,
+      app: "github",
+      observationUntil: observing.until,
+      observedAt: new Date().toISOString(),
+      authorizationsValid: true,
+      permissionsCurrent: true,
+      capabilities: [
+        `legacy-account:${legacy.id}`,
+        `tool:${legacyTool}`,
+      ].sort(),
+    };
+    const request = {
+      kind: "rollback",
+      inventoryRevision: rollbackReport.inventoryRevision,
+    };
+    for (const invalid of [
+      { workspaceId: randomUUID() },
+      { observedAt: new Date(Date.now() - 600_000).toISOString() },
+      { capabilities: [] },
+    ]) {
+      expect(
+        (await rollback({ ...request, evidence: { ...evidence, ...invalid } }))
+          .status,
+      ).toBe(409);
+    }
+    expect((await rollback({ ...request, evidence })).status).toBe(200);
     const checks = {
       identity: "evidence/identity",
       resourceScope: "evidence/resource",
@@ -384,6 +448,9 @@ test("reviews are scoped and stale evidence cannot enable a policy copy", async 
     await database
       .delete(brokeredAccounts)
       .where(eq(brokeredAccounts.userId, person));
+    await database
+      .delete(brokeredConnections)
+      .where(eq(brokeredConnections.userId, person));
     await database.delete(users).where(eq(users.id, person));
   }
 });

@@ -6,7 +6,13 @@ import { type AppVariables, requireAdmin } from "../../auth/guards";
 import type { Database } from "../../db/client";
 import { auditEvents } from "../../db/schema";
 
-import { corsairApp as apps, createCorsairCutover } from "./cutover";
+import {
+  corsairApp as apps,
+  createCorsairCutover,
+  cutoverObservationMs,
+  readUnknownWrites,
+  writeReconciledEvent,
+} from "./cutover";
 import {
   cleanupCommand,
   legacyBroker,
@@ -489,8 +495,17 @@ export function createCorsairReadinessRoutes(options: Options) {
     z.strictObject({
       kind: z.literal("rollback"),
       inventoryRevision: verification.shape.inventoryRevision,
-      legacyAuthorizationRef: reference,
-      currentPermissionsRef: reference,
+      evidence: z.strictObject({
+        workspaceId: reference,
+        app: apps,
+        observationUntil: z.iso.datetime(),
+        observedAt: z.iso.datetime(),
+        authorizationsValid: z.literal(true),
+        permissionsCurrent: z.literal(true),
+        legacyAuthorizationRef: reference,
+        currentPermissionsRef: reference,
+        capabilities: z.array(z.string().min(1)),
+      }),
     }),
     z.strictObject({
       kind: z.literal("begin_cleanup"),
@@ -571,17 +586,21 @@ export function createCorsairReadinessRoutes(options: Options) {
           ? await cutover.rollback(
               actorId,
               {
-                legacyAuthorizationRef: change.legacyAuthorizationRef,
-                currentPermissionsRef: change.currentPermissionsRef,
+                evidence: change.evidence,
+                inventoryRevision: change.inventoryRevision,
               },
-              async (tx) => {
-                const report = await readCorsairReadiness(
-                  { ...options, database: tx },
-                  app,
-                );
+              async (tx, current) => {
+                const evidence = change.evidence;
+                const observed = Date.parse(evidence.observedAt);
+                const now = Date.now();
                 if (
                   !options.includeDeploymentLegacy ||
-                  report.inventoryRevision !== change.inventoryRevision
+                  evidence.workspaceId !== options.workspaceId ||
+                  evidence.app !== app ||
+                  evidence.observationUntil !== current.until ||
+                  observed < Date.parse(current.until) - cutoverObservationMs ||
+                  observed < now - 5 * 60 * 1000 ||
+                  observed > now
                 )
                   return false;
                 const [accounts] = await tx.execute<{ verified: boolean }>(sql`
@@ -605,7 +624,27 @@ export function createCorsairReadinessRoutes(options: Options) {
                   )
                 ) as verified
             `);
-                return accounts?.verified === true;
+                if (!accounts?.verified) return false;
+                const report = await readCorsairReadiness(
+                  { ...options, database: tx },
+                  app,
+                );
+                const required = [
+                  ...new Set(
+                    report.capabilities
+                      .filter(({ key }) =>
+                        /^(legacy-account|tool|audit):/.test(key),
+                      )
+                      .map(({ key }) => key),
+                  ),
+                ].sort();
+                const attested = [...evidence.capabilities].sort();
+                return (
+                  report.inventoryRevision === change.inventoryRevision &&
+                  required.some((key) => key.startsWith("legacy-account:")) &&
+                  required.length === evidence.capabilities.length &&
+                  required.every((key, index) => key === attested[index])
+                );
               },
             )
           : await cutover.beginCleanup(actorId, change.evidenceRef);
@@ -623,47 +662,6 @@ export function createCorsairReadinessRoutes(options: Options) {
     outcome: z.enum(["applied", "not_applied"]),
     evidenceRef: reference,
   });
-  const resolutionEvent = "corsair.migration_write_reconciled";
-  async function unknownWrites(
-    db: Pick<Database, "execute">,
-    app: App,
-    approvalId?: string,
-  ) {
-    return db.execute<{
-      approvalId: string;
-      startedAt: Date;
-      targetId: string;
-      canReconcile: boolean;
-    }>(sql`
-      select s.payload->>'approvalId' as "approvalId", s.created_at as "startedAt",
-        s.target_id as "targetId",
-        (s.created_at <= clock_timestamp() - interval '30 seconds' or exists (
-          select 1 from audit_events u
-          where u.event_type = ${`corsair.${app}.write_unconfirmed`}
-            and u.payload->>'approvalId' = s.payload->>'approvalId'
-        )) as "canReconcile"
-      from audit_events s
-      where s.event_type = ${`corsair.${app}.write_started`}
-        and coalesce(s.payload->>'workspaceId', s.payload->'target'->>'workspaceId') = ${options.workspaceId}
-        and (${approvalId ?? null}::text is null or s.payload->>'approvalId' = ${approvalId ?? null})
-        and not exists (
-          select 1 from audit_events r
-          where r.payload->>'approvalId' = s.payload->>'approvalId'
-            and r.created_at >= s.created_at
-            and (
-              r.event_type in (${`corsair.${app}.write_succeeded`}, ${resolutionEvent})
-              or (r.event_type = ${`corsair.${app}.write_refused`} and r.payload->>'dispatchRefused' = 'true' and not exists (
-                select 1 from audit_events u
-                where u.event_type = ${`corsair.${app}.write_unconfirmed`}
-                  and u.payload->>'approvalId' = s.payload->>'approvalId'
-                  and u.created_at >= s.created_at
-              ))
-            )
-        )
-      order by s.created_at desc
-      limit 100
-    `);
-  }
   routes.get("/:app/unknown-writes", async (c) => {
     const app = apps.safeParse(c.req.param("app"));
     if (!app.success)
@@ -672,7 +670,11 @@ export function createCorsairReadinessRoutes(options: Options) {
     if (!approval.success)
       return c.json({ error: "Invalid Approval ID." }, 400);
     return c.json(
-      await unknownWrites(options.database, app.data, approval.data),
+      await readUnknownWrites(
+        options.database,
+        { workspaceId: options.workspaceId, app: app.data },
+        { approvalId: approval.data },
+      ),
     );
   });
   routes.put("/:app/unknown-writes/:approvalId", async (c) => {
@@ -694,10 +696,14 @@ export function createCorsairReadinessRoutes(options: Options) {
       app,
     });
     const reviewed = await cutover.review(actorId, async (tx) => {
-      const [write] = await unknownWrites(tx, app, approval.data);
+      const [write] = await readUnknownWrites(
+        tx,
+        { workspaceId: options.workspaceId, app },
+        { approvalId: approval.data },
+      );
       if (!write?.canReconcile) return false;
       await tx.insert(auditEvents).values({
-        eventType: resolutionEvent,
+        eventType: writeReconciledEvent,
         targetType: "corsair_migration_scope",
         targetId: JSON.stringify([options.workspaceId, app]),
         actorUserId: actorId,

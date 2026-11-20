@@ -18,6 +18,7 @@ import { type AuditStore, recordAuditEvent } from "../audit";
 import type { CorsairEventOperations } from "../plugins/corsair/event-operations";
 import { githubId } from "../plugins/corsair/github";
 import {
+  githubEventEnvelope,
   githubEventSubject,
   githubPilotEventType,
 } from "../plugins/corsair/github-event-subject";
@@ -310,6 +311,11 @@ export function createTriggerIngressRoutes(deps: TriggerIngressDeps) {
         );
         const bodyId = signedBodyId(raw);
         const { occurredAt } = githubEventSubject(eventType, payload);
+        const envelope = githubEventEnvelope.safeParse(payload);
+        const corsairEligible =
+          envelope.success &&
+          !!envelope.data.installation &&
+          !!envelope.data.repository;
         const receipt =
           deps.corsairEvents?.tracks("github") && repositoryId.success
             ? await deps.corsairEvents.receiveLegacy({
@@ -318,6 +324,8 @@ export function createTriggerIngressRoutes(deps: TriggerIngressDeps) {
                 eventKey: bodyId.slice("body-".length),
                 eventType,
                 occurredAt,
+                corsairEligible,
+                receivedAt: new Date(now()),
                 triggerIds: [trigger.id],
               })
             : null;
@@ -352,13 +360,13 @@ export function createTriggerIngressRoutes(deps: TriggerIngressDeps) {
           if (
             state !== "queued" &&
             githubPilotEventType.safeParse(eventType).success &&
-            (!occurredAt ||
-              (await deps.corsairEvents.requiresReplayEvidence(
-                receipt.id,
-                trigger.id,
-                occurredAt,
-                new Date(now()),
-              )))
+            occurredAt &&
+            (await deps.corsairEvents.requiresReplayEvidence(
+              receipt.id,
+              trigger.id,
+              occurredAt,
+              new Date(now()),
+            ))
           ) {
             const reason = "Historical Trigger eligibility requires review.";
             await deps.corsairEvents.finishLegacy(receipt.id, trigger.id, {

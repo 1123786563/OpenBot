@@ -755,6 +755,15 @@ Reachability codes and account-link codes look alike, and Reachability's are che
 Reachability `link <code>` binds a conversation for delivery and is not recorded as a linked
 account; a `link <code>` from Slack's page under Connections links the Slack user.
 
+### Corsair GitHub and Slack
+
+Configure the [GitHub App](plugins/corsair-github.md) or [Slack App](plugins/corsair-slack.md)
+before enrolling accounts and granting Bot access. Use the
+[readiness inventory](plugins/corsair-readiness.md) and
+[event handoff guide](plugins/corsair-event-handoff.md) to review the deployment before
+[tool cutover](plugins/corsair-cutover.md). For existing installations, see the
+[PostgreSQL upgrade and coordinated restart](plugins/corsair-storage.md).
+
 ## Text messages and push notifications
 
 A provider is switched on by setting its variables and is off while none of them are set. Setting

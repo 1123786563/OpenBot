@@ -7,6 +7,19 @@ export const githubPilotEventType = z.enum([
   "issue_comment.created",
 ]);
 
+export const githubEventEnvelope = z.object({
+  action: z
+    .string()
+    .regex(/^[a-z_]{1,64}$/)
+    .optional(),
+  installation: z.object({ id: githubId }).optional(),
+  repository: z
+    .object({ id: githubId, full_name: z.string().max(256) })
+    .optional(),
+  issue: z.unknown().optional(),
+  comment: z.unknown().optional(),
+});
+
 const subject = z.object({
   id: githubId,
   number: githubId,

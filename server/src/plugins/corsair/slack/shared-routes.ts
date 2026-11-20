@@ -1,3 +1,4 @@
+import { finishExplicitWrite } from "../write-completion";
 import { corsairWriteKey, dispatchCorsairWrite } from "../cutover";
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
@@ -815,22 +816,20 @@ export function createSharedSlackPilot({
         reason: error.message,
         dispatchRefused: true,
       });
-      await approvals.saveResult(actor.id, approvalId, {
+      await finishExplicitWrite(approvals, actor.id, approvalId, {
         content: error.message,
         error: error.message,
       });
-      await approvals.finish(actor.id, approvalId);
       throw error;
     });
     if (!message) {
       const error =
         "Slack did not confirm this write. Check Slack before requesting another Approval.";
       await log("corsair.slack.write_unconfirmed");
-      await approvals.saveResult(actor.id, approvalId, {
+      await finishExplicitWrite(approvals, actor.id, approvalId, {
         content: error,
         error,
       });
-      await approvals.finish(actor.id, approvalId);
       throw new SharedSlackRefusal(error, 502);
     }
     await log("corsair.slack.write_succeeded", {

@@ -2,17 +2,28 @@ import { afterAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { MCPMock } from "@copilotkit/aimock/mcp";
 import { eq } from "drizzle-orm";
+import { mintRunAssertion } from "../src/agents/callback-token";
+import { createApp } from "../src/app";
 import { createAuditStore } from "../src/audit";
+import { loadConfig } from "../src/config";
 import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
-import { agents, mcpServers } from "../src/db/schema";
+import {
+  agents,
+  brokeredConnections,
+  mcpServers,
+  mcpTools,
+} from "../src/db/schema";
 import {
   createCorsairCutover,
   cutoverRefusal,
+  dispatchCorsairWrite,
   withLegacyCorsairRoute,
 } from "../src/plugins/corsair/cutover";
+import { createCorsairReadinessRoutes } from "../src/plugins/corsair/readiness";
 import { createPluginStore } from "../src/plugins/store";
 import { testDatabaseUrl } from "./support/database";
+import { testEnvironment } from "./support/environment";
 
 const database = createDatabase(testDatabaseUrl(), { max: 6 });
 afterAll(() => database.$client.close());
@@ -196,5 +207,180 @@ test("an active GitHub cutover leaves a direct MCP session and tool call availab
     await database.delete(mcpServers).where(eq(mcpServers.id, serverId));
     await database.delete(agents).where(eq(agents.id, botId));
     await mock.stop();
+  }
+});
+
+test("a lost broker write response is reconciled before a native or legacy retry", async () => {
+  const workspaceId = randomUUID();
+  const botId = randomUUID();
+  const actorId = randomUUID();
+  const serverId = randomUUID();
+  const app = "github" as const;
+  const toolName = "GITHUB_CREATE_AN_ISSUE";
+  const ref = `${serverId}/${toolName}`;
+  const scope = { workspaceId, app };
+  const cutover = createCorsairCutover(database, scope);
+  let sends = 0;
+  const store = createPluginStore({
+    database,
+    deploymentId: workspaceId,
+    brokerProvider: "composio",
+    auditStore: createAuditStore(database),
+    credentials: createCredentialStore(database),
+    encryptionKey: "A".repeat(43) + "=",
+    policy: () => ({ mode: "enforce", allow: ["true"], deny: [] }),
+    callVendor: async (connection, tool, args) => {
+      expect(connection.actorId).toBe(actorId);
+      expect(tool).toBe(toolName);
+      expect(args).toEqual({
+        owner: "team",
+        repo: "project",
+        title: "fixture",
+      });
+      if (++sends === 1) throw new Error("response lost");
+      return { text: "created", isError: false };
+    },
+  });
+  const migration = createCorsairReadinessRoutes({
+    database,
+    workspaceId,
+    registrations: {},
+    includeDeploymentLegacy: true,
+    requireUser: async (c, next) => {
+      c.set("actor", {
+        id: actorId,
+        email: "operator@example.test",
+        role: "admin",
+      });
+      await next();
+    },
+  });
+  const token = "fixture-deployment-agent-token";
+  const config = loadConfig(testEnvironment({ AGENT_TOOL_TOKEN: token }));
+  const appServer = createApp(
+    config,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    store,
+  );
+  async function write() {
+    const response = await appServer.request("/api/agent-tools/call", {
+      method: "POST",
+      headers: {
+        "x-openbot-agent-token": token,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        name: `mcp__${serverId}__${toolName}`,
+        args: { owner: "team", repo: "project", title: "fixture" },
+        run: mintRunAssertion(
+          { botId, actorId, runId: randomUUID() },
+          config.keyEncryptionKey,
+        ),
+      }),
+    });
+    expect(response.status).toBe(200);
+    return response.json();
+  }
+  await database
+    .insert(agents)
+    .values({ id: botId, name: botId, type: "built_in", configuration: {} });
+  try {
+    await database.insert(mcpServers).values({
+      id: serverId,
+      title: "GitHub fixture",
+      vendor: "GitHub",
+      url: "composio://github",
+      provenance: "composio",
+      accountMode: "personal",
+    });
+    await database
+      .insert(mcpTools)
+      .values({ serverId, name: toolName, effect: "write" });
+    await database.insert(brokeredConnections).values({
+      provider: "composio",
+      app,
+      holder: "person",
+      userId: actorId,
+      vendorUserId: actorId,
+      verified: true,
+    });
+    await store.grant("mcp", ref, botId, actorId);
+    expect(await write()).toMatchObject({
+      text: expect.stringContaining("response lost"),
+      isError: true,
+    });
+    expect(await write()).toMatchObject({
+      text: expect.stringContaining("Check its outcome"),
+      isError: true,
+    });
+    expect(sends).toBe(1);
+    await cutover.activate(actorId, async () => []);
+    const [pending] = await (
+      await migration.request("/github/unknown-writes")
+    ).json();
+    expect(pending).toMatchObject({
+      targetId: ref,
+      route: "legacy",
+      canReconcile: true,
+    });
+    await expect(
+      dispatchCorsairWrite(
+        database,
+        {
+          ...scope,
+          botId,
+          registration: "fixture",
+          grant: "fixture",
+          approvalId: randomUUID(),
+          writeKey: "native fixture key",
+          binding: "personal",
+        },
+        randomUUID(),
+        undefined,
+        async () => {
+          sends++;
+        },
+      ),
+    ).rejects.toThrow("Check its outcome");
+    expect(sends).toBe(1);
+    expect(
+      (
+        await migration.request(
+          `/github/unknown-writes/${pending.approvalId}`,
+          {
+            method: "PUT",
+            headers: { "X-OpenBot-Pilot": "github" },
+            body: JSON.stringify({
+              outcome: "not_applied",
+              evidenceRef: "fixture/provider-history",
+            }),
+          },
+        )
+      ).status,
+    ).toBe(204);
+    await cutover.rollback(actorId, {}, async () => true);
+    expect(await write()).toMatchObject({
+      text: expect.stringContaining("created"),
+      isError: false,
+    });
+    expect(sends).toBe(2);
+  } finally {
+    await database
+      .delete(brokeredConnections)
+      .where(eq(brokeredConnections.userId, actorId));
+    await database.delete(mcpServers).where(eq(mcpServers.id, serverId));
+    await database.delete(agents).where(eq(agents.id, botId));
   }
 });

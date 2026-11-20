@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../../db/client";
@@ -21,7 +21,7 @@ const stateSchema = z.discriminatedUnion("kind", [
 ]);
 type State = z.infer<typeof stateSchema>;
 const changed = "corsair.migration_route_changed";
-const observationMs = 7 * 24 * 60 * 60 * 1000;
+export const cutoverObservationMs = 7 * 24 * 60 * 60 * 1000;
 
 export { RevocationRefusal as cutoverRefusal };
 
@@ -47,7 +47,7 @@ export function createCorsairCutover(
   async function transition(
     actorId: string,
     decide: (current: State, tx: Transaction) => Promise<State | null>,
-    evidence?: Record<string, string>,
+    evidence?: Record<string, unknown>,
   ) {
     let acquiring = true;
     try {
@@ -66,7 +66,7 @@ export function createCorsairCutover(
           targetId: scope,
           actorUserId: actorId,
           createdAt: sql`clock_timestamp()`,
-          payload: { ...next, ...evidence },
+          payload: { ...evidence, ...next },
         });
         return next;
       });
@@ -103,18 +103,18 @@ export function createCorsairCutover(
         if (!excluded) return null;
         return {
           kind: "observing",
-          until: new Date(Date.now() + observationMs).toISOString(),
+          until: new Date(Date.now() + cutoverObservationMs).toISOString(),
           excluded,
         };
       });
     },
     rollback(
       actorId: string,
-      evidence: {
-        legacyAuthorizationRef: string;
-        currentPermissionsRef: string;
-      },
-      legacyVerified: (tx: Transaction) => Promise<boolean>,
+      evidence: Record<string, unknown>,
+      legacyVerified: (
+        tx: Transaction,
+        current: Extract<State, { kind: "observing" }>,
+      ) => Promise<boolean>,
     ) {
       return transition(
         actorId,
@@ -124,7 +124,9 @@ export function createCorsairCutover(
             Date.parse(current.until) <= Date.now()
           )
             return null;
-          return (await legacyVerified(tx)) ? { kind: "legacy" } : null;
+          return (await legacyVerified(tx, current))
+            ? { kind: "legacy" }
+            : null;
         },
         evidence,
       );
@@ -190,6 +192,22 @@ export function createCorsairCutover(
   };
 }
 
+export function legacyCorsairScope(
+  workspaceId: string | undefined,
+  transport: string,
+  url: string,
+): Scope | undefined {
+  const normalized = url.toLowerCase();
+  const selected = corsairApp.safeParse(normalized.split("://")[1]);
+  if (
+    workspaceId &&
+    selected.success &&
+    (transport === "composio" || transport === "arcade") &&
+    normalized === `${transport}://${selected.data}`
+  )
+    return { workspaceId, app: selected.data };
+}
+
 export function withLegacyCorsairRoute<T>(
   database: Database,
   workspaceId: string | undefined,
@@ -197,18 +215,10 @@ export function withLegacyCorsairRoute<T>(
   url: string,
   send: (tx?: Transaction) => Promise<T>,
 ) {
-  const selected = corsairApp.safeParse(url.toLowerCase().split("://")[1]);
-  if (
-    !workspaceId ||
-    !selected.success ||
-    (transport !== "composio" && transport !== "arcade") ||
-    url.toLowerCase() !== `${transport}://${selected.data}`
-  )
-    return send();
-  return createCorsairCutover(database, {
-    workspaceId,
-    app: selected.data,
-  }).dispatch("legacy", send);
+  const scope = legacyCorsairScope(workspaceId, transport, url);
+  return scope
+    ? createCorsairCutover(database, scope).dispatch("legacy", send)
+    : send();
 }
 
 export function withLegacyCorsairDisconnect<T>(
@@ -236,6 +246,142 @@ export function corsairWriteKey(
   return createHash("sha256")
     .update(JSON.stringify([actorId, providerSubject, targetId, args]))
     .digest("hex");
+}
+
+export const writeReconciledEvent = "corsair.migration_write_reconciled";
+export function readUnknownWrites(
+  db: Pick<Database, "execute">,
+  { workspaceId, app }: Scope,
+  {
+    approvalId,
+    excludeAttemptId,
+    legacyOnly = false,
+  }: {
+    approvalId?: string;
+    excludeAttemptId?: string;
+    legacyOnly?: boolean;
+  } = {},
+) {
+  return db.execute<{
+    approvalId: string;
+    startedAt: Date;
+    route: "legacy" | "corsair";
+    targetId: string;
+    canReconcile: boolean;
+  }>(sql`
+      select s.payload->>'approvalId' as "approvalId", s.created_at as "startedAt",
+        coalesce(s.payload->>'route', 'corsair') as route,
+        s.target_id as "targetId",
+        (s.created_at <= clock_timestamp() - interval '30 seconds' or exists (
+          select 1 from audit_events u
+          where u.event_type = ${`corsair.${app}.write_unconfirmed`}
+            and u.payload->>'approvalId' = s.payload->>'approvalId'
+        )) as "canReconcile"
+      from audit_events s
+      where s.event_type = ${`corsair.${app}.write_started`}
+        and coalesce(s.payload->>'workspaceId', s.payload->'target'->>'workspaceId') = ${workspaceId}
+        and (not ${legacyOnly} or s.payload->>'route' = 'legacy')
+        and (${approvalId ?? null}::text is null or s.payload->>'approvalId' = ${approvalId ?? null})
+        and s.payload->>'approvalId' is distinct from ${excludeAttemptId ?? null}
+        and not exists (
+          select 1 from audit_events r
+          where r.payload->>'approvalId' = s.payload->>'approvalId'
+            and r.created_at >= s.created_at
+            and (
+              r.event_type in (${`corsair.${app}.write_succeeded`}, ${writeReconciledEvent})
+              or (r.event_type = ${`corsair.${app}.write_refused`} and r.payload->>'dispatchRefused' = 'true' and not exists (
+                select 1 from audit_events u
+                where u.event_type = ${`corsair.${app}.write_unconfirmed`}
+                  and u.payload->>'approvalId' = s.payload->>'approvalId'
+                  and u.created_at >= s.created_at
+              ))
+            )
+        )
+      order by s.created_at desc
+      limit 100
+    `);
+}
+export async function dispatchTrackedLegacyWrite<
+  T extends {
+    isError: boolean;
+    accountGone?: true;
+    actionNotAllowed?: true;
+  },
+>(
+  database: Database,
+  scope: Scope,
+  attempt: {
+    actorId: string;
+    botId: string;
+    ref: string;
+    provider: "composio" | "arcade";
+    vendorUserId: string;
+    accountId?: string;
+    credentialActorId: string;
+    argumentDigest: string;
+  },
+  send: (
+    tx: Transaction,
+    invoke: (vendor: () => Promise<T>) => Promise<T>,
+  ) => Promise<T>,
+): Promise<T> {
+  const approvalId = randomUUID();
+  const { actorId, ref, ...details } = attempt;
+  const log = (outcome: string, extra = {}) =>
+    database.insert(auditEvents).values({
+      eventType: `corsair.${scope.app}.write_${outcome}`,
+      targetType: "mcp_tool",
+      targetId: ref,
+      actorUserId: actorId,
+      createdAt: sql`clock_timestamp()`,
+      payload: {
+        workspaceId: scope.workspaceId,
+        route: "legacy",
+        approvalId,
+        ...details,
+        ...extra,
+      },
+    });
+  // Commit before sending. A process crash must leave the attempt available for reconciliation.
+  await log("started");
+  let sent = false;
+  let result: T;
+  try {
+    result = await createCorsairCutover(database, scope).dispatch(
+      "legacy",
+      async (tx) => {
+        // The broker and Corsair can represent the same identity and target differently.
+        // Until provider history resolves an ambiguous write, fence the whole app.
+        const [lock] = await tx.execute<{ acquired: boolean }>(sql`
+        select pg_try_advisory_xact_lock(hashtextextended(
+          ${JSON.stringify(["corsair-broker-write", scope.workspaceId, scope.app])}, 0
+        )) as acquired
+      `);
+        if (
+          !lock?.acquired ||
+          (await readUnknownWrites(tx, scope, { excludeAttemptId: approvalId }))
+            .length ||
+          !(await readUnknownWrites(tx, scope, { approvalId })).length
+        )
+          throw new RevocationRefusal(
+            "A write may already have reached the provider. Check its outcome before retrying.",
+            409,
+          );
+        return send(tx, (vendor) => {
+          sent = true;
+          return vendor();
+        });
+      },
+    );
+  } catch (error) {
+    if (sent) await log("unconfirmed");
+    else await log("refused", { dispatchRefused: true });
+    throw error;
+  }
+  if (result.accountGone || result.actionNotAllowed)
+    await log("refused", { dispatchRefused: true });
+  else await log(result.isError ? "unconfirmed" : "succeeded");
+  return result;
 }
 
 export function dispatchCorsairWrite<T>(
@@ -277,11 +423,15 @@ export function dispatchCorsairWrite<T>(
             409,
           );
       }
+      if ((await readUnknownWrites(tx, scope, { legacyOnly: true })).length)
+        throw new RevocationRefusal(
+          "A broker write may already have reached the provider. Check its outcome before retrying.",
+          409,
+        );
       const started = `corsair.${scope.app}.write_started`;
       const succeeded = `corsair.${scope.app}.write_succeeded`;
       const refused = `corsair.${scope.app}.write_refused`;
       const unconfirmed = `corsair.${scope.app}.write_unconfirmed`;
-      const resolution = "corsair.migration_write_reconciled";
       const [lock] = await tx.execute<{ acquired: boolean }>(sql`
       select pg_try_advisory_xact_lock(hashtextextended(
         ${JSON.stringify(["corsair-write", scope.workspaceId, scope.app, scope.writeKey])}, 0
@@ -307,7 +457,7 @@ export function dispatchCorsairWrite<T>(
               and outcome.created_at >= previous.created_at
               and (
                 outcome.event_type = ${succeeded}
-                or (outcome.event_type = ${resolution} and outcome.payload->>'outcome' = 'not_applied')
+                or (outcome.event_type = ${writeReconciledEvent} and outcome.payload->>'outcome' = 'not_applied')
                 or (outcome.event_type = ${refused} and outcome.payload->>'dispatchRefused' = 'true' and not exists (
                   select 1 from audit_events uncertain
                   where uncertain.event_type = ${unconfirmed}
@@ -316,7 +466,7 @@ export function dispatchCorsairWrite<T>(
               )
           )
       ) or exists (
-        select 1 from audit_events review where review.event_type = ${resolution}
+        select 1 from audit_events review where review.event_type = ${writeReconciledEvent}
           and review.payload->>'approvalId' = ${scope.approvalId}
       ) as blocked
     `);

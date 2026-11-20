@@ -38,6 +38,13 @@ to `PUT /api/corsair/migration/:app/unknown-writes/:approvalId`. A started
 attempt becomes reviewable when marked unconfirmed or after 30 seconds. If
 evidence is inconclusive, leave it open.
 
+A legacy Broker write with an unknown outcome appears in the same list with
+`route: "legacy"`. The entry ID identifies the attempt. Use the audit record to
+identify the Broker account, action and originating Person. While the attempt is
+unresolved, both routes for that workspace and app refuse additional writes.
+Broker and Corsair identities and argument formats can differ across the two routes.
+Reconcile each attempt against provider history before resubmitting.
+
 A consumed Approval cannot dispatch again. A matching Corsair action for the
 same Person and target is blocked while the first result is unknown or has
 been reconciled as applied. A confirmed absence permits a new one-time
@@ -47,10 +54,32 @@ Approval and dispatch. The old Approval remains consumed.
 
 During the seven-day observation window, verify the remaining legacy
 authorization at the broker and verify current action, account, resource and
-audience restrictions. Record both evidence references. Send
-`{ "kind": "rollback", "inventoryRevision": "<current revision>", "legacyAuthorizationRef": "<ref>", "currentPermissionsRef": "<ref>" }`
-with the pilot header to the cutover endpoint. Legacy calls still pass their
-normal per-call authorization and approval checks.
+audience restrictions. Read the current inventory and route. Use the same workspace, app and observation
+deadline from those responses. Include each current `legacy-account:`, `tool:`
+and `audit:` capability key once. Record the time you completed the checks in
+`observedAt` and submit the attestation within five minutes with the pilot header.
+
+```json
+{
+  "kind": "rollback",
+  "inventoryRevision": "<current revision>",
+  "evidence": {
+    "workspaceId": "<workspace>",
+    "app": "github",
+    "observationUntil": "<current cutover until>",
+    "observedAt": "<UTC ISO 8601 timestamp>",
+    "authorizationsValid": true,
+    "permissionsCurrent": true,
+    "legacyAuthorizationRef": "<broker evidence>",
+    "currentPermissionsRef": "<provider and policy evidence>",
+    "capabilities": ["legacy-account:<account>", "tool:<server>/<action>"]
+  }
+}
+```
+
+The server checks the active observation window, inventory revision and local
+connection records. The administrator attests the broker and provider checks.
+Legacy calls still pass their normal per-call authorization and approval checks.
 
 Before withdrawing old authorization in the broker or provider console, record
 `{ "kind": "begin_cleanup", "evidenceRef": "<ref>" }` at the same endpoint.

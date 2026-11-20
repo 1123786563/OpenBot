@@ -31,7 +31,12 @@ import { inspectToolArguments } from "../content-governance";
 import { shareTargetOf } from "../share-target";
 import { type AccountMode, filedUnderPerson } from "../shared-accounts";
 import { transportFor } from "../transport";
-import { withLegacyCorsairRoute } from "../corsair/cutover";
+import {
+  corsairWriteKey,
+  dispatchTrackedLegacyWrite,
+  createCorsairCutover,
+  legacyCorsairScope,
+} from "../corsair/cutover";
 import { withReadRetries } from "../transient";
 import { withVendorDeadline } from "../vendor-deadline";
 import { accountBook, type PinnedAccount } from "./accounts";
@@ -745,69 +750,93 @@ export function callMethods(context: StoreContext) {
             advertised[0]?.vendorName ?? toolName,
             vendorArgs,
           );
-        const result = await withLegacyCorsairRoute(
-          database,
+        const transport = access.transport;
+        const scope = legacyCorsairScope(
           options.deploymentId,
-          access.transport,
+          transport,
           row.url,
-          async (tx) => {
-            const transport = access.transport;
-            const toolkit = access.toolkit;
-            if (
-              tx &&
-              toolkit &&
+        );
+        const dispatch = async (
+          tx?: Parameters<Parameters<typeof database.transaction>[0]>[0],
+          invoke = (vendor: typeof callVendor) => vendor(),
+        ) => {
+          const toolkit = access.toolkit;
+          if (
+            tx &&
+            toolkit &&
+            vendorUserId &&
+            (transport === "arcade" || transport === "composio")
+          ) {
+            const credentialActorId = input.credentialActorId ?? input.actorId;
+            const [current] = await tx
+              .select({ connected: brokeredConnections.app })
+              .from(brokeredConnections)
+              .where(
+                and(
+                  eq(brokeredConnections.app, toolkit),
+                  eq(brokeredConnections.provider, transport),
+                  eq(brokeredConnections.vendorUserId, vendorUserId),
+                  gatedMode === "shared"
+                    ? isNull(brokeredConnections.userId)
+                    : eq(brokeredConnections.userId, credentialActorId),
+                ),
+              )
+              .for("share");
+            const [selected] =
+              pinned && current
+                ? await tx
+                    .select({ id: brokeredAccounts.id })
+                    .from(brokeredAccounts)
+                    .where(
+                      and(
+                        eq(brokeredAccounts.app, toolkit),
+                        eq(brokeredAccounts.provider, transport),
+                        eq(brokeredAccounts.userId, credentialActorId),
+                        eq(brokeredAccounts.vendorUserId, pinned.vendorUserId),
+                        eq(brokeredAccounts.accountId, pinned.accountId ?? ""),
+                      ),
+                    )
+                    .for("share")
+                : [];
+            if (!current || (pinned && !selected))
+              throw new PluginRefusedError(
+                "The broker connection changed before dispatch.",
+                null,
+              );
+          }
+          return effect === "read"
+            ? withReadRetries(callVendor)
+            : invoke(callVendor);
+        };
+        const result = !scope
+          ? await dispatch()
+          : effect !== "read" &&
               vendorUserId &&
               (transport === "arcade" || transport === "composio")
-            ) {
-              const credentialActorId =
-                input.credentialActorId ?? input.actorId;
-              const [current] = await tx
-                .select({ connected: brokeredConnections.app })
-                .from(brokeredConnections)
-                .where(
-                  and(
-                    eq(brokeredConnections.app, toolkit),
-                    eq(brokeredConnections.provider, transport),
-                    eq(brokeredConnections.vendorUserId, vendorUserId),
-                    gatedMode === "shared"
-                      ? isNull(brokeredConnections.userId)
-                      : eq(brokeredConnections.userId, credentialActorId),
+            ? await dispatchTrackedLegacyWrite(
+                database,
+                scope,
+                {
+                  actorId: input.actorId,
+                  credentialActorId: input.credentialActorId ?? input.actorId,
+                  botId: input.botId,
+                  ref: input.ref,
+                  provider: transport,
+                  vendorUserId: runsAs ?? vendorUserId,
+                  accountId: pinned?.accountId ?? undefined,
+                  argumentDigest: corsairWriteKey(
+                    input.actorId,
+                    runsAs ?? vendorUserId,
+                    input.ref,
+                    vendorArgs,
                   ),
-                )
-                .for("share");
-              const [selected] =
-                pinned && current
-                  ? await tx
-                      .select({ id: brokeredAccounts.id })
-                      .from(brokeredAccounts)
-                      .where(
-                        and(
-                          eq(brokeredAccounts.app, toolkit),
-                          eq(brokeredAccounts.provider, transport),
-                          eq(brokeredAccounts.userId, credentialActorId),
-                          eq(
-                            brokeredAccounts.vendorUserId,
-                            pinned.vendorUserId,
-                          ),
-                          eq(
-                            brokeredAccounts.accountId,
-                            pinned.accountId ?? "",
-                          ),
-                        ),
-                      )
-                      .for("share")
-                  : [];
-              if (!current || (pinned && !selected))
-                throw new PluginRefusedError(
-                  "The broker connection changed before dispatch.",
-                  null,
-                );
-            }
-            return effect === "read"
-              ? withReadRetries(callVendor)
-              : callVendor();
-          },
-        );
+                },
+                dispatch,
+              )
+            : await createCorsairCutover(database, scope).dispatch(
+                "legacy",
+                (tx) => dispatch(tx),
+              );
         await recordAuditEvent(auditStore, {
           eventType: result.isError ? "mcp.call_failed" : "mcp.call_succeeded",
           targetType: "mcp_tool",

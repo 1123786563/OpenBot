@@ -8,22 +8,12 @@ import { githubPilotEventReceipts } from "../../db/schema/corsair";
 import { verifyGithubSignature } from "../../responsibilities/signatures";
 import type { CorsairEventOperations } from "./event-operations";
 import type { EventTransaction } from "./event-triggers";
-import { githubId } from "./github";
-import { githubEventSubject } from "./github-event-subject";
+import {
+  githubEventEnvelope,
+  githubEventSubject,
+} from "./github-event-subject";
 
 const receiptTable = githubPilotEventReceipts;
-const envelope = z.object({
-  action: z
-    .string()
-    .regex(/^[a-z_]{1,64}$/)
-    .optional(),
-  installation: z.object({ id: githubId }).optional(),
-  repository: z
-    .object({ id: githubId, full_name: z.string().max(256) })
-    .optional(),
-  issue: z.unknown().optional(),
-  comment: z.unknown().optional(),
-});
 const headers = z.object({
   deliveryId: z.uuid().transform((value) => value.toLowerCase()),
   event: z.string().regex(/^[a-z_]{1,64}$/),
@@ -79,7 +69,7 @@ export function createGithubEventIngress({
     } catch {
       return c.json({ error: "GitHub event is not valid JSON." }, 400);
     }
-    const parsed = envelope.safeParse(value);
+    const parsed = githubEventEnvelope.safeParse(value);
     if (!parsed.success)
       return c.json({ error: "Invalid GitHub event envelope." }, 400);
     const { action, installation, repository } = parsed.data;
@@ -96,7 +86,7 @@ export function createGithubEventIngress({
         isolatedSources?.has(`${installation.id}/${repository.id}`)
       );
       const owner =
-        operations && repository
+        operations && installation && repository
           ? await operations.nativeOwner(
               tx,
               { provider: "github", source: String(repository.id) },

@@ -1,3 +1,4 @@
+import { finishExplicitWrite } from "../write-completion";
 import { corsairGrantRef } from "../grants";
 import { corsairWriteKey, dispatchCorsairWrite } from "../cutover";
 import { randomUUID } from "node:crypto";
@@ -324,21 +325,19 @@ export function createSlackPilotRoutes({
           reason: error.message,
           dispatchRefused: true,
         });
-        await approvals.saveResult(actor.id, approvalId, {
+        await finishExplicitWrite(approvals, actor.id, approvalId, {
           content: error.message,
           error: error.message,
         });
-        await approvals.finish(actor.id, approvalId);
         throw error;
       }
       const reason =
         "Slack did not confirm the channel and user for this write. Check Slack before requesting another Approval.";
       await log("corsair.slack.write_unconfirmed");
-      await approvals.saveResult(actor.id, approvalId, {
+      await finishExplicitWrite(approvals, actor.id, approvalId, {
         content: reason,
         error: reason,
       });
-      await approvals.finish(actor.id, approvalId);
       throw new SlackPilotRefusal(reason, 502);
     }
     await log("corsair.slack.write_succeeded", {

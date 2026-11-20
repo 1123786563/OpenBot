@@ -9,7 +9,12 @@ import {
   corsairEventDispatches as dispatches,
   corsairEvents as events,
 } from "../../db/schema/corsair-storage";
+import {
+  matchesFilter,
+  triggerConfigSchema,
+} from "../../responsibilities/triggers";
 import type { DeliveryOutcome } from "../../responsibilities/trigger-routes";
+import { githubPilotEventType } from "./github-event-subject";
 import type { EventTransaction } from "./event-triggers";
 
 export const eventSource = z.object({
@@ -228,6 +233,7 @@ export function createCorsairEventOperations(
         eventType: string;
         triggerIds: string[];
         occurredAt?: Date | null;
+        corsairEligible?: boolean;
         receivedAt?: Date;
       },
     ) {
@@ -246,7 +252,10 @@ export function createCorsairEventOperations(
         const owner =
           native && native.dispatch !== false
             ? "corsair"
-            : await sourceOwner(tx, key, occurredAt ?? receivedAt);
+            : provider === "github" &&
+                (!occurredAt || input.corsairEligible === false)
+              ? "legacy"
+              : await sourceOwner(tx, key, occurredAt ?? receivedAt);
         const [inserted] = await tx
           .insert(events)
           .values({
@@ -413,6 +422,46 @@ export function createCorsairEventOperations(
           new Set(pairs.values()).size !== pairs.size
         )
           return null;
+        if (key.provider === "github") {
+          for (const [legacy, corsair] of pairs) {
+            const [pair] = await tx.execute<{
+              config: unknown;
+              eventTypes: string[];
+            }>(sql`
+              select t.config, e.event_types as "eventTypes"
+              from responsibility_triggers t
+              join corsair_entities e on e.entity_id = ${corsair}
+                and e.workspace_id = ${workspaceId}
+                and e.registration = ${registrationFor("github") ?? ""}
+                and e.entity_type = 'openbot.github.trigger'
+                and e.goal_id = t.responsibility_id
+                and e.repository_id = ${key.source}
+                and e.installation_id = ${[...installations][0] ?? ""}
+                and e.disabled_at is null
+              join corsair_entities repo on repo.workspace_id = e.workspace_id
+                and repo.registration = e.registration
+                and repo.entity_type = 'openbot.github.repository'
+                and repo.installation_id = e.installation_id
+                and repo.entity_id = e.repository_id
+              where t.id = ${legacy} and t.kind = 'github' and t.enabled
+                and lower(t.config->>'repository') = lower(repo.name)
+              for share of t, e, repo
+            `);
+            const config = triggerConfigSchema.safeParse(pair?.config);
+            if (!pair || !config.success || config.data.kind !== "github")
+              return null;
+            const { filter } = config.data;
+            if (
+              filter.field ||
+              githubPilotEventType.options.some(
+                (type) =>
+                  matchesFilter(filter, type, {}) !==
+                  pair.eventTypes.includes(type),
+              )
+            )
+              return null;
+          }
+        }
         for (const eventKey of eventKeys) {
           const old = rows.filter(
             (row) => row.entry === "legacy" && row.eventKey === eventKey,

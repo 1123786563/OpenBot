@@ -1,3 +1,4 @@
+import { finishExplicitWrite } from "./write-completion";
 import { corsairWriteKey, dispatchCorsairWrite } from "./cutover";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, eq, gt, lt } from "drizzle-orm";
@@ -879,21 +880,19 @@ export function createGithubPilotRoutes({
           reason: error.message,
           dispatchRefused: true,
         });
-        await approvals.saveResult(actor.id, approvalId, {
+        await finishExplicitWrite(approvals, actor.id, approvalId, {
           content: error.message,
           error: error.message,
         });
-        await approvals.finish(actor.id, approvalId);
         throw error;
       }
       const reason =
         "GitHub did not confirm the write and its operator. Check the repository before requesting another Approval.";
       await trail("corsair.github.write_unconfirmed", evidence);
-      await approvals.saveResult(actor.id, approvalId, {
+      await finishExplicitWrite(approvals, actor.id, approvalId, {
         content: reason,
         error: reason,
       });
-      await approvals.finish(actor.id, approvalId);
       throw new PilotRefusal(reason, 502);
     }
     await trail("corsair.github.write_succeeded", {
@@ -902,10 +901,9 @@ export function createGithubPilotRoutes({
       issueNumber: result.number,
       url: result.htmlUrl,
     });
-    await approvals.saveResult(actor.id, approvalId, {
+    await finishExplicitWrite(approvals, actor.id, approvalId, {
       content: result.htmlUrl,
     });
-    await approvals.finish(actor.id, approvalId);
     return c.json({ issue: result });
   });
   return routes;
