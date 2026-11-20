@@ -6,11 +6,11 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { GovernancePage } from "@/components/astryx-pilot/governance";
 import {
   PageEmpty,
   PageRows,
   PageSection,
-  PageShell,
 } from "@/components/layout/page-shell";
 import { StaggerItem } from "@/components/layout/stagger";
 import { Button } from "@/components/ui/button";
@@ -63,14 +63,14 @@ function BoundariesPage() {
 
   if (!policy) {
     return (
-      <PageShell description={DESCRIPTION} title="Boundaries">
+      <GovernancePage description={DESCRIPTION} title="Boundaries">
         {/* Nothing until the policy is known: a rule list that guesses is worse than a blank. */}
         {stored.error ? (
           <p className="text-destructive text-sm" role="alert">
             {stored.error.message}
           </p>
         ) : null}
-      </PageShell>
+      </GovernancePage>
     );
   }
 
@@ -79,7 +79,11 @@ function BoundariesPage() {
     policy.allow.length === 1 && policy.allow[0] === "true";
 
   return (
-    <PageShell action={addRule} description={DESCRIPTION} title="Boundaries">
+    <GovernancePage
+      action={addRule}
+      description={DESCRIPTION}
+      title="Boundaries"
+    >
       <PageSection title="Bots may never">
         {policy.deny.length === 0 ? (
           <PageEmpty
@@ -209,6 +213,6 @@ function BoundariesPage() {
           </p>
         ) : null}
       </PageSection>
-    </PageShell>
+    </GovernancePage>
   );
 }
