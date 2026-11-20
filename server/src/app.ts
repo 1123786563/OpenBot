@@ -27,12 +27,11 @@ import {
 import type { BotAccessCheck } from "./agents/profile-policy";
 import type { AgentProfileStore } from "./agents/profile-store";
 import { createAgentRoutes } from "./agents/routes";
-import { createApprovalRoutes } from "./approvals/routes";
 import { createReviewerGuidanceRoutes } from "./approvals/reviewer-guidance";
+import { createApprovalRoutes } from "./approvals/routes";
 import { createApprovalRuleDraftRoutes } from "./approvals/rule-translate";
 import type { RuleVocabulary } from "./approvals/rule-vocabulary";
 import type { ApprovalService } from "./approvals/service";
-import { type AuditVocabulary, createAuditAskRoutes } from "./audit-ask";
 import {
   type AuditEvent,
   type AuditEventType,
@@ -46,6 +45,7 @@ import {
   readAuditExportRows,
   recordAuditEvent,
 } from "./audit";
+import { type AuditVocabulary, createAuditAskRoutes } from "./audit-ask";
 import { createDevRequireUser } from "./auth/dev-actor";
 import {
   type AppVariables,
@@ -111,13 +111,13 @@ import type { IdentityStore } from "./identity/store";
 import { createIntelligenceClient } from "./intelligence-client";
 import { createCapturePassOrigin } from "./intelligence-gateway-proxy";
 import {
-  createLearningRoutes,
-  type LearningAdminDependencies,
-} from "./learning/routes";
-import {
   type LearningModelEndpoint,
   mountLearningModelEndpoint,
 } from "./learning/model-endpoint";
+import {
+  createLearningRoutes,
+  type LearningAdminDependencies,
+} from "./learning/routes";
 import {
   createPersonalLearningRoutes,
   type PersonalLearningRouteDeps,
@@ -138,6 +138,7 @@ import { MAX_PAGE, type PeopleStore } from "./people/store";
 import type { BrokerProvider } from "./plugins/access";
 import type { AccountModeSwitch } from "./plugins/account-mode";
 import type { ComposioBroker } from "./plugins/broker";
+import { createGithubPilotRoutes } from "./plugins/corsair/routes";
 import { createAppGrantDraftRoutes } from "./plugins/grant-translate";
 import { createPluginRoutes } from "./plugins/routes";
 import { createSharedUseRoutes } from "./plugins/shared-use-routes";
@@ -452,6 +453,10 @@ export function createApp(
   coworker?: {
     productTelemetry?: ProductTelemetry;
     approvals?: ApprovalService;
+    githubPilot?: Omit<
+      Parameters<typeof createGithubPilotRoutes>[0],
+      "requireUser" | "canUseBot"
+    >;
     /** The Recorder extension's routes and guards (recorder/wiring.ts). Absent, nothing about it is mounted. */
     recorder?: RecorderExtensionDeps;
     /** A person's own OpenBot browser, with the Recorder in it already connected (browser/routes.ts). Absent, nothing
@@ -1612,6 +1617,17 @@ export function createApp(
     ? async (actor, botId) =>
         (await agentProfileStore.get(actor, botId)) !== null
     : async () => true;
+
+  if (coworker?.githubPilot && agentProfileStore) {
+    app.route(
+      "/api/corsair/github",
+      createGithubPilotRoutes({
+        ...coworker.githubPilot,
+        requireUser,
+        canUseBot,
+      }),
+    );
+  }
 
   // The Bot computer. Acting on a page needs the gateway and the policy it enforces, so both arrive
   // together or the routes are not mounted. An ungoverned computer is not a reduced feature. It is

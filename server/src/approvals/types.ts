@@ -155,6 +155,8 @@ export type ApprovalCandidate = {
   account?: string;
 };
 export type ApprovalAction = ApprovalCandidate & {
+  /** Decisions for API actions are consumed by the original surface. */
+  dispatch?: "explicit";
   runId: string;
   threadId: string;
   toolCallId: string;

@@ -155,6 +155,14 @@ export const auditEventTypes = [
    */
   "mcp.tools_discovered",
   "mcp.call_succeeded",
+  "corsair.github.connected",
+  "corsair.github.repository_registered",
+  "corsair.github.repository_removed",
+  "corsair.github.grant_changed",
+  "corsair.github.write_started",
+  "corsair.github.write_refused",
+  "corsair.github.write_succeeded",
+  "corsair.github.write_unconfirmed",
   "mcp.call_rejected",
   /*
    * A call this deployment permitted and the vendor did not complete.

@@ -32,7 +32,6 @@ import {
   readRunAssertion,
 } from "./agents/callback-token";
 import { canUseComputer } from "./agents/computer-access";
-import { isUnattended, runModeOf } from "./agents/run-mode";
 import { wireCoordination } from "./agents/coordination-wiring";
 import { createAgentFetch } from "./agents/endpoint";
 import { createHandoffDesk } from "./agents/handoff";
@@ -46,6 +45,7 @@ import {
 import { createBotReset } from "./agents/lifecycle-reset";
 import { createAgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
+import { isUnattended, runModeOf } from "./agents/run-mode";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
 import { createSubagents, SUBAGENT_HANDED_BACK } from "./agents/subagent";
 import { toolLimitRecorder } from "./agents/tool-limit";
@@ -213,12 +213,12 @@ import {
   createLearningModelCalls,
   learningModelEndpointFor,
 } from "./learning/model-endpoint";
-import { learningModelUnavailable } from "./learning/routes";
 import { createLearningPeople } from "./learning/people";
 import {
   createPersonalLearningSpaces,
   createPersonSpaceStore,
 } from "./learning/personal-space";
+import { learningModelUnavailable } from "./learning/routes";
 import { clearLearningRevisionFallback } from "./learning/runtime";
 import { learningScopes } from "./learning/scopes";
 import {
@@ -252,6 +252,10 @@ import { assertActivatable, providerDecision } from "./plugins/broker";
 import { useRoutineTools } from "./plugins/builtin-routines";
 import { useComposioClient } from "./plugins/composio";
 import { createComposioClient } from "./plugins/composio-adapter";
+import {
+  createGithubPilotProvider,
+  githubPilotRegistration,
+} from "./plugins/corsair/github";
 import { backfillBrokeredLogos } from "./plugins/logos";
 import { redirectUriFor } from "./plugins/oauth";
 import {
@@ -3020,6 +3024,7 @@ const identityGithubCallback =
       })
     : undefined;
 
+const githubPilot = githubPilotRegistration(process.env, config.publicUrl);
 const app = createApp(
   config,
   auth,
@@ -3157,6 +3162,19 @@ const app = createApp(
   {
     productTelemetry,
     approvals: approvalService,
+    ...(githubPilot
+      ? {
+          githubPilot: {
+            workspaceId: deploymentId,
+            registration: `${githubPilot.appId}/${githubPilot.clientId}`,
+            provider: createGithubPilotProvider(githubPilot),
+            database,
+            approvals: storedApprovals,
+            audit: bootAuditStore,
+            encryptionKey: config.keyEncryptionKey,
+          },
+        }
+      : {}),
     shared: { modes: accountModes, use: sharedUseStore },
     ...(signInService ? { passwords: signInService } : {}),
     recorder: recorderExtension,

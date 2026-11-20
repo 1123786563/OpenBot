@@ -249,17 +249,19 @@ export function createApprovalStore(database: Database): ApprovalStore {
          */
         if (decision === "deny" && request.action.declined)
           await recordAuditEvent(trail, request.action.declined);
-        await tx
-          .insert(workItems)
-          .values({
-            kind: "approval.resume",
-            key: id,
-            payload: { ownerUserId: owner, approvalId: id },
-          })
-          .onConflictDoNothing();
-        await tx.execute(
-          sql`select pg_notify('openbot_work_offered', 'approval.resume')`,
-        );
+        if (request.action.dispatch !== "explicit") {
+          await tx
+            .insert(workItems)
+            .values({
+              kind: "approval.resume",
+              key: id,
+              payload: { ownerUserId: owner, approvalId: id },
+            })
+            .onConflictDoNothing();
+          await tx.execute(
+            sql`select pg_notify('openbot_work_offered', 'approval.resume')`,
+          );
+        }
         return updated;
       });
     },
