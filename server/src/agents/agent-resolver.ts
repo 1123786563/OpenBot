@@ -1,14 +1,15 @@
 import type { AbstractAgent } from "@ag-ui/client";
 import type { ComputerGuidance } from "@openbot/shared/bot-prompt";
+import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
 import type { AuditInitiator } from "../audit";
 import type { AgentFetch, StallGuard } from "../channels/stall-guard";
 import {
   type HandoffForRun,
   type HoldsTools,
   type LoadAgentsForActor,
+  type LoadAppsForBot,
   type LoadAttachment,
   type LoadInstructions,
-  type LoadAppsForBot,
   type LoadToolsForBot,
   type MarkAttachmentsSent,
   onOpenBotRunner,
@@ -29,6 +30,7 @@ import type { AgentActor } from "./profile-types";
 export type AgentResolutionContext = {
   initiator?: AuditInitiator;
   depth?: number;
+  marketSkill?: MarketSkillSnapshot | null;
   /**
    * A subagent's run (agents/subagent.ts): the same Bot with no coordination at all, so it can
    * neither start a subagent of its own nor reach past itself to another Bot or a person.
@@ -175,6 +177,7 @@ export function createActorAgentResolver(
       context?.holdsTools,
       deps.pickedModelForActor?.(actor.id, context?.initiator),
       deps.loadAppsForActor?.(actor.id),
+      context?.marketSkill,
     ).then((agents) => {
       const loadName = deps.loadNameForActor;
       if (loadName) {

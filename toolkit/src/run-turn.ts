@@ -58,11 +58,7 @@ import { EventType } from "@ag-ui/client";
 import { NOT_RUN_WHILE_WAITING } from "@openbot/shared/approval-outcomes";
 import { NOT_SHOWN } from "@openbot/shared/component-markers";
 import { frameFiring } from "@openbot/shared/routine-firing";
-import {
-  type ApprovalContinuation,
-  RUN_MARKET_SKILL,
-  type RunWithMarketSkill,
-} from "./continuation";
+import type { ApprovalContinuation, MarketSkillSnapshot } from "./continuation";
 import {
   type HeadlessTool,
   HeadlessToolSuspension,
@@ -710,6 +706,8 @@ export function createTurnRunner(options: {
     agentId: string;
     initiator: AuditInitiator;
     depth?: number;
+    /** Null on a continuation without recorded market provenance, including legacy rows. */
+    marketSkill?: MarketSkillSnapshot | null;
   }) => Promise<AbstractAgent>;
   toolsForTurn?: (input: {
     ownerUserId: string;
@@ -873,6 +871,9 @@ export function createTurnRunner(options: {
       agentId,
       initiator,
       ...(depth ? { depth } : {}),
+      ...(continuation
+        ? { marketSkill: continuation.snapshot.marketSkill ?? null }
+        : {}),
     });
     agent.threadId = threadId;
     /*
@@ -913,16 +914,6 @@ export function createTurnRunner(options: {
         initiator,
       })) ?? []),
     ];
-    if (continuation) {
-      const marketSkill = continuation.snapshot.marketSkill ?? null;
-      agent.use((input, next) => {
-        const restored: RunWithMarketSkill = {
-          ...input,
-          [RUN_MARKET_SKILL]: { snapshot: marketSkill },
-        };
-        return next.run(restored);
-      });
-    }
     if (headlessTools.length > 0)
       agent.use(new HeadlessToolsMiddleware(headlessTools, initiator));
     if (signal?.aborted) throw new Error("The headless turn was cancelled.");

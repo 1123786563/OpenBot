@@ -17,6 +17,7 @@
 import type { RunAgentInput } from "@ag-ui/client";
 import {
   type MarketSkillIdentity,
+  type MarketSkillSnapshot,
   RUN_MARKET_SKILL,
   type RunWithMarketSkill,
 } from "@openbot/toolkit/continuation";
@@ -84,9 +85,12 @@ function guidance(skill: PickableSkill): string | undefined {
 export function runPickedSkillGuidance(
   input: RunWithMarketSkill,
   held: readonly PickableSkill[],
+  restored?: MarketSkillSnapshot | null,
 ) {
   input[RUN_MARKET_SKILL] ??= {};
   const selection = input[RUN_MARKET_SKILL];
+  if (selection.snapshot === undefined && restored !== undefined)
+    selection.snapshot = restored;
   if (selection.snapshot) return guidance(selection.snapshot);
 
   const command = pickedSkillCommand(input);

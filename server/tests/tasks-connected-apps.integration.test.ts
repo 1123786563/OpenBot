@@ -555,12 +555,13 @@ const newRunTurn = () =>
       ɵcleanupThreadLock: async () => undefined,
     },
     runner,
-    buildAgentFor: ({ ownerUserId, agentId, initiator }) =>
+    buildAgentFor: ({ ownerUserId, agentId, initiator, marketSkill }) =>
       newResolver().resolveAgentForActor(
         { id: ownerUserId, role: "user" },
         agentId,
         {
           initiator,
+          marketSkill,
         },
       ),
   });

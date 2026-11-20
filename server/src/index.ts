@@ -6,6 +6,7 @@ import {
 import { computerGuidance } from "@openbot/shared/bot-prompt";
 import { isPersonBrowserId } from "@openbot/shared/openbot-browser";
 import { workOwner } from "@openbot/shared/work-owner";
+import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
 import { createTurnRunner } from "@openbot/toolkit/run-turn";
 import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -2083,6 +2084,7 @@ const buildAgentFor = async ({
   initiator,
   depth,
   subagent,
+  marketSkill,
 }: {
   ownerUserId: string;
   agentId: string;
@@ -2090,6 +2092,7 @@ const buildAgentFor = async ({
   depth?: number;
   /** A subagent's run: the same Bot with no coordination. See agents/subagent.ts. */
   subagent?: boolean;
+  marketSkill?: MarketSkillSnapshot | null;
 }) => {
   const actor = await actorFor(ownerUserId);
   let agent: AbstractAgent | undefined;
@@ -2097,6 +2100,7 @@ const buildAgentFor = async ({
     agent = await actorAgentResolver.resolveAgentForActor(actor, agentId, {
       initiator,
       depth,
+      marketSkill,
       ...(subagent ? { subagent } : {}),
     });
   } catch (error) {

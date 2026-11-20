@@ -30,6 +30,7 @@ import { MODEL_TOOL_LIMIT } from "@openbot/shared/model-tool-limit";
 import { runTimeZone } from "@openbot/shared/person-time-zone";
 import { checklistNotice } from "@openbot/shared/run-notices";
 import { SUBAGENT_TOOL } from "@openbot/shared/subagent";
+import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
 import {
   BuiltInAgentWithSaneHistory,
   CloningRemoteAgent,
@@ -996,6 +997,7 @@ export async function buildAgents(
   ),
   /** The apps each Bot holds, as they stand for the person asking. Absent says nothing about apps. */
   loadApps?: LoadAppsForBot,
+  marketSkill?: MarketSkillSnapshot | null,
 ): Promise<Record<string, AbstractAgent>> {
   let vendors: readonly string[] = [];
   try {
@@ -1057,6 +1059,7 @@ export async function buildAgents(
           pickedModel,
           botNames,
           loadApps,
+          marketSkill,
         );
         if (loadPersonalMemory)
           built.use(new PersonalMemoryMiddleware(agent.id, loadPersonalMemory));
@@ -1337,6 +1340,7 @@ async function buildAgent(
   botNames: ReadonlyMap<string, string> = new Map(),
   /** The apps this Bot holds, as they stand for the person asking. See {@link buildAgents}. */
   loadApps?: LoadAppsForBot,
+  marketSkill?: MarketSkillSnapshot | null,
 ): Promise<AbstractAgent> {
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
@@ -1393,7 +1397,7 @@ async function buildAgent(
    * from the same grants narrowing reads, fresh per request. See `picked-skill.ts`.
    */
   const pickedSkillFor = (input: RunAgentInput) =>
-    runPickedSkillGuidance(input, skills);
+    runPickedSkillGuidance(input, skills, marketSkill);
   const holdsInstructions = skills.some((skill) => skill.instructions);
   const narrowing =
     selection &&
@@ -1707,7 +1711,7 @@ async function buildAgent(
 
   const whole = withTools(granted);
   // Even a small app grant may need search once the client's tools arrive with the run.
-  const canReuseWhole =
+  if (
     !pickedModel &&
     !narrowing &&
     !handoff &&
@@ -1715,13 +1719,15 @@ async function buildAgent(
     !acquireLearnedSkills &&
     !holdsTools &&
     !holdsInstructions &&
-    !granted.some((tool) => tool.searchable);
+    !marketSkill &&
+    !granted.some((tool) => tool.searchable)
+  )
+    return whole;
 
   return new RunBuiltAgent(
     { agentId: agent.id, description: agent.name },
     whole,
     async (input, signal) => {
-      if (canReuseWhole && !pickedSkillFor(input)) return whole;
       const runModel = await modelForRun(model, input, pickedModel);
       signal.throwIfAborted();
       logRunModel(agent.id, input, runModel.defaultModel, runModel.effort, {
@@ -2717,6 +2723,7 @@ export async function resolveRuntimeAgents(
   pickedModel?: PickedModel,
   /** Appended last for the positional reason `loadInstructions` gives. See {@link buildAgents}. */
   loadApps?: LoadAppsForBot,
+  marketSkill?: MarketSkillSnapshot | null,
 ): Promise<Record<string, AbstractAgent>> {
   const all = await loadAgents();
   if (all.length === 0) {
@@ -2763,6 +2770,7 @@ export async function resolveRuntimeAgents(
     // of theirs.
     new Map(all.map((agent) => [agent.id, agent.name])),
     loadApps,
+    marketSkill,
   );
 }
 
