@@ -3,6 +3,7 @@ import { configureBotLifecycle } from "../agents/lifecycle";
 import { createDatabase } from "../db/client";
 import { repeatAfterEach } from "../work/loop";
 import { createPersonalSaasApp } from "./app";
+import { workspaceQuotaConfig } from "./quotas";
 
 const httpsUrl = z.url({ protocol: /^https$/ }).refine((value) => {
   const url = new URL(value);
@@ -93,6 +94,16 @@ const app = createPersonalSaasApp(
     encryptionKey: env.KEY_ENCRYPTION_KEY,
     supportSubjects: env.OPENBOT_SUPPORT_SUBJECTS,
     botRuntime,
+    quotas: workspaceQuotaConfig.parse({
+      bot: process.env.OPENBOT_PERSONAL_QUOTA_BOT_RUNS,
+      computer: process.env.OPENBOT_PERSONAL_QUOTA_COMPUTERS,
+      storage:
+        process.env.OPENBOT_PERSONAL_QUOTA_STORAGE_BYTES ??
+        process.env.OPENBOT_PERSONAL_QUOTA_ATTACHMENT_BYTES,
+      computerStorage:
+        process.env.OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES,
+      automation: process.env.OPENBOT_PERSONAL_QUOTA_TRIGGERS_PER_MINUTE,
+    }),
     inboundRelayToken: process.env.OPENBOT_PERSONAL_SAAS_INBOUND_RELAY_TOKEN,
     suspensionOperator:
       operatorId && operatorToken

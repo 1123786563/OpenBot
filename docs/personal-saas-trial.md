@@ -140,3 +140,72 @@ The workspace’s **Routines and inbound bindings** page lists existing items an
 A cutoff leaves Routine configuration and delivery bindings in place. History records the cutoff reason for skipped work. If a Bot turn had started when access ended, its external actions may already have taken effect. Resume schedules the Routine’s next occurrence and accepts inbound messages sent after the binding was resumed. Queued work from an earlier authorization epoch cannot run after access returns.
 
 Inbound delivery uses a trusted provider relay. Set `OPENBOT_PERSONAL_SAAS_INBOUND_RELAY_TOKEN` to enable `POST /api/webhooks/personal-inbound`. The relay verifies the provider event before forwarding it over HTTPS with the configured bearer token. The JSON body contains `transport` (`sms`, `slack`, or `teams`), `realm`, `identity`, `externalId`, `sentAt`, and `text`. Use the provider’s original event ID and send time for every retry. `sentAt` is an ISO 8601 timestamp with a time zone. A valid relay request returns `204`, including when an event is skipped or already recorded. The relay resolves provider identities against existing Personal Workspace delivery bindings.
+
+### Workspace quotas
+
+All Personal SaaS replicas must use the same limits. Trial defaults are placeholders for
+target-environment capacity acceptance.
+
+| Variable | Default | What counts |
+| --- | ---: | --- |
+| `OPENBOT_PERSONAL_QUOTA_BOT_RUNS` | 4 | Queued reservations and in-flight Bot turns, including Routines and inbound automations |
+| `OPENBOT_PERSONAL_QUOTA_COMPUTERS` | 1 | The managed Computer while starting, running, or awaiting process exit. Set to 0 to disable starts. |
+| `OPENBOT_PERSONAL_QUOTA_STORAGE_BYTES` | 67108864 | PostgreSQL attachments and reserved Computer filesystem capacity. The previous `OPENBOT_PERSONAL_QUOTA_ATTACHMENT_BYTES` is accepted as a fallback. |
+| `OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES` | 0 | The portion of the workspace storage limit reserved for the Computer. At zero, Computer starts are disabled. |
+| `OPENBOT_PERSONAL_QUOTA_TRIGGERS_PER_MINUTE` | 30 | Admitted Routine and inbound triggers in the preceding 60 seconds, including manual Run now |
+
+`GET /api/workspace` publishes `quotas` to cookie and bearer sessions. Direct
+admissions that exceed a limit return HTTP 429 with `workspace_quota_exceeded`,
+`resource`, `used`, `limit`, and `message`. Background automation records
+the refusal in its run history. Failed admissions do not consume a trigger.
+Completed turns release Bot slots. An interrupted running turn holds its slot
+until the worker returns or its lease expires. Stopping a Computer keeps its
+files and configuration. The supervisor must be upgraded with the API to
+support manual Computer stop.
+
+Use `POST /api/workspace/bot-runs/:key/stop` or
+`POST /api/workspace/computer/stop` to request a stop. Attachment clients
+can stage a file with multipart `conversationId` and `file` at
+`POST /api/workspace/attachments`, list drafts at `GET /api/workspace/attachments`,
+and withdraw a draft through `POST /api/workspace/attachments/:id/withdraw`.
+The upload limit is 8 MiB per file. Published conversation attachments remain
+available through existing history and export paths.
+
+The storage usage total includes staged and retained attachment bytes plus allocated Computer
+filesystem blocks. When Computer storage is configured, the response also includes
+`attachmentUsed`, `computerUsed`, and `computerReserved`. An unavailable filesystem reading
+sets `used` and `computerUsed` to `null`. Upload admission counts the full Computer reservation
+so filesystem writes and uploads can proceed concurrently within the combined limit.
+
+#### Provision Computer storage
+
+1. Set the same positive `OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES` on the API replicas and
+   the Docker supervisor. Set `OPENBOT_WORKSPACE_STORAGE_ROOT` on the supervisor to an absolute
+   path on the Docker engine host. Keep these settings consistent when replacing an API replica
+   or supervisor.
+2. On the Docker engine host, mount a dedicated, writable ext4 filesystem for each workspace at
+   `<root>/<namespace>-workspace-workspace-<workspace UUID>`. The default namespace is `openbot`.
+   Set the filesystem's block capacity at or below the reservation. Mount it with `nodev,nosuid`.
+   Keep the mount in place while the workspace is in service.
+3. Create `workspace` and `profiles` directories at the filesystem root. Put the exact mount
+   directory basename in the root's `.openbot-workspace` file. Keep the root and marker under
+   operator control. Use regular directories and keep the filesystem free of nested mounts.
+4. For an upgrade, stop the existing Computer before copying. Copy the old
+   `<namespace>-workspace-workspace-<id>` volume into `workspace` and
+   `<namespace>-profile-workspace-<id>` into `profiles` on the new filesystem. Preserve ownership
+   and modes. Keep the source volumes for rollback and confirm both copies before starting
+   the replacement. Ensure existing attachments fit within the workspace limit after reserving
+   Computer storage.
+5. Replace the API and supervisor together while admissions are paused. The supervisor probes
+   the filesystem through Docker before launch and returns 503 if the mount or the requested
+   reservation cannot be verified. Verify a write to both directories, an out-of-space refusal,
+   and a stop and restart before admitting participants.
+
+Both directories share the kernel-enforced capacity of the same filesystem. The Computer's
+image filesystem is read-only. Temporary files go to bounded memory mounts and package installs
+that modify the image filesystem fail. The Computer image must ship with the required system
+packages. Docker log rotation is separate from the workspace storage budget.
+
+Calibrate filesystem size, upload capacity, and Docker host resources in the target environment.
+Exercise quota refusals, release and retry, cross-account isolation, supervisor process exit,
+and the actual Web, mobile, and desktop builds before setting trial capacity.

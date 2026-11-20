@@ -194,6 +194,10 @@ export async function recoverPersonalWork(
       body: JSON.stringify({ action, acknowledged }),
     },
   );
+  if (reply.status === 429)
+    throw new PersonalSaasActionError(
+      "Your workspace has reached its Bot run limit.",
+    );
   if (!reply.ok)
     throw new PersonalSaasActionError(
       "Could not update stopped work. Try again.",

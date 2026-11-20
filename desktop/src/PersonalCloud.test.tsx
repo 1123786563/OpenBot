@@ -3,9 +3,9 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act, cleanup, render, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
-  PersonalCloud,
   type CloudAction,
   type CloudView,
+  PersonalCloud,
 } from "./PersonalCloud";
 
 beforeAll(() => {
@@ -43,6 +43,12 @@ test("a cancelled browser sign-in can be restarted and returned to the existing 
     accessMs: 60_000,
     id: "workspace-1",
     personalAssistant: { id: "bot-1", name: "My Assistant" },
+    quotas: {
+      bot: { used: 4, limit: 4 },
+      computer: { used: null, limit: 1 },
+      storage: { used: 32, limit: 64 },
+      automation: { used: 0, limit: 30 },
+    },
     conversations: [
       {
         id: "conversation-1",
@@ -56,6 +62,8 @@ test("a cancelled browser sign-in can be restarted and returned to the existing 
   await screen.findByRole("heading", { name: "Recent conversations" });
   expect(screen.getByText("Weekend <plans>")).toBeTruthy();
   expect(screen.getByText("Saturday at nine")).toBeTruthy();
+  expect(screen.getByText("Bot runs: 4 / 4")).toBeTruthy();
+  expect(screen.getByText("Computers: Unavailable / 1")).toBeTruthy();
   expect(
     actions.filter((action) => action === "start" || action === "cancel"),
   ).toEqual(["start", "cancel", "start"]);

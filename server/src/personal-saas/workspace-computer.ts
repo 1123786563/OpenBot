@@ -16,6 +16,10 @@ const status = z.object({
   address: z.url({ protocol: /^http$/ }).optional(),
   token: z.string().min(1).optional(),
 });
+const storage = z.object({
+  used: z.number().int().nonnegative(),
+  capacity: z.number().int().positive(),
+});
 const running = z.object({
   computers: z.array(z.object({ id: z.uuid(), epoch: z.number().int() })),
 });
@@ -36,7 +40,12 @@ export function workspaceComputer(
   const base = new URL("/workspace-computers", config.supervisorUrl).href;
   async function call(
     path = "",
-    grant?: { epoch: number; issuedAt: number; expiresAt: number },
+    grant?: {
+      epoch: number;
+      issuedAt: number;
+      expiresAt: number;
+      storageBytes?: number;
+    },
   ) {
     return (config.fetch ?? fetch)(`${base}${path}`, {
       method: grant ? "POST" : "GET",
@@ -79,12 +88,25 @@ export function workspaceComputer(
       const current = await read(workspaceId);
       return { status: current.status, cutoff: current.cutoff };
     },
-    async start(workspaceId: string, session: AccountGrant) {
+    async storageUsage(workspaceId: string, storageBytes: number) {
+      const response = await call(`/${workspaceId}/storage`);
+      if (!response.ok) throw new Error("Managed Computer storage unavailable");
+      const { used, capacity } = storage.parse(await response.json());
+      if (used > capacity || capacity > storageBytes)
+        throw new Error("Managed Computer storage exceeds its reservation");
+      return used;
+    },
+    async start(
+      workspaceId: string,
+      session: AccountGrant,
+      storageBytes: number,
+    ) {
       const issuedAt = now();
       if (!(await ownedWorkspace(workspaceId, session.accountId))) return false;
       const grant = await accounts.verify(session);
       if (grant.kind !== "active") return false;
-      const response = await call(`/${workspaceId}/start`, {
+      const response = await call(`/${workspaceId}/start-with-storage`, {
+        storageBytes,
         epoch: grant.epoch,
         issuedAt,
         expiresAt: Math.min(grant.expiresAt, issuedAt + 15_000),
@@ -92,6 +114,20 @@ export function workspaceComputer(
       if (response.status === 409) return false;
       if (!response.ok) throw new Error("Managed Computer start unavailable");
       return (await accounts.verify(session)).kind === "active";
+    },
+    async stop(workspaceId: string, session: AccountGrant) {
+      if (!(await ownedWorkspace(workspaceId, session.accountId))) return false;
+      const grant = await accounts.verify(session);
+      if (grant.kind !== "active") return false;
+      const issuedAt = now();
+      const response = await call(`/${workspaceId}/stop`, {
+        epoch: grant.epoch,
+        issuedAt,
+        expiresAt: Math.min(grant.expiresAt, issuedAt + 15_000),
+      });
+      if (response.status === 409) return false;
+      if (!response.ok) throw new Error("Managed Computer stop unavailable");
+      return true;
     },
     async accessForTask(
       workspaceId: string,

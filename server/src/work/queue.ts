@@ -242,6 +242,7 @@ export type WorkQueue = {
     leaseMs: number;
     limit?: number;
     maxAttempts?: number;
+    mayClaim?: (tx: Transaction, row: WorkRow) => boolean | Promise<boolean>;
     ready?: SQL;
   }) => Promise<WorkItem[]>;
   executionExpiry?: (input: HeldWork) => Promise<number | undefined>;
@@ -351,7 +352,6 @@ export function createWorkQueue(
           ...cause,
           recordedAt: now(),
         })}::text::jsonb || jsonb_build_object('outcomeUnknown', ${workItems.attempts} > 0)`,
-        leaseUntil: null,
         updatedAt: sql`now()`,
       })
       .where(and(keyed(row.kind, row.key), unfinished));
@@ -541,6 +541,7 @@ export function createWorkQueue(
       leaseMs,
       limit = 1,
       maxAttempts = DEFAULT_MAX_ATTEMPTS,
+      mayClaim,
       ready,
     }) {
       return database.transaction(async (transaction) => {
@@ -612,6 +613,13 @@ export function createWorkQueue(
               reason: "worker_lost",
               cutoffAt: null,
             });
+            continue;
+          }
+          if (mayClaim && !(await mayClaim(transaction, stored))) {
+            await transaction
+              .update(workItems)
+              .set({ runAt: fromNow(1_000) })
+              .where(keyed(stored.kind, stored.key));
             continue;
           }
           const [updated] = await transaction
@@ -871,6 +879,19 @@ export function createWorkQueue(
               ? "running"
               : "queued";
       return { ...result, state };
+    },
+    async requestPersonalStop(kind: string, accountId: string, key: string) {
+      return database.transaction(async (tx) => {
+        const [row] = await tx
+          .select()
+          .from(workItems)
+          .where(and(forAccount(kind, accountId), keyed(kind, key)))
+          .for("update");
+        if (!row) return false;
+        if (!row.interruption && !row.finishedAt)
+          await stop(tx, row, { reason: "user_stopped", cutoffAt: null });
+        return true;
+      });
     },
     async interrupted(kind: string, accountId: string) {
       return database

@@ -95,6 +95,7 @@ export const workItems = pgTable(
     interruption: jsonb("interruption").$type<{
       reason:
         | ExecutionCutoff["reason"]
+        | "user_stopped"
         | "worker_lost"
         | "run_interrupted"
         | "computer_unavailable";

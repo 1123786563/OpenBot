@@ -97,7 +97,7 @@ fn signed_in_cloud_view_loads_workspace_and_owner_history_with_the_same_session(
         for (path, body, access_ms) in [
             (
                 "/api/workspace",
-                r#"{"id":"workspace-1","personalAssistant":{"id":"bot-1","name":"My Assistant"}}"#,
+                r#"{"id":"workspace-1","personalAssistant":{"id":"bot-1","name":"My Assistant"},"quotas":{"bot":{"used":4,"limit":4},"computer":{"used":null,"limit":1},"storage":{"used":32,"limit":64},"automation":{"used":0,"limit":30}}}"#,
                 42_000,
             ),
             (
@@ -145,6 +145,14 @@ fn signed_in_cloud_view_loads_workspace_and_owner_history_with_the_same_session(
             "accessMs": 1000,
             "id": "workspace-1",
             "personalAssistant": {"id": "bot-1", "name": "My Assistant"},
+            "quotas": {
+                "bot": {"used": 4, "limit": 4},
+                "computer": {"used": null, "limit": 1},
+                "storage": {"used": 32, "limit": 64},
+                "automation": {"used": 0, "limit": 30}
+            },
+            "recovery": [],
+            "recoveryCanRetry": false,
             "conversations": [
                 {"id": "conversation-1", "title": "Weekend <plans>", "preview": "Saturday at nine"},
                 {"id": "conversation-2", "title": "Groceries", "preview": null},

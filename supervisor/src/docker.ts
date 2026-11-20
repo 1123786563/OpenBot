@@ -15,6 +15,13 @@ import {
   PERSON_LABEL,
 } from "./names";
 
+import {
+  parseWorkspaceStorageUsage,
+  type WorkspaceStorage,
+  workspaceStoragePath,
+  workspaceStorageProbe,
+} from "./workspace-storage";
+
 /**
  * The only Docker this service knows how to do.
  *
@@ -537,18 +544,43 @@ export type EnsureOptions = {
  * A container is a boundary only if it is configured as one. Each of these closes a specific route
  * off the host while permitting the browser, workspace and package installation inside it.
  */
-function hostConfig(names: ComputerNames, options: EnsureOptions) {
+function hostConfig(
+  names: ComputerNames,
+  options: EnsureOptions,
+  storagePath: string | undefined,
+): Docker.HostConfig {
   return {
     // The Bot's own storage. This is what turns the path confinement inside the computer from a
     // boundary between a Bot and the host into a boundary between one Bot and another.
     Binds: [
-      `${names.profileVolume}:/profiles`,
-      `${names.workspaceVolume}:/workspace`,
+      ...(storagePath
+        ? []
+        : [
+            `${names.profileVolume}:/profiles`,
+            `${names.workspaceVolume}:/workspace`,
+          ]),
       // Read-only: a computer asks the agent what it is and has nothing to tell it.
       ...(options.spireSocketVolume
         ? [`${options.spireSocketVolume}:/tmp/spire-agent/public:ro`]
         : []),
     ],
+    ...(storagePath && {
+      Mounts: ["profiles", "workspace"].map((directory) => ({
+        Type: "bind" as const,
+        Source: `${storagePath}/${directory}`,
+        Target: `/${directory}`,
+      })),
+      ReadonlyRootfs: true,
+      LogConfig: {
+        Type: "json-file",
+        Config: { "max-size": "1m", "max-file": "2" },
+      },
+      Tmpfs: {
+        "/tmp": "rw,nosuid,nodev,size=256m,mode=1777",
+        "/run": "rw,nosuid,nodev,size=16m",
+        "/root": "rw,nosuid,nodev,size=64m,mode=0700",
+      },
+    }),
     // On a shared network the computers are reached by name and nothing is published: a remote host
     // should not accumulate an open port per Bot. Off a network, a laptop, where the server runs
     // outside Docker, an ephemeral host port is the only way in, and it is reported back so nothing
@@ -584,17 +616,78 @@ function hostConfig(names: ComputerNames, options: EnsureOptions) {
   };
 }
 
+export class WorkspaceStorageUnavailableError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("Workspace Computer storage unavailable", options);
+  }
+}
+
+export async function inspectWorkspaceStorage(
+  names: ComputerNames,
+  storage: WorkspaceStorage,
+  image: string,
+) {
+  let probe: Docker.Container | undefined;
+  try {
+    const inspected = await docker.getImage(image).inspect();
+    if (Object.keys(inspected.Config.Volumes ?? {}).length > 0)
+      throw new Error("Computer image declares writable volumes");
+    const path = workspaceStoragePath(names, storage);
+    probe = await docker.createContainer({
+      Image: inspected.Id,
+      Entrypoint: ["sh", "-ec"],
+      Cmd: [workspaceStorageProbe, "workspace-storage", names.workspaceVolume],
+      Tty: true,
+      Healthcheck: { Test: ["NONE"] },
+      HostConfig: {
+        Mounts: [
+          { Type: "bind", Source: path, Target: "/storage", ReadOnly: true },
+        ],
+        ReadonlyRootfs: true,
+        NetworkMode: "none",
+        CapDrop: ["ALL"],
+        SecurityOpt: ["no-new-privileges:true"],
+      },
+    });
+    await probe.start();
+    const { StatusCode } = await probe.wait();
+    if (StatusCode !== 0)
+      throw new Error("Workspace filesystem identity or layout is invalid");
+    const output = await probe.logs({
+      stdout: true,
+      stderr: false,
+      follow: false,
+    });
+    const usage = parseWorkspaceStorageUsage(output.toString(), storage.bytes);
+    if (!usage) throw new Error("Workspace filesystem capacity is invalid");
+    return { ...usage, path, image: inspected.Id };
+  } catch (error) {
+    throw new WorkspaceStorageUnavailableError({ cause: error });
+  } finally {
+    await probe?.remove({ force: true, v: true }).catch(() => undefined);
+  }
+}
+
 /**
  * Make sure this Bot has a computer, and say where to reach it.
  *
  * Idempotent because the caller is a request handler that can run concurrently with itself: two
- * messages to one Bot at the same moment must not race into two containers. An existing owned
- * container is started if stopped, and otherwise left exactly as it is.
+ * messages to one Bot at the same moment must not race into two containers. The managed Workspace
+ * watchdog serializes starts and replaces the container to apply the verified storage mounts.
  */
 export async function ensure(
   names: ComputerNames,
-  options: EnsureOptions,
+  options: EnsureOptions & { workspaceStorage?: WorkspaceStorage },
 ): Promise<ComputerState> {
+  let storage: Awaited<ReturnType<typeof inspectWorkspaceStorage>> | undefined;
+  if (names.kind === "workspace") {
+    if (!options.workspaceStorage) throw new WorkspaceStorageUnavailableError();
+    storage = await inspectWorkspaceStorage(
+      names,
+      options.workspaceStorage,
+      options.image,
+    );
+  }
   for (let attempt = ATTEMPTS; attempt > 0; attempt--) {
     let existing = await inspectOwned(names);
 
@@ -603,8 +696,8 @@ export async function ensure(
      * package permissions: changing HostConfig in the supervisor does not update a container
      * created with CapDrop ALL and no additions, even when its image has not changed.
      *
-     * Safe to do: the profile and the workspace are named volumes and are not removed here, so the
-     * Bot keeps its logins and its files and comes back on the new image. That is the difference
+     * Safe to do: the profile and workspace mounts keep their data across container replacement,
+     * so the Bot keeps its logins and files and comes back on the new image. That is the difference
      * between this and `reset`, which is asked for deliberately and does take the profile.
      *
      * A stopped computer whose network was made again (see `onLiveNetwork`) is replaced the same
@@ -617,7 +710,8 @@ export async function ensure(
      */
     if (
       existing &&
-      (!(await runsCurrentImage(existing.image, options.image)) ||
+      (storage ||
+        !(await runsCurrentImage(existing.image, options.image)) ||
         !holdsCurrentToken(existing.token, options.environment) ||
         !existing.packageCapabilities ||
         (existing.status !== "running" &&
@@ -638,7 +732,9 @@ export async function ensure(
     }
 
     if (!existing) {
-      for (const volume of [names.profileVolume, names.workspaceVolume]) {
+      for (const volume of storage
+        ? []
+        : [names.profileVolume, names.workspaceVolume]) {
         try {
           await docker.createVolume({
             Name: volume,
@@ -667,14 +763,14 @@ export async function ensure(
       try {
         await docker.createContainer({
           name: names.container,
-          Image: options.image,
+          Image: storage?.image ?? options.image,
           // The Bot id is a label because that is what a SPIRE docker workload attestor selects on:
           // an identity per Bot then falls out of the same fact that names the container.
           Labels: labelsFor(names),
           Env: options.environment,
           ExposedPorts: { [COMPUTER_PORT]: {} },
           Healthcheck: COMPUTER_HEALTHCHECK,
-          HostConfig: hostConfig(names, options),
+          HostConfig: hostConfig(names, options, storage?.path),
         });
       } catch (error) {
         if (statusOf(error) !== 409) {
@@ -692,7 +788,7 @@ export async function ensure(
          * container this supervisor made, and the address goes back to a server that then sends the
          * deployment's computer token to whatever is listening inside it.
          */
-        if (!(await inspectOwned(names))) {
+        if (storage || !(await inspectOwned(names))) {
           throw new NameHeldError(names.container);
         }
       }

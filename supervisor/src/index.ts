@@ -9,18 +9,21 @@ import {
   DockerUnavailableError,
   ensure,
   inspectWorkspaceProcess,
+  inspectWorkspaceStorage,
   listOwned,
   NameHeldError,
   reachable,
   reset,
   retireLegacyComputers,
   stop,
+  WorkspaceStorageUnavailableError,
 } from "./docker";
 import { environmentFor } from "./environment";
 import { registerEntry } from "./identity";
 import { listenPort } from "./listen-port";
 import { legacyNamesFor, namesFor } from "./names";
 import { workspaceComputers } from "./workspace-computers";
+import { workspaceStorageConfig } from "./workspace-storage";
 
 /**
  * The container supervisor: the only thing here that holds the Docker socket.
@@ -242,6 +245,11 @@ function workspaceNames(id: string) {
   return result.names;
 }
 
+const workspaceStorage = workspaceStorageConfig(
+  process.env.OPENBOT_WORKSPACE_STORAGE_ROOT,
+  process.env.OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES,
+);
+
 const managed = workspaceComputers({
   now: Date.now,
   inspect: (id) => inspectWorkspaceProcess(workspaceNames(id), network),
@@ -256,6 +264,7 @@ const managed = workspaceComputers({
       network,
       runtime,
       memoryBytes,
+      workspaceStorage,
       mayStart,
     });
   },
@@ -303,6 +312,24 @@ setInterval(() => void managed.sweep(), 250);
 app.get("/workspace-computers", (context) =>
   context.json({ computers: managed.active() }),
 );
+app.get("/workspace-computers/:id/storage", async (context) => {
+  const target = namesFor("workspace", context.req.param("id"));
+  if (!target.ok) return context.body(null, 400);
+  if (!workspaceStorage || !Number.isFinite(workspaceReadyAt))
+    return context.body(null, 503);
+  try {
+    const { used, capacity } = await inspectWorkspaceStorage(
+      target.names,
+      workspaceStorage,
+      image,
+    );
+    return context.json({ used, capacity });
+  } catch (error) {
+    if (error instanceof WorkspaceStorageUnavailableError)
+      return context.body(null, 503);
+    throw error;
+  }
+});
 app.get("/workspace-computers/:id", async (context) => {
   const id = context.req.param("id");
   if (!namesFor("workspace", id).ok) return context.body(null, 400);
@@ -324,7 +351,10 @@ app.get("/workspace-computers/:id", async (context) => {
 app.post("/workspace-computers/:id/:operation", async (context) => {
   const id = context.req.param("id");
   const operation = context.req.param("operation");
-  if (!namesFor("workspace", id).ok || !["start", "renew"].includes(operation))
+  if (
+    !namesFor("workspace", id).ok ||
+    !["start-with-storage", "renew", "stop"].includes(operation)
+  )
     return context.body(null, 400);
   if (!Number.isFinite(workspaceReadyAt) || !process.env.COMPUTER_TOKEN?.trim())
     return context.body(null, 503);
@@ -346,9 +376,24 @@ app.post("/workspace-computers/:id/:operation", async (context) => {
     expiresAt: body.expiresAt,
   };
   if (grant.issuedAt < workspaceReadyAt) return context.body(null, 409);
+  if (operation === "start-with-storage") {
+    if (
+      !workspaceStorage ||
+      !("storageBytes" in body) ||
+      body.storageBytes !== workspaceStorage.bytes
+    )
+      return context.body(null, 503);
+    try {
+      return context.body(null, (await managed.start(id, grant)) ? 204 : 409);
+    } catch (error) {
+      if (error instanceof WorkspaceStorageUnavailableError)
+        return context.body(null, 503);
+      throw error;
+    }
+  }
   const accepted =
-    operation === "start"
-      ? await managed.start(id, grant)
+    operation === "stop"
+      ? await managed.stop(id, grant)
       : managed.renew(id, grant);
   return context.body(null, accepted ? 204 : 409);
 });

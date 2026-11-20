@@ -206,6 +206,7 @@ function newApp(
   db = database,
   dependency?: WorkspaceComputerConfig | TurnRunner,
   computer?: WorkspaceComputerConfig,
+  quotas?: Partial<import("../src/personal-saas/quotas").WorkspaceQuotaLimits>,
   botRuntime?: ReturnType<typeof createPersonalBotRuntime>,
 ) {
   return createPersonalSaasApp(
@@ -216,6 +217,16 @@ function newApp(
       botRuntime,
       computer: typeof dependency === "function" ? computer : dependency,
       runPersonalBot: typeof dependency === "function" ? dependency : undefined,
+      quotas: {
+        computerStorage: (
+          typeof dependency === "function"
+            ? computer
+            : dependency
+        )
+          ? 8
+          : 0,
+        ...quotas,
+      },
       inboundRelayToken: "test-relay-token",
       suspensionOperator: { id: "trial-operator", token: operatorToken },
       suspensionSupport: "support@example.com",
@@ -310,6 +321,12 @@ test("a verified active ordinary email can reach its private workspace and defau
   expect(result).toEqual({
     id: expect.any(String),
     personalAssistant: { id: expect.any(String), name: "Personal Assistant" },
+    quotas: {
+      bot: { used: 0, limit: 4 },
+      computer: { used: 0, limit: 1 },
+      storage: { used: 0, limit: 64 * 1024 * 1024 },
+      automation: { used: 0, limit: 30, windowSeconds: 60 },
+    },
   });
   const headers = { cookie: session, origin };
   const botId = result.personalAssistant.id;
@@ -656,6 +673,36 @@ test("Web, Desktop, iOS, and Android share the owner’s workspace and conversat
     expect(await ready.json()).toEqual(expected);
   }
   expect(expected.personalAssistant.name).toBe("Personal Assistant");
+  const quotaApp = newApp(
+    database,
+    async () => ({ replyText: "Done" }),
+    undefined,
+    { bot: 1 },
+  );
+  const submissions = await Promise.all(
+    [{ cookie: web, origin }, ios, android, desktop].map((headers) =>
+      quotaApp.request("/api/workspace/bot-runs", {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({
+          workspaceId: expected.id,
+          botId: expected.personalAssistant.id,
+          instruction: "Check shared Bot usage",
+        }),
+      }),
+    ),
+  );
+  expect(submissions.map((response) => response.status).sort()).toEqual([
+    202, 429, 429, 429,
+  ]);
+  for (const response of submissions.filter(({ status }) => status === 429))
+    expect(await response.json()).toMatchObject({
+      resource: "bot",
+      used: 1,
+      limit: 1,
+    });
+  expect(await quotaApp.sweepBotWork()).toBe(true);
+
   const bots = await botProfiles.list(profileReader);
   expect(bots.filter((bot) => !before.some(({ id }) => id === bot.id))).toEqual(
     [expect.objectContaining(expected.personalAssistant)],
@@ -2291,7 +2338,9 @@ test("managed Computer owner status and explicit start are scoped to the signed-
         return new Response(null, { status: 204 });
       }
       return Response.json({
-        status: starts.includes(`${path}/start`) ? "running" : "not_started",
+        status: starts.includes(`${path}/start-with-storage`)
+          ? "running"
+          : "not_started",
         address: "http://private-computer:4100",
       });
     },
@@ -2328,7 +2377,9 @@ test("managed Computer owner status and explicit start are scoped to the signed-
     expect(
       (await send(`${computer}/start`, { method: "POST", headers })).status,
     ).toBe(202);
-    expect(starts).toEqual([`/workspace-computers/${owner.workspaceId}/start`]);
+    expect(starts).toEqual([
+      `/workspace-computers/${owner.workspaceId}/start-with-storage`,
+    ]);
     expect(await (await send(computer, { headers })).json()).toEqual({
       status: "running",
     });
@@ -2810,8 +2861,12 @@ for (const reason of [
             accountId: stored.accountId,
           }),
         ).toBe("refused");
-      if (reason === "workspace_paused")
-        expect((await operate("resume")).status).toBe(201);
+      if (reason === "workspace_paused") {
+        const resumedWorkspace = await operate("resume");
+        expect(resumedWorkspace.status).toBe(201);
+        const { effectiveAt } = await resumedWorkspace.json();
+        clockTime = Math.max(Date.now(), Date.parse(effectiveAt) + 1);
+      }
       account.active = true;
       const restored =
         reason === "account_status_unconfirmed"
@@ -3495,7 +3550,7 @@ test("a manual Bot retry asks under current policy and only its new approval can
         }),
     },
   });
-  const runApp = newApp(database, undefined, undefined, runtime);
+  const runApp = newApp(database, undefined, undefined, undefined, runtime);
   const request = (
     path: string,
     body?: object,
@@ -3566,8 +3621,16 @@ test("a manual Bot retry asks under current policy and only its new approval can
     request(`/api/approvals/questions/${id}/respond`, { response: "A name" });
   expect((await answer(oldQuestion.id)).status).toBe(200);
   expect((await operate("pause")).status).toBe(201);
-  expect((await operate("resume")).status).toBe(201);
-  session = await signIn();
+  const resumedWorkspace = await operate("resume");
+  expect(resumedWorkspace.status).toBe(201);
+  const { effectiveAt } = await resumedWorkspace.json();
+  // A fresh login must begin strictly after the suspension operator resumes access.
+  clockTime = Math.max(Date.now(), Date.parse(effectiveAt) + 1);
+  try {
+    session = await signIn();
+  } finally {
+    clockTime = undefined;
+  }
   expect((await answer(oldQuestion.id)).status).toBe(400);
   await runApp.sweepBotDecisions();
   expect(executions).toEqual([]);
@@ -3607,6 +3670,12 @@ test("a manual Bot retry asks under current policy and only its new approval can
   expect(fresh.id).not.toBe(old.id);
   expect(executions).toEqual([]);
   expect((await approve(fresh.id)).status).toBe(200);
+  const capped = newApp(database, undefined, undefined, { bot: 0 }, runtime);
+  await capped.sweepBotDecisions();
+  expect(executions).toEqual([]);
+  expect(resumed).toEqual([]);
+  await Bun.sleep(1_050);
+
   await runApp.sweepBotDecisions();
   expect(executions).toEqual([key]);
   expect(resumed).toEqual([key]);
@@ -3625,6 +3694,412 @@ test("a manual Bot retry asks under current policy and only its new approval can
     )?.status,
   ).toBe("completed");
 }, 30_000);
+
+test("replicas share Bot admission and retain history when a slot is released", async () => {
+  const prior = app;
+  const runner: TurnRunner = async () => ({ replyText: "Completed" });
+  app = newApp(database, runner, undefined, { bot: 1 });
+  const replica = newApp(database, runner, undefined, { bot: 1 });
+  try {
+    const owner = await isolationOwner();
+    const other = await isolationOwner();
+    const run = (target: typeof owner, service = app) =>
+      service.fetch(
+        new Request(new URL("/api/workspace/bot-runs", origin), {
+          method: "POST",
+          headers: {
+            origin,
+            cookie: target.session,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            workspaceId: target.workspaceId,
+            botId: target.botId,
+            instruction: "Work",
+          }),
+        }),
+      );
+    const concurrent = await Promise.all([run(owner), run(owner, replica)]);
+    expect(concurrent.map((response) => response.status).sort()).toEqual([
+      202, 429,
+    ]);
+    const rejected = concurrent.find((response) => response.status === 429);
+    expect(await rejected?.json()).toMatchObject({
+      error: "workspace_quota_exceeded",
+      resource: "bot",
+    });
+    const { runId } = await concurrent
+      .find((response) => response.status === 202)
+      ?.json();
+    expect((await workspace(owner.session)).quotas.bot).toEqual({
+      used: 1,
+      limit: 1,
+    });
+    expect((await run(other)).status).toBe(202);
+    expect(await replica.sweepBotWork()).toBe(true);
+    expect(await app.sweepBotWork()).toBe(true);
+    const history = await send(`/api/workspace/bot-runs/${runId}`, {
+      headers: { cookie: owner.session },
+    });
+    expect(await history.json()).toMatchObject({
+      state: "completed",
+      output: "Completed",
+    });
+    expect((await workspace(owner.session)).quotas.bot).toEqual({
+      used: 0,
+      limit: 1,
+    });
+    expect((await run(owner)).status).toBe(202);
+    await replica.sweepBotWork();
+  } finally {
+    app = prior;
+  }
+});
+
+test("manual and scheduled automation share the trigger limit and retain history", async () => {
+  const owner = await isolationOwner();
+  const manual = await exportFixture(owner, "quota manual");
+  const scheduled = { routineId: crypto.randomUUID() };
+  await database.insert(routines).values({
+    id: scheduled.routineId,
+    ownerUserId: `personal-workspace:${owner.workspaceId}`,
+    agentId: owner.botId,
+    channelId: manual.channelId,
+    title: "Quota scheduled",
+    instruction: "Read the briefing",
+    cron: "0 9 * * *",
+    nextRunAt: new Date(now()),
+  });
+  const bindingId = crypto.randomUUID();
+  await database.insert(deliveryBindings).values({
+    id: bindingId,
+    ownerUserId: `personal-workspace:${owner.workspaceId}`,
+    agentId: owner.botId,
+    channelId: manual.channelId,
+    threadId: manual.channelId,
+    transport: "sms",
+    realm: "quota",
+    identity: bindingId,
+    address: bindingId,
+  });
+  const calls: string[] = [];
+  const worker = newApp(
+    database,
+    async ({ routineId }) => {
+      calls.push(routineId);
+      return { replyText: "Done" };
+    },
+    undefined,
+    { bot: 1, automation: 1 },
+  );
+  const route = (routineId: string) =>
+    `/api/workspace/automation/routines/${routineId}`;
+  const headers = { cookie: owner.session, origin };
+  const runNow = () =>
+    worker.request(`${route(manual.routineId)}/run`, {
+      method: "POST",
+      headers,
+    });
+  const initial = await runNow();
+  expect(initial.status).toBe(202);
+  const { runId } = await initial.json();
+  const bot = await worker.request("/api/workspace/bot-runs", {
+    method: "POST",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify({
+      workspaceId: owner.workspaceId,
+      botId: owner.botId,
+      instruction: "Over shared limit",
+    }),
+  });
+  expect(bot.status).toBe(429);
+  expect(await bot.json()).toMatchObject({
+    resource: "bot",
+    used: 1,
+    limit: 1,
+  });
+  await worker.sweepAutomationRoutines();
+  expect(calls).toEqual([manual.routineId]);
+  await worker.offerAutomationSchedules();
+  const history = await worker.request(`${route(scheduled.routineId)}/runs`, {
+    headers,
+  });
+  expect(await history.json()).toMatchObject({
+    runs: [{ status: "skipped", error: "automation_quota_exceeded" }],
+  });
+  const again = await worker.request(`${route(manual.routineId)}/run`, {
+    method: "POST",
+    headers,
+  });
+  expect(again.status).toBe(429);
+  expect(await again.json()).toMatchObject({
+    resource: "automation",
+    used: 1,
+    limit: 1,
+  });
+  const received = await worker.request("/api/webhooks/personal-inbound", {
+    method: "POST",
+    headers: {
+      authorization: "Bearer test-relay-token",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      transport: "sms",
+      realm: "quota",
+      identity: bindingId,
+      externalId: crypto.randomUUID(),
+      text: "Over limit",
+      sentAt: new Date(now()).toISOString(),
+    }),
+  });
+  expect(received.status).toBe(204);
+  await worker.sweepAutomationInbound();
+  expect(calls).toEqual([manual.routineId]);
+  const bindingHistory = await worker.request(
+    `/api/workspace/automation/bindings/${bindingId}/runs`,
+    { headers },
+  );
+  expect(await bindingHistory.json()).toMatchObject({
+    runs: [{ state: "skipped", error: "automation_quota_exceeded" }],
+  });
+  // Age the admitted trigger into the previous window without waiting a real minute.
+  await database
+    .update(workItems)
+    .set({ createdAt: new Date(Date.now() - 61_000) })
+    .where(eq(workItems.key, runId));
+  expect((await runNow()).status).toBe(202);
+  await worker.sweepAutomationRoutines();
+  expect(calls).toEqual([manual.routineId, manual.routineId]);
+});
+
+test("Computer quota rejects concurrent starts and a confirmed stop releases capacity", async () => {
+  const computers = new Set<string>();
+  const supervisor: WorkspaceComputerConfig = {
+    supervisorUrl: "http://supervisor.example",
+    supervisorToken: "token",
+    async fetch(input, init) {
+      const [, , id, operation] = new URL(input).pathname.split("/");
+      if (init.method === "GET")
+        return Response.json({
+          status: computers.has(id) ? "running" : "restart_required",
+        });
+      if (operation === "start-with-storage") {
+        if (computers.has(id)) return new Response(null, { status: 409 });
+        computers.add(id);
+      }
+      if (operation === "stop") computers.delete(id);
+      return new Response(null, { status: 204 });
+    },
+  };
+  const owner = await isolationOwner();
+  const first = newApp(database, supervisor);
+  const second = newApp(database, supervisor);
+  const disabled = newApp(database, supervisor, undefined, { computer: 0 });
+  const operation = (service: typeof app, action: string) =>
+    service.request(`/api/workspace/computer/${action}`, {
+      method: "POST",
+      headers: { origin, cookie: owner.session },
+    });
+  const zero = await operation(disabled, "start");
+  expect(zero.status).toBe(429);
+  const concurrent = await Promise.all([
+    operation(first, "start"),
+    operation(second, "start"),
+  ]);
+  expect(concurrent.map((response) => response.status).sort()).toEqual([
+    202, 429,
+  ]);
+  expect(
+    await concurrent.find((response) => response.status === 429)?.json(),
+  ).toMatchObject({ resource: "computer", used: 1, limit: 1 });
+  expect((await operation(disabled, "stop")).status).toBe(202);
+  expect((await operation(second, "start")).status).toBe(202);
+});
+
+test("attachment storage admits one of two concurrent uploads and releases a withdrawn draft", async () => {
+  const owner = await isolationOwner();
+  const fixture = await exportFixture(owner, "quota attachments");
+  const first = newApp(database, undefined, undefined, { storage: 12 });
+  const second = newApp(database, undefined, undefined, { storage: 12 });
+  const path = `/api/workspace/attachments`;
+  const headers = { origin, cookie: owner.session };
+  const upload = (service: typeof app) => {
+    const body = new FormData();
+    body.set("conversationId", fixture.channelId);
+    body.set("file", new File(["1234"], "draft.txt"));
+    return service.request(path, { method: "POST", headers, body });
+  };
+  const concurrent = await Promise.all([upload(first), upload(second)]);
+  expect(concurrent.map((response) => response.status).sort()).toEqual([
+    201, 429,
+  ]);
+  expect(
+    await concurrent.find((response) => response.status === 429)?.json(),
+  ).toMatchObject({ resource: "storage", used: 12, limit: 12 });
+  const { id } = await concurrent
+    .find((response) => response.status === 201)
+    ?.json();
+  const other = await isolationOwner();
+  expect(
+    (
+      await first.request(`${path}/${id}/withdraw`, {
+        method: "POST",
+        headers: { origin, cookie: other.session },
+      })
+    ).status,
+  ).toBe(404);
+  expect(
+    (await first.request(`${path}/${id}/withdraw`, { method: "POST", headers }))
+      .status,
+  ).toBe(204);
+  expect((await upload(second)).status).toBe(201);
+  const state = await first.request("/api/workspace", { headers });
+  expect((await state.json()).quotas.storage).toEqual({ used: 12, limit: 12 });
+});
+
+test("Computer storage counts in workspace usage and reserves room against concurrent attachment writes", async () => {
+  const owner = await isolationOwner();
+  const fixture = await exportFixture(owner, "shared storage quota");
+  const supervisor: WorkspaceComputerConfig = {
+    supervisorUrl: "http://supervisor.example",
+    supervisorToken: "token",
+    async fetch(input) {
+      return new URL(input).pathname.endsWith("/storage")
+        ? Response.json({ used: 2, capacity: 8 })
+        : Response.json({ status: "restart_required" });
+    },
+  };
+  const service = newApp(database, supervisor, undefined, {
+    storage: 19,
+    computerStorage: 8,
+  });
+  const headers = { origin, cookie: owner.session };
+  const state = await service.request("/api/workspace", { headers });
+  expect((await state.json()).quotas.storage).toMatchObject({
+    used: 10,
+    limit: 19,
+    attachmentUsed: 8,
+    computerUsed: 2,
+    computerReserved: 8,
+  });
+  const body = new FormData();
+  body.set("conversationId", fixture.channelId);
+  body.set("file", new File(["1234"], "draft.txt"));
+  const upload = await service.request("/api/workspace/attachments", {
+    method: "POST",
+    headers,
+    body,
+  });
+  expect(upload.status).toBe(429);
+});
+
+test("stopping queued work preserves recovery and retry checks the current Bot limit", async () => {
+  const owner = await isolationOwner();
+  const runner: TurnRunner = async () => ({ replyText: "Done" });
+  const service = newApp(database, runner, undefined, { bot: 1 });
+  const restricted = newApp(database, runner, undefined, { bot: 0 });
+  const post = (target: typeof app, path: string, body?: object) =>
+    target.request(path, {
+      method: "POST",
+      headers: {
+        origin,
+        cookie: owner.session,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  const created = await post(service, "/api/workspace/bot-runs", {
+    workspaceId: owner.workspaceId,
+    botId: owner.botId,
+    instruction: "Work",
+  });
+  const { runId } = await created.json();
+  expect(
+    (await post(restricted, `/api/workspace/bot-runs/${runId}/stop`)).status,
+  ).toBe(202);
+  const retryPath = `/api/workspace/recovery/${runId}`;
+  const limited = await post(restricted, retryPath, { action: "retry" });
+  expect(limited.status).toBe(429);
+  expect(await limited.json()).toMatchObject({
+    resource: "bot",
+    used: 0,
+    limit: 0,
+  });
+  const restored = await post(service, retryPath, { action: "retry" });
+  expect(await restored.json()).toMatchObject({
+    action: "retry",
+    key: expect.any(String),
+  });
+  expect(await service.sweepBotWork()).toBe(true);
+});
+
+test("a stopped running Bot holds its slot until the worker exits", async () => {
+  const owner = await isolationOwner();
+  const started = Promise.withResolvers<void>();
+  const aborted = Promise.withResolvers<void>();
+  const exit = Promise.withResolvers<void>();
+  const worker = newApp(
+    database,
+    async ({ signal, beforeDispatch, onText }) => {
+      await beforeDispatch?.();
+      onText?.("Partial output");
+      const cancelled = new Promise<void>((resolve) => {
+        signal?.addEventListener("abort", () => resolve(), { once: true });
+      });
+      started.resolve();
+      await cancelled;
+      aborted.resolve();
+      await exit.promise;
+      signal?.throwIfAborted();
+      return { replyText: "" };
+    },
+    undefined,
+    { bot: 1 },
+  );
+  const req = (path: string, body?: object) =>
+    worker.request(path, {
+      method: "POST",
+      headers: {
+        origin,
+        cookie: owner.session,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  const create = () =>
+    req("/api/workspace/bot-runs", {
+      workspaceId: owner.workspaceId,
+      botId: owner.botId,
+      instruction: "Work",
+    });
+  const { runId } = await (await create()).json();
+  const sweeping = worker.sweepBotWork();
+  try {
+    expect(
+      await Promise.race([
+        started.promise.then(() => true),
+        sweeping.then(() => false),
+      ]),
+    ).toBe(true);
+    expect((await req(`/api/workspace/bot-runs/${runId}/stop`)).status).toBe(
+      202,
+    );
+    await aborted.promise;
+    expect((await create()).status).toBe(429);
+  } finally {
+    exit.resolve();
+    await sweeping;
+  }
+  const history = await worker.request(`/api/workspace/bot-runs/${runId}`, {
+    headers: { cookie: owner.session },
+  });
+  expect(await history.json()).toMatchObject({
+    state: "stopped",
+    output: "Partial output",
+    interruption: { reason: "user_stopped", endedAt: expect.any(Number) },
+  });
+  expect((await create()).status).toBe(202);
+});
 
 test("the mounted workspace recovers each stopped background capability as fresh work", async () => {
   const { createGroupStore } = await import("../src/channels/group");

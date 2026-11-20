@@ -168,6 +168,7 @@ pub enum View {
         conversations: Vec<Conversation>,
         #[serde(rename = "accessMs")]
         access_ms: u64,
+        quotas: Option<WorkspaceQuotas>,
         recovery: Vec<StoppedWork>,
         #[serde(rename = "recoveryCanRetry")]
         recovery_can_retry: bool,
@@ -185,10 +186,25 @@ pub struct Assistant {
 struct Workspace {
     id: String,
     personal_assistant: Assistant,
+    quotas: Option<WorkspaceQuotas>,
     #[serde(default)]
     recovery: Vec<StoppedWork>,
     #[serde(default)]
     recovery_can_retry: bool,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct WorkspaceQuotas {
+    bot: QuotaUsage,
+    computer: QuotaUsage,
+    storage: QuotaUsage,
+    automation: QuotaUsage,
+}
+
+#[derive(Deserialize, Serialize)]
+struct QuotaUsage {
+    used: Option<u64>,
+    limit: u64,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -475,6 +491,7 @@ impl<'a> Api<'a> {
                 let Workspace {
                     id,
                     personal_assistant,
+                    quotas,
                     recovery,
                     recovery_can_retry,
                 } = result.json().map_err(|_| NETWORK_ERROR)?;
@@ -494,6 +511,7 @@ impl<'a> Api<'a> {
                             personal_assistant,
                             conversations,
                             access_ms,
+                            quotas,
                             recovery,
                             recovery_can_retry,
                         })
@@ -621,6 +639,9 @@ pub async fn personal_cloud_recover<R: Runtime>(
             .json(&serde_json::json!({ "action": action, "acknowledged": acknowledged }))
             .send()
             .map_err(|_| NETWORK_ERROR)?;
+        if reply.status() == StatusCode::TOO_MANY_REQUESTS {
+            return Err("Your workspace has reached its Bot run limit.");
+        }
         if !reply.status().is_success() {
             return Err(NETWORK_ERROR);
         }

@@ -35,6 +35,12 @@ import {
 import { browserAttempt, type CasdoorConfig, casdoor } from "./casdoor";
 import { ensureDecisionActor } from "./decision-actor";
 import { bearerSession, type NativeAttempt, nativeAuth } from "./native-auth";
+import {
+  WorkspaceQuotaExceeded,
+  type WorkspaceQuotaLimits,
+  workspaceQuotaConfig,
+  workspaceQuotas,
+} from "./quotas";
 import { sessionEventRoutes } from "./session-events";
 import {
   cookieOptions,
@@ -44,6 +50,10 @@ import {
 import { personalSaasStore, sessionSeconds } from "./store";
 import { supportAccess } from "./support-access";
 import { supportRoutes } from "./support-routes";
+import {
+  workspaceAttachmentDrafts,
+  workspaceAttachmentRoutes,
+} from "./workspace-attachments";
 import { workspaceBotRoutes } from "./workspace-bot-routes";
 import { workspaceBots } from "./workspace-bots";
 import {
@@ -65,6 +75,7 @@ const recoveryReason = {
   account_disabled: "The account was disabled.",
   account_status_unconfirmed: "Account status could not be confirmed.",
   workspace_paused: "The workspace was paused.",
+  user_stopped: "You stopped this Bot run.",
   worker_lost: "The worker lost its lease.",
   run_interrupted: "The run was interrupted.",
   computer_unavailable:
@@ -87,6 +98,7 @@ export type PersonalSaasConfig = {
   suspensionOperator?: SuspensionOperator;
   suspensionSupport?: string;
   computer?: WorkspaceComputerConfig;
+  quotas?: Partial<WorkspaceQuotaLimits>;
   encryptionKey: string;
   casdoor: CasdoorConfig;
 };
@@ -155,7 +167,14 @@ export function createPersonalSaasApp(
   const computer =
     config.computer &&
     workspaceComputer(config.computer, database, accountAccess, now);
-  const botWork = personalBotWork(database, now, computer?.accessForTask);
+  const quotaLimits = workspaceQuotaConfig.parse(config.quotas ?? {});
+  const quotas = workspaceQuotas(quotaLimits);
+  const botWork = personalBotWork(
+    database,
+    now,
+    quotas,
+    computer?.accessForTask,
+  );
   const native = nativeAuth({
     database,
     encryptionKey: config.encryptionKey,
@@ -166,7 +185,7 @@ export function createPersonalSaasApp(
     native: native.attempt.optional(),
   });
 
-  const automation = personalAutomation(database, now, runPersonalBot);
+  const automation = personalAutomation(database, now, quotas, runPersonalBot);
   const backgroundWorkers =
     runPersonalBot &&
     personalBackgroundWorkers(
@@ -203,7 +222,9 @@ export function createPersonalSaasApp(
       return Boolean(bearer(context));
     if (
       context.req.path.startsWith("/api/workspace/recovery/") ||
-      context.req.path === "/api/workspace/bot-runs"
+      context.req.path.startsWith("/api/workspace/attachments") ||
+      context.req.path === "/api/workspace/bot-runs" ||
+      context.req.path.startsWith("/api/workspace/bot-runs/")
     )
       return Boolean(bearer(context));
     switch (context.req.path) {
@@ -212,6 +233,7 @@ export function createPersonalSaasApp(
       case "/auth/sign-out":
       case "/workspace/prepare":
       case "/api/workspace/computer/start":
+      case "/api/workspace/computer/stop":
         return Boolean(bearer(context));
       default:
         return false;
@@ -247,7 +269,23 @@ export function createPersonalSaasApp(
     await next();
   });
 
-  app.onError((_error, context) => {
+  app.onError((error, context) => {
+    if (error instanceof WorkspaceQuotaExceeded) {
+      if (
+        context.req.header("accept")?.includes("text/html") &&
+        !bearer(context)
+      )
+        return context.html(
+          statusPage(
+            "Workspace limit reached",
+            error.message,
+            "/workspace",
+            "Back to workspace",
+          ),
+          429,
+        );
+      return context.json(error.body(), 429);
+    }
     reportFailure("request");
     if (context.req.path.startsWith("/api/"))
       return context.json({ error: "workspace_unavailable" }, 503);
@@ -563,11 +601,15 @@ export function createPersonalSaasApp(
 
   app.on(
     ["GET", "POST"],
-    ["/api/workspace/computer", "/api/workspace/computer/start"],
+    [
+      "/api/workspace/computer",
+      "/api/workspace/computer/start",
+      "/api/workspace/computer/stop",
+    ],
     async (context) => {
-      const start = context.req.method === "POST";
-      if (start !== context.req.path.endsWith("/start"))
-        return context.notFound();
+      const operation = context.req.path.split("/").at(-1);
+      const change = operation === "start" || operation === "stop";
+      if (change !== (context.req.method === "POST")) return context.notFound();
       const token = requestSession(context);
       const session = await authorize(token);
       if (session.kind === "signed-out")
@@ -583,11 +625,31 @@ export function createPersonalSaasApp(
       const workspace = await store.workspace(session.grant.accountId);
       if (!workspace)
         return context.json({ error: "workspace_preparing" }, 409);
-      if (start) {
+      if (change) {
         if (!(await stillAuthorized(token, session.grant)))
           return context.json({ error: "authorization_changed" }, 403);
-        if (!(await computer.start(workspace.id, session.grant)))
-          return context.json({ error: "computer_start_not_accepted" }, 409);
+        if (operation === "start") {
+          const current = await computer.status(workspace.id);
+          quotas.check("computer", computerQuotaUsed(current.status));
+          if (quotaLimits.computerStorage === 0)
+            return context.json({ error: "computer_storage_unavailable" }, 503);
+          await database.transaction((tx) =>
+            quotas.admitStorage(tx, session.grant.accountId, workspace.id, 0),
+          );
+          if (
+            !(await computer.start(
+              workspace.id,
+              session.grant,
+              quotaLimits.computerStorage,
+            ))
+          ) {
+            const latest = await computer.status(workspace.id);
+            quotas.check("computer", computerQuotaUsed(latest.status));
+            return context.json({ error: "computer_start_not_accepted" }, 409);
+          }
+        } else if (!(await computer.stop(workspace.id, session.grant))) {
+          return context.json({ error: "computer_stop_not_accepted" }, 409);
+        }
         if (context.req.header("accept")?.includes("text/html"))
           return context.redirect("/workspace", 303);
         return context.body(null, 202);
@@ -710,6 +772,12 @@ export function createPersonalSaasApp(
       unattendedHistory(session.grant.accountId),
       approvalHistory(session.grant.accountId),
     ]);
+    const drafts = await workspaceAttachmentDrafts(database, workspace.id);
+    const usage = await workspaceQuotaUsage(
+      session.grant.accountId,
+      workspace.id,
+      computerStatus,
+    );
     if (!(await remainingAccess(token, session.grant)))
       return context.redirect("/workspace");
     return context.html(
@@ -719,6 +787,26 @@ export function createPersonalSaasApp(
       <a id="workspace-retry" href="/workspace" hidden>Retry</a>
       <noscript>Enable JavaScript to verify workspace access.</noscript>
       <div id="protected-workspace" hidden>
+      <section aria-labelledby="workspace-usage"><h2 id="workspace-usage">Workspace usage</h2>
+        <ul>
+          <li>Bot runs: ${usage.bot.used} / ${usage.bot.limit}</li>
+          <li>Computers: ${usage.computer.used ?? "Unavailable"} / ${usage.computer.limit}</li>
+          <li>Workspace storage: ${usage.storage.used ?? "Unavailable"} / ${usage.storage.limit} bytes</li>
+          <li>Automation triggers: ${usage.automation.used} / ${usage.automation.limit} per minute</li>
+        </ul>
+        ${
+          drafts.length
+            ? html`<h3>Draft attachments</h3><ul>${drafts.map(
+                (draft) => html`<li>
+          ${draft.name} (${draft.sizeBytes} bytes)
+          <form action="/api/workspace/attachments/${draft.id}/withdraw" method="post">
+            <button>Withdraw ${draft.name}</button>
+          </form>
+        </li>`,
+              )}</ul>`
+            : ""
+        }
+      </section>
       <p><a href="${automationPath}">Routines and inbound bindings</a></p>
       <section aria-labelledby="assistant"><h2 id="assistant">${workspace.personalAssistant.name}</h2></section>
       <section aria-labelledby="conversations"><h2 id="conversations">Recent conversations</h2>
@@ -748,7 +836,7 @@ export function createPersonalSaasApp(
         ${
           ["not_started", "restart_required"].includes(computerStatus.status)
             ? html`<form method="post" action="/api/workspace/computer/start"><button type="submit">Start Computer</button></form>`
-            : ""
+            : html`<form method="post" action="/api/workspace/computer/stop"><button type="submit">Stop Computer</button></form>`
         }
       </section>`
           : ""
@@ -868,6 +956,43 @@ export function createPersonalSaasApp(
     return context.body(null, 204);
   });
 
+  function computerQuotaUsed(
+    status: Awaited<
+      ReturnType<NonNullable<typeof computer>["status"]>
+    >["status"],
+  ) {
+    return Number(["starting", "running", "stopping"].includes(status));
+  }
+
+  async function workspaceQuotaUsage(
+    accountId: string,
+    workspaceId: string,
+    status:
+      | Awaited<ReturnType<NonNullable<typeof computer>["status"]>>
+      | undefined,
+  ) {
+    const used = !computer
+      ? 0
+      : status
+        ? computerQuotaUsed(status.status)
+        : null;
+    const computerStorageUsed =
+      quotaLimits.computerStorage > 0
+        ? await computer
+            ?.storageUsage(workspaceId, quotaLimits.computerStorage)
+            .catch(() => null)
+        : null;
+    return database.transaction((tx) =>
+      quotas.usage(
+        tx,
+        accountId,
+        workspaceId,
+        used,
+        computerStorageUsed ?? null,
+      ),
+    );
+  }
+
   app.get("/api/workspace", async (context) => {
     const token = requestSession(context);
     const session = await authorize(token);
@@ -885,6 +1010,13 @@ export function createPersonalSaasApp(
           unattendedHistory(session.grant.accountId),
         ])
       : [[], []];
+    const quotaUsage = workspace
+      ? await workspaceQuotaUsage(
+          session.grant.accountId,
+          workspace.id,
+          await computer?.status(workspace.id).catch(() => undefined),
+        )
+      : undefined;
     const accessMs = await remainingAccess(token, session.grant);
     if (!accessMs) return context.json({ error: "authorization_changed" }, 403);
     if (workspace) context.header("OpenBot-Access-Ms", String(accessMs));
@@ -893,6 +1025,7 @@ export function createPersonalSaasApp(
           recovery.length || unattended.length
             ? {
                 ...workspace,
+                quotas: quotaUsage,
                 ...(unattended.length
                   ? { interruptedBackgroundWork: unattended }
                   : {}),
@@ -902,7 +1035,7 @@ export function createPersonalSaasApp(
                 })),
                 recoveryCanRetry: Boolean(runPersonalBot),
               }
-            : workspace,
+            : { ...workspace, quotas: quotaUsage },
         )
       : context.json({ status: "preparing" }, 202);
   });
@@ -950,6 +1083,15 @@ export function createPersonalSaasApp(
       : null;
   };
   app.route(
+    "/api/workspace/attachments",
+    workspaceAttachmentRoutes({
+      quotas,
+      getSession: automationSession,
+      withAuthorizedSession: store.withAuthorizedSession,
+    }),
+  );
+
+  app.route(
     automationPath,
     workspaceAutomationRoutes({
       automation,
@@ -983,6 +1125,7 @@ export function createPersonalSaasApp(
       async (tx) => {
         if (!(await workspaceBots(tx).get({ ...input.data, accountId })))
           return null;
+        await quotas.admitBot(tx, accountId);
         const key = crypto.randomUUID();
         const offered = await createWorkQueue(tx, now).offer({
           kind: PERSONAL_BOT_WORK,
@@ -998,6 +1141,27 @@ export function createPersonalSaasApp(
     return outcome.result
       ? context.json({ runId: outcome.result }, 202)
       : context.json({ error: "bot_unavailable" }, 404);
+  });
+
+  app.post("/api/workspace/bot-runs/:key/stop", async (context) => {
+    const session = await automationSession(context);
+    if (!session) return context.json({ error: "authorization_required" }, 403);
+    const key = z.uuid().safeParse(context.req.param("key"));
+    if (!key.success) return context.notFound();
+    const result = await store.withAuthorizedSession(
+      session.grant,
+      session.token,
+      (tx) =>
+        createWorkQueue(tx, now).requestPersonalStop(
+          PERSONAL_BOT_WORK,
+          session.grant.accountId,
+          key.data,
+        ),
+    );
+    if (!result.authorized)
+      return context.json({ error: "authorization_changed" }, 403);
+    if (!result.result) return context.notFound();
+    return context.body(null, 202);
   });
 
   app.get("/api/workspace/bot-runs/:key", async (context) => {
@@ -1065,7 +1229,7 @@ export function createPersonalSaasApp(
             ? {
                 mayRetry: async (transaction, payload) => {
                   const request = botWorkInput.safeParse(payload);
-                  return Boolean(
+                  const mayRetry = Boolean(
                     runPersonalBot &&
                       request.success &&
                       (await workspaceBots(transaction).get({
@@ -1073,6 +1237,8 @@ export function createPersonalSaasApp(
                         accountId,
                       })),
                   );
+                  if (mayRetry) await quotas.admitBot(transaction, accountId);
+                  return mayRetry;
                 },
               }
             : {
@@ -1137,7 +1303,7 @@ export function createPersonalSaasApp(
     accessWorkspaceComputerForTask: computer?.accessForTask,
     renewWorkspaceComputers: computer?.renew,
     sweepBotWork: () => botWork.sweep(runPersonalBot),
-    sweepBotDecisions: () => config.botRuntime?.sweepDecisions(),
+    sweepBotDecisions: () => config.botRuntime?.sweepDecisions(quotas),
     offerAutomationSchedules: automation.offerSchedules,
     sweepAutomationRoutines: automation.sweepRoutines,
     sweepAutomationInbound: automation.sweepInbound,
