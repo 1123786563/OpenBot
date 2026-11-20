@@ -307,6 +307,15 @@ export function createTestCreditLedger(database: Database) {
       });
     },
 
+    async releaseUnsent(accountId: string, id: string) {
+      await database
+        .update(operations)
+        .set({ state: "released", dispatchedAt: null })
+        .where(
+          and(operationFilter(accountId, id), eq(operations.state, "pending")),
+        );
+    },
+
     // Only the controlled route or its trusted reconciler can supply usage.
     async settle(accountId: string, id: string, usage: Usage) {
       return database.transaction(async (tx) => {

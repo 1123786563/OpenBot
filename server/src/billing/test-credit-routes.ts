@@ -2,6 +2,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { ReleasedBifrostRoute } from "../admin/bifrost-catalog";
+import { UnsentBifrostRequest } from "./test-credit-bifrost";
 import type { TestCreditLedger, VerifiedBillingIdentity } from "./test-credit";
 
 const operationId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
@@ -161,7 +162,11 @@ export function createTestCreditRoutes({
           text: completed.text,
           operation: receipt,
         });
-    } catch {
+    } catch (error) {
+      if (error instanceof UnsentBifrostRequest) {
+        await ledger.releaseUnsent(admission.accountId, input.data.operationId);
+        return context.json({ state: "denied", reason: error.reason });
+      }
       // The permit was consumed durably. A retry must never resend this operation.
     }
     return context.json({ state: "reconciling" });

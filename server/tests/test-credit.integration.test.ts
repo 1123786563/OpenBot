@@ -7,6 +7,7 @@ import {
   publish,
   verify,
 } from "../src/admin/bifrost-catalog";
+import { createBifrostCreditExecutor } from "../src/billing/test-credit-bifrost";
 import { createTestCreditLedger } from "../src/billing/test-credit";
 import { createTestCreditRoutes } from "../src/billing/test-credit-routes";
 import { createDatabase } from "../src/db/client";
@@ -25,6 +26,18 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
   let token = firstToken;
   const secondToken = crypto.randomUUID();
   let sends = 0;
+  const gateway = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch() {
+      sends++;
+      if (sends === 2) return new Response(null, { status: 502 });
+      return Response.json({
+        choices: [{ message: { content: "answer" } }],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      });
+    },
+  });
   const api = createTestCreditRoutes({
     ledger,
     authenticate: async (request, intent) => {
@@ -43,11 +56,13 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
           return undefined;
       }
     },
-    execute: async () => {
-      sends++;
-      if (sends === 2) throw new Error("response lost");
-      return { text: "answer", usage: { inputTokens: 1, outputTokens: 1 } };
-    },
+    execute: createBifrostCreditExecutor({
+      endpoint: new URL("/v1/chat/completions", gateway.url),
+      gatewayRevision: "a",
+      meteringRevision: "a",
+      countInputTokens: async (_route, messages) =>
+        messages[0]?.content === "oversized" ? 4 : 1,
+    }),
   });
   const request = async (path: string, body?: object, key: string = token) => {
     const response = await api.request(path, {
@@ -292,6 +307,21 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     const releaseBatch = crypto.randomUUID();
     await ledger.enroll({ identity: first, batchId: releaseBatch, amount: 1n });
     await request("/claim", { batchId: releaseBatch });
+    const oversizedOperationId = crypto.randomUUID();
+    const oversized = await reserve(oversizedOperationId);
+    expect(
+      (
+        await request("/v1/dispatch", {
+          operationId: oversizedOperationId,
+          permit: oversized.body.permit,
+          messages: [{ role: "user", content: "oversized" }],
+        })
+      ).body,
+    ).toEqual({ state: "denied", reason: "execution_limit" });
+    expect(
+      (await request(`/operations/${oversizedOperationId}`)).body,
+    ).toMatchObject({ state: "released", releasedMicrocredits: "2" });
+    expect(sends).toBe(2);
     const withdrawnOperationId = crypto.randomUUID();
     const reserved = await reserve(withdrawnOperationId);
     await saveCatalog(configure(published, { harnessImage, routes: {} }));
@@ -333,6 +363,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     expect(sends).toBe(2);
   } finally {
     await listener.stop(true);
+    await gateway.stop(true);
     const [original] = originalCatalog;
     if (original)
       await database
