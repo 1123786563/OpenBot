@@ -11,6 +11,7 @@ import {
   personalConversationHistory,
   personalSaasCallbackUrl,
   personalWorkspace,
+  workspaceAccessMs,
 } from "./personal-saas-contract";
 
 const sessionKey = `openbot-personal-${Array.from(serverUrl, (char) => char.charCodeAt(0).toString(16)).join("")}`;
@@ -29,9 +30,12 @@ function request(path: string, init?: Parameters<typeof fetch>[1]) {
     throw new PersonalSaasActionError(
       "Personal SaaS requires an HTTPS deployment URL.",
     );
+  const headers = new Headers(init?.headers);
+  headers.set("Cache-Control", "no-cache, no-store");
   return fetch(new URL(path, serverUrl), {
     ...init,
     credentials: "omit",
+    headers,
     redirect: "error",
   });
 }
@@ -107,7 +111,12 @@ export async function signInPersonalSaas() {
   await SecureStore.setItemAsync(sessionKey, session.token, keyOptions);
 }
 
-async function clearSession() {
+async function clearSession(expected?: string) {
+  if (
+    expected &&
+    (await SecureStore.getItemAsync(sessionKey, keyOptions)) !== expected
+  )
+    return;
   await SecureStore.deleteItemAsync(sessionKey, keyOptions);
 }
 
@@ -123,7 +132,7 @@ export async function openPersonalWorkspace(onPreparing: () => void) {
       reply = await request("/api/workspace", { headers });
   }
   if (reply.status === 401) {
-    await clearSession();
+    await clearSession(token);
     return null;
   }
   if (reply.status !== 200)
@@ -131,9 +140,12 @@ export async function openPersonalWorkspace(onPreparing: () => void) {
       "Could not open your Personal Workspace. Try again.",
     );
   const workspace = personalWorkspace.parse(await reply.json());
+  const workspaceAccess = workspaceAccessMs.parse(
+    reply.headers.get("OpenBot-Access-Ms"),
+  );
   const history = await request("/api/workspace/conversations", { headers });
   if (history.status === 401) {
-    await clearSession();
+    await clearSession(token);
     return null;
   }
   if (history.status !== 200)
@@ -143,6 +155,10 @@ export async function openPersonalWorkspace(onPreparing: () => void) {
   return {
     ...workspace,
     ...personalConversationHistory.parse(await history.json()),
+    accessMs: Math.min(
+      workspaceAccess,
+      workspaceAccessMs.parse(history.headers.get("OpenBot-Access-Ms")),
+    ),
   };
 }
 

@@ -537,6 +537,21 @@ function exchangeNative(body: Record<string, unknown>, requestOrigin?: string) {
   });
 }
 
+async function nativeSessionHeaders(
+  client: "ios" | "android" | "desktop",
+  account: Account,
+) {
+  const { start, ...proof } = await nativeAttempt(client);
+  const finish = await completeBrowserLogin(start, account);
+  const code = new URL(finish.headers.get("location") ?? "").searchParams.get(
+    "code",
+  );
+  const exchange = await exchangeNative({ ...proof, code });
+  expect(exchange.status).toBe(200);
+  const { token } = await exchange.json();
+  return { authorization: `Bearer ${token}` };
+}
+
 test("Web, Desktop, iOS, and Android share the owner’s workspace and conversation history", async () => {
   const owner = {
     sub: crypto.randomUUID(),
@@ -1025,12 +1040,15 @@ test("fresh same-identity verification revokes every old session and a later sig
   await enter(first);
   await enter(unrelated);
   const original = await workspace(second);
-  const sessions = personalSaasStore(database);
-  const sharedToken = cookie(
-    await authenticate(account),
-    "__Host-openbot-personal=",
-  ).slice("__Host-openbot-personal=".length);
-  expect(await sessions.session(sharedToken)).toBeDefined();
+  const nativeHeaders = await Promise.all(
+    (["ios", "android", "desktop"] as const).map((client) =>
+      nativeSessionHeaders(client, account),
+    ),
+  );
+  for (const headers of nativeHeaders)
+    expect(
+      (await send("/api/workspace/conversations", { headers })).status,
+    ).toBe(200);
   await withReplica(async (connect) => {
     const live = await Promise.all(
       [first, second, unrelated].map((session) =>
@@ -1067,7 +1085,11 @@ test("fresh same-identity verification revokes every old session and a later sig
     expect((await unrelatedStream.read()).done).toBe(false);
     await unrelatedStream.cancel();
   });
-  expect(await sessions.session(sharedToken)).toBeUndefined();
+  for (const headers of nativeHeaders) {
+    const response = await send("/api/workspace/conversations", { headers });
+    expect(response.status).toBe(401);
+    expect(response.headers.get("OpenBot-Access-Ms")).toBeNull();
+  }
   expect((await workspace(unrelated)).id).not.toBe(original.id);
   const next = cookie(await authenticate(account), "__Host-openbot-personal=");
   expect(await workspace(next)).toEqual(original);
@@ -1858,4 +1880,107 @@ test("native verified handoffs return only the signed-in owner's suspension stat
   expect((await exchangeNative({ ...oldProof, code: oldCode })).status).toBe(
     400,
   );
+});
+
+test("web and native cloud reads expose only the remaining authorization during a status outage", async () => {
+  const account: Account = {
+    sub: crypto.randomUUID(),
+    email: "client-lease@example.com",
+    verified: true,
+    active: true,
+  };
+  const issuedAt = Date.now();
+  clockTime = issuedAt;
+  try {
+    const session = cookie(
+      await authenticate(account),
+      "__Host-openbot-personal=",
+    );
+    const otherSession = cookie(
+      await authenticate(account),
+      "__Host-openbot-personal=",
+    );
+    await enter(session);
+    const page = await send("/workspace", { headers: { cookie: session } });
+    const markup = await page.text();
+    expect(page.headers.get("cache-control")).toBe("no-store");
+    expect(markup).toContain('id="protected-workspace" hidden');
+    const binding = markup.match(/data-workspace-view="([^"]+)"/)?.[1];
+    if (!binding) throw new Error("Missing workspace view binding");
+
+    const signedOutDevice = await nativeSessionHeaders("android", account);
+    const native = await Promise.all(
+      (["ios", "android", "desktop"] as const).map((client) =>
+        nativeSessionHeaders(client, account),
+      ),
+    );
+    expect(
+      (
+        await send("/auth/sign-out", {
+          method: "POST",
+          headers: signedOutDevice,
+        })
+      ).status,
+    ).toBe(204);
+    expect(
+      (await send("/api/workspace/conversations", { headers: signedOutDevice }))
+        .status,
+    ).toBe(401);
+    const checks = [
+      {
+        path: "/api/auth/session/access",
+        headers: { cookie: session, "OpenBot-Workspace-View": binding },
+        status: 204,
+      },
+      ...native.flatMap((headers) =>
+        ["/api/workspace", "/api/workspace/conversations"].map((path) => ({
+          path,
+          headers,
+          status: 200,
+        })),
+      ),
+    ];
+    const switched = await send("/api/auth/session/access", {
+      headers: { cookie: otherSession, "OpenBot-Workspace-View": binding },
+    });
+    expect(switched.status).toBe(403);
+    expect(switched.headers.get("OpenBot-Access-Ms")).toBeNull();
+
+    account.active = undefined;
+    clockTime = issuedAt + 59_000;
+    for (const { path, headers, status } of checks) {
+      const response = await send(path, { headers });
+      expect(response.status).toBe(status);
+      expect(response.headers.get("OpenBot-Access-Ms")).toBe("1000");
+      expect(response.headers.get("cache-control")).toBe("no-store");
+    }
+
+    clockTime = issuedAt + 60_000;
+    for (const { path, headers } of checks) {
+      const response = await send(path, { headers });
+      expect(response.status).toBe(503);
+      expect(response.headers.get("OpenBot-Access-Ms")).toBeNull();
+      expect(response.headers.get("cache-control")).toBe("no-store");
+    }
+
+    account.active = true;
+    for (const { path, headers, status } of checks) {
+      const response = await send(path, { headers });
+      // An old web document is tied to the expired epoch. The session can render a fresh document.
+      expect(response.status).toBe(status === 204 ? 403 : status);
+    }
+    expect(
+      (await send("/workspace", { headers: { cookie: session } })).status,
+    ).toBe(200);
+
+    account.active = false;
+    account.disablements = [{ id: crypto.randomUUID(), effectiveAt: now() }];
+    for (const { path, headers } of checks) {
+      const response = await send(path, { headers });
+      expect(response.status).toBe(401);
+      expect(response.headers.get("OpenBot-Access-Ms")).toBeNull();
+    }
+  } finally {
+    clockTime = undefined;
+  }
 });

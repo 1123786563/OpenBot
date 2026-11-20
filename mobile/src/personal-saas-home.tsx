@@ -1,3 +1,4 @@
+import { addNetworkStateListener } from "expo-network";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Button, ScrollView, Text, View } from "react-native";
 import {
@@ -23,53 +24,119 @@ export function PersonalSaasHome() {
   const [busy, setBusy] = useState(false);
   const [authError, setAuthError] = useState("");
   const working = useRef(false);
+  const active = useRef(AppState.currentState === "active");
+  const generation = useRef(0);
+  const access = useRef<(() => number) | null>(null);
 
-  const load = useCallback(async () => {
-    setScreen({ kind: "loading" });
-    try {
-      const workspace = await openPersonalWorkspace(() =>
-        setScreen({ kind: "preparing" }),
-      );
-      setScreen(
-        workspace ? { kind: "ready", workspace } : { kind: "signed-out" },
-      );
-    } catch {
-      setScreen({ kind: "workspace-error" });
-    }
+  const withdraw = useCallback((kind: "loading" | "workspace-error") => {
+    generation.current++;
+    access.current = null;
+    setScreen({ kind });
   }, []);
 
+  const load = useCallback(
+    async (refresh = false) => {
+      if (!active.current) return;
+      if (!refresh) withdraw("loading");
+      const current = generation.current;
+      const started = performance.now();
+      const wallStarted = Date.now();
+      try {
+        const workspace = await openPersonalWorkspace(() => {
+          if (!refresh && current === generation.current)
+            setScreen({ kind: "preparing" });
+        });
+        if (current !== generation.current) return;
+        if (!workspace) {
+          access.current = null;
+          setScreen({ kind: "signed-out" });
+          return;
+        }
+        const remaining = () =>
+          workspace.accessMs -
+          Math.max(performance.now() - started, Date.now() - wallStarted);
+        if (remaining() <= 0 || (access.current && access.current() <= 0)) {
+          withdraw("workspace-error");
+          return;
+        }
+        access.current = remaining;
+        setScreen({ kind: "ready", workspace });
+      } catch {
+        if (current === generation.current) withdraw("workspace-error");
+      }
+    },
+    [withdraw],
+  );
+
   useEffect(() => {
+    function setActive(next: boolean) {
+      if (next === active.current) return;
+      active.current = next;
+      if (!next) {
+        generation.current++;
+        access.current = null;
+        setScreen((previous) =>
+          previous.kind === "ready" ? { kind: "loading" } : previous,
+        );
+      } else if (!working.current) {
+        void load();
+      }
+    }
+
+    const appState = AppState.addEventListener("change", (state) => {
+      setActive(state === "active");
+    });
+    const blur = AppState.addEventListener("blur", () => setActive(false));
+    const focus = AppState.addEventListener("focus", () => {
+      setActive(AppState.currentState === "active");
+    });
+    let wasOffline = false;
+    const network = addNetworkStateListener((state) => {
+      const offline =
+        state.isConnected === false || state.isInternetReachable === false;
+      const reconnected = wasOffline && !offline && state.isConnected;
+      wasOffline = offline;
+      if (!active.current || working.current) return;
+      if (offline) {
+        generation.current++;
+        access.current = null;
+        setScreen((previous) =>
+          previous.kind === "ready" ||
+          previous.kind === "preparing" ||
+          previous.kind === "loading"
+            ? { kind: "workspace-error" }
+            : previous,
+        );
+      } else if (reconnected) {
+        void load();
+      }
+    });
     void load();
+    return () => {
+      generation.current++;
+      appState.remove();
+      blur.remove();
+      focus.remove();
+      network.remove();
+    };
   }, [load]);
 
   useEffect(() => {
-    if (busy || screen.kind !== "ready") return;
-    let current = true;
-    const foreground = AppState.addEventListener("change", (state) => {
-      if (state === "active") void load();
-    });
-    const expiry = setTimeout(() => {
-      current = false;
-      setScreen({ kind: "workspace-error" });
-    }, 45_000);
-    const refresh = setTimeout(async () => {
-      try {
-        const workspace = await openPersonalWorkspace(() => {});
-        if (current)
-          setScreen(
-            workspace ? { kind: "ready", workspace } : { kind: "signed-out" },
-          );
-      } catch {
-        if (current) setScreen({ kind: "workspace-error" });
-      }
-    }, 5_000);
+    if (screen.kind !== "ready" || !access.current) return;
+    const delay = access.current();
+    const expiry = setTimeout(
+      () => withdraw("workspace-error"),
+      Math.max(0, delay),
+    );
+    const refresh = setTimeout(
+      () => void load(true),
+      Math.min(5_000, Math.max(1_000, delay / 2)),
+    );
     return () => {
-      current = false;
-      foreground.remove();
       clearTimeout(expiry);
       clearTimeout(refresh);
     };
-  }, [busy, load, screen]);
+  }, [load, screen, withdraw]);
 
   async function act(work: () => Promise<void>) {
     if (working.current) return;
@@ -144,45 +211,54 @@ export function PersonalSaasHome() {
             disabled={busy}
             title="Retry"
             onPress={() => {
-              void act(load);
+              void act(() => load());
             }}
           />
         </>
       )}
-      {!busy && screen.kind === "ready" && (
-        <>
-          <Text>Workspace ID {screen.workspace.id}</Text>
-          <Text
-            accessibilityRole="header"
-            style={{ fontSize: 20, fontWeight: "600" }}
-          >
-            {screen.workspace.personalAssistant.name}
-          </Text>
-          <Text
-            accessibilityRole="header"
-            style={{ fontSize: 20, fontWeight: "600" }}
-          >
-            Recent conversations
-          </Text>
-          {screen.workspace.conversations.length === 0 && (
-            <Text>No conversations yet.</Text>
-          )}
-          {screen.workspace.conversations.map(({ id, title, preview }) => (
-            <View key={id}>
-              <Text style={{ fontWeight: "600" }}>{title}</Text>
-              {preview ? <Text>{preview}</Text> : null}
-            </View>
-          ))}
-        </>
-      )}
+      {!busy &&
+        screen.kind === "ready" &&
+        access.current &&
+        access.current() > 0 && (
+          <>
+            <Text>Workspace ID {screen.workspace.id}</Text>
+            <Text
+              accessibilityRole="header"
+              style={{ fontSize: 20, fontWeight: "600" }}
+            >
+              {screen.workspace.personalAssistant.name}
+            </Text>
+            <Text
+              accessibilityRole="header"
+              style={{ fontSize: 20, fontWeight: "600" }}
+            >
+              Recent conversations
+            </Text>
+            {screen.workspace.conversations.length === 0 && (
+              <Text>No conversations yet.</Text>
+            )}
+            {screen.workspace.conversations.map(({ id, title, preview }) => (
+              <View key={id}>
+                <Text style={{ fontWeight: "600" }}>{title}</Text>
+                {preview ? <Text>{preview}</Text> : null}
+              </View>
+            ))}
+          </>
+        )}
       {(screen.kind === "ready" || screen.kind === "workspace-error") && (
         <Button
           disabled={busy}
           title="Sign out"
           onPress={() => {
             void act(async () => {
-              await signOutPersonalSaas();
-              setScreen({ kind: "signed-out" });
+              withdraw("loading");
+              try {
+                await signOutPersonalSaas();
+                setScreen({ kind: "signed-out" });
+              } catch (error) {
+                withdraw("workspace-error");
+                throw error;
+              }
             });
           }}
         />

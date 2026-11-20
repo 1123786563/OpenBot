@@ -4,6 +4,7 @@ import {
   nativeExchange,
   parsePersonalSaasCallback,
   personalSaasCallbackUrl,
+  workspaceAccessMs,
 } from "../src/personal-saas-contract.ts";
 
 const state = "a".repeat(43);
@@ -56,4 +57,10 @@ test("a paused handoff carries public status and no session token", () => {
     nativeExchange.safeParse({ ...status, token: handoff }).success,
     false,
   );
+});
+
+test("a missing, exhausted, or malformed server grant cannot open cached workspace data", () => {
+  deepStrictEqual(workspaceAccessMs.parse("1250"), 1250);
+  for (const header of [null, "", "0", "-1", "1.5", "60001", "1e3", "25, 50"])
+    deepStrictEqual(workspaceAccessMs.safeParse(header).success, false);
 });

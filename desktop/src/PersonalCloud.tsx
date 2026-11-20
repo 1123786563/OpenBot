@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 
 export const CLOUD_FRAGMENT = "personal-cloud";
 
@@ -17,6 +18,7 @@ export type CloudView =
     }
   | {
       kind: "workspace";
+      accessMs: number;
       id: string;
       personalAssistant: { id: string; name: string };
       conversations: { id: string; title: string; preview: string | null }[];
@@ -27,6 +29,7 @@ export type CloudAction = "status" | "start" | "cancel" | "prepare" | "signOut";
 const cloudRequest = (action: CloudAction) =>
   invoke<CloudView>("personal_cloud_action", { action });
 const openLocal = () => invoke<void>("personal_cloud_show_local");
+const ACCESS_ERROR = "Could not check your cloud workspace. Try again.";
 const PREPARE_ERROR = "Could not prepare your Personal Workspace. Try again.";
 
 export function PersonalCloud({
@@ -40,45 +43,125 @@ export function PersonalCloud({
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (busy || view?.kind !== "workspace") return;
-    const refresh = () => {
-      setFailure(null);
-      setView(null);
-    };
-    let current = true;
-    const expiry = setTimeout(refresh, 45_000);
-    const poll = setTimeout(async () => {
-      try {
-        const next = await request("status");
-        if (current) setView(next);
-      } catch {
-        if (current) refresh();
+  const generation = useRef(0);
+  const foreground = useRef(!document.hidden);
+  const access = useRef<(() => number) | null>(null);
+  const [checkVersion, recheck] = useState(0);
+
+  const withdraw = useCallback((message: string | null) => {
+    generation.current++;
+    access.current = null;
+    setView((current) => (current?.kind === "workspace" ? null : current));
+    setFailure(message);
+  }, []);
+
+  const read = useCallback(
+    async (action: CloudAction) => {
+      const started = performance.now();
+      const wallStarted = Date.now();
+      const current = generation.current;
+      const next = await request(action);
+      if (current !== generation.current) return;
+      if (next.kind === "workspace") {
+        if (!foreground.current) return;
+        const remaining = () =>
+          next.accessMs -
+          Math.max(performance.now() - started, Date.now() - wallStarted);
+        if (
+          !Number.isInteger(next.accessMs) ||
+          next.accessMs > 60_000 ||
+          remaining() <= 0 ||
+          (access.current && access.current() <= 0)
+        ) {
+          withdraw(ACCESS_ERROR);
+          return;
+        }
+        access.current = remaining;
+      } else {
+        access.current = null;
       }
-    }, 5_000);
-    window.addEventListener("focus", refresh);
+      return next;
+    },
+    [request, withdraw],
+  );
+
+  useEffect(() => {
+    const background = () => {
+      foreground.current = false;
+      flushSync(() => withdraw(null));
+    };
+    const resume = () => {
+      if (document.hidden) return;
+      foreground.current = true;
+      flushSync(() => {
+        withdraw(null);
+        recheck((version) => version + 1);
+      });
+    };
+    const visibility = () => (document.hidden ? background() : resume());
+    const offline = () => flushSync(() => withdraw(ACCESS_ERROR));
+    const online = () => {
+      if (foreground.current) resume();
+    };
+    window.addEventListener("blur", background);
+    window.addEventListener("focus", resume);
+    window.addEventListener("offline", offline);
+    window.addEventListener("online", online);
+    document.addEventListener("visibilitychange", visibility);
     return () => {
-      current = false;
-      window.removeEventListener("focus", refresh);
+      generation.current++;
+      window.removeEventListener("blur", background);
+      window.removeEventListener("focus", resume);
+      window.removeEventListener("offline", offline);
+      window.removeEventListener("online", online);
+      document.removeEventListener("visibilitychange", visibility);
+    };
+  }, [withdraw]);
+
+  useEffect(() => {
+    if (view?.kind !== "workspace" || !access.current) return;
+    const current = generation.current;
+    const delay = access.current();
+    const expiry = setTimeout(() => withdraw(ACCESS_ERROR), Math.max(0, delay));
+    const poll = setTimeout(
+      async () => {
+        try {
+          const next = await read("status");
+          if (next) setView(next);
+        } catch {
+          if (generation.current === current) withdraw(ACCESS_ERROR);
+        }
+      },
+      Math.min(5_000, Math.max(1_000, delay / 2)),
+    );
+    return () => {
       clearTimeout(expiry);
       clearTimeout(poll);
     };
-  }, [busy, request, view]);
+  }, [view, read, withdraw]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refocus must restart a pending check even when the view is already blank.
   useEffect(() => {
-    if (busy || (view !== null && view.kind !== "waiting") || failure) return;
+    if (
+      !foreground.current ||
+      busy ||
+      (view !== null && view.kind !== "waiting") ||
+      failure
+    )
+      return;
     let active = true;
+    const current = generation.current;
     let timer: ReturnType<typeof setTimeout>;
     const check = async () => {
       try {
-        const next = await request("status");
-        if (!active) return;
+        const next = await read("status");
+        if (!active || !next) return;
         if (next.kind === "preparing") {
           try {
-            const prepared = await request("prepare");
-            if (active) setView(prepared);
+            const prepared = await read("prepare");
+            if (active && prepared) setView(prepared);
           } catch {
-            if (active) {
+            if (active && current === generation.current) {
               setView(next);
               setFailure(PREPARE_ERROR);
             }
@@ -89,9 +172,9 @@ export function PersonalCloud({
           setView(next);
         }
       } catch {
-        if (active) {
+        if (active && current === generation.current) {
           setView(null);
-          setFailure("Could not check your cloud workspace. Try again.");
+          setFailure(ACCESS_ERROR);
         }
       }
     };
@@ -100,15 +183,19 @@ export function PersonalCloud({
       active = false;
       clearTimeout(timer);
     };
-  }, [busy, failure, request, view]);
+  }, [busy, checkVersion, failure, read, view]);
 
   async function run(action: CloudAction, error: string) {
+    generation.current++;
+    if (action === "signOut") withdraw(null);
+    const current = generation.current;
     setBusy(true);
     setFailure(null);
     try {
-      setView(await request(action));
+      const next = await read(action);
+      if (next) setView(next);
     } catch {
-      setFailure(error);
+      if (current === generation.current) setFailure(error);
     } finally {
       setBusy(false);
     }
@@ -205,27 +292,30 @@ export function PersonalCloud({
             </button>
           </>
         )}
-        {!busy && view?.kind === "workspace" && (
-          <>
-            <h2>Personal Workspace</h2>
-            <p>{view.personalAssistant.name}</p>
-            <section aria-labelledby="recent-conversations">
-              <h3 id="recent-conversations">Recent conversations</h3>
-              {view.conversations.length === 0 ? (
-                <p>No conversations yet.</p>
-              ) : (
-                <ul>
-                  {view.conversations.map(({ id, title, preview }) => (
-                    <li key={id}>
-                      <strong>{title}</strong>
-                      {preview && <p>{preview}</p>}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          </>
-        )}
+        {!busy &&
+          view?.kind === "workspace" &&
+          access.current &&
+          access.current() > 0 && (
+            <>
+              <h2>Personal Workspace</h2>
+              <p>{view.personalAssistant.name}</p>
+              <section aria-labelledby="recent-conversations">
+                <h3 id="recent-conversations">Recent conversations</h3>
+                {view.conversations.length === 0 ? (
+                  <p>No conversations yet.</p>
+                ) : (
+                  <ul>
+                    {view.conversations.map(({ id, title, preview }) => (
+                      <li key={id}>
+                        <strong>{title}</strong>
+                        {preview && <p>{preview}</p>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </>
+          )}
         <div className="row">
           {(view?.kind === "preparing" || view?.kind === "workspace") && (
             <button

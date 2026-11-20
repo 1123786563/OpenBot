@@ -27,6 +27,12 @@ const pausedWorkspace = z.strictObject({
 });
 export type PausedWorkspace = z.infer<typeof pausedWorkspace>;
 export const nativeExchange = z.union([nativeSession, pausedWorkspace]);
+export const workspaceAccessMs = z
+  .string()
+  .regex(/^\d+$/)
+  .transform(Number)
+  .pipe(z.number().int().min(1).max(60_000));
+
 export const personalWorkspace = z.object({
   id: z.string().min(1),
   personalAssistant: z.object({

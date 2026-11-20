@@ -24,25 +24,76 @@ export function sessionEventRoutes(options: {
     () =>
       new Response(
         `
-    const initial = document.querySelector("[data-access-ms]");
-    const events = new EventSource("/api/auth/session/events");
-    function signedOut() {
-      events.close();
-      document.querySelector("main").hidden = true;
-      location.replace("/workspace");
+    const binding = document.currentScript.dataset.workspaceView;
+    const workspace = document.getElementById("protected-workspace");
+    const status = document.getElementById("workspace-access");
+    const retry = document.getElementById("workspace-retry");
+    const controller = new AbortController();
+    let expiry, refresh;
+    let remaining = () => Infinity;
+
+    function withdraw() {
+      workspace.remove();
+      controller.abort();
+      clearTimeout(expiry);
+      clearTimeout(refresh);
+      status.textContent = "Workspace access could not be verified.";
+      status.hidden = false;
+      retry.hidden = false;
     }
-    let expires = setTimeout(signedOut, Number(initial.dataset.accessMs));
-    events.addEventListener("authorized", (event) => {
-      clearTimeout(expires);
-      expires = setTimeout(signedOut, Number(event.data));
+
+    function resume() {
+      if (controller.signal.aborted && !document.hidden && navigator.onLine)
+        location.reload();
+    }
+
+    async function checkAccess() {
+      const started = performance.now();
+      const wallStarted = Date.now();
+      try {
+        const response = await fetch("/api/auth/session/access", {
+          cache: "no-store",
+          redirect: "error",
+          headers: { "OpenBot-Workspace-View": binding },
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        const accessMs = Number(response.headers.get("OpenBot-Access-Ms"));
+        const nextRemaining = () => accessMs - Math.max(
+          performance.now() - started, Date.now() - wallStarted,
+        );
+        const delay = nextRemaining();
+        if (
+          response.status !== 204 || !Number.isInteger(accessMs) ||
+          accessMs > 60_000 || delay <= 0 || remaining() <= 0 || document.hidden
+        ) {
+          withdraw();
+          if ([401, 403, 503].includes(response.status)) location.replace("/workspace");
+          return;
+        }
+        remaining = nextRemaining;
+        clearTimeout(expiry);
+        expiry = setTimeout(withdraw, delay);
+        workspace.hidden = false;
+        status.hidden = true;
+        refresh = setTimeout(checkAccess, 5_000);
+      } catch {
+        if (!controller.signal.aborted) withdraw();
+      }
+    }
+
+    window.addEventListener("pagehide", withdraw);
+    window.addEventListener("pageshow", (event) => { if (event.persisted) resume(); });
+    window.addEventListener("offline", withdraw);
+    window.addEventListener("online", resume);
+    window.addEventListener("blur", withdraw);
+    window.addEventListener("focus", resume);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) withdraw();
+      else resume();
     });
-    events.addEventListener("signed-out", signedOut);
-    events.addEventListener("account-status-unconfirmed", signedOut);
-    events.addEventListener("error", async () => {
-      // The session can end between rendering this page and opening its stream.
-      const response = await fetch("/api/workspace").catch(() => null);
-      if (response?.status === 401 || response?.status === 503) signedOut();
-    });
+    if (!document.hidden && navigator.onLine) void checkAccess();
+    else withdraw();
   `,
         { headers: { "content-type": "text/javascript; charset=utf-8" } },
       ),

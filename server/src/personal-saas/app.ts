@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { html } from "hono/html";
@@ -387,16 +388,23 @@ export function createPersonalSaasApp(
     } as const;
   }
 
-  async function stillAuthorized(
+  async function remainingAccess(
     token: string | undefined,
     grant: AccountGrant,
   ) {
     const current = await authorize(token, false);
-    return (
-      current.kind === "authorized" &&
-      current.grant.epoch === grant.epoch &&
-      now() < grant.expiresAt
+    if (current.kind !== "authorized" || current.grant.epoch !== grant.epoch)
+      return 0;
+    return Math.max(
+      0,
+      Math.floor(Math.min(current.grant.expiresAt, grant.expiresAt) - now()),
     );
+  }
+
+  function workspaceViewBinding(token: string, { epoch }: AccountGrant) {
+    return createHmac("sha256", config.encryptionKey)
+      .update(`personal-saas-workspace-view:${token}:${epoch}`)
+      .digest("base64url");
   }
 
   async function refreshSession(token: string) {
@@ -437,7 +445,7 @@ export function createPersonalSaasApp(
       database,
       (context) => authorize(getCookie(context, sessionCookie)),
       (context, grant) =>
-        stillAuthorized(getCookie(context, sessionCookie), grant),
+        remainingAccess(getCookie(context, sessionCookie), grant).then(Boolean),
       async (context, grant, input) => {
         const token = getCookie(context, sessionCookie);
         if (!token) return { authorized: false };
@@ -461,7 +469,7 @@ export function createPersonalSaasApp(
         ),
         503,
       );
-    if (session.kind === "signed-out") {
+    if (session.kind === "signed-out" || !token) {
       deleteCookie(context, sessionCookie, cookieOptions);
       return context.redirect("/");
     }
@@ -469,13 +477,17 @@ export function createPersonalSaasApp(
     const conversations = workspace
       ? await store.recentConversations(session.grant.accountId)
       : [];
-    if (!(await stillAuthorized(token, session.grant)))
+    if (!(await remainingAccess(token, session.grant)))
       return context.redirect("/workspace");
     if (!workspace) return context.html(preparePage());
     return context.html(
       page(
         "Personal Workspace",
-        html`<section aria-labelledby="assistant"><h2 id="assistant">${workspace.personalAssistant.name}</h2></section>
+        html`<p id="workspace-access" role="status">Checking your workspace…</p>
+      <a id="workspace-retry" href="/workspace" hidden>Retry</a>
+      <noscript>Enable JavaScript to verify workspace access.</noscript>
+      <div id="protected-workspace" hidden>
+      <section aria-labelledby="assistant"><h2 id="assistant">${workspace.personalAssistant.name}</h2></section>
       <section aria-labelledby="conversations"><h2 id="conversations">Recent conversations</h2>
         ${
           conversations.length === 0
@@ -491,7 +503,8 @@ export function createPersonalSaasApp(
         <p>Verify your identity with Casdoor to require every device to sign in again.</p>
         <button type="submit">Sign out all devices</button>
       </form>
-      <script src="/assets/session.js" data-access-ms="${Math.max(0, session.grant.expiresAt - now())}" defer></script>`,
+      </div>
+      <script src="/assets/session.js" data-workspace-view="${workspaceViewBinding(token, session.grant)}" defer></script>`,
       ),
     );
   });
@@ -525,6 +538,24 @@ export function createPersonalSaasApp(
     }
   });
 
+  app.get("/api/auth/session/access", async (context) => {
+    const token = getCookie(context, sessionCookie);
+    const session = await authorize(token);
+    if (session.kind === "signed-out" || !token)
+      return context.json({ error: "sign_in_required" }, 401);
+    if (session.kind === "unconfirmed")
+      return context.json({ error: session.reason }, 503);
+    if (
+      context.req.header("OpenBot-Workspace-View") !==
+      workspaceViewBinding(token, session.grant)
+    )
+      return context.json({ error: "authorization_changed" }, 403);
+    const accessMs = await remainingAccess(token, session.grant);
+    if (!accessMs) return context.json({ error: "authorization_changed" }, 403);
+    context.header("OpenBot-Access-Ms", String(accessMs));
+    return context.body(null, 204);
+  });
+
   app.get("/api/workspace", async (context) => {
     const token = requestSession(context);
     const session = await authorize(token);
@@ -536,8 +567,9 @@ export function createPersonalSaasApp(
     if (session.kind === "signed-out")
       return context.json({ error: "sign_in_required" }, 401);
     const workspace = await store.workspace(session.grant.accountId);
-    if (!(await stillAuthorized(token, session.grant)))
-      return context.json({ error: "authorization_changed" }, 403);
+    const accessMs = await remainingAccess(token, session.grant);
+    if (!accessMs) return context.json({ error: "authorization_changed" }, 403);
+    if (workspace) context.header("OpenBot-Access-Ms", String(accessMs));
     return workspace
       ? context.json(workspace)
       : context.json({ status: "preparing" }, 202);
@@ -556,8 +588,9 @@ export function createPersonalSaasApp(
     const conversations = await store.recentConversations(
       session.grant.accountId,
     );
-    if (!(await stillAuthorized(token, session.grant)))
-      return context.json({ error: "authorization_changed" }, 403);
+    const accessMs = await remainingAccess(token, session.grant);
+    if (!accessMs) return context.json({ error: "authorization_changed" }, 403);
+    context.header("OpenBot-Access-Ms", String(accessMs));
     return context.json({ conversations });
   });
 

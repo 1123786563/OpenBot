@@ -166,6 +166,8 @@ pub enum View {
         #[serde(rename = "personalAssistant")]
         personal_assistant: Assistant,
         conversations: Vec<Conversation>,
+        #[serde(rename = "accessMs")]
+        access_ms: u64,
     },
 }
 
@@ -439,6 +441,7 @@ impl<'a> Api<'a> {
             .map_err(|_| NETWORK_ERROR)?;
         match result.status() {
             StatusCode::OK => {
+                let workspace_access = access_ms(&result)?;
                 let Workspace {
                     id,
                     personal_assistant,
@@ -451,12 +454,14 @@ impl<'a> Api<'a> {
                     .map_err(|_| NETWORK_ERROR)?;
                 match history.status() {
                     StatusCode::OK => {
+                        let access_ms = workspace_access.min(access_ms(&history)?);
                         let ConversationHistory { conversations } =
                             history.json().map_err(|_| NETWORK_ERROR)?;
                         Ok(View::Workspace {
                             id,
                             personal_assistant,
                             conversations,
+                            access_ms,
                         })
                     }
                     StatusCode::UNAUTHORIZED => {
@@ -474,6 +479,16 @@ impl<'a> Api<'a> {
             _ => Err(NETWORK_ERROR),
         }
     }
+}
+
+fn access_ms(response: &reqwest::blocking::Response) -> Result<u64, &'static str> {
+    response
+        .headers()
+        .get("openbot-access-ms")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse().ok())
+        .filter(|value| (1..=60_000).contains(value))
+        .ok_or(NETWORK_ERROR)
 }
 
 pub fn show<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<(), String> {

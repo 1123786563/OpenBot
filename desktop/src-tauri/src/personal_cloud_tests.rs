@@ -94,14 +94,16 @@ fn signed_in_cloud_view_loads_workspace_and_owner_history_with_the_same_session(
         .parse()
         .unwrap();
     let server = std::thread::spawn(move || {
-        for (path, body) in [
+        for (path, body, access_ms) in [
             (
                 "/api/workspace",
                 r#"{"id":"workspace-1","personalAssistant":{"id":"bot-1","name":"My Assistant"}}"#,
+                42_000,
             ),
             (
                 "/api/workspace/conversations",
                 r#"{"conversations":[{"id":"conversation-1","title":"Weekend <plans>","preview":"Saturday at nine"},{"id":"conversation-2","title":"Groceries","preview":null}]}"#,
+                1_000,
             ),
         ] {
             let (stream, _) = listener.accept().unwrap();
@@ -124,7 +126,7 @@ fn signed_in_cloud_view_loads_workspace_and_owner_history_with_the_same_session(
                     && value.trim() == "Bearer test-session"));
             write!(
                 reader.get_mut(),
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nOpenBot-Access-Ms: {access_ms}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             ).unwrap();
         }
@@ -140,6 +142,7 @@ fn signed_in_cloud_view_loads_workspace_and_owner_history_with_the_same_session(
         value,
         serde_json::json!({
             "kind": "workspace",
+            "accessMs": 1000,
             "id": "workspace-1",
             "personalAssistant": {"id": "bot-1", "name": "My Assistant"},
             "conversations": [

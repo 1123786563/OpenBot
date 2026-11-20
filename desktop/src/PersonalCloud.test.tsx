@@ -40,6 +40,7 @@ test("a cancelled browser sign-in can be restarted and returned to the existing 
   );
   const existingWorkspace = {
     kind: "workspace",
+    accessMs: 60_000,
     id: "workspace-1",
     personalAssistant: { id: "bot-1", name: "My Assistant" },
     conversations: [
@@ -89,6 +90,7 @@ test("first entry runs shared setup and keeps a retry when setup fails", async (
     if (++preparations === 1) throw new Error("Temporary setup error");
     return {
       kind: "workspace",
+      accessMs: 60_000,
       id: "workspace-1",
       personalAssistant: { id: "bot-1", name: "My Assistant" },
       conversations: [],
@@ -107,6 +109,7 @@ test("first entry runs shared setup and keeps a retry when setup fails", async (
 test("returning to the cloud window rechecks workspace access before showing the assistant", async () => {
   let status: CloudView = {
     kind: "workspace",
+    accessMs: 60_000,
     id: "workspace-1",
     personalAssistant: { id: "bot-1", name: "My Assistant" },
     conversations: [
@@ -147,4 +150,62 @@ test("a verified paused account shows support and an operation ID instead of wor
   expect(
     screen.queryByRole("heading", { name: "Recent conversations" }),
   ).toBeNull();
+});
+
+test("a cloud window drops conversation content at the server deadline", async () => {
+  const request = async (): Promise<CloudView> => ({
+    kind: "workspace",
+    id: "workspace-1",
+    personalAssistant: { id: "bot-1", name: "My Assistant" },
+    conversations: [
+      { id: "conversation-1", title: "Private title", preview: null },
+    ],
+    accessMs: 350,
+  });
+  const screen = within(render(<PersonalCloud request={request} />).container);
+  await screen.findByText("Private title");
+  await screen.findByRole("alert", {}, { timeout: 2000 });
+  expect(screen.queryByText("Private title")).toBeNull();
+});
+
+test("an offline foreground transition discards an outstanding successful cloud response", async () => {
+  const workspace = {
+    kind: "workspace",
+    id: "workspace-1",
+    personalAssistant: { id: "bot-1", name: "My Assistant" },
+    conversations: [
+      { id: "conversation-1", title: "Private title", preview: null },
+    ],
+    accessMs: 60_000,
+  } satisfies CloudView;
+  const pending = Promise.withResolvers<CloudView>();
+  const checking = Promise.withResolvers<void>();
+  let request = async (): Promise<CloudView> => workspace;
+  const screen = within(
+    render(<PersonalCloud request={() => request()} />).container,
+  );
+  await screen.findByText("Private title");
+
+  request = () => {
+    checking.resolve();
+    return pending.promise;
+  };
+  await act(async () => {
+    window.dispatchEvent(new Event("blur"));
+    window.dispatchEvent(new Event("focus"));
+  });
+  await checking.promise;
+  expect(screen.queryByText("Private title")).toBeNull();
+  await act(async () => {
+    window.dispatchEvent(new Event("offline"));
+    pending.resolve(workspace);
+  });
+  await screen.findByRole("alert");
+  expect(screen.queryByText("Private title")).toBeNull();
+
+  request = async () => workspace;
+  await act(async () => {
+    window.dispatchEvent(new Event("online"));
+  });
+  await screen.findByText("Private title");
 });
