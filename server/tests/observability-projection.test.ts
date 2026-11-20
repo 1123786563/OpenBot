@@ -1,9 +1,13 @@
 import { expect, test } from "bun:test";
 import type { AuditTapEvent } from "../src/audit";
+import { signAuditRun } from "../src/telemetry/audit-run-proof";
+
 import {
   type OpenBotAuditRecord,
   projectAuditEvent,
 } from "../src/telemetry/observability-projection";
+
+const proofKey = "audit-fixture-key";
 
 const auditEvent: AuditTapEvent = {
   id: "3967be97-04d1-4ffa-a6aa-d71af0b78f18",
@@ -61,10 +65,18 @@ test("approved computer facets and validated run lineage are the only extras", (
       {
         ...auditEvent,
         runId: "run/1",
-        parentRunId: "run:0",
-        rootTaskId: "task.1",
-        attemptId: "attempt-1",
         threadId: "thread_1",
+        runLineageProof: signAuditRun(
+          {
+            runId: "run/1",
+            parentRunId: "run:0",
+            rootTaskId: "task.1",
+            attemptId: "attempt-1",
+            threadId: "thread_1",
+          },
+          "person-1",
+          proofKey,
+        ),
         payload: {
           action: "computer_run_command",
           bot: "bot-1",
@@ -85,6 +97,7 @@ test("approved computer facets and validated run lineage are the only extras", (
         },
       },
       "staging-1",
+      proofKey,
     ),
   ).toEqual({
     ...commonFields,
@@ -140,13 +153,22 @@ test("an invalid allowlisted decision drops every facet and preserves safe commo
         ...auditEvent,
         eventType: "approval.person_decided",
         runId: "",
-        parentRunId: "private text",
-        rootTaskId: "x".repeat(257),
-        attemptId: "attempt\n1",
         threadId: "线程",
+        runLineageProof: signAuditRun(
+          {
+            runId: "",
+            parentRunId: "private text",
+            rootTaskId: "x".repeat(257),
+            attemptId: "attempt\n1",
+            threadId: "线程",
+          },
+          "person-1",
+          proofKey,
+        ),
         payload: { decision: "private-token-shaped-content", effect: "read" },
       },
       "staging-1",
+      proofKey,
     ),
   ).toEqual({
     ...commonFields,

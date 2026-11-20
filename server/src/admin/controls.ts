@@ -85,6 +85,7 @@ export type EnterpriseDeps = {
   database: Database;
   databaseUrl: string;
   auditStore: AuditStore;
+  auditRunProofKey?: string;
   provider?: ComputerProvider;
   computerToken?: string;
   /** Where a person's own OpenBot browser may go (browser/egress.ts): pushed to it instead of a Bot's policy, which says
@@ -458,7 +459,7 @@ export async function installEnterpriseControls(
   await refresh();
   setPolicyOverlay((context) => decideFromSnapshot(snapshot, context));
 
-  const exporter = createOtelEventExporter(env);
+  const exporter = createOtelEventExporter(env, deps.auditRunProofKey);
   const removeTaps: (() => void)[] = [];
   if (exporter) removeTaps.push(addAuditTap((event) => exporter.emit(event)));
 

@@ -4,6 +4,7 @@ import type { IdentifyActor } from "../copilot";
 import type { DeliveryInbox } from "../delivery/types";
 import {
   appAnalyticsContext,
+  productAuditRunProof,
   type ProductTelemetry,
   productRunForwardedProps,
   type RunPreparation,
@@ -80,25 +81,39 @@ export function productHeadlessBoundary(
 ): NonNullable<Parameters<typeof createTurnRunner>[0]["prepareRunInput"]> {
   return async (input, turn) => {
     const lineage = turn.telemetry;
-    const context = await telemetry.prepare({
-      actorUserId: turn.ownerUserId,
-      threadId: input.threadId,
-      runId: input.runId,
-      trigger:
-        lineage?.trigger ??
-        (turn.continuation ? "followup" : triggerForInitiator(turn.initiator)),
-      surface: lineage?.surface ?? "unknown",
-      rootTaskId: lineage?.rootTaskId ?? `${turn.routineId}:${input.runId}`,
-      // A resumed turn carries on the task the interrupted run was part of.
-      inheritedRootTaskId:
-        lineage?.inheritedRootTaskId ??
-        telemetry.lineageOf(
-          turn.ownerUserId,
-          turn.continuation?.snapshot.forwardedProps,
-        ).rootTaskId,
-      parentRunId: lineage?.parentRunId ?? turn.continuation?.snapshot.runId,
-      attempt: lineage?.attempt,
-    });
+    const snapshot = turn.continuation?.snapshot;
+    const savedAuditLineage =
+      snapshot && telemetry.auditLineageOf(turn.ownerUserId, snapshot);
+    const context = await telemetry.prepare(
+      {
+        actorUserId: turn.ownerUserId,
+        threadId: input.threadId,
+        runId: input.runId,
+        trigger:
+          lineage?.trigger ??
+          (turn.continuation
+            ? "followup"
+            : triggerForInitiator(turn.initiator)),
+        surface: lineage?.surface ?? "unknown",
+        rootTaskId: lineage?.rootTaskId ?? `${turn.routineId}:${input.runId}`,
+        // A resumed turn carries on the task the interrupted run was part of.
+        inheritedRootTaskId:
+          lineage?.inheritedRootTaskId ??
+          telemetry.lineageOf(turn.ownerUserId, snapshot?.forwardedProps)
+            .rootTaskId,
+        parentRunId: lineage?.parentRunId ?? snapshot?.runId,
+        attempt: lineage?.attempt,
+      },
+      {
+        parentRunId:
+          lineage?.parentRunId ??
+          (savedAuditLineage ? snapshot?.runId : undefined),
+        rootTaskId:
+          lineage?.auditRootTaskId === undefined
+            ? (lineage?.inheritedRootTaskId ?? savedAuditLineage?.rootTaskId)
+            : (lineage.auditRootTaskId ?? undefined),
+      },
+    );
     return {
       ...input,
       forwardedProps: productRunForwardedProps(input.forwardedProps, context),
@@ -132,7 +147,11 @@ export async function productHandoffInput<
   );
   return {
     ...input,
-    forwardedProps: { ...input.forwardedProps, openbotTelemetry: context },
+    forwardedProps: {
+      ...input.forwardedProps,
+      openbotTelemetry: context,
+      ...productAuditRunProof(context),
+    },
   };
 }
 /**

@@ -4,7 +4,10 @@ import type { LambdaSendOptions } from "@copilotkit/shared";
 import { CloningRemoteAgent } from "@openbot/toolkit/copilotkit/agents";
 import { lastValueFrom, toArray } from "rxjs";
 import { ProductFixtureAgent } from "../scripts/support/product-run";
-import { createProductTelemetry } from "../src/telemetry/product";
+import {
+  createProductTelemetry,
+  productRunForwardedProps,
+} from "../src/telemetry/product";
 import {
   prepareProductRequest,
   productHeadlessBoundary,
@@ -95,6 +98,60 @@ test("a run is counted only with the context its deployment stated for its perso
   expect(accepted.map((e) => e.properties?.trigger)).toEqual(["human"]);
   expect(other.sent).toEqual([]);
 });
+test.each(["historical", "verified"])(
+  "headless resume preserves product lineage and verifies %s audit ancestry",
+  async (variant) => {
+    const { telemetry } = await fixture();
+    const parent = await telemetry.prepare({
+      actorUserId: "actor",
+      threadId: input.threadId,
+      runId: "parent",
+      trigger: "human",
+      surface: "web",
+    });
+    if (!parent?.root_task_id)
+      throw new Error("Missing parent fixture context");
+    const forwardedProps =
+      variant === "verified"
+        ? productRunForwardedProps({}, parent)
+        : { openbotTelemetry: parent };
+    const resumed = await productHeadlessBoundary(telemetry)(input, {
+      ownerUserId: "actor",
+      routineId: "routine",
+      agentId: "bot",
+      threadId: input.threadId,
+      instruction: "resume",
+      continuation: {
+        snapshot: {
+          ...input,
+          runId: parent.run_id,
+          toolCallId: "call",
+          toolName: "tool",
+          args: {},
+          state: input.state,
+          forwardedProps,
+        },
+        result: { content: "finished" },
+        messageId: "result",
+      },
+    });
+    expect(resumed.forwardedProps.openbotTelemetry).toMatchObject({
+      parent_run_id: parent.run_id,
+      root_task_id: parent.root_task_id,
+    });
+    expect(telemetry.auditLineageOf("actor", resumed)).toEqual({
+      attemptId: input.runId,
+      ...(variant === "verified"
+        ? {
+            parentRunId: parent.run_id,
+            rootTaskId: parent.root_task_id,
+          }
+        : {}),
+    });
+    expect(telemetry.auditLineageOf("another-actor", resumed)).toBeUndefined();
+  },
+);
+
 test("custom remote clone retains product middleware and full forwarded context", async () => {
   const f = await fixture();
   const enriched = await productHeadlessBoundary(f.telemetry)(input, {

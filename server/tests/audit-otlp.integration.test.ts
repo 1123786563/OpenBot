@@ -2,7 +2,7 @@ import { afterAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { installEnterpriseControls } from "../src/admin/controls";
 import { createApprovalStore } from "../src/approvals/store";
-import { approvalAction } from "../src/approvals/types";
+import { approvalAction, withApprovalContext } from "../src/approvals/types";
 import {
   type AuditStore,
   addAuditTap,
@@ -10,8 +10,10 @@ import {
   createAuditStore,
 } from "../src/audit";
 import { createDatabase } from "../src/db/client";
+import { approvalRequests } from "../src/db/schema/approvals";
 import { users } from "../src/db/schema/core";
 import { workItems } from "../src/db/schema/work";
+import { AUDIT_RUN_PROOF_KEY } from "../src/telemetry/audit-run-proof";
 import { createOtelEventExporter } from "../src/telemetry/otel";
 import {
   createProductTelemetry,
@@ -167,9 +169,13 @@ test("the installed audit tap exports only a successful PostgreSQL row as a boun
 
 test.each([
   "complete",
+  "explicit precedence",
   "partially invalid",
   "different run",
+  "different thread",
+  "tampered proof",
   "no continuation",
+  "historical browser",
 ])(
   "a saved approval continuation with %s telemetry exports only its valid lineage",
   async (variant) => {
@@ -183,9 +189,12 @@ test.each([
     const threadId = "conversation-thread";
     const rootTaskId = "a".repeat(64);
     const parentRunId = "interrupted-run";
+    const fullLineage =
+      variant === "complete" || variant === "explicit precedence";
+    const privacyKey = "approval-fixture";
     const productEvents: unknown[] = [];
     const telemetry = await createProductTelemetry({
-      privacyKey: "approval-fixture",
+      privacyKey,
       send: async (event) => {
         productEvents.push(event);
       },
@@ -194,32 +203,38 @@ test.each([
     });
     const context = await telemetry.prepare({
       actorUserId: owner,
-      runId,
-      threadId,
+      runId: variant === "different run" ? "another-run" : runId,
+      threadId: variant === "different thread" ? "another-thread" : threadId,
       trigger: "followup",
       surface: "web",
-      inheritedRootTaskId: rootTaskId,
-      parentRunId,
+      inheritedRootTaskId:
+        variant === "partially invalid" ? "x".repeat(257) : rootTaskId,
+      parentRunId:
+        variant === "partially invalid" ? "path with spaces" : parentRunId,
     });
     if (!context)
       throw new Error("Product telemetry did not prepare the fixture");
     const forwardedProps = productRunForwardedProps({}, context);
-    if (variant === "partially invalid") {
+    if (variant === "tampered proof")
+      forwardedProps[AUDIT_RUN_PROOF_KEY] =
+        `${forwardedProps[AUDIT_RUN_PROOF_KEY]}.tampered`;
+
+    if (variant === "historical browser") {
+      delete forwardedProps[AUDIT_RUN_PROOF_KEY];
       forwardedProps.openbotTelemetry = {
-        run_id: runId,
-        parent_run_id: "path with spaces",
-        root_task_id: "x".repeat(257),
-        attempt_id: undefined,
+        ...context,
+        parent_run_id: "historical-parent",
+        root_task_id: "b".repeat(64),
+        attempt_id: "historical-attempt",
       };
     }
-    if (variant === "different run")
-      forwardedProps.openbotTelemetry = { ...context, run_id: "another-run" };
 
     const controls = await installEnterpriseControls({
       database,
       databaseUrl,
       auditStore,
       env: { ...deployment, OTEL_EXPORTER_OTLP_ENDPOINT: collector.url.href },
+      auditRunProofKey: privacyKey,
     });
     const removeProductTap = addAuditTap(telemetry.recordAudit);
     let approvalId: string | undefined;
@@ -249,9 +264,29 @@ test.each([
         },
       });
       if (variant === "no continuation") delete action.continuation;
-      const request = await store.open(action);
-      approvalId = request.id;
-      await store.decide(owner, approvalId, "deny");
+      if (variant === "historical browser") {
+        approvalId = crypto.randomUUID();
+        await database.insert(approvalRequests).values({
+          id: approvalId,
+          ownerUserId: owner,
+          runId,
+          toolCallId: action.toolCallId,
+          actionDigest: action.actionDigest,
+          action,
+        });
+      } else {
+        approvalId = (await store.open(action)).id;
+      }
+      const decidedId = approvalId;
+      const continuation = action.continuation;
+      if (variant === "explicit precedence" && continuation) {
+        await withApprovalContext(
+          { ...continuation, runId: "ambient-run", threadId: "ambient-thread" },
+          () => store.decide(owner, decidedId, "deny"),
+        );
+      } else {
+        await store.decide(owner, decidedId, "deny");
+      }
       const { events } = await reader.list({ targetId: approvalId, limit: 10 });
       expect(events.map((event) => event.eventType)).toEqual([
         "approval.person_decided",
@@ -273,12 +308,14 @@ test.each([
                         target_id: approvalId,
                         work_item_key: approvalId,
                         run_id: runId,
-                        ...(variant === "complete"
+                        ...(fullLineage
                           ? {
                               parent_run_id: parentRunId,
                               root_task_id: rootTaskId,
-                              attempt_id: runId,
                             }
+                          : {}),
+                        ...(fullLineage || variant === "partially invalid"
+                          ? { attempt_id: runId }
                           : {}),
                         thread_id: threadId,
                       }).map(([key, stringValue]) => ({
@@ -295,10 +332,12 @@ test.each([
       });
       expect(wire).not.toMatch(/trace_?id|span_?id/i);
       expect(wire).not.toContain(context.user_id);
-      if (variant !== "complete")
-        expect(wire).not.toMatch(
-          /parent_run_id|root_task_id|attempt_id|another-run/,
-        );
+      expect(wire).not.toMatch(
+        /another-run|another-thread|ambient-|openbotAuditRunProof/,
+      );
+      if (!fullLineage) expect(wire).not.toMatch(/parent_run_id|root_task_id/);
+      if (!fullLineage && variant !== "partially invalid")
+        expect(wire).not.toContain("attempt_id");
       await telemetry.flush();
       expect(productEvents).toEqual([
         expect.objectContaining({
@@ -308,8 +347,20 @@ test.each([
           }),
         }),
       ]);
+      if (variant === "explicit precedence") {
+        expect(productEvents).toEqual([
+          expect.objectContaining({
+            properties: expect.objectContaining({
+              run_id: "ambient-run",
+              thread_id: "ambient-thread",
+            }),
+          }),
+        ]);
+      } else {
+        expect(JSON.stringify(productEvents)).not.toMatch(/run_id|thread_id/);
+      }
       expect(JSON.stringify(productEvents)).not.toMatch(
-        /run_id|thread_id|root_task_id|attempt_id|work_item_key/,
+        /root_task_id|attempt_id|work_item_key/,
       );
     } finally {
       removeProductTap();

@@ -2256,6 +2256,8 @@ const actorAgentResolver = createActorAgentResolver({
         runId: input.runId,
         // The subagent carries on the asking run's task, on the asking run's surface.
         ...productTelemetry.lineageOf(actorId, input.forwardedProps),
+        auditRootTaskId:
+          productTelemetry.auditLineageOf(actorId, input)?.rootTaskId ?? null,
         initiator: initiator ?? PERSON_INITIATOR,
         ...(depth ? { depth } : {}),
       }),
@@ -2956,6 +2958,7 @@ await installEnterpriseControls({
   database,
   databaseUrl: config.databaseUrl,
   auditStore: bootAuditStore,
+  auditRunProofKey: config.keyEncryptionKey,
   personBrowserPolicy,
   // While a person records in a Bot's browser, the Recorder there reaches OpenBot and the gateway; the Bot does not.
   duringRecording: botBrowserNetwork({

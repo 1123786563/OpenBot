@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { APPROVAL_DECISIONS } from "../approvals/types";
 import type { AuditTapEvent } from "../audit";
+import { readAuditRun } from "./audit-run-proof";
 
 export const AUDIT_SCHEMA_VERSION = 1;
 export const RUNTIME_SCHEMA_VERSION = 1;
@@ -128,6 +129,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function projectAuditEvent(
   event: AuditTapEvent,
   deploymentId: string,
+  auditRunProofKey?: string,
 ): OpenBotAuditRecord | undefined {
   const auditEventId = identifierOf(event.id);
   if (
@@ -141,11 +143,27 @@ export function projectAuditEvent(
   const targetId = identifierOf(event.targetId);
   const actorUserId = identifierOf(event.actorUserId);
   const initiatorId = identifierOf(event.initiatorId);
-  const runId = identifierOf(event.approvalRun?.runId ?? event.runId);
-  const parentRunId = identifierOf(event.parentRunId);
-  const rootTaskId = identifierOf(event.rootTaskId);
-  const attemptId = identifierOf(event.attemptId);
-  const threadId = identifierOf(event.approvalRun?.threadId ?? event.threadId);
+  const sourceRun = event.approvalRun ?? {
+    runId: event.runId,
+    threadId: event.threadId,
+  };
+  const lineage =
+    auditRunProofKey &&
+    event.actorUserId &&
+    sourceRun.runId !== undefined &&
+    sourceRun.threadId !== undefined
+      ? readAuditRun(
+          event.runLineageProof,
+          { runId: sourceRun.runId, threadId: sourceRun.threadId },
+          event.actorUserId,
+          auditRunProofKey,
+        )
+      : undefined;
+  const runId = identifierOf(sourceRun.runId);
+  const parentRunId = identifierOf(lineage?.parentRunId);
+  const rootTaskId = identifierOf(lineage?.rootTaskId);
+  const attemptId = identifierOf(lineage?.attemptId);
+  const threadId = identifierOf(sourceRun.threadId);
   const payload = isRecord(event.payload) ? event.payload : undefined;
   const routineRunId =
     event.eventType === "routines.run_requested"

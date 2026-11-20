@@ -30,6 +30,7 @@ import {
 import type { Database } from "./db/client";
 import { auditEvents } from "./db/schema";
 import { parsePageLimit } from "./paging";
+import { auditRunProofOf } from "./telemetry/audit-run-proof";
 
 const sensitiveKeys = new Set([
   "access_token",
@@ -1062,9 +1063,7 @@ export type AuditTapEvent = {
   /** Original approval run, when the audit write occurs outside that run. */
   approvalRun?: Pick<ApprovalContinuation, "runId" | "threadId">;
   workItemKey?: string;
-  parentRunId?: string;
-  rootTaskId?: string;
-  attemptId?: string;
+  runLineageProof?: string;
   threadId?: string;
   eventType: string;
   targetType: string;
@@ -1088,42 +1087,6 @@ const auditTaps = new Set<AuditTap>();
 export function addAuditTap(tap: AuditTap): () => void {
   auditTaps.add(tap);
   return () => auditTaps.delete(tap);
-}
-
-function productLineageOf(run: AuditRunContext | undefined) {
-  const props = run?.forwardedProps;
-  if (
-    !props ||
-    typeof props !== "object" ||
-    Array.isArray(props) ||
-    !("openbotTelemetry" in props)
-  )
-    return {};
-  const telemetry = props.openbotTelemetry;
-  if (
-    !telemetry ||
-    typeof telemetry !== "object" ||
-    Array.isArray(telemetry) ||
-    !("run_id" in telemetry) ||
-    telemetry.run_id !== run?.runId
-  )
-    return {};
-
-  return {
-    parentRunId:
-      "parent_run_id" in telemetry &&
-      typeof telemetry.parent_run_id === "string"
-        ? telemetry.parent_run_id
-        : undefined,
-    rootTaskId:
-      "root_task_id" in telemetry && typeof telemetry.root_task_id === "string"
-        ? telemetry.root_task_id
-        : undefined,
-    attemptId:
-      "attempt_id" in telemetry && typeof telemetry.attempt_id === "string"
-        ? telemetry.attempt_id
-        : undefined,
-  };
 }
 
 export function createAuditStore(
@@ -1160,7 +1123,7 @@ export function createAuditStore(
             }
           : {}),
         ...(workItemKey ? { workItemKey } : {}),
-        ...productLineageOf(approvalRun ?? run),
+        runLineageProof: auditRunProofOf((approvalRun ?? run)?.forwardedProps),
       };
       const publish = () => {
         for (const tap of auditTaps) {

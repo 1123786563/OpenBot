@@ -8,6 +8,14 @@ import {
 import { defer, finalize, switchMap, tap } from "rxjs";
 import { z } from "zod";
 import type { AuditInitiator, AuditTapEvent } from "../audit";
+import {
+  AUDIT_RUN_PROOF_KEY,
+  auditRunProofOf,
+  readAuditRun,
+  signAuditRun,
+} from "./audit-run-proof";
+
+const auditProofs = new WeakMap<ProductRunContext, string>();
 
 export type ProductTrigger =
   | "human"
@@ -380,6 +388,7 @@ export async function createProductTelemetry(options: {
   }
   async function prepare(
     input: RunPreparation,
+    auditInheritance?: { parentRunId?: string; rootTaskId?: string },
   ): Promise<ProductRunContext | undefined> {
     if (
       !enabled ||
@@ -388,7 +397,7 @@ export async function createProductTelemetry(options: {
     )
       return;
     const userId = user(input.actorUserId);
-    return {
+    const context: ProductRunContext = {
       schema_version: 1,
       app_id: "openbot",
       deployment_id: deploymentId,
@@ -416,6 +425,33 @@ export async function createProductTelemetry(options: {
       environment,
       purpose: input.purpose ?? "ordinary",
     };
+    // The audit copy can outlive the run and cross processes via the saved continuation.
+    // Keep its issuer proof separate from the product telemetry contract.
+    const inheritsRoot =
+      input.trigger !== "human" && input.trigger !== "routine";
+    const parentRunId = auditInheritance
+      ? auditInheritance.parentRunId
+      : context.parent_run_id;
+    const rootTaskId =
+      inheritsRoot && auditInheritance
+        ? auditInheritance.rootTaskId
+        : context.root_task_id;
+    auditProofs.set(
+      context,
+      signAuditRun(
+        {
+          runId: input.runId,
+          threadId: input.threadId,
+          parentRunId: boundedId.safeParse(parentRunId).data,
+          rootTaskId:
+            rootTaskId && taskHash.test(rootTaskId) ? rootTaskId : undefined,
+          attemptId: context.attempt_id,
+        },
+        input.actorUserId,
+        options.privacyKey,
+      ),
+    );
+    return context;
   }
   /*
    * Only a run this deployment stated as work is counted: a person's, a routine's, a subagent's, a
@@ -619,6 +655,16 @@ export async function createProductTelemetry(options: {
   return {
     prepare,
     lineageOf,
+    auditLineageOf: (
+      actorId: string,
+      run: { runId: string; threadId: string; forwardedProps?: unknown },
+    ) =>
+      readAuditRun(
+        auditRunProofOf(run.forwardedProps),
+        run,
+        actorId,
+        options.privacyKey,
+      ),
     middleware,
     recordAudit,
     enabled: () => enabled,
@@ -684,24 +730,29 @@ export function appAnalyticsContext(
     attempt: context.attempt,
   };
 }
-/**
- * A run's forwardedProps carrying this deployment's own context, and nothing a client sent under
- * the same two keys. `openbotTelemetry` is read back by the product middleware; the analytics key
- * is for the thread lock. With telemetry off there is no context, and neither key is present.
- */
+export function productAuditRunProof(context: ProductRunContext | undefined) {
+  return { [AUDIT_RUN_PROOF_KEY]: context && auditProofs.get(context) };
+}
+
+/** Attach this deployment's run context and replace client values under the reserved keys. */
 export function productRunForwardedProps(
   forwardedProps: unknown,
   context: ProductRunContext | undefined,
 ): Record<string, unknown> {
   const own = Object.fromEntries(
     Object.entries(isRecord(forwardedProps) ? forwardedProps : {}).filter(
-      ([key]) => key !== "openbotTelemetry" && key !== ANALYTICS_CONTEXT_KEY,
+      ([key]) =>
+        key !== "openbotTelemetry" &&
+        key !== ANALYTICS_CONTEXT_KEY &&
+        key !== AUDIT_RUN_PROOF_KEY,
     ),
   );
   const analytics = appAnalyticsContext(context);
   return {
     ...own,
-    ...(context ? { openbotTelemetry: context } : {}),
+    ...(context
+      ? { openbotTelemetry: context, ...productAuditRunProof(context) }
+      : {}),
     ...(analytics ? { [ANALYTICS_CONTEXT_KEY]: analytics } : {}),
   };
 }

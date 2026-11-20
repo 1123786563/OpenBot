@@ -149,6 +149,7 @@ function attributesOf(
 
 export function createOtelEventExporter(
   env: Record<string, string | undefined> = process.env,
+  auditRunProofKey?: string,
 ): EventExporter | undefined {
   if (!otelConfigured(env)) return undefined;
   const deploymentId = identifierOf(env.DEPLOYMENT_ID);
@@ -182,7 +183,7 @@ export function createOtelEventExporter(
   return {
     emit(event) {
       try {
-        const record = projectAuditEvent(event, deploymentId);
+        const record = projectAuditEvent(event, deploymentId, auditRunProofKey);
         if (!record) return;
         const failed = record.projection_status === "failed";
         if (failed) {

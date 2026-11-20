@@ -10,6 +10,10 @@ import {
 import { createDatabase } from "../src/db/client";
 import { auditEvents } from "../src/db/schema";
 import {
+  AUDIT_RUN_PROOF_KEY,
+  signAuditRun,
+} from "../src/telemetry/audit-run-proof";
+import {
   type OpenBotAuditRecord,
   projectAuditEvent,
 } from "../src/telemetry/observability-projection";
@@ -304,10 +308,12 @@ afterAll(async () => {
 
 test("the audit replica uses the inserted row identity and captures lineage with no parent", async () => {
   const targetId = target();
+  const actorId = "audit-fixture-actor";
+  const proofKey = "audit-fixture-key";
   const received: OpenBotAuditRecord[] = [];
   const removeTap = addAuditTap((event) => {
     if (event.targetId !== targetId) return;
-    const replica = projectAuditEvent(event, "test-deployment");
+    const replica = projectAuditEvent(event, "test-deployment", proofKey);
     if (replica) received.push(replica);
   });
   try {
@@ -322,11 +328,16 @@ test("the audit replica uses the inserted row identity and captures lineage with
         state: {},
         context: [],
         forwardedProps: {
-          openbotTelemetry: {
-            run_id: "run-1",
-            root_task_id: "task-1",
-            attempt_id: "attempt-1",
-          },
+          [AUDIT_RUN_PROOF_KEY]: signAuditRun(
+            {
+              runId: "run-1",
+              threadId: "thread-1",
+              rootTaskId: "task-1",
+              attemptId: "attempt-1",
+            },
+            actorId,
+            proofKey,
+          ),
         },
       },
       () =>
@@ -334,6 +345,7 @@ test("the audit replica uses the inserted row identity and captures lineage with
           eventType: "mcp.call_succeeded",
           targetType: "mcp_tool",
           targetId,
+          actorUserId: actorId,
           payload: {},
         }),
     );

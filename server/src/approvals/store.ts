@@ -229,7 +229,17 @@ export function createApprovalStore(database: Database): ApprovalStore {
           .returning();
         if (!updated) throw new ApprovalNotFoundError();
         const workItemKey = id;
-        const approvalRun = request.action.continuation ?? request.action;
+        const continuation = request.action.continuation;
+        const approvalRun = {
+          runId: request.runId,
+          threadId: request.action.threadId,
+          forwardedProps:
+            continuation?.runId === request.runId &&
+            continuation.threadId === request.action.threadId &&
+            continuation.toolCallId === request.toolCallId
+              ? continuation.forwardedProps
+              : undefined,
+        };
         const trail = createAuditStore(tx as unknown as Database, (publish) => {
           pendingTaps.push(publish);
         });
