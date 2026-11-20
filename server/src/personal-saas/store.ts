@@ -1,5 +1,15 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { and, desc, eq, gt, isNull, ne, notExists, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gt,
+  isNull,
+  ne,
+  notExists,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Database } from "../db/client";
 import {
@@ -26,7 +36,7 @@ function digest(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+export type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 function liveSession(token: string) {
   return and(
@@ -35,9 +45,9 @@ function liveSession(token: string) {
   );
 }
 
-export function workspaceConversations(
-  database: Database | Transaction,
-  target: { accountId: string; workspaceId?: string },
+export function personalConversationScope(
+  database: Pick<Database, "select">,
+  scope: SQL | undefined,
 ) {
   const otherAgents = alias(channelAgents, "other_agents");
   // A trial conversation belongs to the workspace through its dedicated Assistant.
@@ -68,10 +78,7 @@ export function workspaceConversations(
     .innerJoin(channels, eq(channels.id, channelAgents.channelId))
     .where(
       and(
-        eq(personalWorkspaces.ownerId, target.accountId),
-        target.workspaceId
-          ? eq(personalWorkspaces.id, target.workspaceId)
-          : undefined,
+        scope,
         isNull(agentProfiles.deletedAt),
         isNull(channels.deletedAt),
         isNull(channels.packageId),
@@ -100,6 +107,21 @@ export function workspaceConversations(
         ),
       ),
     );
+}
+
+export function workspaceConversations(
+  database: Pick<Database, "select">,
+  target: { accountId: string; workspaceId?: string },
+) {
+  return personalConversationScope(
+    database,
+    and(
+      eq(personalWorkspaces.ownerId, target.accountId),
+      target.workspaceId
+        ? eq(personalWorkspaces.id, target.workspaceId)
+        : undefined,
+    ),
+  );
 }
 
 export function personalSaasStore(
