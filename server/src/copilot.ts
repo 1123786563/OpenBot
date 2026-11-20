@@ -124,7 +124,7 @@ import {
 } from "./memory/tools";
 import { providerName } from "./model-billing";
 import { modelSourceFor, type RunChoice } from "./model-catalogue";
-import { pickedSkillGuidance } from "./plugins/picked-skill";
+import { runPickedSkillGuidance } from "./plugins/picked-skill";
 import { refFromToolName } from "./plugins/plugin-store/model";
 import { appCallsOfRun, withAppCallsOf } from "./plugins/run-calls";
 import type { SelectableSkill, Selection } from "./plugins/selection";
@@ -1393,7 +1393,7 @@ async function buildAgent(
    * from the same grants narrowing reads, fresh per request. See `picked-skill.ts`.
    */
   const pickedSkillFor = (input: RunAgentInput) =>
-    pickedSkillGuidance(input, skills);
+    runPickedSkillGuidance(input, skills);
   const holdsInstructions = skills.some((skill) => skill.instructions);
   const narrowing =
     selection &&
@@ -1539,7 +1539,7 @@ async function buildAgent(
             )
         : undefined,
       refusingProvider(model),
-      holdsInstructions ? pickedSkillFor : undefined,
+      pickedSkillFor,
       apps,
     );
   }
@@ -1707,7 +1707,7 @@ async function buildAgent(
 
   const whole = withTools(granted);
   // Even a small app grant may need search once the client's tools arrive with the run.
-  if (
+  const canReuseWhole =
     !pickedModel &&
     !narrowing &&
     !handoff &&
@@ -1715,14 +1715,13 @@ async function buildAgent(
     !acquireLearnedSkills &&
     !holdsTools &&
     !holdsInstructions &&
-    !granted.some((tool) => tool.searchable)
-  )
-    return whole;
+    !granted.some((tool) => tool.searchable);
 
   return new RunBuiltAgent(
     { agentId: agent.id, description: agent.name },
     whole,
     async (input, signal) => {
+      if (canReuseWhole && !pickedSkillFor(input)) return whole;
       const runModel = await modelForRun(model, input, pickedModel);
       signal.throwIfAborted();
       logRunModel(agent.id, input, runModel.defaultModel, runModel.effort, {

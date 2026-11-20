@@ -1,4 +1,5 @@
 import { researchRoleOf } from "@openbot/shared/research";
+import type { MarketSkillIdentity } from "@openbot/toolkit/continuation";
 import { textOf } from "../agents/message-text";
 import { researchRoleFor } from "./catalogue";
 /**
@@ -45,6 +46,7 @@ export type SelectableSkill = {
    * skill is given it (`picked-skill.ts`).
    */
   instructions?: string;
+  market?: MarketSkillIdentity;
 };
 
 /** A granted tool, as much of it as narrowing needs. */

@@ -609,7 +609,11 @@ export function mountGrantRoutes({
     if (!(await canUseBot(context.var.actor, agentId))) {
       return context.json({ error: "There is no such Bot." }, 404);
     }
-    return context.json(await store.listForAgent(agentId));
+    const granted = await store.listForAgent(agentId);
+    return context.json({
+      ...granted,
+      skills: granted.skills.map(({ market: _market, ...skill }) => skill),
+    });
   });
 
   /**

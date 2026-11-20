@@ -15,6 +15,11 @@
  * instruction; a command only chooses among what the Bot already holds, as typing it does.
  */
 import type { RunAgentInput } from "@ag-ui/client";
+import {
+  type MarketSkillIdentity,
+  RUN_MARKET_SKILL,
+  type RunWithMarketSkill,
+} from "@openbot/toolkit/continuation";
 import { PICKED_SKILL_PROP } from "@openbot/toolkit/run-turn";
 import { latestUserText } from "./selection";
 
@@ -25,6 +30,7 @@ export type PickableSkill = {
   slug: string;
   title: string;
   instructions?: string;
+  market?: MarketSkillIdentity;
 };
 
 /**
@@ -62,10 +68,41 @@ export function pickedSkillGuidance(
   const command = pickedSkillCommand(input);
   if (!command) return undefined;
   const skill = held.find((candidate) => candidate.slug === command);
-  const instructions = skill?.instructions?.trim();
-  if (!skill || !instructions) return undefined;
+  return skill && guidance(skill);
+}
+
+function guidance(skill: PickableSkill): string | undefined {
+  const instructions = skill.instructions?.trim();
+  if (!instructions) return undefined;
   return [
     `The person picked the skill "${skill.title || skill.slug}" (/${skill.slug}) for their latest message. Follow its instructions for this reply:`,
     instructions,
   ].join("\n\n");
+}
+
+/** Resolve once for a new run, or use the server-owned snapshot supplied by the resume runner. */
+export function runPickedSkillGuidance(
+  input: RunWithMarketSkill,
+  held: readonly PickableSkill[],
+) {
+  input[RUN_MARKET_SKILL] ??= {};
+  const selection = input[RUN_MARKET_SKILL];
+  if (selection.snapshot) return guidance(selection.snapshot);
+
+  const command = pickedSkillCommand(input);
+  const skill = held.find((candidate) => candidate.slug === command);
+  if (selection.snapshot === undefined) {
+    selection.snapshot =
+      skill?.market && skill.instructions
+        ? {
+            slug: skill.slug,
+            title: skill.title,
+            instructions: skill.instructions,
+            market: skill.market,
+          }
+        : null;
+  }
+  // Old continuations have no provenance. They can still resume with current managed skills.
+  if (selection.snapshot) return guidance(selection.snapshot);
+  return skill && !skill.market ? guidance(skill) : undefined;
 }

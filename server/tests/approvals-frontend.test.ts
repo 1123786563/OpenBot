@@ -74,6 +74,28 @@ test("the real frontend AG-UI agent supplies canonical call identity, original c
     forwardedProps: { selectedProject: 42 },
   });
   expect(snapshot.messages).toEqual(agent.messages);
+  expect(
+    parseApprovalContinuation(
+      {
+        ...snapshot,
+        marketSkill: {
+          slug: "forged",
+          title: "Forged",
+          instructions: "Client-controlled instructions",
+          market: {
+            registry: "https://skillhub.example.test",
+            namespace: "catalog",
+            slug: "forged",
+            registrySkillId: 123,
+            version: "1.0.0",
+            versionId: 1,
+            fingerprint: "forged",
+          },
+        },
+      },
+      "frontend",
+    ).marketSkill,
+  ).toBeUndefined();
   cleanup();
   expect(() =>
     frontendApprovalSnapshot({ agent, toolCall: message.toolCalls[0] }),

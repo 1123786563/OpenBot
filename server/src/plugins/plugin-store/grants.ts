@@ -5,6 +5,7 @@ import {
   pluginGrants,
   SKILL_MARKET_RESERVATION,
   skillMarketInstallations,
+  skillMarketSources,
   skills,
 } from "../../db/schema";
 import { catalogueEntry, classifyTool } from "../catalogue";
@@ -307,8 +308,21 @@ export function grantMethods(context: StoreContext) {
           title: skillMarketInstallations.title,
           summary: skillMarketInstallations.summary,
           instructions: skillMarketInstallations.instructions,
+          market: {
+            registry: skillMarketSources.registry,
+            namespace: skillMarketSources.namespace,
+            slug: skillMarketSources.slug,
+            registrySkillId: skillMarketInstallations.registrySkillId,
+            version: skillMarketInstallations.version,
+            versionId: skillMarketInstallations.versionId,
+            fingerprint: skillMarketInstallations.fingerprint,
+          },
         })
         .from(skillMarketInstallations)
+        .innerJoin(
+          skillMarketSources,
+          eq(skillMarketSources.command, skillMarketInstallations.command),
+        )
         .where(eq(skillMarketInstallations.agentId, agentId));
 
       /*

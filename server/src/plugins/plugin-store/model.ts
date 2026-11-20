@@ -1,4 +1,5 @@
 import { isOpenBotActor } from "@openbot/shared/openbot-actor";
+import type { MarketSkillIdentity } from "@openbot/toolkit/continuation";
 import { and, eq, sql } from "drizzle-orm";
 import type { ApprovalGate } from "../../approvals/types";
 import {
@@ -304,6 +305,7 @@ export type GrantedPlugins = {
     title: string;
     summary: string;
     instructions: string;
+    market?: MarketSkillIdentity;
     /**
      * What this skill says it needs, as refs. Never a superset of `tools` above in effect: selection
      * intersects the two, because a skill naming a tool the Bot lacks must load nothing rather than
