@@ -8,12 +8,12 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { ConnectionPage } from "@/components/connections/connection-surface";
 import { IdentityConnectionPage } from "@/components/connections/identity-connection-page";
 import {
   PageEmpty,
   PageRows,
   PageSection,
-  PageShell,
 } from "@/components/layout/page-shell";
 import { PluginPage } from "@/components/manage/plugin-page";
 import {
@@ -348,7 +348,7 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
    * whole of its state defaulted to "you have never connected this".
    */
   if (plugins.isPending || connections.isPending) {
-    return <PageShell title="Account">{null}</PageShell>;
+    return <ConnectionPage title="Account">{null}</ConnectionPage>;
   }
 
   const back = {
@@ -374,12 +374,12 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
    */
   if (connections.error) {
     return (
-      <PageShell backButton={back} title={server?.title ?? key}>
+      <ConnectionPage backButton={back} title={server?.title ?? key}>
         <p className="mt-12 text-destructive text-sm" role="alert">
           Couldn't load this connection. Reload the page, or ask an admin if it
           keeps happening.
         </p>
-      </PageShell>
+      </ConnectionPage>
     );
   }
 
@@ -390,12 +390,12 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
    */
   if (!plugins.data) {
     return (
-      <PageShell backButton={back} title={key}>
+      <ConnectionPage backButton={back} title={key}>
         <p className="mt-12 text-destructive text-sm" role="alert">
           Couldn't load this app. Reload the page, or ask an admin if it keeps
           happening.
         </p>
-      </PageShell>
+      </ConnectionPage>
     );
   }
 
@@ -408,11 +408,11 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
    */
   if (server?.provenance === "composio" && !plugins.data.composioConfigured) {
     return (
-      <PageShell backButton={back} title={server.title}>
+      <ConnectionPage backButton={back} title={server.title}>
         <PageEmpty icon={IconPlugOff} title="Not set up yet">
           An admin has to turn on {server.title} before anyone can connect it.
         </PageEmpty>
-      </PageShell>
+      </ConnectionPage>
     );
   }
 
@@ -427,7 +427,7 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
    */
   if (server?.accountMode === "shared") {
     return (
-      <PageShell backButton={back} title={server.title}>
+      <ConnectionPage backButton={back} title={server.title}>
         {/*
          * THE LANDING NOTICE BELONGS HERE TOO, because a Shared app's account is the deployment's
          * and the verifier lands BOTH holders on this page. Without it the one flow whose Authorize
@@ -469,7 +469,7 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
             serverId={key}
           />
         ) : null}
-      </PageShell>
+      </ConnectionPage>
     );
   }
 
@@ -489,7 +489,7 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
    */
   if (brokered && server?.sharedOnly) {
     return (
-      <PageShell
+      <ConnectionPage
         backButton={back}
         description="You don't connect this app yourself."
         title={server.title}
@@ -498,7 +498,7 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
           An admin connects {server.title} once as a shared account and gives it
           to Bots.
         </PageEmpty>
-      </PageShell>
+      </ConnectionPage>
     );
   }
 
@@ -514,7 +514,7 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
       : `Connecting takes you to ${server.title} to approve access.`;
 
     return (
-      <PageShell
+      <ConnectionPage
         backButton={back}
         description="Bots use this as you, and see only what you can see."
         title={server.title}
@@ -568,7 +568,7 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
             serverId={key}
           />
         ) : null}
-      </PageShell>
+      </ConnectionPage>
     );
   }
 
@@ -579,7 +579,7 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
    */
   if (entry?.auth !== "user-oauth") {
     return (
-      <PageShell
+      <ConnectionPage
         backButton={back}
         description="You don't connect this app yourself."
         title={entry?.title ?? key}
@@ -592,12 +592,12 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
             ? "Bots use one shared account for this app, the same for everybody."
             : "OpenBot has no app by that name."}
         </PageEmpty>
-      </PageShell>
+      </ConnectionPage>
     );
   }
 
   return (
-    <PageShell
+    <ConnectionPage
       backButton={back}
       description={entry.summary}
       title={entry.title}
@@ -728,6 +728,6 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
           </PageRows>
         </PageSection>
       ) : null}
-    </PageShell>
+    </ConnectionPage>
   );
 }
