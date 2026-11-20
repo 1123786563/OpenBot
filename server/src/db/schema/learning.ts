@@ -1,13 +1,15 @@
 import type {
-  LearningSettings,
-  LearningSharingMode,
-} from "@openbot/shared/learning";
-import type {
+  DirectChatReview,
   directChatLearning,
   directChatProposal,
 } from "@openbot/shared/direct-chat-learning";
+import type {
+  LearningSettings,
+  LearningSharingMode,
+} from "@openbot/shared/learning";
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   index,
   pgTable,
@@ -181,4 +183,25 @@ export const directChatAnalyses = pgTable(
       sql`(${table.state} = 'proposed') = (${table.proposal} is not null)`,
     ),
   ],
+);
+
+// A review fixes both the decision and its complete delivery scope. An approval is the publication.
+export const directChatProposalReviews = pgTable(
+  "direct_chat_proposal_reviews",
+  {
+    proposalId: uuid("proposal_id")
+      .primaryKey()
+      .references(() => directChatAnalyses.id, { onDelete: "cascade" }),
+    review: jsonb("review").$type<DirectChatReview>().notNull(),
+  },
+);
+
+export const personalLearningAutoApproval = pgTable(
+  "personal_learning_auto_approval",
+  {
+    personId: text("person_id")
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").notNull(),
+  },
 );

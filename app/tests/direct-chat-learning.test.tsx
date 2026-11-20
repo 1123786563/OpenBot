@@ -21,6 +21,8 @@ test("Learn now starts analysis and shows its pending proposal and source", asyn
   };
   const initial = {
     enabled: true,
+    autoApprove: false,
+    scope: { personId: "person-1", threadId: "direct-thread", botId: "bot-1" },
     available: true,
     latest: null,
     lastResult: null,
@@ -29,10 +31,23 @@ test("Learn now starts analysis and shows its pending proposal and source", asyn
   const running = { ...initial, latest: { ...analysis, state: "running" } };
   const proposed = { ...analysis, state: "proposed" };
   let started = false;
+  let reviewed = false;
   let readsAfterStart = 0;
   const transport = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (url: Parameters<typeof fetch>[0], options?: RequestInit) => {
+        if (
+          url ===
+          "/api/copilotkit/threads/direct-thread/learn/proposals/analysis-1?agentId=bot-1"
+        ) {
+          expect(options?.method).toBe("POST");
+          expect(JSON.parse(String(options?.body))).toEqual({
+            decision: "approve",
+            scope: initial.scope,
+          });
+          reviewed = true;
+          return Response.json({ ok: true });
+        }
         expect(url).toBe(
           "/api/copilotkit/threads/direct-thread/learn?agentId=bot-1",
         );
@@ -50,7 +65,16 @@ test("Learn now starts analysis and shows its pending proposal and source", asyn
           proposals: [
             {
               id: analysis.id,
-              state: "pending_review",
+              state: reviewed ? "published" : "pending_review",
+              review: reviewed
+                ? {
+                    reviewerId: "person-1",
+                    reviewedAt: analysis.startedAt,
+                    mode: "manual",
+                    decision: "approve",
+                    scope: initial.scope,
+                  }
+                : null,
               title: "Prepare a checklist",
               instructions: "List the steps in order.",
               evidence: [
@@ -87,6 +111,10 @@ test("Learn now starts analysis and shows its pending proposal and source", asyn
     fireEvent.click(view.getByText("Evidence (1 turn)"));
     expect(view.getByText(/How should I prepare/)).toBeTruthy();
     expect(view.getByText(/Start with a checklist/)).toBeTruthy();
+    fireEvent.click(
+      view.getByRole("button", { name: "Approve for this conversation" }),
+    );
+    await view.findByText(/Published for this conversation/);
   } finally {
     cleanup();
     client.clear();

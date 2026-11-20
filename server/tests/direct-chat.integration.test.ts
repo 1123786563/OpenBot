@@ -32,6 +32,7 @@ import {
   channelMemberships,
   channels,
   directChatRunEvents,
+  directChatRuns,
   learningSettings,
   opikRuns,
   users,
@@ -68,13 +69,14 @@ const post = (body: unknown) => ({
 
 class AnsweringAgent extends AbstractAgent {
   constructor(
-    private readonly answer: () => Promise<void>,
+    private readonly answer: (input: RunAgentInput) => Promise<void>,
     private readonly partial?: string,
   ) {
     super();
   }
 
-  run({ threadId, runId }: RunAgentInput): Observable<BaseEvent> {
+  run(input: RunAgentInput): Observable<BaseEvent> {
+    const { threadId, runId } = input;
     return new Observable((observer) => {
       const messageId = `reply-${runId}`;
       const events: BaseEvent[] = [
@@ -101,7 +103,7 @@ class AnsweringAgent extends AbstractAgent {
         });
         events.shift();
       }
-      void this.answer().then(
+      void this.answer(input).then(
         () => {
           for (const event of events) observer.next(event);
           observer.complete();
@@ -116,7 +118,7 @@ function web(
   db: typeof database,
   actor: AuthenticatedActor,
   botId: string,
-  answer: () => Promise<void>,
+  answer: (input: RunAgentInput) => Promise<void>,
   {
     deployment = config,
     opik,
@@ -1284,9 +1286,10 @@ test("Learn now coalesces reservations, snapshots completed evidence, and discar
     name: "Learning Bot",
     title: "Bot",
     roleDescription: "Answers locally.",
-    visibility: "private",
+    visibility: "public",
   });
   const reservations: unknown[] = [];
+  const managedPrompts: string[] = [];
   let insufficient = false;
   let dispatched = Promise.withResolvers<void>();
   let release = Promise.withResolvers<void>();
@@ -1311,12 +1314,26 @@ test("Learn now coalesces reservations, snapshots completed evidence, and discar
     port: 0,
     async fetch(request) {
       switch (new URL(request.url).pathname) {
-        case "/v1/reserve":
-          reservations.push(await request.json());
+        case "/v1/reserve": {
+          const reservation = await request.json();
+          reservations.push(reservation);
+          if (reservation.scope.runId === "pause-during-admission") {
+            const paused = await admin.request("/settings", settings(false));
+            expect(paused.status).toBe(200);
+          }
           return insufficient
             ? Response.json({ state: "denied", reason: "insufficient_credits" })
             : Response.json({ state: "reserved", permit: "learn-permit" });
-        case "/v1/dispatch":
+        }
+        case "/v1/dispatch": {
+          const body = await request.text();
+          if (body.includes("Managed delivery check")) {
+            managedPrompts.push(body);
+            return Response.json({
+              state: "completed",
+              text: "Managed answer.",
+            });
+          }
           dispatched.resolve();
           await release.promise;
           return Response.json({
@@ -1326,6 +1343,7 @@ test("Learn now coalesces reservations, snapshots completed evidence, and discar
               instructions: "List the steps in order.",
             }),
           });
+        }
         case "/v1/reconcile":
           reconciled.resolve();
           return Response.json({ state: "settled" });
@@ -1342,7 +1360,12 @@ test("Learn now coalesces reservations, snapshots completed evidence, and discar
       route: "pilot-text-v1",
     },
   };
-  const aliceChat = web(database, alice, bot.id, async () => {});
+  const runInputs: RunAgentInput[] = [];
+  const capture = async (input: RunAgentInput) => {
+    runInputs.push(input);
+  };
+  const aliceChat = web(database, alice, bot.id, capture);
+  const bobChat = web(database, bob, bot.id, capture);
   const aliceLearning = web(database, alice, bot.id, async () => {}, {
     deployment,
   });
@@ -1350,6 +1373,7 @@ test("Learn now coalesces reservations, snapshots completed evidence, and discar
     deployment,
   });
   let channelId: string | undefined;
+  let bobChannelId: string | undefined;
   try {
     const opened = await aliceChat.request(
       "/api/channels",
@@ -1371,6 +1395,13 @@ test("Learn now coalesces reservations, snapshots completed evidence, and discar
       );
       expect(await turn.text()).toContain("Offline answer.");
     }
+    const openedForBob = await bobChat.request(
+      "/api/channels",
+      post({ agentIds: [bot.id] }),
+    );
+    expect(openedForBob.status).toBe(201);
+    const { channel: bobChannel } = await openedForBob.json();
+    bobChannelId = bobChannel.id;
     const path = `/api/copilotkit/threads/${channel.threadId}/learn?agentId=${bot.id}`;
     const empty = await aliceLearning.request(path, post({}));
     expect(await empty.json()).toMatchObject({
@@ -1437,6 +1468,51 @@ test("Learn now coalesces reservations, snapshots completed evidence, and discar
         }),
       }),
     ]);
+    const proposal = (await waitFor("proposed")).proposals[0];
+    const reviewPath = path.replace(
+      "/learn?",
+      `/learn/proposals/${proposal.id}?`,
+    );
+    const scope = {
+      personId: alice.id,
+      threadId: channel.threadId,
+      botId: bot.id,
+    };
+    const approve = post({ decision: "approve", scope });
+    expect((await bobLearning.request(reviewPath, approve)).status).toBe(404);
+    expect(
+      (
+        await aliceLearning.request(
+          reviewPath,
+          post({
+            decision: "approve",
+            scope: { ...scope, personId: bob.id },
+          }),
+        )
+      ).status,
+    ).toBe(409);
+    expect((await admin.request("/settings", settings(false))).status).toBe(
+      200,
+    );
+    expect((await aliceLearning.request(reviewPath, approve)).status).toBe(409);
+    expect((await admin.request("/settings", settings(true))).status).toBe(200);
+    expect((await aliceLearning.request(reviewPath, approve)).status).toBe(200);
+    expect((await aliceLearning.request(reviewPath, approve)).status).toBe(200);
+    expect(await (await aliceLearning.request(path)).json()).toMatchObject({
+      autoApprove: false,
+      proposals: [
+        {
+          id: proposal.id,
+          state: "published",
+          review: {
+            mode: "manual",
+            reviewerId: alice.id,
+            scope,
+          },
+        },
+      ],
+    });
+
     insufficient = true;
     expect((await aliceLearning.request(path, post({}))).status).toBe(202);
     const skipped = await waitFor("skipped");
@@ -1484,6 +1560,171 @@ test("Learn now coalesces reservations, snapshots completed evidence, and discar
     expect(repeated.latest).toEqual(completed.latest);
     expect(reservations).toHaveLength(4);
 
+    const laterReview = path.replace(
+      "/learn?",
+      `/learn/proposals/${completed.latest.id}?`,
+    );
+    expect(
+      (
+        await aliceLearning.request(
+          laterReview,
+          post({ decision: "reject", scope }),
+        )
+      ).status,
+    ).toBe(200);
+    expect((await aliceLearning.request(laterReview, approve)).status).toBe(
+      409,
+    );
+    expect(await read()).toMatchObject({
+      proposals: [{ state: "rejected" }, { state: "published" }],
+    });
+
+    await send("published-skill", "What is your procedure?");
+    expect(runInputs.at(-1)?.messages[0]).toMatchObject({ role: "system" });
+    const guidance = String(runInputs.at(-1)?.messages[0]?.content);
+    expect(guidance).toContain(proposal.id);
+    expect(guidance).toContain("List the steps in order.");
+    expect(guidance).not.toContain(completed.latest.id);
+    expect(runInputs.at(-1)?.tools).toEqual([]);
+
+    const bobPath = `/api/copilotkit/threads/${bobChannel.threadId}/learn?agentId=${bot.id}`;
+    expect(await (await bobChat.request(bobPath)).json()).toMatchObject({
+      autoApprove: false,
+      proposals: [],
+    });
+    expect(
+      (
+        await bobChat.request(
+          bobPath.replace("/learn?", `/learn/proposals/${proposal.id}?`),
+          post({
+            decision: "approve",
+            scope: {
+              ...scope,
+              personId: bob.id,
+              threadId: bobChannel.threadId,
+            },
+          }),
+        )
+      ).status,
+    ).toBe(404);
+    const bobTurn = await bobChat.request(
+      `/api/copilotkit/agent/${bot.id}/run`,
+      post({
+        threadId: bobChannel.threadId,
+        runId: "other-workspace",
+        messages: [
+          {
+            id: "bob-question",
+            role: "user",
+            content: "What is your procedure?",
+          },
+        ],
+      }),
+    );
+    expect(await bobTurn.text()).toContain("Offline answer.");
+    expect(runInputs.at(-1)?.messages.map(({ role }) => role)).toEqual([
+      "user",
+    ]);
+
+    const preference = path.replace("/learn?", "/learn/auto-approval?");
+    expect(
+      (await bobLearning.request(preference, post({ autoApprove: true })))
+        .status,
+    ).toBe(404);
+    expect(
+      (await aliceLearning.request(preference, post({ autoApprove: true })))
+        .status,
+    ).toBe(200);
+    expect(await (await bobChat.request(bobPath)).json()).toMatchObject({
+      autoApprove: false,
+    });
+    expect((await aliceLearning.request(path, post({}))).status).toBe(202);
+    const auto = await waitFor("proposed");
+    expect(auto.proposals[0]).toMatchObject({
+      state: "published",
+      review: { reviewerId: alice.id, mode: "automatic", scope },
+    });
+    const audit = await database
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.actorUserId, alice.id));
+    expect(
+      audit.filter((event) => event.targetId === proposal.id),
+    ).toHaveLength(1);
+    expect(audit).toContainEqual(
+      expect.objectContaining({
+        eventType: "learning.personal_auto_approval_changed",
+        payload: { enabled: true },
+      }),
+    );
+    expect(audit).toContainEqual(
+      expect.objectContaining({
+        eventType: "learning.proposal_reviewed",
+        targetId: auto.latest.id,
+        payload: expect.objectContaining({
+          decision: "approve",
+          mode: "automatic",
+          scope,
+        }),
+      }),
+    );
+
+    async function managedDelivery(
+      runId: string,
+      expected = "Managed answer.",
+    ) {
+      const turn = await aliceLearning.request(
+        `/api/copilotkit/agent/${bot.id}/run`,
+        post({
+          threadId: channel.threadId,
+          runId,
+          messages: [
+            {
+              id: `question-${runId}`,
+              role: "user",
+              content: "Managed delivery check",
+            },
+          ],
+        }),
+      );
+      expect(await turn.text()).toContain(expected);
+      return managedPrompts.at(-1);
+    }
+    expect(await managedDelivery("managed-published")).toContain(
+      auto.latest.id,
+    );
+
+    await managedDelivery("pause-during-admission", "not_authorized");
+    expect(managedPrompts).toHaveLength(1);
+    await send("paused-skill", "Can you still answer?");
+    expect(
+      runInputs.at(-1)?.messages.some(({ role }) => role === "system"),
+    ).toBe(false);
+    expect(await managedDelivery("managed-paused")).not.toContain(proposal.id);
+    expect(managedPrompts.at(-1)).not.toContain(auto.latest.id);
+    expect(await read()).toMatchObject({
+      enabled: false,
+      proposals: [
+        { state: "published", review: { mode: "automatic" } },
+        { state: "rejected" },
+        { state: "published" },
+      ],
+    });
+
+    expect((await admin.request("/settings", settings(true))).status).toBe(200);
+    await database
+      .delete(directChatRuns)
+      .where(
+        and(
+          eq(directChatRuns.threadId, channel.threadId),
+          eq(directChatRuns.id, "learn-source"),
+        ),
+      );
+    expect((await aliceLearning.request(reviewPath, approve)).status).toBe(409);
+    await send("evidence-withdrawn", "What procedure is still available?");
+    expect(runInputs.at(-1)?.messages[0]?.content).toContain(auto.latest.id);
+    expect(runInputs.at(-1)?.messages[0]?.content).not.toContain(proposal.id);
+
     expect(
       (
         await aliceChat.request(`/api/channels/${channel.id}`, {
@@ -1492,6 +1733,7 @@ test("Learn now coalesces reservations, snapshots completed evidence, and discar
       ).ok,
     ).toBe(true);
     expect((await aliceLearning.request(path)).status).toBe(404);
+    expect((await aliceLearning.request(reviewPath, approve)).status).toBe(404);
   } finally {
     release.resolve();
     if (hadSavedSettings) await store.write(previousSettings);
@@ -1502,6 +1744,8 @@ test("Learn now coalesces reservations, snapshots completed evidence, and discar
     await control.stop(true);
     if (channelId)
       await database.delete(channels).where(eq(channels.id, channelId));
+    if (bobChannelId)
+      await database.delete(channels).where(eq(channels.id, bobChannelId));
     await database.delete(agents).where(eq(agents.id, bot.id));
     await database.delete(users).where(eq(users.id, alice.id));
     await database.delete(users).where(eq(users.id, bob.id));
