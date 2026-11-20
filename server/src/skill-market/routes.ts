@@ -1,13 +1,13 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
-import type { AppVariables } from "../auth/guards";
+import { type AppVariables, requireAdmin } from "../auth/guards";
 import {
   CatalogEntryUnavailable,
   createSkillMarket,
   type RegistryFetch,
 } from "./catalog";
 import type { SkillMarketConfig } from "./config";
-import type { marketSkillMethods } from "./installations";
+import { type marketSkillMethods, slashCommand } from "./installations";
 
 const installBody = z.strictObject({ agentId: z.string().trim().min(1) });
 const expectedVersion = z.strictObject({
@@ -18,6 +18,9 @@ const forbidden = "You cannot manage skills on this Bot.";
 const stale =
   "The installed version has changed. Review the current installation and try again.";
 const unavailable = "Skill installation is unavailable.";
+const commandBody = z.strictObject({
+  command: z.string().trim().min(1).max(40).regex(slashCommand),
+});
 const commandUnavailable =
   "This market skill needs an unused slash command assigned by an administrator.";
 
@@ -162,6 +165,49 @@ export function createSkillMarketRoutes(
     },
   );
 
+  routes.post("/:namespace/:slug/command", async (context) => {
+    const denied = requireAdmin(context);
+    if (denied) return denied;
+    if (!installations)
+      return context.json(
+        { error: "Skill command assignment is unavailable." },
+        503,
+      );
+
+    const body = commandBody.safeParse(
+      await context.req.json().catch(() => null),
+    );
+    if (!body.success)
+      return context.json(
+        {
+          error:
+            "Enter up to 40 lowercase letters or digits, with single hyphens between groups.",
+        },
+        400,
+      );
+
+    const { namespace, slug } = context.req.param();
+    const source = await market.commandSource(namespace, slug);
+    const result = await installations.assignMarketCommand(
+      source,
+      body.data.command,
+    );
+    if (result.kind === "command-unavailable")
+      return context.json(
+        { error: "That slash command is already in use." },
+        409,
+      );
+    if (result.kind === "existing" && result.command !== body.data.command)
+      return context.json(
+        { error: `This market skill already uses /${result.command}.` },
+        409,
+      );
+    return context.json(
+      { command: result.command },
+      result.kind === "reserved" ? 201 : 200,
+    );
+  });
+
   routes.get("/:namespace/:slug", async (context) => {
     const { namespace, slug } = context.req.param();
     const page = readPage(context.req.query("page"));
@@ -177,7 +223,12 @@ export function createSkillMarketRoutes(
     return context.json(
       command
         ? { ...preview, command }
-        : { ...preview, installable: false, reasons: [commandUnavailable] },
+        : {
+            ...preview,
+            installable: false,
+            reasons: [commandUnavailable],
+            canAssignCommand: context.var.actor.role === "admin",
+          },
     );
   });
 
