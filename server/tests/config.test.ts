@@ -1451,3 +1451,27 @@ describe("edition", () => {
     expect(() => loadConfig(environment)).toThrow("AGENT_COMPUTER_URL");
   });
 });
+
+test("Opik delivery is opt-in and loads the self-hosted API configuration", () => {
+  expect(loadConfig(baseEnvironment).opik).toBeUndefined();
+  expect(
+    loadConfig({
+      ...baseEnvironment,
+      OPENBOT_OPIK_API_URL: "http://opik:5173/api/",
+      OPENBOT_OPIK_PROJECT: "openbot-runs",
+      OPENBOT_OPIK_WORKSPACE: "operators",
+      OPENBOT_OPIK_API_KEY: "fixture-key",
+    }).opik,
+  ).toEqual({
+    apiUrl: new URL("http://opik:5173/api/"),
+    project: "openbot-runs",
+    workspace: "operators",
+    apiKey: "fixture-key",
+  });
+  expect(() =>
+    loadConfig({
+      ...baseEnvironment,
+      OPENBOT_OPIK_API_URL: "file:///tmp/opik",
+    }),
+  ).toThrow("OPENBOT_OPIK_API_URL");
+});

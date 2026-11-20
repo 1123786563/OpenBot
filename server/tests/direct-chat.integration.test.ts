@@ -19,7 +19,8 @@ import { createThreadIdentity } from "../src/channels/thread-identity";
 import { loadConfig } from "../src/config";
 import { mountCopilotRuntime } from "../src/copilot";
 import { createDatabase } from "../src/db/client";
-import { agents, channels, users } from "../src/db/schema";
+import { agents, channels, opikRuns, users } from "../src/db/schema";
+import { createMemoryStore } from "../src/memory/store";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const databaseUrl = testDatabaseUrl();
@@ -82,6 +83,7 @@ function web(
   actor: AuthenticatedActor,
   botId: string,
   answer: () => Promise<void>,
+  opik?: typeof config.opik,
 ) {
   const store = createAgentProfileStore(db, endpoint);
   const channelStore = createChannelStore(
@@ -94,7 +96,7 @@ function web(
     return new AnsweringAgent(answer);
   };
   const copilot = mountCopilotRuntime(
-    config,
+    { ...config, ...(opik ? { opik } : {}) },
     {
       resolveAgentsForActor: async () => ({
         [botId]: await agentFor(actor, botId),
@@ -335,3 +337,241 @@ test("Web direct chat persists messages and one run per send, with only its Pers
       await database.delete(users).where(eq(users.id, id));
   }
 });
+
+test(
+  "Run feedback survives an Opik outage and scores an incomplete Run once after recovery",
+  async () => {
+    const { createOpikDelivery } = await import("../src/opik/delivery");
+    const alice = await person();
+    const bob = await person();
+    const bot = await profiles.create(alice, {
+      name: "Feedback Bot",
+      title: "Bot",
+      roleDescription: "Answers locally.",
+      visibility: "private",
+    });
+    const bobWeb = web(database, bob, bot.id, async () => {});
+    const aliceChannelWeb = web(database, alice, bot.id, async () => {});
+    const { channel } = await (
+      await aliceChannelWeb.request(
+        "/api/channels",
+        post({ agentIds: [bot.id] }),
+      )
+    ).json();
+    const botPath = `/api/copilotkit/agent/${bot.id}`;
+    try {
+      const runId = crypto.randomUUID();
+      const tracePosts: {
+        id: string;
+        name: string;
+        metadata: { status: string; duration_ms: number; incomplete: boolean };
+      }[] = [];
+      const realApi = process.env.TEST_OPIK_API_URL;
+      const project = `openbot-acceptance-${crypto.randomUUID()}`;
+      let scoreWrites = 0;
+      const scores = new Map<string, number>();
+      const dropped: number[] = [];
+      let available = false;
+      const opik = Bun.serve({
+        port: 0,
+        hostname: "127.0.0.1",
+        async fetch(request) {
+          if (!available) return new Response(null, { status: 503 });
+          const raw = await request.text();
+          const body = JSON.parse(raw);
+          if (realApi) {
+            const upstream = await fetch(
+              new URL(
+                new URL(request.url).pathname.replace(/^\/api\//, ""),
+                realApi.endsWith("/") ? realApi : `${realApi}/`,
+              ),
+              {
+                method: request.method,
+                headers: { "content-type": "application/json" },
+                body: raw,
+              },
+            );
+            if (!upstream.ok) {
+              console.error(
+                `Real Opik returned ${upstream.status}: ${await upstream.text()}`,
+              );
+              return new Response(null, { status: 503 });
+            }
+            await upstream.body?.cancel();
+          }
+          if (request.method === "POST") tracePosts.push(...body.traces);
+          else {
+            for (const score of body.scores)
+              scores.set(`${score.id}:${score.name}`, score.value);
+            if (++scoreWrites === 1) return new Response(null, { status: 503 });
+          }
+          return new Response(null, { status: 204 });
+        },
+      });
+      try {
+        const config = { apiUrl: new URL("api/", opik.url), project };
+        const aliceWeb = web(database, alice, bot.id, async () => {}, config);
+        const options = {
+          now: () => now,
+          onDropped: (count: number) => dropped.push(count),
+        };
+        const run = await aliceWeb.request(
+          `${botPath}/run`,
+          post({
+            runId,
+            threadId: channel.threadId,
+            messages: [
+              { role: "user", id: "question", content: "private prompt" },
+            ],
+          }),
+        );
+        expect(await run.text()).toContain("Offline answer.");
+        const memory = createMemoryStore(database);
+        const fact = await memory.create(alice.id, {
+          content: "private memory",
+        });
+        expect(await memory.list(alice.id)).toContainEqual(
+          expect.objectContaining({ id: fact.id, content: "private memory" }),
+        );
+        await memory.remove(alice.id, fact.id);
+        let now = new Date();
+        await createOpikDelivery(database, config, options).drain();
+        const feedback = {
+          feedbackId: crypto.randomUUID(),
+          score: 1,
+          comment: "private feedback",
+        };
+        const path = `/api/copilotkit/threads/${channel.threadId}/runs/${runId}/feedback?agentId=${bot.id}`;
+        expect((await bobWeb.request(path, post(feedback))).status).toBe(404);
+        expect((await aliceWeb.request(path, post(feedback))).status).toBe(202);
+        expect(
+          (await aliceWeb.request(path, post({ ...feedback, score: 0 })))
+            .status,
+        ).toBe(409);
+        expect(
+          await database
+            .select({
+              feedbackId: opikRuns.feedbackId,
+              comment: opikRuns.comment,
+            })
+            .from(opikRuns)
+            .where(eq(opikRuns.runId, runId)),
+        ).toEqual([
+          { feedbackId: feedback.feedbackId, comment: feedback.comment },
+        ]);
+        now = new Date(now.getTime() + 60 * 60_000 + 1);
+        await createOpikDelivery(database, config, options).drain();
+        expect(dropped).toEqual([1]);
+        expect(scores.size).toBe(0);
+        const restarted = createDatabase(databaseUrl, TEST_POOL);
+        try {
+          const aliceReplica = web(
+            restarted,
+            alice,
+            bot.id,
+            async () => {},
+            config,
+          );
+          expect(
+            (await aliceReplica.request(path, post(feedback))).status,
+          ).toBe(202);
+        } finally {
+          await restarted.$client.close();
+        }
+        available = true;
+        now = new Date(now.getTime() + 60_000);
+        await createOpikDelivery(database, config, options).drain();
+        expect((await aliceWeb.request(path, post(feedback))).status).toBe(202);
+        for (
+          let attempt = 0;
+          attempt < (realApi ? 5 : 2) && scoreWrites < 2;
+          attempt++
+        ) {
+          now = new Date(now.getTime() + 11_000);
+          await createOpikDelivery(database, config, options).drain();
+        }
+        await createOpikDelivery(database, config, options).drain();
+        expect(scoreWrites).toBe(2);
+        expect([...scores.values()]).toEqual([1]);
+        const incompleteTrace = tracePosts[0];
+        expect(tracePosts.length).toBeGreaterThanOrEqual(2);
+        expect(incompleteTrace).toMatchObject({
+          name: "OpenBot Run (incomplete)",
+          metadata: { incomplete: true, status: "completed" },
+        });
+        for (const trace of tracePosts) expect(trace).toEqual(incompleteTrace);
+        expect(JSON.stringify(tracePosts)).not.toContain("private");
+
+        const ordinary = await aliceWeb.request(
+          `${botPath}/run`,
+          post({
+            runId: crypto.randomUUID(),
+            threadId: channel.threadId,
+            messages: [
+              {
+                role: "user",
+                id: "ordinary",
+                content: "private ordinary prompt",
+              },
+            ],
+          }),
+        );
+        expect(await ordinary.text()).toContain("Offline answer.");
+        now = new Date();
+
+        const delivery = createOpikDelivery(database, config, options).start();
+        try {
+          for (
+            let attempt = 0;
+            attempt < (realApi ? 75 : 2) &&
+            !tracePosts.some((trace) => !trace.metadata.incomplete);
+            attempt++
+          )
+            await Bun.sleep(1000);
+        } finally {
+          await delivery.stop();
+        }
+        const ordinaryTrace = tracePosts.find(
+          (trace) => !trace.metadata.incomplete,
+        );
+        expect(ordinaryTrace).toMatchObject({
+          name: "OpenBot Run",
+          metadata: { incomplete: false, status: "completed" },
+        });
+        if (realApi) {
+          const base = new URL(realApi.endsWith("/") ? realApi : `${realApi}/`);
+          for (const trace of [incompleteTrace, ordinaryTrace]) {
+            if (!trace) throw new Error("Trace was not sent");
+            const url = new URL(`v1/private/traces/${trace.id}`, base);
+            let response = await fetch(url);
+            for (let attempt = 0; !response.ok && attempt < 30; attempt++) {
+              await response.body?.cancel();
+              await Bun.sleep(100);
+              response = await fetch(url);
+            }
+            expect(response.status).toBe(200);
+            const record = await response.json();
+            expect(record.name).toBe(trace.name);
+            expect(record.metadata).toEqual(trace.metadata);
+            expect(record.input ?? null).toBeNull();
+            expect(record.output ?? null).toBeNull();
+            expect(JSON.stringify(record)).not.toContain("private");
+            if (trace === incompleteTrace) {
+              expect(record.feedback_scores).toMatchObject([
+                { name: "user_feedback", value: 1 },
+              ]);
+              expect(record.feedback_scores).toHaveLength(1);
+            }
+          }
+        }
+      } finally {
+        opik.stop(true);
+      }
+    } finally {
+      await database.delete(channels).where(eq(channels.id, channel.id));
+      await database.delete(users).where(eq(users.id, alice.id));
+      await database.delete(users).where(eq(users.id, bob.id));
+    }
+  },
+  process.env.TEST_OPIK_API_URL ? 300_000 : 30_000,
+);

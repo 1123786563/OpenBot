@@ -21,6 +21,7 @@ import {
 } from "./dictation/config";
 import { type Edition, parseEdition } from "./edition";
 import { proxiedClientSocketUrl } from "./intelligence-gateway-proxy";
+import type { OpikConfig } from "./opik/client";
 import type { BrokerProvider } from "./plugins/access";
 import { type VoiceConfig, voiceConfig } from "./voice/config";
 import { type WebBotAuth, webBotAuthFromEnv } from "./web-bot-auth";
@@ -366,6 +367,7 @@ export type DeploymentConfig = {
   appUrl: string | undefined;
   tenantPackageDirectory: string;
   runtime: RuntimeCapabilities;
+  opik?: OpikConfig;
   /**
    * How long a Bot's stream may say nothing before this deployment ends the turn, in milliseconds.
    *
@@ -836,6 +838,23 @@ function optionalHttpUrl(
   }
 
   return parsed;
+}
+
+function opikConfig(environment: Environment): OpikConfig | undefined {
+  const apiUrl = optionalHttpUrl(environment, "OPENBOT_OPIK_API_URL");
+  if (!apiUrl) return undefined;
+  if (apiUrl.username || apiUrl.password || apiUrl.search || apiUrl.hash)
+    throw new Error(
+      "OPENBOT_OPIK_API_URL must not contain credentials, a query, or a fragment",
+    );
+  const workspace = optional(environment, "OPENBOT_OPIK_WORKSPACE");
+  const apiKey = optional(environment, "OPENBOT_OPIK_API_KEY");
+  return {
+    apiUrl,
+    project: optional(environment, "OPENBOT_OPIK_PROJECT") ?? "openbot-runs",
+    ...(workspace ? { workspace } : {}),
+    ...(apiKey ? { apiKey } : {}),
+  };
 }
 
 /**
@@ -1648,6 +1667,8 @@ export function loadConfig(
 
   const edition = parseEdition(optional(environment, "OPENBOT_EDITION"));
 
+  const opik = opikConfig(environment);
+
   // Built first and checked after, so every refusal the team edition gives keeps its order.
   const loaded = {
     port: serverPort(environment),
@@ -1672,6 +1693,7 @@ export function loadConfig(
     tenantPackageDirectory:
       optional(environment, "TENANT_PACKAGE_DIR") ?? "../examples/fintech",
     runtime: runtimeCapabilities(environment),
+    ...(opik ? { opik } : {}),
     recorder: { extraExtensionIds: recorderExtraExtensionIds(environment) },
     learning: learningDefault(environment),
     learningAutoAssign: learningAutoAssignEnabled(environment),

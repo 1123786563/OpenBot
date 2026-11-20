@@ -237,6 +237,7 @@ import { createMemoryStore } from "./memory/store";
 import { offeredMemoryTools } from "./memory/tools";
 import { reportModelAvailability } from "./model-availability-check";
 import { createModelCatalogue } from "./model-catalogue";
+import { createOpikDelivery } from "./opik/delivery";
 import { createSignInNotifier, createSignInResumer } from "./passwords/resume";
 import { createSignInService } from "./passwords/service";
 import { createPasswordStore } from "./passwords/store";
@@ -3383,6 +3384,9 @@ startHttpServer({
   app,
 });
 
+const opikDelivery =
+  config.opik && createOpikDelivery(database, config.opik).start();
+
 if (config.singleUser) {
   // Loud, every boot. A server that is not checking who is asking should never be a quiet default.
   console.warn(
@@ -3411,6 +3415,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     for (const sweep of deliverySweeps) sweep.stop();
     void Promise.allSettled([
       productTelemetry.flush(),
+      opikDelivery?.stop(),
       channelActivityListener.stop(),
       policyListener.stop(),
       // Started only where handing work between Bots is switched on, so it is often not there.

@@ -3301,6 +3301,7 @@ export function mountCopilotRuntime(
       basePath,
       createDirectChatRoutes({
         ...options.directChat,
+        traceRuns: Boolean(config.opik),
         identifyActor,
         agentFor: (actor, botId) => agentFor({ actor, botId, textOnly: true }),
       }),

@@ -833,6 +833,25 @@ is still the record.
 | `OTEL_SERVICE_NAME`                | The `service.name` on every record. Defaults to `openbot`.                                             |
 | `OPENBOT_OTEL_EXPORT`              | `off` turns export off while an endpoint is still set.                                                 |
 
+## Self-hosted Opik for Web direct-chat Runs
+
+Deploy Opik using the [official self-hosted instructions](https://www.comet.com/docs/opik/self-host/local_deployment/). Run the OpenBot database migrations before starting the API. Set these variables on the OpenBot server. Docker Compose reads them from `.env`. With Helm, use `config.extraEnv` and reference a Kubernetes Secret for the key. The URL must be reachable **from the server** and end at Opik's API base, for example `http://opik-frontend:5173/api/`.
+
+| Variable | Meaning |
+| --- | --- |
+| `OPENBOT_OPIK_API_URL` | HTTP(S) API base URL. Leave unset to disable delivery and ordinary trace collection. |
+| `OPENBOT_OPIK_PROJECT` | Dedicated Opik project. Defaults to `openbot-runs`. |
+| `OPENBOT_OPIK_WORKSPACE` | Optional workspace sent as `Comet-Workspace`. |
+| `OPENBOT_OPIK_API_KEY` | Optional authorization value supplied by the deployment. |
+
+Keep Opik behind the platform's operator-only access controls. Use the project's **Logs** view to inspect `OpenBot Run` and `OpenBot Run (incomplete)` records. OpenBot exports an opaque Run correlation ID, start and end times, status, duration, the incomplete marker and the numeric `user_feedback` score. Message bodies, tool payloads, Memory and feedback comments stay in OpenBot.
+
+OpenBot records terminal Runs and feedback in PostgreSQL. It retries traces for one hour after a Run finishes, then emits `opik_traces_dropped` with the count of expired traces. Feedback delivery remains pending until acknowledged, including beyond the ordinary trace window. Feedback for an expired or historical Run is attached to an explicitly incomplete record. Turn delivery off by removing `OPENBOT_OPIK_API_URL`. Re-enabling delivery resumes processing existing feedback and applies the one-hour window to queued ordinary traces.
+
+An authenticated direct-chat participant can submit feedback with `POST /api/copilotkit/threads/:threadId/runs/:runId/feedback?agentId=:agentId`. Send JSON containing `feedbackId` (UUID), `score` (`0` or `1`) and an optional `comment`. A `202` confirms PostgreSQL accepted the feedback. Submit the same ID and payload when retrying that request.
+
+For acceptance against a disposable development Opik, set `TEST_OPIK_API_URL` to its API base and run `server/tests/direct-chat.integration.test.ts` with a freshly migrated disposable `TEST_DATABASE_URL`. The test creates a separate project and forwards synthetic trace and score requests to Opik after simulating an outage. It reads back both trace types and the recovered score. Delete the resulting `openbot-acceptance-*` project after inspection.
+
 ## Computer and supervisor
 
 | Variable                             | Meaning                                                                                   |
