@@ -253,6 +253,7 @@ import { useRoutineTools } from "./plugins/builtin-routines";
 import { useComposioClient } from "./plugins/composio";
 import { createComposioClient } from "./plugins/composio-adapter";
 import { createGithubEventDispatch } from "./plugins/corsair/event-dispatch";
+import { createCorsairEventOperations } from "./plugins/corsair/event-operations";
 import { createGithubEventReader } from "./plugins/corsair/event-reader";
 import { createGithubEventTriggers } from "./plugins/corsair/event-triggers";
 import {
@@ -1375,15 +1376,6 @@ if (
   throw new Error(
     "CORSAIR_GITHUB_ISOLATED_EVENT_SOURCES requires installationId/repositoryId pairs.",
   );
-const githubEventDispatch =
-  githubEventScope && githubEventTriggers
-    ? createGithubEventDispatch({
-        ...githubEventScope,
-        database,
-        triggers: githubEventTriggers,
-        isolatedSources: new Set(githubIsolatedSources),
-      })
-    : null;
 const sharedSlack = sharedSlackRegistration(process.env);
 const sharedSlackProvider =
   sharedSlack && createSharedSlackProvider(sharedSlack);
@@ -1393,6 +1385,40 @@ if (slackEventSecret && !sharedSlack)
   throw new Error(
     "Slack Events API requires a shared Slack installation registration.",
   );
+const corsairEventOperations =
+  githubEventScope || slackEventSecret
+    ? createCorsairEventOperations(database, deploymentId, {
+        githubRegistration: githubEventScope?.registration,
+        rawEvidence: {
+          encryptionKey: config.keyEncryptionKey,
+          deliveries: new Set(
+            (process.env.CORSAIR_EVENT_RAW_EVIDENCE_DELIVERIES ?? "")
+              .split(",")
+              .map((entry) => entry.trim())
+              .filter(Boolean),
+          ),
+        },
+        slackRegistration:
+          sharedSlackProvider && slackEventSecret
+            ? [
+                sharedSlackProvider.identity.appId,
+                sharedSlackProvider.identity.teamId,
+                sharedSlackProvider.identity.botId,
+                sharedSlackProvider.identity.botUserId,
+              ].join("/")
+            : undefined,
+      })
+    : undefined;
+const githubEventDispatch =
+  githubEventScope && githubEventTriggers
+    ? createGithubEventDispatch({
+        ...githubEventScope,
+        database,
+        triggers: githubEventTriggers,
+        operations: corsairEventOperations,
+        isolatedSources: new Set(githubIsolatedSources),
+      })
+    : null;
 const slackEvents =
   slackEventSecret && sharedSlack && sharedSlackProvider
     ? createSlackEventPilot({
@@ -1401,6 +1427,7 @@ const slackEvents =
         identity: sharedSlackProvider.identity,
         secret: slackEventSecret,
         checkMember: createSlackEventReader(sharedSlack),
+        operations: corsairEventOperations,
       })
     : undefined;
 
@@ -1460,6 +1487,7 @@ const triggerIngressDeps = {
   directory: responsibilityTriggerStore.directory,
   ingest: (event: unknown) => responsibilityEngine.ingest(event),
   auditStore: bootAuditStore,
+  corsairEvents: corsairEventOperations,
 };
 const inboundEmail = inboundEmailConfigFromEnv(process.env);
 const responsibilityTriggers = {
@@ -2521,6 +2549,28 @@ const slackEventSweep = slackEvents
       }
     }, 2_000)
   : null;
+const corsairEventOperationsSweep = corsairEventOperations
+  ? repeatAfterEach(async () => {
+      try {
+        for (const alert of await corsairEventOperations.alert()) {
+          console.warn(
+            JSON.stringify({
+              type: "corsair-event-dispatch-overdue",
+              ...alert,
+            }),
+          );
+        }
+        await corsairEventOperations.expireEvidence();
+      } catch (error) {
+        console.warn(
+          JSON.stringify({
+            type: "corsair-event-operations-sweep-failed",
+            errorType: error instanceof Error ? error.name : "unknown",
+          }),
+        );
+      }
+    }, 5_000)
+  : null;
 const responsibilitySweep = repeatAfterEach(async () => {
   try {
     const report = await responsibilityEngine.dispatch({
@@ -3297,12 +3347,15 @@ const app = createApp(
   {
     productTelemetry,
     approvals: approvalService,
+    corsairEventOperations,
     ...(githubEventScope && githubEventSecret && githubEventTriggers
       ? {
           githubEvents: {
             ...githubEventScope,
             database,
             secret: githubEventSecret,
+            operations: corsairEventOperations,
+            planAccepted: githubEventDispatch?.planAccepted,
             isolatedSources: new Set(githubIsolatedSources),
             triggers: githubEventTriggers,
           },
@@ -3325,7 +3378,12 @@ const app = createApp(
         }
       : {}),
     ...(slackPilotOptions ? { slackPilot: slackPilotOptions } : {}),
-    ...(slackEvents ? { slackEventRoutes: slackEvents.routes } : {}),
+    ...(slackEvents
+      ? {
+          slackEventRoutes: slackEvents.routes,
+          readSlackEventEvidence: slackEvents.readEvidence,
+        }
+      : {}),
     ...(sharedSlackProvider
       ? {
           sharedSlackPilot: {
@@ -3478,7 +3536,6 @@ const app = createApp(
         pushProjectId: deliveryProviders.pushProjectId,
       },
       webhooks: {
-        corsairSlackTeamId: slackEvents ? sharedSlack?.teamId : undefined,
         store: deliveryStore,
         router: deliveryRouter,
         approvals: approvalService,
@@ -3578,6 +3635,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     responsibilitySweep.stop();
     githubEventSweep?.stop();
     slackEventSweep?.stop();
+    corsairEventOperationsSweep?.stop();
     wakeUpSweep.stop();
     wakeUpReaper.stop();
     memorySweep.stop();

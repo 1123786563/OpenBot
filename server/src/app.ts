@@ -139,6 +139,8 @@ import type { BrokerProvider } from "./plugins/access";
 import type { AccountModeSwitch } from "./plugins/account-mode";
 import type { ComposioBroker } from "./plugins/broker";
 import { createGithubEventIngress } from "./plugins/corsair/event-ingress";
+import { createCorsairEventOperationRoutes } from "./plugins/corsair/event-operation-routes";
+import type { CorsairEventOperations } from "./plugins/corsair/event-operations";
 import { createGithubEventTriggerRoutes } from "./plugins/corsair/event-triggers";
 import { createGithubPilotRoutes } from "./plugins/corsair/routes";
 import { createSlackPilotRoutes } from "./plugins/corsair/slack/routes";
@@ -457,6 +459,7 @@ export function createApp(
   coworker?: {
     productTelemetry?: ProductTelemetry;
     approvals?: ApprovalService;
+    corsairEventOperations?: CorsairEventOperations;
     githubEvents?: Parameters<typeof createGithubEventIngress>[0] &
       Pick<Parameters<typeof createGithubEventTriggerRoutes>[0], "triggers">;
     githubPilot?: Omit<
@@ -468,6 +471,11 @@ export function createApp(
       "requireUser" | "canUseBot"
     >;
     slackEventRoutes?: Hono;
+    readSlackEventEvidence?: (
+      receiptId: string,
+      triggerId: string,
+      personId: string,
+    ) => Promise<Uint8Array | null | undefined>;
     sharedSlackPilot?: Omit<
       Parameters<typeof createSharedSlackPilot>[0],
       "requireUser" | "canUseBot"
@@ -1632,6 +1640,51 @@ export function createApp(
     ? async (actor, botId) =>
         (await agentProfileStore.get(actor, botId)) !== null
     : async () => true;
+
+  if (coworker?.corsairEventOperations) {
+    app.route(
+      "/api/corsair/events",
+      createCorsairEventOperationRoutes(
+        coworker.corsairEventOperations,
+        requireUser,
+      ),
+    );
+  }
+
+  if (coworker?.corsairEventOperations) {
+    const operations = coworker.corsairEventOperations;
+    app.get(
+      "/api/corsair/events/:provider/:receiptId/evidence",
+      requireUser,
+      async (context) => {
+        const { provider, receiptId } = context.req.param();
+        const triggerId = context.req.query("triggerId");
+        if (!triggerId || triggerId.length > 128 || receiptId.length > 128)
+          return context.json({ error: "Invalid evidence request." }, 400);
+        const personId = context.var.actor.id;
+        const github = coworker.githubEvents?.triggers;
+        const raw =
+          provider === "github" && github
+            ? await operations.readEvidence(receiptId, () =>
+                github.canReadEvidence(receiptId, triggerId, personId),
+              )
+            : provider === "slack"
+              ? await coworker.readSlackEventEvidence?.(
+                  receiptId,
+                  triggerId,
+                  personId,
+                )
+              : null;
+        if (!raw) return context.json({ error: "Evidence unavailable." }, 404);
+        return context.body(Uint8Array.from(raw), 200, {
+          "Content-Type": "application/octet-stream",
+          "Content-Disposition": "attachment",
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+        });
+      },
+    );
+  }
 
   if (coworker?.githubEvents) {
     app.route(

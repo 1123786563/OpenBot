@@ -16,6 +16,7 @@ import {
 import { workItems } from "../../db/schema/work";
 import { RESPONSIBILITY_RUN_KIND } from "../../responsibilities/engine";
 import { type GithubEventScope, githubPilotEventType } from "./event-ingress";
+import type { CorsairEventOperations } from "./event-operations";
 import { GITHUB_EVENT_PREFIX } from "./event-run-access";
 import type {
   createGithubEventTriggers,
@@ -31,11 +32,13 @@ export function createGithubEventDispatch({
   registration,
   triggers,
   isolatedSources,
+  operations,
   retryMs = 30_000,
 }: GithubEventScope & {
   database: Database;
   triggers: ReturnType<typeof createGithubEventTriggers>;
   isolatedSources: ReadonlySet<string>;
+  operations?: CorsairEventOperations;
   retryMs?: number;
 }) {
   const inScope = and(
@@ -103,15 +106,20 @@ export function createGithubEventDispatch({
       );
     if (!repo) return "unenrolled";
     if (
-      !receipt.pilotDispatch ||
-      !isolatedSources.has(`${receipt.installationId}/${receipt.repositoryId}`)
-    )
-      return "observed";
-    if (
       !receipt.occurredAt ||
       !githubPilotEventType.safeParse(receipt.eventType).success
     )
       return "review";
+    const owns =
+      receipt.pilotDispatch &&
+      (isolatedSources.has(
+        `${receipt.installationId}/${receipt.repositoryId}`,
+      ) ||
+        (await operations?.nativeOwner(
+          tx,
+          { provider: "github", source: receipt.repositoryId },
+          receipt.occurredAt,
+        )) === "corsair");
     const candidates = await tx
       .select({ trigger: bindings, personId: responsibilities.ownerUserId })
       .from(bindings)
@@ -131,14 +139,25 @@ export function createGithubEventDispatch({
         trigger.disabledAt ||
         trigger.repositoryNodeId !== repo.nodeId
           ? "ineligible"
-          : "pending";
+          : owns
+            ? "pending"
+            : "review";
       await tx
         .insert(outcomes)
         .values({ receiptId: receipt.id, triggerId: trigger.id, outcome });
       if (outcome !== "pending")
         await audit(tx, { receipt, triggerId: trigger.id, personId, outcome });
     }
-    return "planned";
+    return owns ? "planned" : "observed";
+  }
+
+  async function planReceipt(tx: EventTransaction, receipt: Receipt) {
+    const disposition = await plan(tx, receipt);
+    await tx
+      .update(receipts)
+      .set({ disposition, fanoutAt: new Date() })
+      .where(eq(receipts.id, receipt.id));
+    await audit(tx, { receipt, outcome: disposition });
   }
 
   async function deliver(receipt: Receipt, outcome: Outcome) {
@@ -150,6 +169,14 @@ export function createGithubEventDispatch({
     const access = binding
       ? await triggers.access(binding.trigger, binding.personId)
       : "denied";
+    const historyUnknown =
+      receipt.occurredAt &&
+      (await operations?.requiresReplayEvidence(
+        receipt.id,
+        outcome.triggerId,
+        receipt.occurredAt,
+        receipt.receivedAt,
+      ));
     await database.transaction(async (tx) => {
       const [current] = await tx
         .select()
@@ -166,8 +193,17 @@ export function createGithubEventDispatch({
             .where(eq(responsibilities.id, binding.trigger.goalId))
             .for("update")
         : [];
-      const isolated = isolatedSources.has(
-        `${receipt.installationId}/${receipt.repositoryId}`,
+      const isolated = !!(
+        receipt.pilotDispatch &&
+        (isolatedSources.has(
+          `${receipt.installationId}/${receipt.repositoryId}`,
+        ) ||
+          (receipt.repositoryId &&
+            (await operations?.nativeOwner(
+              tx,
+              { provider: "github", source: receipt.repositoryId },
+              receipt.occurredAt,
+            )) === "corsair"))
       );
       let result: Outcome["outcome"] = isolated ? "denied" : "ineligible";
       let runId: string | undefined;
@@ -189,6 +225,7 @@ export function createGithubEventDispatch({
         )
           result = "review";
         else if (access === "retry") result = "retry";
+        else if (access === "allowed" && historyUnknown) result = "review";
         else if (access === "allowed") {
           const eventId = randomUUID();
           runId = randomUUID();
@@ -231,6 +268,13 @@ export function createGithubEventDispatch({
   }
 
   return {
+    async planAccepted(tx: EventTransaction, receiptId: string) {
+      const [receipt] = await tx
+        .select()
+        .from(receipts)
+        .where(and(inScope, eq(receipts.id, receiptId)));
+      if (receipt) await planReceipt(tx, receipt);
+    },
     async sweep() {
       await database.transaction(async (tx) => {
         const batch = await tx
@@ -240,14 +284,7 @@ export function createGithubEventDispatch({
           .orderBy(asc(receipts.receivedAt))
           .limit(20)
           .for("update", { skipLocked: true });
-        for (const receipt of batch) {
-          const disposition = await plan(tx, receipt);
-          await tx
-            .update(receipts)
-            .set({ disposition, fanoutAt: new Date() })
-            .where(eq(receipts.id, receipt.id));
-          await audit(tx, { receipt, outcome: disposition });
-        }
+        for (const receipt of batch) await planReceipt(tx, receipt);
       });
       const pending = await database
         .select({ receipt: receipts, outcome: outcomes })

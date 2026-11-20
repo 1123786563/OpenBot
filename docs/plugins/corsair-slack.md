@@ -63,3 +63,5 @@ For live acceptance, post to a controlled channel and compare the Slack author w
 Use the audit events `corsair.slack.event_delivery` and `corsair.slack.event_run_skipped` to trace the Slack event ID, receipt, Trigger, and Run. A timeout delays dispatch for that Trigger. An explicit denial produces no Run. OpenBot checks the current installation and channel membership again before a queued Run starts. [Slack channel membership API](https://docs.slack.dev/reference/methods/conversations.members/).
 
 To verify a live pilot, send a message in an enrolled channel with two matching Triggers. Compare the Slack event ID and Run IDs in the audit trail. Replay the delivery, then revoke the owner's connection and send another message. Use an OpenTag channel conversation to verify that the Bot's reply still reaches the sender.
+
+Use the source handoff procedure before transferring Goal Run creation from OpenTag to Corsair. [Reconcile Corsair Goal event delivery](corsair-event-handoff.md).

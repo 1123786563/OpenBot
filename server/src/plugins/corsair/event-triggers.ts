@@ -6,6 +6,7 @@ import { decryptSecret } from "../../credentials";
 import type { Database } from "../../db/client";
 import {
   githubPilotConnections as connections,
+  githubPilotEventReceipts as receipts,
   githubPilotRepositories as repositories,
   githubPilotEventTriggers as triggers,
 } from "../../db/schema/corsair";
@@ -221,6 +222,41 @@ export function createGithubEventTriggers({
     ): Promise<GithubReadAccess> {
       const record = await currentBinding(database, trigger, personId);
       return record ? verify(record) : "denied";
+    },
+    async canReadEvidence(
+      receiptId: string,
+      triggerId: string,
+      personId: string,
+    ) {
+      const [binding] = await database
+        .select({ trigger: triggers })
+        .from(triggers)
+        .innerJoin(responsibilities, eq(responsibilities.id, triggers.goalId))
+        .innerJoin(
+          receipts,
+          and(
+            eq(receipts.workspaceId, triggers.workspaceId),
+            eq(receipts.registration, triggers.registration),
+            eq(receipts.installationId, triggers.installationId),
+            eq(receipts.repositoryId, triggers.repositoryId),
+          ),
+        )
+        .where(
+          and(
+            inScope,
+            eq(receipts.id, receiptId),
+            eq(triggers.id, triggerId),
+            eq(responsibilities.ownerUserId, personId),
+          ),
+        );
+      if (
+        !binding ||
+        (await this.access(binding.trigger, personId)) !== "allowed"
+      )
+        return false;
+      return database.transaction((tx) =>
+        this.stillAuthorized(tx, triggerId, personId),
+      );
     },
     async stillAuthorized(
       transaction: EventTransaction,

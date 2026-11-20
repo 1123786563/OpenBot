@@ -6,15 +6,12 @@ import { z } from "zod";
 import type { Database } from "../../db/client";
 import { githubPilotEventReceipts } from "../../db/schema/corsair";
 import { verifyGithubSignature } from "../../responsibilities/signatures";
+import type { CorsairEventOperations } from "./event-operations";
+import type { EventTransaction } from "./event-triggers";
 import { githubId } from "./github";
+import { githubEventSubject } from "./github-event-subject";
 
 const receiptTable = githubPilotEventReceipts;
-const subject = z.object({
-  id: githubId,
-  number: githubId,
-  created_at: z.iso.datetime({ offset: true }),
-  closed_at: z.iso.datetime({ offset: true }).nullish(),
-});
 const envelope = z.object({
   action: z
     .string()
@@ -26,10 +23,6 @@ const envelope = z.object({
     .optional(),
   issue: z.unknown().optional(),
   comment: z.unknown().optional(),
-});
-const openedComment = z.object({
-  id: githubId,
-  created_at: z.iso.datetime({ offset: true }),
 });
 const headers = z.object({
   deliveryId: z.uuid().transform((value) => value.toLowerCase()),
@@ -50,10 +43,14 @@ export function createGithubEventIngress({
   registration,
   secret,
   isolatedSources,
+  operations,
+  planAccepted,
 }: GithubEventScope & {
   database: Database;
   secret: string;
   isolatedSources?: ReadonlySet<string>;
+  operations?: CorsairEventOperations;
+  planAccepted?: (tx: EventTransaction, receiptId: string) => Promise<void>;
 }) {
   const routes = new Hono();
   routes.use(
@@ -91,47 +88,63 @@ export function createGithubEventIngress({
       return c.json({ error: "Invalid GitHub event envelope." }, 400);
     const { action, installation, repository } = parsed.data;
     const eventType = action ? `${event}.${action}` : event;
-    const issue = subject.safeParse(parsed.data.issue);
-    const comment = openedComment.safeParse(parsed.data.comment);
-    const occurredAt = issue.success
-      ? eventType === "issues.opened" && parsed.data.comment === undefined
-        ? issue.data.created_at
-        : eventType === "issues.closed" && parsed.data.comment === undefined
-          ? issue.data.closed_at
-          : eventType === "issue_comment.created" && comment.success
-            ? comment.data.created_at
-            : null
-      : null;
+    const { issue, comment, occurredAt } = githubEventSubject(
+      eventType,
+      parsed.data,
+    );
     const bodyHash = createHash("sha256").update(raw).digest("hex");
-    const [inserted] = await database
-      .insert(receiptTable)
-      .values({
-        workspaceId,
-        registration,
-        deliveryId,
-        bodyHash,
-        eventType,
-        installationId: installation ? String(installation.id) : null,
-        repositoryId: repository ? String(repository.id) : null,
-        pilotDispatch: !!(
-          installation &&
-          repository &&
-          isolatedSources?.has(`${installation.id}/${repository.id}`)
-        ),
-        occurredAt: occurredAt ? new Date(occurredAt) : null,
-        payload:
-          occurredAt && issue.success && repository
-            ? {
-                repository,
-                issue: { id: issue.data.id, number: issue.data.number },
-                ...(comment.success
-                  ? { comment: { id: comment.data.id } }
-                  : {}),
-              }
-            : {},
-      })
-      .onConflictDoNothing()
-      .returning({ id: receiptTable.id });
+    const [inserted] = await database.transaction(async (tx) => {
+      const isolated = !!(
+        installation &&
+        repository &&
+        isolatedSources?.has(`${installation.id}/${repository.id}`)
+      );
+      const owner =
+        operations && repository
+          ? await operations.nativeOwner(
+              tx,
+              { provider: "github", source: String(repository.id) },
+              occurredAt,
+              bodyHash,
+            )
+          : "legacy";
+      const inserted = await tx
+        .insert(receiptTable)
+        .values({
+          workspaceId,
+          registration,
+          deliveryId,
+          bodyHash,
+          eventType,
+          installationId: installation ? String(installation.id) : null,
+          repositoryId: repository ? String(repository.id) : null,
+          pilotDispatch: isolated || owner === "corsair",
+          occurredAt,
+          payload:
+            occurredAt && issue.success && repository
+              ? {
+                  repository,
+                  issue: { id: issue.data.id, number: issue.data.number },
+                  ...(comment.success
+                    ? { comment: { id: comment.data.id } }
+                    : {}),
+                }
+              : {},
+        })
+        .onConflictDoNothing()
+        .returning({ id: receiptTable.id });
+      if (inserted[0]) {
+        await operations?.captureEvidence(
+          tx,
+          "github",
+          deliveryId,
+          inserted[0].id,
+          raw,
+        );
+        await planAccepted?.(tx, inserted[0].id);
+      }
+      return inserted;
+    });
     if (inserted)
       return c.json({ receiptId: inserted.id, duplicate: false }, 202);
     const existing = await database

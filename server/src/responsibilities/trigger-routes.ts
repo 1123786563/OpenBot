@@ -15,6 +15,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { type AuditStore, recordAuditEvent } from "../audit";
+import type { CorsairEventOperations } from "../plugins/corsair/event-operations";
+import { githubId } from "../plugins/corsair/github";
+import { githubEventSubject } from "../plugins/corsair/github-event-subject";
 import {
   linearTimestampFresh,
   verifyBearer,
@@ -39,6 +42,7 @@ export type TriggerIngressDeps = {
   ingest: (event: ResponsibilityEvent) => Promise<ResponsibilityEventResult>;
   auditStore?: AuditStore;
   now?: () => number;
+  corsairEvents?: CorsairEventOperations;
 };
 export type DeliveryOutcome =
   | ({ status: "queued" } & ResponsibilityEventResult)
@@ -189,6 +193,7 @@ export function createTriggerIngressRoutes(deps: TriggerIngressDeps) {
         payload: Record<string, unknown>;
       },
       extraPass = true,
+      receiptId?: string,
     ) => {
       const filter =
         trigger.config.kind === "slack" ? null : trigger.config.filter;
@@ -199,6 +204,8 @@ export function createTriggerIngressRoutes(deps: TriggerIngressDeps) {
         extraPass &&
           (!filter || matchesFilter(filter, delivery.type, delivery.payload)),
       );
+      if (receiptId)
+        await deps.corsairEvents?.finishLegacy(receiptId, trigger.id, outcome);
       if (outcome.status === "inactive" && trigger.kind === "webhook")
         return context.json(
           { error: outcome.reason, accepted: false, queued: false },
@@ -290,11 +297,37 @@ export function createTriggerIngressRoutes(deps: TriggerIngressDeps) {
             403,
           );
         const action = str(payload.action);
-        return deliver({
-          deliveryId: signedBodyId(raw),
-          type: action ? `${event}.${action}` : event,
-          payload,
-        });
+        const eventType = action ? `${event}.${action}` : event;
+        const repositoryId = githubId.safeParse(
+          payload.repository &&
+            typeof payload.repository === "object" &&
+            "id" in payload.repository
+            ? payload.repository.id
+            : undefined,
+        );
+        const bodyId = signedBodyId(raw);
+        const receipt =
+          deps.corsairEvents && repositoryId.success
+            ? await deps.corsairEvents.receiveLegacy({
+                provider: "github",
+                source: String(repositoryId.data),
+                eventKey: bodyId.slice("body-".length),
+                eventType,
+                occurredAt: githubEventSubject(eventType, payload).occurredAt,
+                triggerIds: [trigger.id],
+              })
+            : null;
+        if (receipt?.owner === "corsair")
+          return context.json({
+            accepted: true,
+            queued: false,
+            reason: "Corsair owns this source.",
+          });
+        return deliver(
+          { deliveryId: bodyId, type: eventType, payload },
+          true,
+          receipt?.id,
+        );
       }
       case "linear": {
         if (
