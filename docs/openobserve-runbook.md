@@ -62,10 +62,16 @@ deployment's secret store. Compose and `scripts/start.sh` also accept the settin
 `.env`. Keep files that contain credentials private. For Compose, use an endpoint reachable from
 the API container.
 
-Set `config.otel.paused: true` in Helm or `OPENBOT_OTEL_EXPORT=off` in the deployment environment
-to pause OTLP audit export. Audit export is also off when neither endpoint is configured. PostgreSQL
-audit writes continue during a pause. When export resumes, it sends new records. To pause delivery
-of runtime logs to OpenObserve, pause the Collector's runtime pipeline.
+To pause both derived streams, set `OPENBOT_OTEL_EXPORT=off` in the Collector's trusted
+environment and restart it. Set the same variable on OpenBot, or set `config.otel.paused: true`
+in its Helm release. The API switch controls its OTLP audit client. The Collector switch controls
+both delivery pipelines, including the separate stdout and stderr reader. Manage the two settings
+together in your deployment configuration.
+
+Without an API OTLP endpoint, OpenBot leaves the audit client off. Without an OpenObserve logs URL,
+leave the deployment's Collector pipelines disabled. The sample Collector rejects a missing destination.
+Local stdout and stderr, PostgreSQL audit writes, and business operations continue while delivery is paused.
+When you resume, both pipelines send new records.
 
 ## Collector contract
 
@@ -75,13 +81,13 @@ The Collector must provide two pipelines.
 
 Collect stdout and stderr from OpenBot API, worker, migration, retention, routine, and other included server-side workloads. Normalize records into the runtime schema and route them to `openbot_runtime`. Drop raw request bodies, user messages, prompts, tool arguments, tool results, file contents, credentials, authorization headers, and arbitrary serialized objects.
 
-The runtime writer marks transitional startup notices with `event_category=legacy_unstructured` and `projection_status=unknown`. The `legacy_event` field identifies the notice. The diagnostic comes from the application catalogue and is capped at 160 bytes.
+The runtime writer marks transitional startup notices with `event_category=legacy_unstructured` and `projection_status=unknown`. The `legacy_event` field identifies the notice. OpenBot writes bounded help text locally. The Collector discards that text and looks up its own fixed diagnostic by the event code. The same lookup supplies diagnostics for known structured failures. The Collector keeps a bounded `service` identifier when the record has one.
 
 For any remaining raw console line, including dependency and process errors, the deployment-managed Collector should emit one `legacy_unstructured` marker with `projection_status=unknown`. Set deployment and component from trusted workload metadata and use the fixed diagnostic `Unmigrated process log line.` Discard the original body and its parsed fields before export. Keep raw troubleshooting output in the deployment's existing local logs.
 
 ### Audit pipeline
 
-Receive OTLP audit records after their PostgreSQL insert succeeds. Route them to `openbot_audit`. Keep the stable `audit_event_id` and the required `deployment_id`. Preserve common audit fields and approved facets only. Unknown event types keep common fields with `projection_status=unknown` and drop unknown payload data.
+Receive OTLP audit records after PostgreSQL commits the insert. Route them to `openbot_audit`. Keep the stable `audit_event_id` and the required `deployment_id`. Preserve common audit fields and approved facets only. Unknown event types keep common fields with `projection_status=unknown` and drop unknown payload data.
 
 The Collector may retry and batch records. Queries must tolerate duplicates and small ordering differences. `audit_event_id` is the deduplication key.
 
@@ -110,10 +116,14 @@ A healthy OpenBot deployment continues operating when the Collector or OpenObser
 
 Expect the following signals.
 
-- `otel-export-failed` or equivalent runtime events when OpenBot cannot hand records to the configured endpoint
+- `audit_export_failed` when an API OTLP batch fails after the SDK's retry handling. The API reports this at most once per minute.
+- `audit_export_paused`, `audit_export_deployment_invalid`, or `audit_export_configuration_invalid` in local API stdout at startup when applicable.
+- `audit_projection_failed` when an audit record has an invalid reviewed facet.
 - Collector receive or export errors
 - OpenObserve stream write failures
 - A gap in the affected stream after the bounded retry capacity is exhausted
+
+The administrator export status describes API configuration. Use the runtime diagnostics and Collector signals to check delivery.
 
 Do not treat a missing OpenObserve record as proof that the business action did not happen. Check PostgreSQL audit, Activity, or Opik according to the source-of-truth table.
 

@@ -1,5 +1,9 @@
 import { and, desc, eq, isNull, notExists, sql } from "drizzle-orm";
-import { createAuditStore, recordAuditEvent } from "../audit";
+import {
+  createAuditStore,
+  recordAuditEvent,
+  withAuditTransaction,
+} from "../audit";
 import type { Database } from "../db/client";
 import {
   approvalConversationGrants,
@@ -163,8 +167,7 @@ export function createApprovalStore(database: Database): ApprovalStore {
       });
     },
     async decide(owner, id, decision) {
-      const pendingTaps: (() => void)[] = [];
-      const decided = await database.transaction(async (tx) => {
+      return withAuditTransaction(database, async (tx, deferTap) => {
         const [request] = await tx
           .select()
           .from(approvalRequests)
@@ -240,9 +243,7 @@ export function createApprovalStore(database: Database): ApprovalStore {
               ? continuation.forwardedProps
               : undefined,
         };
-        const trail = createAuditStore(tx as unknown as Database, (publish) => {
-          pendingTaps.push(publish);
-        });
+        const trail = createAuditStore(tx, deferTap);
         await recordAuditEvent(
           trail,
           {
@@ -283,8 +284,6 @@ export function createApprovalStore(database: Database): ApprovalStore {
         );
         return updated;
       });
-      for (const publish of pendingTaps) publish();
-      return decided;
     },
     async consume(owner, id, digest) {
       return database.transaction(async (tx) => {
@@ -558,7 +557,7 @@ function createPolicyStore(database: Database): ApprovalPolicyStore {
      * not at all, and the row says who saved them, the team rules either side, and the sentence.
      */
     async createTeamRules(by, inputs, authoring) {
-      return database.transaction(async (tx) => {
+      return withAuditTransaction(database, async (tx, deferTap) => {
         const executor = tx as unknown as Database;
         const before = await teamRuleRows(executor);
         const rows = inputs.length
@@ -573,7 +572,7 @@ function createPolicyStore(database: Database): ApprovalPolicyStore {
               )
               .returning()
           : [];
-        await recordAuditEvent(createAuditStore(executor), {
+        await recordAuditEvent(createAuditStore(tx, deferTap), {
           eventType: "approval.rule_changed",
           targetType: "approval_rule",
           targetId: TEAM,
@@ -614,7 +613,7 @@ function createPolicyStore(database: Database): ApprovalPolicyStore {
      */
     async setReviewerGuidance(by, change) {
       const after = change.text?.trim() || null;
-      return database.transaction(async (tx) => {
+      return withAuditTransaction(database, async (tx, deferTap) => {
         const [current] = await tx
           .select({ guidance: approvalTeamSettings.reviewerGuidance })
           .from(approvalTeamSettings)
@@ -632,7 +631,7 @@ function createPolicyStore(database: Database): ApprovalPolicyStore {
               updatedAt: sql`now()`,
             },
           });
-        await recordAuditEvent(createAuditStore(tx as unknown as Database), {
+        await recordAuditEvent(createAuditStore(tx, deferTap), {
           eventType: "approval.guidance_changed",
           targetType: "approval_settings",
           targetId: TEAM,

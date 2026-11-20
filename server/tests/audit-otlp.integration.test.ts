@@ -181,8 +181,72 @@ test("the installed audit tap exports only a successful PostgreSQL row as a boun
   }
 });
 
+test("the persisted policy verdict reaches OTLP with reviewed facets only", async () => {
+  const requests: string[] = [];
+  const collector = serveCollector(async (request) => {
+    requests.push(await request.text());
+    return new Response("{}");
+  });
+  const exporter = createOtelEventExporter({
+    ...deployment,
+    OTEL_EXPORTER_OTLP_ENDPOINT: collector.url.href,
+  });
+  if (!exporter) throw new Error("Fixture exporter did not initialize");
+  const removeTap = addAuditTap(exporter.emit);
+  const owner = crypto.randomUUID();
+  const toolRef = `fixture/${crypto.randomUUID()}`;
+  const ruleId = crypto.randomUUID();
+  const outcome = {
+    behaviour: "ask",
+    source: "personal_rule",
+    ruleId,
+    reason: "private policy explanation",
+  } as const;
+  try {
+    await database
+      .insert(users)
+      .values({ id: owner, email: `${owner}@example.test` });
+    const policy = createApprovalStore(database).policy;
+    if (!policy) throw new Error("Fixture policy store is unavailable");
+    await policy.recordDecision({
+      ownerUserId: owner,
+      botId: "fixture-bot",
+      toolRef,
+      effect: "write",
+      scope: "project",
+      outcome,
+    });
+
+    const { events } = await reader.list({ targetId: toolRef, limit: 1 });
+    const [persisted] = events;
+    if (!persisted) throw new Error("Fixture approval verdict did not persist");
+    expect(persisted.payload.outcome).toEqual(outcome);
+    await exporter.shutdown();
+    const wire = requests.join("");
+    expect(wire).toContain(persisted.id);
+    for (const [key, value] of Object.entries({
+      outcome: "ask",
+      reason_code: "personal_rule",
+      policy_rule_id: ruleId,
+      tool: toolRef,
+      effect: "write",
+    })) {
+      expect(wire).toContain(
+        JSON.stringify(stringAttribute(`openbot.facet.${key}`, value)),
+      );
+    }
+    expect(wire).not.toContain(outcome.reason);
+  } finally {
+    removeTap();
+    await exporter.shutdown();
+    collector.stop(true);
+    await database.delete(users).where(eq(users.id, owner));
+  }
+});
+
 test.each([
   "complete",
+  "analytics disabled",
   "explicit precedence",
   "partially invalid",
   "different run",
@@ -203,19 +267,26 @@ test.each([
     const threadId = "conversation-thread";
     const rootTaskId = "a".repeat(64);
     const parentRunId = "interrupted-run";
-    const fullLineage =
-      variant === "complete" || variant === "explicit precedence";
+    const fullLineage = [
+      "complete",
+      "analytics disabled",
+      "explicit precedence",
+    ].includes(variant);
     const privacyKey = "approval-fixture";
     const productEvents: unknown[] = [];
+    const analyticsEnabled = variant !== "analytics disabled";
     const telemetry = await createProductTelemetry({
       privacyKey,
       send: async (event) => {
         productEvents.push(event);
       },
       deploymentId: deployment.DEPLOYMENT_ID,
-      env: { OPENBOT_PRODUCT_TELEMETRY: "1", NODE_ENV: "test" },
+      env: {
+        OPENBOT_PRODUCT_TELEMETRY: analyticsEnabled ? "1" : "0",
+        NODE_ENV: "test",
+      },
     });
-    const context = await telemetry.prepare({
+    const prepared = await telemetry.prepare({
       actorUserId: owner,
       runId: variant === "different run" ? "another-run" : runId,
       threadId: variant === "different thread" ? "another-thread" : threadId,
@@ -226,9 +297,9 @@ test.each([
       parentRunId:
         variant === "partially invalid" ? "path with spaces" : parentRunId,
     });
-    if (!context)
-      throw new Error("Product telemetry did not prepare the fixture");
-    const forwardedProps = productRunForwardedProps({}, context);
+    if (!prepared) throw new Error("Audit lineage fixture was not prepared");
+    expect(Boolean(prepared.context)).toBe(analyticsEnabled);
+    const forwardedProps = productRunForwardedProps({}, prepared);
     if (variant === "tampered proof")
       forwardedProps[AUDIT_RUN_PROOF_KEY] =
         `${forwardedProps[AUDIT_RUN_PROOF_KEY]}.tampered`;
@@ -236,7 +307,7 @@ test.each([
     if (variant === "historical browser") {
       delete forwardedProps[AUDIT_RUN_PROOF_KEY];
       forwardedProps.openbotTelemetry = {
-        ...context,
+        ...prepared.context,
         parent_run_id: "historical-parent",
         root_task_id: "b".repeat(64),
         attempt_id: "historical-attempt",
@@ -345,7 +416,8 @@ test.each([
         ],
       });
       expect(wire).not.toMatch(/trace_?id|span_?id/i);
-      expect(wire).not.toContain(context.user_id);
+      const productUserId = prepared.context?.user_id;
+      if (productUserId) expect(wire).not.toContain(productUserId);
       expect(wire).not.toMatch(
         /another-run|another-thread|ambient-|openbotAuditRunProof/,
       );
@@ -353,14 +425,18 @@ test.each([
       if (!fullLineage && variant !== "partially invalid")
         expect(wire).not.toContain("attempt_id");
       await telemetry.flush();
-      expect(productEvents).toEqual([
-        expect.objectContaining({
-          properties: expect.objectContaining({
-            source_event: "approval.person_decided",
-            user_id: context.user_id,
-          }),
-        }),
-      ]);
+      expect(productEvents).toEqual(
+        analyticsEnabled
+          ? [
+              expect.objectContaining({
+                properties: expect.objectContaining({
+                  source_event: "approval.person_decided",
+                  user_id: productUserId,
+                }),
+              }),
+            ]
+          : [],
+      );
       if (variant === "explicit precedence") {
         expect(productEvents).toEqual([
           expect.objectContaining({

@@ -55,9 +55,17 @@ export type OpenBotRuntimeRecord = OpenBotEnvelope<
   error_category?: string;
 };
 
+const auditDiagnostics = {
+  audit_projection_failed: "invalid_facet",
+  audit_export_failed: "export_error",
+  audit_export_configuration_invalid: "invalid_export_configuration",
+  audit_export_deployment_invalid: "invalid_deployment_id",
+  audit_export_paused: undefined,
+} as const;
+
 export function auditExportDiagnostic(
   deploymentId: string,
-  category: "audit_projection_failed" | "audit_export_failed",
+  category: keyof typeof auditDiagnostics,
 ): OpenBotRuntimeRecord {
   return {
     stream: "openbot_runtime",
@@ -68,12 +76,11 @@ export function auditExportDiagnostic(
     data_class: "runtime",
     projection_status: "known",
     occurred_at: new Date().toISOString(),
-    severity: "warn",
+    severity: category === "audit_export_paused" ? "info" : "warn",
     component: "telemetry",
     event_category: category,
-    outcome: "failed",
-    error_category:
-      category === "audit_projection_failed" ? "invalid_facet" : "export_error",
+    outcome: category === "audit_export_paused" ? "succeeded" : "failed",
+    error_category: auditDiagnostics[category],
   };
 }
 
@@ -81,6 +88,29 @@ const boundedIdentifier = /^[A-Za-z0-9_:./-]{1,256}$/;
 const facetId = z.string().regex(/^[A-Za-z0-9_:./-]{1,128}$/);
 const effect = z.enum(["read", "write", "destructive"]);
 const routineOutcome = z.enum(["succeeded", "failed", "skipped", "waiting"]);
+const approvalOutcome = z.object({
+  behaviour: z.enum(["allow", "ask", "hand_off", "deny"]),
+  source: z.enum([
+    "safety",
+    "team_rule",
+    "personal_rule",
+    "auto_review",
+    "default",
+    "person_declined",
+    "conversation",
+    "task",
+  ]),
+  ruleId: z.guid().optional(),
+});
+const appKey = z.string().regex(/^[a-z0-9_-]{1,128}$/);
+const appAccessEvents = new Set([
+  "app_access.requested",
+  "app_access.approved",
+  "app_access.cancelled",
+  "app_access.dismissed",
+  "app_access.owner_granted",
+  "app_access.owner_revoked",
+]);
 const computerFacets = { action: facetId, bot: facetId, tool: facetId };
 
 /** Values that are safe to use as a queryable OpenBot identifier. */
@@ -100,6 +130,7 @@ const facetSchemasByEvent: Record<
     effect,
     tool: facetId,
   },
+  ...Object.fromEntries([...appAccessEvents].map((event) => [event, {}])),
   "channel.routed": {
     fallback: z.boolean(),
     viaMention: z.boolean(),
@@ -224,5 +255,23 @@ export function projectAuditEvent(
     if (result.data !== null) facets[key] = result.data;
   }
 
+  if (
+    event.eventType === "approval.evaluated" &&
+    Object.hasOwn(payload, "outcome")
+  ) {
+    const outcome = approvalOutcome.safeParse(payload.outcome);
+    if (!outcome.success)
+      return { ...common, projection_status: "failed", facets: {} };
+    facets.outcome = outcome.data.behaviour;
+    facets.reason_code = outcome.data.source;
+    if (outcome.data.ruleId) facets.policy_rule_id = outcome.data.ruleId;
+  }
+  // These producers persist a resolved catalogue, broker or stored app key.
+  if (appAccessEvents.has(event.eventType) && Object.hasOwn(payload, "app")) {
+    const app = appKey.safeParse(payload.app);
+    if (!app.success)
+      return { ...common, projection_status: "failed", facets: {} };
+    facets.app_key = app.data;
+  }
   return { ...common, projection_status: "known", facets };
 }

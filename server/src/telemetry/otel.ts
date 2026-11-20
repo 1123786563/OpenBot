@@ -6,10 +6,10 @@
  * The PostgreSQL row remains authoritative. The exported record is a bounded audit projection for
  * platform administration and carries no generic audit payload.
  *
- * Configured with the standard OpenTelemetry environment variables, read by the SDK itself:
+ * The OpenBot audit exporter reads standard OpenTelemetry environment variables:
  * `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`,
- * `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`. Nothing set means nothing is exported and
- * nothing is loaded. `OPENBOT_OTEL_EXPORT=off` turns it off with an endpoint still configured.
+ * and `OTEL_SERVICE_NAME`. A valid `DEPLOYMENT_ID` scopes the copy.
+ * `OPENBOT_OTEL_EXPORT=off` pauses the audit client with an endpoint still configured.
  *
  * Every record carries `openbot.surface`, the counterpart of Grok Bot's `cursor.surface=grok_bot`:
  * `bot` for something a Bot did (computer actions, tool calls, handoffs), `identity` for sign-in and
@@ -18,6 +18,7 @@
  * Never fatal. An unreachable collector drops records after the SDK's own retries, and the audit row
  * in PostgreSQL is still the record of truth.
  */
+import { validateHeaderName, validateHeaderValue } from "node:http";
 import { SeverityNumber } from "@opentelemetry/api-logs";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
@@ -85,14 +86,50 @@ export function parseHeaders(raw: string | undefined): Record<string, string> {
   return headers;
 }
 
+type ExportConfiguration =
+  | { state: "unconfigured" | "paused" | "invalid" | "invalid_deployment" }
+  | {
+      state: "configured";
+      url: string;
+      deploymentId: string;
+      headers: Record<string, string>;
+    };
+
+function exportConfiguration(
+  env: Record<string, string | undefined>,
+): ExportConfiguration {
+  const logsEndpoint = env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT?.trim();
+  const generalEndpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim();
+  if (env.OPENBOT_OTEL_EXPORT?.trim().toLowerCase() === "off")
+    return { state: "paused" };
+  const endpoint = logsEndpoint || generalEndpoint;
+  if (!endpoint) return { state: "unconfigured" };
+  const deploymentId = identifierOf(env.DEPLOYMENT_ID);
+  if (!deploymentId) return { state: "invalid_deployment" };
+  const url = URL.parse(endpoint);
+  if (!url || !["http:", "https:"].includes(url.protocol)) {
+    return { state: "invalid" };
+  }
+  if (!logsEndpoint)
+    url.pathname = `${url.pathname.replace(/\/$/, "")}/v1/logs`;
+  try {
+    const headers = parseHeaders(
+      env.OTEL_EXPORTER_OTLP_LOGS_HEADERS ?? env.OTEL_EXPORTER_OTLP_HEADERS,
+    );
+    for (const [name, value] of Object.entries(headers)) {
+      validateHeaderName(name);
+      validateHeaderValue(name, value);
+    }
+    return { state: "configured", url: url.href, deploymentId, headers };
+  } catch {
+    return { state: "invalid" };
+  }
+}
+
 export function otelConfigured(
   env: Record<string, string | undefined>,
 ): boolean {
-  if (env.OPENBOT_OTEL_EXPORT?.trim().toLowerCase() === "off") return false;
-  return Boolean(
-    env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT?.trim() ||
-      env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim(),
-  );
+  return exportConfiguration(env).state === "configured";
 }
 
 function attributesOf(
@@ -151,32 +188,61 @@ export function createOtelEventExporter(
   env: Record<string, string | undefined> = process.env,
   auditRunProofKey?: string,
 ): EventExporter | undefined {
-  if (!otelConfigured(env)) return undefined;
-  const deploymentId = identifierOf(env.DEPLOYMENT_ID);
-  if (!deploymentId) return undefined;
+  const configuration = exportConfiguration(env);
+  const service = identifierOf(env.OTEL_SERVICE_NAME?.trim()) ?? "openbot";
+  function report(category: Parameters<typeof auditExportDiagnostic>[1]) {
+    const deploymentId = identifierOf(env.DEPLOYMENT_ID) ?? "";
+    console.info(
+      JSON.stringify({
+        ...auditExportDiagnostic(deploymentId, category),
+        service,
+      }),
+    );
+  }
+  if (configuration.state !== "configured") {
+    if (configuration.state === "paused") report("audit_export_paused");
+    if (configuration.state === "invalid")
+      report("audit_export_configuration_invalid");
+    if (configuration.state === "invalid_deployment")
+      report("audit_export_deployment_invalid");
+    return;
+  }
 
-  /*
-   * The endpoint and headers are read from `env` and passed explicitly, so the configuration this
-   * function was given is the one used (the SDK on its own reads only `process.env`). Same rules as
-   * the SDK: the logs endpoint is used as written, the generic one gets `/v1/logs` appended.
-   */
-  const logsEndpoint = env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT?.trim();
-  const url =
-    logsEndpoint ||
-    `${(env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "").trim().replace(/\/$/, "")}/v1/logs`;
-  const exporter = new OTLPLogExporter({
-    url,
-    headers: parseHeaders(
-      env.OTEL_EXPORTER_OTLP_LOGS_HEADERS ?? env.OTEL_EXPORTER_OTLP_HEADERS,
-    ),
-    timeoutMillis: 10_000,
-  });
+  const { deploymentId, url, headers } = configuration;
+  let exporter: OTLPLogExporter;
+  try {
+    exporter = new OTLPLogExporter({ url, headers, timeoutMillis: 10_000 });
+  } catch {
+    report("audit_export_configuration_invalid");
+    return;
+  }
+  let lastExportFailure = -Infinity;
+  function reportExportFailure() {
+    const now = performance.now();
+    if (now - lastExportFailure < 60_000) return;
+    lastExportFailure = now;
+    report("audit_export_failed");
+  }
   const provider = new LoggerProvider({
     resource: resourceFromAttributes({
-      "service.name": env.OTEL_SERVICE_NAME?.trim() || "openbot",
+      "service.name": service,
       "openbot.deployment_id": deploymentId,
     }),
-    processors: [new BatchLogRecordProcessor({ exporter })],
+    processors: [
+      new BatchLogRecordProcessor({
+        exporter: {
+          export(records, callback) {
+            exporter.export(records, (result) => {
+              // The SDK reports final batch delivery through ExportResultCode (SUCCESS = 0).
+              if (result.code !== 0) reportExportFailure();
+              callback(result);
+            });
+          },
+          forceFlush: () => exporter.forceFlush(),
+          shutdown: () => exporter.shutdown(),
+        },
+      }),
+    ],
   });
   const logger = provider.getLogger("openbot.audit");
 
@@ -186,13 +252,7 @@ export function createOtelEventExporter(
         const record = projectAuditEvent(event, deploymentId, auditRunProofKey);
         if (!record) return;
         const failed = record.projection_status === "failed";
-        if (failed) {
-          console.info(
-            JSON.stringify(
-              auditExportDiagnostic(deploymentId, "audit_projection_failed"),
-            ),
-          );
-        }
+        if (failed) report("audit_projection_failed");
         const severity = failed
           ? SeverityNumber.WARN
           : severityOf(record.event_type);
@@ -204,11 +264,7 @@ export function createOtelEventExporter(
           attributes: attributesOf(record, surfaceOf(record.event_type)),
         });
       } catch {
-        console.info(
-          JSON.stringify(
-            auditExportDiagnostic(deploymentId, "audit_export_failed"),
-          ),
-        );
+        reportExportFailure();
       }
     },
     shutdown: () => provider.shutdown(),

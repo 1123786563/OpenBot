@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import { createOtelEventExporter } from "../src/telemetry/otel";
+import { createOtelEventExporter, otelConfigured } from "../src/telemetry/otel";
 
 /**
  * The audit trail keeps the command a Bot ran in full; what leaves for an outside collector must
@@ -110,3 +110,77 @@ test("a rejected facet emits a bounded runtime diagnostic and a public failed au
   expect(wire).not.toContain("openbot.facet.");
   expect(wire + diagnostics.join("")).not.toContain(secret);
 });
+
+test("an asynchronous OTLP rejection produces a fixed local diagnostic", async () => {
+  const collector = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Response("private upstream error", { status: 400 }),
+  });
+  const log = spyOn(console, "info").mockImplementation(() => {});
+  try {
+    const exporter = createOtelEventExporter({
+      DEPLOYMENT_ID: "test-deployment",
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: `${collector.url}v1/logs`,
+    });
+    exporter?.emit({
+      id: "3967be97-04d1-4ffa-a6aa-d71af0b78f18",
+      createdAt: new Date(),
+      eventType: "computer.action_allowed",
+      targetType: "computer",
+      initiatorKind: "person",
+      initiatorId: null,
+      payload: {},
+    });
+    await exporter?.shutdown().catch(() => {});
+    expect(log.mock.calls.map(([line]) => JSON.parse(line))).toEqual([
+      expect.objectContaining({
+        event_category: "audit_export_failed",
+        error_category: "export_error",
+      }),
+    ]);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(
+      "private upstream error",
+    );
+  } finally {
+    log.mockRestore();
+    collector.stop(true);
+  }
+});
+
+test.each([
+  [{}, "audit_export_deployment_invalid"],
+  [{ DEPLOYMENT_ID: "invalid deployment" }, "audit_export_deployment_invalid"],
+  [
+    {
+      DEPLOYMENT_ID: "test-deployment",
+      OTEL_EXPORTER_OTLP_LOGS_HEADERS: "token=private%0Ainvalid",
+    },
+    "audit_export_configuration_invalid",
+  ],
+  [
+    { DEPLOYMENT_ID: "test-deployment", OPENBOT_OTEL_EXPORT: " OFF " },
+    "audit_export_paused",
+  ],
+])(
+  "disabled audit exporter reports its bounded state",
+  (environment, eventCategory) => {
+    const log = spyOn(console, "info").mockImplementation(() => {});
+    try {
+      const env = {
+        ...environment,
+        OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: "http://127.0.0.1:4318/v1/logs",
+      };
+      expect(createOtelEventExporter(env)).toBeUndefined();
+      expect(otelConfigured(env)).toBe(false);
+      expect(log.mock.calls.map(([line]) => JSON.parse(line))).toEqual([
+        expect.objectContaining({ event_category: eventCategory }),
+      ]);
+      expect(JSON.stringify(log.mock.calls)).not.toContain(
+        "invalid deployment",
+      );
+    } finally {
+      log.mockRestore();
+    }
+  },
+);

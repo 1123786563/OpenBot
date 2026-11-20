@@ -102,18 +102,19 @@ test.each(["historical", "verified"])(
   "headless resume preserves product lineage and verifies %s audit ancestry",
   async (variant) => {
     const { telemetry } = await fixture();
-    const parent = await telemetry.prepare({
+    const prepared = await telemetry.prepare({
       actorUserId: "actor",
       threadId: input.threadId,
       runId: "parent",
       trigger: "human",
       surface: "web",
     });
+    const parent = prepared?.context;
     if (!parent?.root_task_id)
       throw new Error("Missing parent fixture context");
     const forwardedProps =
       variant === "verified"
-        ? productRunForwardedProps({}, parent)
+        ? productRunForwardedProps({}, prepared)
         : { openbotTelemetry: parent };
     const resumed = await productHeadlessBoundary(telemetry)(input, {
       ownerUserId: "actor",
@@ -178,4 +179,28 @@ test("custom remote clone retains product middleware and full forwarded context"
   expect(
     f.sent.find((e) => e.event.endsWith("run_terminal"))?.properties,
   ).toMatchObject({ trigger: "routine", outcome: "success" });
+});
+
+test("a run retains verified audit lineage with product telemetry disabled", async () => {
+  const telemetry = await createProductTelemetry({
+    privacyKey: "synthetic-key",
+    deploymentId: "deployment",
+    env: { OPENBOT_PRODUCT_TELEMETRY: "0" },
+  });
+  const enriched = await productHeadlessBoundary(telemetry)(input, {
+    ownerUserId: "actor",
+    routineId: "routine",
+    agentId: "bot",
+    threadId: input.threadId,
+    instruction: "private",
+    telemetry: { trigger: "routine" },
+  });
+  expect(telemetry.enabled()).toBe(false);
+  expect(enriched.forwardedProps?.openbotTelemetry).toBeUndefined();
+  expect(enriched.forwardedProps?.__copilotkitAnalyticsContext).toBeUndefined();
+  expect(telemetry.auditLineageOf("actor", enriched)).toMatchObject({
+    attemptId: input.runId,
+    rootTaskId: expect.stringMatching(/^[a-f0-9]{64}$/),
+  });
+  expect(telemetry.auditLineageOf("another-actor", enriched)).toBeUndefined();
 });

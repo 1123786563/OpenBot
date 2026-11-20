@@ -15,6 +15,20 @@ The isolated drill for #85 ran on November 20, 2026 UTC. OpenBot revision `e959b
 | Previous-revision rollback | OpenBot `414f577730fd0774d50a75ed60e291ca30159725` started against the same database with the endpoint removed and the Collector stopped. Health and the setting write succeeded. Audit UUID `5542735d-d7f7-4d99-9d8f-9a83e37a1bcc` existed in PostgreSQL and had zero OpenObserve hits. No migrator ran. The ordered migration ledger hash and count remained `836501840a71d12ca91daf62b559bf01\|89`. |
 | Query access | The isolated nginx Basic-auth query gateway returned 200 for both `/web/` and a deployment-filtered search for the configured admin. Both routes returned 401 for anonymous requests and for the synthetic workspace-member and ingest usernames. OpenObserve used a loopback bootstrap endpoint for fixture setup. |
 
+## Final review rerun
+
+The local release drill ran again on November 20, 2026 UTC against PostgreSQL 17, Collector Contrib 0.139.0, and the same OpenObserve build. The results below cover the revised deployment pause procedure.
+
+| Check | Observed result |
+| --- | --- |
+| Dual delivery | Audit event `f9ef7bfd-1732-40f9-adca-c453845d6d6a` and the API's `api_listening` event reached their respective streams with deployment `acceptance85` and schema version 1. The runtime event included `service=openbot`. |
+| Saved approval lineage | OpenObserve returned both saved approval decisions, including audit UUID `0b5b36b3-3873-40c5-877c-159b9940dc2c` with product telemetry off. Both copies carried the stored run ID, thread ID, parent Run ID, root task ID, attempt ID, and work item key. |
+| Coordinated pause | With `OPENBOT_OTEL_EXPORT=off` on OpenBot and the Collector, the API still served health and committed audit UUID `92e9a293-9172-4d0e-a4e0-4adaf518c29d`. Local stdout contained `audit_export_paused` and `api_listening`. OpenObserve returned zero hits for the audit UUID and for the startup record at `2026-11-20T13:04:07.549Z`. |
+| No endpoint | With the API OTLP endpoint unset and the Collector stopped, audit UUID `568fd333-6beb-4be9-863d-43b57b4fa15a` persisted in PostgreSQL, startup was visible locally, and the UUID had zero OpenObserve hits. |
+| Outage and recovery | PostgreSQL retained the audit row written during the OpenObserve outage. The enabled and paused Bot fixtures completed their model and tool calls and read Activity. The Collector exhausted its retry window. A fresh UUID reached OpenObserve after recovery, and the outage UUID stayed absent. |
+| Independent retention | OpenObserve kept the 30-day runtime and 90-day audit settings and both original-data settings off. The seven-day PostgreSQL sweep deleted the old fixture row, and a fresh OpenObserve audit copy remained queryable. |
+| Rollback and query access | The API at `414f5777` served health and wrote audit with the Collector stopped. The PostgreSQL migration ledger kept its previous hash and 89 rows. The nginx fixture allowed the platform admin to open the UI and query the audit stream. It returned 401 for the anonymous, workspace-member, and ingest requests. |
+
 ## Repeat the drill
 
 Run these steps from a clean checkout. Keep host endpoints on loopback and use disposable data. The commands assume Bash, Docker, Bun, Python 3, curl, jq, and OpenSSL.
@@ -36,7 +50,7 @@ oo_header=$(printf %s "$oo_auth" | base64)
 docker run -d --name openbot85-col --network openbot85 -p 127.0.0.1::4318 \
   -v "$fixture:/fixture:ro" -v "$source_root/docs/examples/openobserve-collector.yaml:/config.yaml:ro" \
   -e OPENBOT_DEPLOYMENT_ID=acceptance85 -e OPENBOT_RUNTIME_LOG_GLOB=/fixture/api.cri \
-  -e OPENBOT_RUNTIME_COMPONENT=api \
+  -e OPENBOT_RUNTIME_COMPONENT=api -e OPENBOT_OTEL_EXPORT=on \
   -e OPENOBSERVE_OTLP_LOGS_URL=http://openbot85-oo:5080/api/default/v1/logs \
   -e "OPENOBSERVE_RUNTIME_AUTHORIZATION=Basic $oo_header" \
   -e "OPENOBSERVE_AUDIT_AUTHORIZATION=Basic $oo_header" \
@@ -147,9 +161,11 @@ query "SELECT * FROM openbot_runtime WHERE deployment_id='acceptance85' AND even
    audit_copy "$audit_id" | jq -e '.hits | length > 0'
    ```
 
-2. For lineage and Bot continuity, copy the #83 fixture temporarily beside the original. Change its deployment ID from `audit-integration` to `acceptance85`. In the request handlers for the approval lineage and Bot tests, keep the captured request and forward the same JSON bytes to `$collector/v1/logs` with `Content-Type: application/json`. Check the forwarded response is 2xx. In the complete-lineage case, read `approvalRequests.runId` by `decidedId` before cleanup and compare it to the fixture run ID. Print the audit UUID from `events[0].id`. Run the temporary test with `TEST_DATABASE_URL="$pg_url"` and `--test-name-pattern 'saved approval continuation with complete|produces Activity and audit with export (enabled|paused)$'`. Use `audit_copy` with the printed UUID and compare its stored lineage to the fixture. The fixture uses LLMock and a loopback tool. [Business integration fixture](../server/tests/audit-otlp.integration.test.ts)
+2. For lineage and Bot continuity, copy the #83 fixture temporarily beside the original. Change its deployment ID from `audit-integration` to `acceptance85`. In the request handlers for the approval lineage and Bot tests, keep the captured request and forward the same JSON bytes to `$collector/v1/logs` with `Content-Type: application/json`. Check the forwarded response is 2xx. In both the complete-lineage and analytics-disabled cases, read `approvalRequests.runId` by `decidedId` before cleanup and compare it to the fixture run ID. Print the audit UUID from `events[0].id`. Run the temporary test with `TEST_DATABASE_URL="$pg_url"` and `--test-name-pattern 'saved approval continuation with (complete|analytics disabled)|produces Activity and audit with export (enabled|paused)$'`. Use `audit_copy` with the printed UUID and compare its stored lineage to the fixture. The fixture uses LLMock and a loopback tool. [Business integration fixture](../server/tests/audit-otlp.integration.test.ts)
 3. Stop `openbot85-oo` while Collector and OpenBot stay up. Call health and `write_audit true`. Query the resulting UUID in PostgreSQL and rerun the enabled and paused Bot cases from step 2. Let the Collector's 30-second retry window expire and inspect `docker logs openbot85-col` for dropped audit batches. Start OpenObserve, refresh its published port, and wait for `/config` to return 200. Write a fresh audit event and poll `audit_copy` for it. Verify the outage UUID remains absent.
-4. Restart OpenBot with `OTEL_EXPORTER_OTLP_ENDPOINT="$collector"` and `OPENBOT_OTEL_EXPORT=off`. Write another audit event. Verify its PostgreSQL row and confirm zero OpenObserve hits after the export interval. To stop runtime delivery as well, remove the deployment's runtime reader or stop the dedicated Collector.
+4. Recreate the Collector from the setup command with `OPENBOT_OTEL_EXPORT=off`. Refresh `collector` from its published port and wait for `Started watching file` in the Collector logs. Restart OpenBot with that endpoint and `OPENBOT_OTEL_EXPORT=off`. Write another audit event. Verify its PostgreSQL row and confirm zero OpenObserve hits after the export interval. Find the new `api_listening` record and `audit_export_paused` in `$fixture/api.cri`. Query `openbot_runtime` by the startup record's exact `occurred_at` and deployment ID. Expect zero hits.
+
+   To check endpoint removal, stop the Collector and start OpenBot without either OTLP endpoint. Write an audit event, verify its PostgreSQL row, and confirm zero OpenObserve hits. Verify startup output in `$fixture/api.cri`. The isolated Collector fixture also checks that both pipelines emit zero records without an OpenObserve destination.
 5. For rollback, save the migration ledger before stopping the API. Extract `git archive 414f5777` to a disposable directory and install that revision's dependencies with `bun install --frozen-lockfile`. Stop the Collector and start the extracted API using `start_api` with no exporter variables. Skip the migration command. Run health, `write_audit`, and the PostgreSQL audit query against the same database. Compare the before and after ledger using the following query.
 
    ```sql
@@ -160,12 +176,20 @@ query "SELECT * FROM openbot_runtime WHERE deployment_id='acceptance85' AND even
 6. To repeat the local query boundary check, run nginx 1.28 on `openbot85` with a loopback-published port. Apply `auth_basic` to the whole server, use an `openssl passwd -apr1` entry for `platform-admin` as the sole user, override upstream `Authorization` with `Basic $oo_header`, and proxy to `http://openbot85-oo:5080`. Check `GET /web/` and `POST /api/default/_search?type=logs` with the admin, the two other usernames, and no credentials. Restart nginx if OpenObserve's internal IP changes.
 7. Stop the fixture API, remove the temporary test, and remove the fixture containers and network.
 
-## Repository checks
+## Original repository checks
 
 - `bun run lint`, `bun run format:check`, and `bun run typecheck` passed. `bun run typecheck:tests` passed against its checked-in baseline of 223 known diagnostics.
 - `TEST_DATABASE_URL="$pg_url" bun test --timeout 30000 server/tests/{audit-otlp.integration,audit-retention.integration,audit-approval-outcomes.integration,activity-plumbing-rows.integration,audit-export,otel-export-scrubbing,runtime-log,openobserve-link}.test.ts` passed 74 tests.
 - `helm dependency build charts/openbot` and `bun test tests/chart-openobserve.test.ts` passed all six Helm cases using Helm 3.19.0.
 - `OTELCOL_CONTRIB=/path/to/otelcol-contrib python3 docs/examples/check-openobserve-collector.py` passed with Collector Contrib 0.139.0. It observed six runtime and two audit records and excluded the private sentinel.
+
+## Final review repository checks
+
+- The targeted Bun suite passed 306 tests across 24 files. It covered audit, Activity, approval, Recorder, app access, admin controls, runtime logs, and product telemetry. The tests used an isolated PostgreSQL 17 database.
+- Helm 3.19.0 rendered all six OpenObserve chart cases. The workspace typecheck, test typecheck against the 223-diagnostic baseline, lint, and format checks passed.
+- The real Collector Contrib 0.139.0 fixture received seven runtime records and six audit records. Both output files stayed empty with a missing deployment ID, an invalid deployment ID, a pause, or a missing endpoint.
+- The PostgreSQL retirement regression forced the second audit write to fail. The rollback left both links active, left no audit rows, and sent no OTLP request. The successful retry exported both committed audit IDs.
+- The OTLP fixtures exercised both the generic endpoint and the logs-specific endpoint. Final HTTP failures appeared in the local runtime diagnostics without upstream response text.
 
 ## Staging checks
 

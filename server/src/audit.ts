@@ -1081,7 +1081,7 @@ const auditTaps = new Set<AuditTap>();
 /**
  * Hear every row after it is written: the OpenTelemetry/SIEM exporter and Action Recording.
  *
- * After the insert, and only when it succeeded, so nothing is streamed that the trail does not hold.
+ * Taps run after PostgreSQL commits the insert.
  * A tap that throws is logged and ignored: streaming a row must never fail writing it.
  */
 export function addAuditTap(tap: AuditTap): () => void {
@@ -1089,9 +1089,35 @@ export function addAuditTap(tap: AuditTap): () => void {
   return () => auditTaps.delete(tap);
 }
 
-export function createAuditStore(
+type AuditTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+type DeferAuditTap = (publish: () => void) => void;
+
+export type TransactionAuditStore = (
+  transaction: AuditTransaction,
+  deferTap: DeferAuditTap,
+) => AuditStore;
+
+/** Keep the audit insert atomic with the business write and publish taps after commit. */
+export async function withAuditTransaction<T>(
   database: Database,
-  deferTap?: (publish: () => void) => void,
+  write: (transaction: AuditTransaction, deferTap: DeferAuditTap) => Promise<T>,
+): Promise<T> {
+  const pendingTaps: Array<() => void> = [];
+  const result = await database.transaction((transaction) =>
+    write(transaction, (publish) => pendingTaps.push(publish)),
+  );
+  for (const publish of pendingTaps) publish();
+  return result;
+}
+
+export function createAuditStore(database: Database): AuditStore;
+export function createAuditStore(
+  transaction: AuditTransaction,
+  deferTap: DeferAuditTap,
+): AuditStore;
+export function createAuditStore(
+  database: Database | AuditTransaction,
+  deferTap?: DeferAuditTap,
 ): AuditStore {
   return {
     insert: async (

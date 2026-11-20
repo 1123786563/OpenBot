@@ -204,3 +204,45 @@ test("no replica is made without the persisted row identity, event time, and dep
   expect(projectAuditEvent(auditEvent, "")).toBeUndefined();
   expect(projectAuditEvent(auditEvent, "invalid deployment")).toBeUndefined();
 });
+
+test("approval evaluation projects the persisted verdict and coded source without reviewer text", () => {
+  const ruleId = "3c55db61-f955-4596-b96d-7d2c5dfaf256";
+  const projected = projectAuditEvent(
+    {
+      ...auditEvent,
+      eventType: "approval.evaluated",
+      payload: {
+        outcome: {
+          behaviour: "ask",
+          source: "personal_rule",
+          ruleId,
+          reason: "private reason",
+          review: { reason: "private reviewer output" },
+        },
+      },
+    },
+    "staging-1",
+  );
+  expect(projected?.facets).toEqual({
+    outcome: "ask",
+    reason_code: "personal_rule",
+    policy_rule_id: ruleId,
+  });
+  expect(JSON.stringify(projected)).not.toContain("private");
+});
+
+test("app access preserves its catalogue key and drops an arbitrary app description", () => {
+  const event = { ...auditEvent, eventType: "app_access.requested" };
+  expect(
+    projectAuditEvent(
+      { ...event, payload: { app: "composio-github", description: "private" } },
+      "staging-1",
+    )?.facets,
+  ).toEqual({ app_key: "composio-github" });
+  expect(
+    projectAuditEvent(
+      { ...event, payload: { app: "private app description" } },
+      "staging-1",
+    ),
+  ).toMatchObject({ projection_status: "failed", facets: {} });
+});

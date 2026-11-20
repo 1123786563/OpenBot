@@ -2,9 +2,9 @@ import type { CopilotRuntimeHooks } from "@copilotkit/runtime/v2";
 import type { createTurnRunner, TurnRunner } from "@openbot/toolkit/run-turn";
 import type { IdentifyActor } from "../copilot";
 import type { DeliveryInbox } from "../delivery/types";
+import { AUDIT_RUN_PROOF_KEY } from "./audit-run-proof";
 import {
   appAnalyticsContext,
-  productAuditRunProof,
   type ProductTelemetry,
   productRunForwardedProps,
   type RunPreparation,
@@ -24,8 +24,7 @@ export function productRuntimeHook(
 /**
  * A browser run's request, with this deployment's context in its forwardedProps.
  *
- * Whatever the browser put under the same keys is replaced, and with telemetry off it is removed,
- * so the runtime's thread lock never carries a context this deployment did not state.
+ * Replace browser-supplied claims. The runtime thread lock carries analytics context only when enabled.
  */
 export async function prepareProductRequest(
   telemetry: ProductTelemetry,
@@ -49,7 +48,7 @@ export async function prepareProductRequest(
     const lastUser = [...messages]
       .reverse()
       .find((m) => m?.role === "user" && typeof m.id === "string");
-    const context = await telemetry.prepare({
+    const prepared = await telemetry.prepare({
       actorUserId: actor.id,
       threadId: body.threadId,
       runId: body.runId,
@@ -63,7 +62,7 @@ export async function prepareProductRequest(
         ...body,
         forwardedProps: productRunForwardedProps(
           "forwardedProps" in body ? body.forwardedProps : undefined,
-          context,
+          prepared,
         ),
       }),
     });
@@ -84,7 +83,7 @@ export function productHeadlessBoundary(
     const snapshot = turn.continuation?.snapshot;
     const savedAuditLineage =
       snapshot && telemetry.auditLineageOf(turn.ownerUserId, snapshot);
-    const context = await telemetry.prepare(
+    const prepared = await telemetry.prepare(
       {
         actorUserId: turn.ownerUserId,
         threadId: input.threadId,
@@ -116,7 +115,7 @@ export function productHeadlessBoundary(
     );
     return {
       ...input,
-      forwardedProps: productRunForwardedProps(input.forwardedProps, context),
+      forwardedProps: productRunForwardedProps(input.forwardedProps, prepared),
     };
   };
 }
@@ -142,15 +141,15 @@ export async function productHandoffInput<
   actorUserId: string,
   parentRunId: string,
 ) {
-  const context = await telemetry.prepare(
+  const prepared = await telemetry.prepare(
     handoffPreparation(input, actorUserId, parentRunId),
   );
   return {
     ...input,
     forwardedProps: {
       ...input.forwardedProps,
-      openbotTelemetry: context,
-      ...productAuditRunProof(context),
+      openbotTelemetry: prepared?.context,
+      [AUDIT_RUN_PROOF_KEY]: prepared?.auditProof,
     },
   };
 }
@@ -165,9 +164,11 @@ export async function productHandoffAnalyticsContext(
   parentRunId: string,
 ) {
   return appAnalyticsContext(
-    await telemetry.prepare(
-      handoffPreparation(input, actorUserId, parentRunId),
-    ),
+    (
+      await telemetry.prepare(
+        handoffPreparation(input, actorUserId, parentRunId),
+      )
+    )?.context,
   );
 }
 /**

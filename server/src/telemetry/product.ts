@@ -15,7 +15,7 @@ import {
   signAuditRun,
 } from "./audit-run-proof";
 
-const auditProofs = new WeakMap<ProductRunContext, string>();
+type PreparedRun = { context?: ProductRunContext; auditProof: string };
 
 export type ProductTrigger =
   | "human"
@@ -389,30 +389,49 @@ export async function createProductTelemetry(options: {
   async function prepare(
     input: RunPreparation,
     auditInheritance?: { parentRunId?: string; rootTaskId?: string },
-  ): Promise<ProductRunContext | undefined> {
+  ): Promise<PreparedRun | undefined> {
     if (
-      !enabled ||
       !boundedId.safeParse(input.threadId).success ||
       !boundedId.safeParse(input.runId).success
     )
       return;
     const userId = user(input.actorUserId);
+    const startsRoot = input.trigger === "human" || input.trigger === "routine";
+    const productRoot = startsRoot
+      ? stableId(`${userId}:${input.rootTaskId ?? input.runId}`)
+      : input.inheritedRootTaskId && taskHash.test(input.inheritedRootTaskId)
+        ? input.inheritedRootTaskId
+        : null;
+    const productParent = boundedId.safeParse(input.parentRunId).data;
+    const auditParent = auditInheritance
+      ? auditInheritance.parentRunId
+      : productParent;
+    const auditRoot =
+      !startsRoot && auditInheritance
+        ? auditInheritance.rootTaskId
+        : productRoot;
+    // The signed proof survives saved continuations regardless of the analytics preference.
+    const auditProof = signAuditRun(
+      {
+        runId: input.runId,
+        threadId: input.threadId,
+        parentRunId: boundedId.safeParse(auditParent).data,
+        rootTaskId:
+          auditRoot && taskHash.test(auditRoot) ? auditRoot : undefined,
+        attemptId: input.runId,
+      },
+      input.actorUserId,
+      options.privacyKey,
+    );
+    if (!enabled) return { auditProof };
     const context: ProductRunContext = {
       schema_version: 1,
       app_id: "openbot",
       deployment_id: deploymentId,
       user_id: userId,
-      root_task_id:
-        input.trigger === "human" || input.trigger === "routine"
-          ? stableId(`${userId}:${input.rootTaskId ?? input.runId}`)
-          : input.inheritedRootTaskId &&
-              taskHash.test(input.inheritedRootTaskId)
-            ? input.inheritedRootTaskId
-            : null,
+      root_task_id: productRoot,
       run_id: input.runId,
-      ...(input.parentRunId && boundedId.safeParse(input.parentRunId).success
-        ? { parent_run_id: input.parentRunId }
-        : {}),
+      ...(productParent ? { parent_run_id: productParent } : {}),
       attempt_id: input.runId,
       attempt:
         typeof input.attempt === "number" &&
@@ -425,33 +444,7 @@ export async function createProductTelemetry(options: {
       environment,
       purpose: input.purpose ?? "ordinary",
     };
-    // The audit copy can outlive the run and cross processes via the saved continuation.
-    // Keep its issuer proof separate from the product telemetry contract.
-    const inheritsRoot =
-      input.trigger !== "human" && input.trigger !== "routine";
-    const parentRunId = auditInheritance
-      ? auditInheritance.parentRunId
-      : context.parent_run_id;
-    const rootTaskId =
-      inheritsRoot && auditInheritance
-        ? auditInheritance.rootTaskId
-        : context.root_task_id;
-    auditProofs.set(
-      context,
-      signAuditRun(
-        {
-          runId: input.runId,
-          threadId: input.threadId,
-          parentRunId: boundedId.safeParse(parentRunId).data,
-          rootTaskId:
-            rootTaskId && taskHash.test(rootTaskId) ? rootTaskId : undefined,
-          attemptId: context.attempt_id,
-        },
-        input.actorUserId,
-        options.privacyKey,
-      ),
-    );
-    return context;
+    return { context, auditProof };
   }
   /*
    * Only a run this deployment stated as work is counted: a person's, a routine's, a subagent's, a
@@ -730,15 +723,12 @@ export function appAnalyticsContext(
     attempt: context.attempt,
   };
 }
-export function productAuditRunProof(context: ProductRunContext | undefined) {
-  return { [AUDIT_RUN_PROOF_KEY]: context && auditProofs.get(context) };
-}
-
 /** Attach this deployment's run context and replace client values under the reserved keys. */
 export function productRunForwardedProps(
   forwardedProps: unknown,
-  context: ProductRunContext | undefined,
+  prepared: PreparedRun | undefined,
 ): Record<string, unknown> {
+  const context = prepared?.context;
   const own = Object.fromEntries(
     Object.entries(isRecord(forwardedProps) ? forwardedProps : {}).filter(
       ([key]) =>
@@ -750,9 +740,8 @@ export function productRunForwardedProps(
   const analytics = appAnalyticsContext(context);
   return {
     ...own,
-    ...(context
-      ? { openbotTelemetry: context, ...productAuditRunProof(context) }
-      : {}),
+    ...(prepared ? { [AUDIT_RUN_PROOF_KEY]: prepared.auditProof } : {}),
+    ...(context ? { openbotTelemetry: context } : {}),
     ...(analytics ? { [ANALYTICS_CONTEXT_KEY]: analytics } : {}),
   };
 }

@@ -17,10 +17,7 @@ CONFIG = Path(__file__).resolve().with_name("openobserve-collector.yaml")
 DEPLOYMENT = "fixture-east"
 RAW_COMPONENT = "worker"
 RAW_DIAGNOSTIC = "Unmigrated process log line."
-CATALOGUE_DIAGNOSTIC = (
-    "No identity provider is configured. All requests have administrator access. "
-    "Configure GOOGLE_OAUTH_*, MICROSOFT_OAUTH_* or OKTA_OAUTH_*."
-)
+CATALOGUE_DIAGNOSTIC = "No identity provider is configured."
 UNTRUSTED_IDENTITY = "untrusted-deployment"
 SENTINEL = "PRIVATE_FIXTURE_CONTENT"
 OCCURRED_AT = "2026-01-01T12:00:00.000Z"
@@ -79,7 +76,7 @@ def audit_record(event_type, status, **fields):
     }
 
 
-def send_audit(port):
+def send_audit(port, deployment):
     payload = {
         "resourceLogs": [{
             "schemaUrl": f"https://example.invalid/{SENTINEL}",
@@ -91,9 +88,19 @@ def send_audit(port):
                 "logRecords": [
                     audit_record("approval.person_decided", "known", **{
                         "facet.decision": "allow_once",
+                        "work_item_key": "work:fixture",
+                        "routine_run_id": {"private": SENTINEL},
                         "facet.tool": {"secret": SENTINEL},
                         "facet.scope": SENTINEL,
                     }),
+                    audit_record("routines.run_requested", "known", deployment_id=deployment,
+                                 routine_run_id="routine-run-1"),
+                    audit_record("responsibility.triggered", "known", responsibility_run_id="responsibility-run-1"),
+                    audit_record("approval.evaluated", "known", **{
+                        "facet.outcome": "ask", "facet.reason_code": "personal_rule",
+                        "facet.policy_rule_id": "3c55db61-f955-4596-b96d-7d2c5dfaf256",
+                    }),
+                    audit_record("app_access.requested", "known", **{"facet.app_key": "github"}),
                     audit_record("future.event", "unknown", **{"facet.tool": SENTINEL}),
                     audit_record("approval.person_decided", "known", deployment_id="other"),
                 ],
@@ -127,6 +134,7 @@ def append_runtime(path):
         "deployment_id": DEPLOYMENT, "projection_status": "known",
         "occurred_at": OCCURRED_AT, "severity": "info", "component": "api",
         "event_category": "api_listening", "outcome": "succeeded", "port": 3000,
+        "service": "openbot-api",
         "run_id": "run-fixture", "thread_id": {"secret": SENTINEL},
     }
     legacy = {
@@ -147,7 +155,9 @@ def append_runtime(path):
         structured = json.dumps(current)
         stream.write(crio(structured[:100], tag="P"))
         stream.write(crio(structured[100:]))
-        for record in (legacy, {**legacy, "diagnostic": CATALOGUE_DIAGNOSTIC},
+        for record in (legacy, {**legacy, "diagnostic": "Old producer help text."},
+                       {**current, "event_category": "migration_failed", "outcome": "failed",
+                        "service": {"private": SENTINEL}},
                        {**legacy, "legacy_event": SENTINEL, "diagnostic": RAW_DIAGNOSTIC},
                        {**current, "deployment_id": UNTRUSTED_IDENTITY}):
             stream.write(crio(json.dumps(record)))
@@ -175,15 +185,23 @@ def read_stream(path, stream):
     return fields
 
 
-def check(directory):
+def check(directory, deployment=DEPLOYMENT, switch="on", endpoint="https://example.invalid/api/openbot/v1/logs"):
+    enabled = deployment == DEPLOYMENT and switch == "on" and endpoint
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
     overlay = {
         "receivers": {"otlp/audit": {"protocols": {"http": {"endpoint": f"127.0.0.1:{port}"}}}},
         "exporters": {
-            f"file/{stream}": {"path": str(directory / f"{stream}.jsonl"), "flush_interval": "100ms"}
-            for stream in ("runtime", "audit")
+            **{
+                f"file/{stream}": {"path": str(directory / f"{stream}.jsonl"), "flush_interval": "100ms"}
+                for stream in ("runtime", "audit")
+            },
+            # The Collector validates unused exporters as well. These remain outside both pipelines.
+            **{
+                f"otlphttp/{stream}": {"logs_endpoint": "http://127.0.0.1:1/v1/logs"}
+                for stream in ("runtime", "audit")
+            },
         },
         "service": {
             "telemetry": {"metrics": {"level": "none", "readers": []}},
@@ -198,13 +216,16 @@ def check(directory):
     source.write_text(crio("initial synthetic line"))
     env = {
         **os.environ,
-        "OPENBOT_DEPLOYMENT_ID": DEPLOYMENT,
+        "OPENBOT_DEPLOYMENT_ID": deployment,
+        "OPENBOT_OTEL_EXPORT": switch,
         "OPENBOT_RUNTIME_LOG_GLOB": str(source),
         "OPENBOT_RUNTIME_COMPONENT": RAW_COMPONENT,
-        "OPENOBSERVE_OTLP_LOGS_URL": "https://example.invalid/api/openbot/v1/logs",
+        "OPENOBSERVE_OTLP_LOGS_URL": endpoint,
         "OPENOBSERVE_RUNTIME_AUTHORIZATION": "Basic synthetic",
         "OPENOBSERVE_AUDIT_AUTHORIZATION": "Basic synthetic",
     }
+    if deployment is None:
+        env.pop("OPENBOT_DEPLOYMENT_ID")
     log_path = directory / "collector.log"
     with log_path.open("w") as log:
         collector = subprocess.Popen(
@@ -221,9 +242,9 @@ def check(directory):
             sleep(0.2)
         else:
             raise RuntimeError("Runtime file receiver did not start watching")
-        send_audit(port)
+        send_audit(port, deployment or "")
         append_runtime(source)
-        deadline = time() + 30
+        deadline = time() + (30 if enabled else 2)
         while time() < deadline:
             paths = [directory / f"{stream}.jsonl" for stream in ("runtime", "audit")]
             if all(path.exists() and path.stat().st_size for path in paths):
@@ -235,6 +256,10 @@ def check(directory):
         assert SENTINEL not in internal_logs, "Sensitive content escaped into Collector logs"
         assert UNTRUSTED_IDENTITY not in internal_logs, "Untrusted identity escaped into Collector logs"
         assert "2026-99-01" not in internal_logs, "Collector logged an invalid CRI timestamp"
+        if not enabled:
+            for path in paths:
+                assert not path.exists() or not path.stat().st_size, f"Disabled pipeline wrote to {path}"
+            return
         runtime_records = read_stream(directory / "runtime.jsonl", "openbot_runtime")
         markers = [record for record in runtime_records if record.get("diagnostic") == RAW_DIAGNOSTIC]
         assert len(markers) == 3, f"Expected three fixed CRI legacy markers, got {markers}"
@@ -249,23 +274,35 @@ def check(directory):
                 "diagnostic": RAW_DIAGNOSTIC, "occurred_at": OCCURRED_AT,
                 "canonical_source": marker["canonical_source"],
             }, marker
-        assert len(runtime_records) == 6, runtime_records
+        assert len(runtime_records) == 7, runtime_records
         [current] = [record for record in runtime_records if record["event_category"] == "api_listening"]
         assert current["port"] == 3000 and current["run_id"] == "run-fixture"
         assert "thread_id" not in current and "diagnostic" not in current
+        assert current["service"] == "openbot-api"
+        [failure] = [record for record in runtime_records if record["event_category"] == "migration_failed"]
+        assert failure["diagnostic"] == "Database migrations did not complete."
+        assert "service" not in failure
         notices = [record for record in runtime_records if "legacy_event" in record]
         assert len(notices) == 2
-        assert {record.get("diagnostic") for record in notices} == {None, CATALOGUE_DIAGNOSTIC}
+        assert {record.get("diagnostic") for record in notices} == {CATALOGUE_DIAGNOSTIC}
         for notice in notices:
             assert notice["legacy_event"] == "single_user_mode_enabled"
             assert not ({"run_id", "port"} & notice.keys())
         audit_records = read_stream(directory / "audit.jsonl", "openbot_audit")
-        assert len(audit_records) == 2, audit_records
+        assert len(audit_records) == 6, audit_records
         assert all("diagnostic" not in record for record in audit_records)
         audit = {record["event_type"]: record for record in audit_records}
         approved = audit["approval.person_decided"]
         assert approved["facet_decision"] == "allow_once" and approved["audit_event_id"]
         assert "facet_tool" not in approved and "facet_scope" not in approved
+        assert approved["work_item_key"] == "work:fixture" and "routine_run_id" not in approved
+        assert audit["routines.run_requested"]["routine_run_id"] == "routine-run-1"
+        assert audit["responsibility.triggered"]["responsibility_run_id"] == "responsibility-run-1"
+        evaluated = audit["approval.evaluated"]
+        assert evaluated["facet_outcome"] == "ask"
+        assert evaluated["facet_reason_code"] == "personal_rule"
+        assert evaluated["facet_policy_rule_id"] == "3c55db61-f955-4596-b96d-7d2c5dfaf256"
+        assert audit["app_access.requested"]["facet_app_key"] == "github"
         assert not any(key.startswith("facet_") for key in audit["future.event"])
     except Exception:
         print(log_path.read_text())
@@ -277,6 +314,8 @@ def check(directory):
 
 
 if __name__ == "__main__":
-    with TemporaryDirectory(prefix="openobserve-collector-") as fixture:
-        check(Path(fixture).resolve())
-    print("Collector fixture passed: six runtime and two audit records, no private content.")
+    for options in ({}, {"deployment": None}, {"deployment": "invalid deployment"},
+                    {"switch": " OFF "}, {"endpoint": ""}):
+        with TemporaryDirectory(prefix="openobserve-collector-") as fixture:
+            check(Path(fixture).resolve(), **options)
+    print("Collector fixture passed: seven runtime and six audit records, disabled streams empty.")

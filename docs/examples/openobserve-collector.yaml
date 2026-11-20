@@ -58,7 +58,7 @@ processors:
       - set(log.body, "openbot_runtime")
       - keep_keys(log.attributes, ["source", "deployment_id", "stream", "data_class",
         "schema_version", "projection_status", "occurred_at", "canonical_source",
-        "severity", "component", "event_category", "legacy_event", "diagnostic", "outcome", "operation",
+        "severity", "service", "component", "event_category", "legacy_event", "outcome", "operation",
         "error_category", "version", "run_id", "parent_run_id", "root_task_id", "attempt_id",
         "thread_id", "routine_run_id", "responsibility_run_id", "work_item_key", "port",
         "duration_ms", "deleted", "retention_days", "offered", "considered", "fired",
@@ -71,10 +71,12 @@ processors:
         or not IsMatch(log.attributes["canonical_source"], "^openbot[.](stdout|stderr)$")
       - delete_key(log.attributes, "severity") where not IsString(log.attributes["severity"])
         or not IsMatch(log.attributes["severity"], "^(info|warn|error|debug)$")
+      - delete_key(log.attributes, "service") where not IsString(log.attributes["service"])
+        or not IsMatch(log.attributes["service"], "^[A-Za-z0-9_:./-]{1,256}$")
       - delete_key(log.attributes, "component") where not IsString(log.attributes["component"])
         or not IsMatch(log.attributes["component"], "^(api|worker|migration|retention|routines|telemetry)$")
       - delete_key(log.attributes, "event_category") where not IsString(log.attributes["event_category"])
-        or not IsMatch(log.attributes["event_category"], "^(intelligence_entitlement_waiting|intelligence_entitlement_unreadable|intelligence_entitlement_not_ready|intelligence_entitlement_expired|api_unhandled_rejection|routine_queue_purged|routine_queue_purge_failed|page_frame_retention_swept|page_frame_retention_failed|proactive_retention_swept|proactive_retention_failed|single_user_mode_enabled|api_listen_failed|api_listening|worker_started|worker_configuration_failed|migrations_applied|migration_failed|migration_connection_release_failed|audit_retention_swept|audit_retention_failed|routine_sweep_completed|routine_sweep_failed|audit_projection_failed|audit_export_failed|legacy_unstructured)$")
+        or not IsMatch(log.attributes["event_category"], "^(intelligence_entitlement_waiting|intelligence_entitlement_unreadable|intelligence_entitlement_not_ready|intelligence_entitlement_expired|api_unhandled_rejection|routine_queue_purged|routine_queue_purge_failed|page_frame_retention_swept|page_frame_retention_failed|proactive_retention_swept|proactive_retention_failed|single_user_mode_enabled|api_listen_failed|api_listening|worker_started|worker_configuration_failed|migrations_applied|migration_failed|migration_connection_release_failed|audit_retention_swept|audit_retention_failed|routine_sweep_completed|routine_sweep_failed|audit_projection_failed|audit_export_failed|audit_export_configuration_invalid|audit_export_paused|legacy_unstructured)$")
       - delete_key(log.attributes, "legacy_event") where not IsString(log.attributes["legacy_event"])
         or not IsMatch(log.attributes["legacy_event"], "^(intelligence_entitlement_unreadable|intelligence_entitlement_not_ready|intelligence_entitlement_expired|single_user_mode_enabled)$")
       - delete_key(log.attributes, "outcome") where not IsString(log.attributes["outcome"])
@@ -82,7 +84,7 @@ processors:
       - delete_key(log.attributes, "operation") where not IsString(log.attributes["operation"])
         or not IsMatch(log.attributes["operation"], "^(startup|apply|release_connection|sweep|purge|serve)$")
       - delete_key(log.attributes, "error_category") where not IsString(log.attributes["error_category"])
-        or not IsMatch(log.attributes["error_category"], "^(audit_retention_error|database_connection_error|entitlement_expired|entitlement_read_error|entitlement_unavailable|export_error|http_bind_error|invalid_facet|invalid_worker_configuration|migration_error|page_frame_retention_error|proactive_retention_error|routine_queue_purge_error|routine_sweep_error|unhandled_rejection)$")
+        or not IsMatch(log.attributes["error_category"], "^(audit_retention_error|database_connection_error|entitlement_expired|entitlement_read_error|entitlement_unavailable|export_error|http_bind_error|invalid_facet|invalid_export_configuration|invalid_worker_configuration|migration_error|page_frame_retention_error|proactive_retention_error|routine_queue_purge_error|routine_sweep_error|unhandled_rejection)$")
       - delete_key(log.attributes, "version") where not IsString(log.attributes["version"])
         or not IsMatch(log.attributes["version"], "^[0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9.-]{1,64})?$")
       - delete_key(log.attributes, "run_id") where not IsString(log.attributes["run_id"])
@@ -129,15 +131,46 @@ processors:
         or log.attributes["wait_window_ms"] < 0
       - delete_key(log.attributes, "legacy_event") where log.attributes["event_category"]
         != "legacy_unstructured"
-      # Legacy notices keep only exact diagnostics from server/src/telemetry/runtime-log.ts.
-      - delete_key(log.attributes, "diagnostic") where not (
-        (log.attributes["legacy_event"] == "intelligence_entitlement_unreadable" and log.attributes["diagnostic"] == "Could not read Intelligence entitlements. Check Intelligence availability and the deployment's INTELLIGENCE_API_KEY.")
-        or (log.attributes["legacy_event"] == "intelligence_entitlement_not_ready" and log.attributes["diagnostic"] == "Intelligence did not confirm entitlement. Check the Intelligence deployment's licence and COPILOTKIT_LICENSE_TOKEN.")
-        or (log.attributes["legacy_event"] == "intelligence_entitlement_expired" and log.attributes["diagnostic"] == "Intelligence's licence has expired. Renew it and replace COPILOTKIT_LICENSE_TOKEN on the Intelligence deployment.")
-        or (log.attributes["legacy_event"] == "single_user_mode_enabled" and log.attributes["diagnostic"] == "No identity provider is configured. All requests have administrator access. Configure GOOGLE_OAUTH_*, MICROSOFT_OAUTH_* or OKTA_OAUTH_*."))
+      # Diagnostics come only from the Collector catalogue. Input diagnostic text was discarded.
+      - set(log.attributes["diagnostic"], "Could not read Intelligence entitlements.")
+        where log.attributes["legacy_event"] == "intelligence_entitlement_unreadable"
+      - set(log.attributes["diagnostic"], "Intelligence entitlement is unavailable.")
+        where log.attributes["legacy_event"] == "intelligence_entitlement_not_ready"
+      - set(log.attributes["diagnostic"], "Intelligence entitlement has expired.")
+        where log.attributes["legacy_event"] == "intelligence_entitlement_expired"
+      - set(log.attributes["diagnostic"], "No identity provider is configured.")
+        where log.attributes["legacy_event"] == "single_user_mode_enabled"
+      - set(log.attributes["diagnostic"], "The API caught an unhandled rejection.")
+        where log.attributes["event_category"] == "api_unhandled_rejection"
+      - set(log.attributes["diagnostic"], "Old routine queue items could not be purged.")
+        where log.attributes["event_category"] == "routine_queue_purge_failed"
+      - set(log.attributes["diagnostic"], "Old turn screenshots could not be removed.")
+        where log.attributes["event_category"] == "page_frame_retention_failed"
+      - set(log.attributes["diagnostic"], "Old check-in runs and pings could not be removed.")
+        where log.attributes["event_category"] == "proactive_retention_failed"
+      - set(log.attributes["diagnostic"], "The API could not bind its port.")
+        where log.attributes["event_category"] == "api_listen_failed"
+      - set(log.attributes["diagnostic"], "Worker configuration is invalid.")
+        where log.attributes["event_category"] == "worker_configuration_failed"
+      - set(log.attributes["diagnostic"], "Database migrations did not complete.")
+        where log.attributes["event_category"] == "migration_failed"
+      - set(log.attributes["diagnostic"], "The migration connection could not be released.")
+        where log.attributes["event_category"] == "migration_connection_release_failed"
+      - set(log.attributes["diagnostic"], "Audit retention did not complete.")
+        where log.attributes["event_category"] == "audit_retention_failed"
+      - set(log.attributes["diagnostic"], "Routine sweep did not complete.")
+        where log.attributes["event_category"] == "routine_sweep_failed"
+      - set(log.attributes["diagnostic"], "An audit event contained an invalid facet.")
+        where log.attributes["event_category"] == "audit_projection_failed"
+      - set(log.attributes["diagnostic"], "An audit batch could not be exported.")
+        where log.attributes["event_category"] == "audit_export_failed"
+      - set(log.attributes["diagnostic"], "Audit export configuration is invalid.")
+        where log.attributes["event_category"] == "audit_export_configuration_invalid"
+      - set(log.attributes["diagnostic"], "Audit export is paused.")
+        where log.attributes["event_category"] == "audit_export_paused"
       - keep_keys(log.attributes, ["source", "deployment_id", "stream", "data_class",
         "schema_version", "projection_status", "occurred_at", "canonical_source",
-        "severity", "component", "event_category", "legacy_event", "diagnostic", "outcome", "operation",
+        "severity", "service", "component", "event_category", "legacy_event", "diagnostic", "outcome", "operation",
         "error_category"]) where log.attributes["event_category"] == "legacy_unstructured"
     - conditions:
       - log.attributes["cri_stream"] != nil
@@ -168,6 +201,9 @@ processors:
     error_mode: propagate
     logs:
       log_record:
+      - not IsMatch("${env:OPENBOT_DEPLOYMENT_ID}", "^[A-Za-z0-9_:./-]{1,256}$")
+      - IsMatch("${env:OPENBOT_OTEL_EXPORT:-on}", "(?i)^[[:space:]]*off[[:space:]]*$")
+      - not IsMatch("${env:OPENOBSERVE_OTLP_LOGS_URL}", "^https?://[^[:space:]]+$")
       - log.attributes["source"] != "openbot"
       - log.attributes["stream"] != "openbot_runtime"
       - log.attributes["data_class"] != "runtime"
@@ -186,6 +222,9 @@ processors:
     error_mode: propagate
     logs:
       log_record:
+      - not IsMatch("${env:OPENBOT_DEPLOYMENT_ID}", "^[A-Za-z0-9_:./-]{1,256}$")
+      - IsMatch("${env:OPENBOT_OTEL_EXPORT:-on}", "(?i)^[[:space:]]*off[[:space:]]*$")
+      - not IsMatch("${env:OPENOBSERVE_OTLP_LOGS_URL}", "^https?://[^[:space:]]+$")
       - scope.name != "openbot.audit"
       - log.attributes["openbot.source"] != "openbot"
       - log.attributes["openbot.stream"] != "openbot_audit"
@@ -218,10 +257,12 @@ processors:
         "openbot.event_type", "openbot.target_type", "openbot.initiator_kind", "openbot.target_id",
         "openbot.actor_user_id", "openbot.initiator_id", "openbot.run_id", "openbot.parent_run_id",
         "openbot.root_task_id", "openbot.attempt_id", "openbot.thread_id", "openbot.surface",
+        "openbot.routine_run_id", "openbot.responsibility_run_id", "openbot.work_item_key",
         "openbot.facet.effect", "openbot.facet.decision", "openbot.facet.tool", "openbot.facet.fallback",
         "openbot.facet.viaMention", "openbot.facet.viaNameMatch", "openbot.facet.scope",
         "openbot.facet.setting", "openbot.facet.action", "openbot.facet.bot", "openbot.facet.kind",
-        "openbot.facet.verified", "openbot.facet.routine", "openbot.facet.outcome"])
+        "openbot.facet.verified", "openbot.facet.routine", "openbot.facet.outcome",
+        "openbot.facet.reason_code", "openbot.facet.policy_rule_id", "openbot.facet.app_key"])
       - set(log.body, "openbot_audit")
       - set(log.event_name, "")
       - set(log.severity_text, "")
@@ -243,6 +284,12 @@ processors:
         or not IsMatch(log.attributes["openbot.attempt_id"], "^[A-Za-z0-9_:./-]{1,256}$")
       - delete_key(log.attributes, "openbot.thread_id") where not IsString(log.attributes["openbot.thread_id"])
         or not IsMatch(log.attributes["openbot.thread_id"], "^[A-Za-z0-9_:./-]{1,256}$")
+      - delete_key(log.attributes, "openbot.routine_run_id") where not IsString(log.attributes["openbot.routine_run_id"])
+        or not IsMatch(log.attributes["openbot.routine_run_id"], "^[A-Za-z0-9_:./-]{1,256}$")
+      - delete_key(log.attributes, "openbot.responsibility_run_id") where not IsString(log.attributes["openbot.responsibility_run_id"])
+        or not IsMatch(log.attributes["openbot.responsibility_run_id"], "^[A-Za-z0-9_:./-]{1,256}$")
+      - delete_key(log.attributes, "openbot.work_item_key") where not IsString(log.attributes["openbot.work_item_key"])
+        or not IsMatch(log.attributes["openbot.work_item_key"], "^[A-Za-z0-9_:./-]{1,256}$")
       - delete_key(log.attributes, "openbot.facet.effect") where log.attributes["openbot.projection_status"]
         != "known" or not IsMatch(log.attributes["openbot.event_type"], "^(approval[.]evaluated|approval[.]person_decided)$")
         or not IsString(log.attributes["openbot.facet.effect"]) or not IsMatch(log.attributes["openbot.facet.effect"],
@@ -292,9 +339,21 @@ processors:
         or not IsString(log.attributes["openbot.facet.routine"]) or not IsMatch(log.attributes["openbot.facet.routine"],
         "^[A-Za-z0-9_:./-]{1,256}$")
       - delete_key(log.attributes, "openbot.facet.outcome") where log.attributes["openbot.projection_status"]
-        != "known" or not IsMatch(log.attributes["openbot.event_type"], "^(routine[.]completed|routine[.]failed)$")
-        or not IsString(log.attributes["openbot.facet.outcome"]) or not IsMatch(log.attributes["openbot.facet.outcome"],
-        "^(succeeded|failed|skipped|waiting)$")
+        != "known" or not IsString(log.attributes["openbot.facet.outcome"]) or not (
+        (log.attributes["openbot.event_type"] == "approval.evaluated" and IsMatch(log.attributes["openbot.facet.outcome"], "^(allow|ask|hand_off|deny)$"))
+        or (IsMatch(log.attributes["openbot.event_type"], "^routine[.](completed|failed)$") and IsMatch(log.attributes["openbot.facet.outcome"], "^(succeeded|failed|skipped|waiting)$")))
+      - delete_key(log.attributes, "openbot.facet.reason_code") where log.attributes["openbot.projection_status"]
+        != "known" or log.attributes["openbot.event_type"] != "approval.evaluated"
+        or not IsString(log.attributes["openbot.facet.reason_code"])
+        or not IsMatch(log.attributes["openbot.facet.reason_code"], "^(safety|team_rule|personal_rule|auto_review|default|person_declined|conversation|task)$")
+      - delete_key(log.attributes, "openbot.facet.policy_rule_id") where log.attributes["openbot.projection_status"]
+        != "known" or log.attributes["openbot.event_type"] != "approval.evaluated"
+        or not IsString(log.attributes["openbot.facet.policy_rule_id"])
+        or not IsMatch(log.attributes["openbot.facet.policy_rule_id"], "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+      - delete_key(log.attributes, "openbot.facet.app_key") where log.attributes["openbot.projection_status"]
+        != "known" or not IsMatch(log.attributes["openbot.event_type"], "^app_access[.](requested|approved|cancelled|dismissed|owner_granted|owner_revoked)$")
+        or not IsString(log.attributes["openbot.facet.app_key"])
+        or not IsMatch(log.attributes["openbot.facet.app_key"], "^[a-z0-9_-]{1,128}$")
       - set(log.attributes["source"], log.attributes["openbot.source"])
       - set(log.attributes["stream"], log.attributes["openbot.stream"])
       - set(log.attributes["data_class"], log.attributes["openbot.data_class"])
@@ -316,6 +375,12 @@ processors:
       - set(log.attributes["attempt_id"], log.attributes["openbot.attempt_id"])
       - set(log.attributes["thread_id"], log.attributes["openbot.thread_id"])
       - set(log.attributes["surface"], log.attributes["openbot.surface"])
+      - set(log.attributes["routine_run_id"], log.attributes["openbot.routine_run_id"])
+      - set(log.attributes["responsibility_run_id"], log.attributes["openbot.responsibility_run_id"])
+      - set(log.attributes["work_item_key"], log.attributes["openbot.work_item_key"])
+      - set(log.attributes["facet_reason_code"], log.attributes["openbot.facet.reason_code"])
+      - set(log.attributes["facet_policy_rule_id"], log.attributes["openbot.facet.policy_rule_id"])
+      - set(log.attributes["facet_app_key"], log.attributes["openbot.facet.app_key"])
       - set(log.attributes["facet_effect"], log.attributes["openbot.facet.effect"])
       - set(log.attributes["facet_decision"], log.attributes["openbot.facet.decision"])
       - set(log.attributes["facet_tool"], log.attributes["openbot.facet.tool"])
@@ -334,10 +399,11 @@ processors:
         "schema_version", "deployment_id", "projection_status", "occurred_at", "audit_event_id",
         "event_type", "target_type", "initiator_kind", "target_id", "actor_user_id",
         "initiator_id", "run_id", "parent_run_id", "root_task_id", "attempt_id", "thread_id",
+        "routine_run_id", "responsibility_run_id", "work_item_key",
         "surface", "facet_effect", "facet_decision", "facet_tool", "facet_fallback",
         "facet_viaMention", "facet_viaNameMatch", "facet_scope", "facet_setting",
         "facet_action", "facet_bot", "facet_kind", "facet_verified", "facet_routine",
-        "facet_outcome"])
+        "facet_outcome", "facet_reason_code", "facet_policy_rule_id", "facet_app_key"])
     - statements:
       - keep_keys(resource.attributes, [])
       - set(resource.schema_url, "")

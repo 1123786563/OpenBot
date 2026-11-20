@@ -32,7 +32,6 @@ import {
   readRunAssertion,
 } from "./agents/callback-token";
 import { canUseComputer } from "./agents/computer-access";
-import { isUnattended, runModeOf } from "./agents/run-mode";
 import { wireCoordination } from "./agents/coordination-wiring";
 import { createAgentFetch } from "./agents/endpoint";
 import { createHandoffDesk } from "./agents/handoff";
@@ -46,6 +45,7 @@ import {
 import { createBotReset } from "./agents/lifecycle-reset";
 import { createAgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
+import { isUnattended, runModeOf } from "./agents/run-mode";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
 import { createSubagents, SUBAGENT_HANDED_BACK } from "./agents/subagent";
 import { toolLimitRecorder } from "./agents/tool-limit";
@@ -213,12 +213,12 @@ import {
   createLearningModelCalls,
   learningModelEndpointFor,
 } from "./learning/model-endpoint";
-import { learningModelUnavailable } from "./learning/routes";
 import { createLearningPeople } from "./learning/people";
 import {
   createPersonalLearningSpaces,
   createPersonSpaceStore,
 } from "./learning/personal-space";
+import { learningModelUnavailable } from "./learning/routes";
 import { clearLearningRevisionFallback } from "./learning/runtime";
 import { learningScopes } from "./learning/scopes";
 import {
@@ -560,7 +560,7 @@ const peopleStore = createPeopleStore(
         retireIdentityLinks(
           database,
           credentialStore,
-          (executor) => createAuditStore(executor),
+          createAuditStore,
           userId,
           by,
         ),
@@ -1655,7 +1655,7 @@ const recorderExtension = createRecorderExtension({
     ? { sessionLifetimeMs: await sessionLifetimeMs(betterAuth) }
     : {}),
   // A connection is made or ended exactly when its row is written: both in one transaction.
-  auditFor: (executor) => createAuditStore(executor),
+  auditFor: createAuditStore,
 });
 /*
  * Connections whose lifetime has run out already resolve to nobody; this ends them for good, with the sealed
