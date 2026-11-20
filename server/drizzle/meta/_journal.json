@@ -631,6 +631,13 @@
       "when": 1795158327499,
       "tag": "0089_personal_saas_entry",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1795160662134,
+      "tag": "0090_personal_saas_assistant_bot",
+      "breakpoints": true
     }
   ]
 }

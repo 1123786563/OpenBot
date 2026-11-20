@@ -1,9 +1,11 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, eq, gt } from "drizzle-orm";
 import type { Database } from "../db/client";
+import { agents } from "../db/schema/core";
+import { agentProfiles } from "../db/schema/coworker";
 import {
   personalSaasAccounts,
-  personalSaasAssistants,
+  personalWorkspaceDefaultBots,
   personalSaasSessions,
   personalWorkspaces,
 } from "../db/schema/personal-saas";
@@ -77,15 +79,16 @@ export function personalSaasStore(database: Database) {
         .select({
           id: personalWorkspaces.id,
           personalAssistant: {
-            id: personalSaasAssistants.id,
-            name: personalSaasAssistants.name,
+            id: agents.id,
+            name: agents.name,
           },
         })
         .from(personalWorkspaces)
         .innerJoin(
-          personalSaasAssistants,
-          eq(personalSaasAssistants.workspaceId, personalWorkspaces.id),
+          personalWorkspaceDefaultBots,
+          eq(personalWorkspaceDefaultBots.workspaceId, personalWorkspaces.id),
         )
+        .innerJoin(agents, eq(personalWorkspaceDefaultBots.agentId, agents.id))
         .where(eq(personalWorkspaces.ownerId, accountId));
       return workspace;
     },
@@ -98,12 +101,35 @@ export function personalSaasStore(database: Database) {
         const [workspace] = await tx
           .select({ id: personalWorkspaces.id })
           .from(personalWorkspaces)
-          .where(eq(personalWorkspaces.ownerId, accountId));
+          .where(eq(personalWorkspaces.ownerId, accountId))
+          .for("update");
         if (!workspace) throw new Error("Personal Workspace was not saved");
+        const [assistant] = await tx
+          .select({ id: personalWorkspaceDefaultBots.agentId })
+          .from(personalWorkspaceDefaultBots)
+          .where(eq(personalWorkspaceDefaultBots.workspaceId, workspace.id));
+        if (assistant) return;
+
+        const agentId = `agent_${randomUUID()}`;
+        await tx.insert(agents).values({
+          id: agentId,
+          name: "Personal Assistant",
+          type: "built_in",
+          configuration: {
+            systemPrompt: "You are the user's Personal Assistant.",
+          },
+        });
+        // The workspace link owns this Bot. No enterprise or local user is bound to its profile.
+        await tx.insert(agentProfiles).values({
+          agentId,
+          title: "Personal Assistant",
+          roleDescription: "Help with personal tasks and questions.",
+          avatarSeed: agentId,
+          visibility: "private",
+        });
         await tx
-          .insert(personalSaasAssistants)
-          .values({ workspaceId: workspace.id })
-          .onConflictDoNothing({ target: personalSaasAssistants.workspaceId });
+          .insert(personalWorkspaceDefaultBots)
+          .values({ workspaceId: workspace.id, agentId });
       });
     },
   };

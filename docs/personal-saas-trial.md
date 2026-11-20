@@ -24,6 +24,6 @@ Apply the server migrations first. From the repository root:
 bun run --filter server start:personal-saas
 ```
 
-The landing page sends participants to Casdoor for registration, verification, sign-in and account recovery. OpenBot uses the issuer and stable subject to retain ownership after a verified email change. Returning participants see their existing workspace. An interrupted setup can be retried from the preparation page. First entry creates the workspace and its default Personal Assistant record. Connection setup, Bot execution, and Computer startup are outside this entry flow.
+The landing page sends participants to Casdoor for registration, verification, sign-in and account recovery. OpenBot uses the issuer and stable subject to retain ownership after a verified email change. Returning participants see their existing workspace. An interrupted setup can be retried from the preparation page. First entry creates the workspace and its default Personal Assistant Bot in one transaction. The workspace owns the Bot through `personal_workspace_default_bots`, and `/api/workspace` returns the canonical Bot ID. Bot execution, Connections, and Computers remain disabled in this trial entry point.
 
 Use the existing deployment commands for enterprise or local Personal edition. This entry point only exposes the trial workspace, sign-in and sign-out. The Web trial checks Casdoor status for each protected request. Cross-client revocation, durable disablement history and execution cutoff are separate rollout requirements.

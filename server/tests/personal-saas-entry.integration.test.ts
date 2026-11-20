@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
+import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createDatabase } from "../src/db/client";
 import { createPersonalSaasApp } from "../src/personal-saas/app";
 import { testDatabaseUrl } from "./support/database";
@@ -8,6 +9,8 @@ const origin = "https://trial.openbot.example";
 const clientId = "openbot-trial";
 const clientSecret = "casdoor-test-secret";
 const database = createDatabase(testDatabaseUrl(), { max: 4 });
+const botProfiles = createAgentProfileStore(database, undefined);
+const profileReader = { id: "saas53-test-reader", role: "admin" } as const;
 const { privateKey, publicKey } = await generateKeyPair("RS256");
 const signingKey = await exportJWK(publicKey);
 const issuer = "https://casdoor.example";
@@ -194,10 +197,21 @@ test("a verified active ordinary email can reach its private workspace and defau
   expect((await enter(session)).headers.get("location")).toBe("/workspace");
   const landing = await send("/workspace", { headers: { cookie: session } });
   expect(await landing.text()).toContain("Personal Assistant");
-  expect(await workspace(session)).toEqual({
+  const result = await workspace(session);
+  expect(result).toEqual({
     id: expect.any(String),
     personalAssistant: { id: expect.any(String), name: "Personal Assistant" },
   });
+  const headers = { cookie: session, origin };
+  const botId = result.personalAssistant.id;
+  expect((await send(`/api/agents/${botId}`, { headers })).status).toBe(404);
+  expect((await send("/api/plugins", { headers })).status).toBe(404);
+  expect(
+    (await send(`/api/computers/${botId}/status`, { headers })).status,
+  ).toBe(404);
+  expect(
+    (await send("/api/copilotkit", { method: "POST", headers })).status,
+  ).toBe(404);
   expect((await send("/api/workspace")).status).toBe(401);
 });
 
@@ -242,6 +256,7 @@ test("concurrent first entries converge and email changes never link a different
     active: true,
     verified: true,
   };
+  const before = await botProfiles.list(profileReader);
   const sessions = await Promise.all(
     Array.from({ length: 4 }, async () =>
       cookie(await authenticate(owner), "__Host-openbot-personal="),
@@ -251,7 +266,15 @@ test("concurrent first entries converge and email changes never link a different
   for (const entry of entries)
     expect(entry.headers.get("location")).toBe("/workspace");
   const results = await Promise.all(sessions.map(workspace));
-  for (const result of results) expect(result).toEqual(results[0]);
+  const [first] = results;
+  for (const result of results) expect(result).toEqual(first);
+  expect(
+    await botProfiles.get(profileReader, first.personalAssistant.id),
+  ).toMatchObject({ ...first.personalAssistant, visibility: "private" });
+  const bots = await botProfiles.list(profileReader);
+  expect(bots.filter((bot) => !before.some(({ id }) => id === bot.id))).toEqual(
+    [expect.objectContaining(first.personalAssistant)],
+  );
 
   const recovered = cookie(
     await authenticate({ ...owner, email: "changed@example.com" }),
@@ -285,7 +308,8 @@ test("concurrent first entries converge and email changes never link a different
   ).toBe(404);
 });
 
-test("failed assistant creation rolls back first entry and the same session can retry", async () => {
+test("interruption after writing the Bot rolls back first entry and the same session can retry", async () => {
+  const before = await botProfiles.list(profileReader);
   const account = {
     sub: crypto.randomUUID(),
     email: "retry@example.com",
@@ -305,25 +329,33 @@ test("failed assistant creation rolls back first entry and the same session can 
       END IF;
       RETURN NEW;
     END $$;
-    CREATE TRIGGER saas53_fail_first_assistant BEFORE INSERT ON personal_saas_assistants
+    CREATE TRIGGER saas53_fail_first_assistant BEFORE INSERT ON personal_workspace_default_bots
       FOR EACH ROW EXECUTE FUNCTION saas53_fail_first_assistant();
   `);
   try {
     const interrupted = await enter(session);
     expect(interrupted.status).toBe(503);
     expect(await interrupted.text()).toContain("Retry");
+    expect(await botProfiles.list(profileReader)).toHaveLength(before.length);
     expect(
       (await send("/api/workspace", { headers: { cookie: session } })).status,
     ).toBe(202);
   } finally {
     await database.$client.unsafe(
-      "DROP TRIGGER saas53_fail_first_assistant ON personal_saas_assistants; DROP FUNCTION saas53_fail_first_assistant();",
+      "DROP TRIGGER saas53_fail_first_assistant ON personal_workspace_default_bots; DROP FUNCTION saas53_fail_first_assistant();",
     );
   }
   expect((await enter(session)).headers.get("location")).toBe("/workspace");
   const first = await workspace(session);
   expect((await enter(session)).headers.get("location")).toBe("/workspace");
   expect(await workspace(session)).toEqual(first);
+  expect(
+    await botProfiles.get(profileReader, first.personalAssistant.id),
+  ).toMatchObject({ ...first.personalAssistant, visibility: "private" });
+  const bots = await botProfiles.list(profileReader);
+  expect(bots.filter((bot) => !before.some(({ id }) => id === bot.id))).toEqual(
+    [expect.objectContaining(first.personalAssistant)],
+  );
 });
 
 test("status loss during preparation blocks entry and the original session can retry after confirmation", async () => {

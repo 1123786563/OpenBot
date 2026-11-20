@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { agentProfiles } from "./coworker";
 
 export const personalSaasAccounts = pgTable(
   "personal_saas_accounts",
@@ -28,11 +29,15 @@ export const personalWorkspaces = pgTable("personal_workspaces", {
     .references(() => personalSaasAccounts.id),
 });
 
-export const personalSaasAssistants = pgTable("personal_saas_assistants", {
-  id: uuid().primaryKey().defaultRandom(),
-  workspaceId: uuid("workspace_id")
-    .notNull()
-    .unique()
-    .references(() => personalWorkspaces.id, { onDelete: "cascade" }),
-  name: text().notNull().default("Personal Assistant"),
-});
+export const personalWorkspaceDefaultBots = pgTable(
+  "personal_workspace_default_bots",
+  {
+    workspaceId: uuid("workspace_id")
+      .primaryKey()
+      .references(() => personalWorkspaces.id, { onDelete: "cascade" }),
+    agentId: text("agent_id")
+      .notNull()
+      .unique()
+      .references(() => agentProfiles.agentId),
+  },
+);
