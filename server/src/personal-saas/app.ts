@@ -4,6 +4,7 @@ import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { html } from "hono/html";
 import { z } from "zod";
+import { createApprovalStore } from "../approvals/store";
 import { seal, unseal } from "../auth/signed-value";
 import type { Database } from "../db/client";
 import { createWorkQueue } from "../work/queue";
@@ -119,6 +120,16 @@ export function createPersonalSaasApp(
   );
   const now = config.now ?? Date.now;
   const store = personalSaasStore(database, now);
+  const approvals = createApprovalStore(database, now);
+  async function approvalHistory(owner: string) {
+    return (await approvals.list(owner)).map((request) => ({
+      id: request.id,
+      status: request.status,
+      tool: request.action.toolRef,
+      createdAt: request.createdAt,
+      invalidated: request.action.executionInvalidated === true,
+    }));
+  }
   const accountAccess = createAccountAccess(
     database,
     provider.accountStatus,
@@ -623,6 +634,7 @@ export function createPersonalSaasApp(
       ?.status(workspace.id)
       .catch(() => undefined);
     const recovery = await botWork.history(session.grant.accountId);
+    const history = await approvalHistory(session.grant.accountId);
     if (!(await remainingAccess(token, session.grant)))
       return context.redirect("/workspace");
     return context.html(
@@ -668,6 +680,14 @@ export function createPersonalSaasApp(
       <form method="post" action="/api/workspaces/${workspace.id}/exports">
         <button type="submit">Download workspace data</button>
       </form>
+      ${
+        history.length
+          ? html`<section aria-labelledby="approval-history">
+        <h2 id="approval-history">Approval history</h2>
+        <ul>${history.map((item) => html`<li>${item.tool} · ${item.invalidated ? "Invalidated" : item.status}</li>`)}</ul>
+      </section>`
+          : ""
+      }
       <p><a href="/api/workspaces/${workspace.id}/support-requests/view">Support access</a></p>
       <form method="post" action="/auth/sign-out"><button type="submit">Sign out</button></form>
       <form method="post" action="/auth/sign-out-all">
@@ -779,6 +799,17 @@ export function createPersonalSaasApp(
             : workspace,
         )
       : context.json({ status: "preparing" }, 202);
+  });
+
+  app.get("/api/workspace/approvals", async (context) => {
+    const token = requestSession(context);
+    const session = await authorize(token);
+    if (session.kind !== "authorized")
+      return context.json({ error: "authorization_required" }, 403);
+    const history = await approvalHistory(session.grant.accountId);
+    if (!(await stillAuthorized(token, session.grant)))
+      return context.json({ error: "authorization_changed" }, 403);
+    return context.json({ requests: history });
   });
 
   app.post("/api/workspace/bot-runs", async (context) => {

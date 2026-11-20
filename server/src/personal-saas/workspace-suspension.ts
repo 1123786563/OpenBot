@@ -12,6 +12,8 @@ import {
   personalWorkspaces,
 } from "../db/schema/personal-saas";
 
+import { reconcileDecisionHistory } from "./decision-access";
+
 export type SuspensionOperator = { id: string; token: string };
 
 const operation = z.strictObject({
@@ -83,7 +85,10 @@ export function suspensionRoutes(
 
     const result = await database.transaction(async (tx) => {
       const [workspace] = await tx
-        .select({ ownerId: personalWorkspaces.ownerId })
+        .select({
+          ownerId: personalWorkspaces.ownerId,
+          accountStatus: personalSaasAccounts.status,
+        })
         .from(personalWorkspaces)
         .innerJoin(
           personalSaasAccounts,
@@ -111,19 +116,28 @@ export function suspensionRoutes(
       if (!event) throw new Error("Suspension operation was not recorded");
 
       if (input.data.action === "pause") {
-        await tx
-          .update(personalSaasAccounts)
-          .set({
-            status: sql`${personalSaasAccounts.status} || jsonb_build_object(
-              'epoch', (${personalSaasAccounts.status}->>'epoch')::int + 1,
-              'executionCutoffs', coalesce(${personalSaasAccounts.status}->'executionCutoffs', '[]'::jsonb)
-                || jsonb_build_array(jsonb_build_object(
-                  'epoch', (${personalSaasAccounts.status}->>'epoch')::int + 1,
-                  'reason', 'workspace_paused', 'cutoffAt', ${effectiveAt.getTime()}
-                ))
-            )`,
-          })
-          .where(eq(personalSaasAccounts.id, workspace.ownerId));
+        const status = workspace.accountStatus;
+        if (status) {
+          const epoch = status.epoch + 1;
+          await tx
+            .update(personalSaasAccounts)
+            .set({
+              status: {
+                ...status,
+                epoch,
+                executionCutoffs: [
+                  ...(status.executionCutoffs ?? []),
+                  {
+                    epoch,
+                    reason: "workspace_paused",
+                    cutoffAt: effectiveAt.getTime(),
+                  },
+                ],
+              },
+            })
+            .where(eq(personalSaasAccounts.id, workspace.ownerId));
+        }
+        await reconcileDecisionHistory(tx, workspace.ownerId, now);
         await tx
           .delete(personalSaasSessions)
           .where(eq(personalSaasSessions.accountId, workspace.ownerId));

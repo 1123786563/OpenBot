@@ -4,6 +4,8 @@ import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { eq } from "drizzle-orm";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createAgentProfileStore } from "../src/agents/profile-store";
+import { createApprovalStore } from "../src/approvals/store";
+import { approvalAction } from "../src/approvals/types";
 import { botSeat, seatText } from "../src/computer/computer-key";
 import { createDatabase } from "../src/db/client";
 import {
@@ -2573,6 +2575,69 @@ test("concurrent workspace exports contain only their own readable resources", a
   );
 });
 
+test("the workspace shows owner-scoped invalidated approval history after access returns", async () => {
+  const owner = await isolationOwner();
+  const other = await isolationOwner();
+  const [account] = await database
+    .select({ id: personalSaasAccounts.id })
+    .from(personalSaasAccounts)
+    .where(eq(personalSaasAccounts.subject, owner.account.sub));
+  if (!account) throw new Error("Personal account missing");
+  await database
+    .insert(users)
+    .values({ id: account.id, email: `${account.id}@example.test` });
+  const approval = await createApprovalStore(database).open(
+    approvalAction({
+      actorId: account.id,
+      botId: owner.botId,
+      toolRef: "computer_write_file",
+      scope: "notes",
+      effect: "write",
+      target: { filePath: "notes.txt" },
+      args: { path: "notes.txt" },
+      continuation: {
+        runId: crypto.randomUUID(),
+        threadId: crypto.randomUUID(),
+        toolCallId: crypto.randomUUID(),
+        toolName: "computer_write_file",
+        args: { path: "notes.txt" },
+        messages: [],
+        state: {},
+        context: [],
+        forwardedProps: {},
+      },
+    }),
+  );
+  const operate = (action: "pause" | "resume") =>
+    send(`/api/operator/workspaces/${owner.workspaceId}/suspension`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${operatorToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ action, reason: "Test approval cutoff" }),
+    });
+  const history = (session: string) =>
+    send("/api/workspace/approvals", { headers: { cookie: session } });
+  expect((await operate("pause")).status).toBe(201);
+  expect((await history(owner.session)).status).toBe(403);
+  expect((await operate("resume")).status).toBe(201);
+  // New sign-in evidence must be strictly later than the resume operation.
+  await Bun.sleep(2);
+  const session = cookie(
+    await authenticate(owner.account),
+    "__Host-openbot-personal=",
+  );
+  expect(await (await history(session)).json()).toMatchObject({
+    requests: [
+      { id: approval.id, tool: "computer_write_file", invalidated: true },
+    ],
+  });
+  expect(await (await history(other.session)).json()).toEqual({ requests: [] });
+  const page = await send("/workspace", { headers: { cookie: session } });
+  expect(await page.text()).toContain("computer_write_file · Invalidated");
+});
+
 test("workspace suspension blocks export creation and download and invalidates earlier links", async () => {
   const owner = await isolationOwner();
   const other = await isolationOwner();
@@ -2605,6 +2670,7 @@ test("workspace suspension blocks export creation and download and invalidates e
     ).status,
   ).toBe(201);
   expect((await operate("resume")).status).toBe(201);
+  await Bun.sleep(2);
   const signedIn = await authenticate(owner.account);
   const newSession = cookie(signedIn, "__Host-openbot-personal=");
   const reissued = await create(newSession);

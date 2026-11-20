@@ -14,6 +14,10 @@ import {
   routineRuns,
 } from "../db/schema";
 import type { DeliveryScope } from "../delivery/types";
+import {
+  decisionInvalidated,
+  runWithDecisionAccess,
+} from "../personal-saas/decision-access";
 import type { ResponsibilityStore } from "../responsibilities/types";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import type { ApprovalResumeDependencies, ApprovalService } from "./service";
@@ -29,7 +33,9 @@ export function createApprovalResumeTick(deps: {
   approvalQueue: WorkQueue;
   approvalOwner: string;
   approvalService: ApprovalService;
-  executeApprovedAction: ApprovalResumeDependencies["execute"];
+  executeApprovedAction: ReturnType<
+    typeof import("./execute").createApprovedActionExecutor
+  >;
   database: Database;
   responsibilityStore: ResponsibilityStore;
   groupConversations: Pick<GroupConversations, "continueWaiting">;
@@ -98,13 +104,40 @@ export function createApprovalResumeTick(deps: {
             approvalService.validateReentry(action, () =>
               executeApprovedAction(action),
             ),
-          execute: executeApprovedAction,
+          execute: async (action) => {
+            const request = await approvalService.store.get(
+              input.ownerUserId,
+              input.approvalId,
+            );
+            if (request.action.executionInvalidated)
+              throw new Error(decisionInvalidated);
+            return runWithDecisionAccess(
+              database,
+              input.ownerUserId,
+              {
+                runId: action.runId,
+                createdAt: request.createdAt,
+                epoch: request.action.executionEpoch,
+              },
+              (execution) => executeApprovedAction(action, execution),
+            );
+          },
           continue: async ({
             continuation: snapshot,
             result,
             messageId,
             approvalId,
           }) => {
+            const request = await approvalService.store.get(
+              input.ownerUserId,
+              approvalId,
+            );
+            if (request.action.executionInvalidated) return;
+            const origin = {
+              runId: request.action.runId,
+              createdAt: request.createdAt,
+              epoch: request.action.executionEpoch,
+            };
             const [waitingRun] = await database
               .select({ id: responsibilityRuns.id })
               .from(responsibilityRuns)
@@ -116,6 +149,10 @@ export function createApprovalResumeTick(deps: {
               )
               .limit(1);
             if (waitingRun) {
+              await approvalService.store.checkDecisionAccess?.(
+                input.ownerUserId,
+                origin,
+              );
               await responsibilityStore.resumeWaiting(
                 input.ownerUserId,
                 waitingRun.id,
@@ -123,10 +160,6 @@ export function createApprovalResumeTick(deps: {
               );
               return;
             }
-            const request = await approvalService.store.get(
-              input.ownerUserId,
-              approvalId,
-            );
             /*
              * ASKING AGAIN IS WHERE THE TURN STOPS, NOT A FAILURE. A carried-on turn that reaches
              * another action needing the person opens its own request and stops on it, nothing
@@ -143,15 +176,25 @@ export function createApprovalResumeTick(deps: {
               outcome = await groupConversations.continueWaiting(
                 approvalId,
                 () =>
-                  approvalContinuationRunner({
-                    ownerUserId: input.ownerUserId,
-                    routineId: "approval",
-                    agentId: request.action.botId,
-                    threadId: snapshot.threadId,
-                    instruction: "",
-                    initiator: snapshot.initiator ?? PERSON_INITIATOR,
-                    continuation: { snapshot, result, messageId },
-                  }),
+                  runWithDecisionAccess(
+                    database,
+                    input.ownerUserId,
+                    origin,
+                    async (execution) => {
+                      const resumed = await approvalContinuationRunner({
+                        ownerUserId: input.ownerUserId,
+                        routineId: "approval",
+                        agentId: request.action.botId,
+                        threadId: snapshot.threadId,
+                        instruction: "",
+                        initiator: snapshot.initiator ?? PERSON_INITIATOR,
+                        continuation: { snapshot, result, messageId },
+                        ...execution,
+                      });
+                      await execution.beforeDispatch?.();
+                      return resumed;
+                    },
+                  ),
               );
             } catch (error) {
               if (!(error instanceof HeadlessToolSuspension)) throw error;

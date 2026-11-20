@@ -7,6 +7,7 @@ import {
   personalSaasSessions,
 } from "../db/schema/personal-saas";
 
+import { reconcileDecisionHistory } from "./decision-access";
 import { latestSuspension } from "./workspace-suspension";
 
 const cutoffMs = 60_000;
@@ -255,6 +256,7 @@ export function createAccountAccess(
     async refreshAccounts(issuer: string) {
       const accounts = await database
         .select({
+          id: personalSaasAccounts.id,
           issuer: personalSaasAccounts.issuer,
           subject: personalSaasAccounts.subject,
         })
@@ -263,7 +265,17 @@ export function createAccountAccess(
       let failed = false;
       for (let start = 0; start < accounts.length; start += 16) {
         const batch = accounts.slice(start, start + 16);
-        const results = await Promise.allSettled(batch.map(check));
+        const results = await Promise.allSettled(
+          batch.map(async ({ id, ...identity }) => {
+            try {
+              return await check(identity);
+            } finally {
+              await database.transaction((tx) =>
+                reconcileDecisionHistory(tx, id, now),
+              );
+            }
+          }),
+        );
         failed ||= results.some((result) => result.status === "rejected");
       }
       if (failed) throw new Error("Could not persist account status");

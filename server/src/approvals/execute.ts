@@ -75,7 +75,10 @@ export type ApprovedActionDependencies = {
  * it would have asked about instead of acting.
  */
 export function createApprovedActionExecutor(deps: ApprovedActionDependencies) {
-  return async (action: ApprovalAction): Promise<unknown> => {
+  return async (
+    action: ApprovalAction,
+    execution?: { signal?: AbortSignal; beforeDispatch?: () => Promise<void> },
+  ): Promise<unknown> => {
     const snapshot: ApprovalContinuation = parseApprovalContinuation(
       action.continuation,
     );
@@ -120,9 +123,10 @@ export function createApprovedActionExecutor(deps: ApprovedActionDependencies) {
         throw new ApprovalRefusedError(
           "That computer tool is no longer available.",
         );
+      await execution?.beforeDispatch?.();
       return tool.execute(snapshot.args, {
         toolCallId: snapshot.toolCallId,
-        signal: new AbortController().signal,
+        signal: execution?.signal ?? new AbortController().signal,
       });
     }
     if (snapshot.toolName.startsWith("host_")) {
@@ -133,6 +137,7 @@ export function createApprovedActionExecutor(deps: ApprovedActionDependencies) {
         throw new ApprovalRefusedError(
           "That host tool is no longer available.",
         );
+      await execution?.beforeDispatch?.();
       const result = await tool.execute(snapshot.args);
       if (result.startsWith(deps.refusalMarker))
         throw new ApprovalRefusedError(result);
@@ -160,6 +165,7 @@ export function createApprovedActionExecutor(deps: ApprovedActionDependencies) {
               depth: 0,
               initiator,
             };
+      await execution?.beforeDispatch?.();
       const answered = await deps.coordinationCall({
         name: snapshot.toolName,
         args,
@@ -185,6 +191,7 @@ export function createApprovedActionExecutor(deps: ApprovedActionDependencies) {
             action.botId,
             action.toolRef,
           );
+      await execution?.beforeDispatch?.();
       result = await deps.callTool({
         ref: action.toolRef,
         args,
