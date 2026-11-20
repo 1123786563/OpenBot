@@ -5,9 +5,14 @@ import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createDatabase } from "../src/db/client";
 import {
+  agents,
+  attachments,
+  brokeredConnections,
   channelAgents,
   channelMemberships,
   channels,
+  personalMemories,
+  routines,
   users,
   workItems,
 } from "../src/db/schema";
@@ -1421,11 +1426,6 @@ const closedWorkspaceSurfaces = [
   ["Personal Memory", "/api/memory?botId=:bot", "GET"],
   ["Visible log", "/api/agents/:bot/activity", "GET"],
   ["Search index", "/api/search?workspaceId=:workspace&q=:resource", "GET"],
-  [
-    "Export download",
-    "/api/workspaces/:workspace/exports/:resource/download",
-    "GET",
-  ],
   ["Invitation", "/api/workspaces/:workspace/invitations", "POST"],
   ["Co-owner", "/api/workspaces/:workspace/members", "POST"],
   ["Public share", "/api/workspaces/:workspace/shares", "POST"],
@@ -1858,4 +1858,266 @@ test("native verified handoffs return only the signed-in owner's suspension stat
   expect((await exchangeNative({ ...oldProof, code: oldCode })).status).toBe(
     400,
   );
+});
+
+test("only the current workspace owner can create and download an export", async () => {
+  const owner = await isolationOwner();
+  const other = await isolationOwner();
+  const path = `/api/workspaces/${owner.workspaceId}/exports`;
+  const create = (session: string) =>
+    send(path, { method: "POST", headers: { cookie: session, origin } });
+
+  expect((await create(other.session)).status).toBe(404);
+  const issued = await create(owner.session);
+  expect(issued.status).toBe(201);
+  const { downloadUrl, expiresAt } = await issued.json();
+  const otherUrl = downloadUrl.replace(owner.workspaceId, other.workspaceId);
+  expect(
+    (await send(otherUrl, { headers: { cookie: other.session } })).status,
+  ).toBe(404);
+  const tampered = downloadUrl.replace(
+    /\.([\w-])/,
+    (_: string, first: string) => (first === "A" ? ".B" : ".A"),
+  );
+  expect(
+    (await send(tampered, { headers: { cookie: owner.session } })).status,
+  ).toBe(404);
+  expect((await send(downloadUrl)).status).toBe(401);
+  expect(
+    (await send(downloadUrl, { headers: { cookie: other.session } })).status,
+  ).toBe(404);
+  const download = await send(downloadUrl, {
+    headers: { cookie: owner.session },
+  });
+  expect(download.status).toBe(200);
+  expect(download.headers.get("content-disposition")).toContain("attachment");
+  expect(await download.json()).toMatchObject({
+    workspaceId: owner.workspaceId,
+    bots: [{ id: owner.botId, name: "Personal Assistant" }],
+    conversations: [],
+    attachments: [],
+    personalMemory: [],
+    routines: [],
+    connections: [],
+  });
+  try {
+    clockTime = Date.parse(expiresAt);
+    expect(
+      (await send(downloadUrl, { headers: { cookie: owner.session } })).status,
+    ).toBe(404);
+    expect((await workspace(owner.session)).id).toBe(owner.workspaceId);
+  } finally {
+    clockTime = undefined;
+  }
+});
+
+async function exportFixture(
+  owner: Awaited<ReturnType<typeof isolationOwner>>,
+  marker: string,
+) {
+  const principal = `personal-workspace:${owner.workspaceId}`;
+  const channelId = crypto.randomUUID();
+  const memoryId = crypto.randomUUID();
+  const routineId = crypto.randomUUID();
+  await database
+    .insert(users)
+    .values({ id: principal, email: `${channelId}@example.com` });
+  await database
+    .update(agents)
+    .set({
+      configuration: {
+        systemPrompt: `${marker} prompt`,
+        apiKey: "fixture-private-bot-key",
+      },
+    })
+    .where(eq(agents.id, owner.botId));
+  await database.insert(channels).values({
+    id: channelId,
+    name: `${marker} conversation`,
+    description: "",
+    opening: `${marker} opening`,
+    lastMessage: `${marker} reply`,
+  });
+  await database
+    .insert(channelAgents)
+    .values({ channelId, agentId: owner.botId });
+  const bytes = Buffer.from([0, 32, 127, 255]);
+  await database.insert(attachments).values([
+    {
+      channelId,
+      uploadedBy: principal,
+      name: `${marker}.bin`,
+      mimeType: "application/octet-stream",
+      sizeBytes: bytes.length,
+      bytes,
+      attachedAt: new Date(),
+    },
+    {
+      channelId,
+      uploadedBy: principal,
+      name: "staged-private-file.bin",
+      mimeType: "application/octet-stream",
+      sizeBytes: bytes.length,
+      bytes,
+    },
+  ]);
+  await database.insert(personalMemories).values({
+    id: memoryId,
+    ownerUserId: principal,
+    content: `${marker} memory`,
+    provenance: "person",
+  });
+  await database.insert(routines).values({
+    id: routineId,
+    ownerUserId: principal,
+    agentId: owner.botId,
+    channelId,
+    title: `${marker} routine`,
+    instruction: "Read the briefing",
+    cron: "0 9 * * *",
+    nextRunAt: new Date(),
+  });
+  await database.insert(brokeredConnections).values({
+    provider: "composio",
+    app: `${marker} calendar`,
+    holder: "person",
+    userId: principal,
+    vendorUserId: "fixture-private-vendor-id",
+    connectedBy: "fixture-private-authorization",
+    verified: true,
+  });
+  return { channelId, memoryId, routineId, bytes };
+}
+
+test("concurrent workspace exports contain only their own readable resources", async () => {
+  const alice = await isolationOwner();
+  const bob = await isolationOwner();
+  const cases = [
+    { owner: alice, marker: "Alice fixture" },
+    { owner: bob, marker: "Bob fixture" },
+  ];
+  const fixtures = await Promise.all(
+    cases.map(({ owner, marker }) => exportFixture(owner, marker)),
+  );
+
+  // A channel shared by the two assistants is outside both workspace scopes.
+  const sharedId = crypto.randomUUID();
+  await database
+    .insert(channels)
+    .values({ id: sharedId, name: "shared-private-channel", description: "" });
+  await database
+    .insert(channelAgents)
+    .values(
+      cases.map(({ owner }) => ({ channelId: sharedId, agentId: owner.botId })),
+    );
+
+  await Promise.all(
+    cases.map(async ({ owner, marker }, index) => {
+      const path = `/api/workspaces/${owner.workspaceId}/exports`;
+      const page = await send("/workspace", {
+        headers: { cookie: owner.session },
+      });
+      expect(await page.text()).toContain(`action="${path}"`);
+      const issued = await send(path, {
+        method: "POST",
+        headers: { cookie: owner.session, origin, accept: "text/html" },
+      });
+      expect(issued.status).toBe(303);
+      const link = issued.headers.get("location") ?? "";
+      const foreign = await send(link, {
+        headers: { cookie: cases[1 - index].owner.session },
+      });
+      expect(foreign.status).toBe(404);
+      const download = await send(issued.headers.get("location") ?? "", {
+        headers: { cookie: owner.session },
+      });
+      expect(download.status).toBe(200);
+      expect(download.headers.get("cache-control")).toBe("no-store");
+      const json = await download.text();
+      expect(json).not.toContain("fixture-private-");
+      expect(json).not.toContain("staged-private-file.bin");
+      expect(json).not.toContain("shared-private-channel");
+      expect(json).not.toContain(cases[1 - index].marker);
+      const { channelId, memoryId, routineId, bytes } = fixtures[index];
+      expect(JSON.parse(json)).toMatchObject({
+        workspaceId: owner.workspaceId,
+        bots: [
+          {
+            id: owner.botId,
+            configuration: { systemPrompt: `${marker} prompt` },
+          },
+        ],
+        conversations: [
+          {
+            id: channelId,
+            opening: `${marker} opening`,
+            preview: `${marker} reply`,
+          },
+        ],
+        attachments: [
+          {
+            conversationId: channelId,
+            name: `${marker}.bin`,
+            contentBase64: bytes.toString("base64"),
+          },
+        ],
+        personalMemory: [{ id: memoryId, content: `${marker} memory` }],
+        routines: [
+          {
+            id: routineId,
+            title: `${marker} routine`,
+            conversationId: channelId,
+          },
+        ],
+        connections: [
+          { service: "composio", name: `${marker} calendar`, verified: true },
+        ],
+      });
+    }),
+  );
+});
+
+test("workspace suspension blocks export creation and download and invalidates earlier links", async () => {
+  const owner = await isolationOwner();
+  const other = await isolationOwner();
+  const path = `/api/workspaces/${owner.workspaceId}/exports`;
+  const create = (session: string, target = path) =>
+    send(target, { method: "POST", headers: { cookie: session, origin } });
+  const issued = await create(owner.session);
+  expect(issued.status).toBe(201);
+  const { downloadUrl } = await issued.json();
+  const operate = (action: "pause" | "resume") =>
+    send(`/api/operator/workspaces/${owner.workspaceId}/suspension`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${operatorToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ action, reason: "Test export suspension" }),
+    });
+  expect((await operate("pause")).status).toBe(201);
+  expect((await create(owner.session)).status).toBe(401);
+  expect(
+    (await send(downloadUrl, { headers: { cookie: owner.session } })).status,
+  ).toBe(401);
+  expect(
+    (
+      await create(
+        other.session,
+        `/api/workspaces/${other.workspaceId}/exports`,
+      )
+    ).status,
+  ).toBe(201);
+  expect((await operate("resume")).status).toBe(201);
+  const signedIn = await authenticate(owner.account);
+  const newSession = cookie(signedIn, "__Host-openbot-personal=");
+  const reissued = await create(newSession);
+  expect(reissued.status).toBe(201);
+  const fresh = await reissued.json();
+  expect(
+    (await send(fresh.downloadUrl, { headers: { cookie: newSession } })).status,
+  ).toBe(200);
+  expect(
+    (await send(downloadUrl, { headers: { cookie: newSession } })).status,
+  ).toBe(404);
 });
