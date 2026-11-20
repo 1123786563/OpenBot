@@ -644,6 +644,10 @@ export async function inspectWorkspaceStorage(
           { Type: "bind", Source: path, Target: "/storage", ReadOnly: true },
         ],
         ReadonlyRootfs: true,
+        LogConfig: {
+          Type: "json-file",
+          Config: { "max-size": "1m", "max-file": "2" },
+        },
         NetworkMode: "none",
         CapDrop: ["ALL"],
         SecurityOpt: ["no-new-privileges:true"],

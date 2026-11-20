@@ -3960,37 +3960,57 @@ test("attachment storage admits one of two concurrent uploads and releases a wit
 test("Computer storage counts in workspace usage and reserves room against concurrent attachment writes", async () => {
   const owner = await isolationOwner();
   const fixture = await exportFixture(owner, "shared storage quota");
+  let storageAvailable = true;
   const supervisor: WorkspaceComputerConfig = {
     supervisorUrl: "http://supervisor.example",
     supervisorToken: "token",
     async fetch(input) {
       return new URL(input).pathname.endsWith("/storage")
-        ? Response.json({ used: 2, capacity: 8 })
+        ? storageAvailable
+          ? Response.json({ used: 2, capacity: 8 })
+          : new Response(null, { status: 503 })
         : Response.json({ status: "restart_required" });
     },
   };
-  const service = newApp(database, supervisor, undefined, {
-    storage: 19,
+  const limits = {
+    storage: 20,
     computerStorage: 8,
-  });
+  };
+  const service = newApp(database, supervisor, undefined, limits);
+  const replica = newApp(database, supervisor, undefined, limits);
   const headers = { origin, cookie: owner.session };
   const state = await service.request("/api/workspace", { headers });
   expect((await state.json()).quotas.storage).toMatchObject({
     used: 10,
-    limit: 19,
+    limit: 20,
     attachmentUsed: 8,
     computerUsed: 2,
     computerReserved: 8,
   });
-  const body = new FormData();
-  body.set("conversationId", fixture.channelId);
-  body.set("file", new File(["1234"], "draft.txt"));
-  const upload = await service.request("/api/workspace/attachments", {
-    method: "POST",
-    headers,
-    body,
+  const upload = (target: typeof app) => {
+    const body = new FormData();
+    body.set("conversationId", fixture.channelId);
+    body.set("file", new File(["1234"], "draft.txt"));
+    return target.request("/api/workspace/attachments", {
+      method: "POST",
+      headers,
+      body,
+    });
+  };
+  const concurrent = await Promise.all([upload(service), upload(replica)]);
+  expect(concurrent.map((response) => response.status).sort()).toEqual([
+    201, 429,
+  ]);
+
+  storageAvailable = false;
+  const unavailable = await service.request("/api/workspace", { headers });
+  expect((await unavailable.json()).quotas.storage).toMatchObject({
+    used: null,
+    attachmentUsed: 12,
+    computerUsed: null,
+    computerReserved: 8,
   });
-  expect(upload.status).toBe(429);
+  expect((await upload(replica)).status).toBe(429);
 });
 
 test("stopping queued work preserves recovery and retry checks the current Bot limit", async () => {
