@@ -3624,13 +3624,10 @@ test("a manual Bot retry asks under current policy and only its new approval can
   const resumedWorkspace = await operate("resume");
   expect(resumedWorkspace.status).toBe(201);
   const { effectiveAt } = await resumedWorkspace.json();
-  // A fresh login must begin strictly after the suspension operator resumes access.
-  clockTime = Math.max(Date.now(), Date.parse(effectiveAt) + 1);
-  try {
-    session = await signIn();
-  } finally {
-    clockTime = undefined;
-  }
+  // Casdoor timestamps the login attempt using the real clock.
+  const resumedAt = Date.parse(effectiveAt);
+  while (Date.now() <= resumedAt) await Bun.sleep(1);
+  session = await signIn();
   expect((await answer(oldQuestion.id)).status).toBe(400);
   await runApp.sweepBotDecisions();
   expect(executions).toEqual([]);
