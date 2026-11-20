@@ -20,11 +20,24 @@ const analysis = z.object({
   evidenceCount: z.number().int().nonnegative(),
 });
 
+export const learningScheduleSettings = z
+  .object({
+    enabled: z.boolean(),
+    intervalHours: z.number().int().min(1).max(168),
+  })
+  .strict();
+
 export const directChatLearning = z.object({
   enabled: z.boolean(),
   available: z.boolean(),
   latest: analysis.nullable(),
   lastResult: analysis.nullable(),
+  schedule: learningScheduleSettings
+    .extend({
+      nextAt: z.string().nullable(),
+      lastResult: analysis.nullable(),
+    })
+    .optional(),
   proposals: z.array(
     directChatProposal.extend({
       id: z.string(),

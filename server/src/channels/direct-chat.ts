@@ -1,5 +1,6 @@
 import type { AbstractAgent, BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { EventType } from "@ag-ui/client";
+import { learningScheduleSettings } from "@openbot/shared/direct-chat-learning";
 import { DIRECT_CHAT_REPLAY_HEADER } from "@openbot/shared/direct-chat-replay";
 import { and, eq, isNull, ne, notExists } from "drizzle-orm";
 import { Hono } from "hono";
@@ -114,6 +115,7 @@ export function createDirectChatRoutes(deps: {
   identifyActor: IdentifyActor;
   traceRuns: boolean;
   trial?: { route: string; model: ManagedModel };
+  learningClock?: () => Date;
   agentFor: (
     actor: AgentActor,
     agentId: string,
@@ -193,42 +195,68 @@ export function createDirectChatRoutes(deps: {
     deps.identifyActor(request).catch(() => null);
   const absent = { error: "Conversation not found." };
 
-  const learning = createDirectChatLearning(database, deps.trial);
-  routes.on(["GET", "POST"], "/threads/:threadId/learn", async (context) => {
-    const { threadId } = context.req.param();
-    const agentId = context.req.query("agentId");
-    const request = context.req.raw;
-    if (
-      request.method === "POST" &&
-      (context.req.header("sec-fetch-site") === "cross-site" ||
-        context.req.header("content-type")?.split(";")[0]?.trim() !==
-          "application/json")
-    )
-      return context.json({ error: "Use a same-origin JSON request." }, 403);
-    const personId = (await actorFor(request))?.id;
-    if (!personId || !agentId) return context.json(absent, 404);
-    const result = await learning(
-      { threadId, agentId, personId },
-      async () => {
-        const actor = await actorFor(request);
-        return (tx) =>
-          actor?.id === personId
-            ? threadFor(tx, actor, threadId, agentId, true)
-            : Promise.resolve(null);
-      },
-      request.method === "POST",
-    );
-    if (!result) return context.json(absent, 404);
-    context.header("cache-control", "no-store");
-    if (request.method === "POST") {
-      if (!result.enabled)
+  const learning = createDirectChatLearning(
+    database,
+    deps.trial,
+    deps.learningClock,
+  );
+  routes.on(
+    ["GET", "POST", "PUT"],
+    "/threads/:threadId/learn",
+    async (context) => {
+      const { threadId } = context.req.param();
+      const agentId = context.req.query("agentId");
+      const request = context.req.raw;
+      if (
+        request.method !== "GET" &&
+        (context.req.header("sec-fetch-site") === "cross-site" ||
+          context.req.header("content-type")?.split(";")[0]?.trim() !==
+            "application/json")
+      )
+        return context.json({ error: "Use a same-origin JSON request." }, 403);
+      const personId = (await actorFor(request))?.id;
+      if (!personId || !agentId) return context.json(absent, 404);
+      const configuration =
+        request.method === "PUT"
+          ? learningScheduleSettings.safeParse(
+              await request.json().catch(() => null),
+            )
+          : null;
+      if (configuration && !configuration.success)
+        return context.json(
+          {
+            error:
+              "Choose whether to enable scheduling and a whole-hour interval from 1 to 168.",
+          },
+          400,
+        );
+      const result = await learning.access(
+        { threadId, agentId, personId },
+        async () => {
+          const actor = await actorFor(request);
+          return (tx) =>
+            actor?.id === personId
+              ? threadFor(tx, actor, threadId, agentId, true)
+              : Promise.resolve(null);
+        },
+        configuration
+          ? { kind: "configure", settings: configuration.data }
+          : { kind: request.method === "POST" ? "manual" : "read" },
+      );
+      if (!result) return context.json(absent, 404);
+      context.header("cache-control", "no-store");
+      if (configuration?.data.enabled && !result.enabled)
         return context.json({ error: "Learning is disabled." }, 409);
-      if (!result.available)
-        return context.json({ error: "Learning model is unavailable." }, 503);
-      return context.json(result, 202);
-    }
-    return context.json(result);
-  });
+      if (request.method === "POST") {
+        if (!result.enabled)
+          return context.json({ error: "Learning is disabled." }, 409);
+        if (!result.available)
+          return context.json({ error: "Learning model is unavailable." }, 503);
+        return context.json(result, 202);
+      }
+      return context.json(result);
+    },
+  );
 
   routes.get("/threads/:threadId/messages", async (context) => {
     const { threadId } = context.req.param();
@@ -644,5 +672,19 @@ export function createDirectChatRoutes(deps: {
     }
   });
 
-  return routes;
+  return {
+    routes,
+    sweepLearning: () =>
+      learning.sweep(
+        ({ personId, threadId, agentId }) =>
+          (tx) =>
+            threadFor(
+              tx,
+              { id: personId, role: "user" },
+              threadId,
+              agentId,
+              true,
+            ),
+      ),
+  };
 }

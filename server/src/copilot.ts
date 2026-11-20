@@ -52,6 +52,7 @@ import {
   stopRecorder,
 } from "@openbot/toolkit/run-stop";
 import { historyOrEmpty } from "@openbot/toolkit/thread-history";
+import { Hono } from "hono";
 import { defer, from, switchMap } from "rxjs";
 import { z } from "zod";
 import {
@@ -66,6 +67,7 @@ import {
   type PlanModelConfig,
   planModelForEnvironment,
 } from "./agents/plan-model";
+import type { AgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
 import {
   type RefusingProvider,
@@ -98,15 +100,13 @@ import {
   resolveAttachmentParts,
   type StoredAttachment,
 } from "./channels/attachment-parts";
+import { createDirectChatRoutes } from "./channels/direct-chat";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { DeploymentConfig } from "./config";
+import type { Database } from "./db/client";
 import { observeModelConnection } from "./desktop-connection-failure";
 import { desktopTelemetryProperties } from "./desktop-telemetry";
 import { currentEdition } from "./edition";
-import { Hono } from "hono";
-import type { AgentProfileStore } from "./agents/profile-store";
-import { createDirectChatRoutes } from "./channels/direct-chat";
-import type { Database } from "./db/client";
 import {
   createIntelligenceClient,
   observeIntelligenceAuthentication,
@@ -125,11 +125,11 @@ import {
   type PersonalSkillSources,
 } from "./learning/runtime";
 import type { LearningSettingsStore } from "./learning/settings";
+import { createManagedModel } from "./managed-model";
 import {
   type LoadPersonalMemory,
   PersonalMemoryMiddleware,
 } from "./memory/tools";
-import { createManagedModel } from "./managed-model";
 import { providerName } from "./model-billing";
 import { modelSourceFor, type RunChoice } from "./model-catalogue";
 import { pickedSkillGuidance } from "./plugins/picked-skill";
@@ -3028,7 +3028,11 @@ export function mountCopilotRuntime(
   identifyActor: IdentifyActor,
   options: {
     productTelemetry?: ProductTelemetry;
-    directChat?: { database: Database; profiles: AgentProfileStore };
+    directChat?: {
+      database: Database;
+      profiles: AgentProfileStore;
+      learningClock?: () => Date;
+    };
     /**
      * Where the cards a Bot asks with in the conversation are saved while they wait on the person,
      * so the Bot is under Needs you for them. See approvals/decision-waits.ts.
@@ -3295,23 +3299,23 @@ export function mountCopilotRuntime(
   });
 
   const handler = intelligence ? sdkHandler : new Hono();
+  let sweepLearning: (() => Promise<void>) | undefined;
   if (!intelligence) {
     if (!options.directChat)
       throw new Error("OpenBot chat requires its database and Bot profiles.");
     const trial = config.managedModelTrial;
-    handler.route(
-      basePath,
-      createDirectChatRoutes({
-        ...options.directChat,
-        trial: trial && {
-          route: trial.route,
-          model: createManagedModel(trial),
-        },
-        traceRuns: Boolean(config.opik),
-        identifyActor,
-        agentFor: (actor, botId) => agentFor({ actor, botId, textOnly: true }),
-      }),
-    );
+    const directChat = createDirectChatRoutes({
+      ...options.directChat,
+      trial: trial && {
+        route: trial.route,
+        model: createManagedModel(trial),
+      },
+      traceRuns: Boolean(config.opik),
+      identifyActor,
+      agentFor: (actor, botId) => agentFor({ actor, botId, textOnly: true }),
+    });
+    handler.route(basePath, directChat.routes);
+    if (trial) sweepLearning = directChat.sweepLearning;
     handler.get(`${basePath}/info`, (context) =>
       sdkHandler.fetch(context.req.raw),
     );
@@ -3319,6 +3323,7 @@ export function mountCopilotRuntime(
 
   return {
     handler,
+    sweepLearning,
     learning,
     /**
      * How to reach the platform's runner, exactly as the runtime reaches it.

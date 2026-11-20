@@ -1,16 +1,37 @@
-import { directChatProposal } from "@openbot/shared/direct-chat-learning";
-import { and, asc, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import {
+  directChatProposal,
+  type learningScheduleSettings,
+} from "@openbot/shared/direct-chat-learning";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  lte,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import type { ProfileReadExecutor } from "../agents/profile-store";
 import type { Database } from "../db/client";
 import {
   directChatAnalyses as analyses,
-  directChatRuns as runs,
   learningSettings,
+  intelligenceChannelMappings as mappings,
+  directChatRuns as runs,
+  directChatLearningSchedules as schedules,
 } from "../db/schema";
 import type { ManagedModel, ManagedModelResult } from "../managed-model";
 
 type Analysis = typeof analyses.$inferSelect;
+type ScheduleSettings = z.infer<typeof learningScheduleSettings>;
+type Action =
+  | { kind: "read" | "manual" | "scheduled" }
+  | { kind: "configure"; settings: ScheduleSettings };
 type Scope = { threadId: string; agentId: string; personId: string };
 type Authorize = (
   tx: ProfileReadExecutor,
@@ -57,6 +78,7 @@ async function evidence(
   tx: ProfileReadExecutor,
   threadId: string,
   ids?: string[],
+  evidenceAfter?: Date | null,
 ) {
   const turns = await tx
     .select({
@@ -71,6 +93,7 @@ async function evidence(
       and(
         eq(runs.threadId, threadId),
         eq(runs.status, "completed"),
+        evidenceAfter ? gt(runs.startedAt, evidenceAfter) : undefined,
         isNotNull(runs.assistantMessageId),
         sql`length(btrim(${runs.reply})) > 0`,
         ids
@@ -113,6 +136,7 @@ const proposalResponse = z.union([
 export function createDirectChatLearning(
   database: Database,
   trial?: { route: string; model: ManagedModel },
+  clock = () => new Date(),
 ) {
   async function finish(
     scope: Scope,
@@ -140,7 +164,7 @@ export function createDirectChatLearning(
                 reason: enabled ? "evidence_unavailable" : "learning_disabled",
                 proposal: null,
               }),
-          updatedAt: new Date(),
+          updatedAt: clock(),
         })
         .where(
           and(eq(analyses.id, analysis.id), eq(analyses.state, analysis.state)),
@@ -174,7 +198,7 @@ export function createDirectChatLearning(
         return (
           Boolean(row) &&
           (await evidence(tx, scope.threadId, analysis.evidenceRunIds))
-            .length === turns.length
+            .length === analysis.evidenceRunIds.length
         );
       });
     };
@@ -264,11 +288,11 @@ export function createDirectChatLearning(
     });
   }
 
-  return async (
+  async function transact(
     scope: Scope,
     refreshAuthorization: RefreshAuthorization,
-    start: boolean,
-  ) => {
+    action: Action,
+  ) {
     const authorize = await refreshAuthorization();
     const outcome = await database.transaction(async (tx) => {
       await lockLearningSettings(tx);
@@ -276,6 +300,73 @@ export function createDirectChatLearning(
       if (!conversation) return null;
       const enabled = await learningEnabled(tx, scope.agentId);
       const available = Boolean(trial);
+      const now = clock();
+      const scheduleKey = eq(schedules.threadId, scope.threadId);
+      const [storedSchedule] = await tx
+        .select()
+        .from(schedules)
+        .where(scheduleKey);
+      let schedule = storedSchedule;
+      const nextAt = (intervalHours: number) =>
+        new Date(now.getTime() + intervalHours * 3_600_000);
+
+      if (
+        action.kind === "configure" &&
+        (enabled || !action.settings.enabled)
+      ) {
+        const settings = action.settings;
+        if (
+          schedule?.enabled &&
+          !settings.enabled &&
+          schedule.ownsLastAnalysis &&
+          schedule.lastAnalysisId
+        ) {
+          await tx
+            .update(analyses)
+            .set({
+              state: "cancelled",
+              reason: "schedule_disabled",
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(analyses.id, schedule.lastAnalysisId),
+                inArray(analyses.state, ["running", "reconciling"]),
+              ),
+            );
+        }
+        const values = {
+          ...settings,
+          botId: scope.agentId,
+          nextAt: settings.enabled
+            ? schedule?.enabled &&
+              schedule.intervalHours === settings.intervalHours
+              ? schedule.nextAt
+              : nextAt(settings.intervalHours)
+            : null,
+          evidenceAfter:
+            settings.enabled && schedule && !schedule.enabled
+              ? sql`clock_timestamp()`
+              : (schedule?.evidenceAfter ?? null),
+          pendingDispatch:
+            settings.enabled && (schedule?.pendingDispatch ?? false),
+        };
+        [schedule] = await tx
+          .insert(schedules)
+          .values({ threadId: scope.threadId, ...values })
+          .onConflictDoUpdate({ target: schedules.threadId, set: values })
+          .returning();
+      }
+
+      const scheduled = action.kind === "scheduled";
+      if (
+        scheduled &&
+        (!schedule?.enabled ||
+          !available ||
+          !enabled ||
+          schedule.botId !== scope.agentId)
+      )
+        return null;
       const withinScope = and(
         eq(analyses.threadId, scope.threadId),
         eq(analyses.botId, scope.agentId),
@@ -289,16 +380,52 @@ export function createDirectChatLearning(
         .limit(1);
       let latest = previous;
       let work: (() => void) | undefined;
-      const now = new Date();
+      const due = scheduled && schedule?.nextAt && schedule.nextAt <= now;
+      const pending = Boolean(
+        schedule?.pendingDispatch && schedule.lastAnalysisId === latest?.id,
+      );
       if (latest && active(latest)) {
+        if (pending && scheduled) {
+          const [claimed] = await tx
+            .update(analyses)
+            .set({ updatedAt: now })
+            .where(eq(analyses.id, latest.id))
+            .returning();
+          await tx
+            .update(schedules)
+            .set({ pendingDispatch: false })
+            .where(scheduleKey);
+          const turns = await evidence(
+            tx,
+            scope.threadId,
+            claimed.evidenceRunIds,
+          );
+          work = () =>
+            background(
+              analyze(
+                scope,
+                conversation.channelId,
+                claimed,
+                turns,
+                refreshAuthorization,
+              ),
+              claimed,
+            );
+          return { work, status: null };
+        }
         // A replica can reconcile a timed-out operation, but it never redispatches it.
         const expired =
           latest.state === "running" &&
-          now.getTime() - latest.startedAt.getTime() >= dispatchDeadlineMs;
+          now.getTime() - latest.updatedAt.getTime() >= dispatchDeadlineMs;
         const check =
           latest.state === "reconciling" &&
           now.getTime() - latest.updatedAt.getTime() >= reconcileIntervalMs;
-        if (available && (expired || check)) {
+        if (
+          !pending &&
+          available &&
+          (expired || check) &&
+          (!scheduled || schedule?.lastAnalysisId === latest.id)
+        ) {
           const [claimed] = await tx
             .update(analyses)
             .set({
@@ -322,9 +449,14 @@ export function createDirectChatLearning(
               );
           }
         }
-      } else if (start && enabled && available) {
-        const turns = await evidence(tx, scope.threadId);
-        if (turns.length > 0 || !latest) {
+      } else if ((action.kind === "manual" || due) && enabled && available) {
+        const turns = await evidence(
+          tx,
+          scope.threadId,
+          undefined,
+          due ? schedule?.evidenceAfter : undefined,
+        );
+        if (turns.length > 0 || !latest || due) {
           const [created] = await tx
             .insert(analyses)
             .values({
@@ -333,13 +465,18 @@ export function createDirectChatLearning(
               state: turns.length ? "running" : "skipped",
               reason: turns.length ? null : "no_evidence",
               evidenceRunIds: turns.map(({ runId }) => runId),
-              startedAt: sql`clock_timestamp()`,
-              updatedAt: sql`clock_timestamp()`,
+              startedAt: new Date(
+                Math.max(
+                  now.getTime(),
+                  (previous?.startedAt.getTime() ?? 0) + 1,
+                ),
+              ),
+              updatedAt: now,
             })
             .returning();
           if (created) {
             latest = created;
-            if (active(created))
+            if (!scheduled && active(created))
               work = () =>
                 background(
                   analyze(
@@ -354,6 +491,44 @@ export function createDirectChatLearning(
           }
         }
       }
+
+      let queued = false;
+      if (due && schedule && latest) {
+        const created = latest.id !== previous?.id;
+        if (!created && active(latest) && schedule.evidenceAfter) {
+          const eligible = await evidence(
+            tx,
+            scope.threadId,
+            latest.evidenceRunIds,
+            schedule.evidenceAfter,
+          );
+          if (eligible.length !== latest.evidenceRunIds.length)
+            return { work, status: null };
+        }
+        queued = created && active(latest);
+        [schedule] = await tx
+          .update(schedules)
+          .set({
+            nextAt: nextAt(schedule.intervalHours),
+            lastAnalysisId: latest.id,
+            ownsLastAnalysis:
+              created ||
+              (schedule.lastAnalysisId === latest.id &&
+                schedule.ownsLastAnalysis),
+            pendingDispatch: queued,
+          })
+          .where(scheduleKey)
+          .returning();
+      }
+
+      if (scheduled) return { work, status: null, queued };
+
+      const [scheduledResult] = schedule?.lastAnalysisId
+        ? await tx
+            .select()
+            .from(analyses)
+            .where(eq(analyses.id, schedule.lastAnalysisId))
+        : [];
 
       const [lastResult] =
         latest && active(latest)
@@ -395,11 +570,85 @@ export function createDirectChatLearning(
           available,
           latest: latest ? summary(latest) : null,
           lastResult: lastResult ? summary(lastResult) : null,
+          schedule: {
+            enabled: schedule?.enabled ?? false,
+            intervalHours: schedule?.intervalHours ?? 24,
+            nextAt: enabled ? (schedule?.nextAt?.toISOString() ?? null) : null,
+            lastResult: scheduledResult ? summary(scheduledResult) : null,
+          },
           proposals,
         },
       };
     });
     outcome?.work?.();
-    return outcome?.status ?? null;
+    return outcome;
+  }
+
+  async function sweep(authorize: (scope: Scope) => Authorize) {
+    if (!trial) return;
+    const now = clock();
+    const candidates = await database
+      .select({
+        threadId: schedules.threadId,
+        personId: mappings.userId,
+        agentId: schedules.botId,
+      })
+      .from(schedules)
+      .innerJoin(mappings, eq(mappings.threadId, schedules.threadId))
+      .leftJoin(analyses, eq(analyses.id, schedules.lastAnalysisId))
+      .where(
+        and(
+          eq(schedules.enabled, true),
+          or(
+            lte(schedules.nextAt, now),
+            eq(schedules.pendingDispatch, true),
+            and(
+              eq(analyses.state, "running"),
+              lte(
+                analyses.updatedAt,
+                new Date(now.getTime() - dispatchDeadlineMs),
+              ),
+            ),
+            and(
+              eq(analyses.state, "reconciling"),
+              lte(
+                analyses.updatedAt,
+                new Date(now.getTime() - reconcileIntervalMs),
+              ),
+            ),
+          ),
+        ),
+      )
+      .orderBy(asc(schedules.nextAt), asc(schedules.threadId));
+
+    for (const scope of candidates) {
+      try {
+        // The first pass commits the work item. The second can claim it immediately;
+        // another worker or a later sweep can also resume the committed item.
+        const refresh = async () => authorize(scope);
+        const outcome = await transact(scope, refresh, { kind: "scheduled" });
+        if (outcome?.queued)
+          await transact(scope, refresh, { kind: "scheduled" });
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            type: "scheduled-learning-failed",
+            threadId: scope.threadId,
+            error: String(error),
+          }),
+        );
+      }
+    }
+  }
+
+  return {
+    async access(
+      scope: Scope,
+      authorize: RefreshAuthorization,
+      action: Action,
+    ) {
+      return (await transact(scope, authorize, action))?.status ?? null;
+    },
+    sweep,
   };
 }

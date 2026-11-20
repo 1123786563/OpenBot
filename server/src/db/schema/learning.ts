@@ -1,15 +1,17 @@
 import type {
-  LearningSettings,
-  LearningSharingMode,
-} from "@openbot/shared/learning";
-import type {
   directChatLearning,
   directChatProposal,
 } from "@openbot/shared/direct-chat-learning";
+import type {
+  LearningSettings,
+  LearningSharingMode,
+} from "@openbot/shared/learning";
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   index,
+  integer,
   pgTable,
   primaryKey,
   text,
@@ -179,6 +181,39 @@ export const directChatAnalyses = pgTable(
     check(
       "direct_chat_analyses_proposal_check",
       sql`(${table.state} = 'proposed') = (${table.proposal} is not null)`,
+    ),
+  ],
+);
+
+export const directChatLearningSchedules = pgTable(
+  "direct_chat_learning_schedules",
+  {
+    threadId: text("thread_id")
+      .primaryKey()
+      .references(() => intelligenceChannelMappings.threadId, {
+        onDelete: "cascade",
+      }),
+    botId: text("bot_id").notNull(),
+    enabled: boolean("enabled").notNull(),
+    intervalHours: integer("interval_hours").notNull(),
+    nextAt: timestamp("next_at", { withTimezone: true }),
+    evidenceAfter: timestamp("evidence_after", { withTimezone: true }),
+    lastAnalysisId: uuid("last_analysis_id").references(
+      () => directChatAnalyses.id,
+      {
+        onDelete: "set null",
+      },
+    ),
+    ownsLastAnalysis: boolean("owns_last_analysis").notNull().default(false),
+    pendingDispatch: boolean("pending_dispatch").notNull().default(false),
+  },
+  (table) => [
+    index("direct_chat_learning_schedules_due_idx")
+      .on(table.nextAt)
+      .where(sql`${table.enabled}`),
+    check(
+      "direct_chat_learning_schedules_interval_check",
+      sql`${table.intervalHours} between 1 and 168`,
     ),
   ],
 );

@@ -3409,6 +3409,34 @@ startHttpServer({
 const opikDelivery =
   config.opik && createOpikDelivery(database, config.opik).start();
 
+function startScheduledLearning(sweep: () => Promise<void>) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+  async function tick() {
+    try {
+      await sweep();
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          type: "scheduled-learning-sweep-failed",
+          error: String(error),
+        }),
+      );
+    } finally {
+      if (!stopped) timer = setTimeout(tick, 30_000);
+    }
+  }
+  void tick();
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+  };
+}
+
+const stopScheduledLearning =
+  copilotRuntime.sweepLearning &&
+  startScheduledLearning(copilotRuntime.sweepLearning);
+
 if (config.singleUser) {
   // Loud, every boot. A server that is not checking who is asking should never be a quiet default.
   console.warn(
@@ -3432,6 +3460,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     personResponseSweep.stop();
     groupSweep.stop();
     recorderExpirySweep.stop();
+    stopScheduledLearning?.();
     if (firstAutoApproveSweep) clearTimeout(firstAutoApproveSweep);
     if (autoApproveTimer) clearInterval(autoApproveTimer);
     for (const sweep of deliverySweeps) sweep.stop();

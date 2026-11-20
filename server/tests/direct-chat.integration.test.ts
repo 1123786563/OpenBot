@@ -121,10 +121,12 @@ function web(
     deployment = config,
     opik,
     partial,
+    learningClock,
   }: {
     deployment?: typeof config;
     opik?: typeof config.opik;
     partial?: string;
+    learningClock?: () => Date;
   } = {},
 ) {
   const store = createAgentProfileStore(db, endpoint);
@@ -148,7 +150,7 @@ function web(
     async () => ({ id: actor.id, name: actor.id }),
     async () => actor,
     {
-      directChat: { database: db, profiles: store },
+      directChat: { database: db, profiles: store, learningClock },
     },
   );
   const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
@@ -171,7 +173,7 @@ function web(
   app.route("/api/channels", createChannelAttachmentRoutes(db, requireUser));
   app.route("/api/attachments", createAttachmentRoutes(db, requireUser));
   app.route("/", copilot.handler);
-  return app;
+  return Object.assign(app, { sweepLearning: copilot.sweepLearning });
 }
 
 function events(sse: string) {
@@ -1342,6 +1344,8 @@ test("Learn now coalesces reservations, snapshots completed evidence, and discar
       route: "pilot-text-v1",
     },
   };
+  let now = new Date();
+  const learningClock = () => now;
   const aliceChat = web(database, alice, bot.id, async () => {});
   const aliceLearning = web(database, alice, bot.id, async () => {}, {
     deployment,
@@ -1372,6 +1376,14 @@ test("Learn now coalesces reservations, snapshots completed evidence, and discar
       expect(await turn.text()).toContain("Offline answer.");
     }
     const path = `/api/copilotkit/threads/${channel.threadId}/learn?agentId=${bot.id}`;
+    expect(await (await aliceLearning.request(path)).json()).toMatchObject({
+      schedule: {
+        enabled: false,
+        intervalHours: 24,
+        nextAt: null,
+        lastResult: null,
+      },
+    });
     const empty = await aliceLearning.request(path, post({}));
     expect(await empty.json()).toMatchObject({
       latest: { state: "skipped", reason: "no_evidence", evidenceCount: 0 },
@@ -1483,6 +1495,119 @@ test("Learn now coalesces reservations, snapshots completed evidence, and discar
     const repeated = await (await aliceLearning.request(path, post({}))).json();
     expect(repeated.latest).toEqual(completed.latest);
     expect(reservations).toHaveLength(4);
+
+    const scheduledClient = web(database, alice, bot.id, async () => {}, {
+      deployment,
+      learningClock,
+    });
+    const scheduledReplica = web(database, alice, bot.id, async () => {}, {
+      deployment,
+      learningClock,
+    });
+    const configureSchedule = (enabled: boolean, intervalHours = 1) => ({
+      ...post({ enabled, intervalHours }),
+      method: "PUT",
+    });
+    const runWorker = () =>
+      Promise.all([
+        scheduledClient.sweepLearning?.(),
+        scheduledReplica.sweepLearning?.(),
+      ]);
+    async function waitForScheduled(state: string) {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const status = await (await scheduledClient.request(path)).json();
+        if (status.schedule.lastResult?.state === state) return status;
+        await Bun.sleep(20);
+      }
+      throw new Error(`Scheduled Learning did not reach ${state}.`);
+    }
+
+    await send("scheduled-source", "What should we automate?");
+    await runWorker();
+    expect(reservations).toHaveLength(4);
+    expect(
+      (await bobLearning.request(path, configureSchedule(true))).status,
+    ).toBe(404);
+    expect(
+      (await scheduledClient.request(path, configureSchedule(true, 0))).status,
+    ).toBe(400);
+    now = new Date();
+    const configured = await scheduledClient.request(
+      path,
+      configureSchedule(true),
+    );
+    expect(configured.status).toBe(200);
+    const next = new Date(now.getTime() + 3_600_000);
+    expect(await configured.json()).toMatchObject({
+      schedule: {
+        enabled: true,
+        intervalHours: 1,
+        nextAt: next.toISOString(),
+        lastResult: null,
+      },
+    });
+    await runWorker();
+    expect(reservations).toHaveLength(4);
+
+    now = next;
+    dispatched = Promise.withResolvers<void>();
+    release = Promise.withResolvers<void>();
+    await runWorker();
+    await dispatched.promise;
+    const joinedSchedule = await (
+      await scheduledClient.request(path, post({}))
+    ).json();
+    expect(joinedSchedule.latest).toEqual(joinedSchedule.schedule.lastResult);
+    expect(reservations).toHaveLength(5);
+    release.resolve();
+    const scheduledProposal = await waitForScheduled("proposed");
+    expect(scheduledProposal.proposals[0]).toMatchObject({
+      state: "pending_review",
+      evidence: [{ runId: "scheduled-source" }],
+    });
+
+    await send("scheduled-insufficient", "How do we handle low balance?");
+    insufficient = true;
+    now = new Date(scheduledProposal.schedule.nextAt);
+    await runWorker();
+    const lowBalance = await waitForScheduled("skipped");
+    expect(lowBalance.schedule.lastResult.reason).toBe("insufficient_credits");
+    expect(reservations).toHaveLength(6);
+
+    insufficient = false;
+    dispatched = Promise.withResolvers<void>();
+    release = Promise.withResolvers<void>();
+    reconciled = Promise.withResolvers<void>();
+    now = new Date(lowBalance.schedule.nextAt);
+    await runWorker();
+    await dispatched.promise;
+    expect(
+      (await scheduledClient.request(path, configureSchedule(false))).status,
+    ).toBe(200);
+    expect(
+      (await scheduledClient.request(path, configureSchedule(true))).status,
+    ).toBe(200);
+    release.resolve();
+    await reconciled.promise;
+    expect(
+      (await waitForScheduled("cancelled")).schedule.lastResult.reason,
+    ).toBe("schedule_disabled");
+
+    now = new Date(now.getTime() + 3_600_000);
+    await runWorker();
+    const resumed = await waitForScheduled("skipped");
+    expect(resumed.schedule.lastResult.reason).toBe("no_evidence");
+    expect(reservations).toHaveLength(7);
+
+    await send("fresh-after-resume", "What should we do after resuming?");
+    now = new Date(resumed.schedule.nextAt);
+    await runWorker();
+    const fresh = await waitForScheduled("proposed");
+    expect(fresh.proposals[0]).toMatchObject({
+      state: "pending_review",
+      evidence: [{ runId: "fresh-after-resume" }],
+    });
+    expect(reservations).toHaveLength(8);
 
     expect(
       (
