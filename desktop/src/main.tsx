@@ -1,6 +1,7 @@
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { CLOUD_FRAGMENT, PersonalCloud } from "./PersonalCloud";
 import { startHeartbeat } from "./heartbeat";
 import { isShuttingDownPage, ShuttingDownWindow } from "./ShuttingDown";
 import { isStatusPage, StatusWindow } from "./StatusWindow";
@@ -30,6 +31,8 @@ createRoot(root).render(
       <ShuttingDownWindow />
     ) : isStatusPage(window.location.hash) ? (
       <StatusWindow />
+    ) : window.location.hash === `#${CLOUD_FRAGMENT}` ? (
+      <PersonalCloud />
     ) : (
       <>
         <SetupHeartbeat />

@@ -484,14 +484,14 @@ function exchangeNative(body: Record<string, unknown>, requestOrigin?: string) {
   });
 }
 
-test("Web, iOS, and Android share the owner’s workspace and conversation history", async () => {
+test("Web, Desktop, iOS, and Android share the owner’s workspace and conversation history", async () => {
   const owner = {
     sub: crypto.randomUUID(),
     email: "mobile@example.com",
     active: true,
     verified: true,
   };
-  const native = async (client: "ios" | "android") => {
+  const native = async (client: "ios" | "android" | "desktop") => {
     const { start, ...proof } = await nativeAttempt(client);
     const finish = await completeBrowserLogin(start, owner);
     expect(
@@ -501,7 +501,9 @@ test("Web, iOS, and Android share the owner’s workspace and conversation histo
     ).toBe(false);
     const deepLink = new URL(finish.headers.get("location") ?? "");
     expect(`${deepLink.protocol}//${deepLink.host}${deepLink.pathname}`).toBe(
-      "openbotmobile://auth/personal-saas",
+      client === "desktop"
+        ? "openbot://auth/personal-saas"
+        : "openbotmobile://auth/personal-saas",
     );
     expect(deepLink.searchParams.get("state")).toBe(proof.state);
     const exchange = await exchangeNative({
@@ -514,12 +516,13 @@ test("Web, iOS, and Android share the owner’s workspace and conversation histo
     return { authorization: `Bearer ${token}` };
   };
   const before = await botProfiles.list(profileReader);
-  const [web, ios, android] = await Promise.all([
+  const [web, ios, android, desktop] = await Promise.all([
     authenticate(owner).then((reply) =>
       cookie(reply, "__Host-openbot-personal="),
     ),
     native("ios"),
     native("android"),
+    native("desktop"),
   ]);
   expect(ios.authorization).not.toBe(android.authorization);
   expect(web).not.toContain(ios.authorization.slice(7));
@@ -531,18 +534,22 @@ test("Web, iOS, and Android share the owner’s workspace and conversation histo
       })
     ).status,
   ).toBe(403);
-  const preparing = await send("/api/workspace", { headers: ios });
+  const preparing = await send("/api/workspace", { headers: desktop });
   expect(preparing.status).toBe(202);
-  const [webReady, iosReady, androidReady] = await Promise.all([
+  const [webReady, iosReady, androidReady, desktopReady] = await Promise.all([
     enter(web),
     send("/workspace/prepare", { method: "POST", headers: ios }),
     send("/workspace/prepare", { method: "POST", headers: android }),
+    send("/workspace/prepare", { method: "POST", headers: desktop }),
   ]);
-  expect([webReady.status, iosReady.status, androidReady.status]).toEqual([
-    303, 204, 204,
-  ]);
+  expect([
+    webReady.status,
+    iosReady.status,
+    androidReady.status,
+    desktopReady.status,
+  ]).toEqual([303, 204, 204, 204]);
   const expected = await workspace(web);
-  for (const headers of [ios, android]) {
+  for (const headers of [ios, android, desktop]) {
     const ready = await send("/api/workspace", { headers });
     expect(ready.status).toBe(200);
     expect(await ready.json()).toEqual(expected);
@@ -607,7 +614,7 @@ test("Web, iOS, and Android share the owner’s workspace and conversation histo
   const ownHistory = [
     { id: ownChannel, title: "Weekend <plans>", preview: "Saturday at nine" },
   ];
-  for (const headers of [{ cookie: web }, ios, android]) {
+  for (const headers of [{ cookie: web }, ios, android, desktop]) {
     const history = await send(historyPath, { headers });
     expect(history.status).toBe(200);
     expect(history.headers.get("cache-control")).toBe("no-store");
