@@ -8,6 +8,14 @@ import {
 import { defer, finalize, switchMap, tap } from "rxjs";
 import { z } from "zod";
 import type { AuditInitiator, AuditTapEvent } from "../audit";
+import {
+  AUDIT_RUN_PROOF_KEY,
+  auditRunProofOf,
+  readAuditRun,
+  signAuditRun,
+} from "./audit-run-proof";
+
+type PreparedRun = { context?: ProductRunContext; auditProof: string };
 
 export type ProductTrigger =
   | "human"
@@ -380,30 +388,50 @@ export async function createProductTelemetry(options: {
   }
   async function prepare(
     input: RunPreparation,
-  ): Promise<ProductRunContext | undefined> {
+    auditInheritance?: { parentRunId?: string; rootTaskId?: string },
+  ): Promise<PreparedRun | undefined> {
     if (
-      !enabled ||
       !boundedId.safeParse(input.threadId).success ||
       !boundedId.safeParse(input.runId).success
     )
       return;
     const userId = user(input.actorUserId);
-    return {
+    const startsRoot = input.trigger === "human" || input.trigger === "routine";
+    const productRoot = startsRoot
+      ? stableId(`${userId}:${input.rootTaskId ?? input.runId}`)
+      : input.inheritedRootTaskId && taskHash.test(input.inheritedRootTaskId)
+        ? input.inheritedRootTaskId
+        : null;
+    const productParent = boundedId.safeParse(input.parentRunId).data;
+    const auditParent = auditInheritance
+      ? auditInheritance.parentRunId
+      : productParent;
+    const auditRoot =
+      !startsRoot && auditInheritance
+        ? auditInheritance.rootTaskId
+        : productRoot;
+    // The signed proof survives saved continuations regardless of the analytics preference.
+    const auditProof = signAuditRun(
+      {
+        runId: input.runId,
+        threadId: input.threadId,
+        parentRunId: boundedId.safeParse(auditParent).data,
+        rootTaskId:
+          auditRoot && taskHash.test(auditRoot) ? auditRoot : undefined,
+        attemptId: input.runId,
+      },
+      input.actorUserId,
+      options.privacyKey,
+    );
+    if (!enabled) return { auditProof };
+    const context: ProductRunContext = {
       schema_version: 1,
       app_id: "openbot",
       deployment_id: deploymentId,
       user_id: userId,
-      root_task_id:
-        input.trigger === "human" || input.trigger === "routine"
-          ? stableId(`${userId}:${input.rootTaskId ?? input.runId}`)
-          : input.inheritedRootTaskId &&
-              taskHash.test(input.inheritedRootTaskId)
-            ? input.inheritedRootTaskId
-            : null,
+      root_task_id: productRoot,
       run_id: input.runId,
-      ...(input.parentRunId && boundedId.safeParse(input.parentRunId).success
-        ? { parent_run_id: input.parentRunId }
-        : {}),
+      ...(productParent ? { parent_run_id: productParent } : {}),
       attempt_id: input.runId,
       attempt:
         typeof input.attempt === "number" &&
@@ -416,6 +444,7 @@ export async function createProductTelemetry(options: {
       environment,
       purpose: input.purpose ?? "ordinary",
     };
+    return { context, auditProof };
   }
   /*
    * Only a run this deployment stated as work is counted: a person's, a routine's, a subagent's, a
@@ -619,6 +648,16 @@ export async function createProductTelemetry(options: {
   return {
     prepare,
     lineageOf,
+    auditLineageOf: (
+      actorId: string,
+      run: { runId: string; threadId: string; forwardedProps?: unknown },
+    ) =>
+      readAuditRun(
+        auditRunProofOf(run.forwardedProps),
+        run,
+        actorId,
+        options.privacyKey,
+      ),
     middleware,
     recordAudit,
     enabled: () => enabled,
@@ -684,23 +723,24 @@ export function appAnalyticsContext(
     attempt: context.attempt,
   };
 }
-/**
- * A run's forwardedProps carrying this deployment's own context, and nothing a client sent under
- * the same two keys. `openbotTelemetry` is read back by the product middleware; the analytics key
- * is for the thread lock. With telemetry off there is no context, and neither key is present.
- */
+/** Attach this deployment's run context and replace client values under the reserved keys. */
 export function productRunForwardedProps(
   forwardedProps: unknown,
-  context: ProductRunContext | undefined,
+  prepared: PreparedRun | undefined,
 ): Record<string, unknown> {
+  const context = prepared?.context;
   const own = Object.fromEntries(
     Object.entries(isRecord(forwardedProps) ? forwardedProps : {}).filter(
-      ([key]) => key !== "openbotTelemetry" && key !== ANALYTICS_CONTEXT_KEY,
+      ([key]) =>
+        key !== "openbotTelemetry" &&
+        key !== ANALYTICS_CONTEXT_KEY &&
+        key !== AUDIT_RUN_PROOF_KEY,
     ),
   );
   const analytics = appAnalyticsContext(context);
   return {
     ...own,
+    ...(prepared ? { [AUDIT_RUN_PROOF_KEY]: prepared.auditProof } : {}),
     ...(context ? { openbotTelemetry: context } : {}),
     ...(analytics ? { [ANALYTICS_CONTEXT_KEY]: analytics } : {}),
   };

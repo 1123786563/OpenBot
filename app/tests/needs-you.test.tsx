@@ -486,3 +486,44 @@ test("Tasks groups active work under the status headings in order", async () => 
     ready.compareDocumentPosition(working) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 });
+
+test("Tasks shows an empty inbox only after approvals load successfully", async () => {
+  window.localStorage.setItem(TASKS_VIEW_STORAGE_KEY, "active");
+  serving();
+  const fixtureFetch = global.fetch;
+  const approvals = Promise.withResolvers<Response>();
+  const requested = Promise.withResolvers<void>();
+  global.fetch = Object.assign(
+    (
+      input: Parameters<typeof fetch>[0],
+      init?: Parameters<typeof fetch>[1],
+    ) => {
+      if (String(input) === "/api/approvals") {
+        requested.resolve();
+        return approvals.promise;
+      }
+      return fixtureFetch(input, init);
+    },
+    { preconnect: fixtureFetch.preconnect },
+  );
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const rootRoute = createRootRoute({ component: TasksScreen });
+  const router = createRouter({
+    routeTree: rootRoute,
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
+  const view = render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router as never} />
+    </QueryClientProvider>,
+  );
+  await requested.promise;
+  expect(view.queryByText("No Bot tasks yet")).toBeNull();
+  approvals.resolve(
+    Response.json({ error: "Approvals unavailable" }, { status: 503 }),
+  );
+  await view.findByText("Approvals unavailable");
+  expect(view.queryByText("No Bot tasks yet")).toBeNull();
+});

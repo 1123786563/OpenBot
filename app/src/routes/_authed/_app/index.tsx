@@ -9,7 +9,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { AgentCard } from "@/components/agents/agent-card";
-import { AstryxSurface, astryxPilot } from "@/components/astryx-pilot/theme";
+import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import {
   AstryxBrowseBots,
   AstryxNewConversation,
@@ -21,7 +21,6 @@ import {
 } from "@/components/channels/composer";
 import { WorkingNow } from "@/components/channels/working-now";
 import { BusinessLink } from "@/components/edition/business-link";
-import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
 import { StarterSuggestions } from "@/components/starter-tour/starter-suggestions";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -179,15 +178,9 @@ function RouteComponent() {
 
   return (
     <AstryxSurface className="astryx-home flex min-h-0 flex-1 flex-col overflow-y-auto">
-      {astryxPilot ? (
-        <div className="astryx-home-business">
-          <BusinessLink />
-        </div>
-      ) : (
-        <SidebarToggleBar>
-          <BusinessLink />
-        </SidebarToggleBar>
-      )}
+      <div className="astryx-home-business">
+        <BusinessLink />
+      </div>
       <div className="astryx-home-content flex-1 flex flex-col items-center justify-center w-full p-4 mt-8">
         {/* No product-name label above the greeting: the sidebar already names the product, and a
             second heading over the first made the page open on a word that says nothing. */}
@@ -277,12 +270,10 @@ function RouteComponent() {
             </p>
           ) : null}
         </div>
-        {astryxPilot ? (
-          <div className="astryx-home-links">
-            <AstryxNewConversation />
-            <AstryxBrowseBots />
-          </div>
-        ) : null}
+        <div className="astryx-home-links">
+          <AstryxNewConversation />
+          <AstryxBrowseBots />
+        </div>
         {/*
          * Up to four Bots, two to a row, as compact cards that fill the column. A teaser under the
          * composer, not the place to browse: more than four would push the composer up every time

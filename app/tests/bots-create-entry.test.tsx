@@ -12,7 +12,7 @@ import {
 } from "@tanstack/react-router";
 import { act, cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { astryxPilot } from "@/components/astryx-pilot/theme";
+
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { agentKeys } from "@/lib/agents/queries";
 import { deploymentKeys } from "@/lib/deployment/queries";
@@ -99,7 +99,7 @@ function renderEntry(initialEntry: string) {
   );
 }
 
-const rosterActionRole = astryxPilot ? "link" : "button";
+const rosterActionRole = "link";
 
 test("the Bots header creates a Bot, opens its profile, and Back returns to a closed roster", async () => {
   const view = renderEntry("/bots");
@@ -139,8 +139,7 @@ test("Escape returns focus to the empty roster action that opened the sheet", as
   await waitFor(() =>
     expect(view.queryByRole("dialog", { name: "New Bot" })).toBeNull(),
   );
-  if (astryxPilot)
-    await waitFor(() => expect(document.activeElement).toBe(emptyAction));
+  await waitFor(() => expect(document.activeElement).toBe(emptyAction));
 });
 
 test("dismissing a directly opened creation sheet focuses the Bots header action", async () => {
@@ -153,12 +152,10 @@ test("dismissing a directly opened creation sheet focuses the Bots header action
     expect(view.queryByRole("dialog", { name: "New Bot" })).toBeNull(),
   );
   expect(view.history.location.search).toBe("");
-  if (astryxPilot) {
-    const header = within(view.getByRole("banner"));
-    await waitFor(() =>
-      expect(document.activeElement).toBe(
-        header.getByRole(rosterActionRole, { name: "New Bot" }),
-      ),
-    );
-  }
+  const header = within(view.getByRole("banner"));
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      header.getByRole(rosterActionRole, { name: "New Bot" }),
+    ),
+  );
 });

@@ -9,7 +9,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment, useId, useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
-import { astryxPilot, astryxScope } from "@/components/astryx-pilot/theme";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
@@ -294,7 +294,7 @@ export function RoutinesList({
         </p>
       ) : rows.length === 0 ? (
         <PageEmpty
-          action={<NewRoutineButton agentId={agentId} variant="outline" />}
+          action={<NewRoutineButton agentId={agentId} />}
           icon={IconClock}
           title={agentId ? "No routines for this Bot yet" : "No routines yet"}
         >
@@ -432,7 +432,7 @@ export function RoutinesList({
                       )}
                     </div>
                     <div className="flex flex-wrap items-center gap-1">
-                      {astryxPilot && !routine.channel.gone ? (
+                      {!routine.channel.gone ? (
                         <Link
                           className="rounded-sm px-2 py-1 text-sm underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
                           params={{ channelId: routine.channel.id }}

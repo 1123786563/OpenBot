@@ -1,7 +1,5 @@
 import { Button, type ButtonVariant } from "@astryxdesign/core/Button";
 import type { ComponentProps } from "react";
-import { Button as LegacyButton } from "@/components/ui/button";
-import { astryxPilot } from "./theme";
 
 const variants = {
   default: "primary",
@@ -22,18 +20,6 @@ export function DeviceAction({
   size?: "sm";
   variant?: keyof typeof variants;
 }) {
-  if (!astryxPilot) {
-    return (
-      <LegacyButton
-        {...props}
-        disabled={disabled}
-        size={size}
-        variant={variant}
-      >
-        {children}
-      </LegacyButton>
-    );
-  }
   const nativeButtonProps = { ...props, disabled };
   return (
     <Button

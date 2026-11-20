@@ -36,11 +36,7 @@ function IdeasPage() {
         description="Review what your Bot found and manage its check-ins."
         title="Ideas"
       >
-        {roster.isPending ? (
-          <p className="mt-6 text-sm" role="status">
-            Loading Bots…
-          </p>
-        ) : roster.error ? (
+        {roster.isPending ? null : roster.error ? (
           <p className="mt-6 text-destructive text-sm" role="alert">
             {roster.error.message}
           </p>

@@ -14,11 +14,7 @@ import {
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Fragment, type RefObject, useRef, useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
-import {
-  AstryxSurface,
-  astryxPilot,
-  astryxScope,
-} from "@/components/astryx-pilot/theme";
+import { AstryxSurface, astryxScope } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
@@ -585,18 +581,12 @@ function DailyLimitDialog({
             <Button onClick={close} size="sm" type="button" variant="outline">
               Cancel
             </Button>
-            {astryxPilot ? (
-              <AstryxButton
-                isDisabled={!valid || saving}
-                label={saving ? "Saving…" : "Save"}
-                type="submit"
-                variant="primary"
-              />
-            ) : (
-              <Button disabled={!valid || saving} size="sm" type="submit">
-                {saving ? "Saving…" : "Save"}
-              </Button>
-            )}
+            <AstryxButton
+              isDisabled={!valid || saving}
+              label={saving ? "Saving…" : "Save"}
+              type="submit"
+              variant="primary"
+            />
           </DialogFooter>
         </form>
       </DialogContent>

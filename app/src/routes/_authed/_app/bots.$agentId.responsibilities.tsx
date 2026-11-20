@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { AstryxSurface, astryxPilot } from "@/components/astryx-pilot/theme";
+import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { BotSubpage } from "@/components/bot-profile/bot-subpage";
 import { BotResponsibilities } from "@/components/responsibilities/responsibilities";
 
@@ -16,7 +16,7 @@ function ResponsibilitiesPage() {
       <BotSubpage
         agentId={agentId}
         description="Review this Bot’s ongoing goals, what triggered each run, and its results."
-        title={astryxPilot ? "Responsibilities" : "Goals"}
+        title={"Responsibilities"}
       >
         {(agent) => <BotResponsibilities agentId={agent.id} />}
       </BotSubpage>

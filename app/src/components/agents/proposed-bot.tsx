@@ -1,9 +1,8 @@
 import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import { Link } from "@tanstack/react-router";
 import { type ComponentProps, useEffect, useRef, useState } from "react";
-import { astryxPilot } from "@/components/astryx-pilot/theme";
+
 import { Badge, GalleryFrame } from "@/components/gallery/frame";
-import { Button } from "@/components/ui/button";
 import type { AgentFormValues } from "@/lib/agents/form";
 import {
   botCardAnswer,
@@ -214,28 +213,15 @@ function ProposalAction({
   label: string;
   secondary?: boolean;
 }) {
-  if (astryxPilot) {
-    return (
-      <AstryxButton
-        isDisabled={disabled}
-        label={label}
-        onClick={onClick}
-        size="sm"
-        type="button"
-        variant={secondary ? "secondary" : "primary"}
-      />
-    );
-  }
   return (
-    <Button
-      disabled={disabled}
+    <AstryxButton
+      isDisabled={disabled}
+      label={label}
       onClick={onClick}
       size="sm"
       type="button"
-      variant={secondary ? "outline" : "default"}
-    >
-      {label}
-    </Button>
+      variant={secondary ? "secondary" : "primary"}
+    />
   );
 }
 

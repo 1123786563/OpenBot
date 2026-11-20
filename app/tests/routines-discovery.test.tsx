@@ -9,7 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, fireEvent, render, within } from "@testing-library/react";
 import type * as React from "react";
-import { astryxPilot } from "@/components/astryx-pilot/theme";
+
 import { RoutineComposerButton } from "@/components/routines/new-routine-button";
 import { RoutinesConnectionPage } from "@/components/routines/routines-connection-page";
 import { RoutinesList } from "@/components/routines/routines-list";
@@ -85,7 +85,7 @@ function draw(element: React.ReactNode, page: RoutinesPage) {
   );
 }
 
-const newRoutineRole = astryxPilot ? "link" : "button";
+const newRoutineRole = "link";
 const SWEEP = { lastSweptAt: new Date().toISOString(), working: true };
 
 test("Connections > Routines says what Routines is and leads to the Routines page", async () => {

@@ -54,7 +54,7 @@ function BotsPage() {
         action={<NewBotAction onClick={rememberCreateTrigger} primary />}
         description={
           personal
-            ? "Your Bots for everyday work."
+            ? "Open a Bot to get started."
             : "Manage your Bots and access those shared with you."
         }
         title="Bots"

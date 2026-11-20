@@ -2,7 +2,7 @@ import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import { IconChecklist, IconChevronRight, IconPlus } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Fragment, useRef, useState } from "react";
-import { astryxPilot } from "@/components/astryx-pilot/theme";
+
 import {
   PageEmpty,
   PageRows,
@@ -62,28 +62,17 @@ export function BotResponsibilities({
   return (
     <PageSection
       action={
-        astryxPilot ? (
-          <AstryxButton
-            icon={<IconPlus aria-hidden size={16} />}
-            label="New goal"
-            onClick={start}
-            variant="primary"
-          />
-        ) : (
-          <Button onClick={start} size="sm" variant="ghost">
-            <IconPlus />
-            New goal
-          </Button>
-        )
+        <AstryxButton
+          icon={<IconPlus aria-hidden size={16} />}
+          label="New goal"
+          onClick={start}
+          variant="primary"
+        />
       }
       title={sectionTitle}
     >
       {/* Pending, error, empty, rows — pending first, so no sentence asserts anything mid-fetch. */}
-      {goals.isPending ? (
-        <p className="mt-4 text-sm" role="status">
-          Loading goals…
-        </p>
-      ) : goals.error ? (
+      {goals.isPending ? null : goals.error ? (
         <p role="alert" className="mt-4 text-destructive text-sm">
           {goals.error.message}
         </p>

@@ -352,3 +352,17 @@ test("only same-origin Web pages can be resumed, and an existing flow takes prio
     `${origin}/api/plugins/arcade/verify?flow_id=flow`,
   );
 });
+
+test("returns to a Web deep link without the newer URL.parse API", () => {
+  const descriptor = Object.getOwnPropertyDescriptor(URL, "parse");
+  Object.defineProperty(URL, "parse", { value: undefined, configurable: true });
+  try {
+    expect(appReturnPath("/bots?new=true#details")).toBe(
+      "/bots?new=true#details",
+    );
+    expect(appReturnPath("//outside.example/bots")).toBeUndefined();
+  } finally {
+    if (descriptor) Object.defineProperty(URL, "parse", descriptor);
+    else Reflect.deleteProperty(URL, "parse");
+  }
+});

@@ -3,7 +3,7 @@ import { IconLock, IconWorld, IconX } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { astryxPilot, astryxScope } from "@/components/astryx-pilot/theme";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { useFittedWidth } from "@/components/browser/fitted-window";
 import {
   botBrowserKeys,
@@ -589,7 +589,7 @@ export function ComputerView({
   }, [waitingForFrame, startupGraceMs]);
 
   useEffect(() => {
-    if (!astryxPilot || !expanded) return;
+    if (!expanded) return;
     const trigger = expandTrigger.current;
     closeControl.current?.focus();
     return () => trigger?.focus();

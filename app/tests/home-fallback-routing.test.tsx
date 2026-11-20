@@ -13,7 +13,7 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { astryxPilot } from "@/components/astryx-pilot/theme";
+
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
 import { takeFailedStart } from "@/lib/channels/pending-start";
 import { pluginKeys } from "@/lib/plugins/queries";
@@ -435,7 +435,7 @@ for (const status of [409, 500]) {
   });
 }
 
-test.skipIf(!astryxPilot).each([
+test.each([
   ["Browse Bots", "/bots", "Bots"],
   ["New conversation", "/channel/new", "New conversation"],
 ])(

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { AstryxSurface, astryxPilot } from "@/components/astryx-pilot/theme";
+import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { PageShell } from "@/components/layout/page-shell";
 import { NewRoutineButton } from "@/components/routines/new-routine-button";
 import { RoutinesList } from "@/components/routines/routines-list";
@@ -28,14 +28,12 @@ function RoutinesPage() {
         description="Bots do work for you on a schedule and post what they did. Set one up here, or ask a Bot something like “every weekday at 9, send me…”."
         title="Routines"
       >
-        {astryxPilot ? (
-          <Link
-            className="inline-block rounded-sm text-sm underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
-            to="/tasks"
-          >
-            View Bot tasks
-          </Link>
-        ) : null}
+        <Link
+          className="inline-block rounded-sm text-sm underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+          to="/tasks"
+        >
+          View Bot tasks
+        </Link>
         <RoutinesList />
       </PageShell>
     </AstryxSurface>

@@ -2,7 +2,7 @@ import { Switch as AstryxSwitch } from "@astryxdesign/core/Switch";
 import { IconRoute } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment } from "react";
-import { astryxPilot } from "@/components/astryx-pilot/theme";
+
 import {
   PageEmpty,
   PageRows,
@@ -18,7 +18,6 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { setUpdateRoutingMutationOptions } from "@/lib/bot-lifecycle/mutations";
 import {
@@ -188,24 +187,14 @@ export function UpdateRoutingSection() {
                           className="flex items-center gap-2 text-sm"
                           key={id}
                         >
-                          {astryxPilot ? (
-                            <AstryxSwitch
-                              isLabelHidden
-                              isLoading={save.isPending}
-                              label={name}
-                              onChange={setChecked}
-                              size="sm"
-                              value={checked}
-                            />
-                          ) : (
-                            <Switch
-                              aria-label={name}
-                              checked={checked}
-                              disabled={save.isPending}
-                              onCheckedChange={setChecked}
-                              size="sm"
-                            />
-                          )}
+                          <AstryxSwitch
+                            isLabelHidden
+                            isLoading={save.isPending}
+                            label={name}
+                            onChange={setChecked}
+                            size="sm"
+                            value={checked}
+                          />
                           <span className="leading-tight whitespace-nowrap">
                             {label}
                           </span>

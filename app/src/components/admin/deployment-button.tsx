@@ -1,7 +1,7 @@
 import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import type { ComponentProps, ReactNode } from "react";
-import { astryxPilot } from "@/components/astryx-pilot/theme";
-import { Button } from "@/components/ui/button";
+
+import type { Button } from "@/components/ui/button";
 
 type DeploymentButtonProps = Pick<
   ComponentProps<typeof Button>,
@@ -21,28 +21,20 @@ export function DeploymentButton({
   variant = "default",
   ...props
 }: DeploymentButtonProps) {
-  if (astryxPilot) {
-    return (
-      <AstryxButton
-        {...props}
-        icon={icon}
-        isDisabled={disabled}
-        label={children}
-        size={size}
-        variant={
-          variant === "default"
-            ? "primary"
-            : variant === "outline"
-              ? "secondary"
-              : "destructive"
-        }
-      />
-    );
-  }
   return (
-    <Button {...props} disabled={disabled} size={size} variant={variant}>
-      {icon}
-      {children}
-    </Button>
+    <AstryxButton
+      {...props}
+      icon={icon}
+      isDisabled={disabled}
+      label={children}
+      size={size}
+      variant={
+        variant === "default"
+          ? "primary"
+          : variant === "outline"
+            ? "secondary"
+            : "destructive"
+      }
+    />
   );
 }

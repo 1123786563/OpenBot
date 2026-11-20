@@ -4,15 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
-import AgentOrb from "@/components/agents/orb/agent-orb";
-import {
-  AstryxBrand,
-  AstryxSurface,
-  astryxPilot,
-} from "@/components/astryx-pilot/theme";
+import { AstryxBrand, AstryxSurface } from "@/components/astryx-pilot/theme";
 import { ProviderLogo } from "@/components/auth/provider-logo";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
   providerName,
@@ -154,7 +147,7 @@ function SignScreen() {
 
   const providerButtons = (
     <div className="flex flex-col gap-2">
-      {providers.map((provider) =>
+      {providers.map((provider) => (
         /*
          * Every provider gets the same button, and it is the light-themed outline one
          * rather than the app's filled primary. Google's guidelines require their button be
@@ -163,40 +156,18 @@ function SignScreen() {
          * same size and weight throughout is also the honest presentation: a deployment
          * that configured three has three, and none of them is the recommended one.
          */
-        astryxPilot ? (
-          <AstryxButton
-            className="w-full"
-            icon={<ProviderLogo provider={provider} />}
-            isDisabled={opening !== null && opening !== provider}
-            isLoading={opening === provider}
-            size="lg"
-            key={provider}
-            label={`Continue with ${providerName(provider)}`}
-            onClick={() => handleSignIn(provider)}
-            variant="secondary"
-          />
-        ) : (
-          <Button
-            className="h-10 w-full justify-start gap-3 px-3 tracking-tight"
-            disabled={opening !== null}
-            focusableWhenDisabled
-            key={provider}
-            onClick={() => handleSignIn(provider)}
-            size="lg"
-            variant="outline"
-          >
-            <ProviderLogo provider={provider} />
-            {/* Centred against the button, not against the space left of the mark. */}
-            <span className="flex-1 text-center">
-              {opening === provider
-                ? `Opening ${providerName(provider)}…`
-                : `Continue with ${providerName(provider)}`}
-            </span>
-            {/* Balances the mark so the label sits in the middle of the button. */}
-            <span aria-hidden="true" className="size-[18px]" />
-          </Button>
-        ),
-      )}
+        <AstryxButton
+          className="w-full"
+          icon={<ProviderLogo provider={provider} />}
+          isDisabled={opening !== null && opening !== provider}
+          isLoading={opening === provider}
+          size="lg"
+          key={provider}
+          label={`Continue with ${providerName(provider)}`}
+          onClick={() => handleSignIn(provider)}
+          variant="secondary"
+        />
+      ))}
     </div>
   );
 
@@ -212,13 +183,7 @@ function SignScreen() {
 
   return (
     <AstryxSurface className="min-h-svh">
-      <main
-        className={
-          astryxPilot
-            ? "grid min-h-svh place-items-center px-4 py-10"
-            : "flex h-dvh w-full flex-col items-center justify-center -mt-12"
-        }
-      >
+      <main className={"grid min-h-svh place-items-center px-4 py-10"}>
         <motion.div
           animate="shown"
           className="flex-1 flex w-full max-w-82 flex-col items-center justify-center p-4"
@@ -235,7 +200,7 @@ function SignScreen() {
             variants={{ hidden, shown }}
             className="flex items-center justify-center"
           >
-            {astryxPilot ? <AstryxBrand /> : <AgentOrb size="56px" />}
+            <AstryxBrand />
           </motion.div>
           <motion.h1
             className="text-2xl font-medium tracking-tight text-center mt-8"
@@ -277,51 +242,25 @@ function SignScreen() {
                     <Separator className="flex-1" />
                   </div>
                 ) : null}
-                {astryxPilot ? (
-                  <div className="grid gap-3">
-                    <TextInput
-                      autoComplete="email"
-                      isRequired
-                      label="Company email"
-                      onChange={setEmail}
-                      placeholder="you@company.com"
-                      type="email"
-                      value={email}
-                      width="100%"
-                    />
-                    <AstryxButton
-                      isDisabled={opening !== null && opening !== "sso"}
-                      isLoading={opening === "sso"}
-                      label="Continue with your company account"
-                      type="submit"
-                      variant="secondary"
-                    />
-                  </div>
-                ) : (
-                  <>
-                    <Input
-                      aria-label="Company email"
-                      autoComplete="email"
-                      onChange={(event) => setEmail(event.target.value)}
-                      placeholder="you@company.com"
-                      required
-                      type="email"
-                      value={email}
-                    />
-                    <Button
-                      className="mt-2 h-10 w-full tracking-tight"
-                      disabled={opening !== null || email.trim().length === 0}
-                      focusableWhenDisabled={opening === "sso"}
-                      size="lg"
-                      type="submit"
-                      variant="outline"
-                    >
-                      {opening === "sso"
-                        ? "Opening…"
-                        : "Continue with your company account"}
-                    </Button>
-                  </>
-                )}
+                <div className="grid gap-3">
+                  <TextInput
+                    autoComplete="email"
+                    isRequired
+                    label="Company email"
+                    onChange={setEmail}
+                    placeholder="you@company.com"
+                    type="email"
+                    value={email}
+                    width="100%"
+                  />
+                  <AstryxButton
+                    isDisabled={opening !== null && opening !== "sso"}
+                    isLoading={opening === "sso"}
+                    label="Continue with your company account"
+                    type="submit"
+                    variant="secondary"
+                  />
+                </div>
               </form>
             ) : null}
             {/* The administrators' audited break-glass while SSO is required; everybody else is refused. */}

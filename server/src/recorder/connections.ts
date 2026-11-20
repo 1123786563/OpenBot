@@ -25,6 +25,8 @@ import {
   type AuditStore,
   DEPLOYMENT_INITIATOR,
   recordAuditEvent,
+  type TransactionAuditStore,
+  withAuditTransaction,
 } from "../audit";
 import type { Database } from "../db/client";
 import {
@@ -132,7 +134,7 @@ export function createRecorderConnectionStore(
      * written, and a row that cannot be written undoes the change and fails the request (as approvals and identity
      * links are written). Absent, no rows are written: a test of the store alone.
      */
-    auditFor?: (executor: Database) => AuditStore;
+    auditFor?: TransactionAuditStore;
   } = {},
 ) {
   const now = options.now ?? (() => new Date());
@@ -163,14 +165,13 @@ export function createRecorderConnectionStore(
   /** One `recorder.revoked` row for each connection ended, in the transaction that ended them, saying how it was made as
    * its `recorder.connected` row did. */
   async function auditRevoked(
-    transaction: Transaction,
+    auditStore: AuditStore | undefined,
     ended: Array<{ id: string; userId: string; via: RecorderConnectVia }>,
     reason: RecorderRevokeReason,
     /** How the person's sign-in ended, for `signed_out`. */
     ending?: string,
   ) {
-    if (!auditFor || ended.length === 0) return;
-    const auditStore = auditFor(transaction as unknown as Database);
+    if (!auditStore) return;
     for (const connection of ended) {
       await recordAuditEvent(auditStore, {
         eventType: "recorder.revoked",
@@ -257,7 +258,8 @@ export function createRecorderConnectionStore(
       installId: string;
     }) {
       const at = now();
-      return database.transaction(async (transaction) => {
+      return withAuditTransaction(database, async (transaction, deferTap) => {
+        const auditStore = auditFor?.(transaction, deferTap);
         const [consumed] = await transaction
           .delete(recorderConnectCodes)
           .where(
@@ -309,8 +311,8 @@ export function createRecorderConnectionStore(
           .returning();
         if (!connection) throw new Error("The connection was not stored.");
         const made = connectionView(connection);
-        if (auditFor) {
-          await recordAuditEvent(auditFor(transaction as unknown as Database), {
+        if (auditStore) {
+          await recordAuditEvent(auditStore, {
             eventType: "recorder.connected",
             targetType: "recorder_connection",
             targetId: made.id,
@@ -324,7 +326,7 @@ export function createRecorderConnectionStore(
             },
           });
         }
-        await auditRevoked(transaction, replaced, "replaced");
+        await auditRevoked(auditStore, replaced, "replaced");
         return {
           token,
           connection: made,
@@ -427,7 +429,8 @@ export function createRecorderConnectionStore(
       /** How the person's sign-in ended, for `signed_out`. */
       ending?: string,
     ): Promise<boolean> {
-      return database.transaction(async (transaction) => {
+      return withAuditTransaction(database, async (transaction, deferTap) => {
+        const auditStore = auditFor?.(transaction, deferTap);
         const revoked = await transaction
           .update(recorderConnections)
           .set({
@@ -447,7 +450,7 @@ export function createRecorderConnectionStore(
             userId: recorderConnections.userId,
             via: recorderConnections.via,
           });
-        await auditRevoked(transaction, revoked, reason, ending);
+        await auditRevoked(auditStore, revoked, reason, ending);
         return revoked.length > 0;
       });
     },
@@ -465,7 +468,8 @@ export function createRecorderConnectionStore(
       reason: "signed_out",
       ending?: string,
     ): Promise<string[]> {
-      return database.transaction(async (transaction) => {
+      return withAuditTransaction(database, async (transaction, deferTap) => {
+        const auditStore = auditFor?.(transaction, deferTap);
         await transaction
           .delete(recorderConnectCodes)
           .where(eq(recorderConnectCodes.userId, userId));
@@ -487,7 +491,7 @@ export function createRecorderConnectionStore(
             userId: recorderConnections.userId,
             via: recorderConnections.via,
           });
-        await auditRevoked(transaction, revoked, reason, ending);
+        await auditRevoked(auditStore, revoked, reason, ending);
         return revoked.map((connection) => connection.id);
       });
     },
@@ -514,7 +518,8 @@ export function createRecorderConnectionStore(
       const at = now();
       const within = withinLifetime(at);
       if (!within) return 0;
-      return database.transaction(async (transaction) => {
+      return withAuditTransaction(database, async (transaction, deferTap) => {
+        const auditStore = auditFor?.(transaction, deferTap);
         const due = transaction
           .select({ id: recorderConnections.id })
           .from(recorderConnections)
@@ -540,7 +545,7 @@ export function createRecorderConnectionStore(
             userId: recorderConnections.userId,
             via: recorderConnections.via,
           });
-        await auditRevoked(transaction, expired, "expired");
+        await auditRevoked(auditStore, expired, "expired");
         return expired.length;
       });
     },

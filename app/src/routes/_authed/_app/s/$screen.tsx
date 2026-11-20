@@ -55,11 +55,10 @@ function ActivityOverview() {
     <AstryxSurface className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageShell
         title="Activity"
-        description={bot ? `Work for ${bot.name}.` : undefined}
+        description={bot ? `Review activity for ${bot.name}.` : undefined}
       >
-        {roster.isPending || user.isPending ? (
-          <p role="status">Loading Activity…</p>
-        ) : roster.isError || user.isError ? (
+        {roster.isPending || user.isPending ? null : roster.isError ||
+          user.isError ? (
           <p className="text-destructive" role="alert">
             Couldn't load Activity. Reload the page to try again.
           </p>

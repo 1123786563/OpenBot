@@ -6,7 +6,7 @@ import {
 } from "@tabler/icons-react";
 import { createContext, type ReactNode, useContext, useState } from "react";
 import AgentOrb from "@/components/agents/orb/agent-orb";
-import { astryxPilot } from "@/components/astryx-pilot/theme";
+
 import { BrandName } from "@/components/edition/brand-name";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -208,7 +208,7 @@ export function OnboardingFrame({
                 Back
               </button>
             ) : null}
-            {primary && astryxPilot && !desktopShell() ? (
+            {primary && !desktopShell() ? (
               <AstryxButton
                 data-onboarding-primary=""
                 form={primary.form}
@@ -252,7 +252,7 @@ export function OnboardingFrame({
                 {primary.label}
               </button>
             ) : null}
-            {secondary && astryxPilot && !desktopShell() ? (
+            {secondary && !desktopShell() ? (
               <AstryxButton
                 label={secondary.label}
                 onClick={secondary.onClick}

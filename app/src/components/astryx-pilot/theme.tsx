@@ -2,8 +2,6 @@ import type { CSSProperties, ReactNode } from "react";
 import logo from "@/assets/openbot-logo.png";
 import { appConfig } from "@/lib/generated/application-config";
 
-export const astryxPilot = true;
-
 function accent(value: string | undefined, fallback: string) {
   const fill = value && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
   const [red, green, blue] = [1, 3, 5].map((offset) => {

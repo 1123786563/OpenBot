@@ -250,7 +250,7 @@ function NewConversation({ composition }: { composition: string }) {
   if (profiles === undefined && !rosterError) return null;
 
   return (
-    <ConversationSurface fill>
+    <ConversationSurface>
       <div
         className="sticky top-0 flex min-h-12 shrink-0 flex-row items-center border-b border-border px-2"
         data-slot="conversation-header"

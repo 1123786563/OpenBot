@@ -18,7 +18,7 @@ import {
 } from "@tanstack/react-table";
 import type * as React from "react";
 import { useMemo, useState } from "react";
-import { astryxPilot, astryxScope } from "@/components/astryx-pilot/theme";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { PageEmpty } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -96,7 +96,6 @@ const FACETS = [
 ] as const;
 
 function renderEventLog(table: React.ReactNode, hasRows: boolean) {
-  if (!astryxPilot) return table;
   return (
     <section
       {...astryxScope}
@@ -193,15 +192,7 @@ export function AuditTable({
         }),
       })}
       {renderEventLog(
-        <Table
-          containerClassName={
-            astryxPilot
-              ? "overflow-visible"
-              : rows.length > 0
-                ? "min-h-0 flex-1"
-                : undefined
-          }
-        >
+        <Table containerClassName={"overflow-visible"}>
           <TableHeader>
             {table.getHeaderGroups().map((group) => (
               <TableRow className="hover:bg-transparent" key={group.id}>

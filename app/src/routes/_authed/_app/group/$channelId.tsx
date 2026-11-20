@@ -19,7 +19,7 @@ function RouteComponent() {
   const channel = useQuery(channelQueryOptions(channelId));
   useMarkOpenChannelRead(channelId);
   return (
-    <ConversationSurface fill>
+    <ConversationSurface>
       <div
         className="sticky top-0 flex min-h-12 flex-row items-center gap-1.5 border-b border-border px-3 py-2"
         data-slot="conversation-header"

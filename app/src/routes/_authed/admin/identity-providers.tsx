@@ -1,17 +1,17 @@
-import { astryxPilot, astryxScope } from "@/components/astryx-pilot/theme";
-import { AstryxAdminPage } from "@/components/admin/astryx-admin-page";
 import { IconBuildingBank, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useId, useState } from "react";
+import { AstryxAdminPage } from "@/components/admin/astryx-admin-page";
 import { SignInSection } from "@/components/admin/controls/sign-in-section";
+import { DeploymentButton } from "@/components/admin/deployment-button";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
 import { StaggerItem } from "@/components/layout/stagger";
-import { DeploymentButton } from "@/components/admin/deployment-button";
 import {
   Dialog,
   DialogBody,
@@ -175,10 +175,7 @@ function IdentityProvidersPage() {
       <SignInSection />
 
       <Dialog onOpenChange={setOpen} open={open}>
-        <DialogContent
-          {...astryxScope}
-          className={astryxPilot ? "astryx-admin-dialog" : undefined}
-        >
+        <DialogContent {...astryxScope} className={"astryx-admin-dialog"}>
           <DialogHeader>
             <DialogTitle>Add an identity provider</DialogTitle>
           </DialogHeader>

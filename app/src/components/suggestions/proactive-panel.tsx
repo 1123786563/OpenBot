@@ -9,7 +9,7 @@ import {
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment, useId, useState } from "react";
-import { astryxPilot, astryxScope } from "@/components/astryx-pilot/theme";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
@@ -115,13 +115,7 @@ export function SuggestionsInbox({
   const visible = hidden ? shown.slice(0, SUGGESTIONS_SHOWN) : shown;
   return (
     <PageSection title="Suggested next steps">
-      {suggestions.isPending ? (
-        showEmpty ? (
-          <p role="status" className="text-sm">
-            Loading suggestions…
-          </p>
-        ) : null
-      ) : suggestions.error ? (
+      {suggestions.isPending ? null : suggestions.error ? (
         <p role="alert" className="mt-4 text-destructive text-sm">
           {suggestions.error.message}
         </p>
@@ -220,7 +214,7 @@ export function ProactiveResearchSettings({
       description="A Bot offers a check-in when you look at something together that keeps changing, like a document or your inbox. It reads that once a day, or as often as you choose, and tells you when something there needs you. It can only read: it can't send messages, change anything in an app, or use a browser or computer."
       title="Check-ins"
     >
-      {astryxPilot && showIdeasLink ? (
+      {showIdeasLink ? (
         <Link
           className="text-sm underline underline-offset-4"
           search={{ agent: fixedBot }}

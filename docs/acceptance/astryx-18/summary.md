@@ -30,3 +30,5 @@ ISSUE17_DIR=/tmp/openbot-issue18 bun scripts/acceptance/astryx-rollout.mjs team 
 ```
 
 The fixture uses Personal local sign-in and seeded Team sessions. It reuses each signed-in account while testing its four saved values. External SSO, live model turns, connected-app consent exchanges, and native binaries were outside this run. Unsent Conversation text still clears on full reload, as recorded in both #17 baselines.
+
+For verification after the review fixes, seed four distinct Team accounts with the four retired skin preferences before running the `retired` phase. Use IDs `issue17-<skin>`, roles `user`, completed onboarding, and sessions with tokens `issue17-<skin>-token`, matching the isolated Better Auth setup above. The harness opens a fresh browser context for each of these accounts and checks the stored value before loading Bots.

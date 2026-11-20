@@ -2,8 +2,7 @@ import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
-import { AstryxSurface, astryxPilot } from "@/components/astryx-pilot/theme";
-import { buttonVariants } from "@/components/ui/button";
+import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { desktopShell } from "@/lib/desktop/shell";
 import { confirmBrokeredConnectionMutationOptions } from "@/lib/plugins/mutations";
 
@@ -71,18 +70,12 @@ export function DesktopReturn({
             OpenBot opens on its own. You can close this tab.
           </p>
           {/* An anchor rather than Button: Base UI gives a rendered anchor role="button", and this is a link. */}
-          {astryxPilot ? (
-            <AstryxButton
-              as="a"
-              href={DESKTOP_LINK}
-              label="Open OpenBot"
-              variant="primary"
-            />
-          ) : (
-            <a className={buttonVariants()} href={DESKTOP_LINK}>
-              Open OpenBot
-            </a>
-          )}
+          <AstryxButton
+            as="a"
+            href={DESKTOP_LINK}
+            label="Open OpenBot"
+            variant="primary"
+          />
         </div>
       </main>
     </AstryxSurface>

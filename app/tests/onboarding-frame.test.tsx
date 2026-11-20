@@ -8,7 +8,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { astryxPilot } from "@/components/astryx-pilot/theme";
+
 import { DemoStage } from "@/components/onboarding/demo-stage";
 import { StepIntro } from "@/components/onboarding/onboarding-frame";
 import {
@@ -254,15 +254,8 @@ test("an optional step says Continue, with Not now beside it, the same size", ()
       continueButton.compareDocumentPosition(notNow) &
         Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-  if (astryxPilot) {
-    expect(continueButton?.getAttribute("data-size")).toBe("lg");
-    expect(notNow?.getAttribute("data-size")).toBe("lg");
-  } else {
-    for (const shape of ["h-[52px]", "w-full", "rounded-full"]) {
-      expect(continueButton?.className).toContain(shape);
-      expect(notNow?.className).toContain(shape);
-    }
-  }
+  expect(continueButton?.getAttribute("data-size")).toBe("lg");
+  expect(notNow?.getAttribute("data-size")).toBe("lg");
 });
 
 test("the footnote sits just above the buttons", () => {
@@ -353,10 +346,6 @@ test("a done primary shows a check", () => {
   expect(footerButtons(view)).toHaveLength(1);
   expect(done?.textContent).toBe("Notifications on");
   expect(done?.querySelector("svg")).toBeTruthy();
-  if (!astryxPilot) {
-    expect(done?.hasAttribute("data-done")).toBe(true);
-    expect(done?.className).toContain("bg-emerald-500/10");
-  }
 });
 
 test("an optional step keeps Not now's place when it goes, so the primary doesn't move", () => {
@@ -400,9 +389,7 @@ test("a waiting primary shows a spinner, says it is busy, and can't be pressed a
   expect(
     waiting.disabled || waiting.getAttribute("aria-disabled") === "true",
   ).toBe(true);
-  expect(
-    waiting.querySelector(astryxPilot ? "svg" : ".animate-spin"),
-  ).not.toBeNull();
+  expect(waiting.querySelector("svg")).not.toBeNull();
 });
 
 test("a step with a form submits it from the frame's primary, with Back beside it as anywhere else", () => {

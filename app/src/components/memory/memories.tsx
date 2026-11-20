@@ -1,8 +1,8 @@
 import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import { IconBrain, IconPlus, IconRobot, IconUser } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { astryxPilot, astryxScope } from "@/components/astryx-pilot/theme";
 import { Fragment, type ReactNode, useId, useState } from "react";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
@@ -59,19 +59,12 @@ export function RememberFact() {
   }
   return (
     <>
-      {astryxPilot ? (
-        <AstryxButton
-          icon={<IconPlus aria-hidden size={16} />}
-          label="Remember a fact"
-          onClick={openForm}
-          variant="primary"
-        />
-      ) : (
-        <Button onClick={openForm} size="sm" variant="ghost">
-          <IconPlus />
-          Remember a fact
-        </Button>
-      )}
+      <AstryxButton
+        icon={<IconPlus aria-hidden size={16} />}
+        label="Remember a fact"
+        onClick={openForm}
+        variant="primary"
+      />
       <Dialog onOpenChange={setOpen} open={open}>
         <DialogContent {...astryxScope}>
           <DialogHeader>

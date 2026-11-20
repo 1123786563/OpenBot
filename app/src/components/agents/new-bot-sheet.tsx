@@ -21,7 +21,7 @@ import { HarnessMark } from "@/components/agents/harness-mark";
 import AgentOrb from "@/components/agents/orb/agent-orb";
 import { BotFormAction } from "@/components/astryx-pilot/bot-actions";
 import { BotField } from "@/components/astryx-pilot/bot-fields";
-import { astryxPilot, astryxScope } from "@/components/astryx-pilot/theme";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { BusinessComputerLink } from "@/components/edition/team-features-dialog";
 import { PluginLogo } from "@/components/plugins/plugin-logo";
 import { RoutinesAppHint } from "@/components/routines/routines-app-hint";
@@ -104,7 +104,7 @@ export function NewBotSheet({
     >
       <SheetContent
         {...astryxScope}
-        finalFocus={astryxPilot && returnFocus ? returnFocus : undefined}
+        finalFocus={returnFocus ? returnFocus : undefined}
         className="gap-0 data-[side=right]:w-[calc(100%-1rem)] data-[side=right]:sm:max-w-2xl"
         showCloseButton={false}
         side="right"

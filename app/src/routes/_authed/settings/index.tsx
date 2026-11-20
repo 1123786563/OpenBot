@@ -2,7 +2,7 @@ import { Switch as AstryxSwitch } from "@astryxdesign/core/Switch";
 import { IconMoon } from "@tabler/icons-react";
 import { createFileRoute } from "@tanstack/react-router";
 import React from "react";
-import { AstryxSurface, astryxPilot } from "@/components/astryx-pilot/theme";
+import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import {
   PageRows,
   PageSection,
@@ -23,7 +23,6 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import { formatHotkey, HOTKEYS } from "@/lib/hotkeys/hotkeys";
 
 export const Route = createFileRoute("/_authed/settings/")({
@@ -75,20 +74,12 @@ function RouteComponent() {
                 </ItemDescription>
               </ItemContent>
               <ItemActions>
-                {astryxPilot ? (
-                  <AstryxSwitch
-                    label="Dark theme"
-                    isLabelHidden
-                    value={dark}
-                    onChange={setDark}
-                  />
-                ) : (
-                  <Switch
-                    aria-label="Dark theme"
-                    checked={dark}
-                    onCheckedChange={setDark}
-                  />
-                )}
+                <AstryxSwitch
+                  label="Dark theme"
+                  isLabelHidden
+                  value={dark}
+                  onChange={setDark}
+                />
               </ItemActions>
             </Item>
           </PageRows>

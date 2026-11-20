@@ -5,7 +5,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import type { ComponentProps } from "react";
 import { DeviceAction } from "@/components/astryx-pilot/device-action";
 import { DevicePage } from "@/components/astryx-pilot/device-page";
-import { astryxPilot, astryxScope } from "@/components/astryx-pilot/theme";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { PageCard } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +15,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import type { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -58,39 +58,19 @@ function CredentialInput({
   type?: "password";
   value: string;
 }) {
-  if (astryxPilot) {
-    const { name, onChange, type, value, ...input } = props;
-    return (
-      <TextInput
-        {...input}
-        description={description}
-        htmlName={name}
-        label={label}
-        onChange={(_, event) => onChange?.(event)}
-        status={props["aria-invalid"] ? { type: "error" } : undefined}
-        type={type}
-        value={value}
-        width="100%"
-      />
-    );
-  }
+  const { name, onChange, type, value, ...input } = props;
   return (
-    <>
-      <FieldLabel htmlFor={props.id}>{label}</FieldLabel>
-      {description ? (
-        <FieldDescription id={`${props.id}-description`}>
-          {description}
-        </FieldDescription>
-      ) : null}
-      <Input
-        {...props}
-        aria-describedby={
-          [description && `${props.id}-description`, props["aria-describedby"]]
-            .filter(Boolean)
-            .join(" ") || undefined
-        }
-      />
-    </>
+    <TextInput
+      {...input}
+      description={description}
+      htmlName={name}
+      label={label}
+      onChange={(_, event) => onChange?.(event)}
+      status={props["aria-invalid"] ? { type: "error" } : undefined}
+      type={type}
+      value={value}
+      width="100%"
+    />
   );
 }
 

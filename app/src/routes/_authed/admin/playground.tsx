@@ -4,7 +4,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { cn } from "@/lib/utils";
 import "@/components/astryx-pilot/capability-surface.css";
-import { astryxPilot, astryxScope } from "@/components/astryx-pilot/theme";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { Button } from "@/components/ui/button";
 import {
@@ -205,7 +205,7 @@ function PlaygroundPage() {
       {...astryxScope}
       className={cn(
         "flex min-h-0 flex-1 flex-col",
-        astryxPilot && "astryx-capability-surface",
+        "astryx-capability-surface",
       )}
     >
       <header className="flex flex-wrap items-start justify-between gap-4 border-border border-b px-6 py-4">

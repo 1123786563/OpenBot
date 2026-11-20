@@ -2,9 +2,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import type { ComponentProps, ReactNode } from "react";
 import { PageShell } from "@/components/layout/page-shell";
-import { Button as LegacyButton } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { AstryxSurface, astryxPilot, astryxScope } from "./theme";
+import { AstryxSurface, astryxScope } from "./theme";
 import "./governance.css";
 
 export function GovernanceSurface({ children }: { children: ReactNode }) {
@@ -40,13 +38,6 @@ export function GovernanceAction({
   label: string;
   variant?: "outline" | "destructive";
 }) {
-  if (!astryxPilot) {
-    return (
-      <LegacyButton {...props} disabled={disabled} size="sm" variant={variant}>
-        {label}
-      </LegacyButton>
-    );
-  }
   const nativeButtonProps = { ...props, disabled };
   return (
     <Button
@@ -65,8 +56,6 @@ export function GovernanceSearch({
   label: string;
   value: string;
 } & Pick<ComponentProps<"input">, "onChange" | "placeholder" | "className">) {
-  if (!astryxPilot)
-    return <Input {...props} aria-label={label} type="search" />;
   const { className, onChange, ...input } = props;
   return (
     <div className={className}>

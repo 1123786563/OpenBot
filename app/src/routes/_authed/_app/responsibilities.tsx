@@ -26,7 +26,7 @@ function ResponsibilitiesPage() {
         <GoalsOverview />
       ) : (
         <PageShell
-          description="Ongoing work across your Bots."
+          description="Review ongoing work across your Bots."
           title="Responsibilities"
         >
           <BotResponsibilities />
@@ -45,11 +45,10 @@ function GoalsOverview() {
   return (
     <PageShell
       title="Goals"
-      description={bot ? `Ongoing work for ${bot.name}.` : undefined}
+      description={bot ? `Review ongoing work for ${bot.name}.` : undefined}
     >
-      {agents.isPending || user.isPending ? (
-        <p role="status">Loading Goals…</p>
-      ) : agents.isError || user.isError ? (
+      {agents.isPending || user.isPending ? null : agents.isError ||
+        user.isError ? (
         <p className="text-destructive" role="alert">
           Couldn't load your Goals. Reload the page to try again.
         </p>

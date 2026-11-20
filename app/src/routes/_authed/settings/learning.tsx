@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { AstryxSurface, astryxPilot } from "@/components/astryx-pilot/theme";
+import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { PageShell } from "@/components/layout/page-shell";
 import { LearningReview } from "@/components/settings/learning-review";
 import { LearningSharing } from "@/components/settings/learning-sharing";
@@ -25,14 +25,12 @@ export function LearningSettingsPage() {
       >
         <LearningReview />
         <LearningSharing />
-        {astryxPilot ? (
-          <Link
-            className="mt-6 inline-block text-sm underline underline-offset-4"
-            to="/ideas"
-          >
-            Open Ideas
-          </Link>
-        ) : null}
+        <Link
+          className="mt-6 inline-block text-sm underline underline-offset-4"
+          to="/ideas"
+        >
+          Open Ideas
+        </Link>
       </PageShell>
     </AstryxSurface>
   );

@@ -40,9 +40,13 @@ export function resumeUrlFor(
 export function appReturnPath(value: unknown): string | undefined {
   if (typeof value !== "string" || !value.startsWith("/")) return;
   const base = "https://openbot.invalid";
-  const url = URL.parse(value, base);
+  let url: URL;
+  try {
+    url = new URL(value, base);
+  } catch {
+    return;
+  }
   if (
-    !url ||
     value.startsWith("//") ||
     value.includes("\\") ||
     url.origin !== base ||

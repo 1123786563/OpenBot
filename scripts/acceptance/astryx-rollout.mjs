@@ -184,6 +184,34 @@ try {
       report.push({ restoredTheme: "dark" });
     }
     const profiles = ["openbot", "openduet", "opendots", "openmuse"];
+    if (retired && team) {
+      for (const skin of profiles) {
+        const account = await browser.newContext();
+        try {
+          await signIn(account, skin);
+          const { user } = await api(account, "GET", "/api/me", undefined, 200);
+          assert.equal(user.id, `issue17-${skin}`);
+          const { preferences } = await api(
+            account,
+            "GET",
+            "/api/settings/preferences",
+            undefined,
+            200,
+          );
+          assert.equal(preferences.skin, skin);
+          const signedIn = await account.newPage();
+          await signedIn.goto(`${origin}/bots`);
+          await signedIn.locator(".astryx-web-shell").waitFor();
+          await signedIn
+            .getByRole("heading", { name: "Bots", exact: true })
+            .waitFor();
+          assert.equal(await signedIn.locator("html[data-skin]").count(), 0);
+          report.push({ account: user.id, savedSkin: skin, shell: "Astryx" });
+        } finally {
+          await account.close();
+        }
+      }
+    }
     for (const skin of profiles) {
       await api(context, "PATCH", "/api/settings/preferences", { skin }, 200);
       if (retired) {
@@ -331,12 +359,52 @@ try {
       "Issue 17 unsent composer probe",
     );
     report.push({ unsentComposerTextSurvivesReload: retainedUnsentText });
-    if (enabled) {
-      await page.evaluate(
-        ({ userId, botId }) =>
-          localStorage.setItem(`openmuse-bot:${userId}`, botId),
-        { userId: identity.user.id, botId: bot.id },
+    if (enabled && retired) {
+      const other = (
+        await api(
+          context,
+          "POST",
+          "/api/agents",
+          {
+            name: `Issue 18 ${edition} Other Bot`,
+            title: "",
+            roleDescription: "Fixture for Bot context changes",
+            visibility: "private",
+          },
+          201,
+        )
+      ).agent;
+      await go(`/bots/${other.id}`, `/bots/${other.id}`, other.name);
+      await page
+        .getByRole("navigation", { name: "Main navigation" })
+        .getByRole("link", { name: "Goals", exact: true })
+        .click();
+      await page.waitForURL(
+        (url) => url.pathname + url.search === "/responsibilities?view=goals",
       );
+      await page
+        .getByText(`Review ongoing work for ${other.name}.`, { exact: true })
+        .waitFor();
+      await go(
+        `/channel/${conversation.id}`,
+        `/channel/${conversation.id}`,
+        label,
+      );
+      await go("/s/activity", "/s/activity", "Activity");
+      await page
+        .getByText(`Review activity for ${label}.`, { exact: true })
+        .waitFor();
+      report.push({
+        botContext: "profile to Goals and one-to-one Conversation to Activity",
+      });
+    }
+    if (enabled) {
+      if (!retired)
+        await page.evaluate(
+          ({ userId, botId }) =>
+            localStorage.setItem(`openmuse-bot:${userId}`, botId),
+          { userId: identity.user.id, botId: bot.id },
+        );
       for (const [source, dest, content] of [
         ["/s/tasks", "/tasks", "Bot tasks"],
         ...(retired ? [["/s/unknown", "/", "Browse Bots"]] : []),

@@ -1,7 +1,7 @@
 import { Switch as AstryxSwitch } from "@astryxdesign/core/Switch";
 import { IconRadar } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { astryxPilot } from "@/components/astryx-pilot/theme";
+
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import {
   Item,
@@ -11,7 +11,6 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
-import { Switch } from "@/components/ui/switch";
 import {
   deploymentCapabilitiesQueryOptions,
   offersMemory,
@@ -77,26 +76,17 @@ export function CheckInsSection() {
               </ItemDescription>
             </ItemContent>
             <ItemActions>
-              {astryxPilot ? (
-                <AstryxSwitch
-                  disabledMessage={
-                    byAdmin ? "Turned off by your admin." : undefined
-                  }
-                  isDisabled={byAdmin}
-                  isLabelHidden
-                  isLoading={save.isPending}
-                  label="Check-ins for all your Bots"
-                  onChange={setCheckIns}
-                  value={on}
-                />
-              ) : (
-                <Switch
-                  aria-label="Check-ins for all your Bots"
-                  checked={on}
-                  disabled={byAdmin || save.isPending}
-                  onCheckedChange={setCheckIns}
-                />
-              )}
+              <AstryxSwitch
+                disabledMessage={
+                  byAdmin ? "Turned off by your admin." : undefined
+                }
+                isDisabled={byAdmin}
+                isLabelHidden
+                isLoading={save.isPending}
+                label="Check-ins for all your Bots"
+                onChange={setCheckIns}
+                value={on}
+              />
             </ItemActions>
           </Item>
         </PageRows>

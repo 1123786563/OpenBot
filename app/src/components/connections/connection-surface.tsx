@@ -1,12 +1,7 @@
 import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import type { ComponentProps, ReactNode } from "react";
-import {
-  AstryxSurface,
-  astryxPilot,
-  astryxScope,
-} from "@/components/astryx-pilot/theme";
+import { AstryxSurface, astryxScope } from "@/components/astryx-pilot/theme";
 import { PageShell } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
 import { DialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import "./connection-surface.css";
@@ -33,7 +28,7 @@ export function ConnectionDialogContent({
     <DialogContent
       {...astryxScope}
       {...props}
-      className={cn(astryxPilot && "astryx-connections-dialog", className)}
+      className={cn("astryx-connections-dialog", className)}
     />
   );
 }
@@ -55,20 +50,6 @@ export function ConnectionAction({
   variant = "default",
   ...props
 }: ActionProps) {
-  if (!astryxPilot) {
-    return (
-      <Button
-        {...props}
-        disabled={disabled}
-        size="sm"
-        type={type}
-        variant={variant}
-      >
-        {children}
-        {endContent}
-      </Button>
-    );
-  }
   const nativeButtonProps = { ...props, disabled };
   return (
     <AstryxButton

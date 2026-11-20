@@ -1,5 +1,5 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
-import { AstryxSurface, astryxPilot } from "@/components/astryx-pilot/theme";
+import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { CapabilitiesShell } from "@/components/capabilities/capabilities-shell";
 import { MemoryList, RememberFact } from "@/components/memory/memories";
 import { deploymentOffersMemory } from "@/lib/deployment/queries";
@@ -23,14 +23,12 @@ function MemoryPage() {
           action={<RememberFact />}
           description="Manage what your Bots remember about you. Facts you add are shared with all Bots; learned facts stay with the Bot that learned them."
         />
-        {astryxPilot ? (
-          <Link
-            className="mt-6 inline-block text-sm underline underline-offset-4"
-            to="/ideas"
-          >
-            Open Ideas
-          </Link>
-        ) : null}
+        <Link
+          className="mt-6 inline-block text-sm underline underline-offset-4"
+          to="/ideas"
+        >
+          Open Ideas
+        </Link>
       </CapabilitiesShell>
     </AstryxSurface>
   );

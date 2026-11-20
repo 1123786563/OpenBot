@@ -1,4 +1,3 @@
-import { astryxPilot, astryxScope } from "@/components/astryx-pilot/theme";
 import {
   IconBrain,
   IconChartBar,
@@ -12,8 +11,9 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { HarnessMark } from "@/components/agents/harness-mark";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { PageEmpty, PageRows } from "@/components/layout/page-shell";
-import { DeploymentButton } from "../deployment-button";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -23,7 +23,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Item,
@@ -43,6 +42,7 @@ import {
   type ModelOption,
   type ModelSource,
 } from "@/lib/models/queries";
+import { DeploymentButton } from "../deployment-button";
 import { ControlsSection } from "./controls-section";
 
 /** Who serves the models, by the name an admin knows it by. */
@@ -330,10 +330,7 @@ export function AllowedModelsDialog({
       }}
       open={open}
     >
-      <DialogContent
-        {...astryxScope}
-        className={astryxPilot ? "astryx-admin-dialog" : undefined}
-      >
+      <DialogContent {...astryxScope} className={"astryx-admin-dialog"}>
         <DialogHeader>
           <DialogTitle>Allowed models</DialogTitle>
         </DialogHeader>

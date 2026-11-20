@@ -1,6 +1,5 @@
 import { Button } from "@astryxdesign/core/Button";
 import { IconChecklist } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useWaitingRows } from "@/components/approvals/waiting";
@@ -10,12 +9,15 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
-import { NeedsYouRows, useNeedsYou } from "@/components/needs-you/needs-you";
+import {
+  NeedsYouRows,
+  useNeedsYouTasks,
+} from "@/components/needs-you/needs-you";
 import { BotResponsibilities } from "@/components/responsibilities/responsibilities";
 import { RoutinesList } from "@/components/routines/routines-list";
 import { SuggestionsInbox } from "@/components/suggestions/proactive-panel";
 import { TASK_ORDER } from "@/lib/tasks/groups";
-import { TASK_STATUS_LABEL, taskListQueryOptions } from "@/lib/tasks/queries";
+import { TASK_STATUS_LABEL } from "@/lib/tasks/queries";
 
 /** Which list Tasks shows: what waits on you and what your Bots carry, or what to start next. */
 export type TasksView = "active" | "up_next";
@@ -75,8 +77,8 @@ export function TasksScreen() {
 
 function ActiveView() {
   const waiting = useWaitingRows(undefined);
-  const taskList = useQuery(taskListQueryOptions());
-  const { tasks, done } = useNeedsYou();
+  const taskList = useNeedsYouTasks();
+  const { tasks, done } = taskList;
   const listed = [...tasks, ...done];
 
   return (
@@ -85,7 +87,9 @@ function ActiveView() {
         <p className="text-destructive text-sm" role="alert">
           {taskList.error.message}
         </p>
-      ) : !taskList.isPending &&
+      ) : !taskList.pending &&
+        !waiting.isPending &&
+        !waiting.error &&
         listed.length === 0 &&
         waiting.rows.length === 0 ? (
         <PageEmpty icon={IconChecklist} title="No Bot tasks yet">
