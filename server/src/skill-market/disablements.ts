@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/client";
@@ -92,6 +93,7 @@ export type MarketRunScope = {
 
 export type MarketRunControl = {
   check(): Promise<void>;
+  dispatch: MarketDispatch;
   recordComputerToolCall(callId: string): Promise<void>;
 };
 
@@ -117,6 +119,54 @@ export async function marketRunPauseReason(
     .from(skillMarketRuns)
     .where(matchesRun(run));
   return saved?.reason ?? null;
+}
+
+export type MarketDispatch = <T>(start: () => Promise<T>) => Promise<T>;
+
+const activeDispatch = new AsyncLocalStorage<MarketDispatch>();
+
+export function withMarketDispatch<T>(
+  dispatch: MarketDispatch | undefined,
+  operation: () => T,
+): T {
+  return dispatch ? activeDispatch.run(dispatch, operation) : operation();
+}
+
+export function startMarketRequest<T>(start: () => Promise<T>): Promise<T> {
+  const dispatch = activeDispatch.getStore();
+  return dispatch ? dispatch(start) : start();
+}
+
+export function marketDispatchFor(
+  database: Database,
+  run: MarketRunScope,
+): MarketDispatch {
+  return async (start) => {
+    // A registered run's version is immutable. Calls without a market run
+    // use the same transport without taking a market version lock.
+    const [version] = await database
+      .select({
+        source: skillMarketRuns.source,
+        registrySkillId: skillMarketRuns.registrySkillId,
+        versionId: skillMarketRuns.versionId,
+      })
+      .from(skillMarketRuns)
+      .where(matchesRun(run));
+    if (!version) return start();
+
+    const { response } = await database.transaction(async (transaction) => {
+      await lockVersion(transaction, version);
+      const reason = await marketRunPauseReason(transaction, run);
+      if (reason) throw new MarketRunPaused(reason);
+
+      // Invoke the transport while ordered against disablement. The boxed
+      // promise lets the transaction commit while the response is in flight.
+      const response = start();
+      void response.catch(() => {});
+      return { response };
+    });
+    return response;
+  };
 }
 
 /** Resolve a governed browser tool call from the run that emitted it. */
@@ -190,6 +240,7 @@ export function marketVersionMethods(database: Database) {
           );
       });
       return {
+        dispatch: marketDispatchFor(database, run),
         async check() {
           const reason = await marketRunPauseReason(database, run);
           if (reason) throw new MarketRunPaused(reason);

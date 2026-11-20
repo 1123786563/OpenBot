@@ -1,3 +1,5 @@
+import { MCPMock } from "@copilotkit/aimock/mcp";
+import { createComputerTransport } from "../src/computer/client";
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { type AbstractAgent, HttpAgent } from "@ag-ui/client";
@@ -8,7 +10,7 @@ import {
 } from "@ag-ui/core";
 import { LLMock } from "@copilotkit/aimock";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { of } from "rxjs";
 import { z } from "zod";
@@ -46,14 +48,18 @@ const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const approvals = createApprovalStore(database);
 const approvalService = createApprovalService(approvals);
 const vendorCalls: string[] = [];
-const store = createPluginStore({
+const pluginOptions = {
   brokerProvider: "composio",
   database,
   auditStore: createAuditStore(database),
   credentials: createCredentialStore(database),
   encryptionKey: "x".repeat(44),
   policy: () => ({ mode: "enforce", deny: [], allow: ["true"] }),
-  approvalGate: (candidate) => approvalService.gate(candidate),
+  approvalGate: approvalService.gate,
+} satisfies Parameters<typeof createPluginStore>[0];
+const mcpStore = createPluginStore(pluginOptions);
+const store = createPluginStore({
+  ...pluginOptions,
   callVendor: async (_connection, toolName) => {
     vendorCalls.push(toolName);
     return { text: "done", isError: false };
@@ -734,131 +740,189 @@ test("a loaded market run pauses before the remote endpoint is dialled", async (
   }
 });
 
-for (const afterDispatch of [false, true]) {
-  test(
-    afterDispatch
-      ? "approval keeps the vendor outcome if the run pauses after dispatch"
-      : "approval cannot release a paused market run after the version is re-enabled",
-    async () => {
-      expect([200, 201]).toContain((await install(bot)).status);
-      const model = new LLMock();
-      const previous = process.env.OPENAI_BASE_URL;
-      process.env.OPENAI_BASE_URL = await model.start();
-      model.onMessage(/.*/, {
-        toolCalls: [
-          { name: "reset_workspace", arguments: '{"workspace":"notes"}' },
-        ],
+async function serveMcp(tool: string, pauseAt: "initialize" | "tools/call") {
+  let initialized = 0;
+  let dispatched = 0;
+  const mock = new MCPMock();
+  mock
+    .addTool({
+      name: tool,
+      description: "Fixture tool",
+      inputSchema: { type: "object" },
+    })
+    .onToolCall(tool, () => "done");
+  const upstream = await mock.start();
+  const relay = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      if (request.method !== "POST") return new Response(null, { status: 405 });
+      const body = await request.text();
+      const { method } = JSON.parse(body);
+      if (method === "initialize") initialized++;
+      if (method === "tools/call") dispatched++;
+      if (method === pauseAt) {
+        expect((await changeDisablement("PUT")).status).toBe(204);
+        expect((await changeDisablement("DELETE")).status).toBe(204);
+      }
+      return fetch(upstream, {
+        method: "POST",
+        headers: request.headers,
+        body,
       });
-      const guardedApprovals = createApprovalService(
-        approvals,
+    },
+  });
+  const [previous] = await database
+    .select({ url: mcpServers.url })
+    .from(mcpServers)
+    .where(eq(mcpServers.id, app));
+  await database
+    .update(mcpServers)
+    .set({ url: `http://127.0.0.1:${relay.port}/mcp` })
+    .where(eq(mcpServers.id, app));
+  return {
+    initialized: () => initialized,
+    dispatched: () => dispatched,
+    async stop() {
+      relay.stop(true);
+      await mock.stop();
+      await database
+        .update(mcpServers)
+        .set({ url: previous.url })
+        .where(eq(mcpServers.id, app));
+    },
+  };
+}
+
+for (const phase of ["before approval", "initialize", "tools/call"] as const) {
+  const afterDispatch = phase === "tools/call";
+  test(`approved MCP execution handles disablement at ${phase}`, async () => {
+    expect([200, 201]).toContain((await install(bot)).status);
+    const model = new LLMock();
+    const previous = process.env.OPENAI_BASE_URL;
+    process.env.OPENAI_BASE_URL = await model.start();
+    model.onMessage(/.*/, {
+      toolCalls: [
+        { name: "reset_workspace", arguments: '{"workspace":"notes"}' },
+      ],
+    });
+    const guardedApprovals = createApprovalService(
+      approvals,
+      undefined,
+      undefined,
+      {
+        marketPause: store.marketRunPauseReason,
+      },
+    );
+    const execute = () =>
+      mcpStore.callTool({
+        botId: bot,
+        actorId: member,
+        ref: protectedTool,
+        args: { workspace: "notes" },
+      });
+    const relay = await serveMcp(
+      "reset_workspace",
+      phase === "tools/call" ? phase : "initialize",
+    );
+    try {
+      const available = await buildAgents(
+        [
+          {
+            id: bot,
+            name: bot,
+            type: "built_in",
+            systemPrompt: "Notes assistant",
+          },
+        ],
+        { provider: "openai", defaultModel: "gpt-5.5" },
+        "fixture",
+        undefined,
+        async () => [
+          {
+            name: "reset_workspace",
+            ref: protectedTool,
+            description: "Reset a workspace",
+            parameters: z.object({ workspace: z.string() }),
+            execute: async () => (await execute()).text,
+          },
+        ],
+        undefined,
         undefined,
         undefined,
         {
-          marketPause: store.marketRunPauseReason,
+          loadSkills: (botId) => grantedSkills({ store, botId }),
+          choose: async () => null,
+          registerMarketRun: (scope, version) =>
+            store.registerMarketRun({ ...scope, actorId: member }, version),
         },
       );
-      const execute = () =>
-        store.callTool({
-          botId: bot,
-          actorId: member,
-          ref: protectedTool,
-          args: { workspace: "notes" },
-        });
-      try {
-        const available = await buildAgents(
-          [
-            {
-              id: bot,
-              name: bot,
-              type: "built_in",
-              systemPrompt: "Notes assistant",
-            },
-          ],
-          { provider: "openai", defaultModel: "gpt-5.5" },
-          "fixture",
-          undefined,
-          async () => [
-            {
-              name: "reset_workspace",
-              ref: protectedTool,
-              description: "Reset a workspace",
-              parameters: z.object({ workspace: z.string() }),
-              execute: async () => (await execute()).text,
-            },
-          ],
-          undefined,
-          undefined,
-          undefined,
-          {
-            loadSkills: (botId) => grantedSkills({ store, botId }),
-            choose: async () => null,
-            registerMarketRun: (scope, version) =>
-              store.registerMarketRun({ ...scope, actorId: member }, version),
-          },
-        );
-        const agent: AbstractAgent = available[bot].clone();
-        const threadId = `paused-${suite}-${afterDispatch}`;
-        agent.threadId = threadId;
-        agent.setMessages([
-          { id: "question", role: "user", content: `/${slug} notes` },
-        ]);
-        await agent.runAgent();
-        const request = (await approvals.list(member)).find(
-          (row) => row.action.threadId === threadId,
-        );
-        expect(request?.status).toBe("pending");
-        if (!request) throw new Error("The Bot did not open an approval");
+      const agent: AbstractAgent = available[bot].clone();
+      const threadId = `paused-${suite}-${phase}`;
+      agent.threadId = threadId;
+      agent.setMessages([
+        { id: "question", role: "user", content: `/${slug} notes` },
+      ]);
+      await agent.runAgent();
+      const request = (await approvals.list(member)).find(
+        (row) => row.action.threadId === threadId,
+      );
+      expect(request?.status).toBe("pending");
+      if (!request) throw new Error("The Bot did not open an approval");
 
-        if (!afterDispatch) {
-          expect((await changeDisablement("PUT")).status).toBe(204);
-          expect((await changeDisablement("DELETE")).status).toBe(204);
-        }
-        await guardedApprovals.decide(member, request.id, "allow_once");
-        const dispatch = spyOn(store, "callTool");
-        const continued: unknown[] = [];
-        const previousVendorCalls = vendorCalls.length;
-        try {
-          await guardedApprovals.resume(member, request.id, {
-            validate: (action) =>
-              guardedApprovals.validateReentry(action, execute),
-            execute: async () => {
-              const output = await execute();
-              expect((await changeDisablement("PUT")).status).toBe(204);
-              return output.text;
-            },
-            continue: async (outcome) => {
-              continued.push(outcome);
-            },
-          });
-          expect(dispatch).toHaveBeenCalledTimes(afterDispatch ? 2 : 0);
-          expect(vendorCalls.length - previousVendorCalls).toBe(
-            afterDispatch ? 1 : 0,
-          );
-          expect(continued).toEqual([
-            expect.objectContaining({
-              pauseReason: expect.stringContaining("Review in progress"),
-            }),
-          ]);
-          expect(await approvals.get(member, request.id)).toMatchObject({
-            status: "completed",
-            result: afterDispatch
-              ? { content: "done" }
-              : { error: expect.stringContaining("Review in progress") },
-          });
-        } finally {
-          dispatch.mockRestore();
-        }
-      } finally {
-        if (previous === undefined) delete process.env.OPENAI_BASE_URL;
-        else process.env.OPENAI_BASE_URL = previous;
-        await model.stop();
-        await changeDisablement("DELETE");
+      if (phase === "before approval") {
+        expect((await changeDisablement("PUT")).status).toBe(204);
+        expect((await changeDisablement("DELETE")).status).toBe(204);
       }
-    },
-  );
+      await guardedApprovals.decide(member, request.id, "allow_once");
+      const dispatch = spyOn(mcpStore, "callTool");
+      const continued: unknown[] = [];
+      try {
+        await guardedApprovals.resume(member, request.id, {
+          validate: (action) =>
+            guardedApprovals.validateReentry(action, execute),
+          execute: async () => {
+            const output = await execute();
+            return output.text;
+          },
+          continue: async (outcome) => {
+            continued.push(outcome);
+          },
+        });
+        expect(dispatch).toHaveBeenCalledTimes(
+          phase === "before approval" ? 0 : 2,
+        );
+        expect(relay.initialized()).toBe(phase === "before approval" ? 0 : 1);
+        expect(relay.dispatched()).toBe(afterDispatch ? 1 : 0);
+        expect(continued).toEqual([
+          expect.objectContaining({
+            pauseReason: expect.stringContaining("Review in progress"),
+          }),
+        ]);
+        expect(await approvals.get(member, request.id)).toMatchObject({
+          status: "completed",
+          result: afterDispatch
+            ? { content: "done" }
+            : { error: expect.stringContaining("Review in progress") },
+        });
+      } finally {
+        dispatch.mockRestore();
+      }
+    } finally {
+      if (previous === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = previous;
+      await model.stop();
+      await relay.stop();
+      await changeDisablement("DELETE");
+    }
+  });
 }
 
-for (const boundary of ["tool dispatch", "second model call"] as const) {
+for (const boundary of [
+  "tool dispatch",
+  "second model call",
+  "provider fetch",
+] as const) {
   test(`a market run pauses before its next ${boundary} and preserves a dispatched tool result`, async () => {
     expect([200, 201]).toContain((await install(bot)).status);
     const model = new LLMock();
@@ -920,8 +984,23 @@ for (const boundary of ["tool dispatch", "second model call"] as const) {
         {
           loadSkills: (botId) => grantedSkills({ store, botId }),
           choose: async () => null,
-          registerMarketRun: (scope, version) =>
-            store.registerMarketRun({ ...scope, actorId: member }, version),
+          registerMarketRun: async (scope, version) => {
+            const control = await store.registerMarketRun(
+              { ...scope, actorId: member },
+              version,
+            );
+            if (boundary !== "provider fetch") return control;
+            return {
+              ...control,
+              async dispatch(start) {
+                if (pauseDuringRun) {
+                  expect((await changeDisablement("PUT")).status).toBe(204);
+                  expect((await changeDisablement("DELETE")).status).toBe(204);
+                }
+                return control.dispatch(start);
+              },
+            };
+          },
         },
       );
       const agent: AbstractAgent = available[bot].clone();
@@ -945,8 +1024,8 @@ for (const boundary of ["tool dispatch", "second model call"] as const) {
         });
 
       expect(errors.join(" ")).toContain("Review in progress");
-      expect(requests).toBe(1);
-      expect(dispatched).toBe(boundary === "tool dispatch" ? 0 : 1);
+      expect(requests).toBe(boundary === "provider fetch" ? 0 : 1);
+      expect(dispatched).toBe(boundary === "second model call" ? 1 : 0);
       if (boundary === "second model call")
         expect(toolResults).toContainEqual(
           expect.stringContaining("The vendor returned its accepted result."),
@@ -960,7 +1039,7 @@ for (const boundary of ["tool dispatch", "second model call"] as const) {
         { id: "fresh", role: "user", content: `/${slug} fresh invocation` },
       ]);
       await fresh.runAgent();
-      expect(requests).toBeGreaterThan(1);
+      expect(requests).toBeGreaterThan(boundary === "provider fetch" ? 0 : 1);
     } finally {
       if (previous === undefined) delete process.env.OPENAI_BASE_URL;
       else process.env.OPENAI_BASE_URL = previous;
@@ -971,252 +1050,294 @@ for (const boundary of ["tool dispatch", "second model call"] as const) {
   });
 }
 
-test("a signed callback from a paused market run stays blocked after restore", async () => {
-  expect([200, 201]).toContain((await install(bot)).status);
-  const token = "skill-market-test-callback";
-  const config = loadConfig(testEnvironment({ AGENT_TOOL_TOKEN: token }));
-  const app = createApp(
-    config,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    store,
-  );
-  let assertion: unknown;
-  const transport = spyOn(HttpAgent.prototype, "run").mockImplementation(
-    (input) => {
-      assertion = input.forwardedProps?.openbotRun;
-      return of<[RunStartedEvent, RunFinishedEvent]>(
+for (const duringHandshake of [false, true]) {
+  test(`a signed callback stays blocked after restore when paused ${duringHandshake ? "during MCP initialize" : "before the callback"}`, async () => {
+    expect([200, 201]).toContain((await install(bot)).status);
+    const relay = duringHandshake
+      ? await serveMcp("rename_workspace", "initialize")
+      : undefined;
+    if (relay) {
+      await database
+        .update(mcpTools)
+        .set({ effect: "read" })
+        .where(
+          and(
+            eq(mcpTools.serverId, app),
+            eq(mcpTools.name, "rename_workspace"),
+          ),
+        );
+      await store.grant("mcp", ungrantedTool, bot, "admin@example.test");
+    }
+    const token = "skill-market-test-callback";
+    const config = loadConfig(testEnvironment({ AGENT_TOOL_TOKEN: token }));
+    const callbackApp = createApp(
+      config,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      relay ? mcpStore : store,
+    );
+    let assertion: unknown;
+    const transport = spyOn(HttpAgent.prototype, "run").mockImplementation(
+      (input) => {
+        assertion = input.forwardedProps?.openbotRun;
+        return of<[RunStartedEvent, RunFinishedEvent]>(
+          {
+            type: EventType.RUN_STARTED,
+            threadId: input.threadId,
+            runId: input.runId,
+          },
+          {
+            type: EventType.RUN_FINISHED,
+            threadId: input.threadId,
+            runId: input.runId,
+          },
+        );
+      },
+    );
+    const dispatch = spyOn(relay ? mcpStore : store, "callTool");
+    try {
+      const available = await buildAgents(
+        [
+          {
+            id: bot,
+            name: bot,
+            type: "remote_ag_ui",
+            endpoint: "https://bot.example.test",
+            standingMessage: {
+              id: "role",
+              role: "system",
+              content: "Notes assistant",
+            },
+          },
+        ],
+        { provider: "openai", defaultModel: "gpt-5.5" },
+        null,
+        undefined,
+        async () => [],
+        (botId, runId, threadId) =>
+          mintRunAssertion(
+            { actorId: member, botId, threadId, runId },
+            config.keyEncryptionKey,
+          ),
+        undefined,
+        undefined,
         {
-          type: EventType.RUN_STARTED,
-          threadId: input.threadId,
-          runId: input.runId,
-        },
-        {
-          type: EventType.RUN_FINISHED,
-          threadId: input.threadId,
-          runId: input.runId,
+          loadSkills: (botId) => grantedSkills({ store, botId }),
+          choose: async () => null,
+          registerMarketRun: (scope, version) =>
+            store.registerMarketRun({ ...scope, actorId: member }, version),
         },
       );
-    },
-  );
-  const dispatch = spyOn(store, "callTool");
-  try {
-    const available = await buildAgents(
-      [
-        {
-          id: bot,
-          name: bot,
-          type: "remote_ag_ui",
-          endpoint: "https://bot.example.test",
-          standingMessage: {
-            id: "role",
-            role: "system",
-            content: "Notes assistant",
-          },
-        },
-      ],
-      { provider: "openai", defaultModel: "gpt-5.5" },
-      null,
-      undefined,
-      async () => [],
-      (botId, runId, threadId) =>
-        mintRunAssertion(
-          { actorId: member, botId, threadId, runId },
-          config.keyEncryptionKey,
-        ),
-      undefined,
-      undefined,
-      {
-        loadSkills: (botId) => grantedSkills({ store, botId }),
-        choose: async () => null,
-        registerMarketRun: (scope, version) =>
-          store.registerMarketRun({ ...scope, actorId: member }, version),
-      },
-    );
-    const agent: AbstractAgent = available[bot].clone();
-    agent.setMessages([
-      { id: "question", role: "user", content: `/${slug} notes` },
-    ]);
-    await agent.runAgent({ forwardedProps: { openbotRun: "forged" } });
-    expect(typeof assertion).toBe("string");
-    expect(assertion).not.toBe("forged");
-    expect((await changeDisablement("PUT")).status).toBe(204);
-    expect((await changeDisablement("DELETE")).status).toBe(204);
+      const agent: AbstractAgent = available[bot].clone();
+      agent.setMessages([
+        { id: "question", role: "user", content: `/${slug} notes` },
+      ]);
+      await agent.runAgent({ forwardedProps: { openbotRun: "forged" } });
+      expect(typeof assertion).toBe("string");
+      expect(assertion).not.toBe("forged");
+      if (!relay) {
+        expect((await changeDisablement("PUT")).status).toBe(204);
+        expect((await changeDisablement("DELETE")).status).toBe(204);
+      }
 
-    const response = await app.request(
-      "http://openbot.local/api/agent-tools/call",
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-openbot-agent-token": token,
+      const response = await callbackApp.request(
+        "http://openbot.local/api/agent-tools/call",
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-openbot-agent-token": token,
+          },
+          body: JSON.stringify({
+            name: relay ? ungrantedTool : protectedTool,
+            args: { workspace: "notes" },
+            run: assertion,
+            runId: randomUUID(),
+          }),
         },
-        body: JSON.stringify({
-          name: protectedTool,
-          args: { workspace: "notes" },
-          run: assertion,
-          runId: randomUUID(),
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        isError: true,
+        text: expect.stringContaining("Review in progress"),
+      });
+      expect(dispatch).toHaveBeenCalledTimes(relay ? 1 : 0);
+      if (relay) {
+        expect(relay.initialized()).toBe(1);
+        expect(relay.dispatched()).toBe(0);
+      }
+    } finally {
+      dispatch.mockRestore();
+      await relay?.stop();
+      transport.mockRestore();
+      await changeDisablement("DELETE");
+    }
+  });
+}
+
+for (const afterPreparation of [false, true]) {
+  test(`browser approval uses the server-bound run when paused ${afterPreparation ? "during preparation" : "before approval"}`, async () => {
+    expect([200, 201]).toContain((await install(bot)).status);
+    const callId = randomUUID();
+    const threadId = randomUUID();
+    const name = "computer_click";
+    const args = { x: 10, y: 10 };
+    const transport = spyOn(HttpAgent.prototype, "run").mockImplementation(
+      (input) =>
+        of(
+          {
+            type: EventType.RUN_STARTED,
+            threadId: input.threadId,
+            runId: input.runId,
+          },
+          {
+            type: EventType.TOOL_CALL_START,
+            toolCallId: callId,
+            toolCallName: name,
+          },
+          {
+            type: EventType.TOOL_CALL_ARGS,
+            toolCallId: callId,
+            delta: JSON.stringify(args),
+          },
+          { type: EventType.TOOL_CALL_END, toolCallId: callId },
+          {
+            type: EventType.RUN_FINISHED,
+            threadId: input.threadId,
+            runId: input.runId,
+          },
+        ),
+    );
+    let computerRequests = 0;
+    const computer = createComputerTransport({
+      fetchImpl: Object.assign(
+        async () => {
+          computerRequests++;
+          return Response.json({ ok: true });
+        },
+        { preconnect: fetch.preconnect },
+      ),
+    });
+    const computerDispatch = async () => {
+      expect(afterPreparation).toBe(true);
+      expect((await changeDisablement("PUT")).status).toBe(204);
+      expect((await changeDisablement("DELETE")).status).toBe(204);
+      return computer.post("http://computer.test", bot, "/click", args);
+    };
+    const serverApprovals = createServerApprovalService({
+      storedApprovals: approvals,
+      config: loadConfig(testEnvironment()),
+      sourceForCoordinationRun: async () => ({
+        channelId: "notes-channel",
+        botId: bot,
+      }),
+      agentProfileStore: profiles,
+      actorFor: async (id) => ({ id, role: "user" }),
+      database,
+      authoriseQuestion: async () => {},
+      routineIntelligence: {
+        getThreadMessages: async () => ({
+          messages: [
+            {
+              id: "answer",
+              role: "assistant",
+              toolCalls: [{ id: callId, name, args: JSON.stringify(args) }],
+            },
+          ],
         }),
       },
-    );
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      isError: true,
-      text: expect.stringContaining("Review in progress"),
-    });
-    expect(dispatch).not.toHaveBeenCalled();
-  } finally {
-    dispatch.mockRestore();
-    transport.mockRestore();
-    await changeDisablement("DELETE");
-  }
-});
-
-test("browser approval uses the server-bound run for the computer call", async () => {
-  expect([200, 201]).toContain((await install(bot)).status);
-  const callId = randomUUID();
-  const threadId = randomUUID();
-  const name = "computer_click";
-  const args = { x: 10, y: 10 };
-  const transport = spyOn(HttpAgent.prototype, "run").mockImplementation(
-    (input) =>
-      of(
+      approvalComputerTools: async () => [
         {
-          type: EventType.RUN_STARTED,
-          threadId: input.threadId,
-          runId: input.runId,
-        },
-        {
-          type: EventType.TOOL_CALL_START,
-          toolCallId: callId,
-          toolCallName: name,
-        },
-        {
-          type: EventType.TOOL_CALL_ARGS,
-          toolCallId: callId,
-          delta: JSON.stringify(args),
-        },
-        { type: EventType.TOOL_CALL_END, toolCallId: callId },
-        {
-          type: EventType.RUN_FINISHED,
-          threadId: input.threadId,
-          runId: input.runId,
-        },
-      ),
-  );
-  const computerDispatch = async () => {
-    throw new Error("The computer dispatched");
-  };
-  const serverApprovals = createServerApprovalService({
-    storedApprovals: approvals,
-    config: loadConfig(testEnvironment()),
-    sourceForCoordinationRun: async () => ({
-      channelId: "notes-channel",
-      botId: bot,
-    }),
-    agentProfileStore: profiles,
-    actorFor: async (id) => ({ id, role: "user" }),
-    database,
-    authoriseQuestion: async () => {},
-    routineIntelligence: {
-      getThreadMessages: async () => ({
-        messages: [
-          {
-            id: "answer",
-            role: "assistant",
-            toolCalls: [{ id: callId, name, args: JSON.stringify(args) }],
-          },
-        ],
-      }),
-    },
-    approvalComputerTools: async () => [
-      {
-        definition: { name, description: "Click", parameters: {} },
-        execute: computerDispatch,
-      },
-    ],
-    review: async () => {
-      throw new Error("Unexpected approval review");
-    },
-    notify: async () => {},
-  });
-  try {
-    const available = await buildAgents(
-      [
-        {
-          id: bot,
-          name: bot,
-          type: "remote_ag_ui",
-          endpoint: "https://bot.example.test",
-          standingMessage: {
-            id: "role",
-            role: "system",
-            content: "Notes assistant",
-          },
+          definition: { name, description: "Click", parameters: {} },
+          execute: computerDispatch,
         },
       ],
-      { provider: "openai", defaultModel: "gpt-5.5" },
-      null,
-      undefined,
-      async () => [],
-      undefined,
-      undefined,
-      undefined,
-      {
-        loadSkills: (botId) => grantedSkills({ store, botId }),
-        choose: async () => null,
-        registerMarketRun: (scope, version) =>
-          store.registerMarketRun({ ...scope, actorId: member }, version),
+      review: async () => {
+        throw new Error("Unexpected approval review");
       },
-    );
-    const agent: AbstractAgent = available[bot].clone();
-    agent.threadId = threadId;
-    agent.setMessages([
-      { id: "question", role: "user", content: `/${slug} notes` },
-    ]);
-    await agent.runAgent({
-      tools: [{ name, description: "Click", parameters: {} }],
+      notify: async () => {},
     });
-    expect((await changeDisablement("PUT")).status).toBe(204);
-    expect((await changeDisablement("DELETE")).status).toBe(204);
-    await expect(
-      serverApprovals.frontendAction(member, bot, {
-        runId: randomUUID(),
-        threadId,
-        toolCallId: callId,
-        toolName: name,
-        args,
-        state: {},
-        messages: [
+    try {
+      const available = await buildAgents(
+        [
           {
-            id: "answer",
-            role: "assistant",
-            toolCalls: [
-              {
-                id: callId,
-                type: "function",
-                function: { name, arguments: JSON.stringify(args) },
-              },
-            ],
+            id: bot,
+            name: bot,
+            type: "remote_ag_ui",
+            endpoint: "https://bot.example.test",
+            standingMessage: {
+              id: "role",
+              role: "system",
+              content: "Notes assistant",
+            },
           },
         ],
-        context: [],
-        forwardedProps: {},
-      }),
-    ).rejects.toThrow("Review in progress");
-  } finally {
-    transport.mockRestore();
-    await changeDisablement("DELETE");
-  }
-});
+        { provider: "openai", defaultModel: "gpt-5.5" },
+        null,
+        undefined,
+        async () => [],
+        undefined,
+        undefined,
+        undefined,
+        {
+          loadSkills: (botId) => grantedSkills({ store, botId }),
+          choose: async () => null,
+          registerMarketRun: (scope, version) =>
+            store.registerMarketRun({ ...scope, actorId: member }, version),
+        },
+      );
+      const agent: AbstractAgent = available[bot].clone();
+      agent.threadId = threadId;
+      agent.setMessages([
+        { id: "question", role: "user", content: `/${slug} notes` },
+      ]);
+      await agent.runAgent({
+        tools: [{ name, description: "Click", parameters: {} }],
+      });
+      if (!afterPreparation) {
+        expect((await changeDisablement("PUT")).status).toBe(204);
+        expect((await changeDisablement("DELETE")).status).toBe(204);
+      }
+      await expect(
+        serverApprovals.frontendAction(member, bot, {
+          runId: randomUUID(),
+          threadId,
+          toolCallId: callId,
+          toolName: name,
+          args,
+          state: {},
+          messages: [
+            {
+              id: "answer",
+              role: "assistant",
+              toolCalls: [
+                {
+                  id: callId,
+                  type: "function",
+                  function: { name, arguments: JSON.stringify(args) },
+                },
+              ],
+            },
+          ],
+          context: [],
+          forwardedProps: {},
+        }),
+      ).rejects.toThrow("Review in progress");
+      expect(computerRequests).toBe(0);
+    } finally {
+      transport.mockRestore();
+      await changeDisablement("DELETE");
+    }
+  });
+}
