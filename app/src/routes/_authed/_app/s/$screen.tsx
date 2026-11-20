@@ -9,7 +9,14 @@ import { useActiveSkin } from "@/skins/registry";
  */
 export const Route = createFileRoute("/_authed/_app/s/$screen")({
   beforeLoad: ({ params }) => {
-    if (astryxPilot && params.screen === "goals") {
+    if (!astryxPilot) return;
+    if (params.screen === "memories") {
+      throw redirect({ to: "/capabilities/memory", replace: true });
+    }
+    if (params.screen === "ideas") {
+      throw redirect({ to: "/ideas", replace: true });
+    }
+    if (params.screen === "goals") {
       throw redirect({
         to: "/responsibilities",
         search: { view: "goals" },
