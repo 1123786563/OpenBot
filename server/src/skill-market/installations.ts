@@ -11,6 +11,10 @@ import {
 } from "../db/schema";
 import { registeredBotProfiles } from "../plugins/plugin-store/skills";
 import type { MarketPreview, QualifiedMarketVersion } from "./catalog";
+import {
+  marketVersionMethods,
+  qualifyMarketVersionForWrite,
+} from "./disablements";
 
 type Actor = AppVariables["actor"];
 type Source = Pick<MarketPreview, "source" | "namespace" | "slug">;
@@ -100,6 +104,8 @@ async function reserveCommand(
 
 export function marketSkillMethods(database: Database) {
   return {
+    ...marketVersionMethods(database),
+
     async marketInstallTargets(actor: Actor, agentId?: string) {
       return registeredBotProfiles(database)
         .where(
@@ -186,6 +192,10 @@ export function marketSkillMethods(database: Database) {
           .where(and(manageableBy(actor), eq(agents.id, agentId)))
           .for("share");
         if (!target) return { kind: "forbidden" } as const;
+
+        const reason = await qualifyMarketVersionForWrite(transaction, preview);
+        if (reason !== null)
+          return { kind: "version-disabled", reason } as const;
 
         const reservation =
           expectedVersionId === undefined

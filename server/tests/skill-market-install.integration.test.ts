@@ -1,17 +1,22 @@
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { EventType, HttpAgent } from "@ag-ui/client";
+import { type AbstractAgent, HttpAgent } from "@ag-ui/client";
+import {
+  EventType,
+  type RunFinishedEvent,
+  type RunStartedEvent,
+} from "@ag-ui/core";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { eq, inArray } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
-import { Observable } from "rxjs";
+import { Observable, of } from "rxjs";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createApprovalService } from "../src/approvals/service";
 import { createApprovalStore } from "../src/approvals/store";
 import { withApprovalContext } from "../src/approvals/types";
 import { createAuditStore } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
-import { buildAgents } from "../src/copilot";
+import { buildAgents, type RegisteredAgent } from "../src/copilot";
 import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
 import {
@@ -23,7 +28,7 @@ import {
   skills,
   users,
 } from "../src/db/schema";
-import { pickedSkillGuidance } from "../src/plugins/picked-skill";
+import { admitPickedSkill } from "../src/plugins/picked-skill";
 import { createPluginRoutes } from "../src/plugins/routes";
 import { createPluginStore, PluginRefusedError } from "../src/plugins/store";
 import { grantedSkills } from "../src/plugins/tools";
@@ -61,9 +66,10 @@ const ungrantedTool = `${app}/rename_workspace`;
 const bot = `shared-${suite}`;
 const anotherBot = `another-${suite}`;
 const emptyBot = `empty-${suite}`;
+const spareBot = `spare-${suite}`;
 const fingerprint = `sha256:${"a".repeat(64)}`;
-let state: "published" | "newer" | "offline" | "withdrawn" | "lifecycle" =
-  "published";
+let secondVersionCompatible = false;
+let state: "published" | "newer" | "offline" | "withdrawn" = "published";
 
 beforeAll(async () => {
   await database
@@ -86,7 +92,7 @@ beforeAll(async () => {
     },
     { serverId: app, name: "rename_workspace", vendorName: "rename_workspace" },
   ]);
-  for (const id of [bot, anotherBot, emptyBot]) {
+  for (const id of [bot, anotherBot, emptyBot, spareBot]) {
     await database.insert(agents).values({
       id,
       name: id,
@@ -99,7 +105,7 @@ beforeAll(async () => {
       roleDescription: "Notes",
       avatarSeed: id,
       visibility: "public",
-      ownerUserId: id === bot ? null : owner,
+      ownerUserId: id === bot || id === spareBot ? null : owner,
     });
   }
   await store.grant("mcp", protectedTool, bot, "admin@example.test");
@@ -107,12 +113,13 @@ beforeAll(async () => {
 
 afterEach(() => {
   state = "published";
+  secondVersionCompatible = false;
 });
 
 afterAll(async () => {
   await database
     .delete(agents)
-    .where(inArray(agents.id, [bot, anotherBot, emptyBot]));
+    .where(inArray(agents.id, [bot, anotherBot, emptyBot, spareBot]));
   await database
     .delete(skillMarketSources)
     .where(inArray(skillMarketSources.slug, [slug, collision, racingSource]));
@@ -145,7 +152,7 @@ const plugins = createPluginRoutes(
 const routes = createSkillMarketRoutes(
   requireUser,
   {
-    baseUrl: "https://registry.example",
+    baseUrl: "http://skillhub:8080",
     namespace: "catalog",
     token: "read",
     confirmations: {
@@ -225,7 +232,7 @@ const routes = createSkillMarketRoutes(
           frontmatter: {
             metadata: {
               "openbot-compatibility": {
-                scripts: version === v2 && state === "published",
+                scripts: version === v2 && !secondVersionCompatible,
                 supportingFiles: false,
                 dedicatedRuntime: false,
               },
@@ -261,15 +268,16 @@ function assign(command: string, user = "admin", sourceSlug = collision) {
 }
 
 async function slash(agentId: string, command = slug) {
-  return pickedSkillGuidance(
+  const picked = await admitPickedSkill(
     {
       messages: [
         { id: "message", role: "user", content: `/${command} these notes` },
       ],
       forwardedProps: {},
     },
-    await grantedSkills({ store, botId: agentId }),
+    () => grantedSkills({ store, botId: agentId }),
   );
+  return picked.kind === "admitted" ? picked.guidance : undefined;
 }
 
 test("a Bot invokes the installed version after a new release, outage and withdrawal", async () => {
@@ -448,7 +456,6 @@ test("an owner can install on their Bot and a managed Skill cannot replace the r
 });
 
 test("switches and uninstalls only the selected Bot snapshot", async () => {
-  state = "lifecycle";
   expect((await install(emptyBot, "1.0.0", owner)).status).toBe(201);
   expect([200, 201]).toContain((await install(bot, "1.0.0")).status);
   expect(await slash(bot)).toContain("Summarize in three bullets.");
@@ -471,7 +478,7 @@ test("switches and uninstalls only the selected Bot snapshot", async () => {
     expect(response.status).toBe(200);
     return response.json();
   };
-  const runInput: Parameters<typeof pickedSkillGuidance>[0] = {
+  const runInput: Parameters<typeof admitPickedSkill>[0] = {
     messages: [
       { id: "message", role: "user", content: `/${slug} these notes` },
     ],
@@ -491,7 +498,8 @@ test("switches and uninstalls only the selected Bot snapshot", async () => {
   state = "published";
   expect((await change("2.0.0", 3)).status).toBe(422);
   expect(await slash(emptyBot)).toContain("Summarize in three bullets.");
-  state = "lifecycle";
+  secondVersionCompatible = true;
+  state = "newer";
   const upgrades = await Promise.all([change("2.0.0", 3), change("2.0.0", 3)]);
   expect(upgrades.map((response) => response.status).sort()).toEqual([
     200, 409,
@@ -499,34 +507,40 @@ test("switches and uninstalls only the selected Bot snapshot", async () => {
   const runningV2 = await grantedSkills({ store, botId: emptyBot });
   expect(await slash(emptyBot)).toContain("Produce an outline.");
   expect(await slash(bot)).toContain("Summarize in three bullets.");
-  expect(pickedSkillGuidance(runInput, running)).toContain(
-    "Summarize in three bullets.",
-  );
+  expect(
+    await admitPickedSkill({ ...runInput }, async () => running),
+  ).toMatchObject({
+    guidance: expect.stringContaining("Summarize in three bullets."),
+  });
   expect((await change("1.0.0", 3)).status).toBe(409);
   expect((await uninstall(3)).status).toBe(409);
 
   state = "withdrawn";
   expect((await change("1.0.0", 4)).status).toBe(404);
   expect(await slash(emptyBot)).toContain("Produce an outline.");
-  state = "lifecycle";
+  secondVersionCompatible = true;
+  state = "newer";
   expect((await change("1.0.0", 4)).status).toBe(200);
   expect(await slash(emptyBot)).toContain("Summarize in three bullets.");
-  expect(pickedSkillGuidance(runInput, runningV2)).toContain(
-    "Produce an outline.",
-  );
+  expect(
+    await admitPickedSkill({ ...runInput }, async () => runningV2),
+  ).toMatchObject({ guidance: expect.stringContaining("Produce an outline.") });
 
   state = "offline";
   expect((await uninstall(3)).status).toBe(204);
   expect(await list()).toEqual({ installations: [] });
   expect(await slash(emptyBot)).toBeUndefined();
   expect(await slash(bot)).toContain("Summarize in three bullets.");
-  expect(pickedSkillGuidance(runInput, running)).toContain(
-    "Summarize in three bullets.",
-  );
+  expect(
+    await admitPickedSkill({ ...runInput }, async () => running),
+  ).toMatchObject({
+    guidance: expect.stringContaining("Summarize in three bullets."),
+  });
 });
 
 test("a live Bot run keeps its sent instructions when its installation is removed", async () => {
-  state = "lifecycle";
+  secondVersionCompatible = true;
+  state = "newer";
   expect((await install(emptyBot, "2.0.0", owner)).status).toBe(201);
   const endpointReceived = Promise.withResolvers<string>();
   const release = Promise.withResolvers<void>();
@@ -642,4 +656,186 @@ test("assignment and managed Skill creation cannot both claim a free command", a
     expect(retry.status).toBe(200);
     expect(await retry.json()).toEqual({ command: racingCommand });
   }
+});
+
+const disablementIdentity = {
+  source: "http://skillhub:8080",
+  namespace: "catalog",
+  slug,
+  version: "1.0.0",
+  versionId: 3,
+  registrySkillId: 2,
+};
+
+function changeDisablement(
+  method: "PUT" | "DELETE",
+  user = "admin",
+  reason = "Review in progress",
+) {
+  return routes.request("/version-disablements", {
+    method,
+    headers: { "content-type": "application/json", "x-user": user },
+    body: JSON.stringify(
+      method === "PUT"
+        ? { ...disablementIdentity, reason }
+        : disablementIdentity,
+    ),
+  });
+}
+
+test("only an administrator can disable and restore an exact version", async () => {
+  const path = "/version-disablements";
+  secondVersionCompatible = true;
+  expect([200, 201]).toContain((await install(bot)).status);
+  expect([200, 201]).toContain((await install(anotherBot)).status);
+  expect((await install(emptyBot, "2.0.0")).status).toBe(201);
+  const dispatched: string[] = [];
+  const remote = spyOn(HttpAgent.prototype, "run").mockImplementation(
+    (input) => {
+      dispatched.push(
+        input.messages
+          .map((message) => ("content" in message ? message.content : ""))
+          .join("\n"),
+      );
+      return of<[RunStartedEvent, RunFinishedEvent]>(
+        {
+          type: EventType.RUN_STARTED,
+          threadId: input.threadId,
+          runId: input.runId,
+        },
+        {
+          type: EventType.RUN_FINISHED,
+          threadId: input.threadId,
+          runId: input.runId,
+        },
+      );
+    },
+  );
+  const available = await buildAgents(
+    [
+      {
+        id: anotherBot,
+        name: anotherBot,
+        type: "built_in",
+        systemPrompt: "Notes assistant",
+      },
+      ...[bot, emptyBot].map(
+        (id): RegisteredAgent => ({
+          id,
+          name: id,
+          type: "remote_ag_ui",
+          endpoint: "https://bot.example.test",
+          standingMessage: {
+            id: "standing-role",
+            role: "system",
+            content: "Notes assistant",
+          },
+        }),
+      ),
+    ],
+    { provider: "openai", defaultModel: "gpt-5.5" },
+    null,
+    undefined,
+    async () => [],
+    undefined,
+    undefined,
+    undefined,
+    {
+      loadSkills: (botId) => grantedSkills({ store, botId }),
+      choose: async () => null,
+    },
+  );
+  async function invoke(id: string) {
+    const agent: AbstractAgent = available[id].clone();
+    const failures: string[] = [];
+    agent.subscribe({
+      onRunErrorEvent: ({ event }) => {
+        failures.push(event.message);
+      },
+    });
+    agent.setMessages([
+      { id: "question", role: "user", content: `/${slug} notes` },
+    ]);
+    await agent.runAgent().catch((error: Error) => {
+      if (!failures.length) failures.push(error.message);
+    });
+    return failures;
+  }
+
+  try {
+    expect(
+      (await routes.request(path, { headers: { "x-user": owner } })).status,
+    ).toBe(403);
+    expect((await changeDisablement("PUT", owner)).status).toBe(403);
+    expect((await changeDisablement("PUT", "admin", " ")).status).toBe(400);
+    expect((await changeDisablement("PUT")).status).toBe(204);
+    const preview = await routes.request(`/catalog/${slug}/versions/1.0.0`);
+    expect(await preview.json()).toMatchObject({
+      installable: false,
+      disableReason: "Review in progress",
+    });
+
+    state = "offline";
+    const listed = await routes.request(path);
+    expect(await listed.json()).toMatchObject({
+      versions: expect.arrayContaining([
+        expect.objectContaining({
+          ...disablementIdentity,
+          reason: "Review in progress",
+        }),
+      ]),
+    });
+    expect((await changeDisablement("DELETE", owner)).status).toBe(403);
+    expect(await invoke(bot)).toEqual([
+      expect.stringContaining("Review in progress"),
+    ]);
+    expect(await invoke(anotherBot)).toEqual([
+      expect.stringContaining("Review in progress"),
+    ]);
+    expect(await invoke(emptyBot)).toEqual([]);
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0]).toContain("Produce an outline.");
+    state = "published";
+    const refused = await install(emptyBot);
+    expect(refused.status).toBe(422);
+    expect(await refused.json()).toMatchObject({
+      error: expect.stringContaining("Review in progress"),
+    });
+
+    state = "offline";
+    expect((await changeDisablement("DELETE")).status).toBe(204);
+    expect(await invoke(bot)).toEqual([]);
+    expect(dispatched).toHaveLength(2);
+    expect(dispatched[1]).toContain("Summarize in three bullets.");
+  } finally {
+    const restored = await changeDisablement("DELETE");
+    remote.mockRestore();
+    expect(restored.status).toBe(204);
+  }
+});
+
+test("installation rechecks disablement after successful catalog qualification", async () => {
+  const write = store.installMarketSkill;
+  const installAfterDisable = spyOn(
+    store,
+    "installMarketSkill",
+  ).mockImplementationOnce(async (...args) => {
+    expect(
+      (await changeDisablement("PUT", "admin", "Disabled before the write"))
+        .status,
+    ).toBe(204);
+    return write(...args);
+  });
+  try {
+    const refused = await install(spareBot);
+    expect(refused.status).toBe(422);
+    expect(await refused.json()).toMatchObject({
+      error: expect.stringContaining("Disabled before the write"),
+    });
+    expect(await slash(spareBot)).toBeUndefined();
+  } finally {
+    installAfterDisable.mockRestore();
+    await changeDisablement("DELETE");
+  }
+  expect((await install(spareBot)).status).toBe(201);
 });

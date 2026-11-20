@@ -631,6 +631,13 @@
       "when": 1795183869296,
       "tag": "0089_skill_market_installations",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1795185049024,
+      "tag": "0090_skill_market_version_disablements",
+      "breakpoints": true
     }
   ]
 }

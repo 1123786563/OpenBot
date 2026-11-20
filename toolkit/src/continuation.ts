@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { AuditInitiator } from "./initiator";
 
 export const marketSkillIdentitySchema = z.object({
-  registry: z.string(),
+  source: z.string(),
   namespace: z.string(),
   slug: z.string(),
   registrySkillId: z.number().int(),

@@ -6,6 +6,7 @@ import {
   SKILL_MARKET_RESERVATION,
   skillMarketInstallations,
   skillMarketSources,
+  skillMarketVersionDisablements,
   skills,
 } from "../../db/schema";
 import { catalogueEntry, classifyTool } from "../catalogue";
@@ -308,20 +309,38 @@ export function grantMethods(context: StoreContext) {
           title: skillMarketInstallations.title,
           summary: skillMarketInstallations.summary,
           instructions: skillMarketInstallations.instructions,
-          market: {
-            registry: skillMarketSources.registry,
+          identity: {
+            source: skillMarketSources.registry,
             namespace: skillMarketSources.namespace,
             slug: skillMarketSources.slug,
             registrySkillId: skillMarketInstallations.registrySkillId,
-            version: skillMarketInstallations.version,
             versionId: skillMarketInstallations.versionId,
+            version: skillMarketInstallations.version,
             fingerprint: skillMarketInstallations.fingerprint,
           },
+          disableReason: skillMarketVersionDisablements.reason,
         })
         .from(skillMarketInstallations)
         .innerJoin(
           skillMarketSources,
           eq(skillMarketSources.command, skillMarketInstallations.command),
+        )
+        .leftJoin(
+          skillMarketVersionDisablements,
+          and(
+            eq(
+              skillMarketVersionDisablements.source,
+              skillMarketSources.registry,
+            ),
+            eq(
+              skillMarketVersionDisablements.registrySkillId,
+              skillMarketInstallations.registrySkillId,
+            ),
+            eq(
+              skillMarketVersionDisablements.versionId,
+              skillMarketInstallations.versionId,
+            ),
+          ),
         )
         .where(eq(skillMarketInstallations.agentId, agentId));
 
@@ -337,7 +356,11 @@ export function grantMethods(context: StoreContext) {
       return {
         tools: grantedTools,
         skills: [
-          ...pinnedSkills.map((row) => ({ ...row, tools: [] })),
+          ...pinnedSkills.map(({ identity, disableReason, ...skill }) => ({
+            ...skill,
+            tools: [],
+            marketVersion: { identity, disableReason },
+          })),
           ...skillRows.map((row) => ({
             slug: row.slug,
             title: row.title,

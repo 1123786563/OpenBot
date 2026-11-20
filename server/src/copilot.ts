@@ -125,7 +125,11 @@ import {
 } from "./memory/tools";
 import { providerName } from "./model-billing";
 import { modelSourceFor, type RunChoice } from "./model-catalogue";
-import { runPickedSkillGuidance } from "./plugins/picked-skill";
+import {
+  admitPickedSkill,
+  type PickedSkillAdmission,
+  PickedSkillRefusal,
+} from "./plugins/picked-skill";
 import { refFromToolName } from "./plugins/plugin-store/model";
 import { appCallsOfRun, withAppCallsOf } from "./plugins/run-calls";
 import type { SelectableSkill, Selection } from "./plugins/selection";
@@ -1394,11 +1398,18 @@ async function buildAgent(
   }
   /*
    * The skill this run's message picked, among the ones this Bot holds, as the Bot is told it. Read
-   * from the same grants narrowing reads, fresh per request. See `picked-skill.ts`.
+   * from the same grants narrowing reads, again at admission so a reused agent sees new disablements.
+   * See `picked-skill.ts`.
    */
-  const pickedSkillFor = (input: RunAgentInput) =>
-    runPickedSkillGuidance(input, skills, marketSkill);
-  const holdsInstructions = skills.some((skill) => skill.instructions);
+  const pickedSkillFor =
+    selection || marketSkill
+      ? (input: RunAgentInput) =>
+          admitPickedSkill(
+            input,
+            () => selection?.loadSkills(agent.id) ?? Promise.resolve([]),
+            marketSkill,
+          )
+      : undefined;
   const narrowing =
     selection &&
     skills.some((skill) => skill.tools.length > 0) &&
@@ -1718,8 +1729,7 @@ async function buildAgent(
     !model.plan &&
     !acquireLearnedSkills &&
     !holdsTools &&
-    !holdsInstructions &&
-    !marketSkill &&
+    !pickedSkillFor &&
     !granted.some((tool) => tool.searchable)
   )
     return whole;
@@ -1754,7 +1764,11 @@ async function buildAgent(
           runModel,
           timeZone,
         );
-      const pickedSkill = pickedSkillFor(input);
+      const picked = await pickedSkillFor?.(input);
+      if (picked?.kind === "refused")
+        return new PickedSkillRefusal(picked.reason);
+      const pickedSkill =
+        picked?.kind === "admitted" ? picked.guidance : undefined;
       const learnedSkills = await acquireLearnedSkills?.(agent.id, signal);
       signal.throwIfAborted();
       if (
@@ -2226,7 +2240,7 @@ function remoteAgentWithStandingRole(
    * row the browser sent is read there as conversation data. Absent when the Bot holds no skill.
    * See `picked-skill.ts`.
    */
-  pickedSkillFor?: (input: RunAgentInput) => string | undefined,
+  pickedSkillFor?: (input: RunAgentInput) => Promise<PickedSkillAdmission>,
   /** The apps this Bot holds, as they stand for the person asking. See `grantedToolGuidance`. */
   apps?: readonly BotApp[],
 ) {
@@ -2272,6 +2286,7 @@ function remoteAgentWithStandingRole(
     tools: GrantedTool[],
     input: RunAgentInput,
     next: AbstractAgent,
+    pickedSkill?: string,
   ) => {
     const holdingsMessage = holdingsMessageFor(tools, holds(input));
     /*
@@ -2426,7 +2441,6 @@ function remoteAgentWithStandingRole(
          * And after the date, because it changes with the message, the skill the person picked for
          * this one. Not for a run the runtime makes for itself, which holds nothing of the Bot's.
          */
-        const pickedSkill = held ? pickedSkillFor?.(input) : undefined;
         const standingMessage = {
           ...agent.standingMessage,
           content: [
@@ -2545,34 +2559,31 @@ function remoteAgentWithStandingRole(
         return defer(() => from(answerOwnRuns())).pipe(
           switchMap((own) => own.run(input)),
         );
-      const stream = defer(() =>
-        from(
-          holds(input)
-            ? (coordination?.(agent.id, input) ?? Promise.resolve([])).then(
-                async (coordinationTools) => {
-                  /*
-                   * What the browser offers and the coordination tools are always sent, so the
-                   * Bot's own grants get what is left of what one request may carry. See
-                   * `fitToolLimit`.
-                   */
-                  const limit =
-                    MODEL_TOOL_LIMIT -
-                    (input.tools?.length ?? 0) -
-                    coordinationTools.length -
-                    toolsAddedAfter(input);
-                  const offered = narrow
-                    ? await narrow(input, limit)
-                    : fitToolLimit(tools, {
-                        limit,
-                        text: latestUserText(input.messages),
-                      });
-                  return [...offered, ...coordinationTools];
-                },
-              )
-            : // A run the runtime makes for itself is offered none of them. See `isAskedRun`.
-              Promise.resolve([]),
-        ).pipe(switchMap((offered) => runWith(offered, input, next))),
-      );
+      const stream = defer(async () => {
+        if (!holds(input)) return runWith([], input, next);
+        const picked = await pickedSkillFor?.(input);
+        if (picked?.kind === "refused")
+          return new PickedSkillRefusal(picked.reason).run(input);
+        const coordinationTools = (await coordination?.(agent.id, input)) ?? [];
+        // The browser and coordination tools get their places before the Bot's grants.
+        const limit =
+          MODEL_TOOL_LIMIT -
+          (input.tools?.length ?? 0) -
+          coordinationTools.length -
+          toolsAddedAfter(input);
+        const offered = narrow
+          ? await narrow(input, limit)
+          : fitToolLimit(tools, {
+              limit,
+              text: latestUserText(input.messages),
+            });
+        return runWith(
+          [...offered, ...coordinationTools],
+          input,
+          next,
+          picked?.kind === "admitted" ? picked.guidance : undefined,
+        );
+      }).pipe(switchMap((events) => events));
       const owned =
         !!process.env.MANAGED_AGENT_TOKEN &&
         agent.headers?.["x-openbot-agent-token"] ===

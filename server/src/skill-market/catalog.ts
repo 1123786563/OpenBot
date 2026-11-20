@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { catalogSegment, exactVersion, type SkillMarketConfig } from "./config";
+import {
+  type MarketVersionIdentity,
+  marketVersionDisabledMessage,
+} from "./disablements";
 
 const envelope = z.object({ code: z.literal(0), data: z.unknown() });
 const id = z.number().int().positive();
@@ -306,8 +310,15 @@ export function createSkillMarket(
       namespace: string,
       slug: string,
       version: string,
+      disableReason: (version: MarketVersionIdentity) => Promise<string | null>,
     ) {
       const preview = await market.preview(namespace, slug, version);
+      const reason = await disableReason(preview);
+      if (reason != null)
+        return {
+          kind: "ineligible",
+          reasons: [marketVersionDisabledMessage(version, reason)],
+        } as const;
       if (!preview.installable)
         return { kind: "ineligible", reasons: preview.reasons } as const;
       return { kind: "qualified", preview } as const;

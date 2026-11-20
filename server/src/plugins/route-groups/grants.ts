@@ -612,7 +612,9 @@ export function mountGrantRoutes({
     const granted = await store.listForAgent(agentId);
     return context.json({
       ...granted,
-      skills: granted.skills.map(({ market: _market, ...skill }) => skill),
+      skills: granted.skills.map(
+        ({ marketVersion: _marketVersion, ...skill }) => skill,
+      ),
     });
   });
 

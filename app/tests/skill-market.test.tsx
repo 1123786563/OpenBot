@@ -295,6 +295,54 @@ test("uses the published version picker to upgrade and roll back a single Bot", 
   ]);
 });
 
+test("an administrator can disable and restore an installed version while the catalog is offline", async () => {
+  const version = {
+    source: "https://registry.example",
+    slug: "summarize",
+    namespace: "catalog",
+    version: "1.0.0",
+    registrySkillId: 2,
+    versionId: 3,
+  };
+  const changes: unknown[] = [];
+  let reason: string | null = null;
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const { pathname } = new URL(String(input), "http://localhost");
+      if (pathname !== "/api/skill-market/version-disablements") {
+        return new Response(null, { status: 502 });
+      }
+      if (!init?.method)
+        return Response.json({ versions: [{ ...version, reason }] });
+      const { reason: requestedReason, ...identity } = JSON.parse(
+        String(init.body),
+      );
+      changes.push([init.method, identity]);
+      reason = init.method === "PUT" ? requestedReason : null;
+      return new Response(null, { status: 204 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = render(
+    <QueryClientProvider client={new QueryClient()}>
+      <SkillMarket isAdmin />
+    </QueryClientProvider>,
+  );
+  await view.findByText("Couldn't load the skill market.");
+  const input = await view.findByRole("textbox", { name: "Disable reason" });
+  fireEvent.input(input, { target: { value: "Review in progress" } });
+  const form = input.closest("form");
+  if (!form) throw new Error("Disable form missing");
+  fireEvent.submit(form);
+  await view.findByText("Review in progress");
+  fireEvent.click(view.getByRole("button", { name: "Re-enable version" }));
+  await view.findByRole("button", { name: "Disable version" });
+  expect(changes).toEqual([
+    ["PUT", version],
+    ["DELETE", version],
+  ]);
+});
+
 test("lets only the administrator resolve a command conflict and retry a taken name", async () => {
   const skill = {
     slug: "summarize",

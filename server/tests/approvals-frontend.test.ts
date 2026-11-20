@@ -83,7 +83,7 @@ test("the real frontend AG-UI agent supplies canonical call identity, original c
           title: "Forged",
           instructions: "Client-controlled instructions",
           market: {
-            registry: "https://skillhub.example.test",
+            source: "https://skillhub.example.test",
             namespace: "catalog",
             slug: "forged",
             registrySkillId: 123,

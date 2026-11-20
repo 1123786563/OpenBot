@@ -5,6 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { client } from "@/lib/client";
 import { pluginKeys } from "@/lib/plugins/queries";
+import {
+  MarketVersionAdministration,
+  MarketVersionControl,
+  type MarketVersionIdentity,
+} from "./market-version-administration";
 
 type Skill = {
   namespace: string;
@@ -14,23 +19,23 @@ type Skill = {
   latestVersion: string;
 };
 
-type VersionPreview = Skill & {
-  publisher: string | null;
-  source: string;
-  version: string;
-  instructions: string;
-  runtimeRequirements: string | null;
-  reasons: string[];
-  installable: boolean;
-  command?: string;
-  canAssignCommand?: boolean;
-};
+type VersionPreview = Skill &
+  MarketVersionIdentity & {
+    publisher: string | null;
+    disableReason?: string;
+    instructions: string;
+    runtimeRequirements: string | null;
+    reasons: string[];
+    installable: boolean;
+    command?: string;
+    canAssignCommand?: boolean;
+  };
 
 async function load<T>(path: string, signal: AbortSignal): Promise<T> {
   return (await client(`/api/skill-market${path}`, { signal })).json();
 }
 
-export function SkillMarket() {
+export function SkillMarket({ isAdmin = false }: { isAdmin?: boolean }) {
   const searchId = useId();
   const previewId = useId();
   const [query, setQuery] = useState("");
@@ -53,7 +58,8 @@ export function SkillMarket() {
       title="Skill market"
       description="Browse skills curated by your deployment administrator."
     >
-      <InstalledMarketSkills />
+      <InstalledMarketSkills isAdmin={isAdmin} />
+      {isAdmin && <MarketVersionAdministration />}
       <form
         className="mt-3 flex flex-wrap items-end gap-2"
         onSubmit={(event) => {
@@ -150,6 +156,7 @@ export function SkillMarket() {
           skill={selected}
           version={version}
           selectVersion={setVersion}
+          isAdmin={isAdmin}
         />
       )}
     </PageSection>
@@ -162,12 +169,14 @@ function MarketPreview({
   skill,
   version,
   selectVersion,
+  isAdmin,
 }: {
   id: string;
   installed?: { agentId: string; skill: InstalledSkill };
   skill: Pick<Skill, "namespace" | "slug" | "title">;
   version: string;
   selectVersion: (version: string) => void;
+  isAdmin: boolean;
 }) {
   const [page, setPage] = useState(0);
   const path = `/${encodeURIComponent(skill.namespace)}/${encodeURIComponent(skill.slug)}`;
@@ -265,6 +274,13 @@ function MarketPreview({
               </>
             )}
           </div>
+          {isAdmin && (
+            <MarketVersionControl
+              key={versionPath}
+              version={preview.data}
+              disableReason={preview.data.disableReason ?? null}
+            />
+          )}
           {preview.data.canAssignCommand && (
             <MarketCommandAssignment path={path} />
           )}
@@ -398,7 +414,7 @@ function refreshBotSkills(
   ]);
 }
 
-function InstalledMarketSkills() {
+function InstalledMarketSkills({ isAdmin }: { isAdmin: boolean }) {
   const targets = useInstallTargets();
   const [agentId, setAgentId] = useState("");
   if (targets.isPending) return <p role="status">Loading Bots…</p>;
@@ -429,12 +445,24 @@ function InstalledMarketSkills() {
           ))}
         </select>
       </label>
-      {agentId && <BotMarketInstallations key={agentId} agentId={agentId} />}
+      {agentId && (
+        <BotMarketInstallations
+          key={agentId}
+          agentId={agentId}
+          isAdmin={isAdmin}
+        />
+      )}
     </div>
   );
 }
 
-function BotMarketInstallations({ agentId }: { agentId: string }) {
+function BotMarketInstallations({
+  agentId,
+  isAdmin,
+}: {
+  agentId: string;
+  isAdmin: boolean;
+}) {
   const id = useId();
   const queryClient = useQueryClient();
   const [command, setCommand] = useState("");
@@ -520,6 +548,7 @@ function BotMarketInstallations({ agentId }: { agentId: string }) {
       )}
       {selected && (
         <MarketPreview
+          isAdmin={isAdmin}
           key={selected.command}
           id={id}
           installed={{ agentId, skill: selected }}

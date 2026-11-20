@@ -7,6 +7,11 @@ import {
   type RegistryFetch,
 } from "./catalog";
 import type { SkillMarketConfig } from "./config";
+import {
+  disableMarketVersion,
+  marketVersionDisabledMessage,
+  marketVersionIdentity,
+} from "./disablements";
 import { type marketSkillMethods, slashCommand } from "./installations";
 
 const installBody = z.strictObject({ agentId: z.string().trim().min(1) });
@@ -100,6 +105,48 @@ export function createSkillMarketRoutes(
     }
   });
 
+  routes.get("/version-disablements", async (context) => {
+    const refused = requireAdmin(context);
+    if (refused) return refused;
+    const versions =
+      (await installations?.marketVersionsForAdministration()) ?? [];
+    return context.json({ versions });
+  });
+
+  routes.on(["PUT", "DELETE"], "/version-disablements", async (context) => {
+    const refused = requireAdmin(context);
+    if (refused) return refused;
+    if (!installations)
+      return context.json(
+        { error: "Skill administration is unavailable." },
+        503,
+      );
+
+    const schema =
+      context.req.method === "PUT"
+        ? disableMarketVersion
+        : marketVersionIdentity.transform((version) => ({
+            ...version,
+            reason: null,
+          }));
+    const version = schema.safeParse(
+      await context.req.json().catch(() => null),
+    );
+    if (!version.success) {
+      return context.json(
+        {
+          error:
+            "Choose an exact version and provide a disable reason of up to 500 characters when disabling it.",
+        },
+        400,
+      );
+    }
+
+    const { reason, ...identity } = version.data;
+    await installations.setMarketVersionDisablement(identity, reason);
+    return context.body(null, 204);
+  });
+
   routes.post(
     "/:namespace/:slug/versions/:version/:operation{install|switch}",
     async (context) => {
@@ -132,6 +179,7 @@ export function createSkillMarketRoutes(
         namespace,
         slug,
         version,
+        installations.marketVersionDisableReason,
       );
       if (qualified.kind === "ineligible") {
         return context.json({ error: qualified.reasons.join(" ") }, 422);
@@ -147,6 +195,11 @@ export function createSkillMarketRoutes(
           return context.json({ error: forbidden }, 403);
         case "stale-installation":
           return context.json({ error: stale }, 409);
+        case "version-disabled":
+          return context.json(
+            { error: marketVersionDisabledMessage(version, result.reason) },
+            422,
+          );
         case "command-unavailable":
           return context.json({ error: commandUnavailable }, 409);
         case "different-version":
@@ -218,7 +271,19 @@ export function createSkillMarketRoutes(
   routes.get("/:namespace/:slug/versions/:version", async (context) => {
     const { namespace, slug, version } = context.req.param();
     const preview = await market.preview(namespace, slug, version);
-    if (!installations || !preview.installable) return context.json(preview);
+    if (!installations) return context.json(preview);
+    const reason = await installations.marketVersionDisableReason(preview);
+    if (reason !== null)
+      return context.json({
+        ...preview,
+        installable: false,
+        reasons: [
+          ...preview.reasons,
+          marketVersionDisabledMessage(version, reason),
+        ],
+        disableReason: reason,
+      });
+    if (!preview.installable) return context.json(preview);
     const command = await installations.marketCommand(preview);
     return context.json(
       command
