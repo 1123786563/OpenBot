@@ -1,3 +1,4 @@
+import { startMarketRequest } from "../skill-market/disablements";
 import { isLoopbackHost } from "@openbot/shared/this-machine";
 import {
   checkNavigationTarget,
@@ -402,10 +403,12 @@ export function createAgentFetch(
       }
       // `manual` is what makes this a check rather than a comment: the caller sees the redirect, and
       // the underlying fetch cannot quietly follow one on its own.
-      const response = await doFetch(dialled, {
-        ...carried,
-        redirect: "manual",
-      });
+      const response = await startMarketRequest(() =>
+        doFetch(dialled, {
+          ...carried,
+          redirect: "manual",
+        }),
+      );
       if (!REDIRECT_STATUSES.has(response.status)) return response;
 
       const location = response.headers.get("location");

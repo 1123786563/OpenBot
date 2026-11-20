@@ -10,6 +10,8 @@ import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
 import { createTurnRunner as createToolkitTurnRunner } from "@openbot/toolkit/run-turn";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
+  marketDispatchFor,
+  withMarketDispatch,
   MarketRunPaused,
   type MarketRunScope,
 } from "./skill-market/disablements";
@@ -2003,14 +2005,11 @@ function createTurnRunner(
 ) {
   const run = createToolkitTurnRunner({
     ...options,
-    beforeToolDispatch: async ({ ownerUserId, agentId, threadId, runId }) => {
-      const reason = await pluginStore.marketRunPauseReason({
-        actorId: ownerUserId,
-        botId: agentId,
-        threadId,
-        runId,
-      });
+    executeTool: async ({ ownerUserId, agentId, threadId, runId }, execute) => {
+      const scope = { actorId: ownerUserId, botId: agentId, threadId, runId };
+      const reason = await pluginStore.marketRunPauseReason(scope);
       if (reason) throw new MarketRunPaused(reason);
+      return withMarketDispatch(marketDispatchFor(database, scope), execute);
     },
   });
   return (turn: Parameters<typeof run>[0]) => {
@@ -2451,7 +2450,7 @@ const responsibilitySweep = repeatAfterEach(async () => {
 
 const approvalQueue = createWorkQueue(database);
 const approvalOwner = workOwner("approval");
-const executeApprovedAction = createApprovedActionExecutor({
+const approvedActionExecutor = createApprovedActionExecutor({
   sourceFor: sourceForCoordinationRun,
   gate: approvalService.gate,
   computerTools: approvalComputerTools,
@@ -2473,6 +2472,12 @@ const executeApprovedAction = createApprovedActionExecutor({
   refusalMarker: REFUSAL_MARKER,
   personInitiator: PERSON_INITIATOR,
 });
+const executeApprovedAction = (
+  action: Parameters<typeof approvedActionExecutor>[0],
+) =>
+  withMarketDispatch(marketDispatchFor(database, action), () =>
+    approvedActionExecutor(action),
+  );
 const approvalContinuationRunner = createTurnRunner({
   prepareRunInput: prepareProductRunInput,
   onKnownStop: productTelemetry.stopKnown,

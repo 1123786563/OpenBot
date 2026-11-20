@@ -1,3 +1,5 @@
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import type { Message, RunAgentInput } from "@ag-ui/client";
 import {
   AbstractAgent,
@@ -65,7 +67,7 @@ import {
   EMPTY,
   from,
   map,
-  type Observable,
+  Observable,
   of,
   switchMap,
   tap,
@@ -149,7 +151,10 @@ import {
   PickedSkillRefusal,
 } from "./plugins/picked-skill";
 import {
+  type MarketDispatch,
   type MarketRunControl,
+  startMarketRequest,
+  withMarketDispatch,
   MarketRunPaused,
   type MarketRunScope,
   type MarketVersionIdentity,
@@ -749,7 +754,7 @@ export function builtInAgentConfiguration(
   run: {
     mode?: RunMode;
     usesComputer?: boolean;
-    checkMarketRun?: () => Promise<void>;
+    marketRun?: MarketRunControl;
   } = {},
 ): BuiltInAgentConfiguration {
   const unattended = isUnattended(run.mode);
@@ -775,12 +780,14 @@ export function builtInAgentConfiguration(
    * wrapper cannot hold is sent as it was, with every tool, and the pre-flight count says so.
    */
   const unwrapped =
-    waiting.size > 0 || run.checkMarketRun
+    waiting.size > 0 || run.marketRun?.check
       ? (planModel ??
-        resolveModel(
-          `${model.provider}/${model.defaultModel}`,
-          apiKey ?? undefined,
-        ))
+        (run.marketRun
+          ? marketProviderModel(model, apiKey, run.marketRun.dispatch)
+          : resolveModel(
+              `${model.provider}/${model.defaultModel}`,
+              apiKey ?? undefined,
+            )))
       : undefined;
   const wrapped =
     waiting.size > 0 && isSearchingModel(unwrapped)
@@ -801,8 +808,8 @@ export function builtInAgentConfiguration(
     })) ?? []),
   ];
 
-  const guardedModel = run.checkMarketRun
-    ? guardMarketModel(wrapped ?? unwrapped, run.checkMarketRun)
+  const guardedModel = run.marketRun?.check
+    ? guardMarketModel(wrapped ?? unwrapped, run.marketRun?.check)
     : undefined;
   return {
     model:
@@ -921,15 +928,17 @@ export function builtInAgentConfiguration(
                 execution?.toolCallId,
                 tools.find((granted) => granted.name === tool.name)?.initiator,
                 async () => {
-                  await run.checkMarketRun?.();
-                  return tool.execute(args, {
-                    ...(execution?.toolCallId
-                      ? { toolCallId: execution.toolCallId }
-                      : {}),
-                    ...(execution?.abortSignal
-                      ? { signal: execution.abortSignal }
-                      : {}),
-                  });
+                  await run.marketRun?.check?.();
+                  return withMarketDispatch(run.marketRun?.dispatch, () =>
+                    tool.execute(args, {
+                      ...(execution?.toolCallId
+                        ? { toolCallId: execution.toolCallId }
+                        : {}),
+                      ...(execution?.abortSignal
+                        ? { signal: execution.abortSignal }
+                        : {}),
+                    }),
+                  );
                 },
               ),
           })),
@@ -940,6 +949,38 @@ export function builtInAgentConfiguration(
         }
       : {}),
   };
+}
+
+function marketProviderModel(
+  model: RuntimeModel,
+  apiKey: string | null,
+  dispatch: MarketDispatch,
+) {
+  const guardedFetch: typeof globalThis.fetch = Object.assign(
+    (...args: Parameters<typeof fetch>) => dispatch(() => fetch(...args)),
+    { preconnect: fetch.preconnect },
+  );
+  if (model.provider === "anthropic") {
+    return createAnthropic({
+      apiKey: apiKey || process.env.ANTHROPIC_API_KEY,
+      baseURL: process.env.ANTHROPIC_BASE_URL,
+      fetch: guardedFetch,
+    })(model.defaultModel);
+  }
+
+  // Keep CopilotKit's API routing, including its proxy and environment overrides.
+  const resolved = resolveModel(
+    `openai/${model.defaultModel}`,
+    apiKey ?? undefined,
+  );
+  const provider = createOpenAI({
+    apiKey: apiKey || process.env.OPENAI_API_KEY,
+    baseURL: process.env.OPENAI_BASE_URL,
+    fetch: guardedFetch,
+  });
+  return typeof resolved !== "string" && resolved.provider === "openai.chat"
+    ? provider.chat(model.defaultModel)
+    : provider(model.defaultModel);
 }
 
 /** One of the computer's own tools, which the surface offers by these names (`computer/schema.ts`). */
@@ -1496,7 +1537,7 @@ async function buildAgent(
      * `fitToolLimit`. Absent: a built-in Bot, whose app tools wait behind a search instead.
      */
     limit?: number,
-    checkMarketRun?: () => Promise<void>,
+    marketRun?: MarketRunControl,
   ): Promise<{ offered: GrantedTool[]; pinned: ReadonlySet<string> }> => {
     const text = latestUserText(input.messages);
     if (!narrowing)
@@ -1512,8 +1553,10 @@ async function buildAgent(
       skills,
       text,
       choose: async (prompt, signal) => {
-        await checkMarketRun?.();
-        return narrowing.choose(prompt, signal);
+        await marketRun?.check();
+        return withMarketDispatch(marketRun?.dispatch, () =>
+          narrowing.choose(prompt, signal),
+        );
       },
       signal,
       ...(narrowing.floor === undefined ? {} : { floor: narrowing.floor }),
@@ -1562,8 +1605,8 @@ async function buildAgent(
       signRun,
       connectedVendors,
       // Every remote run, narrowed or not: its tools all reach its model in one request.
-      async (input, limit, checkMarketRun) =>
-        (await selectionFor(input, undefined, limit, checkMarketRun)).offered,
+      async (input, limit, marketRun) =>
+        (await selectionFor(input, undefined, limit, marketRun)).offered,
       loadAttachment,
       markAttachmentsSent,
       acquireLearnedSkills,
@@ -1713,6 +1756,7 @@ async function buildAgent(
             new Set(input.tools.map((tool) => tool.name)),
             signal,
             planChoice(runModel),
+            marketRun?.dispatch,
           )
         : undefined,
       learnedSkills,
@@ -1723,7 +1767,7 @@ async function buildAgent(
       apps,
       {
         mode,
-        checkMarketRun: marketRun?.check,
+        marketRun,
         /*
          * Whether this run was offered the computer, known once the request is: the browser offers
          * the computer tools only to a Bot the person may drive, and a background turn only to one
@@ -1850,7 +1894,7 @@ async function buildAgent(
         );
       }
       const { offered, pinned } = narrowing
-        ? await selectionFor(input, signal, undefined, marketRun?.check)
+        ? await selectionFor(input, signal, undefined, marketRun)
         : { offered: granted, pinned: new Set<string>() };
       signal.throwIfAborted();
       /*
@@ -2000,12 +2044,14 @@ async function remoteTransport(
 ): Promise<AbstractAgent> {
   // The watch wraps whichever fetch is underneath, so a deployment gets both the stall timeout and
   // the redirect check rather than having to choose.
+  const request: AgentFetch =
+    agentFetch ?? ((url, init) => startMarketRequest(() => fetch(url, init)));
   const dial = stallGuard
     ? stallGuard.watch(
         { id: agent.id, name: agent.name, ...(initiator ? { initiator } : {}) },
-        agentFetch,
+        request,
       )
-    : agentFetch;
+    : request;
 
   if (agent.type === "remote_ag_ui") {
     return sayingWhenUnreachable(
@@ -2283,7 +2329,7 @@ function remoteAgentWithStandingRole(
   narrow?: (
     input: RunAgentInput,
     limit: number,
-    checkMarketRun?: () => Promise<void>,
+    marketRun?: MarketRunControl,
   ) => Promise<GrantedTool[]>,
   /*
    * No `agentFetch` and no `initiator` here any more, and they were not dropped: the transport this
@@ -2620,7 +2666,14 @@ function remoteAgentWithStandingRole(
           ? new (class extends AbstractAgent {
               run(input: RunAgentInput) {
                 return defer(checkMarketRun).pipe(
-                  switchMap(() => next.run(input)),
+                  switchMap(
+                    () =>
+                      new Observable<BaseEvent>((subscriber) =>
+                        withMarketDispatch(marketRun?.dispatch, () =>
+                          next.run(input).subscribe(subscriber),
+                        ),
+                      ),
+                  ),
                 );
               }
             })()
@@ -2639,7 +2692,9 @@ function remoteAgentWithStandingRole(
             ...(tool.concurrent ? { concurrent: true } : {}),
             execute: async (args, context) => {
               await checkMarketRun?.();
-              return tool.execute(args, context);
+              return withMarketDispatch(marketRun?.dispatch, () =>
+                tool.execute(args, context),
+              );
             },
           })),
           initiator,
@@ -2688,7 +2743,7 @@ function remoteAgentWithStandingRole(
           coordinationTools.length -
           toolsAddedAfter(input);
         const offered = narrow
-          ? await narrow(input, limit, marketRun?.check)
+          ? await narrow(input, limit, marketRun)
           : fitToolLimit(tools, {
               limit,
               text: latestUserText(input.messages),

@@ -1,3 +1,7 @@
+import {
+  type MarketDispatch,
+  MarketRunPaused,
+} from "../skill-market/disablements";
 import { cutAtCodeUnits } from "../channels/text";
 import { appsPage } from "../edition";
 import { MAX_RESULT_CHARS, type McpCallResult, type McpTool } from "./mcp";
@@ -133,7 +137,11 @@ const TOOLS: readonly McpTool[] = Object.freeze([
   },
 ]);
 
-type Connection = { url: string; token?: string };
+type Connection = {
+  url: string;
+  token?: string;
+  marketDispatch?: MarketDispatch;
+};
 
 /**
  * No credential is needed to know what this adapter can do, because the answer is in this file.
@@ -177,11 +185,16 @@ async function request(
 
   let response: Response;
   try {
-    response = await fetch(url, {
-      headers: { authorization: `Bearer ${connection.token}` },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
+    const start = () =>
+      fetch(url, {
+        headers: { authorization: `Bearer ${connection.token}` },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    response = await (connection.marketDispatch
+      ? connection.marketDispatch(start)
+      : start());
   } catch (error) {
+    if (error instanceof MarketRunPaused) throw error;
     return {
       ok: false,
       message:

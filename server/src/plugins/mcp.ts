@@ -1,3 +1,7 @@
+import {
+  type MarketDispatch,
+  MarketRunPaused,
+} from "../skill-market/disablements";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
@@ -247,6 +251,7 @@ export class McpServerError extends Error {
 }
 
 type Connection = {
+  marketDispatch?: MarketDispatch;
   url: string;
   /** The bearer token for this server, already decrypted. Absent for a server that needs none. */
   token?: string;
@@ -381,7 +386,24 @@ async function withClient<T>(
   connection: Connection,
   use: (client: Client) => Promise<T>,
 ): Promise<T> {
+  let ready = false;
+  let paused: MarketRunPaused | undefined;
+  const dispatch = connection.marketDispatch;
   const transport = new StreamableHTTPClientTransport(new URL(connection.url), {
+    ...(dispatch
+      ? {
+          fetch: async (url, init) => {
+            if (!ready || init?.method !== "POST") return fetch(url, init);
+            try {
+              return await dispatch(() => fetch(url, init));
+            } catch (error) {
+              // The SDK converts send failures to protocol errors.
+              if (error instanceof MarketRunPaused) paused = error;
+              throw error;
+            }
+          },
+        }
+      : {}),
     requestInit: connection.token
       ? {
           headers: connection.tokenHeader
@@ -394,11 +416,13 @@ async function withClient<T>(
 
   try {
     await client.connect(transport);
+    ready = true;
     return await use(client);
   } catch (error) {
     // Rewrapped so a caller never has to care whether the failure came from the transport, the
     // handshake or the call, and so the message that reaches an audit row and an admin page is one
     // sentence rather than a stack.
+    if (paused) throw paused;
     throw new McpServerError(vendorFailure(error), transientFailure(error));
   } finally {
     await client.close().catch(() => {

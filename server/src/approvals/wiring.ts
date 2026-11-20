@@ -1,6 +1,8 @@
 import {
   MarketRunPaused,
   marketRunForComputerCall,
+  marketDispatchFor,
+  withMarketDispatch,
   marketRunPauseReason,
 } from "../skill-market/disablements";
 import { isDeepStrictEqual } from "node:util";
@@ -213,19 +215,32 @@ export function createServerApprovalService(deps: {
       );
       if (!tool)
         throw new ApprovalRefusedError("That computer tool is not available.");
-      if (marketRun) {
-        const pauseReason = await marketRunPauseReason(database, {
-          actorId: ownerUserId,
-          botId,
-          threadId: snapshot.threadId,
-          runId: marketRun.runId,
-        });
+      const scope = marketRun
+        ? {
+            actorId: ownerUserId,
+            botId,
+            threadId: snapshot.threadId,
+            runId: marketRun.runId,
+          }
+        : undefined;
+      if (scope) {
+        const pauseReason = await marketRunPauseReason(database, scope);
         if (pauseReason) throw new ApprovalRefusedError(pauseReason);
       }
-      return tool.execute(snapshot.args, {
-        toolCallId: snapshot.toolCallId,
-        signal: new AbortController().signal,
-      });
+      try {
+        return await withMarketDispatch(
+          scope ? marketDispatchFor(database, scope) : undefined,
+          () =>
+            tool.execute(snapshot.args, {
+              toolCallId: snapshot.toolCallId,
+              signal: new AbortController().signal,
+            }),
+        );
+      } catch (error) {
+        if (error instanceof MarketRunPaused)
+          throw new ApprovalRefusedError(error.message);
+        throw error;
+      }
     },
     {
       review: deps.review,

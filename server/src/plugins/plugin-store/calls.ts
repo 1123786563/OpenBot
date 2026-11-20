@@ -19,7 +19,11 @@ import {
   vendorNameOf,
 } from "../../db/schema";
 import { isProactiveInitiator } from "../../proactive/initiator";
-import { marketRunPauseReason } from "../../skill-market/disablements";
+import {
+  marketDispatchFor,
+  marketRunPauseReason,
+  MarketRunPaused,
+} from "../../skill-market/disablements";
 import {
   classifyTool,
   labelledRead,
@@ -722,18 +726,20 @@ export function callMethods(context: StoreContext) {
           const continuation = currentApprovalContext();
           const threadId = input.threadId ?? continuation?.threadId;
           const runId = input.runId ?? continuation?.runId;
-          if (threadId && runId) {
-            const pauseReason = await marketRunPauseReason(database, {
-              actorId: input.actorId,
-              botId: input.botId,
-              threadId,
-              runId,
-            });
-            if (pauseReason) throw new PluginRefusedError(pauseReason, null);
+          const scope =
+            threadId && runId
+              ? { actorId: input.actorId, botId: input.botId, threadId, runId }
+              : undefined;
+          if (scope) {
+            const reason = await marketRunPauseReason(database, scope);
+            if (reason) throw new PluginRefusedError(reason, null);
           }
           return vendor(
             {
               url: effectiveUrl(row, entry),
+              ...(scope
+                ? { marketDispatch: marketDispatchFor(database, scope) }
+                : {}),
               token,
               tokenHeader: tokenHeaderFor(entry),
               actorId: runsAs ?? input.credentialActorId ?? input.actorId,
@@ -799,6 +805,10 @@ export function callMethods(context: StoreContext) {
         refused = result.accountGone ? "account" : "action";
         reachedVendorAs = runsAs;
       } catch (error) {
+        const failure =
+          error instanceof MarketRunPaused
+            ? new PluginRefusedError(error.message, null)
+            : error;
         /*
          * Recorded, then rethrown unchanged. The caller's behaviour is unaffected — what changes is
          * that the failure now exists in the trail, which is where somebody asking "is this connector
@@ -825,13 +835,13 @@ export function callMethods(context: StoreContext) {
              * an operator and exported. A dump in the row that records a failed call is the same
              * disclosure the tool-list replace was fixed for, in the trail rather than on a page.
              */
-            failure: (error instanceof Error
-              ? withoutStatement(error)
-              : String(error)
+            failure: (failure instanceof Error
+              ? withoutStatement(failure)
+              : String(failure)
             ).slice(0, 400),
           },
         });
-        throw error;
+        throw failure;
       }
       /*
        * WHETHER THE ACCOUNT IS GONE, OR ONLY THIS ACTION, AND ONLY THE FIRST ENDS THE ROW.
