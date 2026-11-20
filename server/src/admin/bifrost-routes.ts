@@ -12,6 +12,7 @@ import {
   configuration,
   configure,
   emptyCatalog,
+  pilotCatalogKey,
   publication,
   publish,
   releaseSchema,
@@ -19,7 +20,6 @@ import {
   view,
 } from "./bifrost-catalog";
 
-const catalogKey = "bifrost_pilot_catalog";
 const releaseKey = (id: string) => `bifrost_pilot_release:${id}`;
 
 export function createBifrostAdminRoutes(
@@ -41,7 +41,7 @@ export function createBifrostAdminRoutes(
     return context.json({ error: "Bifrost catalog is unavailable." }, 503);
   });
 
-  const catalogFilter = eq(enterpriseSettings.key, catalogKey);
+  const catalogFilter = eq(enterpriseSettings.key, pilotCatalogKey);
   async function update<T>(
     by: string,
     change: (catalog: typeof emptyCatalog) => Promise<{
@@ -53,7 +53,7 @@ export function createBifrostAdminRoutes(
     return database.transaction(async (tx) => {
       await tx
         .insert(enterpriseSettings)
-        .values({ key: catalogKey, value: emptyCatalog })
+        .values({ key: pilotCatalogKey, value: emptyCatalog })
         .onConflictDoNothing();
       const [row] = await tx
         .select()

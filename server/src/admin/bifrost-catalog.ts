@@ -92,6 +92,8 @@ const configuredRoute = route.extend({
 const releasedRoute = configuredRoute
   .required({ verification: true })
   .extend({ id, maxChargeMicrocredits: z.string().regex(/^\d+$/) });
+export type ReleasedBifrostRoute = z.infer<typeof releasedRoute>;
+export const pilotCatalogKey = "bifrost_pilot_catalog";
 export const releaseSchema = z.strictObject({
   id: z.uuid(),
   by: z.string(),
