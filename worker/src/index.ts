@@ -46,8 +46,15 @@ import { loadWorkerEnv, routineRunUrl } from "./env";
  * `loadConfig(process.env)` here would refuse to start over settings this loop has no
  * opinion about and does not need.
  */
+let environment: ReturnType<typeof loadWorkerEnv>;
+try {
+  environment = loadWorkerEnv();
+} catch {
+  writeRuntimeLog("worker_configuration_failed");
+  process.exit(1);
+}
 const { workerSharedSecret, serverInternalUrl, databaseUrl, owner } =
-  loadWorkerEnv();
+  environment;
 
 const database = createDatabase(databaseUrl);
 const queue = createWorkQueue(database);
@@ -143,14 +150,9 @@ async function runOneTick(): Promise<void> {
         kind: ROUTINE_FIRE_KIND,
         olderThanMs: PURGE_OLDER_THAN_MS,
       });
-      console.info(JSON.stringify({ type: "routine-sweep-purge", purged }));
-    } catch (error) {
-      console.warn(
-        JSON.stringify({
-          type: "routine-sweep-purge-failed",
-          reason: error instanceof Error ? error.message : String(error),
-        }),
-      );
+      writeRuntimeLog("routine_queue_purged", { purged });
+    } catch {
+      writeRuntimeLog("routine_queue_purge_failed");
     }
   }
 }
