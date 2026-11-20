@@ -22,9 +22,9 @@ import {
 } from "./policy";
 import type { ApprovalQuestions } from "./questions";
 import {
+  APPROVAL_DECISIONS,
   type ApprovalAction,
   ApprovalAlreadyAnsweredError,
-  APPROVAL_DECISIONS,
   type ApprovalCandidate,
   type ApprovalContinuation,
   type ApprovalConversationGrant,
@@ -500,6 +500,10 @@ export function createApprovalService(
           "Questions are unavailable in this deployment.",
         );
       return questions.dismiss(ownerUserId, id);
+    },
+    async threadInbox(ownerUserId: string, threadId: string) {
+      const requests = await store.list(ownerUserId, threadId);
+      return { requests: requests.map(publicApproval) };
     },
     async inbox(ownerUserId: string) {
       const requests = await store.list(ownerUserId);

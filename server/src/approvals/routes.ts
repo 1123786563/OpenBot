@@ -59,9 +59,15 @@ export function createApprovalRoutes(
               : 500,
         ),
   );
-  routes.get("/", async (context) =>
-    context.json(await service.inbox(context.var.actor.id)),
-  );
+  routes.get("/", async (context) => {
+    const threadId = context.req.query("threadId");
+    const ownerId = context.var.actor.id;
+    return context.json(
+      threadId === undefined
+        ? await service.inbox(ownerId)
+        : await service.threadInbox(ownerId, pattern.parse(threadId)),
+    );
+  });
   /*
    * Whether this conversation asks before every step: a task's, started from a check-in. The browser
    * asks before it sends a Bot's look at a page straight to the computer, since a look sent that way

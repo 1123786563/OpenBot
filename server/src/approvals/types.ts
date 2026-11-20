@@ -386,7 +386,7 @@ export type ApprovalStore = {
   setEnabled(ownerUserId: string, enabled: boolean): Promise<void>;
   open(action: ApprovalAction): Promise<ApprovalRecord>;
   get(ownerUserId: string, id: string): Promise<ApprovalRecord>;
-  list(ownerUserId: string): Promise<ApprovalRecord[]>;
+  list(ownerUserId: string, threadId?: string): Promise<ApprovalRecord[]>;
   decide(
     ownerUserId: string,
     id: string,
