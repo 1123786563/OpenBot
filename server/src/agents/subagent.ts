@@ -63,6 +63,7 @@ export type SubagentParent = {
   runId?: string;
   /** The asking run's root task, as its analytics context states it; the subagent works for it. */
   rootTaskId?: string;
+  auditRootTaskId?: string | null;
   /** Where the asking run's person is: the subagent's work reaches them there. */
   surface?: ProductSurface;
   actorId: string;
@@ -186,6 +187,7 @@ export function createSubagents(options: {
                 surface: parent.surface,
                 parentRunId: parent.runId,
                 inheritedRootTaskId: parent.rootTaskId,
+                auditRootTaskId: parent.auditRootTaskId,
               },
               routineId: SUBAGENT_TOOL,
               agentId: parent.botId,

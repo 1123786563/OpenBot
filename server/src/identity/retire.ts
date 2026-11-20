@@ -1,5 +1,9 @@
 import { asc, eq } from "drizzle-orm";
-import { type AuditStore, recordAuditEvent } from "../audit";
+import {
+  recordAuditEvent,
+  type TransactionAuditStore,
+  withAuditTransaction,
+} from "../audit";
 import {
   type CredentialExecutor,
   CredentialRefusedError,
@@ -37,11 +41,11 @@ async function revokeIfLive(
  * the removal cannot be redeemed into a fresh active link afterwards.
  *
  * One transaction, the audit rows included: `auditFor` is handed the transaction and returns the
- * store that writes into it (`createAuditStore(transaction)`, as approvals do), so a link is retired
+ * store that writes into it, so a link is retired
  * exactly when its `identity.link_retired` row is written. A failure anywhere, an audit row
  * included, rolls the whole retirement back and a retry starts over and audits every link; writing
  * the rows after the commit instead lost the rest for good when one failed, because the retry found
- * every link already retired.
+ * every link already retired. Taps receive the rows after the transaction commits.
  *
  * One row per link that changed, shaped like `retireConnectionsFor`'s `mcp.account_disconnected`
  * rows: target the link id; payload `actor` (the remover, `by`), `owner` (the removed person),
@@ -67,12 +71,12 @@ async function revokeIfLive(
 export async function retireIdentityLinks(
   database: Database,
   credentials: Pick<CredentialStore, "revoke">,
-  auditFor: (executor: Database) => AuditStore,
+  auditFor: TransactionAuditStore,
   userId: string,
   by: string,
 ): Promise<number> {
-  return database.transaction(async (transaction) => {
-    const auditStore = auditFor(transaction as unknown as Database);
+  return withAuditTransaction(database, async (transaction, deferTap) => {
+    const auditStore = auditFor(transaction, deferTap);
     await identityUserLock(transaction, userId);
     await transaction
       .delete(identityLinkChallenges)

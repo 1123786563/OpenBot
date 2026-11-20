@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="d146385b-3fa1-45a0-8103-b4304f420ae9" name="Changes" comment="feat: add Astryx web pilot, cloud SaaS ADRs, and observability export&#10;&#10;- Add ADRs 0001-0009 covering Personal SaaS identity and workspace, account status gates, the Astryx pilot decision, OpenBot-owned intelligence state, self-hosted Corsair, Bifrost model routing, the single Credit ledger, and OpenObserve observability&#10;- Pilot Astryx on the /bots list and Create Bot flow: new astryx-pilot theme and field/action components wired into bots.index.tsx, bot-roster.tsx, and new-bot-sheet.tsx, with layout, PRODUCT.md, and test updates&#10;- Add the Astryx pilot doc and migration specs for Astryx and Corsair&#10;- Add AGENTS.md, CLAUDE.md, and docs/agents guides for issue tracking, triage labels, and domain docs&#10;- Update domain glossaries and GLOSSARY-MAP, adding the billing glossary&#10;- Export audit events as OpenTelemetry records with run correlation fields in server/src/audit.ts, adding OTel deps, .env.example vars, and lockfile updates&#10;- Ignore .idea/ in .gitignore and add its IDE-local ignore file" />
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;1123786563&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/1123786563/OpenBot&quot;,
+    &quot;accountId&quot;: &quot;10c7002d-2c4d-4fd9-9c99-f76d734e8efa&quot;
+  }
+}</component>
+  <component name="NextEditCompletionFeaturesState">
+    <decayedCancelled>
+      <entry key="MS100" value="0.0" />
+      <entry key="MS500" value="0.0" />
+      <entry key="S2" value="0.0" />
+      <entry key="S5" value="0.0" />
+      <entry key="S10" value="0.0" />
+      <entry key="S30" value="0.0" />
+      <entry key="S60" value="0.0" />
+      <entry key="M2" value="0.0" />
+      <entry key="M5" value="0.0" />
+      <entry key="M10" value="0.0" />
+      <entry key="M15" value="0.0" />
+      <entry key="M30" value="0.0" />
+      <entry key="H1" value="0.0" />
+      <entry key="H2" value="0.0" />
+      <entry key="H4" value="0.0" />
+      <entry key="D1" value="0.0" />
+      <entry key="W1" value="0.0" />
+    </decayedCancelled>
+    <decayedSelected>
+      <entry key="MS100" value="1.0" />
+      <entry key="MS500" value="1.0" />
+      <entry key="S2" value="1.0" />
+      <entry key="S5" value="1.0" />
+      <entry key="S10" value="1.0" />
+      <entry key="S30" value="1.0" />
+      <entry key="S60" value="1.0" />
+      <entry key="M2" value="1.0" />
+      <entry key="M5" value="1.0" />
+      <entry key="M10" value="1.0" />
+      <entry key="M15" value="1.0" />
+      <entry key="M30" value="1.0" />
+      <entry key="H1" value="1.0" />
+      <entry key="H2" value="1.0" />
+      <entry key="H4" value="1.0" />
+      <entry key="D1" value="1.0" />
+      <entry key="W1" value="1.0" />
+    </decayedSelected>
+    <decayedShown>
+      <entry key="MS100" value="1.8419182655201885E-11" />
+      <entry key="MS500" value="0.007129417879245716" />
+      <entry key="S2" value="0.2905785268795293" />
+      <entry key="S5" value="0.609965690074981" />
+      <entry key="S10" value="0.7810030026030508" />
+      <entry key="S30" value="0.9209108035024993" />
+      <entry key="S60" value="0.9596409763565222" />
+      <entry key="M2" value="0.9796126664945295" />
+      <entry key="M5" value="0.9917946397727175" />
+      <entry key="M10" value="0.9958888691880824" />
+      <entry key="M15" value="0.9972573647528852" />
+      <entry key="M30" value="0.9986277408288262" />
+      <entry key="H1" value="0.9993136348658644" />
+      <entry key="H2" value="0.9996567585255773" />
+      <entry key="H4" value="0.9998283645334219" />
+      <entry key="D1" value="0.9999713920429437" />
+      <entry key="W1" value="0.999995913098884" />
+    </decayedShown>
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;customColor&quot;: &quot;&quot;,
+  &quot;associatedIndex&quot;: 1
+}</component>
+  <component name="ProjectId" id="3MMHsdnxhqrFjdPYx156bPw3V4L" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "SONARLINT_PRECOMMIT_ANALYSIS": "false",
+    "git-widget-placeholder": "integration/openobserve",
+    "kotlin-language-version-configured": "true",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "bun",
+    "ts.external.directory.path": "/Users/wuyj/IdeaProjects/OpenBot/node_modules/typescript/lib"
+  }
+}]]></component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-jdk-30f59d01ecdd-ac68fc9d2b05-intellij.indexing.shared.core-IU-263.7307.200" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="d146385b-3fa1-45a0-8103-b4304f420ae9" name="Changes" comment="" />
+      <created>1795153724410</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1795153724410</updated>
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <option name="CHECK_CODE_SMELLS_BEFORE_PROJECT_COMMIT" value="false" />
+    <option name="CHECK_NEW_TODO" value="false" />
+    <MESSAGE value="feat: add Astryx web pilot, cloud SaaS ADRs, and observability export&#10;&#10;- Add ADRs 0001-0009 covering Personal SaaS identity and workspace, account status gates, the Astryx pilot decision, OpenBot-owned intelligence state, self-hosted Corsair, Bifrost model routing, the single Credit ledger, and OpenObserve observability&#10;- Pilot Astryx on the /bots list and Create Bot flow: new astryx-pilot theme and field/action components wired into bots.index.tsx, bot-roster.tsx, and new-bot-sheet.tsx, with layout, PRODUCT.md, and test updates&#10;- Add the Astryx pilot doc and migration specs for Astryx and Corsair&#10;- Add AGENTS.md, CLAUDE.md, and docs/agents guides for issue tracking, triage labels, and domain docs&#10;- Update domain glossaries and GLOSSARY-MAP, adding the billing glossary&#10;- Export audit events as OpenTelemetry records with run correlation fields in server/src/audit.ts, adding OTel deps, .env.example vars, and lockfile updates&#10;- Ignore .idea/ in .gitignore and add its IDE-local ignore file" />
+    <option name="LAST_COMMIT_MESSAGE" value="feat: add Astryx web pilot, cloud SaaS ADRs, and observability export&#10;&#10;- Add ADRs 0001-0009 covering Personal SaaS identity and workspace, account status gates, the Astryx pilot decision, OpenBot-owned intelligence state, self-hosted Corsair, Bifrost model routing, the single Credit ledger, and OpenObserve observability&#10;- Pilot Astryx on the /bots list and Create Bot flow: new astryx-pilot theme and field/action components wired into bots.index.tsx, bot-roster.tsx, and new-bot-sheet.tsx, with layout, PRODUCT.md, and test updates&#10;- Add the Astryx pilot doc and migration specs for Astryx and Corsair&#10;- Add AGENTS.md, CLAUDE.md, and docs/agents guides for issue tracking, triage labels, and domain docs&#10;- Update domain glossaries and GLOSSARY-MAP, adding the billing glossary&#10;- Export audit events as OpenTelemetry records with run correlation fields in server/src/audit.ts, adding OTel deps, .env.example vars, and lockfile updates&#10;- Ignore .idea/ in .gitignore and add its IDE-local ignore file" />
+    <option name="NON_MODAL_COMMIT_POSTPONE_SLOW_CHECKS" value="false" />
+  </component>
+</project>

@@ -686,7 +686,7 @@ the key in the last column.
 | Where Twilio calls back          | `config.deliveryPublicUrl`                        | defaults to `config.publicUrl`                            |                                                                |
 | SCIM provisioning                | `config.scim.enabled`                             | `connectionId`                                            | `scim-bearer-token` (required), `scim-bearer-token-next` (optional) |
 | Inbound email triggers           | `config.inboundEmail.domain` and `snsTopicArns`   | both needed, or the route is not mounted                  |                                                                |
-| OpenTelemetry export             | `config.otel.endpoint` or `logsEndpoint`          | `serviceName`, `paused`                                   | `otel-logs-headers`, `otel-headers` (optional)                 |
+| OpenTelemetry export             | `config.deploymentId` and `config.otel.endpoint` or `config.otel.logsEndpoint` | `serviceName`, `paused`                                   | `otel-logs-headers`, `otel-headers` (optional)                 |
 | Composio app catalogue           | `secrets.composioApiKey` (the key is the switch)  |                                                           | `composio-api-key` (server only; see [Composio](../../docs/plugins/composio.md)) |
 
 ```yaml
@@ -705,8 +705,13 @@ The install refuses what the server would refuse at boot: a switch with no secre
 `externalSecrets`, no key named for it), an OpenTag secret under 32 characters, an OpenTag URL or icon
 with the pairing off, an OpenTag URL that is not http(s) or an icon that is not https, a partial set
 of Twilio settings, a push project id that is not a UUID, and a `deliveryPublicUrl` that is not
-http(s). With `networkPolicy.enabled`, a collector inside the cluster has to be named in
-`networkPolicy.extraEgress`; the providers themselves are reached on 443.
+http(s). With `networkPolicy.enabled`, allow the Collector destination and port in
+`networkPolicy.extraEgress`. See the [OpenObserve runbook](../../docs/openobserve-runbook.md#openbot-configuration).
+
+Set `config.openObserveUrl` to the external browser URL to show **Open in OpenObserve**
+in Admin → Audit. The browser opens this URL directly and the external platform
+handles authentication. Use an absolute HTTP(S) URL without credentials, a query
+string, or a fragment. An empty or invalid setting hides the link.
 
 ## Upgrading the server without the computers
 

@@ -3,7 +3,7 @@ import type {
   GetTrajectoryLearningContainerIds,
 } from "@copilotkit/runtime/v2";
 import { eq } from "drizzle-orm";
-import type { AuditStore } from "../audit";
+import type { AuditStore, TransactionAuditStore } from "../audit";
 import type { AuthenticatedActor, RoleRepository } from "../auth/guards";
 import {
   ORGANIZATION_SESSION_COOKIE,
@@ -104,7 +104,7 @@ export function createRecorderExtension(deps: {
    * `createAuditStore` over it. Absent, `auditStore` as it is: a test's own, which keeps a row whether or not the
    * transaction commits.
    */
-  auditFor?: (executor: Database) => AuditStore;
+  auditFor?: TransactionAuditStore;
   /** How Intelligence is reached for recording summaries; `fetch` unless a test says otherwise. */
   intelligenceFetch?: typeof fetch;
 }): RecorderExtensionDeps & {

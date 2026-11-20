@@ -372,6 +372,7 @@ export type DeploymentConfig = {
    * deployment serving both from one origin.
    */
   appUrl: string | undefined;
+  openObserveUrl?: string;
   tenantPackageDirectory: string;
   runtime: RuntimeCapabilities;
   /**
@@ -1621,6 +1622,14 @@ function serverPort(environment: Environment): number {
   return port ?? serverPort ?? DEFAULT_PORT;
 }
 
+function openObserveUrl(environment: Environment): string | undefined {
+  const value = optional(environment, "OPENBOT_OPENOBSERVE_URL");
+  if (!value || /[?#\\\s]/.test(value)) return undefined;
+  const authority = /^https?:\/\/([^/]+)/i.exec(value)?.[1];
+  if (!authority || authority.includes("@")) return undefined;
+  return URL.parse(value)?.href;
+}
+
 export function loadConfig(
   environment: Environment = process.env,
 ): DeploymentConfig {
@@ -1682,6 +1691,7 @@ export function loadConfig(
     brokerProvider: brokerProvider(environment),
     publicUrl,
     appUrl,
+    openObserveUrl: openObserveUrl(environment),
     tenantPackageDirectory:
       optional(environment, "TENANT_PACKAGE_DIR") ?? "../examples/fintech",
     runtime: runtimeCapabilities(environment),
