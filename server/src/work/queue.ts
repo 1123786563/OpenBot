@@ -25,6 +25,7 @@ import {
   lt,
   lte,
   or,
+  type SQL,
   sql,
 } from "drizzle-orm";
 import postgres from "postgres";
@@ -147,6 +148,7 @@ export type WorkQueue = {
     leaseMs: number;
     limit?: number;
     maxAttempts?: number;
+    ready?: SQL;
   }) => Promise<WorkItem[]>;
   /** Keep a claim alive while the work runs. False means it was already taken away. */
   renew: (input: {
@@ -216,6 +218,17 @@ function escapeLike(value: string): string {
 function fromNow(ms: number) {
   return sql`now() + make_interval(secs => ${ms / 1000})`;
 }
+
+export function parkedPersonalWork(kind: string, key: SQL) {
+  return sql`exists (select 1 from work_items as origin
+    where origin.kind = ${kind} and origin.key = ${key}
+      and origin.account_id = ${workItems.accountId}
+      and origin.run_at = ${parkedUntil}
+      and origin.finished_at is null and origin.interruption is null)`;
+}
+
+// A decision owns the next dispatch while its originating Bot work remains recoverable.
+const parkedUntil = sql`'9999-01-01'::timestamptz`;
 
 export function createWorkQueue(
   database: Database | Transaction,
@@ -395,6 +408,7 @@ export function createWorkQueue(
       leaseMs,
       limit = 1,
       maxAttempts = DEFAULT_MAX_ATTEMPTS,
+      ready,
     }) {
       return database.transaction(async (transaction) => {
         /*
@@ -408,6 +422,7 @@ export function createWorkQueue(
           .where(
             and(
               eq(workItems.kind, kind),
+              ready,
               unfinished,
               lt(workItems.attempts, maxAttempts),
               lte(workItems.runAt, sql`now()`),
@@ -586,6 +601,38 @@ export function createWorkQueue(
 
   return {
     ...queue,
+    async park(input: HeldWork) {
+      const [parked] =
+        (await underClaim(input, (tx) =>
+          tx
+            .update(workItems)
+            .set({ runAt: parkedUntil, claimedBy: null, leaseUntil: null })
+            .where(ours(input.kind, input.key, input.owner))
+            .returning({ key: workItems.key }),
+        )) ?? [];
+      return Boolean(parked);
+    },
+    async finishParked(
+      kind: string,
+      account: string,
+      key: string,
+      output: string,
+    ) {
+      return database.transaction(async (tx) => {
+        const where = and(
+          keyed(kind, key),
+          eq(workItems.accountId, account),
+          unfinished,
+          sql`${workItems.runAt} = ${parkedUntil}`,
+        );
+        const [row] = await tx.select().from(workItems).where(where);
+        if (!row || (await authorize(tx, row))?.kind !== "active") return;
+        await tx
+          .update(workItems)
+          .set({ finishedAt: sql`now()`, output })
+          .where(where);
+      });
+    },
     async reconcilePersonalWork(kind: string, accountId?: string) {
       const rows = await database
         .select()
@@ -627,18 +674,21 @@ export function createWorkQueue(
           recovery: workItems.recovery,
           output: workItems.output,
           attempts: workItems.attempts,
+          parked: sql<boolean>`${workItems.runAt} = ${parkedUntil}`,
         })
         .from(workItems)
         .where(and(forAccount(kind, accountId), keyed(kind, key)));
       if (!row) return;
-      const { attempts, ...result } = row;
+      const { attempts, parked, ...result } = row;
       const state = row.interruption
         ? "stopped"
         : row.finishedAt
           ? "completed"
-          : attempts
-            ? "running"
-            : "queued";
+          : parked
+            ? "waiting"
+            : attempts
+              ? "running"
+              : "queued";
       return { ...result, state };
     },
     async interrupted(kind: string, accountId: string) {

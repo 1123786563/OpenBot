@@ -15,7 +15,12 @@ export async function readDecisionAccess(
   tx: Transaction,
   owner: string,
   now: () => number,
-  origin?: { runId: string; createdAt?: Date; epoch?: number },
+  origin?: {
+    runId: string;
+    threadId?: string;
+    createdAt?: Date;
+    epoch?: number;
+  },
 ) {
   if (!z.uuid().safeParse(owner).success) return null;
   const access = await readExecutionAccess(tx, owner, now);
@@ -27,7 +32,10 @@ export async function readDecisionAccess(
           .from(workItems)
           .where(
             and(
-              eq(workItems.key, origin.runId),
+              inArray(workItems.key, [
+                origin.runId,
+                origin.threadId ?? origin.runId,
+              ]),
               eq(workItems.accountId, owner),
             ),
           )
@@ -129,11 +137,10 @@ export async function runWithDecisionAccess<T>(
     signal?: AbortSignal;
     beforeDispatch?: () => Promise<void>;
   }) => Promise<T>,
+  now = Date.now,
 ) {
   const read = () =>
-    database.transaction((tx) =>
-      readDecisionAccess(tx, owner, Date.now, origin),
-    );
+    database.transaction((tx) => readDecisionAccess(tx, owner, now, origin));
   const initial = await read();
   if (!initial) return run({});
   const stopped = new Error(decisionInvalidated);
@@ -145,16 +152,16 @@ export async function runWithDecisionAccess<T>(
     clearTimeout(deadline);
     deadline = setTimeout(
       () => abort.abort(stopped),
-      Math.max(0, expiresAt - Date.now()),
+      Math.max(0, expiresAt - now()),
     );
   }
   const beforeDispatch = async () => {
-    if (Date.now() >= expiresAt) abort.abort(stopped);
+    if (now() >= expiresAt) abort.abort(stopped);
     abort.signal.throwIfAborted();
     const access = await read();
     abort.signal.throwIfAborted();
     if (
-      Date.now() >= expiresAt ||
+      now() >= expiresAt ||
       access?.kind !== "active" ||
       access.epoch !== initial.epoch
     ) {

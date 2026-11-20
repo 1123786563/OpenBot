@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { z } from "zod";
 import type { Database } from "../db/client";
@@ -177,7 +178,14 @@ export function personalBotWork(
         if (now() >= expiresAt) controller.abort();
         if (!controller.signal.aborted && (await queue.finish(held)))
           return true;
-      } catch {
+      } catch (error) {
+        if (
+          error instanceof HeadlessToolSuspension &&
+          ["approval", "person_question"].includes(error.waiting.kind) &&
+          !controller.signal.aborted &&
+          (await queue.park(held))
+        )
+          return true;
         // A claimed request may have reached an external service. Keep it for manual review.
       } finally {
         done = true;

@@ -79,7 +79,7 @@ if (Boolean(supervisorUrl) !== Boolean(supervisorToken))
   );
 
 const database = createDatabase(env.DATABASE_URL);
-const runPersonalBot =
+const botRuntime =
   process.env.OPENBOT_PERSONAL_SAAS_BOT_EXECUTION === "on"
     ? await import("eventsource").then(async () =>
         (await import("./bot-runtime")).createPersonalBotRuntime(database),
@@ -90,7 +90,7 @@ const app = createPersonalSaasApp(
     origin: new URL(env.OPENBOT_PERSONAL_SAAS_URL).origin,
     encryptionKey: env.KEY_ENCRYPTION_KEY,
     supportSubjects: env.OPENBOT_SUPPORT_SUBJECTS,
-    runPersonalBot,
+    botRuntime,
     suspensionOperator:
       operatorId && operatorToken
         ? { id: operatorId, token: operatorToken }
@@ -155,6 +155,7 @@ if (renewComputers) {
 repeatAfterEach(async () => {
   try {
     await app.sweepBotWork();
+    await app.sweepBotDecisions();
   } catch {
     console.warn(
       JSON.stringify({ type: "personal-saas-bot-work-sweep-failure" }),

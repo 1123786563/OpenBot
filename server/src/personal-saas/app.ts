@@ -4,6 +4,7 @@ import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { html } from "hono/html";
 import { z } from "zod";
+import { createApprovalRoutes } from "../approvals/routes";
 import { createApprovalStore } from "../approvals/store";
 import { seal, unseal } from "../auth/signed-value";
 import type { Database } from "../db/client";
@@ -13,6 +14,7 @@ import {
   accountDecision,
   createAccountAccess,
 } from "./account-access";
+import type { createPersonalBotRuntime } from "./bot-runtime";
 import {
   botWorkInput,
   PERSONAL_BOT_WORK,
@@ -20,6 +22,7 @@ import {
   recoveryInput,
 } from "./bot-work";
 import { browserAttempt, type CasdoorConfig, casdoor } from "./casdoor";
+import { ensureDecisionActor } from "./decision-actor";
 import { bearerSession, type NativeAttempt, nativeAuth } from "./native-auth";
 import { sessionEventRoutes } from "./session-events";
 import {
@@ -68,6 +71,7 @@ export type PersonalSaasConfig = {
   supportSubjects?: readonly string[];
   now?: () => number;
   runPersonalBot?: TurnRunner;
+  botRuntime?: ReturnType<typeof createPersonalBotRuntime>;
   suspensionOperator?: SuspensionOperator;
   suspensionSupport?: string;
   computer?: WorkspaceComputerConfig;
@@ -118,6 +122,7 @@ export function createPersonalSaasApp(
     config.casdoor,
     new URL(callbackPath, config.origin).href,
   );
+  const runPersonalBot = config.botRuntime?.runTurn ?? config.runPersonalBot;
   const now = config.now ?? Date.now;
   const store = personalSaasStore(database, now);
   const approvals = createApprovalStore(database, now);
@@ -166,6 +171,8 @@ export function createPersonalSaasApp(
       )
     )
       return Boolean(bearer(context));
+    if (context.req.path.startsWith("/api/approvals/"))
+      return Boolean(bearer(context));
     if (context.req.path.startsWith("/api/operator/workspaces/")) return true;
     if (/^\/api\/workspaces\/[^/]+\/exports$/.test(context.req.path))
       return Boolean(bearer(context));
@@ -196,6 +203,14 @@ export function createPersonalSaasApp(
     context.header("X-Content-Type-Options", "nosniff");
     const origin = context.req.header("origin");
     const isPost = context.req.method === "POST";
+    if (
+      context.req.path.startsWith("/api/approvals") &&
+      !["GET", "HEAD"].includes(context.req.method) &&
+      origin !== config.origin &&
+      (origin !== undefined || !bearer(context))
+    )
+      return context.text("Invalid request origin", 403);
+
     if (
       origin !== undefined &&
       origin !== config.origin &&
@@ -706,8 +721,8 @@ export function createPersonalSaasApp(
             item.recovery
               ? html`<p>${item.recovery.action === "retry" ? "Queued as a new run" : "Cancelled"}</p>`
               : html`<form method="post" action="/api/workspace/recovery/${item.key}">
-                ${config.runPersonalBot && item.outcomeUnknown ? html`<label><input type="checkbox" name="acknowledged" value="true"> I checked the external actions.</label>` : ""}
-                ${config.runPersonalBot ? html`<button name="action" value="retry">${item.outcomeUnknown ? "Retry as a new run" : "Requeue"}</button>` : ""}
+                ${runPersonalBot && item.outcomeUnknown ? html`<label><input type="checkbox" name="acknowledged" value="true"> I checked the external actions.</label>` : ""}
+                ${runPersonalBot ? html`<button name="action" value="retry">${item.outcomeUnknown ? "Retry as a new run" : "Requeue"}</button>` : ""}
                 <button name="action" value="cancel">Cancel item</button>
               </form>`
           }
@@ -794,12 +809,37 @@ export function createPersonalSaasApp(
                   ...item,
                   reasonMessage: recoveryReason[item.reason],
                 })),
-                recoveryCanRetry: Boolean(config.runPersonalBot),
+                recoveryCanRetry: Boolean(runPersonalBot),
               }
             : workspace,
         )
       : context.json({ status: "preparing" }, 202);
   });
+
+  if (config.botRuntime) {
+    app.route(
+      "/api/approvals",
+      createApprovalRoutes(
+        config.botRuntime.approvals,
+        async (context, next) => {
+          const token = requestSession(context);
+          const session = await authorize(token);
+          if (session.kind !== "authorized" || !token)
+            return context.json({ error: "authorization_required" }, 403);
+          const { accountId } = session.grant;
+          const admitted = await store.withAuthorizedSession(
+            session.grant,
+            token,
+            (tx) => ensureDecisionActor(tx, accountId),
+          );
+          if (!admitted.authorized)
+            return context.json({ error: "authorization_changed" }, 403);
+          context.set("actor", { id: accountId, email: "", role: "user" });
+          await next();
+        },
+      ),
+    );
+  }
 
   app.get("/api/workspace/approvals", async (context) => {
     const token = requestSession(context);
@@ -817,7 +857,7 @@ export function createPersonalSaasApp(
     const session = await authorize(token);
     if (session.kind !== "authorized" || !token)
       return context.json({ error: "authorization_required" }, 403);
-    if (!config.runPersonalBot)
+    if (!runPersonalBot)
       return context.json({ error: "bot_execution_unavailable" }, 503);
     const input = botWorkInput.safeParse(
       await context.req.json().catch(() => null),
@@ -903,7 +943,7 @@ export function createPersonalSaasApp(
           mayRetry: async (transaction, payload) => {
             const request = botWorkInput.safeParse(payload);
             return Boolean(
-              config.runPersonalBot &&
+              runPersonalBot &&
                 request.success &&
                 (await workspaceBots(transaction).get({
                   ...request.data,
@@ -958,7 +998,8 @@ export function createPersonalSaasApp(
   return Object.assign(app, {
     accessWorkspaceComputerForTask: computer?.accessForTask,
     renewWorkspaceComputers: computer?.renew,
-    sweepBotWork: () => botWork.sweep(config.runPersonalBot),
+    sweepBotWork: () => botWork.sweep(runPersonalBot),
+    sweepBotDecisions: () => config.botRuntime?.sweepDecisions(),
     refreshAccounts: () => accountAccess.refreshAccounts(config.casdoor.issuer),
   });
 }

@@ -1,8 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createHash, randomBytes } from "node:crypto";
+import { EventType, HttpAgent, type RunAgentInput } from "@ag-ui/client";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { eq } from "drizzle-orm";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
+import { Observable } from "rxjs";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createApprovalStore } from "../src/approvals/store";
 import { approvalAction } from "../src/approvals/types";
@@ -30,6 +32,7 @@ import {
   createAccountAccess,
 } from "../src/personal-saas/account-access";
 import { createPersonalSaasApp } from "../src/personal-saas/app";
+import { createPersonalBotRuntime } from "../src/personal-saas/bot-runtime";
 import { PERSONAL_BOT_WORK } from "../src/personal-saas/bot-work";
 import { workspaceIntegrationGrants } from "../src/personal-saas/integration-grants";
 import { personalSaasStore } from "../src/personal-saas/store";
@@ -200,12 +203,14 @@ function newApp(
   db = database,
   dependency?: WorkspaceComputerConfig | TurnRunner,
   computer?: WorkspaceComputerConfig,
+  botRuntime?: ReturnType<typeof createPersonalBotRuntime>,
 ) {
   return createPersonalSaasApp(
     {
       origin,
       supportSubjects: [supportSubject, otherSupportSubject],
       now,
+      botRuntime,
       computer: typeof dependency === "function" ? computer : dependency,
       runPersonalBot: typeof dependency === "function" ? dependency : undefined,
       suspensionOperator: { id: "trial-operator", token: operatorToken },
@@ -3040,3 +3045,263 @@ test("the Bot worker rejects Computer work authorized before a restart and dispa
   expect(dispatched).toEqual([key]);
   expect(taskTimes[1]).toBeGreaterThanOrEqual(startedWith);
 });
+
+test("a manual Bot retry asks under current policy and only its new approval can execute", async () => {
+  const account = {
+    sub: crypto.randomUUID(),
+    email: "approval-retry@example.com",
+    verified: true,
+    active: true,
+  };
+  const signIn = async () =>
+    cookie(await authenticate(account), "__Host-openbot-personal=");
+  let session = await signIn();
+  await enter(session);
+  const target = await workspace(session);
+  const executions: string[] = [];
+  const resumed: string[] = [];
+  const runtime = createPersonalBotRuntime(database, {
+    now,
+    tools: [
+      {
+        definition: {
+          name: "fixture_change",
+          description: "Record a fixture change",
+          parameters: {},
+        },
+        resolve: async () => ({
+          effect: "change",
+          scope: "fixture",
+          execute: async ({ runId }) => {
+            executions.push(runId);
+            return "Saved";
+          },
+        }),
+      },
+    ],
+    transport: {
+      intelligence: {
+        getOrCreateThread: async () => undefined,
+        getThreadMessages: async () => ({ messages: [] }),
+        ɵacquireThreadLock: async () => undefined,
+        ɵrenewThreadLock: async () => undefined,
+        ɵcleanupThreadLock: async () => undefined,
+      },
+      runner: {
+        run: ({ agent, input }) =>
+          new Observable((subscriber) => {
+            agent
+              .runAgent(input, {
+                onEvent: ({ event }) => subscriber.next(event),
+              })
+              .then(
+                () => subscriber.complete(),
+                (error) => subscriber.error(error),
+              );
+          }),
+        stop: async () => true,
+      },
+      buildAgent: () =>
+        new HttpAgent({
+          url: "https://fixture.example/ag-ui",
+          fetch: async (_url, init) => {
+            const input: RunAgentInput = JSON.parse(String(init?.body));
+            const reply = input.messages.some(
+              (message) =>
+                message.role === "tool" ||
+                (message.role === "user" &&
+                  String(message.content).startsWith(
+                    "In response to your question:",
+                  )),
+            );
+            const asks = input.messages.some(
+              (message) =>
+                message.role === "user" && message.content === "Ask a question",
+            );
+            if (reply) resumed.push(input.threadId);
+            const events = [
+              {
+                type: EventType.RUN_STARTED,
+                threadId: input.threadId,
+                runId: input.runId,
+              },
+              ...(reply
+                ? [
+                    {
+                      type: EventType.TEXT_MESSAGE_CHUNK,
+                      messageId: "reply",
+                      role: "assistant",
+                      delta: "Saved",
+                    },
+                  ]
+                : [
+                    {
+                      type: EventType.TOOL_CALL_START,
+                      toolCallId: "call",
+                      toolCallName: asks ? "ask_person" : "fixture_change",
+                      parentMessageId: "asked",
+                    },
+                    {
+                      type: EventType.TOOL_CALL_ARGS,
+                      toolCallId: "call",
+                      delta: asks
+                        ? JSON.stringify({ question: "Which name?" })
+                        : "{}",
+                    },
+                    { type: EventType.TOOL_CALL_END, toolCallId: "call" },
+                  ]),
+              {
+                type: EventType.RUN_FINISHED,
+                threadId: input.threadId,
+                runId: input.runId,
+              },
+            ];
+            return new Response(
+              events
+                .map(
+                  (event) => `data: ${JSON.stringify(event)}
+
+`,
+                )
+                .join(""),
+              {
+                headers: { "content-type": "text/event-stream" },
+              },
+            );
+          },
+        }),
+    },
+  });
+  const runApp = newApp(database, undefined, undefined, runtime);
+  const request = (
+    path: string,
+    body?: object,
+    method = body ? "POST" : "GET",
+  ) =>
+    runApp.fetch(
+      new Request(new URL(path, origin), {
+        method,
+        headers: {
+          origin,
+          cookie: session,
+          "content-type": "application/json",
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      }),
+    );
+  const inbox = async () => {
+    const response = await request("/api/approvals");
+    expect(response.status).toBe(200);
+    return response.json();
+  };
+  const operate = (action: "pause" | "resume") =>
+    send(`/api/operator/workspaces/${target.id}/suspension`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${operatorToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ action, reason: "Test approval cutoff" }),
+    });
+  expect(
+    (await request("/api/approvals/preferences", { enabled: true }, "PATCH"))
+      .status,
+  ).toBe(200);
+  const submitted = await request("/api/workspace/bot-runs", {
+    workspaceId: target.id,
+    botId: target.personalAssistant.id,
+    instruction: "Save the change",
+  });
+  expect(submitted.status).toBe(202);
+  const { runId } = await submitted.json();
+  expect(await runApp.sweepBotWork()).toBe(true);
+  const [old] = (await inbox()).requests;
+  expect(old).toMatchObject({
+    status: "pending",
+    action: { threadId: runId, policy: { source: "default" } },
+  });
+  const queueQuestion = async () => {
+    const response = await request("/api/workspace/bot-runs", {
+      workspaceId: target.id,
+      botId: target.personalAssistant.id,
+      instruction: "Ask a question",
+    });
+    expect(response.status).toBe(202);
+    expect(await runApp.sweepBotWork()).toBe(true);
+    return (await response.json()).runId;
+  };
+  const oldQuestionRun = await queueQuestion();
+  const [oldQuestion] = (await inbox()).questions;
+  expect(oldQuestion).toMatchObject({
+    threadId: oldQuestionRun,
+    question: "Which name?",
+  });
+  const answer = (id: string) =>
+    request(`/api/approvals/questions/${id}/respond`, { response: "A name" });
+  expect((await answer(oldQuestion.id)).status).toBe(200);
+  expect((await operate("pause")).status).toBe(201);
+  expect((await operate("resume")).status).toBe(201);
+  session = await signIn();
+  expect((await answer(oldQuestion.id)).status).toBe(400);
+  await runApp.sweepBotDecisions();
+  expect(resumed).toEqual([]);
+  expect(
+    (
+      await request(`/api/approvals/${old.id}/decision`, {
+        decision: "allow_once",
+      })
+    ).status,
+  ).toBe(400);
+  expect((await inbox()).requests).toContainEqual(
+    expect.objectContaining({ id: old.id, invalidated: true }),
+  );
+  expect(
+    (await request("/api/approvals/preferences", { enabled: false }, "PATCH"))
+      .status,
+  ).toBe(200);
+  expect(
+    (
+      await request("/api/approvals/rules", {
+        toolRef: "fixture_change",
+        behaviour: "ask",
+      })
+    ).status,
+  ).toBe(201);
+  const retry = await request(`/api/workspace/recovery/${runId}`, {
+    action: "retry",
+    acknowledged: true,
+  });
+  expect(retry.status).toBe(200);
+  const { key } = await retry.json();
+  expect(key).not.toBe(runId);
+  expect(await runApp.sweepBotWork()).toBe(true);
+  const fresh = (await inbox()).requests.find(
+    (item: { id: string }) => item.id !== old.id,
+  );
+  expect(fresh).toMatchObject({
+    status: "pending",
+    action: { threadId: key, policy: { source: "personal_rule" } },
+  });
+  expect(executions).toEqual([]);
+  expect(
+    (
+      await request(`/api/approvals/${fresh.id}/decision`, {
+        decision: "allow_once",
+      })
+    ).status,
+  ).toBe(200);
+  await runApp.sweepBotDecisions();
+  expect(executions).toEqual([key]);
+  expect(resumed).toEqual([key]);
+  const questionRun = await queueQuestion();
+  const [freshQuestion] = (await inbox()).questions;
+  expect(freshQuestion).toMatchObject({ threadId: questionRun });
+  expect((await answer(freshQuestion.id)).status).toBe(200);
+  await runApp.sweepBotDecisions();
+  expect(resumed).toEqual([key, questionRun]);
+  expect(
+    (await inbox()).requests.find(
+      (item: { id: string }) => item.id === fresh.id,
+    )?.status,
+  ).toBe("completed");
+}, 30_000);
