@@ -263,6 +263,7 @@ test("voice bridge returns only the new agent answer and respects shared thread 
   const requests: string[] = [];
   const channel = {
     busy: () => busy,
+    read: async () => ({ messages }),
     send: async (request: string) => {
       requests.push(request);
       messages.push({ id: "new", role: "assistant", content: "New answer" });
@@ -277,6 +278,46 @@ test("voice bridge returns only the new agent answer and respects shared thread 
   busy = false;
   expect(await askChannelAgent("Hello", signal, channel)).toBe("New answer");
   expect(requests).toEqual(["Hello"]);
+});
+
+test("voice reports the durable result for its own request, even when the stream only returns partial text", async () => {
+  let messageId = "";
+  const reply = await askChannelAgent(
+    "Check the schedule",
+    new AbortController().signal,
+    {
+      busy: () => false,
+      send: async (_, id) => {
+        messageId = id;
+        return "Partial answer";
+      },
+      read: async () => ({
+        runs: [
+          {
+            id: "previous",
+            userMessageId: "old",
+            status: "completed",
+            assistantMessageId: "old-answer",
+          },
+          {
+            id: "current",
+            userMessageId: messageId,
+            status: "completed",
+            assistantMessageId: "current-answer",
+          },
+        ] satisfies import("../src/lib/copilot/thread-messages").StoredRun[],
+        messages: [
+          { id: "old-answer", role: "assistant", content: "Previous answer" },
+          {
+            id: "current-answer",
+            role: "assistant",
+            content: "Confirmed answer",
+          },
+        ] satisfies Message[],
+      }),
+    },
+  );
+  expect(reply).toBe("Confirmed answer");
 });
 
 // An emoji is two UTF-16 units; each text below is one unit over its limit, so a plain slice

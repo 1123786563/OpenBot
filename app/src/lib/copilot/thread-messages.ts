@@ -1,7 +1,7 @@
 import type { Message } from "@ag-ui/core";
 import { MessageSchema } from "@ag-ui/core/schemas";
 import { z } from "zod";
-import { tryClient } from "@/lib/client";
+import { tryClient } from "../client";
 
 /**
  * The messages a thread already holds, for restoring a conversation somebody comes back to.
@@ -45,6 +45,7 @@ const storedRuns = z.array(
   z.object({
     id: z.string(),
     userMessageId: z.string(),
+    assistantMessageId: z.string().nullish(),
     status: z.enum(["running", "completed", "failed"]),
     waitingForApproval: z.boolean().optional(),
     externalOutcome: z

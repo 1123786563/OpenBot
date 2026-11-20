@@ -1,4 +1,6 @@
 import type { Message } from "@ag-ui/core";
+import type { StoredThread } from "../copilot/thread-messages";
+import { newId } from "../new-id";
 import { closingOf } from "./cut";
 
 export function messageText(message: Message): string {
@@ -31,13 +33,14 @@ export function voiceContext(messages: readonly Message[]): string {
   );
 }
 
-/** Uses the actual AG-UI send path; does not invent messages or run a second agent engine. */
+/** Submit through Conversation chat and prefer the recorded outcome of that exact request. */
 export async function askChannelAgent(
   request: string,
   signal: AbortSignal,
   channel: {
     busy(): boolean;
-    send(request: string): Promise<string>;
+    send(request: string, messageId: string): Promise<string>;
+    read(): Promise<Pick<StoredThread, "runs" | "messages">>;
   },
 ): Promise<string> {
   signal.throwIfAborted();
@@ -45,8 +48,51 @@ export async function askChannelAgent(
     throw new Error(
       "The agent is still working. Wait for its result or use the stop button in chat before asking it to do something else.",
     );
-  const answer = await channel.send(request);
+  const messageId = newId();
+  const streamed = await channel.send(request, messageId).then(
+    (answer) => ({ kind: "reply", answer }) as const,
+    (error: unknown) => ({ kind: "error", error }) as const,
+  );
   signal.throwIfAborted();
+  const stored = await channel.read();
+  signal.throwIfAborted();
+
+  const run = stored.runs?.find(
+    (candidate) => candidate.userMessageId === messageId,
+  );
+  if (run?.externalOutcome === "unknown") {
+    throw new Error(
+      "Check the run’s unverified outcome in the conversation before asking again.",
+    );
+  }
+  if (run?.waitingForApproval) {
+    throw new Error(
+      "This run is waiting for your approval in the conversation.",
+    );
+  }
+  if (run?.status === "running") {
+    throw new Error(
+      "The Bot is still working. You can follow this run in the conversation.",
+    );
+  }
+  if (run?.stopReason === "stopped") {
+    throw new Error("The user stopped this task before it completed.");
+  }
+  if (run?.status === "completed") {
+    const reply = stored.messages.find(
+      (message) =>
+        message.id === run.assistantMessageId && message.role === "assistant",
+    );
+    if (reply) return messageText(reply);
+    throw new Error("The run finished. Check the conversation for its result.");
+  }
+  if (streamed.kind === "error") throw streamed.error;
+  if (stored.runs) {
+    throw new Error(
+      "The run’s result could not be confirmed. Check the conversation.",
+    );
+  }
+  const { answer } = streamed;
   return (
     answer ||
     "The agent finished without a text response. Ask the caller to check the chat for any visual output."

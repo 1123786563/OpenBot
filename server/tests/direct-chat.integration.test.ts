@@ -3,12 +3,19 @@ import {
   AbstractAgent,
   type BaseEvent,
   EventType,
+  HttpAgent,
   type RunAgentInput,
 } from "@ag-ui/client";
 import { and, eq, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { Observable } from "rxjs";
+import {
+  askChannelAgent,
+  messageText,
+} from "../../app/src/lib/voice/agent-bridge";
+import { VoiceSession } from "../../app/src/lib/voice/session";
+import type { VoiceEvent } from "../../app/src/lib/voice/types";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createApprovalRoutes } from "../src/approvals/routes";
 import { createApprovalService } from "../src/approvals/service";
@@ -209,6 +216,90 @@ function events(sse: string) {
     .split("\n")
     .filter((line) => line.startsWith("data: "))
     .map((line) => JSON.parse(line.slice(6)));
+}
+
+function voiceTurn(
+  app: ReturnType<typeof web>,
+  channel: { id: string; threadId: string },
+  botId: string,
+  request: string,
+) {
+  const { threadId } = channel;
+  const outcome = Promise.withResolvers<unknown>();
+  const dispatched = Promise.withResolvers<string>();
+  let receive: (event: VoiceEvent) => void = () => {};
+  const session = new VoiceSession({
+    channelId: channel.id,
+    context: () => "",
+    connect: async (options) => {
+      receive = options.onEvent;
+      return {
+        stream: new EventTarget() as MediaStream,
+        mute() {},
+        close() {},
+        send(event) {
+          const item = event.item;
+          if (
+            item &&
+            typeof item === "object" &&
+            "output" in item &&
+            typeof item.output === "string"
+          )
+            outcome.resolve(JSON.parse(item.output));
+        },
+      };
+    },
+    askAgent: (text, signal) =>
+      askChannelAgent(text, signal, {
+        busy: () => false,
+        async send(content, id) {
+          const agent = new HttpAgent({
+            url: `http://openbot.test/api/copilotkit/agent/${botId}/run`,
+            threadId,
+            fetch: (url, init) => Promise.resolve(app.request(url, init)),
+          });
+          agent.addMessage({ role: "user", content, id });
+          dispatched.resolve(id);
+          let failure: string | undefined;
+          await agent.runAgent(
+            { runId: id },
+            {
+              onRunErrorEvent: ({ event }) => {
+                failure = event.message;
+              },
+            },
+          );
+          if (failure) throw new Error(failure);
+          const reply = agent.messages.findLast(
+            ({ role }) => role === "assistant",
+          );
+          return reply ? messageText(reply) : "";
+        },
+        async read() {
+          const response = await app.request(
+            `/api/copilotkit/threads/${threadId}/messages?agentId=${botId}`,
+          );
+          return response.json();
+        },
+      }),
+  });
+  const result = (async () => {
+    await session.start();
+    expect(session.getSnapshot().phase).toBe("connected");
+    const call = {
+      type: "response.function_call_arguments.done",
+      name: "ask_agent",
+      call_id: "provider-call",
+      arguments: JSON.stringify({ request }),
+    };
+    receive(call);
+    receive({
+      type: "response.done",
+      response: { output: [{ ...call, type: "function_call" }] },
+    });
+    return outcome.promise;
+  })().finally(session.end);
+  return { id: dispatched.promise, result, end: session.end };
 }
 
 test("Web direct chat persists messages and one run per send, with only its Personal Workspace able to read and send", async () => {
@@ -1097,7 +1188,7 @@ test("an open replay stream closes when the reader loses access", async () => {
   }
 });
 
-test("Web turns share Test Credits, reconcile uncertain dispatch on replay, and keep history readable during an outage", async () => {
+test("Conversation and voice turns share Test Credits, reconcile uncertain dispatch, and keep history readable during an outage", async () => {
   const alice = await person();
   const bots: string[] = [];
   const conversations: string[] = [];
@@ -1201,19 +1292,20 @@ test("Web turns share Test Credits, reconcile uncertain dispatch on replay, and 
         conversations.push(channel.id);
         return {
           threadId: channel.threadId,
+          voice: (request: string) => voiceTurn(app, channel, bot.id, request),
           resume: async (runId: string, cursor: number) =>
             app.request(
               `/api/copilotkit/agent/${bot.id}/resume`,
               post({ threadId: channel.threadId, runId, cursor }),
             ),
-          run: async (id: string, runId = id) =>
+          run: async (id: string, runId = id, content = "A question.") =>
             (
               await app.request(
                 `/api/copilotkit/agent/${bot.id}/run`,
                 post({
                   threadId: channel.threadId,
                   runId,
-                  messages: [{ role: "user", id, content: "A question." }],
+                  messages: [{ role: "user", id, content }],
                   personId: "forged-person",
                   model: "forged-route",
                 }),
@@ -1357,15 +1449,37 @@ test("Web turns share Test Credits, reconcile uncertain dispatch on replay, and 
     available = true;
     verifiedText = undefined;
     uncertainState = "pending";
-    expect(await winner.run("uncertain-unsent")).toContain("reconciling");
+    const uncertainVoice = winner.voice("Please do this from the call.");
+    expect(await uncertainVoice.result).toEqual({
+      error: expect.stringContaining("unverified outcome"),
+    });
+    const uncertainVoiceId = await uncertainVoice.id;
+    expect((await (await winner.history()).json()).runs).toContainEqual(
+      expect.objectContaining({
+        id: uncertainVoiceId,
+        userMessageId: uncertainVoiceId,
+        status: "failed",
+        externalOutcome: "unknown",
+      }),
+    );
+    expect(await winner.voice("Try it again.").result).toEqual({
+      error: expect.stringContaining("unverified external outcome"),
+    });
     uncertainState = "released";
     confirmedUnsent = true;
-    expect(await (await winner.reconcile("uncertain-unsent")).json()).toEqual({
+    expect(await (await winner.reconcile(uncertainVoiceId)).json()).toEqual({
       externalOutcome: "not_dispatched",
       settlement: "released",
     });
     expect(dispatches).toBe(3);
-    expect(await winner.run("uncertain-unsent")).toContain("released");
+
+    expect(
+      await winner.run(
+        uncertainVoiceId,
+        "new-browser-run",
+        "Please do this from the call.",
+      ),
+    ).toContain("released");
     expect(dispatches).toBe(3);
     loseDispatchResponse = false;
     expect(await winner.run("retry-without-credits")).toContain(
@@ -1373,7 +1487,15 @@ test("Web turns share Test Credits, reconcile uncertain dispatch on replay, and 
     );
     expect(dispatches).toBe(3);
     available = true;
-    expect(await winner.run("explicit-resend")).toContain("Managed answer.");
+    const voiceRetry = winner.voice("Please try now.");
+    expect(await voiceRetry.result).toEqual({ answer: "Managed answer." });
+    expect((await (await winner.history()).json()).runs).toContainEqual(
+      expect.objectContaining({
+        id: await voiceRetry.id,
+        status: "completed",
+        externalOutcome: "executed",
+      }),
+    );
     expect(dispatches).toBe(4);
     expect(legacyCalls).toBe(0);
   } finally {
@@ -1451,6 +1573,93 @@ test("another worker resumes a persisted Run before dispatch and the original wo
     await database.delete(channels).where(eq(channels.id, channel.id));
     await database.delete(agents).where(eq(agents.id, bot.id));
     await database.delete(users).where(eq(users.id, actor.id));
+  }
+});
+
+test("a voice request uses the current Conversation's approval and access controls", async () => {
+  const owner = await person();
+  const bot = await profiles.create(owner, {
+    name: "Voice Bot",
+    title: "Bot",
+    roleDescription: "Answers locally.",
+    visibility: "private",
+  });
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  let authorized = true;
+  let executions = 0;
+  const app = web(
+    database,
+    owner,
+    bot.id,
+    async () => {
+      executions++;
+      entered.resolve();
+      await release.promise;
+    },
+    { authorized: () => authorized },
+  );
+  const { channel } = await (
+    await app.request("/api/channels", post({ agentIds: [bot.id] }))
+  ).json();
+  const voice = voiceTurn(app, channel, bot.id, "Please do the work.");
+  try {
+    const runId = await voice.id;
+    await entered.promise;
+    const approval = await createApprovalStore(database).open({
+      threadId: channel.threadId,
+      runId,
+      toolCallId: "voice-tool",
+      actionDigest: "voice-action",
+      actorId: owner.id,
+      botId: bot.id,
+      toolRef: "fixture",
+      scope: "fixture",
+      effect: "fixture",
+      args: {},
+    });
+    const thread = `/api/copilotkit/threads/${channel.threadId}`;
+    const history = `${thread}/messages?agentId=${bot.id}`;
+    expect((await (await app.request(history)).json()).runs).toContainEqual(
+      expect.objectContaining({
+        id: runId,
+        status: "running",
+        waitingForApproval: true,
+      }),
+    );
+    expect(
+      (
+        await app.request(
+          `${thread}/runs/${runId}/stop?agentId=${bot.id}`,
+          post({}),
+        )
+      ).status,
+    ).toBe(200);
+    expect(await voice.result).toEqual({
+      error: "The user stopped this task before it completed.",
+    });
+    expect(
+      (
+        await app.request(
+          `/api/approvals/${approval.id}/decision`,
+          post({ decision: "allow_once" }),
+        )
+      ).status,
+    ).toBe(404);
+    authorized = false;
+    expect(await voiceTurn(app, channel, bot.id, "Try again.").result).toEqual({
+      error: expect.any(String),
+    });
+    expect((await app.request(history)).status).toBe(404);
+    authorized = true;
+    expect((await (await app.request(history)).json()).runs).toHaveLength(1);
+    expect(executions).toBe(1);
+  } finally {
+    voice.end();
+    release.resolve();
+    await database.delete(channels).where(eq(channels.id, channel.id));
+    await database.delete(agents).where(eq(agents.id, bot.id));
+    await database.delete(users).where(eq(users.id, owner.id));
   }
 });
 

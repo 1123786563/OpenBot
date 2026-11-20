@@ -1132,7 +1132,7 @@ export function ChannelChat({
   const deliver = async (
     trimmed: string,
     attachments: Attachment[],
-    sent?: Message,
+    options: { sent?: Message; voiceSignal?: AbortSignal },
   ) => {
     // Wait briefly for the runtime agent instance before adding the message.
     if (!isReadyRef.current) {
@@ -1189,6 +1189,7 @@ export function ChannelChat({
         if (answered !== target.messages) target.setMessages(answered);
       }
     }
+    options.voiceSignal?.throwIfAborted();
     const existingMessageIds = new Set(
       target.messages.map((message) => message.id),
     );
@@ -1224,7 +1225,7 @@ export function ChannelChat({
       );
 
     target.addMessage(
-      sent ?? {
+      options.sent ?? {
         content: toMessageContent(trimmed, attachments),
         id: newId(),
         role: "user",
@@ -1273,6 +1274,14 @@ export function ChannelChat({
         awaitingReply.current = false;
         const whole = await readBackFromThread(target, existingMessageIds);
         if (whole) reportReadBack(target);
+        if (options.voiceSignal) {
+          // Read the original outcome without sending another request from the call.
+          if (!whole || unansweredToolCalls(target.messages).size > 0) {
+            turnFailure.current = STREAM_BROKE;
+            setRunError(STREAM_BROKE);
+          }
+          break;
+        }
         const unrun = unansweredToolCalls(target.messages).size > 0;
         if (whole && !unrun) break;
         if (whole && !carriedOn) {
@@ -1343,7 +1352,7 @@ export function ChannelChat({
     text: string,
     attachments: Attachment[] = [],
     /** The message to send for `text`, when it is more than the words: an answer to a question. */
-    sent?: Message,
+    options: { sent?: Message; voiceSignal?: AbortSignal } = {},
   ) => {
     const trimmed = text.trim();
     // A pasted screenshot with no caption is still a message to send: `canSendDraft` already
@@ -1369,7 +1378,7 @@ export function ChannelChat({
       void setChannelBusy({ channelId: channel.id, busy: true });
     }
     try {
-      const reply = await deliver(trimmed, attachments, sent);
+      const reply = await deliver(trimmed, attachments, options);
       /*
        * The person left while this turn was running (holding control of the Bot's browser, say) and the turn went on
        * without this screen. The run-finished subscription that tells the roster what the Bot said went with it, so the
@@ -1516,7 +1525,7 @@ export function ChannelChat({
       inConversation: idle,
     });
     if (continueHere) {
-      await say(text, [], sent);
+      await say(text, [], { sent });
       return;
     }
     setAnsweredId(sent.id);
@@ -1553,7 +1562,22 @@ export function ChannelChat({
       const started = stopEpoch.current;
       const answer = await askChannelAgent(request, signal, {
         busy: () => turnsRef.current > 0 || agentRef.current.isRunning,
-        send: (text) => sayRef.current(text),
+        send: (text, id) =>
+          sayRef.current(text, [], {
+            sent: { id, role: "user", content: text },
+            voiceSignal: signal,
+          }),
+        read: async () => {
+          const thread = await readThreadMessages(
+            channel.threadId,
+            runtimeAgentId,
+          );
+          if (thread.availability !== "ready" && storedRuns !== undefined)
+            throw new Error(
+              "The run’s result could not be confirmed. Check the conversation.",
+            );
+          return thread;
+        },
       });
       if (started !== stopEpoch.current)
         throw new Error("The user stopped this task before it completed.");
