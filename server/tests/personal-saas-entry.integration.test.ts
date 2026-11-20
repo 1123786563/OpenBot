@@ -4363,7 +4363,12 @@ test("the mounted workspace recovers each stopped background capability as fresh
   expect((await operate("pause")).status).toBe(201);
   expect((await retry(handoff, initial, true)).status).toBe(403);
   await sweep();
-  expect((await operate("resume")).status).toBe(201);
+  const resumedWorkspace = await operate("resume");
+  expect(resumedWorkspace.status).toBe(201);
+  const resumedAt = new Date(
+    (await resumedWorkspace.json()).effectiveAt,
+  ).getTime();
+  while (Date.now() <= resumedAt) await Bun.sleep(1);
   const restored = await login();
   const state = await (await request("/api/workspace", restored)).json();
   expect(
