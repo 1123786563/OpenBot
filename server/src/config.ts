@@ -21,6 +21,7 @@ import {
 } from "./dictation/config";
 import { type Edition, parseEdition } from "./edition";
 import { proxiedClientSocketUrl } from "./intelligence-gateway-proxy";
+import type { HindsightConfig } from "./memory/hindsight";
 import type { OpikConfig } from "./opik/client";
 import type { OpikEvaluationConfig } from "./opik/evaluation";
 import type { BrokerProvider } from "./plugins/access";
@@ -369,6 +370,7 @@ export type DeploymentConfig = {
   tenantPackageDirectory: string;
   runtime: RuntimeCapabilities;
   managedModelTrial?: { url: URL; token: string; route: string };
+  hindsight?: HindsightConfig;
   opik?: OpikConfig;
   opikEvaluation?: OpikEvaluationConfig;
   /**
@@ -1758,6 +1760,27 @@ export function loadConfig(
   const edition = parseEdition(optional(environment, "OPENBOT_EDITION"));
   const runtime = runtimeCapabilities(environment);
 
+  const hindsightUrl = optional(environment, "OPENBOT_HINDSIGHT_API_URL");
+  const hindsightApiKey = optional(environment, "OPENBOT_HINDSIGHT_API_KEY");
+  let hindsight: HindsightConfig | undefined;
+  if (hindsightUrl) {
+    const url = new URL(hindsightUrl);
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      url.pathname !== "/"
+    )
+      throw new Error(
+        "OPENBOT_HINDSIGHT_API_URL must be an HTTP(S) service origin.",
+      );
+    hindsight = {
+      url,
+      ...(hindsightApiKey ? { apiKey: hindsightApiKey } : {}),
+    };
+  }
   const opik = opikConfig(environment);
   const opikEvaluation = opikEvaluationConfig(environment, opik);
 
@@ -1786,6 +1809,7 @@ export function loadConfig(
       optional(environment, "TENANT_PACKAGE_DIR") ?? "../examples/fintech",
     runtime,
     managedModelTrial: managedModelTrial(environment, runtime),
+    ...(hindsight ? { hindsight } : {}),
     ...(opik ? { opik } : {}),
     ...(opikEvaluation ? { opikEvaluation } : {}),
     recorder: { extraExtensionIds: recorderExtraExtensionIds(environment) },

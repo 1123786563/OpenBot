@@ -1,5 +1,5 @@
 {
-  "id": "bff44ab8-44fe-4c1b-ae53-a7be351a6d6c",
+  "id": "30b149ca-58b3-424e-90cf-adbdb7349b24",
   "prevId": "d83607de-2471-463b-a362-9f9656d1e9fa",
   "version": "7",
   "dialect": "postgresql",
@@ -4597,124 +4597,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.direct_chat_learning_schedules": {
-      "name": "direct_chat_learning_schedules",
-      "schema": "",
-      "columns": {
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "enabled": {
-          "name": "enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "interval_hours": {
-          "name": "interval_hours",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "next_at": {
-          "name": "next_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "evidence_after": {
-          "name": "evidence_after",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_analysis_id": {
-          "name": "last_analysis_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "owns_last_analysis": {
-          "name": "owns_last_analysis",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "pending_dispatch": {
-          "name": "pending_dispatch",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        }
-      },
-      "indexes": {
-        "direct_chat_learning_schedules_due_idx": {
-          "name": "direct_chat_learning_schedules_due_idx",
-          "columns": [
-            {
-              "expression": "next_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"direct_chat_learning_schedules\".\"enabled\"",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "direct_chat_learning_schedules_thread_id_intelligence_channel_mappings_thread_id_fk": {
-          "name": "direct_chat_learning_schedules_thread_id_intelligence_channel_mappings_thread_id_fk",
-          "tableFrom": "direct_chat_learning_schedules",
-          "tableTo": "intelligence_channel_mappings",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "thread_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "direct_chat_learning_schedules_last_analysis_id_direct_chat_analyses_id_fk": {
-          "name": "direct_chat_learning_schedules_last_analysis_id_direct_chat_analyses_id_fk",
-          "tableFrom": "direct_chat_learning_schedules",
-          "tableTo": "direct_chat_analyses",
-          "columnsFrom": [
-            "last_analysis_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "direct_chat_learning_schedules_interval_check": {
-          "name": "direct_chat_learning_schedules_interval_check",
-          "value": "\"direct_chat_learning_schedules\".\"interval_hours\" between 1 and 168"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.learning_open_skills": {
       "name": "learning_open_skills",
       "schema": "",
@@ -6363,6 +6245,66 @@
       },
       "isRLSEnabled": false
     },
+    "public.hindsight_memory_projections": {
+      "name": "hindsight_memory_projections",
+      "schema": "",
+      "columns": {
+        "memory_id": {
+          "name": "memory_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "owner_user_id": {
+          "name": "owner_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "projected_version": {
+          "name": "projected_version",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "first_deleted_at": {
+          "name": "first_deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_check_at": {
+          "name": "next_check_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "hindsight_memory_projections_due_idx": {
+          "name": "hindsight_memory_projections_due_idx",
+          "columns": [
+            {
+              "expression": "next_check_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.memory_sources": {
       "name": "memory_sources",
       "schema": "",
@@ -6638,6 +6580,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
         },
         "created_at": {
           "name": "created_at",

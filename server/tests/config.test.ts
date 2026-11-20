@@ -1503,3 +1503,20 @@ test("platform evaluation requires an operator allowlist, a budget, and a privat
     }),
   ).toThrow("dedicated origin");
 });
+
+test("Hindsight Recall is opt-in and accepts a dedicated HTTP(S) origin", () => {
+  expect(loadConfig(baseEnvironment).hindsight).toBeUndefined();
+  expect(
+    loadConfig({
+      ...baseEnvironment,
+      OPENBOT_HINDSIGHT_API_URL: "http://hindsight:8888",
+      OPENBOT_HINDSIGHT_API_KEY: "fixture-key",
+    }).hindsight,
+  ).toEqual({ url: new URL("http://hindsight:8888"), apiKey: "fixture-key" });
+  expect(() =>
+    loadConfig({
+      ...baseEnvironment,
+      OPENBOT_HINDSIGHT_API_URL: "http://hindsight:8888/another",
+    }),
+  ).toThrow("OPENBOT_HINDSIGHT_API_URL");
+});
