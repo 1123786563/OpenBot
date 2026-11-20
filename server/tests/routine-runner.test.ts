@@ -122,6 +122,7 @@ function harness(options: {
   };
 
   const channelStore: ChannelStore = {
+    setArchived: async () => {},
     create: () => unreachable("channels.create"),
     list: () => unreachable("channels.list"),
     setPinned: () => unreachable("channels.setPinned"),

@@ -108,6 +108,7 @@ function RouteComponent() {
             footer={
               channel.data ? (
                 <ConversationActions
+                  archived={channel.data.archived === true}
                   channelId={channelId}
                   leave={() => navigate({ to: "/" })}
                   name={channel.data.name}

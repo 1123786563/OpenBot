@@ -1,5 +1,5 @@
 {
-  "id": "0ecc4805-4c65-4333-b9f1-b1a8c9b2f101",
+  "id": "c27a0654-b92b-4e40-a4b8-b0b3e48c5788",
   "prevId": "2695aaa7-3562-427f-8b3f-c4f85b34c702",
   "version": "7",
   "dialect": "postgresql",
@@ -8572,6 +8572,91 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.direct_chat_run_events": {
+      "name": "direct_chat_run_events",
+      "schema": "",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cursor": {
+          "name": "cursor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event": {
+          "name": "event",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "direct_chat_run_events_created_idx": {
+          "name": "direct_chat_run_events_created_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "direct_chat_run_events_thread_id_run_id_direct_chat_runs_thread_id_id_fk": {
+          "name": "direct_chat_run_events_thread_id_run_id_direct_chat_runs_thread_id_id_fk",
+          "tableFrom": "direct_chat_run_events",
+          "tableTo": "direct_chat_runs",
+          "columnsFrom": [
+            "thread_id",
+            "run_id"
+          ],
+          "columnsTo": [
+            "thread_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "direct_chat_run_events_thread_id_run_id_cursor_pk": {
+          "name": "direct_chat_run_events_thread_id_run_id_cursor_pk",
+          "columns": [
+            "thread_id",
+            "run_id",
+            "cursor"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.direct_chat_runs": {
       "name": "direct_chat_runs",
       "schema": "",
@@ -8617,6 +8702,25 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "event_cursor": {
+          "name": "event_cursor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "partial_message_id": {
+          "name": "partial_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "partial_reply": {
+          "name": "partial_reply",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "started_at": {
           "name": "started_at",
@@ -8679,169 +8783,6 @@
         "direct_chat_runs_status_check": {
           "name": "direct_chat_runs_status_check",
           "value": "\"direct_chat_runs\".\"status\" in ('running', 'completed', 'failed')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.opik_runs": {
-      "name": "opik_runs",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "finished_at": {
-          "name": "finished_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "trace": {
-          "name": "trace",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "due_at": {
-          "name": "due_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "lease_until": {
-          "name": "lease_until",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lease_id": {
-          "name": "lease_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "feedback_id": {
-          "name": "feedback_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "score": {
-          "name": "score",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "comment": {
-          "name": "comment",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "feedback_delivered_at": {
-          "name": "feedback_delivered_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "opik_runs_due_idx": {
-          "name": "opik_runs_due_idx",
-          "columns": [
-            {
-              "expression": "due_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"opik_runs\".\"trace\" = 'pending' or (\"opik_runs\".\"score\" is not null and \"opik_runs\".\"feedback_delivered_at\" is null)",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "opik_runs_expiry_idx": {
-          "name": "opik_runs_expiry_idx",
-          "columns": [
-            {
-              "expression": "finished_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"opik_runs\".\"trace\" = 'pending'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "opik_runs_thread_id_run_id_direct_chat_runs_thread_id_id_fk": {
-          "name": "opik_runs_thread_id_run_id_direct_chat_runs_thread_id_id_fk",
-          "tableFrom": "opik_runs",
-          "tableTo": "direct_chat_runs",
-          "columnsFrom": [
-            "thread_id",
-            "run_id"
-          ],
-          "columnsTo": [
-            "thread_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "opik_runs_thread_id_run_id_unique": {
-          "name": "opik_runs_thread_id_run_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "thread_id",
-            "run_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "opik_runs_feedback_check": {
-          "name": "opik_runs_feedback_check",
-          "value": "(\"opik_runs\".\"feedback_id\" is null and \"opik_runs\".\"score\" is null) or (\"opik_runs\".\"feedback_id\" is not null and \"opik_runs\".\"score\" is not null and \"opik_runs\".\"score\" in (0, 1))"
         }
       },
       "isRLSEnabled": false

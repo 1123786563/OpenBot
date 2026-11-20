@@ -635,8 +635,29 @@
     {
       "idx": 90,
       "version": "7",
-      "when": 1795162558035,
-      "tag": "0090_opik_runs",
+      "when": 1795161859942,
+      "tag": "0090_direct_chat_replay",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1795172513486,
+      "tag": "0091_conversation_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1795173315650,
+      "tag": "0092_openbot_recordings",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1795174366772,
+      "tag": "0093_opik_runs",
       "breakpoints": true
     }
   ]

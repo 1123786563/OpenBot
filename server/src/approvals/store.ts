@@ -9,7 +9,12 @@ import {
   approvalTeamRules,
   approvalTeamSettings,
 } from "../db/schema/approvals";
-import { channels, intelligenceChannelMappings } from "../db/schema/core";
+import {
+  channelMemberships,
+  channels,
+  intelligenceChannelMappings,
+} from "../db/schema/core";
+import { groupBotThreads } from "../db/schema/group";
 import { botTasks } from "../db/schema/tasks";
 import { workItems } from "../db/schema/work";
 import { currentEdition } from "../edition";
@@ -61,7 +66,54 @@ const grantInForce = () =>
     ),
   );
 
-export function createApprovalStore(database: Database): ApprovalStore {
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+export function createApprovalStore(
+  database: Database,
+  canUseBot?: (
+    tx: Transaction,
+    owner: string,
+    botId: string,
+  ) => Promise<boolean>,
+): ApprovalStore {
+  async function canControlConversation(
+    tx: Transaction,
+    action: ApprovalAction,
+  ) {
+    const [group] = await tx
+      .select({ channelId: groupBotThreads.channelId })
+      .from(groupBotThreads)
+      .where(eq(groupBotThreads.threadId, action.threadId));
+    const [direct] = group
+      ? []
+      : await tx
+          .select({ channelId: intelligenceChannelMappings.channelId })
+          .from(intelligenceChannelMappings)
+          .where(eq(intelligenceChannelMappings.threadId, action.threadId));
+    const source = group ?? direct;
+    if (!source) return true;
+    // Leave and delete lock the same channel before changing access.
+    const [channel] = await tx
+      .select({ id: channels.id })
+      .from(channels)
+      .where(and(eq(channels.id, source.channelId), isNull(channels.deletedAt)))
+      .for("share");
+    if (!channel) return false;
+    const [member] = await tx
+      .select({ id: channelMemberships.userId })
+      .from(channelMemberships)
+      .where(
+        and(
+          eq(channelMemberships.channelId, channel.id),
+          eq(channelMemberships.userId, action.actorId),
+        ),
+      );
+    return (
+      Boolean(member) &&
+      (!canUseBot || (await canUseBot(tx, action.actorId, action.botId)))
+    );
+  }
+
   const owned = (owner: string, id: string) =>
     and(eq(approvalRequests.ownerUserId, owner), eq(approvalRequests.id, id));
   const ruleScope = (action: ApprovalAction) =>
@@ -171,6 +223,8 @@ export function createApprovalStore(database: Database): ApprovalStore {
           .for("update")
           .limit(1);
         if (!request) throw new ApprovalNotFoundError();
+        if (!(await canControlConversation(tx, request.action)))
+          throw new ApprovalNotFoundError();
         if (request.status !== "pending")
           throw new ApprovalRefusedError("This request was already decided.");
         const handOff = request.action.policy?.behaviour === "hand_off";
@@ -274,7 +328,11 @@ export function createApprovalStore(database: Database): ApprovalStore {
         if (!request) throw new ApprovalNotFoundError();
         if (request.actionDigest !== digest)
           throw new ApprovalRefusedError("The approved action has changed.");
-        if (request.status !== "approved") return false;
+        if (
+          request.status !== "approved" ||
+          !(await canControlConversation(tx, request.action))
+        )
+          return false;
         if (request.decision === "allow_always") {
           const [rule] = await tx
             .select()

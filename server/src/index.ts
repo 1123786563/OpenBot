@@ -32,7 +32,6 @@ import {
   readRunAssertion,
 } from "./agents/callback-token";
 import { canUseComputer } from "./agents/computer-access";
-import { isUnattended, runModeOf } from "./agents/run-mode";
 import { wireCoordination } from "./agents/coordination-wiring";
 import { createAgentFetch } from "./agents/endpoint";
 import { createHandoffDesk } from "./agents/handoff";
@@ -46,6 +45,7 @@ import {
 import { createBotReset } from "./agents/lifecycle-reset";
 import { createAgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
+import { isUnattended, runModeOf } from "./agents/run-mode";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
 import { createSubagents, SUBAGENT_HANDED_BACK } from "./agents/subagent";
 import { toolLimitRecorder } from "./agents/tool-limit";
@@ -104,6 +104,7 @@ import {
   loadAttachmentForTurn,
   markAttachmentsSent,
 } from "./channels/attachments";
+import { expireDirectChatEvents } from "./channels/direct-chat-replay";
 import {
   createChannelEventHub,
   startChannelActivityListener,
@@ -114,7 +115,11 @@ import {
   groupSourceForRun,
 } from "./channels/group";
 import { createModelChoices } from "./channels/model-choice";
-import { type ChannelStore, createChannelStore } from "./channels/routes";
+import {
+  type ChannelStore,
+  createChannelStore,
+  currentChannelEventMembers,
+} from "./channels/routes";
 import { createStallGuard } from "./channels/stall-guard";
 import {
   forgetSettledSummaries,
@@ -214,12 +219,12 @@ import {
   createLearningModelCalls,
   learningModelEndpointFor,
 } from "./learning/model-endpoint";
-import { learningModelUnavailable } from "./learning/routes";
 import { createLearningPeople } from "./learning/people";
 import {
   createPersonalLearningSpaces,
   createPersonSpaceStore,
 } from "./learning/personal-space";
+import { learningModelUnavailable } from "./learning/routes";
 import { clearLearningRevisionFallback } from "./learning/runtime";
 import { learningScopes } from "./learning/scopes";
 import {
@@ -530,6 +535,7 @@ const componentStore = createComponentStore(database);
 const channelActivityListener = await startChannelActivityListener(
   config.databaseUrl,
   channelEvents,
+  (event) => currentChannelEventMembers(database, event),
 );
 const roleRepository = createRoleRepository(database);
 const loadAgentsForActor = createRuntimeAgentLoader(
@@ -735,12 +741,15 @@ let deliveryNotifications: (
  * sitting in front of them in chat. This asks the same repository the request path asks, so a routine
  * sees exactly the coworkers its owner sees.
  */
-const actorFor = async (ownerUserId: string): Promise<AgentActor> => {
+const actorFor = async (
+  ownerUserId: string,
+  rolesFrom = roleRepository,
+): Promise<AgentActor> => {
   // One person, and they are an administrator. The id stays the routine owner's rather than being
   // rewritten to DEV_ACTOR's: in this mode they are the same person, and if they ever were not,
   // silently borrowing the dev actor's identity would be worse than finding nothing.
   if (config.singleUser) return { id: ownerUserId, role: DEV_ACTOR.role };
-  const roles = await roleRepository.rolesForUser(ownerUserId);
+  const roles = await rolesFrom.rolesForUser(ownerUserId);
   if (!roles.includes("admin") && !roles.includes("user")) {
     throw new Error("A routine requires an authorized owner.");
   }
@@ -803,7 +812,17 @@ const authoriseQuestion = async (question: PersonQuestion) => {
   )
     throw new ApprovalRefusedError("That Bot is no longer available to you.");
 };
-const storedApprovals = createApprovalStore(database);
+const storedApprovals = createApprovalStore(
+  database,
+  async (tx, owner, botId) =>
+    Boolean(
+      await agentProfileStore.getWithin(
+        tx,
+        await actorFor(owner, createRoleRepository(tx)),
+        botId,
+      ),
+    ),
+);
 // Before anything reads the model environment: blank base URLs removed, Anthropic given its `/v1`.
 normalizeModelBaseUrls();
 const runtimeModel = runtimeModelForEnvironment(tenantPackage.model);
@@ -958,7 +977,10 @@ const retentionSweeps = startRetentionSweeps(
   config.databaseUrl,
   config.auditRetentionDays,
   pageFrameStore,
-  { proactive: proactiveStore },
+  {
+    proactive: proactiveStore,
+    pruneDirectChatEvents: () => expireDirectChatEvents(database),
+  },
 );
 /**
  * Whose computer a Bot runs on: the person it acts for, unless the Bot is isolated and its owner
