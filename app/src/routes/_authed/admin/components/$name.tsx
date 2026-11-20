@@ -12,12 +12,10 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
+import { CapabilityPage } from "@/components/astryx-pilot/capability-surface";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { AdminComponentPreview } from "@/components/component-preview";
-import {
-  PageRows,
-  PageSection,
-  PageShell,
-} from "@/components/layout/page-shell";
+import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { SettingsItemBackground } from "@/components/settings/background";
 import { Button } from "@/components/ui/button";
 import {
@@ -105,11 +103,11 @@ function RouteComponent() {
 
   if (components.error) {
     return (
-      <PageShell backButton={BACK} title="Components">
+      <CapabilityPage backButton={BACK} title="Components">
         <p className="mt-8 text-destructive text-sm" role="alert">
           Couldn't load components. Reload the page.
         </p>
-      </PageShell>
+      </CapabilityPage>
     );
   }
 
@@ -119,7 +117,7 @@ function RouteComponent() {
      * build no longer ships.
      */
     return (
-      <PageShell
+      <CapabilityPage
         backButton={BACK}
         description="There is no component with that name."
         title="No such component"
@@ -139,7 +137,7 @@ function RouteComponent() {
             Back to components
           </Button>
         </Empty>
-      </PageShell>
+      </CapabilityPage>
     );
   }
 
@@ -288,7 +286,7 @@ function ComponentDetail({
         : held.map((fn) => fn.name).join(", ");
 
   return (
-    <PageShell
+    <CapabilityPage
       backButton={BACK}
       description={
         component.publishedDescription ?? "Not published. No Bot can see it."
@@ -424,7 +422,7 @@ function ComponentDetail({
         }}
         open={sheet === "description"}
       >
-        <DialogContent>
+        <DialogContent {...astryxScope}>
           <DialogHeader>
             <DialogTitle>Description</DialogTitle>
             <DialogDescription>
@@ -469,7 +467,7 @@ function ComponentDetail({
         onOpenChange={(open) => !open && setSheet(null)}
         open={sheet === "grants"}
       >
-        <DialogContent>
+        <DialogContent {...astryxScope}>
           <DialogHeader>
             <DialogTitle>Available to</DialogTitle>
             <DialogDescription>
@@ -518,7 +516,7 @@ function ComponentDetail({
         onOpenChange={(open) => !open && setSheet(null)}
         open={sheet === "functions"}
       >
-        <DialogContent>
+        <DialogContent {...astryxScope}>
           <DialogHeader>
             <DialogTitle>Can read</DialogTitle>
             <DialogDescription>
@@ -569,6 +567,6 @@ function ComponentDetail({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </PageShell>
+    </CapabilityPage>
   );
 }
