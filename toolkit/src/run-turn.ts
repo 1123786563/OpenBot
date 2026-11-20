@@ -714,6 +714,12 @@ export function createTurnRunner(options: {
     threadId: string;
     runId: string;
   }) => Promise<HeadlessTool[]>;
+  beforeToolDispatch?: (scope: {
+    ownerUserId: string;
+    agentId: string;
+    threadId: string;
+    runId: string;
+  }) => Promise<void>;
   /**
    * The governed gallery, so a turn with no browser can still answer with a chart. Offered and
    * decided exactly as the browser would for this Bot. Absent, nothing is offered and nothing is
@@ -909,8 +915,28 @@ export function createTurnRunner(options: {
         initiator,
       })) ?? []),
     ];
-    if (headlessTools.length > 0)
-      agent.use(new HeadlessToolsMiddleware(headlessTools, initiator));
+    if (headlessTools.length > 0) {
+      const beforeDispatch = options.beforeToolDispatch;
+      agent.use(
+        new HeadlessToolsMiddleware(
+          beforeDispatch
+            ? headlessTools.map((tool) => ({
+                ...tool,
+                execute: async (args, context) => {
+                  await beforeDispatch({
+                    ownerUserId,
+                    agentId,
+                    threadId,
+                    runId,
+                  });
+                  return tool.execute(args, context);
+                },
+              }))
+            : headlessTools,
+          initiator,
+        ),
+      );
+    }
     if (signal?.aborted) throw new Error("The headless turn was cancelled.");
 
     let input = turnInput({

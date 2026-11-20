@@ -1037,8 +1037,13 @@ export function createGroupConversations(deps: {
     async continueWaiting(
       approvalId: string,
       run: () => Promise<{ replyText: string }>,
+      pauseReason?: string,
     ): Promise<{ replyText: string }> {
       const row = await deps.store.waitingFor(approvalId);
+      if (pauseReason) {
+        if (row) await deps.store.finish(row.id, pauseReason, "failed");
+        return { replyText: pauseReason };
+      }
       if (!row?.agentId) return run();
       const agentId = row.agentId;
       const held = row.details.privateShare as

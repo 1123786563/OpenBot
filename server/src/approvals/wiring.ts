@@ -1,3 +1,8 @@
+import {
+  MarketRunPaused,
+  marketRunForComputerCall,
+  marketRunPauseReason,
+} from "../skill-market/disablements";
 import { isDeepStrictEqual } from "node:util";
 import { approvalPhrase } from "@openbot/shared/tool-name";
 import type { HeadlessTool } from "@openbot/toolkit/headless-tools";
@@ -179,6 +184,22 @@ export function createServerApprovalService(deps: {
         throw new ApprovalRefusedError(
           "That unanswered tool call is not saved in this conversation.",
         );
+      const marketRun = await marketRunForComputerCall(
+        database,
+        {
+          actorId: ownerUserId,
+          botId,
+          threadId: snapshot.threadId,
+        },
+        snapshot.toolCallId,
+      ).catch((error: unknown) => {
+        if (error instanceof MarketRunPaused)
+          throw new ApprovalRefusedError(error.message);
+        throw error;
+      });
+      if (marketRun?.pauseReason)
+        throw new ApprovalRefusedError(marketRun.pauseReason);
+      if (marketRun) snapshot.runId = marketRun.runId;
       const tools = await approvalComputerTools(
         ownerUserId,
         botId,
@@ -189,11 +210,23 @@ export function createServerApprovalService(deps: {
       );
       if (!tool)
         throw new ApprovalRefusedError("That computer tool is not available.");
+      if (marketRun) {
+        const pauseReason = await marketRunPauseReason(database, {
+          actorId: ownerUserId,
+          botId,
+          threadId: snapshot.threadId,
+          runId: marketRun.runId,
+        });
+        if (pauseReason) throw new ApprovalRefusedError(pauseReason);
+      }
       return tool.execute(snapshot.args, {
         toolCallId: snapshot.toolCallId,
         signal: new AbortController().signal,
       });
     },
-    { review: deps.review },
+    {
+      review: deps.review,
+      marketPause: (action) => marketRunPauseReason(database, action),
+    },
   );
 }

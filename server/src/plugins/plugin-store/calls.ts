@@ -19,6 +19,7 @@ import {
   vendorNameOf,
 } from "../../db/schema";
 import { isProactiveInitiator } from "../../proactive/initiator";
+import { marketRunPauseReason } from "../../skill-market/disablements";
 import {
   classifyTool,
   labelledRead,
@@ -121,6 +122,8 @@ export function callMethods(context: StoreContext) {
        * through its signed run assertion. See the transport's `threadId`.
        */
       threadId?: string;
+      /** Set only by a verified callback; local calls get their run from the tool continuation. */
+      runId?: string;
     }): Promise<{ text: string; isError: boolean }> {
       const [serverId, ...rest] = input.ref.split("/");
       const toolName = rest.join("/");
@@ -715,8 +718,20 @@ export function callMethods(context: StoreContext) {
          * the whole call, so the grant, the policy and the approval above are settled once, and the
          * trail gets one row for what finally happened. See `../transient`.
          */
-        const callVendor = () =>
-          vendor(
+        const callVendor = async () => {
+          const continuation = currentApprovalContext();
+          const threadId = input.threadId ?? continuation?.threadId;
+          const runId = input.runId ?? continuation?.runId;
+          if (threadId && runId) {
+            const pauseReason = await marketRunPauseReason(database, {
+              actorId: input.actorId,
+              botId: input.botId,
+              threadId,
+              runId,
+            });
+            if (pauseReason) throw new PluginRefusedError(pauseReason, null);
+          }
+          return vendor(
             {
               url: effectiveUrl(row, entry),
               token,
@@ -744,6 +759,7 @@ export function callMethods(context: StoreContext) {
             advertised[0]?.vendorName ?? toolName,
             vendorArgs,
           );
+        };
         const result =
           effect === "read"
             ? await withReadRetries(callVendor)

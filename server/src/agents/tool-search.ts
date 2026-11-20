@@ -732,6 +732,33 @@ export function withToolSearch(
   return wrapped;
 }
 
+/** Guard the provider boundary of each model step and retain its tool-search capability. */
+export function guardMarketModel(
+  model: unknown,
+  check: () => Promise<void>,
+): SearchingModel {
+  if (!isSearchingModel(model))
+    throw new Error(
+      "This model does not support market skill dispatch checks.",
+    );
+  const guarded: SearchingModel = {
+    specificationVersion: model.specificationVersion,
+    provider: model.provider,
+    modelId: model.modelId,
+    supportedUrls: model.supportedUrls,
+    async doGenerate(options) {
+      await check();
+      return model.doGenerate(options);
+    },
+    async doStream(options) {
+      await check();
+      return model.doStream(options);
+    },
+  };
+  if (searching.has(model)) searching.add(guarded);
+  return guarded;
+}
+
 /** Every model {@link withToolSearch} built, so a caller can tell whether search is really on. */
 const searching = new WeakSet<object>();
 

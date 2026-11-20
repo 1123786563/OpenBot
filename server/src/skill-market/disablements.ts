@@ -1,9 +1,10 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/client";
 import {
   skillMarketVersionDisablements as disablements,
   skillMarketInstallations,
+  skillMarketRuns,
   skillMarketSources,
 } from "../db/schema";
 import { catalogSegment, exactVersion, skillHubOrigin } from "./config";
@@ -78,10 +79,139 @@ export function marketVersionDisabledMessage(version: string, reason: string) {
   return `Market skill version ${version} is disabled by an OpenBot administrator. Reason: ${reason}`;
 }
 
+function pausedVersionMessage(version: string, reason: string) {
+  return `Run paused. ${marketVersionDisabledMessage(version, reason)}`;
+}
+
+export type MarketRunScope = {
+  actorId: string;
+  botId: string;
+  threadId: string;
+  runId: string;
+};
+
+export type MarketRunControl = {
+  check(): Promise<void>;
+  recordComputerToolCall(callId: string): Promise<void>;
+};
+
+export class MarketRunPaused extends Error {
+  override name = "MarketRunPaused";
+}
+
+function matchesRun(run: MarketRunScope) {
+  return and(
+    eq(skillMarketRuns.actorId, run.actorId),
+    eq(skillMarketRuns.botId, run.botId),
+    eq(skillMarketRuns.threadId, run.threadId),
+    eq(skillMarketRuns.runId, run.runId),
+  );
+}
+
+export async function marketRunPauseReason(
+  database: Pick<Database, "select">,
+  run: MarketRunScope,
+) {
+  const [saved] = await database
+    .select({ reason: skillMarketRuns.pauseReason })
+    .from(skillMarketRuns)
+    .where(matchesRun(run));
+  return saved?.reason ?? null;
+}
+
+/** Resolve a governed browser tool call from the run that emitted it. */
+export async function marketRunForComputerCall(
+  database: Pick<Database, "select">,
+  scope: Omit<MarketRunScope, "runId">,
+  callId: string,
+) {
+  const runs = await database
+    .select({
+      runId: skillMarketRuns.runId,
+      pauseReason: skillMarketRuns.pauseReason,
+    })
+    .from(skillMarketRuns)
+    .where(
+      and(
+        eq(skillMarketRuns.actorId, scope.actorId),
+        eq(skillMarketRuns.botId, scope.botId),
+        eq(skillMarketRuns.threadId, scope.threadId),
+        sql`${callId} = any(${skillMarketRuns.computerToolCalls})`,
+      ),
+    )
+    .limit(2);
+  if (runs.length > 1)
+    throw new MarketRunPaused(
+      "OpenBot could not verify which market skill run requested this computer action.",
+    );
+  return runs[0];
+}
+
 export function marketVersionMethods(database: Database) {
   return {
     marketVersionDisableReason: (version: MarketVersionKey) =>
       marketVersionDisableReason(database, version),
+
+    async registerMarketRun(
+      run: MarketRunScope,
+      version: MarketVersionIdentity,
+      previousRunId?: string,
+    ) {
+      await database.transaction(async (transaction) => {
+        await lockVersion(transaction, version);
+        const disabled = await marketVersionDisableReason(transaction, version);
+        const previousPause = previousRunId
+          ? await marketRunPauseReason(transaction, {
+              ...run,
+              runId: previousRunId,
+            })
+          : null;
+        await transaction
+          .insert(skillMarketRuns)
+          .values({
+            ...run,
+            source: version.source,
+            registrySkillId: version.registrySkillId,
+            versionId: version.versionId,
+            pauseReason:
+              previousPause ??
+              (disabled
+                ? pausedVersionMessage(version.version, disabled)
+                : null),
+          })
+          .onConflictDoNothing();
+        const [saved] = await transaction
+          .select()
+          .from(skillMarketRuns)
+          .where(matchesRun(run));
+        if (versionKey(saved) !== versionKey(version))
+          throw new Error(
+            "This run has already loaded a different market skill version.",
+          );
+      });
+      return {
+        async check() {
+          const reason = await marketRunPauseReason(database, run);
+          if (reason) throw new MarketRunPaused(reason);
+        },
+        async recordComputerToolCall(callId: string) {
+          await database
+            .update(skillMarketRuns)
+            .set({
+              computerToolCalls: sql`array_append(${skillMarketRuns.computerToolCalls}, ${callId})`,
+            })
+            .where(
+              and(
+                matchesRun(run),
+                sql`not (${callId} = any(${skillMarketRuns.computerToolCalls}))`,
+              ),
+            );
+        },
+      } satisfies MarketRunControl;
+    },
+
+    marketRunPauseReason: (run: MarketRunScope) =>
+      marketRunPauseReason(database, run),
 
     async marketVersionsForAdministration() {
       const installed = await database
@@ -133,6 +263,18 @@ export function marketVersionMethods(database: Database) {
               ],
               set: { reason },
             });
+          // A run stays paused even if the version is restored before it next wakes up.
+          await transaction
+            .update(skillMarketRuns)
+            .set({ pauseReason: pausedVersionMessage(version.version, reason) })
+            .where(
+              and(
+                eq(skillMarketRuns.source, version.source),
+                eq(skillMarketRuns.registrySkillId, version.registrySkillId),
+                eq(skillMarketRuns.versionId, version.versionId),
+                isNull(skillMarketRuns.pauseReason),
+              ),
+            );
         }
       });
     },

@@ -1,3 +1,4 @@
+import { MarketRunPaused } from "../skill-market/disablements";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -142,6 +143,7 @@ export type ApprovalResumeDependencies = {
     messageId: string;
     continuation: ApprovalContinuation;
     result: { content: string; error?: string };
+    pauseReason?: string;
   }): Promise<void>;
 };
 export type ApprovalService = ReturnType<typeof createApprovalService>;
@@ -157,6 +159,7 @@ export function createApprovalService(
   options: {
     /** The deployment's configured model, for auto-review and pre-approval checks. */
     review?: ReviewModel;
+    marketPause?: (action: ApprovalAction) => Promise<string | null>;
   } = {},
 ) {
   /**
@@ -650,8 +653,9 @@ export function createApprovalService(
           "The interrupted conversation is unavailable.",
         );
       let result = request.result;
+      const pauseReason = await options.marketPause?.(request.action);
       const refused =
-        !result && dependencies.refusal
+        !result && !pauseReason && dependencies.refusal
           ? await dependencies.refusal(request.action)
           : null;
       if (refused) {
@@ -682,7 +686,8 @@ export function createApprovalService(
           return;
         result = { content: reason, error: reason };
       } else if (!result) {
-        if (request.status === "denied")
+        if (pauseReason) result = { content: pauseReason, error: pauseReason };
+        else if (request.status === "denied")
           result = { content: DECLINED_BY_PERSON, error: DECLINED_BY_PERSON };
         else if (request.decision === "handled")
           result = { content: HANDLED_BY_PERSON };
@@ -735,7 +740,11 @@ export function createApprovalService(
                     digest: approved.actionDigest,
                     owner: ownerUserId,
                   },
-                  () => dependencies.execute(approved),
+                  async () => {
+                    const reason = await options.marketPause?.(request.action);
+                    if (reason) throw new MarketRunPaused(reason);
+                    return dependencies.execute(approved);
+                  },
                 ),
               );
               const content =
@@ -753,7 +762,10 @@ export function createApprovalService(
         // Saved by one process only: whichever saves the answer is the one that continues.
         if (!(await store.saveResult(ownerUserId, id, result))) return;
       }
+      const finalPause =
+        pauseReason ?? (await options.marketPause?.(request.action));
       await dependencies.continue({
+        ...(finalPause ? { pauseReason: finalPause } : {}),
         approvalId: id,
         messageId: `approval:${id}`,
         continuation,

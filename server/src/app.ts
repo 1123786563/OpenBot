@@ -2211,6 +2211,18 @@ export function createApp(
       }
 
       try {
+        const { run } = verdict;
+        if (run.threadId) {
+          const pauseReason = await pluginStore?.marketRunPauseReason?.({
+            ...run,
+            threadId: run.threadId,
+          });
+          if (pauseReason)
+            return context.json({
+              text: `${REFUSAL_MARKER} ${pauseReason}`,
+              isError: true,
+            });
+        }
         const deploymentResult = await deploymentToolCaller?.({
           name: parsedCall.value.ref,
           args: parsedCall.value.args,
@@ -2236,7 +2248,7 @@ export function createApp(
           actorId: verdict.actorId,
           ...(verdict.initiator ? { initiator: verdict.initiator } : {}),
           // The conversation this run is in, signed with the rest: where a routine asked for "here" posts.
-          ...(verdict.run.threadId ? { threadId: verdict.run.threadId } : {}),
+          ...(run.threadId ? { threadId: run.threadId, runId: run.runId } : {}),
         });
         // Worded by the helper the in-process door uses, so a framework Bot's model reads a vendor's
         // error as the vendor's and not as a result. Neither Bot words it on its way through.

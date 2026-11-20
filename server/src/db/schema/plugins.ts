@@ -975,6 +975,38 @@ export const skillMarketVersionDisablements = pgTable(
   ],
 );
 
+export const skillMarketRuns = pgTable(
+  "skill_market_runs",
+  {
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    botId: text("bot_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    threadId: text("thread_id").notNull(),
+    runId: text("run_id").notNull(),
+    source: text("registry").notNull(),
+    registrySkillId: integer("registry_skill_id").notNull(),
+    versionId: integer("version_id").notNull(),
+    pauseReason: text("pause_reason"),
+    computerToolCalls: text("computer_tool_calls")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.actorId, table.botId, table.threadId, table.runId],
+    }),
+    index("skill_market_runs_version_idx").on(
+      table.source,
+      table.registrySkillId,
+      table.versionId,
+    ),
+  ],
+);
+
 /**
  * The tools a skill says it needs. A row is a declaration, and a declaration is not a grant.
  *
