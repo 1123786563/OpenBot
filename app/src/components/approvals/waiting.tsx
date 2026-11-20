@@ -70,6 +70,7 @@ function useWaiting(agentId: string | undefined) {
   const ours = (botId: string) => agentId === undefined || botId === agentId;
   return {
     error: inbox.error,
+    isPending: inbox.isPending,
     questions: (inbox.data?.questions ?? []).filter((question) =>
       ours(question.conversationBotId ?? question.botId),
     ),
@@ -589,6 +590,7 @@ export function useWaitingRows(agentId: string | undefined) {
   const botName = useBotNames();
   return {
     error: waiting.error,
+    isPending: waiting.isPending,
     rows: [
       ...waiting.questions.map((question) => (
         <QuestionRow

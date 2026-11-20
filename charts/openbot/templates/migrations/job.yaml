@@ -95,6 +95,7 @@ spec:
               exec /usr/local/bin/bun scripts/migrate.ts
           env:
 {{ include "openbot.databaseUrlEnv" . | indent 12 }}
+{{ include "openbot.runtimeIdentityEnv" . | indent 12 }}
             - name: EMBEDDED_POSTGRES
               value: "off"
             - name: EMBEDDED_COMPUTER

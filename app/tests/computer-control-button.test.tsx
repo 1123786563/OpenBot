@@ -321,8 +321,16 @@ test("both controls stay disabled while the current browser action drains", asyn
   const backend = server();
   backend.transition();
   const view = controls("draining-control");
-  expect(await view.chat.findByRole("status")).toBeTruthy();
-  expect(view.sidebar.getByRole("status")).toBeTruthy();
+  expect(
+    (await view.chat.findByText("Finishing the current action…")).getAttribute(
+      "role",
+    ),
+  ).toBe("status");
+  expect(
+    view.sidebar
+      .getByText("Finishing the current action…")
+      .getAttribute("role"),
+  ).toBe("status");
   expect(
     view.chat
       .getByRole("button", { name: "Take control" })

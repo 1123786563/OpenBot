@@ -1,7 +1,11 @@
 import { connectAppRefusal } from "@openbot/shared/connect-prompt";
 import { researchRoleOf } from "@openbot/shared/research";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { createAuditStore, recordAuditEvent } from "../../audit";
+import {
+  createAuditStore,
+  recordAuditEvent,
+  withAuditTransaction,
+} from "../../audit";
 import { DEV_ACTOR } from "../../auth/dev-actor";
 import {
   type EntraRefusal,
@@ -14,7 +18,6 @@ import {
   decryptSecret,
   encryptSecret,
 } from "../../credentials";
-import type { Database } from "../../db/client";
 import {
   brokeredConnections,
   credentials as credentialRows,
@@ -464,7 +467,7 @@ export function createStoreContext(options: PluginStoreOptions) {
     input: { actorId: string; authId: string },
     outcome: "failed" | "unreconciled" | "withdrawn",
   ) => {
-    return await database.transaction(async (transaction) => {
+    return withAuditTransaction(database, async (transaction, deferTap) => {
       const [attempt] = await transaction
         .update(pendingAuthorizations)
         .set({
@@ -494,23 +497,20 @@ export function createStoreContext(options: PluginStoreOptions) {
         const toolkit = server
           ? toolkitOfFor(brokerProvider, server.url)
           : null;
-        await recordAuditEvent(
-          createAuditStore(transaction as unknown as Database),
-          {
-            eventType: "mcp.authorization_unreconciled",
-            targetType: "mcp_server",
-            targetId: toolkit ?? attempt.serverId,
-            payload: {
-              actor: input.actorId,
-              server: toolkit,
-              serverId: attempt.serverId,
-              action: attempt.action,
-              holder: attempt.holder,
-              attemptStartedAt: attempt.createdAt.toISOString(),
-              outcome,
-            },
+        await recordAuditEvent(createAuditStore(transaction, deferTap), {
+          eventType: "mcp.authorization_unreconciled",
+          targetType: "mcp_server",
+          targetId: toolkit ?? attempt.serverId,
+          payload: {
+            actor: input.actorId,
+            server: toolkit,
+            serverId: attempt.serverId,
+            action: attempt.action,
+            holder: attempt.holder,
+            attemptStartedAt: attempt.createdAt.toISOString(),
+            outcome,
           },
-        );
+        });
       }
       return true;
     });

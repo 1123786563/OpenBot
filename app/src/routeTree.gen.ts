@@ -21,11 +21,13 @@ import { Route as AuthedAppApprovalsRouteImport } from './routes/_authed/_app/ap
 import { Route as AuthedAppBotRouteImport } from './routes/_authed/_app/bot'
 import { Route as AuthedAppBrowserRouteImport } from './routes/_authed/_app/browser'
 import { Route as AuthedAppCapabilitiesRouteImport } from './routes/_authed/_app/capabilities'
+import { Route as AuthedAppIdeasRouteImport } from './routes/_authed/_app/ideas'
 import { Route as AuthedAppMemoryRouteImport } from './routes/_authed/_app/memory'
 import { Route as AuthedAppReachabilityRouteImport } from './routes/_authed/_app/reachability'
 import { Route as AuthedAppResponsibilitiesRouteImport } from './routes/_authed/_app/responsibilities'
 import { Route as AuthedAppRoutinesRouteImport } from './routes/_authed/_app/routines'
 import { Route as AuthedAppSkillsRouteImport } from './routes/_authed/_app/skills'
+import { Route as AuthedAppTasksRouteImport } from './routes/_authed/_app/tasks'
 import { Route as AuthedAppTeamBotsRouteImport } from './routes/_authed/_app/team-bots'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
 import { Route as AuthedAdminApprovalsRouteImport } from './routes/_authed/admin/approvals'
@@ -169,6 +171,11 @@ const AuthedAppCapabilitiesRoute = AuthedAppCapabilitiesRouteImport.update({
   path: '/capabilities',
   getParentRoute: () => AuthedAppRoute,
 } as any)
+const AuthedAppIdeasRoute = AuthedAppIdeasRouteImport.update({
+  id: '/ideas',
+  path: '/ideas',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
 const AuthedAppMemoryRoute = AuthedAppMemoryRouteImport.update({
   id: '/memory',
   path: '/memory',
@@ -193,6 +200,11 @@ const AuthedAppRoutinesRoute = AuthedAppRoutinesRouteImport.update({
 const AuthedAppSkillsRoute = AuthedAppSkillsRouteImport.update({
   id: '/skills',
   path: '/skills',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppTasksRoute = AuthedAppTasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
   getParentRoute: () => AuthedAppRoute,
 } as any)
 const AuthedAppTeamBotsRoute = AuthedAppTeamBotsRouteImport.update({
@@ -672,11 +684,13 @@ export interface FileRoutesByFullPath {
   '/bot': typeof AuthedAppBotRoute
   '/browser': typeof AuthedAppBrowserRoute
   '/capabilities': typeof AuthedAppCapabilitiesRouteWithChildren
+  '/ideas': typeof AuthedAppIdeasRoute
   '/memory': typeof AuthedAppMemoryRoute
   '/reachability': typeof AuthedAppReachabilityRoute
   '/responsibilities': typeof AuthedAppResponsibilitiesRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
+  '/tasks': typeof AuthedAppTasksRoute
   '/team-bots': typeof AuthedAppTeamBotsRoute
   '/admin/approvals': typeof AuthedAdminApprovalsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
@@ -769,11 +783,13 @@ export interface FileRoutesByTo {
   '/approvals': typeof AuthedAppApprovalsRoute
   '/bot': typeof AuthedAppBotRoute
   '/browser': typeof AuthedAppBrowserRoute
+  '/ideas': typeof AuthedAppIdeasRoute
   '/memory': typeof AuthedAppMemoryRoute
   '/reachability': typeof AuthedAppReachabilityRoute
   '/responsibilities': typeof AuthedAppResponsibilitiesRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
+  '/tasks': typeof AuthedAppTasksRoute
   '/team-bots': typeof AuthedAppTeamBotsRoute
   '/admin/approvals': typeof AuthedAdminApprovalsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
@@ -871,11 +887,13 @@ export interface FileRoutesById {
   '/_authed/_app/bot': typeof AuthedAppBotRoute
   '/_authed/_app/browser': typeof AuthedAppBrowserRoute
   '/_authed/_app/capabilities': typeof AuthedAppCapabilitiesRouteWithChildren
+  '/_authed/_app/ideas': typeof AuthedAppIdeasRoute
   '/_authed/_app/memory': typeof AuthedAppMemoryRoute
   '/_authed/_app/reachability': typeof AuthedAppReachabilityRoute
   '/_authed/_app/responsibilities': typeof AuthedAppResponsibilitiesRoute
   '/_authed/_app/routines': typeof AuthedAppRoutinesRoute
   '/_authed/_app/skills': typeof AuthedAppSkillsRoute
+  '/_authed/_app/tasks': typeof AuthedAppTasksRoute
   '/_authed/_app/team-bots': typeof AuthedAppTeamBotsRoute
   '/_authed/admin/approvals': typeof AuthedAdminApprovalsRoute
   '/_authed/admin/audit': typeof AuthedAdminAuditRoute
@@ -975,11 +993,13 @@ export interface FileRouteTypes {
     | '/bot'
     | '/browser'
     | '/capabilities'
+    | '/ideas'
     | '/memory'
     | '/reachability'
     | '/responsibilities'
     | '/routines'
     | '/skills'
+    | '/tasks'
     | '/team-bots'
     | '/admin/approvals'
     | '/admin/audit'
@@ -1072,11 +1092,13 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/bot'
     | '/browser'
+    | '/ideas'
     | '/memory'
     | '/reachability'
     | '/responsibilities'
     | '/routines'
     | '/skills'
+    | '/tasks'
     | '/team-bots'
     | '/admin/approvals'
     | '/admin/audit'
@@ -1173,11 +1195,13 @@ export interface FileRouteTypes {
     | '/_authed/_app/bot'
     | '/_authed/_app/browser'
     | '/_authed/_app/capabilities'
+    | '/_authed/_app/ideas'
     | '/_authed/_app/memory'
     | '/_authed/_app/reachability'
     | '/_authed/_app/responsibilities'
     | '/_authed/_app/routines'
     | '/_authed/_app/skills'
+    | '/_authed/_app/tasks'
     | '/_authed/_app/team-bots'
     | '/_authed/admin/approvals'
     | '/_authed/admin/audit'
@@ -1356,6 +1380,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAppCapabilitiesRouteImport
       parentRoute: typeof AuthedAppRoute
     }
+    '/_authed/_app/ideas': {
+      id: '/_authed/_app/ideas'
+      path: '/ideas'
+      fullPath: '/ideas'
+      preLoaderRoute: typeof AuthedAppIdeasRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
     '/_authed/_app/memory': {
       id: '/_authed/_app/memory'
       path: '/memory'
@@ -1389,6 +1420,13 @@ declare module '@tanstack/react-router' {
       path: '/skills'
       fullPath: '/skills'
       preLoaderRoute: typeof AuthedAppSkillsRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/tasks': {
+      id: '/_authed/_app/tasks'
+      path: '/tasks'
+      fullPath: '/tasks'
+      preLoaderRoute: typeof AuthedAppTasksRouteImport
       parentRoute: typeof AuthedAppRoute
     }
     '/_authed/_app/team-bots': {
@@ -2150,11 +2188,13 @@ interface AuthedAppRouteChildren {
   AuthedAppBotRoute: typeof AuthedAppBotRoute
   AuthedAppBrowserRoute: typeof AuthedAppBrowserRoute
   AuthedAppCapabilitiesRoute: typeof AuthedAppCapabilitiesRouteWithChildren
+  AuthedAppIdeasRoute: typeof AuthedAppIdeasRoute
   AuthedAppMemoryRoute: typeof AuthedAppMemoryRoute
   AuthedAppReachabilityRoute: typeof AuthedAppReachabilityRoute
   AuthedAppResponsibilitiesRoute: typeof AuthedAppResponsibilitiesRoute
   AuthedAppRoutinesRoute: typeof AuthedAppRoutinesRoute
   AuthedAppSkillsRoute: typeof AuthedAppSkillsRoute
+  AuthedAppTasksRoute: typeof AuthedAppTasksRoute
   AuthedAppTeamBotsRoute: typeof AuthedAppTeamBotsRoute
   AuthedAppIndexRoute: typeof AuthedAppIndexRoute
   AuthedAppChannelChannelIdRoute: typeof AuthedAppChannelChannelIdRoute
@@ -2189,11 +2229,13 @@ const AuthedAppRouteChildren: AuthedAppRouteChildren = {
   AuthedAppBotRoute: AuthedAppBotRoute,
   AuthedAppBrowserRoute: AuthedAppBrowserRoute,
   AuthedAppCapabilitiesRoute: AuthedAppCapabilitiesRouteWithChildren,
+  AuthedAppIdeasRoute: AuthedAppIdeasRoute,
   AuthedAppMemoryRoute: AuthedAppMemoryRoute,
   AuthedAppReachabilityRoute: AuthedAppReachabilityRoute,
   AuthedAppResponsibilitiesRoute: AuthedAppResponsibilitiesRoute,
   AuthedAppRoutinesRoute: AuthedAppRoutinesRoute,
   AuthedAppSkillsRoute: AuthedAppSkillsRoute,
+  AuthedAppTasksRoute: AuthedAppTasksRoute,
   AuthedAppTeamBotsRoute: AuthedAppTeamBotsRoute,
   AuthedAppIndexRoute: AuthedAppIndexRoute,
   AuthedAppChannelChannelIdRoute: AuthedAppChannelChannelIdRoute,

@@ -1,6 +1,9 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { createAuditStore, recordAuditEvent } from "../../audit";
-import type { Database } from "../../db/client";
+import {
+  createAuditStore,
+  recordAuditEvent,
+  withAuditTransaction,
+} from "../../audit";
 import {
   brokeredAccounts,
   brokeredConnections,
@@ -1385,7 +1388,7 @@ export function connectionMethods(context: StoreContext) {
       const recorded: AccountRef = further
         ? { ...further, vendorUserId: own }
         : input.account;
-      return await database.transaction(async (transaction) => {
+      return withAuditTransaction(database, async (transaction, deferTap) => {
         /*
          * ONE STATEMENT, AND THE FIRST ONE. `completed_at` is truncated to milliseconds for the
          * reason `claimAuthorizationAttempt` truncates `created_at`: a `Date` carries only
@@ -1507,34 +1510,31 @@ export function connectionMethods(context: StoreContext) {
             .onConflictDoNothing();
         }
 
-        await recordAuditEvent(
-          createAuditStore(transaction as unknown as Database),
-          {
-            eventType: "mcp.account_connected",
-            targetType: "mcp_server",
-            // The app, the id every other writer of this event files a brokered connection under,
-            // so one query answers what happened to one person's access to one app however it
-            // began and however it ended.
-            targetId: input.toolkit,
-            payload: {
-              actor: input.actorId,
-              server: input.toolkit,
-              /*
-               * WHAT THE VENDOR GRANTED, WHICH A BROKERED ROW HAS NEVER BEEN ABLE TO SAY BEFORE.
-               * Both Composio writers carry `""` because Composio holds the grant and never tells
-               * this deployment what it covers; Arcade does tell us, on the key all four writers
-               * already agree on, so the same query reads both.
-               */
-              scope: input.scopes.join(" "),
-              // The action the attempt was for: what this grant was obtained in order to call.
-              // `null` for a whole-app Connect, which asked for every action at once.
-              action: input.action,
-              authProvider: input.authProvider,
-              reconnected: Boolean(existing),
-              holder: input.account.holder,
-            },
+        await recordAuditEvent(createAuditStore(transaction, deferTap), {
+          eventType: "mcp.account_connected",
+          targetType: "mcp_server",
+          // The app, the id every other writer of this event files a brokered connection under,
+          // so one query answers what happened to one person's access to one app however it
+          // began and however it ended.
+          targetId: input.toolkit,
+          payload: {
+            actor: input.actorId,
+            server: input.toolkit,
+            /*
+             * WHAT THE VENDOR GRANTED, WHICH A BROKERED ROW HAS NEVER BEEN ABLE TO SAY BEFORE.
+             * Both Composio writers carry `""` because Composio holds the grant and never tells
+             * this deployment what it covers; Arcade does tell us, on the key all four writers
+             * already agree on, so the same query reads both.
+             */
+            scope: input.scopes.join(" "),
+            // The action the attempt was for: what this grant was obtained in order to call.
+            // `null` for a whole-app Connect, which asked for every action at once.
+            action: input.action,
+            authProvider: input.authProvider,
+            reconnected: Boolean(existing),
+            holder: input.account.holder,
           },
-        );
+        });
         return { claimed: true };
       });
     },

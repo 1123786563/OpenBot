@@ -9,6 +9,7 @@ import {
 import { motion, useReducedMotion } from "motion/react";
 import * as React from "react";
 import { ALWAYS_ASKS_SHORT } from "@/components/approvals/ask-first-copy";
+import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { AskFirstSwitch } from "@/components/onboarding/ask-first-switch";
 import { BookingCalendar } from "@/components/onboarding/booking-calendar";
 import { IntroReel } from "@/components/onboarding/demos/intro-reel";
@@ -21,6 +22,7 @@ import {
 } from "@/components/onboarding/onboarding-wizard";
 import { Button } from "@/components/ui/button";
 import { currentUserQueryOptions, needsOnboarding } from "@/lib/auth/queries";
+import { appReturnPath } from "@/lib/auth/resume";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { appConfig } from "@/lib/generated/application-config";
 import {
@@ -68,18 +70,23 @@ export const Route = createFileRoute("/_authed/onboarding")({
    * WHERE SOMEBODY IS LIVES IN THE ADDRESS. `?step=<id>` is the step on screen, so a reload stays
    * on it, and browser Back and Forward walk the steps. Anything else is ignored.
    */
-  validateSearch: (search: Record<string, unknown>): { step?: StepId } => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { step?: StepId; returnTo?: string } => ({
     // Named even when absent: the router lays this over the raw search, so a key left out would
     // keep whatever was typed into the address.
     step: isStepId(search.step) ? search.step : undefined,
+    returnTo: appReturnPath(search.returnTo),
   }),
-  beforeLoad: async ({ context }) => {
+  beforeLoad: async ({ context, search }) => {
     const user = await context.queryClient.ensureQueryData(
       currentUserQueryOptions(),
     );
     // Somebody who has finished, or whose deployment tracks no onboarding, has no business here.
     if (!user || !needsOnboarding(user)) {
-      throw redirect({ to: "/" });
+      throw search.returnTo
+        ? redirect({ href: search.returnTo, replace: true })
+        : redirect({ to: "/" });
     }
   },
   component: RouteComponent,
@@ -283,8 +290,12 @@ function RouteComponent() {
   const current: StepId = asked ?? saved ?? "welcome";
   React.useEffect(() => {
     if (asked !== undefined && asked === search.step) return;
-    navigate({ to: "/onboarding", search: { step: current }, replace: true });
-  }, [navigate, current, asked, search.step]);
+    navigate({
+      to: "/onboarding",
+      search: { step: current, returnTo: search.returnTo },
+      replace: true,
+    });
+  }, [navigate, current, asked, search.step, search.returnTo]);
 
   // Saved wherever the person goes, by Continue, Back or the browser.
   const savedStep = me.data?.onboarding?.step;
@@ -321,7 +332,7 @@ function RouteComponent() {
       way === "forward" ? { onboardingFrom: current } : {};
     navigate({
       to: "/onboarding",
-      search: { step: to },
+      search: { step: to, returnTo: search.returnTo },
       replace: way === "back",
       state,
     });
@@ -346,9 +357,15 @@ function RouteComponent() {
   React.useEffect(() => {
     if (!leaving) return;
     // Navigation must also complete in a background tab, where animation frames may pause.
-    const timer = setTimeout(() => navigate({ to: "/" }), reduced ? 0 : 300);
+    const timer = setTimeout(
+      () => {
+        if (search.returnTo) window.location.replace(search.returnTo);
+        else void navigate({ to: "/" });
+      },
+      reduced ? 0 : 300,
+    );
     return () => clearTimeout(timer);
-  }, [leaving, navigate, reduced]);
+  }, [leaving, navigate, reduced, search.returnTo]);
 
   const name = useNameStep({ finish, finished });
   const selfhost = useBookDemoStep();
@@ -432,19 +449,21 @@ function RouteComponent() {
     // The fade runs only after the completion is saved, so a failed save never fades a page the
     // person still needs, and navigation waits for the fade, so the next screen never pops in over
     // a half-faded onboarding.
-    <motion.div
-      animate={{ opacity: leaving ? 0 : 1 }}
-      className={`min-h-svh w-full ${leaving ? "pointer-events-none" : ""}`}
-      initial={false}
-      transition={{ duration: reduced ? 0 : 0.3, ease: "easeOut" }}
-    >
-      {waiting ? null : (
-        <OnboardingWizard
-          onMove={(to, way) => move(to, way)}
-          stepId={current}
-          steps={steps}
-        />
-      )}
-    </motion.div>
+    <AstryxSurface className="min-h-svh">
+      <motion.div
+        animate={{ opacity: leaving ? 0 : 1 }}
+        className={`min-h-svh w-full ${leaving ? "pointer-events-none" : ""}`}
+        initial={false}
+        transition={{ duration: reduced ? 0 : 0.3, ease: "easeOut" }}
+      >
+        {waiting ? null : (
+          <OnboardingWizard
+            onMove={(to, way) => move(to, way)}
+            stepId={current}
+            steps={steps}
+          />
+        )}
+      </motion.div>
+    </AstryxSurface>
   );
 }

@@ -742,7 +742,10 @@ describe("with product telemetry off, no context is sent", () => {
       { threadId: "thread-off", runId: "run-off", askId: "ask-off" },
       { custom: "kept", [ANALYTICS]: { app_context_version: 1 } },
     );
-    expect(forwardedProps).toEqual({ custom: "kept" });
+    expect(forwardedProps).toEqual({
+      custom: "kept",
+      openbotAuditRunProof: expect.any(String),
+    });
   });
 
   test("a headless turn locks without one", async () => {

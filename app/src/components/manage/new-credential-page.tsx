@@ -1,7 +1,12 @@
+import { TextInput } from "@astryxdesign/core/TextInput";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { PageCard, PageShell } from "@/components/layout/page-shell";
+import type { ComponentProps } from "react";
+import { DeviceAction } from "@/components/astryx-pilot/device-action";
+import { DevicePage } from "@/components/astryx-pilot/device-page";
+import { astryxScope } from "@/components/astryx-pilot/theme";
+import { PageCard } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -10,7 +15,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import type { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -32,6 +37,42 @@ import { useManagePaths } from "@/lib/manage-paths";
 
 /** Without `items` the trigger draws the raw value, so the type read "model" in lower case. */
 const KIND_LABEL = { model: "Model", connector: "Connector" } as const;
+
+function CredentialInput({
+  label,
+  description,
+  ...props
+}: Pick<
+  ComponentProps<typeof Input>,
+  | "aria-describedby"
+  | "aria-invalid"
+  | "autoComplete"
+  | "id"
+  | "name"
+  | "onBlur"
+  | "onChange"
+  | "placeholder"
+> & {
+  label: string;
+  description?: string;
+  type?: "password";
+  value: string;
+}) {
+  const { name, onChange, type, value, ...input } = props;
+  return (
+    <TextInput
+      {...input}
+      description={description}
+      htmlName={name}
+      label={label}
+      onChange={(_, event) => onChange?.(event)}
+      status={props["aria-invalid"] ? { type: "error" } : undefined}
+      type={type}
+      value={value}
+      width="100%"
+    />
+  );
+}
 
 /**
  * Adding a credential, on a screen of its own rather than in a dialog over the list.
@@ -63,13 +104,18 @@ export function NewCredentialPage() {
     defaultValues,
     validators: { onSubmit: credentialFormSchema },
     onSubmit: async ({ value }) => {
-      await createCredential.mutateAsync({ ...value, metadata: {} });
+      try {
+        await createCredential.mutateAsync({ ...value, metadata: {} });
+      } catch {
+        // The mutation renders a safe error below. Don't navigate away from the form.
+        return;
+      }
       await navigate(paths.credentials());
     },
   });
 
   return (
-    <PageShell
+    <DevicePage
       backButton={back}
       description={`Save a credential for ${paths.deploymentName}. You won’t be able to view the secret after saving it.`}
       title="Add credential"
@@ -94,7 +140,7 @@ export function NewCredentialPage() {
                 selector={(state) => [state.canSubmit, state.isSubmitting]}
               >
                 {([canSubmit, isSubmitting]) => (
-                  <Button
+                  <DeviceAction
                     disabled={
                       !canSubmit || isSubmitting || createCredential.isPending
                     }
@@ -103,7 +149,7 @@ export function NewCredentialPage() {
                     {isSubmitting || createCredential.isPending
                       ? "Saving…"
                       : "Save credential"}
-                  </Button>
+                  </DeviceAction>
                 )}
               </form.Subscribe>
             </>
@@ -128,13 +174,16 @@ export function NewCredentialPage() {
                       value={field.state.value}
                     >
                       <SelectTrigger
+                        aria-describedby={
+                          isInvalid ? `${field.name}-error` : undefined
+                        }
                         aria-invalid={isInvalid}
                         className="w-full"
                         id={field.name}
                       >
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent {...astryxScope}>
                         <SelectGroup>
                           <SelectItem value="model">Model</SelectItem>
                           <SelectItem value="connector">Connector</SelectItem>
@@ -142,7 +191,10 @@ export function NewCredentialPage() {
                       </SelectContent>
                     </Select>
                     {isInvalid ? (
-                      <FieldError errors={field.state.meta.errors} />
+                      <FieldError
+                        id={`${field.name}-error`}
+                        errors={field.state.meta.errors}
+                      />
                     ) : null}
                   </Field>
                 );
@@ -154,8 +206,11 @@ export function NewCredentialPage() {
                   field.state.meta.isTouched && !field.state.meta.isValid;
                 return (
                   <Field data-invalid={isInvalid}>
-                    <FieldLabel htmlFor={field.name}>Provider</FieldLabel>
-                    <Input
+                    <CredentialInput
+                      label="Provider"
+                      aria-describedby={
+                        isInvalid ? `${field.name}-error` : undefined
+                      }
                       aria-invalid={isInvalid}
                       id={field.name}
                       name={field.name}
@@ -167,7 +222,10 @@ export function NewCredentialPage() {
                       value={field.state.value}
                     />
                     {isInvalid ? (
-                      <FieldError errors={field.state.meta.errors} />
+                      <FieldError
+                        id={`${field.name}-error`}
+                        errors={field.state.meta.errors}
+                      />
                     ) : null}
                   </Field>
                 );
@@ -179,11 +237,12 @@ export function NewCredentialPage() {
                   field.state.meta.isTouched && !field.state.meta.isValid;
                 return (
                   <Field data-invalid={isInvalid}>
-                    <FieldLabel htmlFor={field.name}>Key ID</FieldLabel>
-                    <FieldDescription>
-                      Tells this key apart from others for the same provider.
-                    </FieldDescription>
-                    <Input
+                    <CredentialInput
+                      label="Key ID"
+                      description="Tells this key apart from others for the same provider."
+                      aria-describedby={
+                        isInvalid ? `${field.name}-error` : undefined
+                      }
                       aria-invalid={isInvalid}
                       id={field.name}
                       name={field.name}
@@ -195,7 +254,10 @@ export function NewCredentialPage() {
                       value={field.state.value}
                     />
                     {isInvalid ? (
-                      <FieldError errors={field.state.meta.errors} />
+                      <FieldError
+                        id={`${field.name}-error`}
+                        errors={field.state.meta.errors}
+                      />
                     ) : null}
                   </Field>
                 );
@@ -207,8 +269,11 @@ export function NewCredentialPage() {
                   field.state.meta.isTouched && !field.state.meta.isValid;
                 return (
                   <Field data-invalid={isInvalid}>
-                    <FieldLabel htmlFor={field.name}>Secret</FieldLabel>
-                    <Input
+                    <CredentialInput
+                      label="Secret"
+                      aria-describedby={
+                        isInvalid ? `${field.name}-error` : undefined
+                      }
                       aria-invalid={isInvalid}
                       autoComplete="off"
                       id={field.name}
@@ -221,7 +286,10 @@ export function NewCredentialPage() {
                       value={field.state.value}
                     />
                     {isInvalid ? (
-                      <FieldError errors={field.state.meta.errors} />
+                      <FieldError
+                        id={`${field.name}-error`}
+                        errors={field.state.meta.errors}
+                      />
                     ) : null}
                   </Field>
                 );
@@ -260,7 +328,7 @@ export function NewCredentialPage() {
           ) : null}
         </PageCard>
       </form>
-    </PageShell>
+    </DevicePage>
   );
 }
 

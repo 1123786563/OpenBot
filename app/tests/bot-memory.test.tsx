@@ -1,6 +1,12 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
@@ -111,8 +117,14 @@ function draw(node: ReactNode) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  const router = createRouter({
+    routeTree: createRootRoute({ component: () => node }),
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
   return render(
-    <QueryClientProvider client={client}>{node}</QueryClientProvider>,
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
   );
 }
 

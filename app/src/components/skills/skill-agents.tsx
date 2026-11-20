@@ -48,6 +48,7 @@ export function SkillAgents({
               const on = held.has(agent.id);
               return (
                 <Button
+                  aria-pressed={on}
                   disabled={grant.isPending}
                   key={agent.id}
                   onClick={() => toggle(agent.id, on)}

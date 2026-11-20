@@ -108,6 +108,11 @@ spec:
               protocol: TCP
           env:
 {{ include "openbot.databaseUrlEnv" . | indent 12 }}
+{{ include "openbot.auditExportEnv" . | indent 12 }}
+            {{- with .Values.config.openObserveUrl }}
+            - name: OPENBOT_OPENOBSERVE_URL
+              value: {{ . | quote }}
+            {{- end }}
 {{ include "openbot.commonEnv" . | indent 12 }}
             {{- /* The server's alone, not commonEnv's: only the API creates Learning containers. */}}
             {{- with (include "openbot.learningServiceTokenEnv" . | trim) }}

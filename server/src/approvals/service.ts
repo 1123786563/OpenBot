@@ -14,6 +14,7 @@ import {
 } from "@openbot/shared/approval-outcomes";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { PERSON_INITIATOR } from "../audit";
+import { productRunForwardedProps } from "../telemetry/product";
 import {
   decideAction,
   effectiveHostCommandPolicy,
@@ -22,9 +23,9 @@ import {
 } from "./policy";
 import type { ApprovalQuestions } from "./questions";
 import {
+  APPROVAL_DECISIONS,
   type ApprovalAction,
   ApprovalAlreadyAnsweredError,
-  APPROVAL_DECISIONS,
   type ApprovalCandidate,
   type ApprovalContinuation,
   type ApprovalConversationGrant,
@@ -228,6 +229,7 @@ export function createApprovalService(
         ...(continuation?.initiator
           ? { initiator: continuation.initiator }
           : {}),
+        continuation,
         ...callOf(continuation),
       });
     return outcome;
@@ -246,6 +248,11 @@ export function createApprovalService(
         );
       const snapshot = parseApprovalContinuation(input);
       snapshot.initiator = PERSON_INITIATOR;
+      // Frontend snapshots come from the browser, which cannot supply server telemetry.
+      snapshot.forwardedProps = productRunForwardedProps(
+        snapshot.forwardedProps,
+        undefined,
+      );
       if (!snapshot.toolName.startsWith("computer_"))
         throw new ApprovalRefusedError(
           "That tool cannot be called through this computer request.",
@@ -370,6 +377,7 @@ export function createApprovalService(
             ...(continuation.initiator
               ? { initiator: continuation.initiator }
               : {}),
+            continuation,
             ...callOf(continuation),
           });
           throw new ApprovalRefusedError(DECLINED_BY_PERSON);

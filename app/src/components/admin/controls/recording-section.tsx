@@ -56,13 +56,13 @@ export function RecordingSection() {
                 <ItemTitle>OpenTelemetry export</ItemTitle>
                 <ItemDescription>
                   {data.otel.configured
-                    ? "Exporting over OTLP/HTTP."
-                    : "Not set up. Set OTEL_EXPORTER_OTLP_ENDPOINT on the server."}
+                    ? "Configured for OTLP/HTTP."
+                    : "Requires a deployment ID, an OTLP endpoint, and export enabled on the server."}
                 </ItemDescription>
               </ItemContent>
               <ItemActions>
                 <span className="text-muted-foreground text-sm">
-                  {data.otel.configured ? "On" : "Off"}
+                  {data.otel.configured ? "Configured" : "Off"}
                 </span>
               </ItemActions>
             </Item>

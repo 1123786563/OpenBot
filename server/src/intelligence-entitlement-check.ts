@@ -5,6 +5,7 @@ import {
   transientStatus,
 } from "./intelligence-startup";
 import type { RuntimeEntitlementResponse } from "./self-host-banner";
+import { writeRuntimeLog } from "./telemetry/runtime-log";
 
 /**
  * Whether Intelligence will let this deployment use what it is licensed for, said once at boot.
@@ -78,7 +79,7 @@ export function entitlementWarning(
 /** What one read found: Intelligence's answer, or why there was none and whether that may pass. */
 type Read =
   | { kind: "answer"; response: RuntimeEntitlementResponse }
-  | { kind: "failed"; reason: string; status?: number; transient: boolean };
+  | { kind: "failed"; error: unknown; status?: number; transient: boolean };
 
 /**
  * A failed read. The runtime client's errors carry the HTTP status and whether it may pass
@@ -94,7 +95,7 @@ function failed(error: unknown): Read {
   const code = typeof status === "number" ? status : undefined;
   return {
     kind: "failed",
-    reason: error instanceof Error ? error.message : String(error),
+    error,
     ...(code !== undefined ? { status: code } : {}),
     transient:
       typeof retryable === "boolean"
@@ -128,8 +129,7 @@ export async function reportIntelligenceEntitlement(
     note?: (message: string) => void;
   } & StartupClock,
 ): Promise<void> {
-  const log = options.log ?? ((message: string) => console.warn(message));
-  const note = options.note ?? ((message: string) => console.info(message));
+  const { log, note } = options;
   const { sleep, now } = options;
   const windowMs = options.windowMs ?? INTELLIGENCE_STARTUP_WINDOW_MS;
   const minutes = Math.round(windowMs / 60_000);
@@ -158,19 +158,41 @@ export async function reportIntelligenceEntitlement(
         windowMs,
         ...(sleep ? { sleep } : {}),
         ...(now ? { now } : {}),
-        onWaiting: (answer) =>
+        onWaiting: (answer) => {
+          if (!note) {
+            writeRuntimeLog("intelligence_entitlement_waiting", {
+              wait_window_ms: windowMs,
+            });
+            return;
+          }
           note(
             JSON.stringify({
               type: "intelligence-entitlement-waiting",
-              ...(answer.kind === "failed" ? { reason: answer.reason } : {}),
+              ...(answer.kind === "failed"
+                ? { reason: reasonOf(answer.error) }
+                : {}),
               message: `Waiting for Intelligence to finish starting. OpenBot asks again for up to ${minutes} minutes before reporting it.`,
             }),
-          ),
+          );
+        },
       },
     );
     if (found.kind === "answer") {
       const warning = entitlementWarning(found.response);
-      if (warning) log(JSON.stringify(warning));
+      if (!warning) return;
+      if (log) log(JSON.stringify(warning));
+      else
+        writeRuntimeLog(
+          warning.code === "RUNTIME_ENTITLEMENTS_SELF_HOSTED_EXPIRED"
+            ? "intelligence_entitlement_expired"
+            : "intelligence_entitlement_not_ready",
+        );
+      return;
+    }
+    if (!log) {
+      writeRuntimeLog("intelligence_entitlement_unreadable", {
+        http_status: found.status,
+      });
       return;
     }
     log(
@@ -178,18 +200,23 @@ export async function reportIntelligenceEntitlement(
         type: "intelligence-entitlement-unreadable",
         reason: refused(found)
           ? `Intelligence refused this deployment's INTELLIGENCE_API_KEY (HTTP ${found.status}).`
-          : found.reason,
+          : reasonOf(found.error),
         ...(found.status !== undefined ? { status: found.status } : {}),
         ...(seenStarting ? { waitedMinutes: minutes } : {}),
       }),
     );
   } catch (error) {
-    // Only a logger or the clock can throw here, and the boot check still never takes the server down.
-    log(
-      JSON.stringify({
-        type: "intelligence-entitlement-unreadable",
-        reason: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    if (!log) writeRuntimeLog("intelligence_entitlement_unreadable");
+    else
+      log(
+        JSON.stringify({
+          type: "intelligence-entitlement-unreadable",
+          reason: reasonOf(error),
+        }),
+      );
   }
+}
+
+function reasonOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

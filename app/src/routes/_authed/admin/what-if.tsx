@@ -9,11 +9,10 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
 import {
-  PageCard,
-  PageSection,
-  PageShell,
-} from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
+  GovernanceAction,
+  GovernancePage,
+} from "@/components/astryx-pilot/governance";
+import { PageCard, PageSection } from "@/components/layout/page-shell";
 import {
   InputGroup,
   InputGroupAddon,
@@ -125,7 +124,7 @@ function WhatIfPage() {
   };
 
   return (
-    <PageShell
+    <GovernancePage
       description="Ask what OpenBot would do if a Bot took an action. Every control answers in the order OpenBot checks them, and you see which one decides."
       title="What would happen"
     >
@@ -193,13 +192,12 @@ function WhatIfPage() {
         <PageCard
           className="mt-4"
           footer={
-            <Button
+            <GovernanceAction
+              label={checking ? "Checking…" : "Check"}
               disabled={Boolean(missing) || checking}
               onClick={() => void check()}
               type="button"
-            >
-              {checking ? "Checking…" : "Check"}
-            </Button>
+            />
           }
         >
           {vocabulary.isError ? (
@@ -237,6 +235,6 @@ function WhatIfPage() {
           <WhatIfResultView result={checked.result} />
         </PageSection>
       ) : null}
-    </PageShell>
+    </GovernancePage>
   );
 }
