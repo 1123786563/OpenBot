@@ -1,5 +1,3 @@
-import { MCPMock } from "@copilotkit/aimock/mcp";
-import { createComputerTransport } from "../src/computer/client";
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { type AbstractAgent, HttpAgent } from "@ag-ui/client";
@@ -9,21 +7,21 @@ import {
   type RunStartedEvent,
 } from "@ag-ui/core";
 import { LLMock } from "@copilotkit/aimock";
+import { MCPMock } from "@copilotkit/aimock/mcp";
 import type { HeadlessTool } from "@openbot/toolkit/headless-tools";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { and, eq, inArray } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
-import { z } from "zod";
-import { mintRunAssertion } from "../src/agents/callback-token";
-import { createApp } from "../src/app";
-import { loadConfig } from "../src/config";
 import { Observable, of } from "rxjs";
+import { z } from "zod";
 import {
   frontendApprovalSnapshot,
   observeApprovalAgent,
 } from "../../app/src/lib/copilot/approval-context";
 import { createActorAgentResolver } from "../src/agents/agent-resolver";
+import { mintRunAssertion } from "../src/agents/callback-token";
 import { createAgentProfileStore } from "../src/agents/profile-store";
+import { createApp } from "../src/app";
 import { createApprovedActionExecutor } from "../src/approvals/execute";
 import { createApprovalResumeTick } from "../src/approvals/resume-sweep";
 import { createApprovalRoutes } from "../src/approvals/routes";
@@ -33,6 +31,8 @@ import { withApprovalContext } from "../src/approvals/types";
 import { createServerApprovalService } from "../src/approvals/wiring";
 import { createAuditStore, PERSON_INITIATOR } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
+import { createComputerTransport } from "../src/computer/client";
+import { loadConfig } from "../src/config";
 import {
   ASKED_RUN,
   buildAgents,
@@ -791,7 +791,12 @@ test("a browser computer approval carries on with the market version that emitte
       selectionForActor: () => ({
         loadSkills: (botId) => grantedSkills({ store, botId }),
         registerMarketRun: (scope, version, snapshot) =>
-          store.registerMarketRun({ ...scope, actorId: owner }, version, undefined, snapshot),
+          store.registerMarketRun(
+            { ...scope, actorId: owner },
+            version,
+            undefined,
+            snapshot,
+          ),
         choose: async () => null,
       }),
     });

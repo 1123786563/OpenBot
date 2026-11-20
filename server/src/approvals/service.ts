@@ -1,4 +1,3 @@
-import { MarketRunPaused } from "../skill-market/disablements";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -15,6 +14,7 @@ import {
 } from "@openbot/shared/approval-outcomes";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { PERSON_INITIATOR } from "../audit";
+import { MarketRunPaused } from "../skill-market/disablements";
 import { productRunForwardedProps } from "../telemetry/product";
 import {
   decideAction,

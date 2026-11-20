@@ -1,11 +1,11 @@
-import {
-  type MarketDispatch,
-  MarketRunPaused,
-} from "../skill-market/disablements";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { cutAtCodeUnits } from "../channels/text";
+import {
+  type MarketDispatch,
+  MarketRunPaused,
+} from "../skill-market/disablements";
 import { transientFailure } from "./transient";
 
 /**

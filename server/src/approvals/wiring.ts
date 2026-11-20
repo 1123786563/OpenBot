@@ -1,10 +1,3 @@
-import {
-  MarketRunPaused,
-  marketRunForComputerCall,
-  marketDispatchFor,
-  withMarketDispatch,
-  marketRunPauseReason,
-} from "../skill-market/disablements";
 import { isDeepStrictEqual } from "node:util";
 import { approvalPhrase } from "@openbot/shared/tool-name";
 import type { HeadlessTool } from "@openbot/toolkit/headless-tools";
@@ -16,6 +9,13 @@ import { type AuditInitiator, PERSON_INITIATOR } from "../audit";
 import type { DeploymentConfig } from "../config";
 import type { Database } from "../db/client";
 import type { DeliveryScope } from "../delivery/types";
+import {
+  MarketRunPaused,
+  marketDispatchFor,
+  marketRunForComputerCall,
+  marketRunPauseReason,
+  withMarketDispatch,
+} from "../skill-market/disablements";
 import type { ReviewModel } from "./policy";
 import { createApprovalQuestions, type PersonQuestion } from "./questions";
 import { createApprovalService } from "./service";

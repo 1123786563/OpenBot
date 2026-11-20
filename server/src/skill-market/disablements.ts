@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
-  marketSkillSnapshotSchema,
   type MarketSkillSnapshot,
+  marketSkillSnapshotSchema,
 } from "@openbot/toolkit/continuation";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -200,12 +200,15 @@ export async function marketRunForComputerCall(
       "OpenBot could not verify which market skill run requested this computer action.",
     );
   const [run] = runs;
-  return run && {
-    ...run,
-    snapshot: run.snapshot === null
-      ? undefined
-      : marketSkillSnapshotSchema.parse(run.snapshot),
-  };
+  return (
+    run && {
+      ...run,
+      snapshot:
+        run.snapshot === null
+          ? undefined
+          : marketSkillSnapshotSchema.parse(run.snapshot),
+    }
+  );
 }
 
 export function marketVersionMethods(database: Database) {

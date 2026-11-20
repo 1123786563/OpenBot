@@ -1,9 +1,9 @@
-import { startMarketRequest } from "../skill-market/disablements";
 import { isLoopbackHost } from "@openbot/shared/this-machine";
 import {
   checkNavigationTarget,
   isNeverAllowedHostname,
 } from "../computer/target";
+import { startMarketRequest } from "../skill-market/disablements";
 import { isManagedEndpoint } from "./managed-endpoint";
 
 /**

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { AbstractAgent } from "@ag-ui/client";
 import {
   CopilotKitIntelligence,
@@ -8,13 +9,6 @@ import { isPersonBrowserId } from "@openbot/shared/openbot-browser";
 import { workOwner } from "@openbot/shared/work-owner";
 import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
 import { createTurnRunner as createToolkitTurnRunner } from "@openbot/toolkit/run-turn";
-import { AsyncLocalStorage } from "node:async_hooks";
-import {
-  marketDispatchFor,
-  withMarketDispatch,
-  MarketRunPaused,
-  type MarketRunScope,
-} from "./skill-market/disablements";
 import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { createActivityStore } from "./activity/activity";
@@ -344,6 +338,12 @@ import {
 import { createSelfHostBanner } from "./self-host-banner";
 import { createSetupSources, modelKeyOf } from "./setup/checklist";
 import { createComputerCheck } from "./setup/computer-check";
+import {
+  MarketRunPaused,
+  type MarketRunScope,
+  marketDispatchFor,
+  withMarketDispatch,
+} from "./skill-market/disablements";
 import { createTaskRunner } from "./tasks/runner";
 import { createTaskStore } from "./tasks/store";
 import { createTaskTurn } from "./tasks/turn";

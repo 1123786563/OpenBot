@@ -1,6 +1,6 @@
-import { startMarketRequest } from "../skill-market/disablements";
 import { PlanModel, type PlanModelConfig } from "../agents/plan-model";
 import type { RuntimeModel } from "../copilot";
+import { startMarketRequest } from "../skill-market/disablements";
 
 /**
  * One model call on the deployment's own model, for the router, the approval reviewer and the tool

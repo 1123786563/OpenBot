@@ -27,12 +27,11 @@ import {
 import type { BotAccessCheck } from "./agents/profile-policy";
 import type { AgentProfileStore } from "./agents/profile-store";
 import { createAgentRoutes } from "./agents/routes";
-import { createApprovalRoutes } from "./approvals/routes";
 import { createReviewerGuidanceRoutes } from "./approvals/reviewer-guidance";
+import { createApprovalRoutes } from "./approvals/routes";
 import { createApprovalRuleDraftRoutes } from "./approvals/rule-translate";
 import type { RuleVocabulary } from "./approvals/rule-vocabulary";
 import type { ApprovalService } from "./approvals/service";
-import { type AuditVocabulary, createAuditAskRoutes } from "./audit-ask";
 import {
   type AuditEvent,
   type AuditEventType,
@@ -46,6 +45,7 @@ import {
   readAuditExportRows,
   recordAuditEvent,
 } from "./audit";
+import { type AuditVocabulary, createAuditAskRoutes } from "./audit-ask";
 import { createDevRequireUser } from "./auth/dev-actor";
 import {
   type AppVariables,
@@ -111,13 +111,13 @@ import type { IdentityStore } from "./identity/store";
 import { createIntelligenceClient } from "./intelligence-client";
 import { createCapturePassOrigin } from "./intelligence-gateway-proxy";
 import {
-  createLearningRoutes,
-  type LearningAdminDependencies,
-} from "./learning/routes";
-import {
   type LearningModelEndpoint,
   mountLearningModelEndpoint,
 } from "./learning/model-endpoint";
+import {
+  createLearningRoutes,
+  type LearningAdminDependencies,
+} from "./learning/routes";
 import {
   createPersonalLearningRoutes,
   type PersonalLearningRouteDeps,

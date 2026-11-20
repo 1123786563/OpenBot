@@ -1,8 +1,8 @@
+import type { HandoffRequest } from "@openbot/shared/computer-control";
 import {
   MarketRunPaused,
   startMarketRequest,
 } from "../skill-market/disablements";
-import type { HandoffRequest } from "@openbot/shared/computer-control";
 import type { NavigateResult } from "./schema";
 import { checkNavigationTarget } from "./target";
 

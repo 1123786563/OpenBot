@@ -1,9 +1,9 @@
+import { cutAtCodeUnits } from "../channels/text";
+import { appsPage } from "../edition";
 import {
   type MarketDispatch,
   MarketRunPaused,
 } from "../skill-market/disablements";
-import { cutAtCodeUnits } from "../channels/text";
-import { appsPage } from "../edition";
 import { MAX_RESULT_CHARS, type McpCallResult, type McpTool } from "./mcp";
 
 /**

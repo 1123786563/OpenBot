@@ -1,5 +1,3 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createOpenAI } from "@ai-sdk/openai";
 import type { Message, RunAgentInput } from "@ag-ui/client";
 import {
   AbstractAgent,
@@ -7,6 +5,8 @@ import {
   EventType,
   HttpAgent,
 } from "@ag-ui/client";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import type {
   BuiltInAgentConfiguration,
   CopilotRuntimeHooks,
@@ -158,15 +158,6 @@ import {
   type PickedSkillAdmission,
   PickedSkillRefusal,
 } from "./plugins/picked-skill";
-import {
-  type MarketDispatch,
-  type MarketRunControl,
-  startMarketRequest,
-  withMarketDispatch,
-  MarketRunPaused,
-  type MarketRunScope,
-  type MarketVersionIdentity,
-} from "./skill-market/disablements";
 import { refFromToolName } from "./plugins/plugin-store/model";
 import { appCallsOfRun, withAppCallsOf } from "./plugins/run-calls";
 import type { SelectableSkill, Selection } from "./plugins/selection";
@@ -181,6 +172,15 @@ import {
   holdsWebSearch,
 } from "./plugins/tools";
 import { corsOrigin } from "./request-trust";
+import {
+  type MarketDispatch,
+  type MarketRunControl,
+  MarketRunPaused,
+  type MarketRunScope,
+  type MarketVersionIdentity,
+  startMarketRequest,
+  withMarketDispatch,
+} from "./skill-market/disablements";
 import type { ProductTelemetry } from "./telemetry/product";
 import { productRuntimeHook } from "./telemetry/product-boundaries";
 import { inlineToolImages } from "./tool-images";
