@@ -108,15 +108,17 @@ def probe(monkeypatch, request):
         ]
         if not seen.get("omit_usage"):
             prompt_tokens, completion_tokens = seen.get("usage", (12, 4))
+            usage = {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            }
+            usage.pop(seen.get("omit_usage_field"), None)
             parts.append(
                 {
                     **parts[0],
                     "choices": [],
-                    "usage": {
-                        "prompt_tokens": prompt_tokens,
-                        "completion_tokens": completion_tokens,
-                        "total_tokens": prompt_tokens + completion_tokens,
-                    },
+                    "usage": usage,
                 }
             )
         if seen.get("hold_stream"):
@@ -185,8 +187,10 @@ def events(response):
     indirect=["probe"],
 )
 async def test_streams_pinned_bounded_request_through_managed_harness(
-    probe, expected_model
+    probe, expected_model, monkeypatch
 ):
+    for name in ("OPENAI_API_KEY", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID"):
+        monkeypatch.setenv(name, "synthetic-ordinary-provider")
     app, seen = probe
     data = probe_input()
     result = events(await agui(app, data))
@@ -199,6 +203,9 @@ async def test_streams_pinned_bounded_request_through_managed_harness(
     assert meter.content == gateway.content
     assert meter.headers["authorization"] == "Bearer synthetic-meter"
     assert gateway.headers["authorization"] == "Bearer synthetic-gateway"
+    for header in ("openai-organization", "openai-project"):
+        assert header not in gateway.headers
+        assert header not in meter.headers
     assert meter.headers["x-openbot-bifrost-metering-revision"] == "meter-fixture"
     assert gateway.headers["x-openbot-operation-id"] == data["runId"]
     assert json.loads(gateway.content) == {
@@ -254,12 +261,20 @@ async def test_gateway_failure_makes_one_attempt(probe, gateway_status):
 async def test_only_operator_can_reach_probe_and_product_route_is_absent(
     probe, monkeypatch
 ):
+    from src.main import app as product_app
+
     app, seen = probe
     monkeypatch.setenv("MANAGED_AGENT_TOKEN", "regular-managed-agent")
     assert (
         await agui(app, probe_input(), token="regular-managed-agent")
     ).status_code == 401
     assert (await agui(app, probe_input(), path="/")).status_code == 404
+    assert (
+        await agui(product_app, probe_input(), token="regular-managed-agent")
+    ).status_code == 404
+    assert (
+        await agui(product_app, probe_input(), path="/")
+    ).status_code == 401
     assert not seen["gateway"]
 
 
@@ -348,7 +363,14 @@ async def test_agui_disconnect_closes_inflight_gateway_stream(probe):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "override",
-    [{"omit_usage": True}, {"usage": (12, 5)}, {"count": 11}],
+    [
+        {"omit_usage": True},
+        {"omit_usage_field": "completion_tokens"},
+        {"omit_usage_field": "prompt_tokens"},
+        {"omit_usage_field": "total_tokens"},
+        {"usage": (12, 5)},
+        {"count": 11},
+    ],
 )
 async def test_reports_error_if_gateway_usage_cannot_confirm_bounds(probe, override):
     app, seen = probe

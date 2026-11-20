@@ -78,6 +78,29 @@ class ProbeRequest:
 
 
 _request: ContextVar[ProbeRequest] = ContextVar("bifrost_probe_request")
+UNVERIFIED_USAGE = "Bifrost probe gateway usage could not confirm the token bounds."
+
+
+class ProbeChatOpenAI(ChatOpenAI):
+    def _convert_chunk_to_generation_chunk(
+        self, chunk, default_chunk_class, base_generation_info
+    ):
+        # LangChain fills missing usage fields with zero during conversion.
+        if (usage := chunk.get("usage")) is not None:
+            input_tokens = usage.get("prompt_tokens")
+            output_tokens = usage.get("completion_tokens")
+            total_tokens = usage.get("total_tokens")
+            if (
+                any(
+                    type(count) is not int or count < 0
+                    for count in (input_tokens, output_tokens, total_tokens)
+                )
+                or total_tokens != input_tokens + output_tokens
+            ):
+                raise RunRefused(UNVERIFIED_USAGE)
+        return super()._convert_chunk_to_generation_chunk(
+            chunk, default_chunk_class, base_generation_info
+        )
 
 
 def endpoint(value: str) -> httpx.URL:
@@ -197,6 +220,9 @@ def create_app() -> FastAPI:
 
         async def meter_before_send(request: httpx.Request):
             nonlocal refusal, input_upper_bound
+            # The SDK can inherit these routing headers from an ordinary OpenAI deployment.
+            request.headers.pop("openai-organization", None)
+            request.headers.pop("openai-project", None)
             # Check the exact SDK request. A change of API, redirect, or alternate request
             # parameters cannot turn the metering hook into an unbounded dispatch.
             body = json.loads(request.content)
@@ -266,7 +292,7 @@ def create_app() -> FastAPI:
             event_hooks={"request": [meter_before_send]},
         ) as gateway:
             try:
-                model = ChatOpenAI(
+                model = ProbeChatOpenAI(
                     model=model_id,
                     base_url=str(base_url),
                     api_key=gateway_token,
@@ -281,6 +307,8 @@ def create_app() -> FastAPI:
                     default_headers={"x-openbot-operation-id": run_id},
                 )
                 reply = await bind_tools(model).ainvoke(messages)
+            except RunRefused:
+                raise
             except Exception:  # noqa: BLE001 - SDK errors may include upstream response bodies.
                 # The SDK also wraps request-hook failures.
                 raise RunRefused(
@@ -294,9 +322,7 @@ def create_app() -> FastAPI:
             or not 0 <= usage["input_tokens"] <= input_upper_bound
             or not 0 <= usage["output_tokens"] <= route.max_output_tokens
         ):
-            raise RunRefused(
-                "Bifrost probe gateway usage could not confirm the token bounds."
-            )
+            raise RunRefused(UNVERIFIED_USAGE)
         return {"messages": [reply]}
 
     app = FastAPI(
