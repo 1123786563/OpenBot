@@ -104,6 +104,7 @@ import {
   loadAttachmentForTurn,
   markAttachmentsSent,
 } from "./channels/attachments";
+import type { DirectChatReflect } from "./channels/direct-chat";
 import { expireDirectChatEvents } from "./channels/direct-chat-replay";
 import {
   createChannelEventHub,
@@ -235,9 +236,14 @@ import {
   createLearningSharingStore,
   createOpenSkillIndex,
 } from "./learning/sharing";
+import { createManagedModel } from "./managed-model";
 import { createMemoryDefaults } from "./memory/defaults";
 import { createHindsight } from "./memory/hindsight";
 import { createMemoryIngestion } from "./memory/ingestion";
+import {
+  createReflectModelGateway,
+  REFLECT_MODEL_CALLBACK_PATH,
+} from "./memory/reflect-model";
 import { createMemoryRuntime } from "./memory/runtime";
 import { createMemoryStore } from "./memory/store";
 import { offeredMemoryTools } from "./memory/tools";
@@ -1747,9 +1753,22 @@ const autoApproveTimer =
     ? setInterval(sweepAutoApprovals, 15 * 60_000)
     : undefined;
 autoApproveTimer?.unref();
+const reflectGateway =
+  config.hindsightReflectToken && config.managedModelTrial
+    ? createReflectModelGateway({
+        model: createManagedModel(config.managedModelTrial),
+        route: config.managedModelTrial.route,
+        token: config.hindsightReflectToken,
+      })
+    : undefined;
 const memoryIngestion = createMemoryIngestion({
   hindsight: config.hindsight && {
-    client: createHindsight({ database, ...config.hindsight }),
+    client: createHindsight({
+      database,
+      ...config.hindsight,
+      ...(reflectGateway ? { reflectTimeoutMs: 180_000 } : {}),
+    }),
+    exposeNativeReflect: config.hindsight.reflect && !reflectGateway,
     canUseMemory: async (owner) => {
       if (config.singleUser) return true;
       const person = await peopleStore.find(owner);
@@ -1762,6 +1781,34 @@ const memoryIngestion = createMemoryIngestion({
     (await pluginStore.agentOwner(bot)) === owner ||
     (await agentProfileStore.get(await actorFor(owner), bot)) !== null,
 });
+const directChatReflect: DirectChatReflect | undefined =
+  config.hindsight?.reflect && editionHasMemory(config.edition)
+    ? async ({ query, canContinue, ...scope }) => {
+        const result = await memoryIngestion.reflect(
+          scope.personId,
+          scope.botId,
+          query,
+          reflectGateway &&
+            ((request, authorized) =>
+              reflectGateway.reflect({
+                query,
+                scope,
+                request,
+                canDispatch: async () =>
+                  (await canContinue()) && (await authorized()),
+              })),
+        );
+        if (result.kind === "reflection") {
+          const sources = result.sources.map(
+            ({ id, version }) => `- \`${id}\` (\`${version}\`)`,
+          );
+          return `${result.text}\n\nMemory sources\n\n${sources.join("\n")}`;
+        }
+        return result.memories.length
+          ? `Local memory search\n\n${result.memories.map(({ content }) => content).join("\n\n")}`
+          : "No matching personal memories.";
+      }
+    : undefined;
 /** Team Bots: published Bots, their audiences, and teammates' consent to their own accounts. */
 const teamBots = createTeamBots({
   database,
@@ -2314,7 +2361,11 @@ const copilotRuntime = mountCopilotRuntime(
   identifyUser,
   identifyActor,
   {
-    directChat: { database, profiles: agentProfileStore },
+    directChat: {
+      database,
+      profiles: agentProfileStore,
+      reflect: directChatReflect,
+    },
     productTelemetry,
     decisionWaits: createDecisionWaits(database),
     onRunBusy: (input) => {
@@ -3405,6 +3456,11 @@ const app = createApp(
   identityGithubCallback,
   profileStore,
 );
+if (reflectGateway) {
+  app.post(REFLECT_MODEL_CALLBACK_PATH, (context) =>
+    reflectGateway.complete(context.req.raw),
+  );
+}
 
 startHttpServer({
   port,

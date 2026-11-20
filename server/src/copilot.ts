@@ -100,7 +100,10 @@ import {
   resolveAttachmentParts,
   type StoredAttachment,
 } from "./channels/attachment-parts";
-import { createDirectChatRoutes } from "./channels/direct-chat";
+import {
+  createDirectChatRoutes,
+  type DirectChatReflect,
+} from "./channels/direct-chat";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { DeploymentConfig } from "./config";
 import type { Database } from "./db/client";
@@ -3031,6 +3034,7 @@ export function mountCopilotRuntime(
     directChat?: {
       database: Database;
       profiles: AgentProfileStore;
+      reflect?: DirectChatReflect;
       learningClock?: () => Date;
     };
     /**

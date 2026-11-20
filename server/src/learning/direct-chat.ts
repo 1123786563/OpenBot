@@ -21,6 +21,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 import type { ProfileReadExecutor } from "../agents/profile-store";
+import { reflectCommandPrefix } from "../channels/direct-chat-command";
 import type { Database } from "../db/client";
 import {
   directChatAnalyses as analyses,
@@ -105,6 +106,7 @@ async function evidence(
       and(
         eq(runs.threadId, threadId),
         eq(runs.status, "completed"),
+        sql`${runs.prompt} !~ ${reflectCommandPrefix.source}`,
         evidenceAfter ? gt(runs.startedAt, evidenceAfter) : undefined,
         isNotNull(runs.assistantMessageId),
         sql`length(btrim(${runs.reply})) > 0`,

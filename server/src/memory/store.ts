@@ -359,7 +359,19 @@ export function createMemoryStore(
       .limit(narrow.hindsight ? 500 : 40);
   }
 
+  function retrieveLocal(
+    ownerUserId: string,
+    eligibleSourceIds: string[],
+    search: string,
+    formed?: { botId: string; heldSourceRefs: ReadonlySet<string> },
+  ) {
+    return eligibleRows(ownerUserId, eligibleSourceIds, formed, {
+      term: search.trim(),
+    });
+  }
+
   return {
+    retrieveLocal,
     async recallCandidates(
       ownerUserId: string,
       eligibleSourceIds: string[],
@@ -848,9 +860,12 @@ export function createMemoryStore(
       formed?: { botId: string; heldSourceRefs: ReadonlySet<string> },
     ): Promise<MemoryRecord[]> {
       const term = search.trim();
-      const local = await eligibleRows(ownerUserId, eligibleSourceIds, formed, {
+      const local = await retrieveLocal(
+        ownerUserId,
+        eligibleSourceIds,
         term,
-      });
+        formed,
+      );
       if (!intelligence) return local;
       if (term) {
         /*

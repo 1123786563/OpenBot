@@ -9,6 +9,7 @@ import {
 
 type MemoryRow = typeof personalMemories.$inferSelect;
 type Version = Pick<MemoryRow, "id" | "version">;
+type ReflectCandidate = Version & Pick<MemoryRow, "content">;
 
 const bank = (owner: string) =>
   `openbot-memory-${createHash("sha256").update(owner).digest("hex")}`;
@@ -22,28 +23,43 @@ const eligible = and(
 const checkIntervalMs = 60_000;
 const retirementGraceMs = 10 * checkIntervalMs;
 const rawTypes = ["world", "experience"] as const;
-const recallResponse = z.object({
-  results: z.array(
-    z.object({
-      document_id: z.string(),
-      metadata: z.object({ openbot_version: z.uuid() }),
-      type: z.enum(rawTypes),
-    }),
-  ),
+const rawEvidence = z.object({
+  document_id: z.string(),
+  metadata: z.object({ openbot_version: z.uuid() }),
+  type: z.enum(rawTypes),
+});
+const recallResponse = z.object({ results: z.array(rawEvidence) });
+const reflectResponse = z.object({
+  text: z.string().trim().min(1).max(16_384),
+  based_on: z.strictObject({
+    memories: z
+      .array(
+        rawEvidence.extend({
+          document_id: z.uuid(),
+          text: z.string().trim().min(1),
+        }),
+      )
+      .min(1),
+    mental_models: z.tuple([]),
+    directives: z.tuple([]),
+  }),
 });
 const successResponse = z.object({ success: z.literal(true) });
 
-export type HindsightConfig = { url: URL; apiKey?: string };
+export type HindsightConfig = { url: URL; apiKey?: string; reflect?: boolean };
 
 export function createHindsight({
   database,
   url,
   apiKey,
+  reflect = false,
   recallTimeoutMs = 750,
+  reflectTimeoutMs = 15_000,
   now = Date.now,
 }: HindsightConfig & {
   database: Database;
   recallTimeoutMs?: number;
+  reflectTimeoutMs?: number;
   now?: () => number;
 }) {
   async function request(
@@ -65,6 +81,54 @@ export function createHindsight({
   }
 
   return {
+    reflectEnabled: reflect,
+    async reflect(
+      owner: string,
+      query: string,
+      candidates: ReflectCandidate[],
+    ) {
+      if (!reflect || !candidates.length) return null;
+      try {
+        const response = await request(
+          owner,
+          "reflect",
+          {
+            method: "POST",
+            body: {
+              query,
+              fact_types: rawTypes,
+              exclude_mental_models: true,
+              include: { facts: {} },
+              budget: "low",
+              max_tokens: 1024,
+              tags: candidates.map(tag),
+              tags_match: "any_strict",
+            },
+          },
+          reflectTimeoutMs,
+        );
+        if (!response.ok) return null;
+        const parsed = reflectResponse.safeParse(await response.json());
+        if (!parsed.success) return null;
+        const allowed = new Map(
+          candidates.map((candidate) => [candidate.id, candidate]),
+        );
+        const sources = new Map<string, Version>();
+        for (const { document_id: id, metadata, text } of parsed.data.based_on
+          .memories) {
+          const candidate = allowed.get(id);
+          if (
+            candidate?.version !== metadata.openbot_version ||
+            !candidate.content.includes(text)
+          )
+            return null;
+          sources.set(id, { id, version: metadata.openbot_version });
+        }
+        return { text: parsed.data.text, sources: [...sources.values()] };
+      } catch {
+        return null;
+      }
+    },
     async recall(owner: string, query: string, candidates: Version[]) {
       if (!candidates.length) return [];
       try {

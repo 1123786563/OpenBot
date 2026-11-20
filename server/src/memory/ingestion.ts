@@ -184,6 +184,7 @@ export function createMemoryIngestion(options: {
   plugins: PluginStore;
   hindsight?: {
     client: Hindsight;
+    exposeNativeReflect?: boolean;
     canUseMemory: (ownerUserId: string) => Promise<boolean>;
   };
   /**
@@ -442,6 +443,65 @@ export function createMemoryIngestion(options: {
   }
 
   return {
+    reflectEnabled:
+      hindsight?.exposeNativeReflect ??
+      hindsight?.client.reflectEnabled ??
+      false,
+    async reflect(
+      ownerUserId: string,
+      botId: string,
+      query: string,
+      run?: (
+        request: (query: string) => ReturnType<Hindsight["reflect"]>,
+        authorized: () => Promise<boolean>,
+      ) => ReturnType<Hindsight["reflect"]>,
+    ) {
+      let scope = await recallScope(ownerUserId, botId);
+      const client = hindsight?.client;
+      if (scope && client?.reflectEnabled) {
+        const candidates = await store.recallCandidates(
+          ownerUserId,
+          scope.eligible,
+          scope.formed,
+        );
+        const authorized = async () => {
+          scope = await recallScope(ownerUserId, botId);
+          if (!scope) return false;
+          // The engine can read evidence while deciding which sources to cite.
+          const current = await store.recallCandidates(
+            ownerUserId,
+            scope.eligible,
+            scope.formed,
+            candidates.map(({ id }) => id),
+          );
+          const versions = new Map(
+            current.map(({ id, version }) => [id, version]),
+          );
+          return candidates.every(
+            ({ id, version }) => versions.get(id) === version,
+          );
+        };
+        const request = (text: string) =>
+          client.reflect(ownerUserId, text, candidates);
+        const reflection = run
+          ? await run(request, authorized)
+          : await request(query);
+        if ((await authorized()) && reflection) {
+          return { kind: "reflection" as const, ...reflection };
+        }
+      }
+      return {
+        kind: "local" as const,
+        memories: scope
+          ? await store.retrieveLocal(
+              ownerUserId,
+              scope.eligible,
+              query,
+              scope.formed,
+            )
+          : [],
+      };
+    },
     authorize,
     async createSource(ownerUserId: string, input: unknown) {
       const parsed = parseMemorySourceInput(input);

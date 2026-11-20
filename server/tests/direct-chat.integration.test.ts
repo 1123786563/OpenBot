@@ -19,6 +19,7 @@ import {
   createAttachmentRoutes,
   createChannelAttachmentRoutes,
 } from "../src/channels/attachments";
+import type { DirectChatReflect } from "../src/channels/direct-chat";
 import { expireDirectChatEvents } from "../src/channels/direct-chat-replay";
 import { createGroupStore } from "../src/channels/group";
 import {
@@ -136,6 +137,7 @@ function web(
     learningClock,
     prepare,
     authorized,
+    reflect,
   }: {
     deployment?: typeof config;
     opik?: typeof config.opik;
@@ -143,6 +145,7 @@ function web(
     learningClock?: () => Date;
     prepare?: () => Promise<void>;
     authorized?: () => boolean;
+    reflect?: DirectChatReflect;
   } = {},
 ) {
   const store = createAgentProfileStore(db, endpoint);
@@ -167,7 +170,7 @@ function web(
     async () => ({ id: actor.id, name: actor.id }),
     async () => (authorized?.() === false ? { id: "", role: "user" } : actor),
     {
-      directChat: { database: db, profiles: store, learningClock },
+      directChat: { database: db, profiles: store, reflect, learningClock },
     },
   );
   const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
@@ -1743,7 +1746,9 @@ async function exerciseLearning(scheduled: boolean) {
   const capture = async (input: RunAgentInput) => {
     runInputs.push(input);
   };
-  const aliceChat = web(database, alice, bot.id, capture);
+  const aliceChat = web(database, alice, bot.id, capture, {
+    reflect: async () => "Synthetic reflection.",
+  });
   const bobChat = web(database, bob, bot.id, capture);
   const aliceLearning = web(database, alice, bot.id, async () => {}, {
     deployment,
@@ -1767,6 +1772,7 @@ async function exerciseLearning(scheduled: boolean) {
     async function send(
       runId: string,
       prompt: string,
+      reply = "Offline answer.",
       threadId = channel.threadId,
     ) {
       const turn = await aliceChat.request(
@@ -1779,7 +1785,7 @@ async function exerciseLearning(scheduled: boolean) {
           ],
         }),
       );
-      expect(await turn.text()).toContain("Offline answer.");
+      expect(await turn.text()).toContain(reply);
     }
     const openedForBob = await bobChat.request(
       "/api/channels",
@@ -1797,6 +1803,11 @@ async function exerciseLearning(scheduled: boolean) {
         lastResult: null,
       },
     });
+    await send(
+      "manual-reflect",
+      "/reflect Which lanterns?",
+      "Synthetic reflection.",
+    );
     const empty = await aliceLearning.request(path, post({}));
     expect(await empty.json()).toMatchObject({
       latest: { state: "skipped", reason: "no_evidence", evidenceCount: 0 },
@@ -1981,6 +1992,11 @@ async function exerciseLearning(scheduled: boolean) {
         throw new Error(`Scheduled Learning did not reach ${state}.`);
       }
 
+      await send(
+        "scheduled-reflect",
+        "/reflect\u00a0Which lanterns?",
+        "Synthetic reflection.",
+      );
       await send("scheduled-source", "What should we automate?");
       await runWorker();
       expect(reservations).toHaveLength(4);
@@ -2384,6 +2400,7 @@ async function exerciseLearning(scheduled: boolean) {
       await send(
         "source-direct",
         "Check the address before packing.",
+        "Offline answer.",
         sourceChannel.threadId,
       );
       const directSource = { kind: "conversation", id: sourceChannel.id };
@@ -2570,3 +2587,89 @@ async function exerciseLearning(scheduled: boolean) {
     await database.delete(users).where(eq(users.id, bob.id));
   }
 }
+
+test("Web direct chat dispatches an explicit Reflect with the authenticated Run scope", async () => {
+  const owner = await person();
+  const bot = await profiles.create(owner, {
+    name: "Reflect fixture",
+    title: "Bot",
+    roleDescription: "Answers locally.",
+    visibility: "private",
+  });
+  const requests: Array<Omit<Parameters<DirectChatReflect>[0], "canContinue">> =
+    [];
+  const ordinaryTurns: RunAgentInput[] = [];
+  const app = web(
+    database,
+    owner,
+    bot.id,
+    async (input) => {
+      ordinaryTurns.push(input);
+    },
+    {
+      reflect: async ({ canContinue, ...input }) => {
+        expect(await canContinue()).toBe(true);
+        requests.push(input);
+        return "Synthetic reflection.";
+      },
+    },
+  );
+  let conversationId: string | undefined;
+  try {
+    const opened = await app.request(
+      "/api/channels",
+      post({ agentIds: [bot.id] }),
+    );
+    expect(opened.status).toBe(201);
+    const { channel } = await opened.json();
+    conversationId = channel.id;
+    const runId = crypto.randomUUID();
+    const payload = post({
+      threadId: channel.threadId,
+      runId,
+      messages: [
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          content: "/reflect Which lanterns?",
+        },
+      ],
+    });
+    const url = `/api/copilotkit/agent/${bot.id}/run`;
+    expect(await (await app.request(url, payload)).text()).toContain(
+      "Synthetic reflection.",
+    );
+    expect(await (await app.request(url, payload)).text()).toContain(
+      "Synthetic reflection.",
+    );
+    expect(requests).toEqual([
+      {
+        personId: owner.id,
+        botId: bot.id,
+        runId,
+        conversationId: channel.threadId,
+        query: "Which lanterns?",
+      },
+    ]);
+    expect(ordinaryTurns).toHaveLength(0);
+    const followup = post({
+      threadId: channel.threadId,
+      runId: crypto.randomUUID(),
+      messages: [
+        { id: crypto.randomUUID(), role: "user", content: "A normal question" },
+      ],
+    });
+    expect(await (await app.request(url, followup)).text()).toContain(
+      "Offline answer.",
+    );
+    expect(ordinaryTurns).toHaveLength(1);
+    expect(JSON.stringify(ordinaryTurns)).not.toContain(
+      "Synthetic reflection.",
+    );
+  } finally {
+    if (conversationId)
+      await database.delete(channels).where(eq(channels.id, conversationId));
+    await database.delete(agents).where(eq(agents.id, bot.id));
+    await database.delete(users).where(eq(users.id, owner.id));
+  }
+});

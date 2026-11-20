@@ -35,6 +35,7 @@ import {
 import { setSharedLearningPermission } from "../learning/evidence";
 import type { ManagedModel, ManagedModelResult } from "../managed-model";
 import { runFeedback, saveRunFeedback } from "../opik/feedback";
+import { reflectCommand } from "./direct-chat-command";
 
 import {
   appendDirectChatEvent,
@@ -83,10 +84,23 @@ const managedRunError: Record<
 const workerKey = ({ threadId, runId }: RunKey) =>
   JSON.stringify([threadId, runId]);
 
+export type DirectChatReflect = (input: {
+  query: string;
+  personId: string;
+  botId: string;
+  conversationId: string;
+  runId: string;
+  canContinue: () => Promise<boolean>;
+}) => Promise<string>;
+
 type Emit = (event: BaseEvent, cursor?: number) => void;
 
 function eventStream(
-  work: (emit: Emit, signal: AbortSignal) => Promise<void>,
+  work: (
+    emit: Emit,
+    signal: AbortSignal,
+    heartbeat: () => void,
+  ) => Promise<void>,
   key?: RunKey,
 ) {
   const encoder = new TextEncoder();
@@ -101,7 +115,9 @@ function eventStream(
           );
         }
       };
-      void work(emit, subscription.signal).then(
+      const heartbeat = () =>
+        controller.enqueue(encoder.encode(": heartbeat\n\n"));
+      void work(emit, subscription.signal, heartbeat).then(
         () => {
           if (!subscription.signal.aborted) controller.close();
         },
@@ -142,6 +158,7 @@ export function createDirectChatRoutes(deps: {
   profiles: AgentProfileStore;
   identifyActor: IdentifyActor;
   traceRuns: boolean;
+  reflect?: DirectChatReflect;
   trial?: { route: string; model: ManagedModel };
   learningClock?: () => Date;
   singleUser?: boolean;
@@ -667,7 +684,8 @@ export function createDirectChatRoutes(deps: {
     initial?: Awaited<ReturnType<typeof read>>,
     reconcileFailure?: (event: BaseEvent) => Promise<BaseEvent>,
   ) {
-    return eventStream(async (emit, signal) => {
+    return eventStream(async (emit, signal, heartbeat) => {
+      let nextHeartbeat = Date.now() + 5_000;
       let cursor = after;
       let page = initial;
       while (!signal.aborted && !request.signal.aborted) {
@@ -749,6 +767,10 @@ export function createDirectChatRoutes(deps: {
             result.run.status !== "running"
           )
             continue;
+        }
+        if (deps.reflect && !signal.aborted && Date.now() >= nextHeartbeat) {
+          heartbeat();
+          nextHeartbeat = Date.now() + 5_000;
         }
         await Bun.sleep(200);
       }
@@ -842,7 +864,10 @@ export function createDirectChatRoutes(deps: {
       agentId,
       0,
       undefined,
-      claim.kind === "repeat" && trial && !run.stopReason
+      claim.kind === "repeat" &&
+        trial &&
+        !run.stopReason &&
+        !(deps.reflect && reflectCommand(run.prompt))
         ? async (event) => {
             if (
               "code" in event &&
@@ -908,10 +933,21 @@ export function createDirectChatRoutes(deps: {
         await learningAuthorization(request, threadId, agentId, actor.id)(),
       );
     const previous = await history(database, threadId);
-    const messages = messagesFor(previous, { includePartial: !trial });
-    const agent = trial
-      ? null
-      : await deps.agentFor(actor, agentId).catch(() => null);
+    const currentRun = previous.find(({ id }) => id === key.runId);
+    const reflectQuery =
+      deps.reflect && currentRun && reflectCommand(currentRun.prompt);
+    // Reflection stays in the visible transcript. A later Bot call must not
+    // receive a historical inference whose Memory sources may have been revoked.
+    const messages = messagesFor(
+      previous.filter(
+        ({ id, prompt }) => id === key.runId || !reflectCommand(prompt),
+      ),
+      { includePartial: !trial },
+    );
+    const agent =
+      trial || reflectQuery
+        ? null
+        : await deps.agentFor(actor, agentId).catch(() => null);
     let runnable = true;
     const shouldContinue = async () => {
       if (!runnable || signal.aborted) return false;
@@ -936,7 +972,8 @@ export function createDirectChatRoutes(deps: {
       .update(directChatRuns)
       .set({
         dispatchedAt: new Date(),
-        ...(trial && { externalOutcome: "dispatching" as const }),
+        ...(trial &&
+          !reflectQuery && { externalOutcome: "dispatching" as const }),
       })
       .where(
         and(
@@ -968,6 +1005,31 @@ export function createDirectChatRoutes(deps: {
     let writeFailed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
+      if (reflectQuery && deps.reflect) {
+        if (
+          !(await appendDirectChatEvent(database, key, {
+            type: EventType.RUN_STARTED,
+            ...key,
+          }))
+        )
+          return;
+        if (!(await shouldContinue())) return;
+        const content = await deps.reflect({
+          personId: actor.id,
+          botId: agentId,
+          conversationId: threadId,
+          runId: key.runId,
+          query: reflectQuery,
+          canContinue: shouldContinue,
+        });
+        if (!(await shouldContinue())) return;
+        await appendDirectChatEvent(database, key, terminal(key, "completed"), {
+          traceRuns,
+          reply: { id: crypto.randomUUID(), content },
+          streamReply: true,
+        });
+        return;
+      }
       const skills = await currentGuidance();
       if (!skills) {
         await shouldContinue();
@@ -1115,7 +1177,7 @@ export function createDirectChatRoutes(deps: {
       if (!(await shouldContinue())) return;
       await appendDirectChatEvent(database, key, terminal(key, "failed"), {
         traceRuns,
-        ...(trial && { externalOutcome: "unknown" }),
+        ...(trial && !reflectQuery && { externalOutcome: "unknown" }),
       });
     } finally {
       finished = true;

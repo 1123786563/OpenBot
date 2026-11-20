@@ -371,6 +371,7 @@ export type DeploymentConfig = {
   runtime: RuntimeCapabilities;
   managedModelTrial?: { url: URL; token: string; route: string };
   hindsight?: HindsightConfig;
+  hindsightReflectToken?: string;
   opik?: OpikConfig;
   opikEvaluation?: OpikEvaluationConfig;
   /**
@@ -1762,6 +1763,22 @@ export function loadConfig(
 
   const hindsightUrl = optional(environment, "OPENBOT_HINDSIGHT_API_URL");
   const hindsightApiKey = optional(environment, "OPENBOT_HINDSIGHT_API_KEY");
+  const hindsightReflect = optional(environment, "OPENBOT_HINDSIGHT_REFLECT");
+  const hindsightReflectToken = optional(
+    environment,
+    "OPENBOT_HINDSIGHT_REFLECT_TOKEN",
+  );
+  const modelTrial = managedModelTrial(environment, runtime);
+  if (
+    hindsightReflect &&
+    (!hindsightUrl ||
+      (hindsightReflect !== "local" && hindsightReflect !== "managed") ||
+      (hindsightReflect === "managed" &&
+        (!modelTrial || !hindsightReflectToken)))
+  )
+    throw new Error(
+      "OPENBOT_HINDSIGHT_REFLECT requires a Hindsight API origin and local or managed mode. Managed mode requires Test Credit configuration and OPENBOT_HINDSIGHT_REFLECT_TOKEN.",
+    );
   let hindsight: HindsightConfig | undefined;
   if (hindsightUrl) {
     const url = new URL(hindsightUrl);
@@ -1779,6 +1796,7 @@ export function loadConfig(
     hindsight = {
       url,
       ...(hindsightApiKey ? { apiKey: hindsightApiKey } : {}),
+      ...(hindsightReflect ? { reflect: true } : {}),
     };
   }
   const opik = opikConfig(environment);
@@ -1808,7 +1826,8 @@ export function loadConfig(
     tenantPackageDirectory:
       optional(environment, "TENANT_PACKAGE_DIR") ?? "../examples/fintech",
     runtime,
-    managedModelTrial: managedModelTrial(environment, runtime),
+    managedModelTrial: modelTrial,
+    ...(hindsightReflect === "managed" ? { hindsightReflectToken } : {}),
     ...(hindsight ? { hindsight } : {}),
     ...(opik ? { opik } : {}),
     ...(opikEvaluation ? { opikEvaluation } : {}),

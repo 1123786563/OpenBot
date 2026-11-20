@@ -14,6 +14,8 @@ import { agents, users } from "../src/db/schema/core";
 import { agentProfiles } from "../src/db/schema/coworker";
 import { memorySources, personalMemories } from "../src/db/schema/memory";
 import { mcpServers, mcpTools } from "../src/db/schema/plugins";
+import { createManagedModel } from "../src/managed-model";
+import { createReflectModelGateway } from "../src/memory/reflect-model";
 import { createHindsight } from "../src/memory/hindsight";
 import { createMemoryIngestion } from "../src/memory/ingestion";
 import { createMemoryRoutes } from "../src/memory/routes";
@@ -956,6 +958,294 @@ test.skipIf(!hindsightTestUrl)(
     expect(await memory.recall(owner, bot, search)).toEqual([]);
     await memory.syncHindsight();
     expect((await fetch(document)).status).toBe(404);
+  },
+  30_000,
+);
+
+test("Reflect tool returns synthesis only while all Hindsight sources are current and accessible", async () => {
+  let retained: { document_id: string; metadata: unknown } | undefined;
+  let reflectBody: unknown;
+  let beforeAnswer: (() => Promise<unknown>) | undefined;
+  let foreignId: string | undefined;
+  let foreignEvidence = false;
+  let wrongContent = false;
+  let available = true;
+  const answer = "Use the amber lanterns for the synthetic observatory.";
+  const fixture = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      if (request.method === "DELETE") return Response.json({ success: true });
+      const body = await request.json();
+      if (request.url.endsWith("/reflect")) {
+        if (!available) return new Response(null, { status: 503 });
+        reflectBody = body;
+        await beforeAnswer?.();
+        const memory = {
+          ...retained,
+          type: "world",
+          text: wrongContent
+            ? "Unrelated private text under an allowed identifier."
+            : "Synthetic observatory has amber lanterns.",
+        };
+        return Response.json({
+          text: answer,
+          based_on: {
+            memories: foreignEvidence
+              ? [memory, { ...memory, document_id: foreignId }]
+              : [memory],
+            mental_models: [],
+            directives: [],
+          },
+        });
+      }
+      retained =
+        body.items.find(
+          (item: { content: string }) =>
+            item.content === "Synthetic observatory has amber lanterns.",
+        ) ?? retained;
+      return Response.json({ success: true });
+    },
+  });
+  try {
+    const memory = createMemoryIngestion({
+      store,
+      plugins,
+      hindsight: {
+        client: createHindsight({ database, url: fixture.url, reflect: true }),
+        canUseMemory: async () => true,
+      },
+    });
+    foreignId = (
+      await store.create(other, {
+        content: "Other workspace observatory memory.",
+      })
+    ).id;
+    const local = await store.create(owner, {
+      content: "Local observatory lighting note",
+    });
+    const source = await store.formMemory(owner, {
+      agentId: bot,
+      sourceRef: ref,
+      sourceApp: "Fixture",
+      content: "Synthetic observatory has amber lanterns.",
+    });
+    await store.update(owner, source.id, { reviewState: "confirmed" });
+    await memory.syncHindsight();
+    const reflect = (actor: string) =>
+      memoryTools({
+        store,
+        ingestion: memory,
+        ownerUserId: actor,
+        agentId: bot,
+      }).find((tool) => tool.name === "reflect_personal_memory");
+    const query = "observatory lighting";
+    expect(
+      JSON.parse((await reflect(owner)?.execute({ query })) ?? "null"),
+    ).toMatchObject({
+      kind: "reflection",
+      text: answer,
+      sources: [{ id: source.id, version: expect.any(String) }],
+    });
+    expect(reflectBody).toMatchObject({
+      fact_types: ["world", "experience"],
+      tags_match: "any_strict",
+      exclude_mental_models: true,
+      include: { facts: {} },
+    });
+    foreignEvidence = true;
+    expect(
+      JSON.parse((await reflect(owner)?.execute({ query })) ?? "null"),
+    ).toMatchObject({ kind: "local", memories: [{ id: local.id }] });
+    foreignEvidence = false;
+    const expectLocal = async () =>
+      expect(
+        JSON.parse((await reflect(owner)?.execute({ query })) ?? "null"),
+      ).toMatchObject({ kind: "local", memories: [{ id: local.id }] });
+    wrongContent = true;
+    await expectLocal();
+    wrongContent = false;
+    available = false;
+    await expectLocal();
+    available = true;
+    beforeAnswer = () => plugins.revoke("mcp", ref, bot, owner);
+    await expectLocal();
+    await plugins.grant("mcp", ref, bot, owner);
+    beforeAnswer = () =>
+      store.update(owner, source.id, {
+        content: "Synthetic observatory now uses blue lanterns.",
+      });
+    await expectLocal();
+    beforeAnswer = undefined;
+    await memory.syncHindsight();
+    await expectLocal();
+    await store.update(owner, source.id, { enabled: false });
+    await expectLocal();
+    reflectBody = undefined;
+    expect(
+      JSON.parse((await reflect(other)?.execute({ query })) ?? "null"),
+    ).toEqual({ kind: "local", memories: [] });
+    expect(reflectBody).toBeUndefined();
+  } finally {
+    fixture.stop(true);
+    await plugins.grant("mcp", ref, bot, owner);
+  }
+});
+
+const nativeReflectUrl = process.env.TEST_HINDSIGHT_REFLECT_API_URL;
+test.skipIf(!nativeReflectUrl)(
+  "self-hosted Hindsight Reflect returns a current OpenBot Memory version",
+  async () => {
+    if (!nativeReflectUrl)
+      throw new Error("TEST_HINDSIGHT_REFLECT_API_URL is required");
+    const memory = createMemoryIngestion({
+      store,
+      plugins,
+      hindsight: {
+        client: createHindsight({
+          database,
+          url: new URL(nativeReflectUrl),
+          reflect: true,
+        }),
+        canUseMemory: async () => true,
+      },
+    });
+    const source = await store.create(owner, {
+      content: "Synthetic observatory has amber lanterns.",
+    });
+    await memory.syncHindsight();
+    const reflect = memoryTools({
+      store,
+      ingestion: memory,
+      ownerUserId: owner,
+      agentId: bot,
+    }).find((tool) => tool.name === "reflect_personal_memory");
+    if (!reflect) throw new Error("Missing Reflect tool");
+    const args = {
+      query: "Which lanterns are available at the synthetic observatory?",
+    };
+    expect(JSON.parse(await reflect.execute(args))).toMatchObject({
+      kind: "reflection",
+      text: expect.stringContaining("amber lanterns"),
+      sources: expect.arrayContaining([
+        { id: source.id, version: expect.any(String) },
+      ]),
+    });
+    await store.remove(owner, source.id);
+    expect(await reflect.execute(args)).not.toContain(source.id);
+    await memory.syncHindsight();
+  },
+  30_000,
+);
+
+const managedReflectUrl = process.env.TEST_HINDSIGHT_MANAGED_REFLECT_API_URL;
+const managedReflectPort = Number(
+  process.env.TEST_HINDSIGHT_MANAGED_REFLECT_CALLBACK_PORT,
+);
+const syntheticModelUrl = process.env.TEST_HINDSIGHT_SYNTHETIC_MODEL_URL;
+
+test.skipIf(!managedReflectUrl || !managedReflectPort || !syntheticModelUrl)(
+  "self-hosted Hindsight Reflect admits every model callback through the managed model contract",
+  async () => {
+    if (!managedReflectUrl || !syntheticModelUrl)
+      throw new Error("Missing managed Reflect fixture URL");
+    const operations = new Map<string, "reserved" | "dispatched" | "settled">();
+    const scope = {
+      personId: owner,
+      botId: bot,
+      conversationId: randomUUID(),
+      runId: randomUUID(),
+    };
+    const control = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        const path = new URL(request.url).pathname;
+        const body = await request.json();
+        if (path === "/v1/reserve") {
+          expect(body).toMatchObject({
+            application: "openbot",
+            creditType: "test",
+            scope: { ...scope, source: "hindsight" },
+            route: "fixture-approved-v1",
+          });
+          expect(operations.has(body.operationId)).toBe(false);
+          operations.set(body.operationId, "reserved");
+          return Response.json({ state: "reserved", permit: body.operationId });
+        }
+        if (path === "/v1/dispatch") {
+          expect(operations.get(body.operationId)).toBe("reserved");
+          expect(body.permit).toBe(body.operationId);
+          const [schemaMessage, ...messages] = body.messages;
+          const schema = JSON.parse(schemaMessage.content.split("\n")[1]);
+          const provider = await fetch(syntheticModelUrl, {
+            method: "POST",
+            body: JSON.stringify({
+              messages,
+              response_format: { type: "json_schema", json_schema: { schema } },
+            }),
+          });
+          expect(provider.ok).toBe(true);
+          operations.set(body.operationId, "dispatched");
+          const completion = await provider.json();
+          return Response.json({
+            state: "completed",
+            text: completion.choices[0].message.content,
+          });
+        }
+        expect(path).toBe("/v1/reconcile");
+        expect(operations.get(body.operationId)).toBe("dispatched");
+        operations.set(body.operationId, "settled");
+        return Response.json({ state: "settled" });
+      },
+    });
+    const gateway = createReflectModelGateway({
+      model: createManagedModel({ url: control.url, token: "ledger-fixture" }),
+      route: "fixture-approved-v1",
+      token: "hindsight-fixture",
+    });
+    const callback = Bun.serve({
+      hostname: "0.0.0.0",
+      port: managedReflectPort,
+      fetch: (request) => gateway.complete(request),
+    });
+    try {
+      const memory = createMemoryIngestion({
+        store,
+        plugins,
+        hindsight: {
+          client: createHindsight({
+            database,
+            url: new URL(managedReflectUrl),
+            reflect: true,
+          }),
+          exposeNativeReflect: false,
+          canUseMemory: async () => true,
+        },
+      });
+      const source = await store.create(owner, {
+        content: "Synthetic observatory has amber lanterns.",
+      });
+      await memory.syncHindsight();
+      const query =
+        "Which lanterns are available at the synthetic observatory?";
+      expect(
+        await memory.reflect(owner, bot, query, (request, canDispatch) =>
+          gateway.reflect({ scope, query, request, canDispatch }),
+        ),
+      ).toMatchObject({
+        kind: "reflection",
+        text: expect.stringContaining("amber lanterns"),
+        sources: [{ id: source.id, version: expect.any(String) }],
+      });
+      expect(operations.size).toBeGreaterThan(1);
+      expect(new Set(operations.values())).toEqual(new Set(["settled"]));
+      await store.remove(owner, source.id);
+      await memory.syncHindsight();
+    } finally {
+      callback.stop(true);
+      control.stop(true);
+    }
   },
   30_000,
 );
