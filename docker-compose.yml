@@ -112,6 +112,7 @@ services:
         required: false
     environment:
       DEPLOYMENT_ID:
+      OPENBOT_OPENOBSERVE_URL:
       OTEL_SERVICE_NAME:
       # An unset variable stays absent, allowing generic headers to act as the logs fallback.
       OTEL_EXPORTER_OTLP_ENDPOINT:

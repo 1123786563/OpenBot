@@ -35,6 +35,31 @@ function server(docs: ReturnType<typeof render>) {
 }
 
 test.skipIf(!helm)(
+  "passes the browser URL only to the API server",
+  () => {
+    const name = "OPENBOT_OPENOBSERVE_URL";
+    const value = "https://observe.example.test/ops/";
+    const docs = render(
+      "--set-string",
+      `config.openObserveUrl=${value}`,
+      "--set",
+      "routines.enabled=true",
+    );
+    expect(server(docs).env).toContainEqual({ name, value });
+    expect(
+      workload(docs, "CronJob", "openbot-routines").containers[0].env,
+    ).not.toContainEqual(expect.objectContaining({ name }));
+    expect(
+      workload(docs, "Job", "openbot-migrations-1").containers[0].env,
+    ).not.toContainEqual(expect.objectContaining({ name }));
+    expect(server(render()).env).not.toContainEqual(
+      expect.objectContaining({ name }),
+    );
+  },
+  20_000,
+);
+
+test.skipIf(!helm)(
   "sets deployment identity for API, routine sweep and migration logs",
   () => {
     const docs = render(

@@ -708,6 +708,11 @@ of Twilio settings, a push project id that is not a UUID, and a `deliveryPublicU
 http(s). With `networkPolicy.enabled`, allow the Collector destination and port in
 `networkPolicy.extraEgress`. See the [OpenObserve runbook](../../docs/openobserve-runbook.md#openbot-configuration).
 
+Set `config.openObserveUrl` to the external browser URL to show **Open in OpenObserve**
+in Admin → Audit. The browser opens this URL directly and the external platform
+handles authentication. Use an absolute HTTP(S) URL without credentials, a query
+string, or a fragment. An empty or invalid setting hides the link.
+
 ## Upgrading the server without the computers
 
 `computers.mode: shared` runs one computer for every person's Bots, and on that shape the
