@@ -5,9 +5,10 @@ import {
   ChangeRows,
   PermissionsPreview,
 } from "@/components/admin/controls/describe-capabilities";
+import { GovernancePage } from "@/components/astryx-pilot/governance";
 import { DescribeField } from "@/components/boundaries/describe-rule";
 import { ReadingStatus } from "@/components/boundaries/rule-reading";
-import { PageCard, PageShell } from "@/components/layout/page-shell";
+import { PageCard } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { FieldGroup } from "@/components/ui/field";
 import { saveCapabilityChangesMutationOptions } from "@/lib/capability-changes/mutations";
@@ -82,7 +83,7 @@ function DescribePermissionsPage() {
   };
 
   return (
-    <PageShell
+    <GovernancePage
       backButton={BACK}
       description="Say who may use what, and your model writes the permission changes. Nothing changes until you save them."
       title="Describe who can do what"
@@ -172,6 +173,6 @@ function DescribePermissionsPage() {
           ) : null}
         </PageCard>
       </form>
-    </PageShell>
+    </GovernancePage>
   );
 }

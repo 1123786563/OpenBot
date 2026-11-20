@@ -1,5 +1,8 @@
+import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import { IconClock, IconPlus } from "@tabler/icons-react";
 import { Link, useRouter } from "@tanstack/react-router";
+import { type ComponentProps, useCallback } from "react";
+
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -7,36 +10,29 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-/**
- * New routine, opening the create screen. `agentId` starts it out for one Bot.
- *
- * `outline` where it stands alone in an empty state, `ghost` on a page's title row, as Add
- * credential and New skill are drawn.
- */
-export function NewRoutineButton({
-  agentId,
-  variant = "ghost",
-}: {
-  agentId?: string;
-  variant?: "ghost" | "outline";
-}) {
-  // A list drawn with no router around it, as a skin's own tests draw it, has nowhere to link to.
+/** Opens the Routine create screen, optionally with one Bot selected. */
+export function NewRoutineButton({ agentId }: { agentId?: string }) {
+  const RoutineLink = useCallback(
+    ({ href: _href, ...props }: ComponentProps<"a">) => (
+      <Link {...props} search={agentId ? { agentId } : {}} to="/routines/new" />
+    ),
+    [agentId],
+  );
+  // A list drawn with no router around it, as standalone component tests draw it, has nowhere to link to.
   if (!useRouter({ warn: false })) return null;
   return (
-    <Button
-      render={(props) => (
-        <Link
-          {...props}
-          search={agentId ? { agentId } : {}}
-          to="/routines/new"
-        />
-      )}
+    <AstryxButton
+      as={RoutineLink}
+      href={
+        agentId
+          ? `/routines/new?agentId=${encodeURIComponent(agentId)}`
+          : "/routines/new"
+      }
+      icon={<IconPlus aria-hidden />}
+      label="New routine"
       size="sm"
-      variant={variant}
-    >
-      <IconPlus />
-      New routine
-    </Button>
+      variant="primary"
+    />
   );
 }
 

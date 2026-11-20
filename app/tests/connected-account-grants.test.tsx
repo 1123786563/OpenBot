@@ -360,8 +360,10 @@ test("the route's synthetic toolkit-named unknown reads as could not read and ne
     ],
   });
   const view = renderScreen();
-  const notice = await view.findByRole("status");
-  expect(notice.textContent?.toLowerCase()).toContain("couldn't read");
+  const notice = await view.findByText(
+    /couldn't read what this account allows/i,
+  );
+  expect(notice.closest('[role="status"]')).not.toBeNull();
   expect(view.container.querySelector("[data-action]")).toBeNull();
   expect(view.container.querySelector('[data-action="Gmail"]')).toBeNull();
   expect(

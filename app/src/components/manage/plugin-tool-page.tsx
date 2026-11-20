@@ -1,11 +1,11 @@
 import { IconBolt, IconPlugOff, IconTool } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { ConnectionPage } from "@/components/connections/connection-surface";
 import {
   PageEmpty,
   PageRows,
   PageSection,
-  PageShell,
 } from "@/components/layout/page-shell";
 import {
   Item,
@@ -81,7 +81,7 @@ export function PluginToolPage({
 
   /* Nothing rather than a placeholder, so no sentence asserts anything while the fetch is open. */
   if (plugins.isPending) {
-    return <PageShell title="Tool">{null}</PageShell>;
+    return <ConnectionPage title="Tool">{null}</ConnectionPage>;
   }
 
   /*
@@ -92,17 +92,17 @@ export function PluginToolPage({
    */
   if (!plugins.data) {
     return (
-      <PageShell backButton={back} title={toolName}>
+      <ConnectionPage backButton={back} title={toolName}>
         <p className="mt-12 text-destructive text-sm" role="alert">
           Couldn't load plugins. Reload the page.
         </p>
-      </PageShell>
+      </ConnectionPage>
     );
   }
 
   if (!tool) {
     return (
-      <PageShell
+      <ConnectionPage
         backButton={back}
         description="This connector has no tool with that name."
         title={toolName}
@@ -119,7 +119,7 @@ export function PluginToolPage({
             ? "It may have been removed since the tool list was last refreshed."
             : "Turn it on to see its tools."}
         </PageEmpty>
-      </PageShell>
+      </ConnectionPage>
     );
   }
 
@@ -139,7 +139,7 @@ export function PluginToolPage({
   }));
 
   return (
-    <PageShell
+    <ConnectionPage
       backButton={back}
       description={tool.description || "This tool has no description."}
       title={toolName}
@@ -252,6 +252,6 @@ export function PluginToolPage({
           </PageRows>
         )}
       </PageSection>
-    </PageShell>
+    </ConnectionPage>
   );
 }

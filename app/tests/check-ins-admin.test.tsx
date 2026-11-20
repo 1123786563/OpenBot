@@ -226,11 +226,11 @@ test("the switch turns check-ins off for the organization, and the limit saves o
   for (const value of ["0", "1441", "2.5", ""]) {
     await user.clear(field);
     if (value) await user.type(field, value);
-    expect(save.hasAttribute("disabled")).toBe(true);
+    expect(save.getAttribute("aria-disabled")).toBe("true");
   }
   await user.clear(field);
   await user.type(field, "12");
-  expect(save.hasAttribute("disabled")).toBe(false);
+  expect(save.getAttribute("aria-disabled")).not.toBe("true");
   fireEvent.click(save);
   await waitFor(() =>
     expect(writes).toContainEqual({

@@ -2,8 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import {
   type BotAttention,
+  botAttentionBodyQueryOptions,
   botAttentionQueryOptions,
-  lastPingQueryOptions,
 } from "@/lib/bot-lifecycle/queries";
 // Whether this browser, or OpenBot Desktop, lets OpenBot interrupt: the same answer the offer to
 // turn notifications on reads, so the two cannot disagree.
@@ -195,7 +195,7 @@ function usePingNotifications(
   lastPingId: string | null | undefined,
   bots: BotAttention[] | undefined,
 ) {
-  // Read only when a ping arrives: the badge has no other use for the list, so it does not poll it.
+  // Read suggestions when a ping arrives to name the items it carried.
   const suggestions = useQuery({
     ...proactiveSuggestionsQueryOptions(),
     enabled: false,
@@ -229,22 +229,20 @@ function usePingNotifications(
   }, [lastPingId, refetch]);
 }
 
-/**
- * The badge on the sidebar's Bots item: how many things wait on this person across all their Bots,
- * or a dot when the only news is something unread. Opening Bots lists what is behind the number
- * first, under Needs you.
- *
- * It also sends the browser notifications, since it is the one piece of the app that is always on
- * screen and always reading this.
- *
- * Renders nothing when nothing is waiting, so a quiet day costs the sidebar nothing.
- */
+/** Stays mounted with the app shell while the navigation drawer is closed. */
+export function AttentionNotifier() {
+  const { data } = useQuery(botAttentionBodyQueryOptions());
+  useAttentionNotifications(data?.bots);
+  usePingNotifications(data?.lastPingId, data?.bots);
+  return null;
+}
+
+/** Shows how many things are waiting, or a dot for unread messages and check-ins. */
 export function BotsNavBadge() {
-  const attention = useQuery(botAttentionQueryOptions());
-  const lastPing = useQuery(lastPingQueryOptions());
-  useAttentionNotifications(attention.data);
-  usePingNotifications(lastPing.data, attention.data);
-  const bots = attention.data ?? [];
+  const { data: bots = [] } = useQuery({
+    ...botAttentionQueryOptions(),
+    refetchInterval: false,
+  });
   const waiting = bots.reduce((total, bot) => total + waitingOnYou(bot), 0);
   if (waiting > 0) {
     return (

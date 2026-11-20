@@ -660,8 +660,8 @@ test("Get started on the name step saves the name, finishes, plays the orb's fin
   expect(view.queryByText("Home")).toBeNull();
   // While the orb finishes, the button says what has happened.
   expect(
-    view.getByRole("button", { name: "All set" }).hasAttribute("data-done"),
-  ).toBe(true);
+    view.getByRole("button", { name: "All set" }).querySelector("svg"),
+  ).not.toBeNull();
   await waitFor(() => expect(view.getByText("Home")).toBeTruthy(), {
     timeout: 3000,
   });
@@ -833,8 +833,10 @@ test("until the deployment answers, Welcome's Continue waits; a failure says so 
       await view.findByText("Couldn't load your setup. Try again to continue.")
     ).getAttribute("role"),
   ).toBe("alert");
+  const next = view.getByRole("button", { name: "Continue" });
   expect(
-    view.getByRole("button", { name: "Continue" }).hasAttribute("disabled"),
+    next.hasAttribute("disabled") ||
+      next.getAttribute("aria-disabled") === "true",
   ).toBe(true);
 
   capabilitiesFail = false;

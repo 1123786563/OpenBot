@@ -1,8 +1,8 @@
 import { IconShare } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment } from "react";
+import { GovernanceAction } from "@/components/astryx-pilot/governance";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
 import {
   Item,
   ItemContent,
@@ -75,25 +75,21 @@ export function SharedUseRequests() {
                 </p>
               </ItemContent>
               <ItemFooter className="justify-start">
-                <Button
+                <GovernanceAction
                   disabled={decide.isPending}
                   onClick={() =>
                     decide.mutate({ id: request.id, decision: "approve" })
                   }
-                  size="sm"
-                >
-                  Approve
-                </Button>
-                <Button
+                  label="Approve"
+                />
+                <GovernanceAction
                   disabled={decide.isPending}
                   onClick={() =>
                     decide.mutate({ id: request.id, decision: "decline" })
                   }
-                  size="sm"
+                  label="Decline"
                   variant="outline"
-                >
-                  Decline
-                </Button>
+                />
               </ItemFooter>
             </Item>
           </Fragment>
