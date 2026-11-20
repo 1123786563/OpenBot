@@ -40,12 +40,15 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
   let lastDispatchAccountId: string | undefined;
   const gateway = Bun.serve({
     hostname: externalGateway ? "0.0.0.0" : "127.0.0.1",
-    port: externalGateway ? 33125 : 0,
+    port: externalGateway ? 33139 : 0,
     async fetch(request) {
       const input = await request.json();
       sent.push(input);
       sends++;
-      lastOperationId = request.headers.get("x-openbot-operation-id");
+      if (!externalGateway)
+        expect(request.headers.get("x-openbot-operation-id")).toBe(
+          lastOperationId,
+        );
       if (sends === 2) return new Response(null, { status: 502 });
       return Response.json({
         id: "fixture-completion",
@@ -59,7 +62,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
             message: { role: "assistant", content: "answer" },
           },
         ],
-        usage: { prompt_tokens: 1, completion_tokens: 1 },
+        usage: { prompt_tokens: 1, completion_tokens: 4 },
       });
     },
   });
@@ -89,6 +92,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
       }
     },
     async execute(input) {
+      lastOperationId = input.operationId;
       lastDispatchAccountId = input.accountId;
       switch (input.messages[0]?.content) {
         case "zero":
@@ -145,9 +149,9 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
       gatewayRevision: "a",
       meteringRevision: "a",
       maxInputTokens: 3,
-      maxOutputTokens: 3,
+      maxOutputTokens: 16,
       tools: false,
-      price: { inputPerMillion: 250_000, outputPerMillion: 250_000 },
+      price: { inputPerMillion: 250_000, outputPerMillion: 78_125 },
     };
     const catalog = configure(emptyCatalog, {
       harnessImage,
@@ -176,7 +180,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
           upstreamRequestId: "upstream",
           outputChunks: 2,
           inputTokens: 1,
-          outputTokens: 1,
+          outputTokens: 4,
         },
         cancellation: {
           requestId: "cancel",
@@ -188,7 +192,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
           upstreamRequestId: "upstream-limits",
           rejectedRequestId: "rejected",
           inputCap: 3,
-          outputCap: 3,
+          outputCap: 16,
           oversizedInput: "rejected-before-upstream",
           outputStop: "length",
         },
@@ -320,7 +324,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
         routes: {
           pilot: {
             ...route,
-            price: { inputPerMillion: 600_000, outputPerMillion: 600_000 },
+            price: { inputPerMillion: 600_000, outputPerMillion: 125_000 },
           },
         },
       }),
@@ -741,11 +745,11 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     expect(sent).toHaveLength(4);
     expect(sent[0]).toMatchObject({
       model: externalGateway ? "model-a" : "fixture-a/model-a",
-      max_tokens: 3,
+      [externalGateway ? "max_completion_tokens" : "max_tokens"]: 16,
     });
     expect(sent[3]).toMatchObject({
       model: externalGateway ? "model-b" : "fixture-b/model-b",
-      max_tokens: 3,
+      [externalGateway ? "max_completion_tokens" : "max_tokens"]: 16,
     });
     expect(await createTestCreditLedger(database).balance(first)).toEqual(
       await ledger.balance(first),
