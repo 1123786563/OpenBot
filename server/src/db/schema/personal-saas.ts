@@ -1,4 +1,6 @@
+import { sql } from "drizzle-orm";
 import {
+  check,
   index,
   pgTable,
   text,
@@ -60,4 +62,29 @@ export const personalSaasNativeCodes = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (table) => [index("personal_saas_native_codes_expiry").on(table.expiresAt)],
+);
+
+export const personalWorkspaceIntegrationGrants = pgTable(
+  "personal_workspace_integration_grants",
+  {
+    credentialHash: text("credential_hash").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => personalWorkspaces.id, { onDelete: "cascade" }),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => personalWorkspaceDefaultBots.agentId, {
+        onDelete: "cascade",
+      }),
+    action: text().notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index().on(table.agentId),
+    index().on(table.workspaceId),
+    check(
+      "personal_workspace_integration_action_check",
+      sql`${table.action} = 'assistant.read'`,
+    ),
+  ],
 );

@@ -45,3 +45,13 @@ Set `EXPO_PUBLIC_OPENBOT_MODE=personal-saas` and `EXPO_PUBLIC_SERVER_URL` to the
 Keep the HTTPS origin reachable from the system browser and the app's API client. For a restricted trial, use network-level access that both clients can reach. App API requests authenticate with their own OpenBot Application Session and do not share the system browser's cookies.
 
 Web, iOS, and Android display the same workspace, default Assistant, and recent conversations. `GET /api/workspace/conversations` returns up to 50 titles and last-message previews from the owner's dedicated Assistant, newest activity first. Full transcripts and new conversations are outside the read-only trial.
+
+## Workspace isolation
+
+The owner can read the default Assistant at `GET /api/workspaces/{workspaceId}/bots/{botId}` and rename it at `POST /api/workspaces/{workspaceId}/bots/{botId}/name` with a JSON `name`. Use the IDs returned by `/api/workspace`. The access check uses the authenticated account and the workspace's Assistant binding. Foreign and unknown IDs return the same `404`. The trial sends `Cache-Control: no-store` on workspace responses.
+
+The internal integration service issues an expiring credential for `assistant.read` on one workspace and Assistant. The caller that issues a credential must supply an authenticated owner identity. When a delivery or Worker entry point is enabled, it must also apply the account and workspace execution cutoff checks before dispatch. The trial has no integration credential issuance or execution HTTP route.
+
+Recent conversation history requires an OpenBot Application Session. The authenticated account determines the workspace and Assistant. Assistant integration credentials cannot read conversation history.
+
+Use the two-owner matrix in `server/tests/personal-saas-entry.integration.test.ts` to enable a resource. Replace the closed probe with the real entry point and two actual resources. Verify each owner's success and compare the same request with a foreign and a missing resource. For mutations, verify the denied request leaves the target unchanged. For downloads, replay the exact URL across accounts. For realtime, verify the actual handshake and delivered events. For cache and index access, populate the cache or index as one owner and repeat the same lookup as the other. Apply the same owner and scope checks at background dispatch.

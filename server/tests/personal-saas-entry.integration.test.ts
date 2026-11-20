@@ -13,9 +13,12 @@ import {
 } from "../src/db/schema";
 import { personalSaasNativeCodes } from "../src/db/schema/personal-saas";
 import { createPersonalSaasApp } from "../src/personal-saas/app";
+import { workspaceIntegrationGrants } from "../src/personal-saas/integration-grants";
 import { personalSaasStore } from "../src/personal-saas/store";
+import { workspaceBots } from "../src/personal-saas/workspace-bots";
 import { createWorkQueue } from "../src/work/queue";
 import { testDatabaseUrl } from "./support/database";
+import { assertWorkspaceIsolation } from "./support/workspace-isolation";
 
 const origin = "https://trial.openbot.example";
 const clientId = "openbot-trial";
@@ -625,6 +628,16 @@ test("Web, iOS, and Android share the owner’s workspace and conversation histo
       { id: otherChannel, title: "Other account conversation", preview: null },
     ],
   });
+  const foreignIds = new URLSearchParams({
+    workspaceId: otherWorkspace.id,
+    botId: otherWorkspace.personalAssistant.id,
+    conversationId: otherChannel,
+  });
+  const nativeHistory = await send(`${historyPath}?${foreignIds}`, {
+    headers: android,
+  });
+  expect(nativeHistory.status).toBe(200);
+  expect(await nativeHistory.json()).toEqual({ conversations: ownHistory });
   expect((await send(historyPath)).status).toBe(401);
 
   const returningIos = await native("ios");
@@ -1120,5 +1133,273 @@ test("durable background work keeps its lease and queued work remains claimable 
     expect(await queue.finish({ ...worker, key: "waiting" })).toBe(true);
   } finally {
     await database.delete(workItems).where(eq(workItems.kind, kind));
+  }
+});
+
+async function isolationOwner() {
+  const account = {
+    sub: crypto.randomUUID(),
+    email: "isolation@example.com",
+    verified: true,
+    active: true,
+  };
+  const signedIn = await authenticate(account);
+  expect(signedIn.status).toBe(303);
+  const session = cookie(signedIn, "__Host-openbot-personal=");
+  expect((await enter(session)).status).toBe(303);
+  const own = await workspace(session);
+  return {
+    account,
+    session,
+    workspaceId: own.id,
+    botId: own.personalAssistant.id,
+  };
+}
+
+function botPath(workspaceId: string, botId: string) {
+  return `/api/workspaces/${workspaceId}/bots/${botId}`;
+}
+
+test("an owner can read and rename their Assistant while swapped workspace and Bot IDs return the same result as missing IDs", async () => {
+  const alice = await isolationOwner();
+  const bob = await isolationOwner();
+  const own = botPath(alice.workspaceId, alice.botId);
+  const get = (path: string, session = alice.session) =>
+    send(path, { headers: { cookie: session } });
+  const rename = (
+    path: string,
+    session = alice.session,
+    requestOrigin = origin,
+  ) =>
+    send(`${path}/name`, {
+      method: "POST",
+      headers: {
+        cookie: session,
+        origin: requestOrigin,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ name: "Alice's Assistant" }),
+    });
+  expect(await (await get(own)).json()).toEqual({
+    id: alice.botId,
+    name: "Personal Assistant",
+  });
+  const missing = botPath(alice.workspaceId, "agent_missing");
+  for (const path of [
+    botPath(bob.workspaceId, bob.botId),
+    botPath(alice.workspaceId, bob.botId),
+    botPath(bob.workspaceId, alice.botId),
+    missing,
+  ]) {
+    const read = await get(path);
+    const change = await rename(path);
+    expect(read.status).toBe(404);
+    expect(change.status).toBe(404);
+    expect(await read.json()).toEqual(await (await get(missing)).json());
+    expect(read.headers.get("cache-control")).toBe("no-store");
+  }
+  expect((await get(own, "")).status).toBe(401);
+  expect(
+    (await rename(own, alice.session, "https://other.example")).status,
+  ).toBe(403);
+  const changed = await rename(own);
+  expect(changed.status).toBe(200);
+  expect(changed.headers.get("cache-control")).toBe("no-store");
+  expect(await (await get(own)).json()).toEqual({
+    id: alice.botId,
+    name: "Alice's Assistant",
+  });
+  expect((await workspace(alice.session)).personalAssistant.name).toBe(
+    "Alice's Assistant",
+  );
+  expect(
+    await (await get(botPath(bob.workspaceId, bob.botId), bob.session)).json(),
+  ).toEqual({ id: bob.botId, name: "Personal Assistant" });
+});
+
+test("background and integration entry points require the exact owned workspace, Bot and bound action", async () => {
+  const alice = await isolationOwner();
+  const bob = await isolationOwner();
+  const owned = { workspaceId: alice.workspaceId, botId: alice.botId };
+  const other = { workspaceId: bob.workspaceId, botId: bob.botId };
+  const signedInAccountId = async (account: Account) => {
+    // Background jobs carry the stable account id from trusted enqueue provenance.
+    const { personalSaasAccounts } = await import(
+      "../src/db/schema/personal-saas"
+    );
+    const { and, eq } = await import("drizzle-orm");
+    const [row] = await database
+      .select({ id: personalSaasAccounts.id })
+      .from(personalSaasAccounts)
+      .where(
+        and(
+          eq(personalSaasAccounts.issuer, issuer),
+          eq(personalSaasAccounts.subject, account.sub),
+        ),
+      );
+    if (!row) throw new Error("Missing fixture account");
+    return row.id;
+  };
+  const accountId = await signedInAccountId(alice.account);
+  const bobId = await signedInAccountId(bob.account);
+  const bots = workspaceBots(database);
+  const grants = workspaceIntegrationGrants(database);
+  expect(await bots.get({ ...owned, accountId })).toEqual({
+    id: alice.botId,
+    name: "Personal Assistant",
+  });
+  expect(await bots.get({ ...other, accountId })).toBeUndefined();
+  expect(
+    await bots.rename({ ...owned, accountId: bobId, name: "Cross-owner" }),
+  ).toBeUndefined();
+  const expiresAt = new Date(Date.now() + 60_000);
+  expect(
+    await grants.issueAssistantRead({ ...other, accountId, expiresAt }),
+  ).toBeUndefined();
+  expect(
+    await grants.issueAssistantRead({
+      ...owned,
+      accountId,
+      expiresAt: new Date(0),
+    }),
+  ).toBeUndefined();
+  const grant = await grants.issueAssistantRead({
+    ...owned,
+    accountId,
+    expiresAt,
+  });
+  if (!grant) throw new Error("Owner could not issue Assistant read grant");
+  const { credential } = grant;
+  const dispatch = workspaceIntegrationGrants(database);
+  expect(
+    await dispatch.execute({ ...owned, credential, action: "assistant.read" }),
+  ).toEqual({ id: alice.botId, name: "Personal Assistant" });
+  for (const input of [
+    { ...other, credential, action: "assistant.read" },
+    { ...owned, botId: bob.botId, credential, action: "assistant.read" },
+    {
+      ...owned,
+      workspaceId: bob.workspaceId,
+      credential,
+      action: "assistant.read",
+    },
+    { ...owned, credential, action: "assistant.rename" },
+    { ...owned, credential, action: "conversation.history" },
+    {
+      ...owned,
+      credential: credential.replace(/^./, (first) =>
+        first === "A" ? "B" : "A",
+      ),
+      action: "assistant.read",
+    },
+  ]) {
+    expect(await dispatch.execute(input)).toBeUndefined();
+  }
+  const replay = await send(botPath(alice.workspaceId, alice.botId), {
+    headers: { authorization: `Bearer ${credential}` },
+  });
+  expect(replay.status).toBe(401);
+  for (const workspace of [owned, other]) {
+    const query = new URLSearchParams(workspace);
+    const history = await send(`/api/workspace/conversations?${query}`, {
+      headers: { authorization: `Bearer ${credential}` },
+    });
+    expect(history.status).toBe(401);
+    expect(history.headers.get("cache-control")).toBe("no-store");
+    expect(await history.json()).toEqual({ error: "sign_in_required" });
+  }
+});
+
+const closedWorkspaceSurfaces = [
+  ["Bot execution", "/api/copilotkit", "POST"],
+  ["Conversation", "/api/delivery/conversations/:resource/history", "GET"],
+  [
+    "Conversation mutation",
+    "/api/delivery/conversations/:resource/messages",
+    "POST",
+  ],
+  ["Connection listing", "/api/plugins/connections", "GET"],
+  ["Connection operation", "/api/plugins/servers/:resource/connect", "POST"],
+  ["Computer control", "/api/computers/:bot/control/request", "POST"],
+  [
+    "Computer download",
+    "/api/computers/:bot/files/download?path=report.txt",
+    "GET",
+  ],
+  ["Attachment download", "/api/attachments/:resource", "GET"],
+  ["Attachment cached download", "/api/attachments/:resource", "HEAD"],
+  ["Personal Memory", "/api/memory?botId=:bot", "GET"],
+  ["Visible log", "/api/agents/:bot/activity", "GET"],
+  ["Search index", "/api/search?workspaceId=:workspace&q=:resource", "GET"],
+  [
+    "Export download",
+    "/api/workspaces/:workspace/exports/:resource/download",
+    "GET",
+  ],
+  ["Invitation", "/api/workspaces/:workspace/invitations", "POST"],
+  ["Co-owner", "/api/workspaces/:workspace/members", "POST"],
+  ["Public share", "/api/workspaces/:workspace/shares", "POST"],
+  [
+    "Realtime Conversation",
+    "/api/channels/events?workspaceId=:workspace",
+    "UPGRADE",
+  ],
+  ["Realtime Computer", "/api/computers/:resource/stream", "UPGRADE"],
+] as const;
+
+test("two-owner isolation matrix for enabled and closed trial surfaces", async () => {
+  const owners = await Promise.all([isolationOwner(), isolationOwner()]);
+  const resourceIds = [crypto.randomUUID(), crypto.randomUUID()];
+  await assertWorkspaceIsolation({
+    state: "enabled",
+    async request(viewer, subject) {
+      const { workspaceId, botId } = owners[subject];
+      return send(botPath(workspaceId, botId), {
+        headers: { cookie: owners[viewer].session, "if-none-match": "*" },
+      });
+    },
+    async assertOwned(response, owner) {
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        id: owners[owner].botId,
+        name: "Personal Assistant",
+      });
+    },
+    missing: async (viewer) =>
+      send(botPath(owners[viewer].workspaceId, "agent_missing"), {
+        headers: { cookie: owners[viewer].session, "if-none-match": "*" },
+      }),
+  });
+  for (const [surface, template, method] of closedWorkspaceSurfaces) {
+    await assertWorkspaceIsolation({
+      state: "closed",
+      async request(viewer, subject) {
+        const { workspaceId, botId } = owners[subject];
+        const response = await send(
+          template
+            .replace(":workspace", workspaceId)
+            .replace(":bot", botId)
+            .replace(":resource", resourceIds[subject] ?? ""),
+          {
+            method: method === "UPGRADE" ? "GET" : method,
+            headers: {
+              cookie: owners[viewer].session,
+              origin,
+              "if-none-match": "*",
+              ...(method === "UPGRADE"
+                ? {
+                    connection: "Upgrade",
+                    upgrade: "websocket",
+                    "sec-websocket-version": "13",
+                    "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+                  }
+                : {}),
+            },
+          },
+        );
+        expect(response.status, surface).toBe(404);
+        return response;
+      },
+    });
   }
 });

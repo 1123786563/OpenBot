@@ -12,6 +12,7 @@ import {
   sessionRevocationRoutes,
 } from "./session-revocation";
 import { personalSaasStore, sessionSeconds } from "./store";
+import { workspaceBotRoutes } from "./workspace-bot-routes";
 
 const attemptPrefix = "__Host-openbot-oidc-";
 const callbackPath = "/auth/casdoor/callback";
@@ -368,6 +369,13 @@ export function createPersonalSaasApp(
       isSessionLive: store.isSessionLive,
     }),
   );
+  app.route(
+    "/api/workspaces",
+    workspaceBotRoutes(database, (context) =>
+      authorize(getCookie(context, sessionCookie)),
+    ),
+  );
+
   app.get("/workspace", async (context) => {
     const session = await authorize(getCookie(context, sessionCookie));
     if (session.kind === "unconfirmed")
