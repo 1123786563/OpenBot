@@ -33,6 +33,7 @@ export type DeliveryState =
   | "sent"
   | "delivered"
   | "failed"
+  | "skipped"
   | "unknown"
   /** The SMS recipient replied STOP (Twilio Advanced Opt-Out); nothing was sent. */
   | "opted_out";

@@ -18,6 +18,7 @@ import {
   channelMemberships,
   channels,
   computerSnapshot,
+  deliveryBindings,
   personalMemories,
   routines,
   users,
@@ -213,6 +214,7 @@ function newApp(
       botRuntime,
       computer: typeof dependency === "function" ? computer : dependency,
       runPersonalBot: typeof dependency === "function" ? dependency : undefined,
+      inboundRelayToken: "test-relay-token",
       suspensionOperator: { id: "trial-operator", token: operatorToken },
       suspensionSupport: "support@example.com",
       encryptionKey: Buffer.alloc(32, 7).toString("base64"),
@@ -2417,6 +2419,7 @@ test("only the current workspace owner can create and download an export", async
 async function exportFixture(
   owner: Awaited<ReturnType<typeof isolationOwner>>,
   marker: string,
+  nextRunAt = new Date(now() + 24 * 60 * 60_000),
 ) {
   const principal = `personal-workspace:${owner.workspaceId}`;
   const channelId = crypto.randomUUID();
@@ -2478,7 +2481,7 @@ async function exportFixture(
     title: `${marker} routine`,
     instruction: "Read the briefing",
     cron: "0 9 * * *",
-    nextRunAt: new Date(),
+    nextRunAt,
   });
   await database.insert(brokeredConnections).values({
     provider: "composio",
@@ -3045,6 +3048,280 @@ test("the Bot worker rejects Computer work authorized before a restart and dispa
   expect(dispatched).toEqual([key]);
   expect(taskTimes[1]).toBeGreaterThanOrEqual(startedWith);
 });
+
+const automationCutoffs = [
+  "workspace_paused",
+  "account_disabled",
+  "account_status_unconfirmed",
+] as const;
+
+function operateAutomationWorkspace(
+  workspaceId: string,
+  action: "pause" | "resume",
+) {
+  return send(`/api/operator/workspaces/${workspaceId}/suspension`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${operatorToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ action, reason: "Test suspension" }),
+  });
+}
+
+async function sweepAutomation(worker: ReturnType<typeof newApp>) {
+  await worker.offerAutomationSchedules();
+  await Promise.all([
+    worker.sweepAutomationRoutines(),
+    worker.sweepAutomationInbound(),
+  ]);
+}
+
+async function cutOffAutomation(
+  owner: Awaited<ReturnType<typeof isolationOwner>>,
+  worker: ReturnType<typeof newApp>,
+  cutoff: (typeof automationCutoffs)[number],
+) {
+  if (cutoff === "workspace_paused") {
+    expect(
+      (await operateAutomationWorkspace(owner.workspaceId, "pause")).status,
+    ).toBe(201);
+  } else if (cutoff === "account_disabled") {
+    Object.assign(owner.account, {
+      active: false,
+      disablements: [{ id: crypto.randomUUID(), effectiveAt: now() - 1 }],
+    });
+    await worker.refreshAccounts();
+  } else {
+    Object.assign(owner.account, { active: undefined });
+    clockTime = now() + 30_000;
+    await worker.refreshAccounts();
+    clockTime += 30_001;
+  }
+}
+
+async function restoreAutomation(
+  owner: Awaited<ReturnType<typeof isolationOwner>>,
+  cutoff: (typeof automationCutoffs)[number],
+) {
+  if (cutoff === "workspace_paused")
+    expect(
+      (await operateAutomationWorkspace(owner.workspaceId, "resume")).status,
+    ).toBe(201);
+  Object.assign(owner.account, { active: true });
+  clockTime = now() + 1;
+  return cookie(await authenticate(owner.account), "__Host-openbot-personal=");
+}
+
+for (const cutoff of automationCutoffs) {
+  test(`Routine schedules and manual runs require per-Routine resume after ${cutoff}`, async () => {
+    const alice = await isolationOwner();
+    const bob = await isolationOwner();
+    const a = await exportFixture(alice, "paused", new Date(now()));
+    const b = await exportFixture(bob, "active", new Date(now()));
+    const calls: string[] = [];
+    const worker = newApp(database, async ({ routineId, beforeDispatch }) => {
+      await beforeDispatch?.();
+      calls.push(routineId);
+      return { replyText: "Done" };
+    });
+    const request = (
+      path: string,
+      session: string,
+      method = "GET",
+      accept = "application/json",
+    ) =>
+      worker.request(path, {
+        method,
+        headers: { cookie: session, origin, accept },
+      });
+    const base = "/api/workspace/automation";
+    const path = `${base}/routines/${a.routineId}`;
+    try {
+      expect((await request(`${path}/run`, alice.session, "POST")).status).toBe(
+        202,
+      );
+      await cutOffAutomation(alice, worker, cutoff);
+      expect((await request(`${path}/run`, alice.session, "POST")).status).toBe(
+        403,
+      );
+      await sweepAutomation(worker);
+      await sweepAutomation(worker);
+      expect(calls).toEqual([b.routineId]);
+      const restored = await restoreAutomation(alice, cutoff);
+      const history = await request(`${path}/runs`, restored);
+      expect(await history.json()).toMatchObject({
+        runs: expect.arrayContaining([
+          expect.objectContaining({
+            status: "skipped",
+            source: "schedule",
+            error: cutoff,
+          }),
+          expect.objectContaining({
+            status: "skipped",
+            source: "run_now",
+            error: cutoff,
+          }),
+        ]),
+      });
+      expect((await request(`${path}/run`, restored, "POST")).status).toBe(409);
+      expect(
+        (
+          await request(
+            `${base}/routines/${b.routineId}/resume`,
+            restored,
+            "POST",
+          )
+        ).status,
+      ).toBe(404);
+      const overview = await request(base, restored, "GET", "text/html");
+      expect(await overview.text()).toContain(`action="${path}/resume"`);
+      expect((await request(`${path}/resume`, restored, "POST")).status).toBe(
+        204,
+      );
+      await sweepAutomation(worker);
+      expect(calls).toEqual([b.routineId]);
+      const resumed = await request(base, restored);
+      const state = await resumed.json();
+      const [routine] = state.routines;
+      expect(Date.parse(routine.nextRunAt)).toBeGreaterThan(now());
+      expect((await request(`${path}/run`, restored, "POST")).status).toBe(202);
+      await sweepAutomation(worker);
+      expect(calls).toEqual([b.routineId, a.routineId]);
+    } finally {
+      clockTime = undefined;
+    }
+  });
+}
+
+for (const cutoff of automationCutoffs) {
+  test(`personal inbound rejects delayed messages and requires binding resume after ${cutoff}`, async () => {
+    const alice = await isolationOwner();
+    const bob = await isolationOwner();
+    const bind = async (owner: typeof alice) => {
+      const { channelId, routineId } = await exportFixture(owner, "inbound");
+      await database.delete(routines).where(eq(routines.id, routineId));
+      const id = crypto.randomUUID();
+      await database.insert(deliveryBindings).values({
+        id,
+        ownerUserId: `personal-workspace:${owner.workspaceId}`,
+        agentId: owner.botId,
+        channelId,
+        threadId: channelId,
+        transport: "sms",
+        realm: "test",
+        identity: id,
+        address: id,
+      });
+      return id;
+    };
+    const a = await bind(alice);
+    const b = await bind(bob);
+    const output: string[] = [];
+    const started = Promise.withResolvers<void>();
+    const worker = newApp(
+      database,
+      async ({ instruction, beforeDispatch, signal }) => {
+        await beforeDispatch?.();
+        output.push(instruction);
+        if (instruction === "running") {
+          started.resolve();
+          if (!signal?.aborted)
+            await new Promise<void>((resolve) =>
+              signal?.addEventListener("abort", () => resolve(), {
+                once: true,
+              }),
+            );
+          signal?.throwIfAborted();
+        }
+        return { replyText: "Done" };
+      },
+    );
+    const receive = (
+      identity: string,
+      text: string,
+      sentAt = now(),
+      externalId = crypto.randomUUID(),
+      authorization = "Bearer test-relay-token",
+    ) =>
+      worker.request("/api/webhooks/personal-inbound", {
+        method: "POST",
+        headers: { authorization, "content-type": "application/json" },
+        body: JSON.stringify({
+          transport: "sms",
+          realm: "test",
+          identity,
+          text,
+          sentAt: new Date(sentAt).toISOString(),
+          externalId,
+        }),
+      });
+    const base = "/api/workspace/automation";
+    const request = (path: string, session: string, method = "GET") =>
+      worker.request(path, { method, headers: { cookie: session, origin } });
+    expect(
+      (await receive(a, "forged", now(), crypto.randomUUID(), "Bearer invalid"))
+        .status,
+    ).toBe(401);
+    expect((await receive(a, "running")).status).toBe(204);
+    const running = sweepAutomation(worker);
+    try {
+      expect(
+        await Promise.race([
+          started.promise.then(() => "started"),
+          running.then(() => "ended"),
+        ]),
+      ).toBe("started");
+      expect((await receive(a, "delayed queue")).status).toBe(204);
+      await cutOffAutomation(alice, worker, cutoff);
+      await running;
+      const oldSentAt = now() - 1;
+      expect((await receive(a, "during cutoff")).status).toBe(204);
+      await worker.refreshAccounts();
+      expect((await receive(b, "other owner")).status).toBe(204);
+      await sweepAutomation(worker);
+      await sweepAutomation(worker);
+      expect(output).toEqual(["running", "other owner"]);
+      const restored = await restoreAutomation(alice, cutoff);
+      const beforeResume = crypto.randomUUID();
+      expect(
+        (await receive(a, "waiting for resume", now(), beforeResume)).status,
+      ).toBe(204);
+      const history = await request(`${base}/bindings/${a}/runs`, restored);
+      expect(await history.json()).toMatchObject({
+        runs: expect.arrayContaining([
+          expect.objectContaining({ state: "unknown", error: cutoff }),
+          expect.objectContaining({ state: "skipped", error: cutoff }),
+          expect.objectContaining({
+            state: "skipped",
+            error: "manual_resume_required",
+          }),
+        ]),
+      });
+      expect(
+        (await request(`${base}/bindings/${b}/resume`, restored, "POST"))
+          .status,
+      ).toBe(404);
+      expect(
+        (await request(`${base}/bindings/${a}/resume`, restored, "POST"))
+          .status,
+      ).toBe(204);
+      expect(
+        (await receive(a, "late from before resume", oldSentAt)).status,
+      ).toBe(204);
+      clockTime = now() + 5;
+      expect(
+        (await receive(a, "duplicated pre-resume message", now(), beforeResume))
+          .status,
+      ).toBe(204);
+      expect((await receive(a, "new message")).status).toBe(204);
+      await sweepAutomation(worker);
+      expect(output).toEqual(["running", "other owner", "new message"]);
+    } finally {
+      clockTime = undefined;
+    }
+  });
+}
 
 test("a manual Bot retry asks under current policy and only its new approval can execute", async () => {
   const account = {

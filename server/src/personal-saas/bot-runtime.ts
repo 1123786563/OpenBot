@@ -155,20 +155,34 @@ export function createPersonalBotRuntime(
   const { intelligence, runner, buildAgent } =
     options.transport ?? deployedTransport(database);
   const store = createApprovalStore(database, now);
+  async function ownsBotThread(
+    ownerUserId: string,
+    agentId: string,
+    threadId: string,
+  ) {
+    const [origin] = await database
+      .select({ payload: workItems.payload })
+      .from(workItems)
+      .where(
+        and(
+          eq(workItems.kind, PERSONAL_BOT_WORK),
+          eq(workItems.key, threadId),
+          eq(workItems.accountId, ownerUserId),
+        ),
+      );
+    return origin?.payload.botId === agentId;
+  }
+
   const questions = createApprovalQuestions(
     database,
     async (question) => {
-      const [origin] = await database
-        .select({ payload: workItems.payload })
-        .from(workItems)
-        .where(
-          and(
-            eq(workItems.kind, PERSONAL_BOT_WORK),
-            eq(workItems.key, question.threadId),
-            eq(workItems.accountId, question.actorId),
-          ),
-        );
-      if (origin?.payload.botId !== question.botId)
+      if (
+        !(await ownsBotThread(
+          question.actorId,
+          question.botId,
+          question.threadId,
+        ))
+      )
         throw new ApprovalRefusedError(
           "That question does not belong to this Personal Assistant.",
         );
@@ -200,6 +214,7 @@ export function createPersonalBotRuntime(
     });
     if (permit && "replay" in permit) return permit.replay;
     await beforeDispatch?.();
+    await store.checkDecisionAccess?.(owner.ownerUserId, continuation);
     signal.throwIfAborted();
     const result = await execute({ runId: continuation.runId, signal });
     await permit?.complete(result);
@@ -269,19 +284,25 @@ export function createPersonalBotRuntime(
       await ensureDecisionActor(database, ownerUserId);
       return signal;
     },
-    toolsForTurn: async (owner) => [
-      {
-        definition: questionDefinition,
-        execute: (args, { signal }) =>
-          askPerson(args, owner.ownerUserId, owner.agentId, signal),
-      },
-      ...tools.map(
-        (tool): HeadlessTool => ({
-          definition: tool.definition,
-          execute: (args, { signal }) => callTool(tool, args, owner, signal),
-        }),
-      ),
-    ],
+    toolsForTurn: async (owner) => {
+      if (
+        !(await ownsBotThread(owner.ownerUserId, owner.agentId, owner.threadId))
+      )
+        return [];
+      return [
+        {
+          definition: questionDefinition,
+          execute: (args, { signal }) =>
+            askPerson(args, owner.ownerUserId, owner.agentId, signal),
+        },
+        ...tools.map(
+          (tool): HeadlessTool => ({
+            definition: tool.definition,
+            execute: (args, { signal }) => callTool(tool, args, owner, signal),
+          }),
+        ),
+      ];
+    },
   });
 
   async function continueTurn(
@@ -316,7 +337,7 @@ export function createPersonalBotRuntime(
     const [item] = await queue.claim({
       kind,
       owner,
-      leaseMs: 65_000,
+      leaseMs: 15 * 60_000,
       ready: parkedPersonalWork(PERSONAL_BOT_WORK, ready),
     });
     if (!item?.authorization) return;

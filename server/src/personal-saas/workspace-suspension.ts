@@ -87,7 +87,7 @@ export function suspensionRoutes(
       const [workspace] = await tx
         .select({
           ownerId: personalWorkspaces.ownerId,
-          accountStatus: personalSaasAccounts.status,
+          status: personalSaasAccounts.status,
         })
         .from(personalWorkspaces)
         .innerJoin(
@@ -116,17 +116,18 @@ export function suspensionRoutes(
       if (!event) throw new Error("Suspension operation was not recorded");
 
       if (input.data.action === "pause") {
-        const status = workspace.accountStatus;
-        if (status) {
-          const epoch = status.epoch + 1;
+        if (workspace.status) {
+          // Write through the same JSON mapping as provider refresh. Concatenating JSON
+          // in SQL can turn a driver-encoded JSON string into a JSON array.
+          const epoch = workspace.status.epoch + 1;
           await tx
             .update(personalSaasAccounts)
             .set({
               status: {
-                ...status,
+                ...workspace.status,
                 epoch,
                 executionCutoffs: [
-                  ...(status.executionCutoffs ?? []),
+                  ...(workspace.status.executionCutoffs ?? []),
                   {
                     epoch,
                     reason: "workspace_paused",

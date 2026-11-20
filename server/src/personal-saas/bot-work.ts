@@ -179,6 +179,7 @@ export function personalBotWork(
         if (!controller.signal.aborted && (await queue.finish(held)))
           return true;
       } catch (error) {
+        await checkpoint;
         if (
           error instanceof HeadlessToolSuspension &&
           ["approval", "person_question"].includes(error.waiting.kind) &&

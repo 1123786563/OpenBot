@@ -680,6 +680,13 @@
       "when": 1795177502282,
       "tag": "0096_personal_work_recovery",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1795178829465,
+      "tag": "0097_personal_saas_automation_resume",
+      "breakpoints": true
     }
   ]
 }
