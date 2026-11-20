@@ -3311,6 +3311,7 @@ export function mountCopilotRuntime(
         model: createManagedModel(trial),
       },
       traceRuns: Boolean(config.opik),
+      singleUser: config.singleUser,
       identifyActor,
       agentFor: (actor, botId) => agentFor({ actor, botId, textOnly: true }),
     });

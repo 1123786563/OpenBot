@@ -37,6 +37,7 @@ import {
   directChatRunEvents,
   learningSettings,
   opikRuns,
+  userRoles,
   users,
 } from "../src/db/schema";
 import { createLearningRoutes } from "../src/learning/routes";
@@ -60,6 +61,7 @@ async function person(): Promise<AuthenticatedActor> {
   const id = crypto.randomUUID();
   const email = `${id}@example.test`;
   await database.insert(users).values({ id, email, name: id });
+  await database.insert(userRoles).values({ userId: id, role: "user" });
   return { id, email, role: "user" };
 }
 
@@ -1909,6 +1911,10 @@ test("Learn now coalesces reservations, snapshots completed evidence, and discar
     expect(reservations).toHaveLength(4);
 
     now = next;
+    await database.delete(userRoles).where(eq(userRoles.userId, alice.id));
+    await runWorker();
+    expect(reservations).toHaveLength(4);
+    await database.insert(userRoles).values({ userId: alice.id, role: "user" });
     dispatched = Promise.withResolvers<void>();
     release = Promise.withResolvers<void>();
     await runWorker();

@@ -10,6 +10,8 @@ import type {
   ProfileReadExecutor,
 } from "../agents/profile-store";
 import type { AgentActor } from "../agents/profile-types";
+import { DEV_ACTOR } from "../auth/dev-actor";
+import { createRoleRepository } from "../auth/guards";
 import type { IdentifyActor } from "../copilot";
 import type { Database } from "../db/client";
 import {
@@ -122,6 +124,7 @@ export function createDirectChatRoutes(deps: {
   traceRuns: boolean;
   trial?: { route: string; model: ManagedModel };
   learningClock?: () => Date;
+  singleUser?: boolean;
   agentFor: (
     actor: AgentActor,
     agentId: string,
@@ -919,16 +922,18 @@ export function createDirectChatRoutes(deps: {
   return {
     routes,
     sweepLearning: () =>
-      learning.sweep(
-        ({ personId, threadId, agentId }) =>
-          (tx) =>
-            threadFor(
-              tx,
-              { id: personId, role: "user" },
-              threadId,
-              agentId,
-              true,
-            ),
-      ),
+      learning.sweep(({ personId, threadId, agentId }) => async (tx) => {
+        if (deps.singleUser && personId === DEV_ACTOR.id)
+          return threadFor(tx, DEV_ACTOR, threadId, agentId, true);
+        const roles = await createRoleRepository(tx).rolesForUser(personId);
+        const role = roles.includes("admin")
+          ? "admin"
+          : roles.includes("user")
+            ? "user"
+            : null;
+        return role
+          ? threadFor(tx, { id: personId, role }, threadId, agentId, true)
+          : null;
+      }),
   };
 }
