@@ -1,3 +1,4 @@
+import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import {
   IconBellRinging,
   IconChevronRight,
@@ -11,8 +12,13 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Fragment, useState } from "react";
+import { Fragment, type RefObject, useRef, useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
+import {
+  AstryxSurface,
+  astryxPilot,
+  astryxScope,
+} from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
@@ -120,19 +126,21 @@ export function CheckInsPage() {
   });
 
   return (
-    <PageShell
-      description="Bots check the apps people connected and tell them when something needs them, at most once an hour. They never act without asking."
-      title="Check-ins"
-    >
-      {overview.isPending ? null : overview.error ? (
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          Couldn't load check-in settings. Reload the page.
-        </p>
-      ) : (
-        <CheckInSettings data={overview.data} />
-      )}
-      <Activity days={days} metrics={metrics} onDays={setDays} />
-    </PageShell>
+    <AstryxSurface className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <PageShell
+        description="Bots check the apps people connected and tell them when something needs them, at most once an hour. They never act without asking."
+        title="Check-ins"
+      >
+        {overview.isPending ? null : overview.error ? (
+          <p className="mt-4 text-destructive text-sm" role="alert">
+            Couldn't load check-in settings. Reload the page.
+          </p>
+        ) : (
+          <CheckInSettings data={overview.data} />
+        )}
+        <Activity days={days} metrics={metrics} onDays={setDays} />
+      </PageShell>
+    </AstryxSurface>
   );
 }
 
@@ -142,6 +150,7 @@ function CheckInSettings({ data }: { data: EnterpriseOverview }) {
     setEnterpriseSettingMutationOptions(queryClient),
   );
   const [limitOpen, setLimitOpen] = useState(false);
+  const [limitSession, setLimitSession] = useState(0);
   const capability = data.capabilities.find(
     (row) => row.capability === "proactive",
   );
@@ -153,7 +162,7 @@ function CheckInSettings({ data }: { data: EnterpriseOverview }) {
       Object.keys(capability.groups).length
     : 0;
   const saving = setCapability.isPending || setSetting.isPending;
-  const failure = setCapability.error ?? setSetting.error;
+  const limitTrigger = useRef<HTMLButtonElement>(null);
 
   return (
     <PageSection
@@ -203,7 +212,17 @@ function CheckInSettings({ data }: { data: EnterpriseOverview }) {
         </Item>
         <Separator />
         <Item
-          render={<button onClick={() => setLimitOpen(true)} type="button" />}
+          render={
+            <button
+              ref={limitTrigger}
+              onClick={() => {
+                setSetting.reset();
+                setLimitSession((session) => session + 1);
+                setLimitOpen(true);
+              }}
+              type="button"
+            />
+          }
           size="sm"
         >
           <ItemMedia variant="icon">
@@ -220,13 +239,16 @@ function CheckInSettings({ data }: { data: EnterpriseOverview }) {
           </ItemActions>
         </Item>
       </PageRows>
-      {failure ? (
+      {setCapability.error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
-          {failure.message}
+          {setCapability.error.message}
         </p>
       ) : null}
       <DailyLimitDialog
+        key={limitSession}
+        error={setSetting.error?.message}
         initial={data.settings.proactiveDailyRuns}
+        returnFocus={limitTrigger}
         onClose={() => setLimitOpen(false)}
         onSave={(value) =>
           setSetting.mutate(
@@ -263,7 +285,7 @@ function Activity({
           <SelectTrigger aria-label="Period" size="sm">
             <SelectValue>{PERIODS[days]}</SelectValue>
           </SelectTrigger>
-          <SelectContent align="end">
+          <SelectContent {...astryxScope} align="end">
             <SelectGroup>
               <SelectItem value="7">{PERIODS[7]}</SelectItem>
               <SelectItem value="30">{PERIODS[30]}</SelectItem>
@@ -378,7 +400,7 @@ function BotDialog({
   );
   return (
     <Dialog onOpenChange={(next) => (next ? undefined : onClose())} open>
-      <DialogContent>
+      <DialogContent {...astryxScope}>
         <DialogHeader>
           <div className="flex items-center gap-3">
             <AbstractAvatar name={bot.name} seed={bot.avatarSeed} size={32} />
@@ -484,56 +506,99 @@ function DailyLimitDialog({
   onSave,
   open,
   saving,
+  error,
+  returnFocus,
 }: {
   initial: number;
   onClose: () => void;
   onSave: (value: number) => void;
   open: boolean;
   saving: boolean;
+  error?: string;
+  returnFocus: RefObject<HTMLButtonElement | null>;
 }) {
-  const [value, setValue] = useState(String(initial));
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? String(initial);
   const parsed = Number(value);
-  const valid =
-    value.trim() !== "" &&
-    Number.isInteger(parsed) &&
-    parsed >= 1 &&
-    parsed <= 1440;
+  const valid = /^\d+$/.test(value.trim()) && parsed >= 1 && parsed <= 1440;
+  const input = useRef<HTMLInputElement>(null);
+  function close() {
+    setDraft(null);
+    onClose();
+  }
   return (
     <Dialog
-      onOpenChange={(next) => (next ? setValue(String(initial)) : onClose())}
+      onOpenChange={(next) => {
+        if (!next) close();
+      }}
       open={open}
     >
-      <DialogContent>
+      <DialogContent
+        {...astryxScope}
+        initialFocus={input}
+        finalFocus={returnFocus}
+      >
         <DialogHeader>
           <DialogTitle>Daily limit</DialogTitle>
-        </DialogHeader>
-        <DialogBody className="mt-4 gap-2">
-          <Label htmlFor="check-in-daily-limit">
-            Check-ins a day per Bot, for each person
-          </Label>
-          <Input
-            id="check-in-daily-limit"
-            inputMode="numeric"
-            onChange={(event) => setValue(event.target.value)}
-            value={value}
-          />
-          <p className="text-muted-foreground text-xs">
+          <DialogDescription>
             24 is once an hour. Skipped check-ins don't count.
-          </p>
-        </DialogBody>
-        <DialogFooter className="mt-4">
-          <Button onClick={onClose} size="sm" type="button" variant="outline">
-            Cancel
-          </Button>
-          <Button
-            disabled={!valid || saving}
-            onClick={() => onSave(parsed)}
-            size="sm"
-            type="button"
-          >
-            {saving ? "Saving…" : "Save"}
-          </Button>
-        </DialogFooter>
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="flex min-h-0 flex-col"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (valid && !saving) onSave(parsed);
+          }}
+        >
+          <DialogBody className="gap-2">
+            <Label htmlFor="check-in-daily-limit">
+              Check-ins a day per Bot, for each person
+            </Label>
+            <Input
+              aria-describedby={
+                !valid ? "check-in-limit-validation" : undefined
+              }
+              aria-invalid={!valid || undefined}
+              id="check-in-daily-limit"
+              inputMode="numeric"
+              onChange={(event) => setDraft(event.target.value)}
+              ref={input}
+              value={value}
+            />
+            {!valid ? (
+              <p
+                className="text-destructive text-sm"
+                id="check-in-limit-validation"
+                role="alert"
+              >
+                Enter a whole number between 1 and 1,440.
+              </p>
+            ) : null}
+            {error ? (
+              <p className="text-destructive text-sm" role="alert">
+                {error}
+              </p>
+            ) : null}
+          </DialogBody>
+          <DialogFooter className="mt-4">
+            <Button onClick={close} size="sm" type="button" variant="outline">
+              Cancel
+            </Button>
+            {astryxPilot ? (
+              <AstryxButton
+                isDisabled={!valid || saving}
+                label={saving ? "Saving…" : "Save"}
+                type="submit"
+                variant="primary"
+              />
+            ) : (
+              <Button disabled={!valid || saving} size="sm" type="submit">
+                {saving ? "Saving…" : "Save"}
+              </Button>
+            )}
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

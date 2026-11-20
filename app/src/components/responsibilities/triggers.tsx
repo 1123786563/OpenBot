@@ -10,6 +10,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment, useId, useState } from "react";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { SharedAppNotice } from "@/components/plugins/shared-app-notice";
 import { Button } from "@/components/ui/button";
 import {
@@ -527,7 +528,10 @@ function NewTriggerDialog({
     <Dialog onOpenChange={(next) => !next && onClose()} open>
       {/* The heavier backdrop, forced: this stacks over the responsibility's dialog, and Base UI
           would otherwise render a nested dialog with no backdrop at all. */}
-      <DialogContent overlayClassName="bg-black/20 supports-backdrop-filter:backdrop-blur-sm">
+      <DialogContent
+        {...astryxScope}
+        overlayClassName="bg-black/20 supports-backdrop-filter:backdrop-blur-sm"
+      >
         <DialogHeader>
           <DialogTitle>Add trigger</DialogTitle>
           <DialogDescription>
@@ -566,7 +570,7 @@ function NewTriggerDialog({
                   <SelectTrigger className="w-full" id={`${id}-kind`}>
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent {...astryxScope}>
                     {(Object.keys(KIND_LABEL) as TriggerKind[]).map((value) => (
                       <SelectItem key={value} value={value}>
                         {KIND_LABEL[value]}
@@ -602,7 +606,7 @@ function NewTriggerDialog({
                       <SelectTrigger className="w-full" id={`${id}-mode`}>
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent {...astryxScope}>
                         {(Object.keys(SLACK_MODE) as SlackMode[]).map(
                           (value) => (
                             <SelectItem key={value} value={value}>

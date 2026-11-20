@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { BotApprovalRules } from "@/components/approvals/bot-rules";
+import { CapabilitySurface } from "@/components/astryx-pilot/capability-surface";
 import { AccessSections } from "@/components/bot-profile/access";
 import { BotSubpage } from "@/components/bot-profile/bot-subpage";
-import { BotDetailSurface } from "@/components/bot-profile/detail-surface";
 import { BotResponsibilities } from "@/components/responsibilities/responsibilities";
 import { ProactiveResearchSettings } from "@/components/suggestions/proactive-panel";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
@@ -23,7 +23,7 @@ function AccessPage() {
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
   return (
-    <BotDetailSurface>
+    <CapabilitySurface>
       <BotSubpage
         agentId={agentId}
         description={
@@ -46,6 +46,6 @@ function AccessPage() {
           </>
         )}
       </BotSubpage>
-    </BotDetailSurface>
+    </CapabilitySurface>
   );
 }

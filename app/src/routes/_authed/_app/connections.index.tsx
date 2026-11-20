@@ -13,10 +13,13 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import * as React from "react";
 import {
+  ConnectionAction,
+  ConnectionPage,
+} from "@/components/connections/connection-surface";
+import {
   PageEmpty,
   PageRows,
   PageSection,
-  PageShell,
 } from "@/components/layout/page-shell";
 import { RowMark } from "@/components/layout/row-mark";
 import { AppInitial, PluginLogo } from "@/components/plugins/plugin-logo";
@@ -397,6 +400,7 @@ function RouteComponent() {
    * The apps decide whether there is a list at all, and the account links only add to it: a failed
    * links read costs the GitHub and Slack rows and says so, not the whole page.
    */
+  const retrying = plugins.isFetching || connections.isFetching;
   const loading =
     plugins.isPending ||
     connections.isPending ||
@@ -404,7 +408,7 @@ function RouteComponent() {
     providers.isPending;
 
   return (
-    <PageShell
+    <ConnectionPage
       className="@container"
       description={
         personal
@@ -461,10 +465,22 @@ function RouteComponent() {
          * nothing is listed rather than a list that may be wrong.
          */}
         {loading ? null : plugins.error || connections.error ? (
-          <p className="mt-4 text-destructive text-sm" role="alert">
-            Couldn't load your connections. Reload the page, or ask an admin if
-            it keeps happening.
-          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-destructive text-sm" role="alert">
+              Couldn't load your connections.
+            </p>
+            <ConnectionAction
+              disabled={retrying}
+              onClick={() => {
+                if (plugins.isError) void plugins.refetch();
+                if (connections.isError) void connections.refetch();
+              }}
+              type="button"
+              variant="outline"
+            >
+              {retrying ? "Retrying…" : "Retry"}
+            </ConnectionAction>
+          </div>
         ) : rows.length === 0 ? (
           <PageEmpty icon={IconPlug} title="No apps yet">
             Apps show up here once an admin turns them on.
@@ -598,7 +614,7 @@ function RouteComponent() {
           </PageRows>
         </PageSection>
       ) : null}
-    </PageShell>
+    </ConnectionPage>
   );
 }
 
