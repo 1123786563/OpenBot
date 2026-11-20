@@ -27,6 +27,10 @@ import {
 import { type Edition, parseEdition } from "./edition";
 import { proxiedClientSocketUrl } from "./intelligence-gateway-proxy";
 import type { BrokerProvider } from "./plugins/access";
+import {
+  loadSkillMarketConfig,
+  type SkillMarketConfig,
+} from "./skill-market/config";
 import { type VoiceConfig, voiceConfig } from "./voice/config";
 import { type WebBotAuth, webBotAuthFromEnv } from "./web-bot-auth";
 
@@ -227,6 +231,7 @@ export type SingleUserAccess = {
 };
 
 export type DeploymentConfig = {
+  skillMarket?: SkillMarketConfig;
   /**
    * Browser extension ids OpenBot trusts as the Recorder besides its own fixed id, for a fork or a
    * build signed with another key. From OPENBOT_RECORDER_EXTRA_EXTENSION_IDS, never from NODE_ENV.
@@ -1658,6 +1663,7 @@ export function loadConfig(
   // Built first and checked after, so every refusal the team edition gives keeps its order.
   const loaded = {
     port: serverPort(environment),
+    skillMarket: loadSkillMarketConfig(environment),
     transcription: transcriptionConfig(environment),
     voice: voiceConfig(environment),
     databaseUrl: required(environment, "DATABASE_URL"),

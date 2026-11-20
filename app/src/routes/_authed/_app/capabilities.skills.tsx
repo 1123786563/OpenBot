@@ -9,6 +9,7 @@ import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { StaggerItem } from "@/components/layout/stagger";
 import { EditSkill } from "@/components/skills/edit-skill";
 import { NewSkill } from "@/components/skills/new-skill";
+import { SkillMarket } from "@/components/skills/skill-market";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -27,6 +28,7 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { removeSkillMutationOptions } from "@/lib/plugins/mutations";
 import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
 
@@ -53,6 +55,9 @@ export const Route = createFileRoute("/_authed/_app/capabilities/skills")({
 
 function SkillsPage() {
   const queryClient = useQueryClient();
+  const { data: deploymentCapabilities } = useQuery(
+    deploymentCapabilitiesQueryOptions(),
+  );
   const { new: isCreating, edit: editingSlug } = Route.useSearch();
   const navigate = Route.useNavigate();
   // Creating wins if both are somehow set: it is the more recent intent, the same rule the agents
@@ -258,6 +263,7 @@ function SkillsPage() {
          * the real one now. `SkillRow` below is still parked, because its per-Bot grant toggles have
          * no equivalent in the redesigned rows yet.
          */}
+        {deploymentCapabilities?.skillMarket && <SkillMarket />}
       </CapabilitiesShell>
     </DetailPanel>
   );

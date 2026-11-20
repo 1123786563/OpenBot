@@ -177,6 +177,7 @@ import { createRoutingRoutes } from "./routing/routes";
 import { createCoworkerRoutingService } from "./routing/service";
 import type { SelfHostBanner } from "./self-host-banner";
 import { createSetupRoutes, type SetupSources } from "./setup/checklist";
+import { createSkillMarketRoutes } from "./skill-market/routes";
 import { createTaskRoutes } from "./tasks/routes";
 import type { TaskRunner } from "./tasks/runner";
 import type { TaskStore } from "./tasks/store";
@@ -570,6 +571,10 @@ export function createApp(
   profileStore?: ProfileStore,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
+  const skillMarket =
+    config.edition === "team" && !config.singleUser
+      ? config.skillMarket
+      : undefined;
   // First, in every auth mode: a page from another website changes nothing here and opens no socket.
   // See request-trust.ts for what passes and why.
   app.use("/api/*", createOriginGuard(config));
@@ -625,6 +630,7 @@ export function createApp(
       localEvaluation: config.singleUser,
       // Which product this is: the app shows the personal edition's screens instead of Admin.
       edition: config.edition,
+      skillMarket: Boolean(skillMarket),
       transcription: Boolean(config.transcription),
       voice: Boolean(config.voice),
       /*
@@ -776,6 +782,12 @@ export function createApp(
   // Enterprise controls: capability switches and the model allowlist in front of the routes they
   // govern, the admin screen's API, and the SCIM verbs the GET/POST auth handler above does not take.
   app.use("/api/*", createEnterpriseGate(requireUser));
+  if (skillMarket) {
+    app.route(
+      "/api/skill-market",
+      createSkillMarketRoutes(requireUser, skillMarket),
+    );
+  }
   if (coworker?.productTelemetry)
     app.route(
       "/api/telemetry",
