@@ -12,6 +12,7 @@ import {
   approvalTeamRules,
   brokeredAccounts,
   brokeredConnections,
+  corsairAccounts,
   corsairSharedAccess,
   githubPilotConnections,
   githubPilotRepositories,
@@ -26,6 +27,7 @@ import {
 } from "../src/db/schema";
 import { corsairGrantRef } from "../src/plugins/corsair/grants";
 import { createCorsairReadinessRoutes } from "../src/plugins/corsair/readiness";
+import { createRevocation } from "../src/plugins/corsair/revocation";
 import { createGithubPilotProvider } from "../src/plugins/corsair/github";
 import { createGithubPilotRoutes } from "../src/plugins/corsair/routes";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -503,10 +505,36 @@ test("Slack shared migration requires separate review and preserves the approved
         members: [{ kind: "group", value: "workspace-operators" }],
       },
     });
+    expect(await (await api.request("/slack")).json()).toMatchObject({
+      capabilities: expect.arrayContaining([
+        expect.objectContaining({
+          key: "legacy-account:arcade:",
+          status: "ready",
+          requiredConnectionIds: [installationId],
+        }),
+      ]),
+    });
+    await createRevocation({ database, verify: async () => false }).disconnect(
+      eq(corsairAccounts.id, installationId),
+      "migration-admin",
+    );
+    expect(await (await api.request("/slack")).json()).toMatchObject({
+      ready: false,
+      connections: expect.arrayContaining([
+        expect.objectContaining({ id: installationId, status: "disconnected" }),
+      ]),
+      capabilities: expect.arrayContaining([
+        expect.objectContaining({
+          key: "legacy-account:arcade:",
+          status: "blocked",
+          requiredConnectionIds: [installationId],
+        }),
+      ]),
+    });
   } finally {
     await database
-      .delete(slackSharedInstallations)
-      .where(eq(slackSharedInstallations.id, installationId));
+      .delete(corsairAccounts)
+      .where(eq(corsairAccounts.id, installationId));
     await database
       .delete(brokeredConnections)
       .where(eq(brokeredConnections.vendorUserId, workspaceId));

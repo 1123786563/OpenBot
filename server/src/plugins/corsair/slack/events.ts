@@ -37,6 +37,7 @@ import {
 import { TRIGGER_BODY_LIMIT } from "../../../responsibilities/trigger-routes";
 import { fitPayload } from "../../../responsibilities/triggers";
 import type { EventTransaction } from "../event-triggers";
+import { dispatchWhileConnected, RevocationRefusal } from "../revocation";
 import { SLACK_EVENT_PREFIX, SlackEventAccessRetry } from "./event-run-access";
 import { slackChannel } from "./provider";
 import type { SharedSlackProvider } from "./shared-provider";
@@ -224,10 +225,20 @@ export function createSlackEventPilot({
     if (!installation) return { kind: "denied" } as const;
     let retry = false;
     for (const grant of grants) {
-      const access = await checkMember({
-        channelId: event.channelId,
-        slackUserId: grant.userId,
-      }).catch(() => "retry" as const);
+      const access = await dispatchWhileConnected(
+        database,
+        installation.id,
+        undefined,
+        () =>
+          checkMember({
+            channelId: event.channelId,
+            slackUserId: grant.userId,
+          }),
+      ).catch((error: unknown) =>
+        error instanceof RevocationRefusal
+          ? ("denied" as const)
+          : ("retry" as const),
+      );
       if (access === "allowed") {
         return {
           kind: "allowed",

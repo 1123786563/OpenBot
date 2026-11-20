@@ -130,7 +130,7 @@ export async function readCorsairReadiness(
         select 'trigger:' || id, 'trigger_config',
           jsonb_build_object('ownerId', owner_user_id, 'goalId', responsibility_id,
             'resource', config->>'repository', 'teamId', config->>'teamId',
-            'channelId', config->>'channelId', 'revision', updated_at), 'trigger'
+            'channels', config->'channels', 'revision', updated_at), 'trigger'
         from responsibility_triggers where ${includeDeploymentLegacy} and kind = ${app} and enabled
         union all
         select 'corsair-trigger:' || id, 'trigger_config',
@@ -330,7 +330,7 @@ export async function readCorsairReadiness(
         blockers.push("account_mapping_unverified");
       if (needs === "trigger" && app === "slack") {
         const source = z
-          .object({ teamId: z.string(), channelId: z.string() })
+          .object({ teamId: z.string(), channels: z.array(z.string()) })
           .safeParse(detail);
         const targetId =
           current?.kind === "verified" ? current.targetId : undefined;
@@ -346,7 +346,10 @@ export async function readCorsairReadiness(
             (account) =>
               account.status === "enrolled" &&
               account.teamId === source.data.teamId &&
-              account.channelIds?.includes(source.data.channelId),
+              account.channelIds?.length &&
+              source.data.channels.every((channel) =>
+                account.channelIds?.includes(channel),
+              ),
           )
         )
           blockers.push("trigger_mapping_unverified");
