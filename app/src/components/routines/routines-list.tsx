@@ -7,14 +7,15 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Fragment, useState } from "react";
+import { Fragment, useId, useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
+import { astryxPilot, astryxScope } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
+import { RoutineAction } from "@/components/routines/routine-action";
 import {
   Dialog,
   DialogBody,
@@ -255,6 +256,7 @@ export function RoutinesList({
   const deleteRoutine = useMutation(deleteRoutineMutationOptions(queryClient));
   const runNow = useMutation(runRoutineNowMutationOptions(queryClient));
   /** Which routine's run history is open. One at a time keeps the list scannable. */
+  const historyPrefix = useId();
   const [historyId, setHistoryId] = useState<string | null>(null);
   /** The routine a delete is being confirmed for, or null. Its own dialog rather than one per row. */
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -303,6 +305,7 @@ export function RoutinesList({
       ) : (
         <PageRows>
           {rows.map((routine, index) => {
+            const historyRegionId = `${historyPrefix}-${routine.id}`;
             const lastRun = lastRunLabel(routine.lastRun);
             const bot = bots.get(routine.agentId);
             return (
@@ -428,13 +431,22 @@ export function RoutinesList({
                         </Chip>
                       )}
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex flex-wrap items-center gap-1">
+                      {astryxPilot && !routine.channel.gone ? (
+                        <Link
+                          className="rounded-sm px-2 py-1 text-sm underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+                          params={{ channelId: routine.channel.id }}
+                          to="/channel/$channelId"
+                        >
+                          Edit in conversation
+                        </Link>
+                      ) : null}
                       {/*
                        * Run now is the Test button, and it does real work: the Bot carries out the
                        * instruction in the channel right away. Offered only while the routine is
                        * on, because a paused routine never runs.
                        */}
-                      <Button
+                      <RoutineAction
                         aria-label={`Run the routine scheduled ${routine.schedule} now`}
                         disabled={
                           !routine.enabled ||
@@ -445,7 +457,7 @@ export function RoutinesList({
                             onSuccess: () => setHistoryId(routine.id),
                           })
                         }
-                        size="sm"
+                        icon={<IconPlayerPlay aria-hidden />}
                         title={
                           routine.enabled
                             ? "Runs it now, for real. The Bot does the work and posts in the conversation."
@@ -454,10 +466,10 @@ export function RoutinesList({
                         type="button"
                         variant="outline"
                       >
-                        <IconPlayerPlay />
                         Run now
-                      </Button>
-                      <Button
+                      </RoutineAction>
+                      <RoutineAction
+                        aria-controls={historyRegionId}
                         aria-expanded={historyId === routine.id}
                         aria-label={`Run history for the routine scheduled ${routine.schedule}`}
                         onClick={() =>
@@ -465,33 +477,36 @@ export function RoutinesList({
                             historyId === routine.id ? null : routine.id,
                           )
                         }
-                        size="sm"
+                        icon={<IconHistory aria-hidden />}
                         type="button"
                         variant="ghost"
                       >
-                        <IconHistory />
                         History
-                      </Button>
-                      <Button
+                      </RoutineAction>
+                      <RoutineAction
                         aria-label={`Delete the routine scheduled ${routine.schedule}`}
                         onClick={() => {
                           deleteRoutine.reset();
                           setConfirmingId(routine.id);
                         }}
-                        size="sm"
+                        icon={<IconTrash aria-hidden />}
                         type="button"
                         variant="ghost"
                       >
-                        <IconTrash />
                         Delete
-                      </Button>
+                      </RoutineAction>
                     </div>
                   </ItemFooter>
-                  {historyId === routine.id ? (
-                    <div className="basis-full border-border border-t pt-2">
+                  <section
+                    aria-label={`Run history for ${routine.title ?? routine.schedule}`}
+                    className="basis-full border-border border-t pt-2"
+                    hidden={historyId !== routine.id}
+                    id={historyRegionId}
+                  >
+                    {historyId === routine.id ? (
                       <RoutineRuns routine={routine} />
-                    </div>
-                  ) : null}
+                    ) : null}
+                  </section>
                 </Item>
               </Fragment>
             );
@@ -513,7 +528,10 @@ export function RoutinesList({
       >
         {/* The heavier backdrop, forced: opened from a Bot's dialog this stacks over it, and Base
             UI would otherwise render a nested dialog with no backdrop at all. */}
-        <DialogContent overlayClassName="bg-black/20 supports-backdrop-filter:backdrop-blur-sm">
+        <DialogContent
+          {...astryxScope}
+          overlayClassName="bg-black/20 supports-backdrop-filter:backdrop-blur-sm"
+        >
           <DialogHeader>
             <DialogTitle>Delete "{confirming?.schedule}"?</DialogTitle>
             <DialogDescription>
@@ -528,15 +546,14 @@ export function RoutinesList({
             </DialogBody>
           ) : null}
           <DialogFooter className="mt-4">
-            <Button
+            <RoutineAction
               onClick={() => setConfirmingId(null)}
-              size="sm"
               type="button"
               variant="outline"
             >
               Cancel
-            </Button>
-            <Button
+            </RoutineAction>
+            <RoutineAction
               disabled={deleteRoutine.isPending}
               onClick={() => {
                 if (!confirmingId) return;
@@ -544,12 +561,11 @@ export function RoutinesList({
                   onSuccess: () => setConfirmingId(null),
                 });
               }}
-              size="sm"
               type="button"
               variant="destructive"
             >
               {deleteRoutine.isPending ? "Deleting…" : "Delete"}
-            </Button>
+            </RoutineAction>
           </DialogFooter>
         </DialogContent>
       </Dialog>

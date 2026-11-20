@@ -1,4 +1,5 @@
-import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { createFileRoute, Navigate, redirect } from "@tanstack/react-router";
+import { astryxPilot } from "@/components/astryx-pilot/theme";
 import { useActiveSkin } from "@/skins/registry";
 
 /*
@@ -7,6 +8,13 @@ import { useActiveSkin } from "@/skins/registry";
  * to it, goes home rather than to an empty page.
  */
 export const Route = createFileRoute("/_authed/_app/s/$screen")({
+  beforeLoad: ({ params }) => {
+    if (!astryxPilot) return;
+    if (params.screen === "routines")
+      throw redirect({ to: "/routines", replace: true });
+    if (params.screen === "tasks")
+      throw redirect({ to: "/tasks", replace: true });
+  },
   component: RouteComponent,
 });
 

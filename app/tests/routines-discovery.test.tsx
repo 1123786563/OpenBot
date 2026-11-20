@@ -7,7 +7,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, within } from "@testing-library/react";
 import type * as React from "react";
 import { RoutineComposerButton } from "@/components/routines/new-routine-button";
 import { RoutinesConnectionPage } from "@/components/routines/routines-connection-page";
@@ -63,6 +63,7 @@ function routine(overrides: Partial<RoutineRecord>): RoutineRecord {
 function draw(element: React.ReactNode, page: RoutinesPage) {
   global.fetch = (async (input: RequestInfo | URL) => {
     const path = String(input);
+    if (path.endsWith("/runs")) return Response.json({ runs: [] });
     if (path.startsWith("/api/routines")) return Response.json(page);
     if (path.startsWith("/api/agents"))
       return Response.json({
@@ -170,4 +171,22 @@ test("the schedule picker writes the cron it reads back in words", () => {
     expect(cronFrom(schedule)).toBe(cron);
     expect(scheduleSentence(schedule)).toBe(words);
   }
+});
+
+test("keyboard users can locate the results controlled by a routine's History button", async () => {
+  const view = draw(<RoutinesList />, {
+    routines: [routine({})],
+    sweep: SWEEP,
+  });
+  const history = await view.findByRole("button", { name: /Run history/ });
+  const region = document.getElementById(
+    history.getAttribute("aria-controls") ?? "",
+  );
+  expect(region?.hidden).toBe(true);
+  fireEvent.click(history);
+  expect(
+    (await view.findByRole("region", { name: "Run history for Morning leads" }))
+      .id,
+  ).toBe(region?.id ?? "");
+  expect(history.getAttribute("aria-expanded")).toBe("true");
 });
