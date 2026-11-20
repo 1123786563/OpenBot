@@ -1,11 +1,22 @@
 import { afterAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
+import { responsibilityTriggers } from "../src/db/schema";
 import { createCorsairEventOperations } from "../src/plugins/corsair/event-operations";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
-afterAll(() => database.$client.close());
+const legacyTrigger = randomUUID();
+afterAll(async () => {
+  try {
+    await database
+      .delete(responsibilityTriggers)
+      .where(eq(responsibilityTriggers.id, legacyTrigger));
+  } finally {
+    await database.$client.close();
+  }
+});
 
 test("journals a legacy receipt before dispatch and alerts once for a missing Trigger result", async () => {
   const operations = createCorsairEventOperations(database, randomUUID());
@@ -57,7 +68,6 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
     githubRegistration: registration,
   });
   const key = { provider: "github", source: "321" } as const;
-  const legacyTrigger = randomUUID();
   const nativeTrigger = randomUUID();
   const { createGithubEventIngress } = await import(
     "../src/plugins/corsair/event-ingress"
@@ -85,12 +95,10 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
     triggerIds: [legacyTrigger],
   });
   expect(old.owner).toBe("legacy");
-  const { eq } = await import("drizzle-orm");
   const {
     users,
     agents,
     responsibilities,
-    responsibilityTriggers,
     responsibilityRuns,
     githubPilotConnections,
     githubPilotRepositories,
