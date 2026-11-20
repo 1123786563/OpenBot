@@ -192,7 +192,7 @@ test.each(["user", "admin"] as const)(
       })),
     ).toEqual([
       ...expected(role, "primary"),
-      { label: "Goals", to: "/responsibilities" },
+      { label: "Goals", to: "/responsibilities?view=goals" },
       { label: "Tasks", to: "/tasks" },
       { label: "Ideas", to: "/ideas" },
       { label: "Activity", to: "/s/activity" },

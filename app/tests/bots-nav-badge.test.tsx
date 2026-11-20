@@ -2,7 +2,10 @@ import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
-import { BotsNavBadge } from "@/components/bot-profile/attention";
+import {
+  AttentionNotifier,
+  BotsNavBadge,
+} from "@/components/bot-profile/attention";
 import { botLifecycleKeys } from "@/lib/bot-lifecycle/queries";
 import { awayFromOpenBot } from "./desktop-notifications.fixture";
 import { settleReactWork } from "./settle-react-work";
@@ -115,6 +118,7 @@ function draw() {
   });
   const view = render(
     <QueryClientProvider client={client}>
+      <AttentionNotifier />
       <BotsNavBadge />
     </QueryClientProvider>,
   );
