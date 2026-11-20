@@ -129,6 +129,15 @@ function attributesOf(
       : {}),
     ...(record.attempt_id ? { "openbot.attempt_id": record.attempt_id } : {}),
     ...(record.thread_id ? { "openbot.thread_id": record.thread_id } : {}),
+    ...(record.routine_run_id
+      ? { "openbot.routine_run_id": record.routine_run_id }
+      : {}),
+    ...(record.responsibility_run_id
+      ? { "openbot.responsibility_run_id": record.responsibility_run_id }
+      : {}),
+    ...(record.work_item_key
+      ? { "openbot.work_item_key": record.work_item_key }
+      : {}),
     ...Object.fromEntries(
       Object.entries(record.facets).map(([key, value]) => [
         `openbot.facet.${key}`,

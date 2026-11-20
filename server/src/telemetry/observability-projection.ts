@@ -34,6 +34,9 @@ export type OpenBotAuditRecord = OpenBotEnvelope<
   root_task_id?: string;
   attempt_id?: string;
   thread_id?: string;
+  routine_run_id?: string;
+  responsibility_run_id?: string;
+  work_item_key?: string;
   facets: Record<string, OpenBotScalar>;
 };
 
@@ -111,6 +114,8 @@ const facetSchemasByEvent: Record<
     kind: facetId,
     verified: z.boolean(),
   },
+  "responsibility.triggered": {},
+  "routines.run_requested": { source: z.literal("manual") },
   "routine.completed": { routine: facetId, outcome: routineOutcome },
   "routine.failed": { routine: facetId, outcome: routineOutcome },
   "routine.started": { routine: facetId },
@@ -136,11 +141,24 @@ export function projectAuditEvent(
   const targetId = identifierOf(event.targetId);
   const actorUserId = identifierOf(event.actorUserId);
   const initiatorId = identifierOf(event.initiatorId);
-  const runId = identifierOf(event.runId);
+  const runId = identifierOf(event.approvalRun?.runId ?? event.runId);
   const parentRunId = identifierOf(event.parentRunId);
   const rootTaskId = identifierOf(event.rootTaskId);
   const attemptId = identifierOf(event.attemptId);
-  const threadId = identifierOf(event.threadId);
+  const threadId = identifierOf(event.approvalRun?.threadId ?? event.threadId);
+  const payload = isRecord(event.payload) ? event.payload : undefined;
+  const routineRunId =
+    event.eventType === "routines.run_requested"
+      ? identifierOf(payload?.runId)
+      : undefined;
+  const responsibilityRuns = payload?.runIds;
+  const responsibilityRunId =
+    event.eventType === "responsibility.triggered" &&
+    Array.isArray(responsibilityRuns) &&
+    responsibilityRuns.length === 1
+      ? identifierOf(responsibilityRuns[0])
+      : undefined;
+  const workItemKey = identifierOf(event.workItemKey);
   const common = {
     stream: "openbot_audit",
     schema_version: AUDIT_SCHEMA_VERSION,
@@ -161,13 +179,18 @@ export function projectAuditEvent(
     ...(rootTaskId ? { root_task_id: rootTaskId } : {}),
     ...(attemptId ? { attempt_id: attemptId } : {}),
     ...(threadId ? { thread_id: threadId } : {}),
+    ...(routineRunId ? { routine_run_id: routineRunId } : {}),
+    ...(responsibilityRunId
+      ? { responsibility_run_id: responsibilityRunId }
+      : {}),
+    ...(workItemKey ? { work_item_key: workItemKey } : {}),
   } satisfies Omit<OpenBotAuditRecord, "projection_status" | "facets">;
 
   if (!Object.hasOwn(facetSchemasByEvent, event.eventType)) {
     return { ...common, projection_status: "unknown", facets: {} };
   }
 
-  if (!isRecord(event.payload)) {
+  if (!payload) {
     return { ...common, projection_status: "failed", facets: {} };
   }
 
@@ -175,8 +198,8 @@ export function projectAuditEvent(
   for (const [key, schema] of Object.entries(
     facetSchemasByEvent[event.eventType],
   )) {
-    if (!Object.hasOwn(event.payload, key)) continue;
-    const result = schema.safeParse(event.payload[key]);
+    if (!Object.hasOwn(payload, key)) continue;
+    const result = schema.safeParse(payload[key]);
     if (!result.success) {
       return { ...common, projection_status: "failed", facets: {} };
     }
