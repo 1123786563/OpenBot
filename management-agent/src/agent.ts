@@ -277,7 +277,7 @@ export class ManagementAgent {
       digest: candidate.digest,
     };
     if (!state.accepted) {
-      await this.firstRelease(release, candidate.manifest);
+      await this.firstRelease(release, candidate.manifest, state);
       return;
     }
     const current = parseReleaseManifest(JSON.parse(state.accepted.manifest));
@@ -386,8 +386,9 @@ export class ManagementAgent {
    * A StatefulSet stays stuck on a pod the failed release started that never became Ready, even
    * once its template is put back: Kubernetes asks for those pods to be deleted
    * (https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#forced-rollback).
-   * While the accepted release goes back on, the agent deletes exactly those pods: owned by one of
-   * the release's StatefulSets, not Ready, and not at the revision the StatefulSet now rolls out.
+   * While the accepted release goes back on (or a first install goes on again after one failed),
+   * the agent deletes exactly those pods: owned by one of the release's StatefulSets, not Ready, and
+   * not at the revision the StatefulSet now rolls out.
    */
   private async forcedRollback(signal: AbortSignal) {
     const target = productTarget(this.config);
@@ -489,15 +490,37 @@ export class ManagementAgent {
     }
   }
 
-  /** No release accepted yet: install on an empty namespace, or adopt the running release when it
-   * is the desired one. */
+  /**
+   * No release accepted yet: install on an empty namespace, install again after the agent's own
+   * first install failed, or adopt the running release when it is the desired one.
+   *
+   * A failed first install leaves Flux pinned to its chart and the release's workloads in the
+   * namespace, but no server that answers /release, so it can never be adopted. The agent knows it
+   * put that release there (`firstInstall`) and that none was ever accepted, so there is no data to
+   * keep and no backup to take: once a person has cleared the journal, it installs the desired
+   * release (the same one after its cause is fixed, or the new one CopilotKit names) inside the
+   * window, journaled like the first attempt.
+   */
   private async firstRelease(
     release: AcceptedRelease,
     manifest: ReleaseManifest,
+    state: AgentState,
   ) {
     const target = productTarget(this.config);
     const server = await serverDeployment(target, run).catch(() => null);
     if (!server && (await this.flux.pinnedDigest()) === null) {
+      this.start(release.version, () =>
+        this.install(release, manifest, "install"),
+      );
+      return;
+    }
+    if (state.firstInstall !== null) {
+      if (!this.insideWindow()) {
+        this.waitingWindow = true;
+        this.operationTarget = release.version;
+        this.message = `the first install of ${state.firstInstall} did not complete; waiting for the maintenance window to install ${release.version}`;
+        return;
+      }
       this.start(release.version, () =>
         this.install(release, manifest, "install"),
       );
@@ -568,6 +591,21 @@ export class ManagementAgent {
     );
   }
 
+  /** `applyRelease`, deleting the pods a failed release left stuck while it goes on. */
+  private async applyReleaseUnstuck(
+    release: AcceptedRelease,
+    manifest: ReleaseManifest,
+  ) {
+    const done = new AbortController();
+    const unstuck = this.forcedRollback(done.signal);
+    try {
+      await this.applyRelease(release, manifest);
+    } finally {
+      done.abort();
+      await unstuck;
+    }
+  }
+
   private newJournal(
     from: string,
     to: string,
@@ -608,10 +646,18 @@ export class ManagementAgent {
       release.version,
     );
     try {
+      // Before Flux is moved: from here until a release is accepted, what runs in the namespace is
+      // the agent's own install, which a person may clear and the agent may install again.
+      if (mode === "install")
+        await this.updateState((state) => {
+          state.firstInstall = release.version;
+        });
       journal.databaseMayHaveChanged = true;
       journal.phase = "promoting";
       await this.saveJournal(journal);
-      await this.applyRelease(release, manifest);
+      // After a failed first install, its StatefulSet pods are stuck on the failed release.
+      if (mode === "install") await this.applyReleaseUnstuck(release, manifest);
+      else await this.applyRelease(release, manifest);
       journal.phase = "verifying";
       await this.saveJournal(journal);
       await this.verify(manifest);
@@ -619,6 +665,7 @@ export class ManagementAgent {
         state.accepted = release;
         state.previous = null;
         state.rolledBackFrom = null;
+        state.firstInstall = null;
       });
       journal.phase = "accepted";
       await this.saveJournal(journal);
