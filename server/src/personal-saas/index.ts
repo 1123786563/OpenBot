@@ -14,6 +14,7 @@ const trial = z.object({
   ),
   CASDOOR_ISSUER: httpsUrl,
   CASDOOR_DISCOVERY_URL: httpsUrl,
+  CASDOOR_ACCOUNT_STATUS_URL: httpsUrl,
   CASDOOR_CLIENT_ID: z.string().trim().min(1),
   CASDOOR_CLIENT_SECRET: z.string().trim().min(1),
   KEY_ENCRYPTION_KEY: z
@@ -41,6 +42,7 @@ const app = createPersonalSaasApp(
     casdoor: {
       issuer: env.CASDOOR_ISSUER,
       discoveryUrl: new URL(env.CASDOOR_DISCOVERY_URL),
+      accountStatusUrl: new URL(env.CASDOOR_ACCOUNT_STATUS_URL),
       clientId: env.CASDOOR_CLIENT_ID,
       clientSecret: env.CASDOOR_CLIENT_SECRET,
     },
@@ -59,3 +61,17 @@ console.info(
     url: server.url.href,
   }),
 );
+
+async function refreshAccounts() {
+  try {
+    await app.refreshAccounts();
+  } catch {
+    console.warn(
+      JSON.stringify({ type: "personal-saas-account-refresh-failure" }),
+    );
+  } finally {
+    setTimeout(refreshAccounts, 1_000);
+  }
+}
+
+void refreshAccounts();

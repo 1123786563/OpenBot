@@ -11,6 +11,7 @@ Set these variables in the trial process environment:
 | `OPENBOT_PERSONAL_SAAS_MODE` | `private-trial` |
 | `OPENBOT_PERSONAL_SAAS_URL` | The HTTPS origin participants use for OpenBot |
 | `CASDOOR_DISCOVERY_URL` | The HTTPS URL of the trial application's OIDC discovery document |
+| `CASDOOR_ACCOUNT_STATUS_URL` | The authenticated account status endpoint at the Casdoor discovery origin |
 | `CASDOOR_ISSUER` | The exact `issuer` string from discovery |
 | `CASDOOR_CLIENT_ID`, `CASDOOR_CLIENT_SECRET` | The trial application's client credentials |
 | `DATABASE_URL` | A dedicated OpenBot trial PostgreSQL database with pgvector |
@@ -26,7 +27,7 @@ bun run --filter server start:personal-saas
 
 The landing page sends participants to Casdoor for registration, verification, sign-in and account recovery. OpenBot uses the issuer and stable subject to retain ownership after a verified email change. Returning participants see their existing workspace. An interrupted setup can be retried from the preparation page. First entry creates the workspace and its default Personal Assistant Bot in one transaction. The workspace owns the Bot through `personal_workspace_default_bots`, and `/api/workspace` returns the canonical Bot ID. Bot execution, Connections, and Computers remain disabled in this trial entry point.
 
-Use the existing deployment commands for enterprise or local Personal edition. The Web trial checks Casdoor status for each protected request. Durable disablement history and execution cutoff are separate rollout requirements.
+Use the existing deployment commands for enterprise or local Personal edition.
 
 ## Sign out
 
@@ -37,6 +38,23 @@ The Web workspace opens a same-origin session event stream. Each replica checks 
 Before enabling all-device sign-out for trial participants, verify the deployed Casdoor application honors `prompt=login` and `max_age=0`, and returns a signed ID token with a fresh `auth_time`. Synchronize OpenBot and Casdoor clocks. OpenBot rejects proof issued in the same second the challenge began, since timestamps have whole-second precision. The integration test uses a local OIDC fixture with real JWT signing and validation. Provider behavior needs verification on the deployed Casdoor build.
 
 Sign-out only deletes session records. An integration test exercises the real durable work queue on PostgreSQL and shows that a worker can renew and finish its lease and claim queued work across both kinds of sign-out. The private trial keeps runtime execution disabled. End-to-end continuation for an authorized Personal SaaS Bot, Routine, or Computer needs verification through its production worker once that runtime and its execution authorization are wired.
+
+## Account status and cutoff
+
+Deploy an account status endpoint at `CASDOOR_ACCOUNT_STATUS_URL`. The endpoint accepts a form POST with `client_id`, `client_secret`, and the stable Casdoor `subject`. Authenticate the configured trial application before returning account data. Return the current account state and complete disablement history from one consistent read of Casdoor state.
+
+| Response field | Meaning |
+| --- | --- |
+| `issuer`, `subject` | The Casdoor issuer and stable subject for this account |
+| `active` | Whether the account is currently active |
+| `observedAt` | When the provider reliably observed this state, in UTC Unix milliseconds |
+| `disablements` | Every effective disablement for this identity, with a stable `id` and an `effectiveAt` timestamp in UTC Unix milliseconds |
+
+The deployment must record each disablement durably as it takes effect. Include disablements that end before OpenBot polls. Return a failure if the endpoint cannot establish current state or provide complete history. Keep observations ordered and synchronize clocks on the status provider and OpenBot hosts. The integration test provides this endpoint in its Casdoor fixture. Before admitting participants, deploy the provider and verify that it captures every Casdoor mutation path, including a brief disablement followed by recovery.
+
+OpenBot stores the history in PostgreSQL and revokes existing Application Sessions as soon as it observes a new disablement. Recovery requires a later active observation and a new sign-in. If Casdoor cannot confirm status, API access and live sessions expire 60 seconds after the last reliable active confirmation. A failed check leaves that deadline in place. After Casdoor confirms activity again, an unexpired Application Session can regain access. The trial polls known accounts even when all clients are offline. Verify polling and stream closure within 60 seconds at the trial's planned concurrent account count.
+
+Use `createAccountAccess` in trusted server code to read the current account decision and its expiry, or to verify an issued grant against the stored account and authorization epoch. The grant carries the account ID, epoch, and expiry. Enforce its expiry locally. An old grant stays invalid after the account recovers. The trial Web service applies this decision to access and live connections. Background execution and shared billing admission need to integrate the same decision and verify their own cutoff in the target deployment.
 
 ## iOS and Android trial builds
 

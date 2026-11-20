@@ -44,7 +44,7 @@ export function assistantInWorkspace(target: z.output<typeof assistantTarget>) {
 }
 
 function ownedAssistant(
-  database: Database,
+  database: Pick<Database, "select">,
   accountId: string,
   target: z.output<typeof assistantTarget>,
 ) {
@@ -58,7 +58,7 @@ function ownedAssistant(
   );
 }
 
-export function workspaceBots(database: Database) {
+export function workspaceBots(database: Pick<Database, "select" | "update">) {
   return {
     async get({
       accountId,

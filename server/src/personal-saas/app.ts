@@ -3,6 +3,11 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { html } from "hono/html";
 import { seal, unseal } from "../auth/signed-value";
 import type { Database } from "../db/client";
+import {
+  type AccountGrant,
+  accountDecision,
+  createAccountAccess,
+} from "./account-access";
 import { browserAttempt, type CasdoorConfig, casdoor } from "./casdoor";
 import { bearerSession, type NativeAttempt, nativeAuth } from "./native-auth";
 import { sessionEventRoutes } from "./session-events";
@@ -13,24 +18,21 @@ import {
 } from "./session-revocation";
 import { personalSaasStore, sessionSeconds } from "./store";
 import { workspaceBotRoutes } from "./workspace-bot-routes";
+import { workspaceBots } from "./workspace-bots";
 
 const attemptPrefix = "__Host-openbot-oidc-";
 const callbackPath = "/auth/casdoor/callback";
 const sessionSeal = "personal-saas-access-token";
 
 function reportFailure(
-  stage:
-    | "sign-in"
-    | "casdoor-discovery"
-    | "workspace-status"
-    | "workspace-setup"
-    | "request",
+  stage: "sign-in" | "casdoor-discovery" | "workspace-setup" | "request",
 ) {
   console.warn(JSON.stringify({ type: "personal-saas-trial-failure", stage }));
 }
 
 export type PersonalSaasConfig = {
   origin: string;
+  now?: () => number;
   encryptionKey: string;
   casdoor: CasdoorConfig;
 };
@@ -78,8 +80,18 @@ export function createPersonalSaasApp(
     config.casdoor,
     new URL(callbackPath, config.origin).href,
   );
-  const store = personalSaasStore(database);
-  const native = nativeAuth({ database, encryptionKey: config.encryptionKey });
+  const now = config.now ?? Date.now;
+  const store = personalSaasStore(database, now);
+  const accountAccess = createAccountAccess(
+    database,
+    provider.accountStatus,
+    now,
+  );
+  const native = nativeAuth({
+    database,
+    encryptionKey: config.encryptionKey,
+    now,
+  });
   const browserLogin = browserAttempt.extend({
     native: native.attempt.optional(),
   });
@@ -282,10 +294,12 @@ export function createPersonalSaasApp(
           403,
         );
       }
+      const accountId = await store.bindIdentity(identity);
+      if (!(await accountAccess.check(identity)))
+        throw new Error("Account status unavailable");
       const sessionIdentity = {
-        issuer: identity.issuer,
-        subject: identity.subject,
-        email: identity.email,
+        accountId,
+        loginStartedAt: parsed.expiresAt - 10 * 60_000,
         encryptedAccessToken: await seal(
           identity.accessToken,
           config.encryptionKey,
@@ -297,6 +311,7 @@ export function createPersonalSaasApp(
           await native.complete(nativeAttempt, sessionIdentity),
         );
       const token = await store.signIn(sessionIdentity);
+      if (!token) throw new Error("Account admission changed");
       setCookie(context, sessionCookie, token, {
         ...cookieOptions,
         maxAge: sessionSeconds,
@@ -318,30 +333,48 @@ export function createPersonalSaasApp(
     }
   });
 
-  async function authorize(token: string | undefined) {
+  async function authorize(token: string | undefined, refresh = true) {
     if (!token || !/^[\w-]{43}$/.test(token))
       return { kind: "signed-out" } as const;
     const session = await store.session(token);
     if (!session || session.issuer !== config.casdoor.issuer)
       return { kind: "signed-out" } as const;
-    const access = await unseal(
-      session.encryptedAccessToken,
-      config.encryptionKey,
-      sessionSeal,
+    if (refresh) await accountAccess.check(session);
+    const current = refresh ? await store.session(token) : session;
+    if (!current) return { kind: "signed-out" } as const;
+    const decision = accountDecision(current.status, now());
+    if (decision.kind === "denied")
+      return {
+        kind: "unconfirmed",
+        reason: decision.reason,
+        cutoffAt: decision.cutoffAt,
+      } as const;
+    return {
+      kind: "authorized",
+      grant: {
+        accountId: current.accountId,
+        epoch: decision.epoch,
+        expiresAt: Math.min(decision.expiresAt, current.expiresAt.getTime()),
+      },
+    } as const;
+  }
+
+  async function stillAuthorized(
+    token: string | undefined,
+    grant: AccountGrant,
+  ) {
+    const current = await authorize(token, false);
+    return (
+      current.kind === "authorized" &&
+      current.grant.epoch === grant.epoch &&
+      now() < grant.expiresAt
     );
-    if (!access) return { kind: "signed-out" } as const;
-    try {
-      if (await provider.accountActive(access, session.subject)) {
-        if (await store.isSessionLive(token))
-          return { kind: "authorized", accountId: session.accountId } as const;
-      } else {
-        await store.signOut(token);
-      }
-      return { kind: "signed-out" } as const;
-    } catch {
-      reportFailure("workspace-status");
-      return { kind: "unconfirmed" } as const;
-    }
+  }
+
+  async function refreshSession(token: string) {
+    const session = await store.session(token);
+    if (session?.issuer === config.casdoor.issuer)
+      await accountAccess.check(session);
   }
 
   app.route(
@@ -366,18 +399,30 @@ export function createPersonalSaasApp(
     sessionEventRoutes({
       cookieName: sessionCookie,
       authorize,
-      isSessionLive: store.isSessionLive,
+      refreshSession,
+      now,
     }),
   );
   app.route(
     "/api/workspaces",
-    workspaceBotRoutes(database, (context) =>
-      authorize(getCookie(context, sessionCookie)),
+    workspaceBotRoutes(
+      database,
+      (context) => authorize(getCookie(context, sessionCookie)),
+      (context, grant) =>
+        stillAuthorized(getCookie(context, sessionCookie), grant),
+      async (context, grant, input) => {
+        const token = getCookie(context, sessionCookie);
+        if (!token) return { authorized: false };
+        return store.withAuthorizedSession(grant, token, (tx) =>
+          workspaceBots(tx).rename(input),
+        );
+      },
     ),
   );
 
   app.get("/workspace", async (context) => {
-    const session = await authorize(getCookie(context, sessionCookie));
+    const token = getCookie(context, sessionCookie);
+    const session = await authorize(token);
     if (session.kind === "unconfirmed")
       return context.html(
         statusPage(
@@ -392,9 +437,13 @@ export function createPersonalSaasApp(
       deleteCookie(context, sessionCookie, cookieOptions);
       return context.redirect("/");
     }
-    const workspace = await store.workspace(session.accountId);
+    const workspace = await store.workspace(session.grant.accountId);
+    const conversations = workspace
+      ? await store.recentConversations(session.grant.accountId)
+      : [];
+    if (!(await stillAuthorized(token, session.grant)))
+      return context.redirect("/workspace");
     if (!workspace) return context.html(preparePage());
-    const conversations = await store.recentConversations(session.accountId);
     return context.html(
       page(
         "Personal Workspace",
@@ -414,14 +463,15 @@ export function createPersonalSaasApp(
         <p>Verify your identity with Casdoor to require every device to sign in again.</p>
         <button type="submit">Sign out all devices</button>
       </form>
-      <script src="/assets/session.js" defer></script>`,
+      <script src="/assets/session.js" data-access-ms="${Math.max(0, session.grant.expiresAt - now())}" defer></script>`,
       ),
     );
   });
 
   app.post("/workspace/prepare", async (context) => {
+    const token = requestSession(context);
     const isNative = context.req.header("authorization") !== undefined;
-    const session = await authorize(requestSession(context));
+    const session = await authorize(token);
     if (isNative) {
       if (session.kind === "unconfirmed")
         return context.json({ error: "account_status_unconfirmed" }, 503);
@@ -430,10 +480,13 @@ export function createPersonalSaasApp(
     }
     if (session.kind === "unconfirmed")
       return context.html(preparePage(true), 503);
-    if (session.kind === "signed-out")
+    if (session.kind === "signed-out" || !token)
       return context.redirect("/workspace", 303);
     try {
-      await store.provision(session.accountId);
+      if (!(await store.provision(session.grant, token)))
+        return isNative
+          ? context.json({ error: "authorization_changed" }, 403)
+          : context.redirect("/workspace", 303);
       if (isNative) return context.body(null, 204);
       return context.redirect("/workspace", 303);
     } catch {
@@ -445,26 +498,39 @@ export function createPersonalSaasApp(
   });
 
   app.get("/api/workspace", async (context) => {
-    const session = await authorize(requestSession(context));
+    const token = requestSession(context);
+    const session = await authorize(token);
     if (session.kind === "unconfirmed")
-      return context.json({ error: "account_status_unconfirmed" }, 503);
+      return context.json(
+        { error: session.reason, cutoffAt: session.cutoffAt },
+        503,
+      );
     if (session.kind === "signed-out")
       return context.json({ error: "sign_in_required" }, 401);
-    const workspace = await store.workspace(session.accountId);
+    const workspace = await store.workspace(session.grant.accountId);
+    if (!(await stillAuthorized(token, session.grant)))
+      return context.json({ error: "authorization_changed" }, 403);
     return workspace
       ? context.json(workspace)
       : context.json({ status: "preparing" }, 202);
   });
 
   app.get("/api/workspace/conversations", async (context) => {
-    const session = await authorize(requestSession(context));
+    const token = requestSession(context);
+    const session = await authorize(token);
     if (session.kind === "unconfirmed")
-      return context.json({ error: "account_status_unconfirmed" }, 503);
+      return context.json(
+        { error: session.reason, cutoffAt: session.cutoffAt },
+        503,
+      );
     if (session.kind === "signed-out")
       return context.json({ error: "sign_in_required" }, 401);
-    return context.json({
-      conversations: await store.recentConversations(session.accountId),
-    });
+    const conversations = await store.recentConversations(
+      session.grant.accountId,
+    );
+    if (!(await stillAuthorized(token, session.grant)))
+      return context.json({ error: "authorization_changed" }, 403);
+    return context.json({ conversations });
   });
 
   app.post("/auth/sign-out", async (context) => {
@@ -476,5 +542,7 @@ export function createPersonalSaasApp(
     return context.redirect("/", 303);
   });
 
-  return app;
+  return Object.assign(app, {
+    refreshAccounts: () => accountAccess.refreshAccounts(config.casdoor.issuer),
+  });
 }

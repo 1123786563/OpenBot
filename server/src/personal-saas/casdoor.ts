@@ -1,10 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { z } from "zod";
+import { accountSnapshot } from "./account-access";
 
 export type CasdoorConfig = {
   issuer: string;
   discoveryUrl: URL;
+  accountStatusUrl: URL;
   clientId: string;
   clientSecret: string;
   allowLoopbackHttp?: boolean;
@@ -71,6 +73,7 @@ export function casdoor(config: CasdoorConfig, callback: string) {
       metadata.userinfo_endpoint,
       metadata.introspection_endpoint,
       metadata.jwks_uri,
+      config.accountStatusUrl,
     ]) {
       const url = new URL(endpoint);
       const testLoopback =
@@ -227,6 +230,14 @@ export function casdoor(config: CasdoorConfig, callback: string) {
         accessToken: tokens.access_token,
       } as const;
     },
-    accountActive,
+    async accountStatus(subject: string) {
+      await provider();
+      return accountSnapshot.parse(
+        await read(config.accountStatusUrl, {
+          method: "POST",
+          body: authenticatedForm({ subject }),
+        }),
+      );
+    },
   };
 }
