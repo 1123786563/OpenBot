@@ -2,11 +2,8 @@ import { IconBrandGithub, IconChevronRight } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import {
-  PageRows,
-  PageSection,
-  PageShell,
-} from "@/components/layout/page-shell";
+import { ConnectionPage } from "@/components/connections/connection-surface";
+import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { GithubSources } from "@/components/settings/github-sources";
 import {
   type LinkableProvider,
@@ -70,7 +67,7 @@ export function IdentityConnectionPage({
   }, [linked, navigate]);
 
   return (
-    <PageShell
+    <ConnectionPage
       backButton={{ label: "Connections", linkProps: { to: "/connections" } }}
       description={IDENTITY_SUMMARIES[provider]}
       title={title}
@@ -94,7 +91,7 @@ export function IdentityConnectionPage({
           <GithubTools />
         </>
       ) : null}
-    </PageShell>
+    </ConnectionPage>
   );
 }
 
