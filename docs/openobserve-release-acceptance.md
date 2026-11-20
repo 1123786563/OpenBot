@@ -22,7 +22,7 @@ Run these steps from a clean checkout. Keep host endpoints on loopback and use d
 ```bash
 source_root=$PWD
 fixture=$(mktemp -d /tmp/openbot85.XXXXXX)
-touch "$fixture/api.cri"
+printf '%s stdout F synthetic receiver readiness probe\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$fixture/api.cri"
 docker network create openbot85
 docker run -d --name openbot85-pg --network openbot85 -p 127.0.0.1::5432 \
   -e POSTGRES_PASSWORD=local-fixture-pg -e POSTGRES_DB=openbot85 \
@@ -45,7 +45,11 @@ docker run -d --name openbot85-col --network openbot85 -p 127.0.0.1::4318 \
 port_of() { docker port "$1" "$2/tcp" | cut -d: -f2; }
 pg_url="postgres://postgres:local-fixture-pg@127.0.0.1:$(port_of openbot85-pg 5432)/openbot85"
 collector="http://127.0.0.1:$(port_of openbot85-col 4318)"
-docker exec openbot85-pg pg_isready -U postgres -d openbot85
+for attempt in {1..60}; do
+  if docker exec openbot85-pg pg_isready -h 127.0.0.1 -U postgres -d openbot85; then break; fi
+  sleep 1
+done
+docker exec openbot85-pg pg_isready -h 127.0.0.1 -U postgres -d openbot85 || exit 1
 bun install --frozen-lockfile
 (cd server && DATABASE_URL="$pg_url" bun --no-env-file scripts/migrate.ts)
 openssl rand -base64 32 > "$fixture/key"
@@ -97,6 +101,23 @@ pg() { docker exec openbot85-pg psql -U postgres -d openbot85 -Atc "$1"; }
 audit_copy() {
   query "SELECT * FROM openbot_audit WHERE deployment_id='acceptance85' AND audit_event_id='$1'"
 }
+
+# The file receiver starts at EOF. Confirm that it can export a newly appended
+# synthetic record before starting the API, which emits api_listening once.
+receiver_ready=false
+for attempt in {1..60}; do
+  printf '%s stdout F synthetic receiver readiness probe\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$fixture/api.cri"
+  if query "SELECT * FROM openbot_runtime WHERE deployment_id='acceptance85' AND event_category='legacy_unstructured'" 2>/dev/null |
+      jq -e '.hits | length > 0' >/dev/null; then
+    receiver_ready=true
+    break
+  fi
+  sleep 1
+done
+if [ "$receiver_ready" != true ]; then
+  docker logs openbot85-col
+  exit 1
+fi
 
 start_api "$source_root" OTEL_EXPORTER_OTLP_ENDPOINT="$collector"
 curl -fsS --retry 10 --retry-connrefused "$api/health"
