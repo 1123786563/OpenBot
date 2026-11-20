@@ -155,9 +155,19 @@ test.skipIf(import.meta.env.VITE_OPENBOT_ASTRYX_PILOT !== "1")(
     const view = await openFullSize();
     expect(document.activeElement).toBe(closeButton(view));
 
-    fireEvent.keyDown(document.activeElement ?? document.body, {
-      key: "Escape",
-    });
+    let outerDialogSawEscape = false;
+    const onOuterDialogKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") outerDialogSawEscape = true;
+    };
+    document.addEventListener("keydown", onOuterDialogKeyDown, true);
+    try {
+      fireEvent.keyDown(document.activeElement ?? document.body, {
+        key: "Escape",
+      });
+    } finally {
+      document.removeEventListener("keydown", onOuterDialogKeyDown, true);
+    }
+    expect(outerDialogSawEscape).toBe(false);
 
     await waitFor(() => {
       expect(

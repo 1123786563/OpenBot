@@ -595,15 +595,17 @@ export function ComputerView({
     return () => trigger?.focus();
   }, [expanded]);
 
-  // Input forwarding lives in LiveScreen on the socket.
-  // Escape is bound to the window so it works regardless of overlay focus.
+  // Close the full-size screen before Escape reaches the Computer sheet underneath.
   useEffect(() => {
     if (!expanded) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setExpanded(false);
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setExpanded(false);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [expanded]);
 
   /*
