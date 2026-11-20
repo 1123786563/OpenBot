@@ -1,5 +1,7 @@
 # Astryx Web production rollout and rollback
 
+Astryx is the default Web build from #18. For rollback after retirement, restore the archived #17 legacy artifact at the same origin and retain its hashed assets. Use the matching historical source revision to rebuild that artifact. The procedure below records the #17 rehearsal.
+
 Enable Astryx per deployment by changing the Web build. The selected mechanism is `VITE_OPENBOT_ASTRYX_PILOT=1` at Vite build time. Build the rollback artifact with `VITE_OPENBOT_ASTRYX_PILOT=0`, or retain the already deployed compatible legacy artifact. Personal and Team use the same Web switch. The API's `OPENBOT_EDITION` continues to determine the edition.
 
 The [route and profile inventory](astryx-web-route-inventory.md) lists all 97 normalized Web routes, the four legacy profiles, and compatibility destinations.

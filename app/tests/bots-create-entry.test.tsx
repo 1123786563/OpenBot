@@ -12,16 +12,11 @@ import {
 } from "@tanstack/react-router";
 import { act, cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
 import { astryxPilot } from "@/components/astryx-pilot/theme";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { agentKeys } from "@/lib/agents/queries";
 import { deploymentKeys } from "@/lib/deployment/queries";
 import { Route as BotsRoute } from "@/routes/_authed/_app/bots.index";
-import { usePlace } from "@/skins/opendots/place";
-import { OpenDotsSidebar } from "@/skins/opendots/sidebar";
-import { BotsSheet } from "@/skins/openmuse/bots-sheet";
-import { MuseContext } from "@/skins/openmuse/context";
 import { settleReactWork } from "./settle-react-work";
 
 const NativeResponse = globalThis.Response;
@@ -37,7 +32,7 @@ afterAll(async () => {
   GlobalRegistrator.unregister();
 });
 
-function renderEntry(initialEntry: string, skin?: "dots" | "muse") {
+function renderEntry(initialEntry: string) {
   const query = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
@@ -84,7 +79,6 @@ function renderEntry(initialEntry: string, skin?: "dots" | "muse") {
   const home = createRoute({
     path: "/",
     getParentRoute: () => app,
-    component: skin === "dots" ? DotsHome : MuseHome,
   });
   const history = createMemoryHistory({ initialEntries: [initialEntry] });
   const router = createRouter({
@@ -102,31 +96,6 @@ function renderEntry(initialEntry: string, skin?: "dots" | "muse") {
       </QueryClientProvider>,
     ),
     { history },
-  );
-}
-
-function DotsHome() {
-  return (
-    <OpenDotsSidebar
-      newChat={{ to: "/channel/new" }}
-      onNavigate={() => {}}
-      place={usePlace()}
-    />
-  );
-}
-
-function MuseHome() {
-  const [open, setOpen] = useState(true);
-  return (
-    <MuseContext.Provider
-      value={{
-        bot: undefined,
-        userId: undefined,
-        openSheet: () => setOpen(true),
-      }}
-    >
-      {open ? <BotsSheet onClose={() => setOpen(false)} /> : null}
-    </MuseContext.Provider>
   );
 }
 
@@ -173,25 +142,6 @@ test("Escape returns focus to the empty roster action that opened the sheet", as
   if (astryxPilot)
     await waitFor(() => expect(document.activeElement).toBe(emptyAction));
 });
-
-test.each([
-  { skin: "dots", role: "button", label: "Create Bot" },
-  { skin: "muse", role: "link", label: /New Bot Describe what it should do/ },
-] satisfies {
-  skin: "dots" | "muse";
-  role: "button" | "link";
-  label: string | RegExp;
-}[])(
-  "the $skin skin shortcut opens the roster creation sheet",
-  async ({ skin, role, label }) => {
-    const view = renderEntry("/", skin);
-    await userEvent
-      .setup({ document })
-      .click(await view.findByRole(role, { name: label }));
-    expect(await view.findByRole("dialog", { name: "New Bot" })).toBeTruthy();
-    expect(view.history.location.pathname).toBe("/bots");
-  },
-);
 
 test("dismissing a directly opened creation sheet focuses the Bots header action", async () => {
   const view = renderEntry("/bots?new=true");

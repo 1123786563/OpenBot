@@ -18,11 +18,7 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { AppSidebar } from "@/components/app-sidebar/app-sidebar";
-import { astryxPilot } from "@/components/astryx-pilot/theme";
 import { TeamFeaturesDialog } from "@/components/edition/team-features-dialog";
-import { SidebarToggle } from "@/components/layout/sidebar-toggle";
-import { SidebarProvider } from "@/components/ui/sidebar";
 import { agentKeys } from "@/lib/agents/queries";
 import { authKeys } from "@/lib/auth/queries";
 import { botLifecycleKeys } from "@/lib/bot-lifecycle/queries";
@@ -102,7 +98,7 @@ function conversation(id: string, summary: string): ChannelSummary {
   };
 }
 
-function renderNarrowApp(start = "/channel/models", preview = false) {
+function renderNarrowApp(start = "/channel/models") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
@@ -158,20 +154,12 @@ function renderNarrowApp(start = "/channel/models", preview = false) {
     pageParams: [""],
   });
   const root = createRootRoute({
-    component: () =>
-      preview ? (
-        <>
-          <Outlet />
-          <TeamFeaturesDialog />
-        </>
-      ) : (
-        <SidebarProvider>
-          <AppSidebar />
-          {/* The page's own Show sidebar button, which is how a narrow window opens the sheet. */}
-          <SidebarToggle />
-          <TeamFeaturesDialog />
-        </SidebarProvider>
-      ),
+    component: () => (
+      <>
+        <Outlet />
+        <TeamFeaturesDialog />
+      </>
+    ),
   });
   const shell = createRoute({
     id: "_app",
@@ -181,9 +169,12 @@ function renderNarrowApp(start = "/channel/models", preview = false) {
   const routes = [
     "/",
     "/bots",
+    "/connections",
     "/responsibilities",
     "/channel/new",
     "/settings",
+    "/browser",
+    "/channel/$channelId",
   ].map((path) =>
     createRoute({
       path,
@@ -192,7 +183,7 @@ function renderNarrowApp(start = "/channel/models", preview = false) {
     }),
   );
   const router = createRouter({
-    routeTree: preview ? root.addChildren([shell.addChildren(routes)]) : root,
+    routeTree: root.addChildren([shell.addChildren(routes)]),
     history: createMemoryHistory({ initialEntries: [start] }),
   });
   const view = render(
@@ -208,16 +199,16 @@ function renderNarrowApp(start = "/channel/models", preview = false) {
     /** Opens the sheet as a person does, and answers with it. */
     async openSheet() {
       await user.click(
-        await view.findByRole("button", { name: "Show sidebar" }),
+        await view.findByRole("button", { name: "Open navigation" }),
       );
-      return view.findByRole("dialog", { name: "Sidebar" });
+      return view.findByRole("dialog", { name: "Navigation" });
     },
     async sheetCloses() {
       // `hidden`, because a dialog opened over the sheet hides it from the accessibility tree
       // without closing it.
       await waitFor(() =>
         expect(
-          view.queryByRole("dialog", { name: "Sidebar", hidden: true }),
+          view.queryByRole("dialog", { name: "Navigation", hidden: true }),
         ).toBeNull(),
       );
     },
@@ -236,7 +227,7 @@ test.each([
   ["Connections", "link", /^Connections/, "/connections"],
   ["Teach a Bot", "link", /^Teach a Bot/, "/browser"],
   // A link drawn as a button: it still goes somewhere.
-  ["New conversation", "button", /^New conversation$/, "/channel/new"],
+  ["New conversation", "link", /^New conversation$/, "/channel/new"],
 ] as const)(
   "picking %s in the narrow sheet closes it and opens the page",
   async (_label, role, name, path) => {
@@ -256,7 +247,7 @@ test("Settings in the account menu closes the sheet and opens Settings", async (
   );
   // The menu opens over the sheet; opening it leaves the sheet where it is.
   const menu = await app.view.findByRole("menu");
-  expect(app.view.getByRole("dialog", { name: "Sidebar" })).toBeTruthy();
+  expect(app.view.getByRole("dialog", { name: "Navigation" })).toBeTruthy();
   await app.user.click(
     within(menu).getByRole("menuitem", { name: "Settings" }),
   );
@@ -286,123 +277,111 @@ test("searching the sheet keeps it open", async () => {
     within(sheet).getByRole("textbox", { name: "Search conversations" }),
     "hacker",
   );
-  expect(app.view.getByRole("dialog", { name: "Sidebar" })).toBeTruthy();
+  expect(app.view.getByRole("dialog", { name: "Navigation" })).toBeTruthy();
   expect(
     within(sheet).getByRole("textbox", { name: "Search conversations" }),
   ).toHaveProperty("value", "hacker");
   expect(app.router.state.location.pathname).toBe("/channel/models");
 });
 
-test.skipIf(!astryxPilot)(
-  "preview navigation can be opened, dismissed, and followed with the keyboard",
-  async () => {
-    const app = renderNarrowApp("/", true);
-    const toggle = await app.view.findByRole("button", {
-      name: "Open navigation",
-    });
-    toggle.focus();
-    await app.user.keyboard("{Enter}");
-    await app.view.findByRole("dialog", { name: "Navigation" });
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    await app.user.keyboard("{Escape}");
-    await waitFor(() => expect(document.activeElement).toBe(toggle));
-    await app.user.keyboard("{Enter}");
-    const nav = within(
-      await app.view.findByRole("navigation", { name: "Main navigation" }),
-    );
-    nav.getByRole("link", { name: "Bots" }).focus();
-    await app.user.keyboard("{Enter}");
+test("navigation can be opened, dismissed, and followed with the keyboard", async () => {
+  const app = renderNarrowApp("/");
+  const toggle = await app.view.findByRole("button", {
+    name: "Open navigation",
+  });
+  toggle.focus();
+  await app.user.keyboard("{Enter}");
+  await app.view.findByRole("dialog", { name: "Navigation" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  await app.user.keyboard("{Escape}");
+  await waitFor(() => expect(document.activeElement).toBe(toggle));
+  await app.user.keyboard("{Enter}");
+  const nav = within(
+    await app.view.findByRole("navigation", { name: "Main navigation" }),
+  );
+  nav.getByRole("link", { name: "Bots" }).focus();
+  await app.user.keyboard("{Enter}");
+  await app.view.findByRole("heading", { name: "/bots" });
+  await waitFor(() => {
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(toggle);
+  });
+  await app.user.keyboard("{Enter}");
+  const current = within(
+    await app.view.findByRole("navigation", { name: "Main navigation" }),
+  );
+  expect(
+    current
+      .getByRole("link", { name: "Bots", current: "page" })
+      .getAttribute("href"),
+  ).toBe("/bots");
+});
+
+test("an initial Bots deep link is active in desktop navigation", async () => {
+  const initialWidth = window.innerWidth;
+  window.innerWidth = 1200;
+  try {
+    const app = renderNarrowApp("/bots");
     await app.view.findByRole("heading", { name: "/bots" });
-    await waitFor(() => {
-      expect(toggle.getAttribute("aria-expanded")).toBe("false");
-      expect(document.activeElement).toBe(toggle);
-    });
-    await app.user.keyboard("{Enter}");
-    const current = within(
-      await app.view.findByRole("navigation", { name: "Main navigation" }),
-    );
-    expect(
-      current
-        .getByRole("link", { name: "Bots", current: "page" })
-        .getAttribute("href"),
-    ).toBe("/bots");
-  },
-);
-
-test.skipIf(!astryxPilot)(
-  "an initial Bots deep link is active in desktop navigation",
-  async () => {
-    const initialWidth = window.innerWidth;
-    window.innerWidth = 1200;
-    try {
-      const app = renderNarrowApp("/bots", true);
-      await app.view.findByRole("heading", { name: "/bots" });
-      const navigation = within(
-        await app.view.findByRole("navigation", { name: "Main navigation" }),
-      );
-      expect(
-        navigation
-          .getByRole("link", { name: "Bots", current: "page" })
-          .getAttribute("href"),
-      ).toBe("/bots");
-      expect(app.view.queryByRole("link", { name: "Capabilities" })).toBeNull();
-      expect(
-        app.view
-          .getByRole("button", { name: "Close navigation" })
-          .getAttribute("aria-expanded"),
-      ).toBe("true");
-    } finally {
-      window.innerWidth = initialWidth;
-    }
-  },
-);
-
-test.skipIf(!astryxPilot)(
-  "preview narrow navigation preserves conversation search and Settings",
-  async () => {
-    const app = renderNarrowApp("/", true);
-    await app.user.click(
-      await app.view.findByRole("button", { name: "Open navigation" }),
-    );
-    const sheet = within(
-      await app.view.findByRole("dialog", { name: "Navigation" }),
-    );
-    await app.user.type(
-      sheet.getByRole("textbox", { name: "Search conversations" }),
-      "hacker",
-    );
-    expect(
-      sheet.getByRole("link", { name: /Hacker News Top Stories/ }),
-    ).toBeTruthy();
-    await app.user.type(
-      sheet.getByRole("textbox", { name: "Search conversations" }),
-      "-no-match",
-    );
-    await sheet.findByText("No conversations match your search");
-    await app.user.click(sheet.getByRole("button", { name: /Dana Fresh/ }));
-    const menu = within(await app.view.findByRole("menu"));
-    expect(
-      menu.getByRole("menuitem", { name: "OpenBot for Business" }),
-    ).toBeTruthy();
-    expect(menu.queryByRole("menuitem", { name: "Admin" })).toBeNull();
-    await app.user.click(menu.getByRole("menuitem", { name: "Settings" }));
-    await app.view.findByRole("heading", { name: "/settings" });
-    await app.view.findByRole("button", { name: "Open navigation" });
-  },
-);
-
-test.skipIf(!astryxPilot)(
-  "Goals opens Responsibilities from narrow preview navigation",
-  async () => {
-    const app = renderNarrowApp("/", true);
-    await app.user.click(
-      await app.view.findByRole("button", { name: "Open navigation" }),
-    );
     const navigation = within(
       await app.view.findByRole("navigation", { name: "Main navigation" }),
     );
-    await app.user.click(navigation.getByRole("link", { name: "Goals" }));
-    await app.view.findByRole("heading", { name: "/responsibilities" });
-    await app.view.findByRole("button", { name: "Open navigation" });
-  },
-);
+    expect(
+      navigation
+        .getByRole("link", { name: "Bots", current: "page" })
+        .getAttribute("href"),
+    ).toBe("/bots");
+    expect(app.view.queryByRole("link", { name: "Capabilities" })).toBeNull();
+    expect(
+      app.view
+        .getByRole("button", { name: "Close navigation" })
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+  } finally {
+    window.innerWidth = initialWidth;
+  }
+});
+
+test("narrow navigation preserves conversation search and Settings", async () => {
+  const app = renderNarrowApp("/");
+  await app.user.click(
+    await app.view.findByRole("button", { name: "Open navigation" }),
+  );
+  const sheet = within(
+    await app.view.findByRole("dialog", { name: "Navigation" }),
+  );
+  await app.user.type(
+    sheet.getByRole("textbox", { name: "Search conversations" }),
+    "hacker",
+  );
+  expect(
+    sheet.getByRole("link", { name: /Hacker News Top Stories/ }),
+  ).toBeTruthy();
+  await app.user.type(
+    sheet.getByRole("textbox", { name: "Search conversations" }),
+    "-no-match",
+  );
+  await sheet.findByText("No conversations match your search");
+  await app.user.click(sheet.getByRole("button", { name: /Dana Fresh/ }));
+  const menu = within(await app.view.findByRole("menu"));
+  expect(
+    menu.getByRole("menuitem", { name: "OpenBot for Business" }),
+  ).toBeTruthy();
+  expect(menu.queryByRole("menuitem", { name: "Admin" })).toBeNull();
+  await app.user.click(menu.getByRole("menuitem", { name: "Settings" }));
+  await app.view.findByRole("heading", { name: "/settings" });
+  await app.view.findByRole("button", { name: "Open navigation" });
+});
+
+test("Goals opens Responsibilities from narrow navigation", async () => {
+  const app = renderNarrowApp("/");
+  await app.user.click(
+    await app.view.findByRole("button", { name: "Open navigation" }),
+  );
+  const navigation = within(
+    await app.view.findByRole("navigation", { name: "Main navigation" }),
+  );
+  await app.user.click(navigation.getByRole("link", { name: "Goals" }));
+  await app.view.findByRole("heading", { name: "/responsibilities" });
+  await app.view.findByRole("button", { name: "Open navigation" });
+});

@@ -1,13 +1,10 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
-import type { ReactNode } from "react";
 import { BotLookProvider } from "../components/agents/bot-look";
 import { TeamFeaturesDialog } from "../components/edition/team-features-dialog";
 import { currentUserQueryOptions, needsOnboarding } from "../lib/auth/queries";
 import { appReturnPath } from "../lib/auth/resume";
 import { CopilotProvider } from "../lib/copilot/provider";
 import { AppHotkeys } from "../lib/hotkeys/app-hotkeys";
-import { SkinAccountSync } from "../skins/account-sync";
-import { useActiveSkin } from "../skins/registry";
 
 export const Route = createFileRoute("/_authed")({
   beforeLoad: async ({ context, location }) => {
@@ -40,22 +37,11 @@ export const Route = createFileRoute("/_authed")({
   component: () => (
     <CopilotProvider>
       <AppHotkeys />
-      {/* The skin saved on the account, drawn over the browser's cached one once it loads. */}
-      <SkinAccountSync />
-      {/* Opened by the personal edition's "OpenBot for Business" entry, from whichever skin draws it. */}
+      {/* Opened by the personal edition's "OpenBot for Business" entry. */}
       <TeamFeaturesDialog />
-      <SkinBotLook>
+      <BotLookProvider value="orb">
         <Outlet />
-      </SkinBotLook>
+      </BotLookProvider>
     </CopilotProvider>
   ),
 });
-
-/** Bots are drawn the way the active skin asks for, on every authed page. */
-function SkinBotLook({ children }: { children: ReactNode }) {
-  return (
-    <BotLookProvider value={useActiveSkin().botLook ?? "face"}>
-      {children}
-    </BotLookProvider>
-  );
-}

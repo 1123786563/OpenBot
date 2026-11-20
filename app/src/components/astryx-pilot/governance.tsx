@@ -23,8 +23,10 @@ export function GovernancePage(props: ComponentProps<typeof PageShell>) {
   );
 }
 
-export const governanceOverlay: typeof astryxScope & { className?: string } =
-  astryxPilot ? { ...astryxScope, className: "astryx-governance-overlay" } : {};
+export const governanceOverlay = {
+  ...astryxScope,
+  className: "astryx-governance-overlay",
+};
 
 export function GovernanceAction({
   label,

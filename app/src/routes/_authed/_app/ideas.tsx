@@ -1,31 +1,21 @@
 import { IconBulb } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  createFileRoute,
-  Link,
-  linkOptions,
-  redirect,
-} from "@tanstack/react-router";
-import { AstryxSurface, astryxPilot } from "@/components/astryx-pilot/theme";
+import { createFileRoute, Link, linkOptions } from "@tanstack/react-router";
+import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { PageEmpty, PageShell } from "@/components/layout/page-shell";
 import {
   ProactiveResearchSettings,
   SuggestionsInbox,
 } from "@/components/suggestions/proactive-panel";
+import {
+  chooseBot,
+  resolveChosenBot,
+  useChosenBotId,
+} from "@/lib/agents/chosen-bot";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
-import { chooseBot, useChosenBotId } from "@/skins/openmuse/chosen-bot";
-import { centreBot } from "@/skins/openmuse/model";
 
 export const Route = createFileRoute("/_authed/_app/ideas")({
-  beforeLoad: () => {
-    if (!astryxPilot)
-      throw redirect({
-        to: "/s/$screen",
-        params: { screen: "ideas" },
-        replace: true,
-      });
-  },
   validateSearch: (search: Record<string, unknown>): { agent?: string } =>
     typeof search.agent === "string" ? { agent: search.agent } : {},
   component: IdeasPage,
@@ -36,7 +26,7 @@ function IdeasPage() {
   const roster = useQuery(agentListQueryOptions());
   const { data: user } = useQuery(currentUserQueryOptions());
   const chosen = useChosenBotId(user?.id);
-  const bot = centreBot(roster.data, chosen, agent);
+  const bot = resolveChosenBot(roster.data, chosen, agent);
   const navigate = Route.useNavigate();
 
   return (

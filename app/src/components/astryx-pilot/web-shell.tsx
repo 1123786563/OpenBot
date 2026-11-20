@@ -6,8 +6,6 @@ import { SelfHostBanner } from "@/components/layout/self-host-banner";
 import { SidebarShell } from "@/components/layout/sidebar-shell";
 import { UpdateBanner } from "@/components/layout/update-banner";
 import { SidebarInset, useSidebar } from "@/components/ui/sidebar";
-import { useOffersMemory } from "@/lib/deployment/queries";
-import { useActiveSkin } from "@/skins/registry";
 import { AstryxBrand, astryxScope } from "./theme";
 
 export function AstryxWebShell({ children }: { children: ReactNode }) {
@@ -28,17 +26,10 @@ function AstryxWebFrame({ children }: { children: ReactNode }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const { isMobile, open, openMobile, toggleSidebar } = useSidebar();
   const expanded = isMobile ? openMobile : open;
-  const skin = useActiveSkin();
-  const offersMemory = useOffersMemory();
-  const skinScreens = Object.keys(skin.screens ?? {}).filter(
-    (screen) => screen !== "memories" || offersMemory,
-  );
 
   return (
     <>
-      <AppSidebar
-        previewNavigation={{ id: navId, returnFocus: trigger, skinScreens }}
-      />
+      <AppSidebar navId={navId} returnFocus={trigger} />
       <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
         <div {...astryxScope} className="astryx-web-bar">
           <Button

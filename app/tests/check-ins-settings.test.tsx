@@ -121,7 +121,7 @@ test("turning check-ins off for all Bots saves it and says so", async () => {
   const toggle = await view.findByRole("switch", {
     name: "Check-ins for all your Bots",
   });
-  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  expect(toggle).toHaveProperty("checked", true);
   expect(
     view.getByText("On. Each Bot's own check-ins are on its Memory page."),
   ).toBeTruthy();
@@ -137,7 +137,7 @@ test("turning check-ins off for all Bots saves it and says so", async () => {
   expect(
     await view.findByText("Off. None of your Bots check in for you."),
   ).toBeTruthy();
-  expect(toggle.getAttribute("aria-checked")).toBe("false");
+  expect(toggle).toHaveProperty("checked", false);
 });
 
 test("in the personal edition, each Bot's own check-ins are on its What it can do page", async () => {
@@ -162,12 +162,12 @@ test("turned off by an admin, the switch says who and can't be turned back on", 
   allowed = false;
   serving();
   const view = await draw(<CheckInsSection />);
-  expect(await view.findByText("Turned off by your admin.")).toBeTruthy();
-  const toggle = view.getByRole("switch", {
-    name: "Check-ins for all your Bots",
-  });
-  expect(toggle.getAttribute("aria-checked")).toBe("false");
-  expect(toggle.hasAttribute("data-disabled")).toBe(true);
+  expect(
+    await view.findByText("Turned off by your admin.", { selector: "p" }),
+  ).toBeTruthy();
+  const toggle = view.getByLabelText("Check-ins for all your Bots");
+  expect(toggle).toHaveProperty("checked", false);
+  expect(toggle.getAttribute("aria-disabled")).toBe("true");
 });
 
 test("a Bot's own check-ins say they are off for all your Bots, and won't run now", async () => {

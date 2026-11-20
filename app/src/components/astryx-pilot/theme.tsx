@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from "react";
 import logo from "@/assets/openbot-logo.png";
 import { appConfig } from "@/lib/generated/application-config";
 
-export const astryxPilot = import.meta.env.VITE_OPENBOT_ASTRYX_PILOT === "1";
+export const astryxPilot = true;
 
 function accent(value: string | undefined, fallback: string) {
   const fill = value && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
@@ -28,13 +28,11 @@ const brandStyle: CSSProperties & Record<`--${string}`, string> = {
   "--pilot-on-accent-dark": dark.text,
 };
 
-export const astryxScope = astryxPilot
-  ? {
-      "data-astryx-theme": "neutral",
-      "data-astryx-pilot": "",
-      style: brandStyle,
-    }
-  : {};
+export const astryxScope = {
+  "data-astryx-theme": "neutral",
+  "data-astryx-pilot": "",
+  style: brandStyle,
+};
 
 export function AstryxSurface({
   children,
@@ -43,7 +41,6 @@ export function AstryxSurface({
   children: ReactNode;
   className: string;
 }) {
-  if (!astryxPilot) return children;
   return (
     <div {...astryxScope} className={className}>
       {children}

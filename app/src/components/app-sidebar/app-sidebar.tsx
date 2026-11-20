@@ -1,18 +1,18 @@
 import {
-  IconLayoutGrid,
+  IconActivity,
+  IconBulb,
+  IconChecklist,
   IconLogout,
-  IconPlus,
   IconSearch,
   IconTarget,
 } from "@tabler/icons-react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { Link, type LinkOptions, useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type * as React from "react";
 import { useRef, useState } from "react";
 import { AstryxBrand, astryxScope } from "@/components/astryx-pilot/theme";
 import { AstryxNewConversation } from "@/components/astryx-pilot/web-actions";
-import { BrandName } from "@/components/edition/brand-name";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,7 +44,6 @@ import {
   channelListQueryOptions,
 } from "@/lib/channels/queries";
 import { useChannelEvents } from "@/lib/channels/use-channel-events";
-import { appConfig } from "@/lib/generated/application-config";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { isNavigationLink, useNavigationItems } from "@/lib/navigation";
 import { relativeTimeShort } from "@/lib/relative-time";
@@ -54,15 +53,13 @@ import {
 } from "@/lib/settings/message-list";
 import { BotsNavBadge } from "../bot-profile/attention";
 import { BrowserNavItem } from "../browser/browser-nav-item";
+import { BrandName } from "../edition/brand-name";
 import { navigationRender } from "../edition/team-features-dialog";
 import { OpenBotVersion } from "../layout/openbot-version";
-import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Channel } from "./channel";
 import { ChannelPagination } from "./channel-pagination";
 import { useSignOut } from "./use-sign-out";
-
-const appLinkOptions = { to: "/" } satisfies LinkOptions;
 
 const userMenuItemClassName = "gap-2 px-2 py-1.5";
 
@@ -215,14 +212,11 @@ function ChannelRow({
 }
 
 export function AppSidebar({
-  previewNavigation,
-  ...props
-}: React.ComponentProps<typeof Sidebar> & {
-  previewNavigation?: {
-    id: string;
-    returnFocus: React.RefObject<HTMLButtonElement | null>;
-    skinScreens: readonly string[];
-  };
+  navId,
+  returnFocus,
+}: {
+  navId: string;
+  returnFocus: React.RefObject<HTMLButtonElement | null>;
 }) {
   const emphasis = useMessageListEmphasis();
   const { data: currentUser } = useQuery(currentUserQueryOptions());
@@ -272,37 +266,38 @@ export function AppSidebar({
         ))}
       {/* Your own browser, with the Recorder in it. Drawn only where OpenBot can run one for you. */}
       <BrowserNavItem />
-      {previewNavigation ? (
-        <SidebarMenuItem>
+      {(
+        [
+          {
+            label: "Goals",
+            to: "/responsibilities",
+            params: undefined,
+            icon: IconTarget,
+          },
+          {
+            label: "Tasks",
+            to: "/tasks",
+            params: undefined,
+            icon: IconChecklist,
+          },
+          { label: "Ideas", to: "/ideas", params: undefined, icon: IconBulb },
+          {
+            label: "Activity",
+            to: "/s/$screen",
+            params: { screen: "activity" },
+            icon: IconActivity,
+          },
+        ] as const
+      ).map(({ label, to, params, icon: Icon }) => (
+        <SidebarMenuItem key={label}>
           <SidebarMenuButton
             className="h-10"
-            render={(props) => <Link {...props} to="/responsibilities" />}
+            render={(props) => <Link {...props} to={to} params={params} />}
           >
             <div className="size-[28px] flex items-center justify-center">
-              <IconTarget aria-hidden />
+              <Icon aria-hidden />
             </div>
-            <span className="text-sm">Goals</span>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      ) : null}
-      {previewNavigation?.skinScreens.map((screen) => (
-        <SidebarMenuItem key={screen}>
-          <SidebarMenuButton
-            className="h-10"
-            render={(props) => (
-              <Link {...props} params={{ screen }} to="/s/$screen" />
-            )}
-          >
-            <div className="size-[28px] flex items-center justify-center">
-              <IconLayoutGrid />
-            </div>
-            <span className="first-letter:uppercase">
-              {screen === "routines"
-                ? "OpenDots Routines"
-                : screen === "goals"
-                  ? "Bot Goals"
-                  : screen}
-            </span>
+            <span className="text-sm">{label}</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       ))}
@@ -312,80 +307,38 @@ export function AppSidebar({
   return (
     <Sidebar
       variant="inset"
-      {...props}
-      {...(previewNavigation && {
+      {...{
         ...astryxScope,
         className: "astryx-web-nav",
-        id: isMobile ? undefined : previewNavigation.id,
+        id: isMobile ? undefined : navId,
         mobileNavigation: {
           title: "Navigation",
           popup: {
             ...astryxScope,
             className: "astryx-web-nav",
-            id: previewNavigation.id,
-            finalFocus: previewNavigation.returnFocus,
+            id: navId,
+            finalFocus: returnFocus,
           },
         },
-      })}
+      }}
     >
-      {previewNavigation ? (
-        <SidebarHeader className="astryx-nav-header">
-          <Link
-            to="/"
-            activeOptions={{ exact: true }}
-            className="astryx-home-link"
-          >
-            <AstryxBrand />
-          </Link>
-          <AstryxNewConversation />
-        </SidebarHeader>
-      ) : (
-        <SidebarHeader className="h-12 p-2">
-          <SidebarMenu>
-            <SidebarMenuItem className="flex flex-row gap-1.5">
-              {/* The same hover as every other row in the sidebar, not the menu button's accent tint. */}
-              <SidebarMenuButton
-                className="font-semibold text-[14px] tracking-tighter h-full leading-tight hover:bg-foreground/5 hover:text-sidebar-foreground active:bg-foreground/5 active:text-sidebar-foreground"
-                render={(props) => (
-                  <Link {...appLinkOptions} {...props}>
-                    <BrandName>{appConfig.brand.productName}</BrandName>
-                  </Link>
-                )}
-              />
-              {/* Square, as tall as the name beside it, with the sidebar's hover rather than `muted`, which
-                is nearly the sidebar's own colour. */}
-              <Button
-                aria-label="New conversation"
-                className="aspect-square h-full w-auto hover:bg-foreground/5 dark:hover:bg-foreground/5"
-                size="icon"
-                variant="ghost"
-                render={(props) => (
-                  <Link
-                    {...props}
-                    to="/channel/new"
-                    activeProps={{
-                      className: "bg-foreground/5",
-                    }}
-                  />
-                )}
-              >
-                <IconPlus />
-              </Button>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarHeader>
-      )}
+      <SidebarHeader className="astryx-nav-header">
+        <Link
+          to="/"
+          activeOptions={{ exact: true }}
+          className="astryx-home-link"
+        >
+          <AstryxBrand />
+        </Link>
+        <AstryxNewConversation />
+      </SidebarHeader>
       <SidebarContent ref={scrollRoot} className="scroll-fade-b">
-        {previewNavigation ? (
-          <nav aria-label="Main navigation" className="astryx-primary-nav">
-            {primaryLinks}
-          </nav>
-        ) : null}
+        <nav aria-label="Main navigation" className="astryx-primary-nav">
+          {primaryLinks}
+        </nav>
         <SidebarMenu>
           <SidebarGroup className="gap-px">
-            {previewNavigation ? (
-              <h2 className="astryx-nav-section-title">Recent conversations</h2>
-            ) : null}
+            <h2 className="astryx-nav-section-title">Recent conversations</h2>
             <SidebarMenuItem>
               <InputGroup className="bg-background text-sm rounded-lg h-9">
                 <InputGroupInput
@@ -455,7 +408,6 @@ export function AppSidebar({
         </SidebarMenu>
       </SidebarContent>
       <SidebarFooter>
-        {previewNavigation ? null : primaryLinks}
         <SidebarMenu className="gap-px">
           <SidebarMenuItem>
             <DropdownMenu>
@@ -474,7 +426,7 @@ export function AppSidebar({
                 </span>
               </DropdownMenuTrigger>
               <DropdownMenuContent
-                {...(previewNavigation ? astryxScope : {})}
+                {...astryxScope}
                 align="start"
                 className="p-1.5"
                 side="top"

@@ -14,7 +14,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, waitFor, within } from "@testing-library/react";
+import { cleanup, render, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AppSidebar } from "@/components/app-sidebar/app-sidebar";
 import { TeamFeaturesDialog } from "@/components/edition/team-features-dialog";
@@ -147,7 +147,7 @@ function renderSidebar(
     routeTree: createRootRoute({
       component: () => (
         <SidebarProvider>
-          <AppSidebar />
+          <AppSidebar navId="test-navigation" returnFocus={{ current: null }} />
           {/* Mounted once by the signed-in layout; here so the entry has something to open. */}
           <TeamFeaturesDialog />
         </SidebarProvider>
@@ -182,27 +182,27 @@ test.each(["user", "admin"] as const)(
   "the sidebar draws exactly the shared list for a %s",
   async (role) => {
     const { view, user } = renderSidebar(role);
-    const footer = await waitFor(() => {
-      const element = view.container.querySelector<HTMLElement>(
-        '[data-sidebar="footer"]',
-      );
-      if (!element) throw new Error("No sidebar footer");
-      return element;
+    const nav = await view.findByRole("navigation", {
+      name: "Main navigation",
     });
     expect(
-      links(footer).map(({ label, to }) => ({
+      links(nav).map(({ label, to }) => ({
         label: label.replace(/\d+$/, ""),
         to,
       })),
-    ).toEqual(expected(role, "primary"));
+    ).toEqual([
+      ...expected(role, "primary"),
+      { label: "Goals", to: "/responsibilities" },
+      { label: "Tasks", to: "/tasks" },
+      { label: "Ideas", to: "/ideas" },
+      { label: "Activity", to: "/s/activity" },
+    ]);
     // Scheduled work has its own place beside Bots, where somebody looking for it looks first.
     expect(
-      within(footer)
-        .getByRole("link", { name: "Routines" })
-        .getAttribute("href"),
+      within(nav).getByRole("link", { name: "Routines" }).getAttribute("href"),
     ).toBe("/routines");
     // Bots keeps its count of what waits on the person, and only Bots has one.
-    const badge = within(footer).getByRole("img", {
+    const badge = within(nav).getByRole("img", {
       name: "1 thing needs you",
     });
     expect(badge.closest("a")?.getAttribute("href")).toBe("/bots");

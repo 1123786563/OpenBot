@@ -22,13 +22,13 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { BotRoster } from "@/components/bots/bot-roster";
-import { BotNeedsYou } from "@/components/needs-you/board";
-import { queryClient } from "@/query-client";
 import {
   TASKS_VIEW_STORAGE_KEY,
   TasksScreen,
-} from "@/skins/openduet/tasks-screen";
+} from "@/components/astryx-pilot/tasks-screen";
+import { BotRoster } from "@/components/bots/bot-roster";
+import { BotNeedsYou } from "@/components/needs-you/board";
+import { queryClient } from "@/query-client";
 import { settleReactWork } from "./settle-react-work";
 
 /*
@@ -450,7 +450,7 @@ test("a task whose conversation is running a turn reads Working, whatever the se
   await waitFor(() => expect(bots.getByText("Working")).toBeTruthy());
 });
 
-test("OpenDuet's Active lists the tasks under OpenDuet's headings, in its order", async () => {
+test("Tasks groups active work under the status headings in order", async () => {
   window.localStorage.setItem(TASKS_VIEW_STORAGE_KEY, "active");
   tasks = [
     task({ id: "w", title: "Draft the board update", status: "working" }),
@@ -476,14 +476,13 @@ test("OpenDuet's Active lists the tasks under OpenDuet's headings, in its order"
       <RouterProvider router={router as never} />
     </QueryClientProvider>,
   );
-  const ready = await view.findByRole("region", { name: "Ready for review" });
-  expect(within(ready).getByText("Reply to the landlord")).toBeTruthy();
-  const working = view.getByRole("region", { name: "Working" });
-  expect(within(working).getByText("Draft the board update")).toBeTruthy();
-  const order = [...view.container.querySelectorAll("section[aria-label]")].map(
-    (section) => section.getAttribute("aria-label"),
-  );
-  expect(order.indexOf("Ready for review")).toBeLessThan(
-    order.indexOf("Working"),
-  );
+  const ready = await view.findByRole("heading", { name: "Ready for review" });
+  const working = view.getByRole("heading", { name: "Working" });
+  const readySection = ready.closest("section");
+  const workingSection = working.closest("section");
+  expect(readySection?.textContent).toContain("Reply to the landlord");
+  expect(workingSection?.textContent).toContain("Draft the board update");
+  expect(
+    ready.compareDocumentPosition(working) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });

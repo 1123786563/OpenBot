@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
-import { AstryxSurface, astryxPilot } from "@/components/astryx-pilot/theme";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageSection,
@@ -8,20 +8,13 @@ import {
 } from "@/components/layout/page-shell";
 import { BotResponsibilities } from "@/components/responsibilities/responsibilities";
 import { RoutinesList } from "@/components/routines/routines-list";
-import { LEGACY_PAGES } from "@/lib/agents/legacy-routes";
+import { resolveChosenBot, useChosenBotId } from "@/lib/agents/chosen-bot";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
-import { useChosenBotId } from "@/skins/openmuse/chosen-bot";
-import { centreBot } from "@/skins/openmuse/model";
 
 export const Route = createFileRoute("/_authed/_app/responsibilities")({
   validateSearch: (search: Record<string, unknown>): { view?: "goals" } =>
     search.view === "goals" ? { view: "goals" } : {},
-  beforeLoad: () => {
-    if (!astryxPilot) {
-      throw redirect({ to: LEGACY_PAGES["/responsibilities"], replace: true });
-    }
-  },
   component: ResponsibilitiesPage,
 });
 
@@ -47,7 +40,7 @@ function GoalsOverview() {
   const agents = useQuery(agentListQueryOptions());
   const user = useQuery(currentUserQueryOptions());
   const chosenId = useChosenBotId(user.data?.id);
-  const bot = centreBot(agents.data, chosenId, undefined);
+  const bot = resolveChosenBot(agents.data, chosenId);
 
   return (
     <PageShell

@@ -595,11 +595,16 @@ export function ComputerView({
     return () => trigger?.focus();
   }, [expanded]);
 
-  // Close the full-size screen before Escape reaches the Computer sheet underneath.
+  // Let dialogs opened from the full-size screen handle Escape first.
   useEffect(() => {
     if (!expanded) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest('[data-slot="dialog-content"]')
+      )
+        return;
       event.preventDefault();
       event.stopPropagation();
       setExpanded(false);

@@ -8,10 +8,11 @@ const outputDir = process.env.ISSUE17_DIR ?? "/tmp/openbot-issue17";
 const phase = process.argv[3];
 const origin =
   edition === "personal" ? "http://127.0.0.1:34920" : "http://127.0.0.1:34921";
-const enabled = phase === "enabled";
+const retired = phase === "retired";
+const enabled = phase === "enabled" || retired;
 const team = edition === "team";
 assert(["personal", "team"].includes(edition));
-assert(["before", "enabled", "rollback", "red"].includes(phase));
+assert(["before", "enabled", "rollback", "red", "retired"].includes(phase));
 
 const browser = await chromium.launch();
 const storageState = `${outputDir}/${edition}-browser.json`;
@@ -71,7 +72,7 @@ try {
         undefined,
         200,
       );
-      assert.equal(preferences.skin, "openmuse");
+      if (!retired) assert.equal(preferences.skin, "openmuse");
       report.push({ restoredSkin: preferences.skin });
     }
     assert.equal(identity.user.role, "admin");
@@ -185,11 +186,29 @@ try {
     const profiles = ["openbot", "openduet", "opendots", "openmuse"];
     for (const skin of profiles) {
       await api(context, "PATCH", "/api/settings/preferences", { skin }, 200);
+      if (retired) {
+        await page.evaluate(
+          (value) => localStorage.setItem("openbot-skin", value),
+          skin,
+        );
+      }
       await go("/bots", "/bots", label);
-      await page.waitForFunction(
-        (value) => localStorage.getItem("openbot-skin") === value,
-        skin,
-      );
+      if (retired) {
+        const { preferences } = await api(
+          context,
+          "GET",
+          "/api/settings/preferences",
+          undefined,
+          200,
+        );
+        assert.equal(preferences.skin, skin);
+        assert.equal(await page.locator("html[data-skin]").count(), 0);
+      } else {
+        await page.waitForFunction(
+          (value) => localStorage.getItem("openbot-skin") === value,
+          skin,
+        );
+      }
       assert.equal(
         (await page.locator(".astryx-web-shell").count()) > 0,
         enabled,
@@ -266,6 +285,32 @@ try {
       });
     }
 
+    if (retired) {
+      await go("/settings", "/settings", "Appearance");
+      assert.equal(await page.getByLabel("Skin", { exact: true }).count(), 0);
+      assert.equal(
+        await page.getByText("OpenDuet", { exact: true }).count(),
+        0,
+      );
+      const toggle = page.getByRole("switch", { name: "Dark theme" });
+      await toggle.click();
+      await page.waitForFunction(
+        () =>
+          !document.documentElement.classList.contains("dark") &&
+          localStorage.getItem("openbot-theme") === "light",
+      );
+      await toggle.click();
+      await page.waitForFunction(
+        () =>
+          document.documentElement.classList.contains("dark") &&
+          localStorage.getItem("openbot-theme") === "dark",
+      );
+      report.push({
+        themeControl: "light and dark persist",
+        skinPicker: "absent",
+      });
+    }
+
     await context.storageState({ path: storageState });
     await go(
       `/channel/${conversation.id}`,
@@ -294,6 +339,7 @@ try {
       );
       for (const [source, dest, content] of [
         ["/s/tasks", "/tasks", "Bot tasks"],
+        ...(retired ? [["/s/unknown", "/", "Browse Bots"]] : []),
         ["/s/routines", "/routines", "Routines"],
         [
           "/s/memories",
@@ -347,7 +393,11 @@ try {
       await page.getByRole("button", { name: "Close navigation" }).waitFor();
       await page.keyboard.press("Escape");
       await nav.waitFor();
-      assert(await nav.evaluate((button) => button === document.activeElement));
+      await page.waitForFunction(
+        () =>
+          document.activeElement?.getAttribute("aria-label") ===
+          "Open navigation",
+      );
       report.push({
         narrowKeyboardNavigation:
           "opened with Enter and closed with Escape, focus restored",
@@ -363,6 +413,27 @@ try {
         destination: "/bots?new=true",
         content: "Create Bot dialog",
       });
+      if (retired) {
+        const createdLabel = `Issue 18 ${edition} ${Date.now()}`;
+        const dialog = page.getByRole("dialog", { name: "New Bot" });
+        await dialog.getByLabel("Name", { exact: true }).fill(createdLabel);
+        await dialog.getByRole("button", { name: "Create Bot" }).click();
+        await page.waitForURL((url) => /^\/bots\/[^/]+$/.test(url.pathname));
+        await page.getByText(createdLabel, { exact: true }).first().waitFor();
+        const { agents } = await api(
+          context,
+          "GET",
+          "/api/agents",
+          undefined,
+          200,
+        );
+        assert(agents.some(({ name }) => name === createdLabel));
+        report.push({
+          createdBot: createdLabel,
+          destination: new URL(page.url()).pathname,
+        });
+        await go("/bots", "/bots", createdLabel);
+      }
     }
     if (team) {
       await page.goto(`${origin}/admin/enterprise`);

@@ -196,11 +196,9 @@ test("recording history shares a page scroller with the bounded audit log", asyn
   expect(recording.textContent).toContain("Command 99");
 });
 
-if (import.meta.env.VITE_OPENBOT_ASTRYX_PILOT === "1") {
-  test("the event log is a named keyboard stop for scrolling its table", async () => {
-    const view = await renderAudit();
-    const log = view.getByRole("region", { name: "Audit events" });
-    expect(log.tabIndex).toBe(0);
-    expect(log.contains(view.getByRole("table"))).toBe(true);
-  });
-}
+test("the event log is a named keyboard stop for scrolling its table", async () => {
+  const view = await renderAudit();
+  const log = view.getByRole("region", { name: "Audit events" });
+  expect(log.tabIndex).toBe(0);
+  expect(log.contains(view.getByRole("table"))).toBe(true);
+});

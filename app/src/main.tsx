@@ -6,6 +6,7 @@ import { queryClient } from "./query-client";
 import { router } from "./router";
 import "@copilotkit/react-core/v2/styles.css";
 import "./styles.css";
+import "./components/astryx-pilot/styles";
 
 function renderApp() {
   const rootElement = document.getElementById("root");
@@ -23,8 +24,4 @@ function renderApp() {
   );
 }
 
-if (import.meta.env.VITE_OPENBOT_ASTRYX_PILOT === "1") {
-  void import("./components/astryx-pilot/styles").then(renderApp);
-} else {
-  renderApp();
-}
+renderApp();

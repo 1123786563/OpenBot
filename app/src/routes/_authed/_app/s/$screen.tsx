@@ -5,24 +5,16 @@ import {
   Navigate,
   redirect,
 } from "@tanstack/react-router";
-import { AstryxSurface, astryxPilot } from "@/components/astryx-pilot/theme";
+import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { BotActivitySections } from "@/components/bot-profile/activity";
 import { PageEmpty, PageShell } from "@/components/layout/page-shell";
 import { BotNeedsYou } from "@/components/needs-you/board";
+import { resolveChosenBot, useChosenBotId } from "@/lib/agents/chosen-bot";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
-import { useChosenBotId } from "@/skins/openmuse/chosen-bot";
-import { centreBot } from "@/skins/openmuse/model";
-import { useActiveSkin } from "@/skins/registry";
 
-/*
- * Screens that only a skin has (OpenDuet's Tasks, OpenMuse's Ideas) live here, so a skin adds
- * screens without adding routes. Switching to a skin without this screen, or following an old link
- * to it, goes home rather than to an empty page.
- */
 export const Route = createFileRoute("/_authed/_app/s/$screen")({
   beforeLoad: ({ params }) => {
-    if (!astryxPilot) return;
     if (params.screen === "routines")
       throw redirect({ to: "/routines", replace: true });
     if (params.screen === "tasks")
@@ -46,20 +38,18 @@ export const Route = createFileRoute("/_authed/_app/s/$screen")({
 
 function RouteComponent() {
   const { screen } = Route.useParams();
-  const Screen = useActiveSkin().screens?.[screen];
-
-  if (astryxPilot && screen === "activity") return <ActivityOverview />;
-
-  if (!Screen) return <Navigate replace to="/" />;
-
-  return <Screen />;
+  return screen === "activity" ? (
+    <ActivityOverview />
+  ) : (
+    <Navigate replace to="/" />
+  );
 }
 
 function ActivityOverview() {
   const roster = useQuery(agentListQueryOptions());
   const user = useQuery(currentUserQueryOptions());
   const chosenId = useChosenBotId(user.data?.id);
-  const bot = centreBot(roster.data, chosenId, undefined);
+  const bot = resolveChosenBot(roster.data, chosenId);
 
   return (
     <AstryxSurface className="flex min-h-0 min-w-0 flex-1 flex-col">

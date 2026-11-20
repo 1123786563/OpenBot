@@ -25,7 +25,6 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { formatHotkey, HOTKEYS } from "@/lib/hotkeys/hotkeys";
-import { SkinPicker } from "@/skins/skin-picker";
 
 export const Route = createFileRoute("/_authed/settings/")({
   component: RouteComponent,
@@ -92,8 +91,6 @@ function RouteComponent() {
                 )}
               </ItemActions>
             </Item>
-            <Separator />
-            <SkinPicker />
           </PageRows>
           <MessageListPreference />
         </PageSection>

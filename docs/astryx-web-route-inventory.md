@@ -1,10 +1,10 @@
 # Astryx Web route and profile inventory
 
-This inventory covers the Web router for #17. Parameter names use the router's notation. Index routes are listed without a final slash. The route groups below come from `FileRoutesByFullPath` in `app/src/routeTree.gen.ts`. The four account profile IDs come from `app/src/skins/registry.ts`. See [the rehearsal](astryx-web-rollout.md) for the browser sample and its limits.
+This inventory covers the Web router for #17. Parameter names use the router's notation. Index routes are listed without a final slash. The route groups below come from `FileRoutesByFullPath` in `app/src/routeTree.gen.ts`. The four historical profile IDs are still valid account preferences. See [the rehearsal](astryx-web-rollout.md) for the browser sample and its limits.
 
 ## Legacy profiles
 
-All four expose home and conversation history, New conversation, Bots, Routines, Connections, Settings and account actions. Team sees Capabilities and eligible administrators see Admin. Personal gets the business-features dialog in the account menu. The unified sidebar and account menu carry those shared destinations. Each profile retains its saved identity for rollback.
+All four expose home and conversation history, New conversation, Bots, Routines, Connections, Settings and account actions. Team sees Capabilities and eligible administrators see Admin. Personal gets the business-features dialog in the account menu. The unified sidebar and account menu carry those shared destinations. Astryx uses the same navigation for all four saved profile IDs and leaves the stored value intact.
 
 | Profile | Legacy entry or dedicated workflow | Astryx destination |
 | --- | --- | --- |
@@ -22,7 +22,7 @@ All four expose home and conversation history, New conversation, Bots, Routines,
 | `openmuse` | Goals and selected Bot's ongoing work at `/s/goals` | `/responsibilities?view=goals` with Bot Routines and Responsibilities |
 | `openmuse` | Apps tab, notifications and approvals, account menu | `/connections`, Bot attention and `/settings/approvals`, unified account menu |
 
-Unknown `/s/$screen` keys still go home. The off bundle uses the old profile-specific screen registry. A bookmark for a different profile's dedicated screen can go home in that bundle, just as it did before the switch.
+Unknown `/s/$screen` keys still go home. The archived #17 off bundle uses the old profile-specific screen registry. A bookmark for a different profile's dedicated screen can go home in that bundle, just as it did before the switch.
 
 ## Shared app routes and compatibility
 
@@ -42,7 +42,7 @@ Unknown `/s/$screen` keys still go home. The off bundle uses the old profile-spe
 | `/connections/$key/bots/$agentId`, `/connections/$key/tools/$tool` | `/connections/$key`. |
 | `/settings/connected-accounts`, `/settings/connected-accounts/$key` | Connections list/detail; preserve applicable consent callback state. |
 | `/routines`, `/routines/new` | Same list and creation route. Existing Bot/Conversation launch context remains supported. |
-| `/responsibilities`, `/ideas`, `/tasks` | Same Astryx destinations. Off bundle sends Responsibilities to Bots and Ideas/Tasks to their dedicated legacy screens. |
+| `/responsibilities`, `/ideas`, `/tasks` | Same Astryx destinations. The archived #17 off bundle sends Responsibilities to Bots and Ideas/Tasks to their dedicated legacy screens. |
 | `/approvals`, `/reachability` | `/settings/approvals` and `/settings/notifications`. |
 | `/sign`, `/onboarding`, `/sign-in/$requestId`, `/desktop-return` | Same authentication, first-run and desktop handoff routes. Unauthenticated protected bookmarks return through sign-in. |
 
