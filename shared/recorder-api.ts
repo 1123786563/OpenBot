@@ -74,10 +74,42 @@ export type RecordingRow = {
   reason: string | null;
 };
 export type RecordingsPage = {
+  canManage?: boolean;
   recordings: RecordingRow[];
   nextCursor: string | null;
   unavailable?: "unavailable" | "unreachable";
 };
+export const recordingIdSchema = z
+  .string()
+  .uuid()
+  .transform((id) => id.toLowerCase());
+export const recordingEventSchema = z
+  .object({
+    type: z.literal("CUSTOM"),
+    name: z.string().min(1).max(400),
+    timestamp: z.number().int().positive().max(8_640_000_000_000_000),
+    value: z
+      .object({ seq: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) })
+      .catchall(z.json()),
+  })
+  .strict();
+export const recordingBatchSchema = z
+  .object({
+    captureToken: z.string().max(128),
+    events: z.array(recordingEventSchema).max(50),
+    dropped: z.number().int().nonnegative(),
+  })
+  .strict();
+export type RecordingEvent = z.infer<typeof recordingEventSchema>;
+export type RecordingDetail = RecordingRow & {
+  events: RecordingEvent[];
+  nextSeq: number | null;
+};
+export const openBotCaptureGrantSchema = z.object({
+  kind: z.literal("openbot"),
+  token: z.string().min(1).max(128),
+});
+export type OpenBotCaptureGrant = z.infer<typeof openBotCaptureGrantSchema>;
 export type ExchangeResponse = {
   token: string;
   connection: RecorderConnection;
@@ -216,6 +248,12 @@ export const recorderPaths = {
   me: "/api/recorder/me",
   /** GET, the signed-in person's own recordings, `?cursor=`. */
   recordings: "/api/recorder/recordings",
+  recording: (recordingId: string) =>
+    `/api/recorder/recordings/${id(recordingId)}`,
+  captureGrant: (trajectoryId: string) =>
+    `/api/recorder/capture/${id(trajectoryId)}/grant`,
+  captureEvents: (trajectoryId: string) =>
+    `/api/recorder/capture/${id(trajectoryId)}/events`,
   learning: "/api/recorder/learning",
   /** POST `RecorderActivity`, with the Recorder's bearer: what this browser's Recorder is doing now (the red dot). */
   activity: "/api/recorder/activity",

@@ -11,6 +11,8 @@ import {
   type RecorderUser,
   type RecordingsPage,
   recorderActivitySchema,
+  recordingBatchSchema,
+  recordingIdSchema,
 } from "@openbot/shared/recorder-api";
 import { extensionIdFromOrigin } from "@openbot/shared/recorder-extension";
 import { Hono, type MiddlewareHandler } from "hono";
@@ -23,6 +25,7 @@ import type {
   RecorderConnectionStore,
   SealedOrganizationSession,
 } from "./connections";
+import type { createOpenBotRecordings } from "./openbot-recordings";
 import { InvalidCursorError } from "./trajectory-bindings";
 import type { RecorderVariables } from "./variables";
 
@@ -49,6 +52,7 @@ export type RecorderRouteDeps = {
   recordings?: {
     list(userId: string, cursor: string | null): Promise<RecordingsPage>;
   };
+  localRecordings?: ReturnType<typeof createOpenBotRecordings>;
   auditStore?: AuditStore;
 };
 
@@ -242,6 +246,7 @@ export function createRecorderRoutes(deps: RecorderRouteDeps) {
   });
 
   routes.get("/recordings", deps.requireUser, async (context) => {
+    context.header("Cache-Control", "no-store");
     if (!deps.recordings) {
       return context.json({ error: "Recordings are not available here." }, 503);
     }
@@ -265,6 +270,111 @@ export function createRecorderRoutes(deps: RecorderRouteDeps) {
       throw error;
     }
   });
+
+  const local = deps.localRecordings;
+  if (local) {
+    const missing = { code: "NOT_FOUND", error: "Recording not found." };
+    const signedOut = {
+      code: RECORDER_SIGNED_OUT,
+      reason: "revoked",
+      error: "Connect this browser to OpenBot again.",
+    };
+    routes.post(
+      "/capture/:trajectoryId/grant",
+      deps.requireRecorder,
+      jsonOnly,
+      smallBody,
+      async (context) => {
+        context.header("Cache-Control", "no-store");
+        const trajectoryId = recordingIdSchema.safeParse(
+          context.req.param("trajectoryId"),
+        );
+        const body: unknown = await context.req.json().catch(() => null);
+        const recordingId = recordingIdSchema.safeParse(
+          typeof body === "object" && body !== null && "recordingId" in body
+            ? body.recordingId
+            : null,
+        );
+        if (!trajectoryId.success || !recordingId.success)
+          return context.json(
+            { code: "INVALID_REQUEST", error: "Invalid recording identifier." },
+            400,
+          );
+        const connectionId = context.var.recorderConnectionId;
+        if (!connectionId) return context.json(signedOut, 401);
+        const grant = await local.grant(
+          {
+            userId: context.var.actor.id,
+            connectionId,
+            trajectoryId: trajectoryId.data,
+          },
+          recordingId.data,
+        );
+        if (grant.kind === "signed-out") return context.json(signedOut, 401);
+        return grant.kind === "openbot"
+          ? context.json(grant)
+          : context.json(missing, 404);
+      },
+    );
+
+    routes.post(
+      "/capture/:trajectoryId/events",
+      deps.requireRecorder,
+      jsonOnly,
+      bodyLimit({ maxSize: 70 * 1024 }),
+      async (context) => {
+        const trajectoryId = recordingIdSchema.safeParse(
+          context.req.param("trajectoryId"),
+        );
+        const body = recordingBatchSchema.safeParse(
+          await context.req.json().catch(() => null),
+        );
+        if (!trajectoryId.success || !body.success)
+          return context.json({ reason: "invalid_batch" }, 400);
+        const connectionId = context.var.recorderConnectionId;
+        if (!connectionId) return context.json(signedOut, 401);
+        const result = await local.submit(
+          {
+            userId: context.var.actor.id,
+            connectionId,
+            trajectoryId: trajectoryId.data,
+          },
+          body.data.captureToken,
+          body.data.events,
+        );
+        switch (result.kind) {
+          case "accepted":
+            return context.json(result.ack);
+          case "signed-out":
+            return context.json(signedOut, 401);
+          case "invalid-grant":
+            return context.json({ reason: "scope_mismatch" }, 403);
+          case "expired-grant":
+            return context.json({ reason: "capture_grant_expired" }, 403);
+          case "not-found":
+            return context.json({ reason: "trajectory_mismatch" }, 404);
+        }
+      },
+    );
+
+    routes.get("/recordings/:id", deps.requireUser, async (context) => {
+      const id = recordingIdSchema.safeParse(context.req.param("id"));
+      if (!id.success) return context.json(missing, 404);
+      const after = Number(context.req.query("after") ?? 0);
+      if (!Number.isSafeInteger(after) || after < 0)
+        return context.json({ error: "Invalid event cursor." }, 400);
+      context.header("Cache-Control", "no-store");
+      const detail = await local.detail(context.var.actor.id, id.data, after);
+      return detail ? context.json(detail) : context.json(missing, 404);
+    });
+
+    routes.delete("/recordings/:id", deps.requireUser, async (context) => {
+      const id = recordingIdSchema.safeParse(context.req.param("id"));
+      if (!id.success || !(await local.remove(context.var.actor.id, id.data)))
+        return context.json(missing, 404);
+      return context.body(null, 204);
+    });
+  }
 
   // Declared before `:id`, or "current" would be taken for a connection id.
   routes.delete(
