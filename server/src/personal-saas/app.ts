@@ -4,17 +4,16 @@ import { html } from "hono/html";
 import { seal, unseal } from "../auth/signed-value";
 import type { Database } from "../db/client";
 import { browserAttempt, type CasdoorConfig, casdoor } from "./casdoor";
+import { sessionEventRoutes } from "./session-events";
+import {
+  cookieOptions,
+  sessionCookie,
+  sessionRevocationRoutes,
+} from "./session-revocation";
 import { personalSaasStore, sessionSeconds } from "./store";
 
-const sessionCookie = "__Host-openbot-personal";
 const attemptPrefix = "__Host-openbot-oidc-";
 const callbackPath = "/auth/casdoor/callback";
-const cookieOptions = {
-  path: "/",
-  httpOnly: true,
-  secure: true,
-  sameSite: "Lax",
-} as const;
 const sessionSeal = "personal-saas-access-token";
 
 function reportFailure(
@@ -83,7 +82,7 @@ export function createPersonalSaasApp(
     context.header("Cache-Control", "no-store");
     context.header(
       "Content-Security-Policy",
-      "default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+      `default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; form-action 'self' ${config.casdoor.discoveryUrl.origin}; base-uri 'none'; frame-ancestors 'none'`,
     );
     context.header("Referrer-Policy", "same-origin");
     context.header("X-Content-Type-Options", "nosniff");
@@ -251,9 +250,12 @@ export function createPersonalSaasApp(
     );
     if (!access) return { kind: "signed-out" } as const;
     try {
-      if (await provider.accountActive(access, session.subject))
-        return { kind: "authorized", accountId: session.accountId } as const;
-      await store.signOut(token);
+      if (await provider.accountActive(access, session.subject)) {
+        if (await store.isSessionLive(token))
+          return { kind: "authorized", accountId: session.accountId } as const;
+      } else {
+        await store.signOut(token);
+      }
       return { kind: "signed-out" } as const;
     } catch {
       reportFailure("workspace-status");
@@ -261,6 +263,31 @@ export function createPersonalSaasApp(
     }
   }
 
+  app.route(
+    "/",
+    sessionRevocationRoutes({
+      ...config,
+      store,
+      failurePage: async (status) =>
+        new Response(
+          await statusPage(
+            "Couldn't sign out all devices",
+            "OpenBot couldn't verify your identity. Return to your workspace to try again.",
+            "/workspace",
+            "Back to workspace",
+          ),
+          { status, headers: { "content-type": "text/html; charset=UTF-8" } },
+        ),
+    }),
+  );
+  app.route(
+    "/",
+    sessionEventRoutes({
+      cookieName: sessionCookie,
+      authorize,
+      isSessionLive: store.isSessionLive,
+    }),
+  );
   app.get("/workspace", async (context) => {
     const session = await authorize(getCookie(context, sessionCookie));
     if (session.kind === "unconfirmed")
@@ -283,7 +310,12 @@ export function createPersonalSaasApp(
       page(
         "Personal Workspace",
         html`<section aria-labelledby="assistant"><h2 id="assistant">${workspace.personalAssistant.name}</h2></section>
-      <form method="post" action="/auth/sign-out"><button type="submit">Sign out</button></form>`,
+      <form method="post" action="/auth/sign-out"><button type="submit">Sign out</button></form>
+      <form method="post" action="/auth/sign-out-all">
+        <p>Verify your identity with Casdoor to require every device to sign in again.</p>
+        <button type="submit">Sign out all devices</button>
+      </form>
+      <script src="/assets/session.js" defer></script>`,
       ),
     );
   });
@@ -313,13 +345,6 @@ export function createPersonalSaasApp(
     return workspace
       ? context.json(workspace)
       : context.json({ status: "preparing" }, 202);
-  });
-
-  app.post("/auth/sign-out", async (context) => {
-    const token = getCookie(context, sessionCookie);
-    if (token) await store.signOut(token);
-    deleteCookie(context, sessionCookie, cookieOptions);
-    return context.redirect("/", 303);
   });
 
   return app;

@@ -132,7 +132,7 @@ export function casdoor(config: CasdoorConfig, callback: string) {
   }
 
   return {
-    async start() {
+    async start(options?: { forceLogin: true }) {
       const { metadata } = await provider();
       const state = randomBytes(24).toString("base64url");
       const verifier = randomBytes(32).toString("base64url");
@@ -152,13 +152,21 @@ export function casdoor(config: CasdoorConfig, callback: string) {
       };
       for (const [key, value] of Object.entries(params))
         authorization.searchParams.set(key, value);
+      if (options?.forceLogin) {
+        authorization.searchParams.set("prompt", "login");
+        authorization.searchParams.set("max_age", "0");
+      }
       return {
         authorization,
         state,
         attempt: { verifier, nonce, expiresAt: Date.now() + 10 * 60_000 },
       };
     },
-    async authenticate(code: string, attempt: BrowserAttempt) {
+    async authenticate(
+      code: string,
+      attempt: BrowserAttempt,
+      options?: { authenticatedAfter: number },
+    ) {
       const { metadata, keys } = await provider();
       const tokens = token.parse(
         await read(metadata.token_endpoint, {
@@ -187,6 +195,15 @@ export function casdoor(config: CasdoorConfig, callback: string) {
           payload.azp !== config.clientId)
       )
         throw new Error("Unexpected Casdoor ID token");
+      if (
+        options &&
+        (typeof payload.auth_time !== "number" ||
+          !Number.isSafeInteger(payload.auth_time) ||
+          payload.auth_time <= options.authenticatedAfter ||
+          payload.auth_time > (payload.iat ?? 0) ||
+          payload.auth_time > Math.floor(Date.now() / 1_000))
+      )
+        throw new Error("Casdoor did not re-verify the account");
       const identity = userinfo.parse(
         await read(metadata.userinfo_endpoint, {
           headers: { authorization: `Bearer ${tokens.access_token}` },

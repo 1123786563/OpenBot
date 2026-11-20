@@ -1,8 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createDatabase } from "../src/db/client";
+import { workItems } from "../src/db/schema";
 import { createPersonalSaasApp } from "../src/personal-saas/app";
+import { personalSaasStore } from "../src/personal-saas/store";
+import { createWorkQueue } from "../src/work/queue";
 import { testDatabaseUrl } from "./support/database";
 
 const origin = "https://trial.openbot.example";
@@ -15,6 +19,7 @@ const { privateKey, publicKey } = await generateKeyPair("RS256");
 const signingKey = await exportJWK(publicKey);
 const issuer = "https://casdoor.example";
 const callback = `${origin}/auth/casdoor/callback`;
+const reverifyCallback = `${origin}/auth/casdoor/reverify/callback`;
 
 type Account = {
   sub: string;
@@ -24,9 +29,16 @@ type Account = {
 };
 const authorizeCodes = new Map<
   string,
-  { account: Account; nonce: string; challenge: string }
+  {
+    account: Account;
+    nonce: string;
+    challenge: string;
+    authTime?: number;
+    redirectUri?: string;
+  }
 >();
 const accessTokens = new Map<string, Account>();
+const introspectionGates = new WeakMap<Account, () => Promise<void>>();
 let provider: ReturnType<typeof Bun.serve>;
 let app: ReturnType<typeof createPersonalSaasApp>;
 
@@ -58,7 +70,7 @@ beforeAll(() => {
           authorizeCodes.delete(code);
           if (
             !entry ||
-            form.get("redirect_uri") !== callback ||
+            form.get("redirect_uri") !== (entry.redirectUri ?? callback) ||
             form.get("client_id") !== clientId ||
             form.get("client_secret") !== clientSecret ||
             new Bun.CryptoHasher("sha256")
@@ -68,7 +80,10 @@ beforeAll(() => {
             return new Response(null, { status: 400 });
           const access = crypto.randomUUID();
           accessTokens.set(access, entry.account);
-          const id = await new SignJWT({ nonce: entry.nonce })
+          const id = await new SignJWT({
+            nonce: entry.nonce,
+            auth_time: entry.authTime,
+          })
             .setProtectedHeader({ alg: "RS256", kid: "trial" })
             .setSubject(entry.account.sub)
             .setIssuer(issuer)
@@ -103,6 +118,7 @@ beforeAll(() => {
           )
             return new Response(null, { status: 401 });
           const account = accessTokens.get(String(form.get("token")));
+          if (account) await introspectionGates.get(account)?.();
           return Response.json({
             active: account?.active,
             client_id: clientId,
@@ -114,7 +130,11 @@ beforeAll(() => {
       return new Response(null, { status: 404 });
     },
   });
-  app = createPersonalSaasApp(
+  app = newApp();
+});
+
+function newApp(db = database) {
+  return createPersonalSaasApp(
     {
       origin,
       encryptionKey: Buffer.alloc(32, 7).toString("base64"),
@@ -129,9 +149,9 @@ beforeAll(() => {
         allowLoopbackHttp: true,
       },
     },
-    database,
+    db,
   );
-});
+}
 
 afterAll(async () => {
   await provider?.stop(true);
@@ -423,4 +443,349 @@ test("the registered redirect refuses a callback without its initiating browser"
       .getSetCookie()
       .some((value) => value.startsWith("__Host-openbot-personal=")),
   ).toBe(false);
+});
+
+async function withReplica(
+  run: (connect: (session: string) => Promise<Response>) => Promise<void>,
+) {
+  const replicaDatabase = createDatabase(testDatabaseUrl(), { max: 2 });
+  const replica = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: newApp(replicaDatabase).fetch,
+  });
+  try {
+    await run((session) =>
+      fetch(new URL("/api/auth/session/events", replica.url), {
+        headers: { cookie: session },
+        signal: AbortSignal.timeout(20_000),
+      }),
+    );
+  } finally {
+    await replica.stop(true);
+    await replicaDatabase.$client.close();
+  }
+}
+
+async function readSessionStream(response: Response) {
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-type")).toContain("text/event-stream");
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Missing session stream");
+  expect((await reader.read()).done).toBe(false);
+  return reader;
+}
+
+async function expectRevoked(reader: ReadableStreamDefaultReader<Uint8Array>) {
+  const decoder = new TextDecoder();
+  let events = "";
+  for (
+    let chunk = await reader.read();
+    !chunk.done;
+    chunk = await reader.read()
+  ) {
+    events += decoder.decode(chunk.value, { stream: true });
+  }
+  expect(events).toContain("event: signed-out");
+}
+
+function signOut(session: string) {
+  return send("/auth/sign-out", {
+    method: "POST",
+    headers: { cookie: session, origin },
+  });
+}
+
+test("signing out ends its live connection on another server and leaves the second session in the workspace", async () => {
+  const account = {
+    sub: crypto.randomUUID(),
+    email: "multi-device@example.com",
+    verified: true,
+    active: true,
+  };
+  const first = cookie(await authenticate(account), "__Host-openbot-personal=");
+  const second = cookie(
+    await authenticate(account),
+    "__Host-openbot-personal=",
+  );
+  await enter(first);
+  const original = await workspace(second);
+  await withReplica(async (connect) => {
+    const [firstStream, secondStream] = await Promise.all([
+      connect(first).then(readSessionStream),
+      connect(second).then(readSessionStream),
+    ]);
+    expect((await signOut(first)).status).toBe(303);
+    expect(
+      (await send("/api/workspace", { headers: { cookie: first } })).status,
+    ).toBe(401);
+    expect((await connect(first)).status).toBe(401);
+    await expectRevoked(firstStream);
+    expect((await secondStream.read()).done).toBe(false);
+    expect(await workspace(second)).toEqual(original);
+    await secondStream.cancel();
+  });
+});
+
+async function beginRevocation(session: string) {
+  const response = await send("/auth/sign-out-all", {
+    method: "POST",
+    headers: { origin, cookie: session },
+  });
+  expect(response.status).toBe(303);
+  const authorization = new URL(response.headers.get("location") ?? "");
+  expect(authorization.searchParams.get("prompt")).toBe("login");
+  expect(authorization.searchParams.get("max_age")).toBe("0");
+  expect(authorization.searchParams.get("redirect_uri")).toBe(reverifyCallback);
+  return {
+    authorization,
+    pending: cookie(response, "__Host-openbot-reverify-"),
+  };
+}
+
+async function finishRevocation(
+  { authorization, pending }: Awaited<ReturnType<typeof beginRevocation>>,
+  session: string,
+  account: Account,
+  authTime: number | undefined,
+) {
+  const code = crypto.randomUUID();
+  authorizeCodes.set(code, {
+    account,
+    nonce: authorization.searchParams.get("nonce") ?? "",
+    challenge: authorization.searchParams.get("code_challenge") ?? "",
+    redirectUri: reverifyCallback,
+    authTime,
+  });
+  const query = new URLSearchParams({
+    code,
+    state: authorization.searchParams.get("state") ?? "",
+    iss: issuer,
+  });
+  return send(`${new URL(reverifyCallback).pathname}?${query}`, {
+    headers: { cookie: `${session}; ${pending}` },
+  });
+}
+
+test("fresh same-identity verification revokes every old session and a later sign-in retains the workspace", async () => {
+  const account = {
+    sub: crypto.randomUUID(),
+    email: "reverify@example.com",
+    verified: true,
+    active: true,
+  };
+  const first = cookie(await authenticate(account), "__Host-openbot-personal=");
+  const second = cookie(
+    await authenticate(account),
+    "__Host-openbot-personal=",
+  );
+  const unrelated = cookie(
+    await authenticate({ ...account, sub: crypto.randomUUID() }),
+    "__Host-openbot-personal=",
+  );
+  await enter(first);
+  await enter(unrelated);
+  const original = await workspace(second);
+  const sessions = personalSaasStore(database);
+  const sharedToken = await sessions.signIn({
+    issuer,
+    subject: account.sub,
+    email: account.email,
+    encryptedAccessToken: "not used at the store boundary",
+  });
+  expect(await sessions.session(sharedToken)).toBeDefined();
+  await withReplica(async (connect) => {
+    const live = await Promise.all(
+      [first, second, unrelated].map((session) =>
+        connect(session).then(readSessionStream),
+      ),
+    );
+    const [firstStream, secondStream, unrelatedStream] = live;
+    if (!firstStream || !secondStream || !unrelatedStream)
+      throw new Error("Missing session streams");
+    const pending = await beginRevocation(first);
+    // ID tokens use whole seconds. Advance beyond the challenge's second before authenticating.
+    await Bun.sleep(1_000);
+    const response = await finishRevocation(
+      pending,
+      first,
+      account,
+      Math.floor(Date.now() / 1_000),
+    );
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/");
+    expect(cookie(response, "__Host-openbot-personal=")).toBe(
+      "__Host-openbot-personal=",
+    );
+    for (const session of [first, second]) {
+      expect(
+        (await send("/api/workspace", { headers: { cookie: session } })).status,
+      ).toBe(401);
+      expect((await connect(session)).status).toBe(401);
+    }
+    await Promise.all([
+      expectRevoked(firstStream),
+      expectRevoked(secondStream),
+    ]);
+    expect((await unrelatedStream.read()).done).toBe(false);
+    await unrelatedStream.cancel();
+  });
+  expect(await sessions.session(sharedToken)).toBeUndefined();
+  expect((await workspace(unrelated)).id).not.toBe(original.id);
+  const next = cookie(await authenticate(account), "__Host-openbot-personal=");
+  expect(await workspace(next)).toEqual(original);
+});
+
+test("failed re-verification preserves both existing sessions", async () => {
+  const account = {
+    sub: crypto.randomUUID(),
+    email: "reject-proof@example.com",
+    verified: true,
+    active: true,
+  };
+  const first = cookie(await authenticate(account), "__Host-openbot-personal=");
+  const second = cookie(
+    await authenticate(account),
+    "__Host-openbot-personal=",
+  );
+  await enter(first);
+  const original = await workspace(first);
+  const foreignForm = await send("/auth/sign-out-all", {
+    method: "POST",
+    headers: { origin: "https://elsewhere.example", cookie: first },
+  });
+  expect(foreignForm.status).toBe(403);
+  const stale = await beginRevocation(first);
+  expect(
+    (
+      await finishRevocation(
+        stale,
+        first,
+        account,
+        Math.floor(Date.now() / 1_000) - 60,
+      )
+    ).status,
+  ).toBe(403);
+  const missing = await beginRevocation(first);
+  expect(
+    (await finishRevocation(missing, first, account, undefined)).status,
+  ).toBe(403);
+  const switched = await beginRevocation(first);
+  const otherIdentity = await beginRevocation(first);
+  await Bun.sleep(1_000);
+  const authTime = Math.floor(Date.now() / 1_000);
+  expect(
+    (await finishRevocation(switched, second, account, authTime)).status,
+  ).toBe(403);
+  expect(
+    (
+      await finishRevocation(
+        otherIdentity,
+        first,
+        { ...account, sub: crypto.randomUUID() },
+        authTime,
+      )
+    ).status,
+  ).toBe(403);
+  expect(await workspace(first)).toEqual(original);
+  expect(await workspace(second)).toEqual(original);
+});
+
+test("a pending all-device request cannot revoke a sibling after its initiating session signs out", async () => {
+  const account = {
+    sub: crypto.randomUUID(),
+    email: "race-proof@example.com",
+    verified: true,
+    active: true,
+  };
+  const first = cookie(await authenticate(account), "__Host-openbot-personal=");
+  const second = cookie(
+    await authenticate(account),
+    "__Host-openbot-personal=",
+  );
+  await enter(first);
+  const original = await workspace(second);
+  const pending = await beginRevocation(first);
+  const enteredProvider = Promise.withResolvers<void>();
+  const resumeProvider = Promise.withResolvers<void>();
+  const proofAccount = { ...account };
+  introspectionGates.set(proofAccount, () => {
+    enteredProvider.resolve();
+    return resumeProvider.promise;
+  });
+  await Bun.sleep(1_000);
+  const callbackResponse = finishRevocation(
+    pending,
+    first,
+    proofAccount,
+    Math.floor(Date.now() / 1_000),
+  );
+  try {
+    await Promise.race([
+      enteredProvider.promise,
+      callbackResponse.then(() => {
+        throw new Error("The callback did not reach Casdoor introspection");
+      }),
+    ]);
+    expect((await signOut(first)).status).toBe(303);
+  } finally {
+    resumeProvider.resolve();
+  }
+  expect((await callbackResponse).status).toBe(403);
+  expect(await workspace(second)).toEqual(original);
+});
+
+test("durable background work keeps its lease and queued work remains claimable through both types of sign-out", async () => {
+  const account = {
+    sub: crypto.randomUUID(),
+    email: "background-work@example.com",
+    verified: true,
+    active: true,
+  };
+  const first = cookie(await authenticate(account), "__Host-openbot-personal=");
+  const second = cookie(
+    await authenticate(account),
+    "__Host-openbot-personal=",
+  );
+  await enter(first);
+  const { id: workspaceId } = await workspace(first);
+  const queue = createWorkQueue(database);
+  const kind = `test.personal-session.${crypto.randomUUID()}`;
+  const worker = { kind, owner: "worker", leaseMs: 30_000 };
+  try {
+    expect(
+      await queue.offer({ kind, key: "in-flight", payload: { workspaceId } }),
+    ).toBe("queued");
+    expect(await queue.claim(worker)).toMatchObject([
+      { key: "in-flight", payload: { workspaceId } },
+    ]);
+    expect(
+      await queue.offer({ kind, key: "waiting", payload: { workspaceId } }),
+    ).toBe("queued");
+    expect((await signOut(first)).status).toBe(303);
+    expect(await queue.renew({ ...worker, key: "in-flight" })).toBe(true);
+    const pending = await beginRevocation(second);
+    await Bun.sleep(1_000);
+    expect(
+      (
+        await finishRevocation(
+          pending,
+          second,
+          account,
+          Math.floor(Date.now() / 1_000),
+        )
+      ).status,
+    ).toBe(303);
+    expect(
+      (await send("/api/workspace", { headers: { cookie: second } })).status,
+    ).toBe(401);
+    expect(await queue.finish({ ...worker, key: "in-flight" })).toBe(true);
+    expect(await queue.claim(worker)).toMatchObject([
+      { key: "waiting", payload: { workspaceId } },
+    ]);
+    expect(await queue.finish({ ...worker, key: "waiting" })).toBe(true);
+  } finally {
+    await database.delete(workItems).where(eq(workItems.kind, kind));
+  }
 });
