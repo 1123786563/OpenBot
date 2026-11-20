@@ -871,6 +871,18 @@ describe("every OpenBot surface stays reachable", () => {
 });
 
 describe("each tab is OpenBot's own sections for the centre Bot", () => {
+  test.skipIf(import.meta.env.VITE_OPENBOT_ASTRYX_PILOT !== "1")(
+    "Activity opens the currently selected Bot's overview",
+    async () => {
+      serve();
+      const router = renderAt("/s/activity");
+      fireEvent.click(await page().findByRole("link", { name: "View Muse" }));
+      await waitFor(() =>
+        expect(router.state.location.pathname).toBe("/bots/picked-harness"),
+      );
+    },
+  );
+
   test("Activity shows what the Bot waits on you for, and its work", async () => {
     serve();
     renderAt("/s/activity");
