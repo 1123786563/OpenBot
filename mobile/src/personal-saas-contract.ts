@@ -29,6 +29,19 @@ export type PausedWorkspace = z.infer<typeof pausedWorkspace>;
 export const nativeExchange = z.union([nativeSession, pausedWorkspace]);
 export const personalWorkspace = z.object({
   id: z.string().min(1),
+  recovery: z
+    .array(
+      z.object({
+        key: z.uuid(),
+        instruction: z.string(),
+        reasonMessage: z.string(),
+        output: z.string().nullable(),
+        outcomeUnknown: z.boolean(),
+        recovery: z.object({ action: z.enum(["cancel", "retry"]) }).nullable(),
+      }),
+    )
+    .default([]),
+  recoveryCanRetry: z.boolean().default(false),
   personalAssistant: z.object({
     id: z.string().min(1),
     name: z.string().min(1),

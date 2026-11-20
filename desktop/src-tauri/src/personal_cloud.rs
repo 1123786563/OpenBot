@@ -166,6 +166,9 @@ pub enum View {
         #[serde(rename = "personalAssistant")]
         personal_assistant: Assistant,
         conversations: Vec<Conversation>,
+        recovery: Vec<StoppedWork>,
+        #[serde(rename = "recoveryCanRetry")]
+        recovery_can_retry: bool,
     },
 }
 
@@ -180,6 +183,33 @@ pub struct Assistant {
 struct Workspace {
     id: String,
     personal_assistant: Assistant,
+    #[serde(default)]
+    recovery: Vec<StoppedWork>,
+    #[serde(default)]
+    recovery_can_retry: bool,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoppedWork {
+    key: String,
+    instruction: String,
+    reason_message: String,
+    output: Option<String>,
+    outcome_unknown: bool,
+    recovery: Option<WorkRecovery>,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct WorkRecovery {
+    action: RecoveryAction,
+}
+
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RecoveryAction {
+    Cancel,
+    Retry,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -442,6 +472,8 @@ impl<'a> Api<'a> {
                 let Workspace {
                     id,
                     personal_assistant,
+                    recovery,
+                    recovery_can_retry,
                 } = result.json().map_err(|_| NETWORK_ERROR)?;
                 let history = self
                     .http
@@ -457,6 +489,8 @@ impl<'a> Api<'a> {
                             id,
                             personal_assistant,
                             conversations,
+                            recovery,
+                            recovery_can_retry,
                         })
                     }
                     StatusCode::UNAUTHORIZED => {
@@ -539,6 +573,43 @@ pub async fn personal_cloud_action<R: Runtime>(
                 .open_url(url.as_str(), None::<&str>)
                 .map_err(|_| "Could not open your system browser. Try again.")
         })
+    })
+    .await
+    .map_err(|_| NETWORK_ERROR)?
+    .map_err(str::to_owned)
+}
+
+#[tauri::command]
+pub async fn personal_cloud_recover<R: Runtime>(
+    window: WebviewWindow<R>,
+    key: String,
+    action: RecoveryAction,
+    acknowledged: bool,
+) -> Result<(), String> {
+    require_cloud_window(&window)?;
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let cloud = app.state::<Cloud>();
+        let origin = cloud.origin.as_ref().ok_or(NETWORK_ERROR)?;
+        let token = credential(origin)?
+            .get_password()
+            .map_err(|_| STORE_ERROR)?;
+        let api = Api::new(origin)?;
+        let mut url = endpoint(origin, "/api/workspace/recovery");
+        url.path_segments_mut()
+            .map_err(|_| NETWORK_ERROR)?
+            .push(&key);
+        let reply = api
+            .http
+            .post(url)
+            .bearer_auth(token)
+            .json(&serde_json::json!({ "action": action, "acknowledged": acknowledged }))
+            .send()
+            .map_err(|_| NETWORK_ERROR)?;
+        if !reply.status().is_success() {
+            return Err(NETWORK_ERROR);
+        }
+        Ok(())
     })
     .await
     .map_err(|_| NETWORK_ERROR)?

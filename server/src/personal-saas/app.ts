@@ -1,13 +1,22 @@
+import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { html } from "hono/html";
+import { z } from "zod";
 import { seal, unseal } from "../auth/signed-value";
 import type { Database } from "../db/client";
+import { createWorkQueue } from "../work/queue";
 import {
   type AccountGrant,
   accountDecision,
   createAccountAccess,
 } from "./account-access";
+import {
+  botWorkInput,
+  PERSONAL_BOT_WORK,
+  personalBotWork,
+  recoveryInput,
+} from "./bot-work";
 import { browserAttempt, type CasdoorConfig, casdoor } from "./casdoor";
 import { bearerSession, type NativeAttempt, nativeAuth } from "./native-auth";
 import { sessionEventRoutes } from "./session-events";
@@ -32,6 +41,13 @@ import {
 const attemptPrefix = "__Host-openbot-oidc-";
 const callbackPath = "/auth/casdoor/callback";
 const sessionSeal = "personal-saas-access-token";
+const recoveryReason = {
+  account_disabled: "The account was disabled.",
+  account_status_unconfirmed: "Account status could not be confirmed.",
+  workspace_paused: "The workspace was paused.",
+  worker_lost: "The worker lost its lease.",
+  run_interrupted: "The run was interrupted.",
+};
 
 function reportFailure(
   stage: "sign-in" | "casdoor-discovery" | "workspace-setup" | "request",
@@ -43,6 +59,7 @@ export type PersonalSaasConfig = {
   origin: string;
   supportSubjects?: readonly string[];
   now?: () => number;
+  runPersonalBot?: TurnRunner;
   suspensionOperator?: SuspensionOperator;
   suspensionSupport?: string;
   encryptionKey: string;
@@ -94,6 +111,7 @@ export function createPersonalSaasApp(
   );
   const now = config.now ?? Date.now;
   const store = personalSaasStore(database, now);
+  const botWork = personalBotWork(database, now);
   const accountAccess = createAccountAccess(
     database,
     provider.accountStatus,
@@ -128,6 +146,11 @@ export function createPersonalSaasApp(
       return Boolean(bearer(context));
     if (context.req.path.startsWith("/api/operator/workspaces/")) return true;
     if (/^\/api\/workspaces\/[^/]+\/exports$/.test(context.req.path))
+      return Boolean(bearer(context));
+    if (
+      context.req.path.startsWith("/api/workspace/recovery/") ||
+      context.req.path === "/api/workspace/bot-runs"
+    )
       return Boolean(bearer(context));
     switch (context.req.path) {
       case "/api/auth/native/exchange":
@@ -529,6 +552,9 @@ export function createPersonalSaasApp(
     if (!(await stillAuthorized(token, session.grant)))
       return context.redirect("/workspace");
     if (!workspace) return context.html(preparePage());
+    const recovery = await botWork.history(session.grant.accountId);
+    if (!(await stillAuthorized(token, session.grant)))
+      return context.redirect("/", 303);
     return context.html(
       page(
         "Personal Workspace",
@@ -552,6 +578,27 @@ export function createPersonalSaasApp(
         <p>Verify your identity with Casdoor to require every device to sign in again.</p>
         <button type="submit">Sign out all devices</button>
       </form>
+      ${
+        recovery.length
+          ? html`<section aria-labelledby="work-recovery"><h2 id="work-recovery">Stopped work</h2>
+        <ul>${recovery.map(
+          (item) => html`<li>
+          <p>${item.instruction}</p><p>${recoveryReason[item.reason]}</p>
+          ${item.output ? html`<p>Output before interruption</p><pre>${item.output}</pre>` : ""}
+          ${item.outcomeUnknown ? html`<p>Check any external actions before retrying. Their outcome is unknown.</p>` : ""}
+          ${
+            item.recovery
+              ? html`<p>${item.recovery.action === "retry" ? "Queued as a new run" : "Cancelled"}</p>`
+              : html`<form method="post" action="/api/workspace/recovery/${item.key}">
+                ${config.runPersonalBot && item.outcomeUnknown ? html`<label><input type="checkbox" name="acknowledged" value="true"> I checked the external actions.</label>` : ""}
+                ${config.runPersonalBot ? html`<button name="action" value="retry">${item.outcomeUnknown ? "Retry as a new run" : "Requeue"}</button>` : ""}
+                <button name="action" value="cancel">Cancel item</button>
+              </form>`
+          }
+        </li>`,
+        )}</ul></section>`
+          : ""
+      }
       <script src="/assets/session.js" data-access-ms="${Math.max(0, session.grant.expiresAt - now())}" defer></script>`,
       ),
     );
@@ -599,9 +646,140 @@ export function createPersonalSaasApp(
     const workspace = await store.workspace(session.grant.accountId);
     if (!(await stillAuthorized(token, session.grant)))
       return context.json({ error: "authorization_changed" }, 403);
+    const recovery = workspace
+      ? await botWork.history(session.grant.accountId)
+      : [];
+    if (!(await stillAuthorized(token, session.grant)))
+      return context.json({ error: "authorization_changed" }, 403);
     return workspace
-      ? context.json(workspace)
+      ? context.json(
+          recovery.length
+            ? {
+                ...workspace,
+                recovery: recovery.map((item) => ({
+                  ...item,
+                  reasonMessage: recoveryReason[item.reason],
+                })),
+                recoveryCanRetry: Boolean(config.runPersonalBot),
+              }
+            : workspace,
+        )
       : context.json({ status: "preparing" }, 202);
+  });
+
+  app.post("/api/workspace/bot-runs", async (context) => {
+    const token = requestSession(context);
+    const session = await authorize(token);
+    if (session.kind !== "authorized" || !token)
+      return context.json({ error: "authorization_required" }, 403);
+    if (!config.runPersonalBot)
+      return context.json({ error: "bot_execution_unavailable" }, 503);
+    const input = botWorkInput.safeParse(
+      await context.req.json().catch(() => null),
+    );
+    if (!input.success) return context.json({ error: "invalid_request" }, 400);
+    const accountId = session.grant.accountId;
+    const outcome = await store.withAuthorizedSession(
+      session.grant,
+      token,
+      async (tx) => {
+        if (!(await workspaceBots(tx).get({ ...input.data, accountId })))
+          return null;
+        const key = crypto.randomUUID();
+        const offered = await createWorkQueue(tx, now).offer({
+          kind: PERSONAL_BOT_WORK,
+          key,
+          accountId,
+          payload: input.data,
+        });
+        return offered === "queued" ? key : null;
+      },
+    );
+    if (!outcome.authorized)
+      return context.json({ error: "authorization_changed" }, 403);
+    return outcome.result
+      ? context.json({ runId: outcome.result }, 202)
+      : context.json({ error: "bot_unavailable" }, 404);
+  });
+
+  app.get("/api/workspace/bot-runs/:key", async (context) => {
+    const token = requestSession(context);
+    const session = await authorize(token);
+    if (session.kind !== "authorized")
+      return context.json({ error: "authorization_required" }, 403);
+    const key = z.uuid().safeParse(context.req.param("key"));
+    if (!key.success) return context.json({ error: "work_not_found" }, 404);
+    const accountId = session.grant.accountId;
+    const queue = createWorkQueue(database, now);
+    await queue.reconcilePersonalWork(PERSONAL_BOT_WORK, accountId);
+    const result = await queue.personalStatus(
+      PERSONAL_BOT_WORK,
+      accountId,
+      key.data,
+    );
+    if (!(await stillAuthorized(token, session.grant)))
+      return context.json({ error: "authorization_changed" }, 403);
+    return result
+      ? context.json(result)
+      : context.json({ error: "work_not_found" }, 404);
+  });
+
+  app.post("/api/workspace/recovery/:key", async (context) => {
+    const token = requestSession(context);
+    const session = await authorize(token);
+    if (session.kind !== "authorized" || !token)
+      return context.json({ error: "authorization_required" }, 403);
+    const key = z.uuid().safeParse(context.req.param("key"));
+    const form = context.req
+      .header("content-type")
+      ?.startsWith("application/x-www-form-urlencoded");
+    const body = form ? await context.req.parseBody() : undefined;
+    const input = recoveryInput.safeParse(
+      body
+        ? { action: body.action, acknowledged: body.acknowledged === "true" }
+        : await context.req.json().catch(() => null),
+    );
+    if (!key.success || !input.success)
+      return context.json({ error: "invalid_recovery_request" }, 400);
+    const accountId = session.grant.accountId;
+    await createWorkQueue(database, now).reconcilePersonalWork(
+      PERSONAL_BOT_WORK,
+      accountId,
+    );
+    const outcome = await store.withAuthorizedSession(
+      session.grant,
+      token,
+      (tx) =>
+        createWorkQueue(tx, now).recover({
+          ...input.data,
+          kind: PERSONAL_BOT_WORK,
+          accountId,
+          key: key.data,
+          mayRetry: async (transaction, payload) => {
+            const request = botWorkInput.safeParse(payload);
+            return Boolean(
+              config.runPersonalBot &&
+                request.success &&
+                (await workspaceBots(transaction).get({
+                  ...request.data,
+                  accountId,
+                })),
+            );
+          },
+        }),
+    );
+    if (!outcome.authorized || outcome.result.kind === "forbidden")
+      return context.json({ error: "recovery_unavailable" }, 403);
+    if (outcome.result.kind === "missing")
+      return context.json({ error: "work_not_found" }, 404);
+    if (outcome.result.kind === "acknowledgement_required")
+      return context.json(
+        { error: "external_outcome_acknowledgement_required" },
+        409,
+      );
+    return form
+      ? context.redirect("/workspace", 303)
+      : context.json(outcome.result.recovery);
   });
 
   app.get("/api/workspace/conversations", async (context) => {
@@ -632,6 +810,7 @@ export function createPersonalSaasApp(
   });
 
   return Object.assign(app, {
+    sweepBotWork: () => botWork.sweep(config.runPersonalBot),
     refreshAccounts: () => accountAccess.refreshAccounts(config.casdoor.issuer),
   });
 }

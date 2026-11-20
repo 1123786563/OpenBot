@@ -17,11 +17,21 @@ import {
 } from "../../personal-saas/support-contract";
 import { agentProfiles } from "./coworker";
 
+export type ExecutionCutoff = {
+  epoch: number;
+  reason:
+    | "account_disabled"
+    | "account_status_unconfirmed"
+    | "workspace_paused";
+  cutoffAt: number;
+};
+
 export type AccountStatus = {
   source: "active" | "disabled" | "ambiguous";
   observedAt: number;
   confirmedAt: number | null;
   epoch: number;
+  executionCutoffs?: ExecutionCutoff[];
   disablements: { id: string; effectiveAt: number }[];
 };
 

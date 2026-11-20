@@ -6,8 +6,10 @@ import {
   primaryKey,
   text,
   timestamp,
+  uuid,
 } from "drizzle-orm/pg-core";
 import { jsonb } from "./json";
+import { type ExecutionCutoff, personalSaasAccounts } from "./personal-saas";
 
 const createdAt = () =>
   timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -88,12 +90,28 @@ export const workItems = pgTable(
     lastError: text("last_error"),
     /** Anything the work needs that is not in the key. */
     payload: jsonb("payload").notNull().default({}),
+    accountId: uuid("account_id").references(() => personalSaasAccounts.id),
+    accountEpoch: integer("account_epoch"),
+    interruption: jsonb("interruption").$type<{
+      reason: ExecutionCutoff["reason"] | "worker_lost" | "run_interrupted";
+      cutoffAt: number | null;
+      recordedAt: number;
+      outcomeUnknown: boolean;
+      endedAt?: number;
+    }>(),
+    recovery: jsonb("recovery").$type<
+      { action: "cancel" } | { action: "retry"; key: string }
+    >(),
+    output: text("output"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (table) => [
     primaryKey({ columns: [table.kind, table.key] }),
     // The claim's own query: due, unclaimed or expired, not yet finished, oldest first.
+    index("work_items_personal_account_idx")
+      .on(table.accountId)
+      .where(sql`${table.accountId} IS NOT NULL`),
     index("work_items_claimable_idx").on(table.kind, table.runAt),
     /*
      * What a conversation is waiting on: the open hops asked from a thread. Read on every roster

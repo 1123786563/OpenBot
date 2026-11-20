@@ -9,16 +9,33 @@
  * free again the moment anything looks, so recovery needs no process to notice a death, only the
  * next claim to read the clock.
  *
- * WHOSE CLOCK. The database's, everywhere, and this is the load-bearing part. Leases used to be
+ * Lease and scheduling decisions use the database clock. Leases used to be
  * computed as `Date.now() + leaseMs` on the replica and compared against `now()` in Postgres, which
  * is two clocks pretending to be one: a node ninety seconds behind wrote a sixty-second lease that
  * Postgres considered expired on arrival, and the next replica to look took the item straight out
- * from under the first. Both then ran it. Every time this file names a moment it names it in SQL.
+ * from under the first. Both then ran it.
  */
-import { and, eq, gte, isNull, like, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  gte,
+  isNotNull,
+  isNull,
+  like,
+  lt,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import postgres from "postgres";
 import type { Database } from "../db/client";
 import { workItems } from "../db/schema";
+import { readExecutionAccess } from "../personal-saas/account-access";
+
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+type WorkRow = typeof workItems.$inferSelect;
+type Interruption = NonNullable<WorkRow["interruption"]>;
+type HeldWork = { kind: string; key: string; owner: string };
 
 /**
  * Said aloud when work is queued, so a sweep can start now instead of at its next poll.
@@ -76,6 +93,7 @@ export type WorkItem = {
    * state folded into failure.
    */
   attempts: number;
+  authorization?: { accountId: string; epoch: number; expiresAt: number };
 };
 
 /**
@@ -104,6 +122,7 @@ export type WorkQueue = {
     key: string;
     payload?: Record<string, unknown>;
     runAt?: Date;
+    accountId?: string;
     /**
      * Refuse this if the prefix is already that full.
      *
@@ -193,7 +212,74 @@ function fromNow(ms: number) {
   return sql`now() + make_interval(secs => ${ms / 1000})`;
 }
 
-export function createWorkQueue(database: Database): WorkQueue {
+export function createWorkQueue(
+  database: Database | Transaction,
+  now = Date.now,
+) {
+  const keyed = (kind: string, key: string) =>
+    and(eq(workItems.kind, kind), eq(workItems.key, key));
+  const unfinished = and(
+    isNull(workItems.finishedAt),
+    isNull(workItems.interruption),
+  );
+  const heldBy = ({ kind, key, owner }: HeldWork) =>
+    and(keyed(kind, key), eq(workItems.claimedBy, owner));
+
+  async function stop(
+    tx: Transaction,
+    row: WorkRow,
+    cause: Pick<Interruption, "reason" | "cutoffAt">,
+  ) {
+    await tx
+      .update(workItems)
+      .set({
+        interruption: sql`${JSON.stringify({
+          ...cause,
+          recordedAt: now(),
+        })}::text::jsonb || jsonb_build_object('outcomeUnknown', ${workItems.attempts} > 0)`,
+        leaseUntil: null,
+        updatedAt: sql`now()`,
+      })
+      .where(and(keyed(row.kind, row.key), unfinished));
+  }
+
+  async function authorize(tx: Transaction, row: WorkRow, skipLocked = false) {
+    if (row.accountId === null || row.accountEpoch === null) return;
+    const access = await readExecutionAccess(
+      tx,
+      row.accountId,
+      now,
+      row.accountEpoch,
+      skipLocked,
+    );
+    if (access?.kind === "denied")
+      await stop(tx, row, {
+        reason: access.reason,
+        cutoffAt: access.cutoffAt,
+      });
+    return access;
+  }
+
+  async function underClaim<T>(
+    input: HeldWork,
+    operation: (tx: Transaction) => Promise<T>,
+  ) {
+    return database.transaction(async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(workItems)
+        .where(and(heldBy(input), unfinished));
+      if (!row) return;
+      if (row.accountId !== null) {
+        // Locks are acquired account first here and on recovery. Claim uses SKIP LOCKED
+        // when it needs the account lock after locking a queue row.
+        const access = await authorize(tx, row);
+        if (access?.kind !== "active") return;
+      }
+      return operation(tx);
+    });
+  }
+
   /**
    * Still ours, and still wanting doing.
    *
@@ -206,15 +292,29 @@ export function createWorkQueue(database: Database): WorkQueue {
       eq(workItems.kind, kind),
       eq(workItems.key, key),
       eq(workItems.claimedBy, owner),
-      isNull(workItems.finishedAt),
+      unfinished,
+      or(
+        isNull(workItems.accountId),
+        sql`${workItems.leaseUntil} > clock_timestamp()`,
+      ),
     );
 
-  return {
-    async offer({ kind, key, payload = {}, runAt, atMost }) {
-      const write = async (transaction: Database) =>
+  const queue: WorkQueue = {
+    async offer({ kind, key, payload = {}, runAt, atMost, accountId }) {
+      const write = async (
+        transaction: Pick<Database, "insert">,
+        accountEpoch?: number,
+      ) =>
         transaction
           .insert(workItems)
-          .values({ kind, key, payload, ...(runAt ? { runAt } : {}) })
+          .values({
+            kind,
+            key,
+            payload,
+            accountId,
+            accountEpoch,
+            ...(runAt ? { runAt } : {}),
+          })
           /*
            * Nothing on conflict, deliberately.
            *
@@ -229,13 +329,23 @@ export function createWorkQueue(database: Database): WorkQueue {
           // there. Nothing is written on conflict, so this comes back empty for a duplicate.
           .returning({ key: workItems.key });
 
-      if (!atMost) {
+      if (!atMost && !accountId) {
         const [written] = await write(database);
         if (written) await announceOffered(database, kind);
         return written ? "queued" : "already";
       }
 
       return database.transaction(async (transaction) => {
+        const access = accountId
+          ? await readExecutionAccess(transaction, accountId, now)
+          : undefined;
+        if (accountId && access?.kind !== "active") return "refused";
+        const epoch = access?.kind === "active" ? access.epoch : undefined;
+        if (!atMost) {
+          const [written] = await write(transaction, epoch);
+          if (written) await announceOffered(transaction, kind);
+          return written ? "queued" : "already";
+        }
         /*
          * Everything offered under this prefix, one at a time, across every replica.
          *
@@ -268,7 +378,7 @@ export function createWorkQueue(database: Database): WorkQueue {
           .limit(1);
         if (already.length > 0) return "already";
         if ((row?.total ?? 0) >= atMost.max) return "refused";
-        const [written] = await write(transaction as unknown as Database);
+        const [written] = await write(transaction, epoch);
         if (written) await announceOffered(transaction, kind);
         return written ? "queued" : "already";
       });
@@ -287,29 +397,36 @@ export function createWorkQueue(database: Database): WorkQueue {
          * second replica blocks on the first replica's rows and the queue serialises; with it, it
          * walks past them and takes the next free ones.
          */
-        const due = await transaction.execute(sql`
-          select "kind", "key"
-          from "work_items"
-          where "kind" = ${kind}
-            and "finished_at" is null
-            and "attempts" < ${maxAttempts}
-            and "run_at" <= now()
-            and ("lease_until" is null or "lease_until" <= now())
-          order by "run_at" asc
-          limit ${limit}
-          for update skip locked
-        `);
-
-        const rows = (
-          Array.isArray(due) ? due : ((due as { rows?: unknown[] })?.rows ?? [])
-        ) as {
-          kind: string;
-          key: string;
-        }[];
-        if (rows.length === 0) return [];
+        const due = await transaction
+          .select()
+          .from(workItems)
+          .where(
+            and(
+              eq(workItems.kind, kind),
+              unfinished,
+              lt(workItems.attempts, maxAttempts),
+              lte(workItems.runAt, sql`now()`),
+              or(
+                isNull(workItems.leaseUntil),
+                lte(workItems.leaseUntil, sql`now()`),
+              ),
+            ),
+          )
+          .orderBy(workItems.runAt)
+          .limit(limit)
+          .for("update", { skipLocked: true });
 
         const claimed: WorkItem[] = [];
-        for (const row of rows) {
+        for (const stored of due) {
+          const access = await authorize(transaction, stored, true);
+          if (stored.accountId !== null && access?.kind !== "active") continue;
+          if (stored.accountId !== null && stored.attempts > 0) {
+            await stop(transaction, stored, {
+              reason: "worker_lost",
+              cutoffAt: null,
+            });
+            continue;
+          }
           const [updated] = await transaction
             .update(workItems)
             .set({
@@ -318,9 +435,7 @@ export function createWorkQueue(database: Database): WorkQueue {
               attempts: sql`${workItems.attempts} + 1`,
               updatedAt: sql`now()`,
             })
-            .where(
-              and(eq(workItems.kind, row.kind), eq(workItems.key, row.key)),
-            )
+            .where(keyed(stored.kind, stored.key))
             .returning({
               kind: workItems.kind,
               key: workItems.key,
@@ -331,8 +446,16 @@ export function createWorkQueue(database: Database): WorkQueue {
             claimed.push({
               kind: updated.kind,
               key: updated.key,
-              payload: (updated.payload ?? {}) as Record<string, unknown>,
+              payload: updated.payload,
               attempts: updated.attempts,
+              ...(stored.accountId !== null &&
+                access?.kind === "active" && {
+                  authorization: {
+                    accountId: stored.accountId,
+                    epoch: access.epoch,
+                    expiresAt: access.expiresAt,
+                  },
+                }),
             });
           }
         }
@@ -341,35 +464,41 @@ export function createWorkQueue(database: Database): WorkQueue {
     },
 
     async renew({ kind, key, owner, leaseMs }) {
-      const [renewed] = await database
-        .update(workItems)
-        .set({ leaseUntil: fromNow(leaseMs), updatedAt: sql`now()` })
-        /*
-         * Only while still ours. A lease that expired and was taken by somebody else must not be
-         * renewed back out from under them, which would put two replicas on one item believing they
-         * each held it.
-         */
-        .where(ours(kind, key, owner))
-        .returning({ key: workItems.key });
+      const [renewed] =
+        (await underClaim({ kind, key, owner }, (tx) =>
+          tx
+            .update(workItems)
+            .set({ leaseUntil: fromNow(leaseMs), updatedAt: sql`now()` })
+            /*
+             * Only while still ours. A lease that expired and was taken by somebody else must not be
+             * renewed back out from under them, which would put two replicas on one item believing they
+             * each held it.
+             */
+            .where(ours(kind, key, owner))
+            .returning({ key: workItems.key }),
+        )) ?? [];
       return Boolean(renewed);
     },
 
     async finish({ kind, key, owner }) {
-      const [finished] = await database
-        .update(workItems)
-        /*
-         * Marked, not deleted. The row is what a later offer of the same key collides with, and
-         * deleting it handed that key back to anybody who re-offered it: the recovery path was also
-         * a duplicate-run path. Swept later by `purge`.
-         */
-        .set({
-          finishedAt: sql`now()`,
-          claimedBy: null,
-          leaseUntil: null,
-          updatedAt: sql`now()`,
-        })
-        .where(ours(kind, key, owner))
-        .returning({ key: workItems.key });
+      const [finished] =
+        (await underClaim({ kind, key, owner }, (tx) =>
+          tx
+            .update(workItems)
+            /*
+             * Marked, not deleted. The row is what a later offer of the same key collides with, and
+             * deleting it handed that key back to anybody who re-offered it: the recovery path was also
+             * a duplicate-run path. Swept later by `purge`.
+             */
+            .set({
+              finishedAt: sql`now()`,
+              claimedBy: null,
+              leaseUntil: null,
+              updatedAt: sql`now()`,
+            })
+            .where(ours(kind, key, owner))
+            .returning({ key: workItems.key }),
+        )) ?? [];
       return Boolean(finished);
     },
 
@@ -377,27 +506,30 @@ export function createWorkQueue(database: Database): WorkQueue {
       // Freed and pushed out, rather than finished: the work still wants doing, just not immediately
       // and not by whoever just gave up on it. The reason stays on the row so an item that runs out
       // of attempts says why rather than simply stopping.
-      const [released] = await database
-        .update(workItems)
-        .set({
-          claimedBy: null,
-          leaseUntil: null,
-          runAt: fromNow(delayMs),
-          updatedAt: sql`now()`,
-          ...(reason === undefined ? {} : { lastError: reason }),
-          ...(uncounted
-            ? { attempts: sql`greatest(${workItems.attempts} - 1, 0)` }
-            : {}),
-          ...(payload === undefined
-            ? {}
-            : {
-                // Sent as text and parsed here: a parameter typed jsonb is encoded again by the
-                // driver, and `||` with a JSON string makes the payload an array.
-                payload: sql`${workItems.payload} || ${JSON.stringify(payload)}::text::jsonb`,
-              }),
-        })
-        .where(ours(kind, key, owner))
-        .returning({ key: workItems.key });
+      const [released] =
+        (await underClaim({ kind, key, owner }, (tx) =>
+          tx
+            .update(workItems)
+            .set({
+              claimedBy: null,
+              leaseUntil: null,
+              runAt: fromNow(delayMs),
+              updatedAt: sql`now()`,
+              ...(reason === undefined ? {} : { lastError: reason }),
+              ...(uncounted
+                ? { attempts: sql`greatest(${workItems.attempts} - 1, 0)` }
+                : {}),
+              ...(payload === undefined
+                ? {}
+                : {
+                    // Sent as text and parsed here: a parameter typed jsonb is encoded again by the
+                    // driver, and `||` with a JSON string makes the payload an array.
+                    payload: sql`${workItems.payload} || ${JSON.stringify(payload)}::text::jsonb`,
+                  }),
+            })
+            .where(ours(kind, key, owner))
+            .returning({ key: workItems.key }),
+        )) ?? [];
       return Boolean(released);
     },
 
@@ -414,6 +546,7 @@ export function createWorkQueue(database: Database): WorkQueue {
         .where(
           and(
             eq(workItems.kind, kind),
+            isNull(workItems.accountId),
             or(
               lt(workItems.finishedAt, finishedCutoff),
               /*
@@ -438,6 +571,192 @@ export function createWorkQueue(database: Database): WorkQueue {
         )
         .returning({ key: workItems.key });
       return gone.length;
+    },
+  };
+
+  function forAccount(kind: string, accountId: string) {
+    return and(eq(workItems.kind, kind), eq(workItems.accountId, accountId));
+  }
+
+  return {
+    ...queue,
+    async reconcilePersonalWork(kind: string, accountId?: string) {
+      const rows = await database
+        .select()
+        .from(workItems)
+        .where(
+          and(
+            unfinished,
+            eq(workItems.kind, kind),
+            accountId === undefined
+              ? isNotNull(workItems.accountId)
+              : eq(workItems.accountId, accountId),
+          ),
+        );
+      for (const row of rows) {
+        await database.transaction(async (tx) => {
+          const access = await authorize(tx, row);
+          if (access?.kind !== "active" || row.attempts === 0) return;
+          const [locked] = await tx
+            .select()
+            .from(workItems)
+            .where(
+              and(
+                keyed(row.kind, row.key),
+                unfinished,
+                lte(workItems.leaseUntil, sql`clock_timestamp()`),
+              ),
+            )
+            .for("update");
+          if (locked)
+            await stop(tx, locked, { reason: "worker_lost", cutoffAt: null });
+        });
+      }
+    },
+    async personalStatus(kind: string, accountId: string, key: string) {
+      const [row] = await database
+        .select({
+          finishedAt: workItems.finishedAt,
+          interruption: workItems.interruption,
+          recovery: workItems.recovery,
+          output: workItems.output,
+          attempts: workItems.attempts,
+        })
+        .from(workItems)
+        .where(and(forAccount(kind, accountId), keyed(kind, key)));
+      if (!row) return;
+      const { attempts, ...result } = row;
+      const state = row.interruption
+        ? "stopped"
+        : row.finishedAt
+          ? "completed"
+          : attempts
+            ? "running"
+            : "queued";
+      return { ...result, state };
+    },
+    async interrupted(kind: string, accountId: string) {
+      return database
+        .select({
+          key: workItems.key,
+          payload: workItems.payload,
+          output: workItems.output,
+          interruption: workItems.interruption,
+          recovery: workItems.recovery,
+        })
+        .from(workItems)
+        .where(
+          and(forAccount(kind, accountId), isNotNull(workItems.interruption)),
+        )
+        .orderBy(workItems.createdAt);
+    },
+    async recover(input: {
+      kind: string;
+      accountId: string;
+      key: string;
+      action: "cancel" | "retry";
+      acknowledged: boolean;
+      mayRetry: (
+        tx: Transaction,
+        payload: WorkRow["payload"],
+      ) => Promise<boolean>;
+    }) {
+      const { kind, accountId, key, action } = input;
+      return database.transaction(async (tx) => {
+        const access = await readExecutionAccess(tx, accountId, now);
+        if (access?.kind !== "active") return { kind: "forbidden" } as const;
+        const [row] = await tx
+          .select()
+          .from(workItems)
+          .where(
+            and(
+              forAccount(kind, accountId),
+              keyed(kind, key),
+              isNotNull(workItems.interruption),
+            ),
+          )
+          .for("update");
+        if (!row?.interruption) return { kind: "missing" } as const;
+        if (row.recovery)
+          return { kind: "resolved", recovery: row.recovery } as const;
+        if (
+          action === "retry" &&
+          row.interruption.outcomeUnknown &&
+          !input.acknowledged
+        )
+          return { kind: "acknowledgement_required" } as const;
+        if (action === "retry" && !(await input.mayRetry(tx, row.payload)))
+          return { kind: "forbidden" } as const;
+        if (now() >= access.expiresAt) return { kind: "forbidden" } as const;
+
+        let recovery: NonNullable<WorkRow["recovery"]> = { action: "cancel" };
+        if (action === "retry") {
+          const newKey = crypto.randomUUID();
+          const offered = await createWorkQueue(tx, now).offer({
+            kind,
+            key: newKey,
+            payload: row.payload,
+            accountId,
+          });
+          if (offered !== "queued") return { kind: "forbidden" } as const;
+          recovery = { action, key: newKey };
+        }
+        await tx
+          .update(workItems)
+          .set({ recovery, updatedAt: sql`now()` })
+          .where(keyed(kind, key));
+        return { kind: "resolved", recovery } as const;
+      });
+    },
+    async checkpoint(input: HeldWork, output: string) {
+      await database
+        .update(workItems)
+        .set({ output })
+        .where(
+          and(
+            heldBy(input),
+            isNotNull(workItems.accountId),
+            isNull(workItems.finishedAt),
+          ),
+        );
+    },
+    async endInterrupted(
+      input: HeldWork,
+      endedAt: number | undefined,
+      localCutoffAt?: number,
+    ) {
+      await database.transaction(async (tx) => {
+        const [row] = await tx
+          .select()
+          .from(workItems)
+          .where(
+            and(
+              heldBy(input),
+              isNotNull(workItems.accountId),
+              isNull(workItems.finishedAt),
+            ),
+          );
+        if (!row) return;
+        await authorize(tx, row);
+        await tx
+          .update(workItems)
+          .set({
+            interruption: sql`coalesce(${workItems.interruption}, ${JSON.stringify(
+              {
+                reason:
+                  localCutoffAt === undefined
+                    ? "run_interrupted"
+                    : "account_status_unconfirmed",
+                cutoffAt: localCutoffAt ?? null,
+                outcomeUnknown: true,
+                recordedAt: now(),
+              },
+            )}::text::jsonb) || jsonb_strip_nulls(jsonb_build_object('endedAt', ${endedAt ?? null}::bigint))`,
+            claimedBy: null,
+            leaseUntil: null,
+          })
+          .where(and(heldBy(input), isNull(workItems.finishedAt)));
+      });
     },
   };
 }
