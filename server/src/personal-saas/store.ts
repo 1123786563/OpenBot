@@ -1,7 +1,14 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { and, eq, gt } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, ne, notExists, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { Database } from "../db/client";
-import { agents } from "../db/schema/core";
+import {
+  agents,
+  channelAgents,
+  channelMemberships,
+  channels,
+  intelligenceChannelMappings,
+} from "../db/schema/core";
 import { agentProfiles } from "../db/schema/coworker";
 import {
   personalSaasAccounts,
@@ -16,6 +23,8 @@ function digest(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
 function liveSession(token: string) {
   return and(
     eq(personalSaasSessions.tokenHash, digest(token)),
@@ -23,7 +32,7 @@ function liveSession(token: string) {
   );
 }
 
-export function personalSaasStore(database: Database) {
+export function personalSaasStore(database: Database | Transaction) {
   return {
     async signIn(input: {
       issuer: string;
@@ -126,6 +135,67 @@ export function personalSaasStore(database: Database) {
         .innerJoin(agents, eq(personalWorkspaceDefaultBots.agentId, agents.id))
         .where(eq(personalWorkspaces.ownerId, accountId));
       return workspace;
+    },
+    async recentConversations(accountId: string) {
+      const otherAgents = alias(channelAgents, "other_agents");
+      // A trial conversation belongs to the workspace through its dedicated Assistant.
+      // Exclude shared channels and channels with enterprise memberships or threads.
+      return database
+        .select({
+          id: channels.id,
+          title: sql<string>`coalesce(${channels.title}, ${channels.summary}, ${channels.opening}, ${channels.name})`,
+          preview: channels.lastMessage,
+        })
+        .from(personalWorkspaces)
+        .innerJoin(
+          personalWorkspaceDefaultBots,
+          eq(personalWorkspaceDefaultBots.workspaceId, personalWorkspaces.id),
+        )
+        .innerJoin(
+          agentProfiles,
+          eq(agentProfiles.agentId, personalWorkspaceDefaultBots.agentId),
+        )
+        .innerJoin(
+          channelAgents,
+          eq(channelAgents.agentId, personalWorkspaceDefaultBots.agentId),
+        )
+        .innerJoin(channels, eq(channels.id, channelAgents.channelId))
+        .where(
+          and(
+            eq(personalWorkspaces.ownerId, accountId),
+            isNull(agentProfiles.deletedAt),
+            isNull(channels.deletedAt),
+            isNull(channels.packageId),
+            notExists(
+              database
+                .select({ id: otherAgents.agentId })
+                .from(otherAgents)
+                .where(
+                  and(
+                    eq(otherAgents.channelId, channels.id),
+                    ne(otherAgents.agentId, channelAgents.agentId),
+                  ),
+                ),
+            ),
+            notExists(
+              database
+                .select({ id: channelMemberships.userId })
+                .from(channelMemberships)
+                .where(eq(channelMemberships.channelId, channels.id)),
+            ),
+            notExists(
+              database
+                .select({ id: intelligenceChannelMappings.threadId })
+                .from(intelligenceChannelMappings)
+                .where(eq(intelligenceChannelMappings.channelId, channels.id)),
+            ),
+          ),
+        )
+        .orderBy(
+          desc(sql`coalesce(${channels.lastMessageAt}, ${channels.createdAt})`),
+          desc(channels.id),
+        )
+        .limit(50);
     },
     async provision(accountId: string) {
       return database.transaction(async (tx) => {

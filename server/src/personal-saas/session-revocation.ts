@@ -31,7 +31,7 @@ export function sessionRevocationRoutes(options: {
   casdoor: Parameters<typeof casdoor>[0];
   store: Pick<
     ReturnType<typeof personalSaasStore>,
-    "session" | "signOut" | "revokeAllSessions"
+    "session" | "revokeAllSessions"
   >;
   failurePage: (status: 403 | 503) => Response | Promise<Response>;
 }) {
@@ -41,13 +41,6 @@ export function sessionRevocationRoutes(options: {
     new URL(callbackPath, options.origin).href,
   );
   const { store } = options;
-
-  app.post("/auth/sign-out", async (context) => {
-    const token = getCookie(context, sessionCookie);
-    if (token) await store.signOut(token);
-    deleteCookie(context, sessionCookie, cookieOptions);
-    return context.redirect("/", 303);
-  });
 
   app.post("/auth/sign-out-all", async (context) => {
     const token = getCookie(context, sessionCookie);

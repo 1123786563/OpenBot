@@ -1,9 +1,17 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { createHash, randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createDatabase } from "../src/db/client";
-import { workItems } from "../src/db/schema";
+import {
+  channelAgents,
+  channelMemberships,
+  channels,
+  users,
+  workItems,
+} from "../src/db/schema";
+import { personalSaasNativeCodes } from "../src/db/schema/personal-saas";
 import { createPersonalSaasApp } from "../src/personal-saas/app";
 import { personalSaasStore } from "../src/personal-saas/store";
 import { createWorkQueue } from "../src/work/queue";
@@ -172,6 +180,10 @@ function cookie(response: Response, prefix: string) {
 
 async function authenticate(account: Account) {
   const start = await send("/auth/casdoor/start");
+  return completeBrowserLogin(start, account);
+}
+
+async function completeBrowserLogin(start: Response, account: Account) {
   expect(start.status).toBe(302);
   const authorization = new URL(start.headers.get("location") ?? "");
   const state = authorization.searchParams.get("state") ?? "";
@@ -216,7 +228,9 @@ test("a verified active ordinary email can reach its private workspace and defau
   expect(await preparing.text()).toContain("Preparing your Personal Workspace");
   expect((await enter(session)).headers.get("location")).toBe("/workspace");
   const landing = await send("/workspace", { headers: { cookie: session } });
-  expect(await landing.text()).toContain("Personal Assistant");
+  const landingPage = await landing.text();
+  expect(landingPage).toContain("Personal Assistant");
+  expect(landingPage).toContain("No conversations yet.");
   const result = await workspace(session);
   expect(result).toEqual({
     id: expect.any(String),
@@ -443,6 +457,325 @@ test("the registered redirect refuses a callback without its initiating browser"
       .getSetCookie()
       .some((value) => value.startsWith("__Host-openbot-personal=")),
   ).toBe(false);
+});
+
+async function nativeAttempt(client: "ios" | "android" | "desktop") {
+  const state = randomBytes(32).toString("base64url");
+  const verifier = randomBytes(32).toString("base64url");
+  const code_challenge = new Bun.CryptoHasher("sha256")
+    .update(verifier)
+    .digest("base64url");
+  const start = await send(
+    `/auth/native/start?${new URLSearchParams({ client, state, code_challenge })}`,
+  );
+  return { start, state, client, code_verifier: verifier };
+}
+
+function exchangeNative(body: Record<string, unknown>, requestOrigin?: string) {
+  const headers = new Headers({ "content-type": "application/json" });
+  if (requestOrigin !== undefined) headers.set("origin", requestOrigin);
+  return send("/api/auth/native/exchange", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+}
+
+test("Web, iOS, and Android share the owner’s workspace and conversation history", async () => {
+  const owner = {
+    sub: crypto.randomUUID(),
+    email: "mobile@example.com",
+    active: true,
+    verified: true,
+  };
+  const native = async (client: "ios" | "android") => {
+    const { start, ...proof } = await nativeAttempt(client);
+    const finish = await completeBrowserLogin(start, owner);
+    expect(
+      finish.headers
+        .getSetCookie()
+        .some((value) => value.startsWith("__Host-openbot-personal=")),
+    ).toBe(false);
+    const deepLink = new URL(finish.headers.get("location") ?? "");
+    expect(`${deepLink.protocol}//${deepLink.host}${deepLink.pathname}`).toBe(
+      "openbotmobile://auth/personal-saas",
+    );
+    expect(deepLink.searchParams.get("state")).toBe(proof.state);
+    const exchange = await exchangeNative({
+      ...proof,
+      code: deepLink.searchParams.get("code"),
+    });
+    expect(exchange.status).toBe(200);
+    const { token } = await exchange.json();
+    expect(typeof token).toBe("string");
+    return { authorization: `Bearer ${token}` };
+  };
+  const before = await botProfiles.list(profileReader);
+  const [web, ios, android] = await Promise.all([
+    authenticate(owner).then((reply) =>
+      cookie(reply, "__Host-openbot-personal="),
+    ),
+    native("ios"),
+    native("android"),
+  ]);
+  expect(ios.authorization).not.toBe(android.authorization);
+  expect(web).not.toContain(ios.authorization.slice(7));
+  expect(web).not.toContain(android.authorization.slice(7));
+  expect(
+    (
+      await send("/api/workspace", {
+        headers: { ...ios, origin: "https://elsewhere.example" },
+      })
+    ).status,
+  ).toBe(403);
+  const preparing = await send("/api/workspace", { headers: ios });
+  expect(preparing.status).toBe(202);
+  const [webReady, iosReady, androidReady] = await Promise.all([
+    enter(web),
+    send("/workspace/prepare", { method: "POST", headers: ios }),
+    send("/workspace/prepare", { method: "POST", headers: android }),
+  ]);
+  expect([webReady.status, iosReady.status, androidReady.status]).toEqual([
+    303, 204, 204,
+  ]);
+  const expected = await workspace(web);
+  for (const headers of [ios, android]) {
+    const ready = await send("/api/workspace", { headers });
+    expect(ready.status).toBe(200);
+    expect(await ready.json()).toEqual(expected);
+  }
+  expect(expected.personalAssistant.name).toBe("Personal Assistant");
+  const bots = await botProfiles.list(profileReader);
+  expect(bots.filter((bot) => !before.some(({ id }) => id === bot.id))).toEqual(
+    [expect.objectContaining(expected.personalAssistant)],
+  );
+  const otherWeb = cookie(
+    await authenticate({ ...owner, sub: crypto.randomUUID() }),
+    "__Host-openbot-personal=",
+  );
+  await enter(otherWeb);
+  const otherWorkspace = await workspace(otherWeb);
+  const historyPath = "/api/workspace/conversations";
+  const ownChannel = crypto.randomUUID();
+  const deletedChannel = crypto.randomUUID();
+  const otherChannel = crypto.randomUUID();
+  const sharedChannel = crypto.randomUUID();
+  const enterpriseChannel = crypto.randomUUID();
+  const enterpriseUser = crypto.randomUUID();
+  await database.insert(channels).values([
+    {
+      id: ownChannel,
+      name: "Personal Assistant",
+      description: "",
+      title: "Weekend <plans>",
+      lastMessage: "Saturday at nine",
+    },
+    {
+      id: deletedChannel,
+      name: "Deleted conversation",
+      description: "",
+      deletedAt: new Date(),
+    },
+    { id: otherChannel, name: "Other account conversation", description: "" },
+    { id: sharedChannel, name: "Shared conversation", description: "" },
+    { id: enterpriseChannel, name: "Enterprise conversation", description: "" },
+  ]);
+  await database.insert(channelAgents).values([
+    ...[ownChannel, deletedChannel, sharedChannel, enterpriseChannel].map(
+      (channelId) => ({
+        channelId,
+        agentId: expected.personalAssistant.id,
+      }),
+    ),
+    ...[otherChannel, sharedChannel].map((channelId) => ({
+      channelId,
+      agentId: otherWorkspace.personalAssistant.id,
+    })),
+  ]);
+  await database.insert(users).values({
+    id: enterpriseUser,
+    email: `${enterpriseUser}@example.com`,
+  });
+  await database.insert(channelMemberships).values({
+    userId: enterpriseUser,
+    channelId: enterpriseChannel,
+  });
+
+  const ownHistory = [
+    { id: ownChannel, title: "Weekend <plans>", preview: "Saturday at nine" },
+  ];
+  for (const headers of [{ cookie: web }, ios, android]) {
+    const history = await send(historyPath, { headers });
+    expect(history.status).toBe(200);
+    expect(history.headers.get("cache-control")).toBe("no-store");
+    expect(await history.json()).toEqual({ conversations: ownHistory });
+  }
+  const webPage = await send("/workspace", { headers: { cookie: web } });
+  const html = await webPage.text();
+  expect(html).toContain("Weekend &lt;plans&gt;");
+  expect(html).toContain("Saturday at nine");
+  expect(html).not.toContain("Other account conversation");
+  const otherHistory = await send(
+    `${historyPath}?workspaceId=${expected.id}&botId=${expected.personalAssistant.id}&conversationId=${ownChannel}`,
+    { headers: { cookie: otherWeb } },
+  );
+  expect(otherHistory.status).toBe(200);
+  expect(await otherHistory.json()).toEqual({
+    conversations: [
+      { id: otherChannel, title: "Other account conversation", preview: null },
+    ],
+  });
+  expect((await send(historyPath)).status).toBe(401);
+
+  const returningIos = await native("ios");
+  expect(returningIos.authorization).not.toBe(ios.authorization);
+  const returningWorkspace = await send("/api/workspace", {
+    headers: returningIos,
+  });
+  expect(returningWorkspace.status).toBe(200);
+  expect(await returningWorkspace.json()).toEqual(expected);
+  const returningHistory = await send(historyPath, { headers: returningIos });
+  expect(await returningHistory.json()).toEqual({ conversations: ownHistory });
+  expect(
+    (await send("/auth/sign-out", { method: "POST", headers: ios })).status,
+  ).toBe(204);
+  expect((await send(historyPath, { headers: ios })).status).toBe(401);
+  const androidHistory = await send(historyPath, { headers: android });
+  expect(await androidHistory.json()).toEqual({ conversations: ownHistory });
+});
+
+test("native exchange is bound to its app proof and can only start one session", async () => {
+  const account = {
+    sub: crypto.randomUUID(),
+    email: "desktop@example.com",
+    active: true,
+    verified: true,
+  };
+  const { start, ...proof } = await nativeAttempt("desktop");
+  const finish = await completeBrowserLogin(start, account);
+  const link = new URL(finish.headers.get("location") ?? "");
+  expect(`${link.protocol}//${link.host}${link.pathname}`).toBe(
+    "openbot://auth/personal-saas",
+  );
+  const exchange = { ...proof, code: link.searchParams.get("code") };
+  for (const invalid of [
+    { ...exchange, client: "ios" },
+    { ...exchange, state: randomBytes(32).toString("base64url") },
+    { ...exchange, code_verifier: randomBytes(32).toString("base64url") },
+  ])
+    expect((await exchangeNative(invalid)).status).toBe(400);
+  expect(
+    (await exchangeNative(exchange, "https://elsewhere.example")).status,
+  ).toBe(403);
+  const outcomes = await Promise.all([
+    exchangeNative(exchange),
+    exchangeNative(exchange),
+  ]);
+  expect(outcomes.map((reply) => reply.status).sort()).toEqual([200, 400]);
+  expect((await exchangeNative(exchange)).status).toBe(400);
+});
+
+test("the native handoff expires and only returns to registered apps", async () => {
+  const account = {
+    sub: crypto.randomUUID(),
+    email: "expired@example.com",
+    active: true,
+    verified: true,
+  };
+  const { start, ...proof } = await nativeAttempt("ios");
+  const before = Date.now();
+  const finish = await completeBrowserLogin(start, account);
+  const handoff = new URL(finish.headers.get("location") ?? "");
+  const code = handoff.searchParams.get("code");
+  if (!code) throw new Error("Missing native handoff code");
+  const codeDigest = createHash("sha256").update(code).digest("base64url");
+  const matchingCode = eq(personalSaasNativeCodes.codeHash, codeDigest);
+  const [record] = await database
+    .select()
+    .from(personalSaasNativeCodes)
+    .where(matchingCode);
+  expect(record.expiresAt.getTime()).toBeWithin(
+    before + 60_000,
+    Date.now() + 60_001,
+  );
+  await database
+    .update(personalSaasNativeCodes)
+    .set({ expiresAt: new Date(before - 1) })
+    .where(matchingCode);
+  expect((await exchangeNative({ ...proof, code })).status).toBe(400);
+
+  const query = new URLSearchParams({
+    client: proof.client,
+    state: proof.state,
+    code_challenge: codeDigest,
+    redirect_uri: "https://elsewhere.example/callback",
+  });
+  const rejected = await send(`/auth/native/start?${query}`);
+  expect(rejected.status).toBe(400);
+  expect(rejected.headers.has("location")).toBe(false);
+});
+
+test("a rejected native browser return can be retried and cannot bind to a different owner", async () => {
+  const owner = {
+    sub: crypto.randomUUID(),
+    email: "private@example.com",
+    active: true,
+    verified: true,
+  };
+  const ownerSession = cookie(
+    await authenticate(owner),
+    "__Host-openbot-personal=",
+  );
+  await enter(ownerSession);
+  const ownerWorkspace = await workspace(ownerSession);
+  const other = { ...owner, sub: crypto.randomUUID() };
+  const first = await nativeAttempt("android");
+  const browser = new URL(first.start.headers.get("location") ?? "");
+  const query = new URLSearchParams({
+    state: browser.searchParams.get("state") ?? "",
+    error: "access_denied",
+  });
+  const cancelled = await send(`/auth/casdoor/callback?${query}`, {
+    headers: { cookie: cookie(first.start, "__Host-openbot-oidc-") },
+  });
+  const cancellation = new URL(cancelled.headers.get("location") ?? "");
+  expect(cancellation.searchParams.get("state")).toBe(first.state);
+  expect(cancellation.searchParams.get("error")).toBe("sign_in_incomplete");
+  expect(cancellation.searchParams.has("code")).toBe(false);
+
+  const { start, ...proof } = await nativeAttempt("android");
+  const finish = await completeBrowserLogin(start, other);
+  const handoff = new URL(finish.headers.get("location") ?? "");
+  const session = await exchangeNative({
+    ...proof,
+    code: handoff.searchParams.get("code"),
+  });
+  expect(session.status).toBe(200);
+  const { token } = await session.json();
+  const authorization = `Bearer ${token}`;
+  const prepare = await send("/workspace/prepare", {
+    method: "POST",
+    headers: { authorization },
+  });
+  expect(prepare.status).toBe(204);
+  const entry = await send(`/api/workspace?id=${ownerWorkspace.id}`, {
+    headers: { authorization, cookie: ownerSession },
+  });
+  expect(entry.status).toBe(200);
+  expect((await entry.json()).id).not.toBe(ownerWorkspace.id);
+  const signedOut = await send("/auth/sign-out", {
+    method: "POST",
+    headers: { authorization, cookie: ownerSession },
+  });
+  expect(signedOut.status).toBe(204);
+  expect(
+    (
+      await send("/api/workspace", {
+        headers: { authorization, cookie: ownerSession },
+      })
+    ).status,
+  ).toBe(401);
+  expect(await workspace(ownerSession)).toEqual(ownerWorkspace);
 });
 
 async function withReplica(
