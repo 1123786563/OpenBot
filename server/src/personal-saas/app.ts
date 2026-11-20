@@ -12,6 +12,7 @@ import {
   sessionRevocationRoutes,
 } from "./session-revocation";
 import { personalSaasStore, sessionSeconds } from "./store";
+import { supportRoutes } from "./support-routes";
 import { workspaceBotRoutes } from "./workspace-bot-routes";
 
 const attemptPrefix = "__Host-openbot-oidc-";
@@ -31,6 +32,7 @@ function reportFailure(
 
 export type PersonalSaasConfig = {
   origin: string;
+  supportSubjects?: readonly string[];
   encryptionKey: string;
   casdoor: CasdoorConfig;
 };
@@ -95,6 +97,12 @@ export function createPersonalSaasApp(
   }
 
   function acceptsNativePost(context: Context) {
+    if (
+      /^\/api\/(?:support\/)?workspaces\/[^/]+\/(?:support-requests|tickets)\//.test(
+        context.req.path,
+      )
+    )
+      return Boolean(bearer(context));
     switch (context.req.path) {
       case "/api/auth/native/exchange":
         return true;
@@ -333,7 +341,11 @@ export function createPersonalSaasApp(
     try {
       if (await provider.accountActive(access, session.subject)) {
         if (await store.isSessionLive(token))
-          return { kind: "authorized", accountId: session.accountId } as const;
+          return {
+            kind: "authorized",
+            accountId: session.accountId,
+            subject: session.subject,
+          } as const;
       } else {
         await store.signOut(token);
       }
@@ -376,6 +388,16 @@ export function createPersonalSaasApp(
     ),
   );
 
+  app.route(
+    "/",
+    supportRoutes({
+      database,
+      authorize: (context) => authorize(requestSession(context)),
+      subjects: config.supportSubjects ?? [],
+      page,
+    }),
+  );
+
   app.get("/workspace", async (context) => {
     const session = await authorize(getCookie(context, sessionCookie));
     if (session.kind === "unconfirmed")
@@ -409,6 +431,7 @@ export function createPersonalSaasApp(
               )}</ul>`
         }
       </section>
+      <p><a href="/api/workspaces/${workspace.id}/support-requests/view">Support access</a></p>
       <form method="post" action="/auth/sign-out"><button type="submit">Sign out</button></form>
       <form method="post" action="/auth/sign-out-all">
         <p>Verify your identity with Casdoor to require every device to sign in again.</p>

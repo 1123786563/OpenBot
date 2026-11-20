@@ -2,12 +2,18 @@ import { sql } from "drizzle-orm";
 import {
   check,
   index,
+  integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+import {
+  maxSupportSeconds,
+  type SupportResource,
+} from "../../personal-saas/support-contract";
 import { agentProfiles } from "./coworker";
 
 export const personalSaasAccounts = pgTable(
@@ -87,4 +93,50 @@ export const personalWorkspaceIntegrationGrants = pgTable(
       sql`${table.action} = 'assistant.read'`,
     ),
   ],
+);
+
+export const personalSupportRequests = pgTable(
+  "personal_support_requests",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => personalWorkspaces.id, { onDelete: "cascade" }),
+    ticketId: text("ticket_id").notNull(),
+    operatorId: uuid("operator_id").notNull(),
+    actorSubject: text("actor_subject").notNull(),
+    resources: jsonb().$type<SupportResource[]>().notNull(),
+    reason: text().notNull(),
+    durationSeconds: integer("duration_seconds").notNull(),
+    requestedAt: timestamp("requested_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    index().on(table.workspaceId, table.requestedAt),
+    check(
+      "personal_support_duration_check",
+      sql`${table.durationSeconds} BETWEEN 1 AND ${sql.raw(String(maxSupportSeconds))}`,
+    ),
+  ],
+);
+
+export const personalSupportAccesses = pgTable(
+  "personal_support_accesses",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => personalSupportRequests.id, { onDelete: "cascade" }),
+    actorSubject: text("actor_subject").notNull(),
+    resource: jsonb().$type<SupportResource>().notNull(),
+    reason: text().notNull(),
+    accessedAt: timestamp("accessed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index().on(table.requestId, table.accessedAt)],
 );

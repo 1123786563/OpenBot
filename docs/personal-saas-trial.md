@@ -55,3 +55,17 @@ The internal integration service issues an expiring credential for `assistant.re
 Recent conversation history requires an OpenBot Application Session. The authenticated account determines the workspace and Assistant. Assistant integration credentials cannot read conversation history.
 
 Use the two-owner matrix in `server/tests/personal-saas-entry.integration.test.ts` to enable a resource. Replace the closed probe with the real entry point and two actual resources. Verify each owner's success and compare the same request with a foreign and a missing resource. For mutations, verify the denied request leaves the target unchanged. For downloads, replay the exact URL across accounts. For realtime, verify the actual handshake and delivered events. For cache and index access, populate the cache or index as one owner and repeat the same lookup as the other. Apply the same owner and scope checks at background dispatch.
+
+## Support access
+
+Set `OPENBOT_SUPPORT_SUBJECTS` to the comma-separated Casdoor subject IDs of individual support operators for the configured issuer. An empty or omitted setting disables operator endpoints. Operators sign in with their own OpenBot Application Sessions. Removing a subject from the setting takes effect after restarting the trial replicas.
+
+Under `/api/support/workspaces/{workspaceId}`, operators can use:
+
+- `GET /metadata` for workspace readiness, counts by Routine run status, and recent failed run IDs.
+- `POST /tickets/{ticketId}/requests` with `resources`, `durationSeconds`, and `reason`. Specify up to 20 exact resources by `{kind, id}`. Supported kinds are `conversation` (channel ID), `file` (attached file UUID), and `computer-session` (session ID for the workspace's isolated Assistant).
+- `POST /tickets/{ticketId}/requests/{id}/read` with `resource` and a per-read `reason`. The response returns the conversation's trial title and preview, attached file bytes as base64, or the current snapshot for the specified Computer session.
+
+Ticket IDs refer to the operator's existing support cases. The workspace owner opens **Support access** to review the ticket, resource IDs, reason, and requested duration. The owner can approve for up to 24 hours from approval or revoke access early. The same page shows which operator read each resource, when, and why after expiry or revocation. Owner clients can use `GET /api/workspaces/{workspaceId}/support-requests` and POST to `/{id}/approve` or `/{id}/revoke` beneath that path.
+
+The trial keeps Bot execution, file upload, and live Computer access disabled. The support API reads existing scoped records and provides read-only snapshots for Computer sessions.

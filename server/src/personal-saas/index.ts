@@ -23,6 +23,16 @@ const trial = z.object({
         Buffer.from(value, "base64").length === 32 &&
         value !== Buffer.alloc(32).toString("base64"),
     ),
+  OPENBOT_SUPPORT_SUBJECTS: z
+    .string()
+    .optional()
+    .transform(
+      (value) =>
+        value
+          ?.split(",")
+          .map((subject) => subject.trim())
+          .filter(Boolean) ?? [],
+    ),
   DATABASE_URL: z.string().min(1),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
 });
@@ -38,6 +48,7 @@ const app = createPersonalSaasApp(
   {
     origin: new URL(env.OPENBOT_PERSONAL_SAAS_URL).origin,
     encryptionKey: env.KEY_ENCRYPTION_KEY,
+    supportSubjects: env.OPENBOT_SUPPORT_SUBJECTS,
     casdoor: {
       issuer: env.CASDOOR_ISSUER,
       discoveryUrl: new URL(env.CASDOOR_DISCOVERY_URL),
