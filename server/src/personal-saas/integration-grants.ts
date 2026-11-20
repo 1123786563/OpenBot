@@ -3,6 +3,7 @@ import { and, eq, gt } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/client";
 import {
+  personalSaasAccounts,
   personalWorkspaceIntegrationGrants as grants,
   personalWorkspaceDefaultBots,
   personalWorkspaces,
@@ -12,6 +13,8 @@ import {
   assistantInWorkspace,
   assistantTarget,
 } from "./workspace-bots";
+
+import { latestSuspension } from "./workspace-suspension";
 
 const readAction = "assistant.read";
 const issuance = assistantTarget.extend({
@@ -38,6 +41,16 @@ export function workspaceIntegrationGrants(database: Database) {
         return;
       const target = parsed.data;
       return database.transaction(async (tx) => {
+        const [owner] = await tx
+          .select({ id: personalSaasAccounts.id })
+          .from(personalSaasAccounts)
+          .where(eq(personalSaasAccounts.id, target.accountId))
+          .for("share");
+        if (
+          !owner ||
+          (await latestSuspension(tx, owner.id))?.action === "pause"
+        )
+          return;
         const [bot] = await assistantBinding(tx)
           .where(
             and(

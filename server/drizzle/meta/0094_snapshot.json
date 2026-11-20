@@ -1,5 +1,5 @@
 {
-  "id": "a52ada04-912d-48e2-b80c-7e889ed9c2ae",
+  "id": "f622c5be-a037-449d-9cdd-54a7aec855dd",
   "prevId": "8fc618e5-4e0a-4799-b185-98c77a64d051",
   "version": "7",
   "dialect": "postgresql",
@@ -10798,221 +10798,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.personal_support_accesses": {
-      "name": "personal_support_accesses",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "request_id": {
-          "name": "request_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "actor_subject": {
-          "name": "actor_subject",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "resource": {
-          "name": "resource",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "accessed_at": {
-          "name": "accessed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "personal_support_accesses_request_id_accessed_at_index": {
-          "name": "personal_support_accesses_request_id_accessed_at_index",
-          "columns": [
-            {
-              "expression": "request_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "accessed_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "personal_support_accesses_request_id_personal_support_requests_id_fk": {
-          "name": "personal_support_accesses_request_id_personal_support_requests_id_fk",
-          "tableFrom": "personal_support_accesses",
-          "tableTo": "personal_support_requests",
-          "columnsFrom": [
-            "request_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.personal_support_requests": {
-      "name": "personal_support_requests",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ticket_id": {
-          "name": "ticket_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "operator_id": {
-          "name": "operator_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "actor_subject": {
-          "name": "actor_subject",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "resources": {
-          "name": "resources",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "duration_seconds": {
-          "name": "duration_seconds",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "requested_at": {
-          "name": "requested_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "approved_at": {
-          "name": "approved_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "personal_support_requests_workspace_id_requested_at_index": {
-          "name": "personal_support_requests_workspace_id_requested_at_index",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "requested_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "personal_support_requests_workspace_id_personal_workspaces_id_fk": {
-          "name": "personal_support_requests_workspace_id_personal_workspaces_id_fk",
-          "tableFrom": "personal_support_requests",
-          "tableTo": "personal_workspaces",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "personal_support_duration_check": {
-          "name": "personal_support_duration_check",
-          "value": "\"personal_support_requests\".\"duration_seconds\" BETWEEN 1 AND 86400"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.personal_workspace_default_bots": {
       "name": "personal_workspace_default_bots",
       "schema": "",
@@ -11177,6 +10962,112 @@
           "value": "\"personal_workspace_integration_grants\".\"action\" = 'assistant.read'"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.personal_workspace_suspensions": {
+      "name": "personal_workspace_suspensions",
+      "schema": "",
+      "columns": {
+        "sequence": {
+          "name": "sequence",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "operator": {
+          "name": "operator",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "display_reason": {
+          "name": "display_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "effective_at": {
+          "name": "effective_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "personal_workspace_suspensions_workspace_id_sequence_index": {
+          "name": "personal_workspace_suspensions_workspace_id_sequence_index",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "personal_workspace_suspensions_workspace_id_personal_workspaces_id_fk": {
+          "name": "personal_workspace_suspensions_workspace_id_personal_workspaces_id_fk",
+          "tableFrom": "personal_workspace_suspensions",
+          "tableTo": "personal_workspaces",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "personal_workspace_suspensions_id_unique": {
+          "name": "personal_workspace_suspensions_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.personal_workspaces": {

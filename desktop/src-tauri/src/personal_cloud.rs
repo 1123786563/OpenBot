@@ -137,6 +137,7 @@ enum SignIn {
     Idle,
     Waiting(Attempt),
     Failed(SignInFailure),
+    Paused(PausedWorkspace),
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -159,6 +160,7 @@ pub enum View {
         message: &'static str,
     },
     Preparing,
+    Paused(PausedWorkspace),
     Workspace {
         id: String,
         #[serde(rename = "personalAssistant")]
@@ -193,8 +195,31 @@ struct ConversationHistory {
 }
 
 #[derive(Deserialize)]
-struct Exchange {
-    token: String,
+#[serde(untagged)]
+enum Exchange {
+    Paused {
+        #[serde(rename = "status")]
+        _status: PauseStatus,
+        #[serde(flatten)]
+        details: PausedWorkspace,
+    },
+    Session {
+        token: String,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum PauseStatus {
+    Paused,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PausedWorkspace {
+    operation_id: String,
+    reason: Option<String>,
+    support_email: Option<String>,
 }
 
 pub struct Cloud {
@@ -244,6 +269,10 @@ impl Cloud {
             });
         }
 
+        if let (Action::Status, SignIn::Paused(details)) = (action, &*sign_in) {
+            return Ok(View::Paused(details.clone()));
+        }
+
         let store = credential(origin)?;
         let token = match store.get_password() {
             Ok(token) => Some(token),
@@ -276,7 +305,8 @@ impl Cloud {
         *sign_in = match result {
             Return::Failed(failure) => SignIn::Failed(failure),
             Return::Code(code) => match exchange_and_store(origin, attempt, &code) {
-                Ok(()) => SignIn::Idle,
+                Ok(Some(details)) => SignIn::Paused(details),
+                Ok(None) => SignIn::Idle,
                 Err(failure) => SignIn::Failed(failure),
             },
         };
@@ -295,17 +325,29 @@ fn clear_credential(store: &keyring::Entry) -> Result<(), &'static str> {
     }
 }
 
-fn exchange_and_store(origin: &Url, attempt: &Attempt, code: &str) -> Result<(), SignInFailure> {
+fn exchange_and_store(
+    origin: &Url,
+    attempt: &Attempt,
+    code: &str,
+) -> Result<Option<PausedWorkspace>, SignInFailure> {
     let api = Api::new(origin).map_err(|_| SignInFailure::Incomplete)?;
     let store = credential(origin).map_err(|_| SignInFailure::StoreUnavailable)?;
-    let token = api
+    let token = match api
         .exchange(attempt, code)
-        .map_err(|_| SignInFailure::Incomplete)?;
+        .map_err(|_| SignInFailure::Incomplete)?
+    {
+        Exchange::Paused { details, .. } => {
+            clear_credential(&store).map_err(|_| SignInFailure::StoreUnavailable)?;
+            return Ok(Some(details));
+        }
+        Exchange::Session { token } if !token.is_empty() => token,
+        Exchange::Session { .. } => return Err(SignInFailure::Incomplete),
+    };
     if store.set_password(&token).is_err() {
         let _ = api.end_session(&token);
         return Err(SignInFailure::StoreUnavailable);
     }
-    Ok(())
+    Ok(None)
 }
 
 fn endpoint(origin: &Url, path: &str) -> Url {
@@ -331,7 +373,7 @@ impl<'a> Api<'a> {
         Ok(Self { origin, http })
     }
 
-    fn exchange(&self, attempt: &Attempt, code: &str) -> Result<String, &'static str> {
+    fn exchange(&self, attempt: &Attempt, code: &str) -> Result<Exchange, &'static str> {
         let result = self
             .http
             .post(endpoint(self.origin, "/api/auth/native/exchange"))
@@ -346,11 +388,7 @@ impl<'a> Api<'a> {
         if result.status() != StatusCode::OK {
             return Err(NETWORK_ERROR);
         }
-        let Exchange { token } = result.json().map_err(|_| NETWORK_ERROR)?;
-        if token.is_empty() {
-            return Err(NETWORK_ERROR);
-        }
-        Ok(token)
+        result.json().map_err(|_| NETWORK_ERROR)
     }
 
     fn end_session(&self, token: &str) -> Result<StatusCode, &'static str> {

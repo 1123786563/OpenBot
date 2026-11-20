@@ -28,6 +28,8 @@ import {
 } from "../db/schema/personal-saas";
 import { type AccountGrant, accountDecision } from "./account-access";
 
+import { latestSuspension } from "./workspace-suspension";
+
 export const sessionSeconds = 8 * 60 * 60;
 
 function digest(token: string) {
@@ -175,9 +177,15 @@ export function personalSaasStore(
           .where(eq(personalSaasAccounts.id, input.accountId))
           .for("update");
         const access = accountDecision(account?.status ?? null, now());
+        const suspension = await latestSuspension(tx, input.accountId);
         const disabledAt = account?.status?.disablements.at(-1)?.effectiveAt;
         if (
           access.kind === "denied" ||
+          (suspension &&
+            (suspension.action === "pause" ||
+              input.loginStartedAt <= suspension.effectiveAt.getTime() ||
+              (account?.status?.observedAt ?? 0) <=
+                suspension.effectiveAt.getTime())) ||
           (disabledAt !== undefined && input.loginStartedAt <= disabledAt)
         )
           return undefined;

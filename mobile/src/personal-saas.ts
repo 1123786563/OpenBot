@@ -6,7 +6,7 @@ import { openAuthSessionAsync } from "expo-web-browser";
 import { Platform } from "react-native";
 import { serverUrl } from "./auth";
 import {
-  nativeSession,
+  nativeExchange,
   parsePersonalSaasCallback,
   personalConversationHistory,
   personalSaasCallbackUrl,
@@ -99,7 +99,11 @@ export async function signInPersonalSaas() {
   });
   if (!reply.ok)
     throw new PersonalSaasActionError("Sign-in did not finish. Try again.");
-  const session = nativeSession.parse(await reply.json());
+  const session = nativeExchange.parse(await reply.json());
+  if ("status" in session) {
+    await clearSession();
+    return session;
+  }
   await SecureStore.setItemAsync(sessionKey, session.token, keyOptions);
 }
 

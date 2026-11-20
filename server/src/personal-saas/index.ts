@@ -34,6 +34,12 @@ const trial = z.object({
           .map((subject) => subject.trim())
           .filter(Boolean) ?? [],
     ),
+  OPENBOT_SUSPENSION_OPERATOR_ID: z.string().trim().min(1).optional(),
+  OPENBOT_SUSPENSION_OPERATOR_TOKEN: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{43}$/)
+    .optional(),
+  OPENBOT_SUSPENSION_SUPPORT_EMAIL: z.email().optional(),
   DATABASE_URL: z.string().min(1),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
 });
@@ -45,11 +51,27 @@ if (!result.success) {
   );
 }
 const env = result.data;
+const operatorId = env.OPENBOT_SUSPENSION_OPERATOR_ID;
+const operatorToken = env.OPENBOT_SUSPENSION_OPERATOR_TOKEN;
+const suspensionSupport = env.OPENBOT_SUSPENSION_SUPPORT_EMAIL;
+if (
+  [operatorId, operatorToken, suspensionSupport].some(Boolean) &&
+  !(operatorId && operatorToken && suspensionSupport)
+)
+  throw new Error(
+    "Configure the suspension operator ID, token and support email together",
+  );
+
 const app = createPersonalSaasApp(
   {
     origin: new URL(env.OPENBOT_PERSONAL_SAAS_URL).origin,
     encryptionKey: env.KEY_ENCRYPTION_KEY,
     supportSubjects: env.OPENBOT_SUPPORT_SUBJECTS,
+    suspensionOperator:
+      operatorId && operatorToken
+        ? { id: operatorId, token: operatorToken }
+        : undefined,
+    suspensionSupport,
     casdoor: {
       issuer: env.CASDOOR_ISSUER,
       discoveryUrl: new URL(env.CASDOOR_DISCOVERY_URL),

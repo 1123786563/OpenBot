@@ -5,6 +5,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  serial,
   text,
   timestamp,
   unique,
@@ -148,4 +149,21 @@ export const personalSupportAccesses = pgTable(
       .defaultNow(),
   },
   (table) => [index().on(table.requestId, table.accessedAt)],
+);
+
+export const personalWorkspaceSuspensions = pgTable(
+  "personal_workspace_suspensions",
+  {
+    sequence: serial().primaryKey(),
+    id: uuid().notNull().defaultRandom().unique(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => personalWorkspaces.id),
+    action: text({ enum: ["pause", "resume"] }).notNull(),
+    operator: text().notNull(),
+    reason: text().notNull(),
+    displayReason: text("display_reason"),
+    effectiveAt: timestamp("effective_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index().on(table.workspaceId, table.sequence)],
 );

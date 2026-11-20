@@ -15,7 +15,18 @@ const callback = z.union([
     ]),
   }),
 ]);
-export const nativeSession = z.object({ token: proof });
+const nativeSession = z.strictObject({
+  token: proof,
+  expiresIn: z.number().positive(),
+});
+const pausedWorkspace = z.strictObject({
+  status: z.literal("paused"),
+  operationId: z.uuid(),
+  reason: z.string().nullable(),
+  supportEmail: z.email().nullable(),
+});
+export type PausedWorkspace = z.infer<typeof pausedWorkspace>;
+export const nativeExchange = z.union([nativeSession, pausedWorkspace]);
 export const personalWorkspace = z.object({
   id: z.string().min(1),
   personalAssistant: z.object({
