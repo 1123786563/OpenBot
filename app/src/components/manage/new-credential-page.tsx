@@ -42,7 +42,22 @@ function CredentialInput({
   label,
   description,
   ...props
-}: ComponentProps<typeof Input> & { label: string; description?: string }) {
+}: Pick<
+  ComponentProps<typeof Input>,
+  | "aria-describedby"
+  | "aria-invalid"
+  | "autoComplete"
+  | "id"
+  | "name"
+  | "onBlur"
+  | "onChange"
+  | "placeholder"
+> & {
+  label: string;
+  description?: string;
+  type?: "password";
+  value: string;
+}) {
   if (astryxPilot) {
     const { name, onChange, type, value, ...input } = props;
     return (
@@ -53,8 +68,8 @@ function CredentialInput({
         label={label}
         onChange={(_, event) => onChange?.(event)}
         status={props["aria-invalid"] ? { type: "error" } : undefined}
-        type={type === "password" ? "password" : "text"}
-        value={typeof value === "string" ? value : ""}
+        type={type}
+        value={value}
         width="100%"
       />
     );
