@@ -367,6 +367,27 @@ export async function dispatchTrackedLegacyWrite<
             "A write may already have reached the provider. Check its outcome before retrying.",
             409,
           );
+        const [applied] = await tx.execute<{ matching: boolean }>(sql`
+          select exists (
+            select 1 from audit_events started
+            join audit_events review
+              on review.event_type = ${writeReconciledEvent}
+              and review.payload->>'approvalId' = started.payload->>'approvalId'
+              and review.created_at >= started.created_at
+              and review.target_id = ${JSON.stringify([scope.workspaceId, scope.app])}
+            where started.event_type = ${`corsair.${scope.app}.write_started`}
+              and started.payload->>'route' = 'legacy'
+              and started.payload->>'workspaceId' = ${scope.workspaceId}
+              and started.payload->>'provider' = ${attempt.provider}
+              and started.payload->>'argumentDigest' = ${attempt.argumentDigest}
+              and review.payload->>'outcome' = 'applied'
+          ) as matching
+        `);
+        if (applied?.matching)
+          throw new RevocationRefusal(
+            "The matching broker write was confirmed applied. It cannot be retried.",
+            409,
+          );
         return send(tx, (vendor) => {
           sent = true;
           return vendor();
