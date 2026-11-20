@@ -16,6 +16,8 @@ import {
   GITHUB_EVENT_PREFIX,
   githubQueuedRunAuthorization,
 } from "../plugins/corsair/event-run-access";
+import { SLACK_EVENT_PREFIX } from "../plugins/corsair/slack/event-run-access";
+import type { createSlackEventPilot } from "../plugins/corsair/slack/events";
 import { RESPONSIBILITY_RUN_KIND } from "./engine";
 import {
   type GoalRepeats,
@@ -42,6 +44,10 @@ export function createResponsibilityStore(
   database: Database,
   options: {
     resolveTarget: ResponsibilityTargetResolver;
+    slackEventAccess?: Pick<
+      ReturnType<typeof createSlackEventPilot>,
+      "authorizeRun"
+    >;
     githubEventAccess?: Parameters<
       typeof githubQueuedRunAuthorization
     >[0]["service"];
@@ -411,6 +417,11 @@ export function createResponsibilityStore(
               personId: targetGoal.ownerUserId,
             })
           : undefined;
+      const slackEvent =
+        reference.status === "queued" &&
+        reference.externalId.startsWith(SLACK_EVENT_PREFIX)
+          ? await options.slackEventAccess?.authorizeRun(runId)
+          : undefined;
       const repeats =
         targetGoal.status === "active"
           ? await repeatsOf(database, targetGoal)
@@ -495,6 +506,32 @@ export function createResponsibilityStore(
             targetId: origin?.receiptId,
             payload: {
               triggerId: origin?.triggerId,
+              runId,
+              outcome: "authorization_ended",
+            },
+          });
+          return null;
+        }
+        if (
+          event.externalId.startsWith(SLACK_EVENT_PREFIX) &&
+          !(await slackEvent?.check?.(transaction, goal.ownerUserId))
+        ) {
+          await transaction
+            .update(responsibilityRuns)
+            .set({
+              status: "skipped",
+              error: "Slack event read authorization ended.",
+              finishedAt: new Date(),
+            })
+            .where(eq(responsibilityRuns.id, runId));
+          await transaction.insert(auditEvents).values({
+            eventType: "corsair.slack.event_run_skipped",
+            actorUserId: goal.ownerUserId,
+            initiatorKind: "system",
+            targetType: "slack_event_receipt",
+            targetId: slackEvent?.receiptId,
+            payload: {
+              triggerId: slackEvent?.triggerId,
               runId,
               outcome: "authorization_ended",
             },

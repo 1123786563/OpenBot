@@ -261,6 +261,8 @@ import {
 } from "./plugins/corsair/github";
 import { readVerifiedLegacyGithubDefaults } from "./plugins/corsair/legacy-defaults";
 import { readSlackLegacyDefaults } from "./plugins/corsair/slack/accounts";
+import { createSlackEventReader } from "./plugins/corsair/slack/event-reader";
+import { createSlackEventPilot } from "./plugins/corsair/slack/events";
 import { createSlackGoalAction } from "./plugins/corsair/slack/goal-action";
 import {
   createSlackPilotProvider,
@@ -1382,7 +1384,28 @@ const githubEventDispatch =
         isolatedSources: new Set(githubIsolatedSources),
       })
     : null;
+const sharedSlack = sharedSlackRegistration(process.env);
+const sharedSlackProvider =
+  sharedSlack && createSharedSlackProvider(sharedSlack);
+const slackEventSecret =
+  process.env.CORSAIR_SLACK_EVENTS_SIGNING_SECRET?.trim();
+if (slackEventSecret && !sharedSlack)
+  throw new Error(
+    "Slack Events API requires a shared Slack installation registration.",
+  );
+const slackEvents =
+  slackEventSecret && sharedSlack && sharedSlackProvider
+    ? createSlackEventPilot({
+        database,
+        workspaceId: deploymentId,
+        identity: sharedSlackProvider.identity,
+        secret: slackEventSecret,
+        checkMember: createSlackEventReader(sharedSlack),
+      })
+    : undefined;
+
 const responsibilityStore = createResponsibilityStore(database, {
+  slackEventAccess: slackEvents,
   githubEventAccess: githubEventTriggers,
   resolveTarget: async (ownerUserId, agentId, channelId) => {
     const actor = await actorFor(ownerUserId);
@@ -2484,6 +2507,20 @@ const githubEventSweep = githubEventDispatch
       }
     }, 2_000)
   : null;
+const slackEventSweep = slackEvents
+  ? repeatAfterEach(async () => {
+      try {
+        await slackEvents.sweep();
+      } catch (error) {
+        console.warn(
+          JSON.stringify({
+            type: "corsair-slack-event-dispatch-failed",
+            errorType: error instanceof Error ? error.name : "unknown",
+          }),
+        );
+      }
+    }, 2_000)
+  : null;
 const responsibilitySweep = repeatAfterEach(async () => {
   try {
     const report = await responsibilityEngine.dispatch({
@@ -3123,7 +3160,6 @@ const identityGithubCallback =
       })
     : undefined;
 
-const sharedSlack = sharedSlackRegistration(process.env);
 const app = createApp(
   config,
   auth,
@@ -3289,11 +3325,12 @@ const app = createApp(
         }
       : {}),
     ...(slackPilotOptions ? { slackPilot: slackPilotOptions } : {}),
-    ...(sharedSlack
+    ...(slackEvents ? { slackEventRoutes: slackEvents.routes } : {}),
+    ...(sharedSlackProvider
       ? {
           sharedSlackPilot: {
             workspaceId: deploymentId,
-            provider: createSharedSlackProvider(sharedSlack),
+            provider: sharedSlackProvider,
             database,
             approvals: storedApprovals,
             audit: bootAuditStore,
@@ -3441,6 +3478,7 @@ const app = createApp(
         pushProjectId: deliveryProviders.pushProjectId,
       },
       webhooks: {
+        corsairSlackTeamId: slackEvents ? sharedSlack?.teamId : undefined,
         store: deliveryStore,
         router: deliveryRouter,
         approvals: approvalService,
@@ -3539,6 +3577,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     responsibilitySweep.stop();
     githubEventSweep?.stop();
+    slackEventSweep?.stop();
     wakeUpSweep.stop();
     wakeUpReaper.stop();
     memorySweep.stop();

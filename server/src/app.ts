@@ -467,6 +467,7 @@ export function createApp(
       Parameters<typeof createSlackPilotRoutes>[0],
       "requireUser" | "canUseBot"
     >;
+    slackEventRoutes?: Hono;
     sharedSlackPilot?: Omit<
       Parameters<typeof createSharedSlackPilot>[0],
       "requireUser" | "canUseBot"
@@ -1656,6 +1657,9 @@ export function createApp(
       }),
     );
   }
+
+  if (coworker?.slackEventRoutes)
+    app.route("/api/corsair/slack", coworker.slackEventRoutes);
 
   if (coworker?.sharedSlackPilot && agentProfileStore) {
     app.route(

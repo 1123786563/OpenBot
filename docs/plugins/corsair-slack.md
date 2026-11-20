@@ -53,3 +53,13 @@ Automated acceptance uses PostgreSQL and a Slack HTTP fixture. Live acceptance n
 Prefix each route with `/api/corsair/slack/shared`. Send `X-OpenBot-Pilot: slack` on mutations. Admins can inspect enrollment with `GET /installation` or revoke it with `DELETE /installation`.
 
 For live acceptance, post to a controlled channel and compare the Slack author with the enrolled Bot and the `slack_installation_bot` identity in the OpenBot audit event. Check that a denied attempt leaves a refusal event and no Slack message. If Slack's response leaves the result uncertain, inspect the channel before opening another Approval.
+
+## Dispatch Slack channel events to Goals
+
+1. On the shared installation Slack app, subscribe to the Bot events `message.channels`, `message.groups`, `app_mention`, and `reaction_added` as needed. Add the corresponding Bot scopes and reinstall the app if the scopes change. Set the request URL to `<OpenBot public HTTPS URL>/api/corsair/slack/webhook`. Set `CORSAIR_SLACK_EVENTS_SIGNING_SECRET` to this app's signing secret. [Slack Events API](https://docs.slack.dev/apis/events-api/) and [Slack request signatures](https://docs.slack.dev/authentication/verifying-requests-from-slack/).
+2. Enroll the shared installation and its channels in each OpenBot workspace that should receive events. For each Goal owner, connect a personal Slack account in that OpenBot workspace. Use a Slack account from the installation's Slack team with access to the enrolled channel.
+3. Create a Slack Goal Trigger with the team, channel, and event mode. The existing Trigger setup uses the owner's OpenTag pairing to validate the channel. For the configured team, Corsair dispatches channel events to Goals. OpenTag still handles conversations and replies through its existing agent endpoint.
+
+Use the audit events `corsair.slack.event_delivery` and `corsair.slack.event_run_skipped` to trace the Slack event ID, receipt, Trigger, and Run. A timeout delays dispatch for that Trigger. An explicit denial produces no Run. OpenBot checks the current installation and channel membership again before a queued Run starts. [Slack channel membership API](https://docs.slack.dev/reference/methods/conversations.members/).
+
+To verify a live pilot, send a message in an enrolled channel with two matching Triggers. Compare the Slack event ID and Run IDs in the audit trail. Replay the delivery, then revoke the owner's connection and send another message. Use an OpenTag channel conversation to verify that the Bot's reply still reaches the sender.
