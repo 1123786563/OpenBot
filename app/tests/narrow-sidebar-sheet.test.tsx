@@ -178,7 +178,13 @@ function renderNarrowApp(start = "/channel/models", preview = false) {
     getParentRoute: () => root,
     component: AppRoute.options.component,
   });
-  const routes = ["/", "/bots", "/channel/new", "/settings"].map((path) =>
+  const routes = [
+    "/",
+    "/bots",
+    "/responsibilities",
+    "/channel/new",
+    "/settings",
+  ].map((path) =>
     createRoute({
       path,
       getParentRoute: () => shell,
@@ -381,6 +387,22 @@ test.skipIf(!astryxPilot)(
     expect(menu.queryByRole("menuitem", { name: "Admin" })).toBeNull();
     await app.user.click(menu.getByRole("menuitem", { name: "Settings" }));
     await app.view.findByRole("heading", { name: "/settings" });
+    await app.view.findByRole("button", { name: "Open navigation" });
+  },
+);
+
+test.skipIf(!astryxPilot)(
+  "Goals opens Responsibilities from narrow preview navigation",
+  async () => {
+    const app = renderNarrowApp("/", true);
+    await app.user.click(
+      await app.view.findByRole("button", { name: "Open navigation" }),
+    );
+    const navigation = within(
+      await app.view.findByRole("navigation", { name: "Main navigation" }),
+    );
+    await app.user.click(navigation.getByRole("link", { name: "Goals" }));
+    await app.view.findByRole("heading", { name: "/responsibilities" });
     await app.view.findByRole("button", { name: "Open navigation" });
   },
 );

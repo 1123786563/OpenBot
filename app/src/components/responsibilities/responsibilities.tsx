@@ -1,6 +1,8 @@
+import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import { IconChecklist, IconChevronRight, IconPlus } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState } from "react";
+import { astryxPilot } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
@@ -37,7 +39,18 @@ import {
  * triggers, its runs, pausing and completing it — is in the dialog the row opens, because that is
  * many values and a settings screen that edits many values in place turns back into a form.
  */
-export function BotResponsibilities({ agentId }: { agentId?: string }) {
+export function BotResponsibilities({
+  agentId,
+  sectionTitle = "Goals",
+}: {
+  agentId?: string;
+  sectionTitle?: string;
+}) {
+  const trigger = useRef<HTMLButtonElement | null>(null);
+  function start(event: React.MouseEvent<HTMLButtonElement>) {
+    trigger.current = event.currentTarget;
+    setCreating(true);
+  }
   const goals = useQuery(responsibilitiesQueryOptions());
   const [creating, setCreating] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -49,26 +62,35 @@ export function BotResponsibilities({ agentId }: { agentId?: string }) {
   return (
     <PageSection
       action={
-        <Button onClick={() => setCreating(true)} size="sm" variant="ghost">
-          <IconPlus />
-          New goal
-        </Button>
+        astryxPilot ? (
+          <AstryxButton
+            icon={<IconPlus aria-hidden size={16} />}
+            label="New goal"
+            onClick={start}
+            variant="primary"
+          />
+        ) : (
+          <Button onClick={start} size="sm" variant="ghost">
+            <IconPlus />
+            New goal
+          </Button>
+        )
       }
-      title="Goals"
+      title={sectionTitle}
     >
       {/* Pending, error, empty, rows — pending first, so no sentence asserts anything mid-fetch. */}
-      {goals.isPending ? null : goals.error ? (
+      {goals.isPending ? (
+        <p className="mt-4 text-sm" role="status">
+          Loading goals…
+        </p>
+      ) : goals.error ? (
         <p role="alert" className="mt-4 text-destructive text-sm">
           {goals.error.message}
         </p>
       ) : shown.length === 0 ? (
         <PageEmpty
           action={
-            <Button
-              onClick={() => setCreating(true)}
-              size="sm"
-              variant="outline"
-            >
+            <Button onClick={start} size="sm" variant="outline">
               <IconPlus />
               New goal
             </Button>
@@ -87,7 +109,10 @@ export function BotResponsibilities({ agentId }: { agentId?: string }) {
               {index > 0 ? <Separator /> : null}
               <ResponsibilityRow
                 goal={goal}
-                onOpen={() => setOpenId(goal.id)}
+                onOpen={(event) => {
+                  trigger.current = event.currentTarget;
+                  setOpenId(goal.id);
+                }}
               />
             </Fragment>
           ))}
@@ -96,6 +121,7 @@ export function BotResponsibilities({ agentId }: { agentId?: string }) {
       {creating ? (
         <NewResponsibilityDialog
           agentId={agentId}
+          returnFocus={trigger}
           onClose={() => setCreating(false)}
         />
       ) : null}
@@ -103,6 +129,7 @@ export function BotResponsibilities({ agentId }: { agentId?: string }) {
         <ResponsibilityDialog
           goal={open}
           key={open.id}
+          returnFocus={trigger}
           onClose={() => setOpenId(null)}
         />
       ) : null}
@@ -120,7 +147,7 @@ function ResponsibilityRow({
   onOpen,
 }: {
   goal: ResponsibilityRecord;
-  onOpen: () => void;
+  onOpen: React.MouseEventHandler<HTMLButtonElement>;
 }) {
   const triggers = useQuery(triggersQueryOptions(goal.id));
   const Icon = STATUS[goal.status].icon;
