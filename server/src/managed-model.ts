@@ -115,8 +115,8 @@ export function createManagedModel({
     async complete(
       input: ModelOperation & {
         route: string;
-        beforeDispatch?: () => Promise<boolean>;
         messages: readonly ModelMessage[];
+        beforeDispatch?: () => Promise<boolean>;
       },
     ): Promise<ManagedModelResult> {
       const id = operationId(input);

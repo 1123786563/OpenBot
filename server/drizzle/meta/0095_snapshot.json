@@ -1,5 +1,5 @@
 {
-  "id": "8f6bd3f4-45f3-4607-b2ad-151ee7d8d3f4",
+  "id": "09f059bf-3a1c-4ef5-8d0d-fb5a14c4e711",
   "prevId": "8d805d97-6bd2-4859-9dc6-f36ef0de3442",
   "version": "7",
   "dialect": "postgresql",
@@ -4460,6 +4460,143 @@
       },
       "isRLSEnabled": false
     },
+    "public.direct_chat_analyses": {
+      "name": "direct_chat_analyses",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bot_id": {
+          "name": "bot_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "evidence_run_ids": {
+          "name": "evidence_run_ids",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "proposal": {
+          "name": "proposal",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "direct_chat_analyses_history_idx": {
+          "name": "direct_chat_analyses_history_idx",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "direct_chat_analyses_active_idx": {
+          "name": "direct_chat_analyses_active_idx",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"direct_chat_analyses\".\"state\" in ('running', 'reconciling')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "direct_chat_analyses_thread_id_intelligence_channel_mappings_thread_id_fk": {
+          "name": "direct_chat_analyses_thread_id_intelligence_channel_mappings_thread_id_fk",
+          "tableFrom": "direct_chat_analyses",
+          "tableTo": "intelligence_channel_mappings",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "thread_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "direct_chat_analyses_state_check": {
+          "name": "direct_chat_analyses_state_check",
+          "value": "\"direct_chat_analyses\".\"state\" in ('running', 'reconciling', 'proposed', 'skipped', 'failed', 'cancelled')"
+        },
+        "direct_chat_analyses_proposal_check": {
+          "name": "direct_chat_analyses_proposal_check",
+          "value": "(\"direct_chat_analyses\".\"state\" = 'proposed') = (\"direct_chat_analyses\".\"proposal\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.learning_open_skills": {
       "name": "learning_open_skills",
       "schema": "",
@@ -8740,24 +8877,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "dispatched_at": {
-          "name": "dispatched_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "external_outcome": {
-          "name": "external_outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "stop_reason": {
-          "name": "stop_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "event_cursor": {
           "name": "event_cursor",

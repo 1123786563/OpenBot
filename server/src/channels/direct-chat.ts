@@ -19,6 +19,7 @@ import {
   groupBotThreads,
   intelligenceChannelMappings,
 } from "../db/schema";
+import { createDirectChatLearning } from "../learning/direct-chat";
 import type { ManagedModel, ManagedModelResult } from "../managed-model";
 import { runFeedback, saveRunFeedback } from "../opik/feedback";
 
@@ -198,6 +199,43 @@ export function createDirectChatRoutes(deps: {
   const actorFor = (request: Request) =>
     deps.identifyActor(request).catch(() => null);
   const absent = { error: "Conversation not found." };
+
+  const learning = createDirectChatLearning(database, deps.trial);
+  routes.on(["GET", "POST"], "/threads/:threadId/learn", async (context) => {
+    const { threadId } = context.req.param();
+    const agentId = context.req.query("agentId");
+    const request = context.req.raw;
+    if (
+      request.method === "POST" &&
+      (context.req.header("sec-fetch-site") === "cross-site" ||
+        context.req.header("content-type")?.split(";")[0]?.trim() !==
+          "application/json")
+    )
+      return context.json({ error: "Use a same-origin JSON request." }, 403);
+    const personId = (await actorFor(request))?.id;
+    if (!personId || !agentId) return context.json(absent, 404);
+    const result = await learning(
+      { threadId, agentId, personId },
+      async () => {
+        const actor = await actorFor(request);
+        return (tx) =>
+          actor?.id === personId
+            ? threadFor(tx, actor, threadId, agentId, true)
+            : Promise.resolve(null);
+      },
+      request.method === "POST",
+    );
+    if (!result) return context.json(absent, 404);
+    context.header("cache-control", "no-store");
+    if (request.method === "POST") {
+      if (!result.enabled)
+        return context.json({ error: "Learning is disabled." }, 409);
+      if (!result.available)
+        return context.json({ error: "Learning model is unavailable." }, 503);
+      return context.json(result, 202);
+    }
+    return context.json(result);
+  });
 
   routes.get("/threads/:threadId/messages", async (context) => {
     const { threadId } = context.req.param();

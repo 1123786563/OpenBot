@@ -670,8 +670,15 @@
     {
       "idx": 95,
       "version": "7",
-      "when": 1795180506850,
-      "tag": "0095_direct_chat_recovery",
+      "when": 1795180537112,
+      "tag": "0095_direct_chat_learning",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1795181168585,
+      "tag": "0096_direct_chat_recovery",
       "breakpoints": true
     }
   ]
