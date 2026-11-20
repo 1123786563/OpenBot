@@ -20,6 +20,12 @@ import { personalSaasStore, sessionSeconds } from "./store";
 import { workspaceBotRoutes } from "./workspace-bot-routes";
 import { workspaceBots } from "./workspace-bots";
 
+import {
+  pausedWorkspace,
+  type SuspensionOperator,
+  suspensionRoutes,
+} from "./workspace-suspension";
+
 const attemptPrefix = "__Host-openbot-oidc-";
 const callbackPath = "/auth/casdoor/callback";
 const sessionSeal = "personal-saas-access-token";
@@ -33,6 +39,8 @@ function reportFailure(
 export type PersonalSaasConfig = {
   origin: string;
   now?: () => number;
+  suspensionOperator?: SuspensionOperator;
+  suspensionSupport?: string;
   encryptionKey: string;
   casdoor: CasdoorConfig;
 };
@@ -91,6 +99,7 @@ export function createPersonalSaasApp(
     database,
     encryptionKey: config.encryptionKey,
     now,
+    suspensionSupport: config.suspensionSupport,
   });
   const browserLogin = browserAttempt.extend({
     native: native.attempt.optional(),
@@ -107,6 +116,7 @@ export function createPersonalSaasApp(
   }
 
   function acceptsNativePost(context: Context) {
+    if (context.req.path.startsWith("/api/operator/workspaces/")) return true;
     switch (context.req.path) {
       case "/api/auth/native/exchange":
         return true;
@@ -154,6 +164,7 @@ export function createPersonalSaasApp(
     );
   });
 
+  app.route("/", suspensionRoutes(database, config.suspensionOperator, now));
   app.get("/health", (context) => context.json({ status: "ok" }));
   app.get(
     "/assets/entry.css",
@@ -297,6 +308,23 @@ export function createPersonalSaasApp(
       const accountId = await store.bindIdentity(identity);
       if (!(await accountAccess.check(identity)))
         throw new Error("Account status unavailable");
+      const suspension = nativeAttempt
+        ? undefined
+        : await pausedWorkspace(database, accountId, config.suspensionSupport);
+      if (suspension) {
+        deleteCookie(context, sessionCookie, cookieOptions);
+        return context.html(
+          page(
+            "Personal Workspace paused",
+            html`<p role="status">Your access to this OpenBot workspace is paused.</p>
+              ${suspension.reason ? html`<p>${suspension.reason}</p>` : ""}
+              <p>Operation ID <code>${suspension.operationId}</code></p>
+              ${suspension.supportEmail ? html`<p>Contact support at <a href="mailto:${suspension.supportEmail}">${suspension.supportEmail}</a>.</p>` : ""}
+              <a href="/auth/casdoor/start">Sign in again</a>`,
+          ),
+          403,
+        );
+      }
       const sessionIdentity = {
         accountId,
         loginStartedAt: parsed.expiresAt - 10 * 60_000,

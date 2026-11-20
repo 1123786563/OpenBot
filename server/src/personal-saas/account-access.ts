@@ -7,6 +7,8 @@ import {
   personalSaasSessions,
 } from "../db/schema/personal-saas";
 
+import { latestSuspension } from "./workspace-suspension";
+
 const cutoffMs = 60_000;
 const millis = z.number().int().nonnegative();
 const disablement = z.object({ id: z.string().min(1), effectiveAt: millis });
@@ -177,11 +179,31 @@ export function createAccountAccess(
   }
 
   async function decision(accountId: string) {
-    const [account] = await database
-      .select({ status: personalSaasAccounts.status })
-      .from(personalSaasAccounts)
-      .where(eq(personalSaasAccounts.id, accountId));
-    return accountDecision(account?.status ?? null, now());
+    return database.transaction(async (tx) => {
+      const [account] = await tx
+        .select({ status: personalSaasAccounts.status })
+        .from(personalSaasAccounts)
+        .where(eq(personalSaasAccounts.id, accountId))
+        .for("share");
+      if (!account) return accountDecision(null, now());
+      const suspension = await latestSuspension(tx, accountId);
+      if (suspension?.action === "pause")
+        return {
+          kind: "denied",
+          reason: "workspace_paused",
+          cutoffAt: suspension.effectiveAt.getTime(),
+        } as const;
+      if (
+        suspension &&
+        (account.status?.observedAt ?? 0) <= suspension.effectiveAt.getTime()
+      )
+        return {
+          kind: "denied",
+          reason: "account_status_unconfirmed",
+          cutoffAt: suspension.effectiveAt.getTime(),
+        } as const;
+      return accountDecision(account.status, now());
+    });
   }
 
   return {

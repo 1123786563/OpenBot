@@ -26,6 +26,7 @@ import { assertWorkspaceIsolation } from "./support/workspace-isolation";
 
 const origin = "https://trial.openbot.example";
 const clientId = "openbot-trial";
+const operatorToken = "s".repeat(43);
 const clientSecret = "casdoor-test-secret";
 const database = createDatabase(testDatabaseUrl(), { max: 4 });
 const botProfiles = createAgentProfileStore(database, undefined);
@@ -183,6 +184,8 @@ function newApp(db = database) {
     {
       origin,
       now,
+      suspensionOperator: { id: "trial-operator", token: operatorToken },
+      suspensionSupport: "support@example.com",
       encryptionKey: Buffer.alloc(32, 7).toString("base64"),
       casdoor: {
         issuer,
@@ -1625,4 +1628,234 @@ test("an idle live stream closes at the established deadline during an account s
   } finally {
     clockTime = undefined;
   }
+});
+
+test("only a suspension operator can pause one workspace and revoke all of its sessions", async () => {
+  const owner = {
+    sub: crypto.randomUUID(),
+    email: "owner@example.com",
+    verified: true,
+    active: true,
+  };
+  const other = { ...owner, sub: crypto.randomUUID() };
+  const first = cookie(await authenticate(owner), "__Host-openbot-personal=");
+  const second = cookie(await authenticate(owner), "__Host-openbot-personal=");
+  const unaffected = cookie(
+    await authenticate(other),
+    "__Host-openbot-personal=",
+  );
+  await enter(first);
+  await enter(unaffected);
+  const target = await workspace(first);
+  const nativeHeaders = [];
+  for (const client of ["ios", "android", "desktop"] as const) {
+    const { start, ...proof } = await nativeAttempt(client);
+    const finish = await completeBrowserLogin(start, owner);
+    const code = new URL(finish.headers.get("location") ?? "").searchParams.get(
+      "code",
+    );
+    const response = await exchangeNative({ ...proof, code });
+    expect(response.status).toBe(200);
+    const { token } = await response.json();
+    const headers = { authorization: `Bearer ${token}` };
+    expect(
+      (await send("/api/workspace/conversations", { headers })).status,
+    ).toBe(200);
+    nativeHeaders.push(headers);
+  }
+  const persisted = await personalSaasStore(database).session(
+    first.split("=")[1],
+  );
+  if (!persisted) throw new Error("Expected an Application Session");
+  const accountAccess = createAccountAccess(
+    database,
+    () => Promise.reject(new Error("offline")),
+    now,
+  );
+  const decision = await accountAccess.decision(persisted.accountId);
+  if (decision.kind !== "active") throw new Error("Expected an active grant");
+  const executionGrant = {
+    accountId: persisted.accountId,
+    epoch: decision.epoch,
+    expiresAt: decision.expiresAt,
+  };
+  const grants = workspaceIntegrationGrants(database);
+  const targetGrant = {
+    accountId: persisted.accountId,
+    workspaceId: target.id,
+    botId: target.personalAssistant.id,
+    expiresAt: new Date(now() + 60_000),
+  };
+  const issued = await grants.issueAssistantRead(targetGrant);
+  if (!issued) throw new Error("Expected an Assistant credential");
+  const readAssistant = {
+    workspaceId: target.id,
+    botId: target.personalAssistant.id,
+    credential: issued.credential,
+    action: "assistant.read",
+  };
+  expect(await grants.execute(readAssistant)).toBeDefined();
+  const pause = (headers: Record<string, string>) =>
+    send(`/api/operator/workspaces/${target.id}/suspension`, {
+      method: "POST",
+      headers: { origin, "content-type": "application/json", ...headers },
+      body: JSON.stringify({
+        action: "pause",
+        reason: "Contact support to review your workspace.",
+      }),
+    });
+  expect((await pause({ cookie: first })).status).toBe(403);
+  expect((await pause({ authorization: "Bearer wrong" })).status).toBe(403);
+  const credential = { authorization: `Bearer ${operatorToken}` };
+  expect(
+    (await send("/api/workspace/conversations", { headers: credential }))
+      .status,
+  ).toBe(401);
+  expect(
+    (
+      await send(botPath(target.id, target.personalAssistant.id), {
+        headers: credential,
+      })
+    ).status,
+  ).toBe(401);
+  await withReplica(async (connect) => {
+    const stream = await readSessionStream(await connect(second));
+    try {
+      const response = await pause(credential);
+      expect(response.status).toBe(201);
+      const { effectiveAt } = await response.json();
+      expect(await accountAccess.verify(executionGrant)).toEqual({
+        kind: "denied",
+        reason: "workspace_paused",
+        cutoffAt: Date.parse(effectiveAt),
+      });
+      expect(await grants.execute(readAssistant)).toBeUndefined();
+      expect(await grants.issueAssistantRead(targetGrant)).toBeUndefined();
+      await expectRevoked(stream);
+      expect(now() - Date.parse(effectiveAt)).toBeLessThan(60_000);
+    } finally {
+      await stream.cancel();
+    }
+  });
+  for (const session of [first, second])
+    expect(
+      (await send("/api/workspace", { headers: { cookie: session } })).status,
+    ).toBe(401);
+  for (const headers of nativeHeaders) {
+    expect((await send("/api/workspace", { headers })).status).toBe(401);
+    expect(
+      (await send("/api/workspace/conversations", { headers })).status,
+    ).toBe(401);
+  }
+  expect((await workspace(unaffected)).id).not.toBe(target.id);
+});
+
+test("fresh verification shows only the owner's public suspension details and resume requires sign-in", async () => {
+  const owner = {
+    sub: crypto.randomUUID(),
+    email: "paused@example.com",
+    verified: true,
+    active: true,
+  };
+  const other = { ...owner, sub: crypto.randomUUID() };
+  const session = cookie(await authenticate(owner), "__Host-openbot-personal=");
+  await enter(session);
+  const target = await workspace(session);
+  const operate = (action: "pause" | "resume") =>
+    send(`/api/operator/workspaces/${target.id}/suspension`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${operatorToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        action,
+        reason: "Internal-only note",
+        displayReason: "Contact us about your trial.",
+      }),
+    });
+  const pause = await operate("pause");
+  expect(pause.status).toBe(201);
+  const { operationId } = await pause.json();
+  const response = await authenticate(owner);
+  expect(response.status).toBe(403);
+  expect(
+    response.headers
+      .getSetCookie()
+      .some((value) =>
+        /^__Host-openbot-personal=[A-Za-z0-9_-]{43};/.test(value),
+      ),
+  ).toBe(false);
+  const page = await response.text();
+  expect(page).toContain("Contact us about your trial.");
+  expect(page).toContain("support@example.com");
+  expect(page).toContain(operationId);
+  expect(page).not.toContain("Internal-only note");
+  expect(page).not.toContain(target.id);
+  expect((await authenticate(other)).status).toBe(303);
+  expect((await operate("resume")).status).toBe(201);
+  expect(
+    (await send("/api/workspace", { headers: { cookie: session } })).status,
+  ).toBe(401);
+  owner.active = false;
+  expect((await authenticate(owner)).status).toBe(403);
+  owner.active = true;
+  const fresh = cookie(await authenticate(owner), "__Host-openbot-personal=");
+  expect((await workspace(fresh)).id).toBe(target.id);
+});
+
+test("native verified handoffs return only the signed-in owner's suspension status", async () => {
+  const owner = await isolationOwner();
+  const { start: oldStart, ...oldProof } = await nativeAttempt("desktop");
+  const oldFinish = await completeBrowserLogin(oldStart, owner.account);
+  const oldCode = new URL(
+    oldFinish.headers.get("location") ?? "",
+  ).searchParams.get("code");
+  expect(oldCode).toBeTruthy();
+  const operate = (action: "pause" | "resume") =>
+    send(`/api/operator/workspaces/${owner.workspaceId}/suspension`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${operatorToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        action,
+        reason: "Private operations note",
+        displayReason: "Trial paused for review.",
+      }),
+    });
+  const response = await operate("pause");
+  expect(response.status).toBe(201);
+  const { operationId } = await response.json();
+  for (const client of ["ios", "android", "desktop"] as const) {
+    const { start, ...proof } = await nativeAttempt(client);
+    const finish = await completeBrowserLogin(start, owner.account);
+    const link = new URL(finish.headers.get("location") ?? "");
+    expect(link.search).not.toContain(operationId);
+    const input = { ...proof, code: link.searchParams.get("code") };
+    const status = await exchangeNative(input);
+    expect(status.status).toBe(200);
+    expect(status.headers.get("cache-control")).toBe("no-store");
+    expect(await status.json()).toEqual({
+      status: "paused",
+      operationId,
+      reason: "Trial paused for review.",
+      supportEmail: "support@example.com",
+    });
+    expect((await exchangeNative(input)).status).toBe(400);
+  }
+  const other = await isolationOwner();
+  const { start, ...proof } = await nativeAttempt("desktop");
+  const finish = await completeBrowserLogin(start, other.account);
+  const code = new URL(finish.headers.get("location") ?? "").searchParams.get(
+    "code",
+  );
+  const result = await exchangeNative({ ...proof, code });
+  expect(result.status).toBe(200);
+  expect(await result.json()).toMatchObject({ token: expect.any(String) });
+  expect((await operate("resume")).status).toBe(201);
+  expect((await exchangeNative({ ...oldProof, code: oldCode })).status).toBe(
+    400,
+  );
 });

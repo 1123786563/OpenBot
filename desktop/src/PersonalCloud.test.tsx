@@ -2,7 +2,11 @@ import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act, cleanup, render, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { PersonalCloud, type CloudAction, type CloudView } from "./PersonalCloud";
+import {
+  PersonalCloud,
+  type CloudAction,
+  type CloudView,
+} from "./PersonalCloud";
 
 beforeAll(() => {
   if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
@@ -21,36 +25,58 @@ test("a cancelled browser sign-in can be restarted and returned to the existing 
     if (action === "cancel") status = { kind: "signedOut" };
     return status;
   };
-  const screen = within(render(<PersonalCloud request={request} showLocal={async () => {}} />).container);
+  const screen = within(
+    render(<PersonalCloud request={request} showLocal={async () => {}} />)
+      .container,
+  );
   const user = userEvent.setup({ document });
-  await user.click(await screen.findByRole("button", { name: "Sign in with browser" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Sign in with browser" }),
+  );
   await screen.findByText("Finish signing in in your browser.");
   await user.click(screen.getByRole("button", { name: "Cancel sign-in" }));
-  await user.click(await screen.findByRole("button", { name: "Sign in with browser" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Sign in with browser" }),
+  );
   const existingWorkspace = {
     kind: "workspace",
     id: "workspace-1",
     personalAssistant: { id: "bot-1", name: "My Assistant" },
-    conversations: [{ id: "conversation-1", title: "Weekend <plans>", preview: "Saturday at nine" }],
+    conversations: [
+      {
+        id: "conversation-1",
+        title: "Weekend <plans>",
+        preview: "Saturday at nine",
+      },
+    ],
   } satisfies CloudView;
   status = existingWorkspace;
   await screen.findByText("My Assistant");
   await screen.findByRole("heading", { name: "Recent conversations" });
   expect(screen.getByText("Weekend <plans>")).toBeTruthy();
   expect(screen.getByText("Saturday at nine")).toBeTruthy();
-  expect(actions.filter((action) => action === "start" || action === "cancel")).toEqual(["start", "cancel", "start"]);
+  expect(
+    actions.filter((action) => action === "start" || action === "cancel"),
+  ).toEqual(["start", "cancel", "start"]);
 });
-
 
 test("cloud configuration errors still leave a direct local entry", async () => {
   let openedLocal = false;
-  const screen = within(render(<PersonalCloud
-    request={async () => ({ kind: "unavailable" })}
-    showLocal={async () => { openedLocal = true; }}
-  />).container);
+  const screen = within(
+    render(
+      <PersonalCloud
+        request={async () => ({ kind: "unavailable" })}
+        showLocal={async () => {
+          openedLocal = true;
+        }}
+      />,
+    ).container,
+  );
   const user = userEvent.setup({ document });
   await screen.findByRole("alert");
-  expect(screen.queryByRole("button", { name: "Sign in with browser" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Sign in with browser" }),
+  ).toBeNull();
   await user.click(screen.getByRole("button", { name: "Open local OpenBot" }));
   expect(openedLocal).toBe(true);
 });
@@ -61,7 +87,12 @@ test("first entry runs shared setup and keeps a retry when setup fails", async (
     if (action === "status") return { kind: "preparing" };
     if (action !== "prepare") throw new Error(`Unexpected action: ${action}`);
     if (++preparations === 1) throw new Error("Temporary setup error");
-    return { kind: "workspace", id: "workspace-1", personalAssistant: { id: "bot-1", name: "My Assistant" }, conversations: [] };
+    return {
+      kind: "workspace",
+      id: "workspace-1",
+      personalAssistant: { id: "bot-1", name: "My Assistant" },
+      conversations: [],
+    };
   };
   const screen = within(render(<PersonalCloud request={request} />).container);
   const user = userEvent.setup({ document });
@@ -78,9 +109,13 @@ test("returning to the cloud window rechecks workspace access before showing the
     kind: "workspace",
     id: "workspace-1",
     personalAssistant: { id: "bot-1", name: "My Assistant" },
-    conversations: [{ id: "conversation-1", title: "Existing title", preview: null }],
+    conversations: [
+      { id: "conversation-1", title: "Existing title", preview: null },
+    ],
   };
-  const screen = within(render(<PersonalCloud request={async () => status} />).container);
+  const screen = within(
+    render(<PersonalCloud request={async () => status} />).container,
+  );
   await screen.findByText("My Assistant");
 
   expect(screen.getByText("Existing title")).toBeTruthy();
@@ -92,4 +127,24 @@ test("returning to the cloud window rechecks workspace access before showing the
   await screen.findByRole("button", { name: "Sign in with browser" });
   expect(screen.queryByText("My Assistant")).toBeNull();
   expect(screen.queryByText("Existing title")).toBeNull();
+});
+
+test("a verified paused account shows support and an operation ID instead of workspace content", async () => {
+  const paused = {
+    kind: "paused",
+    operationId: "pause-123",
+    reason: "Trial paused for review.",
+    supportEmail: "support@example.com",
+  } satisfies CloudView;
+  const screen = within(
+    render(<PersonalCloud request={async () => paused} />).container,
+  );
+  await screen.findByRole("heading", { name: "Personal Workspace paused" });
+  expect(screen.getByText("Trial paused for review.")).toBeTruthy();
+  expect(screen.getByText("pause-123")).toBeTruthy();
+  expect(screen.getByText("support@example.com")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Sign in again" })).toBeTruthy();
+  expect(
+    screen.queryByRole("heading", { name: "Recent conversations" }),
+  ).toBeNull();
 });

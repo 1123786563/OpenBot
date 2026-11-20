@@ -1,6 +1,7 @@
 import { deepStrictEqual } from "node:assert";
 import { test } from "node:test";
 import {
+  nativeExchange,
   parsePersonalSaasCallback,
   personalSaasCallbackUrl,
 } from "../src/personal-saas-contract.ts";
@@ -40,5 +41,19 @@ test("the app can show a retryable failure returned from a verified attempt", ()
       state,
     ),
     { kind: "error", error: "email_unverified" },
+  );
+});
+
+test("a paused handoff carries public status and no session token", () => {
+  const status = {
+    status: "paused",
+    operationId: "89b4db61-9c69-435f-815b-3ee6de75a313",
+    reason: "Trial paused for review.",
+    supportEmail: "support@example.com",
+  };
+  deepStrictEqual(nativeExchange.parse(status), status);
+  deepStrictEqual(
+    nativeExchange.safeParse({ ...status, token: handoff }).success,
+    false,
   );
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, ScrollView, Text, View } from "react-native";
+import { AppState, Button, ScrollView, Text, View } from "react-native";
 import {
   openPersonalWorkspace,
   PersonalSaasActionError,
@@ -7,13 +7,16 @@ import {
   signOutPersonalSaas,
 } from "./personal-saas";
 
+import type { PausedWorkspace } from "./personal-saas-contract";
+
 type Screen =
   | { kind: "loading" | "preparing" | "signed-out" }
   | {
       kind: "ready";
       workspace: NonNullable<Awaited<ReturnType<typeof openPersonalWorkspace>>>;
     }
-  | { kind: "workspace-error" };
+  | { kind: "workspace-error" }
+  | { kind: "paused"; status: PausedWorkspace };
 
 export function PersonalSaasHome() {
   const [screen, setScreen] = useState<Screen>({ kind: "loading" });
@@ -38,6 +41,35 @@ export function PersonalSaasHome() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (busy || screen.kind !== "ready") return;
+    let current = true;
+    const foreground = AppState.addEventListener("change", (state) => {
+      if (state === "active") void load();
+    });
+    const expiry = setTimeout(() => {
+      current = false;
+      setScreen({ kind: "workspace-error" });
+    }, 45_000);
+    const refresh = setTimeout(async () => {
+      try {
+        const workspace = await openPersonalWorkspace(() => {});
+        if (current)
+          setScreen(
+            workspace ? { kind: "ready", workspace } : { kind: "signed-out" },
+          );
+      } catch {
+        if (current) setScreen({ kind: "workspace-error" });
+      }
+    }, 5_000);
+    return () => {
+      current = false;
+      foreground.remove();
+      clearTimeout(expiry);
+      clearTimeout(refresh);
+    };
+  }, [busy, load, screen]);
 
   async function act(work: () => Promise<void>) {
     if (working.current) return;
@@ -66,7 +98,9 @@ export function PersonalSaasHome() {
       >
         {screen.kind === "signed-out"
           ? "Sign in to OpenBot"
-          : "Personal Workspace"}
+          : screen.kind === "paused"
+            ? "Personal Workspace paused"
+            : "Personal Workspace"}
       </Text>
       {screen.kind === "loading" && (
         <Text accessibilityLiveRegion="polite">Checking your workspace…</Text>
@@ -77,14 +111,26 @@ export function PersonalSaasHome() {
         </Text>
       )}
       {authError !== "" && <Text accessibilityRole="alert">{authError}</Text>}
-      {screen.kind === "signed-out" && (
+      {screen.kind === "paused" && (
+        <>
+          {screen.status.reason && <Text>{screen.status.reason}</Text>}
+          <Text>Operation ID {screen.status.operationId}</Text>
+          {screen.status.supportEmail && (
+            <Text>Contact support at {screen.status.supportEmail}.</Text>
+          )}
+        </>
+      )}
+      {(screen.kind === "signed-out" || screen.kind === "paused") && (
         <Button
           disabled={busy}
-          title="Continue with Casdoor"
+          title={
+            screen.kind === "paused" ? "Sign in again" : "Continue with Casdoor"
+          }
           onPress={() => {
             void act(async () => {
-              await signInPersonalSaas();
-              await load();
+              const status = await signInPersonalSaas();
+              if (status) setScreen({ kind: "paused", status });
+              else await load();
             });
           }}
         />
@@ -103,7 +149,7 @@ export function PersonalSaasHome() {
           />
         </>
       )}
-      {screen.kind === "ready" && (
+      {!busy && screen.kind === "ready" && (
         <>
           <Text>Workspace ID {screen.workspace.id}</Text>
           <Text

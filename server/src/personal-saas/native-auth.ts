@@ -7,6 +7,8 @@ import type { Database } from "../db/client";
 import { personalSaasNativeCodes as codes } from "../db/schema/personal-saas";
 import { personalSaasStore, sessionSeconds } from "./store";
 
+import { pausedWorkspace } from "./workspace-suspension";
+
 const client = z.enum(["ios", "android", "desktop"]);
 const callbacks = {
   ios: "openbotmobile://auth/personal-saas",
@@ -47,10 +49,12 @@ export function nativeAuth({
   database,
   encryptionKey,
   now,
+  suspensionSupport,
 }: {
   database: Database;
   encryptionKey: string;
   now: () => number;
+  suspensionSupport?: string;
 }) {
   const routes = new Hono();
 
@@ -69,7 +73,7 @@ export function nativeAuth({
     if (!request.success)
       return context.json({ error: "invalid_exchange" }, 400);
     const { client, state, code, code_verifier } = request.data;
-    const token = await database.transaction(async (tx) => {
+    const result = await database.transaction(async (tx) => {
       const [record] = await tx
         .delete(codes)
         .where(
@@ -89,12 +93,20 @@ export function nativeAuth({
         handoffSeal,
       );
       if (!identity) throw new Error("Could not decrypt native handoff");
-      const pending = sessionIdentity.safeParse(JSON.parse(identity));
-      if (!pending.success) return null;
-      return personalSaasStore(tx, now).signIn(pending.data);
+      const verified = sessionIdentity.safeParse(JSON.parse(identity));
+      if (!verified.success) return null;
+      const paused = await pausedWorkspace(
+        tx,
+        verified.data.accountId,
+        suspensionSupport,
+      );
+      if (paused) return paused;
+      const token = await personalSaasStore(tx, now).signIn(verified.data);
+      if (!token) return null;
+      return { token, expiresIn: sessionSeconds };
     });
-    if (!token) return context.json({ error: "invalid_exchange" }, 400);
-    return context.json({ token, expiresIn: sessionSeconds });
+    if (!result) return context.json({ error: "invalid_exchange" }, 400);
+    return context.json(result);
   });
 
   function handoff(

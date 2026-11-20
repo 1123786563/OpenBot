@@ -150,3 +150,25 @@ fn signed_in_cloud_view_loads_workspace_and_owner_history_with_the_same_session(
     );
     server.join().unwrap();
 }
+
+#[test]
+fn paused_exchange_projects_only_public_status_to_the_cloud_view() {
+    let response = serde_json::json!({
+        "status": "paused",
+        "operationId": "89b4db61-9c69-435f-815b-3ee6de75a313",
+        "reason": "Trial paused for review.",
+        "supportEmail": "support@example.com",
+    });
+    let Exchange::Paused { details, .. } = serde_json::from_value(response).unwrap() else {
+        panic!("expected a status-only response");
+    };
+    assert_eq!(
+        serde_json::to_value(View::Paused(details)).unwrap(),
+        serde_json::json!({
+            "kind": "paused",
+            "operationId": "89b4db61-9c69-435f-815b-3ee6de75a313",
+            "reason": "Trial paused for review.",
+            "supportEmail": "support@example.com",
+        })
+    );
+}
