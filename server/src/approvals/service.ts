@@ -249,7 +249,7 @@ export function createApprovalService(
         throw new ApprovalRefusedError(
           "Computer approvals are unavailable in this deployment.",
         );
-      const snapshot = parseApprovalContinuation(input);
+      const snapshot = parseApprovalContinuation(input, "frontend");
       snapshot.initiator = PERSON_INITIATOR;
       // Frontend snapshots come from the browser, which cannot supply server telemetry.
       snapshot.forwardedProps = productRunForwardedProps(

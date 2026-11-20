@@ -1,3 +1,4 @@
+import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -990,6 +991,7 @@ export const skillMarketRuns = pgTable(
     registrySkillId: integer("registry_skill_id").notNull(),
     versionId: integer("version_id").notNull(),
     pauseReason: text("pause_reason"),
+    snapshot: jsonb("snapshot").$type<MarketSkillSnapshot>(),
     computerToolCalls: text("computer_tool_calls")
       .array()
       .notNull()

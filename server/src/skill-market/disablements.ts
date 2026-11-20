@@ -1,3 +1,7 @@
+import {
+  marketSkillSnapshotSchema,
+  type MarketSkillSnapshot,
+} from "@openbot/toolkit/continuation";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/client";
@@ -129,6 +133,7 @@ export async function marketRunForComputerCall(
     .select({
       runId: skillMarketRuns.runId,
       pauseReason: skillMarketRuns.pauseReason,
+      snapshot: skillMarketRuns.snapshot,
     })
     .from(skillMarketRuns)
     .where(
@@ -144,7 +149,13 @@ export async function marketRunForComputerCall(
     throw new MarketRunPaused(
       "OpenBot could not verify which market skill run requested this computer action.",
     );
-  return runs[0];
+  const [run] = runs;
+  return run && {
+    ...run,
+    snapshot: run.snapshot === null
+      ? undefined
+      : marketSkillSnapshotSchema.parse(run.snapshot),
+  };
 }
 
 export function marketVersionMethods(database: Database) {
@@ -156,6 +167,7 @@ export function marketVersionMethods(database: Database) {
       run: MarketRunScope,
       version: MarketVersionIdentity,
       previousRunId?: string,
+      snapshot?: MarketSkillSnapshot,
     ) {
       await database.transaction(async (transaction) => {
         await lockVersion(transaction, version);
@@ -173,6 +185,7 @@ export function marketVersionMethods(database: Database) {
             source: version.source,
             registrySkillId: version.registrySkillId,
             versionId: version.versionId,
+            snapshot,
             pauseReason:
               previousPause ??
               (disabled

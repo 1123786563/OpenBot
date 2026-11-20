@@ -199,7 +199,10 @@ export function createServerApprovalService(deps: {
       });
       if (marketRun?.pauseReason)
         throw new ApprovalRefusedError(marketRun.pauseReason);
-      if (marketRun) snapshot.runId = marketRun.runId;
+      if (marketRun) {
+        snapshot.runId = marketRun.runId;
+        snapshot.marketSkill = marketRun.snapshot;
+      }
       const tools = await approvalComputerTools(
         ownerUserId,
         botId,

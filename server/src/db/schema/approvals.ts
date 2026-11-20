@@ -16,7 +16,7 @@ import type {
   HostCommandPolicy,
   RuleBehaviour,
 } from "../../approvals/types";
-import { users } from "./core";
+import { agents, users } from "./core";
 import { jsonb } from "./json";
 export const approvalPreferences = pgTable(
   "approval_preferences",

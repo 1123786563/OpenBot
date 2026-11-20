@@ -3,6 +3,7 @@ import { RunAgentInputSchema } from "@ag-ui/core/schemas";
 import {
   type ApprovalContinuation,
   currentApprovalContext,
+  marketSkillSnapshotSchema,
   withApprovalContext,
 } from "@openbot/toolkit/continuation";
 import type { AuditEventInput, AuditInitiator } from "../audit";
@@ -519,6 +520,7 @@ export function parseApprovalResult(value: unknown): {
 }
 export function parseApprovalContinuation(
   value: unknown,
+  source: "stored" | "frontend" = "stored",
 ): ApprovalContinuation {
   if (!value || typeof value !== "object")
     throw new ApprovalRefusedError(
@@ -537,6 +539,11 @@ export function parseApprovalContinuation(
   const parsed = RunAgentInputSchema.safeParse({ ...input, tools: [] });
   if (!parsed.success)
     throw new ApprovalRefusedError("The interrupted conversation is invalid.");
+  const marketSkill = marketSkillSnapshotSchema
+    .optional()
+    .safeParse(source === "stored" ? input.marketSkill : undefined);
+  if (!marketSkill.success)
+    throw new ApprovalRefusedError("The interrupted Skill version is invalid.");
   return {
     runId: parsed.data.runId,
     threadId: parsed.data.threadId,
@@ -548,6 +555,7 @@ export function parseApprovalContinuation(
     context: parsed.data.context,
     forwardedProps: parsed.data.forwardedProps,
     ...(input.initiator ? { initiator: input.initiator } : {}),
+    ...(marketSkill.data ? { marketSkill: marketSkill.data } : {}),
   };
 }
 function canonical(value: unknown): string {

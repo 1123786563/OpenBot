@@ -35,6 +35,7 @@ import { MODEL_TOOL_LIMIT } from "@openbot/shared/model-tool-limit";
 import { runTimeZone } from "@openbot/shared/person-time-zone";
 import { checklistNotice } from "@openbot/shared/run-notices";
 import { SUBAGENT_TOOL } from "@openbot/shared/subagent";
+import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
 import {
   BuiltInAgentWithSaneHistory,
   CloningRemoteAgent,
@@ -1038,6 +1039,7 @@ export async function buildAgents(
   ),
   /** The apps each Bot holds, as they stand for the person asking. Absent says nothing about apps. */
   loadApps?: LoadAppsForBot,
+  marketSkill?: MarketSkillSnapshot | null,
 ): Promise<Record<string, AbstractAgent>> {
   let vendors: readonly string[] = [];
   try {
@@ -1099,6 +1101,7 @@ export async function buildAgents(
           pickedModel,
           botNames,
           loadApps,
+          marketSkill,
         );
         if (loadPersonalMemory)
           built.use(new PersonalMemoryMiddleware(agent.id, loadPersonalMemory));
@@ -1379,6 +1382,7 @@ async function buildAgent(
   botNames: ReadonlyMap<string, string> = new Map(),
   /** The apps this Bot holds, as they stand for the person asking. See {@link buildAgents}. */
   loadApps?: LoadAppsForBot,
+  marketSkill?: MarketSkillSnapshot | null,
 ): Promise<AbstractAgent> {
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
@@ -1440,16 +1444,22 @@ async function buildAgent(
     input: RunAgentInput,
     picked: PickedSkillAdmission | undefined,
   ) =>
-    picked?.kind === "admitted" && picked.marketVersion && registerMarketRun
+    picked?.kind === "admitted" && picked.marketSnapshot && registerMarketRun
       ? registerMarketRun(
           { botId: agent.id, runId: input.runId, threadId: input.threadId },
-          picked.marketVersion,
+          picked.marketSnapshot.market,
+          picked.marketSnapshot,
         )
       : undefined;
-  const pickedSkillFor = selection
-    ? (input: RunAgentInput) =>
-        admitPickedSkill(input, () => selection.loadSkills(agent.id))
-    : undefined;
+  const pickedSkillFor =
+    selection || marketSkill
+      ? (input: RunAgentInput) =>
+          admitPickedSkill(
+            input,
+            () => selection?.loadSkills(agent.id) ?? Promise.resolve([]),
+            marketSkill,
+          )
+      : undefined;
   const narrowing =
     selection &&
     skills.some((skill) => skill.tools.length > 0) &&
@@ -1917,6 +1927,7 @@ function recordMarketComputerCalls(
         concatMap((event) => {
           if (
             event.type === EventType.TOOL_CALL_START &&
+            !("subagentRunId" in event && event.subagentRunId) &&
             "toolCallName" in event &&
             typeof event.toolCallName === "string" &&
             event.toolCallName.startsWith("computer_") &&
@@ -1939,6 +1950,7 @@ export type ToolSelection = {
   registerMarketRun?: (
     scope: Omit<MarketRunScope, "actorId">,
     version: MarketVersionIdentity,
+    snapshot: MarketSkillSnapshot,
   ) => Promise<MarketRunControl>;
   /** Pass one. Ordinary failures skip narrowing; cancellation stops the run. */
   choose: (prompt: string, signal?: AbortSignal) => Promise<string | null>;
@@ -2857,6 +2869,7 @@ export async function resolveRuntimeAgents(
   pickedModel?: PickedModel,
   /** Appended last for the positional reason `loadInstructions` gives. See {@link buildAgents}. */
   loadApps?: LoadAppsForBot,
+  marketSkill?: MarketSkillSnapshot | null,
 ): Promise<Record<string, AbstractAgent>> {
   const all = await loadAgents();
   if (all.length === 0) {
@@ -2903,6 +2916,7 @@ export async function resolveRuntimeAgents(
     // of theirs.
     new Map(all.map((agent) => [agent.id, agent.name])),
     loadApps,
+    marketSkill,
   );
 }
 

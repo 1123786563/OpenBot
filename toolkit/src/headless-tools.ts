@@ -18,7 +18,12 @@ import {
 } from "@openbot/shared/tool-steps";
 import { OPENBOT_WAITING_METADATA } from "@openbot/shared/waiting";
 import { Observable, type Subscription } from "rxjs";
-import { withApprovalContext } from "./continuation";
+import {
+  marketSkillForContinuation,
+  RUN_MARKET_SKILL,
+  type RunWithMarketSkill,
+  withApprovalContext,
+} from "./continuation";
 import type { AuditInitiator } from "./initiator";
 
 /**
@@ -94,7 +99,7 @@ export class HeadlessToolsMiddleware extends Middleware {
   }
 
   run(
-    originalInput: RunAgentInput,
+    originalInput: RunWithMarketSkill,
     next: AbstractAgent,
   ): Observable<BaseEvent> {
     return new Observable((subscriber) => {
@@ -112,8 +117,9 @@ export class HeadlessToolsMiddleware extends Middleware {
       let subscription: Subscription | undefined;
       let started = false;
       const work = async () => {
-        let request: RunAgentInput = {
+        let request: RunWithMarketSkill = {
           ...originalInput,
+          [RUN_MARKET_SKILL]: originalInput[RUN_MARKET_SKILL] ?? {},
           tools: [
             ...originalInput.tools.filter((tool) => !tools.has(tool.name)),
             ...this.tools
@@ -223,6 +229,7 @@ export class HeadlessToolsMiddleware extends Middleware {
               context: request.context,
               forwardedProps: request.forwardedProps,
               initiator: this.initiator,
+              ...marketSkillForContinuation(request),
             };
             return withApprovalContext(continuation, () =>
               tool.execute(args, {

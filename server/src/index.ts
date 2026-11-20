@@ -6,6 +6,7 @@ import {
 import { computerGuidance } from "@openbot/shared/bot-prompt";
 import { isPersonBrowserId } from "@openbot/shared/openbot-browser";
 import { workOwner } from "@openbot/shared/work-owner";
+import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
 import { createTurnRunner as createToolkitTurnRunner } from "@openbot/toolkit/run-turn";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
@@ -2030,11 +2031,12 @@ function createTurnRunner(
 
 const selectionForActor = (actorId: string): ToolSelection => ({
   loadSkills: (botId) => grantedSkills({ store: pluginStore, botId }),
-  registerMarketRun: (scope, version) =>
+  registerMarketRun: (scope, version, snapshot) =>
     pluginStore.registerMarketRun(
       { ...scope, actorId },
       version,
       restoredMarketRun.getStore()?.runId,
+      snapshot,
     ),
   // The deployment's own model and key, the same pair the intent router uses, so selection is
   // never a second thing to configure. It throws on a missing key, which reads as "could not
@@ -2126,6 +2128,7 @@ const buildAgentFor = async ({
   initiator,
   depth,
   subagent,
+  marketSkill,
 }: {
   ownerUserId: string;
   agentId: string;
@@ -2133,6 +2136,7 @@ const buildAgentFor = async ({
   depth?: number;
   /** A subagent's run: the same Bot with no coordination. See agents/subagent.ts. */
   subagent?: boolean;
+  marketSkill?: MarketSkillSnapshot | null;
 }) => {
   const actor = await actorFor(ownerUserId);
   let agent: AbstractAgent | undefined;
@@ -2140,6 +2144,7 @@ const buildAgentFor = async ({
     agent = await actorAgentResolver.resolveAgentForActor(actor, agentId, {
       initiator,
       depth,
+      marketSkill,
       ...(subagent ? { subagent } : {}),
     });
   } catch (error) {

@@ -20,6 +20,11 @@ import {
   type RunErrorEvent,
   type RunStartedEvent,
 } from "@ag-ui/core";
+import {
+  type MarketSkillSnapshot,
+  RUN_MARKET_SKILL,
+  type RunWithMarketSkill,
+} from "@openbot/toolkit/continuation";
 import { PICKED_SKILL_PROP } from "@openbot/toolkit/run-turn";
 import { of } from "rxjs";
 import {
@@ -71,14 +76,32 @@ export type PickedSkillAdmission =
   | {
       kind: "admitted";
       guidance: string;
-      marketVersion?: NonNullable<PickableSkill["marketVersion"]>["identity"];
+      marketSnapshot?: MarketSkillSnapshot;
     };
 
 /** Resolve the picked skill from the Bot's current holdings and local version status. */
 export async function admitPickedSkill(
-  input: Pick<RunAgentInput, "messages" | "forwardedProps">,
+  input: Pick<
+    RunWithMarketSkill,
+    "messages" | "forwardedProps" | typeof RUN_MARKET_SKILL
+  >,
   loadSkills: () => Promise<readonly PickableSkill[]>,
+  restored?: MarketSkillSnapshot | null,
 ): Promise<PickedSkillAdmission> {
+  input[RUN_MARKET_SKILL] ??= {};
+  const selection = input[RUN_MARKET_SKILL];
+  if (selection.snapshot === undefined && restored !== undefined)
+    selection.snapshot = restored;
+  if (selection.snapshot) {
+    return {
+      kind: "admitted",
+      guidance: skillGuidance(
+        selection.snapshot,
+        selection.snapshot.instructions.trim(),
+      ),
+      marketSnapshot: selection.snapshot,
+    };
+  }
   const command = pickedSkillCommand(input);
   if (!command) return { kind: "none" };
   const held = await loadSkills().catch(() => null);
@@ -89,8 +112,13 @@ export async function admitPickedSkill(
         "OpenBot couldn't check whether this skill is available. Try again.",
     };
   const skill = held.find((candidate) => candidate.slug === command);
-  if (!skill) return { kind: "none" };
+  if (!skill) {
+    selection.snapshot = null;
+    return { kind: "none" };
+  }
   const version = skill.marketVersion;
+  // Old continuations can still resume, but have no authority to load a market installation.
+  if (version && selection.snapshot === null) return { kind: "none" };
   if (version && version.disableReason !== null) {
     return {
       kind: "refused",
@@ -102,15 +130,30 @@ export async function admitPickedSkill(
   }
 
   const instructions = skill.instructions?.trim();
-  if (!instructions) return { kind: "none" };
+  if (!instructions) {
+    selection.snapshot = null;
+    return { kind: "none" };
+  }
+  selection.snapshot = version
+    ? {
+        slug: skill.slug,
+        title: skill.title,
+        instructions,
+        market: version.identity,
+      }
+    : null;
   return {
     kind: "admitted",
-    guidance: [
-      `The person picked the skill "${skill.title || skill.slug}" (/${skill.slug}) for their latest message. Follow its instructions for this reply:`,
-      instructions,
-    ].join("\n\n"),
-    ...(version ? { marketVersion: version.identity } : {}),
+    guidance: skillGuidance(skill, instructions),
+    ...(selection.snapshot ? { marketSnapshot: selection.snapshot } : {}),
   };
+}
+
+function skillGuidance(skill: PickableSkill, instructions: string) {
+  return [
+    `The person picked the skill "${skill.title || skill.slug}" (/${skill.slug}) for their latest message. Follow its instructions for this reply:`,
+    instructions,
+  ].join("\n\n");
 }
 
 export class PickedSkillRefusal extends AbstractAgent {
