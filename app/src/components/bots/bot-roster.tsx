@@ -1,34 +1,21 @@
-import {
-  IconBolt,
-  IconChevronRight,
-  IconPlus,
-  IconShare,
-} from "@tabler/icons-react";
+import { Badge } from "@astryxdesign/core/Badge";
+import { Card } from "@astryxdesign/core/Card";
+import { Text } from "@astryxdesign/core/Text";
+import { IconBolt, IconChevronRight, IconShare } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Fragment, useState } from "react";
+import { type MouseEventHandler, useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
+import { NewBotAction } from "@/components/astryx-pilot/bot-actions";
+
 import {
   attentionSummary,
   waitingOnYou,
 } from "@/components/bot-profile/attention";
-import {
-  PageEmpty,
-  PageRows,
-  PageSection,
-} from "@/components/layout/page-shell";
+import { PageEmpty, PageSection } from "@/components/layout/page-shell";
 import { NeedsYouBoard } from "@/components/needs-you/board";
 import { DoneTasks, useNeedsYou } from "@/components/needs-you/needs-you";
 import { Button } from "@/components/ui/button";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemMedia,
-  ItemTitle,
-} from "@/components/ui/item";
-import { Separator } from "@/components/ui/separator";
 import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
 import { groupRoster } from "@/lib/agents/roster";
 import { shownSubtitle } from "@/lib/agents/subtitle";
@@ -49,7 +36,11 @@ import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
  *
  * This replaces three screens (Bots, Agents and Team Bots) that listed the same Bots three ways.
  */
-export function BotRoster() {
+export function BotRoster({
+  onNewBotClick,
+}: {
+  onNewBotClick?: MouseEventHandler<HTMLElement>;
+}) {
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
   const agents = useQuery(agentListQueryOptions());
@@ -89,18 +80,7 @@ export function BotRoster() {
         ) : (
           <PageEmpty
             action={
-              yoursPinned ? undefined : (
-                <Button
-                  render={(props) => (
-                    <Link {...props} search={{ new: true }} to="/bots" />
-                  )}
-                  size="sm"
-                  variant="outline"
-                >
-                  <IconPlus />
-                  New Bot
-                </Button>
-              )
+              yoursPinned ? undefined : <NewBotAction onClick={onNewBotClick} />
             }
             icon={IconBolt}
             title={yoursPinned ? "All pinned" : "No Bots yet"}
@@ -170,14 +150,11 @@ function RosterRows({
   byId: Map<string, BotAttention>;
 }) {
   return (
-    <PageRows>
-      {agents.map((agent, index) => (
-        <Fragment key={agent.id}>
-          {index > 0 ? <Separator /> : null}
-          <RosterRow agent={agent} state={byId.get(agent.id)} />
-        </Fragment>
+    <Card className="astryx-bot-rows mt-2" padding={4}>
+      {agents.map((agent) => (
+        <RosterRow agent={agent} key={agent.id} state={byId.get(agent.id)} />
       ))}
-    </PageRows>
+    </Card>
   );
 }
 
@@ -200,27 +177,20 @@ function RosterRow({
     : "";
   const waiting = state ? waitingOnYou(state) : 0;
   return (
-    <Item
-      render={<Link params={{ agentId: agent.id }} to="/bots/$agentId" />}
-      size="sm"
+    <Link
+      className="astryx-bot-row"
+      params={{ agentId: agent.id }}
+      to="/bots/$agentId"
     >
-      <ItemMedia>
-        <AbstractAvatar name={agent.name} seed={agent.avatarSeed} size={28} />
-      </ItemMedia>
-      <ItemContent>
-        <ItemTitle>{agent.name}</ItemTitle>
-        <ItemDescription>
+      <AbstractAvatar name={agent.name} seed={agent.avatarSeed} size={32} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Text weight="semibold">{agent.name}</Text>
+        <Text color="secondary" size="sm">
           {summary || shownSubtitle(agent.title)}
-        </ItemDescription>
-      </ItemContent>
-      <ItemActions>
-        {waiting > 0 ? (
-          <span className="rounded-full bg-primary px-1.5 text-[11px] font-medium text-primary-foreground tabular-nums">
-            {waiting}
-          </span>
-        ) : null}
-        <IconChevronRight className="size-4 text-muted-foreground" />
-      </ItemActions>
-    </Item>
+        </Text>
+      </div>
+      {waiting > 0 ? <Badge label={waiting} /> : null}
+      <IconChevronRight aria-hidden className="size-4 shrink-0" />
+    </Link>
   );
 }

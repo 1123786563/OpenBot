@@ -109,11 +109,7 @@ export const botLifecycleKeys = {
 export const botPath = (agentId: string) =>
   `/api/bots/${encodeURIComponent(agentId)}`;
 
-/*
- * One read of `/api/bots/attention` answers two questions: what each Bot has waiting on the person,
- * and which ping told them last. Both factories share the key, so they are one request polled once,
- * and each component sees only the half it asked for.
- */
+/** One response contains both the sidebar badge counts and the latest check-in ping. */
 const attentionQuery = {
   queryKey: botLifecycleKeys.attention,
   queryFn: async (): Promise<AttentionBody> =>
@@ -135,18 +131,10 @@ export function botAttentionQueryOptions() {
 
 /**
  * The same read, whole, for code outside a component that reads it once rather than watching it:
- * `ensureQueryData` hands back what the badge's poll already holds.
+ * `ensureQueryData` hands back what the shell's poll already holds.
  */
 export function botAttentionBodyQueryOptions() {
   return queryOptions(attentionQuery);
-}
-
-/** The person's newest ping, for the one browser notification each new ping sends. */
-export function lastPingQueryOptions() {
-  return queryOptions({
-    ...attentionQuery,
-    select: (body): string | null => body.lastPingId,
-  });
 }
 
 export function botLifecycleQueryOptions(agentId: string) {

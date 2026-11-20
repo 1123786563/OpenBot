@@ -9,11 +9,11 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
+import { ConnectionPage } from "@/components/connections/connection-surface";
 import {
   PageEmpty,
   PageRows,
   PageSection,
-  PageShell,
 } from "@/components/layout/page-shell";
 import { RowMark } from "@/components/layout/row-mark";
 import {
@@ -160,7 +160,7 @@ export function PluginsListPage({
   );
 
   return (
-    <PageShell
+    <ConnectionPage
       description="Connect services for your company, then choose which Bots can use each service’s tools."
       title="Plugins"
     >
@@ -344,7 +344,7 @@ export function PluginsListPage({
         </>
       )}
       {children}
-    </PageShell>
+    </ConnectionPage>
   );
 }
 

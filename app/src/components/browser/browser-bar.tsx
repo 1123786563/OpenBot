@@ -18,6 +18,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -463,6 +464,7 @@ export function ClearBrowserDialog({
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent
+        {...astryxScope}
         {...(stacked
           ? {
               overlayClassName:

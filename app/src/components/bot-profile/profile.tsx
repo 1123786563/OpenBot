@@ -1,6 +1,7 @@
 import {
   IconBell,
   IconChevronRight,
+  IconDeviceDesktop,
   IconMessage,
   IconPlayerPause,
 } from "@tabler/icons-react";
@@ -8,11 +9,12 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type * as React from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { BotNeedsYou } from "@/components/needs-you/board";
 import { DoneTasks, useNeedsYou } from "@/components/needs-you/needs-you";
 import { SharedAppNotice } from "@/components/plugins/shared-app-notice";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Item,
   ItemActions,
@@ -40,6 +42,8 @@ import {
   type BotNotify,
   botLifecycleQueryOptions,
 } from "@/lib/bot-lifecycle/queries";
+import { computerToolsOffered } from "@/lib/copilot/computer-available";
+import { myCapabilitiesQueryOptions } from "@/lib/enterprise/queries";
 import {
   requestNotificationPermission,
   useNotificationPermission,
@@ -71,6 +75,11 @@ export function BotProfile({
 }) {
   const lifecycle = useQuery(botLifecycleQueryOptions(agent.id));
   const { done } = useNeedsYou(agent.id);
+  const capabilities = useQuery(myCapabilitiesQueryOptions());
+  const computer = computerToolsOffered({
+    profile: agent,
+    capabilities: capabilities.data?.capabilities,
+  });
   const pause = useMutation(setBotPausedMutationOptions(queryClient));
   const notify = useMutation(setBotNotifyMutationOptions(queryClient));
   // The browser's answer, shared with the prompt a conversation offers, so a yes there shows here.
@@ -94,6 +103,16 @@ export function BotProfile({
       </div>
       <div className="mt-4">
         <BotPausedBanner agentId={agent.id} />
+        {capabilities.isSuccess && (computer.browser || computer.computer) ? (
+          <Link
+            className={buttonVariants({ size: "sm", variant: "outline" })}
+            search={{ agent: agent.id, watch: true }}
+            to="/bot"
+          >
+            <IconDeviceDesktop />
+            Open Computer
+          </Link>
+        ) : null}
       </div>
 
       {/* Its questions and approvals, its tasks, and what its check-ins found, in one card. */}
@@ -166,7 +185,7 @@ export function BotProfile({
                   <SelectTrigger aria-label="Notifications">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent {...astryxScope}>
                     {(Object.keys(NOTIFY_LABEL) as BotNotify[]).map((value) => (
                       <SelectItem key={value} value={value}>
                         {NOTIFY_LABEL[value]}

@@ -9,22 +9,24 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { useState } from "react";
 import {
+  ConnectionAction,
+  ConnectionDialogContent,
+  ConnectionPage,
+} from "@/components/connections/connection-surface";
+import {
   PageEmpty,
   PageRows,
   PageSection,
-  PageShell,
 } from "@/components/layout/page-shell";
+import { DescribeGrants } from "@/components/manage/describe-grants";
 import {
   SharedApprovalFields,
   sharedSectionSentence,
 } from "@/components/plugins/shared-approval-fields";
 import { SkippedToolsNotice } from "@/components/plugins/skipped-tools-notice";
-import { DescribeGrants } from "@/components/manage/describe-grants";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogBody,
-  DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -51,12 +53,12 @@ import {
   type PluginTool,
   pluginsPageQueryOptions,
 } from "@/lib/plugins/queries";
-import { toolsListError } from "@/lib/plugins/tools-error";
 import {
   botSharedAppsQueryOptions,
   type SharedUseApproval,
   sharedUseKeys,
 } from "@/lib/plugins/shared-use";
+import { toolsListError } from "@/lib/plugins/tools-error";
 
 /**
  * One Bot and one app: every action the app offers, and which of them this Bot holds.
@@ -198,7 +200,7 @@ export function PluginBotPage({
 
   /* Nothing rather than a placeholder, so no sentence asserts anything while a fetch is open. */
   if (plugins.isPending || agents.isPending || hiddenAgents.isPending) {
-    return <PageShell title="Bot">{null}</PageShell>;
+    return <ConnectionPage title="Bot">{null}</ConnectionPage>;
   }
 
   /*
@@ -211,7 +213,7 @@ export function PluginBotPage({
    */
   if (plugins.data && !server) {
     return (
-      <PageShell
+      <ConnectionPage
         backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
         description="No app with that name is turned on."
         title={appTitle}
@@ -219,7 +221,7 @@ export function PluginBotPage({
         <PageEmpty icon={IconPlugOff} title="This app is off">
           Nothing to give a Bot here.
         </PageEmpty>
-      </PageShell>
+      </ConnectionPage>
     );
   }
 
@@ -232,14 +234,14 @@ export function PluginBotPage({
    */
   if (!server) {
     return (
-      <PageShell
+      <ConnectionPage
         backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
         title="Plugins"
       >
         <p className="mt-12 text-destructive text-sm" role="alert">
           Couldn't load plugins. Reload the page.
         </p>
-      </PageShell>
+      </ConnectionPage>
     );
   }
 
@@ -257,7 +259,7 @@ export function PluginBotPage({
   // Both rosters, because a Bot absent from the visible one may simply be hidden.
   if (agents.data && hiddenAgents.data && !bot) {
     return (
-      <PageShell
+      <ConnectionPage
         backButton={back}
         description="There is no Bot with that name."
         title="Not a Bot"
@@ -265,7 +267,7 @@ export function PluginBotPage({
         <PageEmpty icon={IconBolt} title="Bot not found">
           It may have been deleted after you opened this page.
         </PageEmpty>
-      </PageShell>
+      </ConnectionPage>
     );
   }
 
@@ -426,7 +428,7 @@ export function PluginBotPage({
   );
 
   return (
-    <PageShell
+    <ConnectionPage
       backButton={back}
       description={`Which ${appTitle} actions ${botName} can call. Turning one off applies from the next call.`}
       title={`${botName} and ${appTitle}`}
@@ -493,10 +495,9 @@ export function PluginBotPage({
                   wouldHold === 1 ? "tool" : "tools"
                 } from this app.`}
               </p>
-              <Button
+              <ConnectionAction
                 disabled={granting !== null}
                 onClick={() => void grantEveryRead(ungranted)}
-                size="sm"
                 type="button"
                 variant="outline"
               >
@@ -504,7 +505,7 @@ export function PluginBotPage({
                 {granting
                   ? `Granting ${Math.min(granting.done + 1, granting.total)} of ${granting.total}…`
                   : "Turn on every read-only action"}
-              </Button>
+              </ConnectionAction>
             </div>
           ) : null}
 
@@ -561,7 +562,7 @@ export function PluginBotPage({
             onOpenChange={(next) => !next && setPendingGrant(null)}
             open={pendingGrant !== null}
           >
-            <DialogContent>
+            <ConnectionDialogContent>
               <DialogHeader>
                 <DialogTitle>
                   Let {botName} use the shared {appTitle} account?
@@ -581,25 +582,23 @@ export function PluginBotPage({
                 </p>
               ) : null}
               <DialogFooter className="mt-4">
-                <Button
+                <ConnectionAction
                   onClick={() => setPendingGrant(null)}
-                  size="sm"
                   variant="outline"
                 >
                   Cancel
-                </Button>
-                <Button
+                </ConnectionAction>
+                <ConnectionAction
                   disabled={grantingShared}
                   onClick={() => void confirmSharedGrant()}
-                  size="sm"
                 >
                   {grantingShared ? "Allowing…" : "Allow"}
-                </Button>
+                </ConnectionAction>
               </DialogFooter>
-            </DialogContent>
+            </ConnectionDialogContent>
           </Dialog>
         </>
       )}
-    </PageShell>
+    </ConnectionPage>
   );
 }

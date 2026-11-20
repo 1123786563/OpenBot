@@ -1,11 +1,12 @@
 import { IconKey, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { DeviceAction } from "@/components/astryx-pilot/device-action";
+import { DevicePage } from "@/components/astryx-pilot/device-page";
 import {
   PageEmpty,
   PageRows,
   PageSection,
-  PageShell,
 } from "@/components/layout/page-shell";
 import { StaggerItem } from "@/components/layout/stagger";
 import { Button } from "@/components/ui/button";
@@ -34,7 +35,7 @@ export function CredentialsPage() {
   );
 
   return (
-    <PageShell
+    <DevicePage
       action={
         // Its own screen, `credentials_.new.tsx`, which says why the form is not on this page.
         <Button
@@ -54,10 +55,24 @@ export function CredentialsPage() {
       title={paths.credentialsLabel}
     >
       <PageSection title="Saved credentials">
-        {credentials.isPending ? null : credentials.error ? (
+        {revokeCredential.isError ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
-            Couldn't load credentials. Reload the page.
+            Couldn't revoke the credential. Try Revoke again.
           </p>
+        ) : null}
+        {credentials.isPending ? null : credentials.error ? (
+          <div className="mt-4 flex flex-col items-start gap-2">
+            <p className="text-destructive text-sm" role="alert">
+              Couldn't load credentials. {credentials.error.message}
+            </p>
+            <DeviceAction
+              onClick={() => void credentials.refetch()}
+              size="sm"
+              variant="outline"
+            >
+              Try again
+            </DeviceAction>
+          </div>
         ) : credentials.data?.length === 0 ? (
           <PageEmpty
             action={
@@ -90,7 +105,7 @@ export function CredentialsPage() {
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
-                    <Button
+                    <DeviceAction
                       disabled={
                         Boolean(credential.revokedAt) ||
                         revokeCredential.isPending
@@ -100,7 +115,7 @@ export function CredentialsPage() {
                       variant="outline"
                     >
                       Revoke
-                    </Button>
+                    </DeviceAction>
                   </ItemActions>
                 </Item>
                 {index !== (credentials.data?.length ?? 0) - 1 && <Separator />}
@@ -109,6 +124,6 @@ export function CredentialsPage() {
           </PageRows>
         )}
       </PageSection>
-    </PageShell>
+    </DevicePage>
   );
 }

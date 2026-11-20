@@ -398,8 +398,8 @@ test("a disconnected Arcade page offers Connect for the whole app, and the actio
 test("a redirect carrying an action marks that action", async () => {
   install({ provider: "arcade", connected: true });
   const view = renderScreen("?action=Gmail.ListEmails");
-  const marked = await view.findByRole("status");
-  expect(marked.textContent).toBe("You just authorized Gmail.ListEmails.");
+  const marked = await view.findByText("You just authorized Gmail.ListEmails.");
+  expect(marked.getAttribute("role")).toBe("status");
   expect(marked.getAttribute("data-landed-action")).toBe("Gmail.ListEmails");
 });
 
@@ -407,8 +407,7 @@ test("a landing without an action behaves as it did", async () => {
   install({ provider: "arcade", connected: true });
   const view = renderScreen();
   await view.findByText("Disconnect");
-  expect(view.queryByRole("status")).toBeNull();
-  expect(view.container.textContent).not.toContain("just authorized");
+  expect(view.queryByText(/You just authorized/)).toBeNull();
 });
 
 test("validateSearch omits the key when absent and reads the action as text", () => {

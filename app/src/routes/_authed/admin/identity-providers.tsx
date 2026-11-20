@@ -2,15 +2,16 @@ import { IconBuildingBank, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useId, useState } from "react";
+import { AstryxAdminPage } from "@/components/admin/astryx-admin-page";
 import { SignInSection } from "@/components/admin/controls/sign-in-section";
+import { DeploymentButton } from "@/components/admin/deployment-button";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
   PageSection,
-  PageShell,
 } from "@/components/layout/page-shell";
 import { StaggerItem } from "@/components/layout/stagger";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogBody,
@@ -100,11 +101,11 @@ function IdentityProvidersPage() {
   }
 
   return (
-    <PageShell
+    <AstryxAdminPage
       action={
-        <Button onClick={() => setOpen(true)} size="lg">
+        <DeploymentButton onClick={() => setOpen(true)} size="lg">
           Add a provider
-        </Button>
+        </DeploymentButton>
       }
       description="Configure your company’s SAML or OpenID Connect provider. Email domains determine which provider people use to sign in."
       title="Identity providers"
@@ -125,9 +126,13 @@ function IdentityProvidersPage() {
         ) : providers.data?.length === 0 ? (
           <PageEmpty
             action={
-              <Button onClick={() => setOpen(true)} size="sm" variant="outline">
+              <DeploymentButton
+                onClick={() => setOpen(true)}
+                size="sm"
+                variant="outline"
+              >
                 Add a provider
-              </Button>
+              </DeploymentButton>
             }
             icon={IconBuildingBank}
             title="No identity providers yet"
@@ -150,15 +155,15 @@ function IdentityProvidersPage() {
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
-                    <Button
+                    <DeploymentButton
+                      icon={<IconTrash aria-hidden size={16} />}
                       disabled={remove.isPending}
                       onClick={() => remove.mutate(provider.providerId)}
                       size="sm"
                       variant="destructive"
                     >
-                      <IconTrash />
                       Remove
-                    </Button>
+                    </DeploymentButton>
                   </ItemActions>
                 </Item>
                 {index !== (providers.data?.length ?? 0) - 1 && <Separator />}
@@ -170,7 +175,7 @@ function IdentityProvidersPage() {
       <SignInSection />
 
       <Dialog onOpenChange={setOpen} open={open}>
-        <DialogContent>
+        <DialogContent {...astryxScope} className={"astryx-admin-dialog"}>
           <DialogHeader>
             <DialogTitle>Add an identity provider</DialogTitle>
           </DialogHeader>
@@ -180,7 +185,8 @@ function IdentityProvidersPage() {
             <form className="flex flex-col gap-4" id={formId} onSubmit={submit}>
               <div className="flex gap-2">
                 {(["saml", "oidc"] as const).map((protocol) => (
-                  <Button
+                  <DeploymentButton
+                    aria-pressed={draft.protocol === protocol}
                     key={protocol}
                     onClick={() => setDraft({ ...draft, protocol })}
                     size="sm"
@@ -190,7 +196,7 @@ function IdentityProvidersPage() {
                     }
                   >
                     {protocol.toUpperCase()}
-                  </Button>
+                  </DeploymentButton>
                 ))}
               </div>
 
@@ -313,25 +319,25 @@ function IdentityProvidersPage() {
             ) : null}
           </DialogBody>
           <DialogFooter className="mt-4">
-            <Button
+            <DeploymentButton
               onClick={() => setOpen(false)}
               size="sm"
               type="button"
               variant="outline"
             >
               Cancel
-            </Button>
-            <Button
+            </DeploymentButton>
+            <DeploymentButton
               disabled={register.isPending}
               form={formId}
               size="sm"
               type="submit"
             >
               {register.isPending ? "Adding…" : "Add"}
-            </Button>
+            </DeploymentButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </PageShell>
+    </AstryxAdminPage>
   );
 }

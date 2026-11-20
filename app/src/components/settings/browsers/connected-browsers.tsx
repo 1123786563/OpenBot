@@ -2,12 +2,13 @@ import type { ListedRecorderConnection } from "@openbot/shared/recorder-api";
 import { IconBrowser } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment, useState } from "react";
+import { DeviceAction } from "@/components/astryx-pilot/device-action";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogBody,
@@ -127,7 +128,7 @@ function ConnectedBrowserRow({
           </ItemDescription>
         </ItemContent>
         <ItemActions>
-          <Button
+          <DeviceAction
             aria-label={`Disconnect ${name}`}
             size="sm"
             variant="ghost"
@@ -138,11 +139,11 @@ function ConnectedBrowserRow({
             }}
           >
             {revoke.isPending ? "Disconnecting…" : "Disconnect"}
-          </Button>
+          </DeviceAction>
         </ItemActions>
       </Item>
       <Dialog onOpenChange={setAsking} open={asking}>
-        <DialogContent>
+        <DialogContent {...astryxScope}>
           <DialogHeader>
             <DialogTitle>Disconnect {connection.label}?</DialogTitle>
           </DialogHeader>
@@ -159,10 +160,14 @@ function ConnectedBrowserRow({
             ) : null}
           </DialogBody>
           <DialogFooter className="mt-4">
-            <Button size="sm" variant="ghost" onClick={() => setAsking(false)}>
+            <DeviceAction
+              size="sm"
+              variant="ghost"
+              onClick={() => setAsking(false)}
+            >
               Cancel
-            </Button>
-            <Button
+            </DeviceAction>
+            <DeviceAction
               size="sm"
               variant="destructive"
               disabled={revoke.isPending}
@@ -173,7 +178,7 @@ function ConnectedBrowserRow({
               }
             >
               {revoke.isPending ? "Disconnecting…" : "Disconnect"}
-            </Button>
+            </DeviceAction>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -28,7 +28,7 @@ const SHORTCUT_LABEL = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent)
  */
 export function useSidebarToggleVisible(): boolean {
   const sidebar = useOptionalSidebar();
-  if (!sidebar) return false;
+  if (!sidebar?.pageToggle) return false;
   /*
    * Below 768px the sidebar is an overlay Sheet with its own open state, and `open` describes the
    * desktop pane — reading it there would answer for the wrong one.

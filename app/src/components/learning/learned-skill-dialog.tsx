@@ -1,6 +1,7 @@
 import type { LearnedSkillRecording } from "@openbot/shared/learning";
 import { IconChevronRight, IconVideo } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { Link } from "@tanstack/react-router";
 import { Fragment, type ReactNode, useRef } from "react";
 import { SkillFiles } from "@/components/learning/skill-files";
@@ -116,7 +117,7 @@ export function LearnedSkillDialog({
       onOpenChange={(next) => (next ? undefined : onClose())}
       open={name !== null}
     >
-      <DialogContent>
+      <DialogContent {...astryxScope}>
         <DialogHeader>
           <DialogTitle>{heading}</DialogTitle>
           {skill && <DialogDescription>{skill.description}</DialogDescription>}

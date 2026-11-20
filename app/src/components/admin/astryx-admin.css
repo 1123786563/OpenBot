@@ -1,0 +1,33 @@
+.astryx-admin-context {
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.astryx-admin-nav a[aria-current="page"] {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.astryx-admin-nav[data-mobile] [data-sidebar="header"] {
+  margin-inline-end: 36px;
+}
+
+.astryx-admin-page [data-slot="page-title"] {
+  font-family: var(--font-family-heading);
+}
+
+.astryx-admin-page a[data-slot="item"]:focus-visible,
+.astryx-admin-dialog :is(input, textarea, button):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.astryx-admin-page [data-slot="item-description"] {
+  overflow-wrap: anywhere;
+}
+
+.astryx-admin-dialog[data-astryx-pilot] {
+  border-radius: var(--radius-container);
+}
