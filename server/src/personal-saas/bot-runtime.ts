@@ -44,6 +44,7 @@ import {
   runWithDecisionAccess,
 } from "./decision-access";
 import { ensureDecisionActor } from "./decision-actor";
+import { assistantTarget, workspaceBots } from "./workspace-bots";
 
 const questionInput = personQuestionSchema.pick({
   question: true,
@@ -170,7 +171,17 @@ export function createPersonalBotRuntime(
           eq(workItems.accountId, ownerUserId),
         ),
       );
-    return origin?.payload.botId === agentId;
+    const target = assistantTarget.safeParse(origin?.payload);
+    return (
+      target.success &&
+      target.data.botId === agentId &&
+      Boolean(
+        await workspaceBots(database).get({
+          ...target.data,
+          accountId: ownerUserId,
+        }),
+      )
+    );
   }
 
   const questions = createApprovalQuestions(
@@ -312,14 +323,16 @@ export function createPersonalBotRuntime(
   ) {
     try {
       const answer = await run();
-      await queue.finishParked(
-        PERSONAL_BOT_WORK,
-        account,
-        threadId,
-        answer.replyText,
-      );
+      await queue.settleParked(PERSONAL_BOT_WORK, account, threadId, {
+        kind: "complete",
+        output: answer.replyText,
+      });
     } catch (error) {
-      if (!(error instanceof HeadlessToolSuspension)) throw error;
+      if (error instanceof HeadlessToolSuspension) return;
+      await queue.settleParked(PERSONAL_BOT_WORK, account, threadId, {
+        kind: "interrupted",
+      });
+      throw error;
     }
   }
 
@@ -388,7 +401,7 @@ export function createPersonalBotRuntime(
                   "Workspace execution is unavailable.",
                 );
               const signal = execution.signal;
-              const invoke = (current: typeof action) => {
+              const invoke = async (current: typeof action) => {
                 const snapshot = currentApprovalContext();
                 const tool = tools.find(
                   ({ definition }) =>
@@ -398,6 +411,16 @@ export function createPersonalBotRuntime(
                 if (!tool || !snapshot)
                   throw new ApprovalRefusedError(
                     "The approved tool is no longer available.",
+                  );
+                if (
+                  !(await ownsBotThread(
+                    account,
+                    current.botId,
+                    snapshot.threadId,
+                  ))
+                )
+                  throw new ApprovalRefusedError(
+                    "The Personal Assistant is unavailable.",
                   );
                 return callTool(
                   tool,

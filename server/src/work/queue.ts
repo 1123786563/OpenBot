@@ -612,11 +612,11 @@ export function createWorkQueue(
         )) ?? [];
       return Boolean(parked);
     },
-    async finishParked(
+    async settleParked(
       kind: string,
       account: string,
       key: string,
-      output: string,
+      outcome: { kind: "complete"; output: string } | { kind: "interrupted" },
     ) {
       return database.transaction(async (tx) => {
         const where = and(
@@ -627,9 +627,13 @@ export function createWorkQueue(
         );
         const [row] = await tx.select().from(workItems).where(where);
         if (!row || (await authorize(tx, row))?.kind !== "active") return;
+        if (outcome.kind === "interrupted") {
+          await stop(tx, row, { reason: "run_interrupted", cutoffAt: null });
+          return;
+        }
         await tx
           .update(workItems)
-          .set({ finishedAt: sql`now()`, output })
+          .set({ finishedAt: sql`now()`, output: outcome.output })
           .where(where);
       });
     },

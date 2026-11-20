@@ -3378,7 +3378,7 @@ test("a manual Bot retry asks under current policy and only its new approval can
           }),
         stop: async () => true,
       },
-      buildAgent: () =>
+      buildAgent: async () =>
         new HttpAgent({
           url: "https://fixture.example/ag-ui",
           fetch: async (_url, init) => {
@@ -3484,30 +3484,33 @@ test("a manual Bot retry asks under current policy and only its new approval can
     (await request("/api/approvals/preferences", { enabled: true }, "PATCH"))
       .status,
   ).toBe(200);
-  const submitted = await request("/api/workspace/bot-runs", {
-    workspaceId: target.id,
-    botId: target.personalAssistant.id,
-    instruction: "Save the change",
-  });
-  expect(submitted.status).toBe(202);
-  const { runId } = await submitted.json();
-  expect(await runApp.sweepBotWork()).toBe(true);
-  const [old] = (await inbox()).requests;
-  expect(old).toMatchObject({
-    status: "pending",
-    action: { threadId: runId, policy: { source: "default" } },
-  });
-  const queueQuestion = async () => {
+  const queueRun = async (instruction: string) => {
     const response = await request("/api/workspace/bot-runs", {
       workspaceId: target.id,
       botId: target.personalAssistant.id,
-      instruction: "Ask a question",
+      instruction,
     });
     expect(response.status).toBe(202);
     expect(await runApp.sweepBotWork()).toBe(true);
     return (await response.json()).runId;
   };
-  const oldQuestionRun = await queueQuestion();
+  const runId = await queueRun("Save the change");
+  const [old] = (await inbox()).requests;
+  expect(old).toMatchObject({
+    status: "pending",
+    action: { threadId: runId, policy: { source: "default" } },
+  });
+  expect(
+    await (await request(`/api/workspace/bot-runs/${runId}`)).json(),
+  ).toMatchObject({ state: "waiting" });
+  const queuedApprovalRun = await queueRun("Save another change");
+  const [queuedApproval] = (await inbox()).requests;
+  expect(queuedApproval.action.threadId).toBe(queuedApprovalRun);
+  const approve = (id: string) =>
+    request(`/api/approvals/${id}/decision`, { decision: "allow_once" });
+  expect((await approve(queuedApproval.id)).status).toBe(200);
+
+  const oldQuestionRun = await queueRun("Ask a question");
   const [oldQuestion] = (await inbox()).questions;
   expect(oldQuestion).toMatchObject({
     threadId: oldQuestionRun,
@@ -3521,16 +3524,14 @@ test("a manual Bot retry asks under current policy and only its new approval can
   session = await signIn();
   expect((await answer(oldQuestion.id)).status).toBe(400);
   await runApp.sweepBotDecisions();
+  expect(executions).toEqual([]);
   expect(resumed).toEqual([]);
-  expect(
-    (
-      await request(`/api/approvals/${old.id}/decision`, {
-        decision: "allow_once",
-      })
-    ).status,
-  ).toBe(400);
-  expect((await inbox()).requests).toContainEqual(
-    expect.objectContaining({ id: old.id, invalidated: true }),
+  expect((await approve(old.id)).status).toBe(400);
+  expect((await inbox()).requests).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: old.id, invalidated: true }),
+      expect.objectContaining({ id: queuedApproval.id, invalidated: true }),
+    ]),
   );
   expect(
     (await request("/api/approvals/preferences", { enabled: false }, "PATCH"))
@@ -3552,25 +3553,21 @@ test("a manual Bot retry asks under current policy and only its new approval can
   const { key } = await retry.json();
   expect(key).not.toBe(runId);
   expect(await runApp.sweepBotWork()).toBe(true);
-  const fresh = (await inbox()).requests.find(
-    (item: { id: string }) => item.id !== old.id,
-  );
+  const [fresh] = (await inbox()).requests;
   expect(fresh).toMatchObject({
     status: "pending",
     action: { threadId: key, policy: { source: "personal_rule" } },
   });
+  expect(fresh.id).not.toBe(old.id);
   expect(executions).toEqual([]);
-  expect(
-    (
-      await request(`/api/approvals/${fresh.id}/decision`, {
-        decision: "allow_once",
-      })
-    ).status,
-  ).toBe(200);
+  expect((await approve(fresh.id)).status).toBe(200);
   await runApp.sweepBotDecisions();
   expect(executions).toEqual([key]);
   expect(resumed).toEqual([key]);
-  const questionRun = await queueQuestion();
+  expect(
+    await (await request(`/api/workspace/bot-runs/${key}`)).json(),
+  ).toMatchObject({ state: "completed", output: "Saved" });
+  const questionRun = await queueRun("Ask a question");
   const [freshQuestion] = (await inbox()).questions;
   expect(freshQuestion).toMatchObject({ threadId: questionRun });
   expect((await answer(freshQuestion.id)).status).toBe(200);

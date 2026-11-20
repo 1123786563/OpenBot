@@ -5,6 +5,7 @@ import { approvalRequests } from "../db/schema/approvals";
 import { personalSaasAccounts } from "../db/schema/personal-saas";
 import { workItems } from "../db/schema/work";
 import { readExecutionAccess } from "./account-access";
+import { PERSONAL_BOT_WORK } from "./bot-work";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
@@ -32,13 +33,19 @@ export async function readDecisionAccess(
           .from(workItems)
           .where(
             and(
-              inArray(workItems.key, [
-                origin.runId,
-                origin.threadId ?? origin.runId,
-              ]),
+              origin.threadId && origin.threadId !== origin.runId
+                ? or(
+                    eq(workItems.key, origin.runId),
+                    and(
+                      eq(workItems.kind, PERSONAL_BOT_WORK),
+                      eq(workItems.key, origin.threadId),
+                    ),
+                  )
+                : eq(workItems.key, origin.runId),
               eq(workItems.accountId, owner),
             ),
           )
+          .orderBy(sql`${workItems.kind} = ${PERSONAL_BOT_WORK} DESC`)
           .limit(1)
       : [];
   const epoch = origin.epoch ?? work?.epoch;
