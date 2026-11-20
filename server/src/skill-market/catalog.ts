@@ -164,6 +164,16 @@ export function createSkillMarket(
   }
 
   const market = {
+    async commandSource(namespace: string, slug: string) {
+      const { skill } = await scopedSkill(namespace, slug);
+      return {
+        source: config.baseUrl,
+        namespace: skill.namespace,
+        slug: skill.slug,
+        title: skill.displayName,
+      };
+    },
+
     async search(q: string, pageNumber: number) {
       const params = new URLSearchParams({
         q,

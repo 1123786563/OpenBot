@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import {
@@ -11,7 +11,6 @@ import {
 } from "../db/schema";
 import { registeredBotProfiles } from "../plugins/plugin-store/skills";
 import type { MarketPreview, QualifiedMarketVersion } from "./catalog";
-
 import {
   marketVersionMethods,
   qualifyMarketVersionForWrite,
@@ -39,7 +38,57 @@ function matchesSource(source: Source) {
 }
 
 // Match the existing slash parser and the managed skill slug length limit.
-const slashCommand = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export const slashCommand = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+async function reserveCommand(
+  transaction: Transaction,
+  source: Source & { title: string },
+  command: string,
+) {
+  // Serialize assignments and installs for this source, even when they propose different commands.
+  const key = JSON.stringify([
+    "skill-market-command",
+    source.source,
+    source.namespace,
+    source.slug,
+  ]);
+  await transaction.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`,
+  );
+  const [existing] = await transaction
+    .select({ command: skillMarketSources.command })
+    .from(skillMarketSources)
+    .where(matchesSource(source));
+  if (existing) return { kind: "existing", command: existing.command } as const;
+
+  if (command.length > 40 || !slashCommand.test(command))
+    return { kind: "command-unavailable" } as const;
+
+  // The shared slug index arbitrates with managed Skills and other market sources.
+  const [reserved] = await transaction
+    .insert(skills)
+    .values({
+      id: command,
+      slug: command,
+      title: source.title,
+      summary: "",
+      instructions: "",
+      origin: SKILL_MARKET_RESERVATION,
+    })
+    .onConflictDoNothing()
+    .returning({ slug: skills.slug });
+  if (!reserved) return { kind: "command-unavailable" } as const;
+
+  await transaction.insert(skillMarketSources).values({
+    command,
+    registry: source.source,
+    namespace: source.namespace,
+    slug: source.slug,
+  });
+  return { kind: "reserved", command } as const;
+}
 
 export function marketSkillMethods(database: Database) {
   return {
@@ -71,6 +120,15 @@ export function marketSkillMethods(database: Database) {
       return taken ? null : source.slug;
     },
 
+    async assignMarketCommand(
+      source: Source & { title: string },
+      command: string,
+    ) {
+      return database.transaction((transaction) =>
+        reserveCommand(transaction, source, command),
+      );
+    },
+
     async installMarketSkill(
       actor: Actor,
       agentId: string,
@@ -86,48 +144,14 @@ export function marketSkillMethods(database: Database) {
         if (reason !== null)
           return { kind: "version-disabled", reason } as const;
 
-        let [source] = await transaction
-          .select()
-          .from(skillMarketSources)
-          .where(matchesSource(preview));
-        if (!source) {
-          if (preview.slug.length > 40 || !slashCommand.test(preview.slug))
-            return { kind: "command-unavailable" } as const;
-          // The managed skill slug index arbitrates between both kinds of Skill, including
-          // concurrent creates. Keep this reservation even after all Bot installations go away.
-          const [reserved] = await transaction
-            .insert(skills)
-            .values({
-              id: preview.slug,
-              slug: preview.slug,
-              title: preview.title,
-              summary: "",
-              instructions: "",
-              origin: SKILL_MARKET_RESERVATION,
-            })
-            .onConflictDoNothing()
-            .returning({ slug: skills.slug });
-          if (reserved) {
-            [source] = await transaction
-              .insert(skillMarketSources)
-              .values({
-                command: reserved.slug,
-                registry: preview.source,
-                namespace: preview.namespace,
-                slug: preview.slug,
-              })
-              .returning();
-          } else {
-            // A concurrent install of this same source can have reserved the command first.
-            [source] = await transaction
-              .select()
-              .from(skillMarketSources)
-              .where(matchesSource(preview));
-          }
-          if (!source) return { kind: "command-unavailable" } as const;
-        }
+        const reservation = await reserveCommand(
+          transaction,
+          preview,
+          preview.slug,
+        );
+        if (reservation.kind === "command-unavailable") return reservation;
 
-        const { command } = source;
+        const { command } = reservation;
         const {
           version,
           versionId,

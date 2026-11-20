@@ -55,6 +55,9 @@ const store = createPluginStore({
 const suite = randomUUID().slice(0, 8);
 const slug = `notes-${suite}`;
 const collision = `collision-${suite}`;
+const alternatives = [`market-notes-${suite}`, `market-memo-${suite}`] as const;
+const racingSource = `race-source-${suite}`;
+const racingCommand = `race-command-${suite}`;
 const owner = `owner-${suite}`;
 const member = `member-${suite}`;
 const app = `workspace-${suite}`;
@@ -119,8 +122,12 @@ afterAll(async () => {
     .where(inArray(agents.id, [bot, anotherBot, emptyBot, spareBot]));
   await database
     .delete(skillMarketSources)
-    .where(inArray(skillMarketSources.slug, [slug, collision]));
-  await database.delete(skills).where(inArray(skills.slug, [slug, collision]));
+    .where(inArray(skillMarketSources.slug, [slug, collision, racingSource]));
+  await database
+    .delete(skills)
+    .where(
+      inArray(skills.slug, [slug, collision, racingCommand, ...alternatives]),
+    );
   await database.delete(mcpServers).where(eq(mcpServers.id, app));
   await database.delete(users).where(inArray(users.id, [owner, member]));
 });
@@ -252,6 +259,14 @@ function install(
   });
 }
 
+function assign(command: string, user = "admin", sourceSlug = collision) {
+  return routes.request(`/catalog/${sourceSlug}/command`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-user": user },
+    body: JSON.stringify({ command }),
+  });
+}
+
 async function slash(agentId: string, command = slug) {
   const picked = await admitPickedSkill(
     {
@@ -351,7 +366,7 @@ async function targets(user: string) {
   return (await response.json()).bots;
 }
 
-test("a managed Skill keeps its command when a market Skill uses the same slug", async () => {
+test("only an administrator can resolve a collision and both Bots use the winning assignment", async () => {
   await store.installSkill({
     slug: collision,
     title: "Original",
@@ -364,6 +379,7 @@ test("a managed Skill keeps its command when a market Skill uses the same slug",
   const preview = await routes.request(`/catalog/${collision}/versions/1.0.0`);
   expect(await preview.json()).toMatchObject({
     installable: false,
+    canAssignCommand: true,
     reasons: [
       "This market skill needs an unused slash command assigned by an administrator.",
     ],
@@ -372,6 +388,55 @@ test("a managed Skill keeps its command when a market Skill uses the same slug",
     409,
   );
   expect(await slash(anotherBot, collision)).toBeUndefined();
+  const memberPreview = await routes.request(
+    `/catalog/${collision}/versions/1.0.0`,
+    { headers: { "x-user": owner } },
+  );
+  expect(await memberPreview.json()).not.toHaveProperty(
+    "canAssignCommand",
+    true,
+  );
+  expect((await assign(alternatives[0], owner)).status).toBe(403);
+  expect((await assign("Invalid Command")).status).toBe(400);
+  expect((await assign(collision)).status).toBe(409);
+
+  const [first, second, racingInstall] = await Promise.all([
+    assign(alternatives[0]),
+    assign(alternatives[1]),
+    install(anotherBot, "1.0.0", owner, collision),
+  ]);
+  expect([first.status, second.status].sort()).toEqual([201, 409]);
+  const winner = first.status === 201 ? alternatives[0] : alternatives[1];
+  const loser = first.status === 201 ? alternatives[1] : alternatives[0];
+  expect([201, 409]).toContain(racingInstall.status);
+  if (racingInstall.status === 201)
+    expect(await racingInstall.json()).toMatchObject({ command: winner });
+
+  await store.installSkill({
+    slug: loser,
+    title: "Available alternative",
+    summary: "",
+    instructions: "Use the alternative.",
+    ownerUserId: null,
+    by: "admin@example.test",
+  });
+  expect((await assign(loser)).status).toBe(409);
+  expect((await assign(winner)).status).toBe(200);
+  const installed = await Promise.all([
+    install(bot, "1.0.0", "admin", collision),
+    install(anotherBot, "1.0.0", owner, collision),
+  ]);
+  expect(installed.map((response) => response.status)).toEqual([
+    201,
+    racingInstall.status === 201 ? 200 : 201,
+  ]);
+  for (const response of installed) {
+    expect(await response.json()).toMatchObject({ command: winner });
+  }
+  expect(await slash(bot, winner)).toContain("Summarize in three bullets.");
+  expect(await slash(anotherBot, winner)).toContain(
+    "Summarize in three bullets.",
+  );
   expect(await slash(bot, collision)).toContain("Keep the original.");
 });
 
@@ -388,6 +453,35 @@ test("an owner can install on their Bot and a managed Skill cannot replace the r
     }),
   ).rejects.toThrow("This command is reserved by a market skill.");
   expect(await slash(anotherBot)).toContain("Summarize in three bullets.");
+});
+
+test("assignment and managed Skill creation cannot both claim a free command", async () => {
+  const [assignment, managed] = await Promise.allSettled([
+    assign(racingCommand, "admin", racingSource),
+    store.installSkill({
+      slug: racingCommand,
+      title: "Managed",
+      summary: "",
+      instructions: "Use the managed instructions.",
+      ownerUserId: null,
+      by: "admin@example.test",
+    }),
+  ]);
+  if (assignment.status === "rejected") throw assignment.reason;
+
+  if (managed.status === "fulfilled") {
+    expect(assignment.value.status).toBe(409);
+    await store.grant("skill", racingCommand, bot, "admin@example.test");
+    expect(await slash(bot, racingCommand)).toContain(
+      "Use the managed instructions.",
+    );
+  } else {
+    expect(assignment.value.status).toBe(201);
+    expect(managed.reason).toBeInstanceOf(PluginRefusedError);
+    const retry = await assign(racingCommand, "admin", racingSource);
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toEqual({ command: racingCommand });
+  }
 });
 
 function changeDisablement(
