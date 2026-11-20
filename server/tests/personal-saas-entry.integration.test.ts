@@ -4,6 +4,10 @@ import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createDatabase } from "../src/db/client";
 import { workItems } from "../src/db/schema";
+import {
+  type AccountDisablement,
+  createAccountAccess,
+} from "../src/personal-saas/account-access";
 import { createPersonalSaasApp } from "../src/personal-saas/app";
 import { personalSaasStore } from "../src/personal-saas/store";
 import { createWorkQueue } from "../src/work/queue";
@@ -26,6 +30,7 @@ type Account = {
   email: string;
   verified?: boolean;
   active?: boolean;
+  disablements?: AccountDisablement[];
 };
 const authorizeCodes = new Map<
   string,
@@ -37,7 +42,11 @@ const authorizeCodes = new Map<
     redirectUri?: string;
   }
 >();
+const statusAccounts = new Map<string, Account>();
+let clockTime: number | undefined;
+const now = () => clockTime ?? Date.now();
 const accessTokens = new Map<string, Account>();
+const snapshotGates = new WeakMap<Account, () => Promise<void>>();
 const introspectionGates = new WeakMap<Account, () => Promise<void>>();
 let provider: ReturnType<typeof Bun.serve>;
 let app: ReturnType<typeof createPersonalSaasApp>;
@@ -80,6 +89,9 @@ beforeAll(() => {
             return new Response(null, { status: 400 });
           const access = crypto.randomUUID();
           accessTokens.set(access, entry.account);
+          if ((entry.redirectUri ?? callback) === callback) {
+            statusAccounts.set(entry.account.sub, entry.account);
+          }
           const id = await new SignJWT({
             nonce: entry.nonce,
             auth_time: entry.authTime,
@@ -110,6 +122,28 @@ beforeAll(() => {
             email_verified: account.verified,
           });
         }
+        case "/account-status": {
+          const form = await request.formData();
+          const subject = String(form.get("subject"));
+          const account = statusAccounts.get(subject);
+          if (
+            form.get("client_id") !== clientId ||
+            form.get("client_secret") !== clientSecret ||
+            account?.active === undefined
+          )
+            return new Response(null, { status: 503 });
+          const snapshot = Response.json({
+            issuer,
+            subject,
+            active: account.active,
+            observedAt: now(),
+            disablements: account.disablements ?? [],
+          });
+          const gate = snapshotGates.get(account);
+          snapshotGates.delete(account);
+          await gate?.();
+          return snapshot;
+        }
         case "/api/login/oauth/introspect": {
           const form = await request.formData();
           if (
@@ -137,6 +171,7 @@ function newApp(db = database) {
   return createPersonalSaasApp(
     {
       origin,
+      now,
       encryptionKey: Buffer.alloc(32, 7).toString("base64"),
       casdoor: {
         issuer,
@@ -144,6 +179,7 @@ function newApp(db = database) {
           "/.well-known/openid-configuration",
           provider.url,
         ),
+        accountStatusUrl: new URL("/account-status", provider.url),
         clientId,
         clientSecret,
         allowLoopbackHttp: true,
@@ -385,17 +421,31 @@ test("status loss during preparation blocks entry and the original session can r
     verified: true,
     active: true,
   };
-  const session = cookie(
-    await authenticate(account),
-    "__Host-openbot-personal=",
-  );
-  account.active = undefined;
-  expect((await enter(session)).status).toBe(503);
-  account.active = true;
-  expect(
-    (await send("/api/workspace", { headers: { cookie: session } })).status,
-  ).toBe(202);
-  expect((await enter(session)).headers.get("location")).toBe("/workspace");
+  const confirmedAt = Date.now();
+  clockTime = confirmedAt;
+  try {
+    const session = cookie(
+      await authenticate(account),
+      "__Host-openbot-personal=",
+    );
+    account.active = undefined;
+    clockTime = confirmedAt + 59_999;
+    const headers = { cookie: session };
+    expect((await send("/api/workspace", { headers })).status).toBe(202);
+    clockTime = confirmedAt + 60_000;
+    const denied = await send("/api/workspace", { headers });
+    expect(denied.status).toBe(503);
+    expect(await denied.json()).toEqual({
+      error: "account_status_unconfirmed",
+      cutoffAt: confirmedAt + 60_000,
+    });
+    expect((await enter(session)).status).toBe(503);
+    account.active = true;
+    expect((await send("/api/workspace", { headers })).status).toBe(202);
+    expect((await enter(session)).headers.get("location")).toBe("/workspace");
+  } finally {
+    clockTime = undefined;
+  }
 });
 
 test("cross-site forms cannot provision or end a Personal SaaS session", async () => {
@@ -588,12 +638,10 @@ test("fresh same-identity verification revokes every old session and a later sig
   await enter(unrelated);
   const original = await workspace(second);
   const sessions = personalSaasStore(database);
-  const sharedToken = await sessions.signIn({
-    issuer,
-    subject: account.sub,
-    email: account.email,
-    encryptedAccessToken: "not used at the store boundary",
-  });
+  const sharedToken = cookie(
+    await authenticate(account),
+    "__Host-openbot-personal=",
+  ).slice("__Host-openbot-personal=".length);
   expect(await sessions.session(sharedToken)).toBeDefined();
   await withReplica(async (connect) => {
     const live = await Promise.all(
@@ -787,5 +835,141 @@ test("durable background work keeps its lease and queued work remains claimable 
     expect(await queue.finish({ ...worker, key: "waiting" })).toBe(true);
   } finally {
     await database.delete(workItems).where(eq(workItems.kind, kind));
+  }
+});
+
+test("a short disablement revokes both sessions even after Casdoor recovers", async () => {
+  const account: Account = {
+    sub: crypto.randomUUID(),
+    email: "brief@example.com",
+    verified: true,
+    active: true,
+  };
+  const first = cookie(await authenticate(account), "__Host-openbot-personal=");
+  const second = cookie(
+    await authenticate(account),
+    "__Host-openbot-personal=",
+  );
+  const stream = await send("/api/auth/session/events", {
+    headers: { cookie: second },
+  });
+  expect(stream.status).toBe(200);
+  account.active = false;
+  account.disablements = [{ id: crypto.randomUUID(), effectiveAt: now() - 1 }];
+  account.active = true;
+  expect(
+    (await send("/api/workspace", { headers: { cookie: first } })).status,
+  ).toBe(401);
+  expect(await stream.text()).toContain("event: signed-out");
+  expect(
+    (await send("/api/workspace", { headers: { cookie: second } })).status,
+  ).toBe(401);
+  expect((await authenticate(account)).status).toBe(303);
+});
+
+test("a late active response cannot undo a recorded disablement across replicas", async () => {
+  const account: Account = {
+    sub: crypto.randomUUID(),
+    email: "race@example.com",
+    verified: true,
+    active: true,
+  };
+  const session = cookie(
+    await authenticate(account),
+    "__Host-openbot-personal=",
+  );
+  const stored = await personalSaasStore(database).session(
+    session.split("=")[1],
+  );
+  if (!stored) throw new Error("Expected an Application Session");
+  const access = createAccountAccess(
+    database,
+    () => Promise.reject(new Error("offline")),
+    now,
+  );
+  const permit = await access.decision(stored.accountId);
+  if (permit.kind !== "active") throw new Error("Expected an execution grant");
+  const grant = {
+    accountId: stored.accountId,
+    epoch: permit.epoch,
+    expiresAt: permit.expiresAt,
+  };
+
+  const captured = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  snapshotGates.set(account, () => {
+    captured.resolve();
+    return release.promise;
+  });
+  const request = new Request(new URL("/api/workspace", origin), {
+    headers: { cookie: session },
+  });
+  const pending = newApp().fetch(request.clone());
+  try {
+    await captured.promise;
+    account.active = false;
+    const effectiveAt = now();
+    account.disablements = [{ id: crypto.randomUUID(), effectiveAt }];
+    expect((await app.fetch(request)).status).toBe(401);
+    expect(await access.verify(grant)).toEqual({
+      kind: "denied",
+      reason: "account_disabled",
+      cutoffAt: effectiveAt + 60_000,
+    });
+    release.resolve();
+    expect((await pending).status).toBe(401);
+    expect((await access.verify(grant)).kind).toBe("denied");
+    account.active = true;
+    expect((await authenticate(account)).status).toBe(303);
+    expect((await access.verify(grant)).kind).toBe("denied");
+  } finally {
+    release.resolve();
+    await pending;
+  }
+});
+
+test("an idle live stream closes at the established deadline during an account status outage", async () => {
+  const account: Account = {
+    sub: crypto.randomUUID(),
+    email: "offline@example.com",
+    verified: true,
+    active: true,
+  };
+  const confirmedAt = Date.now();
+  clockTime = confirmedAt;
+  try {
+    const session = cookie(
+      await authenticate(account),
+      "__Host-openbot-personal=",
+    );
+    const headers = { cookie: session };
+    const response = await send("/api/auth/session/events", { headers });
+    const reader = await readSessionStream(response);
+    try {
+      account.active = undefined;
+      clockTime = confirmedAt + 60_000;
+      const denial = await send("/api/workspace", { headers });
+      expect(denial.status).toBe(503);
+      expect(await denial.json()).toEqual({
+        error: "account_status_unconfirmed",
+        cutoffAt: confirmedAt + 60_000,
+      });
+      const decoder = new TextDecoder();
+      let events = "";
+      for (
+        let chunk = await reader.read();
+        !chunk.done;
+        chunk = await reader.read()
+      ) {
+        events += decoder.decode(chunk.value, { stream: true });
+      }
+      expect(events).toContain("event: account-status-unconfirmed");
+      account.active = true;
+      expect((await send("/api/workspace", { headers })).status).toBe(202);
+    } finally {
+      await reader.cancel();
+    }
+  } finally {
+    clockTime = undefined;
   }
 });
