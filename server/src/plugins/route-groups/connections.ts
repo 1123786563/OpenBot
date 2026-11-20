@@ -1,4 +1,4 @@
-import type { Context } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import type { AppVariables } from "../../auth/guards";
 import { reasonWithoutStatement } from "../../db/query-failure";
 import { appsPage, askAdminTo } from "../../edition";
@@ -17,6 +17,7 @@ import {
   schemeKind,
 } from "../broker";
 import { catalogueEntry } from "../catalogue";
+import { RevocationRefusal } from "../corsair/revocation";
 import {
   sharedAccountOnly,
   sharedAccountOnlySentence,
@@ -67,6 +68,40 @@ export function mountConnectionRoutes({
   appOfUrl,
   actorEmail,
 }: PluginRouteContext) {
+  const legacyAuthorization =
+    (callback?: string): MiddlewareHandler<{ Variables: AppVariables }> =>
+    async (context, next) => {
+      const serverId = context.req.param("id");
+      if (!serverId) return next();
+      try {
+        await store.withLegacyAuthorization(
+          {
+            callback,
+            serverId,
+            actor: context.var.actor.id,
+          },
+          next,
+        );
+      } catch (error) {
+        if (error instanceof RevocationRefusal)
+          return context.json({ error: error.message }, 409);
+        throw error;
+      }
+    };
+
+  routes.post("/servers/:id/connect", requireUser, legacyAuthorization());
+  routes.post("/servers/:id/authorize", requireUser, legacyAuthorization());
+  routes.post(
+    "/servers/:id/connection/confirm",
+    requireUser,
+    legacyAuthorization("composio-confirm"),
+  );
+  routes.post(
+    "/servers/:id/connection/recheck",
+    requireUser,
+    legacyAuthorization(),
+  );
+
   /**
    * Where a person's own connections are, and how to start a new one.
    *
@@ -150,7 +185,7 @@ export function mountConnectionRoutes({
    * `{ connected: true }` where the vendor already holds this account and this deployment had no
    * row for it, which is recorded here exactly as the confirm route records it.
    */
-  routes.post("/servers/:id/connect", requireUser, async (context) => {
+  routes.post("/servers/:id/connect", async (context) => {
     const serverId = context.req.param("id");
 
     /*
@@ -900,6 +935,13 @@ export function mountConnectionRoutes({
        * below answers with the vendor's sentence and never with what was being minted when it
        * failed.
        */
+      await store.recordLegacyAuthorizationStart({
+        toolkit,
+        actor: context.var.actor.id,
+        holder: account.holder,
+        vendorUserId: account.vendorUserId,
+        action: null,
+      });
       let redirectUrl: string;
       try {
         ({ redirectUrl } = await withVendorDeadline(() =>
@@ -1727,6 +1769,13 @@ export function mountConnectionRoutes({
       );
     }
 
+    await store.recordLegacyAuthorizationStart({
+      toolkit,
+      actor: context.var.actor.id,
+      holder: account.holder,
+      vendorUserId: account.vendorUserId,
+      action,
+    });
     let minted: Awaited<ReturnType<ConnectedAppBroker["authorize"]>>;
     try {
       minted = await withVendorDeadline(() =>
@@ -2041,7 +2090,7 @@ export function mountConnectionRoutes({
    *
    * A FAILED MINT'S ATTEMPT is handled at the mint's `catch`. NOT HERE: cancelling one.
    */
-  routes.post("/servers/:id/authorize", requireUser, async (context) => {
+  routes.post("/servers/:id/authorize", async (context) => {
     const serverId = context.req.param("id");
 
     if (!composio) {
@@ -2327,30 +2376,9 @@ export function mountConnectionRoutes({
      * thing this `catch` cannot do: it is the only step on this leg that can leave a grant RECORDED
      * on the way out, so it is the only one that can say whether `not-recorded` is true. See it.
      */
-    try {
-      let signedIn = false;
-      const refusal = await requireUser(context, async () => {
-        signedIn = true;
-      });
-      if (!signedIn) {
-        /*
-         * ONLY A MISSING SESSION GOES TO SIGN-IN. The guard also refuses 403 for a session with no
-         * role, and sending that person to sign-in is a dead end: the sign-in screen's own load hits
-         * the same guard, gets the same 403, and they sign in as themselves again with nothing
-         * changed and never told their access was removed.
-         */
-        if (refusal instanceof Response && refusal.status === 401) {
-          return context.redirect(signInUrlFor(connect?.appUrl, flowId), 303);
-        }
-        return context.json(
-          {
-            error:
-              "OpenBot doesn't recognise you anymore, so nothing was recorded. Ask an admin to restore your access, then authorize again from the app's page.",
-          },
-          403,
-        );
-      }
-
+    const finish = async (
+      attempt: Awaited<ReturnType<typeof store.authorizationAttemptFor>>,
+    ) => {
       /*
        * THE CAPABILITY GATE, AND IT IS A PRESENCE TEST ON A VALUE THE BROKER DECLARED. Never a
        * `provider === "arcade"` comparison: see {@link ConnectedAppBroker.authorizations}, and
@@ -2393,7 +2421,6 @@ export function mountConnectionRoutes({
        * worth spending on it, and nothing is written — the row stands until its TTL.
        */
       const actorId = context.var.actor.id;
-      const attempt = await store.authorizationAttemptFor(actorId);
       if (!attempt || attempt.authId === null) return refusedWith("no-attempt");
       const attemptAccount = asAccountRef(attempt);
       if (!attemptAccount) return refusedWith("no-attempt");
@@ -3096,31 +3123,58 @@ export function mountConnectionRoutes({
       }
 
       return context.redirect(landing, 303);
+    };
+
+    try {
+      let signedIn = false;
+      const refusal = await requireUser(context, async () => {
+        signedIn = true;
+      });
+      if (!signedIn) {
+        /*
+         * ONLY A MISSING SESSION GOES TO SIGN-IN. The guard also refuses 403 for a session with no
+         * role, and sending that person to sign-in is a dead end: the sign-in screen's own load hits
+         * the same guard, gets the same 403, and they sign in as themselves again with nothing
+         * changed and never told their access was removed.
+         */
+        if (refusal instanceof Response && refusal.status === 401) {
+          return context.redirect(signInUrlFor(connect?.appUrl, flowId), 303);
+        }
+        return context.json(
+          {
+            error:
+              "OpenBot doesn't recognise you anymore, so nothing was recorded. Ask an admin to restore your access, then authorize again from the app's page.",
+          },
+          403,
+        );
+      }
+
+      const actorId = context.var.actor.id;
+      const attempt = await store.authorizationAttemptFor(actorId);
+      const verify = () => finish(attempt);
+      if (!attempt) {
+        if (flowId) await store.recordUnmatchedLegacyReturn(actorId, flowId);
+        return verify();
+      }
+      try {
+        return await store.withLegacyAuthorization(
+          {
+            serverId: attempt.serverId,
+            actor: actorId,
+            callback: flowId,
+          },
+          verify,
+        );
+      } catch (error) {
+        if (error instanceof RevocationRefusal)
+          return refusedWith("not-permitted");
+        throw error;
+      }
     } catch (error) {
-      /*
-       * AND THE BLANKET `catch` IS NO LONGER WHERE A LOST COMPLETION GOES QUIET. It stands over the
-       * reads that happen BEFORE the completion — the guard's session and role reads, the attempt
-       * read, and the refusals' own string building — and over the reads after a completion that
-       * claimed nothing, which wrote nothing either — so `not-recorded` is true of everything that
-       * reaches it: the completion above answers for itself, under its own `catch`, and never falls
-       * through to here still thinking it might have landed.
-       *
-       * `recorded` IS LOGGED RATHER THAN ASSUMED FALSE. The only step left after a completion that
-       * claimed its row is the redirect, and the sole way it can throw is a `Location` this deployment's own `appUrl`
-       * made unencodable — which would equally defeat the refusal built below, so there is no
-       * honest second answer to give here and the flag is what makes the claim checkable in a
-       * deployment rather than only in this comment.
-       *
-       * LOGGED AT ALL, which is the second half of what this leg was missing: every sibling on this
-       * route reports a failure it swallowed, and this one reported nothing. With the same
-       * restraint as the completion's own line above and nothing of the vendor's in it, through
-       * {@link reasonWithoutStatement} for the reason given there.
-       */
       console.error(
         JSON.stringify({
           type: "arcade-verify-failed",
           recorded,
-          note: "A check on the verifier raised instead of answering. The person was sent back to the list with a failure.",
           error: reasonWithoutStatement(error),
         }),
       );

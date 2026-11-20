@@ -7,6 +7,12 @@ import type { Database } from "../../db/client";
 import { auditEvents } from "../../db/schema";
 
 import { corsairApp as apps, createCorsairCutover } from "./cutover";
+import {
+  cleanupCommand,
+  legacyBroker,
+  readLegacyCleanup,
+  recordLegacyCleanup,
+} from "./legacy-cleanup";
 import { copyVerifiedPolicy, migrationRequest } from "./migration-policy";
 import { githubPilotTool } from "./routes";
 import { sharedSlackTool } from "./slack/shared-provider";
@@ -435,6 +441,45 @@ export function createCorsairReadinessRoutes(options: Options) {
     const denied = requireAdmin(c);
     if (denied) return denied;
     await next();
+  });
+  routes.on(["GET", "POST"], "/:app/legacy-cleanup/:provider", async (c) => {
+    const app = apps.safeParse(c.req.param("app"));
+    const provider = legacyBroker.safeParse(c.req.param("provider"));
+    if (!options.includeDeploymentLegacy || !app.success || !provider.success)
+      return c.json(
+        { error: "Deployment legacy cleanup scope unavailable." },
+        404,
+      );
+    const scope = {
+      workspaceId: options.workspaceId,
+      app: app.data,
+      provider: provider.data,
+    };
+    if (c.req.method === "POST") {
+      if (c.req.header("X-OpenBot-Pilot") !== app.data)
+        return c.json({ error: "The pilot request header is required." }, 403);
+      const parsed = cleanupCommand.safeParse(
+        await c.req.json().catch(() => null),
+      );
+      if (!parsed.success)
+        return c.json({ error: "Invalid cleanup evidence." }, 400);
+      if (
+        !(await recordLegacyCleanup(
+          options.database,
+          scope,
+          c.var.actor.id,
+          parsed.data,
+        ))
+      )
+        return c.json(
+          {
+            error:
+              "Cleanup evidence refused. Check observation, inventory, impact and credential dependencies.",
+          },
+          409,
+        );
+    }
+    return c.json(await readLegacyCleanup(options.database, scope));
   });
   const transitionRequest = z.discriminatedUnion("kind", [
     z.strictObject({

@@ -85,9 +85,12 @@ export function createCorsairCutover(
 
   return {
     read: () => read(),
-    review(actorId: string, record: (tx: Transaction) => Promise<boolean>) {
+    review(
+      actorId: string,
+      record: (tx: Transaction, current: State) => Promise<boolean>,
+    ) {
       return transition(actorId, async (current, tx) =>
-        (await record(tx)) ? current : null,
+        (await record(tx, current)) ? current : null,
       );
     },
     activate(
@@ -147,6 +150,11 @@ export function createCorsairCutover(
         if (current.kind === "observing")
           throw new RevocationRefusal(
             "Mark legacy cleanup before withdrawing the authorization.",
+            409,
+          );
+        if (current.kind === "cleanup")
+          throw new RevocationRefusal(
+            "Use the legacy cleanup inventory and impact review to withdraw the authorization.",
             409,
           );
         result = { value: await disconnect() };

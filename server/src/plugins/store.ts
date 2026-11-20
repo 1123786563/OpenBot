@@ -1,6 +1,11 @@
-import { RevocationRefusal } from "./corsair/revocation";
+import { toolkitOfFor } from "./access";
 import { withLegacyCorsairDisconnect } from "./corsair/cutover";
-import { PluginRefusedError } from "./plugin-store/model";
+import {
+  guardLegacyAuthorization,
+  recordLegacyAuthorizationStart,
+  recordUnmatchedArcadeReturn,
+} from "./corsair/legacy-cleanup";
+import { RevocationRefusal } from "./corsair/revocation";
 import { accountMethods } from "./plugin-store/accounts";
 import { appAccessMethods } from "./plugin-store/app-access";
 import { callMethods } from "./plugin-store/calls";
@@ -8,6 +13,7 @@ import { connectionMethods } from "./plugin-store/connections";
 import { createStoreContext } from "./plugin-store/context";
 import { grantMethods } from "./plugin-store/grants";
 import type { PluginStoreOptions } from "./plugin-store/model";
+import { PluginRefusedError } from "./plugin-store/model";
 import { serverMethods } from "./plugin-store/servers";
 import { skillMethods } from "./plugin-store/skills";
 
@@ -53,6 +59,7 @@ export function createPluginStore(options: PluginStoreOptions) {
   const context = createStoreContext(options);
   const connections = connectionMethods(context);
   const accounts = accountMethods(context);
+  const servers = serverMethods(context);
   const disconnect = <T>(
     input: { toolkit: string; by: string },
     run: () => Promise<T>,
@@ -71,13 +78,69 @@ export function createPluginStore(options: PluginStoreOptions) {
   // In the order the methods were always declared. Each group's methods call each other through
   // `this`, which is the whole store when a method is called on it.
   return {
-    ...serverMethods(context),
+    ...servers,
     ...skillMethods(context),
     ...grantMethods(context),
     ...connections,
     ...callMethods(context),
     ...appAccessMethods(context),
     ...accounts,
+    recordLegacyAuthorizationStart(
+      input: Parameters<typeof recordLegacyAuthorizationStart>[3],
+    ) {
+      return recordLegacyAuthorizationStart(
+        options.database,
+        options.deploymentId,
+        context.brokerProvider,
+        input,
+      );
+    },
+    async recordUnmatchedLegacyReturn(actor: string, callback: string) {
+      if (options.deploymentId)
+        await recordUnmatchedArcadeReturn(
+          options.database,
+          options.deploymentId,
+          actor,
+          callback,
+        );
+    },
+    async withLegacyAuthorization<T>(
+      input: {
+        serverId: string;
+        actor: string;
+        callback?: string;
+      },
+      run: () => Promise<T>,
+    ): Promise<T> {
+      if (!options.deploymentId) return run();
+      const row = await this.serverAddress(input.serverId);
+      if (!row) return run();
+      return guardLegacyAuthorization({
+        ...input,
+        database: options.database,
+        workspaceId: options.deploymentId,
+        provider: context.brokerProvider,
+        url: row.url,
+        run,
+      });
+    },
+    async removeServer(serverId: string, by: string) {
+      if (!options.deploymentId)
+        return servers.removeServer.call(this, serverId, by);
+      const row = await this.serverAddress(serverId);
+      const toolkit =
+        row &&
+        (toolkitOfFor("composio", row.url) ?? toolkitOfFor("arcade", row.url));
+      return toolkit
+        ? withLegacyCorsairDisconnect(
+            options.database,
+            options.deploymentId,
+            toolkit,
+            by,
+            () => servers.removeServer.call(this, serverId, by),
+          )
+        : servers.removeServer.call(this, serverId, by);
+    },
     disconnectBrokered(
       input: Parameters<typeof connections.disconnectBrokered>[0],
     ) {

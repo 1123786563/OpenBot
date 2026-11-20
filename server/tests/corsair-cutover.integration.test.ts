@@ -1,17 +1,17 @@
+import { afterAll, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { MCPMock } from "@copilotkit/aimock/mcp";
 import { eq } from "drizzle-orm";
 import { createAuditStore } from "../src/audit";
 import { createCredentialStore } from "../src/credentials";
-import { agents, mcpServers } from "../src/db/schema";
-import { createPluginStore } from "../src/plugins/store";
-import { afterAll, expect, test } from "bun:test";
-import { randomUUID } from "node:crypto";
 import { createDatabase } from "../src/db/client";
+import { agents, mcpServers } from "../src/db/schema";
 import {
   createCorsairCutover,
   cutoverRefusal,
   withLegacyCorsairRoute,
 } from "../src/plugins/corsair/cutover";
+import { createPluginStore } from "../src/plugins/store";
 import { testDatabaseUrl } from "./support/database";
 
 const database = createDatabase(testDatabaseUrl(), { max: 6 });
@@ -124,7 +124,10 @@ test("rollback requires current evidence and is permanently blocked once cleanup
   expect(
     await cutover.beginCleanup("admin", "provider-review/3"),
   ).toMatchObject({ kind: "cleanup" });
-  await expect(disconnect()).resolves.toBe(1);
+  await expect(disconnect()).rejects.toThrow(
+    "Use the legacy cleanup inventory",
+  );
+  expect(cleanupCalls).toBe(0);
   expect(
     await cutover.rollback(
       "admin",

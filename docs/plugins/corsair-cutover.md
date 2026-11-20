@@ -58,6 +58,56 @@ Cleanup permanently closes the rollback path for that workspace and app.
 Recovery thereafter means fixing the Corsair route and reauthorizing any
 affected Connections. Resolve outstanding writes before sending new ones.
 
+## Reconcile legacy authorizations and retire the cleanup credential
+
+Use the deployment-admin endpoint
+`/api/corsair/migration/:app/legacy-cleanup/:provider`, where the provider is
+`composio` or `arcade`. Include `X-OpenBot-Pilot` with the app name on every
+POST. The endpoint accepts evidence after the seven-day observation period and
+`begin_cleanup`. Perform provider operations through the authorized broker or
+provider console.
+
+1. GET the ledger. Compare its entries with the broker and provider records,
+   including remote-only grants and consent attempts that can still finish.
+   File a complete `inventory` with an `evidenceRef` and an `entries` array.
+   Each entry contains a `ref` and an `impact` array of affected installations,
+   connections, or scopes. Keep the returned local refs and add stable opaque
+   refs for remote-only entries. Cite the inventory that links each local ref
+   to its remote record or documents its absence. Use `reopen: true` if an
+   existing authorization becomes uncertain again.
+2. For each nonempty impact list, show the full list to the person authorized
+   to approve the impact. Record `confirm_impact` with the entry ref, the exact
+   impact array, and an evidence ref for their approval. Include the
+   `deployment-account` marker when it appears in the local inventory.
+3. Request revocation in the authorized console and record `requested` with
+   the entry ref and the broker receipt as `evidenceRef`. If the status query
+   fails, record `query_failed` with the entry ref and an evidence ref. Recheck
+   before retrying a request whose outcome is uncertain. The ledger keeps the
+   entry open until evidence verifies the result.
+4. Submit `verify` for each entry with its ref, `accessEvidenceRef`, and
+   `refreshEvidenceRef`. Use `source: "broker"` for broker evidence that
+   separately establishes both results. When the broker cannot establish
+   both results, a holder or external administrator verifies them and gives
+   the deployment administrator an evidence reference. Record
+   `source: "holder"` or `source: "external_admin"` and a `verifierRef`.
+   For a local attempt, also provide `terminalAttemptEvidenceRef` showing that
+   the attempt can no longer grant authorization. Use an updated inventory
+   to include blocked callbacks that arrive during review.
+5. Check for other apps, workspaces, deployments, and external jobs that use
+   the cleanup credential. Submit `prepare_retirement` with
+   `dependencyEvidenceRef` for that review. If OpenBot finds a remaining
+   dependency or an unverified entry, it returns 409. Use the preparation
+   event's `id` from the response as `preparationRef`.
+6. Have the authorized operator disable the credential and verify its
+   retirement. Submit `retire` with the preparation ref, the same
+   `dependencyEvidenceRef`, and the retirement `evidenceRef`. OpenBot
+   rechecks the ledger and records the actor and time. If new evidence
+   invalidates the preparation, reconcile it and prepare again.
+
+Use evidence references that an operator can resolve in an access-controlled
+record. Keep tokens, authorization URLs, and raw callback handles in their
+original systems.
+
 ## Live pilot evidence still required
 
 Use an authorized isolated self-hosted pilot. Record separate GitHub and Slack
