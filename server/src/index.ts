@@ -2399,6 +2399,7 @@ const slackPilotOptions = slackPilot
       workspaceId: deploymentId,
       registration: slackPilot.registration,
       allowedChannels: slackPilot.allowedChannels,
+      legacyPolicy: () => policyStore.get(),
       provider: createSlackPilotProvider({
         ...slackPilot.config,
         reconcileGoalWrites: !!githubEventTriggers,
@@ -3308,12 +3309,28 @@ const app = createApp(
           },
         }
       : {}),
+    corsairReadiness: {
+      database,
+      workspaceId: deploymentId,
+      includeDeploymentLegacy: true,
+      registrations: {
+        ...(githubPilot
+          ? { github: `${githubPilot.appId}/${githubPilot.clientId}` }
+          : {}),
+        ...(slackPilot ? { slack: slackPilot.registration } : {}),
+      },
+      ...(slackPilot
+        ? { slackChannels: [...slackPilot.allowedChannels].sort() }
+        : {}),
+      ...(sharedSlack ? { sharedSlackRegistration: sharedSlack.appId } : {}),
+    },
     ...(githubPilot
       ? {
           githubPilot: {
             workspaceId: deploymentId,
             registration: `${githubPilot.appId}/${githubPilot.clientId}`,
             provider: createGithubPilotProvider(githubPilot),
+            legacyPolicy: () => policyStore.get(),
             legacyDefaults: readVerifiedLegacyGithubDefaults(
               process.env.CORSAIR_GITHUB_VERIFIED_LEGACY_DEFAULTS,
             ),
@@ -3331,6 +3348,7 @@ const app = createApp(
           sharedSlackPilot: {
             workspaceId: deploymentId,
             provider: sharedSlackProvider,
+            legacyPolicy: () => policyStore.get(),
             database,
             approvals: storedApprovals,
             audit: bootAuditStore,

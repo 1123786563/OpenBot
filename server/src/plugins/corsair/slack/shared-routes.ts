@@ -15,6 +15,7 @@ import {
   recordAuditEvent,
 } from "../../../audit";
 import { type AppVariables, requireAdmin } from "../../../auth/guards";
+import type { ActionPolicy } from "../../../computer/policy";
 import type { Database } from "../../../db/client";
 import {
   slackSharedBotAccess as access,
@@ -39,6 +40,7 @@ import {
   RevocationRefusal,
   revocationState,
 } from "../revocation";
+import { migratedPolicyAllows } from "../migration-policy";
 import { slackChannel } from "./provider";
 import {
   type SharedSlackProvider,
@@ -114,12 +116,14 @@ export function createSharedSlackPilot({
   audit,
   sharedUse,
   canUseBot,
+  legacyPolicy,
 }: {
   database: Database;
   workspaceId: string;
   provider: SharedSlackProvider;
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
   canUseBot: BotAccessCheck;
+  legacyPolicy?: () => ActionPolicy;
   approvals: Pick<
     ApprovalStore,
     "open" | "get" | "decide" | "consume" | "saveResult" | "finish"
@@ -530,6 +534,21 @@ export function createSharedSlackPilot({
     const outside =
       source.kind === "goal" && !OWNER_STEERED_SOURCES.has(source.source);
     if (
+      !(await migratedPolicyAllows(database, {
+        workspaceId,
+        app: "slack",
+        registration: current.appId,
+        kind: "shared",
+        botId: input.botId,
+        connectionId: current.id,
+        resource: input.channelId,
+        actorId: actor.id,
+        initiator:
+          source.kind === "goal"
+            ? { kind: "responsibility", id: source.goalId }
+            : undefined,
+        legacyPolicy,
+      })) ||
       !approval.success ||
       !admits(
         approval.data,

@@ -140,6 +140,7 @@ import type { AccountModeSwitch } from "./plugins/account-mode";
 import type { ComposioBroker } from "./plugins/broker";
 import { createGithubEventIngress } from "./plugins/corsair/event-ingress";
 import { createGithubEventTriggerRoutes } from "./plugins/corsair/event-triggers";
+import { createCorsairReadinessRoutes } from "./plugins/corsair/readiness";
 import { createGithubPilotRoutes } from "./plugins/corsair/routes";
 import { createSlackPilotRoutes } from "./plugins/corsair/slack/routes";
 import { createSharedSlackPilot } from "./plugins/corsair/slack/shared-routes";
@@ -457,6 +458,10 @@ export function createApp(
   coworker?: {
     productTelemetry?: ProductTelemetry;
     approvals?: ApprovalService;
+    corsairReadiness?: Omit<
+      Parameters<typeof createCorsairReadinessRoutes>[0],
+      "requireUser"
+    >;
     githubEvents?: Parameters<typeof createGithubEventIngress>[0] &
       Pick<Parameters<typeof createGithubEventTriggerRoutes>[0], "triggers">;
     githubPilot?: Omit<
@@ -1632,6 +1637,17 @@ export function createApp(
     ? async (actor, botId) =>
         (await agentProfileStore.get(actor, botId)) !== null
     : async () => true;
+
+  if (coworker?.corsairReadiness) {
+    app.route(
+      "/api/corsair/migration",
+      createCorsairReadinessRoutes({
+        ...coworker.corsairReadiness,
+        requireUser,
+        canUseBot,
+      }),
+    );
+  }
 
   if (coworker?.githubEvents) {
     app.route(

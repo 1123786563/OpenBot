@@ -16,6 +16,7 @@ import {
 } from "../../audit";
 import { type AppVariables, requireAdmin } from "../../auth/guards";
 import { decryptSecret, encryptSecret } from "../../credentials";
+import type { ActionPolicy } from "../../computer/policy";
 import type { Database } from "../../db/client";
 import {
   githubPilotConnections,
@@ -27,6 +28,7 @@ import { corsairAccounts } from "../../db/schema/corsair-storage";
 import { brokeredAccounts, pluginGrants } from "../../db/schema/plugins";
 import { type GithubPilotProvider, githubId } from "./github";
 import { corsairGrantRef } from "./grants";
+import { migratedPolicyAllows } from "./migration-policy";
 import type { VerifiedLegacyGithubDefault } from "./legacy-defaults";
 
 import {
@@ -39,13 +41,14 @@ import {
   RevocationRefusal,
 } from "./revocation";
 
-const tool = {
+export const githubPilotTool = {
   ref: "corsair/github.create_issue",
   effect: "write",
   identity: "github_app_user",
   resource: "registered_installation_repository",
   permissions: { issues: "write" },
 };
+const tool = githubPilotTool;
 const id = z.uuid();
 const botId = z.string().trim().min(1).max(200);
 const invocation = z.strictObject({
@@ -86,6 +89,7 @@ type Deps = {
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
   canUseBot: BotAccessCheck;
   clock?: () => Date;
+  legacyPolicy?: () => ActionPolicy;
   legacyDefaults?: readonly VerifiedLegacyGithubDefault[];
 };
 
@@ -100,6 +104,7 @@ export function createGithubPilotRoutes({
   requireUser,
   canUseBot,
   clock = () => new Date(),
+  legacyPolicy,
   legacyDefaults = [],
 }: Deps) {
   const routes = new Hono<{ Variables: AppVariables }>();
@@ -222,7 +227,20 @@ export function createGithubPilotRoutes({
       .select({ bot: pluginGrants.agentId })
       .from(pluginGrants)
       .where(grantScope(input.botId));
-    if (!grant)
+    if (
+      !grant ||
+      !(await migratedPolicyAllows(database, {
+        workspaceId,
+        app: "github",
+        registration,
+        kind: "personal",
+        botId: input.botId,
+        connectionId: input.connectionId,
+        resource: String(input.repositoryId),
+        actorId: actor.id,
+        legacyPolicy,
+      }))
+    )
       throw new PilotRefusal("This Bot needs a GitHub pilot grant.", 403);
     const [repository] = await database
       .select()

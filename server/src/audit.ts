@@ -157,6 +157,8 @@ export const auditEventTypes = [
   "mcp.call_succeeded",
   "corsair.authorization.disconnected",
   "corsair.authorization.revocation_checked",
+  "corsair.migration_readiness_decided",
+  "corsair.migration_policy_copied",
   "corsair.github.connected",
   "corsair.slack.connected",
   "corsair.slack.event_delivery",
