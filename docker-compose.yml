@@ -72,6 +72,8 @@ services:
     # therefore one of the places that happens.
     command: ["bun", "scripts/migrate.ts"]
     environment:
+      DEPLOYMENT_ID:
+      OTEL_SERVICE_NAME:
       DATABASE_URL: postgres://openbot:openbot@postgres:5432/openbot
     depends_on:
       postgres:
@@ -109,6 +111,14 @@ services:
       - path: ./.env
         required: false
     environment:
+      DEPLOYMENT_ID:
+      OTEL_SERVICE_NAME:
+      # An unset variable stays absent, allowing generic headers to act as the logs fallback.
+      OTEL_EXPORTER_OTLP_ENDPOINT:
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:
+      OTEL_EXPORTER_OTLP_HEADERS:
+      OTEL_EXPORTER_OTLP_LOGS_HEADERS:
+      OPENBOT_OTEL_EXPORT:
       # Both names, because `.env` carries `SERVER_PORT` for the host port, and the server refuses to
       # start when the two disagree (`serverPort` in server/src/config.ts). Inside this container it
       # is always 3001; the host port is the mapping's business, below.
@@ -241,9 +251,11 @@ services:
     image: ${SERVER_IMAGE:-openbot-server:latest}
     pull_policy: ${IMAGE_PULL_POLICY:-build}
     command: ["bun", "../worker/src/index.ts"]
-    # Its three settings and nothing else. It is handed no `.env`: it does not read the deployment's
-    # configuration, and the less this process holds, the less a mistake in it can spend.
+    # Database, dispatch and runtime log identity only. The worker does not get the deployment's
+    # .env or the audit export credentials.
     environment:
+      DEPLOYMENT_ID:
+      OTEL_SERVICE_NAME:
       DATABASE_URL: postgres://openbot:openbot@postgres:5432/openbot
       SERVER_INTERNAL_URL: http://server:3001
       WORKER_SHARED_SECRET: ${WORKER_SHARED_SECRET:-openbot-dev-worker-secret}

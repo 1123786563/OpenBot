@@ -130,6 +130,8 @@ migrations:
 
 # What OpenBot needs to run. Anything secret belongs in `secrets` below, never here.
 config:
+  # Stable identifier for this deployment. Set explicitly when exporting OpenObserve records.
+  deploymentId: ""
   # Where people reach this deployment. Sets the OAuth callback and the trusted origin.
   publicUrl: ""
   # Web Bot Auth: every request a Bot's browser makes is signed as coming from this deployment, and
@@ -331,9 +333,9 @@ config:
     # Comma-separated ARNs of the SNS topics allowed to deliver mail.
     snsTopicArns: ""
 
-  # Every audit row as an OTLP log record over HTTP, for a SIEM or an OpenTelemetry Collector.
+  # Derived audit records over OTLP HTTP. Runtime logs go to stdout and stderr.
   #
-  # Setting either endpoint switches export on. Headers, which usually carry a collector's API key,
+  # Export requires either endpoint and config.deploymentId. Headers, which can carry an API key,
   # are secrets: `secrets.otelHeaders` and `secrets.otelLogsHeaders`, as `key=value` pairs separated
   # by commas. With `networkPolicy.enabled`, a collector inside the cluster has to be named in
   # `networkPolicy.extraEgress`.
@@ -342,7 +344,7 @@ config:
     endpoint: ""
     # Where log records go, used exactly as written. Takes precedence over `endpoint`.
     logsEndpoint: ""
-    # The `service.name` on every record. Empty means the server's default, `openbot`.
+    # The service name in audit exports and runtime logs. Defaults to `openbot`.
     serviceName: ""
     # Stops export while an endpoint is still set.
     paused: false

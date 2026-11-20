@@ -21,26 +21,49 @@ Every runtime log and audit replica must carry this value. A query that spans mu
 
 ## OpenBot configuration
 
-The Helm chart configures the OTLP destination under `config.otel`. The endpoint may be the Collector or an OpenObserve-compatible OTLP endpoint. Headers are stored in the chart Secret or an external Secret provider.
+Set `config.deploymentId` and an OTLP destination under `config.otel`. With `endpoint`, the API
+appends `/v1/logs`. With `logsEndpoint`, the API uses that URL as written and gives it precedence.
 
 ```yaml
 config:
+  deploymentId: production-east
   otel:
     endpoint: https://otel-collector.example.internal:4318
     serviceName: openbot
     paused: false
 
-secrets:
-  otelHeaders: x-api-key=replace-me
+# Example for a Collector in another namespace. Match the labels and port of your Collector.
+networkPolicy:
+  enabled: true
+  extraEgress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app: otel-collector
+      ports:
+        - protocol: TCP
+          port: 4318
 ```
 
-Use `logsEndpoint` when the logs endpoint is different from the generic OTLP endpoint. Use `otelLogsHeaders` for headers that apply only to logs. Keep ingestion credentials out of ConfigMaps, application logs, and user-facing settings.
+Supply headers as comma-separated `key=value` pairs in `secrets.otelLogsHeaders` or
+`secrets.otelHeaders`. To use a Secret managed outside the chart, set `secrets.existingSecret` and
+provide the `otel-logs-headers` or `otel-headers` key. With External Secrets Operator, map those same
+keys through `externalSecrets.data`. Leave the logs headers unset to use the generic headers.
 
-For Compose or host processes, set the equivalent `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_LOGS_HEADERS`, and `OTEL_SERVICE_NAME` values in the deployment environment. `OPENBOT_OTEL_EXPORT=off` pauses export while the endpoint remains configured.
+For Compose and host startup, set `DEPLOYMENT_ID`, `OTEL_SERVICE_NAME`, and one of
+`OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`. Inject
+`OTEL_EXPORTER_OTLP_HEADERS` or `OTEL_EXPORTER_OTLP_LOGS_HEADERS` into the API process from your
+deployment's secret store. Compose and `scripts/start.sh` also accept the settings from the root
+`.env`. Keep files that contain credentials private. For Compose, use an endpoint reachable from
+the API container.
 
-No endpoint means export is disabled. Pausing or removing the endpoint does not pause OpenBot business execution. It only stops new derived copies. The paused interval is not backfilled automatically.
-
-A deployment without a Collector or OpenObserve is valid. It does not produce an OpenObserve alert until export is explicitly enabled.
+Set `config.otel.paused: true` in Helm or `OPENBOT_OTEL_EXPORT=off` in the deployment environment
+to pause OTLP audit export. Audit export is also off when neither endpoint is configured. PostgreSQL
+audit writes continue during a pause. When export resumes, it sends new records. To pause delivery
+of runtime logs to OpenObserve, pause the Collector's runtime pipeline.
 
 ## Collector contract
 

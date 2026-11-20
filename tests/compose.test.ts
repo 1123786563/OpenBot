@@ -368,6 +368,46 @@ test("native opt-out wins over a Compose override that enables telemetry", () =>
   }
 });
 
+test("passes OTLP controls and headers to the API and identity to runtime log producers", () => {
+  const identity = {
+    DEPLOYMENT_ID: "local-east",
+    OTEL_SERVICE_NAME: "openbot-east",
+  };
+  const exporter = {
+    OTEL_EXPORTER_OTLP_ENDPOINT: "https://collector.example:4318",
+    OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: "https://collector.example/ingest",
+    OTEL_EXPORTER_OTLP_HEADERS: "x-api-key=generic-fixture",
+    OTEL_EXPORTER_OTLP_LOGS_HEADERS: "x-api-key=logs-fixture",
+    OPENBOT_OTEL_EXPORT: "off",
+  };
+  const services = runComposeConfig({ ...identity, ...exporter }).services;
+  expect(services.server.environment).toMatchObject({
+    ...identity,
+    ...exporter,
+  });
+  expect(services.worker.environment).toMatchObject(identity);
+  expect(services.migrate.environment).toMatchObject(identity);
+  for (const [name, service] of Object.entries(services)) {
+    if (name === "server") continue;
+    for (const key of Object.keys(exporter)) {
+      expect(service.environment?.[key]).toBeUndefined();
+    }
+  }
+  const genericOnly = runComposeConfig({
+    OTEL_EXPORTER_OTLP_HEADERS: exporter.OTEL_EXPORTER_OTLP_HEADERS,
+  }).services.server.environment;
+  expect(genericOnly.OTEL_EXPORTER_OTLP_HEADERS).toBe(
+    exporter.OTEL_EXPORTER_OTLP_HEADERS,
+  );
+  expect(
+    genericOnly.OTEL_EXPORTER_OTLP_LOGS_HEADERS ?? undefined,
+  ).toBeUndefined();
+  expect(
+    runComposeConfig({}).services.server.environment
+      .OTEL_EXPORTER_OTLP_ENDPOINT ?? undefined,
+  ).toBeUndefined();
+}, 20_000);
+
 test("leaves optional telemetry settings absent for ordinary Compose startup", () => {
   const env = runComposeConfig({}).services.server.environment;
   for (const key of [
@@ -940,6 +980,8 @@ test("puts the server beside the database and the Bots, and the worker beside th
   expect(services.worker.networks).toEqual(["data"]);
   expect(Object.keys(services.worker.environment ?? {}).sort()).toEqual([
     "DATABASE_URL",
+    "DEPLOYMENT_ID",
+    "OTEL_SERVICE_NAME",
     "SERVER_INTERNAL_URL",
     "WORKER_SHARED_SECRET",
   ]);

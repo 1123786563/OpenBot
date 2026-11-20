@@ -422,6 +422,48 @@ not, so there they are required (templates/secret.yaml, validation.yaml).
 {{- if .Values.postgresql.enabled -}}true{{- end -}}
 {{- end -}}
 
+{{- define "openbot.runtimeIdentityEnv" -}}
+{{- with .Values.config.deploymentId }}
+- name: DEPLOYMENT_ID
+  value: {{ . | quote }}
+{{- end }}
+{{- $otel := .Values.config.otel | default dict }}
+{{- with $otel.serviceName }}
+- name: OTEL_SERVICE_NAME
+  value: {{ . | quote }}
+{{- end }}
+{{- end }}
+
+{{- define "openbot.auditExportEnv" -}}
+{{- $otel := .Values.config.otel | default dict }}
+{{- if or $otel.endpoint $otel.logsEndpoint }}
+{{- with $otel.endpoint }}
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: {{ . | quote }}
+{{- end }}
+{{- with $otel.logsEndpoint }}
+- name: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
+  value: {{ . | quote }}
+{{- end }}
+{{- if $otel.paused }}
+- name: OPENBOT_OTEL_EXPORT
+  value: "off"
+{{- end }}
+- name: OTEL_EXPORTER_OTLP_LOGS_HEADERS
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "openbot.secretName" . }}
+      key: otel-logs-headers
+      optional: true
+- name: OTEL_EXPORTER_OTLP_HEADERS
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "openbot.secretName" . }}
+      key: otel-headers
+      optional: true
+{{- end }}
+{{- end }}
+
 {{/*
 Everything the API reads that is not the database.
 
@@ -766,37 +808,7 @@ and in whatever holds the release, which is not where `KEY_ENCRYPTION_KEY` belon
 - name: OPENBOT_INBOUND_EMAIL_SNS_TOPIC_ARNS
   value: {{ . | quote }}
 {{- end }}
-{{- $otel := .Values.config.otel | default dict }}
-{{- if or $otel.endpoint $otel.logsEndpoint }}
-{{- with $otel.endpoint }}
-- name: OTEL_EXPORTER_OTLP_ENDPOINT
-  value: {{ . | quote }}
-{{- end }}
-{{- with $otel.logsEndpoint }}
-- name: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
-  value: {{ . | quote }}
-{{- end }}
-{{- with $otel.serviceName }}
-- name: OTEL_SERVICE_NAME
-  value: {{ . | quote }}
-{{- end }}
-{{- if $otel.paused }}
-- name: OPENBOT_OTEL_EXPORT
-  value: "off"
-{{- end }}
-- name: OTEL_EXPORTER_OTLP_LOGS_HEADERS
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "openbot.secretName" . }}
-      key: otel-logs-headers
-      optional: true
-- name: OTEL_EXPORTER_OTLP_HEADERS
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "openbot.secretName" . }}
-      key: otel-headers
-      optional: true
-{{- end }}
+{{ include "openbot.runtimeIdentityEnv" . }}
 {{- /*
   One definition, for the same reason `openbot.databaseUrlEnv` is one (see its comment above): the
   API server needs this value to RECOGNISE the worker, and the routines CronJob needs the same value
