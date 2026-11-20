@@ -26,11 +26,15 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# Runners. Every job runs on the 16-core larger runners (org runner group openbot-larger, billed per
+# minute) for main, releases and pull requests from this repository: the standard runners are shared
+# across the organization, and a job used to wait longer for one than it took to run. Pull requests
+# from forks stay on the free standard runners.
 jobs:
   # Formatting, linting, typing and tests are independent checks, so each reports its own result.
   static:
     name: format, lint, types
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'openbot-ubuntu-16core' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -81,7 +85,7 @@ jobs:
   #   release that first served it deprecated.
   api:
     name: API spec
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'openbot-ubuntu-16core' }}
     env:
       # Pinned with its checksum, from https://github.com/oasdiff/oasdiff/releases. The spec never
       # leaves the runner: the binary runs here, rather than the action, which uploads by default.
@@ -233,7 +237,7 @@ jobs:
 
   mobile:
     name: native types
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'openbot-ubuntu-16core' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -254,7 +258,7 @@ jobs:
   # Playwright, whose Chromium is a different build from the one playwright-core launches.
   app-browser:
     name: app (real browser)
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'openbot-ubuntu-16core' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -323,7 +327,7 @@ jobs:
   # .github/actions/test-shard, which says why.
   test:
     name: tests (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'openbot-ubuntu-16core' }}
     strategy:
       # Every shard runs to the end, so one red run names every failing test, not just the first
       # shard's.
@@ -368,7 +372,7 @@ jobs:
   # add up to less than the floor (scripts/test-floor.ts).
   test-total:
     name: tests
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'openbot-ubuntu-16core' }}
     # Also when a shard failed, so this reports the failure rather than being skipped, which a
     # required check would read as a pass.
     if: always()
@@ -400,7 +404,7 @@ jobs:
 
   startup:
     name: startup (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'windows-latest' && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'windows-latest' || 'openbot-windows-16core') || matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -424,7 +428,7 @@ jobs:
   # Node it ships on, from its own lockfile, as each Python harness below runs its own.
   langgraph-ts:
     name: typescript langgraph engine
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'openbot-ubuntu-16core' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -441,9 +445,6 @@ jobs:
 
   python-harness:
     name: python harness regressions
-    # CPU-bound: runs on a 16-core larger runner (org runner group openbot-larger, billed per
-    # minute) for main, releases and pull requests from this repository. Pull requests from forks
-    # stay on the free standard runner.
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'openbot-ubuntu-16core' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -566,7 +567,7 @@ jobs:
 
   build:
     name: build
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'openbot-ubuntu-16core' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -590,7 +591,7 @@ jobs:
   # price of a dependency in the one workflow whose inputs are a security boundary.
   component-dockerfiles:
     name: component dockerfiles
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'openbot-ubuntu-16core' }}
     # Minutes rather than seconds, so on a pull request it runs only when an admin adds the
     # `full-ci` label, the point at which the PR is actually a merge candidate. On main and through
     # the release's workflow_call it always runs. `verify` treats a skipped job as passing.
@@ -631,7 +632,7 @@ jobs:
   # remembering to add it to a list, and a job that was skipped for the wrong reason is not a pass.
   verify:
     name: verify
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'openbot-ubuntu-16core' }}
     if: always()
     needs: [static, api, mobile, app-browser, test, test-total, startup, langgraph-ts, python-harness, build, component-dockerfiles]
     steps:
