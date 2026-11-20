@@ -645,6 +645,13 @@
       "when": 1795160228166,
       "tag": "0091_corsair_github_events",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1795161386423,
+      "tag": "0092_corsair_slack_personal",
+      "breakpoints": true
     }
   ]
 }

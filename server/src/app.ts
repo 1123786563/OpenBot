@@ -141,6 +141,7 @@ import type { ComposioBroker } from "./plugins/broker";
 import { createGithubEventIngress } from "./plugins/corsair/event-ingress";
 import { createGithubEventTriggerRoutes } from "./plugins/corsair/event-triggers";
 import { createGithubPilotRoutes } from "./plugins/corsair/routes";
+import { createSlackPilotRoutes } from "./plugins/corsair/slack/routes";
 import { createAppGrantDraftRoutes } from "./plugins/grant-translate";
 import { createPluginRoutes } from "./plugins/routes";
 import { createSharedUseRoutes } from "./plugins/shared-use-routes";
@@ -459,6 +460,10 @@ export function createApp(
       Pick<Parameters<typeof createGithubEventTriggerRoutes>[0], "triggers">;
     githubPilot?: Omit<
       Parameters<typeof createGithubPilotRoutes>[0],
+      "requireUser" | "canUseBot"
+    >;
+    slackPilot?: Omit<
+      Parameters<typeof createSlackPilotRoutes>[0],
       "requireUser" | "canUseBot"
     >;
     /** The Recorder extension's routes and guards (recorder/wiring.ts). Absent, nothing about it is mounted. */
@@ -1641,6 +1646,17 @@ export function createApp(
       "/api/corsair/github",
       createGithubPilotRoutes({
         ...coworker.githubPilot,
+        requireUser,
+        canUseBot,
+      }),
+    );
+  }
+
+  if (coworker?.slackPilot && agentProfileStore) {
+    app.route(
+      "/api/corsair/slack",
+      createSlackPilotRoutes({
+        ...coworker.slackPilot,
         requireUser,
         canUseBot,
       }),

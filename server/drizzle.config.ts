@@ -44,6 +44,7 @@ export default defineConfig({
     "./src/db/schema/identity.ts",
     "./src/db/schema/recorder.ts",
     "./src/db/schema/corsair.ts",
+    "./src/db/schema/corsair-slack.ts",
   ],
   out: "./drizzle",
   dbCredentials: {
