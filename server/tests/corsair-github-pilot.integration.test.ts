@@ -133,6 +133,7 @@ test("only the initiating workspace and Person can finish a single-use GitHub au
     ).toHaveLength(1);
     expect(await (await b.request("/connections")).json()).toEqual({
       connections: [],
+      defaultConnectionId: null,
     });
   } finally {
     await database.delete(users).where(eq(users.id, person));

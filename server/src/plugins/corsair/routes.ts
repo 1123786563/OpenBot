@@ -19,11 +19,14 @@ import { decryptSecret, encryptSecret } from "../../credentials";
 import type { Database } from "../../db/client";
 import {
   githubPilotConnections,
+  githubPilotDefaults,
   githubPilotGrants,
   githubPilotRepositories,
   githubPilotStates,
 } from "../../db/schema/corsair";
+import { brokeredAccounts } from "../../db/schema/plugins";
 import { type GithubPilotProvider, githubId } from "./github";
+import type { VerifiedLegacyGithubDefault } from "./legacy-defaults";
 
 const tool = {
   ref: "corsair/github.create_issue",
@@ -36,7 +39,7 @@ const id = z.uuid();
 const botId = z.string().trim().min(1).max(200);
 const invocation = z.strictObject({
   botId,
-  connectionId: id,
+  connectionId: id.optional(),
   repositoryId: githubId,
   title: z
     .string()
@@ -45,7 +48,7 @@ const invocation = z.strictObject({
     .refine((value) => value.trim().length > 0),
   body: z.string().max(32_000).optional(),
 });
-type Invocation = z.infer<typeof invocation>;
+type Invocation = z.infer<typeof invocation> & { connectionId: string };
 const digest = (value: string, encoding: "hex" | "base64url" = "hex") =>
   createHash("sha256").update(value).digest(encoding);
 
@@ -72,6 +75,7 @@ type Deps = {
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
   canUseBot: BotAccessCheck;
   clock?: () => Date;
+  legacyDefaults?: readonly VerifiedLegacyGithubDefault[];
 };
 
 export function createGithubPilotRoutes({
@@ -85,6 +89,7 @@ export function createGithubPilotRoutes({
   requireUser,
   canUseBot,
   clock = () => new Date(),
+  legacyDefaults = [],
 }: Deps) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", requireUser, async (context, next) => {
@@ -143,6 +148,22 @@ export function createGithubPilotRoutes({
     login: githubPilotConnections.login,
     expiresAt: githubPilotConnections.expiresAt,
   };
+
+  const matchesDefault = and(
+    eq(githubPilotDefaults.workspaceId, githubPilotConnections.workspaceId),
+    eq(githubPilotDefaults.personId, githubPilotConnections.personId),
+    eq(githubPilotDefaults.registration, githubPilotConnections.registration),
+    eq(githubPilotDefaults.githubUserId, githubPilotConnections.githubUserId),
+  );
+
+  async function defaultConnectionId(personId: string) {
+    const [row] = await database
+      .select({ id: githubPilotConnections.id })
+      .from(githubPilotConnections)
+      .innerJoin(githubPilotDefaults, matchesDefault)
+      .where(connectionScope(personId));
+    return row?.id ?? null;
+  }
 
   async function credential(personId: string, connectionId: string) {
     const [row] = await database
@@ -287,26 +308,63 @@ export function createGithubPilotRoutes({
       expiresAt,
       revision: randomUUID(),
     };
-    const [connection] = await database
-      .insert(githubPilotConnections)
-      .values({
-        workspaceId,
-        registration,
-        personId: c.var.actor.id,
-        githubUserId: String(identity.id),
-        ...update,
-      })
-      .onConflictDoUpdate({
-        target: [
-          githubPilotConnections.workspaceId,
-          githubPilotConnections.personId,
-          githubPilotConnections.registration,
-          githubPilotConnections.githubUserId,
-        ],
-        set: update,
-      })
-      .returning(publicIdentity);
-    if (!connection) throw new Error("Connection was not saved.");
+    const personId = c.var.actor.id;
+    const githubUserId = String(identity.id);
+    // Brokered accounts carry no workspace or verified GitHub subject. Both come from the evidence.
+    const [evidence, conflictingEvidence] = legacyDefaults.filter(
+      (entry) =>
+        entry.workspaceId === workspaceId &&
+        entry.registration === registration &&
+        entry.personId === personId,
+    );
+    const { connection, inheritedFrom } = await database.transaction(
+      async (tx) => {
+        const [connection] = await tx
+          .insert(githubPilotConnections)
+          .values({
+            workspaceId,
+            registration,
+            personId,
+            githubUserId,
+            ...update,
+          })
+          .onConflictDoUpdate({
+            target: [
+              githubPilotConnections.workspaceId,
+              githubPilotConnections.personId,
+              githubPilotConnections.registration,
+              githubPilotConnections.githubUserId,
+            ],
+            set: update,
+          })
+          .returning(publicIdentity);
+        if (!connection) throw new Error("Connection was not saved.");
+        if (conflictingEvidence || evidence?.githubUserId !== identity.id)
+          return { connection };
+        const [legacy] = await tx
+          .select({ id: brokeredAccounts.id })
+          .from(brokeredAccounts)
+          .where(
+            and(
+              eq(brokeredAccounts.id, evidence.brokeredAccountId),
+              eq(brokeredAccounts.userId, personId),
+              eq(brokeredAccounts.app, "github"),
+              eq(brokeredAccounts.isDefault, true),
+            ),
+          )
+          .for("share");
+        if (!legacy) return { connection };
+        const [inherited] = await tx
+          .insert(githubPilotDefaults)
+          .values({ workspaceId, registration, personId, githubUserId })
+          .onConflictDoNothing()
+          .returning({ githubUserId: githubPilotDefaults.githubUserId });
+        return {
+          connection,
+          inheritedFrom: inherited ? evidence.evidenceRef : undefined,
+        };
+      },
+    );
     await recordAuditEvent(audit, {
       eventType: "corsair.github.connected",
       actorUserId: c.var.actor.id,
@@ -316,19 +374,51 @@ export function createGithubPilotRoutes({
         workspaceId,
         githubUserId: identity.id,
         login: identity.login,
+        ...(inheritedFrom
+          ? { inheritedDefaultEvidenceRef: inheritedFrom }
+          : {}),
       },
     });
     return c.json({ connectionId: connection.id, identity });
   });
 
-  routes.get("/connections", async (c) =>
-    c.json({
-      connections: await database
-        .select(publicIdentity)
-        .from(githubPilotConnections)
-        .where(connectionScope(c.var.actor.id)),
-    }),
-  );
+  routes.get("/connections", async (c) => {
+    const rows = await database
+      .select({
+        ...publicIdentity,
+        defaultUserId: githubPilotDefaults.githubUserId,
+      })
+      .from(githubPilotConnections)
+      .leftJoin(githubPilotDefaults, matchesDefault)
+      .where(connectionScope(c.var.actor.id));
+    return c.json({
+      connections: rows.map(
+        ({ defaultUserId: _defaultUserId, ...connection }) => connection,
+      ),
+      defaultConnectionId:
+        rows.find((row) => row.defaultUserId !== null)?.id ?? null,
+    });
+  });
+
+  routes.put("/connections/default", async (c) => {
+    const { connectionId } = z
+      .strictObject({ connectionId: id })
+      .parse(await c.req.json());
+    const personId = c.var.actor.id;
+    const { githubUserId } = await credential(personId, connectionId);
+    await database
+      .insert(githubPilotDefaults)
+      .values({ workspaceId, registration, personId, githubUserId })
+      .onConflictDoUpdate({
+        target: [
+          githubPilotDefaults.workspaceId,
+          githubPilotDefaults.personId,
+          githubPilotDefaults.registration,
+        ],
+        set: { githubUserId },
+      });
+    return c.json({ defaultConnectionId: connectionId });
+  });
 
   routes.post("/repositories", async (c) => {
     const forbidden = requireAdmin(c);
@@ -515,8 +605,16 @@ export function createGithubPilotRoutes({
   }
 
   routes.post("/approvals", async (c) => {
-    const input = invocation.parse(await c.req.json());
+    const selection = invocation.parse(await c.req.json());
     const actor = c.var.actor;
+    const connectionId =
+      selection.connectionId ?? (await defaultConnectionId(actor.id));
+    if (!connectionId)
+      throw new PilotRefusal(
+        "Choose a default from your newly authorized GitHub Connections or select one for this action.",
+        409,
+      );
+    const input = { ...selection, connectionId };
     const action = actionFor(
       actor.id,
       input,
@@ -566,9 +664,13 @@ export function createGithubPilotRoutes({
 
   routes.post("/approvals/:id/execute", async (c) => {
     const approvalId = id.parse(c.req.param("id"));
-    const input = invocation.parse(await c.req.json());
+    const invocationArgs = invocation.parse(await c.req.json());
     const actor = c.var.actor;
     const record = await ownedApproval(actor.id, approvalId);
+    const pinned = z
+      .object({ connectionId: id, repositoryId: z.string() })
+      .parse(record.action.target);
+    const input = { ...invocationArgs, connectionId: pinned.connectionId };
     const trail = (
       eventType: AuditEventInput["eventType"],
       payload: Record<string, unknown>,
@@ -577,11 +679,11 @@ export function createGithubPilotRoutes({
         eventType,
         actorUserId: actor.id,
         targetType: "github_repository",
-        targetId: String(input.repositoryId),
+        targetId: pinned.repositoryId,
         payload: {
           workspaceId,
           approvalId,
-          botId: input.botId,
+          botId: record.action.botId,
           tool: tool.ref,
           connectionId: input.connectionId,
           ...payload,
@@ -591,6 +693,14 @@ export function createGithubPilotRoutes({
     try {
       if (record.status !== "approved" || record.decision !== "allow_once")
         throw new PilotRefusal("A current one-time Approval is required.", 409);
+      if (
+        invocationArgs.connectionId !== undefined &&
+        invocationArgs.connectionId !== pinned.connectionId
+      )
+        throw new PilotRefusal(
+          "The GitHub Connection no longer matches its Approval.",
+          409,
+        );
       const current = await permitted(actor, input);
       if (
         actionFor(actor.id, input, current, record.action.runId)

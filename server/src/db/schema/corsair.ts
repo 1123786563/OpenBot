@@ -1,4 +1,5 @@
 import {
+  foreignKey,
   pgTable,
   primaryKey,
   text,
@@ -36,6 +37,29 @@ export const githubPilotConnections = pgTable(
   },
   (t) => [
     unique().on(t.workspaceId, t.personId, t.registration, t.githubUserId),
+  ],
+);
+
+export const githubPilotDefaults = pgTable(
+  "github_pilot_defaults",
+  {
+    workspaceId: text("workspace_id").notNull(),
+    personId: text("person_id").notNull(),
+    registration: text("registration").notNull(),
+    githubUserId: text("github_user_id").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.personId, t.registration] }),
+    foreignKey({
+      name: "github_pilot_defaults_connection_fk",
+      columns: [t.workspaceId, t.personId, t.registration, t.githubUserId],
+      foreignColumns: [
+        githubPilotConnections.workspaceId,
+        githubPilotConnections.personId,
+        githubPilotConnections.registration,
+        githubPilotConnections.githubUserId,
+      ],
+    }).onDelete("cascade"),
   ],
 );
 

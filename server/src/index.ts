@@ -256,6 +256,7 @@ import {
   createGithubPilotProvider,
   githubPilotRegistration,
 } from "./plugins/corsair/github";
+import { readVerifiedLegacyGithubDefaults } from "./plugins/corsair/legacy-defaults";
 import { backfillBrokeredLogos } from "./plugins/logos";
 import { redirectUriFor } from "./plugins/oauth";
 import {
@@ -3168,6 +3169,9 @@ const app = createApp(
             workspaceId: deploymentId,
             registration: `${githubPilot.appId}/${githubPilot.clientId}`,
             provider: createGithubPilotProvider(githubPilot),
+            legacyDefaults: readVerifiedLegacyGithubDefaults(
+              process.env.CORSAIR_GITHUB_VERIFIED_LEGACY_DEFAULTS,
+            ),
             database,
             approvals: storedApprovals,
             audit: bootAuditStore,
