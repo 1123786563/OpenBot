@@ -10,6 +10,9 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { Observable } from "rxjs";
 import { createAgentProfileStore } from "../src/agents/profile-store";
+import { createApprovalRoutes } from "../src/approvals/routes";
+import { createApprovalService } from "../src/approvals/service";
+import { createApprovalStore } from "../src/approvals/store";
 import { createAuditStore } from "../src/audit";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import {
@@ -123,10 +126,14 @@ function web(
     deployment = config,
     opik,
     partial,
+    prepare,
+    authorized,
   }: {
     deployment?: typeof config;
     opik?: typeof config.opik;
     partial?: string;
+    prepare?: () => Promise<void>;
+    authorized?: () => boolean;
   } = {},
 ) {
   const store = createAgentProfileStore(db, endpoint);
@@ -137,6 +144,7 @@ function web(
   );
   const agentFor = async (_actor: unknown, id: string) => {
     if (id !== botId) throw new Error("Unexpected Bot.");
+    await prepare?.();
     return new AnsweringAgent(answer, partial);
   };
   const copilot = mountCopilotRuntime(
@@ -148,7 +156,7 @@ function web(
       resolveAgentForActor: agentFor,
     },
     async () => ({ id: actor.id, name: actor.id }),
-    async () => actor,
+    async () => (authorized?.() === false ? { id: "", role: "user" } : actor),
     {
       directChat: { database: db, profiles: store },
     },
@@ -172,6 +180,13 @@ function web(
   );
   app.route("/api/channels", createChannelAttachmentRoutes(db, requireUser));
   app.route("/api/attachments", createAttachmentRoutes(db, requireUser));
+  app.route(
+    "/api/approvals",
+    createApprovalRoutes(
+      createApprovalService(createApprovalStore(db)),
+      requireUser,
+    ),
+  );
   app.route("/", copilot.handler);
   return app;
 }
@@ -1058,7 +1073,9 @@ test("Web turns share Test Credits, reconcile uncertain dispatch on replay, and 
   const ids = new Set<string>();
   const calls: { path: string; operationId: string }[] = [];
   let uncertainOperation: string | undefined;
-  let uncertainState: "pending" | "settled" = "pending";
+  let uncertainState: "pending" | "settled" | "released" = "pending";
+  let verifiedText: string | undefined;
+  let confirmedUnsent = false;
   let loseDispatchResponse = false;
   let available = true;
   let dispatches = 0;
@@ -1098,6 +1115,10 @@ test("Web turns share Test Credits, reconcile uncertain dispatch on replay, and 
       }
       expect(path).toBe("/v1/reconcile");
       return Response.json({
+        ...(call.operationId === uncertainOperation &&
+          (confirmedUnsent
+            ? { outcome: "not_dispatched" }
+            : verifiedText && { outcome: "executed", text: verifiedText })),
         state:
           call.operationId === uncertainOperation
             ? uncertainState
@@ -1167,6 +1188,11 @@ test("Web turns share Test Credits, reconcile uncertain dispatch on replay, and 
                 }),
               )
             ).text(),
+          reconcile: (runId: string) =>
+            app.request(
+              `/api/copilotkit/threads/${channel.threadId}/runs/${runId}/reconcile?agentId=${bot.id}`,
+              post({}),
+            ),
           history: () =>
             app.request(
               `/api/copilotkit/threads/${channel.threadId}/messages?agentId=${bot.id}`,
@@ -1241,6 +1267,12 @@ test("Web turns share Test Credits, reconcile uncertain dispatch on replay, and 
         code: "reconciling",
       }),
     );
+    expect(await winner.run("different-message")).toContain(
+      "The previous Run has an unverified external outcome.",
+    );
+    expect(await (await winner.history()).text()).toContain(
+      '"externalOutcome":"unknown"',
+    );
     uncertainState = "settled";
     expect(
       events(await winner.run("uncertain-message", "later-browser-run")),
@@ -1267,7 +1299,51 @@ test("Web turns share Test Credits, reconcile uncertain dispatch on replay, and 
         { runId: "uncertain-message", status: "failed" },
       ]),
     );
+    expect(await (await winner.reconcile("uncertain-message")).json()).toEqual({
+      externalOutcome: "unknown",
+      settlement: "settled",
+    });
+    verifiedText = "Verified original reply.";
+    expect(await (await winner.reconcile("uncertain-message")).json()).toEqual({
+      externalOutcome: "executed",
+      settlement: "settled",
+    });
+    expect(await (await winner.history()).text()).toContain(verifiedText);
+    const recovered = await winner.resume("uncertain-message", 1);
+    const recoveredEvents = events(await recovered.text());
+    expect(recoveredEvents).toContainEqual(
+      expect.objectContaining({
+        type: EventType.MESSAGES_SNAPSHOT,
+        messages: expect.arrayContaining([
+          expect.objectContaining({ role: "assistant", content: verifiedText }),
+        ]),
+      }),
+    );
+    expect(recoveredEvents.at(-1)).toMatchObject({
+      type: EventType.RUN_FINISHED,
+    });
     expect(dispatches).toBe(2);
+    available = true;
+    verifiedText = undefined;
+    uncertainState = "pending";
+    expect(await winner.run("uncertain-unsent")).toContain("reconciling");
+    uncertainState = "released";
+    confirmedUnsent = true;
+    expect(await (await winner.reconcile("uncertain-unsent")).json()).toEqual({
+      externalOutcome: "not_dispatched",
+      settlement: "released",
+    });
+    expect(dispatches).toBe(3);
+    expect(await winner.run("uncertain-unsent")).toContain("released");
+    expect(dispatches).toBe(3);
+    loseDispatchResponse = false;
+    expect(await winner.run("retry-without-credits")).toContain(
+      "insufficient_credits",
+    );
+    expect(dispatches).toBe(3);
+    available = true;
+    expect(await winner.run("explicit-resend")).toContain("Managed answer.");
+    expect(dispatches).toBe(4);
     expect(legacyCalls).toBe(0);
   } finally {
     await control.stop(true);
@@ -1276,6 +1352,289 @@ test("Web turns share Test Credits, reconcile uncertain dispatch on replay, and 
     for (const id of bots)
       await database.delete(agents).where(eq(agents.id, id));
     await database.delete(users).where(eq(users.id, alice.id));
+  }
+});
+
+test("another worker resumes a persisted Run before dispatch and the original worker cannot dispatch it again", async () => {
+  const actor = await person();
+  const bot = await profiles.create(actor, {
+    name: "Recovery Bot",
+    title: "Bot",
+    roleDescription: "Answers locally.",
+    visibility: "private",
+  });
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  let dispatches = 0;
+  const answer = async () => {
+    dispatches++;
+  };
+  const original = web(database, actor, bot.id, answer, {
+    prepare: async () => {
+      entered.resolve();
+      await release.promise;
+    },
+  });
+  const { channel } = await (
+    await original.request("/api/channels", post({ agentIds: [bot.id] }))
+  ).json();
+  const key = { threadId: channel.threadId, runId: "recoverable" };
+  const base = `/api/copilotkit/agent/${bot.id}`;
+  const message = { role: "user", id: "prompt", content: "Hello." };
+  try {
+    const first = await original.request(
+      `${base}/run`,
+      post({ ...key, messages: [message] }),
+    );
+    await entered.promise;
+    await first.body?.cancel();
+    const resumed = Promise.withResolvers<void>();
+    const replacement = web(database, actor, bot.id, async () => {
+      await answer();
+      resumed.resolve();
+    });
+    const opened = await replacement.request(
+      `${base}/connect`,
+      post({ threadId: key.threadId }),
+    );
+    expect(await opened.text()).toContain(message.content);
+    await resumed.promise;
+    const reattached = await replacement.request(
+      `${base}/resume`,
+      post({ ...key, cursor: 0 }),
+    );
+    expect(reattached.status).toBe(200);
+    expect(events(await reattached.text())).toContainEqual({
+      type: EventType.RUN_FINISHED,
+      ...key,
+    });
+    release.resolve();
+    const repeated = await original.request(
+      `${base}/run`,
+      post({ ...key, messages: [message] }),
+    );
+    expect(await repeated.text()).toContain("Offline answer.");
+    expect(dispatches).toBe(1);
+  } finally {
+    release.resolve();
+    await database.delete(channels).where(eq(channels.id, channel.id));
+    await database.delete(agents).where(eq(agents.id, bot.id));
+    await database.delete(users).where(eq(users.id, actor.id));
+  }
+});
+
+test("only the owner can stop an active Run and the stopped Run rejects a late approval and preserves output", async () => {
+  const actor = await person();
+  const stranger = await person();
+  const bot = await profiles.create(actor, {
+    name: "Stoppable Bot",
+    title: "Bot",
+    roleDescription: "Answers locally.",
+    visibility: "private",
+  });
+  const release = Promise.withResolvers<void>();
+  const app = web(database, actor, bot.id, () => release.promise, {
+    partial: "Partial output.",
+  });
+  const other = web(database, stranger, bot.id, async () => {});
+  const { channel } = await (
+    await app.request("/api/channels", post({ agentIds: [bot.id] }))
+  ).json();
+  const key = { threadId: channel.threadId, runId: "waiting" };
+  const base = `/api/copilotkit/agent/${bot.id}`;
+  const thread = `/api/copilotkit/threads/${key.threadId}`;
+  const stop = `${thread}/runs/${key.runId}/stop?agentId=${bot.id}`;
+  const send = (runId: string) =>
+    app.request(
+      `${base}/run`,
+      post({
+        ...key,
+        runId,
+        messages: [{ role: "user", id: runId, content: "Hello." }],
+      }),
+    );
+  try {
+    const reader = (await send(key.runId)).body?.getReader();
+    if (!reader) throw new Error("Missing Run stream.");
+    let partial = "";
+    while (!partial.includes("Partial output.")) {
+      const read = await reader.read();
+      if (read.done) throw new Error("Run ended before sending output.");
+      partial += new TextDecoder().decode(read.value);
+    }
+    const approvals = createApprovalStore(database);
+    const request = await approvals.open({
+      ...key,
+      toolCallId: "call",
+      actionDigest: "digest",
+      actorId: actor.id,
+      botId: bot.id,
+      toolRef: "fixture",
+      scope: "fixture",
+      effect: "fixture",
+      args: {},
+    });
+    const waiting = await (
+      await app.request(`${thread}/messages?agentId=${bot.id}`)
+    ).json();
+    expect(waiting.runs).toContainEqual(
+      expect.objectContaining({
+        id: key.runId,
+        status: "running",
+        waitingForApproval: true,
+      }),
+    );
+    expect((await send("next")).status).toBe(409);
+    expect((await other.request(stop, post({}))).status).toBe(404);
+    expect(await (await app.request(stop, post({}))).json()).toEqual({
+      stopped: true,
+    });
+    const lateDecision = await app.request(
+      `/api/approvals/${request.id}/decision`,
+      post({ decision: "allow_once" }),
+    );
+    expect(lateDecision.status).toBe(404);
+    release.resolve();
+    let tail = "";
+    for (
+      let read = await reader.read();
+      !read.done;
+      read = await reader.read()
+    ) {
+      tail += new TextDecoder().decode(read.value);
+    }
+    expect(events(tail)).toEqual([
+      {
+        type: EventType.RUN_ERROR,
+        code: "stopped",
+        message: "The Bot run was stopped.",
+      },
+    ]);
+    const beforeNext = await (
+      await app.request(`${thread}/messages?agentId=${bot.id}`)
+    ).text();
+    expect(beforeNext).toContain("Partial output.");
+    expect(beforeNext).toContain('"stopReason":"stopped"');
+    expect(beforeNext).not.toContain("Offline answer.");
+    expect(await (await send("next")).text()).toContain("Offline answer.");
+  } finally {
+    release.resolve();
+    await database.delete(channels).where(eq(channels.id, channel.id));
+    await database.delete(agents).where(eq(agents.id, bot.id));
+    await database.delete(users).where(eq(users.id, actor.id));
+    await database.delete(users).where(eq(users.id, stranger.id));
+  }
+});
+
+test("a revoked account loses its live Run and a restored account must start a new Run", async () => {
+  const alice = await person();
+  const bob = await person();
+  const release = Promise.withResolvers<void>();
+  const bots = await Promise.all(
+    [alice, bob].map((actor) =>
+      profiles.create(actor, {
+        name: "Account cut-off Bot",
+        title: "Bot",
+        roleDescription: "Answers locally.",
+        visibility: "private",
+      }),
+    ),
+  );
+  const [aliceBot, bobBot] = bots;
+  if (!aliceBot || !bobBot) throw new Error("Missing test Bots.");
+  let authorized = true;
+  let dispatches = 0;
+  const aliceApp = web(
+    database,
+    alice,
+    aliceBot.id,
+    async () => {
+      dispatches++;
+      await release.promise;
+    },
+    { authorized: () => authorized, partial: "Before revocation." },
+  );
+  const bobApp = web(database, bob, bobBot.id, async () => {});
+  const [aliceChannel, bobChannel] = await Promise.all(
+    [
+      [aliceApp, aliceBot.id],
+      [bobApp, bobBot.id],
+    ].map(async ([app, botId]) => {
+      if (typeof app === "string") throw new Error("Missing test app.");
+      return (
+        await (
+          await app.request("/api/channels", post({ agentIds: [botId] }))
+        ).json()
+      ).channel;
+    }),
+  );
+  const path = `/api/copilotkit/agent/${aliceBot.id}`;
+  const message = { role: "user", id: "original", content: "Hello." };
+  const payload = {
+    threadId: aliceChannel.threadId,
+    runId: "original",
+    messages: [message],
+  };
+  try {
+    const reader = (
+      await aliceApp.request(`${path}/run`, post(payload))
+    ).body?.getReader();
+    if (!reader) throw new Error("Missing Run stream.");
+    let partial = "";
+    while (!partial.includes("Before revocation.")) {
+      const read = await reader.read();
+      if (read.done) throw new Error("Missing partial output.");
+      partial += new TextDecoder().decode(read.value);
+    }
+    authorized = false;
+    const revokedAt = Date.now();
+    let tail = "";
+    for (
+      let read = await reader.read();
+      !read.done;
+      read = await reader.read()
+    ) {
+      tail += new TextDecoder().decode(read.value);
+    }
+    expect(tail).toContain("The Bot run is unavailable.");
+    expect(Date.now() - revokedAt).toBeLessThan(60_000);
+    expect((await aliceApp.request(`${path}/run`, post(payload))).status).toBe(
+      404,
+    );
+    expect(
+      await (
+        await bobApp.request(
+          `/api/copilotkit/agent/${bobBot.id}/run`,
+          post({
+            ...payload,
+            threadId: bobChannel.threadId,
+          }),
+        )
+      ).text(),
+    ).toContain("Offline answer.");
+    authorized = true;
+    release.resolve();
+    const original = await aliceApp.request(`${path}/run`, post(payload));
+    expect(await original.text()).toContain("access_revoked");
+    expect(dispatches).toBe(1);
+    const retry = await aliceApp.request(
+      `${path}/run`,
+      post({
+        ...payload,
+        runId: "explicit-retry",
+        messages: [{ ...message, id: "explicit-retry" }],
+      }),
+    );
+    expect(await retry.text()).toContain("Offline answer.");
+    expect(dispatches).toBe(2);
+  } finally {
+    release.resolve();
+    for (const channel of [aliceChannel, bobChannel])
+      await database.delete(channels).where(eq(channels.id, channel.id));
+    for (const bot of bots)
+      await database.delete(agents).where(eq(agents.id, bot.id));
+    for (const actor of [alice, bob])
+      await database.delete(users).where(eq(users.id, actor.id));
   }
 });
 

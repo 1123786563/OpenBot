@@ -14,6 +14,7 @@ import {
   channels,
   intelligenceChannelMappings,
 } from "../db/schema/core";
+import { directChatRuns } from "../db/schema/direct-chat";
 import { groupBotThreads } from "../db/schema/group";
 import { botTasks } from "../db/schema/tasks";
 import { workItems } from "../db/schema/work";
@@ -76,6 +77,20 @@ export function createApprovalStore(
     botId: string,
   ) => Promise<boolean>,
 ): ApprovalStore {
+  async function runAcceptsApproval(tx: Transaction, action: ApprovalAction) {
+    const [run] = await tx
+      .select({ status: directChatRuns.status })
+      .from(directChatRuns)
+      .where(
+        and(
+          eq(directChatRuns.threadId, action.threadId),
+          eq(directChatRuns.id, action.runId),
+        ),
+      )
+      .for("share");
+    return !run || run.status === "running";
+  }
+
   async function canControlConversation(
     tx: Transaction,
     action: ApprovalAction,
@@ -110,6 +125,7 @@ export function createApprovalStore(
       );
     return (
       Boolean(member) &&
+      (await runAcceptsApproval(tx, action)) &&
       (!canUseBot || (await canUseBot(tx, action.actorId, action.botId)))
     );
   }
@@ -174,6 +190,8 @@ export function createApprovalStore(
     },
     async open(action) {
       return database.transaction(async (tx) => {
+        if (!(await runAcceptsApproval(tx, action)))
+          throw new ApprovalRefusedError("The Bot run has ended.");
         // A request the policy gate opened was opened because something asked for the person; a
         // saved "always" rule was already weighed there and must not approve it behind that.
         const [rule] = action.policy

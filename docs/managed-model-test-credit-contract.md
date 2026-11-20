@@ -24,6 +24,20 @@ OpenBot posts JSON with the configured service bearer token. Return typed busine
 
 Denial reasons are `insufficient_credits`, `execution_limit`, `not_authorized` and `route_unavailable`. Reconciliation accepts only an operation ID. Usage and prices come from trusted service records. OpenBot asks for reconciliation after dispatch, on ambiguous reservation responses and when an existing operation needs recovery.
 
+## Direct-chat Run recovery
+
+OpenBot stores a dispatch checkpoint on the Run before it calls the controlled entry point. An authorized replay request can resume a Run that has yet to cross that checkpoint. If dispatch might have occurred and the outcome is unknown, OpenBot blocks fresh turns in the Thread.
+
+`POST /api/copilotkit/threads/:threadId/runs/:runId/reconcile?agentId=:agentId` checks the original operation. The control plane can include conclusive outcome evidence in its existing `/v1/reconcile` response.
+
+| Response fields | OpenBot behavior |
+| --- | --- |
+| `state: "settled"`, `outcome: "executed"`, `text` | Records the verified reply in the original Run. |
+| `state: "released"` or `"absent"`, `outcome: "not_dispatched"` | Clears the hold when the control plane guarantees the original operation never reached the supplier and can no longer dispatch. A new send creates a new Run and checks Test Credit admission again. |
+| `state` alone | Reports settlement and keeps the unknown outcome. A released reservation can also represent an expired dispatched operation. |
+
+`POST /api/copilotkit/threads/:threadId/runs/:runId/stop?agentId=:agentId` ends an active Run for the authorized owner. History preserves partial output and any outstanding unknown outcome.
+
 ## Service requirements for acceptance
 
 1. The ADR 0008 ledger resolves the Person to the Billing Account, checks spending authorization and atomically reserves the bounded Test Credit charge against that account and the applicable execution limits. The reservation freezes the Price Version. Bind the permit and operation to the service identity, route, actor and reservation. Release confirmed unsent reservations when authorization or eligibility is lost or the permit expires.
