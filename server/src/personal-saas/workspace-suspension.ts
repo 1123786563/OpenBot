@@ -1,11 +1,12 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Database } from "../db/client";
 import {
   personalSaasAccounts,
   personalSaasSessions,
+  personalSupportRequests,
   personalWorkspaceIntegrationGrants,
   personalWorkspaceSuspensions,
   personalWorkspaces,
@@ -119,6 +120,17 @@ export function suspensionRoutes(
         await tx
           .delete(personalSaasSessions)
           .where(eq(personalSaasSessions.accountId, workspace.ownerId));
+        await tx
+          .update(personalSupportRequests)
+          .set({ revokedAt: effectiveAt })
+          .where(
+            and(
+              eq(personalSupportRequests.workspaceId, workspaceId.data),
+              isNotNull(personalSupportRequests.approvedAt),
+              isNull(personalSupportRequests.revokedAt),
+              sql`${personalSupportRequests.expiresAt} > clock_timestamp()`,
+            ),
+          );
         await tx
           .delete(personalWorkspaceIntegrationGrants)
           .where(
