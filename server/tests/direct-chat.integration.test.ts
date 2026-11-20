@@ -367,14 +367,16 @@ test("normal Web turns share Test Credits across conversations and keep history 
         ids.add(call.operationId);
         return Response.json({ state: "reserved", permit: "one-call" });
       }
-      expect(ids.has(call.operationId)).toBe(true);
       if (path === "/v1/dispatch") {
+        expect(ids.has(call.operationId)).toBe(true);
         expect(call.permit).toBe("one-call");
         dispatches++;
         return Response.json({ state: "completed", text: "Managed answer." });
       }
       expect(path).toBe("/v1/reconcile");
-      return Response.json({ state: "settled" });
+      return Response.json({
+        state: ids.has(call.operationId) ? "settled" : "absent",
+      });
     },
   });
   const deployment = loadConfig({
