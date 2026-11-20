@@ -2,7 +2,11 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { type AppVariables, requireAdmin } from "../../auth/guards";
-import { type CorsairEventOperations, eventSource } from "./event-operations";
+import {
+  type CorsairEventOperations,
+  eventSource,
+  replayDecision,
+} from "./event-operations";
 
 const text = z.string().trim().min(1).max(256);
 const evidence = eventSource.extend({
@@ -17,6 +21,7 @@ const replay = eventSource.extend({
   receiptId: text,
   triggerId: text,
   historyRef: text,
+  decision: replayDecision.optional(),
 });
 const incident = eventSource.extend({ historyRef: text });
 

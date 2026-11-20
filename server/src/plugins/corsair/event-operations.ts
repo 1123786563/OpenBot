@@ -16,6 +16,13 @@ export const eventSource = z.object({
   provider: z.enum(["github", "slack"]),
   source: z.string().min(1).max(160),
 });
+export const replayDecision = z.enum([
+  "eligible",
+  "account-inactive",
+  "authorization-revoked",
+  "trigger-created-after-event",
+  "unknown",
+]);
 type Source = z.infer<typeof eventSource>;
 type EventKey = Source & { eventKey: string };
 const journalType = "openbot.events.legacy";
@@ -121,8 +128,11 @@ export function createCorsairEventOperations(
     );
   }
 
-  const replayId = (receiptId: string, triggerId: string) =>
-    idFor(replayType, receiptId, triggerId);
+  const replayId = (
+    receiptId: string,
+    triggerId: string,
+    decision: z.infer<typeof replayDecision>,
+  ) => idFor(replayType, receiptId, triggerId, decision);
 
   async function reportOn(db: Database | EventTransaction, key: Source) {
     const rows = await db
@@ -555,9 +565,15 @@ export function createCorsairEventOperations(
         receiptId: string;
         triggerId: string;
         historyRef: string;
+        decision?: z.infer<typeof replayDecision>;
       },
     ) {
-      const { receiptId, triggerId, historyRef } = request;
+      const {
+        receiptId,
+        triggerId,
+        historyRef,
+        decision = "eligible",
+      } = request;
       return database.transaction(async (tx) => {
         const [target] = await tx
           .select({ outcome: dispatches.outcome })
@@ -578,18 +594,33 @@ export function createCorsairEventOperations(
         await tx
           .insert(events)
           .values({
-            id: replayId(receiptId, triggerId),
+            id: replayId(receiptId, triggerId, decision),
             accountId,
             workspaceId,
             registration: accountId,
             eventType: replayType,
             status: "completed",
-            payload: { ...key, receiptId, triggerId, actorId, historyRef },
+            payload: {
+              ...key,
+              receiptId,
+              triggerId,
+              actorId,
+              historyRef,
+              decision,
+            },
           })
           .onConflictDoNothing();
+        const outcome =
+          decision === "eligible"
+            ? "retry"
+            : decision === "unknown"
+              ? "review"
+              : decision === "authorization-revoked"
+                ? "denied"
+                : "ineligible";
         await tx
           .update(dispatches)
-          .set({ outcome: "retry", nextAttemptAt: new Date() })
+          .set({ outcome, nextAttemptAt: new Date() })
           .where(
             and(
               eq(dispatches.receiptId, receiptId),
@@ -610,7 +641,7 @@ export function createCorsairEventOperations(
       const [record] = await database
         .select({ id: events.id })
         .from(events)
-        .where(eq(events.id, replayId(receiptId, triggerId)));
+        .where(eq(events.id, replayId(receiptId, triggerId, "eligible")));
       return !record;
     },
     async captureEvidence(
