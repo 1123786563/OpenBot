@@ -2,11 +2,11 @@ import { IconChevronRight, IconFileText, IconPlus } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
+import { CapabilityPage } from "@/components/astryx-pilot/capability-surface";
 import {
   PageEmpty,
   PageRows,
   PageSection,
-  PageShell,
 } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,7 +59,7 @@ export function SkillsPage() {
   );
 
   return (
-    <PageShell
+    <CapabilityPage
       action={newSkill("lg")}
       description={
         personal
@@ -72,9 +72,19 @@ export function SkillsPage() {
       <PageSection>
         {/* A read that failed says so; `isPending` goes false on it too, and it is not "none". */}
         {plugins.isPending ? null : !plugins.data ? (
-          <p className="mt-4 text-destructive text-sm" role="alert">
-            Couldn't load skills. Reload the page.
-          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <p className="text-destructive text-sm" role="alert">
+              Couldn't load skills.
+            </p>
+            <Button
+              disabled={plugins.isFetching}
+              onClick={() => void plugins.refetch()}
+              size="sm"
+              variant="outline"
+            >
+              Retry
+            </Button>
+          </div>
         ) : skills.length === 0 ? (
           <PageEmpty
             action={newSkill("sm")}
@@ -131,6 +141,6 @@ export function SkillsPage() {
           </PageRows>
         )}
       </PageSection>
-    </PageShell>
+    </CapabilityPage>
   );
 }

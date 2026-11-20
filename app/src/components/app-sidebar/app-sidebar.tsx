@@ -3,6 +3,7 @@ import {
   IconLogout,
   IconPlus,
   IconSearch,
+  IconTarget,
 } from "@tabler/icons-react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link, type LinkOptions, useParams } from "@tanstack/react-router";
@@ -271,6 +272,19 @@ export function AppSidebar({
         ))}
       {/* Your own browser, with the Recorder in it. Drawn only where OpenBot can run one for you. */}
       <BrowserNavItem />
+      {previewNavigation ? (
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            className="h-10"
+            render={(props) => <Link {...props} to="/responsibilities" />}
+          >
+            <div className="size-[28px] flex items-center justify-center">
+              <IconTarget aria-hidden />
+            </div>
+            <span className="text-sm">Goals</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      ) : null}
       {previewNavigation?.skinScreens.map((screen) => (
         <SidebarMenuItem key={screen}>
           <SidebarMenuButton
@@ -283,7 +297,11 @@ export function AppSidebar({
               <IconLayoutGrid />
             </div>
             <span className="first-letter:uppercase">
-              {screen === "routines" ? "OpenDots Routines" : screen}
+              {screen === "routines"
+                ? "OpenDots Routines"
+                : screen === "goals"
+                  ? "Bot Goals"
+                  : screen}
             </span>
           </SidebarMenuButton>
         </SidebarMenuItem>
