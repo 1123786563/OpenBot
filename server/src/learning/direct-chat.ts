@@ -1,17 +1,26 @@
-import { directChatProposal } from "@openbot/shared/direct-chat-learning";
+import {
+  type DirectChatDecision,
+  type DirectChatLearningScope,
+  type DirectChatReview,
+  directChatProposal,
+} from "@openbot/shared/direct-chat-learning";
 import { and, asc, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { ProfileReadExecutor } from "../agents/profile-store";
 import type { Database } from "../db/client";
 import {
   directChatAnalyses as analyses,
-  directChatRuns as runs,
+  auditEvents,
   learningSettings,
+  personalLearningAutoApproval as preferences,
+  directChatProposalReviews as reviews,
+  directChatRuns as runs,
 } from "../db/schema";
 import type { ManagedModel, ManagedModelResult } from "../managed-model";
 
 type Analysis = typeof analyses.$inferSelect;
-type Scope = { threadId: string; agentId: string; personId: string };
+type Scope = DirectChatLearningScope;
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Authorize = (
   tx: ProfileReadExecutor,
 ) => Promise<{ channelId: string } | null>;
@@ -58,6 +67,7 @@ async function evidence(
   threadId: string,
   ids?: string[],
 ) {
+  if (ids?.length === 0) return [];
   const turns = await tx
     .select({
       runId: runs.id,
@@ -92,13 +102,71 @@ async function evidence(
   );
 }
 
+function sameScope(left: Scope, right: Scope) {
+  return (
+    left.personId === right.personId &&
+    left.botId === right.botId &&
+    left.threadId === right.threadId
+  );
+}
+
+function inScope(scope: Scope) {
+  return and(
+    eq(analyses.threadId, scope.threadId),
+    eq(analyses.botId, scope.botId),
+  );
+}
+
+async function autoApproval(tx: ProfileReadExecutor, personId: string) {
+  const [row] = await tx
+    .select()
+    .from(preferences)
+    .where(eq(preferences.personId, personId));
+  return row?.enabled ?? false;
+}
+
+async function saveReview(
+  tx: Transaction,
+  proposalId: string,
+  scope: Scope,
+  decision: DirectChatDecision["decision"],
+  mode: DirectChatReview["mode"],
+) {
+  const review: DirectChatReview = {
+    decision,
+    scope,
+    mode,
+    reviewerId: scope.personId,
+    reviewedAt: new Date().toISOString(),
+  };
+  await tx.insert(reviews).values({ proposalId, review });
+  await tx.insert(auditEvents).values({
+    actorUserId: scope.personId,
+    eventType: "learning.proposal_reviewed",
+    targetType: "learning_proposal",
+    targetId: proposalId,
+    payload: review,
+  });
+}
+
+async function verifiedEvidence(tx: ProfileReadExecutor, analysis: Analysis) {
+  const sources = await evidence(
+    tx,
+    analysis.threadId,
+    analysis.evidenceRunIds,
+  );
+  return sources.length > 0 && sources.length === analysis.evidenceRunIds.length
+    ? sources
+    : null;
+}
+
 function operation(scope: Scope, channelId: string, analysis: Analysis) {
   return {
     scope: {
       source: "learning" as const,
       personId: scope.personId,
       conversationId: channelId,
-      botId: scope.agentId,
+      botId: scope.botId,
       runId: analysis.id,
     },
     step: "direct-chat-proposal",
@@ -124,13 +192,12 @@ export function createDirectChatLearning(
     await database.transaction(async (tx) => {
       await lockLearningSettings(tx);
       const authorized = await authorize(tx);
-      const enabled = await learningEnabled(tx, scope.agentId);
+      const enabled = await learningEnabled(tx, scope.botId);
       const valid =
         authorized &&
         (result.state !== "proposed" ||
-          (await evidence(tx, scope.threadId, analysis.evidenceRunIds))
-            .length === analysis.evidenceRunIds.length);
-      await tx
+          Boolean(await verifiedEvidence(tx, analysis)));
+      const [saved] = await tx
         .update(analyses)
         .set({
           ...(enabled && valid
@@ -144,7 +211,13 @@ export function createDirectChatLearning(
         })
         .where(
           and(eq(analyses.id, analysis.id), eq(analyses.state, analysis.state)),
-        );
+        )
+        .returning();
+      if (
+        saved?.state === "proposed" &&
+        (await autoApproval(tx, scope.personId))
+      )
+        await saveReview(tx, saved.id, scope, "approve", "automatic");
     });
   }
 
@@ -160,10 +233,7 @@ export function createDirectChatLearning(
       const authorize = await refreshAuthorization();
       return database.transaction(async (tx) => {
         await lockLearningSettings(tx);
-        if (
-          !(await authorize(tx)) ||
-          !(await learningEnabled(tx, scope.agentId))
-        )
+        if (!(await authorize(tx)) || !(await learningEnabled(tx, scope.botId)))
           return false;
         const [row] = await tx
           .select({ id: analyses.id })
@@ -264,22 +334,19 @@ export function createDirectChatLearning(
     });
   }
 
-  return async (
+  async function status(
     scope: Scope,
     refreshAuthorization: RefreshAuthorization,
     start: boolean,
-  ) => {
+  ) {
     const authorize = await refreshAuthorization();
     const outcome = await database.transaction(async (tx) => {
       await lockLearningSettings(tx);
       const conversation = await authorize(tx);
       if (!conversation) return null;
-      const enabled = await learningEnabled(tx, scope.agentId);
+      const enabled = await learningEnabled(tx, scope.botId);
       const available = Boolean(trial);
-      const withinScope = and(
-        eq(analyses.threadId, scope.threadId),
-        eq(analyses.botId, scope.agentId),
-      );
+      const withinScope = inScope(scope);
       const recent = [desc(analyses.startedAt), desc(analyses.id)];
       const [previous] = await tx
         .select()
@@ -329,7 +396,7 @@ export function createDirectChatLearning(
             .insert(analyses)
             .values({
               threadId: scope.threadId,
-              botId: scope.agentId,
+              botId: scope.botId,
               state: turns.length ? "running" : "skipped",
               reason: turns.length ? null : "no_evidence",
               evidenceRunIds: turns.map(({ runId }) => runId),
@@ -371,28 +438,36 @@ export function createDirectChatLearning(
               .limit(1)
           : [latest];
       const proposed = await tx
-        .select()
+        .select({ analysis: analyses, review: reviews.review })
         .from(analyses)
+        .leftJoin(reviews, eq(reviews.proposalId, analyses.id))
         .where(and(withinScope, eq(analyses.state, "proposed")))
         .orderBy(...recent)
         .limit(20);
       const proposals = [];
-      for (const row of proposed) {
-        const sources = await evidence(tx, scope.threadId, row.evidenceRunIds);
-        if (row.proposal && sources.length === row.evidenceRunIds.length) {
-          proposals.push({
-            ...row.proposal,
-            id: row.id,
-            state: "pending_review" as const,
-            evidence: sources,
-          });
-        }
+      for (const { analysis, review } of proposed) {
+        const sources = await verifiedEvidence(tx, analysis);
+        if (!analysis.proposal || !sources) continue;
+        if (review && !sameScope(review.scope, scope)) continue;
+        proposals.push({
+          ...analysis.proposal,
+          id: analysis.id,
+          state: !review
+            ? ("pending_review" as const)
+            : review.decision === "approve"
+              ? ("published" as const)
+              : ("rejected" as const),
+          evidence: sources,
+          review,
+        });
       }
       return {
         work,
         status: {
           enabled,
           available,
+          scope,
+          autoApprove: await autoApproval(tx, scope.personId),
           latest: latest ? summary(latest) : null,
           lastResult: lastResult ? summary(lastResult) : null,
           proposals,
@@ -401,5 +476,103 @@ export function createDirectChatLearning(
     });
     outcome?.work?.();
     return outcome?.status ?? null;
-  };
+  }
+
+  async function decide(
+    scope: Scope,
+    authorize: Authorize,
+    proposalId: string,
+    requested: DirectChatDecision,
+  ) {
+    return database.transaction(async (tx) => {
+      await lockLearningSettings(tx);
+      if (!(await authorize(tx))) return "absent";
+      const [row] = await tx
+        .select({ analysis: analyses, review: reviews.review })
+        .from(analyses)
+        .leftJoin(reviews, eq(reviews.proposalId, analyses.id))
+        .where(
+          and(
+            inScope(scope),
+            eq(analyses.id, proposalId),
+            eq(analyses.state, "proposed"),
+          ),
+        );
+      if (!row?.analysis.proposal) return "absent";
+      if (!sameScope(scope, requested.scope)) return "scope_changed";
+      if (!(await verifiedEvidence(tx, row.analysis)))
+        return "evidence_unavailable";
+      if (row.review)
+        return row.review.decision === requested.decision &&
+          sameScope(row.review.scope, scope)
+          ? "saved"
+          : "already_reviewed";
+      if (
+        requested.decision === "approve" &&
+        !(await learningEnabled(tx, scope.botId))
+      )
+        return "learning_disabled";
+
+      await saveReview(tx, proposalId, scope, requested.decision, "manual");
+      return "saved";
+    });
+  }
+
+  async function setAutoApproval(
+    scope: Scope,
+    authorize: Authorize,
+    enabled: boolean,
+  ) {
+    return database.transaction(async (tx) => {
+      if (!(await authorize(tx))) return false;
+      const changed = await tx
+        .insert(preferences)
+        .values({ personId: scope.personId, enabled })
+        .onConflictDoUpdate({
+          target: preferences.personId,
+          set: { enabled },
+          setWhere: ne(preferences.enabled, enabled),
+        })
+        .returning();
+      if (changed.length > 0) {
+        await tx.insert(auditEvents).values({
+          actorUserId: scope.personId,
+          eventType: "learning.personal_auto_approval_changed",
+          targetType: "person",
+          targetId: scope.personId,
+          payload: { enabled },
+        });
+      }
+      return true;
+    });
+  }
+
+  async function guidance(scope: Scope, authorize: Authorize) {
+    return database.transaction(async (tx) => {
+      await lockLearningSettings(tx);
+      if (!(await authorize(tx))) return null;
+      if (!(await learningEnabled(tx, scope.botId))) return [];
+      const candidates = await tx
+        .select({ analysis: analyses, review: reviews.review })
+        .from(analyses)
+        .innerJoin(reviews, eq(reviews.proposalId, analyses.id))
+        .where(
+          and(inScope(scope), sql`${reviews.review}->>'decision' = 'approve'`),
+        )
+        .orderBy(desc(analyses.startedAt), desc(analyses.id))
+        .limit(20);
+      const skills = [];
+      for (const { analysis, review } of candidates) {
+        if (
+          analysis.proposal &&
+          sameScope(review.scope, scope) &&
+          (await verifiedEvidence(tx, analysis))
+        )
+          skills.push({ id: analysis.id, ...analysis.proposal });
+      }
+      return skills;
+    });
+  }
+
+  return { status, decide, setAutoApproval, guidance };
 }

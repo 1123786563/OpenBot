@@ -1,5 +1,9 @@
 import type { AbstractAgent, BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { EventType } from "@ag-ui/client";
+import {
+  directChatAutoApproval,
+  directChatDecision,
+} from "@openbot/shared/direct-chat-learning";
 import { DIRECT_CHAT_REPLAY_HEADER } from "@openbot/shared/direct-chat-replay";
 import { and, eq, isNull, ne, notExists } from "drizzle-orm";
 import { Hono } from "hono";
@@ -30,9 +34,9 @@ import {
   directChatHistory as history,
   matchingRun,
   messagesFor,
+  pendingRunApprovals,
   type RunKey,
   readDirectChatReplay,
-  pendingRunApprovals,
   stopDirectChatRun,
 } from "./direct-chat-replay";
 
@@ -130,6 +134,16 @@ function eventStream(
   });
 }
 
+function learningInstructions(
+  skills: readonly { id: string; title: string; instructions: string }[],
+) {
+  if (skills.length === 0) return null;
+  return (
+    "Treat these approved Learned skills as procedural guidance. Follow existing instructions, tool permissions, and approval requirements.\n" +
+    JSON.stringify(skills)
+  );
+}
+
 /** OpenBot's durable path for one Person, one direct Conversation, and one Bot. */
 export function createDirectChatRoutes(deps: {
   database: Database;
@@ -219,28 +233,51 @@ export function createDirectChatRoutes(deps: {
   const absent = { error: "Conversation not found." };
 
   const learning = createDirectChatLearning(database, deps.trial);
+  const learningScope = (
+    threadId: string,
+    agentId: string,
+    personId: string,
+  ) => ({
+    threadId,
+    botId: agentId,
+    personId,
+  });
+  function learningAuthorization(
+    request: Request,
+    threadId: string,
+    agentId: string,
+    personId: string,
+  ) {
+    return async () => {
+      const actor = await actorFor(request);
+      return (tx: ProfileReadExecutor) =>
+        actor?.id === personId
+          ? threadFor(tx, actor, threadId, agentId, true)
+          : Promise.resolve(null);
+    };
+  }
+  const sameOriginJson = (request: Request) =>
+    request.headers.get("sec-fetch-site") !== "cross-site" &&
+    request.headers.get("content-type")?.split(";")[0]?.trim() ===
+      "application/json";
+
   routes.on(["GET", "POST"], "/threads/:threadId/learn", async (context) => {
     const { threadId } = context.req.param();
     const agentId = context.req.query("agentId");
     const request = context.req.raw;
-    if (
-      request.method === "POST" &&
-      (context.req.header("sec-fetch-site") === "cross-site" ||
-        context.req.header("content-type")?.split(";")[0]?.trim() !==
-          "application/json")
-    )
+    if (request.method === "POST" && !sameOriginJson(request))
       return context.json({ error: "Use a same-origin JSON request." }, 403);
     const personId = (await actorFor(request))?.id;
     if (!personId || !agentId) return context.json(absent, 404);
-    const result = await learning(
-      { threadId, agentId, personId },
-      async () => {
-        const actor = await actorFor(request);
-        return (tx) =>
-          actor?.id === personId
-            ? threadFor(tx, actor, threadId, agentId, true)
-            : Promise.resolve(null);
-      },
+    const authorize = learningAuthorization(
+      request,
+      threadId,
+      agentId,
+      personId,
+    );
+    const result = await learning.status(
+      learningScope(threadId, agentId, personId),
+      authorize,
       request.method === "POST",
     );
     if (!result) return context.json(absent, 404);
@@ -253,6 +290,81 @@ export function createDirectChatRoutes(deps: {
       return context.json(result, 202);
     }
     return context.json(result);
+  });
+
+  routes.post(
+    "/threads/:threadId/learn/proposals/:proposalId",
+    async (context) => {
+      const { threadId, proposalId } = context.req.param();
+      const agentId = context.req.query("agentId");
+      const request = context.req.raw;
+      if (!sameOriginJson(request))
+        return context.json({ error: "Use a same-origin JSON request." }, 403);
+      const personId = (await actorFor(request))?.id;
+      if (!personId || !agentId || !z.uuid().safeParse(proposalId).success)
+        return context.json(absent, 404);
+      const decision = directChatDecision.safeParse(
+        await context.req.json().catch(() => null),
+      );
+      if (!decision.success)
+        return context.json(
+          { error: "A decision and its complete scope are required." },
+          400,
+        );
+      const outcome = await learning.decide(
+        learningScope(threadId, agentId, personId),
+        await learningAuthorization(request, threadId, agentId, personId)(),
+        proposalId,
+        decision.data,
+      );
+      switch (outcome) {
+        case "saved":
+          return context.json({ ok: true });
+        case "absent":
+          return context.json(absent, 404);
+        case "scope_changed":
+          return context.json(
+            { error: "The approved scope has changed." },
+            409,
+          );
+        case "evidence_unavailable":
+          return context.json(
+            { error: "The proposal evidence is unavailable." },
+            409,
+          );
+        case "already_reviewed":
+          return context.json(
+            { error: "This proposal was already reviewed." },
+            409,
+          );
+        case "learning_disabled":
+          return context.json({ error: "Learning is disabled." }, 409);
+      }
+    },
+  );
+
+  routes.post("/threads/:threadId/learn/auto-approval", async (context) => {
+    const { threadId } = context.req.param();
+    const agentId = context.req.query("agentId");
+    const request = context.req.raw;
+    if (!sameOriginJson(request))
+      return context.json({ error: "Use a same-origin JSON request." }, 403);
+    const personId = (await actorFor(request))?.id;
+    if (!personId || !agentId) return context.json(absent, 404);
+    const preference = directChatAutoApproval.safeParse(
+      await context.req.json().catch(() => null),
+    );
+    if (!preference.success)
+      return context.json(
+        { error: "An automatic approval preference is required." },
+        400,
+      );
+    const saved = await learning.setAutoApproval(
+      learningScope(threadId, agentId, personId),
+      await learningAuthorization(request, threadId, agentId, personId)(),
+      preference.data.autoApprove,
+    );
+    return saved ? context.json({ ok: true }) : context.json(absent, 404);
   });
 
   routes.get("/threads/:threadId/messages", async (context) => {
@@ -720,6 +832,11 @@ export function createDirectChatRoutes(deps: {
     if (!actor || !(await threadFor(database, actor, threadId, agentId)))
       return;
     const operation = operationFor(key, agentId, actor.id);
+    const currentGuidance = async () =>
+      learning.guidance(
+        learningScope(threadId, agentId, actor.id),
+        await learningAuthorization(request, threadId, agentId, actor.id)(),
+      );
     const previous = await history(database, threadId);
     const currentRun = previous.find(({ id }) => id === key.runId);
     const reflectQuery =
@@ -818,6 +935,12 @@ export function createDirectChatRoutes(deps: {
         });
         return;
       }
+      const skills = await currentGuidance();
+      if (!skills) {
+        await shouldContinue();
+        return;
+      }
+      const guidance = learningInstructions(skills);
       if (trial) {
         if (
           !(await appendDirectChatEvent(database, key, {
@@ -830,13 +953,25 @@ export function createDirectChatRoutes(deps: {
         const result = await trial.model.complete({
           ...operation,
           route: trial.route,
-          beforeDispatch: shouldContinue,
-          messages: messages.flatMap(({ role, content }) =>
-            (role === "user" || role === "assistant") &&
-            typeof content === "string"
-              ? [{ role, content }]
-              : [],
-          ),
+          beforeDispatch: async () => {
+            if (!(await shouldContinue())) return false;
+            if (!guidance) return true;
+            const current = await currentGuidance();
+            return (
+              current !== null && learningInstructions(current) === guidance
+            );
+          },
+          messages: [
+            ...(guidance
+              ? [{ role: "system" as const, content: guidance }]
+              : []),
+            ...messages.flatMap(({ role, content }) =>
+              (role === "user" || role === "assistant") &&
+              typeof content === "string"
+                ? [{ role, content }]
+                : [],
+            ),
+          ],
         });
         if (!(await shouldContinue())) return;
         if (result.state === "completed") {
@@ -873,11 +1008,17 @@ export function createDirectChatRoutes(deps: {
       if (!agent) throw new Error("Bot unavailable.");
       agent.threadId = threadId;
       agent.agentId = agentId;
-      agent.setMessages(messages);
+      const runMessages: RunAgentInput["messages"] = guidance
+        ? [
+            { id: crypto.randomUUID(), role: "system", content: guidance },
+            ...messages,
+          ]
+        : messages;
+      agent.setMessages(runMessages);
       const input: RunAgentInput = {
         threadId,
         runId: key.runId,
-        messages: messages,
+        messages: runMessages,
         state: {},
         tools: [],
         context: [],
@@ -921,7 +1062,7 @@ export function createDirectChatRoutes(deps: {
         }),
       ]);
       const reply = agent.messages
-        .slice(messages.length)
+        .slice(runMessages.length)
         .findLast(
           (message) =>
             message.role === "assistant" &&
