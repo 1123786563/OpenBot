@@ -18,6 +18,7 @@ const dispatch = z.discriminatedUnion("state", [
   denied,
   z.object({ state: z.literal("reconciling") }),
   z.object({ state: z.literal("existing") }),
+  z.object({ state: z.enum(["settled", "released"]) }),
 ]);
 const reconciliation = z.object({
   state: z.enum(["pending", "settled", "released", "absent"]),
@@ -115,6 +116,7 @@ export function createManagedModel({
     reconcile,
     async complete(
       input: ModelOperation & {
+        rerunOf?: ModelOperation;
         route: string;
         priceVersion: string;
         messages: readonly ModelMessage[];
@@ -129,6 +131,7 @@ export function createManagedModel({
             "reserve",
             {
               operationId: id,
+              rerunOfOperationId: input.rerunOf && operationId(input.rerunOf),
               route: input.route,
               priceVersion: input.priceVersion,
             },

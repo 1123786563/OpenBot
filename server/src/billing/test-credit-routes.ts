@@ -10,6 +10,7 @@ const operation = z.strictObject({ operationId });
 const reserve = operation.extend({
   route: z.string().min(1).max(64),
   priceVersion: z.uuid(),
+  rerunOfOperationId: operationId.optional(),
 });
 const messages = z
   .array(
@@ -20,13 +21,21 @@ const messages = z
   )
   .min(1);
 const dispatch = operation.extend({ permit: z.uuid(), messages });
-const result = z.object({
-  text: z.string().trim().min(1),
-  usage: z.object({
-    inputTokens: z.number().int().nonnegative(),
-    outputTokens: z.number().int().nonnegative(),
-  }),
+const usage = z.object({
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
 });
+const result = z.union([
+  z.object({
+    outcome: z.literal("completed").optional(),
+    text: z.string().trim().min(1),
+    usage,
+  }),
+  z.object({
+    outcome: z.enum(["partial", "cancelled", "platform_failure", "zero_cost"]),
+    usage,
+  }),
+]);
 
 type Dependencies = {
   ledger: TestCreditLedger;
@@ -148,20 +157,30 @@ export function createTestCreditRoutes({
           messages: input.data.messages,
         }),
       );
-      const receipt = await ledger.settle(
+      const recorded = await ledger.recordEvidence(
         admission.accountId,
         input.data.operationId,
         {
+          evidenceId: "inline-completion",
+          outcome: completed.outcome ?? "completed",
           inputTokens: BigInt(completed.usage.inputTokens),
           outputTokens: BigInt(completed.usage.outputTokens),
         },
       );
-      if (receipt)
+      const receipt =
+        recorded &&
+        (await ledger.settleRecorded(
+          admission.accountId,
+          input.data.operationId,
+        ));
+      if (receipt && "text" in completed)
         return context.json({
           state: "completed",
           text: completed.text,
           operation: receipt,
         });
+      if (receipt)
+        return context.json({ state: receipt.state, operation: receipt });
     } catch (error) {
       if (error instanceof UnsentBifrostRequest) {
         await ledger.releaseUnsent(admission.accountId, input.data.operationId);
@@ -178,7 +197,7 @@ export function createTestCreditRoutes({
     );
     if (!input.success)
       return context.json({ error: "Invalid reconciliation." }, 400);
-    const receipt = await ledger.receipt(
+    const receipt = await ledger.reconcile(
       context.var.identity,
       input.data.operationId,
     );

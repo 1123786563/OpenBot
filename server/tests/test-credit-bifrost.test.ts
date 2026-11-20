@@ -3,6 +3,10 @@ import { createBifrostCreditExecutor } from "../src/billing/test-credit-bifrost"
 
 test("the pilot executor makes one bounded provider request and returns metered usage", async () => {
   const requests: unknown[] = [];
+  let response: unknown = {
+    choices: [{ message: { content: "fixture answer" } }],
+    usage: { prompt_tokens: 2, completion_tokens: 1 },
+  };
   const gateway = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -11,10 +15,7 @@ test("the pilot executor makes one bounded provider request and returns metered 
         path: new URL(request.url).pathname,
         body: await request.json(),
       });
-      return Response.json({
-        choices: [{ message: { content: "fixture answer" } }],
-        usage: { prompt_tokens: 2, completion_tokens: 1 },
-      });
+      return Response.json(response);
     },
   });
   try {
@@ -59,6 +60,22 @@ test("the pilot executor makes one bounded provider request and returns metered 
         },
       },
     ]);
+    response = {
+      choices: [],
+      usage: { prompt_tokens: 2, completion_tokens: 0 },
+    };
+    await expect(execute(input)).resolves.toEqual({
+      outcome: "partial",
+      usage: { inputTokens: 2, outputTokens: 0 },
+    });
+    response = {
+      choices: [{ message: { content: "fixture answer" } }],
+      usage: { prompt_tokens: 2, completion_tokens: 12 },
+    };
+    await expect(execute(input)).resolves.toEqual({
+      text: "fixture answer",
+      usage: { inputTokens: 2, outputTokens: 12 },
+    });
   } finally {
     gateway.stop(true);
   }

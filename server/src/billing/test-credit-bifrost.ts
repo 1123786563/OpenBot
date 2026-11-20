@@ -17,11 +17,13 @@ type Messages = readonly {
 
 const tokens = z.number().int().nonnegative();
 const completion = z.object({
-  choices: z.tuple([
-    z.object({ message: z.object({ content: z.string().trim().min(1) }) }),
-  ]),
+  choices: z.unknown(),
   usage: z.object({ prompt_tokens: tokens, completion_tokens: tokens }),
 });
+
+const completionText = z.tuple([
+  z.object({ message: z.object({ content: z.string().trim().min(1) }) }),
+]);
 
 export class UnsentBifrostRequest extends Error {
   constructor(readonly reason: "route_unavailable" | "execution_limit") {
@@ -58,7 +60,15 @@ export function createBifrostCreditExecutor({
     throw new Error("Invalid Test Credit gateway endpoint.");
   }
 
-  return async ({ route, messages }: { route: Route; messages: Messages }) => {
+  return async ({
+    route,
+    messages,
+    operationId,
+  }: {
+    route: Route;
+    messages: Messages;
+    operationId?: string;
+  }) => {
     if (
       route.gatewayRevision !== gatewayRevision ||
       route.meteringRevision !== meteringRevision
@@ -77,6 +87,7 @@ export function createBifrostCreditExecutor({
     // and request transformations. The adapter sends one explicit provider/model request.
     const headers = new Headers({ "content-type": "application/json" });
     if (gatewayToken) headers.set("authorization", `Bearer ${gatewayToken}`);
+    if (operationId) headers.set("x-openbot-operation-id", operationId);
     const response = await fetch(url, {
       method: "POST",
       redirect: "error",
@@ -92,18 +103,13 @@ export function createBifrostCreditExecutor({
     if (!response.ok) throw new Error("Test Credit gateway request failed.");
 
     const { choices, usage } = completion.parse(await response.json());
-    if (
-      usage.prompt_tokens > route.maxInputTokens ||
-      usage.completion_tokens > route.maxOutputTokens
-    ) {
-      throw new Error("Test Credit usage exceeds the verified token limits.");
-    }
-    return {
-      text: choices[0].message.content,
-      usage: {
-        inputTokens: usage.prompt_tokens,
-        outputTokens: usage.completion_tokens,
-      },
+    const metered = {
+      inputTokens: usage.prompt_tokens,
+      outputTokens: usage.completion_tokens,
     };
+    const text = completionText.safeParse(choices);
+    return text.success
+      ? { text: text.data[0].message.content, usage: metered }
+      : { outcome: "partial" as const, usage: metered };
   };
 }

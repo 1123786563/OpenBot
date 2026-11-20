@@ -17,7 +17,8 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 test("pilot routes isolate accounts and settle one of two concurrent admissions exactly once", async () => {
   const database = createDatabase(testDatabaseUrl(), TEST_POOL);
-  const ledger = createTestCreditLedger(database);
+  let now = Date.UTC(2026, 0, 1);
+  const ledger = createTestCreditLedger(database, () => new Date(now));
   const issuer = "https://casdoor.example.test";
   const first = { issuer, subject: crypto.randomUUID() };
   const second = { issuer, subject: crypto.randomUUID() };
@@ -26,17 +27,27 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
   let token = firstToken;
   const secondToken = crypto.randomUUID();
   let sends = 0;
+  let lastOperationId: string | null = null;
+  let lastDispatchAccountId: string | undefined;
   const gateway = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
-    fetch() {
+    fetch(request) {
       sends++;
+      lastOperationId = request.headers.get("x-openbot-operation-id");
       if (sends === 2) return new Response(null, { status: 502 });
       return Response.json({
         choices: [{ message: { content: "answer" } }],
         usage: { prompt_tokens: 1, completion_tokens: 1 },
       });
     },
+  });
+  const execute = createBifrostCreditExecutor({
+    endpoint: new URL("/v1/chat/completions", gateway.url),
+    gatewayRevision: "a",
+    meteringRevision: "a",
+    countInputTokens: async (_route, messages) =>
+      messages[0]?.content === "oversized" ? 4 : 1,
   });
   const api = createTestCreditRoutes({
     ledger,
@@ -56,13 +67,28 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
           return undefined;
       }
     },
-    execute: createBifrostCreditExecutor({
-      endpoint: new URL("/v1/chat/completions", gateway.url),
-      gatewayRevision: "a",
-      meteringRevision: "a",
-      countInputTokens: async (_route, messages) =>
-        messages[0]?.content === "oversized" ? 4 : 1,
-    }),
+    async execute(input) {
+      lastDispatchAccountId = input.accountId;
+      switch (input.messages[0]?.content) {
+        case "zero":
+          return {
+            outcome: "zero_cost",
+            usage: { inputTokens: 0, outputTokens: 0 },
+          };
+        case "failure":
+          return {
+            outcome: "platform_failure",
+            usage: { inputTokens: 8, outputTokens: 0 },
+          };
+        case "cancel":
+          return {
+            outcome: "cancelled",
+            usage: { inputTokens: 16, outputTokens: 0 },
+          };
+        default:
+          return execute(input);
+      }
+    },
   });
   const request = async (path: string, body?: object, key: string = token) => {
     const response = await api.request(path, {
@@ -178,6 +204,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
       creditType: "test",
       priceVersion: release.id,
       maxChargeMicrocredits: "2",
+      usageDisclosure: expect.stringContaining("Interrupted"),
       price: route.price,
     });
 
@@ -297,6 +324,16 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
       state: "reconciling",
     });
     expect(await restartedWorker.reconcile(workerOperation)).toBe("pending");
+    const originalId = lastOperationId;
+    const originalAccountId = lastDispatchAccountId;
+    if (!originalId || !originalAccountId)
+      throw new Error("Fixture dispatch lacked correlation");
+    const originalReceipt = () =>
+      request(`/operations/${originalId}`, undefined, secondToken);
+    expect((await originalReceipt()).body).toMatchObject({
+      state: "pending",
+      outcome: "unknown",
+    });
     expect((await request("/balance")).body).toMatchObject({
       availableMicrocredits: "0",
       reservedMicrocredits: "2",
@@ -307,6 +344,122 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     const releaseBatch = crypto.randomUUID();
     await ledger.enroll({ identity: first, batchId: releaseBatch, amount: 1n });
     await request("/claim", { batchId: releaseBatch });
+    const interrupted = async () => {
+      const operationId = crypto.randomUUID();
+      const { body } = await reserve(operationId);
+      now += 60_000;
+      const dispatched = await ledger.beginDispatch(first, {
+        operationId,
+        permit: body.permit,
+      });
+      if (dispatched.state !== "dispatch")
+        throw new Error("Fixture dispatch denied");
+      return { accountId: dispatched.accountId, operationId };
+    };
+    const timely = await interrupted();
+    const partial = {
+      evidenceId: "fixture-partial",
+      outcome: "partial",
+      inputTokens: 2n,
+      outputTokens: 0n,
+    } as const;
+    now += 24 * 60 * 60_000 - 1;
+    await Promise.all(
+      Array.from({ length: 3 }, () =>
+        ledger.recordEvidence(timely.accountId, timely.operationId, partial),
+      ),
+    );
+    expect(
+      (await request(`/operations/${timely.operationId}`)).body,
+    ).toMatchObject({ state: "pending", heldMicrocredits: "2" });
+    now++;
+    const cutoff = await Promise.all([
+      request(`/operations/${timely.operationId}`),
+      request("/balance"),
+      ledger.recordEvidence(timely.accountId, timely.operationId, {
+        evidenceId: "fixture-late",
+        outcome: "cancelled",
+        inputTokens: 12n,
+        outputTokens: 0n,
+      }),
+    ]);
+    expect(cutoff[0].body).toMatchObject({
+      state: "pending",
+      heldMicrocredits: "1",
+      releasedMicrocredits: "1",
+    });
+    expect(cutoff[1].body).toMatchObject({ reservedMicrocredits: "1" });
+    const replays = await Promise.all(
+      Array.from({ length: 3 }, () =>
+        request("/v1/reconcile", { operationId: timely.operationId }),
+      ),
+    );
+    for (const { body } of replays)
+      expect(body).toMatchObject({
+        state: "settled",
+        operation: { outcome: "partial", chargedMicrocredits: "1" },
+      });
+    expect(
+      await ledger.recordEvidence(
+        timely.accountId,
+        timely.operationId,
+        partial,
+      ),
+    ).toMatchObject({ platformMicrocredits: "2" });
+    expect(await restartedWorker.complete(input)).toEqual({
+      state: "released",
+    });
+    expect((await originalReceipt()).body).toMatchObject({
+      state: "released",
+      outcome: "unknown",
+      chargedMicrocredits: null,
+      releasedMicrocredits: "2",
+    });
+    const secondBalance = await ledger.balance(second);
+    expect(
+      await ledger.recordEvidence(originalAccountId, originalId, {
+        ...partial,
+        inputTokens: 8n,
+      }),
+    ).toMatchObject({ platformMicrocredits: "2" });
+    expect(await ledger.balance(second)).toEqual(secondBalance);
+    await expect(
+      ledger.recordEvidence(timely.accountId, timely.operationId, {
+        ...partial,
+        inputTokens: 6n,
+      }),
+    ).rejects.toThrow("differs on replay");
+    expect(
+      await restartedWorker.complete({ ...input, rerunOf: workerOperation }),
+    ).toEqual({
+      state: "not_authorized",
+    });
+    expect(sends).toBe(2);
+    const rerun = {
+      ...input,
+      rerunOf: workerOperation,
+      step: "extract-explicit-rerun",
+    };
+    expect(
+      await Promise.all([
+        restartedWorker.complete(rerun),
+        client.complete(rerun),
+      ]),
+    ).toContainEqual({ state: "completed", text: "answer" });
+    expect(await restartedWorker.complete(rerun)).toEqual({ state: "settled" });
+    expect(sends).toBe(3);
+    expect(lastOperationId).not.toBe(originalId);
+    expect(
+      (await request(`/operations/${lastOperationId}`, undefined, secondToken))
+        .body,
+    ).toMatchObject({
+      rerunOfOperationId: originalId,
+      state: "settled",
+      reservedMicrocredits: "2",
+    });
+    const extraBatch = crypto.randomUUID();
+    await ledger.enroll({ identity: first, batchId: extraBatch, amount: 1n });
+    await request("/claim", { batchId: extraBatch });
     const oversizedOperationId = crypto.randomUUID();
     const oversized = await reserve(oversizedOperationId);
     expect(
@@ -321,7 +474,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     expect(
       (await request(`/operations/${oversizedOperationId}`)).body,
     ).toMatchObject({ state: "released", releasedMicrocredits: "2" });
-    expect(sends).toBe(2);
+    expect(sends).toBe(3);
     const withdrawnOperationId = crypto.randomUUID();
     const reserved = await reserve(withdrawnOperationId);
     await saveCatalog(configure(published, { harnessImage, routes: {} }));
@@ -345,6 +498,76 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     );
     expect((await request("/quote")).status).toBe(404);
     await saveCatalog(published);
+    const fixtureOutcomes = [
+      {
+        message: "zero",
+        outcome: "zero_cost",
+        state: "released",
+        charged: null,
+        released: "2",
+      },
+      {
+        message: "failure",
+        outcome: "platform_failure",
+        state: "released",
+        charged: null,
+        released: "2",
+      },
+      {
+        message: "cancel",
+        outcome: "cancelled",
+        state: "settled",
+        charged: "2",
+        released: "0",
+      },
+    ];
+    token = firstToken;
+    for (const fixture of fixtureOutcomes) {
+      const operationId = crypto.randomUUID();
+      const { body: reservation } = await reserve(operationId);
+      const { body } = await request("/v1/dispatch", {
+        operationId,
+        permit: reservation.permit,
+        messages: [{ role: "user", content: fixture.message }],
+      });
+      expect(
+        await ledger.reconciliationCost(timely.accountId, operationId),
+      ).toEqual(fixture.message === "zero" ? "0" : "2");
+      expect(body).toMatchObject({
+        state: fixture.state,
+        operation: {
+          outcome: fixture.outcome,
+          chargedMicrocredits: fixture.charged,
+          releasedMicrocredits: fixture.released,
+        },
+      });
+    }
+    const linked = crypto.randomUUID();
+    token = secondToken;
+    expect(
+      (
+        await request("/v1/reserve", {
+          operationId: linked,
+          rerunOfOperationId: originalId,
+          route: "pilot",
+          priceVersion: release.id,
+        })
+      ).body.reason,
+    ).toBe("insufficient_credits");
+    token = firstToken;
+    expect(
+      (
+        await request("/v1/reserve", {
+          operationId: linked,
+          rerunOfOperationId: originalId,
+          route: "pilot",
+          priceVersion: release.id,
+        })
+      ).body.reason,
+    ).toBe("not_authorized");
+    const finalBatch = crypto.randomUUID();
+    await ledger.enroll({ identity: first, batchId: finalBatch, amount: 2n });
+    await request("/claim", { batchId: finalBatch });
     // A write failure after the balance and quote checks must leave no operation or dispatch.
     await database.execute(sql`alter table test_credit_operations
       add constraint fixture_reject_admission check (state <> 'reserved') not valid`);
@@ -360,7 +583,10 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
         sql`alter table test_credit_operations drop constraint fixture_reject_admission`,
       );
     }
-    expect(sends).toBe(2);
+    expect(sends).toBe(3);
+    expect(await createTestCreditLedger(database).balance(first)).toEqual(
+      await ledger.balance(first),
+    );
   } finally {
     await listener.stop(true);
     await gateway.stop(true);

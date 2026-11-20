@@ -7,6 +7,7 @@ import {
   testCreditEnrollments as enrollments,
   enterpriseSettings,
   testCreditOperations as operations,
+  testCreditEvidence as evidence,
 } from "../db/schema";
 
 export type VerifiedBillingIdentity = { issuer: string; subject: string };
@@ -14,6 +15,11 @@ type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Operation = typeof operations.$inferSelect;
 type Usage = { inputTokens: bigint; outputTokens: bigint };
 
+type Evidence = Pick<
+  typeof evidence.$inferSelect,
+  "evidenceId" | "outcome" | "inputTokens" | "outputTokens"
+>;
+const reconciliationMilliseconds = 24 * 60 * 60_000;
 const reservationMilliseconds = 5 * 60_000;
 const tokenUnit = 1_000_000n;
 const identityFilter = ({ issuer, subject }: VerifiedBillingIdentity) =>
@@ -44,7 +50,7 @@ async function totals(database: Database | Transaction, accountId: string) {
       where ${enrollments.accountId} = ${accountId} and ${enrollments.claimedAt} is not null
     )`,
       held: sql<string>`(
-      select coalesce(sum(${operations.reserved}), 0)::text from ${operations}
+      select coalesce(sum(coalesce(${operations.cutoffHold}, ${operations.reserved})), 0)::text from ${operations}
       where ${operations.accountId} = ${accountId} and ${operations.state} in ('reserved', 'pending')
     )`,
       spent: sql<string>`(
@@ -60,7 +66,7 @@ async function totals(database: Database | Transaction, accountId: string) {
   return { granted, held, spent, available: granted - held - spent };
 }
 
-function operationReceipt(operation: Operation) {
+function operationReceipt(operation: Operation, verified?: Evidence) {
   const {
     id,
     state,
@@ -72,14 +78,30 @@ function operationReceipt(operation: Operation) {
     inputTokens,
     outputTokens,
   } = operation;
+  const held =
+    state === "pending" || state === "reserved"
+      ? (operation.cutoffHold ?? reserved)
+      : 0n;
   const released =
     state === "released"
       ? reserved
       : charged === null
-        ? null
+        ? operation.cutoffHold === null
+          ? null
+          : reserved - held
         : reserved - charged;
   return {
     operationId: id,
+    rerunOfOperationId: operation.rerunOfOperationId,
+    outcome:
+      verified?.outcome ??
+      (state === "pending" || (state === "released" && dispatchedAt)
+        ? "unknown"
+        : null),
+    cutoffAt:
+      dispatchedAt &&
+      new Date(dispatchedAt.getTime() + reconciliationMilliseconds),
+    heldMicrocredits: held.toString(),
     state,
     priceVersion,
     route: route.id,
@@ -89,23 +111,99 @@ function operationReceipt(operation: Operation) {
     chargedMicrocredits: charged?.toString() ?? null,
     releasedMicrocredits: released?.toString() ?? null,
     dispatchedAt,
-    inputTokens: inputTokens?.toString() ?? null,
-    outputTokens: outputTokens?.toString() ?? null,
+    inputTokens: (inputTokens ?? verified?.inputTokens)?.toString() ?? null,
+    outputTokens: (outputTokens ?? verified?.outputTokens)?.toString() ?? null,
   };
 }
 
-export function createTestCreditLedger(database: Database) {
-  async function account(identity: VerifiedBillingIdentity, tx?: Transaction) {
-    const query = (tx ?? database)
+function eligibleCharge(
+  row: Operation,
+  verified: typeof evidence.$inferSelect,
+) {
+  if (verified.outcome === "platform_failure") return 0n;
+  return verified.cost > row.reserved ? row.reserved : verified.cost;
+}
+
+export function createTestCreditLedger(database: Database, clock?: () => Date) {
+  async function currentTime(tx: Transaction) {
+    if (clock) return clock();
+    const [row] = await tx.execute<{ time: string }>(
+      sql`select clock_timestamp()::text as time`,
+    );
+    if (!row) throw new Error("Test Credit clock unavailable");
+    return new Date(row.time);
+  }
+
+  function evidenceFor(row: Operation) {
+    return and(
+      eq(evidence.accountId, row.accountId),
+      eq(evidence.operationId, row.id),
+    );
+  }
+
+  async function eligibleEvidence(tx: Transaction, row: Operation) {
+    if (row.eligibleEvidenceId === null) return undefined;
+    const [verified] = await tx
+      .select()
+      .from(evidence)
+      .where(
+        and(evidenceFor(row), eq(evidence.evidenceId, row.eligibleEvidenceId)),
+      );
+    if (!verified) throw new Error("Test Credit evidence unavailable");
+    return verified;
+  }
+
+  async function applyCutoff(tx: Transaction, accountId: string, now: Date) {
+    const due = await tx
+      .select()
+      .from(operations)
+      .where(
+        and(
+          eq(operations.accountId, accountId),
+          eq(operations.state, "pending"),
+          isNull(operations.cutoffHold),
+          lte(
+            operations.dispatchedAt,
+            new Date(now.getTime() - reconciliationMilliseconds),
+          ),
+        ),
+      );
+    for (const row of due) {
+      const verified = await eligibleEvidence(tx, row);
+      const cutoffHold = verified ? eligibleCharge(row, verified) : 0n;
+      await tx
+        .update(operations)
+        .set({
+          cutoffHold,
+          state:
+            cutoffHold === 0n && verified?.outcome !== "completed"
+              ? "released"
+              : "pending",
+        })
+        .where(operationFilter(accountId, row.id));
+    }
+  }
+
+  async function lockAccount(tx: Transaction, accountId: string) {
+    const [row] = await tx
       .select({ id: accounts.id })
       .from(accounts)
-      .where(identityFilter(identity));
-    const [row] = await (tx ? query.for("update") : query);
+      .where(eq(accounts.id, accountId))
+      .for("update");
+    return row;
+  }
+
+  async function account(identity: VerifiedBillingIdentity, tx: Transaction) {
+    const [row] = await tx
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(identityFilter(identity))
+      .for("update");
     return row?.id;
   }
 
-  async function operation(accountId: string, id: string, tx?: Transaction) {
-    const [row] = await (tx ?? database)
+  async function operation(accountId: string, id: string, tx: Transaction) {
+    const [row] = await tx
       .select()
       .from(operations)
       .where(operationFilter(accountId, id));
@@ -175,29 +273,35 @@ export function createTestCreditLedger(database: Database) {
         route: route.id,
         price: route.price,
         maxChargeMicrocredits: route.maxChargeMicrocredits,
+        usageDisclosure:
+          "Interrupted, cancelled, or failed requests may still use Test Credits.",
       };
     },
 
     async balance(identity: VerifiedBillingIdentity) {
-      const accountId = await account(identity);
-      if (!accountId) return undefined;
-      const { granted, held, spent, available } = await totals(
-        database,
-        accountId,
-      );
-      return {
-        creditType: "test" as const,
-        grantedMicrocredits: granted.toString(),
-        reservedMicrocredits: held.toString(),
-        chargedMicrocredits: spent.toString(),
-        availableMicrocredits: available.toString(),
-      };
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return undefined;
+        await applyCutoff(tx, accountId, await currentTime(tx));
+        const { granted, held, spent, available } = await totals(tx, accountId);
+        return {
+          creditType: "test" as const,
+          grantedMicrocredits: granted.toString(),
+          reservedMicrocredits: held.toString(),
+          chargedMicrocredits: spent.toString(),
+          availableMicrocredits: available.toString(),
+        };
+      });
     },
 
     async receipt(identity: VerifiedBillingIdentity, id: string) {
-      const accountId = await account(identity);
-      const row = accountId && (await operation(accountId, id));
-      return row ? operationReceipt(row) : undefined;
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return undefined;
+        await applyCutoff(tx, accountId, await currentTime(tx));
+        const row = await operation(accountId, id, tx);
+        return row && operationReceipt(row, await eligibleEvidence(tx, row));
+      });
     },
 
     async reserve(
@@ -206,13 +310,15 @@ export function createTestCreditLedger(database: Database) {
         operationId: string;
         route: string;
         priceVersion: string;
+        rerunOfOperationId?: string;
       },
     ) {
       return database.transaction(async (tx) => {
         const accountId = await account(identity, tx);
         if (!accountId) return denied("not_authorized");
-        // Only untouched permits expire here. Pending dispatches keep their holds.
-        const expired = new Date(Date.now() - reservationMilliseconds);
+        const now = await currentTime(tx);
+        await applyCutoff(tx, accountId, now);
+        const expired = new Date(now.getTime() - reservationMilliseconds);
         await tx
           .update(operations)
           .set({ state: "released" })
@@ -227,16 +333,30 @@ export function createTestCreditLedger(database: Database) {
         if (existing) {
           const sameQuote =
             existing.route.id === input.route &&
-            existing.priceVersion === input.priceVersion;
+            existing.priceVersion === input.priceVersion &&
+            existing.rerunOfOperationId === (input.rerunOfOperationId ?? null);
+          if (
+            existing.rerunOfOperationId !== (input.rerunOfOperationId ?? null)
+          )
+            return denied("not_authorized");
           return {
             state: "existing",
-            operation: operationReceipt(existing),
+            operation: operationReceipt(
+              existing,
+              await eligibleEvidence(tx, existing),
+            ),
             permit:
               existing.state === "reserved" && sameQuote
                 ? existing.permit
                 : undefined,
           } as const;
         }
+        if (
+          input.rerunOfOperationId !== undefined &&
+          !(await operation(accountId, input.rerunOfOperationId, tx))
+            ?.dispatchedAt
+        )
+          return denied("not_authorized");
         const active = await activeRoutes(tx, true);
         const route = active?.options.find(({ id }) => id === input.route);
         if (!route || active?.priceVersion !== input.priceVersion)
@@ -253,6 +373,8 @@ export function createTestCreditLedger(database: Database) {
             priceVersion: input.priceVersion,
             route,
             reserved,
+            createdAt: now,
+            rerunOfOperationId: input.rerunOfOperationId,
             state: "reserved",
           })
           .returning();
@@ -272,14 +394,15 @@ export function createTestCreditLedger(database: Database) {
     ) {
       return database.transaction(async (tx) => {
         const accountId = await account(identity, tx);
-        const row =
-          accountId && (await operation(accountId, input.operationId, tx));
+        if (!accountId) return denied("not_authorized");
+        await applyCutoff(tx, accountId, await currentTime(tx));
+        const row = await operation(accountId, input.operationId, tx);
         if (!row || row.permit !== input.permit)
           return denied("not_authorized");
         if (row.state !== "reserved")
           return {
             state: "existing",
-            operation: operationReceipt(row),
+            operation: operationReceipt(row, await eligibleEvidence(tx, row)),
           } as const;
         const active = await activeRoutes(tx, true);
         const eligible = active?.options.some(
@@ -287,14 +410,15 @@ export function createTestCreditLedger(database: Database) {
             id === row.route.id && revision === row.route.revision,
         );
         const filter = operationFilter(row.accountId, row.id);
+        const dispatchedAt = await currentTime(tx);
         if (
           !eligible ||
-          Date.now() - row.createdAt.getTime() >= reservationMilliseconds
+          dispatchedAt.getTime() - row.createdAt.getTime() >=
+            reservationMilliseconds
         ) {
           await tx.update(operations).set({ state: "released" }).where(filter);
           return denied("route_unavailable");
         }
-        const dispatchedAt = new Date();
         await tx
           .update(operations)
           .set({ state: "pending", dispatchedAt })
@@ -308,48 +432,169 @@ export function createTestCreditLedger(database: Database) {
     },
 
     async releaseUnsent(accountId: string, id: string) {
-      await database
-        .update(operations)
-        .set({ state: "released", dispatchedAt: null })
-        .where(
-          and(operationFilter(accountId, id), eq(operations.state, "pending")),
-        );
-    },
-
-    // Only the controlled route or its trusted reconciler can supply usage.
-    async settle(accountId: string, id: string, usage: Usage) {
-      return database.transaction(async (tx) => {
-        const [locked] = await tx
-          .select({ id: accounts.id })
-          .from(accounts)
-          .where(eq(accounts.id, accountId))
-          .for("update");
-        if (!locked) return undefined;
-        const row = await operation(accountId, id, tx);
-        if (!row) return undefined;
-        if (row.state === "settled") return operationReceipt(row);
-        const { inputTokens, outputTokens } = usage;
-        if (
-          row.state !== "pending" ||
-          inputTokens < 0n ||
-          outputTokens < 0n ||
-          inputTokens > BigInt(row.route.maxInputTokens) ||
-          outputTokens > BigInt(row.route.maxOutputTokens)
-        )
-          return undefined;
-        const scaled =
-          inputTokens * BigInt(row.route.price.inputPerMillion) +
-          outputTokens * BigInt(row.route.price.outputPerMillion);
-        const charged = (scaled + tokenUnit / 2n) / tokenUnit;
-        const [settled] = await tx
+      await database.transaction(async (tx) => {
+        if (!(await lockAccount(tx, accountId))) return;
+        await tx
           .update(operations)
-          .set({ state: "settled", charged, inputTokens, outputTokens })
-          .where(operationFilter(accountId, id))
-          .returning();
-        return settled && operationReceipt(settled);
+          .set({ state: "released", dispatchedAt: null })
+          .where(
+            and(
+              operationFilter(accountId, id),
+              eq(operations.state, "pending"),
+              isNull(operations.eligibleEvidenceId),
+            ),
+          );
       });
     },
+
+    recordEvidence,
+    settleRecorded,
+
+    async reconcile(identity: VerifiedBillingIdentity, id: string) {
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return undefined;
+        return settlePending(tx, accountId, id);
+      });
+    },
+
+    async reconciliationCost(accountId: string, id: string) {
+      return database.transaction(async (tx) => {
+        if (!(await lockAccount(tx, accountId))) return undefined;
+        const row = await operation(accountId, id, tx);
+        if (!row) return undefined;
+        return platformCost(tx, row, await eligibleEvidence(tx, row));
+      });
+    },
+
+    // Compatibility for controlled callers that obtain a completed response inline.
+    async settle(accountId: string, id: string, usage: Usage) {
+      const recorded = await recordEvidence(accountId, id, {
+        evidenceId: "inline-completion",
+        outcome: "completed",
+        ...usage,
+      });
+      return recorded && settleRecorded(accountId, id);
+    },
   };
+
+  // Evidence IDs belong to the trusted source. Each observation is cumulative for
+  // the same upstream invocation, so replay or subsequent evidence never adds a debit.
+  async function recordEvidence(
+    accountId: string,
+    id: string,
+    verified: Evidence,
+  ) {
+    return database.transaction(async (tx) => {
+      if (!(await lockAccount(tx, accountId))) return undefined;
+      const now = await currentTime(tx);
+      await applyCutoff(tx, accountId, now);
+      const row = await operation(accountId, id, tx);
+      if (!row?.dispatchedAt) return undefined;
+      const { evidenceId, outcome, inputTokens, outputTokens } = verified;
+      const maxBigint = 9_223_372_036_854_775_807n;
+      if (
+        !evidenceId ||
+        evidenceId.length > 256 ||
+        inputTokens < 0n ||
+        outputTokens < 0n ||
+        inputTokens > maxBigint ||
+        outputTokens > maxBigint ||
+        (outcome === "zero_cost" && (inputTokens !== 0n || outputTokens !== 0n))
+      )
+        throw new Error("Invalid Test Credit evidence");
+      const scaled =
+        inputTokens * BigInt(row.route.price.inputPerMillion) +
+        outputTokens * BigInt(row.route.price.outputPerMillion);
+      const cost = (scaled + tokenUnit / 2n) / tokenUnit;
+      const [existing] = await tx
+        .select()
+        .from(evidence)
+        .where(and(evidenceFor(row), eq(evidence.evidenceId, evidenceId)));
+      if (existing) {
+        if (
+          existing.outcome !== outcome ||
+          existing.inputTokens !== inputTokens ||
+          existing.outputTokens !== outputTokens
+        )
+          throw new Error("Test Credit evidence differs on replay");
+      } else {
+        await tx.insert(evidence).values({
+          ...verified,
+          accountId,
+          operationId: id,
+          cost,
+          recordedAt: now,
+        });
+        if (
+          row.state === "pending" &&
+          row.eligibleEvidenceId === null &&
+          row.cutoffHold === null
+        ) {
+          await tx
+            .update(operations)
+            .set({ eligibleEvidenceId: evidenceId })
+            .where(operationFilter(accountId, id));
+          row.eligibleEvidenceId = evidenceId;
+        }
+      }
+      const eligible = await eligibleEvidence(tx, row);
+      return {
+        operation: operationReceipt(row, eligible),
+        platformMicrocredits: await platformCost(tx, row, eligible),
+      };
+    });
+  }
+
+  async function platformCost(
+    tx: Transaction,
+    row: Operation,
+    eligible: typeof evidence.$inferSelect | undefined,
+  ) {
+    const [observed] = await tx
+      .select({
+        maxCost: sql<string | null>`max(${evidence.cost})::text`,
+      })
+      .from(evidence)
+      .where(evidenceFor(row));
+    if (observed?.maxCost == null) return undefined;
+    const charge =
+      row.charged ?? (eligible ? eligibleCharge(row, eligible) : 0n);
+    const totalCost = BigInt(observed.maxCost);
+    return (totalCost > charge ? totalCost - charge : 0n).toString();
+  }
+
+  async function settleRecorded(accountId: string, id: string) {
+    return database.transaction(async (tx) => {
+      if (!(await lockAccount(tx, accountId))) return undefined;
+      return settlePending(tx, accountId, id);
+    });
+  }
+
+  async function settlePending(tx: Transaction, accountId: string, id: string) {
+    await applyCutoff(tx, accountId, await currentTime(tx));
+    const row = await operation(accountId, id, tx);
+    if (!row) return undefined;
+    const verified = await eligibleEvidence(tx, row);
+    if (row.state !== "pending" || !verified)
+      return operationReceipt(row, verified);
+    const charged = eligibleCharge(row, verified);
+    const [settled] = await tx
+      .update(operations)
+      .set(
+        charged === 0n && verified.outcome !== "completed"
+          ? { state: "released" }
+          : {
+              state: "settled",
+              charged,
+              inputTokens: verified.inputTokens,
+              outputTokens: verified.outputTokens,
+            },
+      )
+      .where(operationFilter(accountId, id))
+      .returning();
+    return settled && operationReceipt(settled, verified);
+  }
 }
 
 export type TestCreditLedger = ReturnType<typeof createTestCreditLedger>;
