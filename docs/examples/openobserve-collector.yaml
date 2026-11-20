@@ -9,37 +9,60 @@ receivers:
     include_file_name: false
     include_file_path: true
     operators:
-    # Drop non-CRI input before the container parser can print it in a format error.
-    - type: filter
-      id: require-cri-framing
-      expr: 'not (body matches "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+(Z|[+-][0-9]{2}:[0-9]{2}) (stdout|stderr) [FP] ")'
-    - type: container
-      id: container
-      add_metadata_from_filepath: false
+    # Parse the timestamp in the quiet stanza operator so invalid framing is dropped.
+    - type: regex_parser
+      id: parse-cri
+      regex: '^(?P<cri_time>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:[.][0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])) (?P<cri_stream>stdout|stderr) (?P<cri_tag>[FP]) (?P<cri_message>.*)$'
+      timestamp:
+        parse_from: attributes.cri_time
+        layout_type: gotime
+        layout: '2006-01-02T15:04:05.999999999Z07:00'
       on_error: drop_quiet
+    - type: move
+      from: attributes.cri_message
+      to: body
+      on_error: drop_quiet
+    - type: add
+      field: attributes.cri_source
+      value: 'EXPR(attributes["log.file.path"] + ":" + attributes.cri_stream)'
+      on_error: drop_quiet
+    - type: recombine
+      source_identifier: attributes.cri_source
+      combine_field: body
+      combine_with: ""
+      is_last_entry: "attributes.cri_tag == 'F'"
+      overwrite_with: newest
+      max_log_size: 64KiB
+      on_error: drop_quiet
+    - type: filter
+      id: require-cri-final
+      expr: 'attributes.cri_tag != "F"'
   otlp/audit:
     protocols:
       http:
         endpoint: 0.0.0.0:4318
         max_request_body_size: 1048576
 processors:
-  # Malformed JSON leaves empty attributes and is rejected by filter/runtime.
+  # Rebuild raw markers from file framing and deployment configuration.
   transform/runtime:
     error_mode: propagate
     log_statements:
     - error_mode: silent
       statements:
-      - keep_keys(log.attributes, [])
+      - keep_keys(log.attributes, ["cri_stream"])
       - merge_maps(log.attributes, ParseJSON(log.body), "insert") where IsString(log.body)
-    - statements:
+    # A claimed OpenBot envelope must pass the structured-record filter.
+    - conditions:
+      - log.attributes["source"] == "openbot" or log.attributes["stream"] == "openbot_runtime"
+      statements:
+      - set(log.body, "openbot_runtime")
       - keep_keys(log.attributes, ["source", "deployment_id", "stream", "data_class",
         "schema_version", "projection_status", "occurred_at", "canonical_source",
-        "severity", "component", "event_category", "legacy_event", "outcome", "operation",
+        "severity", "component", "event_category", "legacy_event", "diagnostic", "outcome", "operation",
         "error_category", "version", "run_id", "parent_run_id", "root_task_id", "attempt_id",
         "thread_id", "routine_run_id", "responsibility_run_id", "work_item_key", "port",
         "duration_ms", "deleted", "retention_days", "offered", "considered", "fired",
         "skipped", "purged", "deleted_runs", "deleted_pings", "http_status", "wait_window_ms"])
-      - set(log.body, "openbot_runtime")
       - delete_key(log.attributes, "projection_status") where not IsString(log.attributes["projection_status"])
         or not IsMatch(log.attributes["projection_status"], "^(known|unknown|failed)$")
       - delete_key(log.attributes, "occurred_at") where not IsString(log.attributes["occurred_at"])
@@ -106,11 +129,33 @@ processors:
         or log.attributes["wait_window_ms"] < 0
       - delete_key(log.attributes, "legacy_event") where log.attributes["event_category"]
         != "legacy_unstructured"
-      # Legacy notices have their own allowlist and carry no raw diagnostic text.
+      # Legacy notices keep only exact diagnostics from server/src/telemetry/runtime-log.ts.
+      - delete_key(log.attributes, "diagnostic") where not (
+        (log.attributes["legacy_event"] == "intelligence_entitlement_unreadable" and log.attributes["diagnostic"] == "Could not read Intelligence entitlements. Check Intelligence availability and the deployment's INTELLIGENCE_API_KEY.")
+        or (log.attributes["legacy_event"] == "intelligence_entitlement_not_ready" and log.attributes["diagnostic"] == "Intelligence did not confirm entitlement. Check the Intelligence deployment's licence and COPILOTKIT_LICENSE_TOKEN.")
+        or (log.attributes["legacy_event"] == "intelligence_entitlement_expired" and log.attributes["diagnostic"] == "Intelligence's licence has expired. Renew it and replace COPILOTKIT_LICENSE_TOKEN on the Intelligence deployment.")
+        or (log.attributes["legacy_event"] == "single_user_mode_enabled" and log.attributes["diagnostic"] == "No identity provider is configured. All requests have administrator access. Configure GOOGLE_OAUTH_*, MICROSOFT_OAUTH_* or OKTA_OAUTH_*."))
       - keep_keys(log.attributes, ["source", "deployment_id", "stream", "data_class",
         "schema_version", "projection_status", "occurred_at", "canonical_source",
-        "severity", "component", "event_category", "legacy_event", "outcome", "operation",
+        "severity", "component", "event_category", "legacy_event", "diagnostic", "outcome", "operation",
         "error_category"]) where log.attributes["event_category"] == "legacy_unstructured"
+    - conditions:
+      - log.attributes["cri_stream"] != nil
+      statements:
+      - keep_keys(log.attributes, ["cri_stream"])
+      - set(log.body, "openbot_runtime")
+      - set(log.attributes["source"], "openbot")
+      - set(log.attributes["stream"], "openbot_runtime")
+      - set(log.attributes["data_class"], "runtime")
+      - set(log.attributes["schema_version"], 1)
+      - set(log.attributes["deployment_id"], "${env:OPENBOT_DEPLOYMENT_ID}")
+      - set(log.attributes["component"], "${env:OPENBOT_RUNTIME_COMPONENT:-api}")
+      - set(log.attributes["canonical_source"], Concat(["openbot", log.attributes["cri_stream"]], "."))
+      - set(log.attributes["occurred_at"], Format("%s.%03dZ", [FormatTime(log.time, "%Y-%m-%dT%H:%M:%S"), UnixMilli(log.time) - (UnixSeconds(log.time) * 1000)]))
+      - set(log.attributes["event_category"], "legacy_unstructured")
+      - set(log.attributes["projection_status"], "unknown")
+      - set(log.attributes["diagnostic"], "Unmigrated process log line.")
+      - delete_key(log.attributes, "cri_stream")
     - statements:
       - keep_keys(resource.attributes, [])
       - set(resource.schema_url, "")
@@ -131,12 +176,12 @@ processors:
       - log.attributes["canonical_source"] == nil
       - log.attributes["projection_status"] == nil
       - log.attributes["occurred_at"] == nil
-      - log.attributes["severity"] == nil
       - log.attributes["component"] == nil
       - log.attributes["event_category"] == nil
-      - log.attributes["outcome"] == nil
+      - log.attributes["diagnostic"] != "Unmigrated process log line." and
+        (log.attributes["severity"] == nil or log.attributes["outcome"] == nil)
       - log.attributes["event_category"] == "legacy_unstructured" and (log.attributes["legacy_event"]
-        == nil or log.attributes["projection_status"] != "unknown")
+        == nil or log.attributes["projection_status"] != "unknown") and log.attributes["diagnostic"] != "Unmigrated process log line."
   filter/audit:
     error_mode: propagate
     logs:

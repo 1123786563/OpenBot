@@ -15,6 +15,13 @@ from uuid import uuid4
 COLLECTOR = os.environ.get("OTELCOL_CONTRIB", "otelcol-contrib")
 CONFIG = Path(__file__).resolve().with_name("openobserve-collector.yaml")
 DEPLOYMENT = "fixture-east"
+RAW_COMPONENT = "worker"
+RAW_DIAGNOSTIC = "Unmigrated process log line."
+CATALOGUE_DIAGNOSTIC = (
+    "No identity provider is configured. All requests have administrator access. "
+    "Configure GOOGLE_OAUTH_*, MICROSOFT_OAUTH_* or OKTA_OAUTH_*."
+)
+UNTRUSTED_IDENTITY = "untrusted-deployment"
 SENTINEL = "PRIVATE_FIXTURE_CONTENT"
 OCCURRED_AT = "2026-01-01T12:00:00.000Z"
 
@@ -39,8 +46,8 @@ def attributes(values):
     ]
 
 
-def crio(body):
-    return f"{OCCURRED_AT} stdout F {body}\n"
+def crio(body, channel="stdout", tag="F", timestamp=OCCURRED_AT):
+    return f"{timestamp} {channel} {tag} {body}\n"
 
 
 def audit_record(event_type, status, **fields):
@@ -129,16 +136,27 @@ def append_runtime(path):
     }
     with path.open("a") as stream:
         stream.write(f"unrecognized container format {SENTINEL}\n")
+        stream.write(f"2026-99-01T12:00:00.000Z stdout F {SENTINEL}\n")
+        stream.write(f"{OCCURRED_AT} stdout X {SENTINEL}\n")
         stream.write(crio(f"legacy plain text {SENTINEL}"))
+        stream.write(crio(json.dumps({
+            "deployment_id": UNTRUSTED_IDENTITY, "component": "migration",
+            "run_id": SENTINEL, "diagnostic": SENTINEL, "cri_stream": "stdout",
+        }), channel="stderr", timestamp="2026-01-01T13:00:00.000+01:00"))
         stream.write(crio(f'{{"prompt": "{SENTINEL}"'))
-        for record in (current, legacy, {**legacy, "legacy_event": SENTINEL},
-                       {**current, "deployment_id": "other"}):
+        structured = json.dumps(current)
+        stream.write(crio(structured[:100], tag="P"))
+        stream.write(crio(structured[100:]))
+        for record in (legacy, {**legacy, "diagnostic": CATALOGUE_DIAGNOSTIC},
+                       {**legacy, "legacy_event": SENTINEL, "diagnostic": RAW_DIAGNOSTIC},
+                       {**current, "deployment_id": UNTRUSTED_IDENTITY}):
             stream.write(crio(json.dumps(record)))
 
 
 def read_stream(path, stream):
     raw = path.read_text()
     assert SENTINEL not in raw, f"Sensitive content escaped into {stream}"
+    assert UNTRUSTED_IDENTITY not in raw, f"Untrusted identity escaped into {stream}"
     records = [
         record
         for line in raw.splitlines()
@@ -146,17 +164,15 @@ def read_stream(path, stream):
         for scope in resource["scopeLogs"]
         for record in scope["logRecords"]
     ]
-    assert len(records) == 2, (stream, records)
     fields = []
     for record in records:
         assert record["body"] == {"stringValue": stream}, record
         assert not record.get("traceId") and not record.get("spanId"), record
         attrs = {item["key"]: next(iter(item["value"].values())) for item in record["attributes"]}
         assert attrs["stream"] == stream and attrs["deployment_id"] == DEPLOYMENT, attrs
-        assert not (attrs.keys() & PRIVATE_FIELDS.keys()), attrs
+        assert not (attrs.keys() & (PRIVATE_FIELDS.keys() - {"diagnostic"})), attrs
         fields.append(attrs)
-    return {record["event_category" if stream == "openbot_runtime" else "event_type"]: record
-            for record in fields}
+    return fields
 
 
 def check(directory):
@@ -184,6 +200,7 @@ def check(directory):
         **os.environ,
         "OPENBOT_DEPLOYMENT_ID": DEPLOYMENT,
         "OPENBOT_RUNTIME_LOG_GLOB": str(source),
+        "OPENBOT_RUNTIME_COMPONENT": RAW_COMPONENT,
         "OPENOBSERVE_OTLP_LOGS_URL": "https://example.invalid/api/openbot/v1/logs",
         "OPENOBSERVE_RUNTIME_AUTHORIZATION": "Basic synthetic",
         "OPENOBSERVE_AUDIT_AUTHORIZATION": "Basic synthetic",
@@ -214,15 +231,38 @@ def check(directory):
             sleep(0.2)
         collector.terminate()
         assert collector.wait(timeout=5) == 0
-        assert SENTINEL not in log_path.read_text(), "Sensitive content escaped into Collector logs"
-        runtime = read_stream(directory / "runtime.jsonl", "openbot_runtime")
-        assert runtime["api_listening"]["port"] == 3000
-        assert runtime["api_listening"]["run_id"] == "run-fixture"
-        assert "thread_id" not in runtime["api_listening"]
-        legacy = runtime["legacy_unstructured"]
-        assert legacy["legacy_event"] == "single_user_mode_enabled"
-        assert not ({"run_id", "port"} & legacy.keys())
-        audit = read_stream(directory / "audit.jsonl", "openbot_audit")
+        internal_logs = log_path.read_text()
+        assert SENTINEL not in internal_logs, "Sensitive content escaped into Collector logs"
+        assert UNTRUSTED_IDENTITY not in internal_logs, "Untrusted identity escaped into Collector logs"
+        assert "2026-99-01" not in internal_logs, "Collector logged an invalid CRI timestamp"
+        runtime_records = read_stream(directory / "runtime.jsonl", "openbot_runtime")
+        markers = [record for record in runtime_records if record.get("diagnostic") == RAW_DIAGNOSTIC]
+        assert len(markers) == 3, f"Expected three fixed CRI legacy markers, got {markers}"
+        assert sorted(marker["canonical_source"] for marker in markers) == [
+            "openbot.stderr", "openbot.stdout", "openbot.stdout",
+        ], markers
+        for marker in markers:
+            assert marker == {
+                "source": "openbot", "stream": "openbot_runtime", "data_class": "runtime",
+                "schema_version": "1", "deployment_id": DEPLOYMENT, "component": RAW_COMPONENT,
+                "event_category": "legacy_unstructured", "projection_status": "unknown",
+                "diagnostic": RAW_DIAGNOSTIC, "occurred_at": OCCURRED_AT,
+                "canonical_source": marker["canonical_source"],
+            }, marker
+        assert len(runtime_records) == 6, runtime_records
+        [current] = [record for record in runtime_records if record["event_category"] == "api_listening"]
+        assert current["port"] == 3000 and current["run_id"] == "run-fixture"
+        assert "thread_id" not in current and "diagnostic" not in current
+        notices = [record for record in runtime_records if "legacy_event" in record]
+        assert len(notices) == 2
+        assert {record.get("diagnostic") for record in notices} == {None, CATALOGUE_DIAGNOSTIC}
+        for notice in notices:
+            assert notice["legacy_event"] == "single_user_mode_enabled"
+            assert not ({"run_id", "port"} & notice.keys())
+        audit_records = read_stream(directory / "audit.jsonl", "openbot_audit")
+        assert len(audit_records) == 2, audit_records
+        assert all("diagnostic" not in record for record in audit_records)
+        audit = {record["event_type"]: record for record in audit_records}
         approved = audit["approval.person_decided"]
         assert approved["facet_decision"] == "allow_once" and approved["audit_event_id"]
         assert "facet_tool" not in approved and "facet_scope" not in approved
@@ -239,4 +279,4 @@ def check(directory):
 if __name__ == "__main__":
     with TemporaryDirectory(prefix="openobserve-collector-") as fixture:
         check(Path(fixture).resolve())
-    print("Collector fixture passed: two runtime and two audit records, no private content.")
+    print("Collector fixture passed: six runtime and two audit records, no private content.")
