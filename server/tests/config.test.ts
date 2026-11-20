@@ -1520,3 +1520,28 @@ test("Hindsight Recall is opt-in and accepts a dedicated HTTP(S) origin", () => 
     }),
   ).toThrow("OPENBOT_HINDSIGHT_API_URL");
 });
+
+test("Hindsight Reflect is explicit and managed mode requires both service credentials", () => {
+  const service = {
+    OPENBOT_SINGLE_USER: "true",
+    DATABASE_URL: baseEnvironment.DATABASE_URL,
+    KEY_ENCRYPTION_KEY: baseEnvironment.KEY_ENCRYPTION_KEY,
+    OPENBOT_HINDSIGHT_API_URL: "http://hindsight:8888",
+  };
+  expect(
+    loadConfig({ ...service, OPENBOT_HINDSIGHT_REFLECT: "local" }).hindsight,
+  ).toMatchObject({ reflect: true });
+  expect(() =>
+    loadConfig({ ...service, OPENBOT_HINDSIGHT_REFLECT: "managed" }),
+  ).toThrow("OPENBOT_HINDSIGHT_REFLECT_TOKEN");
+  const managed = loadConfig({
+    ...service,
+    OPENBOT_HINDSIGHT_REFLECT: "managed",
+    OPENBOT_HINDSIGHT_REFLECT_TOKEN: "callback-fixture",
+    OPENBOT_MANAGED_MODEL_TRIAL_URL: "https://managed.example.test",
+    OPENBOT_MANAGED_MODEL_TRIAL_TOKEN: "admission-fixture",
+    OPENBOT_MANAGED_MODEL_TRIAL_ROUTE: "approved-v1",
+  });
+  expect(managed.hindsight).toMatchObject({ reflect: true });
+  expect(managed.hindsightReflectToken).toBe("callback-fixture");
+});

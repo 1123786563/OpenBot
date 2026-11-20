@@ -833,7 +833,7 @@ is still the record.
 | `OTEL_SERVICE_NAME`                | The `service.name` on every record. Defaults to `openbot`.                                             |
 | `OPENBOT_OTEL_EXPORT`              | `off` turns export off while an endpoint is still set.                                                 |
 
-## Personal Memory Recall
+## Personal Memory Recall and Reflect
 
 Set `OPENBOT_HINDSIGHT_API_URL` to the HTTP(S) origin of a private, dedicated
 self-hosted Hindsight service. Set `OPENBOT_HINDSIGHT_API_KEY` when the
@@ -853,6 +853,41 @@ service or a verifiable hit, the recall tool uses OpenBot's local search.
 Keep the service reachable for deletion retries. After restoring a
 Hindsight backup, reconcile withdrawals against OpenBot before opening
 the service to application traffic.
+
+In Web direct chat, send `/reflect <question>` to reflect on approved
+Memory. Questions are limited to 200 characters. OpenBot checks the returned
+raw evidence against the current Memory content and version, then rechecks
+the authorization of the entire retrieval scope. If the engine is
+unavailable or evidence cannot be verified, the reply shows the result of
+local Memory search. The transcript retains the reply for the Person.
+
+Reflect is off by default. Set `OPENBOT_HINDSIGHT_REFLECT=local` to use a
+self-hosted, unmetered model configured specifically for Reflect. This
+also exposes the `reflect_personal_memory` tool to Bots with Memory tools.
+Keep the general Hindsight model provider set to `none` for indexing.
+
+For the Test Credit path, set `OPENBOT_HINDSIGHT_REFLECT=managed` and the
+three managed model trial settings. Generate a separate high-entropy bearer
+credential for `OPENBOT_HINDSIGHT_REFLECT_TOKEN`. Configure Hindsight 1.2
+with the following Reflect model settings.
+
+| Hindsight setting | Value |
+| --- | --- |
+| `HINDSIGHT_API_REFLECT_LLM_PROVIDER` | `openai` |
+| `HINDSIGHT_API_REFLECT_LLM_BASE_URL` | Private OpenBot service URL ending in `/internal/hindsight/v1` |
+| `HINDSIGHT_API_REFLECT_LLM_API_KEY` | Same value as `OPENBOT_HINDSIGHT_REFLECT_TOKEN` |
+| `HINDSIGHT_API_REFLECT_LLM_MODEL` | Label for the adapter. OpenBot selects the actual route from the managed model trial setting. |
+| `HINDSIGHT_API_REFLECT_LLM_TIMEOUT` | `110` seconds so the callback can wait for admission, dispatch, and reconciliation. |
+
+Keep Reflect on the Hindsight 1.2 structured JSON call strategy and use a
+dedicated Hindsight instance. The only model egress for that instance is
+the private OpenBot callback. Use one OpenBot API replica for the managed
+trial so the callback reaches the process holding its active Run scope.
+Exclude the callback route from public ingress. The callback derives the
+Person, Conversation, Bot and Run from the authenticated direct chat.
+Matching callbacks in one request share one admission operation. A refusal
+or invalid result leads to local Memory search. The managed control plane
+owns usage and settlement.
 
 ## Self-hosted Opik for Web direct-chat Runs
 

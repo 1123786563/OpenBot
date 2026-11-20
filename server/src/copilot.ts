@@ -105,7 +105,10 @@ import { desktopTelemetryProperties } from "./desktop-telemetry";
 import { currentEdition } from "./edition";
 import { Hono } from "hono";
 import type { AgentProfileStore } from "./agents/profile-store";
-import { createDirectChatRoutes } from "./channels/direct-chat";
+import {
+  createDirectChatRoutes,
+  type DirectChatReflect,
+} from "./channels/direct-chat";
 import type { Database } from "./db/client";
 import {
   createIntelligenceClient,
@@ -3028,7 +3031,11 @@ export function mountCopilotRuntime(
   identifyActor: IdentifyActor,
   options: {
     productTelemetry?: ProductTelemetry;
-    directChat?: { database: Database; profiles: AgentProfileStore };
+    directChat?: {
+      database: Database;
+      profiles: AgentProfileStore;
+      reflect?: DirectChatReflect;
+    };
     /**
      * Where the cards a Bot asks with in the conversation are saved while they wait on the person,
      * so the Bot is under Needs you for them. See approvals/decision-waits.ts.

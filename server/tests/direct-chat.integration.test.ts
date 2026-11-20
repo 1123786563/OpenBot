@@ -19,6 +19,7 @@ import {
   createAttachmentRoutes,
   createChannelAttachmentRoutes,
 } from "../src/channels/attachments";
+import type { DirectChatReflect } from "../src/channels/direct-chat";
 import { expireDirectChatEvents } from "../src/channels/direct-chat-replay";
 import {
   createChannelRoutes,
@@ -71,13 +72,14 @@ const post = (body: unknown) => ({
 
 class AnsweringAgent extends AbstractAgent {
   constructor(
-    private readonly answer: () => Promise<void>,
+    private readonly answer: (input: RunAgentInput) => Promise<void>,
     private readonly partial?: string,
   ) {
     super();
   }
 
-  run({ threadId, runId }: RunAgentInput): Observable<BaseEvent> {
+  run(input: RunAgentInput): Observable<BaseEvent> {
+    const { threadId, runId } = input;
     return new Observable((observer) => {
       const messageId = `reply-${runId}`;
       const events: BaseEvent[] = [
@@ -104,7 +106,7 @@ class AnsweringAgent extends AbstractAgent {
         });
         events.shift();
       }
-      void this.answer().then(
+      void this.answer(input).then(
         () => {
           for (const event of events) observer.next(event);
           observer.complete();
@@ -119,19 +121,21 @@ function web(
   db: typeof database,
   actor: AuthenticatedActor,
   botId: string,
-  answer: () => Promise<void>,
+  answer: (input: RunAgentInput) => Promise<void>,
   {
     deployment = config,
     opik,
     partial,
     prepare,
     authorized,
+    reflect,
   }: {
     deployment?: typeof config;
     opik?: typeof config.opik;
     partial?: string;
     prepare?: () => Promise<void>;
     authorized?: () => boolean;
+    reflect?: DirectChatReflect;
   } = {},
 ) {
   const store = createAgentProfileStore(db, endpoint);
@@ -156,7 +160,7 @@ function web(
     async () => ({ id: actor.id, name: actor.id }),
     async () => (authorized?.() === false ? { id: "", role: "user" } : actor),
     {
-      directChat: { database: db, profiles: store },
+      directChat: { database: db, profiles: store, reflect },
     },
   );
   const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
@@ -1864,5 +1868,91 @@ test("Learn now coalesces reservations, snapshots completed evidence, and discar
     await database.delete(agents).where(eq(agents.id, bot.id));
     await database.delete(users).where(eq(users.id, alice.id));
     await database.delete(users).where(eq(users.id, bob.id));
+  }
+});
+
+test("Web direct chat dispatches an explicit Reflect with the authenticated Run scope", async () => {
+  const owner = await person();
+  const bot = await profiles.create(owner, {
+    name: "Reflect fixture",
+    title: "Bot",
+    roleDescription: "Answers locally.",
+    visibility: "private",
+  });
+  const requests: Array<Omit<Parameters<DirectChatReflect>[0], "canContinue">> =
+    [];
+  const ordinaryTurns: RunAgentInput[] = [];
+  const app = web(
+    database,
+    owner,
+    bot.id,
+    async (input) => {
+      ordinaryTurns.push(input);
+    },
+    {
+      reflect: async ({ canContinue, ...input }) => {
+        expect(await canContinue()).toBe(true);
+        requests.push(input);
+        return "Synthetic reflection.";
+      },
+    },
+  );
+  let conversationId: string | undefined;
+  try {
+    const opened = await app.request(
+      "/api/channels",
+      post({ agentIds: [bot.id] }),
+    );
+    expect(opened.status).toBe(201);
+    const { channel } = await opened.json();
+    conversationId = channel.id;
+    const runId = crypto.randomUUID();
+    const payload = post({
+      threadId: channel.threadId,
+      runId,
+      messages: [
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          content: "/reflect Which lanterns?",
+        },
+      ],
+    });
+    const url = `/api/copilotkit/agent/${bot.id}/run`;
+    expect(await (await app.request(url, payload)).text()).toContain(
+      "Synthetic reflection.",
+    );
+    expect(await (await app.request(url, payload)).text()).toContain(
+      "Synthetic reflection.",
+    );
+    expect(requests).toEqual([
+      {
+        personId: owner.id,
+        botId: bot.id,
+        runId,
+        conversationId: channel.threadId,
+        query: "Which lanterns?",
+      },
+    ]);
+    expect(ordinaryTurns).toHaveLength(0);
+    const followup = post({
+      threadId: channel.threadId,
+      runId: crypto.randomUUID(),
+      messages: [
+        { id: crypto.randomUUID(), role: "user", content: "A normal question" },
+      ],
+    });
+    expect(await (await app.request(url, followup)).text()).toContain(
+      "Offline answer.",
+    );
+    expect(ordinaryTurns).toHaveLength(1);
+    expect(JSON.stringify(ordinaryTurns)).not.toContain(
+      "Synthetic reflection.",
+    );
+  } finally {
+    if (conversationId)
+      await database.delete(channels).where(eq(channels.id, conversationId));
+    await database.delete(agents).where(eq(agents.id, bot.id));
+    await database.delete(users).where(eq(users.id, owner.id));
   }
 });
