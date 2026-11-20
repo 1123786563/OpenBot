@@ -337,11 +337,14 @@ test("Web direct chat persists messages and one run per send, with only its Pers
   }
 });
 
-test("normal Web turns share Test Credits across conversations and keep history readable during a billing outage", async () => {
+test("Web turns share Test Credits, reconcile uncertain dispatch on replay, and keep history readable during an outage", async () => {
   const alice = await person();
   const bots: string[] = [];
   const conversations: string[] = [];
   const ids = new Set<string>();
+  const calls: { path: string; operationId: string }[] = [];
+  let uncertainOperation: string | undefined;
+  let loseDispatchResponse = false;
   let available = true;
   let dispatches = 0;
   let legacyCalls = 0;
@@ -353,6 +356,7 @@ test("normal Web turns share Test Credits across conversations and keep history 
       const path = new URL(request.url).pathname;
       expect(request.headers.get("authorization")).toBe("Bearer test-token");
       const call = await request.json();
+      calls.push({ path, operationId: call.operationId });
       if (path === "/v1/reserve") {
         expect(call.scope.personId).toBe(alice.id);
         expect(call.route).toBe("pilot-text-v1");
@@ -371,11 +375,20 @@ test("normal Web turns share Test Credits across conversations and keep history 
         expect(ids.has(call.operationId)).toBe(true);
         expect(call.permit).toBe("one-call");
         dispatches++;
+        if (loseDispatchResponse) {
+          uncertainOperation = call.operationId;
+          return new Response(null, { status: 504 });
+        }
         return Response.json({ state: "completed", text: "Managed answer." });
       }
       expect(path).toBe("/v1/reconcile");
       return Response.json({
-        state: ids.has(call.operationId) ? "settled" : "absent",
+        state:
+          call.operationId === uncertainOperation
+            ? "pending"
+            : ids.has(call.operationId)
+              ? "settled"
+              : "absent",
       });
     },
   });
@@ -414,13 +427,13 @@ test("normal Web turns share Test Credits across conversations and keep history 
         const { channel } = await opened.json();
         conversations.push(channel.id);
         return {
-          run: async (id: string) =>
+          run: async (id: string, runId = id) =>
             (
               await app.request(
                 `/api/copilotkit/agent/${bot.id}/run`,
                 post({
                   threadId: channel.threadId,
-                  runId: id,
+                  runId,
                   messages: [{ role: "user", id, content: "A question." }],
                   personId: "forged-person",
                   model: "forged-route",
@@ -453,6 +466,34 @@ test("normal Web turns share Test Credits across conversations and keep history 
     expect(await winner.run("new-id")).toContain("unavailable");
     expect(await (await winner.history()).text()).toContain("Managed answer.");
     expect(dispatches).toBe(1);
+    expect(legacyCalls).toBe(0);
+
+    outage = false;
+    available = true;
+    loseDispatchResponse = true;
+    const beforeUncertain = calls.length;
+    expect(events(await winner.run("uncertain-message"))).toContainEqual(
+      expect.objectContaining({
+        type: EventType.RUN_ERROR,
+        code: "reconciling",
+      }),
+    );
+    const operationId = calls[beforeUncertain]?.operationId;
+    if (!operationId) throw new Error("Expected an operation ID.");
+    expect(
+      events(await winner.run("uncertain-message", "new-browser-run")),
+    ).toContainEqual(
+      expect.objectContaining({
+        type: EventType.RUN_ERROR,
+        code: "reconciling",
+      }),
+    );
+    expect(calls.slice(beforeUncertain)).toEqual(
+      ["/v1/reserve", "/v1/dispatch", "/v1/reconcile", "/v1/reconcile"].map(
+        (path) => ({ path, operationId }),
+      ),
+    );
+    expect(dispatches).toBe(2);
     expect(legacyCalls).toBe(0);
   } finally {
     await control.stop(true);
