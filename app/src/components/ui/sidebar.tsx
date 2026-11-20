@@ -38,6 +38,7 @@ type SidebarContextProps = {
   openMobile: boolean;
   setOpenMobile: (open: boolean) => void;
   isMobile: boolean;
+  pageToggle: boolean;
   toggleSidebar: () => void;
 };
 
@@ -94,6 +95,7 @@ function followsLinkHere(event: React.MouseEvent): boolean {
  */
 function SidebarProvider({
   defaultOpen = true,
+  pageToggle = true,
   open: openProp,
   onOpenChange: setOpenProp,
   className,
@@ -102,6 +104,7 @@ function SidebarProvider({
   ...props
 }: React.ComponentProps<"div"> & {
   defaultOpen?: boolean;
+  pageToggle?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
@@ -157,11 +160,12 @@ function SidebarProvider({
       open,
       setOpen,
       isMobile,
+      pageToggle,
       openMobile,
       setOpenMobile,
       toggleSidebar,
     }),
-    [state, open, setOpen, isMobile, openMobile, toggleSidebar],
+    [state, open, setOpen, isMobile, pageToggle, openMobile, toggleSidebar],
   );
 
   return (
@@ -194,11 +198,19 @@ function Sidebar({
   className,
   children,
   dir,
+  mobileNavigation,
   ...props
 }: React.ComponentProps<"div"> & {
   side?: "left" | "right";
   variant?: "sidebar" | "floating" | "inset";
   collapsible?: "offcanvas" | "icon" | "none";
+  mobileNavigation?: {
+    title: string;
+    popup: Pick<
+      React.ComponentProps<typeof SheetContent>,
+      "className" | "id" | "finalFocus"
+    > & { style?: React.CSSProperties };
+  };
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
 
@@ -218,9 +230,14 @@ function Sidebar({
   }
 
   if (isMobile) {
+    const style: React.CSSProperties & { "--sidebar-width": string } = {
+      "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
+      ...mobileNavigation?.popup.style,
+    };
     return (
       <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
         <SheetContent
+          {...mobileNavigation?.popup}
           dir={dir}
           data-sidebar="sidebar"
           data-slot="sidebar"
@@ -233,17 +250,19 @@ function Sidebar({
           onClick={(event) => {
             if (followsLinkHere(event)) setOpenMobile(false);
           }}
-          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
-          style={
-            {
-              "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
-            } as React.CSSProperties
-          }
+          className={cn(
+            "w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground",
+            mobileNavigation ? "gap-0" : "[&>button]:hidden",
+            mobileNavigation?.popup.className,
+          )}
+          style={style}
           side={side}
         >
           <SheetHeader className="sr-only">
-            <SheetTitle>Sidebar</SheetTitle>
-            <SheetDescription>Displays the mobile sidebar.</SheetDescription>
+            <SheetTitle>{mobileNavigation?.title ?? "Sidebar"}</SheetTitle>
+            {mobileNavigation ? null : (
+              <SheetDescription>Displays the mobile sidebar.</SheetDescription>
+            )}
           </SheetHeader>
           <div className="flex h-full w-full flex-col">{children}</div>
         </SheetContent>
@@ -284,6 +303,13 @@ function Sidebar({
           className,
         )}
         {...props}
+        inert={
+          mobileNavigation &&
+          state === "collapsed" &&
+          collapsible === "offcanvas"
+            ? true
+            : undefined
+        }
       >
         <div
           data-sidebar="sidebar"

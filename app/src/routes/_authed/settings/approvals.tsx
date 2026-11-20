@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ApprovalSettings } from "@/components/approvals/settings";
-import { PageShell } from "@/components/layout/page-shell";
+import { GovernancePage } from "@/components/astryx-pilot/governance";
 import { TeamBotConsents } from "@/components/settings/team-bot-consents";
 
 export const Route = createFileRoute("/_authed/settings/approvals")({
@@ -9,12 +9,12 @@ export const Route = createFileRoute("/_authed/settings/approvals")({
 
 function ApprovalsSettingsPage() {
   return (
-    <PageShell
+    <GovernancePage
       description="Choose when your Bots ask before they change things. Rules here apply to all of them."
       title="Approvals"
     >
       <ApprovalSettings />
       <TeamBotConsents />
-    </PageShell>
+    </GovernancePage>
   );
 }

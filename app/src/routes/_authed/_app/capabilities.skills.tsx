@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
+import { CapabilitySurface } from "@/components/astryx-pilot/capability-surface";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { CapabilitiesShell } from "@/components/capabilities/capabilities-shell";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
@@ -100,9 +102,13 @@ function SkillsPage() {
     <DetailPanel
       detail={
         showCreate ? (
-          <NewSkill />
+          <CapabilitySurface>
+            <NewSkill />
+          </CapabilitySurface>
         ) : editingSlug ? (
-          <EditSkill slug={editingSlug} />
+          <CapabilitySurface>
+            <EditSkill slug={editingSlug} />
+          </CapabilitySurface>
         ) : null
       }
       onClose={() => navigate({ search: {} })}
@@ -185,7 +191,7 @@ function SkillsPage() {
                             </Button>
                           }
                         ></DropdownMenuTrigger>
-                        <DropdownMenuContent>
+                        <DropdownMenuContent {...astryxScope}>
                           <DropdownMenuGroup>
                             <DropdownMenuItem
                               onClick={() =>

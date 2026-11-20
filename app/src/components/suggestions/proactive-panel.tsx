@@ -9,6 +9,7 @@ import {
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment, useId, useState } from "react";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
@@ -84,9 +85,10 @@ const SUGGESTIONS_SHOWN = 3;
  */
 export function SuggestionsInbox({
   agentId,
+  showEmpty = false,
 }: {
-  /** Only this Bot's suggestions, and nothing at all when it has none. */
   agentId?: string;
+  showEmpty?: boolean;
 } = {}) {
   const suggestions = useQuery(proactiveSuggestionsQueryOptions());
   const shown = (suggestions.data ?? []).filter(
@@ -96,7 +98,14 @@ export function SuggestionsInbox({
   const [expanded, setExpanded] = useState(false);
   const botName = (id: string) =>
     bots.data?.find((bot) => bot.id === id)?.name ?? "Your Bot";
-  if (agentId !== undefined && shown.length === 0) return null;
+  if (
+    !showEmpty &&
+    agentId !== undefined &&
+    !suggestions.isError &&
+    shown.length === 0
+  ) {
+    return null;
+  }
   /*
    * The newest few, the rest a click away. Each suggestion is a paragraph with two buttons, and a
    * Bot that had piled up sixty of them made its own page 8,000px of suggestions with its settings
@@ -177,9 +186,11 @@ function useCheckInsBlocked(): string | null {
  */
 export function ProactiveResearchSettings({
   agentId: fixedBot,
+  showIdeasLink = true,
 }: {
   /** Only this Bot's check-ins, and a new one is this Bot's without asking. */
   agentId?: string;
+  showIdeasLink?: boolean;
 } = {}) {
   const settings = useQuery(proactiveSettingsQueryOptions());
   const bots = useQuery(agentListQueryOptions());
@@ -203,6 +214,15 @@ export function ProactiveResearchSettings({
       description="A Bot offers a check-in when you look at something together that keeps changing, like a document or your inbox. It reads that once a day, or as often as you choose, and tells you when something there needs you. It can only read: it can't send messages, change anything in an app, or use a browser or computer."
       title="Check-ins"
     >
+      {showIdeasLink ? (
+        <Link
+          className="text-sm underline underline-offset-4"
+          search={{ agent: fixedBot }}
+          to="/ideas"
+        >
+          Open Ideas
+        </Link>
+      ) : null}
       {blocked ? (
         <p className="mt-1 max-w-prose text-muted-foreground text-sm">
           {blocked === "Off for all your Bots" ? (
@@ -297,7 +317,7 @@ function TurnOnResearchDialog({
   const add = useMutation(createProactiveSettingMutationOptions(queryClient));
   return (
     <Dialog onOpenChange={(next) => !next && onClose()} open>
-      <DialogContent>
+      <DialogContent {...astryxScope}>
         <DialogHeader>
           <DialogTitle>Turn on check-ins</DialogTitle>
           <DialogDescription>
@@ -414,7 +434,7 @@ function TurnOnResearchDialog({
             </p>
           )}
         </DialogBody>
-        <DialogFooter className="mt-4">
+        <DialogFooter className="mt-4 flex-wrap">
           <Button onClick={onClose} size="sm" variant="outline">
             Cancel
           </Button>
@@ -549,7 +569,7 @@ function SettingRow({
         </ItemActions>
       </Item>
       <Dialog onOpenChange={setOpen} open={open}>
-        <DialogContent>
+        <DialogContent {...astryxScope}>
           <DialogHeader>
             <DialogTitle>Check-ins</DialogTitle>
             <DialogDescription>
@@ -614,7 +634,7 @@ function SettingRow({
               </p>
             )}
           </DialogBody>
-          <DialogFooter className="mt-4">
+          <DialogFooter className="mt-4 flex-wrap">
             <Button
               size="sm"
               variant="outline"

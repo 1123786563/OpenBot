@@ -9,7 +9,10 @@ import {
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, waitFor, within } from "@testing-library/react";
-import { BotsNavBadge } from "@/components/bot-profile/attention";
+import {
+  AttentionNotifier,
+  BotsNavBadge,
+} from "@/components/bot-profile/attention";
 import { NotifyPrompt } from "@/components/notifications/notify-prompt";
 import { botLifecycleKeys } from "@/lib/bot-lifecycle/queries";
 import { refreshNotificationPermission } from "@/lib/notifications/permission";
@@ -112,6 +115,7 @@ async function aBotStartsNeedingThePerson(waitingIn: string | null = null) {
   });
   render(
     <QueryClientProvider client={client}>
+      <AttentionNotifier />
       <BotsNavBadge />
     </QueryClientProvider>,
   );

@@ -1,7 +1,8 @@
+import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
-import { buttonVariants } from "@/components/ui/button";
+import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { desktopShell } from "@/lib/desktop/shell";
 import { confirmBrokeredConnectionMutationOptions } from "@/lib/plugins/mutations";
 
@@ -61,17 +62,22 @@ export function DesktopReturn({
   }, [app, confirm, navigate, openDesktop]);
 
   return (
-    <main className="grid min-h-svh place-items-center bg-background p-6 text-foreground">
-      <div className="flex max-w-sm flex-col items-center gap-4 text-center">
-        <h1 className="text-xl font-semibold">Back to OpenBot</h1>
-        <p className="text-sm text-muted-foreground">
-          OpenBot opens on its own. You can close this tab.
-        </p>
-        {/* An anchor rather than Button: Base UI gives a rendered anchor role="button", and this is a link. */}
-        <a className={buttonVariants()} href={DESKTOP_LINK}>
-          Open OpenBot
-        </a>
-      </div>
-    </main>
+    <AstryxSurface className="min-h-svh">
+      <main className="grid min-h-svh place-items-center bg-background p-6 text-foreground">
+        <div className="flex max-w-sm flex-col items-center gap-4 text-center">
+          <h1 className="text-xl font-semibold">Back to OpenBot</h1>
+          <p className="text-sm text-muted-foreground">
+            OpenBot opens on its own. You can close this tab.
+          </p>
+          {/* An anchor rather than Button: Base UI gives a rendered anchor role="button", and this is a link. */}
+          <AstryxButton
+            as="a"
+            href={DESKTOP_LINK}
+            label="Open OpenBot"
+            variant="primary"
+          />
+        </div>
+      </main>
+    </AstryxSurface>
   );
 }

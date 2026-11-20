@@ -43,12 +43,14 @@ export function SidebarShell({
   children,
   className,
   name,
+  pageToggle,
   width: defaultWidth,
 }: {
   children: ReactNode;
   className?: string;
   /** Whose width this is: each shell remembers its own, under this name. */
   name: string;
+  pageToggle?: boolean;
   /** The width before anybody drags the sidebar's edge. */
   width: string;
 }) {
@@ -87,6 +89,7 @@ export function SidebarShell({
       data-resizing={resizing ? "" : undefined}
       onOpenChange={setOpen}
       open={open}
+      pageToggle={pageToggle}
       /*
        * `--sidebar-width-mobile` is set for the shape's sake and currently goes unread: the
        * primitive's mobile branch styles its Sheet from a hardcoded 18rem. Below 768px the sidebar

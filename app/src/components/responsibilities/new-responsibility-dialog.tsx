@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useId, useState } from "react";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -53,9 +54,11 @@ const SOURCES = {
 export function NewResponsibilityDialog({
   agentId: fixedBot,
   onClose,
+  returnFocus,
 }: {
   agentId?: string;
   onClose: () => void;
+  returnFocus: React.RefObject<HTMLButtonElement | null>;
 }) {
   const formId = useId();
   const bots = useQuery(agentListQueryOptions());
@@ -83,7 +86,7 @@ export function NewResponsibilityDialog({
   const create = useMutation(createResponsibilityMutationOptions(queryClient));
   return (
     <Dialog onOpenChange={(next) => !next && onClose()} open>
-      <DialogContent>
+      <DialogContent {...astryxScope} finalFocus={returnFocus}>
         <DialogHeader>
           <DialogTitle>New goal</DialogTitle>
           <DialogDescription>
@@ -137,7 +140,7 @@ export function NewResponsibilityDialog({
                     >
                       <SelectValue placeholder="Choose a conversation" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent {...astryxScope}>
                       {offered.map((channel) => (
                         <SelectItem key={channel.id} value={channel.id}>
                           {conversationLabel(channel)}
@@ -160,7 +163,7 @@ export function NewResponsibilityDialog({
                       <SelectTrigger className="w-full" id={`${formId}-bot`}>
                         <SelectValue placeholder="Choose a Bot" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent {...astryxScope}>
                         {availableBots.map((bot) => (
                           <SelectItem key={bot.id} value={bot.id}>
                             {bot.name}
@@ -238,7 +241,7 @@ export function NewResponsibilityDialog({
                     <SelectTrigger className="w-full" id={`${formId}-source`}>
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent {...astryxScope}>
                       {(Object.keys(SOURCES) as (keyof typeof SOURCES)[]).map(
                         (value) => (
                           <SelectItem key={value} value={value}>

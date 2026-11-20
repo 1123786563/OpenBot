@@ -192,8 +192,10 @@ for (const accountMode of [null, "shared"] as const) {
     await waitFor(() => expect(router.state.location.search).toEqual({}));
 
     // The notice survives the strip.
-    const notice = await view.findByRole("status");
-    expect(notice.textContent).toBe("You just authorized Gmail.ListEmails.");
+    const notice = await view.findByText(
+      "You just authorized Gmail.ListEmails.",
+    );
+    expect(notice.getAttribute("role")).toBe("status");
 
     // Half two: the grant list, drawn only now — after the strip — still marks the landed row.
     api.release();

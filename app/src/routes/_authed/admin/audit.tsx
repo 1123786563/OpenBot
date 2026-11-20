@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-router";
 import { z } from "zod";
 import { RecordingSection } from "@/components/admin/controls/recording-section";
+import { GovernanceSurface } from "@/components/astryx-pilot/governance";
 import { AuditPage } from "@/components/manage/audit-page";
 import { buttonVariants } from "@/components/ui/button";
 import { client } from "@/lib/client";
@@ -39,25 +40,27 @@ function AdminAuditPage() {
     retry: false,
   });
   return (
-    <AuditPage
-      action={
-        openObserve.isSuccess && openObserve.data ? (
-          <a
-            className={buttonVariants({ variant: "outline" })}
-            href={openObserve.data}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            Open in OpenObserve
-            <IconExternalLink aria-hidden="true" />
-          </a>
-        ) : null
-      }
-      ask
-      bot={bot}
-      onClearBot={() => navigate({ to: "/admin/audit" })}
-    >
-      <RecordingSection />
-    </AuditPage>
+    <GovernanceSurface>
+      <AuditPage
+        action={
+          openObserve.isSuccess && openObserve.data ? (
+            <a
+              className={buttonVariants({ variant: "outline" })}
+              href={openObserve.data}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              Open in OpenObserve
+              <IconExternalLink aria-hidden="true" />
+            </a>
+          ) : null
+        }
+        ask
+        bot={bot}
+        onClearBot={() => navigate({ to: "/admin/audit" })}
+      >
+        <RecordingSection />
+      </AuditPage>
+    </GovernanceSurface>
   );
 }

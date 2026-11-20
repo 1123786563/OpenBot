@@ -1,6 +1,7 @@
 import { IconUser, IconUsers } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useState } from "react";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -63,7 +64,7 @@ export function GroupPeopleButton({ channelId }: { channelId: string }) {
         {count}
       </Button>
       <Dialog onOpenChange={setOpen} open={open}>
-        <DialogContent>
+        <DialogContent {...astryxScope}>
           <DialogHeader>
             <DialogTitle>People in this group</DialogTitle>
             <DialogDescription>
