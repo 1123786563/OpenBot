@@ -181,24 +181,6 @@ export function createWakeUpStore(
         scheduledAt: now().toISOString(),
       };
       await database.transaction(async (transaction) => {
-        await transaction.execute(
-          sql`select pg_advisory_xact_lock(hashtext(${`${WAKE_UP_KIND}:${input.ownerUserId}:${input.agentId}`}))`,
-        );
-        const [counts] = await transaction
-          .select({
-            pending: sql<number>`count(*) filter (where ${workItems.finishedAt} is null)::int`,
-            today: sql<number>`count(*) filter (where ${workItems.createdAt} > now() - interval '1 day')::int`,
-          })
-          .from(workItems)
-          .where(owned(input.ownerUserId, input.agentId));
-        if ((counts?.pending ?? 0) >= WAKE_UP_MAX_PENDING)
-          throw new WakeUpRefusedError(
-            `This Bot already has ${WAKE_UP_MAX_PENDING} follow-ups waiting. Cancel one first.`,
-          );
-        if ((counts?.today ?? 0) >= WAKE_UP_MAX_PER_DAY)
-          throw new WakeUpRefusedError(
-            `This Bot has scheduled ${WAKE_UP_MAX_PER_DAY} follow-ups today, which is the most it may.`,
-          );
         const offered = await createWorkQueue(transaction, () =>
           now().getTime(),
         ).offer({
@@ -209,6 +191,24 @@ export function createWakeUpStore(
         });
         if (offered === "refused")
           throw new WakeUpRefusedError("Bot work authorization ended.");
+        await transaction.execute(
+          sql`select pg_advisory_xact_lock(hashtext(${`${WAKE_UP_KIND}:${input.ownerUserId}:${input.agentId}`}))`,
+        );
+        const [counts] = await transaction
+          .select({
+            pending: sql<number>`count(*) filter (where ${workItems.finishedAt} is null)::int`,
+            today: sql<number>`count(*) filter (where ${workItems.createdAt} > now() - interval '1 day')::int`,
+          })
+          .from(workItems)
+          .where(owned(input.ownerUserId, input.agentId));
+        if ((counts?.pending ?? 0) > WAKE_UP_MAX_PENDING)
+          throw new WakeUpRefusedError(
+            `This Bot already has ${WAKE_UP_MAX_PENDING} follow-ups waiting. Cancel one first.`,
+          );
+        if ((counts?.today ?? 0) > WAKE_UP_MAX_PER_DAY)
+          throw new WakeUpRefusedError(
+            `This Bot has scheduled ${WAKE_UP_MAX_PER_DAY} follow-ups today, which is the most it may.`,
+          );
       });
       await audit(
         "bot.follow_up_scheduled",

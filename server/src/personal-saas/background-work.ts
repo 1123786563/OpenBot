@@ -18,6 +18,7 @@ import {
   createGroupConversations,
   createGroupStore,
   GROUP_TURN_KIND,
+  GroupRefusedError,
   groupTurnSchema,
   submitGroupTurn,
 } from "../channels/group";
@@ -28,6 +29,7 @@ import {
   channelMemberships,
   channels,
   groupBotThreads,
+  responsibilities as responsibilityRows,
   pluginGrants,
   responsibilityRuns,
 } from "../db/schema";
@@ -285,14 +287,21 @@ export async function retryBackgroundWork(
         const store = createResponsibilityStore(tx, {
           resolveTarget: async () => null,
         });
-        const [run] = await tx
-          .select()
+        const [goal] = await tx
+          .select({
+            id: responsibilityRows.id,
+            ownerUserId: responsibilityRows.ownerUserId,
+            status: responsibilityRows.status,
+            agentId: responsibilityRows.agentId,
+            channelId: responsibilityRows.channelId,
+          })
           .from(responsibilityRuns)
+          .innerJoin(
+            responsibilityRows,
+            eq(responsibilityRows.id, responsibilityRuns.responsibilityId),
+          )
           .where(eq(responsibilityRuns.id, runId.data));
-        if (!run) return;
-        const owner = z.string().safeParse(payload.ownerUserId);
-        if (!owner.success) return;
-        const goal = await store.get(owner.data, run.responsibilityId);
+        if (!goal) return;
         if (
           goal.status !== "active" ||
           !(await authorizedBot(
@@ -356,6 +365,7 @@ export async function retryBackgroundWork(
     if (
       !(
         error instanceof WakeUpRefusedError ||
+        error instanceof GroupRefusedError ||
         error instanceof ProactiveNotFoundError ||
         error instanceof ProactiveRefusedError ||
         error instanceof ResponsibilityNotFoundError ||
