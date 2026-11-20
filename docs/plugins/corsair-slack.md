@@ -24,6 +24,12 @@ All operations below start at `/api/corsair/slack`. Use the same signed-in OpenB
 
 A user can reauthorize the same stable subject and keep the Connection ID. Reauthorization invalidates pending or approved writes tied to the previous authorization. Routine token rotation keeps the Approval binding when Slack confirms the same identity. A refresh that cannot be verified marks the Connection as requiring reauthorization. When Slack cannot confirm a write and its operator, check the channel before opening a new Approval.
 
+## Post from a GitHub event Goal
+
+When the GitHub event pilot is enabled, a Goal Run from a bound GitHub Trigger can ask for a one-time Approval to post in a registered Slack channel. The Bot needs the Slack grant and the Goal owner needs a selected or default Slack Connection. The Approval pins the Slack user, Connection revision, channel, and message. The worker checks the original GitHub Trigger and the pinned Slack authorization before posting. A temporary GitHub lookup failure keeps the Run waiting. A revoked GitHub or Slack authorization closes the Approval and fails the Run.
+
+For automated reconciliation of an unconfirmed send, add the Slack user scopes `channels:history` and `groups:history` and reconnect existing Slack Connections. OpenBot checks recent history in the approved channel for the approved user and the message's delivery ID. If that check cannot confirm delivery, OpenBot records the outcome as unconfirmed. Check the channel before requesting a new Approval. [Slack message history](https://docs.slack.dev/reference/methods/conversations.history/) and [message metadata](https://docs.slack.dev/messaging/message-metadata/).
+
 ## Carry over a verified Broker default
 
 Set `CORSAIR_SLACK_VERIFIED_LEGACY_DEFAULTS` to a JSON array. Each entry contains `workspaceId` (OpenBot deployment ID), `registration` (`<app ID>/<client ID>/<team ID>` plus `/<enterprise ID>` for an org install), `personId`, `brokeredAccountId`, `subjectScope` (Slack team or enterprise ID), `userId` (stable Slack user ID), and `evidenceRef` (reference to the provider evidence behind the match). Use one record per OpenBot workspace, registration, and Person. The callback checks the exact stable subject and confirms that the Broker row is still the selected default. A Person can set a default manually when no verified mapping is available.

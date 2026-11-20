@@ -261,6 +261,7 @@ import {
 } from "./plugins/corsair/github";
 import { readVerifiedLegacyGithubDefaults } from "./plugins/corsair/legacy-defaults";
 import { readSlackLegacyDefaults } from "./plugins/corsair/slack/accounts";
+import { createSlackGoalAction } from "./plugins/corsair/slack/goal-action";
 import {
   createSlackPilotProvider,
   slackPilotRegistration,
@@ -2369,7 +2370,37 @@ const skillIn = async (containerId: string, name: string) => {
   return read.skills.find((skill) => skill.name === name) ?? null;
 };
 
+const slackPilot = slackPilotRegistration(process.env, config.publicUrl);
+const slackPilotOptions = slackPilot
+  ? {
+      workspaceId: deploymentId,
+      registration: slackPilot.registration,
+      allowedChannels: slackPilot.allowedChannels,
+      provider: createSlackPilotProvider({
+        ...slackPilot.config,
+        reconcileGoalWrites: !!githubEventTriggers,
+      }),
+      legacyDefaults: readSlackLegacyDefaults(
+        process.env.CORSAIR_SLACK_VERIFIED_LEGACY_DEFAULTS,
+      ),
+      database,
+      approvals: storedApprovals,
+      audit: bootAuditStore,
+      encryptionKey: config.keyEncryptionKey,
+    }
+  : undefined;
+const slackGoalAction = slackPilotOptions
+  ? createSlackGoalAction({
+      ...slackPilotOptions,
+      githubEventAccess: githubEventTriggers,
+      actorFor,
+      canUseBot: async (actor, botId) =>
+        (await agentProfileStore.get(actor, botId)) !== null,
+    })
+  : undefined;
+
 const responsibilityEngine = createServerResponsibilityEngine({
+  slackGoalAction,
   productTelemetry,
   database,
   responsibilityStore,
@@ -2597,6 +2628,7 @@ const approvalSweep = repeatAfterEach(
   createApprovalResumeTick({
     approvalQueue,
     approvalOwner,
+    slackGoalAction,
     approvalService,
     executeApprovedAction,
     database,
@@ -3091,7 +3123,6 @@ const identityGithubCallback =
       })
     : undefined;
 
-const slackPilot = slackPilotRegistration(process.env, config.publicUrl);
 const sharedSlack = sharedSlackRegistration(process.env);
 const app = createApp(
   config,
@@ -3257,23 +3288,7 @@ const app = createApp(
           },
         }
       : {}),
-    ...(slackPilot
-      ? {
-          slackPilot: {
-            workspaceId: deploymentId,
-            registration: slackPilot.registration,
-            allowedChannels: slackPilot.allowedChannels,
-            provider: createSlackPilotProvider(slackPilot.config),
-            legacyDefaults: readSlackLegacyDefaults(
-              process.env.CORSAIR_SLACK_VERIFIED_LEGACY_DEFAULTS,
-            ),
-            database,
-            approvals: storedApprovals,
-            audit: bootAuditStore,
-            encryptionKey: config.keyEncryptionKey,
-          },
-        }
-      : {}),
+    ...(slackPilotOptions ? { slackPilot: slackPilotOptions } : {}),
     ...(sharedSlack
       ? {
           sharedSlackPilot: {

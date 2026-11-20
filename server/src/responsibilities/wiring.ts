@@ -22,6 +22,7 @@ import { createHeadlessComputerTools } from "../computer/headless-tools";
 import type { mountCopilotRuntime } from "../copilot";
 import type { Database } from "../db/client";
 import type { DeliveryScope } from "../delivery/types";
+import type { createSlackGoalAction } from "../plugins/corsair/slack/goal-action";
 import { markUntrusted } from "../untrusted-content";
 import { createWorkQueue } from "../work/queue";
 import {
@@ -43,6 +44,7 @@ export function createServerResponsibilityEngine(deps: {
   productTelemetry?: import("../telemetry/product").ProductTelemetry;
   database: Database;
   responsibilityStore: ResponsibilityStore;
+  slackGoalAction?: ReturnType<typeof createSlackGoalAction>;
   routineIntelligence: IntelligenceLike;
   routineAgentRunner: RunnerLike;
   componentCatalog: ComponentCatalog;
@@ -129,8 +131,10 @@ export function createServerResponsibilityEngine(deps: {
                     ...(signInService ? { signIn: signInService } : {}),
                   })
                 : [];
+            const slack = await deps.slackGoalAction?.toolFor(context);
             return [
               ...computer,
+              ...(slack ? [slack] : []),
               ...tools.map((tool) => ({
                 definition: {
                   name: tool.name,

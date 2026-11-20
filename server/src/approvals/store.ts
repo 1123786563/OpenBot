@@ -265,7 +265,7 @@ export function createApprovalStore(database: Database): ApprovalStore {
         return updated;
       });
     },
-    async consume(owner, id, digest) {
+    async consume(owner, id, digest, beforeConsume) {
       return database.transaction(async (tx) => {
         const [request] = await tx
           .select()
@@ -300,6 +300,7 @@ export function createApprovalStore(database: Database): ApprovalStore {
             .limit(1);
           if (!grant) return false;
         }
+        await beforeConsume?.(tx);
         const rows = await tx
           .update(approvalRequests)
           .set({ status: "consumed", consumedAt: sql`now()` })

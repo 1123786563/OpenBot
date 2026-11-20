@@ -1,60 +1,24 @@
-import { createHash, randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
-import { Hono, type MiddlewareHandler } from "hono";
+import { randomUUID } from "node:crypto";
+import { Hono } from "hono";
 import { z } from "zod";
-import type { BotAccessCheck } from "../../../agents/profile-policy";
 import {
-  type ApprovalAction,
   ApprovalNotFoundError,
   ApprovalRefusedError,
-  type ApprovalStore,
 } from "../../../approvals/types";
-import {
-  type AuditEventInput,
-  type AuditStore,
-  recordAuditEvent,
-} from "../../../audit";
+import { type AuditEventInput, recordAuditEvent } from "../../../audit";
 import { type AppVariables, requireAdmin } from "../../../auth/guards";
 import { pluginGrants as grants } from "../../../db/schema/plugins";
-import { corsairGrantRef } from "../grants";
-import { SlackPilotRefusal, slackAccounts } from "./accounts";
+import { SlackPilotRefusal } from "./accounts";
 import { slackChannel } from "./provider";
 
-const tool = {
-  ref: "corsair/slack.post_message",
-  effect: "write",
-  identity: "slack_user",
-  resource: "registered_channel",
-  permissions: ["chat:write", "channels:read", "groups:read"],
-};
-const id = z.uuid();
-const botId = z.string().trim().min(1).max(200);
-const invocation = z.strictObject({
+import {
   botId,
-  connectionId: id.optional(),
-  channelId: slackChannel,
-  text: z
-    .string()
-    .min(1)
-    .max(4000)
-    .refine((text) => text.trim().length > 0),
-});
-
-type Options = Omit<
-  Parameters<typeof slackAccounts>[0],
-  "clock" | "legacyDefaults"
-> & {
-  clock?: () => Date;
-  legacyDefaults?: Parameters<typeof slackAccounts>[0]["legacyDefaults"];
-  allowedChannels: ReadonlySet<string>;
-  approvals: Pick<
-    ApprovalStore,
-    "open" | "get" | "decide" | "consume" | "saveResult" | "finish"
-  >;
-  audit: AuditStore;
-  requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
-  canUseBot: BotAccessCheck;
-};
+  createSlackWriteAccess,
+  id,
+  invocation,
+  type Options,
+  tool,
+} from "./write-access";
 
 export function createSlackPilotRoutes({
   allowedChannels,
@@ -67,7 +31,22 @@ export function createSlackPilotRoutes({
   ...options
 }: Options) {
   const { workspaceId, registration, provider, database } = options;
-  const accounts = slackAccounts({ ...options, clock, legacyDefaults });
+  const {
+    accounts,
+    grantRef,
+    grantScope,
+    actorCanPost,
+    permitted,
+    actionFor,
+    checkBinding,
+    verifiedTarget,
+  } = createSlackWriteAccess({
+    ...options,
+    allowedChannels,
+    canUseBot,
+    clock,
+    legacyDefaults,
+  });
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", requireUser, async (c, next) => {
     c.header("Cache-Control", "no-store");
@@ -93,21 +72,6 @@ export function createSlackPilotRoutes({
       500,
     );
   });
-  const grantRef = corsairGrantRef(workspaceId, registration, tool.ref);
-  const grantScope = (bot: string) =>
-    and(
-      eq(grants.kind, "corsair.slack"),
-      eq(grants.agentId, bot),
-      eq(grants.ref, grantRef),
-    );
-  const actorCanPost = async (actor: AppVariables["actor"], bot: string) =>
-    (await canUseBot(actor, bot)) &&
-    (
-      await database
-        .select({ bot: grants.agentId })
-        .from(grants)
-        .where(grantScope(bot))
-    ).length > 0;
   const trail = (
     actorUserId: string,
     eventType: AuditEventInput["eventType"],
@@ -192,76 +156,6 @@ export function createSlackPilotRoutes({
     }),
   );
 
-  type Invocation = z.infer<typeof invocation> & { connectionId: string };
-  async function permitted(actor: AppVariables["actor"], input: Invocation) {
-    if (
-      !allowedChannels.has(input.channelId) ||
-      !(await actorCanPost(actor, input.botId))
-    )
-      throw new SlackPilotRefusal(
-        "A Slack channel in range and a current Bot Grant are required.",
-        403,
-      );
-    return accounts.find(actor.id, input.connectionId);
-  }
-
-  function actionFor(
-    personId: string,
-    input: Invocation,
-    connection: Awaited<ReturnType<typeof permitted>>,
-    runId: string,
-  ): ApprovalAction {
-    const target = {
-      workspaceId,
-      registration,
-      teamId: provider.teamId,
-      subjectScope: connection.subjectScope,
-      userId: connection.userId,
-      connectionId: connection.id,
-      revision: connection.revision,
-      channelId: input.channelId,
-    };
-    const binding = {
-      actorId: personId,
-      botId: input.botId,
-      toolRef: tool.ref,
-      effect: tool.effect,
-      scope: workspaceId,
-      target,
-      args: { text: input.text },
-    };
-    return {
-      ...binding,
-      dispatch: "explicit",
-      account: connection.label,
-      actionDigest: createHash("sha256")
-        .update(JSON.stringify(binding))
-        .digest("hex"),
-      runId,
-      toolCallId: runId,
-      threadId: runId,
-      policy: {
-        behaviour: "ask",
-        source: "safety",
-        closed: true,
-        reason: "Posting a message as a Slack user requires one-time Approval.",
-      },
-      declined: {
-        eventType: "corsair.slack.write_refused",
-        actorUserId: personId,
-        targetType: "slack_channel",
-        targetId: input.channelId,
-        payload: {
-          workspaceId,
-          botId: input.botId,
-          tool: tool.ref,
-          target,
-          reason: "Person denied the Approval.",
-        },
-      },
-    };
-  }
-
   routes.post("/approvals", async (c) => {
     const selection = invocation.parse(await c.req.json());
     const actor = c.var.actor;
@@ -343,18 +237,6 @@ export function createSlackPilotRoutes({
         target: record.action.target,
         ...details,
       });
-    async function checkBinding() {
-      const connection = await permitted(actor, input);
-      if (
-        actionFor(actor.id, input, connection, record.action.runId)
-          .actionDigest !== record.action.actionDigest
-      )
-        throw new SlackPilotRefusal(
-          "The Slack action no longer matches its Approval.",
-          409,
-        );
-      return connection;
-    }
     let token: string;
     try {
       if (record.status !== "approved" || record.decision !== "allow_once")
@@ -370,25 +252,8 @@ export function createSlackPilotRoutes({
           "The Slack Connection no longer matches its Approval.",
           409,
         );
-      const connection = await checkBinding();
-      token = await accounts.verifiedToken(
-        actor.id,
-        connection.id,
-        connection.revision,
-      );
-      try {
-        await provider.checkChannel({
-          token,
-          channelId: input.channelId,
-          userId: connection.userId,
-        });
-      } catch {
-        throw new SlackPilotRefusal(
-          "Slack could not verify membership in the selected channel.",
-          403,
-        );
-      }
-      await checkBinding();
+      ({ token } = await verifiedTarget(actor, input, record.action));
+      await checkBinding(actor, input, record.action);
       if (
         !(await approvals.consume(
           actor.id,

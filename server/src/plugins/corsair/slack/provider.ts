@@ -6,6 +6,23 @@ const enterprise = z.string().regex(/^E[A-Z0-9]+$/);
 const slackUser = z.string().regex(/^[UW][A-Z0-9]+$/);
 export const slackChannel = z.string().regex(/^[CG][A-Z0-9]+$/);
 const scopes = ["chat:write", "channels:read", "groups:read"];
+const reconcileScopes = ["channels:history", "groups:history"];
+const deliveryEvent = "openbot_slack_message_sent";
+const deliveryHistory = z.object({
+  messages: z.array(
+    z.object({
+      ts: z.string().regex(/^\d+\.\d+$/),
+      user: slackUser.optional(),
+      metadata: z
+        .object({
+          event_type: z.string(),
+          event_payload: z.object({ delivery: z.uuid() }).optional(),
+        })
+        .optional()
+        .catch(undefined),
+    }),
+  ),
+});
 const rotatingUser = z.object({
   token_type: z.literal("user"),
   access_token: z.string().startsWith("xoxe.xoxp-"),
@@ -47,9 +64,11 @@ export type SlackRegistration = {
   clientId: string;
   clientSecret: string;
   redirectUri: string;
+  reconcileGoalWrites?: boolean;
 };
 
 export class SlackIdentityMismatch extends Error {}
+export class SlackWritePermissionUnavailable extends Error {}
 
 export function createSlackPilotProvider(
   config: SlackRegistration,
@@ -62,6 +81,7 @@ export function createSlackPilotProvider(
     method: string,
     schema: S,
     init: RequestInit = {},
+    verifyWriteScope = false,
   ) {
     const response = await transport(`https://slack.com/api/${method}`, {
       ...init,
@@ -69,6 +89,14 @@ export function createSlackPilotProvider(
       signal: init.signal ?? AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new Error("Slack request failed.");
+    if (
+      verifyWriteScope &&
+      !response.headers
+        .get("x-oauth-scopes")
+        ?.split(",")
+        .some((scope) => scope.trim() === "chat:write")
+    )
+      throw new SlackWritePermissionUnavailable();
     const payload: unknown = await response.json();
     z.object({ ok: z.literal(true) }).parse(payload);
     return schema.parse(payload);
@@ -132,7 +160,10 @@ export function createSlackPilotProvider(
         redirect_uri: redirectUri,
         state,
         team: teamId,
-        user_scope: scopes.join(","),
+        user_scope: [
+          ...scopes,
+          ...(config.reconcileGoalWrites ? reconcileScopes : []),
+        ].join(","),
       }).toString();
       return url.toString();
     },
@@ -159,10 +190,12 @@ export function createSlackPilotProvider(
       token,
       channelId,
       userId,
+      verifyWriteScope = false,
     }: {
       token: string;
       channelId: string;
       userId: string;
+      verifyWriteScope?: boolean;
     }) {
       const { channel } = await request(
         `conversations.info?${new URLSearchParams({ channel: channelId })}`,
@@ -175,6 +208,7 @@ export function createSlackPilotProvider(
           }),
         }),
         { headers: bearer(token) },
+        verifyWriteScope,
       );
       if (
         channel.id !== channelId ||
@@ -203,14 +237,49 @@ export function createSlackPilotProvider(
       }
       throw new Error("Slack membership could not be verified.");
     },
+    async findGoalMessage({
+      token,
+      channel,
+      userId,
+      delivery,
+      startedAt,
+    }: {
+      token: string;
+      channel: string;
+      userId: string;
+      delivery: string;
+      startedAt: Date;
+    }) {
+      const query = new URLSearchParams({
+        channel,
+        oldest: String(startedAt.getTime() / 1000 - 30),
+        limit: "15",
+        include_all_metadata: "true",
+      });
+      const history = await request(
+        `conversations.history?${query}`,
+        deliveryHistory,
+        {
+          headers: bearer(token),
+        },
+      );
+      return history.messages.find(
+        (message) =>
+          message.user === userId &&
+          message.metadata?.event_type === deliveryEvent &&
+          message.metadata.event_payload?.delivery === delivery,
+      )?.ts;
+    },
     async postMessage({
       token,
       channel,
       text,
       userId,
+      delivery,
     }: {
       token: string;
       channel: string;
+      delivery?: string;
       text: string;
       userId: string;
     }) {
@@ -239,6 +308,14 @@ export function createSlackPilotProvider(
                       },
                       body: JSON.stringify({
                         ...args,
+                        ...(delivery
+                          ? {
+                              metadata: {
+                                event_type: deliveryEvent,
+                                event_payload: { delivery },
+                              },
+                            }
+                          : {}),
                         unfurl_links: false,
                         unfurl_media: false,
                       }),

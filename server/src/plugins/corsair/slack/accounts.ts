@@ -88,11 +88,16 @@ export function slackAccounts({
     encryptSecret(encryptionKey, JSON.stringify(storedTokens.parse(value)));
   const expiry = (seconds: number) =>
     new Date(clock().getTime() + seconds * 1000);
-  async function find(personId: string, id: string) {
-    const [connection] = await database
+  async function find(
+    personId: string,
+    id: string,
+    tx?: Parameters<Parameters<Database["transaction"]>[0]>[0],
+  ) {
+    const query = (tx ?? database)
       .select()
       .from(connections)
       .where(bound(personId, id));
+    const [connection] = await (tx ? query.for("share") : query);
     if (!connection)
       throw new SlackPilotRefusal("This Slack Connection is unavailable.", 403);
     if (connection.verificationRequiredAt)

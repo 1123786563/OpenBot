@@ -7,6 +7,7 @@ import {
 } from "@openbot/toolkit/continuation";
 import type { AuditEventInput, AuditInitiator } from "../audit";
 import { cutAtCodeUnits } from "../channels/text";
+import type { Database } from "../db/client";
 
 /**
  * `handled` answers a hand-off: the person did it themselves, so it is never executed for them.
@@ -155,8 +156,8 @@ export type ApprovalCandidate = {
   account?: string;
 };
 export type ApprovalAction = ApprovalCandidate & {
-  /** Decisions for API actions are consumed by the original surface. */
-  dispatch?: "explicit";
+  /** API actions are consumed by the original surface. Goal actions use the Approval worker. */
+  dispatch?: "explicit" | "corsair-slack-goal";
   runId: string;
   threadId: string;
   toolCallId: string;
@@ -394,7 +395,14 @@ export type ApprovalStore = {
     id: string,
     decision: ApprovalDecision,
   ): Promise<ApprovalRecord>;
-  consume(ownerUserId: string, id: string, digest: string): Promise<boolean>;
+  consume(
+    ownerUserId: string,
+    id: string,
+    digest: string,
+    beforeConsume?: (
+      tx: Parameters<Parameters<Database["transaction"]>[0]>[0],
+    ) => Promise<void>,
+  ): Promise<boolean>;
   saveResult(
     ownerUserId: string,
     id: string,

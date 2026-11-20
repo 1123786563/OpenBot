@@ -1,12 +1,24 @@
 import { afterAll, expect, test } from "bun:test";
 import { createHmac, randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
+import type { MiddlewareHandler } from "hono";
+import { z } from "zod";
+import { createApprovalRoutes } from "../src/approvals/routes";
+import { createApprovalResumeTick } from "../src/approvals/resume-sweep";
+import { createApprovalService } from "../src/approvals/service";
+import { withApprovalContext } from "../src/approvals/types";
+import type { AppVariables } from "../src/auth/guards";
+import { createSlackGoalAction } from "../src/plugins/corsair/slack/goal-action";
+import { createSlackPilotProvider } from "../src/plugins/corsair/slack/provider";
+import { createSlackPilotRoutes } from "../src/plugins/corsair/slack/routes";
 import { createApprovalStore } from "../src/approvals/store";
 import { createAuditReader, createAuditStore } from "../src/audit";
 import { encryptSecret } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
 import {
   agents,
+  auditEvents,
+  slackPilotConnections,
   githubPilotConnections,
   githubPilotEventReceipts,
   githubPilotRepositories,
@@ -564,3 +576,441 @@ test("observation and historical/ineligible events produce no Runs", async () =>
     await f.cleanup();
   }
 });
+
+test("the normal Approval resume ends the event Run when GitHub revokes read access", async () => {
+  const f = await waitingSlackGoal();
+  try {
+    f.setAccess("denied");
+    await f.approve();
+    await f.tick();
+    expect(await f.run()).toMatchObject({
+      status: "failed",
+      error: "GitHub event read authorization ended.",
+    });
+    expect(await f.approval()).toMatchObject({
+      status: "completed",
+      result: { error: "GitHub event read authorization ended." },
+    });
+    expect(f.writes).toEqual([]);
+  } finally {
+    await f.cleanup();
+  }
+}, 30_000);
+
+test("a GitHub-triggered Approval posts the pinned Slack action after a transient source failure", async () => {
+  const f = await waitingSlackGoal();
+  try {
+    await f.useDefault(await f.connect("second"));
+    f.setAccess("retry");
+    await f.approve();
+    await f.tick();
+    expect(await f.run()).toMatchObject({ status: "waiting" });
+    expect(await f.approval()).toMatchObject({
+      status: "approved",
+      result: null,
+    });
+    expect(f.writes).toEqual([]);
+
+    f.setAccess("allowed");
+    await database
+      .update(workItems)
+      .set({ runAt: new Date(0) })
+      .where(eq(workItems.key, f.approvalId));
+    await f.tick();
+    await f.tick();
+    expect(f.writes).toEqual([
+      { channel: "C123", text: "Triage is ready.", user: "U111" },
+    ]);
+    expect(await f.approval()).toMatchObject({
+      status: "completed",
+      result: { content: "Slack message C123/12345.67890" },
+    });
+    expect(await f.run()).toMatchObject({ status: "queued" });
+
+    const trail = await database
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.actorUserId, f.owner));
+    const source = trail.find(
+      (row) =>
+        row.eventType === "corsair.github.event_delivery" &&
+        row.payload.outcome === "queued",
+    );
+    expect(source?.payload).toMatchObject({
+      deliveryId: f.deliveryId,
+      runId: (await f.run())?.id,
+    });
+    expect(
+      trail.find((row) => row.eventType === "corsair.slack.write_succeeded")
+        ?.payload,
+    ).toMatchObject({
+      receiptId: source?.targetId,
+      runId: source?.payload.runId,
+      approvalId: f.approvalId,
+      timestamp: "12345.67890",
+    });
+  } finally {
+    await f.cleanup();
+  }
+}, 30_000);
+
+test.each(["disconnected", "write scope revoked"])(
+  "a Slack Connection with %s prevents dispatch",
+  async (change) => {
+    const f = await waitingSlackGoal();
+    try {
+      if (change === "disconnected") {
+        await database
+          .delete(slackPilotConnections)
+          .where(eq(slackPilotConnections.id, f.connectionId));
+      } else {
+        f.revokeWriteScope();
+      }
+      await f.approve();
+      await f.tick();
+      expect(f.writes).toEqual([]);
+      expect(await f.run()).toMatchObject({ status: "failed" });
+      expect(await f.approval()).toMatchObject({
+        status: "completed",
+        result: { error: expect.any(String) },
+      });
+      const trail = await database
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.actorUserId, f.owner));
+      expect(
+        trail.find((row) => row.eventType === "corsair.slack.write_refused")
+          ?.payload,
+      ).toMatchObject({
+        approvalId: f.approvalId,
+        reason: (await f.run())?.error,
+      });
+    } finally {
+      await f.cleanup();
+    }
+  },
+  30_000,
+);
+
+test.each(["found", "unknown"] as const)(
+  "a lost Slack response is reconciled without resending when the outcome is %s",
+  async (mode) => {
+    const f = await waitingSlackGoal(mode);
+    try {
+      await f.approve();
+      await f.tick();
+      await f.tick();
+      expect(f.writes).toHaveLength(1);
+      expect(f.historyReads()).toBe(1);
+      expect(await f.approval()).toMatchObject({
+        status: "completed",
+        result:
+          mode === "found"
+            ? { content: "Slack message C123/12345.67890" }
+            : { error: expect.stringContaining("Check the selected channel") },
+      });
+    } finally {
+      await f.cleanup();
+    }
+  },
+  30_000,
+);
+
+async function waitingSlackGoal(ambiguous?: "found" | "unknown") {
+  const f = await eventFixture();
+  const approved = createApprovalStore(database);
+  const approvalService = createApprovalService(approved);
+  const audit = createAuditStore(database);
+  const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
+    c,
+    next,
+  ) => {
+    c.set("actor", {
+      id: f.owner,
+      email: "fixture@example.test",
+      role: "admin",
+    });
+    await next();
+  };
+  const actorFor = async () => ({ id: f.owner, role: "admin" as const });
+  const writes: unknown[] = [];
+  let historyReads = 0;
+  let hasWriteScope = true;
+  let historyMessage: unknown;
+  const provider = createSlackPilotProvider(
+    {
+      appId: "A123",
+      reconcileGoalWrites: true,
+      clientId: "fixture",
+      clientSecret: "fixture",
+      teamId: "T123",
+      redirectUri: "https://openbot.test/api/corsair/slack/callback",
+    },
+    Object.assign(
+      async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        const req = new Request(input, init);
+        const url = new URL(req.url);
+        switch (url.pathname) {
+          case "/api/oauth.v2.access": {
+            const code = new URLSearchParams(await req.text()).get("code");
+            const user = code === "second" ? "U222" : "U111";
+            return Response.json({
+              ok: true,
+              app_id: "A123",
+              team: { id: "T123" },
+              is_enterprise_install: false,
+              authed_user: {
+                id: user,
+                access_token: `xoxe.xoxp-${user}`,
+                refresh_token: `xoxe-${user}`,
+                expires_in: 3600,
+                scope: "chat:write,channels:read,groups:read",
+                token_type: "user",
+              },
+            });
+          }
+          case "/api/auth.test":
+            return Response.json({
+              ok: true,
+              user_id: req.headers.get("authorization")?.split("-").at(-1),
+              user: "fixture",
+              team_id: "T123",
+            });
+          case "/api/conversations.info":
+            return Response.json(
+              {
+                ok: true,
+                channel: {
+                  id: "C123",
+                  context_team_id: "T123",
+                  is_archived: false,
+                  is_ext_shared: false,
+                },
+              },
+              {
+                headers: {
+                  "x-oauth-scopes": hasWriteScope
+                    ? "chat:write,channels:read,groups:read"
+                    : "channels:read,groups:read",
+                },
+              },
+            );
+          case "/api/conversations.members":
+            return Response.json({ ok: true, members: ["U111", "U222"] });
+          case "/api/chat.postMessage": {
+            const { channel, text, metadata } = await req.json();
+            const user = req.headers.get("authorization")?.split("-").at(-1);
+            writes.push({ channel, text, user });
+            historyMessage = { ts: "12345.67890", user, metadata };
+            if (ambiguous) throw new Error("Response lost after posting");
+            return Response.json({
+              ok: true,
+              channel,
+              ts: "12345.67890",
+              message: { user },
+            });
+          }
+          case "/api/conversations.history":
+            expect(url.searchParams.get("channel")).toBe("C123");
+            expect(url.searchParams.get("include_all_metadata")).toBe("true");
+            historyReads++;
+            return Response.json({
+              ok: true,
+              messages: ambiguous === "found" ? [historyMessage] : [],
+            });
+          default:
+            throw new Error(`Unexpected Slack call ${url.pathname}`);
+        }
+      },
+      { preconnect: fetch.preconnect },
+    ),
+  );
+  const slackOptions = {
+    database,
+    audit,
+    workspaceId: f.scope.workspaceId,
+    registration: "A123/fixture/T123",
+    encryptionKey: Buffer.alloc(32, 7).toString("base64"),
+    allowedChannels: new Set(["C123"]),
+    provider,
+    approvals: approved,
+    canUseBot: async (_actor: unknown, id: string) => id === f.botId,
+  };
+  const slack = createSlackPilotRoutes({ ...slackOptions, requireUser });
+  const connect = async (code: string) => {
+    const started = await slack.request("/connect", {
+      method: "POST",
+      headers: { "X-OpenBot-Pilot": "slack" },
+    });
+    expect(started.status).toBe(201);
+    const { authorizationUrl } = await started.json();
+    const oauth = new URL(authorizationUrl);
+    expect(oauth.searchParams.get("user_scope")?.split(",")).toEqual([
+      "chat:write",
+      "channels:read",
+      "groups:read",
+      "channels:history",
+      "groups:history",
+    ]);
+    const state = oauth.searchParams.get("state");
+    const response = await slack.request(
+      `/callback?code=${code}&state=${state}`,
+    );
+    expect(response.status).toBe(200);
+    return z
+      .object({ connection: z.object({ id: z.uuid() }) })
+      .parse(await response.json()).connection.id;
+  };
+  const connectionId = await connect("first");
+  const useDefault = async (connectionId: string) =>
+    expect(
+      (
+        await slack.request("/connections/default", {
+          method: "PUT",
+          headers: { "X-OpenBot-Pilot": "slack" },
+          body: JSON.stringify({ connectionId }),
+        })
+      ).status,
+    ).toBe(200);
+  await useDefault(connectionId);
+  expect(
+    (
+      await slack.request(`/bots/${f.botId}/grant`, {
+        method: "PUT",
+        headers: { "X-OpenBot-Pilot": "slack" },
+        body: JSON.stringify({ enabled: true }),
+      })
+    ).status,
+  ).toBe(200);
+  const action = createSlackGoalAction({
+    ...slackOptions,
+    actorFor,
+    githubEventAccess: f.triggers,
+  });
+  const goals = createResponsibilityStore(database, {
+    resolveTarget: async () => ({ threadId: "fixture-thread" }),
+    githubEventAccess: f.triggers,
+  });
+  const approvalQueue = createWorkQueue(database);
+  const parameters = { channelId: "C123", text: "Triage is ready." };
+  const engine = createResponsibilityEngine({
+    store: goals,
+    queue: approvalQueue,
+    runTurn: async (context) => {
+      const tool = await action.toolFor(context);
+      if (!tool) throw new Error("Missing Slack Goal tool");
+      await withApprovalContext(
+        {
+          runId: "ag-ui-fixture",
+          threadId: context.threadId,
+          toolCallId: "post-1",
+          toolName: tool.definition.name,
+          args: parameters,
+          messages: [],
+          state: {},
+          context: [],
+          forwardedProps: {},
+          initiator: { kind: "responsibility", id: f.goal.id },
+        },
+        () =>
+          tool.execute(parameters, {
+            toolCallId: "post-1",
+            signal: context.signal,
+          }),
+      );
+      return { replyText: "Unexpected" };
+    },
+  });
+  expect((await f.triggers.create(f.owner, f.input)).kind).toBe("created");
+  const deliveryId = randomUUID();
+  const ingress = createGithubEventIngress({
+    database,
+    ...f.scope,
+    secret,
+    isolatedSources: new Set(["20/30"]),
+  });
+  expect(
+    (await ingress.fetch(request(deliveryId, issue(new Date())))).status,
+  ).toBe(202);
+  await createGithubEventDispatch({
+    database,
+    ...f.scope,
+    triggers: f.triggers,
+    isolatedSources: new Set(["20/30"]),
+  }).sweep();
+  const run = async () => (await goals.listRuns(f.owner, f.goal.id))[0];
+  const runId = (await run())?.id;
+  expect(
+    (await engine.dispatch({ owner: "goal-slack-fixture" })).waiting,
+  ).toEqual([runId]);
+  const approvalRoutes = createApprovalRoutes(approvalService, requireUser);
+  const { requests } = z
+    .object({ requests: z.array(z.object({ id: z.string() })) })
+    .parse(await (await approvalRoutes.request("/")).json());
+  const approvalId = requests[0]?.id;
+  if (!approvalId) throw new Error("Missing Slack Approval");
+  const tick = createApprovalResumeTick({
+    approvalQueue,
+    approvalOwner: "goal-slack-approval-fixture",
+    approvalService,
+    database,
+    responsibilityStore: goals,
+    actorFor,
+    slackGoalAction: action,
+    executeApprovedAction: async () => {
+      throw new Error("Unexpected generic action");
+    },
+    groupConversations: {
+      continueWaiting: async () => {
+        throw new Error("Unexpected group continuation");
+      },
+    },
+    approvalContinuationRunner: async () => {
+      throw new Error("Unexpected generic continuation");
+    },
+    channelStore: {
+      recordActivity: async () => {
+        throw new Error("Unexpected channel activity");
+      },
+    },
+    notify: async () => {},
+  });
+  return {
+    ...f,
+    writes,
+    run,
+    tick,
+    deliveryId,
+    connectionId,
+    connect,
+    useDefault,
+    revokeWriteScope: () => {
+      hasWriteScope = false;
+    },
+    historyReads: () => historyReads,
+    slack,
+    approvalId,
+    approval: () => approved.get(f.owner, approvalId),
+    async approve() {
+      expect(
+        (
+          await approvalRoutes.request(`/${approvalId}/decision`, {
+            method: "POST",
+            body: JSON.stringify({ decision: "allow_once" }),
+          })
+        ).status,
+      ).toBe(200);
+    },
+    async cleanup() {
+      await database
+        .delete(workItems)
+        .where(
+          and(
+            eq(workItems.kind, "approval.resume"),
+            sql`${workItems.payload}->>'approvalId' = ${approvalId}`,
+          ),
+        );
+      await f.cleanup();
+    },
+  };
+}
