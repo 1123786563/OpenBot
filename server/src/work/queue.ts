@@ -315,6 +315,7 @@ function fromNow(ms: number) {
 export function createWorkQueue(
   database: Database | Transaction,
   now = Date.now,
+  options?: { personalOnly: true },
 ) {
   const keyed = (kind: string, key: string) =>
     and(eq(workItems.kind, kind), eq(workItems.key, key));
@@ -540,6 +541,9 @@ export function createWorkQueue(
           .where(
             and(
               eq(workItems.kind, kind),
+              options?.personalOnly
+                ? isNotNull(workItems.accountId)
+                : undefined,
               unfinished,
               or(
                 lt(workItems.attempts, maxAttempts),
@@ -829,16 +833,34 @@ export function createWorkQueue(
         )
         .orderBy(workItems.createdAt);
     },
+    async interruptedKind(accountId: string, key: string) {
+      const rows = await database
+        .select({ kind: workItems.kind })
+        .from(workItems)
+        .where(
+          and(
+            eq(workItems.accountId, accountId),
+            eq(workItems.key, key),
+            isNotNull(workItems.interruption),
+          ),
+        )
+        .limit(2);
+      return rows.length === 1 ? rows[0]?.kind : undefined;
+    },
     async recover(input: {
       kind: string;
       accountId: string;
       key: string;
       action: "cancel" | "retry";
       acknowledged: boolean;
-      mayRetry: (
+      mayRetry?: (
         tx: Transaction,
         payload: WorkRow["payload"],
       ) => Promise<boolean>;
+      startFresh?: (
+        tx: Transaction,
+        payload: WorkRow["payload"],
+      ) => Promise<string | undefined>;
     }) {
       const { kind, accountId, key, action } = input;
       return database.transaction(async (tx) => {
@@ -864,21 +886,32 @@ export function createWorkQueue(
           !input.acknowledged
         )
           return { kind: "acknowledgement_required" } as const;
-        if (action === "retry" && !(await input.mayRetry(tx, row.payload)))
+        if (
+          action === "retry" &&
+          input.mayRetry &&
+          !(await input.mayRetry(tx, row.payload))
+        )
           return { kind: "forbidden" } as const;
         if (now() >= access.expiresAt) return { kind: "forbidden" } as const;
 
         let recovery: NonNullable<WorkRow["recovery"]> = { action: "cancel" };
         if (action === "retry") {
-          const newKey = crypto.randomUUID();
-          const offered = await createWorkQueue(tx, now).offer({
-            kind,
-            key: newKey,
-            payload: row.payload,
-            accountId,
-          });
-          if (offered !== "queued") return { kind: "forbidden" } as const;
-          recovery = { action, key: newKey };
+          if (input.startFresh) {
+            const newKey = await input.startFresh(tx, row.payload);
+            if (!newKey) return { kind: "forbidden" } as const;
+            recovery = { action, key: newKey };
+          } else {
+            if (!input.mayRetry) return { kind: "forbidden" } as const;
+            const newKey = crypto.randomUUID();
+            const offered = await createWorkQueue(tx, now).offer({
+              kind,
+              key: newKey,
+              payload: row.payload,
+              accountId,
+            });
+            if (offered !== "queued") return { kind: "forbidden" } as const;
+            recovery = { action, key: newKey };
+          }
         }
         await tx
           .update(workItems)

@@ -32,7 +32,7 @@ export type ResponsibilityTargetResolver = (
 ) => Promise<{ threadId: string } | null>;
 
 export function createResponsibilityStore(
-  database: Database,
+  database: Connection,
   options: { resolveTarget: ResponsibilityTargetResolver },
 ): ResponsibilityStore {
   async function owned(

@@ -181,3 +181,18 @@ for (const [task, sweep] of [
     }
   }, 1_000);
 }
+
+for (const [task, sweep] of Object.entries(app.backgroundWorkers ?? {})) {
+  repeatAfterEach(async () => {
+    try {
+      await sweep();
+    } catch {
+      console.warn(
+        JSON.stringify({
+          type: "personal-saas-background-sweep-failure",
+          task,
+        }),
+      );
+    }
+  }, 1_000);
+}

@@ -74,7 +74,7 @@ export type GroupTurn = {
    */
   inResponseTo?: string;
 };
-const turnSchema = z.object({
+export const groupTurnSchema = z.object({
   ownerUserId: z.string().min(1),
   channelId: z.string().min(1),
   messageId: z.string().min(1),
@@ -1301,7 +1301,7 @@ export function createGroupConversations(deps: {
         maxAttempts: 2,
       });
       if (!item) return false;
-      const turn = turnSchema.parse(item.payload);
+      const turn = groupTurnSchema.parse(item.payload);
       try {
         await runAuthorizedWork(deps.queue, item, deps.owner, async (guard) => {
           await deps.busy?.(turn, true).catch(() => {});

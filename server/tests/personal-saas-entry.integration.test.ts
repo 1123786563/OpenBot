@@ -2784,6 +2784,14 @@ for (const reason of [
           action,
           acknowledged,
         });
+      const freshFollowUp = await resolve(followUp.id, "retry");
+      expect(freshFollowUp.status).toBe(200);
+      const followUpRecovery = await freshFollowUp.json();
+      expect(followUpRecovery).toMatchObject({ action: "retry" });
+      expect(followUpRecovery.key).not.toBe(followUp.id);
+      expect(await (await resolve(followUp.id, "retry")).json()).toEqual(
+        followUpRecovery,
+      );
       expect((await resolve(runId, "retry")).status).toBe(409);
       const concurrent = await Promise.all([
         resolve(runId, "retry", true),
@@ -3270,3 +3278,239 @@ for (const cutoff of automationCutoffs) {
     }
   });
 }
+
+test("the mounted workspace recovers each stopped background capability as fresh work", async () => {
+  const { createGroupStore } = await import("../src/channels/group");
+  const { createProactiveStore } = await import("../src/proactive/store");
+  const { createResponsibilityStore } = await import(
+    "../src/responsibilities/store"
+  );
+  const { pluginGrants } = await import("../src/db/schema");
+  const account: Account = {
+    sub: crypto.randomUUID(),
+    email: "background-recovery@example.com",
+    verified: true,
+    active: true,
+  };
+  const login = async () =>
+    cookie(await authenticate(account), "__Host-openbot-personal=");
+  const initial = await login();
+  await enter(initial);
+  const target = await workspace(initial);
+  const ownerUserId = workspaceResourceOwner(target.id);
+  const agentId = target.personalAssistant.id;
+  const channelId = crypto.randomUUID();
+  const groupId = crypto.randomUUID();
+  const sourceBotId = crypto.randomUUID();
+  await database
+    .insert(users)
+    .values({ id: ownerUserId, email: `${target.id}@workspace.example` });
+  await database
+    .insert(agents)
+    .values({
+      id: sourceBotId,
+      name: "Source Bot",
+      type: "built_in",
+      configuration: {},
+    });
+  await database.insert(channels).values([
+    { id: channelId, name: "Private conversation", description: "" },
+    { id: groupId, name: "Private group", description: "" },
+  ]);
+  await database.insert(channelAgents).values([
+    { channelId, agentId },
+    { channelId: groupId, agentId },
+    { channelId: groupId, agentId: sourceBotId },
+  ]);
+  const { agentProfiles } = await import("../src/db/schema");
+  await database.insert(agentProfiles).values({
+    agentId: sourceBotId,
+    title: "Source Bot",
+    roleDescription: "",
+    avatarSeed: sourceBotId,
+    visibility: "private",
+  });
+  await database
+    .insert(channelMemberships)
+    .values({ channelId: groupId, userId: ownerUserId });
+  await database
+    .insert(pluginGrants)
+    .values({ kind: "bot", agentId: sourceBotId, ref: agentId });
+
+  const groups = createGroupStore(database, () => crypto.randomUUID());
+  const setting = await createProactiveStore(database).create(
+    ownerUserId,
+    {
+      agentId,
+      channelId,
+      subject: "Travel updates",
+    },
+    channelId,
+  );
+  const responsibilities = createResponsibilityStore(database, {
+    resolveTarget: async () => ({ threadId: channelId }),
+  });
+  const goal = await responsibilities.create(ownerUserId, {
+    agentId,
+    channelId,
+    title: "Delivery watch",
+    instruction: "Check for a delivery",
+    successCriteria: "Delivery confirmed",
+  });
+  const [responsibility] = (
+    await responsibilities.ingestEvent({
+      ownerUserId,
+      responsibilityId: goal.id,
+      source: "manual",
+      externalId: crypto.randomUUID(),
+      type: "requested",
+      payload: {},
+    })
+  ).runIds;
+  if (!responsibility) throw new Error("Expected a queued responsibility");
+  const checkIn = `${setting.id}:scheduled`;
+  const group = `message:${crypto.randomUUID()}`;
+  const handoff = `hop:${crypto.randomUUID()}:${crypto.randomUUID()}`;
+  const queue = createWorkQueue(database, now);
+  expect(
+    await queue.offer({
+      kind: "proactive.run",
+      key: checkIn,
+      payload: {
+        settingId: setting.id,
+        ownerUserId,
+        runId: crypto.randomUUID(),
+        trigger: "schedule",
+      },
+    }),
+  ).toBe("queued");
+  await groups.submit({
+    ownerUserId,
+    channelId: groupId,
+    messageId: group,
+    agentIds: [agentId],
+    text: "Check the group update",
+  });
+  expect(
+    await queue.offer({
+      kind: "bot.message",
+      key: handoff,
+      payload: {
+        actorId: ownerUserId,
+        fromBotId: sourceBotId,
+        toBotId: agentId,
+        threadId: await groups.thread(ownerUserId, groupId, sourceBotId),
+        runId: crypto.randomUUID(),
+        depth: 1,
+        task: "Check the handoff",
+      },
+    }),
+  ).toBe("queued");
+  expect(
+    (
+      await queue.claim({
+        kind: "bot.message",
+        owner: "interrupted-worker",
+        leaseMs: 60_000,
+      })
+    )[0]?.key,
+  ).toBe(handoff);
+
+  const calls: string[] = [];
+  const runApp = newApp(database, async ({ routineId, beforeDispatch }) => {
+    await beforeDispatch?.();
+    calls.push(routineId);
+    return { replyText: "Fresh response" };
+  });
+  const workers = runApp.backgroundWorkers;
+  if (!workers) throw new Error("Expected trial workers");
+  const request = (path: string, session: string, body?: object) =>
+    runApp.fetch(
+      new Request(new URL(path, origin), {
+        method: body ? "POST" : "GET",
+        headers: {
+          cookie: session,
+          origin,
+          "content-type": "application/json",
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      }),
+    );
+  const operate = (action: "pause" | "resume") =>
+    send(`/api/operator/workspaces/${target.id}/suspension`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${operatorToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ action, reason: "Test suspension" }),
+    });
+  const sweep = () =>
+    Promise.all([
+      workers.checkIn(),
+      workers.responsibility(),
+      workers.group(),
+      workers.handoff(),
+    ]);
+  const retry = (key: string, session: string, acknowledged = false) =>
+    request(`/api/workspace/recovery/${encodeURIComponent(key)}`, session, {
+      action: "retry",
+      acknowledged,
+    });
+
+  expect((await operate("pause")).status).toBe(201);
+  expect((await retry(handoff, initial, true)).status).toBe(403);
+  await sweep();
+  expect((await operate("resume")).status).toBe(201);
+  const restored = await login();
+  const state = await (await request("/api/workspace", restored)).json();
+  expect(
+    state.interruptedBackgroundWork
+      .map((item: { key: string }) => item.key)
+      .sort(),
+  ).toEqual([checkIn, responsibility, group, handoff].sort());
+  await sweep();
+  expect(calls).toEqual([]);
+  expect((await retry(handoff, restored)).status).toBe(409);
+  const other = cookie(
+    await authenticate({ ...account, sub: crypto.randomUUID() }),
+    "__Host-openbot-personal=",
+  );
+  expect((await retry(handoff, other, true)).status).toBe(404);
+  const fresh = new Map<string, string>();
+  for (const key of [checkIn, responsibility, group, handoff]) {
+    const response = await retry(key, restored, true);
+    expect(response.status).toBe(200);
+    const recovery = await response.json();
+    expect(recovery).toMatchObject({
+      action: "retry",
+      key: expect.any(String),
+    });
+    expect(recovery.key).not.toBe(key);
+    expect(await (await retry(key, restored, true)).json()).toEqual(recovery);
+    fresh.set(key, recovery.key);
+  }
+  await sweep();
+  expect(calls.sort()).toEqual(
+    [
+      `proactive:${setting.id}`,
+      goal.id,
+      `group:${groupId}`,
+      fresh.get(handoff),
+    ].sort(),
+  );
+  await sweep();
+  expect(calls).toHaveLength(4);
+  const after = await (await request("/api/workspace", restored)).json();
+  expect(after.interruptedBackgroundWork).toEqual(
+    expect.arrayContaining(
+      [...fresh].map(([key, newKey]) =>
+        expect.objectContaining({
+          key,
+          reason: "workspace_paused",
+          recovery: { action: "retry", key: newKey },
+        }),
+      ),
+    ),
+  );
+});

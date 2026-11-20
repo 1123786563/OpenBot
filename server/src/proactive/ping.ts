@@ -183,7 +183,9 @@ const itemColumns = {
   sourceApp: proactiveSuggestions.sourceApp,
 };
 
-export function createPingStore(database: Database) {
+export function createPingStore(
+  database: Database | Parameters<Parameters<Database["transaction"]>[0]>[0],
+) {
   return {
     /**
      * Take the person's hourly slot and write one ping folding everything waiting for them. Null when

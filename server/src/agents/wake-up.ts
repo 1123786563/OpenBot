@@ -111,7 +111,7 @@ function toRecord(row: typeof workItems.$inferSelect): WakeUpRecord {
 export type WakeUpStore = ReturnType<typeof createWakeUpStore>;
 
 export function createWakeUpStore(
-  database: Database,
+  database: Database | Parameters<Parameters<Database["transaction"]>[0]>[0],
   options: { auditStore?: AuditStore; now?: () => Date } = {},
 ) {
   const now = options.now ?? (() => new Date());
@@ -421,8 +421,14 @@ export function createWakeUpRunner(options: {
   owner: string;
   actorFor: (ownerUserId: string) => Promise<AgentActor>;
   channels: {
-    get(actor: AgentActor, channelId: string): Promise<AgentChannel | null>;
-    direct(actor: AgentActor, agentId: string): Promise<AgentChannel>;
+    get(
+      actor: AgentActor,
+      channelId: string,
+    ): Promise<Pick<AgentChannel, "id" | "threadId"> | null>;
+    direct(
+      actor: AgentActor,
+      agentId: string,
+    ): Promise<Pick<AgentChannel, "id" | "threadId">>;
     recordActivity(
       actor: AgentActor,
       channelId: string,
@@ -476,20 +482,21 @@ export function createWakeUpRunner(options: {
             continue;
           }
           const actor = await actorFor(payload.ownerUserId);
-          const channel =
-            (payload.channelId
-              ? await channels.get(actor, payload.channelId)
-              : null) ?? (await channels.direct(actor, payload.agentId));
           const initiator: AuditInitiator = {
             kind: "routine",
             id: `follow-up:${item.key}`,
           };
+          let channel: Pick<AgentChannel, "id" | "threadId"> | undefined;
           try {
             await runAuthorizedWork(
               queue,
               item,
               owner,
               async (guard) => {
+                channel =
+                  (payload.channelId
+                    ? await channels.get(actor, payload.channelId)
+                    : null) ?? (await channels.direct(actor, payload.agentId));
                 const { replyText } = await runTurn({
                   ...guard,
                   ownerUserId: payload.ownerUserId,
@@ -504,6 +511,7 @@ export function createWakeUpRunner(options: {
                   instruction: wakeUpInstruction(payload),
                   initiator,
                 });
+                await guard?.beforeDispatch();
                 await channels.recordActivity(
                   actor,
                   channel.id,
@@ -539,7 +547,7 @@ export function createWakeUpRunner(options: {
             if (error instanceof BotPausedError) {
               await done("skipped", error.message);
               report.skipped.push(item.key);
-            } else if (error instanceof HeadlessToolSuspension) {
+            } else if (error instanceof HeadlessToolSuspension && channel) {
               await channels
                 .recordActivity(
                   actor,

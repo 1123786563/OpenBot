@@ -818,7 +818,11 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
      * check-in, so both presses offer the same key, and the next press after any check-in, skipped
      * or not, offers a new one.
      */
-    async runNow(ownerUserId: string, id: string): Promise<RunNowResponse> {
+    async runNow(
+      ownerUserId: string,
+      id: string,
+      freshKey?: string,
+    ): Promise<RunNowResponse> {
       const setting = await deps.store.get(ownerUserId, id);
       if (!setting.enabled)
         throw new ProactiveRefusedError(
@@ -855,7 +859,7 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
       };
       const offered = await deps.queue.offer({
         kind: PROACTIVE_RUN_KIND,
-        key: `${setting.id}:now:${latest?.id ?? "first"}`,
+        key: freshKey ?? `${setting.id}:now:${latest?.id ?? "first"}`,
         payload,
       });
       /*
@@ -930,6 +934,15 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
      * One scheduling pass: close check-ins a stopped replica left running, ping whoever is due one,
      * offer what is due, then run at most one check-in.
      */
+    async drainRuns() {
+      return drain(
+        PROACTIVE_RUN_KIND,
+        async (payload, signal, beforeDispatch, onText) => {
+          const { settingId, runId, trigger } = payloadSchema.parse(payload);
+          await run(settingId, runId, trigger, signal, beforeDispatch, onText);
+        },
+      );
+    },
     async sweep() {
       await deps.store.closeStaleRuns(RUN_LEASE_MS);
       await pingPass();
@@ -947,13 +960,7 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
           },
         });
       }
-      await drain(
-        PROACTIVE_RUN_KIND,
-        async (payload, signal, beforeDispatch, onText) => {
-          const { settingId, runId, trigger } = payloadSchema.parse(payload);
-          await run(settingId, runId, trigger, signal, beforeDispatch, onText);
-        },
-      );
+      await this.drainRuns();
     },
   };
 }

@@ -4,6 +4,10 @@ import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { html } from "hono/html";
 import { z } from "zod";
+import {
+  personalBackgroundWorkers,
+  retryBackgroundWork,
+} from "./background-work";
 import { seal, unseal } from "../auth/signed-value";
 import type { Database } from "../db/client";
 import { createWorkQueue, unattendedWorkLabels } from "../work/queue";
@@ -147,6 +151,14 @@ export function createPersonalSaasApp(
   });
 
   const automation = personalAutomation(database, now, config.runPersonalBot);
+  const backgroundWorkers =
+    config.runPersonalBot &&
+    personalBackgroundWorkers(
+      database,
+      now,
+      config.encryptionKey,
+      config.runPersonalBot,
+    );
 
   function bearer(context: Context) {
     return bearerSession(context.req.header("authorization"));
@@ -626,6 +638,9 @@ export function createPersonalSaasApp(
                 typeof summary === "string" ? summary.slice(0, 500) : undefined,
               output: item.output,
               ...item.interruption,
+              recovery: item.recovery,
+              recoveryCanRetry:
+                Boolean(backgroundWorkers) && kind !== "delivery.outbound",
               reasonMessage: recoveryReason[item.interruption.reason],
             },
           ];
@@ -729,7 +744,7 @@ export function createPersonalSaasApp(
           ${
             item.recovery
               ? html`<p>${item.recovery.action === "retry" ? "Queued as a new run" : "Cancelled"}</p>`
-              : html`<form method="post" action="/api/workspace/recovery/${item.key}">
+              : html`<form method="post" action="/api/workspace/recovery/${encodeURIComponent(item.key)}">
                 ${config.runPersonalBot && item.outcomeUnknown ? html`<label><input type="checkbox" name="acknowledged" value="true"> I checked the external actions.</label>` : ""}
                 ${config.runPersonalBot ? html`<button name="action" value="retry">${item.outcomeUnknown ? "Retry as a new run" : "Requeue"}</button>` : ""}
                 <button name="action" value="cancel">Cancel item</button>
@@ -749,6 +764,15 @@ export function createPersonalSaasApp(
             <p>${item.reasonMessage}</p>
             ${item.output ? html`<p>Output before interruption</p><pre>${item.output}</pre>` : ""}
             ${item.outcomeUnknown ? html`<p>Check any external actions before starting new work. Their outcome is unknown.</p>` : ""}
+            ${
+              item.recovery
+                ? html`<p>${item.recovery.action === "retry" ? "Started as fresh work" : "Cancelled"}</p>`
+                : html`<form method="post" action="/api/workspace/recovery/${encodeURIComponent(item.key)}">
+                ${item.recoveryCanRetry && item.outcomeUnknown ? html`<label><input type="checkbox" name="acknowledged" value="true"> I checked the external actions.</label>` : ""}
+                ${item.recoveryCanRetry ? html`<button name="action" value="retry">Start fresh work</button>` : ""}
+                <button name="action" value="cancel">Cancel item</button>
+              </form>`
+            }
           </li>`,
           )}</ul>
         </section>`
@@ -909,7 +933,7 @@ export function createPersonalSaasApp(
     const session = await authorize(token);
     if (session.kind !== "authorized")
       return context.json({ error: "authorization_required" }, 403);
-    const key = z.uuid().safeParse(context.req.param("key"));
+    const key = z.string().min(1).max(1024).safeParse(context.req.param("key"));
     if (!key.success) return context.json({ error: "work_not_found" }, 404);
     const accountId = session.grant.accountId;
     const queue = createWorkQueue(database, now);
@@ -931,7 +955,7 @@ export function createPersonalSaasApp(
     const session = await authorize(token);
     if (session.kind !== "authorized" || !token)
       return context.json({ error: "authorization_required" }, 403);
-    const key = z.uuid().safeParse(context.req.param("key"));
+    const key = z.string().min(1).max(1024).safeParse(context.req.param("key"));
     const form = context.req
       .header("content-type")
       ?.startsWith("application/x-www-form-urlencoded");
@@ -951,24 +975,49 @@ export function createPersonalSaasApp(
     const outcome = await store.withAuthorizedSession(
       session.grant,
       token,
-      (tx) =>
-        createWorkQueue(tx, now).recover({
+      async (tx) => {
+        const queue = createWorkQueue(tx, now);
+        const kind = await queue.interruptedKind(accountId, key.data);
+        if (
+          !kind ||
+          (kind !== PERSONAL_BOT_WORK &&
+            !Object.hasOwn(unattendedWorkLabels, kind))
+        )
+          return { kind: "missing" } as const;
+        return queue.recover({
           ...input.data,
-          kind: PERSONAL_BOT_WORK,
+          kind,
           accountId,
           key: key.data,
-          mayRetry: async (transaction, payload) => {
-            const request = botWorkInput.safeParse(payload);
-            return Boolean(
-              config.runPersonalBot &&
-                request.success &&
-                (await workspaceBots(transaction).get({
-                  ...request.data,
-                  accountId,
-                })),
-            );
-          },
-        }),
+          ...(kind === PERSONAL_BOT_WORK
+            ? {
+                mayRetry: async (transaction, payload) => {
+                  const request = botWorkInput.safeParse(payload);
+                  return Boolean(
+                    config.runPersonalBot &&
+                      request.success &&
+                      (await workspaceBots(transaction).get({
+                        ...request.data,
+                        accountId,
+                      })),
+                  );
+                },
+              }
+            : {
+                startFresh: (transaction, payload) =>
+                  config.runPersonalBot
+                    ? retryBackgroundWork(
+                        transaction,
+                        now,
+                        accountId,
+                        kind,
+                        payload,
+                        config.runPersonalBot,
+                      )
+                    : Promise.resolve(undefined),
+              }),
+        });
+      },
     );
     if (!outcome.authorized || outcome.result.kind === "forbidden")
       return context.json({ error: "recovery_unavailable" }, 403);
@@ -1018,6 +1067,7 @@ export function createPersonalSaasApp(
     offerAutomationSchedules: automation.offerSchedules,
     sweepAutomationRoutines: automation.sweepRoutines,
     sweepAutomationInbound: automation.sweepInbound,
+    backgroundWorkers,
     sweepBotWork: () => botWork.sweep(config.runPersonalBot),
     refreshAccounts: () => accountAccess.refreshAccounts(config.casdoor.issuer),
   });

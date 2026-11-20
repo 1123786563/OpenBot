@@ -305,7 +305,9 @@ async function priorItemsOf(
   };
 }
 
-export function createProactiveStore(database: Database) {
+export function createProactiveStore(
+  database: Database | Parameters<Parameters<Database["transaction"]>[0]>[0],
+) {
   const owned = (owner: string, id: string) =>
     and(eq(proactiveSettings.ownerUserId, owner), eq(proactiveSettings.id, id));
   async function get(owner: string, id: string): Promise<ProactiveSetting> {
