@@ -1002,7 +1002,7 @@ describe("group conversations in PostgreSQL", () => {
     }
   });
 
-  test("leaving a group revokes the ability to decide an existing Run approval", async () => {
+  test("leaving a group blocks pending approval decisions and previously approved actions", async () => {
     const owner = await person();
     const teammate = await person();
     const ada = await bot(owner, "Ada");
@@ -1020,38 +1020,52 @@ describe("group conversations in PostgreSQL", () => {
       .where(eq(groupBotThreads.channelId, channel.id));
     if (!thread) throw new Error("missing group Bot thread");
     const approvals = createApprovalStore(database);
-    const request = await approvals.open(
-      approvalAction({
-        actorId: owner.id,
-        botId: thread.agentId,
-        toolRef: "computer_write_file",
-        effect: "write",
-        scope: "project",
-        args: { path: "notes.txt" },
-        target: { filePath: "notes.txt" },
-        continuation: {
-          runId: `${prefix}-run`,
-          threadId: thread.threadId,
-          toolCallId: randomUUID(),
-          toolName: "computer_write_file",
+    const open = () =>
+      approvals.open(
+        approvalAction({
+          actorId: owner.id,
+          botId: thread.agentId,
+          toolRef: "computer_write_file",
+          effect: "write",
+          scope: "project",
           args: { path: "notes.txt" },
-          messages: [],
-          state: {},
-          context: [],
-          forwardedProps: {},
-        },
-      }),
-    );
+          target: { filePath: "notes.txt" },
+          continuation: {
+            runId: `${prefix}-run`,
+            threadId: thread.threadId,
+            toolCallId: randomUUID(),
+            toolName: "computer_write_file",
+            args: { path: "notes.txt" },
+            messages: [],
+            state: {},
+            context: [],
+            forwardedProps: {},
+          },
+        }),
+      );
+    const pending = await open();
+    const granted = await open();
     try {
+      expect(
+        (await approvals.decide(owner.id, granted.id, "allow_once")).status,
+      ).toBe("approved");
       await conversations.removeMember(owner.id, channel.id, owner.id);
       await expect(
-        approvals.decide(owner.id, request.id, "allow_once"),
+        approvals.decide(owner.id, pending.id, "allow_once"),
       ).rejects.toBeInstanceOf(ApprovalNotFoundError);
-      expect((await approvals.get(owner.id, request.id)).status).toBe(
+      expect((await approvals.get(owner.id, pending.id)).status).toBe(
         "pending",
       );
+      expect(
+        await approvals.consume(owner.id, granted.id, granted.actionDigest),
+      ).toBe(false);
+      expect((await approvals.get(owner.id, granted.id)).status).toBe(
+        "approved",
+      );
     } finally {
-      await database.delete(workItems).where(eq(workItems.key, request.id));
+      await database
+        .delete(workItems)
+        .where(inArray(workItems.key, [pending.id, granted.id]));
     }
   });
 
