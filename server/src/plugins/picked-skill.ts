@@ -23,8 +23,8 @@ import {
 import { PICKED_SKILL_PROP } from "@openbot/toolkit/run-turn";
 import { of } from "rxjs";
 import {
-  marketVersionDisabledMessage,
   type MarketVersionIdentity,
+  marketVersionDisabledMessage,
 } from "../skill-market/disablements";
 import { latestUserText } from "./selection";
 

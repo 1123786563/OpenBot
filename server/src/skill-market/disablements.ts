@@ -2,9 +2,9 @@ import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/client";
 import {
+  skillMarketVersionDisablements as disablements,
   skillMarketInstallations,
   skillMarketSources,
-  skillMarketVersionDisablements as disablements,
 } from "../db/schema";
 import { catalogSegment, exactVersion } from "./config";
 

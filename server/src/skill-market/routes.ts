@@ -80,7 +80,10 @@ export function createSkillMarketRoutes(
     const schema =
       context.req.method === "PUT"
         ? disableMarketVersion
-        : marketVersionIdentity;
+        : marketVersionIdentity.transform((version) => ({
+            ...version,
+            reason: null,
+          }));
     const version = schema.safeParse(
       await context.req.json().catch(() => null),
     );
@@ -94,10 +97,8 @@ export function createSkillMarketRoutes(
       );
     }
 
-    await installations.setMarketVersionDisablement(
-      version.data,
-      "reason" in version.data ? version.data.reason : null,
-    );
+    const { reason, ...identity } = version.data;
+    await installations.setMarketVersionDisablement(identity, reason);
     return context.body(null, 204);
   });
 

@@ -1,22 +1,22 @@
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { type AbstractAgent, HttpAgent } from "@ag-ui/client";
 import {
   EventType,
-  type RunStartedEvent,
   type RunFinishedEvent,
+  type RunStartedEvent,
 } from "@ag-ui/core";
-import { of } from "rxjs";
-import { buildAgents, type RegisteredAgent } from "../src/copilot";
-import { randomUUID } from "node:crypto";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { eq, inArray } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
+import { of } from "rxjs";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createApprovalService } from "../src/approvals/service";
 import { createApprovalStore } from "../src/approvals/store";
 import { withApprovalContext } from "../src/approvals/types";
 import { createAuditStore } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
+import { buildAgents, type RegisteredAgent } from "../src/copilot";
 import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
 import {
@@ -484,37 +484,33 @@ test("assignment and managed Skill creation cannot both claim a free command", a
   }
 });
 
+const disablementIdentity = {
+  source: "https://registry.example",
+  namespace: "catalog",
+  slug,
+  version: "1.0.0",
+  versionId: 3,
+  registrySkillId: 2,
+};
+
 function changeDisablement(
   method: "PUT" | "DELETE",
   user = "admin",
   reason = "Review in progress",
 ) {
-  const identity = {
-    source: "https://registry.example",
-    namespace: "catalog",
-    slug,
-    version: "1.0.0",
-    versionId: 3,
-    registrySkillId: 2,
-  };
-
   return routes.request("/version-disablements", {
     method,
     headers: { "content-type": "application/json", "x-user": user },
-    body: JSON.stringify(method === "PUT" ? { ...identity, reason } : identity),
+    body: JSON.stringify(
+      method === "PUT"
+        ? { ...disablementIdentity, reason }
+        : disablementIdentity,
+    ),
   });
 }
 
 test("only an administrator can disable and restore an exact version", async () => {
   const path = "/version-disablements";
-  const identity = {
-    source: "https://registry.example",
-    namespace: "catalog",
-    slug,
-    version: "1.0.0",
-    versionId: 3,
-    registrySkillId: 2,
-  };
   secondVersionCompatible = true;
   expect([200, 201]).toContain((await install(bot)).status);
   expect([200, 201]).toContain((await install(anotherBot)).status);
@@ -592,17 +588,30 @@ test("only an administrator can disable and restore an exact version", async () 
     return failures;
   }
 
-  expect((await changeDisablement("PUT", owner)).status).toBe(403);
-  expect((await changeDisablement("PUT")).status).toBe(204);
   try {
+    expect(
+      (await routes.request(path, { headers: { "x-user": owner } })).status,
+    ).toBe(403);
+    expect((await changeDisablement("PUT", owner)).status).toBe(403);
+    expect((await changeDisablement("PUT", "admin", " ")).status).toBe(400);
+    expect((await changeDisablement("PUT")).status).toBe(204);
+    const preview = await routes.request(`/catalog/${slug}/versions/1.0.0`);
+    expect(await preview.json()).toMatchObject({
+      installable: false,
+      disableReason: "Review in progress",
+    });
+
+    state = "offline";
     const listed = await routes.request(path);
     expect(await listed.json()).toMatchObject({
       versions: expect.arrayContaining([
-        expect.objectContaining({ ...identity, reason: "Review in progress" }),
+        expect.objectContaining({
+          ...disablementIdentity,
+          reason: "Review in progress",
+        }),
       ]),
     });
     expect((await changeDisablement("DELETE", owner)).status).toBe(403);
-    state = "offline";
     expect(await invoke(bot)).toEqual([
       expect.stringContaining("Review in progress"),
     ]);
@@ -619,8 +628,8 @@ test("only an administrator can disable and restore an exact version", async () 
       error: expect.stringContaining("Review in progress"),
     });
 
-    expect((await changeDisablement("DELETE")).status).toBe(204);
     state = "offline";
+    expect((await changeDisablement("DELETE")).status).toBe(204);
     expect(await invoke(bot)).toEqual([]);
     expect(dispatched).toHaveLength(2);
     expect(dispatched[1]).toContain("Summarize in three bullets.");

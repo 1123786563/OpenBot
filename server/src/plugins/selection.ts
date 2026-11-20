@@ -1,7 +1,7 @@
-import type { PickableSkill } from "./picked-skill";
 import { researchRoleOf } from "@openbot/shared/research";
 import { textOf } from "../agents/message-text";
 import { researchRoleFor } from "./catalogue";
+import type { PickableSkill } from "./picked-skill";
 /**
  * Choosing which of a Bot's tools to put in front of the model, one run at a time.
  *

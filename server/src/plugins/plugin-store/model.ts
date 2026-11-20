@@ -1,4 +1,3 @@
-import type { PickableSkill } from "../picked-skill";
 import { isOpenBotActor } from "@openbot/shared/openbot-actor";
 import { and, eq, sql } from "drizzle-orm";
 import type { ApprovalGate } from "../../approvals/types";
@@ -31,6 +30,7 @@ import type {
 } from "../broker";
 import { type CatalogueEntry, resolveServerUrl } from "../catalogue";
 import { type ListedTool, McpServerError } from "../mcp";
+import type { PickableSkill } from "../picked-skill";
 import type { AccountMode } from "../shared-accounts";
 import type { SharedUseGate } from "../shared-use-store";
 

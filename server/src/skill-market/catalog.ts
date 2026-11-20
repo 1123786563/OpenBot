@@ -1,9 +1,9 @@
-import {
-  marketVersionDisabledMessage,
-  type MarketVersionIdentity,
-} from "./disablements";
 import { z } from "zod";
 import { catalogSegment, exactVersion, type SkillMarketConfig } from "./config";
+import {
+  type MarketVersionIdentity,
+  marketVersionDisabledMessage,
+} from "./disablements";
 
 const envelope = z.object({ code: z.literal(0), data: z.unknown() });
 const id = z.number().int().positive();
