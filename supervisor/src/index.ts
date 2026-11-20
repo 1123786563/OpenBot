@@ -324,7 +324,10 @@ app.get("/workspace-computers/:id", async (context) => {
 app.post("/workspace-computers/:id/:operation", async (context) => {
   const id = context.req.param("id");
   const operation = context.req.param("operation");
-  if (!namesFor("workspace", id).ok || !["start", "renew"].includes(operation))
+  if (
+    !namesFor("workspace", id).ok ||
+    !["start", "renew", "stop"].includes(operation)
+  )
     return context.body(null, 400);
   if (!Number.isFinite(workspaceReadyAt) || !process.env.COMPUTER_TOKEN?.trim())
     return context.body(null, 503);
@@ -349,7 +352,9 @@ app.post("/workspace-computers/:id/:operation", async (context) => {
   const accepted =
     operation === "start"
       ? await managed.start(id, grant)
-      : managed.renew(id, grant);
+      : operation === "stop"
+        ? await managed.stop(id, grant)
+        : managed.renew(id, grant);
   return context.body(null, accepted ? 204 : 409);
 });
 

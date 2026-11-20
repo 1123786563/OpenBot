@@ -4,6 +4,7 @@ import {
   nativeExchange,
   parsePersonalSaasCallback,
   personalSaasCallbackUrl,
+  personalWorkspace,
   workspaceAccessMs,
 } from "../src/personal-saas-contract.ts";
 
@@ -63,4 +64,19 @@ test("a missing, exhausted, or malformed server grant cannot open cached workspa
   deepStrictEqual(workspaceAccessMs.parse("1250"), 1250);
   for (const header of [null, "", "0", "-1", "1.5", "60001", "1e3", "25, 50"])
     deepStrictEqual(workspaceAccessMs.safeParse(header).success, false);
+});
+
+test("workspace usage keeps a full Bot limit and an unknown Computer count", () => {
+  const quotas = {
+    bot: { used: 4, limit: 4 },
+    computer: { used: null, limit: 1 },
+    storage: { used: 32, limit: 64 },
+    automation: { used: 0, limit: 30 },
+  };
+  const parsed = personalWorkspace.parse({
+    id: "workspace-1",
+    personalAssistant: { id: "bot-1", name: "My Assistant" },
+    quotas,
+  });
+  deepStrictEqual(parsed.quotas, quotas);
 });

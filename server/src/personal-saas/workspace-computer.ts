@@ -93,6 +93,20 @@ export function workspaceComputer(
       if (!response.ok) throw new Error("Managed Computer start unavailable");
       return (await accounts.verify(session)).kind === "active";
     },
+    async stop(workspaceId: string, session: AccountGrant) {
+      if (!(await ownedWorkspace(workspaceId, session.accountId))) return false;
+      const grant = await accounts.verify(session);
+      if (grant.kind !== "active") return false;
+      const issuedAt = now();
+      const response = await call(`/${workspaceId}/stop`, {
+        epoch: grant.epoch,
+        issuedAt,
+        expiresAt: Math.min(grant.expiresAt, issuedAt + 15_000),
+      });
+      if (response.status === 409) return false;
+      if (!response.ok) throw new Error("Managed Computer stop unavailable");
+      return true;
+    },
     async accessForTask(
       workspaceId: string,
       grant: AccountGrant & { authorizedAt: number },

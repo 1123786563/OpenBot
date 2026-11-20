@@ -21,6 +21,10 @@ export type CloudView =
       accessMs: number;
       id: string;
       personalAssistant: { id: string; name: string };
+      quotas?: Record<
+        "bot" | "computer" | "storage" | "automation",
+        { used: number | null; limit: number }
+      > | null;
       recoveryCanRetry?: boolean;
       recovery?: {
         key: string;
@@ -225,9 +229,12 @@ export function PersonalCloud({
       if (current !== generation.current) return;
       const next = await read("status");
       if (next) setView(next);
-    } catch {
-      if (current === generation.current)
-        withdraw("Could not update stopped work. Try again.");
+    } catch (error) {
+      if (current === generation.current) {
+        if (error === "Your workspace has reached its Bot run limit.")
+          setFailure(error);
+        else withdraw("Could not update stopped work. Try again.");
+      }
     } finally {
       setBusy(false);
     }
@@ -331,6 +338,28 @@ export function PersonalCloud({
             <>
               <h2>Personal Workspace</h2>
               <p>{view.personalAssistant.name}</p>
+              {view.quotas && (
+                <section aria-labelledby="workspace-usage">
+                  <h3 id="workspace-usage">Workspace usage</h3>
+                  <ul>
+                    <li>
+                      Bot runs: {view.quotas.bot.used} / {view.quotas.bot.limit}
+                    </li>
+                    <li>
+                      Computers: {view.quotas.computer.used ?? "Unavailable"} /{" "}
+                      {view.quotas.computer.limit}
+                    </li>
+                    <li>
+                      Attachment storage: {view.quotas.storage.used} /{" "}
+                      {view.quotas.storage.limit} bytes
+                    </li>
+                    <li>
+                      Automation triggers: {view.quotas.automation.used} /{" "}
+                      {view.quotas.automation.limit} per minute
+                    </li>
+                  </ul>
+                </section>
+              )}
               {Boolean(view.recovery?.length) && (
                 <section aria-labelledby="stopped-work">
                   <h3 id="stopped-work">Stopped work</h3>

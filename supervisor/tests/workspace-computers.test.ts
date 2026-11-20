@@ -129,3 +129,48 @@ test("a prior task authorization cannot use a manually restarted Computer", asyn
       .address,
   ).toBe(address);
 });
+
+test("a concurrent start cannot replace a starting or stopping Computer", async () => {
+  let now = 10_000;
+  const launch = Promise.withResolvers<void>();
+  const ready = Promise.withResolvers<void>();
+  const exit = Promise.withResolvers<void>();
+  let processStatus = "created";
+  const computers = workspaceComputers({
+    now: () => now,
+    async launch() {
+      launch.resolve();
+      await ready.promise;
+      processStatus = "running";
+    },
+    async inspect() {
+      return { status: processStatus, finishedAt: now };
+    },
+    async stop() {
+      await exit.promise;
+      processStatus = "exited";
+    },
+  });
+  const grant = () => ({ epoch: 1, issuedAt: now, expiresAt: now + 15_000 });
+  const first = computers.start("workspace", grant());
+  await launch.promise;
+  expect(await computers.status("workspace")).toMatchObject({
+    status: "starting",
+  });
+  expect(await computers.start("workspace", grant())).toBe(false);
+  ready.resolve();
+  expect(await first).toBe(true);
+  now++;
+  const stopped = computers.stop("workspace", grant());
+  expect(await computers.status("workspace")).toMatchObject({
+    status: "stopping",
+  });
+  expect(await computers.start("workspace", grant())).toBe(false);
+  exit.resolve();
+  expect(await stopped).toBe(true);
+  expect(await computers.status("workspace")).toMatchObject({
+    status: "restart_required",
+  });
+  now++;
+  expect(await computers.start("workspace", grant())).toBe(true);
+});

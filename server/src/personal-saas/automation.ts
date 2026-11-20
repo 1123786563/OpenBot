@@ -1,5 +1,5 @@
-import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { TURN_LIMITS } from "@openbot/toolkit/limits";
+import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { and, asc, desc, eq, isNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/client";
@@ -15,10 +15,14 @@ import { nextOccurrence, ScheduleRefusedError } from "../routines/schedule";
 import { DEFAULT_GRACE_MS } from "../routines/sweep";
 import { createWorkQueue } from "../work/queue";
 import { readExecutionAccess } from "./account-access";
+import {
+  personalInboundWork as inboundKind,
+  personalRoutineWork as routineKind,
+  WorkspaceQuotaExceeded,
+  type workspaceQuotas,
+} from "./quotas";
 import { type Transaction, workspaceConversations } from "./store";
 
-const routineKind = "personal.automation.routine";
-const inboundKind = "personal.automation.inbound";
 const resumeRequired = "manual_resume_required";
 const subject = z.object({
   accountId: z.uuid(),
@@ -59,6 +63,7 @@ function requiredAccess(
 export function personalAutomation(
   database: Database,
   now: () => number,
+  quotas: ReturnType<typeof workspaceQuotas>,
   runTurn?: TurnRunner,
 ) {
   const queue = createWorkQueue(database, now);
@@ -103,6 +108,16 @@ export function personalAutomation(
 
   const ownRoutine = (id: string, accountId: string) =>
     and(eq(routines.id, id), eq(personalWorkspaces.ownerId, accountId));
+
+  async function backgroundQuotaReason(tx: Transaction, accountId: string) {
+    try {
+      await quotas.admitBot(tx, accountId, true);
+      return null;
+    } catch (error) {
+      if (!(error instanceof WorkspaceQuotaExceeded)) throw error;
+      return `${error.resource}_quota_exceeded`;
+    }
+  }
 
   async function startRoutine(
     tx: Transaction,
@@ -190,7 +205,13 @@ export function personalAutomation(
           return;
         }
         if (reason || now() - routine.nextRunAt.getTime() <= DEFAULT_GRACE_MS)
-          await startRoutine(tx, accountId, routine, "schedule", reason);
+          await startRoutine(
+            tx,
+            accountId,
+            routine,
+            "schedule",
+            reason ?? (await backgroundQuotaReason(tx, accountId)),
+          );
       });
     }
   }
@@ -296,6 +317,9 @@ export function personalAutomation(
       owner,
       limit: 1,
       leaseMs: TURN_LIMITS.turnTimeoutMs + 30_000,
+      mayClaim: (tx, row) =>
+        row.attempts > 0 ||
+        quotas.mayClaim(tx, subject.parse(row.payload).accountId),
     });
     if (!item) return;
     const { accountId, epoch, scheduledFor } = subject.parse(item.payload);
@@ -514,6 +538,7 @@ export function personalAutomation(
       const { routine } = held;
       if (action === "resume") {
         if (routine.personalResumeEpoch !== access.epoch) {
+          await quotas.admitBot(tx, accountId, true);
           const resumedAt = new Date(now());
           if (routine.enabled && routine.nextRunAt <= resumedAt)
             await startRoutine(
@@ -550,6 +575,7 @@ export function personalAutomation(
         .where(and(eq(routineRuns.routineId, id), isNull(routineRuns.status)))
         .limit(1);
       if (open) return { kind: "running" } as const;
+      await quotas.admitBot(tx, accountId, true);
       return {
         kind: "queued",
         runId: await startRoutine(tx, accountId, routine, "run_now", null),
@@ -568,7 +594,8 @@ export function personalAutomation(
         )
         .for("update", { of: deliveryBindings });
       if (!held) return "missing";
-      if (held.binding.personalResumeEpoch !== access.epoch)
+      if (held.binding.personalResumeEpoch !== access.epoch) {
+        await quotas.admitBot(tx, accountId, true);
         await tx
           .update(deliveryBindings)
           .set({
@@ -576,6 +603,7 @@ export function personalAutomation(
             personalResumedAt: new Date(now()),
           })
           .where(eq(deliveryBindings.id, id));
+      }
       return "resumed";
     },
     async receive(input: z.infer<typeof inboundMessage>) {
@@ -604,7 +632,8 @@ export function personalAutomation(
               ? "message_predates_resume"
               : !runTurn
                 ? "bot_execution_unavailable"
-                : null);
+                : null) ??
+          (await backgroundQuotaReason(tx, accountId));
         const id = crypto.randomUUID();
         const [row] = await tx
           .insert(deliveryInbox)

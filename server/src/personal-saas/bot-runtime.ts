@@ -44,6 +44,7 @@ import {
   runWithDecisionAccess,
 } from "./decision-access";
 import { ensureDecisionActor } from "./decision-actor";
+import type { workspaceQuotas } from "./quotas";
 import { assistantTarget, workspaceBots } from "./workspace-bots";
 
 const questionInput = personQuestionSchema.pick({
@@ -337,6 +338,7 @@ export function createPersonalBotRuntime(
   }
 
   async function sweepDecision(
+    quotas: ReturnType<typeof workspaceQuotas>,
     kind: "approval.resume" | "person.response",
     ready: Parameters<typeof parkedPersonalWork>[1],
     resume: (
@@ -352,6 +354,8 @@ export function createPersonalBotRuntime(
       owner,
       leaseMs: 15 * 60_000,
       ready: parkedPersonalWork(PERSONAL_BOT_WORK, ready),
+      mayClaim: (tx, row) =>
+        row.accountId !== null && quotas.mayClaim(tx, row.accountId),
     });
     if (!item?.authorization) return;
     const held = { kind, key: item.key, owner };
@@ -376,8 +380,9 @@ export function createPersonalBotRuntime(
   return {
     approvals,
     runTurn,
-    async sweepDecisions() {
+    async sweepDecisions(quotas: ReturnType<typeof workspaceQuotas>) {
       await sweepDecision(
+        quotas,
         "approval.resume",
         sql`(
         select ${approvalRequests.action}->>'threadId' from ${approvalRequests}
@@ -392,6 +397,7 @@ export function createPersonalBotRuntime(
             account,
             {
               runId: action.runId,
+              threadId: action.threadId,
               createdAt: request.createdAt,
               epoch: action.executionEpoch,
             },
@@ -459,6 +465,7 @@ export function createPersonalBotRuntime(
         },
       );
       await sweepDecision(
+        quotas,
         "person.response",
         sql`${workItems.payload}->'question'->>'threadId'`,
         async (account, key, payload, epoch) => {

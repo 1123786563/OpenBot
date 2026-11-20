@@ -20,6 +20,9 @@ const automationReason: Record<string, string> = {
   binding_unavailable: "The inbound binding changed or is unavailable.",
   conversation_unavailable: "The conversation is unavailable.",
   bot_execution_unavailable: "Bot execution is unavailable.",
+  automation_quota_exceeded:
+    "The workspace reached its automation trigger limit.",
+  bot_quota_exceeded: "The workspace reached its Bot run limit.",
   opted_out: "The recipient opted out.",
 };
 export const automationPath = "/api/workspace/automation";

@@ -140,3 +140,38 @@ The workspace’s **Routines and inbound bindings** page lists existing items an
 A cutoff leaves Routine configuration and delivery bindings in place. History records the cutoff reason for skipped work. If a Bot turn had started when access ended, its external actions may already have taken effect. Resume schedules the Routine’s next occurrence and accepts inbound messages sent after the binding was resumed. Queued work from an earlier authorization epoch cannot run after access returns.
 
 Inbound delivery uses a trusted provider relay. Set `OPENBOT_PERSONAL_SAAS_INBOUND_RELAY_TOKEN` to enable `POST /api/webhooks/personal-inbound`. The relay verifies the provider event before forwarding it over HTTPS with the configured bearer token. The JSON body contains `transport` (`sms`, `slack`, or `teams`), `realm`, `identity`, `externalId`, `sentAt`, and `text`. Use the provider’s original event ID and send time for every retry. `sentAt` is an ISO 8601 timestamp with a time zone. A valid relay request returns `204`, including when an event is skipped or already recorded. The relay resolves provider identities against existing Personal Workspace delivery bindings.
+
+### Workspace quotas
+
+All Personal SaaS replicas must use the same limits. Trial defaults are placeholders for
+target-environment capacity acceptance.
+
+| Variable | Default | What counts |
+| --- | ---: | --- |
+| `OPENBOT_PERSONAL_QUOTA_BOT_RUNS` | 4 | Queued reservations and in-flight Bot turns, including Routines and inbound automations |
+| `OPENBOT_PERSONAL_QUOTA_COMPUTERS` | 1 | The managed Computer while starting, running, or awaiting process exit. Set to 0 to disable starts. |
+| `OPENBOT_PERSONAL_QUOTA_ATTACHMENT_BYTES` | 67108864 | PostgreSQL attachment bytes, including staged drafts and retained conversation files |
+| `OPENBOT_PERSONAL_QUOTA_TRIGGERS_PER_MINUTE` | 30 | Admitted Routine and inbound triggers in the preceding 60 seconds, including manual Run now |
+
+`GET /api/workspace` publishes `quotas` to cookie and bearer sessions. Direct
+admissions that exceed a limit return HTTP 429 with `workspace_quota_exceeded`,
+`resource`, `used`, `limit`, and `message`. Background automation records
+the refusal in its run history. Failed admissions do not consume a trigger.
+Completed turns release Bot slots. An interrupted running turn holds its slot
+until the worker returns or its lease expires. Stopping a Computer keeps its
+files and configuration. The supervisor must be upgraded with the API to
+support manual Computer stop.
+
+Use `POST /api/workspace/bot-runs/:key/stop` or
+`POST /api/workspace/computer/stop` to request a stop. Attachment clients
+can stage a file with multipart `conversationId` and `file` at
+`POST /api/workspace/attachments`, list drafts at `GET /api/workspace/attachments`,
+and withdraw a draft through `POST /api/workspace/attachments/:id/withdraw`.
+The upload limit is 8 MiB per file. Published conversation attachments remain
+available through existing history and export paths.
+
+The attachment limit measures application-managed PostgreSQL storage. Computer
+volumes and any external storage require capacity controls in the target
+deployment. Exercise quota refusals, release and retry, cross-account
+isolation, supervisor process exit, and the actual Web, mobile, and desktop
+builds before setting trial capacity.

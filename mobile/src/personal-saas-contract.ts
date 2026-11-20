@@ -33,6 +33,11 @@ export const workspaceAccessMs = z
   .transform(Number)
   .pipe(z.number().int().min(1).max(60_000));
 
+const quotaUsage = z.object({
+  used: z.number().int().nonnegative().nullable(),
+  limit: z.number().int().nonnegative(),
+});
+
 export const personalWorkspace = z.object({
   id: z.string().min(1),
   recovery: z
@@ -47,6 +52,14 @@ export const personalWorkspace = z.object({
       }),
     )
     .default([]),
+  quotas: z
+    .object({
+      bot: quotaUsage,
+      computer: quotaUsage,
+      storage: quotaUsage,
+      automation: quotaUsage,
+    })
+    .optional(),
   recoveryCanRetry: z.boolean().default(false),
   personalAssistant: z.object({
     id: z.string().min(1),

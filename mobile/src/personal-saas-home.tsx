@@ -242,6 +242,28 @@ export function PersonalSaasHome() {
             >
               {screen.workspace.personalAssistant.name}
             </Text>
+            {screen.workspace.quotas && (
+              <View>
+                <Text accessibilityRole="header">Workspace usage</Text>
+                <Text>
+                  Bot runs: {screen.workspace.quotas.bot.used} /{" "}
+                  {screen.workspace.quotas.bot.limit}
+                </Text>
+                <Text>
+                  Computers:{" "}
+                  {screen.workspace.quotas.computer.used ?? "Unavailable"} /{" "}
+                  {screen.workspace.quotas.computer.limit}
+                </Text>
+                <Text>
+                  Attachment storage: {screen.workspace.quotas.storage.used} /{" "}
+                  {screen.workspace.quotas.storage.limit} bytes
+                </Text>
+                <Text>
+                  Automation triggers: {screen.workspace.quotas.automation.used}{" "}
+                  / {screen.workspace.quotas.automation.limit} per minute
+                </Text>
+              </View>
+            )}
             <Text
               accessibilityRole="header"
               style={{ fontSize: 20, fontWeight: "600" }}

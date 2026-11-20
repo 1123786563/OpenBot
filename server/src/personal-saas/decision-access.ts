@@ -26,28 +26,30 @@ export async function readDecisionAccess(
   if (!z.uuid().safeParse(owner).success) return null;
   const access = await readExecutionAccess(tx, owner, now);
   if (access?.kind !== "active" || !origin) return access;
-  const [work] =
-    origin.epoch === undefined
-      ? await tx
-          .select({ epoch: workItems.accountEpoch })
-          .from(workItems)
-          .where(
-            and(
-              origin.threadId && origin.threadId !== origin.runId
-                ? or(
-                    eq(workItems.key, origin.runId),
-                    and(
-                      eq(workItems.kind, PERSONAL_BOT_WORK),
-                      eq(workItems.key, origin.threadId),
-                    ),
-                  )
-                : eq(workItems.key, origin.runId),
-              eq(workItems.accountId, owner),
-            ),
-          )
-          .orderBy(sql`${workItems.kind} = ${PERSONAL_BOT_WORK} DESC`)
-          .limit(1)
-      : [];
+  const [work] = await tx
+    .select({
+      epoch: workItems.accountEpoch,
+      interruption: workItems.interruption,
+    })
+    .from(workItems)
+    .where(
+      and(
+        origin.threadId && origin.threadId !== origin.runId
+          ? or(
+              eq(workItems.key, origin.runId),
+              and(
+                eq(workItems.kind, PERSONAL_BOT_WORK),
+                eq(workItems.key, origin.threadId),
+              ),
+            )
+          : eq(workItems.key, origin.runId),
+        eq(workItems.accountId, owner),
+      ),
+    )
+    .orderBy(sql`${workItems.kind} = ${PERSONAL_BOT_WORK} DESC`)
+    .limit(1);
+  if (work?.interruption?.reason === "user_stopped")
+    return { kind: "denied" } as const;
   const epoch = origin.epoch ?? work?.epoch;
   if (epoch != null)
     return access.epoch === epoch ? access : ({ kind: "denied" } as const);

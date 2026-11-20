@@ -138,6 +138,15 @@ export function workspaceComputers(runtime: {
         await reconcile(id, run);
       }
     },
+    async stop(id: string, grant: Grant) {
+      const run = runs.get(id);
+      if (!run) return true;
+      if (grant.epoch < run.grant.epoch || grant.issuedAt < run.startedWith)
+        return false;
+      run.closed = true;
+      await reconcile(id, run);
+      return true;
+    },
     renew(id: string, grant: Grant) {
       const run = runs.get(id);
       if (

@@ -5,10 +5,11 @@ import { z } from "zod";
 import type { Database } from "../db/client";
 import { createWorkQueue } from "../work/queue";
 import { readExecutionAccess } from "./account-access";
+import { PERSONAL_BOT_WORK, type workspaceQuotas } from "./quotas";
 import { assistantTarget, workspaceBots } from "./workspace-bots";
 import type { workspaceComputer } from "./workspace-computer";
 
-export const PERSONAL_BOT_WORK = "personal.bot.turn";
+export { PERSONAL_BOT_WORK } from "./quotas";
 export const botWorkInput = assistantTarget.extend({
   instruction: z.string().trim().min(1).max(20_000),
   requiresComputer: z.boolean().optional(),
@@ -20,7 +21,8 @@ export const recoveryInput = z.strictObject({
 
 export function personalBotWork(
   database: Database,
-  now = Date.now,
+  now: () => number,
+  quotas: ReturnType<typeof workspaceQuotas>,
   accessComputer?: ReturnType<typeof workspaceComputer>["accessForTask"],
 ) {
   const queue = createWorkQueue(database, now);
@@ -52,6 +54,8 @@ export function personalBotWork(
         kind: PERSONAL_BOT_WORK,
         owner,
         leaseMs,
+        mayClaim: (tx, row) =>
+          row.accountId !== null && quotas.mayClaim(tx, row.accountId),
       });
       if (!item?.authorization) return false;
       const grant = item.authorization;
@@ -165,7 +169,11 @@ export function personalBotWork(
             const access = await database.transaction((tx) =>
               readExecutionAccess(tx, grant.accountId, now, grant.epoch),
             );
-            if (access?.kind !== "active" || now() >= expiresAt)
+            if (
+              access?.kind !== "active" ||
+              now() >= expiresAt ||
+              !(await queue.renew({ ...held, leaseMs }))
+            )
               controller.abort();
             controller.signal.throwIfAborted();
           },
