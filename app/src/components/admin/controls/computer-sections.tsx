@@ -6,8 +6,9 @@ import {
 } from "@tabler/icons-react";
 import { useMutation } from "@tanstack/react-query";
 import { useId, useState } from "react";
+import { DeviceAction } from "@/components/astryx-pilot/device-action";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { PageRows } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogBody,
@@ -232,7 +233,7 @@ export function NetworkSection() {
               ))}
             </PageRows>
             {data.groups.length > 0 ? (
-              <Button
+              <DeviceAction
                 className="mt-4"
                 onClick={() =>
                   setNetworkScope({ scopeKind: "group", scopeId: "" })
@@ -241,7 +242,7 @@ export function NetworkSection() {
                 variant="outline"
               >
                 Add a group policy
-              </Button>
+              </DeviceAction>
             ) : null}
             {networkScope ? (
               <NetworkDialog
@@ -261,14 +262,14 @@ function SweepNow() {
   const sweep = useMutation(terminateInactiveComputersMutationOptions());
   return (
     <div className="mt-4 flex items-center gap-3">
-      <Button
+      <DeviceAction
         disabled={sweep.isPending}
         onClick={() => sweep.mutate()}
         size="sm"
         variant="outline"
       >
         {sweep.isPending ? "Stopping…" : "Stop inactive computers now"}
-      </Button>
+      </DeviceAction>
       {sweep.data ? (
         <span className="text-muted-foreground text-sm">
           Stopped {sweep.data.stopped.length}.
@@ -340,7 +341,7 @@ function NetworkDialog({
 
   return (
     <Dialog onOpenChange={(open) => (open ? undefined : onClose())} open>
-      <DialogContent>
+      <DialogContent {...astryxScope}>
         <DialogHeader>
           <DialogTitle>
             {initial.scopeKind === "organization"
@@ -468,7 +469,7 @@ function NetworkDialog({
         </DialogBody>
         <DialogFooter className="mt-4">
           {existing ? (
-            <Button
+            <DeviceAction
               disabled={remove.isPending}
               onClick={() =>
                 remove.mutate(
@@ -481,12 +482,17 @@ function NetworkDialog({
               variant="destructive"
             >
               Remove policy
-            </Button>
+            </DeviceAction>
           ) : null}
-          <Button onClick={onClose} size="sm" type="button" variant="outline">
+          <DeviceAction
+            onClick={onClose}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
             Cancel
-          </Button>
-          <Button
+          </DeviceAction>
+          <DeviceAction
             disabled={
               save.isPending ||
               broken ||
@@ -497,7 +503,7 @@ function NetworkDialog({
             type="submit"
           >
             {save.isPending ? "Saving…" : "Save"}
-          </Button>
+          </DeviceAction>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -523,7 +529,7 @@ function DaysDialog({
       onOpenChange={(next) => (next ? setDays(String(initial)) : onClose())}
       open={open}
     >
-      <DialogContent>
+      <DialogContent {...astryxScope}>
         <DialogHeader>
           <DialogTitle>Stop inactive computers</DialogTitle>
         </DialogHeader>
@@ -540,10 +546,15 @@ function DaysDialog({
           </p>
         </DialogBody>
         <DialogFooter className="mt-4">
-          <Button onClick={onClose} size="sm" type="button" variant="outline">
+          <DeviceAction
+            onClick={onClose}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
             Cancel
-          </Button>
-          <Button
+          </DeviceAction>
+          <DeviceAction
             disabled={!valid}
             onClick={() => {
               onSave(parsed);
@@ -553,7 +564,7 @@ function DaysDialog({
             type="button"
           >
             Save
-          </Button>
+          </DeviceAction>
         </DialogFooter>
       </DialogContent>
     </Dialog>

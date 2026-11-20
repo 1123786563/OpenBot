@@ -148,6 +148,28 @@ test("watching a Bot work, the close button takes the person back", async () => 
   );
 });
 
+test.skipIf(import.meta.env.VITE_OPENBOT_ASTRYX_PILOT !== "1")(
+  "the expanded screen focuses Close and Escape restores focus to the preview",
+  async () => {
+    serve("bot");
+    const view = await openFullSize();
+    expect(document.activeElement).toBe(closeButton(view));
+
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+
+    await waitFor(() => {
+      expect(
+        view.queryByRole("dialog", { name: "The Bot's screen" }),
+      ).toBeNull();
+      expect(document.activeElement).toBe(
+        view.getByRole("button", { name: "Open the Bot's screen full size" }),
+      );
+    });
+  },
+);
+
 test("with the wheel in the person's hands, the close button still takes them back", async () => {
   serve("human");
   const view = await openFullSize();
