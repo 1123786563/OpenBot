@@ -28,6 +28,7 @@ import {
 } from "@/components/astryx-pilot/tasks-screen";
 import { BotRoster } from "@/components/bots/bot-roster";
 import { BotNeedsYou } from "@/components/needs-you/board";
+import { taskListQueryOptions } from "@/lib/tasks/queries";
 import { queryClient } from "@/query-client";
 import { settleReactWork } from "./settle-react-work";
 
@@ -520,6 +521,11 @@ test("Tasks shows an empty inbox only after approvals load successfully", async 
     </QueryClientProvider>,
   );
   await requested.promise;
+  await waitFor(() =>
+    expect(client.getQueryState(taskListQueryOptions().queryKey)?.status).toBe(
+      "success",
+    ),
+  );
   expect(view.queryByText("No Bot tasks yet")).toBeNull();
   approvals.resolve(
     Response.json({ error: "Approvals unavailable" }, { status: 503 }),
