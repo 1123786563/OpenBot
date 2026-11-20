@@ -1,3 +1,4 @@
+import { astryxPilot, astryxScope } from "@/components/astryx-pilot/theme";
 import {
   IconBrain,
   IconChartBar,
@@ -12,7 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { HarnessMark } from "@/components/agents/harness-mark";
 import { PageEmpty, PageRows } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
+import { DeploymentButton } from "../deployment-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -22,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Item,
@@ -328,7 +330,10 @@ export function AllowedModelsDialog({
       }}
       open={open}
     >
-      <DialogContent>
+      <DialogContent
+        {...astryxScope}
+        className={astryxPilot ? "astryx-admin-dialog" : undefined}
+      >
         <DialogHeader>
           <DialogTitle>Allowed models</DialogTitle>
         </DialogHeader>
@@ -426,10 +431,15 @@ export function AllowedModelsDialog({
           ) : null}
         </DialogBody>
         <DialogFooter className="mt-4">
-          <Button onClick={onClose} size="sm" type="button" variant="outline">
+          <DeploymentButton
+            onClick={onClose}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
             Cancel
-          </Button>
-          <Button
+          </DeploymentButton>
+          <DeploymentButton
             onClick={() => {
               onSave(selected);
               onClose();
@@ -438,7 +448,7 @@ export function AllowedModelsDialog({
             type="button"
           >
             Save
-          </Button>
+          </DeploymentButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>

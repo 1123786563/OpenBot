@@ -1,6 +1,6 @@
 # Astryx Web preview
 
-The preview opens the Astryx Neutral shell, home, Bots list, and Create Bot sheet at their existing URLs. Create Bot still opens from the Bots list and the recipient picker in a new conversation. The preview also applies Astryx Neutral to Capabilities, Skills, Bot access, both component galleries, and Playground. Settings, Admin, and skin-specific screens keep their existing frames during the transition.
+The preview opens the Astryx Neutral shell, home, Bots list, and Create Bot sheet at their existing URLs. Create Bot still opens from the Bots list and the recipient picker in a new conversation. The preview also applies Astryx Neutral to Capabilities, Skills, Bot access, both component galleries, and Playground. Team Admin uses the preview frame and keeps its existing account-menu entry. The Admin overview, Providers, and Identity providers use Astryx Neutral. Other Admin pages keep their existing content under that frame. Settings and skin-specific screens keep their existing frames during the transition.
 
 ## Run the preview
 
@@ -12,6 +12,8 @@ APP_PORT=3405 SERVER_PORT=3404 bun --cwd app serve.ts
 ```
 
 Team uses the API's normal sign-in configuration. Personal opens directly when the API is configured for local use. Build with `VITE_OPENBOT_ASTRYX_PILOT=0` for the standard Web UI, where the appearance picker still offers openbot, OpenDuet, OpenDots, and OpenMuse. The same Web bundle supports both editions. `OPENBOT_EDITION` selects the edition on the API server.
+
+Team administrators can open `/admin/providers` and `/admin/identity-providers` directly. The legacy `/admin/enterprise` bookmark opens the Admin overview, which links to the pages where its controls now live.
 
 ## Preview a deployment brand
 

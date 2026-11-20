@@ -19,6 +19,7 @@ import {
 } from "@tabler/icons-react";
 import { Link, type LinkOptions } from "@tanstack/react-router";
 import type * as React from "react";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   Sidebar,
   SidebarContent,
@@ -153,10 +154,32 @@ const GROUPS: {
 ];
 
 export function AdminSidebar({
-  ...props
-}: React.ComponentProps<typeof Sidebar>) {
+  preview,
+}: {
+  preview?: {
+    id: string;
+    returnFocus: React.RefObject<HTMLButtonElement | null>;
+  };
+}) {
   return (
-    <Sidebar variant="inset" {...props}>
+    <Sidebar
+      variant="inset"
+      {...(preview
+        ? {
+            ...astryxScope,
+            className: "astryx-web-nav astryx-admin-nav",
+            mobileNavigation: {
+              title: "Admin navigation",
+              popup: {
+                ...astryxScope,
+                className: "astryx-web-nav astryx-admin-nav",
+                id: `${preview.id}-dialog`,
+                finalFocus: preview.returnFocus,
+              },
+            },
+          }
+        : {})}
+    >
       {/*
        * Pinned to the same height as the app sidebar's header. Left to itself this one is 60px
        * against the app's 45px — `p-2` around a `size="lg"` button rather than a fixed height — so
@@ -171,7 +194,11 @@ export function AdminSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton
               render={(props) => (
-                <Link {...appLinkOptions} {...props}>
+                <Link
+                  {...appLinkOptions}
+                  activeOptions={{ exact: true }}
+                  {...props}
+                >
                   <IconArrowLeft className="mr-2 h-4 w-4" />
                   Back to app
                 </Link>
@@ -180,7 +207,11 @@ export function AdminSidebar({
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-      <SidebarContent>
+      <SidebarContent
+        role={preview ? "navigation" : undefined}
+        aria-label={preview ? "Admin navigation" : undefined}
+        id={preview?.id}
+      >
         <SidebarGroup>
           <SidebarMenu>
             <SidebarMenuItem>
