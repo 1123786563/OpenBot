@@ -1,4 +1,7 @@
-import { directChatLearning } from "@openbot/shared/direct-chat-learning";
+import {
+  type DirectChatDecision,
+  directChatLearning,
+} from "@openbot/shared/direct-chat-learning";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { z } from "zod";
@@ -56,7 +59,9 @@ export function DirectChatLearning({
 }) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
-  const path = `/api/copilotkit/threads/${encodeURIComponent(threadId)}/learn?agentId=${encodeURIComponent(agentId)}`;
+  const base = `/api/copilotkit/threads/${encodeURIComponent(threadId)}/learn`;
+  const query = `?agentId=${encodeURIComponent(agentId)}`;
+  const path = base + query;
   const queryKey = ["direct-chat-learning", threadId, agentId];
   const status = useQuery({
     queryKey,
@@ -98,6 +103,30 @@ export function DirectChatLearning({
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey }),
   });
+  const review = useMutation({
+    mutationFn: async ({
+      id,
+      body,
+    }: {
+      id: string;
+      body: DirectChatDecision;
+    }) =>
+      client(`${base}/proposals/${encodeURIComponent(id)}${query}`, {
+        method: "POST",
+        body,
+        fallback: "Couldn't save the review.",
+      }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey }),
+  });
+  const autoApproval = useMutation({
+    mutationFn: async (autoApprove: boolean) =>
+      client(`${base}/auto-approval${query}`, {
+        method: "POST",
+        body: { autoApprove },
+        fallback: "Couldn't save automatic approval.",
+      }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey }),
+  });
   const data = status.data;
   if (!data || status.error) return null;
   const working = inProgress(data.latest);
@@ -110,6 +139,8 @@ export function DirectChatLearning({
         variant="ghost"
         onClick={() => {
           start.reset();
+          review.reset();
+          autoApproval.reset();
           void status.refetch();
           setOpen(true);
         }}
@@ -197,12 +228,34 @@ export function DirectChatLearning({
               </Button>
             </form>
           )}
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={data.autoApprove}
+              disabled={autoApproval.isPending}
+              onChange={(event) =>
+                autoApproval.mutate(event.currentTarget.checked)
+              }
+            />
+            Automatically approve new proposals in my Personal Workspace. Each
+            skill stays in its source conversation with its original Bot.
+          </label>
           {data.proposals.map((proposal) => (
             <article
               key={proposal.id}
               className="space-y-2 rounded-md border p-3 text-sm"
             >
-              <p className="text-xs text-muted-foreground">Pending review</p>
+              <p className="text-xs text-muted-foreground">
+                {proposal.state === "pending_review" && "Pending review"}
+                {proposal.state === "published" &&
+                  "Published for this conversation"}
+                {proposal.state === "rejected" && "Rejected"}
+                {proposal.review?.mode === "automatic" &&
+                  " · Automatically approved"}
+                {proposal.review &&
+                  ` · ${new Date(proposal.review.reviewedAt).toLocaleString()}`}
+              </p>
               <h3 className="font-medium break-words">{proposal.title}</h3>
               <p className="whitespace-pre-wrap break-words">
                 {proposal.instructions}
@@ -228,12 +281,48 @@ export function DirectChatLearning({
                   ))}
                 </ol>
               </details>
+              {proposal.state === "pending_review" && (
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={review.isPending}
+                    onClick={() =>
+                      review.mutate({
+                        id: proposal.id,
+                        body: { decision: "reject", scope: data.scope },
+                      })
+                    }
+                  >
+                    Reject
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={!data.enabled || review.isPending}
+                    onClick={() =>
+                      review.mutate({
+                        id: proposal.id,
+                        body: { decision: "approve", scope: data.scope },
+                      })
+                    }
+                  >
+                    Approve for this conversation
+                  </Button>
+                </div>
+              )}
             </article>
           ))}
-          {start.error && (
-            <p className="text-sm text-destructive" role="alert">
-              {start.error.message}
-            </p>
+          {[start.error, review.error, autoApproval.error].map(
+            (error) =>
+              error && (
+                <p
+                  key={error.message}
+                  className="text-sm text-destructive"
+                  role="alert"
+                >
+                  {error.message}
+                </p>
+              ),
           )}
           <DialogFooter>
             <Button

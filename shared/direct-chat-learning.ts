@@ -5,6 +5,34 @@ export const directChatProposal = z.object({
   instructions: z.string().trim().min(1).max(4000),
 });
 
+const scopeId = z.string().min(1).max(256);
+export const directChatLearningScope = z
+  .object({
+    personId: scopeId,
+    threadId: scopeId,
+    botId: scopeId,
+  })
+  .strict();
+export const directChatDecision = z
+  .object({
+    decision: z.enum(["approve", "reject"]),
+    scope: directChatLearningScope,
+  })
+  .strict();
+export const directChatAutoApproval = z
+  .object({
+    autoApprove: z.boolean(),
+  })
+  .strict();
+export const directChatReview = directChatDecision.extend({
+  reviewerId: scopeId,
+  mode: z.enum(["manual", "automatic"]),
+  reviewedAt: z.string(),
+});
+export type DirectChatLearningScope = z.infer<typeof directChatLearningScope>;
+export type DirectChatDecision = z.infer<typeof directChatDecision>;
+export type DirectChatReview = z.infer<typeof directChatReview>;
+
 const analysis = z.object({
   id: z.string(),
   state: z.enum([
@@ -30,6 +58,8 @@ export const learningScheduleSettings = z
 export const directChatLearning = z.object({
   enabled: z.boolean(),
   available: z.boolean(),
+  scope: directChatLearningScope,
+  autoApprove: z.boolean(),
   latest: analysis.nullable(),
   lastResult: analysis.nullable(),
   schedule: learningScheduleSettings
@@ -41,7 +71,8 @@ export const directChatLearning = z.object({
   proposals: z.array(
     directChatProposal.extend({
       id: z.string(),
-      state: z.literal("pending_review"),
+      state: z.enum(["pending_review", "published", "rejected"]),
+      review: directChatReview.nullable(),
       evidence: z.array(
         z.object({
           runId: z.string(),
