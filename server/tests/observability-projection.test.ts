@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import type { AuditTapEvent } from "../src/audit";
-import { projectAuditEvent } from "../src/telemetry/observability-projection";
+import {
+  type OpenBotAuditRecord,
+  projectAuditEvent,
+} from "../src/telemetry/observability-projection";
 
 const auditEvent: AuditTapEvent = {
   id: "3967be97-04d1-4ffa-a6aa-d71af0b78f18",
@@ -29,7 +32,7 @@ const commonFields = {
   actor_user_id: "person-1",
   initiator_kind: "agent",
   initiator_id: "bot-1",
-};
+} satisfies Omit<OpenBotAuditRecord, "projection_status" | "facets">;
 
 test.each(["future.event", "constructor", "__proto__"])(
   "unknown event %s preserves the audit envelope and drops the whole payload",
