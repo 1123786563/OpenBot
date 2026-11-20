@@ -1,6 +1,6 @@
 {
-  "id": "1200b807-205b-4b83-8954-ff2ff188f281",
-  "prevId": "d3ca0833-d25b-4cc0-86b0-b75082e2c6a3",
+  "id": "d3ca0833-d25b-4cc0-86b0-b75082e2c6a3",
+  "prevId": "2807c759-6b89-4e14-9bcd-4a9fcd4af4d0",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -11873,15 +11873,16 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.corsair_account_defaults": {
-      "name": "corsair_account_defaults",
+    "public.github_pilot_connections": {
+      "name": "github_pilot_connections",
       "schema": "",
       "columns": {
-        "openbot_kind": {
-          "name": "openbot_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
         },
         "workspace_id": {
           "name": "workspace_id",
@@ -11889,14 +11890,14 @@
           "primaryKey": false,
           "notNull": true
         },
-        "registration": {
-          "name": "registration",
+        "person_id": {
+          "name": "person_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "person_id": {
-          "name": "person_id",
+        "registration": {
+          "name": "registration",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -11905,296 +11906,39 @@
           "name": "github_user_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
-        "github_subject_scope": {
-          "name": "github_subject_scope",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "connection_id": {
-          "name": "connection_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "corsair_account_defaults_person_id_users_id_fk": {
-          "name": "corsair_account_defaults_person_id_users_id_fk",
-          "tableFrom": "corsair_account_defaults",
-          "tableTo": "users",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "corsair_defaults_github_subject_fk": {
-          "name": "corsair_defaults_github_subject_fk",
-          "tableFrom": "corsair_account_defaults",
-          "tableTo": "corsair_accounts",
-          "columnsFrom": [
-            "openbot_kind",
-            "workspace_id",
-            "registration",
-            "person_id",
-            "github_subject_scope",
-            "github_user_id"
-          ],
-          "columnsTo": [
-            "openbot_kind",
-            "workspace_id",
-            "registration",
-            "person_id",
-            "subject_scope",
-            "external_user_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "corsair_defaults_account_owner_fk": {
-          "name": "corsair_defaults_account_owner_fk",
-          "tableFrom": "corsair_account_defaults",
-          "tableTo": "corsair_accounts",
-          "columnsFrom": [
-            "openbot_kind",
-            "workspace_id",
-            "registration",
-            "person_id",
-            "connection_id"
-          ],
-          "columnsTo": [
-            "openbot_kind",
-            "workspace_id",
-            "registration",
-            "person_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "corsair_account_defaults_openbot_kind_workspace_id_person_id_registration_pk": {
-          "name": "corsair_account_defaults_openbot_kind_workspace_id_person_id_registration_pk",
-          "columns": [
-            "openbot_kind",
-            "workspace_id",
-            "person_id",
-            "registration"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "corsair_defaults_shape": {
-          "name": "corsair_defaults_shape",
-          "value": "(\"corsair_account_defaults\".\"openbot_kind\" = 'github-personal' and \"corsair_account_defaults\".\"github_user_id\" is not null and \"corsair_account_defaults\".\"github_subject_scope\" is not null and \"corsair_account_defaults\".\"github_subject_scope\" = '' and \"corsair_account_defaults\".\"connection_id\" is null) or\n    (\"corsair_account_defaults\".\"openbot_kind\" = 'slack-personal' and \"corsair_account_defaults\".\"github_user_id\" is null and \"corsair_account_defaults\".\"github_subject_scope\" is null and \"corsair_account_defaults\".\"connection_id\" is not null)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.corsair_accounts": {
-      "name": "corsair_accounts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()::text"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "tenant_id": {
-          "name": "tenant_id",
+        "login": {
+          "name": "login",
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "integration_id": {
-          "name": "integration_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "config": {
-          "name": "config",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "dek": {
-          "name": "dek",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "registration": {
-          "name": "registration",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "openbot_kind": {
-          "name": "openbot_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "person_id": {
-          "name": "person_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "subject_scope": {
-          "name": "subject_scope",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "external_user_id": {
-          "name": "external_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "label": {
-          "name": "label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "credential": {
           "name": "credential",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "revision": {
           "name": "revision",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "default": "gen_random_uuid()"
         },
         "expires_at": {
           "name": "expires_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": false
-        },
-        "verification_required_at": {
-          "name": "verification_required_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "shared_workspace_id": {
-          "name": "shared_workspace_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "app_id": {
-          "name": "app_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "team_id": {
-          "name": "team_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "bot_user_id": {
-          "name": "bot_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "channel_ids": {
-          "name": "channel_ids",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         }
       },
-      "indexes": {
-        "corsair_accounts_tenant_integration_idx": {
-          "name": "corsair_accounts_tenant_integration_idx",
-          "columns": [
-            {
-              "expression": "tenant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "integration_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
-        "corsair_accounts_integration_id_corsair_integrations_id_fk": {
-          "name": "corsair_accounts_integration_id_corsair_integrations_id_fk",
-          "tableFrom": "corsair_accounts",
-          "tableTo": "corsair_integrations",
-          "columnsFrom": [
-            "integration_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "corsair_accounts_person_id_users_id_fk": {
-          "name": "corsair_accounts_person_id_users_id_fk",
-          "tableFrom": "corsair_accounts",
+        "github_pilot_connections_person_id_users_id_fk": {
+          "name": "github_pilot_connections_person_id_users_id_fk",
+          "tableFrom": "github_pilot_connections",
           "tableTo": "users",
           "columnsFrom": [
             "person_id"
@@ -12208,121 +11952,231 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "corsair_account_personal_subject": {
-          "name": "corsair_account_personal_subject",
+        "github_pilot_connections_workspace_id_person_id_registration_github_user_id_unique": {
+          "name": "github_pilot_connections_workspace_id_person_id_registration_github_user_id_unique",
           "nullsNotDistinct": false,
           "columns": [
-            "openbot_kind",
             "workspace_id",
-            "registration",
             "person_id",
-            "subject_scope",
-            "external_user_id"
-          ]
-        },
-        "corsair_account_owner": {
-          "name": "corsair_account_owner",
-          "nullsNotDistinct": false,
-          "columns": [
-            "openbot_kind",
-            "workspace_id",
             "registration",
-            "person_id",
-            "id"
-          ]
-        },
-        "corsair_account_shared_workspace": {
-          "name": "corsair_account_shared_workspace",
-          "nullsNotDistinct": false,
-          "columns": [
-            "shared_workspace_id"
-          ]
-        },
-        "corsair_account_id_kind": {
-          "name": "corsair_account_id_kind",
-          "nullsNotDistinct": false,
-          "columns": [
-            "id",
-            "openbot_kind"
+            "github_user_id"
           ]
         }
       },
       "policies": {},
-      "checkConstraints": {
-        "corsair_accounts_openbot_shape": {
-          "name": "corsair_accounts_openbot_shape",
-          "value": "\n    case \"corsair_accounts\".\"openbot_kind\"\n      when 'github-personal' then \"corsair_accounts\".\"subject_scope\" = '' and \"corsair_accounts\".\"subject_scope\" is not null\n        and \"corsair_accounts\".\"person_id\" is not null and \"corsair_accounts\".\"workspace_id\" is not null and \"corsair_accounts\".\"registration\" is not null\n        and \"corsair_accounts\".\"external_user_id\" is not null and \"corsair_accounts\".\"label\" is not null and \"corsair_accounts\".\"credential\" is not null\n        and \"corsair_accounts\".\"revision\" is not null and \"corsair_accounts\".\"expires_at\" is not null\n      when 'slack-personal' then \"corsair_accounts\".\"subject_scope\" is not null and \"corsair_accounts\".\"subject_scope\" <> ''\n        and \"corsair_accounts\".\"person_id\" is not null and \"corsair_accounts\".\"workspace_id\" is not null and \"corsair_accounts\".\"registration\" is not null\n        and \"corsair_accounts\".\"external_user_id\" is not null and \"corsair_accounts\".\"label\" is not null and \"corsair_accounts\".\"credential\" is not null\n        and \"corsair_accounts\".\"revision\" is not null and \"corsair_accounts\".\"expires_at\" is not null\n      when 'slack-shared' then \"corsair_accounts\".\"shared_workspace_id\" is not null and \"corsair_accounts\".\"app_id\" is not null\n        and \"corsair_accounts\".\"team_id\" is not null and \"corsair_accounts\".\"bot_id\" is not null and \"corsair_accounts\".\"bot_user_id\" is not null\n        and cardinality(\"corsair_accounts\".\"channel_ids\") > 0 and \"corsair_accounts\".\"channel_ids\" is not null\n      when 'registration' then \"corsair_accounts\".\"workspace_id\" is not null and \"corsair_accounts\".\"registration\" is not null\n      else \"corsair_accounts\".\"openbot_kind\" is null\n    end"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.corsair_entities": {
-      "name": "corsair_entities",
+    "public.github_pilot_defaults": {
+      "name": "github_pilot_defaults",
       "schema": "",
       "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()::text"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "entity_id": {
-          "name": "entity_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "entity_type": {
-          "name": "entity_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version": {
-          "name": "version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "data": {
-          "name": "data",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
         "workspace_id": {
           "name": "workspace_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
         },
         "registration": {
           "name": "registration",
           "type": "text",
           "primaryKey": false,
+          "notNull": true
+        },
+        "github_user_id": {
+          "name": "github_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "github_pilot_defaults_connection_fk": {
+          "name": "github_pilot_defaults_connection_fk",
+          "tableFrom": "github_pilot_defaults",
+          "tableTo": "github_pilot_connections",
+          "columnsFrom": [
+            "workspace_id",
+            "person_id",
+            "registration",
+            "github_user_id"
+          ],
+          "columnsTo": [
+            "workspace_id",
+            "person_id",
+            "registration",
+            "github_user_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "github_pilot_defaults_workspace_id_person_id_registration_pk": {
+          "name": "github_pilot_defaults_workspace_id_person_id_registration_pk",
+          "columns": [
+            "workspace_id",
+            "person_id",
+            "registration"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.github_pilot_event_outcomes": {
+      "name": "github_pilot_event_outcomes",
+      "schema": "",
+      "columns": {
+        "receipt_id": {
+          "name": "receipt_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trigger_id": {
+          "name": "trigger_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
           "notNull": false
+        }
+      },
+      "indexes": {
+        "github_pilot_event_outcomes_pending_idx": {
+          "name": "github_pilot_event_outcomes_pending_idx",
+          "columns": [
+            {
+              "expression": "next_attempt_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"github_pilot_event_outcomes\".\"outcome\" in ('pending', 'retry')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "github_pilot_event_outcomes_receipt_id_github_pilot_event_receipts_id_fk": {
+          "name": "github_pilot_event_outcomes_receipt_id_github_pilot_event_receipts_id_fk",
+          "tableFrom": "github_pilot_event_outcomes",
+          "tableTo": "github_pilot_event_receipts",
+          "columnsFrom": [
+            "receipt_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "github_pilot_event_outcomes_run_id_responsibility_runs_id_fk": {
+          "name": "github_pilot_event_outcomes_run_id_responsibility_runs_id_fk",
+          "tableFrom": "github_pilot_event_outcomes",
+          "tableTo": "responsibility_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "github_pilot_event_outcomes_receipt_id_trigger_id_pk": {
+          "name": "github_pilot_event_outcomes_receipt_id_trigger_id_pk",
+          "columns": [
+            "receipt_id",
+            "trigger_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "github_pilot_event_outcomes_run_id_unique": {
+          "name": "github_pilot_event_outcomes_run_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "run_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.github_pilot_event_receipts": {
+      "name": "github_pilot_event_receipts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registration": {
+          "name": "registration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "delivery_id": {
+          "name": "delivery_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body_hash": {
+          "name": "body_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
         },
         "installation_id": {
           "name": "installation_id",
@@ -12336,47 +12190,171 @@
           "primaryKey": false,
           "notNull": false
         },
-        "node_id": {
-          "name": "node_id",
+        "pilot_dispatch": {
+          "name": "pilot_dispatch",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "received_at": {
+          "name": "received_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "disposition": {
+          "name": "disposition",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "name": {
-          "name": "name",
-          "type": "text",
+        "fanout_at": {
+          "name": "fanout_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        }
+      },
+      "indexes": {
+        "github_pilot_receipts_pending_idx": {
+          "name": "github_pilot_receipts_pending_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "registration",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "received_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"github_pilot_event_receipts\".\"fanout_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "github_pilot_event_receipts_workspace_id_registration_delivery_id_unique": {
+          "name": "github_pilot_event_receipts_workspace_id_registration_delivery_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "workspace_id",
+            "registration",
+            "delivery_id"
+          ]
+        },
+        "github_pilot_event_receipts_workspace_id_registration_body_hash_unique": {
+          "name": "github_pilot_event_receipts_workspace_id_registration_body_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "workspace_id",
+            "registration",
+            "body_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.github_pilot_event_triggers": {
+      "name": "github_pilot_event_triggers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registration": {
+          "name": "registration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
         },
         "goal_id": {
           "name": "goal_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "connection_id": {
           "name": "connection_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "connection_revision": {
           "name": "connection_revision",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
+        },
+        "installation_id": {
+          "name": "installation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "repository_id": {
+          "name": "repository_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
         },
         "repository_node_id": {
           "name": "repository_node_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "event_types": {
           "name": "event_types",
           "type": "text[]",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         },
         "disabled_at": {
           "name": "disabled_at",
@@ -12386,8 +12364,8 @@
         }
       },
       "indexes": {
-        "corsair_entities_source_idx": {
-          "name": "corsair_entities_source_idx",
+        "github_pilot_event_triggers_source_idx": {
+          "name": "github_pilot_event_triggers_source_idx",
           "columns": [
             {
               "expression": "workspace_id",
@@ -12419,8 +12397,8 @@
           "method": "btree",
           "with": {}
         },
-        "corsair_entities_goal_idx": {
-          "name": "corsair_entities_goal_idx",
+        "github_pilot_event_triggers_goal_idx": {
+          "name": "github_pilot_event_triggers_goal_idx",
           "columns": [
             {
               "expression": "goal_id",
@@ -12436,22 +12414,9 @@
         }
       },
       "foreignKeys": {
-        "corsair_entities_account_id_corsair_accounts_id_fk": {
-          "name": "corsair_entities_account_id_corsair_accounts_id_fk",
-          "tableFrom": "corsair_entities",
-          "tableTo": "corsair_accounts",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "corsair_entities_goal_id_responsibilities_id_fk": {
-          "name": "corsair_entities_goal_id_responsibilities_id_fk",
-          "tableFrom": "corsair_entities",
+        "github_pilot_event_triggers_goal_id_responsibilities_id_fk": {
+          "name": "github_pilot_event_triggers_goal_id_responsibilities_id_fk",
+          "tableFrom": "github_pilot_event_triggers",
           "tableTo": "responsibilities",
           "columnsFrom": [
             "goal_id"
@@ -12464,310 +12429,48 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "corsair_entities_account_type_entity": {
-          "name": "corsair_entities_account_type_entity",
-          "nullsNotDistinct": false,
-          "columns": [
-            "account_id",
-            "entity_type",
-            "entity_id"
-          ]
-        },
-        "corsair_entities_repository_scope": {
-          "name": "corsair_entities_repository_scope",
-          "nullsNotDistinct": false,
-          "columns": [
-            "workspace_id",
-            "registration",
-            "entity_id",
-            "entity_type"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.corsair_event_dispatches": {
-      "name": "corsair_event_dispatches",
+    "public.github_pilot_grants": {
+      "name": "github_pilot_grants",
       "schema": "",
       "columns": {
-        "receipt_id": {
-          "name": "receipt_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "trigger_id": {
-          "name": "trigger_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "next_attempt_at": {
-          "name": "next_attempt_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "corsair_event_dispatches_pending_idx": {
-          "name": "corsair_event_dispatches_pending_idx",
-          "columns": [
-            {
-              "expression": "next_attempt_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"corsair_event_dispatches\".\"outcome\" in ('pending', 'retry')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "corsair_event_dispatches_receipt_id_corsair_events_id_fk": {
-          "name": "corsair_event_dispatches_receipt_id_corsair_events_id_fk",
-          "tableFrom": "corsair_event_dispatches",
-          "tableTo": "corsair_events",
-          "columnsFrom": [
-            "receipt_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "corsair_event_dispatches_run_id_responsibility_runs_id_fk": {
-          "name": "corsair_event_dispatches_run_id_responsibility_runs_id_fk",
-          "tableFrom": "corsair_event_dispatches",
-          "tableTo": "responsibility_runs",
-          "columnsFrom": [
-            "run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "corsair_event_dispatches_receipt_id_trigger_id_pk": {
-          "name": "corsair_event_dispatches_receipt_id_trigger_id_pk",
-          "columns": [
-            "receipt_id",
-            "trigger_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {
-        "corsair_event_dispatches_run_id_unique": {
-          "name": "corsair_event_dispatches_run_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "run_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.corsair_events": {
-      "name": "corsair_events",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()::text"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "event_type": {
-          "name": "event_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
         "workspace_id": {
           "name": "workspace_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "registration": {
           "name": "registration",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
-        "delivery_id": {
-          "name": "delivery_id",
+        "bot_id": {
+          "name": "bot_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
-        "body_hash": {
-          "name": "body_hash",
+        "tool_ref": {
+          "name": "tool_ref",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
-        },
-        "installation_id": {
-          "name": "installation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "repository_id": {
-          "name": "repository_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "pilot_dispatch": {
-          "name": "pilot_dispatch",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "occurred_at": {
-          "name": "occurred_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "disposition": {
-          "name": "disposition",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "fanout_at": {
-          "name": "fanout_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         }
       },
-      "indexes": {
-        "corsair_events_account_type_created_idx": {
-          "name": "corsair_events_account_type_created_idx",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "event_type",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "corsair_events_pending_idx": {
-          "name": "corsair_events_pending_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "registration",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"corsair_events\".\"delivery_id\" is not null and \"corsair_events\".\"fanout_at\" is null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
-        "corsair_events_account_id_corsair_accounts_id_fk": {
-          "name": "corsair_events_account_id_corsair_accounts_id_fk",
-          "tableFrom": "corsair_events",
-          "tableTo": "corsair_accounts",
+        "github_pilot_grants_bot_id_agents_id_fk": {
+          "name": "github_pilot_grants_bot_id_agents_id_fk",
+          "tableFrom": "github_pilot_grants",
+          "tableTo": "agents",
           "columnsFrom": [
-            "account_id"
+            "bot_id"
           ],
           "columnsTo": [
             "id"
@@ -12776,109 +12479,147 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "corsair_events_delivery": {
-          "name": "corsair_events_delivery",
-          "nullsNotDistinct": false,
+      "compositePrimaryKeys": {
+        "github_pilot_grants_workspace_id_registration_bot_id_tool_ref_pk": {
+          "name": "github_pilot_grants_workspace_id_registration_bot_id_tool_ref_pk",
           "columns": [
             "workspace_id",
             "registration",
-            "delivery_id"
-          ]
-        },
-        "corsair_events_body": {
-          "name": "corsair_events_body",
-          "nullsNotDistinct": false,
-          "columns": [
-            "workspace_id",
-            "registration",
-            "body_hash"
+            "bot_id",
+            "tool_ref"
           ]
         }
       },
+      "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "corsair_events_status": {
-          "name": "corsair_events_status",
-          "value": "\"corsair_events\".\"status\" in ('pending', 'processing', 'completed', 'failed')"
-        },
-        "corsair_events_delivery_shape": {
-          "name": "corsair_events_delivery_shape",
-          "value": "\"corsair_events\".\"delivery_id\" is null or (\n    \"corsair_events\".\"workspace_id\" is not null and \"corsair_events\".\"registration\" is not null and \"corsair_events\".\"body_hash\" is not null and \"corsair_events\".\"pilot_dispatch\" is not null\n  )"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.corsair_integrations": {
-      "name": "corsair_integrations",
+    "public.github_pilot_repositories": {
+      "name": "github_pilot_repositories",
       "schema": "",
       "columns": {
-        "id": {
-          "name": "id",
+        "workspace_id": {
+          "name": "workspace_id",
           "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()::text"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
+          "notNull": true
         },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
+        "registration": {
+          "name": "registration",
+          "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
+          "notNull": true
+        },
+        "repository_id": {
+          "name": "repository_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "installation_id": {
+          "name": "installation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
         },
         "name": {
           "name": "name",
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "config": {
-          "name": "config",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "dek": {
-          "name": "dek",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
       "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "github_pilot_repositories_workspace_id_registration_repository_id_pk": {
+          "name": "github_pilot_repositories_workspace_id_registration_repository_id_pk",
+          "columns": [
+            "workspace_id",
+            "registration",
+            "repository_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.github_pilot_states": {
+      "name": "github_pilot_states",
+      "schema": "",
+      "columns": {
+        "state_hash": {
+          "name": "state_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registration": {
+          "name": "registration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "verifier": {
+          "name": "verifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "github_pilot_states_person_id_users_id_fk": {
+          "name": "github_pilot_states_person_id_users_id_fk",
+          "tableFrom": "github_pilot_states",
+          "tableTo": "users",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.corsair_oauth_states": {
-      "name": "corsair_oauth_states",
+    "public.slack_pilot_connections": {
+      "name": "slack_pilot_connections",
       "schema": "",
       "columns": {
-        "state_hash": {
-          "name": "state_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider": {
-          "name": "provider",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "workspace_id": {
           "name": "workspace_id",
           "type": "text",
@@ -12897,24 +12638,61 @@
           "primaryKey": false,
           "notNull": true
         },
-        "verifier": {
-          "name": "verifier",
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "subject_scope": {
+          "name": "subject_scope",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "credential": {
+          "name": "credential",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
         },
         "expires_at": {
           "name": "expires_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
+        },
+        "revision": {
+          "name": "revision",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "verification_required_at": {
+          "name": "verification_required_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
       "foreignKeys": {
-        "corsair_oauth_states_person_id_users_id_fk": {
-          "name": "corsair_oauth_states_person_id_users_id_fk",
-          "tableFrom": "corsair_oauth_states",
+        "slack_pilot_connections_person_id_users_id_fk": {
+          "name": "slack_pilot_connections_person_id_users_id_fk",
+          "tableFrom": "slack_pilot_connections",
           "tableTo": "users",
           "columnsFrom": [
             "person_id"
@@ -12926,146 +12704,240 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "corsair_oauth_states_provider_state_hash_pk": {
-          "name": "corsair_oauth_states_provider_state_hash_pk",
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "slack_pilot_stable_subject": {
+          "name": "slack_pilot_stable_subject",
+          "nullsNotDistinct": false,
           "columns": [
-            "provider",
-            "state_hash"
+            "workspace_id",
+            "registration",
+            "person_id",
+            "subject_scope",
+            "user_id"
+          ]
+        },
+        "slack_pilot_connection_owner": {
+          "name": "slack_pilot_connection_owner",
+          "nullsNotDistinct": false,
+          "columns": [
+            "workspace_id",
+            "registration",
+            "person_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.slack_pilot_defaults": {
+      "name": "slack_pilot_defaults",
+      "schema": "",
+      "columns": {
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registration": {
+          "name": "registration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "slack_pilot_defaults_person_id_users_id_fk": {
+          "name": "slack_pilot_defaults_person_id_users_id_fk",
+          "tableFrom": "slack_pilot_defaults",
+          "tableTo": "users",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "slack_pilot_default_owner": {
+          "name": "slack_pilot_default_owner",
+          "tableFrom": "slack_pilot_defaults",
+          "tableTo": "slack_pilot_connections",
+          "columnsFrom": [
+            "workspace_id",
+            "registration",
+            "person_id",
+            "connection_id"
+          ],
+          "columnsTo": [
+            "workspace_id",
+            "registration",
+            "person_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "slack_pilot_defaults_workspace_id_registration_person_id_pk": {
+          "name": "slack_pilot_defaults_workspace_id_registration_person_id_pk",
+          "columns": [
+            "workspace_id",
+            "registration",
+            "person_id"
           ]
         }
       },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "corsair_oauth_states_provider": {
-          "name": "corsair_oauth_states_provider",
-          "value": "(\"corsair_oauth_states\".\"provider\" = 'github' and \"corsair_oauth_states\".\"verifier\" is not null) or (\"corsair_oauth_states\".\"provider\" = 'slack' and \"corsair_oauth_states\".\"verifier\" is null)"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.corsair_permissions": {
-      "name": "corsair_permissions",
+    "public.slack_pilot_grants": {
+      "name": "slack_pilot_grants",
       "schema": "",
       "columns": {
-        "id": {
-          "name": "id",
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registration": {
+          "name": "registration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bot_id": {
+          "name": "bot_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tool_ref": {
+          "name": "tool_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "slack_pilot_grants_bot_id_agents_id_fk": {
+          "name": "slack_pilot_grants_bot_id_agents_id_fk",
+          "tableFrom": "slack_pilot_grants",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "bot_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "slack_pilot_grants_workspace_id_registration_bot_id_tool_ref_pk": {
+          "name": "slack_pilot_grants_workspace_id_registration_bot_id_tool_ref_pk",
+          "columns": [
+            "workspace_id",
+            "registration",
+            "bot_id",
+            "tool_ref"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.slack_pilot_states": {
+      "name": "slack_pilot_states",
+      "schema": "",
+      "columns": {
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registration": {
+          "name": "registration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state_hash": {
+          "name": "state_hash",
           "type": "text",
           "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()::text"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "token": {
-          "name": "token",
-          "type": "text",
-          "primaryKey": false,
           "notNull": true
-        },
-        "plugin": {
-          "name": "plugin",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "endpoint": {
-          "name": "endpoint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "args": {
-          "name": "args",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "tenant_id": {
-          "name": "tenant_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'default'"
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
         },
         "expires_at": {
           "name": "expires_at",
-          "type": "text",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
-        },
-        "error": {
-          "name": "error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
-      "indexes": {
-        "corsair_permissions_token_idx": {
-          "name": "corsair_permissions_token_idx",
-          "columns": [
-            {
-              "expression": "token",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
+      "indexes": {},
+      "foreignKeys": {
+        "slack_pilot_states_person_id_users_id_fk": {
+          "name": "slack_pilot_states_person_id_users_id_fk",
+          "tableFrom": "slack_pilot_states",
+          "tableTo": "users",
+          "columnsFrom": [
+            "person_id"
           ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
-      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "corsair_permissions_status": {
-          "name": "corsair_permissions_status",
-          "value": "\"corsair_permissions\".\"status\" in ('pending', 'approved', 'executing', 'completed', 'denied', 'expired', 'failed')"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.corsair_shared_access": {
-      "name": "corsair_shared_access",
+    "public.slack_shared_bot_access": {
+      "name": "slack_shared_bot_access",
       "schema": "",
       "columns": {
         "installation_id": {
           "name": "installation_id",
-          "type": "text",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
-        },
-        "openbot_kind": {
-          "name": "openbot_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'slack-shared'"
         },
         "bot_id": {
           "name": "bot_id",
@@ -13089,9 +12961,22 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "corsair_shared_access_bot_id_agents_id_fk": {
-          "name": "corsair_shared_access_bot_id_agents_id_fk",
-          "tableFrom": "corsair_shared_access",
+        "slack_shared_bot_access_installation_id_slack_shared_installations_id_fk": {
+          "name": "slack_shared_bot_access_installation_id_slack_shared_installations_id_fk",
+          "tableFrom": "slack_shared_bot_access",
+          "tableTo": "slack_shared_installations",
+          "columnsFrom": [
+            "installation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "slack_shared_bot_access_bot_id_agents_id_fk": {
+          "name": "slack_shared_bot_access_bot_id_agents_id_fk",
+          "tableFrom": "slack_shared_bot_access",
           "tableTo": "agents",
           "columnsFrom": [
             "bot_id"
@@ -13101,26 +12986,11 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
-        },
-        "corsair_shared_access_account_fk": {
-          "name": "corsair_shared_access_account_fk",
-          "tableFrom": "corsair_shared_access",
-          "tableTo": "corsair_accounts",
-          "columnsFrom": [
-            "installation_id",
-            "openbot_kind"
-          ],
-          "columnsTo": [
-            "id",
-            "openbot_kind"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
-        "corsair_shared_access_installation_id_bot_id_pk": {
-          "name": "corsair_shared_access_installation_id_bot_id_pk",
+        "slack_shared_bot_access_installation_id_bot_id_pk": {
+          "name": "slack_shared_bot_access_installation_id_bot_id_pk",
           "columns": [
             "installation_id",
             "bot_id"
@@ -13129,10 +12999,180 @@
       },
       "uniqueConstraints": {},
       "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.slack_shared_installations": {
+      "name": "slack_shared_installations",
+      "schema": "",
+      "columns": {
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "app_id": {
+          "name": "app_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "team_id": {
+          "name": "team_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bot_id": {
+          "name": "bot_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bot_user_id": {
+          "name": "bot_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel_ids": {
+          "name": "channel_ids",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "slack_shared_installations_id_unique": {
+          "name": "slack_shared_installations_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.direct_chat_runs": {
+      "name": "direct_chat_runs",
+      "schema": "",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_message_id": {
+          "name": "user_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prompt": {
+          "name": "prompt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assistant_message_id": {
+          "name": "assistant_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reply": {
+          "name": "reply",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "direct_chat_runs_request_idx": {
+          "name": "direct_chat_runs_request_idx",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "direct_chat_runs_thread_id_intelligence_channel_mappings_thread_id_fk": {
+          "name": "direct_chat_runs_thread_id_intelligence_channel_mappings_thread_id_fk",
+          "tableFrom": "direct_chat_runs",
+          "tableTo": "intelligence_channel_mappings",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "thread_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "direct_chat_runs_thread_id_id_pk": {
+          "name": "direct_chat_runs_thread_id_id_pk",
+          "columns": [
+            "thread_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {
-        "corsair_shared_access_kind": {
-          "name": "corsair_shared_access_kind",
-          "value": "\"corsair_shared_access\".\"openbot_kind\" = 'slack-shared'"
+        "direct_chat_runs_status_check": {
+          "name": "direct_chat_runs_status_check",
+          "value": "\"direct_chat_runs\".\"status\" in ('running', 'completed', 'failed')"
         }
       },
       "isRLSEnabled": false

@@ -2,6 +2,7 @@ import type { CopilotRuntimeHooks } from "@copilotkit/runtime/v2";
 import type { createTurnRunner, TurnRunner } from "@openbot/toolkit/run-turn";
 import type { IdentifyActor } from "../copilot";
 import type { DeliveryInbox } from "../delivery/types";
+import { AUDIT_RUN_PROOF_KEY } from "./audit-run-proof";
 import {
   appAnalyticsContext,
   type ProductTelemetry,
@@ -23,8 +24,7 @@ export function productRuntimeHook(
 /**
  * A browser run's request, with this deployment's context in its forwardedProps.
  *
- * Whatever the browser put under the same keys is replaced, and with telemetry off it is removed,
- * so the runtime's thread lock never carries a context this deployment did not state.
+ * Replace browser-supplied claims. The runtime thread lock carries analytics context only when enabled.
  */
 export async function prepareProductRequest(
   telemetry: ProductTelemetry,
@@ -48,7 +48,7 @@ export async function prepareProductRequest(
     const lastUser = [...messages]
       .reverse()
       .find((m) => m?.role === "user" && typeof m.id === "string");
-    const context = await telemetry.prepare({
+    const prepared = await telemetry.prepare({
       actorUserId: actor.id,
       threadId: body.threadId,
       runId: body.runId,
@@ -62,7 +62,7 @@ export async function prepareProductRequest(
         ...body,
         forwardedProps: productRunForwardedProps(
           "forwardedProps" in body ? body.forwardedProps : undefined,
-          context,
+          prepared,
         ),
       }),
     });
@@ -80,28 +80,42 @@ export function productHeadlessBoundary(
 ): NonNullable<Parameters<typeof createTurnRunner>[0]["prepareRunInput"]> {
   return async (input, turn) => {
     const lineage = turn.telemetry;
-    const context = await telemetry.prepare({
-      actorUserId: turn.ownerUserId,
-      threadId: input.threadId,
-      runId: input.runId,
-      trigger:
-        lineage?.trigger ??
-        (turn.continuation ? "followup" : triggerForInitiator(turn.initiator)),
-      surface: lineage?.surface ?? "unknown",
-      rootTaskId: lineage?.rootTaskId ?? `${turn.routineId}:${input.runId}`,
-      // A resumed turn carries on the task the interrupted run was part of.
-      inheritedRootTaskId:
-        lineage?.inheritedRootTaskId ??
-        telemetry.lineageOf(
-          turn.ownerUserId,
-          turn.continuation?.snapshot.forwardedProps,
-        ).rootTaskId,
-      parentRunId: lineage?.parentRunId ?? turn.continuation?.snapshot.runId,
-      attempt: lineage?.attempt,
-    });
+    const snapshot = turn.continuation?.snapshot;
+    const savedAuditLineage =
+      snapshot && telemetry.auditLineageOf(turn.ownerUserId, snapshot);
+    const prepared = await telemetry.prepare(
+      {
+        actorUserId: turn.ownerUserId,
+        threadId: input.threadId,
+        runId: input.runId,
+        trigger:
+          lineage?.trigger ??
+          (turn.continuation
+            ? "followup"
+            : triggerForInitiator(turn.initiator)),
+        surface: lineage?.surface ?? "unknown",
+        rootTaskId: lineage?.rootTaskId ?? `${turn.routineId}:${input.runId}`,
+        // A resumed turn carries on the task the interrupted run was part of.
+        inheritedRootTaskId:
+          lineage?.inheritedRootTaskId ??
+          telemetry.lineageOf(turn.ownerUserId, snapshot?.forwardedProps)
+            .rootTaskId,
+        parentRunId: lineage?.parentRunId ?? snapshot?.runId,
+        attempt: lineage?.attempt,
+      },
+      {
+        parentRunId:
+          lineage?.parentRunId ??
+          (savedAuditLineage ? snapshot?.runId : undefined),
+        rootTaskId:
+          lineage?.auditRootTaskId === undefined
+            ? (lineage?.inheritedRootTaskId ?? savedAuditLineage?.rootTaskId)
+            : (lineage.auditRootTaskId ?? undefined),
+      },
+    );
     return {
       ...input,
-      forwardedProps: productRunForwardedProps(input.forwardedProps, context),
+      forwardedProps: productRunForwardedProps(input.forwardedProps, prepared),
     };
   };
 }
@@ -127,12 +141,16 @@ export async function productHandoffInput<
   actorUserId: string,
   parentRunId: string,
 ) {
-  const context = await telemetry.prepare(
+  const prepared = await telemetry.prepare(
     handoffPreparation(input, actorUserId, parentRunId),
   );
   return {
     ...input,
-    forwardedProps: { ...input.forwardedProps, openbotTelemetry: context },
+    forwardedProps: {
+      ...input.forwardedProps,
+      openbotTelemetry: prepared?.context,
+      [AUDIT_RUN_PROOF_KEY]: prepared?.auditProof,
+    },
   };
 }
 /**
@@ -146,9 +164,11 @@ export async function productHandoffAnalyticsContext(
   parentRunId: string,
 ) {
   return appAnalyticsContext(
-    await telemetry.prepare(
-      handoffPreparation(input, actorUserId, parentRunId),
-    ),
+    (
+      await telemetry.prepare(
+        handoffPreparation(input, actorUserId, parentRunId),
+      )
+    )?.context,
   );
 }
 /**

@@ -34,6 +34,7 @@ export default defineConfig({
     "./src/db/schema/tasks.ts",
     "./src/db/schema/demonstrations.ts",
     "./src/db/schema/delivery.ts",
+    "./src/db/schema/direct-chat.ts",
     "./src/db/schema/group.ts",
     "./src/db/schema/admin.ts",
     "./src/db/schema/scim.ts",

@@ -1,3 +1,4 @@
+import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import {
   IconCheck,
   IconChevronDown,
@@ -5,6 +6,7 @@ import {
 } from "@tabler/icons-react";
 import { createContext, type ReactNode, useContext, useState } from "react";
 import AgentOrb from "@/components/agents/orb/agent-orb";
+
 import { BrandName } from "@/components/edition/brand-name";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -13,6 +15,7 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { desktopShell } from "@/lib/desktop/shell";
 import { appConfig } from "@/lib/generated/application-config";
 import { cn } from "@/lib/utils";
 
@@ -205,7 +208,22 @@ export function OnboardingFrame({
                 Back
               </button>
             ) : null}
-            {primary ? (
+            {primary && !desktopShell() ? (
+              <AstryxButton
+                data-onboarding-primary=""
+                form={primary.form}
+                icon={
+                  primary.done ? <IconCheck aria-hidden size={18} /> : undefined
+                }
+                isDisabled={primary.disabled && !primary.pending}
+                isLoading={primary.pending}
+                label={primary.label}
+                onClick={primary.form ? undefined : primary.onClick}
+                size="lg"
+                type={primary.form ? "submit" : "button"}
+                variant="primary"
+              />
+            ) : primary ? (
               <button
                 aria-busy={primary.pending ? true : undefined}
                 className={cn(
@@ -234,7 +252,14 @@ export function OnboardingFrame({
                 {primary.label}
               </button>
             ) : null}
-            {secondary ? (
+            {secondary && !desktopShell() ? (
+              <AstryxButton
+                label={secondary.label}
+                onClick={secondary.onClick}
+                size="lg"
+                variant="secondary"
+              />
+            ) : secondary ? (
               <button
                 className={cn(
                   buttonVariants({ variant: "outline", size: "lg" }),

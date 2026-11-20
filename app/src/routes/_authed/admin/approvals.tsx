@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { TeamApprovalSettings } from "@/components/approvals/team-settings";
-import { PageShell } from "@/components/layout/page-shell";
+import { GovernancePage } from "@/components/astryx-pilot/governance";
 
 export const Route = createFileRoute("/_authed/admin/approvals")({
   component: AdminApprovalsPage,
@@ -8,11 +8,11 @@ export const Route = createFileRoute("/_authed/admin/approvals")({
 
 function AdminApprovalsPage() {
   return (
-    <PageShell
+    <GovernancePage
       description="Set approval rules for members’ Bots and review requests to use shared accounts."
       title="Approvals"
     >
       <TeamApprovalSettings />
-    </PageShell>
+    </GovernancePage>
   );
 }

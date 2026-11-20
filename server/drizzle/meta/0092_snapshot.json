@@ -1,6 +1,6 @@
 {
-  "id": "2807c759-6b89-4e14-9bcd-4a9fcd4af4d0",
-  "prevId": "0dfae62f-4e42-4771-8f28-3c860e3aa90b",
+  "id": "0dfae62f-4e42-4771-8f28-3c860e3aa90b",
+  "prevId": "f348f80e-968b-4d52-b88f-a53a0709e3ae",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -12616,317 +12616,115 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.slack_pilot_connections": {
-      "name": "slack_pilot_connections",
+    "public.direct_chat_runs": {
+      "name": "direct_chat_runs",
       "schema": "",
       "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "registration": {
-          "name": "registration",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "person_id": {
-          "name": "person_id",
+        "thread_id": {
+          "name": "thread_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
         "id": {
           "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "subject_scope": {
-          "name": "subject_scope",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "user_id": {
-          "name": "user_id",
+        "user_message_id": {
+          "name": "user_message_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "label": {
-          "name": "label",
+        "prompt": {
+          "name": "prompt",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "credential": {
-          "name": "credential",
+        "assistant_message_id": {
+          "name": "assistant_message_id",
           "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "revision": {
-          "name": "revision",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "verification_required_at": {
-          "name": "verification_required_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "slack_pilot_connections_person_id_users_id_fk": {
-          "name": "slack_pilot_connections_person_id_users_id_fk",
-          "tableFrom": "slack_pilot_connections",
-          "tableTo": "users",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "slack_pilot_stable_subject": {
-          "name": "slack_pilot_stable_subject",
-          "nullsNotDistinct": false,
-          "columns": [
-            "workspace_id",
-            "registration",
-            "person_id",
-            "subject_scope",
-            "user_id"
-          ]
         },
-        "slack_pilot_connection_owner": {
-          "name": "slack_pilot_connection_owner",
-          "nullsNotDistinct": false,
-          "columns": [
-            "workspace_id",
-            "registration",
-            "person_id",
-            "id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.slack_pilot_defaults": {
-      "name": "slack_pilot_defaults",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
+        "reply": {
+          "name": "reply",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "registration": {
-          "name": "registration",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "person_id": {
-          "name": "person_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "connection_id": {
-          "name": "connection_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "slack_pilot_defaults_person_id_users_id_fk": {
-          "name": "slack_pilot_defaults_person_id_users_id_fk",
-          "tableFrom": "slack_pilot_defaults",
-          "tableTo": "users",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "slack_pilot_default_owner": {
-          "name": "slack_pilot_default_owner",
-          "tableFrom": "slack_pilot_defaults",
-          "tableTo": "slack_pilot_connections",
-          "columnsFrom": [
-            "workspace_id",
-            "registration",
-            "person_id",
-            "connection_id"
-          ],
-          "columnsTo": [
-            "workspace_id",
-            "registration",
-            "person_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "slack_pilot_defaults_workspace_id_registration_person_id_pk": {
-          "name": "slack_pilot_defaults_workspace_id_registration_person_id_pk",
-          "columns": [
-            "workspace_id",
-            "registration",
-            "person_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.slack_pilot_grants": {
-      "name": "slack_pilot_grants",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "registration": {
-          "name": "registration",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "tool_ref": {
-          "name": "tool_ref",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "slack_pilot_grants_bot_id_agents_id_fk": {
-          "name": "slack_pilot_grants_bot_id_agents_id_fk",
-          "tableFrom": "slack_pilot_grants",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "bot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "slack_pilot_grants_workspace_id_registration_bot_id_tool_ref_pk": {
-          "name": "slack_pilot_grants_workspace_id_registration_bot_id_tool_ref_pk",
-          "columns": [
-            "workspace_id",
-            "registration",
-            "bot_id",
-            "tool_ref"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.slack_pilot_states": {
-      "name": "slack_pilot_states",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "registration": {
-          "name": "registration",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "person_id": {
-          "name": "person_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state_hash": {
-          "name": "state_hash",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
+        "started_at": {
+          "name": "started_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "direct_chat_runs_request_idx": {
+          "name": "direct_chat_runs_request_idx",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
-        "slack_pilot_states_person_id_users_id_fk": {
-          "name": "slack_pilot_states_person_id_users_id_fk",
-          "tableFrom": "slack_pilot_states",
-          "tableTo": "users",
+        "direct_chat_runs_thread_id_intelligence_channel_mappings_thread_id_fk": {
+          "name": "direct_chat_runs_thread_id_intelligence_channel_mappings_thread_id_fk",
+          "tableFrom": "direct_chat_runs",
+          "tableTo": "intelligence_channel_mappings",
           "columnsFrom": [
-            "person_id"
+            "thread_id"
           ],
           "columnsTo": [
-            "id"
+            "thread_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "compositePrimaryKeys": {
+        "direct_chat_runs_thread_id_id_pk": {
+          "name": "direct_chat_runs_thread_id_id_pk",
+          "columns": [
+            "thread_id",
+            "id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "direct_chat_runs_status_check": {
+          "name": "direct_chat_runs_status_check",
+          "value": "\"direct_chat_runs\".\"status\" in ('running', 'completed', 'failed')"
+        }
+      },
       "isRLSEnabled": false
     }
   },

@@ -72,6 +72,7 @@ export function registerIdentityProviderMutationOptions(
         method: "POST",
         body: registerBody(input),
         fallback: FALLBACK,
+        errorMessageKey: "message",
       });
     },
     onSuccess: () => invalidateProviders(queryClient),

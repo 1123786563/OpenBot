@@ -50,8 +50,7 @@ export function useBotName() {
  * A task's conversation that is running a turn reads Working: the busy signal comes from the
  * conversations list the sidebar keeps live over the socket.
  */
-export function useNeedsYou(agentId?: string) {
-  const suggestions = useQuery(proactiveSuggestionsQueryOptions());
+export function useNeedsYouTasks(agentId?: string) {
   const taskList = useQuery(taskListQueryOptions());
   const channels = useInfiniteQuery(channelListQueryOptions());
   const busy = (channelId: string) =>
@@ -64,11 +63,23 @@ export function useNeedsYou(agentId?: string) {
     Date.now(),
   );
   return {
-    pending: suggestions.isPending || taskList.isPending,
-    error: suggestions.error ?? taskList.error,
+    pending: taskList.isPending,
+    error: taskList.error,
     tasks: listed.filter(({ status }) => status !== "resolved"),
     done: listed.filter(({ status }) => status === "resolved"),
-    items: (suggestions.data ?? []).filter(mine),
+  };
+}
+
+export function useNeedsYou(agentId?: string) {
+  const taskList = useNeedsYouTasks(agentId);
+  const suggestions = useQuery(proactiveSuggestionsQueryOptions());
+  return {
+    ...taskList,
+    pending: suggestions.isPending || taskList.pending,
+    error: suggestions.error ?? taskList.error,
+    items: (suggestions.data ?? []).filter(
+      (row) => agentId === undefined || row.agentId === agentId,
+    ),
   };
 }
 

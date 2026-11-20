@@ -1,6 +1,6 @@
 {
-  "id": "d3ca0833-d25b-4cc0-86b0-b75082e2c6a3",
-  "prevId": "2807c759-6b89-4e14-9bcd-4a9fcd4af4d0",
+  "id": "2807c759-6b89-4e14-9bcd-4a9fcd4af4d0",
+  "prevId": "0dfae62f-4e42-4771-8f28-3c860e3aa90b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -12929,141 +12929,115 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.slack_shared_bot_access": {
-      "name": "slack_shared_bot_access",
+    "public.direct_chat_runs": {
+      "name": "direct_chat_runs",
       "schema": "",
       "columns": {
-        "installation_id": {
-          "name": "installation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "bot_id": {
-          "name": "bot_id",
+        "thread_id": {
+          "name": "thread_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "granted": {
-          "name": "granted",
-          "type": "boolean",
+        "id": {
+          "name": "id",
+          "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": false
+          "notNull": true
         },
-        "approval": {
-          "name": "approval",
-          "type": "jsonb",
+        "user_message_id": {
+          "name": "user_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prompt": {
+          "name": "prompt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assistant_message_id": {
+          "name": "assistant_message_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "reply": {
+          "name": "reply",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "direct_chat_runs_request_idx": {
+          "name": "direct_chat_runs_request_idx",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
-        "slack_shared_bot_access_installation_id_slack_shared_installations_id_fk": {
-          "name": "slack_shared_bot_access_installation_id_slack_shared_installations_id_fk",
-          "tableFrom": "slack_shared_bot_access",
-          "tableTo": "slack_shared_installations",
+        "direct_chat_runs_thread_id_intelligence_channel_mappings_thread_id_fk": {
+          "name": "direct_chat_runs_thread_id_intelligence_channel_mappings_thread_id_fk",
+          "tableFrom": "direct_chat_runs",
+          "tableTo": "intelligence_channel_mappings",
           "columnsFrom": [
-            "installation_id"
+            "thread_id"
           ],
           "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "slack_shared_bot_access_bot_id_agents_id_fk": {
-          "name": "slack_shared_bot_access_bot_id_agents_id_fk",
-          "tableFrom": "slack_shared_bot_access",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "bot_id"
-          ],
-          "columnsTo": [
-            "id"
+            "thread_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
-        "slack_shared_bot_access_installation_id_bot_id_pk": {
-          "name": "slack_shared_bot_access_installation_id_bot_id_pk",
+        "direct_chat_runs_thread_id_id_pk": {
+          "name": "direct_chat_runs_thread_id_id_pk",
           "columns": [
-            "installation_id",
-            "bot_id"
+            "thread_id",
+            "id"
           ]
         }
       },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.slack_shared_installations": {
-      "name": "slack_shared_installations",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "app_id": {
-          "name": "app_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "team_id": {
-          "name": "team_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "bot_user_id": {
-          "name": "bot_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "channel_ids": {
-          "name": "channel_ids",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true
+      "checkConstraints": {
+        "direct_chat_runs_status_check": {
+          "name": "direct_chat_runs_status_check",
+          "value": "\"direct_chat_runs\".\"status\" in ('running', 'completed', 'failed')"
         }
       },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "slack_shared_installations_id_unique": {
-          "name": "slack_shared_installations_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

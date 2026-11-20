@@ -1,5 +1,9 @@
 import { and, desc, eq, isNull, notExists, sql } from "drizzle-orm";
-import { createAuditStore, recordAuditEvent } from "../audit";
+import {
+  createAuditStore,
+  recordAuditEvent,
+  withAuditTransaction,
+} from "../audit";
 import type { Database } from "../db/client";
 import {
   approvalConversationGrants,
@@ -163,7 +167,7 @@ export function createApprovalStore(database: Database): ApprovalStore {
       });
     },
     async decide(owner, id, decision) {
-      return database.transaction(async (tx) => {
+      return withAuditTransaction(database, async (tx, deferTap) => {
         const [request] = await tx
           .select()
           .from(approvalRequests)
@@ -227,34 +231,53 @@ export function createApprovalStore(database: Database): ApprovalStore {
           .where(owned(owner, id))
           .returning();
         if (!updated) throw new ApprovalNotFoundError();
-        const trail = createAuditStore(tx as unknown as Database);
-        await recordAuditEvent(trail, {
-          eventType: "approval.person_decided",
-          targetType: "approval",
-          targetId: id,
-          actorUserId: owner,
-          payload: {
-            decidedBy: "person",
-            decision,
-            bot: request.action.botId,
-            tool: request.action.toolRef,
-            scope: request.action.scope,
-            ...targetSubject(request.action.target),
+        const workItemKey =
+          request.action.dispatch === "explicit" ? undefined : id;
+        const continuation = request.action.continuation;
+        const approvalRun = {
+          runId: request.runId,
+          threadId: request.action.threadId,
+          forwardedProps:
+            continuation?.runId === request.runId &&
+            continuation.threadId === request.action.threadId &&
+            continuation.toolCallId === request.toolCallId
+              ? continuation.forwardedProps
+              : undefined,
+        };
+        const trail = createAuditStore(tx, deferTap);
+        await recordAuditEvent(
+          trail,
+          {
+            eventType: "approval.person_decided",
+            targetType: "approval",
+            targetId: id,
+            actorUserId: owner,
+            payload: {
+              decidedBy: "person",
+              decision,
+              bot: request.action.botId,
+              tool: request.action.toolRef,
+              scope: request.action.scope,
+              ...targetSubject(request.action.target),
+            },
           },
-        });
+          { run: approvalRun, workItemKey },
+        );
         /*
          * The action's own row for a denial, beside the decision and in the same transaction, so it
          * is written once. Without it the trail held only the decision: the action itself read as
          * nothing, or, from the code that asked, as allowed, and the Blocked view never showed it.
          */
         if (decision === "deny" && request.action.declined)
-          await recordAuditEvent(trail, request.action.declined);
-        if (request.action.dispatch !== "explicit") {
+          await recordAuditEvent(trail, request.action.declined, {
+            run: approvalRun,
+          });
+        if (workItemKey) {
           await tx
             .insert(workItems)
             .values({
               kind: "approval.resume",
-              key: id,
+              key: workItemKey,
               payload: { ownerUserId: owner, approvalId: id },
             })
             .onConflictDoNothing();
@@ -538,7 +561,7 @@ function createPolicyStore(database: Database): ApprovalPolicyStore {
      * not at all, and the row says who saved them, the team rules either side, and the sentence.
      */
     async createTeamRules(by, inputs, authoring) {
-      return database.transaction(async (tx) => {
+      return withAuditTransaction(database, async (tx, deferTap) => {
         const executor = tx as unknown as Database;
         const before = await teamRuleRows(executor);
         const rows = inputs.length
@@ -553,7 +576,7 @@ function createPolicyStore(database: Database): ApprovalPolicyStore {
               )
               .returning()
           : [];
-        await recordAuditEvent(createAuditStore(executor), {
+        await recordAuditEvent(createAuditStore(tx, deferTap), {
           eventType: "approval.rule_changed",
           targetType: "approval_rule",
           targetId: TEAM,
@@ -594,7 +617,7 @@ function createPolicyStore(database: Database): ApprovalPolicyStore {
      */
     async setReviewerGuidance(by, change) {
       const after = change.text?.trim() || null;
-      return database.transaction(async (tx) => {
+      return withAuditTransaction(database, async (tx, deferTap) => {
         const [current] = await tx
           .select({ guidance: approvalTeamSettings.reviewerGuidance })
           .from(approvalTeamSettings)
@@ -612,7 +635,7 @@ function createPolicyStore(database: Database): ApprovalPolicyStore {
               updatedAt: sql`now()`,
             },
           });
-        await recordAuditEvent(createAuditStore(tx as unknown as Database), {
+        await recordAuditEvent(createAuditStore(tx, deferTap), {
           eventType: "approval.guidance_changed",
           targetType: "approval_settings",
           targetId: TEAM,
@@ -840,23 +863,27 @@ function createPolicyStore(database: Database): ApprovalPolicyStore {
       });
     },
     async recordDecision(input) {
-      await recordAuditEvent(audit, {
-        eventType: "approval.evaluated",
-        targetType: "approval",
-        targetId: input.toolRef,
-        actorUserId: input.ownerUserId,
-        ...(input.initiator ? { initiator: input.initiator } : {}),
-        payload: {
-          decidedBy: "policy",
-          bot: input.botId,
-          tool: input.toolRef,
-          effect: input.effect,
-          scope: input.scope,
-          ...targetSubject(input.target),
-          outcome: input.outcome,
-          ...(input.call ? { call: input.call } : {}),
+      await recordAuditEvent(
+        audit,
+        {
+          eventType: "approval.evaluated",
+          targetType: "approval",
+          targetId: input.toolRef,
+          actorUserId: input.ownerUserId,
+          ...(input.initiator ? { initiator: input.initiator } : {}),
+          payload: {
+            decidedBy: "policy",
+            bot: input.botId,
+            tool: input.toolRef,
+            effect: input.effect,
+            scope: input.scope,
+            ...targetSubject(input.target),
+            outcome: input.outcome,
+            ...(input.call ? { call: input.call } : {}),
+          },
         },
-      });
+        { run: input.continuation },
+      );
     },
   };
 }

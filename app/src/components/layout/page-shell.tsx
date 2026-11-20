@@ -27,6 +27,7 @@ export function PageShell({
   children,
   className,
   description,
+  eyebrow,
   title,
   width = "prose",
   backButton,
@@ -36,6 +37,7 @@ export function PageShell({
   children: React.ReactNode;
   className?: string;
   description?: React.ReactNode;
+  eyebrow?: React.ReactNode;
   title: string;
   width?: ShellWidth;
   backButton?: {
@@ -62,7 +64,12 @@ export function PageShell({
   const bar = showToggle || !!backButton;
 
   const header = (
-    <PageHeader title={title} action={action} description={description} />
+    <PageHeader
+      eyebrow={eyebrow}
+      title={title}
+      action={action}
+      description={description}
+    />
   );
 
   const barRow = bar ? (

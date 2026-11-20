@@ -189,6 +189,7 @@ import { slackCodeRedeemer } from "./identity/slack-redeem";
 import { createIdentityStore } from "./identity/store";
 import {
   createIntelligenceClient,
+  disabledIntelligenceSettings,
   observeIntelligenceAuthentication,
 } from "./intelligence-client";
 import { reportIntelligenceEntitlement } from "./intelligence-entitlement-check";
@@ -365,6 +366,7 @@ import {
   deliveryLineage,
   productHeadlessBoundary,
 } from "./telemetry/product-boundaries";
+import { writeRuntimeLog } from "./telemetry/runtime-log";
 import {
   createPackageStatusReader,
   deploymentNameOf,
@@ -380,6 +382,8 @@ import { repeatAfterEach } from "./work/loop";
 import { createWorkQueue, type WorkOfferedListener } from "./work/queue";
 
 const config = loadConfig();
+const legacyIntelligence =
+  config.runtime.intelligence ?? disabledIntelligenceSettings;
 // Before anything resolves a capability or reads an enterprise setting. See edition.ts.
 setEdition(config.edition);
 // One person on their own machine is shown every model their credential lists; nothing narrows it.
@@ -421,7 +425,7 @@ const learningProbeIntelligence = createIntelligenceClient(
  * is what a laptop running `bun run start` has: those two only over HTTPS, or HTTP on loopback.
  * None of them, and the log and Admin say exactly what to run instead.
  */
-const learningApiUrl = config.runtime.intelligence.apiUrl.replace(/\/+$/, "");
+const learningApiUrl = legacyIntelligence.apiUrl.replace(/\/+$/, "");
 const learningApiOrigin = (() => {
   try {
     return intelligenceApiOrigin(learningApiUrl);
@@ -436,10 +440,13 @@ const learningCredentials = (): LearningContainerCredentials => ({
   nonInteractive: true,
   key: keyIntelligence(
     learningApiUrl,
-    config.runtime.intelligence.apiKey,
-    config.runtime.intelligence.gatewayWsUrl,
+    legacyIntelligence.apiKey,
+    legacyIntelligence.gatewayWsUrl,
   ),
-  cliLogin: learningApiOrigin !== undefined && cliLoginPresent(),
+  cliLogin:
+    config.runtime.mode === "intelligence" &&
+    learningApiOrigin !== undefined &&
+    cliLoginPresent(),
   ...(config.learningSetup && learningApiOrigin
     ? {
         serviceToken: {
@@ -450,7 +457,7 @@ const learningCredentials = (): LearningContainerCredentials => ({
     : {}),
 });
 const learningAutoAssign = createLearningAutoAssign({
-  enabled: config.learningAutoAssign,
+  enabled: config.runtime.mode === "intelligence" && config.learningAutoAssign,
   configured: configuredLearning,
   store: learningSettingsStore,
   probe: (containerId) =>
@@ -580,7 +587,7 @@ const peopleStore = createPeopleStore(
         retireIdentityLinks(
           database,
           credentialStore,
-          (executor) => createAuditStore(executor),
+          createAuditStore,
           userId,
           by,
         ),
@@ -660,7 +667,7 @@ const personBrowserPolicy = personBrowserEgressPolicy({
   native: config.browser !== undefined,
   allowPrivateHosts: config.computer?.allowPrivateHosts ?? false,
   openbotUrls: [config.publicUrl, config.appUrl],
-  gatewayUrl: config.runtime.intelligence.gatewayWsUrl,
+  gatewayUrl: legacyIntelligence.gatewayWsUrl,
 });
 // Each computer is pushed its network policy on the way to the action that woke it, because a
 // computer refuses every connection until one arrives (see `withPolicyPushOnWake`). A person's own
@@ -921,13 +928,15 @@ const readWhatIfQuestions = createModelCompleter({
  * connection, but its `threads` map is per instance, and a runner per turn would fragment the
  * already-running check that keeps two turns off one thread. See `toolkit/run-turn.ts`.
  */
-const routineIntelligence = observeIntelligenceAuthentication(
-  new CopilotKitIntelligence({
-    apiUrl: config.runtime.intelligence.apiUrl,
-    wsUrl: config.runtime.intelligence.gatewayWsUrl,
-    apiKey: config.runtime.intelligence.apiKey,
-  }),
-);
+const routineIntelligence = config.runtime.intelligence
+  ? observeIntelligenceAuthentication(
+      new CopilotKitIntelligence({
+        apiUrl: legacyIntelligence.apiUrl,
+        wsUrl: legacyIntelligence.gatewayWsUrl,
+        apiKey: legacyIntelligence.apiKey,
+      }),
+    )
+  : createIntelligenceClient();
 const approvalComputerTools = async (
   ownerUserId: string,
   agentId: string,
@@ -1618,20 +1627,10 @@ console.info(
  * time out, it will close a stream halfway through, and none of that is exceptional.
  *
  * Logged loudly rather than swallowed. A process that hides unhandled rejections is worse than one
- * that dies, so this prints the full reason and keeps serving; what it must never do is stay quiet.
+ * that dies, so this records the failure and keeps serving; what it must never do is stay quiet.
  */
-process.on("unhandledRejection", (reason) => {
-  console.error(
-    JSON.stringify({
-      type: "unhandled-rejection",
-      message: reason instanceof Error ? reason.message : String(reason),
-      code:
-        reason && typeof reason === "object" && "code" in reason
-          ? String((reason as { code: unknown }).code)
-          : undefined,
-      note: "The server kept running. A remote agent's connection failing must not stop everyone else.",
-    }),
-  );
+process.on("unhandledRejection", () => {
+  writeRuntimeLog("api_unhandled_rejection");
 });
 
 /**
@@ -1773,7 +1772,7 @@ const recorderExtension = createRecorderExtension({
     ? { sessionLifetimeMs: await sessionLifetimeMs(betterAuth) }
     : {}),
   // A connection is made or ended exactly when its row is written: both in one transaction.
-  auditFor: (executor) => createAuditStore(executor),
+  auditFor: createAuditStore,
 });
 /*
  * Connections whose lifetime has run out already resolve to nobody; this ends them for good, with the sealed
@@ -2364,6 +2363,8 @@ const actorAgentResolver = createActorAgentResolver({
         runId: input.runId,
         // The subagent carries on the asking run's task, on the asking run's surface.
         ...productTelemetry.lineageOf(actorId, input.forwardedProps),
+        auditRootTaskId:
+          productTelemetry.auditLineageOf(actorId, input)?.rootTaskId ?? null,
         initiator: initiator ?? PERSON_INITIATOR,
         ...(depth ? { depth } : {}),
       }),
@@ -2391,6 +2392,7 @@ const copilotRuntime = mountCopilotRuntime(
   identifyUser,
   identifyActor,
   {
+    directChat: { database, profiles: agentProfileStore },
     productTelemetry,
     decisionWaits: createDecisionWaits(database),
     onRunBusy: (input) => {
@@ -3148,12 +3150,13 @@ await installEnterpriseControls({
   database,
   databaseUrl: config.databaseUrl,
   auditStore: bootAuditStore,
+  auditRunProofKey: config.keyEncryptionKey,
   personBrowserPolicy,
   // While a person records in a Bot's browser, the Recorder there reaches OpenBot and the gateway; the Bot does not.
   duringRecording: botBrowserNetwork({
     connections: recorderExtension.connections,
     openbotUrls: [config.publicUrl, config.appUrl],
-    gatewayUrl: config.runtime.intelligence.gatewayWsUrl,
+    gatewayUrl: legacyIntelligence.gatewayWsUrl,
   }),
   ...(computerProvider ? { provider: computerProvider } : {}),
   ...(config.computer?.token ? { computerToken: config.computer.token } : {}),
@@ -3191,9 +3194,10 @@ const selfHostBannerIntelligence = createIntelligenceClient(
 // self-hosted Intelligence without a licence refuses memory quietly; this is the line that says why.
 // On a first install, an Intelligence installed beside this server is still running its migrations
 // when this first asks, so the check waits that out before it says anything (intelligence-startup.ts).
-void reportIntelligenceEntitlement({
-  entitlements: () => selfHostBannerIntelligence.getRuntimeEntitlements(),
-});
+if (config.runtime.mode === "intelligence")
+  void reportIntelligenceEntitlement({
+    entitlements: () => selfHostBannerIntelligence.getRuntimeEntitlements(),
+  });
 
 const identityGithubCallback =
   config.githubApp && config.publicUrl
@@ -3334,9 +3338,10 @@ const app = createApp(
     autoAssign: learningAutoAssign,
     status: copilotRuntime.learning?.status,
     // Read directly: the runtime client refuses a snapshot without dashboard links.
-    inspect: copilotRuntime.learning
-      ? createInspectorLearningReader(config.runtime.intelligence)
-      : undefined,
+    inspect:
+      copilotRuntime.learning && config.runtime.intelligence
+        ? createInspectorLearningReader(config.runtime.intelligence)
+        : undefined,
     manage: learningProbeIntelligence.experimental.learning,
     modelUnavailable: learningModelUnavailable(process.env),
     skills: copilotRuntime.learning?.containerSkills,
@@ -3632,22 +3637,23 @@ const app = createApp(
   profileStore,
 );
 
-startHttpServer({
-  port,
-  config,
-  resolveRequestActor,
-  agentProfileStore,
-  computerGateway,
-  app,
-});
+try {
+  startHttpServer({
+    port,
+    config,
+    resolveRequestActor,
+    agentProfileStore,
+    computerGateway,
+    app,
+  });
+} catch {
+  writeRuntimeLog("api_listen_failed", { port });
+  process.exit(1);
+}
 
 if (config.singleUser) {
   // Loud, every boot. A server that is not checking who is asking should never be a quiet default.
-  console.warn(
-    "No identity provider is configured, so every request is treated as " +
-      `${DEV_ACTOR.email} (administrator). Configure GOOGLE_OAUTH_*, ` +
-      "MICROSOFT_OAUTH_* or OKTA_OAUTH_* before anybody else can reach this.",
-  );
+  writeRuntimeLog("single_user_mode_enabled");
 }
 
 // Each listener holds a connection of its own for the life of the process. Released on the way out,
@@ -3681,4 +3687,4 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-console.info(`OpenBot server listening on http://127.0.0.1:${port}`);
+writeRuntimeLog("api_listening", { port });

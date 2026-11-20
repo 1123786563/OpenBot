@@ -628,50 +628,57 @@
     {
       "idx": 89,
       "version": "7",
-      "when": 1795157336453,
-      "tag": "0089_corsair_github_pilot",
+      "when": 1795157993281,
+      "tag": "0089_direct_chat_runs",
       "breakpoints": true
     },
     {
       "idx": 90,
       "version": "7",
-      "when": 1795159221383,
-      "tag": "0090_github_pilot_defaults",
+      "when": 1795175780567,
+      "tag": "0090_corsair_github_pilot",
       "breakpoints": true
     },
     {
       "idx": 91,
       "version": "7",
-      "when": 1795160228166,
-      "tag": "0091_corsair_github_events",
+      "when": 1795175780568,
+      "tag": "0091_github_pilot_defaults",
       "breakpoints": true
     },
     {
       "idx": 92,
       "version": "7",
-      "when": 1795161386423,
-      "tag": "0092_corsair_slack_personal",
+      "when": 1795175780569,
+      "tag": "0092_corsair_github_events",
       "breakpoints": true
     },
     {
       "idx": 93,
       "version": "7",
-      "when": 1795166247870,
-      "tag": "0093_corsair_slack_shared",
+      "when": 1795175780570,
+      "tag": "0093_corsair_slack_personal",
       "breakpoints": true
     },
     {
       "idx": 94,
       "version": "7",
-      "when": 1795172289661,
-      "tag": "0094_corsair_shared_storage",
+      "when": 1795175780571,
+      "tag": "0094_corsair_slack_shared",
       "breakpoints": true
     },
     {
       "idx": 95,
       "version": "7",
-      "when": 1795175780566,
-      "tag": "0095_corsair_revocation",
+      "when": 1795175780572,
+      "tag": "0095_corsair_shared_storage",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1795175780573,
+      "tag": "0096_corsair_revocation",
       "breakpoints": true
     }
   ]

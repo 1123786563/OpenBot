@@ -9,13 +9,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 import { useState } from "react";
+import { ASK_FIRST_TITLE } from "@/components/approvals/ask-first-copy";
+import {
+  ConnectionDialogContent,
+  ConnectionPage,
+} from "@/components/connections/connection-surface";
 import {
   PageEmpty,
   PageRows,
   PageSection,
-  PageShell,
 } from "@/components/layout/page-shell";
-import { ASK_FIRST_TITLE } from "@/components/approvals/ask-first-copy";
 import { AccessRequestsSection } from "@/components/plugins/access-requests";
 import { AccountModeDialog } from "@/components/plugins/account-mode-dialog";
 import {
@@ -29,7 +32,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogBody,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -77,12 +79,12 @@ import {
   pluginsPageQueryOptions,
   pluginsProvider,
 } from "@/lib/plugins/queries";
-import { toolsListError } from "@/lib/plugins/tools-error";
 import {
   botSharedAppsQueryOptions,
   describeApproval,
 } from "@/lib/plugins/shared-use";
 import { toolInWords, toolName } from "@/lib/plugins/tool-words";
+import { toolsListError } from "@/lib/plugins/tools-error";
 
 /**
  * One vendor: what it needs from this deployment, and which Bots hold its tools.
@@ -593,7 +595,7 @@ export function PluginPage({
    * connected this". The personal screen had the identical gap; see its own note.
    */
   if (plugins.isPending || connections.isPending) {
-    return <PageShell title="Plugin">{null}</PageShell>;
+    return <ConnectionPage title="Plugin">{null}</ConnectionPage>;
   }
   /*
    * Gated on the plugin list having ARRIVED, the guard the per-Bot grant screen already keeps
@@ -605,7 +607,7 @@ export function PluginPage({
    */
   if (!plugins.data) {
     return (
-      <PageShell
+      <ConnectionPage
         backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
         title={paths.pluginsLabel}
       >
@@ -614,12 +616,12 @@ export function PluginPage({
             ? "Couldn't load your apps. Reload the page."
             : "Couldn't load plugins. Reload the page."}
         </p>
-      </PageShell>
+      </ConnectionPage>
     );
   }
   if (!(entry || server)) {
     return (
-      <PageShell
+      <ConnectionPage
         backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
         description={
           personal
@@ -634,7 +636,7 @@ export function PluginPage({
         >
           Nothing to configure.
         </PageEmpty>
-      </PageShell>
+      </ConnectionPage>
     );
   }
 
@@ -650,7 +652,7 @@ export function PluginPage({
     .map((bot) => bot.name);
 
   return (
-    <PageShell
+    <ConnectionPage
       backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
       description={entry?.summary ?? server?.summary}
       title={title}
@@ -1497,7 +1499,7 @@ export function PluginPage({
         onOpenChange={(open) => setDialog(open ? dialog : null)}
         open={dialog !== null && dialog !== "grant"}
       >
-        <DialogContent>
+        <ConnectionDialogContent>
           <DialogHeader>
             <DialogTitle>
               {dialog === "client"
@@ -1591,7 +1593,7 @@ export function PluginPage({
               Save
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </ConnectionDialogContent>
       </Dialog>
 
       {/*
@@ -1604,7 +1606,7 @@ export function PluginPage({
           onOpenChange={(open) => setDialog(open ? dialog : null)}
           open={dialog === "grant"}
         >
-          <DialogContent>
+          <ConnectionDialogContent>
             <DialogHeader>
               <DialogTitle>Grant tools</DialogTitle>
               <DialogDescription>
@@ -1787,9 +1789,9 @@ export function PluginPage({
                   : "Grant"}
               </Button>
             </DialogFooter>
-          </DialogContent>
+          </ConnectionDialogContent>
         </Dialog>
       ) : null}
-    </PageShell>
+    </ConnectionPage>
   );
 }

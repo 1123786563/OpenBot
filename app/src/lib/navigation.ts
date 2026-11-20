@@ -12,22 +12,7 @@ import { OpenBotLogo } from "@/components/edition/openbot-logo";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 
-/**
- * Where a person can go in OpenBot, in one list.
- *
- * OpenBot's own sidebar draws it, and so does every skin that replaces the sidebar, so a destination
- * added here reaches every frame at once. One left out of a frame's own copy would simply be
- * missing from that skin, with nothing failing to say so.
- *
- * `section` says where OpenBot's sidebar puts each entry: `primary` destinations sit in its footer,
- * `account` ones in the menu under the person's name. A skin may group them its own way.
- *
- * Bots, Routines, Capabilities and Connections are each somebody's own, which is why they sit beside
- * each other and not inside Admin. Routines are the work your Bots do on a schedule, every Bot's on
- * one page, where somebody who wants a Bot to do something every morning looks first. Capabilities
- * are your skills and what your Bots remember about you; Connections are the apps a Bot reaches as
- * you. Capabilities links to `/capabilities` rather than a tab, so it stays lit on both of its tabs.
- */
+/** Shared destinations for the Web sidebar and account menu. */
 export type NavigationItem =
   | {
       kind?: undefined;

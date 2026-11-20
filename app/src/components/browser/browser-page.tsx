@@ -6,8 +6,9 @@ import type {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useSearch } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
-import { PageEmpty, PageShell } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
+import { DeviceAction } from "@/components/astryx-pilot/device-action";
+import { DevicePage } from "@/components/astryx-pilot/device-page";
+import { PageEmpty } from "@/components/layout/page-shell";
 import { openBrowserMutationOptions } from "@/lib/browser/mutations";
 import { browserStateQueryOptions } from "@/lib/browser/queries";
 import { recorderKeys } from "@/lib/recorder/queries";
@@ -82,24 +83,34 @@ export function BrowserPage() {
   // screen, where tearing it down would open it all over again.
   if (state.data === undefined) {
     return (
-      <PageShell title={TITLE}>
-        <p className="mt-6 text-destructive text-sm" role="alert">
-          Couldn't load your browser. Reload the page.
-        </p>
+      <DevicePage title={TITLE}>
+        <div className="mt-6 flex flex-col items-start gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't load your browser. {state.error?.message}
+          </p>
+          <DeviceAction
+            disabled={state.isFetching}
+            onClick={() => void state.refetch()}
+            size="sm"
+            variant="outline"
+          >
+            Try again
+          </DeviceAction>
+        </div>
         <YourRecordings action={<LearnedLink />} />
-      </PageShell>
+      </DevicePage>
     );
   }
   if (!state.data.available) {
     // Why, where the server can say: its Bots share one computer, say, which is no place for a browser of the person's.
     return (
-      <PageShell title={TITLE}>
+      <DevicePage title={TITLE}>
         <PageEmpty>
           {state.data.note ??
             "OpenBot isn't set up to run a browser for you. Ask an admin."}
         </PageEmpty>
         <YourRecordings action={<LearnedLink />} />
-      </PageShell>
+      </DevicePage>
     );
   }
   return <OpenedBrowser state={state.data} />;
@@ -149,12 +160,16 @@ function OpenedBrowser({ state }: { state: BrowserApiState }) {
       );
     // The Recorder's link to the list opens no browser on arrival: the list, and Open browser to open one.
     return (
-      <PageShell title={TITLE} description={DESCRIPTION}>
+      <DevicePage title={TITLE} description={DESCRIPTION}>
         {recordingsOnly && !said ? (
           <div className="mt-6">
-            <Button onClick={() => open.mutate()} size="sm" variant="outline">
+            <DeviceAction
+              onClick={() => open.mutate()}
+              size="sm"
+              variant="outline"
+            >
               Open browser
-            </Button>
+            </DeviceAction>
           </div>
         ) : null}
         {said ? (
@@ -163,9 +178,13 @@ function OpenedBrowser({ state }: { state: BrowserApiState }) {
               {said}
             </p>
             {open.error ? (
-              <Button onClick={() => open.mutate()} size="sm" variant="outline">
+              <DeviceAction
+                onClick={() => open.mutate()}
+                size="sm"
+                variant="outline"
+              >
                 Try again
-              </Button>
+              </DeviceAction>
             ) : null}
           </div>
         ) : null}
@@ -173,7 +192,7 @@ function OpenedBrowser({ state }: { state: BrowserApiState }) {
           action={<LearnedLink />}
           waiting={recordingOnItsWay(state.recorder?.lastStopped)}
         />
-      </PageShell>
+      </DevicePage>
     );
   }
   // The person's own everyday browser has no screen here: it is a window on their desktop.
@@ -208,12 +227,12 @@ function OpenedBrowser({ state }: { state: BrowserApiState }) {
  */
 function NativeBrowser({ state }: { state: BrowserApiState }) {
   return (
-    <PageShell title={TITLE}>
+    <DevicePage title={TITLE}>
       <TeachSteps state={state} />
       <YourRecordings
         action={<LearnedLink />}
         waiting={recordingOnItsWay(state.recorder?.lastStopped)}
       />
-    </PageShell>
+    </DevicePage>
   );
 }

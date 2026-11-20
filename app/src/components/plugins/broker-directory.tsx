@@ -3,10 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, type LinkOptions, useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 import {
+  ConnectionAction,
+  ConnectionPage,
+} from "@/components/connections/connection-surface";
+import {
   PageEmpty,
   PageRows,
   PageSection,
-  PageShell,
 } from "@/components/layout/page-shell";
 import {
   type ConnectInNewTab,
@@ -27,6 +30,11 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useManagePaths } from "@/lib/manage-paths";
 import {
+  type DirectoryAppState,
+  directoryAppState,
+  directoryConnect,
+} from "@/lib/plugins/directory-state";
+import {
   consentBreadth,
   coverageWarning,
   keyNeededLine,
@@ -42,11 +50,6 @@ import {
   type PluginsProvider,
   providerVocabulary,
 } from "@/lib/plugins/provider-vocabulary";
-import {
-  type DirectoryAppState,
-  directoryAppState,
-  directoryConnect,
-} from "@/lib/plugins/directory-state";
 import {
   type ComposioApp,
   composioAppsQueryOptions,
@@ -253,7 +256,7 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
   const tabError = signingIn ? tab.error : null;
 
   return (
-    <PageShell
+    <ConnectionPage
       backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
       description={directoryDescriptions(paths.edition).page}
       title={directoryLabel}
@@ -372,14 +375,13 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
                          * harmless.
                          */}
                         {state.kind === "addable" ? (
-                          <Button
+                          <ConnectionAction
                             disabled={isAdding || (mine && tab.pending)}
                             onClick={() => add(entry)}
-                            size="sm"
                             variant="outline"
                           >
                             {isAdding ? "Adding…" : "Add"}
-                          </Button>
+                          </ConnectionAction>
                         ) : (
                           <DirectoryRowState
                             connectLink={
@@ -416,7 +418,7 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
           </>
         )}
       </PageSection>
-    </PageShell>
+    </ConnectionPage>
   );
 }
 
@@ -518,11 +520,10 @@ function DirectoryRowState({
           Connect
         </Button>
       ) : (
-        <Button
+        <ConnectionAction
           aria-label={opening || waiting ? undefined : `Connect ${name}`}
           disabled={opening}
           onClick={onConnect}
-          size="sm"
           variant="outline"
         >
           {waiting
@@ -530,7 +531,7 @@ function DirectoryRowState({
             : opening
               ? "Opening sign-in…"
               : "Connect"}
-        </Button>
+        </ConnectionAction>
       )}
     </>
   );

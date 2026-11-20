@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { and, eq, type SQL, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
-import { createAuditStore, recordAuditEvent } from "../../audit";
+import {
+  type AuditStore,
+  createAuditStore,
+  recordAuditEvent,
+  withAuditTransaction,
+} from "../../audit";
 import type { AppVariables } from "../../auth/guards";
 import type { Database } from "../../db/client";
 import { corsairAccounts as accounts } from "../../db/schema/corsair-storage";
@@ -110,6 +115,7 @@ export function createRevocation({
 
   async function save(
     tx: Transaction,
+    audit: AuditStore,
     actorId: string,
     row: Account,
     state: Progress,
@@ -133,7 +139,7 @@ export function createRevocation({
       })
       .where(eq(accounts.id, row.id));
     const result = revocationState(config);
-    await recordAuditEvent(createAuditStore(tx), {
+    await recordAuditEvent(audit, {
       eventType,
       actorUserId: actorId,
       targetType: row.kind === "slack-shared" ? "installation" : "connection",
@@ -149,12 +155,14 @@ export function createRevocation({
   }
 
   async function disconnect(scope: SQL | undefined, actorId: string) {
-    return database.transaction(async (tx) => {
+    return withAuditTransaction(database, async (tx, deferTap) => {
+      const audit = createAuditStore(tx, deferTap);
       const row = await find(scope, tx);
       const current = revocationState(row.config);
       if (current.status !== "connected") return current;
       return save(
         tx,
+        audit,
         actorId,
         row,
         {
@@ -180,7 +188,8 @@ export function createRevocation({
     actorId: string,
     confirmedScope?: (tx: Transaction) => Promise<Account[]>,
   ) {
-    return database.transaction(async (tx) => {
+    return withAuditTransaction(database, async (tx, deferTap) => {
+      const audit = createAuditStore(tx, deferTap);
       const affected = await confirmedScope?.(tx);
       const row = await find(scope, tx);
       const current = revocationState(row.config);
@@ -194,6 +203,7 @@ export function createRevocation({
         )
           await save(
             tx,
+            audit,
             actorId,
             related,
             {
@@ -214,6 +224,7 @@ export function createRevocation({
       }
       return save(
         tx,
+        audit,
         actorId,
         row,
         state,
@@ -232,7 +243,8 @@ export function createRevocation({
     actorId: string,
     input: z.infer<typeof manualEvidence>,
   ) {
-    return database.transaction(async (tx) => {
+    return withAuditTransaction(database, async (tx, deferTap) => {
+      const audit = createAuditStore(tx, deferTap);
       const row = await find(scope, tx);
       const current = revocationState(row.config);
       if (current.status === "connected")
@@ -242,6 +254,7 @@ export function createRevocation({
       state[input.capability] = "manual";
       return save(
         tx,
+        audit,
         actorId,
         row,
         state,

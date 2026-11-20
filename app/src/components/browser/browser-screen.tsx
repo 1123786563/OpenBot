@@ -2,13 +2,14 @@ import type { BrowserApiState } from "@openbot/shared/openbot-browser";
 import { IconSearch } from "@tabler/icons-react";
 import { useMutation } from "@tanstack/react-query";
 import { type ReactNode, type RefObject, useId, useRef, useState } from "react";
+import { DeviceAction } from "@/components/astryx-pilot/device-action";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   LiveScreen,
   type LiveScreenHandle,
 } from "@/components/computer/live-screen";
 import { OpenBotLogo } from "@/components/edition/openbot-logo";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
-import { Button } from "@/components/ui/button";
 import {
   InputGroup,
   InputGroupAddon,
@@ -260,6 +261,7 @@ export function BrowserDesk({
   });
   return (
     <div
+      {...astryxScope}
       ref={desk}
       className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-muted/40 p-3 sm:p-5"
     >
@@ -339,9 +341,9 @@ export function OpeningBrowser({
                   {problem}
                 </p>
                 {onRetry ? (
-                  <Button onClick={onRetry} size="sm" variant="outline">
+                  <DeviceAction onClick={onRetry} size="sm" variant="outline">
                     Try again
-                  </Button>
+                  </DeviceAction>
                 ) : null}
               </div>
             ) : (
@@ -421,14 +423,14 @@ function Screen({
       ) : !open ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center text-muted-foreground text-sm">
           <span>Your browser is closed.</span>
-          <Button disabled={reopening} onClick={reopen} size="sm">
+          <DeviceAction disabled={reopening} onClick={reopen} size="sm">
             {reopening ? "Opening…" : "Open it again"}
-          </Button>
+          </DeviceAction>
         </div>
       ) : problem ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/85 p-4 text-center text-muted-foreground text-sm">
           <span>{problem}</span>
-          <Button
+          <DeviceAction
             onClick={() => {
               setProblem(null);
               setRetryKey((value) => value + 1);
@@ -437,7 +439,7 @@ function Screen({
             variant="outline"
           >
             Try again
-          </Button>
+          </DeviceAction>
         </div>
       ) : blank ? (
         <StartPage onGo={onGo} />
