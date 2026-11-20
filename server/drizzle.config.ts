@@ -43,8 +43,7 @@ export default defineConfig({
     "./src/db/schema/shared-use.ts",
     "./src/db/schema/identity.ts",
     "./src/db/schema/recorder.ts",
-    "./src/db/schema/corsair.ts",
-    "./src/db/schema/corsair-slack.ts",
+    "./src/db/schema/corsair-storage.ts",
   ],
   out: "./drizzle",
   dbCredentials: {

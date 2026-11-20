@@ -7,6 +7,7 @@ export * from "./computer";
 export * from "./core";
 export * from "./corsair";
 export * from "./corsair-slack";
+export * from "./corsair-storage";
 export * from "./coworker";
 export * from "./defaults";
 export * from "./delivery";

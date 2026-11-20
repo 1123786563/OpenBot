@@ -20,12 +20,12 @@ import type { Database } from "../../db/client";
 import {
   githubPilotConnections,
   githubPilotDefaults,
-  githubPilotGrants,
   githubPilotRepositories,
   githubPilotStates,
 } from "../../db/schema/corsair";
-import { brokeredAccounts } from "../../db/schema/plugins";
+import { brokeredAccounts, pluginGrants } from "../../db/schema/plugins";
 import { type GithubPilotProvider, githubId } from "./github";
+import { corsairGrantRef } from "./grants";
 import type { VerifiedLegacyGithubDefault } from "./legacy-defaults";
 
 const tool = {
@@ -135,12 +135,12 @@ export function createGithubPilotRoutes({
       eq(githubPilotRepositories.registration, registration),
       eq(githubPilotRepositories.repositoryId, String(repositoryId)),
     );
+  const grantRef = corsairGrantRef(workspaceId, registration, tool.ref);
   const grantScope = (bot: string) =>
     and(
-      eq(githubPilotGrants.workspaceId, workspaceId),
-      eq(githubPilotGrants.registration, registration),
-      eq(githubPilotGrants.botId, bot),
-      eq(githubPilotGrants.toolRef, tool.ref),
+      eq(pluginGrants.kind, "corsair.github"),
+      eq(pluginGrants.agentId, bot),
+      eq(pluginGrants.ref, grantRef),
     );
   const publicIdentity = {
     id: githubPilotConnections.id,
@@ -187,8 +187,8 @@ export function createGithubPilotRoutes({
     if (!(await canUseBot(actor, input.botId)))
       throw new PilotRefusal("This Bot is unavailable.", 403);
     const [grant] = await database
-      .select({ bot: githubPilotGrants.botId })
-      .from(githubPilotGrants)
+      .select({ bot: pluginGrants.agentId })
+      .from(pluginGrants)
       .where(grantScope(input.botId));
     if (!grant)
       throw new PilotRefusal("This Bot needs a GitHub pilot grant.", 403);
@@ -330,6 +330,8 @@ export function createGithubPilotRoutes({
           })
           .onConflictDoUpdate({
             target: [
+              githubPilotConnections.storageKind,
+              githubPilotConnections.subjectScope,
               githubPilotConnections.workspaceId,
               githubPilotConnections.personId,
               githubPilotConnections.registration,
@@ -411,6 +413,7 @@ export function createGithubPilotRoutes({
       .values({ workspaceId, registration, personId, githubUserId })
       .onConflictDoUpdate({
         target: [
+          githubPilotDefaults.storageKind,
           githubPilotDefaults.workspaceId,
           githubPilotDefaults.personId,
           githubPilotDefaults.registration,
@@ -449,6 +452,7 @@ export function createGithubPilotRoutes({
       .values(row)
       .onConflictDoUpdate({
         target: [
+          githubPilotRepositories.entityType,
           githubPilotRepositories.workspaceId,
           githubPilotRepositories.registration,
           githubPilotRepositories.repositoryId,
@@ -523,10 +527,16 @@ export function createGithubPilotRoutes({
       .parse(await c.req.json());
     if (enabled)
       await database
-        .insert(githubPilotGrants)
-        .values({ workspaceId, registration, botId: bot, toolRef: tool.ref })
+        .insert(pluginGrants)
+        .values({
+          kind: "corsair.github",
+          ref: grantRef,
+          agentId: bot,
+          grantedBy: c.var.actor.id,
+          grantedAs: "admin",
+        })
         .onConflictDoNothing();
-    else await database.delete(githubPilotGrants).where(grantScope(bot));
+    else await database.delete(pluginGrants).where(grantScope(bot));
     await recordAuditEvent(audit, {
       eventType: "corsair.github.grant_changed",
       actorUserId: c.var.actor.id,
@@ -541,8 +551,8 @@ export function createGithubPilotRoutes({
     const bot = botId.parse(c.req.param("botId"));
     if (!(await canUseBot(c.var.actor, bot))) return c.json({ tools: [] });
     const [grant] = await database
-      .select({ bot: githubPilotGrants.botId })
-      .from(githubPilotGrants)
+      .select({ bot: pluginGrants.agentId })
+      .from(pluginGrants)
       .where(grantScope(bot));
     return c.json({ tools: grant ? [tool] : [] });
   });

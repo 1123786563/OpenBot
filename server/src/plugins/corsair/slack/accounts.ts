@@ -135,6 +135,7 @@ export function slackAccounts({
         .values({ ...owner(personId), connectionId })
         .onConflictDoUpdate({
           target: [
+            defaults.storageKind,
             defaults.workspaceId,
             defaults.registration,
             defaults.personId,
@@ -211,6 +212,7 @@ export function slackAccounts({
           })
           .onConflictDoUpdate({
             target: [
+              connections.storageKind,
               connections.workspaceId,
               connections.registration,
               connections.personId,

@@ -537,10 +537,13 @@ export function createSharedSlackPilot({
     const approvalId = id.parse(c.req.param("id"));
     const { action, status, decision } = await owned(actor, approvalId);
     const pinned = target.parse(action.target);
+    const { text } = z
+      .object({ text: invocation.shape.text })
+      .parse(action.args);
     const input = invocation.parse({
       botId: action.botId,
       channelId: pinned.channelId,
-      text: action.args.text,
+      text,
     });
     const log = (
       event: AuditEventInput["eventType"],

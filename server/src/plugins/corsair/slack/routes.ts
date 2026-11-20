@@ -15,8 +15,9 @@ import {
   recordAuditEvent,
 } from "../../../audit";
 import { type AppVariables, requireAdmin } from "../../../auth/guards";
-import { slackPilotGrants as grants } from "../../../db/schema/corsair-slack";
-import { slackAccounts, SlackPilotRefusal } from "./accounts";
+import { pluginGrants as grants } from "../../../db/schema/plugins";
+import { corsairGrantRef } from "../grants";
+import { SlackPilotRefusal, slackAccounts } from "./accounts";
 import { slackChannel } from "./provider";
 
 const tool = {
@@ -92,18 +93,18 @@ export function createSlackPilotRoutes({
       500,
     );
   });
+  const grantRef = corsairGrantRef(workspaceId, registration, tool.ref);
   const grantScope = (bot: string) =>
     and(
-      eq(grants.workspaceId, workspaceId),
-      eq(grants.registration, registration),
-      eq(grants.botId, bot),
-      eq(grants.toolRef, tool.ref),
+      eq(grants.kind, "corsair.slack"),
+      eq(grants.agentId, bot),
+      eq(grants.ref, grantRef),
     );
   const actorCanPost = async (actor: AppVariables["actor"], bot: string) =>
     (await canUseBot(actor, bot)) &&
     (
       await database
-        .select({ bot: grants.botId })
+        .select({ bot: grants.agentId })
         .from(grants)
         .where(grantScope(bot))
     ).length > 0;
@@ -165,7 +166,13 @@ export function createSlackPilotRoutes({
     if (enabled)
       await database
         .insert(grants)
-        .values({ workspaceId, registration, botId: bot, toolRef: tool.ref })
+        .values({
+          kind: "corsair.slack",
+          ref: grantRef,
+          agentId: bot,
+          grantedBy: c.var.actor.id,
+          grantedAs: "admin",
+        })
         .onConflictDoNothing();
     else await database.delete(grants).where(grantScope(bot));
     await trail(c.var.actor.id, "corsair.slack.grant_changed", "bot", bot, {

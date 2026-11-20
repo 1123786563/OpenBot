@@ -127,7 +127,7 @@ async function fixture() {
     encryptionKey: randomBytes(32).toString("base64"),
     clock: () => now,
   } satisfies Pilot;
-  const client = (pilot: Pilot = deps, actor = person) => {
+  const client = (pilot: Pilot = deps, actor: string = person) => {
     const appArgs: AppArgs = [
       loadConfig(
         testEnvironment({

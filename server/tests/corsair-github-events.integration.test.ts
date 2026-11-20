@@ -485,6 +485,7 @@ test("GitHub can recover a failed receipt write, and the audit links the redeliv
     expect(runs).toHaveLength(1);
     const { events } = await createAuditReader(database).list({
       targetId: receiptId,
+      limit: 20,
     });
     expect(events.map((event) => event.payload)).toContainEqual(
       expect.objectContaining({
@@ -553,7 +554,10 @@ test("observation and historical/ineligible events produce no Runs", async () =>
       [wrongInstallation, "unenrolled"],
       [denied, "denied"],
     ]) {
-      const { events } = await createAuditReader(database).list({ targetId });
+      const { events } = await createAuditReader(database).list({
+        targetId,
+        limit: 20,
+      });
       expect(events.map((event) => event.payload.outcome)).toContain(outcome);
     }
   } finally {
