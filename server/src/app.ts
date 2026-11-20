@@ -4,6 +4,7 @@ import type { Hono as HonoApp, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { serveStatic } from "hono/bun";
+import { createBifrostAdminRoutes } from "./admin/bifrost-routes";
 import { createCapabilityChangeRoutes } from "./admin/capability-translate";
 import { enterpriseControls } from "./admin/controls";
 import { createEnterpriseGate } from "./admin/gate";
@@ -808,6 +809,16 @@ export function createApp(
   );
   app.route("/api/admin/enterprise", createEnterpriseAdminRoutes(requireUser));
   app.route("/api/admin/proactive", createProactiveAdminRoutes(requireUser));
+  if (attachmentDatabase) {
+    app.route(
+      "/api/admin/bifrost",
+      createBifrostAdminRoutes(
+        requireUser,
+        attachmentDatabase,
+        process.env.OPENBOT_BIFROST_EVIDENCE_DIRECTORY,
+      ),
+    );
+  }
   app.on(["PUT", "PATCH", "DELETE"], "/api/auth/scim/*", (context) =>
     auth
       ? auth.handler(context.req.raw)
