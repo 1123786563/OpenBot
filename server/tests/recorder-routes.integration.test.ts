@@ -942,6 +942,16 @@ async function waitForRecorder(
   throw new Error(`Timed out waiting for ${description}`);
 }
 
+// Playwright evaluates this browser-provided API inside the Chromium page.
+declare const chrome: {
+  runtime: {
+    sendMessage(
+      extensionId: string,
+      message: Record<string, unknown>,
+    ): Promise<unknown>;
+  };
+};
+
 const recorderDist = process.env.OPENBOT_TEST_RECORDER_DIST;
 test.skipIf(!recorderDist)(
   "Chromium Recorder masks a password, submits without Intelligence, and cannot replay after deletion",
@@ -1032,10 +1042,16 @@ test.skipIf(!recorderDist)(
         await page.getByLabel("Password").pressSequentially(password);
         await page.getByLabel("Note").fill("ordinary fixture note");
         await page.getByRole("button", { name: "Save task" }).click();
-        await waitForRecorder(
-          "captured actions",
-          async () => (await message({ type: "openbot.state" })).actions > 0,
-        );
+        await waitForRecorder("captured actions", async () => {
+          const state = await message({ type: "openbot.state" });
+          return (
+            typeof state === "object" &&
+            state !== null &&
+            "actions" in state &&
+            typeof state.actions === "number" &&
+            state.actions > 0
+          );
+        });
         expect(await message({ type: "openbot.stop" })).toMatchObject({
           ok: true,
         });
