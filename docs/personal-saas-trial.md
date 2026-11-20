@@ -25,7 +25,7 @@ Apply the server migrations first. From the repository root:
 bun run --filter server start:personal-saas
 ```
 
-The landing page sends participants to Casdoor for registration, verification, sign-in and account recovery. OpenBot uses the issuer and stable subject to retain ownership after a verified email change. Returning participants see their existing workspace. An interrupted setup can be retried from the preparation page. First entry creates the workspace and its default Personal Assistant Bot in one transaction. The workspace owns the Bot through `personal_workspace_default_bots`, and `/api/workspace` returns the canonical Bot ID. Bot execution, Connections, and Computers remain disabled in this trial entry point.
+The landing page sends participants to Casdoor for registration, verification, sign-in and account recovery. OpenBot uses the issuer and stable subject to retain ownership after a verified email change. Returning participants see their existing workspace. An interrupted setup can be retried from the preparation page. First entry creates the workspace and its default Personal Assistant Bot in one transaction. The workspace owns the Bot through `personal_workspace_default_bots`, and `/api/workspace` returns the canonical Bot ID. Bot execution is opt-in for private acceptance. Connections and Computers remain disabled in this trial entry point.
 
 Use the existing deployment commands for enterprise or local Personal edition.
 
@@ -119,3 +119,11 @@ user-owned Memory, Routine, and Connection rows. Existing local or enterprise
 accounts have separate storage ownership. The trial does not currently expose
 creation flows for those resources. Export artifacts are generated from the
 workspace data on demand, with no separate copies to remove during closure.
+
+## Bot execution and stopped work
+
+The private trial can run the default Personal Assistant through the OpenBot headless runtime. To enable it on a restricted acceptance service, set `OPENBOT_PERSONAL_SAAS_BOT_EXECUTION=on` and configure `INTELLIGENCE_API_URL`, `INTELLIGENCE_GATEWAY_WS_URL`, `CPK_INTELLIGENCE_API_KEY`, `BOT_MODEL`, and `OPENAI_API_KEY`. This runtime uses the deployment's model credential. It has no connected app or Computer tools and does not implement Test Credits admission.
+
+An authorized client can create a run with `POST /api/workspace/bot-runs` using the workspace ID, Bot ID, and instruction. The response contains a run ID for `GET /api/workspace/bot-runs/{key}`. The same service process polls the durable queue. Work is bound to the account authorization epoch that admitted it, independent of the lifetime of any Application Session. The worker checks that epoch again before dispatch and while running, and enforces expiry locally. A run submitted with `requiresComputer: true` also requires a managed Computer that accepts the task’s original authorization time. If the Computer is unavailable or has since restarted, start it manually and retry to create a new authorization.
+
+After restoring workspace access, Web, mobile, and Desktop Cloud show stopped work with its reason, original input and available output. Cancel or requeue each item independently. A claimed item may have reached an external service, so retry requires acknowledging that the external actions were checked. Requeue and retry produce new queue and run IDs and preserve the stopped record. Keep this capability restricted until cutoff timing on the deployed Intelligence and model services and the recovery flow on installed clients have been verified.

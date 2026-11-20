@@ -10957,6 +10957,7 @@ fn main() {
         .manage(personal_cloud::Cloud::configured())
         .invoke_handler(tauri::generate_handler![
             personal_cloud::personal_cloud_action,
+            personal_cloud::personal_cloud_recover,
             personal_cloud::personal_cloud_show_local,
             back_end_wait_ended,
             start_early_downloads,

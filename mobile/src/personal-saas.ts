@@ -174,3 +174,28 @@ export async function signOutPersonalSaas() {
   }
   await clearSession();
 }
+
+export async function recoverPersonalWork(
+  key: string,
+  action: "cancel" | "retry",
+  acknowledged = false,
+) {
+  const token = await SecureStore.getItemAsync(sessionKey, keyOptions);
+  if (!token)
+    throw new PersonalSaasActionError("Sign in to manage stopped work.");
+  const reply = await request(
+    `/api/workspace/recovery/${encodeURIComponent(key)}`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ action, acknowledged }),
+    },
+  );
+  if (!reply.ok)
+    throw new PersonalSaasActionError(
+      "Could not update stopped work. Try again.",
+    );
+}

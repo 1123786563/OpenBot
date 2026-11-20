@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createHash, randomBytes } from "node:crypto";
+import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { eq } from "drizzle-orm";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createAgentProfileStore } from "../src/agents/profile-store";
@@ -18,12 +19,16 @@ import {
   users,
   workItems,
 } from "../src/db/schema";
-import { personalSaasNativeCodes } from "../src/db/schema/personal-saas";
+import {
+  personalSaasAccounts,
+  personalSaasNativeCodes,
+} from "../src/db/schema/personal-saas";
 import {
   type AccountDisablement,
   createAccountAccess,
 } from "../src/personal-saas/account-access";
 import { createPersonalSaasApp } from "../src/personal-saas/app";
+import { PERSONAL_BOT_WORK } from "../src/personal-saas/bot-work";
 import { workspaceIntegrationGrants } from "../src/personal-saas/integration-grants";
 import { personalSaasStore } from "../src/personal-saas/store";
 import { workspaceBots } from "../src/personal-saas/workspace-bots";
@@ -189,13 +194,18 @@ beforeAll(() => {
   app = newApp();
 });
 
-function newApp(db = database, computer?: WorkspaceComputerConfig) {
+function newApp(
+  db = database,
+  dependency?: WorkspaceComputerConfig | TurnRunner,
+  computer?: WorkspaceComputerConfig,
+) {
   return createPersonalSaasApp(
     {
       origin,
       supportSubjects: [supportSubject, otherSupportSubject],
       now,
-      computer,
+      computer: typeof dependency === "function" ? computer : dependency,
+      runPersonalBot: typeof dependency === "function" ? dependency : undefined,
       suspensionOperator: { id: "trial-operator", token: operatorToken },
       suspensionSupport: "support@example.com",
       encryptionKey: Buffer.alloc(32, 7).toString("base64"),
@@ -2606,4 +2616,361 @@ test("workspace suspension blocks export creation and download and invalidates e
   expect(
     (await send(downloadUrl, { headers: { cookie: newSession } })).status,
   ).toBe(404);
+});
+
+for (const reason of [
+  "workspace_paused",
+  "account_disabled",
+  "account_status_unconfirmed",
+] as const) {
+  test(`Bot worker stops and shows individually recoverable work after ${reason}`, async () => {
+    const account: Account = {
+      sub: crypto.randomUUID(),
+      email: "work-cutoff@example.com",
+      verified: true,
+      active: true,
+    };
+    const signedIn = cookie(
+      await authenticate(account),
+      "__Host-openbot-personal=",
+    );
+    const otherSession = cookie(
+      await authenticate(account),
+      "__Host-openbot-personal=",
+    );
+    await enter(signedIn);
+    const target = await workspace(signedIn);
+    const started = Promise.withResolvers<string>();
+    const calls: string[] = [];
+    const runApp = newApp(
+      database,
+      async ({ routineId, signal, onText, beforeDispatch }) => {
+        await beforeDispatch?.();
+        calls.push(routineId);
+        if (calls.length > 1) return { replyText: "New run completed" };
+        onText?.("Partial reply");
+        started.resolve(routineId);
+        if (!signal?.aborted) {
+          await new Promise<void>((resolve) =>
+            signal?.addEventListener("abort", () => resolve(), { once: true }),
+          );
+        }
+        signal?.throwIfAborted();
+        return { replyText: "" };
+      },
+    );
+    const request = (path: string, session: string, body?: object) =>
+      runApp.fetch(
+        new Request(new URL(path, origin), {
+          method: body ? "POST" : "GET",
+          headers: {
+            origin,
+            cookie: session,
+            "content-type": "application/json",
+          },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        }),
+      );
+    const queueRun = (instruction: string) =>
+      request("/api/workspace/bot-runs", signedIn, {
+        workspaceId: target.id,
+        botId: target.personalAssistant.id,
+        instruction,
+      });
+    const operate = (action: "pause" | "resume") =>
+      send(`/api/operator/workspaces/${target.id}/suspension`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${operatorToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ action, reason: "Test suspension" }),
+      });
+    const first = await queueRun("Already running");
+    expect(first.status).toBe(202);
+    const { runId } = await first.json();
+    const swept = runApp.sweepBotWork();
+    try {
+      expect(
+        await Promise.race([started.promise, swept.then(() => null)]),
+      ).toBe(runId);
+      expect((await queueRun("Still queued")).status).toBe(202);
+      expect((await signOut(signedIn)).status).toBe(303);
+      expect(
+        await Promise.race([swept, Bun.sleep(80).then(() => "still running")]),
+      ).toBe("still running");
+      const stored = await personalSaasStore(database).session(
+        otherSession.split("=")[1],
+      );
+      if (!stored) throw new Error("Expected a live session");
+      if (reason === "workspace_paused") {
+        expect((await operate("pause")).status).toBe(201);
+      } else if (reason === "account_disabled") {
+        account.disablements = [
+          { id: crypto.randomUUID(), effectiveAt: now() - 1 },
+        ];
+        // The current state is already active, but the brief disablement still invalidates work.
+        await app.refreshAccounts();
+      } else {
+        account.active = undefined;
+        clockTime = now() + 60_001;
+      }
+      expect(await swept).toBe(true);
+      expect(await runApp.sweepBotWork()).toBe(false);
+      const queue = createWorkQueue(database, now);
+      if (reason !== "account_disabled")
+        expect(
+          await queue.offer({
+            kind: PERSONAL_BOT_WORK,
+            key: crypto.randomUUID(),
+            accountId: stored.accountId,
+          }),
+        ).toBe("refused");
+      if (reason === "workspace_paused")
+        expect((await operate("resume")).status).toBe(201);
+      account.active = true;
+      const restored =
+        reason === "account_status_unconfirmed"
+          ? otherSession
+          : cookie(await authenticate(account), "__Host-openbot-personal=");
+      const state = await request("/api/workspace", restored);
+      expect(state.status).toBe(200);
+      const { recovery } = await state.json();
+      expect(recovery).toHaveLength(2);
+      const [active, queued] = recovery;
+      expect(active).toMatchObject({
+        key: runId,
+        reason,
+        output: "Partial reply",
+        outcomeUnknown: true,
+        endedAt: expect.any(Number),
+      });
+      expect(queued).toMatchObject({
+        reason,
+        outcomeUnknown: false,
+        instruction: "Still queued",
+      });
+      expect(await (await request("/workspace", restored)).text()).toContain(
+        "Check any external actions before retrying",
+      );
+      const resolve = (
+        key: string,
+        action: "cancel" | "retry",
+        acknowledged = false,
+      ) =>
+        request(`/api/workspace/recovery/${key}`, restored, {
+          action,
+          acknowledged,
+        });
+      expect((await resolve(runId, "retry")).status).toBe(409);
+      const concurrent = await Promise.all([
+        resolve(runId, "retry", true),
+        resolve(runId, "retry", true),
+      ]);
+      const retries = await Promise.all(
+        concurrent.map((response) => response.json()),
+      );
+      expect(retries[0]).toEqual(retries[1]);
+      expect(retries[0].key).not.toBe(runId);
+      expect(await (await resolve(queued.key, "cancel")).json()).toEqual({
+        action: "cancel",
+      });
+      expect(await runApp.sweepBotWork()).toBe(true);
+      expect(calls).toEqual([runId, retries[0].key]);
+      const newRun = await request(
+        `/api/workspace/bot-runs/${retries[0].key}`,
+        restored,
+      );
+      expect(await newRun.json()).toMatchObject({
+        state: "completed",
+        output: "New run completed",
+      });
+      const original = await request(
+        `/api/workspace/bot-runs/${runId}`,
+        restored,
+      );
+      expect(await original.json()).toMatchObject({
+        state: "stopped",
+        output: "Partial reply",
+      });
+    } finally {
+      clockTime = undefined;
+    }
+  }, 30_000);
+}
+
+test("a running Bot aborts on its local grant deadline while its database check is blocked", async () => {
+  const account = {
+    sub: crypto.randomUUID(),
+    email: "worker-offline@example.com",
+    verified: true,
+    active: true,
+  };
+  const session = cookie(
+    await authenticate(account),
+    "__Host-openbot-personal=",
+  );
+  await enter(session);
+  const target = await workspace(session);
+  const stored = await personalSaasStore(database).session(
+    session.split("=")[1],
+  );
+  if (!stored?.status?.confirmedAt)
+    throw new Error("Expected an account grant");
+  const cutoff = stored.status.confirmedAt + 60_000;
+
+  const running = Promise.withResolvers<void>();
+  const aborted = Promise.withResolvers<void>();
+  const runApp = newApp(database, async ({ signal }) => {
+    running.resolve();
+    await new Promise<void>((resolve) =>
+      signal?.addEventListener("abort", () => resolve(), { once: true }),
+    );
+    aborted.resolve();
+    signal?.throwIfAborted();
+    return { replyText: "" };
+  });
+  const queue = createWorkQueue(database, now);
+  clockTime = cutoff - 2_500;
+  const locked = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  let blocking: Promise<unknown> | undefined;
+  try {
+    const key = crypto.randomUUID();
+    expect(
+      await queue.offer({
+        kind: PERSONAL_BOT_WORK,
+        key,
+        accountId: stored.accountId,
+        payload: {
+          workspaceId: target.id,
+          botId: target.personalAssistant.id,
+          instruction: "Wait for the cutoff",
+        },
+      }),
+    ).toBe("queued");
+    const sweep = runApp.sweepBotWork();
+    await Promise.race([
+      running.promise,
+      sweep.then(() => {
+        throw new Error("Bot did not start");
+      }),
+    ]);
+    blocking = database.transaction(async (tx) => {
+      await tx
+        .select()
+        .from(personalSaasAccounts)
+        .where(eq(personalSaasAccounts.id, stored.accountId))
+        .for("update");
+      locked.resolve();
+      await release.promise;
+    });
+    await locked.promise;
+    expect(
+      await Promise.race([
+        aborted.promise.then(() => "aborted"),
+        Bun.sleep(4_000).then(() => "still running"),
+      ]),
+    ).toBe("aborted");
+    release.resolve();
+    await blocking;
+    expect(await sweep).toBe(true);
+    expect(
+      await queue.personalStatus(PERSONAL_BOT_WORK, stored.accountId, key),
+    ).toMatchObject({
+      state: "stopped",
+      interruption: { cutoffAt: cutoff, reason: "account_status_unconfirmed" },
+    });
+  } finally {
+    release.resolve();
+    await blocking;
+    clockTime = undefined;
+  }
+}, 15_000);
+
+test("the Bot worker rejects Computer work authorized before a restart and dispatches a fresh manual retry", async () => {
+  const session = cookie(
+    await authenticate({
+      sub: crypto.randomUUID(),
+      email: "computer-work@example.com",
+      verified: true,
+      active: true,
+    }),
+    "__Host-openbot-personal=",
+  );
+  await enter(session);
+  const target = await workspace(session);
+  const dispatched: string[] = [];
+  const taskTimes: number[] = [];
+  let startedWith = Number.POSITIVE_INFINITY;
+  const runApp = newApp(
+    database,
+    async ({ beforeDispatch, runId }) => {
+      await beforeDispatch?.();
+      if (!runId) throw new Error("Expected a persistent run ID");
+      dispatched.push(runId);
+      return { replyText: "Completed" };
+    },
+    {
+      supervisorUrl: "http://supervisor.example",
+      supervisorToken: "fixture-supervisor-token",
+      async fetch(input) {
+        const url = new URL(String(input));
+        expect(url.pathname).toBe(`/workspace-computers/${target.id}`);
+        expect(url.searchParams.has("epoch")).toBe(true);
+        const authorizedAt = Number(url.searchParams.get("authorizedAt"));
+        taskTimes.push(authorizedAt);
+        return Response.json(
+          authorizedAt >= startedWith
+            ? {
+                status: "running",
+                address: "http://computer:4100",
+                token: "fixture-computer",
+              }
+            : { status: "running" },
+        );
+      },
+    },
+  );
+  const request = (path: string, body?: object) =>
+    runApp.fetch(
+      new Request(new URL(path, origin), {
+        method: body ? "POST" : "GET",
+        headers: {
+          origin,
+          cookie: session,
+          "content-type": "application/json",
+        },
+        body: body && JSON.stringify(body),
+      }),
+    );
+
+  const queued = await request("/api/workspace/bot-runs", {
+    workspaceId: target.id,
+    botId: target.personalAssistant.id,
+    instruction: "Use the Computer",
+    requiresComputer: true,
+  });
+  expect(queued.status).toBe(202);
+  const { runId } = await queued.json();
+  startedWith = Date.now();
+  await Bun.sleep(15);
+  expect(await runApp.sweepBotWork()).toBe(true);
+  expect(dispatched).toEqual([]);
+  expect(taskTimes).toHaveLength(1);
+  expect(taskTimes[0]).toBeLessThan(startedWith);
+  const stopped = await request(`/api/workspace/bot-runs/${runId}`);
+  expect(await stopped.json()).toMatchObject({
+    state: "stopped",
+    interruption: { reason: "computer_unavailable", outcomeUnknown: false },
+  });
+  const retry = await request(`/api/workspace/recovery/${runId}`, {
+    action: "retry",
+  });
+  expect(retry.status).toBe(200);
+  const { key } = await retry.json();
+  expect(key).not.toBe(runId);
+  expect(await runApp.sweepBotWork()).toBe(true);
+  expect(dispatched).toEqual([key]);
+  expect(taskTimes[1]).toBeGreaterThanOrEqual(startedWith);
 });

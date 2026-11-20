@@ -21,6 +21,15 @@ export type CloudView =
       accessMs: number;
       id: string;
       personalAssistant: { id: string; name: string };
+      recoveryCanRetry?: boolean;
+      recovery?: {
+        key: string;
+        instruction: string;
+        reasonMessage: string;
+        outcomeUnknown: boolean;
+        output: string | null;
+        recovery: { action: "retry" | "cancel" } | null;
+      }[];
       conversations: { id: string; title: string; preview: string | null }[];
     };
 
@@ -201,6 +210,29 @@ export function PersonalCloud({
     }
   }
 
+  async function recover(
+    key: string,
+    action: "cancel" | "retry",
+    acknowledged: boolean,
+  ) {
+    if (busy || !foreground.current || !access.current || access.current() <= 0)
+      return;
+    const current = ++generation.current;
+    setBusy(true);
+    setFailure(null);
+    try {
+      await invoke("personal_cloud_recover", { key, action, acknowledged });
+      if (current !== generation.current) return;
+      const next = await read("status");
+      if (next) setView(next);
+    } catch {
+      if (current === generation.current)
+        withdraw("Could not update stopped work. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <main>
       <div className="sheet">
@@ -299,6 +331,76 @@ export function PersonalCloud({
             <>
               <h2>Personal Workspace</h2>
               <p>{view.personalAssistant.name}</p>
+              {Boolean(view.recovery?.length) && (
+                <section aria-labelledby="stopped-work">
+                  <h3 id="stopped-work">Stopped work</h3>
+                  <ul>
+                    {view.recovery?.map((item) => (
+                      <li key={item.key}>
+                        <p>{item.instruction}</p>
+                        <p>{item.reasonMessage}</p>
+                        {item.output && (
+                          <>
+                            <p>Output before interruption</p>
+                            <pre>{item.output}</pre>
+                          </>
+                        )}
+                        {item.outcomeUnknown && (
+                          <p>
+                            Check any external actions before retrying. Their
+                            outcome is unknown.
+                          </p>
+                        )}
+                        {item.recovery ? (
+                          <p>
+                            {item.recovery.action === "retry"
+                              ? "Queued as a new run"
+                              : "Cancelled"}
+                          </p>
+                        ) : (
+                          <form
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              const checked = new FormData(
+                                event.currentTarget,
+                              ).has("acknowledged");
+                              void recover(item.key, "retry", checked);
+                            }}
+                          >
+                            {view.recoveryCanRetry && (
+                              <>
+                                {item.outcomeUnknown && (
+                                  <label>
+                                    <input
+                                      name="acknowledged"
+                                      type="checkbox"
+                                      required
+                                    />{" "}
+                                    I checked the external actions.
+                                  </label>
+                                )}
+                                <button type="submit">
+                                  {item.outcomeUnknown
+                                    ? "Retry as a new run"
+                                    : "Requeue"}
+                                </button>
+                              </>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void recover(item.key, "cancel", false)
+                              }
+                            >
+                              Cancel item
+                            </button>
+                          </form>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
               <section aria-labelledby="recent-conversations">
                 <h3 id="recent-conversations">Recent conversations</h3>
                 {view.conversations.length === 0 ? (

@@ -1,9 +1,10 @@
 import { addNetworkStateListener } from "expo-network";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, Button, ScrollView, Text, View } from "react-native";
+import { Alert, AppState, Button, ScrollView, Text, View } from "react-native";
 import {
   openPersonalWorkspace,
   PersonalSaasActionError,
+  recoverPersonalWork,
   signInPersonalSaas,
   signOutPersonalSaas,
 } from "./personal-saas";
@@ -157,6 +158,19 @@ export function PersonalSaasHome() {
     }
   }
 
+  function resolve(
+    key: string,
+    action: "cancel" | "retry",
+    acknowledged = false,
+  ) {
+    if (!active.current || !access.current || access.current() <= 0) return;
+    const current = generation.current;
+    void act(async () => {
+      await recoverPersonalWork(key, action, acknowledged);
+      if (current === generation.current) await load(true);
+    });
+  }
+
   return (
     <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
       <Text
@@ -244,6 +258,67 @@ export function PersonalSaasHome() {
               </View>
             ))}
           </>
+        )}
+      {access.current &&
+        access.current() > 0 &&
+        screen.kind === "ready" &&
+        screen.workspace.recovery.length > 0 && (
+          <View style={{ gap: 12 }}>
+            <Text accessibilityRole="header">Stopped work</Text>
+            {screen.workspace.recovery.map((item) => (
+              <View key={item.key} style={{ gap: 6 }}>
+                <Text>{item.instruction}</Text>
+                <Text>{item.reasonMessage}</Text>
+                {item.output ? (
+                  <Text>Output before interruption: {item.output}</Text>
+                ) : null}
+                {item.outcomeUnknown && (
+                  <Text>
+                    Check any external actions before retrying. Their outcome is
+                    unknown.
+                  </Text>
+                )}
+                {item.recovery ? (
+                  <Text>
+                    {item.recovery.action === "retry"
+                      ? "Queued as a new run"
+                      : "Cancelled"}
+                  </Text>
+                ) : (
+                  <>
+                    {screen.workspace.recoveryCanRetry && (
+                      <Button
+                        title={
+                          item.outcomeUnknown ? "Retry as a new run" : "Requeue"
+                        }
+                        disabled={busy}
+                        onPress={() => {
+                          if (!item.outcomeUnknown)
+                            return resolve(item.key, "retry");
+                          Alert.alert(
+                            "Check external actions",
+                            "Confirm you checked the external actions before retrying.",
+                            [
+                              { text: "Back", style: "cancel" },
+                              {
+                                text: "I checked",
+                                onPress: () => resolve(item.key, "retry", true),
+                              },
+                            ],
+                          );
+                        }}
+                      />
+                    )}
+                    <Button
+                      title="Cancel item"
+                      disabled={busy}
+                      onPress={() => resolve(item.key, "cancel")}
+                    />
+                  </>
+                )}
+              </View>
+            ))}
+          </View>
         )}
       {(screen.kind === "ready" || screen.kind === "workspace-error") && (
         <Button

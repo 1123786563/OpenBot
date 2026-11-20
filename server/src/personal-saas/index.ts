@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createDatabase } from "../db/client";
+import { repeatAfterEach } from "../work/loop";
 import { createPersonalSaasApp } from "./app";
 
 const httpsUrl = z.url({ protocol: /^https$/ }).refine((value) => {
@@ -77,11 +78,19 @@ if (Boolean(supervisorUrl) !== Boolean(supervisorToken))
     "Configure the workspace Computer supervisor URL and token together",
   );
 
+const database = createDatabase(env.DATABASE_URL);
+const runPersonalBot =
+  process.env.OPENBOT_PERSONAL_SAAS_BOT_EXECUTION === "on"
+    ? await import("eventsource").then(async () =>
+        (await import("./bot-runtime")).createPersonalBotRuntime(database),
+      )
+    : undefined;
 const app = createPersonalSaasApp(
   {
     origin: new URL(env.OPENBOT_PERSONAL_SAAS_URL).origin,
     encryptionKey: env.KEY_ENCRYPTION_KEY,
     supportSubjects: env.OPENBOT_SUPPORT_SUBJECTS,
+    runPersonalBot,
     suspensionOperator:
       operatorId && operatorToken
         ? { id: operatorId, token: operatorToken }
@@ -99,7 +108,7 @@ const app = createPersonalSaasApp(
       clientSecret: env.CASDOOR_CLIENT_SECRET,
     },
   },
-  createDatabase(env.DATABASE_URL),
+  database,
 );
 
 const server = Bun.serve({
@@ -143,3 +152,12 @@ if (renewComputers) {
   }
   void maintainComputerLeases();
 }
+repeatAfterEach(async () => {
+  try {
+    await app.sweepBotWork();
+  } catch {
+    console.warn(
+      JSON.stringify({ type: "personal-saas-bot-work-sweep-failure" }),
+    );
+  }
+}, 1_000);

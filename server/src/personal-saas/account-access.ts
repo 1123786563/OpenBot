@@ -57,6 +57,54 @@ export function accountDecision(status: AccountStatus | null, now: number) {
   return { kind: "active", epoch: status.epoch, expiresAt } as const;
 }
 
+/** Read under the account lock shared with provider refresh and operator suspension. */
+export async function readExecutionAccess(
+  tx: Pick<Database, "select">,
+  accountId: string,
+  now: () => number,
+  epoch?: number,
+  skipLocked = false,
+) {
+  const [account] = await tx
+    .select({ status: personalSaasAccounts.status })
+    .from(personalSaasAccounts)
+    .where(eq(personalSaasAccounts.id, accountId))
+    .for("share", skipLocked ? { skipLocked: true } : {});
+  if (!account) return null;
+  const suspension = await latestSuspension(tx, accountId);
+  const invalidation = account.status?.executionCutoffs?.find(
+    (event) => epoch !== undefined && event.epoch > epoch,
+  );
+  if (invalidation) return { kind: "denied", ...invalidation } as const;
+  if (suspension?.action === "pause")
+    return {
+      kind: "denied",
+      reason: "workspace_paused",
+      cutoffAt: suspension.effectiveAt.getTime(),
+    } as const;
+  if (
+    suspension &&
+    (account.status?.observedAt ?? 0) <= suspension.effectiveAt.getTime()
+  )
+    return {
+      kind: "denied",
+      reason: "account_status_unconfirmed",
+      cutoffAt: suspension.effectiveAt.getTime(),
+    } as const;
+  const current = accountDecision(account.status, now());
+  if (
+    current.kind === "active" &&
+    epoch !== undefined &&
+    epoch !== current.epoch
+  )
+    return {
+      kind: "denied",
+      reason: "account_status_unconfirmed",
+      cutoffAt: now(),
+    } as const;
+  return current;
+}
+
 export function createAccountAccess(
   database: Database,
   readSnapshot: (subject: string) => Promise<AccountSnapshot>,
@@ -146,6 +194,20 @@ export function createAccountAccess(
             accountDecision(before, now()).kind === "denied" ||
             (before.confirmedAt !== null &&
               confirmedAt >= before.confirmedAt + cutoffMs)));
+      const epoch = (before?.epoch ?? 0) + Number(epochChanged);
+      const executionCutoffs = before?.executionCutoffs ?? [];
+      if (epochChanged) {
+        const newEvent = history.find(
+          (event) => !priorHistory.some((prior) => prior.id === event.id),
+        );
+        executionCutoffs.push({
+          epoch,
+          reason: newEvent ? "account_disabled" : "account_status_unconfirmed",
+          cutoffAt: newEvent
+            ? newEvent.effectiveAt + cutoffMs
+            : Math.min(now(), (before?.confirmedAt ?? now()) + cutoffMs),
+        });
+      }
       const status: AccountStatus = {
         source,
         observedAt: Math.max(before?.observedAt ?? 0, snapshot.observedAt),
@@ -153,7 +215,8 @@ export function createAccountAccess(
           source === "active"
             ? Math.max(before?.confirmedAt ?? 0, confirmedAt)
             : (before?.confirmedAt ?? null),
-        epoch: (before?.epoch ?? 0) + Number(epochChanged),
+        epoch,
+        executionCutoffs,
         disablements: history,
       };
       await tx
@@ -179,31 +242,11 @@ export function createAccountAccess(
   }
 
   async function decision(accountId: string) {
-    return database.transaction(async (tx) => {
-      const [account] = await tx
-        .select({ status: personalSaasAccounts.status })
-        .from(personalSaasAccounts)
-        .where(eq(personalSaasAccounts.id, accountId))
-        .for("share");
-      if (!account) return accountDecision(null, now());
-      const suspension = await latestSuspension(tx, accountId);
-      if (suspension?.action === "pause")
-        return {
-          kind: "denied",
-          reason: "workspace_paused",
-          cutoffAt: suspension.effectiveAt.getTime(),
-        } as const;
-      if (
-        suspension &&
-        (account.status?.observedAt ?? 0) <= suspension.effectiveAt.getTime()
-      )
-        return {
-          kind: "denied",
-          reason: "account_status_unconfirmed",
-          cutoffAt: suspension.effectiveAt.getTime(),
-        } as const;
-      return accountDecision(account.status, now());
-    });
+    return database.transaction(
+      async (tx) =>
+        (await readExecutionAccess(tx, accountId, now)) ??
+        accountDecision(null, now()),
+    );
   }
 
   return {

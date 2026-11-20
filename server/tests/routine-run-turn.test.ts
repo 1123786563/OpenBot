@@ -2,13 +2,13 @@ import { describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/client";
 import { AbstractAgent, EventType } from "@ag-ui/client";
 import {
-  HeadlessToolSuspension,
-  OPENBOT_WAITING_METADATA,
-} from "@openbot/toolkit/headless-tools";
-import {
   DECLINED_BY_PERSON,
   NOT_RUN_WHILE_WAITING,
 } from "@openbot/shared/approval-outcomes";
+import {
+  HeadlessToolSuspension,
+  OPENBOT_WAITING_METADATA,
+} from "@openbot/toolkit/headless-tools";
 import type { TurnAdmission } from "@openbot/toolkit/ports";
 import {
   createTurnRunner,
@@ -267,13 +267,14 @@ function harness(options: {
       : { lockTtlSeconds: options.lockTtlSeconds }),
   });
 
-  const run = () =>
+  const run = (beforeDispatch?: () => Promise<void>) =>
     runTurn({
       ownerUserId: OWNER,
       routineId: ROUTINE_ID,
       agentId: AGENT_ID,
       threadId: THREAD_ID,
       instruction: INSTRUCTION,
+      beforeDispatch,
       ...(options.continuation ? { continuation: options.continuation } : {}),
     });
 
@@ -995,6 +996,17 @@ describe("a turn's admission", () => {
     await expect(run()).rejects.toThrow("Use Bots is off for this person.");
     expect(order).toEqual([]);
     expect(builtFor).toEqual([]);
+  });
+
+  test("revocation during setup releases the lock before dispatching the Bot", async () => {
+    const { run, calls, order } = harness({});
+    await expect(
+      run(async () => {
+        throw new Error("Execution authorization changed");
+      }),
+    ).rejects.toThrow("Execution authorization changed");
+    expect(order).not.toContain("run");
+    expect(calls.cleaned).toHaveLength(1);
   });
 
   test("aborting the signal it handed back stops a running turn and gives the lock back", async () => {

@@ -114,7 +114,14 @@ export function suspensionRoutes(
         await tx
           .update(personalSaasAccounts)
           .set({
-            status: sql`jsonb_set(${personalSaasAccounts.status}, '{epoch}', to_jsonb((${personalSaasAccounts.status}->>'epoch')::int + 1))`,
+            status: sql`${personalSaasAccounts.status} || jsonb_build_object(
+              'epoch', (${personalSaasAccounts.status}->>'epoch')::int + 1,
+              'executionCutoffs', coalesce(${personalSaasAccounts.status}->'executionCutoffs', '[]'::jsonb)
+                || jsonb_build_array(jsonb_build_object(
+                  'epoch', (${personalSaasAccounts.status}->>'epoch')::int + 1,
+                  'reason', 'workspace_paused', 'cutoffAt', ${effectiveAt.getTime()}
+                ))
+            )`,
           })
           .where(eq(personalSaasAccounts.id, workspace.ownerId));
         await tx

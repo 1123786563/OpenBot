@@ -87,6 +87,8 @@ export type TurnRunner = (input: {
   instruction: string; // the user message of this turn
   initiator?: AuditInitiator;
   signal?: AbortSignal;
+  /** Revalidates host execution authority after setup, immediately before dispatch. */
+  beforeDispatch?: () => Promise<void>;
   continuation?: {
     snapshot: ApprovalContinuation;
     result: { content: string; error?: string };
@@ -1030,6 +1032,9 @@ export function createTurnRunner(options: {
     });
 
     try {
+      signal?.throwIfAborted();
+      if (hostTurn.beforeDispatch) await hostTurn.beforeDispatch();
+      signal?.throwIfAborted();
       const cancelled = new Promise<never>((_resolve, reject) => {
         cancelTurn = () => {
           void options
