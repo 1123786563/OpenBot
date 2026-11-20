@@ -515,6 +515,15 @@ export function personalBackgroundWorkers(
     owner,
     auditStore,
     caps: { maxDepth: 0, maxPerRun: 0 },
+    publishProgress: false,
+    privateShare: async ({ ownerUserId, botId, audience }) =>
+      (await privateGroupBot(database, ownerUserId, audience.id, botId))
+        ? { status: "allowed", reason: "Only the workspace owner can read it." }
+        : {
+            status: "denied",
+            message: "The group is no longer private to this workspace.",
+          },
+
     mayAddress: async () => false,
     roster: async (ownerUserId, channelId) => {
       const accountId = accountFor();

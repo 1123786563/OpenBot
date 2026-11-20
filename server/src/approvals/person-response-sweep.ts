@@ -1,9 +1,13 @@
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { RunAssertion } from "../agents/callback-token";
 import type { AgentActor } from "../agents/profile-types";
 import type { ChannelStore } from "../channels/routes";
+import type { Database } from "../db/client";
+import { workItems } from "../db/schema/work";
 import type { DeliveryScope } from "../delivery/types";
+import { runWithDecisionAccess } from "../personal-saas/decision-access";
 import type { ResponsibilityStore } from "../responsibilities/types";
 import type { WorkQueue } from "../work/queue";
 import { resumePersonQuestion } from "./question-resume";
@@ -24,6 +28,7 @@ import { ApprovalRefusedError } from "./types";
  */
 export function createPersonResponseTick(deps: {
   approvalQueue: WorkQueue;
+  database: Database;
   personResponseOwner: string;
   authoriseQuestion: (question: PersonQuestion) => Promise<unknown>;
   approvalContinuationRunner: TurnRunner;
@@ -76,15 +81,55 @@ export function createPersonResponseTick(deps: {
             "The saved question owner does not match.",
           );
         await authoriseQuestion(payload.question);
-        const outcome = await resumePersonQuestion({
-          ownerUserId: payload.ownerUserId,
-          question: payload.question,
-          response: payload.response,
-          messageId: `person-response:${item.key}`,
-          runTurn: approvalContinuationRunner,
-          responsibilities: responsibilityStore,
-          responsibilityTurn: responsibilityAnswerTurn,
-        });
+        const [original] = await deps.database
+          .select({
+            createdAt: workItems.createdAt,
+            accountEpoch: workItems.accountEpoch,
+          })
+          .from(workItems)
+          .where(
+            and(
+              eq(workItems.kind, "person.question"),
+              eq(workItems.key, item.key),
+            ),
+          );
+        const [response] = original
+          ? []
+          : await deps.database
+              .select({
+                createdAt: workItems.createdAt,
+                accountEpoch: workItems.accountEpoch,
+              })
+              .from(workItems)
+              .where(
+                and(eq(workItems.kind, item.kind), eq(workItems.key, item.key)),
+              );
+        const origin = original ?? response;
+        const outcome = await runWithDecisionAccess(
+          deps.database,
+          payload.ownerUserId,
+          {
+            runId: payload.question.runId,
+            createdAt: origin?.createdAt,
+            epoch:
+              item.authorization?.epoch ?? origin?.accountEpoch ?? undefined,
+          },
+          async (execution) => {
+            await execution.beforeDispatch?.();
+            const result = await resumePersonQuestion({
+              ownerUserId: payload.ownerUserId,
+              question: payload.question,
+              response: payload.response,
+              messageId: `person-response:${item.key}`,
+              runTurn: approvalContinuationRunner,
+              responsibilities: responsibilityStore,
+              responsibilityTurn: responsibilityAnswerTurn,
+              ...execution,
+            });
+            await execution.beforeDispatch?.();
+            return result;
+          },
+        );
         const source = await sourceForCoordinationRun({
           ...payload.question,
           botId: questionConversationBot(payload.question),

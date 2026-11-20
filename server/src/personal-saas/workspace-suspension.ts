@@ -12,6 +12,8 @@ import {
   personalWorkspaces,
 } from "../db/schema/personal-saas";
 
+import { reconcileDecisionHistory } from "./decision-access";
+
 export type SuspensionOperator = { id: string; token: string };
 
 const operation = z.strictObject({
@@ -136,6 +138,7 @@ export function suspensionRoutes(
             })
             .where(eq(personalSaasAccounts.id, workspace.ownerId));
         }
+        await reconcileDecisionHistory(tx, workspace.ownerId, now);
         await tx
           .delete(personalSaasSessions)
           .where(eq(personalSaasSessions.accountId, workspace.ownerId));

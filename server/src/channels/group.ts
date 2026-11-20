@@ -587,6 +587,7 @@ export function createGroupConversations(deps: {
   ) => Promise<{ id: string }>;
   /** How often a running reply's partial text is written for the transcript to show. */
   progressEveryMs?: number;
+  publishProgress?: boolean;
   /**
    * The owner's permission before a Bot's words reach other people in the group. A Bot run as this
    * person can draw on their private memory and conversations, and nothing can prove a reply did
@@ -877,8 +878,9 @@ export function createGroupConversations(deps: {
         ...(turn.depth ? { depth: turn.depth } : {}),
         onText: (text) => {
           latest = text;
-          if (!deps.privateShare) guard?.onText(text);
-          flush();
+          if (!deps.privateShare || deps.publishProgress === false)
+            guard?.onText(text);
+          if (deps.publishProgress !== false) flush();
         },
         ownerUserId: turn.ownerUserId,
         telemetry: {

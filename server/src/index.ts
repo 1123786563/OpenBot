@@ -2810,6 +2810,7 @@ const groupSweep = repeatAfterEach(async () => {
 const personResponseSweep = repeatAfterEach(
   createPersonResponseTick({
     approvalQueue,
+    database,
     personResponseOwner,
     authoriseQuestion,
     approvalContinuationRunner,

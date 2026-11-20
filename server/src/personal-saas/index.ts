@@ -79,7 +79,7 @@ if (Boolean(supervisorUrl) !== Boolean(supervisorToken))
   );
 
 const database = createDatabase(env.DATABASE_URL);
-const runPersonalBot =
+const botRuntime =
   process.env.OPENBOT_PERSONAL_SAAS_BOT_EXECUTION === "on"
     ? await import("eventsource").then(async () =>
         (await import("./bot-runtime")).createPersonalBotRuntime(database),
@@ -90,7 +90,7 @@ const app = createPersonalSaasApp(
     origin: new URL(env.OPENBOT_PERSONAL_SAAS_URL).origin,
     encryptionKey: env.KEY_ENCRYPTION_KEY,
     supportSubjects: env.OPENBOT_SUPPORT_SUBJECTS,
-    runPersonalBot,
+    botRuntime,
     inboundRelayToken: process.env.OPENBOT_PERSONAL_SAAS_INBOUND_RELAY_TOKEN,
     suspensionOperator:
       operatorId && operatorToken
@@ -162,6 +162,17 @@ repeatAfterEach(async () => {
     );
   }
 }, 1_000);
+
+if (botRuntime)
+  repeatAfterEach(async () => {
+    try {
+      await app.sweepBotDecisions();
+    } catch {
+      console.warn(
+        JSON.stringify({ type: "personal-saas-bot-decision-sweep-failure" }),
+      );
+    }
+  }, 1_000);
 
 for (const [task, sweep] of [
   ["schedule", app.offerAutomationSchedules],

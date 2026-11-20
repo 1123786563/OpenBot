@@ -1,10 +1,14 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createHash, randomBytes } from "node:crypto";
+import { EventType, HttpAgent, type RunAgentInput } from "@ag-ui/client";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createWakeUpStore } from "../src/agents/wake-up";
+import { Observable } from "rxjs";
 import { createAgentProfileStore } from "../src/agents/profile-store";
+import { createApprovalStore } from "../src/approvals/store";
+import { approvalAction } from "../src/approvals/types";
 import { botSeat, seatText } from "../src/computer/computer-key";
 import { createDatabase } from "../src/db/client";
 import {
@@ -15,8 +19,8 @@ import {
   channelMemberships,
   channels,
   computerSnapshot,
-  personalMemories,
   deliveryBindings,
+  personalMemories,
   routines,
   users,
   workItems,
@@ -30,6 +34,7 @@ import {
   createAccountAccess,
 } from "../src/personal-saas/account-access";
 import { createPersonalSaasApp } from "../src/personal-saas/app";
+import { createPersonalBotRuntime } from "../src/personal-saas/bot-runtime";
 import { PERSONAL_BOT_WORK } from "../src/personal-saas/bot-work";
 import { workspaceIntegrationGrants } from "../src/personal-saas/integration-grants";
 import { personalSaasStore } from "../src/personal-saas/store";
@@ -201,12 +206,14 @@ function newApp(
   db = database,
   dependency?: WorkspaceComputerConfig | TurnRunner,
   computer?: WorkspaceComputerConfig,
+  botRuntime?: ReturnType<typeof createPersonalBotRuntime>,
 ) {
   return createPersonalSaasApp(
     {
       origin,
       supportSubjects: [supportSubject, otherSupportSubject],
       now,
+      botRuntime,
       computer: typeof dependency === "function" ? computer : dependency,
       runPersonalBot: typeof dependency === "function" ? dependency : undefined,
       inboundRelayToken: "test-relay-token",
@@ -2578,6 +2585,69 @@ test("concurrent workspace exports contain only their own readable resources", a
   );
 });
 
+test("the workspace shows owner-scoped invalidated approval history after access returns", async () => {
+  const owner = await isolationOwner();
+  const other = await isolationOwner();
+  const [account] = await database
+    .select({ id: personalSaasAccounts.id })
+    .from(personalSaasAccounts)
+    .where(eq(personalSaasAccounts.subject, owner.account.sub));
+  if (!account) throw new Error("Personal account missing");
+  await database
+    .insert(users)
+    .values({ id: account.id, email: `${account.id}@example.test` });
+  const approval = await createApprovalStore(database).open(
+    approvalAction({
+      actorId: account.id,
+      botId: owner.botId,
+      toolRef: "computer_write_file",
+      scope: "notes",
+      effect: "write",
+      target: { filePath: "notes.txt" },
+      args: { path: "notes.txt" },
+      continuation: {
+        runId: crypto.randomUUID(),
+        threadId: crypto.randomUUID(),
+        toolCallId: crypto.randomUUID(),
+        toolName: "computer_write_file",
+        args: { path: "notes.txt" },
+        messages: [],
+        state: {},
+        context: [],
+        forwardedProps: {},
+      },
+    }),
+  );
+  const operate = (action: "pause" | "resume") =>
+    send(`/api/operator/workspaces/${owner.workspaceId}/suspension`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${operatorToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ action, reason: "Test approval cutoff" }),
+    });
+  const history = (session: string) =>
+    send("/api/workspace/approvals", { headers: { cookie: session } });
+  expect((await operate("pause")).status).toBe(201);
+  expect((await history(owner.session)).status).toBe(403);
+  expect((await operate("resume")).status).toBe(201);
+  // New sign-in evidence must be strictly later than the resume operation.
+  await Bun.sleep(2);
+  const session = cookie(
+    await authenticate(owner.account),
+    "__Host-openbot-personal=",
+  );
+  expect(await (await history(session)).json()).toMatchObject({
+    requests: [
+      { id: approval.id, tool: "computer_write_file", invalidated: true },
+    ],
+  });
+  expect(await (await history(other.session)).json()).toEqual({ requests: [] });
+  const page = await send("/workspace", { headers: { cookie: session } });
+  expect(await page.text()).toContain("computer_write_file · Invalidated");
+});
+
 test("workspace suspension blocks export creation and download and invalidates earlier links", async () => {
   const owner = await isolationOwner();
   const other = await isolationOwner();
@@ -2610,6 +2680,7 @@ test("workspace suspension blocks export creation and download and invalidates e
     ).status,
   ).toBe(201);
   expect((await operate("resume")).status).toBe(201);
+  await Bun.sleep(2);
   const signedIn = await authenticate(owner.account);
   const newSession = cookie(signedIn, "__Host-openbot-personal=");
   const reissued = await create(newSession);
@@ -2815,6 +2886,25 @@ for (const reason of [
         state: "completed",
         output: "New run completed",
       });
+      // Make the newly scheduled follow-up due without waiting a minute.
+      await database
+        .update(workItems)
+        .set({ runAt: new Date(0) })
+        .where(
+          and(
+            eq(workItems.kind, "bot.wakeup"),
+            eq(workItems.key, followUpRecovery.key),
+          ),
+        );
+      expect(await runApp.backgroundWorkers?.wakeUp()).toEqual({
+        ran: [followUpRecovery.key],
+        skipped: [],
+      });
+      expect(calls).toEqual([
+        runId,
+        retries[0].key,
+        `follow-up:${followUpRecovery.key}`,
+      ]);
       const original = await request(
         `/api/workspace/bot-runs/${runId}`,
         restored,
@@ -3279,6 +3369,263 @@ for (const cutoff of automationCutoffs) {
   });
 }
 
+test("a manual Bot retry asks under current policy and only its new approval can execute", async () => {
+  const account = {
+    sub: crypto.randomUUID(),
+    email: "approval-retry@example.com",
+    verified: true,
+    active: true,
+  };
+  const signIn = async () =>
+    cookie(await authenticate(account), "__Host-openbot-personal=");
+  let session = await signIn();
+  await enter(session);
+  const target = await workspace(session);
+  const executions: string[] = [];
+  const resumed: string[] = [];
+  const runtime = createPersonalBotRuntime(database, {
+    now,
+    tools: [
+      {
+        definition: {
+          name: "fixture_change",
+          description: "Record a fixture change",
+          parameters: {},
+        },
+        resolve: async () => ({
+          effect: "change",
+          scope: "fixture",
+          execute: async ({ runId }) => {
+            executions.push(runId);
+            return "Saved";
+          },
+        }),
+      },
+    ],
+    transport: {
+      intelligence: {
+        getOrCreateThread: async () => undefined,
+        getThreadMessages: async () => ({ messages: [] }),
+        ɵacquireThreadLock: async () => undefined,
+        ɵrenewThreadLock: async () => undefined,
+        ɵcleanupThreadLock: async () => undefined,
+      },
+      runner: {
+        run: ({ agent, input }) =>
+          new Observable((subscriber) => {
+            agent
+              .runAgent(input, {
+                onEvent: ({ event }) => subscriber.next(event),
+              })
+              .then(
+                () => subscriber.complete(),
+                (error) => subscriber.error(error),
+              );
+          }),
+        stop: async () => true,
+      },
+      buildAgent: async () =>
+        new HttpAgent({
+          url: "https://fixture.example/ag-ui",
+          fetch: async (_url, init) => {
+            const input: RunAgentInput = JSON.parse(String(init?.body));
+            const reply = input.messages.some(
+              (message) =>
+                message.role === "tool" ||
+                (message.role === "user" &&
+                  String(message.content).startsWith(
+                    "In response to your question:",
+                  )),
+            );
+            const asks = input.messages.some(
+              (message) =>
+                message.role === "user" && message.content === "Ask a question",
+            );
+            if (reply) resumed.push(input.threadId);
+            const events = [
+              {
+                type: EventType.RUN_STARTED,
+                threadId: input.threadId,
+                runId: input.runId,
+              },
+              ...(reply
+                ? [
+                    {
+                      type: EventType.TEXT_MESSAGE_CHUNK,
+                      messageId: "reply",
+                      role: "assistant",
+                      delta: "Saved",
+                    },
+                  ]
+                : [
+                    {
+                      type: EventType.TOOL_CALL_START,
+                      toolCallId: "call",
+                      toolCallName: asks ? "ask_person" : "fixture_change",
+                      parentMessageId: "asked",
+                    },
+                    {
+                      type: EventType.TOOL_CALL_ARGS,
+                      toolCallId: "call",
+                      delta: asks
+                        ? JSON.stringify({ question: "Which name?" })
+                        : "{}",
+                    },
+                    { type: EventType.TOOL_CALL_END, toolCallId: "call" },
+                  ]),
+              {
+                type: EventType.RUN_FINISHED,
+                threadId: input.threadId,
+                runId: input.runId,
+              },
+            ];
+            return new Response(
+              events
+                .map(
+                  (event) => `data: ${JSON.stringify(event)}
+
+`,
+                )
+                .join(""),
+              {
+                headers: { "content-type": "text/event-stream" },
+              },
+            );
+          },
+        }),
+    },
+  });
+  const runApp = newApp(database, undefined, undefined, runtime);
+  const request = (
+    path: string,
+    body?: object,
+    method = body ? "POST" : "GET",
+  ) =>
+    runApp.fetch(
+      new Request(new URL(path, origin), {
+        method,
+        headers: {
+          origin,
+          cookie: session,
+          "content-type": "application/json",
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      }),
+    );
+  const inbox = async () => {
+    const response = await request("/api/approvals");
+    expect(response.status).toBe(200);
+    return response.json();
+  };
+  const operate = (action: "pause" | "resume") =>
+    send(`/api/operator/workspaces/${target.id}/suspension`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${operatorToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ action, reason: "Test approval cutoff" }),
+    });
+  expect(
+    (await request("/api/approvals/preferences", { enabled: true }, "PATCH"))
+      .status,
+  ).toBe(200);
+  const queueRun = async (instruction: string) => {
+    const response = await request("/api/workspace/bot-runs", {
+      workspaceId: target.id,
+      botId: target.personalAssistant.id,
+      instruction,
+    });
+    expect(response.status).toBe(202);
+    expect(await runApp.sweepBotWork()).toBe(true);
+    return (await response.json()).runId;
+  };
+  const runId = await queueRun("Save the change");
+  const [old] = (await inbox()).requests;
+  expect(old).toMatchObject({
+    status: "pending",
+    action: { threadId: runId, policy: { source: "default" } },
+  });
+  expect(
+    await (await request(`/api/workspace/bot-runs/${runId}`)).json(),
+  ).toMatchObject({ state: "waiting" });
+  const queuedApprovalRun = await queueRun("Save another change");
+  const [queuedApproval] = (await inbox()).requests;
+  expect(queuedApproval.action.threadId).toBe(queuedApprovalRun);
+  const approve = (id: string) =>
+    request(`/api/approvals/${id}/decision`, { decision: "allow_once" });
+  expect((await approve(queuedApproval.id)).status).toBe(200);
+
+  const oldQuestionRun = await queueRun("Ask a question");
+  const [oldQuestion] = (await inbox()).questions;
+  expect(oldQuestion).toMatchObject({
+    threadId: oldQuestionRun,
+    question: "Which name?",
+  });
+  const answer = (id: string) =>
+    request(`/api/approvals/questions/${id}/respond`, { response: "A name" });
+  expect((await answer(oldQuestion.id)).status).toBe(200);
+  expect((await operate("pause")).status).toBe(201);
+  expect((await operate("resume")).status).toBe(201);
+  session = await signIn();
+  expect((await answer(oldQuestion.id)).status).toBe(400);
+  await runApp.sweepBotDecisions();
+  expect(executions).toEqual([]);
+  expect(resumed).toEqual([]);
+  expect((await approve(old.id)).status).toBe(400);
+  expect((await inbox()).requests).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: old.id, invalidated: true }),
+      expect.objectContaining({ id: queuedApproval.id, invalidated: true }),
+    ]),
+  );
+  expect(
+    (await request("/api/approvals/preferences", { enabled: false }, "PATCH"))
+      .status,
+  ).toBe(200);
+  expect(
+    (
+      await request("/api/approvals/rules", {
+        toolRef: "fixture_change",
+        behaviour: "ask",
+      })
+    ).status,
+  ).toBe(201);
+  const retry = await request(`/api/workspace/recovery/${runId}`, {
+    action: "retry",
+    acknowledged: true,
+  });
+  expect(retry.status).toBe(200);
+  const { key } = await retry.json();
+  expect(key).not.toBe(runId);
+  expect(await runApp.sweepBotWork()).toBe(true);
+  const [fresh] = (await inbox()).requests;
+  expect(fresh).toMatchObject({
+    status: "pending",
+    action: { threadId: key, policy: { source: "personal_rule" } },
+  });
+  expect(fresh.id).not.toBe(old.id);
+  expect(executions).toEqual([]);
+  expect((await approve(fresh.id)).status).toBe(200);
+  await runApp.sweepBotDecisions();
+  expect(executions).toEqual([key]);
+  expect(resumed).toEqual([key]);
+  expect(
+    await (await request(`/api/workspace/bot-runs/${key}`)).json(),
+  ).toMatchObject({ state: "completed", output: "Saved" });
+  const questionRun = await queueRun("Ask a question");
+  const [freshQuestion] = (await inbox()).questions;
+  expect(freshQuestion).toMatchObject({ threadId: questionRun });
+  expect((await answer(freshQuestion.id)).status).toBe(200);
+  await runApp.sweepBotDecisions();
+  expect(resumed).toEqual([key, questionRun]);
+  expect(
+    (await inbox()).requests.find(
+      (item: { id: string }) => item.id === fresh.id,
+    )?.status,
+  ).toBe("completed");
+}, 30_000);
+
 test("the mounted workspace recovers each stopped background capability as fresh work", async () => {
   const { createGroupStore } = await import("../src/channels/group");
   const { createProactiveStore } = await import("../src/proactive/store");
@@ -3305,14 +3652,12 @@ test("the mounted workspace recovers each stopped background capability as fresh
   await database
     .insert(users)
     .values({ id: ownerUserId, email: `${target.id}@workspace.example` });
-  await database
-    .insert(agents)
-    .values({
-      id: sourceBotId,
-      name: "Source Bot",
-      type: "built_in",
-      configuration: {},
-    });
+  await database.insert(agents).values({
+    id: sourceBotId,
+    name: "Source Bot",
+    type: "built_in",
+    configuration: {},
+  });
   await database.insert(channels).values([
     { id: channelId, name: "Private conversation", description: "" },
     { id: groupId, name: "Private group", description: "" },
@@ -3513,4 +3858,4 @@ test("the mounted workspace recovers each stopped background capability as fresh
       ),
     ),
   );
-});
+}, 20_000);

@@ -14,6 +14,7 @@ import {
 } from "@openbot/shared/approval-outcomes";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { PERSON_INITIATOR } from "../audit";
+import { decisionInvalidated } from "../personal-saas/decision-access";
 import {
   decideAction,
   effectiveHostCommandPolicy,
@@ -22,9 +23,9 @@ import {
 } from "./policy";
 import type { ApprovalQuestions } from "./questions";
 import {
+  APPROVAL_DECISIONS,
   type ApprovalAction,
   ApprovalAlreadyAnsweredError,
-  APPROVAL_DECISIONS,
   type ApprovalCandidate,
   type ApprovalContinuation,
   type ApprovalConversationGrant,
@@ -296,6 +297,8 @@ export function createApprovalService(
     async gate(
       candidate: ApprovalCandidate,
     ): Promise<ApprovalPermit | undefined> {
+      const origin = candidate.continuation ?? currentApprovalContext();
+      if (origin) await store.checkDecisionAccess?.(candidate.actorId, origin);
       const probe = validationProbe.getStore();
       if (probe) {
         probe.action = approvalAction(candidate);
@@ -402,6 +405,7 @@ export function createApprovalService(
               ...(evaluated?.review ? { review: evaluated.review } : {}),
             }
           : evaluated;
+      if (origin) await store.checkDecisionAccess?.(candidate.actorId, origin);
       if (outcome) {
         if (outcome.behaviour === "allow") return;
       } else if (
@@ -417,6 +421,8 @@ export function createApprovalService(
         ...(equivalence ? { equivalence, userTurns } : {}),
       };
       const request = await store.open(action);
+      if (request.action.executionInvalidated)
+        throw new ApprovalAlreadyAnsweredError(decisionInvalidated);
       if (request.decision === "handled")
         return { replay: HANDLED_BY_PERSON, complete: async () => undefined };
       if (request.result) {
@@ -641,6 +647,13 @@ export function createApprovalService(
         throw new ApprovalRefusedError(
           "The interrupted conversation is unavailable.",
         );
+      const checkAccess = () =>
+        store.checkDecisionAccess?.(ownerUserId, {
+          runId: request.action.runId,
+          createdAt: request.createdAt,
+          epoch: request.action.executionEpoch,
+        });
+      await checkAccess();
       let result = request.result;
       const refused =
         !result && dependencies.refusal
@@ -727,7 +740,10 @@ export function createApprovalService(
                     digest: approved.actionDigest,
                     owner: ownerUserId,
                   },
-                  () => dependencies.execute(approved),
+                  async () => {
+                    await checkAccess();
+                    return dependencies.execute(approved);
+                  },
                 ),
               );
               const content =
@@ -745,6 +761,7 @@ export function createApprovalService(
         // Saved by one process only: whichever saves the answer is the one that continues.
         if (!(await store.saveResult(ownerUserId, id, result))) return;
       }
+      await checkAccess();
       await dependencies.continue({
         approvalId: id,
         messageId: `approval:${id}`,
@@ -768,6 +785,11 @@ export function createApprovalService(
       if (request.status === "completed" || request.status === "pending")
         return;
       const continuation = request.action.continuation;
+      await store.checkDecisionAccess?.(ownerUserId, {
+        runId: request.action.runId,
+        createdAt: request.createdAt,
+        epoch: request.action.executionEpoch,
+      });
       let result = request.result;
       if (!result) {
         const text = notCarriedOut(reason);
@@ -831,6 +853,7 @@ function publicApproval(request: ApprovalRecord) {
   const { action, ...record } = request;
   return {
     ...record,
+    ...(action.executionInvalidated ? { invalidated: true } : {}),
     result: request.result ? { error: request.result.error } : null,
     action: {
       botId: action.botId,
