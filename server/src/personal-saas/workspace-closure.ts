@@ -250,7 +250,7 @@ export function workspaceClosureRoutes({
             reason: "workspace_closed",
             cutoffAt: acceptedAt.getTime(),
             recordedAt: acceptedAt.getTime(),
-          })}::jsonb || jsonb_build_object('outcomeUnknown', ${workItems.attempts} > 0)`,
+          })}::text::jsonb || jsonb_build_object('outcomeUnknown', ${workItems.attempts} > 0)`,
           leaseUntil: null,
         })
         .where(

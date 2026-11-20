@@ -56,12 +56,12 @@ import {
 } from "./workspace-attachments";
 import { workspaceBotRoutes } from "./workspace-bot-routes";
 import { workspaceBots } from "./workspace-bots";
+import { workspaceClosureRoutes } from "./workspace-closure";
+import { workspaceClosure } from "./workspace-closure-record";
 import {
   type WorkspaceComputerConfig,
   workspaceComputer,
 } from "./workspace-computer";
-import { workspaceClosureRoutes } from "./workspace-closure";
-import { workspaceClosure } from "./workspace-closure-record";
 import { workspaceExportRoutes } from "./workspace-export-routes";
 
 import {

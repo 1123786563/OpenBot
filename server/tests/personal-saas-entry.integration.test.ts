@@ -4695,7 +4695,7 @@ test("closure survives an unavailable supervisor and confirms only observed proc
   }
 });
 
-test("closure rolls back partial acceptance, stops an in-flight Bot and fences racing dispatch", async () => {
+test("closure rolls back partial acceptance, stops an in-flight Bot and fences queued dispatch", async () => {
   const previousApp = app;
   const started = Promise.withResolvers<void>();
   const aborted = Promise.withResolvers<void>();
@@ -4765,13 +4765,21 @@ test("closure rolls back partial acceptance, stops an in-flight Bot and fences r
       );
       await database.execute(sql`drop function test_71_reject_cutoff()`);
     }
-    const [accepted, raced] = await Promise.all([
-      confirmClosure(proof),
-      requestBot(),
-    ]);
+    // Exercise the ordering where dispatch commits before closure takes the account lock.
+    const queued = await requestBot();
+    expect(queued.status).toBe(202);
+    const { runId: queuedId } = await queued.json();
+    const accepted = await confirmClosure(proof);
     expect(accepted.status).toBe(200);
-    expect([202, 403]).toContain(raced.status);
     expect((await requestBot()).status).toBe(403);
+    const [row] = await database
+      .select()
+      .from(workItems)
+      .where(eq(workItems.key, queuedId));
+    expect(row).toMatchObject({
+      attempts: 0,
+      interruption: { reason: "workspace_closed", outcomeUnknown: false },
+    });
     const status = cookie(accepted, "__Host-openbot-closure-status=");
     await aborted.promise;
     await app.sweepWorkspaceClosures();
@@ -4784,15 +4792,18 @@ test("closure rolls back partial acceptance, stops an in-flight Bot and fences r
     expect(await (await closureStatus(status)).json()).toMatchObject({
       executionCutoff: { work: "confirmed" },
     });
-    if (raced.status === 202) {
-      const racedId = (await raced.json()).runId;
-      const [row] = await database
-        .select()
-        .from(workItems)
-        .where(eq(workItems.key, racedId));
-      expect(row?.interruption?.reason).toBe("workspace_closed");
-      expect(row?.attempts).toBe(0);
-    }
+    const [stopped] = await database
+      .select()
+      .from(workItems)
+      .where(eq(workItems.key, runId));
+    expect(stopped).toMatchObject({
+      claimedBy: null,
+      interruption: {
+        reason: "workspace_closed",
+        outcomeUnknown: true,
+        endedAt: expect.any(Number),
+      },
+    });
   } finally {
     finish.resolve();
     await running;
