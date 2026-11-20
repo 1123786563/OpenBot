@@ -833,6 +833,15 @@ is still the record.
 | `OTEL_SERVICE_NAME`                | The `service.name` on every record. Defaults to `openbot`.                                             |
 | `OPENBOT_OTEL_EXPORT`              | `off` turns export off while an endpoint is still set.                                                 |
 
+### OpenObserve link in Admin Audit
+
+Set `OPENBOT_OPENOBSERVE_URL` in the server environment (or in the root `.env` for
+Compose and source installs) to show **Open in OpenObserve** in Admin → Audit.
+Use an absolute HTTP(S) URL without credentials, a query string, or a fragment.
+The link is hidden when the value is missing or invalid. OpenObserve or its
+identity gateway authenticates administrators and handles queries. The browser
+URL is independent of the Collector endpoint.
+
 ## Computer and supervisor
 
 | Variable                             | Meaning                                                                                   |

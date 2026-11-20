@@ -154,12 +154,14 @@ const NO_LABELS: AuditFilterLabels = {
 };
 
 export function AuditPage({
+  action,
   ask = false,
   bot,
   children,
   description = ADMIN_DESCRIPTION,
   onClearBot,
 }: {
+  action?: ReactNode;
   /**
    * Admin's Ask and its filter chips: questions in English, and the trail's own filters by app,
    * tool, effect, action and rule. The personal edition's Activity has neither.
@@ -271,7 +273,12 @@ export function AuditPage({
      * height; the title stays put and the rows scroll inside the log. With recording controls
      * below it, the log is bounded so the page can scroll down to those controls too.
      */
-    <PageShell description={description} title={paths.auditLabel} width="full">
+    <PageShell
+      action={action}
+      description={description}
+      title={paths.auditLabel}
+      width="full"
+    >
       {/* With admin settings below the log, the page scrolls and the log keeps its own bounded
           viewport. Without settings, the table fills the panel as before. */}
       <div className={children ? "min-h-0 flex-1 overflow-y-auto" : "contents"}>
