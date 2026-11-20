@@ -4694,12 +4694,12 @@ test("closure survives an unavailable supervisor and confirms only observed proc
 
 test("closure rolls back partial acceptance, stops an in-flight Bot and fences queued dispatch", async () => {
   const previousApp = app;
-  const started = Promise.withResolvers<void>();
+  const started = Promise.withResolvers<string>();
   const aborted = Promise.withResolvers<void>();
   const finish = Promise.withResolvers<void>();
   let running: Promise<boolean> | undefined;
-  app = newApp(database, async ({ signal }) => {
-    started.resolve();
+  app = newApp(database, async ({ runId, signal }) => {
+    started.resolve(runId);
     await Promise.race([
       finish.promise,
       new Promise<void>((resolve) => {
@@ -4731,13 +4731,20 @@ test("closure rolls back partial acceptance, stops an in-flight Bot and fences q
     const active = await requestBot();
     expect(active.status).toBe(202);
     const { runId } = await active.json();
+    // The worker claims globally. Prioritize this run over earlier test fixtures.
+    await database
+      .update(workItems)
+      .set({ runAt: new Date(0) })
+      .where(eq(workItems.key, runId));
     running = app.sweepBotWork();
-    await Promise.race([
-      started.promise,
-      running.then(() => {
-        throw new Error("Fixture Bot did not start");
-      }),
-    ]);
+    expect(
+      await Promise.race([
+        started.promise,
+        running.then(() => {
+          throw new Error("Fixture Bot did not start");
+        }),
+      ]),
+    ).toBe(runId);
     const proof = await proveClosure(owner.session, owner.account);
     await database.execute(sql`create function test_71_reject_cutoff() returns trigger
       language plpgsql as $$ begin raise exception 'test interruption write unavailable'; end $$`);
