@@ -265,6 +265,10 @@ import {
   createSlackPilotProvider,
   slackPilotRegistration,
 } from "./plugins/corsair/slack/provider";
+import {
+  createSharedSlackProvider,
+  sharedSlackRegistration,
+} from "./plugins/corsair/slack/shared-provider";
 import { backfillBrokeredLogos } from "./plugins/logos";
 import { redirectUriFor } from "./plugins/oauth";
 import {
@@ -3088,6 +3092,7 @@ const identityGithubCallback =
     : undefined;
 
 const slackPilot = slackPilotRegistration(process.env, config.publicUrl);
+const sharedSlack = sharedSlackRegistration(process.env);
 const app = createApp(
   config,
   auth,
@@ -3266,6 +3271,18 @@ const app = createApp(
             approvals: storedApprovals,
             audit: bootAuditStore,
             encryptionKey: config.keyEncryptionKey,
+          },
+        }
+      : {}),
+    ...(sharedSlack
+      ? {
+          sharedSlackPilot: {
+            workspaceId: deploymentId,
+            provider: createSharedSlackProvider(sharedSlack),
+            database,
+            approvals: storedApprovals,
+            audit: bootAuditStore,
+            sharedUse: sharedUseStore,
           },
         }
       : {}),

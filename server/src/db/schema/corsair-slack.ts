@@ -1,4 +1,5 @@
 import {
+  boolean,
   foreignKey,
   pgTable,
   primaryKey,
@@ -7,7 +8,9 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { SharedUseApproval } from "../../plugins/shared-use";
 import { agents, users } from "./core";
+import { jsonb } from "./json";
 
 const owner = () => ({
   workspaceId: text("workspace_id").notNull(),
@@ -91,4 +94,29 @@ export const slackPilotGrants = pgTable(
       columns: [t.workspaceId, t.registration, t.botId, t.toolRef],
     }),
   ],
+);
+
+export const slackSharedInstallations = pgTable("slack_shared_installations", {
+  workspaceId: text("workspace_id").primaryKey(),
+  id: uuid("id").defaultRandom().notNull().unique(),
+  appId: text("app_id").notNull(),
+  teamId: text("team_id").notNull(),
+  botId: text("bot_id").notNull(),
+  botUserId: text("bot_user_id").notNull(),
+  channelIds: text("channel_ids").array().notNull(),
+});
+
+export const slackSharedBotAccess = pgTable(
+  "slack_shared_bot_access",
+  {
+    installationId: uuid("installation_id")
+      .notNull()
+      .references(() => slackSharedInstallations.id, { onDelete: "cascade" }),
+    botId: text("bot_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    granted: boolean("granted").notNull().default(false),
+    approval: jsonb("approval").$type<SharedUseApproval>(),
+  },
+  (table) => [primaryKey({ columns: [table.installationId, table.botId] })],
 );

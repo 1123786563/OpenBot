@@ -142,6 +142,7 @@ import { createGithubEventIngress } from "./plugins/corsair/event-ingress";
 import { createGithubEventTriggerRoutes } from "./plugins/corsair/event-triggers";
 import { createGithubPilotRoutes } from "./plugins/corsair/routes";
 import { createSlackPilotRoutes } from "./plugins/corsair/slack/routes";
+import { createSharedSlackPilot } from "./plugins/corsair/slack/shared-routes";
 import { createAppGrantDraftRoutes } from "./plugins/grant-translate";
 import { createPluginRoutes } from "./plugins/routes";
 import { createSharedUseRoutes } from "./plugins/shared-use-routes";
@@ -464,6 +465,10 @@ export function createApp(
     >;
     slackPilot?: Omit<
       Parameters<typeof createSlackPilotRoutes>[0],
+      "requireUser" | "canUseBot"
+    >;
+    sharedSlackPilot?: Omit<
+      Parameters<typeof createSharedSlackPilot>[0],
       "requireUser" | "canUseBot"
     >;
     /** The Recorder extension's routes and guards (recorder/wiring.ts). Absent, nothing about it is mounted. */
@@ -1646,6 +1651,17 @@ export function createApp(
       "/api/corsair/github",
       createGithubPilotRoutes({
         ...coworker.githubPilot,
+        requireUser,
+        canUseBot,
+      }),
+    );
+  }
+
+  if (coworker?.sharedSlackPilot && agentProfileStore) {
+    app.route(
+      "/api/corsair/slack/shared",
+      createSharedSlackPilot({
+        ...coworker.sharedSlackPilot,
         requireUser,
         canUseBot,
       }),
