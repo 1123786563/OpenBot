@@ -833,6 +833,45 @@ is still the record.
 | `OTEL_SERVICE_NAME`                | The `service.name` on every record. Defaults to `openbot`.                                             |
 | `OPENBOT_OTEL_EXPORT`              | `off` turns export off while an endpoint is still set.                                                 |
 
+## Self-hosted Opik for Web direct-chat Runs
+
+Deploy Opik using the [official self-hosted instructions](https://www.comet.com/docs/opik/self-host/local_deployment/). Run the OpenBot database migrations before starting the API. Set these variables on the OpenBot server. Docker Compose reads them from `.env`. With Helm, use `config.extraEnv` and reference a Kubernetes Secret for the key. The URL must be reachable **from the server** and end at Opik's API base, for example `http://opik-frontend:5173/api/`.
+
+| Variable | Meaning |
+| --- | --- |
+| `OPENBOT_OPIK_API_URL` | HTTP(S) API base URL. Leave unset to disable delivery and ordinary trace collection. |
+| `OPENBOT_OPIK_PROJECT` | Dedicated Opik project. Defaults to `openbot-runs`. |
+| `OPENBOT_OPIK_WORKSPACE` | Optional workspace sent as `Comet-Workspace`. |
+| `OPENBOT_OPIK_API_KEY` | Optional authorization value supplied by the deployment. |
+
+Keep Opik behind the platform's operator-only access controls. Use the project's **Logs** view to inspect `OpenBot Run` and `OpenBot Run (incomplete)` records. OpenBot exports an opaque Run correlation ID, start and end times, status, duration, the incomplete marker and the numeric `user_feedback` score. Message bodies, tool payloads, Memory and feedback comments stay in OpenBot.
+
+OpenBot records terminal Runs and feedback in PostgreSQL. It retries traces for one hour after a Run finishes, then emits `opik_traces_dropped` with the count of expired traces. Feedback delivery remains pending until acknowledged, including beyond the ordinary trace window. Feedback for an expired or historical Run is attached to an explicitly incomplete record. Turn delivery off by removing `OPENBOT_OPIK_API_URL`. Re-enabling delivery resumes processing existing feedback and applies the one-hour window to queued ordinary traces.
+
+An authenticated direct-chat participant can submit feedback with `POST /api/copilotkit/threads/:threadId/runs/:runId/feedback?agentId=:agentId`. Send JSON containing `feedbackId` (UUID), `score` (`0` or `1`) and an optional `comment`. A `202` confirms PostgreSQL accepted the feedback. Submit the same ID and payload when retrying that request.
+
+For acceptance against a disposable development Opik, set `TEST_OPIK_API_URL` to its API base and run `server/tests/direct-chat.integration.test.ts` with a freshly migrated disposable `TEST_DATABASE_URL`. The test creates a separate project and forwards synthetic trace and score requests to Opik after simulating an outage. It reads back both trace types and the recovered score. Delete the resulting `openbot-acceptance-*` project after inspection.
+
+### Platform evaluation
+
+Set `OPENBOT_OPIK_EVAL_API_URL` to a self-hosted Opik API base. Set `OPENBOT_OPIK_EVAL_OPERATORS` to the comma-separated OpenBot user IDs of platform operators who also hold the admin role. Set `OPENBOT_OPIK_EVAL_DAILY_CASE_LIMIT` to a positive integer. The shared platform budget counts admitted cases per UTC day, including failed or uncertain dispatches. Synthetic runs use two cases and real runs use one. Both use a deterministic scorer and consume zero user credits.
+
+Use optional `OPENBOT_OPIK_EVAL_PROJECT`, `OPENBOT_OPIK_EVAL_WORKSPACE`, and `OPENBOT_OPIK_EVAL_API_KEY` to configure the synthetic destination. The project defaults to `openbot-synthetic-evaluations`. Keep Opik ingress private. If operators need the native Opik console, gate it with the platform operator identity policy.
+
+With an operator session, post `{"requestId":"<new UUID>"}` as JSON to `/api/opik-evaluation/admin/synthetic`. Open `/api/opik-evaluation/admin/synthetic/<id>` with the returned ID to view both case results and the aggregate read back from Opik. Refresh the page if Opik is still indexing the experiment. Reuse the request ID to check a submission without consuming more budget.
+
+### Authorized real samples
+
+Enable `OPENBOT_OPIK_REAL_EVAL_API_URL` only after provisioning a separate Opik instance with private network access limited to OpenBot and the cleanup service. Use a dedicated origin and keep its native console out of the operator-facing ingress. Configure optional `OPENBOT_OPIK_REAL_EVAL_PROJECT`, `OPENBOT_OPIK_REAL_EVAL_WORKSPACE`, and `OPENBOT_OPIK_REAL_EVAL_API_KEY`. The project defaults to `openbot-authorized-evaluations`.
+
+1. As the Memory owner, post `memoryId`, `contentSha256`, and `purpose: "normalization-fidelity"` as JSON to `/api/opik-evaluation/grants`. Hash the exact UTF-8 content, including whitespace. The sample must be an enabled, confirmed or edited, person-authored Personal Memory with no external source.
+2. Give the operator the grant ID and scope. The operator posts that scope plus `grantId` to `/api/opik-evaluation/admin/real`. Only the authorized snapshot goes to private Opik. The scorer checks whether whitespace normalization changes the sample.
+3. To revoke, call `DELETE /api/opik-evaluation/grants/<grant-id>` as the owner. Changing or deleting the source also revokes its existing grants. The server serializes revocation with a dispatch already in progress. After revocation commits, the grant cannot be reused.
+
+OpenBot records the cleanup intent in PostgreSQL even if an attempted export timed out. Read it from `GET /api/opik-evaluation/admin/cleanup` using an operator session. Follow the `next` cursor through `?after=<cursor>` and start each sweep from the first page. The cleanup service must delete and verify the listed trace IDs at the recorded destinations within 24 hours while Opik is available. Keep recovered real Opik data private until cleanup has been replayed and verified. Retain backups for at most 30 days and preserve the revocation ledger through restore. The platform operates the deletion service.
+
+Run `server/tests/opik-evaluation.integration.test.ts` with a migrated disposable `TEST_DATABASE_URL` and set `TEST_OPIK_API_URL` to a disposable self-hosted Opik. The live test reads back the synthetic experiment and verifies an aggregate `exact_match` score of `0.5`.
+
 ## Computer and supervisor
 
 | Variable                             | Meaning                                                                                   |

@@ -11,7 +11,14 @@ import {
 import type { CaptureStatus } from "../protocol/messages";
 import { TRAJECTORY_ROLLOVER_AT } from "../shared/limits";
 import { isAllowedGatewayUrl } from "../shared/origin";
-import { GrantError, type GrantVerdict, PASS_HINTS } from "./grant";
+import {
+  type CaptureGrant,
+  classifyGrantError,
+  GrantError,
+  type GrantVerdict,
+  type OpenBotUpload,
+  PASS_HINTS,
+} from "./grant";
 import {
   type Outbox,
   type OutboxEvent,
@@ -47,7 +54,7 @@ type Timers = {
 };
 
 export type StreamerDeps = {
-  fetchGrant(trajectoryId: string): Promise<TrajectoryGrant>;
+  fetchGrant(trajectoryId: string, recordingId: string): Promise<CaptureGrant>;
   allowedGatewayUrls: string[] | null;
   outbox: Outbox;
   sequencer: { next(): number; flush(): Promise<void> };
@@ -216,6 +223,7 @@ type Connection = {
   pushRetry: unknown;
   /** The gateway its pass pointed at, once the pass came. */
   gatewayUrl?: string;
+  upload?: OpenBotUpload;
 };
 
 type Lane = {
@@ -778,7 +786,7 @@ export async function createStreamer(
     dropped: number,
   ) => {
     const channel = conn.channel;
-    if (!channel) return;
+    if (!channel && !conn.upload) return;
     const inflight: InFlight = { items, dropped, timer: undefined };
     conn.inflight = inflight;
     const lost = () => {
@@ -789,8 +797,41 @@ export async function createStreamer(
       }
     };
     inflight.timer = timers.set(lost, PHOENIX_TIMEOUT_MS);
+    if (conn.upload) {
+      void conn
+        .upload({ events: items.map((item) => item.event), dropped })
+        .then(async (response) => {
+          const body: unknown = await response.json().catch(() => null);
+          if (!current(lane, conn) || conn.inflight !== inflight) return;
+          if (response.ok) {
+            await acknowledged(lane, conn, inflight, body);
+          } else if (response.status === 401) {
+            const raw = isRecord(body) ? body : {};
+            const verdict = classifyGrantError(401, {
+              code: typeof raw.code === "string" ? raw.code : undefined,
+              reason: typeof raw.reason === "string" ? raw.reason : undefined,
+            });
+            lane.meta.droppedPending += dropped;
+            void persist(lane);
+            fail(lane, conn, passFailure(new GrantError(verdict)));
+          } else {
+            refused(
+              lane,
+              conn,
+              inflight,
+              response.status === 413
+                ? { reason: "batch_too_large" }
+                : response.status >= 500 || response.status === 429
+                  ? { reason: "storage_unavailable" }
+                  : body,
+            );
+          }
+        })
+        .catch(lost);
+      return;
+    }
     channel
-      .push(
+      ?.push(
         "events",
         { events: items.map((item) => item.event), dropped },
         PHOENIX_TIMEOUT_MS,
@@ -933,6 +974,7 @@ export async function createStreamer(
           reason: MESSAGES_REFUSED,
         });
         return;
+      case "capture_grant_expired":
       case "unmatched topic":
         fail(lane, conn, regrant("41"));
         return;
@@ -1145,14 +1187,19 @@ export async function createStreamer(
     };
     lane.conn = conn;
     emitStatus();
-    let grant: TrajectoryGrant;
+    let grant: CaptureGrant;
     try {
-      grant = await deps.fetchGrant(lane.id);
+      grant = await deps.fetchGrant(lane.id, lane.meta.recordingId);
     } catch (error) {
       fail(lane, conn, passFailure(error));
       return;
     }
     if (!current(lane, conn)) return;
+    if ("upload" in grant) {
+      conn.upload = grant.upload;
+      joined(lane, conn);
+      return;
+    }
     conn.gatewayUrl = grant.realtime.clientUrl;
     if (!isAllowedGatewayUrl(grant.realtime.clientUrl, allowedGatewayUrls)) {
       fail(lane, conn, {

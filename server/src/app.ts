@@ -129,6 +129,7 @@ import {
   createModelRoutes,
   type ModelCatalogueReader,
 } from "./model-catalogue";
+import { createOpikEvaluationRoutes } from "./opik/evaluation-routes";
 import { parsePageLimit } from "./paging";
 import { createPasswordRoutes, createSignInRoutes } from "./passwords/routes";
 import type { SignInService } from "./passwords/service";
@@ -776,6 +777,16 @@ export function createApp(
   // Enterprise controls: capability switches and the model allowlist in front of the routes they
   // govern, the admin screen's API, and the SCIM verbs the GET/POST auth handler above does not take.
   app.use("/api/*", createEnterpriseGate(requireUser));
+  if (attachmentDatabase && !config.singleUser) {
+    app.route(
+      "/api/opik-evaluation",
+      createOpikEvaluationRoutes({
+        database: attachmentDatabase,
+        requireUser,
+        config: config.opikEvaluation,
+      }),
+    );
+  }
   if (coworker?.productTelemetry)
     app.route(
       "/api/telemetry",

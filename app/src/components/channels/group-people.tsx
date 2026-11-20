@@ -32,7 +32,13 @@ import {
  * can take someone out, anyone else can leave, and anyone in it can add a person who has signed in
  * here. Everyone added sees the whole conversation.
  */
-export function GroupPeopleButton({ channelId }: { channelId: string }) {
+export function GroupPeopleButton({
+  channelId,
+  onLeave,
+}: {
+  channelId: string;
+  onLeave: () => void;
+}) {
   const queryClient = useQueryClient();
   const group = useQuery(groupQueryOptions(channelId));
   const me = useQuery(currentUserQueryOptions()).data;
@@ -75,7 +81,7 @@ export function GroupPeopleButton({ channelId }: { channelId: string }) {
             <div className="overflow-hidden rounded-lg">
               {people.map((person, index) => {
                 const self = person.userId === me?.id;
-                const removable = self ? !person.creator : iCreated;
+                const removable = self || iCreated;
                 return (
                   <Fragment key={person.userId}>
                     {index > 0 ? <Separator /> : null}
@@ -88,7 +94,9 @@ export function GroupPeopleButton({ channelId }: { channelId: string }) {
                           {self ? "You" : (person.name ?? person.email)}
                         </ItemTitle>
                         <ItemDescription>
-                          {person.creator ? "Started this group" : person.email}
+                          {person.creator
+                            ? "Manages group membership"
+                            : person.email}
                         </ItemDescription>
                       </ItemContent>
                       {removable ? (
@@ -100,7 +108,13 @@ export function GroupPeopleButton({ channelId }: { channelId: string }) {
                                 : `Remove ${person.email}`
                             }
                             disabled={remove.isPending}
-                            onClick={() => remove.mutate(person.userId)}
+                            onClick={() =>
+                              remove.mutate(person.userId, {
+                                onSuccess: () => {
+                                  if (self) onLeave();
+                                },
+                              })
+                            }
                             size="sm"
                             variant="outline"
                           >

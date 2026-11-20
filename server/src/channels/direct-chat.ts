@@ -1,11 +1,7 @@
-import type {
-  AbstractAgent,
-  BaseEvent,
-  Message,
-  RunAgentInput,
-} from "@ag-ui/client";
+import type { AbstractAgent, BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { EventType } from "@ag-ui/client";
-import { and, asc, eq, isNull, ne, notExists, sql } from "drizzle-orm";
+import { DIRECT_CHAT_REPLAY_HEADER } from "@openbot/shared/direct-chat-replay";
+import { and, eq, isNull, ne, notExists } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 import type {
@@ -24,6 +20,17 @@ import {
   intelligenceChannelMappings,
 } from "../db/schema";
 import type { ManagedModel, ManagedModelResult } from "../managed-model";
+import { runFeedback, saveRunFeedback } from "../opik/feedback";
+
+import {
+  appendDirectChatEvent,
+  directChatRunTimeoutMs,
+  expireDirectChatRuns,
+  directChatHistory as history,
+  messagesFor,
+  type RunKey,
+  readDirectChatReplay,
+} from "./direct-chat-replay";
 
 const id = z.string().min(1).max(256);
 const runBody = z.object({
@@ -37,10 +44,10 @@ const promptMessage = z.object({
   content: z.string().min(1).max(1_000_000),
 });
 const joinBody = z.object({ threadId: id });
-type Run = typeof directChatRuns.$inferSelect;
-const RUN_TIMEOUT_MS = 5 * 60_000;
-const DUPLICATE_WAIT_MS = 30_000;
-
+const resumeBody = joinBody.extend({
+  runId: id,
+  cursor: z.number().int().min(0).max(2_147_483_647),
+});
 const managedRunError: Record<
   Exclude<ManagedModelResult["state"], "completed">,
   string
@@ -56,45 +63,35 @@ const managedRunError: Record<
   released: "The previous model call ended and its reservation was released.",
 };
 
-function messagesFor(runs: Run[]): Message[] {
-  return runs.flatMap((run): Message[] => [
-    { id: run.userMessageId, role: "user", content: run.prompt },
-    ...replyFor(run),
-  ]);
-}
-
-function replyFor(run: Run): Message[] {
-  return run.assistantMessageId && run.reply !== null
-    ? [{ id: run.assistantMessageId, role: "assistant", content: run.reply }]
-    : [];
-}
+type Emit = (event: BaseEvent, cursor?: number) => void;
 
 function eventStream(
-  work: (emit: (event: BaseEvent) => void) => Promise<void>,
+  work: (emit: Emit, signal: AbortSignal) => Promise<void>,
+  key?: RunKey,
 ) {
   const encoder = new TextEncoder();
-  let open = true;
+  const subscription = new AbortController();
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
-      const emit = (event: BaseEvent) => {
-        if (open)
+      const emit: Emit = (event, cursor) => {
+        if (!subscription.signal.aborted) {
+          const id = cursor === undefined ? "" : `id: ${cursor}\n`;
           controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
+            encoder.encode(`${id}data: ${JSON.stringify(event)}\n\n`),
           );
+        }
       };
-      void work(emit)
-        .catch(() => {
-          emit({
-            type: EventType.RUN_ERROR,
-            message: "Could not load the Bot run.",
-          });
-        })
-        .finally(() => {
-          if (open) controller.close();
-        });
+      void work(emit, subscription.signal).then(
+        () => {
+          if (!subscription.signal.aborted) controller.close();
+        },
+        (error: unknown) => {
+          if (!subscription.signal.aborted) controller.error(error);
+        },
+      );
     },
     cancel() {
-      open = false;
+      subscription.abort();
     },
   });
   return new Response(body, {
@@ -102,6 +99,9 @@ function eventStream(
       "content-type": "text/event-stream",
       "cache-control": "no-cache",
       "x-accel-buffering": "no",
+      ...(key
+        ? { [DIRECT_CHAT_REPLAY_HEADER]: encodeURIComponent(key.runId) }
+        : {}),
     },
   });
 }
@@ -111,13 +111,14 @@ export function createDirectChatRoutes(deps: {
   database: Database;
   profiles: AgentProfileStore;
   identifyActor: IdentifyActor;
+  traceRuns: boolean;
   trial?: { route: string; model: ManagedModel };
   agentFor: (
     actor: AgentActor,
     agentId: string,
   ) => Promise<AbstractAgent | null>;
 }) {
-  const { database, profiles } = deps;
+  const { database, profiles, traceRuns } = deps;
   const routes = new Hono();
 
   async function threadFor(
@@ -180,21 +181,11 @@ export function createDirectChatRoutes(deps: {
         ),
       );
     const [row] = lock
-      ? await query.for("update", { of: mapping })
+      ? await query.for("update", { of: [channels, mapping] })
       : await query;
     if (!row) return null;
-    const profile = lock
-      ? await profiles.getWithin(executor, actor, agentId)
-      : await profiles.get(actor, agentId);
+    const profile = await profiles.getWithin(executor, actor, agentId);
     return profile && !profile.deletedAt && !profile.hidden ? row : null;
-  }
-
-  function history(executor: ProfileReadExecutor, threadId: string) {
-    return executor
-      .select()
-      .from(directChatRuns)
-      .where(eq(directChatRuns.threadId, threadId))
-      .orderBy(asc(directChatRuns.startedAt), asc(directChatRuns.id));
   }
 
   const actorFor = (request: Request) =>
@@ -223,6 +214,30 @@ export function createDirectChatRoutes(deps: {
     });
   });
 
+  routes.post("/threads/:threadId/runs/:runId/feedback", async (context) => {
+    const { threadId, runId } = context.req.param();
+    const agentId = context.req.query("agentId");
+    const actor = await actorFor(context.req.raw);
+    if (!actor || !agentId) return context.json(absent, 404);
+    const feedback = runFeedback.safeParse(
+      await context.req.json().catch(() => null),
+    );
+    if (!feedback.success)
+      return context.json({ error: "Invalid Run feedback." }, 400);
+    const outcome = await database.transaction(async (transaction) => {
+      if (!(await threadFor(transaction, actor, threadId, agentId, true)))
+        return "absent";
+      return saveRunFeedback(transaction, { threadId, runId }, feedback.data);
+    });
+    if (outcome === "absent") return context.json(absent, 404);
+    if (outcome === "conflict")
+      return context.json(
+        { error: "Feedback already submitted for this Run." },
+        409,
+      );
+    return context.json({ feedbackId: feedback.data.feedbackId }, 202);
+  });
+
   routes.post("/agent/:agentId/connect", async (context) => {
     const parsed = joinBody.safeParse(
       await context.req.json().catch(() => null),
@@ -230,21 +245,133 @@ export function createDirectChatRoutes(deps: {
     if (!parsed.success)
       return context.json({ error: "A thread is required." }, 400);
     const { threadId } = parsed.data;
+    const agentId = context.req.param("agentId");
     const actor = await actorFor(context.req.raw);
-    if (
-      !actor ||
-      !(await threadFor(
-        database,
-        actor,
-        threadId,
-        context.req.param("agentId"),
-      ))
-    )
+    if (!actor || !(await threadFor(database, actor, threadId, agentId)))
       return context.json(absent, 404);
     const messages = messagesFor(await history(database, threadId));
     return eventStream(async (emit) => {
+      if (!(await threadFor(database, actor, threadId, agentId))) return;
       emit({ type: EventType.MESSAGES_SNAPSHOT, messages });
     });
+  });
+
+  function terminal(key: RunKey, status: "completed" | "failed"): BaseEvent {
+    return status === "completed"
+      ? { type: EventType.RUN_FINISHED, ...key }
+      : { type: EventType.RUN_ERROR, message: "The Bot run failed." };
+  }
+
+  async function read(
+    request: Request,
+    key: RunKey,
+    agentId: string,
+    cursor: number,
+  ) {
+    const actor = await actorFor(request);
+    const actorId = actor?.id;
+    if (!actor || !actorId) return { kind: "absent" } as const;
+    // Close abandoned executions when their existing dispatch deadline passes.
+    return database.transaction(
+      async (tx) => {
+        if (!(await threadFor(tx, actor, key.threadId, agentId)))
+          return { kind: "absent" } as const;
+        await expireDirectChatRuns(tx, key.threadId, traceRuns);
+        return readDirectChatReplay(tx, key, cursor, actorId);
+      },
+      { isolationLevel: "repeatable read" },
+    );
+  }
+
+  function follow(
+    request: Request,
+    key: RunKey,
+    agentId: string,
+    after: number,
+    initial?: Awaited<ReturnType<typeof read>>,
+    reconcileFailure?: (event: BaseEvent) => Promise<BaseEvent>,
+  ) {
+    return eventStream(async (emit, signal) => {
+      let cursor = after;
+      let page = initial;
+      while (!signal.aborted && !request.signal.aborted) {
+        const result = page ?? (await read(request, key, agentId, cursor));
+        page = undefined;
+        if (result.kind === "absent" || result.kind === "invalid") {
+          emit({
+            type: EventType.RUN_ERROR,
+            message: "The Bot run is unavailable.",
+          });
+          return;
+        }
+        if (result.kind === "snapshot") {
+          if (cursor === 0) emit({ type: EventType.RUN_STARTED, ...key });
+          emit({
+            type: EventType.MESSAGES_SNAPSHOT,
+            messages: result.messages,
+          });
+          cursor = result.run.eventCursor;
+          emit(
+            {
+              type: EventType.CUSTOM,
+              name: "openbot.run.snapshot",
+              value: {
+                ...key,
+                cursor,
+                status: result.run.status,
+                pendingApprovals: result.pendingApprovals,
+              },
+            },
+            cursor,
+          );
+          if (result.run.status !== "running") {
+            const event = terminal(key, result.run.status);
+            emit(
+              event.type === EventType.RUN_ERROR && reconcileFailure
+                ? await reconcileFailure(event)
+                : event,
+            );
+            return;
+          }
+        } else {
+          for (const row of result.events) {
+            emit(
+              row.event.type === EventType.RUN_ERROR && reconcileFailure
+                ? await reconcileFailure(row.event)
+                : row.event,
+              row.cursor,
+            );
+            cursor = row.cursor;
+            if (
+              row.event.type === EventType.RUN_FINISHED ||
+              row.event.type === EventType.RUN_ERROR
+            )
+              return;
+          }
+          if (
+            cursor < result.run.eventCursor ||
+            result.run.status !== "running"
+          )
+            continue;
+        }
+        await Bun.sleep(200);
+      }
+    }, key);
+  }
+
+  routes.post("/agent/:agentId/resume", async (context) => {
+    const body = resumeBody.safeParse(
+      await context.req.json().catch(() => null),
+    );
+    if (!body.success)
+      return context.json({ error: "A run and cursor are required." }, 400);
+    const { cursor, ...key } = body.data;
+    const agentId = context.req.param("agentId");
+    const initial = await read(context.req.raw, key, agentId, cursor);
+    if (initial.kind === "absent") return context.json(absent, 404);
+    if (initial.kind === "invalid")
+      return context.json({ error: "Invalid run cursor." }, 400);
+    return follow(context.req.raw, key, agentId, cursor, initial);
   });
 
   routes.post("/agent/:agentId/run", async (context) => {
@@ -265,16 +392,7 @@ export function createDirectChatRoutes(deps: {
         return { kind: "absent" } as const;
       // The mapping row serializes claims from every server process. An expired claim remains
       // the original request's record, so repeating it can never start the Bot again.
-      await transaction
-        .update(directChatRuns)
-        .set({ status: "failed" })
-        .where(
-          and(
-            eq(directChatRuns.threadId, threadId),
-            eq(directChatRuns.status, "running"),
-            sql`${directChatRuns.startedAt} < now() - ${RUN_TIMEOUT_MS} * interval '1 millisecond'`,
-          ),
-        );
+      await expireDirectChatRuns(transaction, threadId, traceRuns);
       const previous = await history(transaction, threadId);
       const same = previous.find((run) => run.userMessageId === messageId);
       if (same)
@@ -299,7 +417,9 @@ export function createDirectChatRoutes(deps: {
       return {
         kind: "start",
         run,
-        messages: messagesFor([...previous, run]),
+        messages: messagesFor([...previous, run], {
+          includePartial: !deps.trial,
+        }),
       } as const;
     });
     if (claim.kind === "absent") return context.json(absent, 404);
@@ -311,95 +431,75 @@ export function createDirectChatRoutes(deps: {
         409,
       );
     const run = claim.run;
-    const runKey = and(
-      eq(directChatRuns.threadId, threadId),
-      eq(directChatRuns.id, run.id),
-    );
-
+    const key = { threadId, runId: run.id };
+    const trial = deps.trial;
     const operation = {
       scope: {
         source: "direct-chat" as const,
         personId: actor.id,
         botId: agentId,
         conversationId: threadId,
-        runId: run.id,
+        runId: key.runId,
       },
       step: "direct-chat-answer",
     };
-    const trial = deps.trial;
-    return eventStream(async (emit) => {
-      if (claim.kind === "repeat") {
-        let outcome = run;
-        const deadline = Date.now() + DUPLICATE_WAIT_MS;
-        while (
-          outcome.status === "running" &&
-          Date.now() < deadline &&
-          !context.req.raw.signal.aborted
-        ) {
-          await Bun.sleep(150);
-          const [saved] = await database
-            .select()
-            .from(directChatRuns)
-            .where(runKey);
-          if (!saved) break;
-          outcome = saved;
-        }
-        if (!(await threadFor(database, actor, threadId, agentId))) return;
-        emit({ type: EventType.RUN_STARTED, threadId, runId: run.id });
-        if (outcome.status === "completed") {
-          emit({
-            type: EventType.MESSAGES_SNAPSHOT,
-            messages: messagesFor(await history(database, threadId)),
-          });
-          emit({ type: EventType.RUN_FINISHED, threadId, runId: run.id });
-        } else {
-          if (outcome.status === "failed" && trial) {
+    if (claim.kind === "start") {
+      void execute(actor, claim.messages).catch(() => {
+        // A database failure leaves the claim for the existing timeout to settle.
+      });
+    }
+    return follow(
+      context.req.raw,
+      key,
+      agentId,
+      0,
+      undefined,
+      claim.kind === "repeat" && trial
+        ? async (event) => {
             const state = await trial.model
               .reconcile(operation)
               .catch(() => undefined);
-            const code = state === "pending" ? "reconciling" : state;
-            if (code && code !== "absent") {
-              emit({
+            const currentActor = await actorFor(context.req.raw);
+            if (
+              !currentActor ||
+              !(await threadFor(database, currentActor, threadId, agentId))
+            )
+              return {
                 type: EventType.RUN_ERROR,
-                code,
-                message: managedRunError[code],
-              });
-              return;
-            }
+                message: "The Bot run is unavailable.",
+              };
+            const code = state === "pending" ? "reconciling" : state;
+            return code && code !== "absent"
+              ? {
+                  type: EventType.RUN_ERROR,
+                  code,
+                  message: managedRunError[code],
+                }
+              : event;
           }
-          emit({
-            type: EventType.RUN_ERROR,
-            message:
-              outcome.status === "running"
-                ? "This request is already running."
-                : "The Bot run failed.",
-          });
-        }
-        return;
-      }
+        : undefined,
+    );
 
-      const running = and(runKey, eq(directChatRuns.status, "running"));
-      async function finish(reply: { id: string; content: string }) {
-        const [saved] = await database
-          .update(directChatRuns)
-          .set({
-            status: "completed",
-            assistantMessageId: reply.id,
-            reply: reply.content,
-          })
-          .where(running)
-          .returning({ id: directChatRuns.id });
-        if (!saved) throw new Error("The Bot run has expired.");
-      }
-
+    async function execute(
+      actor: AgentActor,
+      messages: ReturnType<typeof messagesFor>,
+    ) {
+      let writes = Promise.resolve();
+      let writeFailed = false;
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         if (trial) {
-          emit({ type: EventType.RUN_STARTED, threadId, runId: run.id });
+          if (
+            !(await appendDirectChatEvent(database, key, {
+              type: EventType.RUN_STARTED,
+              ...key,
+            }))
+          )
+            return;
           const result = await trial.model.complete({
             ...operation,
             route: trial.route,
-            messages: claim.messages.flatMap(({ role, content }) =>
+            messages: messages.flatMap(({ role, content }) =>
               (role === "user" || role === "assistant") &&
               typeof content === "string"
                 ? [{ role, content }]
@@ -407,30 +507,23 @@ export function createDirectChatRoutes(deps: {
             ),
           });
           if (result.state === "completed") {
-            const reply = { id: crypto.randomUUID(), content: result.text };
-            await finish(reply);
-            emit({
-              type: EventType.TEXT_MESSAGE_START,
-              messageId: reply.id,
-              role: "assistant",
-            });
-            emit({
-              type: EventType.TEXT_MESSAGE_CONTENT,
-              messageId: reply.id,
-              delta: reply.content,
-            });
-            emit({ type: EventType.TEXT_MESSAGE_END, messageId: reply.id });
-            emit({ type: EventType.RUN_FINISHED, threadId, runId: run.id });
+            await appendDirectChatEvent(
+              database,
+              key,
+              terminal(key, "completed"),
+              {
+                traceRuns,
+                reply: { id: crypto.randomUUID(), content: result.text },
+                streamReply: true,
+              },
+            );
           } else {
-            await database
-              .update(directChatRuns)
-              .set({ status: "failed" })
-              .where(running);
-            emit({
+            const event = {
               type: EventType.RUN_ERROR,
               code: result.state,
               message: managedRunError[result.state],
-            });
+            } satisfies BaseEvent;
+            await appendDirectChatEvent(database, key, event, { traceRuns });
           }
           return;
         }
@@ -438,11 +531,11 @@ export function createDirectChatRoutes(deps: {
         if (!agent) throw new Error("Bot unavailable.");
         agent.threadId = threadId;
         agent.agentId = agentId;
-        agent.setMessages(claim.messages);
+        agent.setMessages(messages);
         const input: RunAgentInput = {
           threadId,
           runId: run.id,
-          messages: claim.messages,
+          messages: messages,
           state: {},
           tools: [],
           context: [],
@@ -452,7 +545,19 @@ export function createDirectChatRoutes(deps: {
         const completion = agent.runAgent(input, {
           onEvent: ({ event }) => {
             if (event.type === EventType.RUN_ERROR) failure = true;
-            else if (event.type !== EventType.RUN_FINISHED) emit(event);
+            else if (event.type !== EventType.RUN_FINISHED) {
+              writes = writes
+                .then(async () => {
+                  if (
+                    !writeFailed &&
+                    !(await appendDirectChatEvent(database, key, event))
+                  )
+                    writeFailed = true;
+                })
+                .catch(() => {
+                  writeFailed = true;
+                });
+            }
           },
         });
         await Promise.race([
@@ -465,33 +570,40 @@ export function createDirectChatRoutes(deps: {
               },
               Math.max(
                 0,
-                run.startedAt.getTime() + RUN_TIMEOUT_MS - Date.now(),
+                run.startedAt.getTime() + directChatRunTimeoutMs - Date.now(),
               ),
             );
           }),
         ]);
         const reply = agent.messages
-          .slice(claim.messages.length)
+          .slice(messages.length)
           .findLast(
             (message) =>
               message.role === "assistant" &&
               typeof message.content === "string" &&
               message.content.trim(),
           );
-        if (failure || !reply || typeof reply.content !== "string")
+        await writes;
+        if (
+          writeFailed ||
+          failure ||
+          !reply ||
+          typeof reply.content !== "string"
+        )
           throw new Error("Bot returned no text.");
-        await finish({ id: reply.id, content: reply.content });
-        emit({ type: EventType.RUN_FINISHED, threadId, runId: run.id });
+        await appendDirectChatEvent(database, key, terminal(key, "completed"), {
+          traceRuns,
+          reply: { id: reply.id, content: reply.content },
+        });
       } catch {
-        await database
-          .update(directChatRuns)
-          .set({ status: "failed" })
-          .where(running);
-        emit({ type: EventType.RUN_ERROR, message: "The Bot run failed." });
+        await writes;
+        await appendDirectChatEvent(database, key, terminal(key, "failed"), {
+          traceRuns,
+        });
       } finally {
         clearTimeout(timer);
       }
-    });
+    }
   });
 
   return routes;

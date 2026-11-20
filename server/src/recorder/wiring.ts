@@ -27,6 +27,7 @@ import {
   type RecorderRefusalSink,
   type RecorderResolver,
 } from "./guard";
+import { createOpenBotRecordings } from "./openbot-recordings";
 import { createRecordings, fetchTrajectorySummaries } from "./recordings";
 import { createRecorderRefusalAudit } from "./refusal-audit";
 import type { RecorderRouteDeps } from "./routes";
@@ -217,10 +218,15 @@ export function createRecorderExtension(deps: {
           ),
   });
 
+  const local = intelligence
+    ? undefined
+    : createOpenBotRecordings(database, config.keyEncryptionKey);
   return {
     connections,
-    recordings,
-    recordingTitles: (userId, ids) => recordings.recordingTitles(userId, ids),
+    recordings: local ?? recordings,
+    localRecordings: local,
+    recordingTitles: (userId, ids) =>
+      (local ?? recordings).recordingTitles(userId, ids),
     allowedExtensionIds: () => allowedExtensionIds(config),
     // Bounded like a capture pass, so the popup is not held by a slow Intelligence; a creation it started goes on.
     learningSpace: (actor) =>

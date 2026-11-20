@@ -3307,6 +3307,7 @@ export function mountCopilotRuntime(
           route: trial.route,
           model: createManagedModel(trial),
         },
+        traceRuns: Boolean(config.opik),
         identifyActor,
         agentFor: (actor, botId) => agentFor({ actor, botId, textOnly: true }),
       }),

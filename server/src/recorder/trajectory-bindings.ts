@@ -115,13 +115,16 @@ export function createTrajectoryBindingStore(database: Database) {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function encodeCursor(row: { trajectoryId: string; createdAt: Date }): string {
+export function encodeCursor(row: {
+  trajectoryId: string;
+  createdAt: Date;
+}): string {
   return Buffer.from(
     `${row.createdAt.toISOString()}|${row.trajectoryId}`,
   ).toString("base64url");
 }
 
-function decodeCursor(cursor: string): {
+export function decodeCursor(cursor: string): {
   createdAt: Date;
   trajectoryId: string;
 } {

@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { recordingsQueryOptions } from "@/lib/recorder/queries";
+import { RecordingDetails } from "./recording-details";
 
 const STOP_REASONS: Record<string, string> = {
   disconnected: "disconnected",
@@ -110,11 +111,14 @@ export function YourRecordings({
                         {new Date(row.recordedAt).toLocaleString()}
                       </ItemDescription>
                     </ItemContent>
-                    {ended ? (
+                    {ended || recordings.data?.pages[0]?.canManage ? (
                       <ItemActions>
                         <span className="text-muted-foreground text-sm">
                           {ended}
                         </span>
+                        {recordings.data?.pages[0]?.canManage ? (
+                          <RecordingDetails row={row} />
+                        ) : null}
                       </ItemActions>
                     ) : null}
                   </Item>

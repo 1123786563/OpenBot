@@ -1,6 +1,11 @@
+import type { BaseEvent } from "@ag-ui/client";
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
+  index,
+  integer,
+  jsonb,
   pgTable,
   primaryKey,
   text,
@@ -25,6 +30,9 @@ export const directChatRuns = pgTable(
     status: text("status")
       .$type<"running" | "completed" | "failed">()
       .notNull(),
+    eventCursor: integer("event_cursor").notNull().default(0),
+    partialMessageId: text("partial_message_id"),
+    partialReply: text("partial_reply"),
     startedAt: timestamp("started_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -39,5 +47,26 @@ export const directChatRuns = pgTable(
       "direct_chat_runs_status_check",
       sql`${table.status} in ('running', 'completed', 'failed')`,
     ),
+  ],
+);
+
+export const directChatRunEvents = pgTable(
+  "direct_chat_run_events",
+  {
+    threadId: text("thread_id").notNull(),
+    runId: text("run_id").notNull(),
+    cursor: integer("cursor").notNull(),
+    event: jsonb("event").$type<BaseEvent>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.threadId, table.runId, table.cursor] }),
+    foreignKey({
+      columns: [table.threadId, table.runId],
+      foreignColumns: [directChatRuns.threadId, directChatRuns.id],
+    }).onDelete("cascade"),
+    index("direct_chat_run_events_created_idx").on(table.createdAt),
   ],
 );
