@@ -27,8 +27,17 @@ test("a cancelled browser sign-in can be restarted and returned to the existing 
   await screen.findByText("Finish signing in in your browser.");
   await user.click(screen.getByRole("button", { name: "Cancel sign-in" }));
   await user.click(await screen.findByRole("button", { name: "Sign in with browser" }));
-  status = { kind: "workspace", id: "workspace-1", personalAssistant: { id: "bot-1", name: "My Assistant" } };
+  const existingWorkspace = {
+    kind: "workspace",
+    id: "workspace-1",
+    personalAssistant: { id: "bot-1", name: "My Assistant" },
+    conversations: [{ id: "conversation-1", title: "Weekend <plans>", preview: "Saturday at nine" }],
+  } satisfies CloudView;
+  status = existingWorkspace;
   await screen.findByText("My Assistant");
+  await screen.findByRole("heading", { name: "Recent conversations" });
+  expect(screen.getByText("Weekend <plans>")).toBeTruthy();
+  expect(screen.getByText("Saturday at nine")).toBeTruthy();
   expect(actions.filter((action) => action === "start" || action === "cancel")).toEqual(["start", "cancel", "start"]);
 });
 
@@ -52,7 +61,7 @@ test("first entry runs shared setup and keeps a retry when setup fails", async (
     if (action === "status") return { kind: "preparing" };
     if (action !== "prepare") throw new Error(`Unexpected action: ${action}`);
     if (++preparations === 1) throw new Error("Temporary setup error");
-    return { kind: "workspace", id: "workspace-1", personalAssistant: { id: "bot-1", name: "My Assistant" } };
+    return { kind: "workspace", id: "workspace-1", personalAssistant: { id: "bot-1", name: "My Assistant" }, conversations: [] };
   };
   const screen = within(render(<PersonalCloud request={request} />).container);
   const user = userEvent.setup({ document });
@@ -60,6 +69,7 @@ test("first entry runs shared setup and keeps a retry when setup fails", async (
   expect(preparations).toBe(1);
   await user.click(screen.getByRole("button", { name: "Retry setup" }));
   await screen.findByText("My Assistant");
+  expect(screen.getByText("No conversations yet.")).toBeTruthy();
   expect(preparations).toBe(2);
 });
 
@@ -68,10 +78,12 @@ test("returning to the cloud window rechecks workspace access before showing the
     kind: "workspace",
     id: "workspace-1",
     personalAssistant: { id: "bot-1", name: "My Assistant" },
+    conversations: [{ id: "conversation-1", title: "Existing title", preview: null }],
   };
   const screen = within(render(<PersonalCloud request={async () => status} />).container);
   await screen.findByText("My Assistant");
 
+  expect(screen.getByText("Existing title")).toBeTruthy();
   status = { kind: "signedOut" };
   await act(async () => {
     window.dispatchEvent(new Event("focus"));
@@ -79,4 +91,5 @@ test("returning to the cloud window rechecks workspace access before showing the
 
   await screen.findByRole("button", { name: "Sign in with browser" });
   expect(screen.queryByText("My Assistant")).toBeNull();
+  expect(screen.queryByText("Existing title")).toBeNull();
 });

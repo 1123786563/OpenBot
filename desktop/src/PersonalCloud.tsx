@@ -9,7 +9,12 @@ export type CloudView =
   | { kind: "waiting" }
   | { kind: "signInFailed"; message: string }
   | { kind: "preparing" }
-  | { kind: "workspace"; id: string; personalAssistant: { id: string; name: string } };
+  | {
+      kind: "workspace";
+      id: string;
+      personalAssistant: { id: string; name: string };
+      conversations: { id: string; title: string; preview: string | null }[];
+    };
 
 export type CloudAction = "status" | "start" | "cancel" | "prepare" | "signOut";
 
@@ -126,7 +131,21 @@ export function PersonalCloud({
           <>
             <h2>Personal Workspace</h2>
             <p>{view.personalAssistant.name}</p>
-            <p>Conversation history and other workspace resources aren’t available in this desktop view yet.</p>
+            <section aria-labelledby="recent-conversations">
+              <h3 id="recent-conversations">Recent conversations</h3>
+              {view.conversations.length === 0 ? (
+                <p>No conversations yet.</p>
+              ) : (
+                <ul>
+                  {view.conversations.map(({ id, title, preview }) => (
+                    <li key={id}>
+                      <strong>{title}</strong>
+                      {preview && <p>{preview}</p>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           </>
         )}
         <div className="row">

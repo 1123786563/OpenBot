@@ -163,6 +163,7 @@ pub enum View {
         id: String,
         #[serde(rename = "personalAssistant")]
         personal_assistant: Assistant,
+        conversations: Vec<Conversation>,
     },
 }
 
@@ -177,6 +178,18 @@ pub struct Assistant {
 struct Workspace {
     id: String,
     personal_assistant: Assistant,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct Conversation {
+    id: String,
+    title: String,
+    preview: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ConversationHistory {
+    conversations: Vec<Conversation>,
 }
 
 #[derive(Deserialize)]
@@ -392,10 +405,28 @@ impl<'a> Api<'a> {
                     id,
                     personal_assistant,
                 } = result.json().map_err(|_| NETWORK_ERROR)?;
-                Ok(View::Workspace {
-                    id,
-                    personal_assistant,
-                })
+                let history = self
+                    .http
+                    .get(endpoint(self.origin, "/api/workspace/conversations"))
+                    .bearer_auth(token)
+                    .send()
+                    .map_err(|_| NETWORK_ERROR)?;
+                match history.status() {
+                    StatusCode::OK => {
+                        let ConversationHistory { conversations } =
+                            history.json().map_err(|_| NETWORK_ERROR)?;
+                        Ok(View::Workspace {
+                            id,
+                            personal_assistant,
+                            conversations,
+                        })
+                    }
+                    StatusCode::UNAUTHORIZED => {
+                        clear_credential(store)?;
+                        Ok(View::SignedOut)
+                    }
+                    _ => Err(NETWORK_ERROR),
+                }
             }
             StatusCode::ACCEPTED => Ok(View::Preparing),
             StatusCode::UNAUTHORIZED => {

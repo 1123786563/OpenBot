@@ -83,3 +83,70 @@ fn configuration_accepts_only_a_bare_https_origin() {
         assert!(parse_origin(bad).is_none(), "accepted {bad}");
     }
 }
+
+#[test]
+fn signed_in_cloud_view_loads_workspace_and_owner_history_with_the_same_session() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap())
+        .parse()
+        .unwrap();
+    let server = std::thread::spawn(move || {
+        for (path, body) in [
+            (
+                "/api/workspace",
+                r#"{"id":"workspace-1","personalAssistant":{"id":"bot-1","name":"My Assistant"}}"#,
+            ),
+            (
+                "/api/workspace/conversations",
+                r#"{"conversations":[{"id":"conversation-1","title":"Weekend <plans>","preview":"Saturday at nine"},{"id":"conversation-2","title":"Groceries","preview":null}]}"#,
+            ),
+        ] {
+            let (stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut reader = BufReader::new(stream);
+            let mut request = String::new();
+            reader.read_line(&mut request).unwrap();
+            assert_eq!(request, format!("GET {path} HTTP/1.1\r\n"));
+            let headers: Vec<_> = (&mut reader)
+                .lines()
+                .map(Result::unwrap)
+                .take_while(|line| !line.is_empty())
+                .collect();
+            assert!(headers
+                .iter()
+                .filter_map(|line| line.split_once(':'))
+                .any(|(name, value)| name.eq_ignore_ascii_case("authorization")
+                    && value.trim() == "Bearer test-session"));
+            write!(
+                reader.get_mut(),
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            ).unwrap();
+        }
+    });
+
+    let store = keyring::Entry::new("openbot-desktop-test", "unused").unwrap();
+    let view = Api::new(&origin)
+        .unwrap()
+        .session_action(Action::Status, &store, "test-session")
+        .unwrap();
+    let value = serde_json::to_value(view).unwrap();
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "kind": "workspace",
+            "id": "workspace-1",
+            "personalAssistant": {"id": "bot-1", "name": "My Assistant"},
+            "conversations": [
+                {"id": "conversation-1", "title": "Weekend <plans>", "preview": "Saturday at nine"},
+                {"id": "conversation-2", "title": "Groceries", "preview": null},
+            ]
+        })
+    );
+    server.join().unwrap();
+}
