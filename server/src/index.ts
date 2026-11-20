@@ -236,6 +236,7 @@ import {
   createOpenSkillIndex,
 } from "./learning/sharing";
 import { createMemoryDefaults } from "./memory/defaults";
+import { createHindsight } from "./memory/hindsight";
 import { createMemoryIngestion } from "./memory/ingestion";
 import { createMemoryRuntime } from "./memory/runtime";
 import { createMemoryStore } from "./memory/store";
@@ -1747,6 +1748,14 @@ const autoApproveTimer =
     : undefined;
 autoApproveTimer?.unref();
 const memoryIngestion = createMemoryIngestion({
+  hindsight: config.hindsight && {
+    client: createHindsight({ database, ...config.hindsight }),
+    canUseMemory: async (owner) => {
+      if (config.singleUser) return true;
+      const person = await peopleStore.find(owner);
+      return !!person && !person.revoked;
+    },
+  },
   store: personalMemoryStore,
   plugins: pluginStore,
   canUseBot: async (owner, bot) =>

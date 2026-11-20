@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { connectAppRefusal } from "@openbot/shared/connect-prompt";
 import { betterAuth } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
@@ -14,10 +14,12 @@ import { agents, users } from "../src/db/schema/core";
 import { agentProfiles } from "../src/db/schema/coworker";
 import { memorySources, personalMemories } from "../src/db/schema/memory";
 import { mcpServers, mcpTools } from "../src/db/schema/plugins";
+import { createHindsight } from "../src/memory/hindsight";
 import { createMemoryIngestion } from "../src/memory/ingestion";
 import { createMemoryRoutes } from "../src/memory/routes";
 import { createMemoryRuntime } from "../src/memory/runtime";
 import { createMemoryStore } from "../src/memory/store";
+import { memoryTools } from "../src/memory/tools";
 import { MemoryNotFoundError, MemoryRefusedError } from "../src/memory/types";
 import { createPluginStore, PluginRefusedError } from "../src/plugins/store";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -722,3 +724,226 @@ test("signed-in people manage separate local Memory settings and revocation reac
   await store.remove(owner, unattributed.id);
   await store.removeSource(owner, importedSource.id);
 });
+
+test("Hindsight Recall ranks approved current memories and falls back after withdrawal", async () => {
+  const requests: unknown[] = [];
+  let hit: { document_id: string; metadata: unknown; type: string } | undefined;
+  let recallBody: unknown;
+  let beforeRecallResponse: (() => Promise<unknown>) | undefined;
+  let available = true;
+  let clockOffset = 0;
+  const deleted: string[] = [];
+  const fixture = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      if (!available) return new Response(null, { status: 503 });
+      if (request.method === "DELETE") {
+        deleted.push(new URL(request.url).pathname.split("/").at(-1) ?? "");
+        return Response.json({ success: true });
+      }
+      const body = await request.json();
+      if (request.url.endsWith("/recall")) {
+        recallBody = body;
+        await beforeRecallResponse?.();
+        return Response.json({ results: hit ? [hit] : [] });
+      }
+      requests.push(...body.items);
+      return Response.json({ success: true });
+    },
+  });
+  try {
+    const hindsight = createHindsight({
+      database,
+      url: fixture.url,
+      recallTimeoutMs: 100,
+      now: () => Date.now() + clockOffset,
+    });
+    const memory = createMemoryIngestion({
+      store,
+      plugins,
+      hindsight: { client: hindsight, canUseMemory: async () => true },
+    });
+    const content = "The synthetic observatory uses amber lanterns.";
+    const term = "lighting gear";
+    const local = await store.create(owner, { content: `Local ${term}` });
+    const formed = await store.formMemory(owner, {
+      agentId: bot,
+      sourceRef: ref,
+      sourceApp: "Fixture",
+      content,
+    });
+    await memory.syncHindsight();
+    expect(requests).not.toContainEqual(expect.objectContaining({ content }));
+    await store.update(owner, formed.id, { reviewState: "confirmed" });
+    await memory.syncHindsight();
+    const projection = requests.find(
+      (item) =>
+        typeof item === "object" &&
+        item !== null &&
+        "content" in item &&
+        item.content === content,
+    );
+    expect(projection).toEqual({
+      content,
+      document_id: formed.id,
+      metadata: { openbot_version: expect.any(String) },
+      tags: [expect.any(String)],
+    });
+    hit = {
+      document_id: formed.id,
+      metadata:
+        projection && "metadata" in projection ? projection.metadata : null,
+      type: "world",
+    };
+    expect(
+      (await memory.recall(owner, bot, term)).map((row) => row.id),
+    ).toEqual([formed.id, local.id]);
+    expect(recallBody).toMatchObject({
+      tags_match: "any_strict",
+      types: ["world", "experience"],
+    });
+    expect(await memory.recall(other, bot, term)).toEqual([]);
+    const originalHit = hit;
+    hit = { ...originalHit, metadata: null };
+    expect(
+      (await memory.recall(owner, bot, term)).map((row) => row.id),
+    ).toEqual([local.id]);
+    hit = originalHit;
+    beforeRecallResponse = () => Bun.sleep(300);
+    expect(
+      (await memory.recall(owner, bot, term)).map((row) => row.id),
+    ).toEqual([local.id]);
+    beforeRecallResponse = () =>
+      store.update(owner, formed.id, {
+        content: "The synthetic observatory uses blue lanterns.",
+      });
+    expect(
+      (await memory.recall(owner, bot, term)).map((row) => row.id),
+    ).toEqual([local.id]);
+    beforeRecallResponse = undefined;
+    await memory.syncHindsight();
+    expect(
+      (await memory.recall(owner, bot, term)).map((row) => row.id),
+    ).toEqual([local.id]);
+    await store.update(owner, formed.id, { enabled: false });
+    expect(
+      (await memory.recall(owner, bot, term)).map((row) => row.id),
+    ).toEqual([local.id]);
+    available = false;
+    await expect(memory.syncHindsight()).rejects.toThrow(
+      "Hindsight projection reconciliation failed",
+    );
+    expect(deleted).not.toContain(formed.id);
+    available = true;
+    // A later sweep retries retirement even after the local record is withdrawn.
+    await store.remove(owner, formed.id);
+    clockOffset += 60_000;
+    await memory.syncHindsight();
+    expect(deleted).toContain(formed.id);
+  } finally {
+    fixture.stop(true);
+  }
+});
+
+const hindsightTestUrl = process.env.TEST_HINDSIGHT_API_URL;
+test.skipIf(!hindsightTestUrl)(
+  "self-hosted Hindsight indexes only the current approved Personal Memory",
+  async () => {
+    if (!hindsightTestUrl)
+      throw new Error("TEST_HINDSIGHT_API_URL is required");
+    const url = new URL(hindsightTestUrl);
+    const client = createHindsight({ database, url, recallTimeoutMs: 5000 });
+    const memory = createMemoryIngestion({
+      store,
+      plugins,
+      hindsight: { client, canUseMemory: async () => true },
+    });
+    const approved = await store.formMemory(owner, {
+      agentId: bot,
+      sourceApp: "Synthetic catalog",
+      sourceRef: ref,
+      content: "Mars observatory's telescope uses amber lanterns.",
+    });
+    const digest = createHash("sha256").update(owner).digest("hex");
+    const bankUrl = new URL(`/v1/default/banks/openbot-memory-${digest}/`, url);
+    const document = new URL(`documents/${approved.id}`, bankUrl);
+    const source = await store.createSource(owner, {
+      agentId: bot,
+      toolRef: ref,
+      title: "Synthetic import",
+    });
+    const importedContent = "A synthetic library catalog uses a ruby sticker.";
+    await store.completeSync(owner, source.id, [
+      {
+        externalId: "catalog",
+        digest: "v1",
+        content: importedContent,
+        provenance: "Sample",
+      },
+    ]);
+    const imported = (await store.list(owner)).find(
+      (row) => row.sourceId === source.id,
+    );
+    if (!imported) throw new Error("Missing synthetic import");
+    const importedDocument = new URL(`documents/${imported.id}`, bankUrl);
+    await memory.syncHindsight();
+    expect((await fetch(document)).status).toBe(404);
+    expect((await fetch(importedDocument)).status).toBe(404);
+    const reviewed = await store.update(owner, approved.id, {
+      reviewState: "confirmed",
+    });
+    await store.update(owner, imported.id, { reviewState: "confirmed" });
+    await memory.syncHindsight();
+    const response = await fetch(document);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      id: approved.id,
+      original_text: reviewed.content,
+      tags: [
+        expect.stringMatching(
+          new RegExp(`^openbot:${approved.id}:[0-9a-f-]{36}$`),
+        ),
+      ],
+    });
+    expect((await fetch(importedDocument)).status).toBe(200);
+    // A term that the local substring path cannot find proves Hindsight supplied the ranking.
+    const search = "Mars telescope with lanterns";
+    const recall = memoryTools({
+      store,
+      ingestion: memory,
+      ownerUserId: owner,
+      agentId: bot,
+    }).find((tool) => tool.name === "recall_personal_memory");
+    if (!recall) throw new Error("Missing Recall tool");
+    expect(await ingestion.recall(owner, bot, search)).toEqual([]);
+    expect(await recall.execute({ search })).toContain(approved.id);
+    expect(await memory.recall(owner, secondBot, search)).toEqual([]);
+    await store.create(other, {
+      content: "A synthetic Earth observatory uses flashlights.",
+    });
+    expect(
+      (await memory.recall(other, otherBot, search)).map((row) => row.id),
+    ).not.toContain(approved.id);
+
+    await store.completeSync(owner, source.id, [
+      {
+        externalId: "catalog",
+        digest: "v2",
+        content: "A synthetic library catalog uses a blue sticker.",
+        provenance: "New sample",
+      },
+    ]);
+    expect(
+      (await store.list(owner)).find((row) => row.id === imported.id)
+        ?.reviewState,
+    ).toBe("unreviewed");
+    await memory.syncHindsight();
+    expect((await fetch(importedDocument)).status).toBe(404);
+    await store.remove(owner, approved.id);
+    expect(await memory.recall(owner, bot, search)).toEqual([]);
+    await memory.syncHindsight();
+    expect((await fetch(document)).status).toBe(404);
+  },
+  30_000,
+);
