@@ -132,6 +132,8 @@ migrations:
 config:
   # Stable identifier for this deployment. Set explicitly when exporting OpenObserve records.
   deploymentId: ""
+  # Optional browser URL for the platform administrator's Audit page.
+  openObserveUrl: ""
   # Where people reach this deployment. Sets the OAuth callback and the trusted origin.
   publicUrl: ""
   # Web Bot Auth: every request a Bot's browser makes is signed as coming from this deployment, and
