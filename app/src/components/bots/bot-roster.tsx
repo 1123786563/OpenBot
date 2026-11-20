@@ -1,13 +1,13 @@
-import {
-  IconBolt,
-  IconChevronRight,
-  IconPlus,
-  IconShare,
-} from "@tabler/icons-react";
+import { Badge } from "@astryxdesign/core/Badge";
+import { Card } from "@astryxdesign/core/Card";
+import { Text } from "@astryxdesign/core/Text";
+import { IconBolt, IconChevronRight, IconShare } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment, useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
+import { NewBotAction } from "@/components/astryx-pilot/bot-actions";
+import { astryxPilot } from "@/components/astryx-pilot/theme";
 import {
   attentionSummary,
   waitingOnYou,
@@ -88,20 +88,7 @@ export function BotRoster() {
           <RosterRows agents={yours} byId={byId} />
         ) : (
           <PageEmpty
-            action={
-              yoursPinned ? undefined : (
-                <Button
-                  render={(props) => (
-                    <Link {...props} search={{ new: true }} to="/bots" />
-                  )}
-                  size="sm"
-                  variant="outline"
-                >
-                  <IconPlus />
-                  New Bot
-                </Button>
-              )
-            }
+            action={yoursPinned ? undefined : <NewBotAction />}
             icon={IconBolt}
             title={yoursPinned ? "All pinned" : "No Bots yet"}
           >
@@ -169,6 +156,15 @@ function RosterRows({
   agents: AgentProfile[];
   byId: Map<string, BotAttention>;
 }) {
+  if (astryxPilot) {
+    return (
+      <Card className="astryx-bot-rows mt-2" padding={4}>
+        {agents.map((agent) => (
+          <RosterRow agent={agent} key={agent.id} state={byId.get(agent.id)} />
+        ))}
+      </Card>
+    );
+  }
   return (
     <PageRows>
       {agents.map((agent, index) => (
@@ -199,6 +195,25 @@ function RosterRow({
         .join(" · ")
     : "";
   const waiting = state ? waitingOnYou(state) : 0;
+  if (astryxPilot) {
+    return (
+      <Link
+        className="astryx-bot-row"
+        params={{ agentId: agent.id }}
+        to="/bots/$agentId"
+      >
+        <AbstractAvatar name={agent.name} seed={agent.avatarSeed} size={32} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Text weight="semibold">{agent.name}</Text>
+          <Text color="secondary" size="sm">
+            {summary || shownSubtitle(agent.title)}
+          </Text>
+        </div>
+        {waiting > 0 ? <Badge label={waiting} /> : null}
+        <IconChevronRight aria-hidden className="size-4 shrink-0" />
+      </Link>
+    );
+  }
   return (
     <Item
       render={<Link params={{ agentId: agent.id }} to="/bots/$agentId" />}

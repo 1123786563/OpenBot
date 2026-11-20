@@ -19,21 +19,20 @@ import { MotionConfig, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { HarnessMark } from "@/components/agents/harness-mark";
 import AgentOrb from "@/components/agents/orb/agent-orb";
+import { BotFormAction } from "@/components/astryx-pilot/bot-actions";
+import { BotField } from "@/components/astryx-pilot/bot-fields";
+import { astryxPilot, astryxScope } from "@/components/astryx-pilot/theme";
 import { BusinessComputerLink } from "@/components/edition/team-features-dialog";
 import { PluginLogo } from "@/components/plugins/plugin-logo";
 import { RoutinesAppHint } from "@/components/routines/routines-app-hint";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Field,
   FieldDescription,
-  FieldError,
   FieldGroup,
-  FieldLabel,
   FieldLegend,
   FieldSet,
 } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import {
   Sheet,
   SheetClose,
@@ -41,7 +40,6 @@ import {
   SheetFooter,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -89,8 +87,10 @@ export function NewBotSheet({
   open,
   onClose,
   onCreated,
+  returnFocus,
 }: {
   open: boolean;
+  returnFocus?: () => HTMLElement | null;
   onClose: () => void;
   /** The new Bot's id, so the caller can take the person to it. */
   onCreated: (agentId: string) => void;
@@ -103,6 +103,8 @@ export function NewBotSheet({
       open={open}
     >
       <SheetContent
+        {...astryxScope}
+        finalFocus={astryxPilot && returnFocus ? returnFocus : undefined}
         className="gap-0 data-[side=right]:w-[calc(100%-1rem)] data-[side=right]:sm:max-w-2xl"
         showCloseButton={false}
         side="right"
@@ -499,28 +501,29 @@ function NewBotFlow({ onCreated }: { onCreated: (agentId: string) => void }) {
       <SheetFooter className="flex-row flex-wrap items-center justify-between border-t border-border">
         {step === "about" ? (
           <SheetClose
-            render={<Button className="px-4" size="lg" variant="ghost" />}
-          >
-            Cancel
-          </SheetClose>
+            render={
+              <BotFormAction className="px-4" variant="ghost">
+                Cancel
+              </BotFormAction>
+            }
+          />
         ) : (
-          <Button
+          <BotFormAction
             className="px-4"
             disabled={busy}
             onClick={() => go(previous())}
-            size="lg"
             type="button"
             variant="ghost"
           >
             Back
-          </Button>
+          </BotFormAction>
         )}
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           {step === "about" && builtInAvailable && (
-            <Button
+            <BotFormAction
               type="button"
+              icon={<IconPlugConnected aria-hidden className="size-4" />}
               variant="outline"
-              size="lg"
               disabled={busy}
               onClick={() => {
                 const parsed = agentFormSchema.shape.name.safeParse(name);
@@ -533,15 +536,13 @@ function NewBotFlow({ onCreated }: { onCreated: (agentId: string) => void }) {
                 go("runtime");
               }}
             >
-              <IconPlugConnected className="size-4" />
               Connect a custom agent
-            </Button>
+            </BotFormAction>
           )}
           {step !== "runtime" && (
-            <Button
+            <BotFormAction
               className="px-4"
               disabled={!canContinue}
-              size="lg"
               type="submit"
             >
               {checking
@@ -551,7 +552,7 @@ function NewBotFlow({ onCreated }: { onCreated: (agentId: string) => void }) {
                   : step === "endpoint" || (step === "about" && !custom)
                     ? "Create Bot"
                     : "Continue"}
-            </Button>
+            </BotFormAction>
           )}
         </div>
       </SheetFooter>
@@ -679,44 +680,26 @@ function AboutStep({
 }) {
   return (
     <FieldGroup>
-      <Field>
-        <FieldLabel htmlFor="new-bot-name">Name</FieldLabel>
-        <Input
-          autoComplete="off"
-          autoFocus
-          id="new-bot-name"
-          aria-invalid={Boolean(nameError)}
-          aria-describedby={nameError ? "new-bot-name-error" : undefined}
-          maxLength={80}
-          onChange={(event) => onName(event.target.value)}
-          placeholder="Expense Review"
-          value={name}
-        />
-        {nameError && (
-          <p
-            id="new-bot-name-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {nameError}
-          </p>
-        )}
-      </Field>
-      <Field>
-        <FieldLabel htmlFor="new-bot-instructions">
-          Instructions
-          <span className="font-normal text-muted-foreground">Optional</span>
-        </FieldLabel>
-        <Textarea
-          autoComplete="off"
-          id="new-bot-instructions"
-          maxLength={1000}
-          onChange={(event) => onInstructions(event.target.value)}
-          placeholder="Review receipts, categorize expenses, and prepare reimbursement reports."
-          rows={5}
-          value={instructions}
-        />
-      </Field>
+      <BotField
+        autoFocus
+        error={nameError}
+        id="new-bot-name"
+        label="Name"
+        maxLength={80}
+        onChange={onName}
+        placeholder="Expense Review"
+        value={name}
+      />
+      <BotField
+        id="new-bot-instructions"
+        label="Instructions"
+        maxLength={1000}
+        onChange={onInstructions}
+        optional
+        placeholder="Review receipts, categorize expenses, and prepare reimbursement reports."
+        rows={5}
+        value={instructions}
+      />
       {personal ? (
         <BusinessComputerLink />
       ) : (
@@ -768,6 +751,7 @@ function AboutStep({
                   "flex items-center gap-3 rounded-lg bg-muted/50 pr-3 text-sm",
                   app.key === ALWAYS_ON_APP && "sm:col-span-2",
                 )}
+                data-bot-form-app={app.key}
                 key={app.key}
               >
                 <label
@@ -823,6 +807,7 @@ function EveryAppList({ turnedOn }: { turnedOn: UseQueryResult<PluginsPage> }) {
                 "flex items-center gap-3 rounded-lg bg-muted/50 p-3 text-sm",
                 server.id === ALWAYS_ON_APP && "sm:col-span-2",
               )}
+              data-bot-form-app={server.id}
               key={server.id}
             >
               <PluginLogo logo={server.logo} />
@@ -1022,48 +1007,31 @@ function EndpointStep({
       </div>
 
       <FieldGroup>
-        <Field data-invalid={endpointError ? true : undefined}>
-          <FieldLabel htmlFor="new-bot-endpoint">Agent address</FieldLabel>
-          <Input
-            aria-invalid={endpointError ? true : undefined}
-            autoComplete="off"
-            autoFocus
-            id="new-bot-endpoint"
-            inputMode="url"
-            onChange={(event) => onEndpoint(event.target.value)}
-            placeholder="https://your-agent.example.com/ag-ui"
-            value={endpoint}
-          />
-          {endpointError ? (
-            <FieldError
-              className="text-pretty"
-              errors={[{ message: endpointError }]}
-            />
-          ) : (
-            <FieldDescription>
-              Any agent that speaks AG-UI works. OpenBot connects to it, so it
-              has to be reachable from OpenBot's server.
-            </FieldDescription>
-          )}
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="new-bot-key">
-            Key
-            <span className="font-normal text-muted-foreground">Optional</span>
-          </FieldLabel>
-          <Input
-            autoComplete="off"
-            id="new-bot-key"
-            onChange={(event) => onKey(event.target.value)}
-            placeholder="Bearer …"
-            type="password"
-            value={secret}
-          />
-          <FieldDescription>
-            Sent as an <code>Authorization</code> header with every request, and
-            stored encrypted.
-          </FieldDescription>
-        </Field>
+        <BotField
+          autoFocus
+          description={
+            endpointError
+              ? undefined
+              : "Any agent that speaks AG-UI works. OpenBot connects to it, so it has to be reachable from OpenBot's server."
+          }
+          error={endpointError}
+          id="new-bot-endpoint"
+          inputMode="url"
+          label="Agent address"
+          onChange={onEndpoint}
+          placeholder="https://your-agent.example.com/ag-ui"
+          value={endpoint}
+        />
+        <BotField
+          description="Sent as an Authorization header with every request, and stored encrypted."
+          id="new-bot-key"
+          label="Key"
+          onChange={onKey}
+          optional
+          placeholder="Bearer …"
+          type="password"
+          value={secret}
+        />
       </FieldGroup>
     </div>
   );

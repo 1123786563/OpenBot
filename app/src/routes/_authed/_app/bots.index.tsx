@@ -1,15 +1,20 @@
-import { IconBook, IconChevronRight, IconPlus } from "@tabler/icons-react";
+import { IconBook, IconChevronRight } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { z } from "zod";
 import { NewBotSheet } from "@/components/agents/new-bot-sheet";
+import { NewBotAction } from "@/components/astryx-pilot/bot-actions";
+import {
+  AstryxBotsSurface,
+  AstryxBrand,
+  astryxPilot,
+} from "@/components/astryx-pilot/theme";
 import { BotRoster } from "@/components/bots/bot-roster";
 import {
   PageRows,
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
 import {
   Item,
   ItemActions,
@@ -35,50 +40,47 @@ function BotsPage() {
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
   return (
-    <PageShell
-      action={
-        <Button
-          render={(props) => (
-            <Link {...props} search={{ new: true }} to="/bots" />
-          )}
-          size="sm"
-          variant="ghost"
-        >
-          <IconPlus />
-          New Bot
-        </Button>
-      }
-      description={
-        personal
-          ? "Your Bots for everyday work."
-          : "Manage your Bots and access those shared with you."
-      }
-      title="Bots"
-    >
-      <BotRoster />
-      {personal ? <WhatYourBotsKnow /> : null}
-      <NewBotSheet
-        onClose={() => void navigate({ search: {} })}
-        onCreated={(agentId) => {
-          /*
-           * Close first, then go. Navigating straight to the Bot unmounted this page with the sheet
-           * still on it, so it vanished instead of sliding away. Replacing the `?new` entry means Back
-           * from the new Bot lands on the roster, not on an empty sheet.
-           */
-          void navigate({ replace: true, search: {} });
-          window.setTimeout(
-            () =>
-              void navigate({
-                params: { agentId },
-                search: {},
-                to: "/bots/$agentId",
-              }),
-            SHEET_CLOSE_MS,
-          );
-        }}
-        open={creating === true}
-      />
-    </PageShell>
+    <AstryxBotsSurface>
+      <PageShell
+        action={<NewBotAction primary />}
+        description={
+          personal
+            ? "Your Bots for everyday work."
+            : "Manage your Bots and access those shared with you."
+        }
+        title="Bots"
+        eyebrow={astryxPilot ? <AstryxBrand /> : undefined}
+      >
+        <BotRoster />
+        {personal ? <WhatYourBotsKnow /> : null}
+        <NewBotSheet
+          onClose={() => void navigate({ search: {} })}
+          onCreated={(agentId) => {
+            /*
+             * Close first, then go. Navigating straight to the Bot unmounted this page with the sheet
+             * still on it, so it vanished instead of sliding away. Replacing the `?new` entry means Back
+             * from the new Bot lands on the roster, not on an empty sheet.
+             */
+            void navigate({ replace: true, search: {} });
+            window.setTimeout(
+              () =>
+                void navigate({
+                  params: { agentId },
+                  search: {},
+                  to: "/bots/$agentId",
+                }),
+              SHEET_CLOSE_MS,
+            );
+          }}
+          open={creating === true}
+          returnFocus={() =>
+            document.querySelector<HTMLAnchorElement>(
+              "[data-slot=page-header] a[href*='new=true']",
+            )
+          }
+        />
+      </PageShell>
+    </AstryxBotsSurface>
   );
 }
 

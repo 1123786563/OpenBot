@@ -345,6 +345,7 @@ function NewConversation({ composition }: { composition: string }) {
       </div>
       <NewBotSheet
         open={creatingBot}
+        returnFocus={() => pickerInput.current}
         onClose={() => setCreatingBot(false)}
         onCreated={(agentId) => {
           setCreatingBot(false);

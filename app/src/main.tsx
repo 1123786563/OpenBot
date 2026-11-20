@@ -7,16 +7,24 @@ import { router } from "./router";
 import "@copilotkit/react-core/v2/styles.css";
 import "./styles.css";
 
-const rootElement = document.getElementById("root");
+function renderApp() {
+  const rootElement = document.getElementById("root");
 
-if (!rootElement) {
-  throw new Error("OpenBot could not find the application root element.");
+  if (!rootElement) {
+    throw new Error("OpenBot could not find the application root element.");
+  }
+
+  createRoot(rootElement).render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} context={{ queryClient }} />
+      </QueryClientProvider>
+    </StrictMode>,
+  );
 }
 
-createRoot(rootElement).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} context={{ queryClient }} />
-    </QueryClientProvider>
-  </StrictMode>,
-);
+if (import.meta.env.VITE_OPENBOT_ASTRYX_PILOT === "1") {
+  void import("./components/astryx-pilot/styles").then(renderApp);
+} else {
+  renderApp();
+}

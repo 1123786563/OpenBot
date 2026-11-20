@@ -1,0 +1,108 @@
+[data-astryx-pilot] {
+  --font-family-body: "Figtree Variable", system-ui, sans-serif;
+  --font-family-heading: var(--font-family-body);
+  --color-accent: light-dark(
+    var(--pilot-accent-light),
+    var(--pilot-accent-dark)
+  );
+  --color-on-accent: light-dark(
+    var(--pilot-on-accent-light),
+    var(--pilot-on-accent-dark)
+  );
+  --background: var(--color-background-body);
+  --foreground: var(--color-text-primary);
+  --card: var(--color-background-card);
+  --popover: var(--color-background-surface);
+  --popover-foreground: var(--color-text-primary);
+  --muted: var(--color-background-card);
+  --muted-foreground: var(--color-text-secondary);
+  --border: var(--color-border);
+  --input: var(--color-border-emphasized);
+  --primary: var(--color-accent);
+  --primary-foreground: var(--color-on-accent);
+  --ring: var(--color-focus-ring, var(--color-accent));
+  --destructive: var(--color-text-error);
+  background: var(--color-background-body);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-body);
+}
+
+.astryx-bots-surface [data-slot="page-title"],
+[data-astryx-pilot] [data-slot="sheet-title"] {
+  color: var(--color-text-primary);
+  font-family: var(--font-family-heading);
+}
+
+.astryx-bots-surface section:has(.astryx-bot-rows) {
+  margin-top: var(--spacing-8);
+}
+
+.astryx-bots-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-3);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.astryx-bots-brand img {
+  object-fit: contain;
+}
+
+.astryx-bot-row {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: var(--radius-element);
+  color: var(--color-text-primary);
+}
+
+.astryx-bot-row + .astryx-bot-row {
+  border-top: 1px solid var(--color-border);
+}
+
+.astryx-bot-row:hover {
+  background: var(--color-background-card);
+}
+
+.astryx-bot-row:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+[data-astryx-pilot][data-slot="sheet-content"] {
+  background: var(--color-background-surface);
+  border-color: var(--color-border);
+  border-radius: var(--radius-container);
+}
+
+[data-slot="sheet-portal"]:has(
+  > [data-slot="sheet-content"][data-astryx-pilot]
+) {
+  position: relative;
+  z-index: 100000;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="sheet-portal"]:has(> [data-astryx-pilot])
+    > [data-slot="sheet-overlay"],
+  [data-astryx-pilot][data-slot="sheet-content"] {
+    transition: none;
+  }
+}
+
+@media (max-width: 639px) {
+  [data-astryx-pilot] [data-bot-form-app="routines"] {
+    flex-wrap: wrap;
+    row-gap: var(--spacing-1);
+  }
+
+  [data-astryx-pilot] [data-bot-form-app="routines"] > :last-child {
+    flex-wrap: wrap;
+    margin-inline-start: 0;
+  }
+}
