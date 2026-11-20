@@ -1,4 +1,7 @@
-import { currentApprovalContext } from "@openbot/toolkit/continuation";
+import {
+  type ApprovalContinuation,
+  currentApprovalContext,
+} from "@openbot/toolkit/continuation";
 import type { AuditInitiator } from "@openbot/toolkit/initiator";
 import {
   and,
@@ -889,8 +892,19 @@ export type AuditEventInput = {
   payload: Record<string, unknown>;
 };
 
+type AuditRunContext = Pick<ApprovalContinuation, "runId" | "threadId"> &
+  Partial<Pick<ApprovalContinuation, "forwardedProps">>;
+
+type AuditCorrelation = {
+  run?: AuditRunContext;
+  workItemKey?: string;
+};
+
 export type AuditStore = {
-  insert: (event: AuditEventInput) => Promise<void>;
+  insert: (
+    event: AuditEventInput,
+    correlation?: AuditCorrelation,
+  ) => Promise<void>;
 };
 
 export type AuditEvent = {
@@ -1004,11 +1018,15 @@ export function redactAuditPayload(value: unknown): unknown {
 export async function recordAuditEvent(
   store: AuditStore,
   event: AuditEventInput,
+  correlation?: AuditCorrelation,
 ) {
-  await store.insert({
-    ...event,
-    payload: redactAuditPayload(event.payload) as Record<string, unknown>,
-  });
+  await store.insert(
+    {
+      ...event,
+      payload: redactAuditPayload(event.payload) as Record<string, unknown>,
+    },
+    correlation,
+  );
 }
 
 /**
@@ -1041,6 +1059,9 @@ export type AuditTapEvent = {
   createdAt?: Date;
   /** Trusted native/headless action scope; never read from an analytics client. */
   runId?: string;
+  /** Original approval run, when the audit write occurs outside that run. */
+  approvalRun?: Pick<ApprovalContinuation, "runId" | "threadId">;
+  workItemKey?: string;
   parentRunId?: string;
   rootTaskId?: string;
   attemptId?: string;
@@ -1069,9 +1090,51 @@ export function addAuditTap(tap: AuditTap): () => void {
   return () => auditTaps.delete(tap);
 }
 
-export function createAuditStore(database: Database): AuditStore {
+function productLineageOf(run: AuditRunContext | undefined) {
+  const props = run?.forwardedProps;
+  if (
+    !props ||
+    typeof props !== "object" ||
+    Array.isArray(props) ||
+    !("openbotTelemetry" in props)
+  )
+    return {};
+  const telemetry = props.openbotTelemetry;
+  if (
+    !telemetry ||
+    typeof telemetry !== "object" ||
+    Array.isArray(telemetry) ||
+    !("run_id" in telemetry) ||
+    telemetry.run_id !== run?.runId
+  )
+    return {};
+
   return {
-    insert: async ({ initiator, ...event }) => {
+    parentRunId:
+      "parent_run_id" in telemetry &&
+      typeof telemetry.parent_run_id === "string"
+        ? telemetry.parent_run_id
+        : undefined,
+    rootTaskId:
+      "root_task_id" in telemetry && typeof telemetry.root_task_id === "string"
+        ? telemetry.root_task_id
+        : undefined,
+    attemptId:
+      "attempt_id" in telemetry && typeof telemetry.attempt_id === "string"
+        ? telemetry.attempt_id
+        : undefined,
+  };
+}
+
+export function createAuditStore(
+  database: Database,
+  deferTap?: (publish: () => void) => void,
+): AuditStore {
+  return {
+    insert: async (
+      { initiator, ...event },
+      { run: approvalRun, workItemKey } = {},
+    ) => {
       const row = {
         ...event,
         ...initiatorColumns(initiator),
@@ -1081,52 +1144,41 @@ export function createAuditStore(database: Database): AuditStore {
         .insert(auditEvents)
         .values(row)
         .returning({ id: auditEvents.id, createdAt: auditEvents.createdAt });
-      for (const tap of auditTaps) {
-        try {
-          const run = currentApprovalContext();
-          const telemetry =
-            run?.forwardedProps &&
-            typeof run.forwardedProps === "object" &&
-            !Array.isArray(run.forwardedProps) &&
-            "openbotTelemetry" in run.forwardedProps &&
-            run.forwardedProps.openbotTelemetry &&
-            typeof run.forwardedProps.openbotTelemetry === "object" &&
-            !Array.isArray(run.forwardedProps.openbotTelemetry)
-              ? run.forwardedProps.openbotTelemetry
-              : undefined;
-          const context =
-            telemetry &&
-            "run_id" in telemetry &&
-            telemetry.run_id === run?.runId
-              ? telemetry
-              : {};
-          tap({
-            ...row,
-            ...persisted,
-            ...(run ? { runId: run.runId, threadId: run.threadId } : {}),
-            ...("parent_run_id" in context &&
-            typeof context.parent_run_id === "string"
-              ? { parentRunId: context.parent_run_id }
-              : {}),
-            ...("root_task_id" in context &&
-            typeof context.root_task_id === "string"
-              ? { rootTaskId: context.root_task_id }
-              : {}),
-            ...("attempt_id" in context &&
-            typeof context.attempt_id === "string"
-              ? { attemptId: context.attempt_id }
-              : {}),
-          });
-        } catch (error) {
-          console.error(
-            JSON.stringify({
-              type: "audit-tap-failed",
-              eventType: row.eventType,
-              error: String(error),
-            }),
-          );
+      if (!persisted || auditTaps.size === 0) return;
+
+      const run = currentApprovalContext();
+      const tapped: AuditTapEvent = {
+        ...row,
+        ...persisted,
+        ...(run ? { runId: run.runId, threadId: run.threadId } : {}),
+        ...(approvalRun
+          ? {
+              approvalRun: {
+                runId: approvalRun.runId,
+                threadId: approvalRun.threadId,
+              },
+            }
+          : {}),
+        ...(workItemKey ? { workItemKey } : {}),
+        ...productLineageOf(approvalRun ?? run),
+      };
+      const publish = () => {
+        for (const tap of auditTaps) {
+          try {
+            tap(tapped);
+          } catch (error) {
+            console.error(
+              JSON.stringify({
+                type: "audit-tap-failed",
+                eventType: row.eventType,
+                error: String(error),
+              }),
+            );
+          }
         }
-      }
+      };
+      if (deferTap) deferTap(publish);
+      else publish();
     },
   };
 }

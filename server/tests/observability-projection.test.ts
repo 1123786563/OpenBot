@@ -98,6 +98,41 @@ test("approved computer facets and validated run lineage are the only extras", (
   });
 });
 
+test.each([
+  [
+    "routines.run_requested",
+    "routine_run_id",
+    { runId: "routine-run-1" },
+    "routine-run-1",
+  ],
+  [
+    "responsibility.triggered",
+    "responsibility_run_id",
+    { runIds: ["responsibility-run-1"] },
+    "responsibility-run-1",
+  ],
+])("projects %s with its own run identifier", (eventType, key, payload, id) => {
+  const projected = projectAuditEvent(
+    { ...auditEvent, eventType, payload },
+    "staging-1",
+  );
+  expect(projected).toHaveProperty(key, id);
+  expect(projected).not.toHaveProperty("run_id");
+});
+
+test("a responsibility trigger with multiple runs has no single correlated run", () => {
+  const projected = projectAuditEvent(
+    {
+      ...auditEvent,
+      eventType: "responsibility.triggered",
+      payload: { runIds: ["run-1", "run-2"] },
+    },
+    "staging-1",
+  );
+  expect(projected).not.toHaveProperty("responsibility_run_id");
+  expect(projected).not.toHaveProperty("run_id");
+});
+
 test("an invalid allowlisted decision drops every facet and preserves safe common fields", () => {
   expect(
     projectAuditEvent(

@@ -1,5 +1,8 @@
 import { afterAll, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 import { installEnterpriseControls } from "../src/admin/controls";
+import { createApprovalStore } from "../src/approvals/store";
+import { approvalAction } from "../src/approvals/types";
 import {
   type AuditStore,
   addAuditTap,
@@ -7,7 +10,13 @@ import {
   createAuditStore,
 } from "../src/audit";
 import { createDatabase } from "../src/db/client";
+import { users } from "../src/db/schema/core";
+import { workItems } from "../src/db/schema/work";
 import { createOtelEventExporter } from "../src/telemetry/otel";
+import {
+  createProductTelemetry,
+  productRunForwardedProps,
+} from "../src/telemetry/product";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const databaseUrl = testDatabaseUrl();
@@ -155,6 +164,164 @@ test("the installed audit tap exports only a successful PostgreSQL row as a boun
     collector.stop(true);
   }
 });
+
+test.each([
+  "complete",
+  "partially invalid",
+  "different run",
+  "no continuation",
+])(
+  "a saved approval continuation with %s telemetry exports only its valid lineage",
+  async (variant) => {
+    const requests: string[] = [];
+    const collector = serveCollector(async (request) => {
+      requests.push(await request.text());
+      return new Response("{}");
+    });
+    const owner = crypto.randomUUID();
+    const runId = "resumed-run";
+    const threadId = "conversation-thread";
+    const rootTaskId = "a".repeat(64);
+    const parentRunId = "interrupted-run";
+    const productEvents: unknown[] = [];
+    const telemetry = await createProductTelemetry({
+      privacyKey: "approval-fixture",
+      send: async (event) => {
+        productEvents.push(event);
+      },
+      deploymentId: deployment.DEPLOYMENT_ID,
+      env: { OPENBOT_PRODUCT_TELEMETRY: "1", NODE_ENV: "test" },
+    });
+    const context = await telemetry.prepare({
+      actorUserId: owner,
+      runId,
+      threadId,
+      trigger: "followup",
+      surface: "web",
+      inheritedRootTaskId: rootTaskId,
+      parentRunId,
+    });
+    if (!context)
+      throw new Error("Product telemetry did not prepare the fixture");
+    const forwardedProps = productRunForwardedProps({}, context);
+    if (variant === "partially invalid") {
+      forwardedProps.openbotTelemetry = {
+        run_id: runId,
+        parent_run_id: "path with spaces",
+        root_task_id: "x".repeat(257),
+        attempt_id: undefined,
+      };
+    }
+    if (variant === "different run")
+      forwardedProps.openbotTelemetry = { ...context, run_id: "another-run" };
+
+    const controls = await installEnterpriseControls({
+      database,
+      databaseUrl,
+      auditStore,
+      env: { ...deployment, OTEL_EXPORTER_OTLP_ENDPOINT: collector.url.href },
+    });
+    const removeProductTap = addAuditTap(telemetry.recordAudit);
+    let approvalId: string | undefined;
+    try {
+      await database
+        .insert(users)
+        .values({ id: owner, email: `${owner}@example.test` });
+      const store = createApprovalStore(database);
+      const action = approvalAction({
+        actorId: owner,
+        botId: "approval-bot",
+        toolRef: "computer_write_file",
+        effect: "write",
+        scope: "project",
+        args: {},
+        target: {},
+        continuation: {
+          runId,
+          threadId,
+          toolCallId: "tool-call",
+          toolName: "computer_write_file",
+          args: {},
+          messages: [],
+          state: {},
+          context: [],
+          forwardedProps,
+        },
+      });
+      if (variant === "no continuation") delete action.continuation;
+      const request = await store.open(action);
+      approvalId = request.id;
+      await store.decide(owner, approvalId, "deny");
+      const { events } = await reader.list({ targetId: approvalId, limit: 10 });
+      expect(events.map((event) => event.eventType)).toEqual([
+        "approval.person_decided",
+      ]);
+      await controls.stop();
+      expect(requests).toHaveLength(1);
+      const [wire] = requests;
+      expect(JSON.parse(wire)).toMatchObject({
+        resourceLogs: [
+          {
+            scopeLogs: [
+              {
+                logRecords: [
+                  {
+                    body: { stringValue: "approval.person_decided" },
+                    attributes: expect.arrayContaining(
+                      Object.entries({
+                        audit_event_id: events[0]?.id,
+                        target_id: approvalId,
+                        work_item_key: approvalId,
+                        run_id: runId,
+                        ...(variant === "complete"
+                          ? {
+                              parent_run_id: parentRunId,
+                              root_task_id: rootTaskId,
+                              attempt_id: runId,
+                            }
+                          : {}),
+                        thread_id: threadId,
+                      }).map(([key, stringValue]) => ({
+                        key: `openbot.${key}`,
+                        value: { stringValue },
+                      })),
+                    ),
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+      expect(wire).not.toMatch(/trace_?id|span_?id/i);
+      expect(wire).not.toContain(context.user_id);
+      if (variant !== "complete")
+        expect(wire).not.toMatch(
+          /parent_run_id|root_task_id|attempt_id|another-run/,
+        );
+      await telemetry.flush();
+      expect(productEvents).toEqual([
+        expect.objectContaining({
+          properties: expect.objectContaining({
+            source_event: "approval.person_decided",
+            user_id: context.user_id,
+          }),
+        }),
+      ]);
+      expect(JSON.stringify(productEvents)).not.toMatch(
+        /run_id|thread_id|root_task_id|attempt_id|work_item_key/,
+      );
+    } finally {
+      removeProductTap();
+      await controls.stop();
+      collector.stop(true);
+      if (approvalId)
+        await database.delete(workItems).where(eq(workItems.key, approvalId));
+      await database.delete(users).where(eq(users.id, owner));
+    }
+  },
+  10_000,
+);
 
 test("audit writes remain readable while the Collector holds and rejects a batch", async () => {
   const firstRequest = Promise.withResolvers<void>();
