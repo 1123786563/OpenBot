@@ -1,5 +1,6 @@
 import { IconDeviceDesktop, IconTerminal2 } from "@tabler/icons-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   followedView,
@@ -67,7 +68,7 @@ export function ComputerViewPanel({
     control?.holder === "human" && !control.transitioning && !someoneElse;
 
   return (
-    <section aria-label="Computer sidebar" className="p-4">
+    <section {...astryxScope} aria-label="Computer sidebar" className="p-4">
       <Tabs
         onValueChange={(next) =>
           setPicked({ agentId, view: next as PanelView })

@@ -1,5 +1,7 @@
 import { IconDeviceDesktop } from "@tabler/icons-react";
 import { useEffect, useRef } from "react";
+import { DeviceAction } from "@/components/astryx-pilot/device-action";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { Button } from "@/components/ui/button";
 import { useComputerControl } from "@/lib/computers/use-control";
 
@@ -19,8 +21,11 @@ export function ComputerControlButton({
   // Someone else's wheel is not the person's to hand back, and not theirs to take from under them either.
   const human = control?.holder === "human" && !someoneElse;
   return (
-    <div className="flex flex-col items-start gap-1">
-      <Button
+    <div
+      {...astryxScope}
+      className="flex flex-col items-start gap-1 bg-transparent"
+    >
+      <DeviceAction
         size="sm"
         variant={human || prominent ? "default" : "outline"}
         disabled={busy || !control || control.transitioning || someoneElse}
@@ -32,7 +37,7 @@ export function ComputerControlButton({
         }}
       >
         {human ? "Hand back" : "Take control"}
-      </Button>
+      </DeviceAction>
       {control?.transitioning ? (
         <span className="text-xs text-muted-foreground" role="status">
           Finishing the current action…

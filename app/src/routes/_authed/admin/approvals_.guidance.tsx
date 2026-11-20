@@ -3,12 +3,12 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { GuidanceBacktestField } from "@/components/approvals/guidance-backtest";
-import { ReadingStatus } from "@/components/boundaries/rule-reading";
 import {
-  PageCard,
-  PageSection,
-  PageShell,
-} from "@/components/layout/page-shell";
+  GovernancePage,
+  governanceOverlay,
+} from "@/components/astryx-pilot/governance";
+import { ReadingStatus } from "@/components/boundaries/rule-reading";
+import { PageCard, PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -93,7 +93,7 @@ function ReviewerGuidancePage() {
   };
 
   return (
-    <PageShell
+    <GovernancePage
       backButton={BACK}
       description="Tell the reviewer what your organization needs a person for, or what is routine. It reads your guidance with every action it checks. Nothing changes until you save."
       title="Guidance for auto-review"
@@ -217,7 +217,7 @@ function ReviewerGuidancePage() {
         </PageSection>
       ) : null}
       <Dialog onOpenChange={setRemoving} open={removing}>
-        <DialogContent>
+        <DialogContent {...governanceOverlay}>
           <DialogHeader>
             <DialogTitle>Remove the guidance?</DialogTitle>
             <DialogDescription>
@@ -249,6 +249,6 @@ function ReviewerGuidancePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </PageShell>
+    </GovernancePage>
   );
 }

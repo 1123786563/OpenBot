@@ -1,1 +1,0 @@
-ALTER TABLE "skill_market_runs" ADD COLUMN "snapshot" jsonb;

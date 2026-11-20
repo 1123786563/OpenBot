@@ -267,6 +267,10 @@ test("a model and effort picked before the first message are both saved before i
   );
   const user = userEvent.setup({ document });
 
+  expect(
+    await view.findByRole("combobox", { name: "Recipients" }),
+  ).toBeTruthy();
+
   // OpenBot's own model, at its own default effort, until the person picks.
   await user.click(
     await view.findByRole("combobox", {

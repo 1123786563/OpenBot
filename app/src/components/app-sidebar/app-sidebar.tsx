@@ -1,10 +1,18 @@
-import { IconLogout, IconPlus, IconSearch } from "@tabler/icons-react";
+import {
+  IconActivity,
+  IconBulb,
+  IconChecklist,
+  IconLogout,
+  IconSearch,
+  IconTarget,
+} from "@tabler/icons-react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { Link, type LinkOptions, useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type * as React from "react";
 import { useRef, useState } from "react";
-import { BrandName } from "@/components/edition/brand-name";
+import { AstryxBrand, astryxScope } from "@/components/astryx-pilot/theme";
+import { AstryxNewConversation } from "@/components/astryx-pilot/web-actions";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,7 +44,6 @@ import {
   channelListQueryOptions,
 } from "@/lib/channels/queries";
 import { useChannelEvents } from "@/lib/channels/use-channel-events";
-import { appConfig } from "@/lib/generated/application-config";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { isNavigationLink, useNavigationItems } from "@/lib/navigation";
 import { relativeTimeShort } from "@/lib/relative-time";
@@ -46,15 +53,13 @@ import {
 } from "@/lib/settings/message-list";
 import { BotsNavBadge } from "../bot-profile/attention";
 import { BrowserNavItem } from "../browser/browser-nav-item";
+import { BrandName } from "../edition/brand-name";
 import { navigationRender } from "../edition/team-features-dialog";
 import { OpenBotVersion } from "../layout/openbot-version";
-import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Channel } from "./channel";
 import { ChannelPagination } from "./channel-pagination";
 import { useSignOut } from "./use-sign-out";
-
-const appLinkOptions = { to: "/" } satisfies LinkOptions;
 
 const userMenuItemClassName = "gap-2 px-2 py-1.5";
 
@@ -206,7 +211,13 @@ function ChannelRow({
   );
 }
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+export function AppSidebar({
+  navId,
+  returnFocus,
+}: {
+  navId: string;
+  returnFocus: React.RefObject<HTMLButtonElement | null>;
+}) {
   const emphasis = useMessageListEmphasis();
   const { data: currentUser } = useQuery(currentUserQueryOptions());
   const signOut = useSignOut();
@@ -227,47 +238,108 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const animateOrder =
     !searching && (channels.data?.length ?? 0) <= MAX_ANIMATED_ROWS;
   const navigation = useNavigationItems();
-  const { setOpenMobile } = useSidebar();
-
-  return (
-    <Sidebar variant="inset" {...props}>
-      <SidebarHeader className="h-12 p-2">
-        <SidebarMenu>
-          <SidebarMenuItem className="flex flex-row gap-1.5">
-            {/* The same hover as every other row in the sidebar, not the menu button's accent tint. */}
+  const { isMobile, setOpenMobile } = useSidebar();
+  const primaryLinks = (
+    <SidebarMenu className="gap-px">
+      {navigation
+        .filter(isNavigationLink)
+        .filter((item) => item.section === "primary")
+        .map((item) => (
+          <SidebarMenuItem key={item.id}>
             <SidebarMenuButton
-              className="font-semibold text-[14px] tracking-tighter h-full leading-tight hover:bg-foreground/5 hover:text-sidebar-foreground active:bg-foreground/5 active:text-sidebar-foreground"
-              render={(props) => (
-                <Link {...appLinkOptions} {...props}>
-                  <BrandName>{appConfig.brand.productName}</BrandName>
-                </Link>
-              )}
-            />
-            {/* Square, as tall as the name beside it, with the sidebar's hover rather than `muted`, which
-                is nearly the sidebar's own colour. */}
-            <Button
-              aria-label="New conversation"
-              className="aspect-square h-full w-auto hover:bg-foreground/5 dark:hover:bg-foreground/5"
-              size="icon"
-              variant="ghost"
+              className="hover:bg-foreground/5 h-10"
               render={(props) => (
                 <Link
                   {...props}
-                  to="/channel/new"
-                  activeProps={{
-                    className: "bg-foreground/5",
-                  }}
+                  to={item.to}
+                  activeProps={{ className: "bg-foreground/5" }}
                 />
               )}
             >
-              <IconPlus />
-            </Button>
+              <div className="size-[28px] flex items-center justify-center">
+                <item.icon />
+              </div>
+              <span className="text-sm">{item.label}</span>
+              {item.id === "bots" ? <BotsNavBadge /> : null}
+            </SidebarMenuButton>
           </SidebarMenuItem>
-        </SidebarMenu>
+        ))}
+      {/* Your own browser, with the Recorder in it. Drawn only where OpenBot can run one for you. */}
+      <BrowserNavItem />
+      {(
+        [
+          {
+            label: "Goals",
+            to: "/responsibilities",
+            search: { view: "goals" },
+            params: undefined,
+            icon: IconTarget,
+          },
+          {
+            label: "Tasks",
+            to: "/tasks",
+            params: undefined,
+            icon: IconChecklist,
+          },
+          { label: "Ideas", to: "/ideas", params: undefined, icon: IconBulb },
+          {
+            label: "Activity",
+            to: "/s/$screen",
+            params: { screen: "activity" },
+            icon: IconActivity,
+          },
+        ] as const
+      ).map(({ label, icon: Icon, ...options }) => (
+        <SidebarMenuItem key={label}>
+          <SidebarMenuButton
+            className="h-10"
+            render={(props) => <Link {...props} {...options} />}
+          >
+            <div className="size-[28px] flex items-center justify-center">
+              <Icon aria-hidden />
+            </div>
+            <span className="text-sm">{label}</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      ))}
+    </SidebarMenu>
+  );
+
+  return (
+    <Sidebar
+      variant="inset"
+      {...{
+        ...astryxScope,
+        className: "astryx-web-nav",
+        id: isMobile ? undefined : navId,
+        mobileNavigation: {
+          title: "Navigation",
+          popup: {
+            ...astryxScope,
+            className: "astryx-web-nav",
+            id: navId,
+            finalFocus: returnFocus,
+          },
+        },
+      }}
+    >
+      <SidebarHeader className="astryx-nav-header">
+        <Link
+          to="/"
+          activeOptions={{ exact: true }}
+          className="astryx-home-link"
+        >
+          <AstryxBrand />
+        </Link>
+        <AstryxNewConversation />
       </SidebarHeader>
       <SidebarContent ref={scrollRoot} className="scroll-fade-b">
+        <nav aria-label="Main navigation" className="astryx-primary-nav">
+          {primaryLinks}
+        </nav>
         <SidebarMenu>
           <SidebarGroup className="gap-px">
+            <h2 className="astryx-nav-section-title">Recent conversations</h2>
             <SidebarMenuItem>
               <InputGroup className="bg-background text-sm rounded-lg h-9">
                 <InputGroupInput
@@ -338,32 +410,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu className="gap-px">
-          {navigation
-            .filter(isNavigationLink)
-            .filter((item) => item.section === "primary")
-            .map((item) => (
-              <SidebarMenuItem key={item.id}>
-                <SidebarMenuButton
-                  className="hover:bg-foreground/5 h-10"
-                  render={(props) => (
-                    <Link
-                      {...props}
-                      to={item.to}
-                      activeProps={{ className: "bg-foreground/5" }}
-                    />
-                  )}
-                >
-                  <div className="size-[28px] flex items-center justify-center">
-                    <item.icon />
-                  </div>
-                  <span className="text-sm">{item.label}</span>
-                  {/* What waits on you across every Bot; Bots lists them first. */}
-                  {item.id === "bots" ? <BotsNavBadge /> : null}
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
-          {/* Your own browser, with the Recorder in it. Drawn only where OpenBot can run one for you. */}
-          <BrowserNavItem />
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -381,6 +427,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </span>
               </DropdownMenuTrigger>
               <DropdownMenuContent
+                {...astryxScope}
                 align="start"
                 className="p-1.5"
                 side="top"

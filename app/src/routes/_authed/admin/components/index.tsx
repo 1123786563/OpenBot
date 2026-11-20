@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { CapabilityPage } from "@/components/astryx-pilot/capability-surface";
 import { AdminComponentPreview } from "@/components/component-preview";
-import { PageShell } from "@/components/layout/page-shell";
 import { SettingsItemBackground } from "@/components/settings/background";
 import {
   Empty,
@@ -25,7 +25,7 @@ function RouteComponent() {
   const components = useQuery(componentListQueryOptions());
 
   return (
-    <PageShell
+    <CapabilityPage
       description="Choose which components each Bot can display. Published components are available to all Bots by default. Changes and blocked requests appear in Audit."
       title="UI components"
     >
@@ -56,7 +56,7 @@ function RouteComponent() {
              * the preview is `aria-hidden`, so nothing inside it reaches the accessible name.
              */
             <Link
-              className="flex aspect-square flex-col overflow-hidden rounded-lg border border-border bg-card text-left outline-none transition-colors hover:border-ring focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="astryx-component-tile flex aspect-square flex-col overflow-hidden rounded-lg border border-border bg-card text-left outline-none transition-colors hover:border-ring focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
               data-testid={`component-${component.name}`}
               key={component.name}
               params={{ name: component.name }}
@@ -100,6 +100,6 @@ function RouteComponent() {
           ))}
         </div>
       )}
-    </PageShell>
+    </CapabilityPage>
   );
 }

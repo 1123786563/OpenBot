@@ -14,6 +14,10 @@ Fill the required values, then run:
 bash scripts/start.sh
 ```
 
+## Web bundle
+
+For tenant branding, production build commands, and artifact rollback, see the [Astryx Web rollout guide](astryx-web-rollout.md).
+
 ## Required API server variables
 
 | Variable                      | Meaning                                                                                               |

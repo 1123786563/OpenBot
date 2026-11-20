@@ -1,6 +1,6 @@
 {
-  "id": "9dc2fb7f-e275-41ea-92ba-ee36f5335c05",
-  "prevId": "8d7585b1-6824-4ad3-b538-5c764059b332",
+  "id": "441e48a5-f8da-4979-813e-61c8f4701c09",
+  "prevId": "939c073f-357b-42ec-869e-3c9379d3f9c6",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -8967,6 +8967,117 @@
       },
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.direct_chat_runs": {
+      "name": "direct_chat_runs",
+      "schema": "",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_message_id": {
+          "name": "user_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prompt": {
+          "name": "prompt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assistant_message_id": {
+          "name": "assistant_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reply": {
+          "name": "reply",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "direct_chat_runs_request_idx": {
+          "name": "direct_chat_runs_request_idx",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "direct_chat_runs_thread_id_intelligence_channel_mappings_thread_id_fk": {
+          "name": "direct_chat_runs_thread_id_intelligence_channel_mappings_thread_id_fk",
+          "tableFrom": "direct_chat_runs",
+          "tableTo": "intelligence_channel_mappings",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "thread_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "direct_chat_runs_thread_id_id_pk": {
+          "name": "direct_chat_runs_thread_id_id_pk",
+          "columns": [
+            "thread_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "direct_chat_runs_status_check": {
+          "name": "direct_chat_runs_status_check",
+          "value": "\"direct_chat_runs\".\"status\" in ('running', 'completed', 'failed')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.group_bot_threads": {

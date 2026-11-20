@@ -1,6 +1,8 @@
+import { Switch as AstryxSwitch } from "@astryxdesign/core/Switch";
 import { IconRoute } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment } from "react";
+
 import {
   PageEmpty,
   PageRows,
@@ -16,7 +18,6 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { setUpdateRoutingMutationOptions } from "@/lib/bot-lifecycle/mutations";
 import {
@@ -166,37 +167,40 @@ export function UpdateRoutingSection() {
                     </ItemDescription>
                   </ItemContent>
                   <ItemFooter className="flex-wrap justify-start gap-x-6 gap-y-3 pl-8">
-                    {shown.map((transport) => (
-                      <div
-                        className="flex items-center gap-2 text-sm"
-                        key={transport.id}
-                      >
-                        <Switch
-                          aria-label={`${KIND_LABEL[kind].title} by ${transport.label}`}
-                          checked={
-                            configured(transport.id) && allowed(transport.id)
-                          }
-                          disabled={save.isPending || !configured(transport.id)}
-                          onCheckedChange={(checked) => {
-                            const next = TRANSPORTS.map((t) => t.id).filter(
-                              (id) =>
-                                id === transport.id ? checked : allowed(id),
-                            );
-                            save.mutate({
-                              kind,
-                              transports:
-                                next.length === TRANSPORTS.length
-                                  ? "all"
-                                  : next,
-                            });
-                          }}
-                          size="sm"
-                        />
-                        <span className="leading-tight whitespace-nowrap">
-                          {transport.label}
-                        </span>
-                      </div>
-                    ))}
+                    {shown.map(({ id, label }) => {
+                      const checked = allowed(id);
+                      const name = `${KIND_LABEL[kind].title} by ${label}`;
+                      const setChecked = (next: boolean) => {
+                        const selected = TRANSPORTS.map((t) => t.id).filter(
+                          (key) => (key === id ? next : allowed(key)),
+                        );
+                        save.mutate({
+                          kind,
+                          transports:
+                            selected.length === TRANSPORTS.length
+                              ? "all"
+                              : selected,
+                        });
+                      };
+                      return (
+                        <div
+                          className="flex items-center gap-2 text-sm"
+                          key={id}
+                        >
+                          <AstryxSwitch
+                            isLabelHidden
+                            isLoading={save.isPending}
+                            label={name}
+                            onChange={setChecked}
+                            size="sm"
+                            value={checked}
+                          />
+                          <span className="leading-tight whitespace-nowrap">
+                            {label}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </ItemFooter>
                 </Item>
               </Fragment>

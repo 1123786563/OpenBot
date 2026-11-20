@@ -7,6 +7,11 @@ import {
   test,
 } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import type {
+  LearningRunSummary,
+  PersonalReview,
+  RecordingSkills,
+} from "@openbot/shared/learning";
 import {
   type BrowserApiState,
   type BrowserOpenResponse,
@@ -17,11 +22,6 @@ import {
   browserTabsRequestSchema,
   type LauncherState,
 } from "@openbot/shared/openbot-browser";
-import type {
-  LearningRunSummary,
-  PersonalReview,
-  RecordingSkills,
-} from "@openbot/shared/learning";
 import type { RecordingRow } from "@openbot/shared/recorder-api";
 import { QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -516,6 +516,21 @@ function draw(ui: ReactNode, entry = "/") {
     </StrictMode>,
   );
 }
+
+test("retries an initial Browser state failure from the page", async () => {
+  state = screenState();
+  stateFails = true;
+  const view = draw(<BrowserPage />, "/?recordings=1");
+  expect(
+    (await view.findByRole("alert", {}, { timeout: 3000 })).textContent,
+  ).toContain("Couldn't load your browser");
+  stateFails = false;
+  await userEvent
+    .setup({ document })
+    .click(view.getByRole("button", { name: "Try again" }));
+  await view.findByRole("button", { name: "Open browser" });
+  expect(view.queryByRole("alert")).toBeNull();
+});
 
 const opens = () =>
   writes.filter((write) => write.path === browserApiPaths.open).length;

@@ -278,16 +278,20 @@ test("refuses an empty or unreachable custom endpoint without creating", async (
   verdict = { ok: false, reason: "Nothing answered at that address." };
   const { view, user } = await connected("");
   await user.click(view.getByRole("button", { name: "Create Bot" }));
-  expect(await view.findByText("Enter your agent's address.")).toBeTruthy();
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "Enter your agent's address.",
+  );
   expect(dialled).toEqual([]);
   await user.type(
     view.getByLabelText("Agent address"),
     "https://agent.example.com/ag-ui",
   );
   await user.click(view.getByRole("button", { name: "Create Bot" }));
-  expect(
-    await view.findByText("Nothing answered at that address."),
-  ).toBeTruthy();
+  await waitFor(() => {
+    expect(view.getByRole("alert").textContent).toBe(
+      "Nothing answered at that address.",
+    );
+  });
   expect(creates).toEqual([]);
 });
 

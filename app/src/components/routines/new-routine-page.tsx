@@ -2,7 +2,9 @@ import { useForm } from "@tanstack/react-form";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
+import { AstryxSurface, astryxScope } from "@/components/astryx-pilot/theme";
 import { PageCard, PageShell } from "@/components/layout/page-shell";
+import { RoutineAction } from "@/components/routines/routine-action";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -77,13 +79,20 @@ const WEEKDAY_ITEMS = Object.fromEntries(
  * schedule through the same store this page does. `agentId` and `channelId` arrive pre-filled from
  * a Bot's Routines page and from the clock beside a conversation's message box.
  */
-export function NewRoutinePage({
+type RoutineCreateProps = { agentId?: string; channelId?: string };
+
+export function NewRoutinePage(props: RoutineCreateProps) {
+  return (
+    <AstryxSurface className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <RoutineCreateForm {...props} />
+    </AstryxSurface>
+  );
+}
+
+function RoutineCreateForm({
   agentId: presetAgentId,
   channelId: presetChannelId,
-}: {
-  agentId?: string;
-  channelId?: string;
-}) {
+}: RoutineCreateProps) {
   const navigate = useNavigate();
   const agents = useQuery(agentListQueryOptions());
   const channels = useInfiniteQuery(channelListQueryOptions());
@@ -132,7 +141,9 @@ export function NewRoutinePage({
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
-          form.handleSubmit();
+          void form.handleSubmit().catch(() => {
+            // The mutation error is rendered below the form.
+          });
         }}
       >
         <PageCard
@@ -148,7 +159,7 @@ export function NewRoutinePage({
                 selector={(state) => [state.canSubmit, state.isSubmitting]}
               >
                 {([canSubmit, isSubmitting]) => (
-                  <Button
+                  <RoutineAction
                     disabled={
                       !canSubmit || isSubmitting || createRoutine.isPending
                     }
@@ -157,7 +168,7 @@ export function NewRoutinePage({
                     {isSubmitting || createRoutine.isPending
                       ? "Creating…"
                       : "Create routine"}
-                  </Button>
+                  </RoutineAction>
                 )}
               </form.Subscribe>
             </>
@@ -195,7 +206,7 @@ export function NewRoutinePage({
                       >
                         <SelectValue placeholder="Choose a Bot" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent {...astryxScope}>
                         <SelectGroup>
                           {(agents.data ?? []).map((agent) => (
                             <SelectItem key={agent.id} value={agent.id}>
@@ -266,7 +277,7 @@ export function NewRoutinePage({
                       <SelectTrigger className="min-w-40 flex-1" id="repeat">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent {...astryxScope}>
                         <SelectGroup>
                           {REPEATS.map((repeat) => (
                             <SelectItem key={repeat} value={repeat}>
@@ -297,7 +308,7 @@ export function NewRoutinePage({
                               >
                                 <SelectValue />
                               </SelectTrigger>
-                              <SelectContent>
+                              <SelectContent {...astryxScope}>
                                 <SelectGroup>
                                   {WEEKDAY_LABEL.map((label, index) => (
                                     <SelectItem
@@ -329,7 +340,7 @@ export function NewRoutinePage({
                               >
                                 <SelectValue />
                               </SelectTrigger>
-                              <SelectContent>
+                              <SelectContent {...astryxScope}>
                                 <SelectGroup>
                                   {MONTH_DAYS.map((day) => (
                                     <SelectItem key={day} value={day}>
@@ -422,7 +433,7 @@ export function NewRoutinePage({
                           <SelectTrigger className="w-full" id={field.name}>
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent {...astryxScope}>
                             <SelectGroup>
                               {choices.map(([value, label]) => (
                                 <SelectItem key={value} value={value}>

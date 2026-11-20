@@ -108,6 +108,22 @@ test("a proposal still streaming shows nothing to press", async () => {
   expect(view.queryByRole("button")).toBeNull();
 });
 
+test("a keyboard user can focus and scroll the proposal instructions before approving", async () => {
+  const view = routed(
+    <ProposedBotCard
+      args={DRAFT}
+      create={async () => MADE}
+      respond={async () => {}}
+    />,
+  );
+  const instructions = await view.findByRole("region", {
+    name: "Bot instructions",
+  });
+  await userEvent.setup({ document }).tab();
+  expect(document.activeElement).toBe(instructions);
+  expect(instructions.textContent).toBe(INSTRUCTIONS);
+});
+
 test("the whole instruction is on screen, unclipped, before anything is created", async () => {
   let created = 0;
   const view = routed(
@@ -217,7 +233,8 @@ test("a refusal keeps the run open with the buttons still live", async () => {
 
   await view.findByText("A coworker called Renewal Desk already exists.");
   expect(answers).toEqual([]);
-  expect((view.getByText("Create it") as HTMLButtonElement).disabled).toBe(
+  expect(view.getByRole("button", { name: "Create it" })).toHaveProperty(
+    "disabled",
     false,
   );
 });

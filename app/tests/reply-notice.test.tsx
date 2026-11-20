@@ -15,7 +15,10 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
-import { BotsNavBadge } from "@/components/bot-profile/attention";
+import {
+  AttentionNotifier,
+  BotsNavBadge,
+} from "@/components/bot-profile/attention";
 import { agentKeys } from "@/lib/agents/queries";
 import {
   type BotAttention,
@@ -225,8 +228,12 @@ async function openPage(options: {
     queryClient.setQueryData(agentKeys.list(false), options.agents);
   function Page() {
     useChannelEvents();
-    // The sidebar's badge, which raises "needs you" off the same attention list.
-    return options.badge ? <BotsNavBadge /> : null;
+    return options.badge ? (
+      <>
+        <AttentionNotifier />
+        <BotsNavBadge />
+      </>
+    ) : null;
   }
   const router = createRouter({
     routeTree: createRootRoute({ component: Page }),

@@ -1,3 +1,4 @@
+import { AstryxAdminPage } from "@/components/admin/astryx-admin-page";
 import {
   IconBrain,
   IconBuildingBank,
@@ -21,11 +22,7 @@ import {
   Link,
   type LinkOptions,
 } from "@tanstack/react-router";
-import {
-  PageRows,
-  PageSection,
-  PageShell,
-} from "@/components/layout/page-shell";
+import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { StaggerItem } from "@/components/layout/stagger";
 import {
   Item,
@@ -191,7 +188,7 @@ const SECTIONS: {
 
 function RouteComponent() {
   return (
-    <PageShell
+    <AstryxAdminPage
       description="Manage settings that apply to everyone and every Bot in this deployment."
       title="Admin"
     >
@@ -227,6 +224,6 @@ function RouteComponent() {
           </PageRows>
         </PageSection>
       ))}
-    </PageShell>
+    </AstryxAdminPage>
   );
 }
