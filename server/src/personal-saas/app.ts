@@ -23,6 +23,7 @@ import {
   type WorkspaceComputerConfig,
   workspaceComputer,
 } from "./workspace-computer";
+import { workspaceExportRoutes } from "./workspace-export-routes";
 
 import {
   pausedWorkspace,
@@ -125,6 +126,8 @@ export function createPersonalSaasApp(
 
   function acceptsNativePost(context: Context) {
     if (context.req.path.startsWith("/api/operator/workspaces/")) return true;
+    if (/^\/api\/workspaces\/[^/]+\/exports$/.test(context.req.path))
+      return Boolean(bearer(context));
     switch (context.req.path) {
       case "/api/auth/native/exchange":
         return true;
@@ -498,6 +501,19 @@ export function createPersonalSaasApp(
     },
   );
 
+  app.route(
+    "/",
+    workspaceExportRoutes({
+      database,
+      encryptionKey: config.encryptionKey,
+      now,
+      authorize: (context) => authorize(requestSession(context)),
+      stillAuthorized: async (context, grant) =>
+        (await accountAccess.verify(grant)).kind === "active" &&
+        stillAuthorized(requestSession(context), grant),
+    }),
+  );
+
   app.get("/workspace", async (context) => {
     const token = getCookie(context, sessionCookie);
     const session = await authorize(token);
@@ -563,6 +579,9 @@ export function createPersonalSaasApp(
       </section>`
           : ""
       }
+      <form method="post" action="/api/workspaces/${workspace.id}/exports">
+        <button type="submit">Download workspace data</button>
+      </form>
       <form method="post" action="/auth/sign-out"><button type="submit">Sign out</button></form>
       <form method="post" action="/auth/sign-out-all">
         <p>Verify your identity with Casdoor to require every device to sign in again.</p>
