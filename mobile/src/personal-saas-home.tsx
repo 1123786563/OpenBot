@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, ScrollView, Text } from "react-native";
+import { Button, ScrollView, Text, View } from "react-native";
 import {
   openPersonalWorkspace,
   PersonalSaasActionError,
   signInPersonalSaas,
   signOutPersonalSaas,
 } from "./personal-saas";
-import type { PersonalWorkspace } from "./personal-saas-contract";
 
 type Screen =
   | { kind: "loading" | "preparing" | "signed-out" }
-  | { kind: "ready"; workspace: PersonalWorkspace }
+  | {
+      kind: "ready";
+      workspace: NonNullable<Awaited<ReturnType<typeof openPersonalWorkspace>>>;
+    }
   | { kind: "workspace-error" };
 
 export function PersonalSaasHome() {
@@ -110,7 +112,21 @@ export function PersonalSaasHome() {
           >
             {screen.workspace.personalAssistant.name}
           </Text>
-          <Text>Conversation history is unavailable in this trial.</Text>
+          <Text
+            accessibilityRole="header"
+            style={{ fontSize: 20, fontWeight: "600" }}
+          >
+            Recent conversations
+          </Text>
+          {screen.workspace.conversations.length === 0 && (
+            <Text>No conversations yet.</Text>
+          )}
+          {screen.workspace.conversations.map(({ id, title, preview }) => (
+            <View key={id}>
+              <Text style={{ fontWeight: "600" }}>{title}</Text>
+              {preview ? <Text>{preview}</Text> : null}
+            </View>
+          ))}
         </>
       )}
       {(screen.kind === "ready" || screen.kind === "workspace-error") && (

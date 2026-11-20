@@ -24,6 +24,15 @@ export const personalWorkspace = z.object({
   }),
 });
 export type PersonalWorkspace = z.infer<typeof personalWorkspace>;
+export const personalConversationHistory = z.object({
+  conversations: z.array(
+    z.object({
+      id: z.string().min(1),
+      title: z.string(),
+      preview: z.string().nullable(),
+    }),
+  ),
+});
 
 export function parsePersonalSaasCallback(raw: string, state: string) {
   if (!raw.startsWith(`${personalSaasCallbackUrl}?`) || raw.includes("#"))

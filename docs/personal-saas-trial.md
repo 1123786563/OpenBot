@@ -44,4 +44,4 @@ Set `EXPO_PUBLIC_OPENBOT_MODE=personal-saas` and `EXPO_PUBLIC_SERVER_URL` to the
 
 Keep the HTTPS origin reachable from the system browser and the app's API client. For a restricted trial, use network-level access that both clients can reach. App API requests authenticate with their own OpenBot Application Session and do not share the system browser's cookies.
 
-Each client uses the same workspace and default Assistant identifiers. The trial has no Personal Workspace conversation-history or Bot resource API. The mobile build displays the workspace identity and the default Assistant.
+Web, iOS, and Android display the same workspace, default Assistant, and recent conversations. `GET /api/workspace/conversations` returns up to 50 titles and last-message previews from the owner's dedicated Assistant, newest activity first. Full transcripts and new conversations are outside the read-only trial.

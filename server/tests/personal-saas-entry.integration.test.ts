@@ -4,7 +4,13 @@ import { eq } from "drizzle-orm";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createDatabase } from "../src/db/client";
-import { workItems } from "../src/db/schema";
+import {
+  channelAgents,
+  channelMemberships,
+  channels,
+  users,
+  workItems,
+} from "../src/db/schema";
 import { personalSaasNativeCodes } from "../src/db/schema/personal-saas";
 import { createPersonalSaasApp } from "../src/personal-saas/app";
 import { personalSaasStore } from "../src/personal-saas/store";
@@ -222,7 +228,9 @@ test("a verified active ordinary email can reach its private workspace and defau
   expect(await preparing.text()).toContain("Preparing your Personal Workspace");
   expect((await enter(session)).headers.get("location")).toBe("/workspace");
   const landing = await send("/workspace", { headers: { cookie: session } });
-  expect(await landing.text()).toContain("Personal Assistant");
+  const landingPage = await landing.text();
+  expect(landingPage).toContain("Personal Assistant");
+  expect(landingPage).toContain("No conversations yet.");
   const result = await workspace(session);
   expect(result).toEqual({
     id: expect.any(String),
@@ -473,7 +481,7 @@ function exchangeNative(body: Record<string, unknown>, requestOrigin?: string) {
   });
 }
 
-test("mobile and Web first entries use independent sessions in the same workspace", async () => {
+test("Web, iOS, and Android share the owner’s workspace and conversation history", async () => {
   const owner = {
     sub: crypto.randomUUID(),
     email: "mobile@example.com",
@@ -541,6 +549,84 @@ test("mobile and Web first entries use independent sessions in the same workspac
   expect(bots.filter((bot) => !before.some(({ id }) => id === bot.id))).toEqual(
     [expect.objectContaining(expected.personalAssistant)],
   );
+  const otherWeb = cookie(
+    await authenticate({ ...owner, sub: crypto.randomUUID() }),
+    "__Host-openbot-personal=",
+  );
+  await enter(otherWeb);
+  const otherWorkspace = await workspace(otherWeb);
+  const historyPath = "/api/workspace/conversations";
+  const ownChannel = crypto.randomUUID();
+  const deletedChannel = crypto.randomUUID();
+  const otherChannel = crypto.randomUUID();
+  const sharedChannel = crypto.randomUUID();
+  const enterpriseChannel = crypto.randomUUID();
+  const enterpriseUser = crypto.randomUUID();
+  await database.insert(channels).values([
+    {
+      id: ownChannel,
+      name: "Personal Assistant",
+      description: "",
+      title: "Weekend <plans>",
+      lastMessage: "Saturday at nine",
+    },
+    {
+      id: deletedChannel,
+      name: "Deleted conversation",
+      description: "",
+      deletedAt: new Date(),
+    },
+    { id: otherChannel, name: "Other account conversation", description: "" },
+    { id: sharedChannel, name: "Shared conversation", description: "" },
+    { id: enterpriseChannel, name: "Enterprise conversation", description: "" },
+  ]);
+  await database.insert(channelAgents).values([
+    ...[ownChannel, deletedChannel, sharedChannel, enterpriseChannel].map(
+      (channelId) => ({
+        channelId,
+        agentId: expected.personalAssistant.id,
+      }),
+    ),
+    ...[otherChannel, sharedChannel].map((channelId) => ({
+      channelId,
+      agentId: otherWorkspace.personalAssistant.id,
+    })),
+  ]);
+  await database.insert(users).values({
+    id: enterpriseUser,
+    email: `${enterpriseUser}@example.com`,
+  });
+  await database.insert(channelMemberships).values({
+    userId: enterpriseUser,
+    channelId: enterpriseChannel,
+  });
+
+  const ownHistory = [
+    { id: ownChannel, title: "Weekend <plans>", preview: "Saturday at nine" },
+  ];
+  for (const headers of [{ cookie: web }, ios, android]) {
+    const history = await send(historyPath, { headers });
+    expect(history.status).toBe(200);
+    expect(history.headers.get("cache-control")).toBe("no-store");
+    expect(await history.json()).toEqual({ conversations: ownHistory });
+  }
+  const webPage = await send("/workspace", { headers: { cookie: web } });
+  const html = await webPage.text();
+  expect(html).toContain("Weekend &lt;plans&gt;");
+  expect(html).toContain("Saturday at nine");
+  expect(html).not.toContain("Other account conversation");
+  const otherHistory = await send(
+    `${historyPath}?workspaceId=${expected.id}&botId=${expected.personalAssistant.id}&conversationId=${ownChannel}`,
+    { headers: { cookie: otherWeb } },
+  );
+  expect(otherHistory.status).toBe(200);
+  expect(await otherHistory.json()).toEqual({
+    conversations: [
+      { id: otherChannel, title: "Other account conversation", preview: null },
+    ],
+  });
+  expect((await send(historyPath)).status).toBe(401);
+
   const returningIos = await native("ios");
   expect(returningIos.authorization).not.toBe(ios.authorization);
   const returningWorkspace = await send("/api/workspace", {
@@ -548,6 +634,14 @@ test("mobile and Web first entries use independent sessions in the same workspac
   });
   expect(returningWorkspace.status).toBe(200);
   expect(await returningWorkspace.json()).toEqual(expected);
+  const returningHistory = await send(historyPath, { headers: returningIos });
+  expect(await returningHistory.json()).toEqual({ conversations: ownHistory });
+  expect(
+    (await send("/auth/sign-out", { method: "POST", headers: ios })).status,
+  ).toBe(204);
+  expect((await send(historyPath, { headers: ios })).status).toBe(401);
+  const androidHistory = await send(historyPath, { headers: android });
+  expect(await androidHistory.json()).toEqual({ conversations: ownHistory });
 });
 
 test("native exchange is bound to its app proof and can only start one session", async () => {

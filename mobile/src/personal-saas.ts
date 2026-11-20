@@ -8,6 +8,7 @@ import { serverUrl } from "./auth";
 import {
   nativeSession,
   parsePersonalSaasCallback,
+  personalConversationHistory,
   personalSaasCallbackUrl,
   personalWorkspace,
 } from "./personal-saas-contract";
@@ -125,7 +126,20 @@ export async function openPersonalWorkspace(onPreparing: () => void) {
     throw new PersonalSaasActionError(
       "Could not open your Personal Workspace. Try again.",
     );
-  return personalWorkspace.parse(await reply.json());
+  const workspace = personalWorkspace.parse(await reply.json());
+  const history = await request("/api/workspace/conversations", { headers });
+  if (history.status === 401) {
+    await clearSession();
+    return null;
+  }
+  if (history.status !== 200)
+    throw new PersonalSaasActionError(
+      "Could not load your conversation history. Try again.",
+    );
+  return {
+    ...workspace,
+    ...personalConversationHistory.parse(await history.json()),
+  };
 }
 
 export async function signOutPersonalSaas() {

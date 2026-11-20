@@ -386,10 +386,21 @@ export function createPersonalSaasApp(
     }
     const workspace = await store.workspace(session.accountId);
     if (!workspace) return context.html(preparePage());
+    const conversations = await store.recentConversations(session.accountId);
     return context.html(
       page(
         "Personal Workspace",
         html`<section aria-labelledby="assistant"><h2 id="assistant">${workspace.personalAssistant.name}</h2></section>
+      <section aria-labelledby="conversations"><h2 id="conversations">Recent conversations</h2>
+        ${
+          conversations.length === 0
+            ? html`<p>No conversations yet.</p>`
+            : html`<ul>${conversations.map(
+                ({ title, preview }) =>
+                  html`<li><strong>${title}</strong>${preview ? html`<p>${preview}</p>` : ""}</li>`,
+              )}</ul>`
+        }
+      </section>
       <form method="post" action="/auth/sign-out"><button type="submit">Sign out</button></form>
       <form method="post" action="/auth/sign-out-all">
         <p>Verify your identity with Casdoor to require every device to sign in again.</p>
@@ -435,6 +446,17 @@ export function createPersonalSaasApp(
     return workspace
       ? context.json(workspace)
       : context.json({ status: "preparing" }, 202);
+  });
+
+  app.get("/api/workspace/conversations", async (context) => {
+    const session = await authorize(requestSession(context));
+    if (session.kind === "unconfirmed")
+      return context.json({ error: "account_status_unconfirmed" }, 503);
+    if (session.kind === "signed-out")
+      return context.json({ error: "sign_in_required" }, 401);
+    return context.json({
+      conversations: await store.recentConversations(session.accountId),
+    });
   });
 
   app.post("/auth/sign-out", async (context) => {
