@@ -1,4 +1,5 @@
 import { Hono, type MiddlewareHandler } from "hono";
+import { z } from "zod";
 import type { AppVariables } from "../auth/guards";
 import {
   CatalogEntryUnavailable,
@@ -6,11 +7,17 @@ import {
   type RegistryFetch,
 } from "./catalog";
 import type { SkillMarketConfig } from "./config";
+import type { marketSkillMethods } from "./installations";
+
+const installBody = z.strictObject({ agentId: z.string().trim().min(1) });
+const commandUnavailable =
+  "This market skill needs an unused slash command assigned by an administrator.";
 
 export function createSkillMarketRoutes(
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
   config: SkillMarketConfig,
   fetchRegistry?: RegistryFetch,
+  installations?: ReturnType<typeof marketSkillMethods>,
 ) {
   const market = createSkillMarket(config, fetchRegistry);
   const routes = new Hono<{ Variables: AppVariables }>();
@@ -38,6 +45,71 @@ export function createSkillMarketRoutes(
     return context.json(await market.search(q, page));
   });
 
+  routes.get("/install-targets", async (context) => {
+    const bots = installations
+      ? await installations.marketInstallTargets(context.var.actor)
+      : [];
+    return context.json({ bots });
+  });
+
+  routes.post(
+    "/:namespace/:slug/versions/:version/install",
+    async (context) => {
+      if (!installations)
+        return context.json(
+          { error: "Skill installation is unavailable." },
+          503,
+        );
+      const body = installBody.safeParse(
+        await context.req.json().catch(() => null),
+      );
+      if (!body.success) return context.json({ error: "Choose a Bot." }, 400);
+      const { agentId } = body.data;
+      const { actor } = context.var;
+      if (!(await installations.marketInstallTargets(actor, agentId)).length) {
+        return context.json(
+          { error: "You cannot manage skills on this Bot." },
+          403,
+        );
+      }
+
+      const { namespace, slug, version } = context.req.param();
+      const qualified = await market.qualifyInstallation(
+        namespace,
+        slug,
+        version,
+      );
+      if (qualified.kind === "ineligible") {
+        return context.json({ error: qualified.reasons.join(" ") }, 422);
+      }
+      const result = await installations.installMarketSkill(
+        actor,
+        agentId,
+        qualified,
+      );
+      switch (result.kind) {
+        case "forbidden":
+          return context.json(
+            { error: "You cannot manage skills on this Bot." },
+            403,
+          );
+        case "command-unavailable":
+          return context.json({ error: commandUnavailable }, 409);
+        case "different-version":
+          return context.json(
+            { error: "This Bot already has a different version installed." },
+            409,
+          );
+        case "installed":
+        case "already-installed":
+          return context.json(
+            { command: result.command, version: result.version },
+            result.kind === "installed" ? 201 : 200,
+          );
+      }
+    },
+  );
+
   routes.get("/:namespace/:slug", async (context) => {
     const { namespace, slug } = context.req.param();
     const page = readPage(context.req.query("page"));
@@ -47,7 +119,14 @@ export function createSkillMarketRoutes(
 
   routes.get("/:namespace/:slug/versions/:version", async (context) => {
     const { namespace, slug, version } = context.req.param();
-    return context.json(await market.preview(namespace, slug, version));
+    const preview = await market.preview(namespace, slug, version);
+    if (!installations || !preview.installable) return context.json(preview);
+    const command = await installations.marketCommand(preview);
+    return context.json(
+      command
+        ? { ...preview, command }
+        : { ...preview, installable: false, reasons: [commandUnavailable] },
+    );
   });
 
   routes.get(

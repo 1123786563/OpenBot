@@ -159,7 +159,7 @@ export function createSkillMarket(
     return { skill, detail, resolved, versionPath };
   }
 
-  return {
+  const market = {
     async search(q: string, pageNumber: number) {
       const params = new URLSearchParams({
         q,
@@ -264,6 +264,7 @@ export function createSkillMarket(
       return {
         ...summary(skill),
         source: config.baseUrl,
+        registrySkillId: skill.id,
         version,
         versionId: detail.id,
         fingerprint: resolved.fingerprint,
@@ -288,4 +289,29 @@ export function createSkillMarket(
       return response;
     },
   };
+
+  return {
+    ...market,
+    async qualifyInstallation(
+      namespace: string,
+      slug: string,
+      version: string,
+    ) {
+      const preview = await market.preview(namespace, slug, version);
+      if (!preview.installable)
+        return { kind: "ineligible", reasons: preview.reasons } as const;
+      return { kind: "qualified", preview } as const;
+    },
+  };
 }
+
+export type MarketPreview = Awaited<
+  ReturnType<ReturnType<typeof createSkillMarket>["preview"]>
+>;
+
+export type QualifiedMarketVersion = Extract<
+  Awaited<
+    ReturnType<ReturnType<typeof createSkillMarket>["qualifyInstallation"]>
+  >,
+  { kind: "qualified" }
+>;

@@ -1,6 +1,12 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { recordAuditEvent } from "../../audit";
-import { mcpTools, pluginGrants, skills } from "../../db/schema";
+import {
+  mcpTools,
+  pluginGrants,
+  SKILL_MARKET_RESERVATION,
+  skillMarketInstallations,
+  skills,
+} from "../../db/schema";
 import { catalogueEntry, classifyTool } from "../catalogue";
 import type { StoreContext } from "./context";
 import {
@@ -227,7 +233,6 @@ export function grantMethods(context: StoreContext) {
         .select()
         .from(pluginGrants)
         .where(eq(pluginGrants.agentId, agentId));
-      if (held.length === 0) return { tools: [], skills: [] };
 
       const toolRefs = held
         .filter((row) => row.kind === "mcp")
@@ -289,7 +294,22 @@ export function grantMethods(context: StoreContext) {
           : await database
               .select()
               .from(skills)
-              .where(inArray(skills.slug, skillSlugs));
+              .where(
+                and(
+                  inArray(skills.slug, skillSlugs),
+                  ne(skills.origin, SKILL_MARKET_RESERVATION),
+                ),
+              );
+
+      const pinnedSkills = await database
+        .select({
+          slug: skillMarketInstallations.command,
+          title: skillMarketInstallations.title,
+          summary: skillMarketInstallations.summary,
+          instructions: skillMarketInstallations.instructions,
+        })
+        .from(skillMarketInstallations)
+        .where(eq(skillMarketInstallations.agentId, agentId));
 
       /*
        * What each skill says it needs, carried alongside rather than folded into `tools`.
@@ -302,13 +322,16 @@ export function grantMethods(context: StoreContext) {
 
       return {
         tools: grantedTools,
-        skills: skillRows.map((row) => ({
-          slug: row.slug,
-          title: row.title,
-          summary: row.summary,
-          instructions: row.instructions,
-          tools: declared.get(row.id) ?? [],
-        })),
+        skills: [
+          ...pinnedSkills.map((row) => ({ ...row, tools: [] })),
+          ...skillRows.map((row) => ({
+            slug: row.slug,
+            title: row.title,
+            summary: row.summary,
+            instructions: row.instructions,
+            tools: declared.get(row.id) ?? [],
+          })),
+        ],
       };
     },
   };

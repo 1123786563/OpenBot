@@ -785,7 +785,7 @@ export function createApp(
   if (skillMarket) {
     app.route(
       "/api/skill-market",
-      createSkillMarketRoutes(requireUser, skillMarket),
+      createSkillMarketRoutes(requireUser, skillMarket, undefined, pluginStore),
     );
   }
   if (coworker?.productTelemetry)

@@ -80,3 +80,76 @@ test("searches the shared market and shows the selected version's instructions a
     ),
   ).toBeTruthy();
 });
+
+test("installs the previewed version only on a Bot the server offers to manage", async () => {
+  const skill = {
+    slug: "summarize",
+    namespace: "catalog",
+    title: "Summarize",
+    summary: "Summarize notes",
+    latestVersion: "1.0.0",
+    version: "1.0.0",
+    source: "https://registry.example",
+    instructions: "Summarize in three bullets.",
+    installable: true,
+    command: "summarize",
+    reasons: [],
+  };
+  const installs: unknown[] = [];
+  let canManage = false;
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const { pathname } = new URL(String(input), "http://localhost");
+      switch (pathname) {
+        case "/api/skill-market":
+          return Response.json({ items: [skill], hasMore: false });
+        case "/api/skill-market/install-targets":
+          return Response.json({
+            bots: canManage ? [{ id: "managed", title: "Managed Bot" }] : [],
+          });
+        case "/api/skill-market/catalog/summarize":
+          return Response.json({ versions: ["1.0.0"], hasMore: false });
+        case "/api/skill-market/catalog/summarize/versions/1.0.0":
+          return Response.json(skill);
+        case "/api/skill-market/catalog/summarize/versions/1.0.0/install":
+          expect(init?.method).toBe("POST");
+          installs.push(JSON.parse(String(init?.body)));
+          return Response.json(
+            { command: "summarize", version: "1.0.0" },
+            { status: 201 },
+          );
+        default:
+          return new Response(null, { status: 404 });
+      }
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  async function openPreview() {
+    const view = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SkillMarket />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(
+      await view.findByRole("button", { name: "Preview Summarize" }),
+    );
+    return view;
+  }
+
+  const member = await openPreview();
+  await member.findByText(
+    "You don't manage any Bots that can install this skill.",
+  );
+  expect(member.queryByRole("button", { name: "Install on Bot" })).toBeNull();
+  member.unmount();
+
+  canManage = true;
+  const owner = await openPreview();
+  await owner.findByRole("option", { name: "Managed Bot" });
+  fireEvent.change(owner.getByRole("combobox", { name: "Bot" }), {
+    target: { value: "managed" },
+  });
+  fireEvent.click(owner.getByRole("button", { name: "Install on Bot" }));
+  await owner.findByText("Installed 1.0.0. Use /summarize on Managed Bot.");
+  expect(installs).toEqual([{ agentId: "managed" }]);
+});

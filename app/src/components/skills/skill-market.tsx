@@ -1,9 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { client } from "@/lib/client";
+import { pluginKeys } from "@/lib/plugins/queries";
 
 type Skill = {
   namespace: string;
@@ -21,6 +22,7 @@ type VersionPreview = Skill & {
   runtimeRequirements: string | null;
   reasons: string[];
   installable: boolean;
+  command?: string;
 };
 
 async function load<T>(path: string, signal: AbortSignal): Promise<T> {
@@ -172,13 +174,10 @@ function MarketPreview({
       ),
     retry: false,
   });
+  const versionPath = `${path}/versions/${encodeURIComponent(version)}`;
   const preview = useQuery({
     queryKey: ["skill-market", path, "version", version],
-    queryFn: ({ signal }) =>
-      load<VersionPreview>(
-        `${path}/versions/${encodeURIComponent(version)}`,
-        signal,
-      ),
+    queryFn: ({ signal }) => load<VersionPreview>(versionPath, signal),
     retry: false,
   });
   const versions = new Set([version, ...(detail.data?.versions ?? [])]);
@@ -260,6 +259,13 @@ function MarketPreview({
               </>
             )}
           </div>
+          {preview.data.installable && preview.data.command && (
+            <MarketInstall
+              key={versionPath}
+              command={preview.data.command}
+              versionPath={versionPath}
+            />
+          )}
           <div>
             <h4 className="font-medium">Instructions</h4>
             <pre className="whitespace-pre-wrap break-words text-sm">
@@ -269,5 +275,102 @@ function MarketPreview({
         </>
       )}
     </section>
+  );
+}
+
+type InstallTarget = { id: string; title: string };
+
+function MarketInstall({
+  command,
+  versionPath,
+}: {
+  command: string;
+  versionPath: string;
+}) {
+  const [agentId, setAgentId] = useState("");
+  const queryClient = useQueryClient();
+  const targets = useQuery({
+    queryKey: ["skill-market", "install-targets"],
+    queryFn: ({ signal }) =>
+      load<{ bots: InstallTarget[] }>("/install-targets", signal),
+    retry: false,
+  });
+  const install = useMutation({
+    mutationFn: async (bot: InstallTarget) => {
+      const response = await client(`/api/skill-market${versionPath}/install`, {
+        method: "POST",
+        body: { agentId: bot.id },
+        fallback: "Couldn't install this skill.",
+      });
+      const result: { command: string; version: string } =
+        await response.json();
+      return { ...result, botTitle: bot.title };
+    },
+    onSuccess: (_result, bot) =>
+      queryClient.invalidateQueries({ queryKey: pluginKeys.forAgent(bot.id) }),
+  });
+
+  if (targets.isPending) return <p role="status">Loading Bots…</p>;
+  if (targets.isError) {
+    return (
+      <p role="alert">
+        Couldn't load Bots for installation.{" "}
+        <Button variant="link" onClick={() => void targets.refetch()}>
+          Try again
+        </Button>
+      </p>
+    );
+  }
+  if (targets.data.bots.length === 0) {
+    return <p>You don't manage any Bots that can install this skill.</p>;
+  }
+  const selected = targets.data.bots.find((bot) => bot.id === agentId);
+  return (
+    <form
+      className="grid gap-2 text-sm"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (selected && !install.isPending) install.mutate(selected);
+      }}
+    >
+      <p>
+        Slash command <code>/{command}</code>
+      </p>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="grid gap-1">
+          Bot
+          <select
+            className="rounded-md border bg-background px-2 py-1"
+            disabled={install.isPending}
+            value={selected?.id ?? ""}
+            onChange={(event) => {
+              setAgentId(event.target.value);
+              install.reset();
+            }}
+          >
+            <option value="">Choose a Bot</option>
+            {targets.data.bots.map((bot) => (
+              <option key={bot.id} value={bot.id}>
+                {bot.title}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Button
+          type="submit"
+          size="sm"
+          disabled={!selected || install.isPending || install.isSuccess}
+        >
+          {install.isPending ? "Installing…" : "Install on Bot"}
+        </Button>
+      </div>
+      {install.error && <p role="alert">{install.error.message}</p>}
+      {install.data && (
+        <p role="status">
+          Installed {install.data.version}. Use /{install.data.command} on{" "}
+          {install.data.botTitle}.
+        </p>
+      )}
+    </form>
   );
 }

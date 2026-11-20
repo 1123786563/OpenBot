@@ -914,6 +914,49 @@ export const skills = pgTable(
   ],
 );
 
+export const SKILL_MARKET_RESERVATION = "skill-market-reservation";
+
+export const skillMarketSources = pgTable(
+  "skill_market_sources",
+  {
+    command: text("command")
+      .primaryKey()
+      .references(() => skills.slug),
+    registry: text("registry").notNull(),
+    namespace: text("namespace").notNull(),
+    slug: text("slug").notNull(),
+  },
+  (table) => [
+    uniqueIndex("skill_market_source_key").on(
+      table.registry,
+      table.namespace,
+      table.slug,
+    ),
+  ],
+);
+
+export const skillMarketInstallations = pgTable(
+  "skill_market_installations",
+  {
+    command: text("command")
+      .notNull()
+      .references(() => skillMarketSources.command),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    version: text("version").notNull(),
+    versionId: integer("version_id").notNull(),
+    registrySkillId: integer("registry_skill_id").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    title: text("title").notNull(),
+    summary: text("summary").notNull(),
+    instructions: text("instructions").notNull(),
+    installedBy: text("installed_by").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [primaryKey({ columns: [table.agentId, table.command] })],
+);
+
 /**
  * The tools a skill says it needs. A row is a declaration, and a declaration is not a grant.
  *
