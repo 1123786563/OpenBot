@@ -89,6 +89,7 @@ import { createRoleRepository } from "./auth/guards";
 import { createIdentityProviderStore } from "./auth/identity-provider-store";
 import { createOrganizationAuth } from "./auth/organization";
 import { organizationUserStore } from "./auth/organization-store";
+import { createTestCreditLedger } from "./billing/test-credit";
 import { openbotAddress } from "./browser/address";
 import { botBrowserNetwork } from "./browser/bot-browser";
 import { personBrowserEgressPolicy } from "./browser/egress";
@@ -1666,6 +1667,20 @@ const recorderExtension = createRecorderExtension({
   // A connection is made or ended exactly when its row is written: both in one transaction.
   auditFor: (executor) => createAuditStore(executor),
 });
+const testCreditLedger = createTestCreditLedger(database);
+const testCreditCutoffSweep = repeatAfterEach(async () => {
+  try {
+    await testCreditLedger.sweepCutoffs();
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        type: "test-credit-cutoff-sweep-error",
+        error: error instanceof Error ? error.name : "UnknownError",
+      }),
+    );
+  }
+}, 60_000);
+
 /*
  * Connections whose lifetime has run out already resolve to nobody; this ends them for good, with the sealed
  * organization session any of them still held, and writes their rows. Every replica runs it, and each row is ended once.
@@ -3403,6 +3418,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     personResponseSweep.stop();
     groupSweep.stop();
     recorderExpirySweep.stop();
+    testCreditCutoffSweep.stop();
     if (firstAutoApproveSweep) clearTimeout(firstAutoApproveSweep);
     if (autoApproveTimer) clearInterval(autoApproveTimer);
     for (const sweep of deliverySweeps) sweep.stop();

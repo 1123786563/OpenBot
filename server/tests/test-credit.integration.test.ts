@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   configure,
   emptyCatalog,
@@ -11,7 +11,14 @@ import { createBifrostCreditExecutor } from "../src/billing/test-credit-bifrost"
 import { createTestCreditLedger } from "../src/billing/test-credit";
 import { createTestCreditRoutes } from "../src/billing/test-credit-routes";
 import { createDatabase } from "../src/db/client";
-import { enterpriseSettings } from "../src/db/schema";
+import {
+  enterpriseSettings,
+  testCreditAccounts,
+  testCreditBatches,
+  testCreditEnrollments,
+  testCreditEvidence,
+  testCreditOperations,
+} from "../src/db/schema";
 import { createManagedModel, type ModelOperation } from "../src/managed-model";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
@@ -19,7 +26,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
   const database = createDatabase(testDatabaseUrl(), TEST_POOL);
   let now = Date.UTC(2026, 0, 1);
   const ledger = createTestCreditLedger(database, () => new Date(now));
-  const issuer = "https://casdoor.example.test";
+  const issuer = `https://casdoor.example.test/${crypto.randomUUID()}`;
   const first = { issuer, subject: crypto.randomUUID() };
   const second = { issuer, subject: crypto.randomUUID() };
   const batchId = crypto.randomUUID();
@@ -339,6 +346,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
       reservedMicrocredits: "2",
     });
     expect(sends).toBe(2);
+    expect(await ledger.sweepCutoffs()).toBe(0);
 
     token = firstToken;
     const releaseBatch = crypto.randomUUID();
@@ -373,6 +381,62 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
       (await request(`/operations/${timely.operationId}`)).body,
     ).toMatchObject({ state: "pending", heldMicrocredits: "2" });
     now++;
+    // Inspect storage before making any request that would itself apply the cutoff.
+    const persisted = async (accountId: string, id: string) => {
+      const [row] = await database
+        .select({
+          state: testCreditOperations.state,
+          hold: testCreditOperations.cutoffHold,
+        })
+        .from(testCreditOperations)
+        .where(
+          and(
+            eq(testCreditOperations.accountId, accountId),
+            eq(testCreditOperations.id, id),
+          ),
+        );
+      return row;
+    };
+    expect(await persisted(originalAccountId, originalId)).toEqual({
+      state: "pending",
+      hold: null,
+    });
+    expect(await persisted(timely.accountId, timely.operationId)).toEqual({
+      state: "pending",
+      hold: null,
+    });
+    await database.transaction(async (tx) => {
+      await tx
+        .select({ id: testCreditAccounts.id })
+        .from(testCreditAccounts)
+        .where(eq(testCreditAccounts.id, originalAccountId))
+        .for("update");
+      expect(await ledger.sweepCutoffs(1)).toBe(0);
+    });
+    expect(await ledger.sweepCutoffs(1)).toBe(1);
+    expect(await persisted(originalAccountId, originalId)).toEqual({
+      state: "released",
+      hold: 0n,
+    });
+    expect(await persisted(timely.accountId, timely.operationId)).toEqual({
+      state: "pending",
+      hold: null,
+    });
+    const parallelLedger = createTestCreditLedger(
+      database,
+      () => new Date(now),
+    );
+    const swept = await Promise.all([
+      ledger.sweepCutoffs(1),
+      parallelLedger.sweepCutoffs(1),
+    ]);
+    expect(swept.sort()).toEqual([0, 1]);
+    expect(await persisted(timely.accountId, timely.operationId)).toEqual({
+      state: "pending",
+      hold: 1n,
+    });
+    expect(await ledger.sweepCutoffs(1)).toBe(0);
+    expect(sends).toBe(2);
     const cutoff = await Promise.all([
       request(`/operations/${timely.operationId}`),
       request("/balance"),
@@ -600,6 +664,34 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
       await database
         .delete(enterpriseSettings)
         .where(eq(enterpriseSettings.key, pilotCatalogKey));
-    await database.$client.close();
+    try {
+      await database.transaction(async (tx) => {
+        const accountIds = tx
+          .select({ id: testCreditAccounts.id })
+          .from(testCreditAccounts)
+          .where(eq(testCreditAccounts.issuer, issuer));
+        await tx
+          .delete(testCreditEvidence)
+          .where(inArray(testCreditEvidence.accountId, accountIds));
+        await tx
+          .delete(testCreditOperations)
+          .where(inArray(testCreditOperations.accountId, accountIds));
+        const removedEnrollments = await tx
+          .delete(testCreditEnrollments)
+          .where(inArray(testCreditEnrollments.accountId, accountIds))
+          .returning({ batchId: testCreditEnrollments.batchId });
+        await tx
+          .delete(testCreditAccounts)
+          .where(eq(testCreditAccounts.issuer, issuer));
+        await tx.delete(testCreditBatches).where(
+          inArray(
+            testCreditBatches.id,
+            removedEnrollments.map(({ batchId }) => batchId),
+          ),
+        );
+      });
+    } finally {
+      await database.$client.close();
+    }
   }
 });

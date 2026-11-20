@@ -20,6 +20,7 @@ type Evidence = Pick<
   "evidenceId" | "outcome" | "inputTokens" | "outputTokens"
 >;
 const reconciliationMilliseconds = 24 * 60 * 60_000;
+const cutoffBatchSize = 100;
 const reservationMilliseconds = 5 * 60_000;
 const tokenUnit = 1_000_000n;
 const identityFilter = ({ issuer, subject }: VerifiedBillingIdentity) =>
@@ -153,43 +154,51 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
     return verified;
   }
 
+  function dueForCutoff(now: Date) {
+    return and(
+      // Match the partial index predicate even on a generic prepared plan.
+      sql`${operations.state} = 'pending'`,
+      isNull(operations.cutoffHold),
+      lte(
+        operations.dispatchedAt,
+        new Date(now.getTime() - reconciliationMilliseconds),
+      ),
+    );
+  }
+
+  async function applyOperationCutoff(tx: Transaction, row: Operation) {
+    const verified = await eligibleEvidence(tx, row);
+    const cutoffHold = verified ? eligibleCharge(row, verified) : 0n;
+    await tx
+      .update(operations)
+      .set({
+        cutoffHold,
+        state:
+          cutoffHold === 0n && verified?.outcome !== "completed"
+            ? "released"
+            : "pending",
+      })
+      .where(operationFilter(row.accountId, row.id));
+  }
+
   async function applyCutoff(tx: Transaction, accountId: string, now: Date) {
     const due = await tx
       .select()
       .from(operations)
-      .where(
-        and(
-          eq(operations.accountId, accountId),
-          eq(operations.state, "pending"),
-          isNull(operations.cutoffHold),
-          lte(
-            operations.dispatchedAt,
-            new Date(now.getTime() - reconciliationMilliseconds),
-          ),
-        ),
-      );
-    for (const row of due) {
-      const verified = await eligibleEvidence(tx, row);
-      const cutoffHold = verified ? eligibleCharge(row, verified) : 0n;
-      await tx
-        .update(operations)
-        .set({
-          cutoffHold,
-          state:
-            cutoffHold === 0n && verified?.outcome !== "completed"
-              ? "released"
-              : "pending",
-        })
-        .where(operationFilter(accountId, row.id));
-    }
+      .where(and(eq(operations.accountId, accountId), dueForCutoff(now)));
+    for (const row of due) await applyOperationCutoff(tx, row);
   }
 
-  async function lockAccount(tx: Transaction, accountId: string) {
+  async function lockAccount(
+    tx: Transaction,
+    accountId: string,
+    skipLocked = false,
+  ) {
     const [row] = await tx
       .select({ id: accounts.id })
       .from(accounts)
       .where(eq(accounts.id, accountId))
-      .for("update");
+      .for("update", skipLocked ? { skipLocked: true } : undefined);
     return row;
   }
 
@@ -211,6 +220,41 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
   }
 
   return {
+    async sweepCutoffs(limit = cutoffBatchSize) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > cutoffBatchSize) {
+        throw new RangeError("Invalid Test Credit cutoff batch size");
+      }
+      const candidates = await database.transaction(async (tx) =>
+        tx
+          .select({ accountId: operations.accountId, id: operations.id })
+          .from(operations)
+          .where(dueForCutoff(await currentTime(tx)))
+          .orderBy(operations.dispatchedAt, operations.accountId, operations.id)
+          .limit(limit),
+      );
+      let applied = 0;
+      for (const { accountId, id } of candidates) {
+        applied += await database.transaction(async (tx) => {
+          // Other ledger writers take the account lock first. Recheck after
+          // locking because they may already have processed this candidate.
+          if (!(await lockAccount(tx, accountId, true))) return 0;
+          const [row] = await tx
+            .select()
+            .from(operations)
+            .where(
+              and(
+                operationFilter(accountId, id),
+                dueForCutoff(await currentTime(tx)),
+              ),
+            );
+          if (!row) return 0;
+          await applyOperationCutoff(tx, row);
+          return 1;
+        });
+      }
+      return applied;
+    },
+
     // Called by trusted provisioning. Batch amounts cannot be changed on replay.
     async enroll({
       identity,
