@@ -25,6 +25,23 @@ export type SkillMarketConfig = {
   confirmations: Record<string, z.infer<typeof confirmation>>;
 };
 
+export function skillHubOrigin(value: string): string | undefined {
+  const url = URL.parse(value);
+  if (
+    !url ||
+    !["http:", "https:"].includes(url.protocol) ||
+    url.pathname !== "/" ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    url.origin.length > 2048
+  ) {
+    return;
+  }
+  return url.origin;
+}
+
 export function loadSkillMarketConfig(
   env: Record<string, string | undefined>,
 ): SkillMarketConfig | undefined {
@@ -34,15 +51,9 @@ export function loadSkillMarketConfig(
   const rawConfirmations = env.SKILLHUB_COMPATIBILITY_CONFIRMATIONS?.trim();
   if (!url && !namespace && !token && !rawConfirmations) return;
 
-  const parsed = URL.parse(url ?? "");
+  const baseUrl = skillHubOrigin(url ?? "");
   if (
-    !parsed ||
-    !["http:", "https:"].includes(parsed.protocol) ||
-    parsed.pathname !== "/" ||
-    parsed.username ||
-    parsed.password ||
-    parsed.search ||
-    parsed.hash ||
+    !baseUrl ||
     !namespace ||
     namespace === "global" ||
     !catalogSegment.safeParse(namespace).success ||
@@ -64,7 +75,7 @@ export function loadSkillMarketConfig(
     if (Object.keys(confirmations).length !== confirmed.length) {
       throw new Error("Duplicate version IDs");
     }
-    return { baseUrl: parsed.origin, namespace, token, confirmations };
+    return { baseUrl, namespace, token, confirmations };
   } catch {
     throw new Error(
       "SKILLHUB_COMPATIBILITY_CONFIRMATIONS must be a JSON array of exact-version confirmations with unique version IDs.",

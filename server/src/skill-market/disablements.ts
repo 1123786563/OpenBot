@@ -6,13 +6,10 @@ import {
   skillMarketInstallations,
   skillMarketSources,
 } from "../db/schema";
-import { catalogSegment, exactVersion } from "./config";
+import { catalogSegment, exactVersion, skillHubOrigin } from "./config";
 
 export const marketVersionIdentity = z.object({
-  source: z
-    .httpUrl()
-    .max(2048)
-    .refine((value) => URL.parse(value)?.origin === value),
+  source: z.string().refine((value) => skillHubOrigin(value) === value),
   namespace: catalogSegment,
   slug: catalogSegment,
   registrySkillId: z.number().int().min(1).max(2147483647),

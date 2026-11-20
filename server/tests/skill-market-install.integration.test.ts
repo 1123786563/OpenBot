@@ -152,7 +152,7 @@ const plugins = createPluginRoutes(
 const routes = createSkillMarketRoutes(
   requireUser,
   {
-    baseUrl: "https://registry.example",
+    baseUrl: "http://skillhub:8080",
     namespace: "catalog",
     token: "read",
     confirmations: {
@@ -485,7 +485,7 @@ test("assignment and managed Skill creation cannot both claim a free command", a
 });
 
 const disablementIdentity = {
-  source: "https://registry.example",
+  source: "http://skillhub:8080",
   namespace: "catalog",
   slug,
   version: "1.0.0",
