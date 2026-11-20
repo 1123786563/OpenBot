@@ -18,6 +18,7 @@ import {
   deliveryBindings,
   deliveryInbox,
   deliveryOutbox,
+  personalIntelligenceRuns,
   personalMemories,
   personalSaasAccounts,
   personalSaasSessions,
@@ -35,9 +36,14 @@ import {
   type CleanupResult,
   type CleanupStep,
   type ClosureCleanup,
+  type closureRestoreJournal,
   type closureTombstone,
   onlineCleanupSteps,
 } from "./closure-cleanup-contract";
+import {
+  captureLegacyBotRuns,
+  readIntelligenceInventory,
+} from "./intelligence-inventory";
 import { personalConversationScope, type Transaction } from "./store";
 import { workspaceResourceOwner } from "./workspace-principal";
 
@@ -134,10 +140,17 @@ export function workspaceCleanup({
   reconcile,
   now,
   stopped,
+  eraseComputer,
+  eraseThread,
 }: {
   database: Database;
   reconcile?: ClosureCleanup;
   now: () => number;
+  eraseThread?: (
+    accountId: string,
+    target: { threadId: string; agentId: string },
+  ) => Promise<void>;
+  eraseComputer?: (workspaceId: string) => Promise<void>;
   stopped?: (workspaceId: string) => Promise<boolean>;
 }) {
   const ready = (closure: Closure) =>
@@ -177,6 +190,33 @@ export function workspaceCleanup({
           await purgePostgres(savepoint, target);
           return "confirmed";
         }
+        if (key === "computerVolume") await eraseComputer?.(workspaceId);
+        if (key === "internalServices") {
+          const inventory = await readIntelligenceInventory(savepoint, [
+            accountId,
+          ]);
+          if (eraseThread) {
+            const threads = new Map(
+              inventory.map(({ threadId, agentId }) => [
+                JSON.stringify([threadId, agentId]),
+                { threadId, agentId },
+              ]),
+            );
+            for (const thread of threads.values())
+              await eraseThread(accountId, thread);
+          }
+          if (!reconcile) return "unconfirmed";
+          return (
+            await reconcile(key, {
+              ...target,
+              intelligence: inventory.map(({ agentId, threadId, runId }) => ({
+                agentId,
+                threadId,
+                runId,
+              })),
+            })
+          ).status;
+        }
         if (!reconcile) return "unconfirmed";
         const result = await reconcile(key, target);
         if (key === "connections" && result.status === "confirmed")
@@ -198,7 +238,7 @@ export function workspaceCleanup({
   }
 
   return async function sweep() {
-    if (!reconcile) return;
+    if (!reconcile && !eraseComputer && !eraseThread) return;
     const records = await database
       .select()
       .from(personalWorkspaceClosures)
@@ -246,7 +286,14 @@ export function workspaceCleanup({
           )
             continue;
         }
-        await withClosure(record.id, (tx, closure) => step(tx, closure, key));
+        await withClosure(record.id, async (tx, closure) => {
+          if (
+            key === "internalServices" &&
+            closure.cleanup[key]?.status !== "confirmed"
+          )
+            await captureLegacyBotRuns(tx, closure.accountId);
+          await step(tx, closure, key);
+        });
       }
       await withClosure(record.id, async (tx, closure) => {
         if (closure.backupSchedule || !reconcile || !ready(closure)) return;
@@ -274,7 +321,7 @@ export function workspaceCleanup({
 
 export async function reapplyWorkspaceClosures(
   database: Database,
-  records: Tombstone[],
+  records: z.output<typeof closureRestoreJournal>,
 ) {
   await database.transaction(async (tx) => {
     const existing = await tx
@@ -285,7 +332,7 @@ export async function reapplyWorkspaceClosures(
       throw new Error(
         "Closure restore journal omits an operation present in the backup",
       );
-    for (const record of records) {
+    for (const { intelligence, ...record } of records) {
       const [owner] = await tx
         .select({ status: personalSaasAccounts.status })
         .from(personalSaasAccounts)
@@ -361,6 +408,17 @@ export async function reapplyWorkspaceClosures(
         );
       // The recovery target is offline. Claims restored from its backup
       // cannot belong to a running worker and must never be dispatched.
+      await captureLegacyBotRuns(tx, record.accountId);
+      for (let offset = 0; offset < intelligence.length; offset += 1_000)
+        await tx
+          .insert(personalIntelligenceRuns)
+          .values(
+            intelligence.slice(offset, offset + 1_000).map((locator) => ({
+              ...locator,
+              accountId: record.accountId,
+            })),
+          )
+          .onConflictDoNothing();
       await tx
         .delete(workItems)
         .where(eq(workItems.accountId, record.accountId));

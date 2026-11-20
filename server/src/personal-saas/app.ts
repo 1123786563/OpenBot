@@ -35,6 +35,7 @@ import {
 import { browserAttempt, type CasdoorConfig, casdoor } from "./casdoor";
 import type { ClosureCleanup } from "./closure-cleanup-contract";
 import { ensureDecisionActor } from "./decision-actor";
+import { trackIntelligenceRuns } from "./intelligence-inventory";
 import { bearerSession, type NativeAttempt, nativeAuth } from "./native-auth";
 import {
   WorkspaceQuotaExceeded,
@@ -152,8 +153,11 @@ export function createPersonalSaasApp(
     config.casdoor,
     new URL(callbackPath, config.origin).href,
   );
-  const runPersonalBot = config.botRuntime?.runTurn ?? config.runPersonalBot;
   const now = config.now ?? Date.now;
+  const runPersonalBot =
+    config.botRuntime?.runTurn ??
+    (config.runPersonalBot &&
+      trackIntelligenceRuns(database, now, config.runPersonalBot));
   const store = personalSaasStore(database, now);
   const approvals = createApprovalStore(database, now);
   async function approvalHistory(owner: string) {
@@ -194,6 +198,8 @@ export function createPersonalSaasApp(
     now,
     reconcile: config.closureCleanup,
     stopped: computer?.stopped,
+    eraseComputer: computer?.eraseStorage,
+    eraseThread: config.botRuntime?.eraseThread,
   });
   const native = nativeAuth({
     database,

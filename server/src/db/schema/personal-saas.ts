@@ -5,6 +5,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   serial,
   text,
   timestamp,
@@ -208,4 +209,21 @@ export const personalWorkspaceClosures = pgTable(
     backupSchedule:
       jsonb("backup_schedule").$type<z.output<typeof backupSchedule>>(),
   },
+);
+
+export const personalIntelligenceRuns = pgTable(
+  "personal_intelligence_runs",
+  {
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => personalSaasAccounts.id),
+    threadId: text("thread_id").notNull(),
+    runId: text("run_id").notNull(),
+    agentId: text("agent_id").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.accountId, table.threadId, table.runId, table.agentId],
+    }),
+  ],
 );

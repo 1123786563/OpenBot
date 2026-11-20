@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   CopilotKitIntelligence,
   IntelligenceAgentRunner,
+  PlatformRequestError,
 } from "@copilotkit/runtime/v2";
 import type { HeadlessTool } from "@openbot/toolkit/headless-tools";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
@@ -44,6 +45,7 @@ import {
   runWithDecisionAccess,
 } from "./decision-access";
 import { ensureDecisionActor } from "./decision-actor";
+import { trackIntelligenceRuns } from "./intelligence-inventory";
 import type { workspaceQuotas } from "./quotas";
 import { assistantTarget, workspaceBots } from "./workspace-bots";
 
@@ -147,6 +149,8 @@ export function createPersonalBotRuntime(
   options: {
     now?: () => number;
     transport?: Pick<TurnOptions, "intelligence" | "runner"> & {
+      intelligence: TurnOptions["intelligence"] &
+        Partial<Pick<CopilotKitIntelligence, "deleteThread">>;
       buildAgent: TurnOptions["buildAgentFor"];
     };
     /** Server-owned tool catalogue. Arguments from the Bot are resolved again after approval. */
@@ -282,7 +286,7 @@ export function createPersonalBotRuntime(
     );
   }
 
-  const runTurn = createTurnRunner({
+  const executeTurn = createTurnRunner({
     intelligence,
     runner,
     buildAgentFor: buildAgent,
@@ -316,6 +320,7 @@ export function createPersonalBotRuntime(
       ];
     },
   });
+  const runTurn = trackIntelligenceRuns(database, now, executeTurn);
 
   async function continueTurn(
     account: string,
@@ -380,6 +385,19 @@ export function createPersonalBotRuntime(
   return {
     approvals,
     runTurn,
+    async eraseThread(
+      userId: string,
+      target: { threadId: string; agentId: string },
+    ) {
+      const erase = intelligence.deleteThread;
+      if (!erase) return;
+      try {
+        await erase.call(intelligence, { userId, ...target });
+      } catch (error) {
+        if (!(error instanceof PlatformRequestError && error.status === 404))
+          throw error;
+      }
+    },
     async sweepDecisions(quotas: ReturnType<typeof workspaceQuotas>) {
       await sweepDecision(
         quotas,

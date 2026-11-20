@@ -212,8 +212,9 @@ and the actual Web, mobile, and desktop builds before setting trial capacity.
 
 ## Workspace closure cleanup and disaster recovery
 
-Apply migration `0099_personal_workspace_cleanup` before rolling out this
-worker. The closure operation remains the access fence. Its PostgreSQL cleanup
+Apply migrations through `0100_personal_intelligence_cleanup` before rolling
+out this worker. Drain older trial workers during the rollout so every new
+Intelligence dispatch records its locator. The closure operation remains the access fence. Its PostgreSQL cleanup
 removes workspace content and the dedicated Assistant but keeps the workspace
 identity anchor, the Casdoor binding, and suspension history. Billing accounts,
 ledger entries, and transactions follow their existing billing retention rules.
@@ -222,7 +223,8 @@ Set `OPENBOT_CLOSURE_CLEANUP_URL` to the deployment's authenticated HTTPS
 reconciliation endpoint and `OPENBOT_CLOSURE_CLEANUP_TOKEN` to its service
 credential. Without this endpoint, closure still blocks access and stops
 execution, and cleanup remains pending. The deployment supplies the endpoint
-and its store and provider integrations.
+and its store and provider integrations. OpenBot can still erase supported
+local Computer files and Intelligence threads while reconciliation is pending.
 
 The endpoint receives a JSON POST with `step`, `id` (the closure operation),
 `accountId`, `workspaceId`, and `acceptedAt`. Calls can be repeated after a
@@ -232,10 +234,10 @@ step, or `{"status":"unconfirmed"}` while any result is unknown.
 
 | Step | Deployment verification |
 | --- | --- |
-| `computerVolume` | The Computer supervisor has fenced the prior leases and stopped the workspace Computer. The storage provisioner then removes and verifies absence of the dedicated filesystem and other online volume replicas. |
+| `computerVolume` | The configured supervisor removes the stopped workspace container and its Docker JSON logs, then erases and checks both the `workspace` and `profiles` directories on the verified ext4 mount. The provisioner must release the filesystem and verify any replicas, migrated source volumes and forwarded logs. |
 | `exports` | OpenBot streams exports from PostgreSQL. Verify any proxy, CDN or managed export store has no retained workspace copies. User-downloaded files are outside the deployment's control. |
 | `caches`, `indexes` | Fence repopulation and remove entries for the workspace from every configured cache and index replica. |
-| `internalServices` | Use the workspace's resource inventory to remove and verify content in internal services such as Intelligence thread and run storage. PostgreSQL keeps the Assistant and conversation identifiers until this step and index cleanup are verified. |
+| `internalServices` | The request includes an `intelligence` array of `threadId`, `runId` and `agentId`. When Bot execution is configured, OpenBot calls Intelligence thread deletion with the closed account ID before reconciliation. Verify run storage, event and artifact replicas and any model trace stores. When Bot execution is disabled, the reconciler must also delete threads. PostgreSQL keeps the Assistant and conversations through reconciliation. |
 | `connections` | Resolve grants from authoritative provider inventory, remove only the closed workspace's bindings, and verify dedicated grants are revoked. Shared grants and installations must continue working for other authorized parties. Return unconfirmed for missing, ambiguous or partially verified provider results. |
 | `backups` | Return `{"status":"confirmed","schedule":[{"store":"PostgreSQL","retentionDays":7,"remainingCopiesExpireBy":"2026-12-01T00:00:00Z"}]}` with the deployment's actual values for every store. The example values are only illustrative. |
 
@@ -246,7 +248,21 @@ provider-managed replicas in the inventory. The endpoint must calculate each
 expiry from the last backup that could contain the data. The expiry is a
 schedule for backup retention and does not attest to completed deletion.
 
-Preserve committed closure tombstones independently of data snapshots, using
+Private exports are streamed from PostgreSQL, and attachment bytes live in
+PostgreSQL. Computer tmpfs is discarded with the container. The mounted cleanup
+does not control host or external log collectors. Existing append-only audit
+rows can contain follow-up reasons and handoff failure details. The audit
+retention API expires rows by age, so the operator must account for their
+PostgreSQL retention and any audit copies in the deployment. Completion of
+the closure reconciler requires verification of the relevant stores.
+
+The inventory stores identifiers only. Migration backfills surviving Bot work,
+Routine runs, inbound deliveries and decision origins. For executions predating
+this migration whose exact IDs no longer exist in PostgreSQL, the Intelligence
+operator must inventory the closed account in the owning project. Include older
+continuations, follow-ups, check-ins, goals and handoffs in that verification.
+
+Preserve committed closure tombstones and their run inventory independently of data snapshots, using
 an authoritative recovery copy with zero loss of acknowledged closure
 transactions. A periodic journal export alone leaves a gap after the last
 export. Keep recovery traffic, workers and downstream services offline until
@@ -254,7 +270,9 @@ reconciliation is complete.
 
 1. From a trusted copy with all acknowledged closure transactions, export the
    minimal journal with `bun server/scripts/export-workspace-closure-journal.ts`.
-   Set `DATABASE_URL` to that copy. Protect the output as an operator-only file.
+   Set `DATABASE_URL` to that copy. Protect the version 2 output as an
+   operator-only file. Re-export version 1 journals from the migrated authority
+   to include run locators.
 2. Restore and migrate the target database. Preserve the account identity
    bindings and billing state from their respective recovery sources.
 3. Mount the journal read-only and set `OPENBOT_CLOSURE_RESTORE_JOURNAL` to

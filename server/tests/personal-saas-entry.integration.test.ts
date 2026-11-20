@@ -4585,6 +4585,84 @@ test("concurrent closure confirmation revokes browser, native and cached grants,
   });
 });
 
+test("mounted closure retries Intelligence cleanup after the source work is gone", async () => {
+  const owner = await isolationOwner();
+  const dispatched: Array<{
+    agentId: string;
+    threadId: string;
+    runId?: string;
+  }> = [];
+  const runApp = newApp(database, async ({ agentId, threadId, runId }) => {
+    dispatched.push({ agentId, threadId, runId });
+    return { replyText: "private output fixture" };
+  });
+  const submission = await runApp.fetch(
+    new Request(new URL("/api/workspace/bot-runs", origin), {
+      method: "POST",
+      headers: {
+        origin,
+        cookie: owner.session,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        workspaceId: owner.workspaceId,
+        botId: owner.botId,
+        instruction: "private input fixture",
+      }),
+    }),
+  );
+  expect(submission.status).toBe(202);
+  const { runId } = await submission.json();
+  await database
+    .update(workItems)
+    .set({ runAt: new Date(0) })
+    .where(eq(workItems.key, runId));
+  await runApp.sweepBotWork();
+  expect(dispatched).toEqual([
+    { agentId: owner.botId, threadId: runId, runId },
+  ]);
+  await database.delete(workItems).where(eq(workItems.key, runId));
+
+  const response = await confirmClosure(
+    await proveClosure(owner.session, owner.account),
+  );
+  const { operationId } = await response.json();
+  const status = cookie(response, "__Host-openbot-closure-status=");
+  const calls: unknown[] = [];
+  const worker = () =>
+    newApp(
+      database,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      async (step, target) => {
+        if (target.id !== operationId) return { status: "unconfirmed" };
+        if (step === "internalServices") {
+          calls.push(JSON.parse(JSON.stringify(target)));
+          if (calls.length === 1)
+            throw new Error("fixture adapter interrupted");
+        }
+        return { status: "confirmed" };
+      },
+    );
+  await worker().sweepWorkspaceClosures();
+  expect(await (await closureStatus(status)).json()).toMatchObject({
+    onlineCleanup: { internalServices: { status: "retrying" } },
+  });
+  await worker().sweepWorkspaceClosures();
+  expect(await (await closureStatus(status)).json()).toMatchObject({
+    onlineCleanup: {
+      internalServices: { status: "confirmed" },
+      postgres: { status: "confirmed" },
+    },
+  });
+  expect(calls).toHaveLength(2);
+  expect(calls[0]).toEqual(calls[1]);
+  expect(calls[0]).toMatchObject({ id: operationId, intelligence: dispatched });
+  expect(JSON.stringify(calls)).not.toContain("private");
+});
+
 test("closure records partial cleanup and retries only unconfirmed steps", async () => {
   const owner = await isolationOwner();
   const other = await isolationOwner();

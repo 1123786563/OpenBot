@@ -44,6 +44,15 @@ done
 stat -f -c '%S %b %f' /storage
 `;
 
+export const workspaceStorageErase =
+  workspaceStorageProbe +
+  `
+for path in /storage/workspace /storage/profiles; do
+  find "$path" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+  test -z "$(find "$path" -mindepth 1 -maxdepth 1 -print -quit)"
+done
+`;
+
 export function workspaceStoragePath(
   names: ComputerNames,
   storage: WorkspaceStorage,

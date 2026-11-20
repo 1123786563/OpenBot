@@ -8,6 +8,7 @@ import {
   carryOverProfile,
   DockerUnavailableError,
   ensure,
+  eraseWorkspaceComputer,
   inspectWorkspaceProcess,
   inspectWorkspaceStorage,
   listOwned,
@@ -348,6 +349,23 @@ app.get("/workspace-computers/:id", async (context) => {
     ),
   );
 });
+app.delete("/workspace-computers/:id/storage", async (context) => {
+  const id = context.req.param("id");
+  const target = namesFor("workspace", id);
+  if (!target.ok) return context.body(null, 400);
+  const storage = workspaceStorage;
+  if (!storage || !Number.isFinite(workspaceReadyAt))
+    return context.body(null, 503);
+  try {
+    const erased = await managed.erase(id, () =>
+      eraseWorkspaceComputer(target.names, storage, image),
+    );
+    return context.body(null, erased ? 204 : 409);
+  } catch {
+    return context.body(null, 503);
+  }
+});
+
 app.post("/workspace-computers/:id/:operation", async (context) => {
   const id = context.req.param("id");
   const operation = context.req.param("operation");

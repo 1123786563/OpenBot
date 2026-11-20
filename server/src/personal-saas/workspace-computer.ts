@@ -48,9 +48,10 @@ export function workspaceComputer(
       expiresAt: number;
       storageBytes?: number;
     },
+    method = grant ? "POST" : "GET",
   ) {
     return (config.fetch ?? fetch)(`${base}${path}`, {
-      method: grant ? "POST" : "GET",
+      method,
       headers: {
         Authorization: `Bearer ${config.supervisorToken}`,
         ...(grant ? { "Content-Type": "application/json" } : {}),
@@ -86,6 +87,15 @@ export function workspaceComputer(
   }
 
   return {
+    async eraseStorage(workspaceId: string) {
+      const response = await call(
+        `/${workspaceId}/storage`,
+        undefined,
+        "DELETE",
+      );
+      if (response.status !== 204)
+        throw new Error("Workspace Computer cleanup unconfirmed");
+    },
     async status(workspaceId: string) {
       const current = await read(workspaceId);
       return { status: current.status, cutoff: current.cutoff };

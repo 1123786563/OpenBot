@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import Docker from "dockerode";
-import { ensure, reset, stop } from "../src/docker";
+import { ensure, eraseWorkspaceComputer, reset, stop } from "../src/docker";
 import { namesFor } from "../src/names";
 
 const image = process.env.WORKSPACE_STORAGE_TEST_IMAGE;
@@ -41,7 +41,7 @@ test.skipIf(!image)(
 const storageRoot = process.env.WORKSPACE_STORAGE_TEST_ROOT;
 const workspaceId = process.env.WORKSPACE_STORAGE_TEST_ID;
 test.skipIf(!image || !storageRoot || !workspaceId)(
-  "Docker enforces one ext4 capacity across profiles and workspace and keeps both on replacement",
+  "Docker enforces one ext4 capacity across profiles and workspace and erases stopped workspace content on closure",
   async () => {
     const target = namesFor("workspace", workspaceId);
     if (!target.ok || !image || !storageRoot)
@@ -110,6 +110,21 @@ test.skipIf(!image || !storageRoot || !workspaceId)(
       expect(
         await shell(
           'test "$(cat /workspace/retained)" = workspace; test "$(cat /profiles/retained)" = profile',
+        ),
+      ).toBe(0);
+      await expect(
+        eraseWorkspaceComputer(names, options.workspaceStorage, image),
+      ).rejects.toThrow("Workspace Computer is not stopped and owned");
+      await stop(names);
+      await eraseWorkspaceComputer(names, options.workspaceStorage, image);
+      await eraseWorkspaceComputer(names, options.workspaceStorage, image);
+      await expect(
+        docker.getContainer(names.container).inspect(),
+      ).rejects.toMatchObject({ statusCode: 404 });
+      await ensure(names, options);
+      expect(
+        await shell(
+          'test -z "$(find /workspace /profiles -name retained -o -name fill)"',
         ),
       ).toBe(0);
     } finally {

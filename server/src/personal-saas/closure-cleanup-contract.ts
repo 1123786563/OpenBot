@@ -16,6 +16,12 @@ export type CleanupResult = {
   checkedAt: string;
 };
 
+export const intelligenceLocator = z.strictObject({
+  threadId: z.string().min(1),
+  runId: z.string().min(1),
+  agentId: z.string().min(1),
+});
+
 export const closureTombstone = z.strictObject({
   id: z.uuid(),
   accountId: z.uuid(),
@@ -27,8 +33,10 @@ export const closureTombstone = z.strictObject({
 
 export const closureRestoreJournal = z
   .strictObject({
-    version: z.literal(1),
-    operations: z.array(closureTombstone),
+    version: z.literal(2),
+    operations: z.array(
+      closureTombstone.extend({ intelligence: z.array(intelligenceLocator) }),
+    ),
   })
   .transform(({ operations }) => operations);
 
@@ -56,7 +64,9 @@ const result = z.discriminatedUnion("status", [
 
 export type ClosureCleanup = (
   step: Exclude<CleanupStep, "postgres"> | "backups",
-  target: z.output<typeof closureTombstone>,
+  target: z.output<typeof closureTombstone> & {
+    intelligence?: z.output<typeof intelligenceLocator>[];
+  },
 ) => Promise<z.output<typeof result>>;
 
 export function closureCleanupClient(

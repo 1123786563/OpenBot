@@ -25,6 +25,7 @@ export function workspaceComputers(runtime: {
   inspect: (id: string) => Promise<Process | null>;
 }) {
   const runs = new Map<string, Run>();
+  const erasing = new Set<string>();
   const valid = (grant: Grant) => {
     const now = runtime.now();
     return (
@@ -52,6 +53,7 @@ export function workspaceComputers(runtime: {
 
   async function reconcile(id: string, run: Run) {
     if (
+      erasing.has(id) ||
       run.settled ||
       (runtime.now() < run.grant.expiresAt - exitGraceMs && !run.closed)
     )
@@ -98,9 +100,25 @@ export function workspaceComputers(runtime: {
   }
 
   return {
+    async erase(id: string, remove: () => Promise<void>) {
+      const run = runs.get(id);
+      if (
+        erasing.has(id) ||
+        (run && (!run.closed || run.launching || run.stopping))
+      )
+        return false;
+      erasing.add(id);
+      try {
+        await remove();
+        return true;
+      } finally {
+        erasing.delete(id);
+      }
+    },
     async start(id: string, grant: Grant) {
       const prior = runs.get(id);
       if (
+        erasing.has(id) ||
         !valid(grant) ||
         (prior &&
           (prior.stopping ||

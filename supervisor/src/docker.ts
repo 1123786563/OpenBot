@@ -18,6 +18,7 @@ import {
 import {
   parseWorkspaceStorageUsage,
   type WorkspaceStorage,
+  workspaceStorageErase,
   workspaceStoragePath,
   workspaceStorageProbe,
 } from "./workspace-storage";
@@ -622,10 +623,27 @@ export class WorkspaceStorageUnavailableError extends Error {
   }
 }
 
+export function inspectWorkspaceStorage(
+  names: ComputerNames,
+  storage: WorkspaceStorage,
+  image: string,
+): Promise<{ used: number; capacity: number; path: string; image: string }>;
+export function inspectWorkspaceStorage(
+  names: ComputerNames,
+  storage: WorkspaceStorage,
+  image: string,
+  erase: true,
+): Promise<{
+  used: number;
+  capacity: number;
+  path: string;
+  image: string;
+} | null>;
 export async function inspectWorkspaceStorage(
   names: ComputerNames,
   storage: WorkspaceStorage,
   image: string,
+  erase = false,
 ) {
   let probe: Docker.Container | undefined;
   try {
@@ -636,12 +654,16 @@ export async function inspectWorkspaceStorage(
     probe = await docker.createContainer({
       Image: inspected.Id,
       Entrypoint: ["sh", "-ec"],
-      Cmd: [workspaceStorageProbe, "workspace-storage", names.workspaceVolume],
+      Cmd: [
+        erase ? workspaceStorageErase : workspaceStorageProbe,
+        "workspace-storage",
+        names.workspaceVolume,
+      ],
       Tty: true,
       Healthcheck: { Test: ["NONE"] },
       HostConfig: {
         Mounts: [
-          { Type: "bind", Source: path, Target: "/storage", ReadOnly: true },
+          { Type: "bind", Source: path, Target: "/storage", ReadOnly: !erase },
         ],
         ReadonlyRootfs: true,
         LogConfig: {
@@ -650,6 +672,7 @@ export async function inspectWorkspaceStorage(
         },
         NetworkMode: "none",
         CapDrop: ["ALL"],
+        ...(erase && { CapAdd: ["DAC_OVERRIDE", "FOWNER"] }),
         SecurityOpt: ["no-new-privileges:true"],
       },
     });
@@ -666,10 +689,47 @@ export async function inspectWorkspaceStorage(
     if (!usage) throw new Error("Workspace filesystem capacity is invalid");
     return { ...usage, path, image: inspected.Id };
   } catch (error) {
+    if (
+      erase &&
+      !probe &&
+      error instanceof Error &&
+      "statusCode" in error &&
+      error.statusCode === 400 &&
+      error.message.includes(
+        `bind source path does not exist: ${workspaceStoragePath(names, storage)}`,
+      )
+    )
+      return null;
     throw new WorkspaceStorageUnavailableError({ cause: error });
   } finally {
     await probe?.remove({ force: true, v: true }).catch(() => undefined);
   }
+}
+
+export async function eraseWorkspaceComputer(
+  names: ComputerNames,
+  storage: WorkspaceStorage,
+  image: string,
+) {
+  if (names.kind !== "workspace")
+    throw new Error("Expected a Workspace Computer");
+  const process = await docker
+    .getContainer(names.container)
+    .inspect()
+    .catch((error) => {
+      if (error?.statusCode === 404) return null;
+      throw error;
+    });
+  if (process) {
+    if (
+      !isThisComputer(process.Config.Labels, names) ||
+      !["created", "exited"].includes(process.State.Status)
+    )
+      throw new Error("Workspace Computer is not stopped and owned");
+    // Removing the exact inspected container also deletes its local json-file logs.
+    await docker.getContainer(process.Id).remove({ v: true });
+  }
+  await inspectWorkspaceStorage(names, storage, image, true);
 }
 
 /**
