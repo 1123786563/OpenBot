@@ -24,6 +24,16 @@ const trial = z.object({
         Buffer.from(value, "base64").length === 32 &&
         value !== Buffer.alloc(32).toString("base64"),
     ),
+  OPENBOT_SUPPORT_SUBJECTS: z
+    .string()
+    .optional()
+    .transform(
+      (value) =>
+        value
+          ?.split(",")
+          .map((subject) => subject.trim())
+          .filter(Boolean) ?? [],
+    ),
   OPENBOT_SUSPENSION_OPERATOR_ID: z.string().trim().min(1).optional(),
   OPENBOT_SUSPENSION_OPERATOR_TOKEN: z
     .string()
@@ -71,6 +81,7 @@ const app = createPersonalSaasApp(
   {
     origin: new URL(env.OPENBOT_PERSONAL_SAAS_URL).origin,
     encryptionKey: env.KEY_ENCRYPTION_KEY,
+    supportSubjects: env.OPENBOT_SUPPORT_SUBJECTS,
     suspensionOperator:
       operatorId && operatorToken
         ? { id: operatorId, token: operatorToken }

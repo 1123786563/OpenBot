@@ -74,13 +74,27 @@ Recent conversation history requires an OpenBot Application Session. The authent
 
 Use the two-owner matrix in `server/tests/personal-saas-entry.integration.test.ts` to enable a resource. Replace the closed probe with the real entry point and two actual resources. Verify each owner's success and compare the same request with a foreign and a missing resource. For mutations, verify the denied request leaves the target unchanged. For downloads, replay the exact URL across accounts. For realtime, verify the actual handshake and delivered events. For cache and index access, populate the cache or index as one owner and repeat the same lookup as the other. Apply the same owner and scope checks at background dispatch.
 
+## Support access
+
+Set `OPENBOT_SUPPORT_SUBJECTS` to the comma-separated Casdoor subject IDs of individual support operators for the configured issuer. An empty or omitted setting disables operator endpoints. Operators sign in with their own OpenBot Application Sessions. Removing a subject from the setting takes effect after restarting the trial replicas.
+
+Under `/api/support/workspaces/{workspaceId}`, operators can use:
+
+- `GET /metadata` for workspace readiness, counts by Routine run status, and recent failed run IDs.
+- `POST /tickets/{ticketId}/requests` with `resources`, `durationSeconds`, and `reason`. Specify up to 20 exact resources by `{kind, id}`. Supported kinds are `conversation` (channel ID), `file` (attached file UUID), and `computer-session` (session ID for the workspace's isolated Assistant).
+- `POST /tickets/{ticketId}/requests/{id}/read` with `resource` and a per-read `reason`. The response returns the conversation's trial title and preview, attached file bytes as base64, or the current snapshot for the specified Computer session.
+
+Ticket IDs refer to the operator's existing support cases. The workspace owner opens **Support access** to review the ticket, resource IDs, reason, and requested duration. The owner can approve for up to 24 hours from approval or revoke access early. The same page shows which operator read each resource, when, and why after expiry or revocation. Owner clients can use `GET /api/workspaces/{workspaceId}/support-requests` and POST to `/{id}/approve` or `/{id}/revoke` beneath that path.
+
+The trial keeps Bot execution, file upload, and live Computer access disabled. The support API reads existing scoped records and provides read-only snapshots for Computer sessions.
+
 ## Workspace suspension
 
 Configure `OPENBOT_SUSPENSION_OPERATOR_ID`, `OPENBOT_SUSPENSION_OPERATOR_TOKEN`, and `OPENBOT_SUSPENSION_SUPPORT_EMAIL` together to enable operator actions. Give the designated operator a dedicated credential generated from 32 random bytes encoded as unpadded base64url. Set the ID to the operator's identity in your operations records. Rotate the credential when that person changes and update the ID at the same time.
 
 Send an HTTPS `POST /api/operator/workspaces/{workspaceId}/suspension` with that credential as a Bearer token and a JSON body containing `action` (`pause` or `resume`), a required internal `reason`, and an optional user-facing `displayReason`. A successful change returns an operation ID and the effective time. An already applied state returns `409`. Each transition is recorded with the operator identity. The bearer credential has access to this operation only.
 
-Pause revokes OpenBot sessions and Assistant integration credentials for that workspace in the same transaction as the audit record. Live Web sessions recheck server-side and close on revocation. Mobile and Desktop periodically recheck access and clear displayed workspace content when access ends. A new Casdoor sign-in while paused returns the owner's published reason, support email, and operation ID through the same sign-in flow. Native clients receive those fields through the one-time exchange without a workspace session. Resume requires a later active Casdoor observation and a new sign-in started after the resume took effect. Workspace suspension leaves the Casdoor account and other applications' permissions under their own policies.
+Pause revokes OpenBot sessions, approved support access, and Assistant integration credentials for that workspace in the same transaction as the audit record. Live Web sessions recheck server-side and close on revocation. Mobile and Desktop periodically recheck access and clear displayed workspace content when access ends. A new Casdoor sign-in while paused returns the owner's published reason, support email, and operation ID through the same sign-in flow. Native clients receive those fields through the one-time exchange without a workspace session. Resume requires a later active Casdoor observation and a new sign-in started after the resume took effect. Workspace suspension leaves the Casdoor account and other applications' permissions under their own policies.
 
 Before deployment, apply the suspension migration, provision the operator secret and support address, and verify session closure and offline or foreground behavior on installed builds. Personal SaaS worker dispatch and account deletion are separate trial capabilities. Verify their integration and cutoff before enabling them.
 

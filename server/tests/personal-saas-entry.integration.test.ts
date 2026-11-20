@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createAgentProfileStore } from "../src/agents/profile-store";
+import { botSeat, seatText } from "../src/computer/computer-key";
 import { createDatabase } from "../src/db/client";
 import {
   agents,
@@ -11,6 +12,7 @@ import {
   channelAgents,
   channelMemberships,
   channels,
+  computerSnapshot,
   personalMemories,
   routines,
   users,
@@ -31,6 +33,8 @@ import { testDatabaseUrl } from "./support/database";
 import { assertWorkspaceIsolation } from "./support/workspace-isolation";
 
 const origin = "https://trial.openbot.example";
+const supportSubject = crypto.randomUUID();
+const otherSupportSubject = crypto.randomUUID();
 const clientId = "openbot-trial";
 const operatorToken = "s".repeat(43);
 const clientSecret = "casdoor-test-secret";
@@ -189,6 +193,7 @@ function newApp(db = database, computer?: WorkspaceComputerConfig) {
   return createPersonalSaasApp(
     {
       origin,
+      supportSubjects: [supportSubject, otherSupportSubject],
       now,
       computer,
       suspensionOperator: { id: "trial-operator", token: operatorToken },
@@ -1496,6 +1501,258 @@ test("two-owner isolation matrix for enabled and closed trial surfaces", async (
   }
 });
 
+test("support content requires the owner's approval for the exact operator, ticket, workspace and resource", async () => {
+  const signIn = async (sub: string) =>
+    cookie(
+      await authenticate({
+        sub,
+        email: "verified@example.com",
+        verified: true,
+        active: true,
+      }),
+      "__Host-openbot-personal=",
+    );
+  const owner = await signIn(crypto.randomUUID());
+  const otherOwner = await signIn(crypto.randomUUID());
+  const operator = await signIn(supportSubject);
+  const otherOperator = await signIn(otherSupportSubject);
+  await enter(owner);
+  await enter(otherOwner);
+  const own = await workspace(owner);
+  const other = await workspace(otherOwner);
+  const resourceId = crypto.randomUUID();
+  await database.insert(channels).values({
+    id: resourceId,
+    name: "Private conversation",
+    description: "",
+    lastMessage: "protected conversation content",
+  });
+  await database
+    .insert(channelAgents)
+    .values({ channelId: resourceId, agentId: own.personalAssistant.id });
+  const fileId = crypto.randomUUID();
+  const uploaderId = crypto.randomUUID();
+  await database.insert(users).values({
+    id: uploaderId,
+    name: "Fixture uploader",
+    email: `${uploaderId}@example.com`,
+  });
+  await database.insert(attachments).values({
+    id: fileId,
+    channelId: resourceId,
+    uploadedBy: uploaderId,
+    attachedAt: new Date(),
+    name: "private.txt",
+    mimeType: "text/plain",
+    sizeBytes: 6,
+    bytes: Buffer.from("secret"),
+  });
+  const computerSession = crypto.randomUUID();
+  await database.insert(computerSnapshot).values({
+    computerId: seatText(botSeat(own.personalAssistant.id)),
+    session: computerSession,
+    snapshotId: 1,
+    url: "https://private.example/",
+    elements: {},
+  });
+  const supportPath = `/api/support/workspaces/${own.id}`;
+  const ownerPath = `/api/workspaces/${own.id}/support-requests`;
+  const api = (path: string, session: string, body?: object) =>
+    send(path, {
+      method: body ? "POST" : "GET",
+      headers: { cookie: session, origin, "content-type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  const metadata = await api(`${supportPath}/metadata`, operator);
+  expect(metadata.status).toBe(200);
+  expect(await metadata.json()).toMatchObject({
+    status: "ready",
+    usage: expect.any(Object),
+    errorIds: expect.any(Array),
+  });
+  expect((await api(`${supportPath}/metadata`, otherOwner)).status).toBe(403);
+  expect((await api(ownerPath, operator)).status).toBe(404);
+  expect((await api(`${supportPath}/metadata`, "")).status).toBe(401);
+  const ticketId = "CASE-67";
+  const resource = { kind: "conversation", id: resourceId };
+  const file = { kind: "file", id: fileId };
+  const computer = { kind: "computer-session", id: computerSession };
+  const draft = {
+    resources: [resource, file, computer],
+    durationSeconds: 60,
+    reason: "Investigate reported delivery failure",
+  };
+  const request = await api(
+    `${supportPath}/tickets/${ticketId}/requests`,
+    operator,
+    draft,
+  );
+  expect(request.status).toBe(201);
+  const { id } = await request.json();
+  const readPath = `${supportPath}/tickets/${ticketId}/requests/${id}/read`;
+  const read = { resource, reason: "Confirm last conversation update" };
+  expect((await api(readPath, operator, read)).status).toBe(404);
+  expect((await api(ownerPath, otherOwner)).status).toBe(404);
+  expect(await (await api(ownerPath, owner)).json()).toMatchObject({
+    requests: [{ id, ticketId, ...draft, approvedAt: null }],
+    accesses: [],
+  });
+  expect((await api(`${ownerPath}/${id}/approve`, otherOwner, {})).status).toBe(
+    404,
+  );
+  const ownerPage = await api(`${ownerPath}/view`, owner);
+  expect(await ownerPage.text()).toContain("Approve access for ticket CASE-67");
+  expect(
+    (
+      await send(`${ownerPath}/${id}/approve`, {
+        method: "POST",
+        headers: {
+          cookie: owner,
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: "",
+      })
+    ).status,
+  ).toBe(403);
+  expect(
+    (
+      await send(`${ownerPath}/${id}/approve`, {
+        method: "POST",
+        headers: {
+          cookie: owner,
+          origin,
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: "",
+      })
+    ).status,
+  ).toBe(303);
+  expect((await api(readPath, otherOperator, read)).status).toBe(404);
+  expect(
+    (await api(readPath.replace(ticketId, "CASE-OTHER"), operator, read))
+      .status,
+  ).toBe(404);
+  expect(
+    (await api(readPath.replace(own.id, other.id), operator, read)).status,
+  ).toBe(404);
+  expect(
+    (
+      await api(readPath, operator, {
+        ...read,
+        resource: { ...resource, id: "outside-scope" },
+      })
+    ).status,
+  ).toBe(404);
+  const content = await api(readPath, operator, read);
+  expect(content.status).toBe(200);
+  expect(content.headers.get("cache-control")).toBe("no-store");
+  expect(await content.json()).toMatchObject({
+    preview: "protected conversation content",
+  });
+  expect(
+    await (await api(readPath, operator, { ...read, resource: file })).json(),
+  ).toEqual({
+    name: "private.txt",
+    mimeType: "text/plain",
+    base64: "c2VjcmV0",
+  });
+  expect(
+    await (
+      await api(readPath, operator, { ...read, resource: computer })
+    ).json(),
+  ).toMatchObject({
+    session: computerSession,
+    url: "https://private.example/",
+  });
+  await database
+    .update(computerSnapshot)
+    .set({ session: crypto.randomUUID() })
+    .where(
+      eq(
+        computerSnapshot.computerId,
+        seatText(botSeat(own.personalAssistant.id)),
+      ),
+    );
+  expect(
+    (await api(readPath, operator, { ...read, resource: computer })).status,
+  ).toBe(404);
+  await database.insert(channelAgents).values({
+    channelId: resourceId,
+    agentId: other.personalAssistant.id,
+  });
+  expect((await api(readPath, operator, read)).status).toBe(404);
+  expect(
+    (await api(readPath, operator, { ...read, resource: file })).status,
+  ).toBe(404);
+  expect((await api(`${ownerPath}/${id}/revoke`, owner, {})).status).toBe(204);
+  expect((await api(readPath, operator, read)).status).toBe(404);
+  expect((await api(`${ownerPath}/${id}/approve`, owner, {})).status).toBe(404);
+  expect(await (await api(ownerPath, owner)).json()).toMatchObject({
+    requests: [{ id, revokedAt: expect.any(String) }],
+    accesses: expect.arrayContaining(
+      [resource, file, computer].map((resource) =>
+        expect.objectContaining({
+          requestId: id,
+          actorSubject: supportSubject,
+          reason: read.reason,
+          resource,
+        }),
+      ),
+    ),
+  });
+
+  const expiring = await api(
+    `${supportPath}/tickets/${ticketId}/requests`,
+    operator,
+    {
+      ...draft,
+      durationSeconds: 1,
+    },
+  );
+  const { id: expiringId } = await expiring.json();
+  expect(
+    (await api(`${ownerPath}/${expiringId}/approve`, owner, {})).status,
+  ).toBe(204);
+  await Bun.sleep(1100);
+  expect(
+    (await api(readPath.replace(id, expiringId), operator, read)).status,
+  ).toBe(404);
+  expect(
+    (await api(`${ownerPath}/${expiringId}/approve`, owner, {})).status,
+  ).toBe(404);
+  const history = await (await api(ownerPath, owner)).json();
+  expect(history.accesses).toHaveLength(3);
+  expect(await (await api(`${ownerPath}/view`, owner)).text()).toContain(
+    "Expired",
+  );
+
+  await database
+    .delete(channelAgents)
+    .where(eq(channelAgents.agentId, other.personalAssistant.id));
+  const interrupted = await api(
+    `${supportPath}/tickets/${ticketId}/requests`,
+    operator,
+    draft,
+  );
+  const { id: interruptedId } = await interrupted.json();
+  expect(
+    (await api(`${ownerPath}/${interruptedId}/approve`, owner, {})).status,
+  ).toBe(204);
+  const suspend = (action: string) =>
+    send(`/api/operator/workspaces/${own.id}/suspension`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${operatorToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ action, reason: "Trial review" }),
+    });
+  const interruptedPath = `/api/support/workspaces/${own.id}/tickets/${ticketId}/requests/${interruptedId}/read`;
+  expect((await suspend("pause")).status).toBe(201);
+  expect((await api(interruptedPath, operator, read)).status).toBe(404);
+  expect((await suspend("resume")).status).toBe(201);
+  expect((await api(interruptedPath, operator, read)).status).toBe(404);
+}, 25000);
 test("a short disablement revokes both sessions even after Casdoor recovers", async () => {
   const account: Account = {
     sub: crypto.randomUUID(),
