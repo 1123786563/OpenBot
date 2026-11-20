@@ -342,6 +342,7 @@ const memories: MemoryRecord[] = [
     content: "Prefers morning meetings",
     provenance: "You told Muse",
     sourceId: null,
+    sourceRef: null,
     enabled: true,
     reviewState: "confirmed",
     formedBy: "person",
