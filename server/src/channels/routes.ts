@@ -35,6 +35,7 @@ import {
   intelligenceChannelMappings,
   users,
 } from "../db/schema";
+import { withdrawLearningEvidence } from "../learning/evidence";
 import { parsePageLimit } from "../paging";
 import type { UserPreferencesStore } from "../user-preferences";
 import {
@@ -1013,6 +1014,12 @@ export function createChannelStore(
             .insert(conversationEvidenceWithdrawals)
             .values({ channelId })
             .onConflictDoNothing();
+          await withdrawLearningEvidence(
+            transaction,
+            actor.id,
+            { kind: "conversation", id: channelId },
+            true,
+          );
 
           // A failed start can delete its newly created, still-empty conversation.
           // Release only that account's matching claim, never a used tour.

@@ -824,6 +824,10 @@ export const auditEventTypes = [
    */
   "learning.sharing_changed",
   "learning.proposal_reviewed",
+  "learning.evidence_withdrawn",
+  "learning.skill_paused",
+  "learning.proposal_resubmitted",
+  "learning.shared_evidence_permission_changed",
   "learning.personal_auto_approval_changed",
   /* A person opened one of their own learned Skills to every Bot, or closed it again. Target and payload `skill`. */
   "learning.skill_opened",

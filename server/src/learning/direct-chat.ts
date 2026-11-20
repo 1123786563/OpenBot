@@ -3,6 +3,7 @@ import {
   type DirectChatLearningScope,
   type DirectChatReview,
   directChatProposal,
+  type learningRequest,
   type learningScheduleSettings,
 } from "@openbot/shared/direct-chat-learning";
 import {
@@ -32,11 +33,13 @@ import {
   directChatLearningSchedules as schedules,
 } from "../db/schema";
 import type { ManagedModel, ManagedModelResult } from "../managed-model";
+import { readLearningSource } from "./evidence";
 
 type Analysis = typeof analyses.$inferSelect;
 type ScheduleSettings = z.infer<typeof learningScheduleSettings>;
 type Action =
-  | { kind: "read" | "manual" | "scheduled" }
+  | { kind: "read" | "scheduled" }
+  | { kind: "manual"; request: z.infer<typeof learningRequest> }
   | { kind: "configure"; settings: ScheduleSettings };
 type Scope = DirectChatLearningScope;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -77,7 +80,8 @@ function summary(analysis: Analysis) {
     state: analysis.state,
     reason: analysis.reason,
     startedAt: analysis.startedAt.toISOString(),
-    evidenceCount: analysis.evidenceRunIds.length,
+    evidenceCount:
+      analysis.evidenceRunIds.length + analysis.evidenceSources.length,
   };
 }
 
@@ -170,15 +174,71 @@ async function saveReview(
   });
 }
 
-async function verifiedEvidence(tx: ProfileReadExecutor, analysis: Analysis) {
-  const sources = await evidence(
+async function remainingEvidence(
+  tx: ProfileReadExecutor,
+  scope: Scope,
+  analysis: Analysis,
+) {
+  const turns = await evidence(tx, analysis.threadId, analysis.evidenceRunIds);
+  const sources = [];
+  const excerpts = [];
+  for (const source of analysis.evidenceSources) {
+    const current = await readLearningSource(
+      tx,
+      scope,
+      source,
+      new Date(source.cutoff),
+    );
+    if (current?.digest === source.digest) {
+      sources.push(source);
+      excerpts.push(current.evidence);
+    }
+  }
+  return { turns, sources, excerpts };
+}
+
+async function verifiedEvidence(
+  tx: ProfileReadExecutor,
+  scope: Scope,
+  analysis: Analysis,
+) {
+  const { turns, sources, excerpts } = await remainingEvidence(
     tx,
-    analysis.threadId,
-    analysis.evidenceRunIds,
+    scope,
+    analysis,
   );
-  return sources.length > 0 && sources.length === analysis.evidenceRunIds.length
-    ? sources
+  return turns.length === analysis.evidenceRunIds.length &&
+    sources.length === analysis.evidenceSources.length &&
+    turns.length + excerpts.length > 0
+    ? [...turns, ...excerpts]
     : null;
+}
+
+export class LearningEvidenceUnavailable extends Error {}
+
+function joinsAnalysis(
+  request: z.infer<typeof learningRequest>,
+  analysis: Analysis,
+) {
+  if (request.revisesProposalId)
+    return request.revisesProposalId === analysis.revisesProposalId;
+  if (!request.evidence) return true;
+  const requested = new Set(
+    request.evidence.map(({ kind, id }) => `${kind}:${id}`),
+  );
+  return (
+    requested.size === analysis.evidenceSources.length &&
+    analysis.evidenceSources.every(({ kind, id }) =>
+      requested.has(`${kind}:${id}`),
+    )
+  );
+}
+
+async function lockPersonLearning(tx: Transaction, scope: Scope) {
+  // A person's analyses can reference their other direct conversations.
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`openbot:learning:${scope.personId}`}, 0))`,
+  );
 }
 
 function operation(scope: Scope, channelId: string, analysis: Analysis) {
@@ -213,12 +273,13 @@ export function createDirectChatLearning(
     const authorize = await refreshAuthorization();
     await database.transaction(async (tx) => {
       await lockLearningSettings(tx);
+      await lockPersonLearning(tx, scope);
       const authorized = await authorize(tx);
       const enabled = await learningEnabled(tx, scope.botId);
       const valid =
         authorized &&
         (result.state !== "proposed" ||
-          Boolean(await verifiedEvidence(tx, analysis)));
+          Boolean(await verifiedEvidence(tx, scope, analysis)));
       const [saved] = await tx
         .update(analyses)
         .set({
@@ -237,6 +298,8 @@ export function createDirectChatLearning(
         .returning();
       if (
         saved?.state === "proposed" &&
+        !saved.revisesProposalId &&
+        saved.evidenceSources.length === 0 &&
         (await autoApproval(tx, scope.personId))
       )
         await saveReview(tx, saved.id, scope, "approve", "automatic");
@@ -247,7 +310,7 @@ export function createDirectChatLearning(
     scope: Scope,
     channelId: string,
     analysis: Analysis,
-    turns: Awaited<ReturnType<typeof evidence>>,
+    turns: NonNullable<Awaited<ReturnType<typeof verifiedEvidence>>>,
     refreshAuthorization: RefreshAuthorization,
   ) {
     if (!trial) return;
@@ -255,6 +318,7 @@ export function createDirectChatLearning(
       const authorize = await refreshAuthorization();
       return database.transaction(async (tx) => {
         await lockLearningSettings(tx);
+        await lockPersonLearning(tx, scope);
         if (!(await authorize(tx)) || !(await learningEnabled(tx, scope.botId)))
           return false;
         const [row] = await tx
@@ -264,9 +328,7 @@ export function createDirectChatLearning(
             and(eq(analyses.id, analysis.id), eq(analyses.state, "running")),
           );
         return (
-          Boolean(row) &&
-          (await evidence(tx, scope.threadId, analysis.evidenceRunIds))
-            .length === analysis.evidenceRunIds.length
+          Boolean(row) && Boolean(await verifiedEvidence(tx, scope, analysis))
         );
       });
     };
@@ -364,6 +426,7 @@ export function createDirectChatLearning(
     const authorize = await refreshAuthorization();
     const outcome = await database.transaction(async (tx) => {
       await lockLearningSettings(tx);
+      await lockPersonLearning(tx, scope);
       const conversation = await authorize(tx);
       if (!conversation) return null;
       const enabled = await learningEnabled(tx, scope.botId);
@@ -450,6 +513,10 @@ export function createDirectChatLearning(
         schedule?.pendingDispatch && schedule.lastAnalysisId === latest?.id,
       );
       if (latest && active(latest)) {
+        if (action.kind === "manual" && !joinsAnalysis(action.request, latest))
+          throw new LearningEvidenceUnavailable(
+            "An analysis is already in progress.",
+          );
         if (pending && scheduled) {
           const [claimed] = await tx
             .update(analyses)
@@ -460,11 +527,7 @@ export function createDirectChatLearning(
             .update(schedules)
             .set({ pendingDispatch: false })
             .where(scheduleKey);
-          const turns = await evidence(
-            tx,
-            scope.threadId,
-            claimed.evidenceRunIds,
-          );
+          const turns = (await verifiedEvidence(tx, scope, claimed)) ?? [];
           work = () =>
             background(
               analyze(
@@ -515,21 +578,102 @@ export function createDirectChatLearning(
           }
         }
       } else if ((action.kind === "manual" || due) && enabled && available) {
-        const turns = await evidence(
-          tx,
-          scope.threadId,
-          undefined,
-          due ? schedule?.evidenceAfter : undefined,
-        );
-        if (turns.length > 0 || !latest || due) {
+        const request = action.kind === "manual" ? action.request : {};
+        const revisesProposalId = request.revisesProposalId;
+        let turns: Awaited<ReturnType<typeof evidence>> = [];
+        let sources: Analysis["evidenceSources"] = [];
+        let excerpts: Awaited<
+          ReturnType<typeof remainingEvidence>
+        >["excerpts"] = [];
+        if (revisesProposalId) {
+          if (request.evidence)
+            throw new LearningEvidenceUnavailable(
+              "A revision uses the remaining evidence from its original proposal.",
+            );
+          const [original] = await tx
+            .select()
+            .from(analyses)
+            .where(
+              and(
+                withinScope,
+                eq(analyses.id, revisesProposalId),
+                eq(analyses.reason, "evidence_withdrawn"),
+              ),
+            );
+          if (!original)
+            throw new LearningEvidenceUnavailable(
+              "The proposal is unavailable for revision.",
+            );
+          const [submitted] = await tx
+            .select({ id: analyses.id })
+            .from(analyses)
+            .where(
+              and(
+                eq(analyses.revisesProposalId, original.id),
+                eq(analyses.state, "proposed"),
+              ),
+            )
+            .limit(1);
+          if (submitted)
+            throw new LearningEvidenceUnavailable(
+              "A revision has already been submitted.",
+            );
+          ({ turns, sources, excerpts } = await remainingEvidence(
+            tx,
+            scope,
+            original,
+          ));
+          if (!turns.length && !sources.length)
+            throw new LearningEvidenceUnavailable(
+              "No authorized evidence remains.",
+            );
+        } else if (request.evidence) {
+          const selections = new Map(
+            request.evidence.map((source) => [
+              `${source.kind}:${source.id}`,
+              source,
+            ]),
+          );
+          for (const source of selections.values()) {
+            if (
+              source.kind === "conversation" &&
+              source.id === conversation.channelId
+            )
+              throw new LearningEvidenceUnavailable(
+                "Use Learn now to analyze this conversation.",
+              );
+            const current = await readLearningSource(tx, scope, source, now);
+            if (!current)
+              throw new LearningEvidenceUnavailable(
+                `The selected ${source.kind} is unavailable or lacks permission.`,
+              );
+            sources.push({
+              ...source,
+              digest: current.digest,
+              cutoff: now.toISOString(),
+            });
+            excerpts.push(current.evidence);
+          }
+        } else {
+          turns = await evidence(
+            tx,
+            scope.threadId,
+            undefined,
+            due ? schedule?.evidenceAfter : undefined,
+          );
+        }
+        const count = turns.length + sources.length;
+        if (count > 0 || !latest || due) {
           const [created] = await tx
             .insert(analyses)
             .values({
               threadId: scope.threadId,
               botId: scope.botId,
-              state: turns.length ? "running" : "skipped",
-              reason: turns.length ? null : "no_evidence",
+              state: count ? "running" : "skipped",
+              reason: count ? null : "no_evidence",
               evidenceRunIds: turns.map(({ runId }) => runId),
+              evidenceSources: sources,
+              revisesProposalId,
               startedAt: new Date(
                 Math.max(
                   now.getTime(),
@@ -539,6 +683,14 @@ export function createDirectChatLearning(
               updatedAt: now,
             })
             .returning();
+          if (created && revisesProposalId)
+            await tx.insert(auditEvents).values({
+              actorUserId: scope.personId,
+              eventType: "learning.proposal_resubmitted",
+              targetType: "learning_proposal",
+              targetId: created.id,
+              payload: { revisesProposalId },
+            });
           if (created) {
             latest = created;
             if (!scheduled && active(created))
@@ -548,7 +700,7 @@ export function createDirectChatLearning(
                     scope,
                     conversation.channelId,
                     created,
-                    turns,
+                    [...turns, ...excerpts],
                     refreshAuthorization,
                   ),
                   created,
@@ -614,14 +766,45 @@ export function createDirectChatLearning(
         .select({ analysis: analyses, review: reviews.review })
         .from(analyses)
         .leftJoin(reviews, eq(reviews.proposalId, analyses.id))
-        .where(and(withinScope, eq(analyses.state, "proposed")))
+        .where(
+          and(
+            withinScope,
+            or(
+              eq(analyses.state, "proposed"),
+              eq(analyses.reason, "evidence_withdrawn"),
+            ),
+          ),
+        )
         .orderBy(...recent)
         .limit(20);
+      const submittedRevisions = new Set(
+        proposed.flatMap(({ analysis }) =>
+          analysis.state === "proposed" && analysis.revisesProposalId
+            ? [analysis.revisesProposalId]
+            : [],
+        ),
+      );
       const proposals = [];
       for (const { analysis, review } of proposed) {
-        const sources = await verifiedEvidence(tx, analysis);
-        if (!analysis.proposal || !sources) continue;
         if (review && !sameScope(review.scope, scope)) continue;
+        if (analysis.reason === "evidence_withdrawn") {
+          const remaining = await remainingEvidence(tx, scope, analysis);
+          proposals.push({
+            id: analysis.id,
+            title: "Evidence withdrawn",
+            instructions: "Submit the remaining evidence for a new review.",
+            state:
+              review?.decision === "approve"
+                ? ("paused" as const)
+                : ("revision_required" as const),
+            evidence: [...remaining.turns, ...remaining.excerpts],
+            revisionSubmitted: submittedRevisions.has(analysis.id),
+            review,
+          });
+          continue;
+        }
+        const sources = await verifiedEvidence(tx, scope, analysis);
+        if (!analysis.proposal || !sources) continue;
         proposals.push({
           ...analysis.proposal,
           id: analysis.id,
@@ -722,6 +905,7 @@ export function createDirectChatLearning(
   ) {
     return database.transaction(async (tx) => {
       await lockLearningSettings(tx);
+      await lockPersonLearning(tx, scope);
       if (!(await authorize(tx))) return "absent";
       const [row] = await tx
         .select({ analysis: analyses, review: reviews.review })
@@ -731,12 +915,16 @@ export function createDirectChatLearning(
           and(
             inScope(scope),
             eq(analyses.id, proposalId),
-            eq(analyses.state, "proposed"),
+            or(
+              eq(analyses.state, "proposed"),
+              eq(analyses.reason, "evidence_withdrawn"),
+            ),
           ),
         );
-      if (!row?.analysis.proposal) return "absent";
+      if (!row) return "absent";
+      if (!row.analysis.proposal) return "evidence_unavailable";
       if (!sameScope(scope, requested.scope)) return "scope_changed";
-      if (!(await verifiedEvidence(tx, row.analysis)))
+      if (!(await verifiedEvidence(tx, scope, row.analysis)))
         return "evidence_unavailable";
       if (row.review)
         return row.review.decision === requested.decision &&
@@ -786,6 +974,7 @@ export function createDirectChatLearning(
   async function guidance(scope: Scope, authorize: Authorize) {
     return database.transaction(async (tx) => {
       await lockLearningSettings(tx);
+      await lockPersonLearning(tx, scope);
       if (!(await authorize(tx))) return null;
       if (!(await learningEnabled(tx, scope.botId))) return [];
       const candidates = await tx
@@ -793,7 +982,11 @@ export function createDirectChatLearning(
         .from(analyses)
         .innerJoin(reviews, eq(reviews.proposalId, analyses.id))
         .where(
-          and(inScope(scope), sql`${reviews.review}->>'decision' = 'approve'`),
+          and(
+            inScope(scope),
+            eq(analyses.state, "proposed"),
+            sql`${reviews.review}->>'decision' = 'approve'`,
+          ),
         )
         .orderBy(desc(analyses.startedAt), desc(analyses.id))
         .limit(20);
@@ -802,7 +995,7 @@ export function createDirectChatLearning(
         if (
           analysis.proposal &&
           sameScope(review.scope, scope) &&
-          (await verifiedEvidence(tx, analysis))
+          (await verifiedEvidence(tx, scope, analysis))
         )
           skills.push({ id: analysis.id, ...analysis.proposal });
       }

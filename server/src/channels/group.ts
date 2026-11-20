@@ -18,6 +18,7 @@
  * each hop is one deeper), the same fan-out cap per reply, the same durable leased queue, and the same
  * `agent.handoff_*` audit rows. Nothing here orchestrates beyond that one rule.
  */
+
 import { createHash } from "node:crypto";
 import type { Message } from "@ag-ui/client";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
@@ -43,11 +44,12 @@ import {
   users,
 } from "../db/schema/core";
 import { groupBotThreads, groupMessages } from "../db/schema/group";
-import { CHANNEL_ACTIVITY_TOPIC } from "./events";
 import { workItems } from "../db/schema/work";
+import { withdrawLearningEvidence } from "../learning/evidence";
 import { leadingSkillCommand } from "../plugins/picked-skill";
 import type { CheckPrivateShare } from "../proactive/private-share";
 import type { WorkQueue } from "../work/queue";
+import { CHANNEL_ACTIVITY_TOPIC } from "./events";
 
 export const GROUP_TURN_KIND = "group.turn";
 
@@ -343,6 +345,10 @@ export function createGroupStore(
               eq(channelMemberships.userId, userId),
             ),
           );
+        await withdrawLearningEvidence(tx, owner, {
+          kind: "conversation",
+          id: channelId,
+        });
         await tx
           .delete(intelligenceChannelMappings)
           .where(
@@ -375,10 +381,16 @@ export function createGroupStore(
         );
       await database.transaction(async (tx) => {
         await lockGroupMembership(tx, { channelId, userId: owner });
-        await tx
+        const [added] = await tx
           .insert(channelMemberships)
           .values({ channelId, userId: person.id })
-          .onConflictDoNothing();
+          .onConflictDoNothing()
+          .returning({ id: channelMemberships.userId });
+        if (added)
+          await withdrawLearningEvidence(tx, owner, {
+            kind: "conversation",
+            id: channelId,
+          });
         // The channel store reads a member's channel through their own mapping row.
         await tx
           .insert(intelligenceChannelMappings)

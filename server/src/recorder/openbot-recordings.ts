@@ -24,6 +24,7 @@ import {
   recorderRecordings as recordings,
   recorderCaptureTrajectories as trajectories,
 } from "../db/schema/recorder";
+import { withdrawLearningEvidence } from "../learning/evidence";
 import { decodeCursor, encodeCursor } from "./trajectory-bindings";
 
 const GRANT_LIFETIME = 5 * 60_000;
@@ -97,7 +98,8 @@ export function createOpenBotRecordings(database: Database, secret: string) {
     return row !== undefined;
   }
 
-  async function purge(tx: Transaction, id: string) {
+  async function purge(tx: Transaction, id: string, userId: string) {
+    await withdrawLearningEvidence(tx, userId, { kind: "recording", id });
     await tx.delete(events).where(eq(events.recordingId, id));
     // The retained row is both the revocation marker and the completion record for the online content copy.
     await tx
@@ -212,7 +214,7 @@ export function createOpenBotRecordings(database: Database, secret: string) {
             phase === "failed" &&
             (reason === "discarded" || reason === "restarted")
           ) {
-            await purge(tx, record.id);
+            await purge(tx, record.id, scope.userId);
           } else {
             await tx
               .update(recordings)
@@ -309,7 +311,7 @@ export function createOpenBotRecordings(database: Database, secret: string) {
           .where(and(visible(userId), eq(recordings.id, id)))
           .for("update");
         if (!row) return false;
-        await purge(tx, id);
+        await purge(tx, id, userId);
         return true;
       });
     },

@@ -394,6 +394,9 @@ export const channelMemberships = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
+    learningEvidenceAllowed: boolean("learning_evidence_allowed")
+      .notNull()
+      .default(false),
     /**
      * When this member pinned the channel, or null. On the membership, not the channel: a pin is
      * one person's marker, and the membership row is already the per-member half of a channel.

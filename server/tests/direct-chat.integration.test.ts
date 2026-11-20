@@ -20,6 +20,7 @@ import {
   createChannelAttachmentRoutes,
 } from "../src/channels/attachments";
 import { expireDirectChatEvents } from "../src/channels/direct-chat-replay";
+import { createGroupStore } from "../src/channels/group";
 import {
   createChannelRoutes,
   createChannelStore,
@@ -38,12 +39,16 @@ import {
   directChatRuns,
   learningSettings,
   opikRuns,
+  recorderConnections,
   userRoles,
   users,
 } from "../src/db/schema";
 import { createLearningRoutes } from "../src/learning/routes";
 import { createLearningSettingsStore } from "../src/learning/settings";
 import { createMemoryStore } from "../src/memory/store";
+import { createRecorderConnectionStore } from "../src/recorder/connections";
+import { createOpenBotRecordings } from "../src/recorder/openbot-recordings";
+import { createRecorderRoutes } from "../src/recorder/routes";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const databaseUrl = testDatabaseUrl();
@@ -1648,6 +1653,7 @@ test.each([
 ])(
   "Learn now preserves $feature alongside reservation coalescing and evidence snapshots",
   ({ scheduled }) => exerciseLearning(scheduled),
+  20_000,
 );
 
 async function exerciseLearning(scheduled: boolean) {
@@ -1747,6 +1753,9 @@ async function exerciseLearning(scheduled: boolean) {
   });
   let channelId: string | undefined;
   let bobChannelId: string | undefined;
+  let sharedChannelId: string | undefined;
+  let sourceChannelId: string | undefined;
+  let secondBotId: string | undefined;
   try {
     const opened = await aliceChat.request(
       "/api/channels",
@@ -1755,11 +1764,15 @@ async function exerciseLearning(scheduled: boolean) {
     expect(opened.status).toBe(201);
     const { channel } = await opened.json();
     channelId = channel.id;
-    async function send(runId: string, prompt: string) {
+    async function send(
+      runId: string,
+      prompt: string,
+      threadId = channel.threadId,
+    ) {
       const turn = await aliceChat.request(
         `/api/copilotkit/agent/${bot.id}/run`,
         post({
-          threadId: channel.threadId,
+          threadId,
           runId,
           messages: [
             { id: `question-${runId}`, role: "user", content: prompt },
@@ -2253,6 +2266,269 @@ async function exerciseLearning(scheduled: boolean) {
       expect(runInputs.at(-1)?.messages[0]?.content).not.toContain(proposal.id);
     }
 
+    if (!scheduled) {
+      const second = await profiles.create(alice, {
+        name: "Second Bot",
+        title: "Bot",
+        roleDescription: "Answers locally.",
+        visibility: "public",
+      });
+      secondBotId = second.id;
+      const shared = await aliceChat.request(
+        "/api/channels",
+        post({ agentIds: [bot.id, second.id] }),
+      );
+      expect(shared.status).toBe(201);
+      const groupId = (await shared.json()).channel.id;
+      sharedChannelId = groupId;
+      const groups = createGroupStore(database, () => crypto.randomUUID());
+      await groups.seedOrder(alice.id, groupId, [bot.id, second.id]);
+      await groups.addMember(alice.id, groupId, bob.email);
+      await groups.append({
+        id: crypto.randomUUID(),
+        ownerUserId: alice.id,
+        channelId: groupId,
+        agentId: bot.id,
+        threadId: "shared-fixture",
+        text: "Check the shipping label.",
+        details: {},
+      });
+
+      const recordingId = crypto.randomUUID();
+      const trajectory = crypto.randomUUID();
+      const connection = crypto.randomUUID();
+      await database.insert(recorderConnections).values({
+        id: connection,
+        userId: alice.id,
+        tokenHash: connection,
+        label: "Test Recorder",
+        via: "web",
+        extensionId: "fixture",
+        installId: "fixture",
+      });
+      const local = createOpenBotRecordings(database, "test-recorder-secret");
+      const recorderApp = new Hono().route(
+        "/api/recorder",
+        createRecorderRoutes({
+          connections: createRecorderConnectionStore(database),
+          localRecordings: local,
+          requireUser: async (context, next) => {
+            context.set("actor", alice);
+            await next();
+          },
+          requireRecorder: async (context, next) => {
+            context.set("actor", alice);
+            context.set("recorderConnectionId", connection);
+            await next();
+          },
+          allowedExtensionIds: () => [],
+          learningSpace: async () => ({
+            state: "unassigned",
+            containerId: null,
+          }),
+          user: async () => null,
+          sealOrganizationSession: async () => null,
+        }),
+      );
+      const capture = `/api/recorder/capture/${trajectory}`;
+      const grant = await recorderApp.request(
+        `${capture}/grant`,
+        post({ recordingId }),
+      );
+      expect(grant.status).toBe(200);
+      const { token } = await grant.json();
+      const recorded = await recorderApp.request(
+        `${capture}/events`,
+        post({
+          captureToken: token,
+          dropped: 0,
+          events: [
+            {
+              type: "CUSTOM",
+              name: "click",
+              timestamp: Date.now(),
+              value: { seq: 1, label: "Open packing list" },
+            },
+            {
+              type: "CUSTOM",
+              name: "outcome",
+              timestamp: Date.now(),
+              value: {
+                seq: 2,
+                phase: "succeeded",
+                workflow: "Pack a shipment",
+              },
+            },
+          ],
+        }),
+      );
+      expect(recorded.status).toBe(200);
+      expect(await recorded.json()).toMatchObject({ accepted: 2 });
+      const details = await recorderApp.request(
+        `/api/recorder/recordings/${recordingId}`,
+      );
+      expect(details.status).toBe(200);
+      expect(await details.json()).toMatchObject({
+        ended: "succeeded",
+        events: [{ name: "click" }, { name: "outcome" }],
+      });
+      const recording = { kind: "recording", id: recordingId };
+      const conversation = { kind: "conversation", id: groupId };
+      const openedSource = await aliceChat.request(
+        "/api/channels",
+        post({ agentIds: [bot.id] }),
+      );
+      expect(openedSource.status).toBe(201);
+      const { channel: sourceChannel } = await openedSource.json();
+      sourceChannelId = sourceChannel.id;
+      await send(
+        "source-direct",
+        "Check the address before packing.",
+        sourceChannel.threadId,
+      );
+      const directSource = { kind: "conversation", id: sourceChannel.id };
+      const both = post({ evidence: [recording, conversation, directSource] });
+      expect((await aliceLearning.request(path, both)).status).toBe(409);
+      const bobPath = `/api/copilotkit/threads/${bobChannel.threadId}/learn?agentId=${bot.id}`;
+      expect(
+        (await bobLearning.request(bobPath, post({ evidence: [recording] })))
+          .status,
+      ).toBe(409);
+      const grantLearning = {
+        ...post({ allowed: true }),
+        method: "PUT",
+      };
+      const permission = `/api/copilotkit/conversations/${groupId}/learning-evidence`;
+      expect(
+        (await aliceLearning.request(permission, grantLearning)).status,
+      ).toBe(200);
+      expect((await aliceLearning.request(path, both)).status).toBe(409);
+      expect(
+        (await bobLearning.request(permission, grantLearning)).status,
+      ).toBe(200);
+
+      const started = await aliceLearning.request(path, both);
+      expect(await started.json()).toMatchObject({
+        latest: { state: "running" },
+      });
+      expect(started.status).toBe(202);
+      const mixed = (await waitFor("proposed")).proposals[0];
+      expect(mixed).toMatchObject({
+        state: "pending_review",
+        evidence: [
+          {
+            source: recording,
+            prompt: "click: Open packing list",
+            reply: "Pack a shipment",
+          },
+          { source: conversation, prompt: "Bot: Check the shipping label." },
+          {
+            source: directSource,
+            prompt:
+              "Person: Check the address before packing.\nBot: Offline answer.",
+          },
+        ],
+      });
+      const reviewFor = (id: string) =>
+        path.replace("/learn?", `/learn/proposals/${id}?`);
+      expect(
+        (await aliceLearning.request(reviewFor(mixed.id), approve)).status,
+      ).toBe(200);
+      expect((await aliceLearning.request(path, both)).status).toBe(202);
+      const pending = (await waitFor("proposed")).proposals[0];
+      expect(pending.id).not.toBe(mixed.id);
+      const remove = await recorderApp.request(
+        `/api/recorder/recordings/${recordingId}`,
+        { method: "DELETE" },
+      );
+      expect(remove.ok).toBe(true);
+      expect(
+        (await recorderApp.request(`/api/recorder/recordings/${recordingId}`))
+          .status,
+      ).toBe(404);
+      const withdrawn = await read();
+      expect(withdrawn.proposals).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: mixed.id,
+            state: "paused",
+            evidence: [expect.objectContaining({ source: conversation })],
+          }),
+          expect.objectContaining({
+            id: pending.id,
+            state: "revision_required",
+          }),
+        ]),
+      );
+      expect(JSON.stringify(withdrawn)).not.toContain("Open packing list");
+      expect(JSON.stringify(withdrawn)).not.toContain("Pack a shipment");
+      expect(
+        (await aliceLearning.request(reviewFor(pending.id), approve)).status,
+      ).toBe(409);
+      await send("withdrawn-recording", "What procedure can you use?");
+      expect(JSON.stringify(runInputs.at(-1)?.messages)).not.toContain(
+        mixed.id,
+      );
+
+      const deleteSource = await aliceChat.request(
+        `/api/channels/${sourceChannel.id}`,
+        { method: "DELETE" },
+      );
+      expect(deleteSource.ok).toBe(true);
+      expect(JSON.stringify(await read())).not.toContain(
+        "Check the address before packing.",
+      );
+      const resubmit = post({ revisesProposalId: mixed.id });
+      expect((await bobLearning.request(bobPath, resubmit)).status).toBe(409);
+      expect((await aliceLearning.request(path, resubmit)).status).toBe(202);
+      const revised = (await waitFor("proposed")).proposals[0];
+      expect(revised).toMatchObject({
+        state: "pending_review",
+        evidence: [{ source: conversation }],
+      });
+      await send("awaiting-new-review", "Which procedure is available?");
+      expect(JSON.stringify(runInputs.at(-1)?.messages)).not.toContain(
+        revised.id,
+      );
+      expect(
+        (await aliceLearning.request(reviewFor(revised.id), approve)).status,
+      ).toBe(200);
+      await send("revised-skill", "Which procedure is approved?");
+      expect(JSON.stringify(runInputs.at(-1)?.messages)).toContain(revised.id);
+      expect(
+        (
+          await bobLearning.request(permission, {
+            ...post({ allowed: false }),
+            method: "PUT",
+          })
+        ).status,
+      ).toBe(200);
+      expect(
+        (await aliceLearning.request(reviewFor(revised.id), approve)).status,
+      ).toBe(409);
+      expect(JSON.stringify(await read())).not.toContain(
+        "Check the shipping label.",
+      );
+      await send(
+        "revoked-shared-evidence",
+        "Which procedure is still approved?",
+      );
+      expect(JSON.stringify(runInputs.at(-1)?.messages)).not.toContain(
+        revised.id,
+      );
+
+      const evidenceAudit = await database
+        .select({ eventType: auditEvents.eventType })
+        .from(auditEvents)
+        .where(eq(auditEvents.targetId, mixed.id));
+      expect(evidenceAudit.map(({ eventType }) => eventType)).toEqual(
+        expect.arrayContaining([
+          "learning.evidence_withdrawn",
+          "learning.skill_paused",
+        ]),
+      );
+    }
+
     expect(
       (
         await aliceChat.request(`/api/channels/${channel.id}`, {
@@ -2262,6 +2538,15 @@ async function exerciseLearning(scheduled: boolean) {
     ).toBe(true);
     expect((await aliceLearning.request(path)).status).toBe(404);
     expect((await aliceLearning.request(reviewPath, approve)).status).toBe(404);
+    if (!scheduled) {
+      const withdrawal = await database
+        .select({ eventType: auditEvents.eventType })
+        .from(auditEvents)
+        .where(eq(auditEvents.targetId, proposal.id));
+      expect(withdrawal.map(({ eventType }) => eventType)).toContain(
+        "learning.skill_paused",
+      );
+    }
   } finally {
     release.resolve();
     if (hadSavedSettings) await store.write(previousSettings);
@@ -2274,6 +2559,12 @@ async function exerciseLearning(scheduled: boolean) {
       await database.delete(channels).where(eq(channels.id, channelId));
     if (bobChannelId)
       await database.delete(channels).where(eq(channels.id, bobChannelId));
+    if (sharedChannelId)
+      await database.delete(channels).where(eq(channels.id, sharedChannelId));
+    if (sourceChannelId)
+      await database.delete(channels).where(eq(channels.id, sourceChannelId));
+    if (secondBotId)
+      await database.delete(agents).where(eq(agents.id, secondBotId));
     await database.delete(agents).where(eq(agents.id, bot.id));
     await database.delete(users).where(eq(users.id, alice.id));
     await database.delete(users).where(eq(users.id, bob.id));

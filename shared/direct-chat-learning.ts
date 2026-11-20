@@ -13,6 +13,26 @@ export const directChatLearningScope = z
     botId: scopeId,
   })
   .strict();
+export const learningEvidenceSelection = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("conversation"), id: scopeId }),
+  z.object({
+    kind: z.literal("recording"),
+    id: z.uuid().transform((id) => id.toLowerCase()),
+  }),
+]);
+export type LearningEvidenceSelection = z.infer<
+  typeof learningEvidenceSelection
+>;
+export const learningRequest = z
+  .object({
+    evidence: z.array(learningEvidenceSelection).min(1).max(8).optional(),
+    revisesProposalId: z.uuid().optional(),
+  })
+  .strict();
+export const learningEvidencePermission = z
+  .object({ allowed: z.boolean() })
+  .strict();
+
 export const directChatDecision = z
   .object({
     decision: z.enum(["approve", "reject"]),
@@ -71,10 +91,18 @@ export const directChatLearning = z.object({
   proposals: z.array(
     directChatProposal.extend({
       id: z.string(),
-      state: z.enum(["pending_review", "published", "rejected"]),
+      state: z.enum([
+        "pending_review",
+        "published",
+        "rejected",
+        "revision_required",
+        "paused",
+      ]),
       review: directChatReview.nullable(),
+      revisionSubmitted: z.boolean().optional(),
       evidence: z.array(
         z.object({
+          source: learningEvidenceSelection.optional(),
           runId: z.string(),
           userMessageId: z.string(),
           assistantMessageId: z.string(),

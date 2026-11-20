@@ -3,10 +3,12 @@ import { EventType } from "@ag-ui/client";
 import {
   directChatAutoApproval,
   directChatDecision,
+  learningEvidencePermission,
+  learningRequest,
   learningScheduleSettings,
 } from "@openbot/shared/direct-chat-learning";
 import { DIRECT_CHAT_REPLAY_HEADER } from "@openbot/shared/direct-chat-replay";
-import { and, eq, isNull, ne, notExists } from "drizzle-orm";
+import { and, eq, exists, isNull, ne, notExists } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 import type {
@@ -26,7 +28,11 @@ import {
   groupBotThreads,
   intelligenceChannelMappings,
 } from "../db/schema";
-import { createDirectChatLearning } from "../learning/direct-chat";
+import {
+  createDirectChatLearning,
+  LearningEvidenceUnavailable,
+} from "../learning/direct-chat";
+import { setSharedLearningPermission } from "../learning/evidence";
 import type { ManagedModel, ManagedModelResult } from "../managed-model";
 import { runFeedback, saveRunFeedback } from "../opik/feedback";
 
@@ -252,6 +258,51 @@ export function createDirectChatRoutes(deps: {
     request.headers.get("content-type")?.split(";")[0]?.trim() ===
       "application/json";
 
+  routes.get("/conversations/:channelId/learning-evidence", async (context) => {
+    const actor = await actorFor(context.req.raw);
+    if (!actor) return context.json(absent, 404);
+    const channelId = context.req.param("channelId");
+    const [membership] = await database
+      .select({ allowed: channelMemberships.learningEvidenceAllowed })
+      .from(channelMemberships)
+      .innerJoin(channels, eq(channels.id, channelMemberships.channelId))
+      .where(
+        and(
+          eq(channels.id, channelId),
+          eq(channelMemberships.userId, actor.id),
+          isNull(channels.deletedAt),
+          exists(
+            database
+              .select()
+              .from(groupBotThreads)
+              .where(eq(groupBotThreads.channelId, channelId)),
+          ),
+        ),
+      );
+    context.header("cache-control", "no-store");
+    return membership ? context.json(membership) : context.json(absent, 404);
+  });
+
+  routes.put("/conversations/:channelId/learning-evidence", async (context) => {
+    const request = context.req.raw;
+    if (!sameOriginJson(request))
+      return context.json({ error: "Use a same-origin JSON request." }, 403);
+    const actor = await actorFor(request);
+    if (!actor) return context.json(absent, 404);
+    const body = learningEvidencePermission.safeParse(
+      await request.json().catch(() => null),
+    );
+    if (!body.success)
+      return context.json({ error: "Choose whether to allow learning." }, 400);
+    const saved = await setSharedLearningPermission(
+      database,
+      actor.id,
+      context.req.param("channelId"),
+      body.data.allowed,
+    );
+    return saved ? context.json({ ok: true }) : context.json(absent, 404);
+  });
+
   routes.on(
     ["GET", "POST", "PUT"],
     "/threads/:threadId/learn",
@@ -277,25 +328,45 @@ export function createDirectChatRoutes(deps: {
           },
           400,
         );
-      const result = await learning.access(
-        learningScope(threadId, agentId, personId),
-        learningAuthorization(request, threadId, agentId, personId),
-        configuration
-          ? { kind: "configure", settings: configuration.data }
-          : { kind: request.method === "POST" ? "manual" : "read" },
-      );
-      if (!result) return context.json(absent, 404);
-      context.header("cache-control", "no-store");
-      if (configuration?.data.enabled && !result.enabled)
-        return context.json({ error: "Learning is disabled." }, 409);
-      if (request.method === "POST") {
-        if (!result.enabled)
+      const submitted =
+        request.method === "POST"
+          ? learningRequest.safeParse(await request.json().catch(() => null))
+          : null;
+      if (submitted && !submitted.success)
+        return context.json(
+          { error: "Choose valid evidence or a proposal to revise." },
+          400,
+        );
+      try {
+        const result = await learning.access(
+          learningScope(threadId, agentId, personId),
+          learningAuthorization(request, threadId, agentId, personId),
+          configuration
+            ? { kind: "configure", settings: configuration.data }
+            : submitted
+              ? { kind: "manual", request: submitted.data }
+              : { kind: "read" },
+        );
+        if (!result) return context.json(absent, 404);
+        context.header("cache-control", "no-store");
+        if (configuration?.data.enabled && !result.enabled)
           return context.json({ error: "Learning is disabled." }, 409);
-        if (!result.available)
-          return context.json({ error: "Learning model is unavailable." }, 503);
-        return context.json(result, 202);
+        if (request.method === "POST") {
+          if (!result.enabled)
+            return context.json({ error: "Learning is disabled." }, 409);
+          if (!result.available)
+            return context.json(
+              { error: "Learning model is unavailable." },
+              503,
+            );
+          return context.json(result, 202);
+        }
+        return context.json(result);
+      } catch (error) {
+        if (error instanceof LearningEvidenceUnavailable)
+          return context.json({ error: error.message }, 409);
+        throw error;
       }
-      return context.json(result);
     },
   );
 

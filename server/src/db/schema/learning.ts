@@ -2,6 +2,7 @@ import type {
   DirectChatReview,
   directChatLearning,
   directChatProposal,
+  LearningEvidenceSelection,
 } from "@openbot/shared/direct-chat-learning";
 import type {
   LearningSettings,
@@ -157,6 +158,13 @@ export const directChatAnalyses = pgTable(
     botId: text("bot_id").notNull(),
     state: text("state").$type<DirectChatAnalysisState>().notNull(),
     reason: text("reason"),
+    evidenceSources: jsonb("evidence_sources")
+      .$type<
+        (LearningEvidenceSelection & { digest: string; cutoff: string })[]
+      >()
+      .notNull()
+      .default([]),
+    revisesProposalId: uuid("revises_proposal_id"),
     evidenceRunIds: jsonb("evidence_run_ids").$type<string[]>().notNull(),
     proposal: jsonb("proposal").$type<z.infer<typeof directChatProposal>>(),
     startedAt: timestamp("started_at", { withTimezone: true })

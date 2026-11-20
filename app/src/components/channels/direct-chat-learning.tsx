@@ -1,8 +1,15 @@
 import {
   type DirectChatDecision,
   directChatLearning,
+  type LearningEvidenceSelection,
+  type learningRequest,
 } from "@openbot/shared/direct-chat-learning";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useState } from "react";
 import type { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -14,7 +21,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { channelListQueryOptions } from "@/lib/channels/queries";
 import { client, tryClient } from "@/lib/client";
+import { recordingsQueryOptions } from "@/lib/recorder/queries";
 
 type Analysis = NonNullable<z.infer<typeof directChatLearning>["latest"]>;
 
@@ -30,7 +39,8 @@ const reasons: Record<string, string> = {
   analysis_interrupted: "The analysis was interrupted.",
   schedule_disabled: "Scheduled Learning was turned off.",
   learning_disabled: "Learning was turned off.",
-  evidence_unavailable: "The conversation evidence is unavailable.",
+  evidence_unavailable: "The selected evidence is unavailable.",
+  evidence_withdrawn: "Evidence was withdrawn.",
 };
 
 function inProgress(analysis: Analysis | null | undefined) {
@@ -50,6 +60,114 @@ function analysisText(analysis: Analysis) {
   );
 }
 
+function LearningSources({
+  agentId,
+  threadId,
+  selected,
+  onChange,
+}: {
+  agentId: string;
+  threadId: string;
+  selected: LearningEvidenceSelection[];
+  onChange: (value: LearningEvidenceSelection[]) => void;
+}) {
+  const conversations = useInfiniteQuery(channelListQueryOptions());
+  const recordings = useInfiniteQuery(recordingsQueryOptions());
+  const choices: { source: LearningEvidenceSelection; label: string }[] = [
+    ...(conversations.data ?? [])
+      .filter(
+        (row) =>
+          row.active &&
+          row.agentIds.includes(agentId) &&
+          row.threadId !== threadId,
+      )
+      .map((row) => ({
+        source: { kind: "conversation" as const, id: row.id },
+        label: row.summary ?? row.name,
+      })),
+    ...(recordings.data?.pages ?? []).flatMap((page) =>
+      page.canManage
+        ? page.recordings
+            .filter((row) => row.ended === "succeeded")
+            .map((row) => ({
+              source: { kind: "recording" as const, id: row.id },
+              label: row.title ?? new Date(row.recordedAt).toLocaleString(),
+            }))
+        : [],
+    ),
+  ];
+  return (
+    <fieldset className="space-y-2 rounded-md border p-3 text-sm">
+      <legend className="px-1 font-medium">Learning sources</legend>
+      <p>
+        Choose up to 8 sources. Everyone in a shared conversation must allow its
+        use.
+      </p>
+      {choices.map(({ source, label }) => {
+        const checked = selected.some(
+          (item) => item.kind === source.kind && item.id === source.id,
+        );
+        return (
+          <label
+            className="flex items-start gap-2"
+            key={`${source.kind}:${source.id}`}
+          >
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={checked}
+              disabled={!checked && selected.length >= 8}
+              onChange={() =>
+                onChange(
+                  checked
+                    ? selected.filter(
+                        (item) =>
+                          item.kind !== source.kind || item.id !== source.id,
+                      )
+                    : [...selected, source],
+                )
+              }
+            />
+            {source.kind === "recording" ? "Recording" : "Conversation"} ·{" "}
+            {label}
+          </label>
+        );
+      })}
+      {(conversations.isPending || recordings.isPending) && (
+        <p role="status">Loading sources…</p>
+      )}
+      {(conversations.isError || recordings.isError) && (
+        <p role="alert">Some sources couldn't be loaded.</p>
+      )}
+      {!conversations.isPending &&
+        !recordings.isPending &&
+        choices.length === 0 && <p>No other sources available.</p>}
+      {conversations.hasNextPage && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={conversations.isFetchingNextPage}
+          onClick={() => void conversations.fetchNextPage()}
+        >
+          More conversations
+        </Button>
+      )}
+      {recordings.hasNextPage && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={recordings.isFetchingNextPage}
+          onClick={() => void recordings.fetchNextPage()}
+        >
+          More recordings
+        </Button>
+      )}
+    </fieldset>
+  );
+}
+
 export function DirectChatLearning({
   threadId,
   agentId,
@@ -62,6 +180,8 @@ export function DirectChatLearning({
   const base = `/api/copilotkit/threads/${encodeURIComponent(threadId)}/learn`;
   const query = `?agentId=${encodeURIComponent(agentId)}`;
   const path = base + query;
+  const [chooseSources, setChooseSources] = useState(false);
+  const [selected, setSelected] = useState<LearningEvidenceSelection[]>([]);
   const queryKey = ["direct-chat-learning", threadId, agentId];
   const status = useQuery({
     queryKey,
@@ -80,10 +200,10 @@ export function DirectChatLearning({
     retry: false,
   });
   const start = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (body: z.infer<typeof learningRequest>) => {
       const response = await client(path, {
         method: "POST",
-        body: {},
+        body,
         fallback: "Couldn't start Learning.",
       });
       return directChatLearning.parse(await response.json());
@@ -139,6 +259,8 @@ export function DirectChatLearning({
         variant="ghost"
         onClick={() => {
           start.reset();
+          setSelected([]);
+          setChooseSources(false);
           review.reset();
           autoApproval.reset();
           void status.refetch();
@@ -238,9 +360,29 @@ export function DirectChatLearning({
                 autoApproval.mutate(event.currentTarget.checked)
               }
             />
-            Automatically approve new proposals in my Personal Workspace. Each
-            skill stays in its source conversation with its original Bot.
+            Automatically approve new proposals from this conversation. Skills
+            are delivered here for this Bot.
           </label>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-expanded={chooseSources}
+            onClick={() => {
+              if (chooseSources) setSelected([]);
+              setChooseSources(!chooseSources);
+            }}
+          >
+            {chooseSources ? "Use this conversation" : "Choose other evidence"}
+          </Button>
+          {chooseSources && (
+            <LearningSources
+              agentId={agentId}
+              threadId={threadId}
+              selected={selected}
+              onChange={setSelected}
+            />
+          )}
           {data.proposals.map((proposal) => (
             <article
               key={proposal.id}
@@ -251,6 +393,9 @@ export function DirectChatLearning({
                 {proposal.state === "published" &&
                   "Published for this conversation"}
                 {proposal.state === "rejected" && "Rejected"}
+                {proposal.state === "revision_required" && "Revision required"}
+                {proposal.state === "paused" && "Skill delivery paused"}
+                {proposal.revisionSubmitted && " · Revision submitted"}
                 {proposal.review?.mode === "automatic" &&
                   " · Automatically approved"}
                 {proposal.review &&
@@ -266,21 +411,58 @@ export function DirectChatLearning({
                   {proposal.evidence.length === 1 ? "turn" : "turns"})
                 </summary>
                 <ol className="mt-2 space-y-3">
-                  {proposal.evidence.map(({ runId, prompt, reply }) => (
+                  {proposal.evidence.map(({ runId, prompt, reply, source }) => (
                     <li
                       key={runId}
                       className="space-y-1 border-l pl-3 break-words"
                     >
-                      <p className="whitespace-pre-wrap">
-                        <strong>You</strong> · {prompt}
-                      </p>
-                      <p className="whitespace-pre-wrap">
-                        <strong>Bot</strong> · {reply}
-                      </p>
+                      {source ? (
+                        <>
+                          <p>
+                            <strong>
+                              {source.kind === "recording"
+                                ? "Recording"
+                                : "Conversation"}
+                            </strong>{" "}
+                            · {reply}
+                          </p>
+                          <p className="whitespace-pre-wrap">{prompt}</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="whitespace-pre-wrap">
+                            <strong>You</strong> · {prompt}
+                          </p>
+                          <p className="whitespace-pre-wrap">
+                            <strong>Bot</strong> · {reply}
+                          </p>
+                        </>
+                      )}
                     </li>
                   ))}
                 </ol>
               </details>
+              {(proposal.state === "paused" ||
+                proposal.state === "revision_required") &&
+                !proposal.revisionSubmitted &&
+                proposal.evidence.length > 0 && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={
+                      !data.enabled ||
+                      !data.available ||
+                      working ||
+                      start.isPending
+                    }
+                    onClick={() =>
+                      start.mutate({ revisesProposalId: proposal.id })
+                    }
+                  >
+                    Resubmit remaining evidence
+                  </Button>
+                )}
               {proposal.state === "pending_review" && (
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -327,9 +509,15 @@ export function DirectChatLearning({
           <DialogFooter>
             <Button
               disabled={
-                !data.enabled || !data.available || working || start.isPending
+                !data.enabled ||
+                !data.available ||
+                working ||
+                start.isPending ||
+                (chooseSources && !selected.length)
               }
-              onClick={() => start.mutate()}
+              onClick={() =>
+                start.mutate(chooseSources ? { evidence: selected } : {})
+              }
             >
               Learn now
             </Button>
