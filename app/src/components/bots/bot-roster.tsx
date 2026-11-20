@@ -4,7 +4,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { IconBolt, IconChevronRight, IconShare } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Fragment, useState } from "react";
+import { Fragment, type MouseEventHandler, useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { NewBotAction } from "@/components/astryx-pilot/bot-actions";
 import { astryxPilot } from "@/components/astryx-pilot/theme";
@@ -49,7 +49,11 @@ import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
  *
  * This replaces three screens (Bots, Agents and Team Bots) that listed the same Bots three ways.
  */
-export function BotRoster() {
+export function BotRoster({
+  onNewBotClick,
+}: {
+  onNewBotClick?: MouseEventHandler<HTMLElement>;
+}) {
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
   const agents = useQuery(agentListQueryOptions());
@@ -88,7 +92,9 @@ export function BotRoster() {
           <RosterRows agents={yours} byId={byId} />
         ) : (
           <PageEmpty
-            action={yoursPinned ? undefined : <NewBotAction />}
+            action={
+              yoursPinned ? undefined : <NewBotAction onClick={onNewBotClick} />
+            }
             icon={IconBolt}
             title={yoursPinned ? "All pinned" : "No Bots yet"}
           >

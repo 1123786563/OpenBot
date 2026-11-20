@@ -1,7 +1,7 @@
 import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import { IconPlus } from "@tabler/icons-react";
 import { Link } from "@tanstack/react-router";
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps, MouseEventHandler, ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { astryxPilot } from "./theme";
 
@@ -9,7 +9,13 @@ function NewBotLink({ href: _href, ...props }: ComponentProps<"a">) {
   return <Link {...props} search={{ new: true }} to="/bots" />;
 }
 
-export function NewBotAction({ primary = false }: { primary?: boolean }) {
+export function NewBotAction({
+  onClick,
+  primary = false,
+}: {
+  onClick?: MouseEventHandler<HTMLElement>;
+  primary?: boolean;
+}) {
   if (astryxPilot) {
     return (
       <AstryxButton
@@ -17,6 +23,7 @@ export function NewBotAction({ primary = false }: { primary?: boolean }) {
         href="/bots?new=true"
         icon={<IconPlus aria-hidden size={16} />}
         label="New Bot"
+        onClick={onClick}
         variant={primary ? "primary" : "secondary"}
       />
     );

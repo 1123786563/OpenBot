@@ -9,8 +9,15 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
 import {
   type DeploymentCapabilities,
@@ -60,6 +67,7 @@ function agent(
 
 const CLAUDE = agent({ id: "claude-agent-sdk", name: "Claude Agent SDK" });
 const ASSISTANT = agent({ id: "picked-harness", name: "Personal Assistant" });
+const CREATED = agent({ id: "created-bot", name: "Research Bot" });
 
 /** Every write that left the browser, as `METHOD /path body`. */
 let sent: { method: string; path: string; body: unknown }[] = [];
@@ -98,13 +106,22 @@ beforeAll(() => {
         path: url.pathname,
         body: init?.body ? JSON.parse(String(init.body)) : undefined,
       });
-    if (url.pathname === "/api/groups" && method === "POST")
+    if (url.pathname === "/api/agents/capabilities")
+      return NativeResponse.json({ capabilities: { builtInAvailable: true } });
+    if (url.pathname === "/api/agents" && method === "POST")
+      return NativeResponse.json({ agent: CREATED }, { status: 201 });
+    if (url.pathname === "/api/agents")
+      return NativeResponse.json({ agents: [CLAUDE, ASSISTANT, CREATED] });
+    if (url.pathname === `/api/agents/${CREATED.id}`)
+      return NativeResponse.json({ agent: CREATED });
+    if (url.pathname === "/api/groups" && method === "POST") {
+      const { agentIds } = JSON.parse(String(init?.body));
       return NativeResponse.json(
         {
           channel: {
             id: "group-1",
-            name: "Claude Agent SDK, Personal Assistant",
-            agentIds: [CLAUDE.id, ASSISTANT.id],
+            name: "Group conversation",
+            agentIds,
             threadId: "group-thread",
             active: true,
             lastMessageAt: null,
@@ -112,6 +129,7 @@ beforeAll(() => {
         },
         { status: 201 },
       );
+    }
     if (url.pathname === "/api/groups/group-1" && method === "POST")
       return new NativeResponse(null, { status: 202 });
     if (url.pathname === "/api/channels" && method === "POST")
@@ -203,7 +221,9 @@ function renderNewConversation(agents: AgentProfile[]) {
   return Object.assign(
     render(
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
+        <TooltipProvider>
+          <RouterProvider router={router} />
+        </TooltipProvider>
       </QueryClientProvider>,
     ),
     { router },
@@ -345,4 +365,62 @@ test("a new conversation with its one Bot picked offers that Bot to @, and sends
   expect(sent.some((write) => write.path.startsWith("/api/groups"))).toBe(
     false,
   );
+});
+
+test("creating a Bot in To: keeps the draft and starts the conversation only on first send", async () => {
+  const view = renderNewConversation([CLAUDE, ASSISTANT]);
+  const user = userEvent.setup({ document });
+  await addToTo(view, ASSISTANT.name);
+  const message = "Read this first";
+  const editor = await view.findByRole("textbox", { name: "Message" });
+  await user.click(editor);
+  await user.keyboard(message);
+  expect(sent).toEqual([]);
+
+  const to = view.getByRole("combobox");
+  await user.click(to);
+  await user.keyboard("{ArrowDown}");
+  await user.click(
+    await view.findByRole("button", { name: /New Bot Create a new Bot/ }),
+  );
+  const sheet = within(await view.findByRole("dialog", { name: "New Bot" }));
+  await user.type(sheet.getByLabelText("Name"), CREATED.name);
+  await user.click(await sheet.findByRole("button", { name: "Create Bot" }));
+
+  await view.findByRole(
+    "button",
+    { name: `Remove ${CREATED.name}` },
+    { timeout: 3500 },
+  );
+  expect(
+    view.getByRole("button", { name: `Remove ${ASSISTANT.name}` }),
+  ).toBeTruthy();
+  expect(view.getByRole("textbox", { name: "Message" }).textContent).toBe(
+    message,
+  );
+  expect(view.router.state.location.pathname).toBe("/channel/new");
+  expect(sent).toEqual([
+    {
+      method: "POST",
+      path: "/api/agents",
+      body: expect.objectContaining({ name: CREATED.name }),
+    },
+  ]);
+
+  await user.click(view.getByRole("textbox", { name: "Message" }));
+  await user.keyboard("{Enter}");
+
+  await view.findByText("The group");
+  expect(sent.slice(1)).toEqual([
+    {
+      method: "POST",
+      path: "/api/groups",
+      body: { agentIds: [ASSISTANT.id, CREATED.id] },
+    },
+    {
+      method: "POST",
+      path: "/api/groups/group-1",
+      body: expect.objectContaining({ agentId: null, text: message }),
+    },
+  ]);
 });

@@ -1,6 +1,7 @@
 import { IconBook, IconChevronRight } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { type MouseEventHandler, useRef } from "react";
 import { z } from "zod";
 import { NewBotSheet } from "@/components/agents/new-bot-sheet";
 import { NewBotAction } from "@/components/astryx-pilot/bot-actions";
@@ -37,12 +38,24 @@ export const Route = createFileRoute("/_authed/_app/bots/")({
 function BotsPage() {
   const { new: creating } = Route.useSearch();
   const navigate = Route.useNavigate();
+  const createTrigger = useRef<HTMLElement | null>(null);
+  const rememberCreateTrigger: MouseEventHandler<HTMLElement> = (event) => {
+    if (
+      event.button === 0 &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.shiftKey
+    ) {
+      createTrigger.current = event.currentTarget;
+    }
+  };
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
   return (
     <AstryxBotsSurface>
       <PageShell
-        action={<NewBotAction primary />}
+        action={<NewBotAction onClick={rememberCreateTrigger} primary />}
         description={
           personal
             ? "Your Bots for everyday work."
@@ -51,7 +64,7 @@ function BotsPage() {
         title="Bots"
         eyebrow={astryxPilot ? <AstryxBrand /> : undefined}
       >
-        <BotRoster />
+        <BotRoster onNewBotClick={rememberCreateTrigger} />
         {personal ? <WhatYourBotsKnow /> : null}
         <NewBotSheet
           onClose={() => void navigate({ search: {} })}
@@ -73,11 +86,15 @@ function BotsPage() {
             );
           }}
           open={creating === true}
-          returnFocus={() =>
-            document.querySelector<HTMLAnchorElement>(
-              "[data-slot=page-header] a[href*='new=true']",
-            )
-          }
+          returnFocus={() => {
+            const trigger = createTrigger.current;
+            createTrigger.current = null;
+            return trigger?.isConnected
+              ? trigger
+              : document.querySelector<HTMLAnchorElement>(
+                  "[data-slot=page-header] a[href*='new=true']",
+                );
+          }}
         />
       </PageShell>
     </AstryxBotsSurface>
