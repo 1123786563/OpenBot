@@ -1,9 +1,17 @@
+import { inArray } from "drizzle-orm";
 import { z } from "zod";
 import { configureBotLifecycle } from "../agents/lifecycle";
 import { createDatabase } from "../db/client";
+import { personalWorkspaceClosures } from "../db/schema";
 import { repeatAfterEach } from "../work/loop";
 import { createPersonalSaasApp } from "./app";
+import {
+  cleanupSteps,
+  closureCleanupClient,
+  closureRestoreJournal,
+} from "./closure-cleanup-contract";
 import { workspaceQuotaConfig } from "./quotas";
+import { reapplyWorkspaceClosures } from "./workspace-cleanup";
 
 const httpsUrl = z.url({ protocol: /^https$/ }).refine((value) => {
   const url = new URL(value);
@@ -51,6 +59,9 @@ const trial = z.object({
     .trim()
     .min(1)
     .optional(),
+  OPENBOT_CLOSURE_CLEANUP_URL: httpsUrl.optional(),
+  OPENBOT_CLOSURE_CLEANUP_TOKEN: z.string().trim().min(1).optional(),
+  OPENBOT_CLOSURE_RESTORE_JOURNAL: z.string().trim().min(1).optional(),
   DATABASE_URL: z.string().min(1),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
 });
@@ -80,7 +91,17 @@ if (Boolean(supervisorUrl) !== Boolean(supervisorToken))
     "Configure the workspace Computer supervisor URL and token together",
   );
 
+const cleanupUrl = env.OPENBOT_CLOSURE_CLEANUP_URL;
+const cleanupToken = env.OPENBOT_CLOSURE_CLEANUP_TOKEN;
+if (Boolean(cleanupUrl) !== Boolean(cleanupToken))
+  throw new Error("Configure the closure cleanup URL and token together");
+
 const database = createDatabase(env.DATABASE_URL);
+const restoreJournal = env.OPENBOT_CLOSURE_RESTORE_JOURNAL;
+const restoredClosures = restoreJournal
+  ? closureRestoreJournal.parse(await Bun.file(restoreJournal).json())
+  : [];
+if (restoreJournal) await reapplyWorkspaceClosures(database, restoredClosures);
 configureBotLifecycle({ database });
 const botRuntime =
   process.env.OPENBOT_PERSONAL_SAAS_BOT_EXECUTION === "on"
@@ -90,6 +111,10 @@ const botRuntime =
     : undefined;
 const app = createPersonalSaasApp(
   {
+    closureCleanup:
+      cleanupUrl && cleanupToken
+        ? closureCleanupClient(cleanupUrl, cleanupToken)
+        : undefined,
     origin: new URL(env.OPENBOT_PERSONAL_SAAS_URL).origin,
     encryptionKey: env.KEY_ENCRYPTION_KEY,
     supportSubjects: env.OPENBOT_SUPPORT_SUBJECTS,
@@ -124,6 +149,28 @@ const app = createPersonalSaasApp(
   },
   database,
 );
+
+if (restoredClosures.length) {
+  await app.sweepWorkspaceClosures();
+  const records = await database
+    .select({ cleanup: personalWorkspaceClosures.cleanup })
+    .from(personalWorkspaceClosures)
+    .where(
+      inArray(
+        personalWorkspaceClosures.id,
+        restoredClosures.map(({ id }) => id),
+      ),
+    );
+  if (
+    records.length !== restoredClosures.length ||
+    records.some(({ cleanup }) =>
+      cleanupSteps.some((step) => cleanup[step]?.status !== "confirmed"),
+    )
+  )
+    throw new Error(
+      "Closure recovery is incomplete. Keep the recovery environment offline.",
+    );
+}
 
 const server = Bun.serve({
   hostname: "127.0.0.1",

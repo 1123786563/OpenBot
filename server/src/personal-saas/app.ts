@@ -33,6 +33,7 @@ import {
   recoveryInput,
 } from "./bot-work";
 import { browserAttempt, type CasdoorConfig, casdoor } from "./casdoor";
+import type { ClosureCleanup } from "./closure-cleanup-contract";
 import { ensureDecisionActor } from "./decision-actor";
 import { bearerSession, type NativeAttempt, nativeAuth } from "./native-auth";
 import {
@@ -56,6 +57,7 @@ import {
 } from "./workspace-attachments";
 import { workspaceBotRoutes } from "./workspace-bot-routes";
 import { workspaceBots } from "./workspace-bots";
+import { workspaceCleanup } from "./workspace-cleanup";
 import { workspaceClosureRoutes } from "./workspace-closure";
 import { workspaceClosure } from "./workspace-closure-record";
 import {
@@ -101,6 +103,7 @@ export type PersonalSaasConfig = {
   suspensionOperator?: SuspensionOperator;
   suspensionSupport?: string;
   computer?: WorkspaceComputerConfig;
+  closureCleanup?: ClosureCleanup;
   quotas?: Partial<WorkspaceQuotaLimits>;
   encryptionKey: string;
   casdoor: CasdoorConfig;
@@ -185,6 +188,12 @@ export function createPersonalSaasApp(
     now,
     computer,
     page,
+  });
+  const sweepCleanup = workspaceCleanup({
+    database,
+    now,
+    reconcile: config.closureCleanup,
+    stopped: computer?.stopped,
   });
   const native = nativeAuth({
     database,
@@ -1340,7 +1349,10 @@ export function createPersonalSaasApp(
   return Object.assign(app, {
     accessWorkspaceComputerForTask: computer?.accessForTask,
     renewWorkspaceComputers: computer?.renew,
-    sweepWorkspaceClosures: closure.sweep,
+    async sweepWorkspaceClosures() {
+      await closure.sweep();
+      await sweepCleanup();
+    },
     sweepBotWork: () => botWork.sweep(runPersonalBot),
     sweepBotDecisions: () => config.botRuntime?.sweepDecisions(quotas),
     offerAutomationSchedules: automation.offerSchedules,

@@ -209,3 +209,61 @@ packages. Docker log rotation is separate from the workspace storage budget.
 Calibrate filesystem size, upload capacity, and Docker host resources in the target environment.
 Exercise quota refusals, release and retry, cross-account isolation, supervisor process exit,
 and the actual Web, mobile, and desktop builds before setting trial capacity.
+
+## Workspace closure cleanup and disaster recovery
+
+Apply migration `0099_personal_workspace_cleanup` before rolling out this
+worker. The closure operation remains the access fence. Its PostgreSQL cleanup
+removes workspace content and the dedicated Assistant but keeps the workspace
+identity anchor, the Casdoor binding, and suspension history. Billing accounts,
+ledger entries, and transactions follow their existing billing retention rules.
+
+Set `OPENBOT_CLOSURE_CLEANUP_URL` to the deployment's authenticated HTTPS
+reconciliation endpoint and `OPENBOT_CLOSURE_CLEANUP_TOKEN` to its service
+credential. Without this endpoint, closure still blocks access and stops
+execution, and cleanup remains pending. The deployment supplies the endpoint
+and its store and provider integrations.
+
+The endpoint receives a JSON POST with `step`, `id` (the closure operation),
+`accountId`, `workspaceId`, and `acceptedAt`. Calls can be repeated after a
+timeout or restore. Each response must reflect a fresh observation of the
+target environment. Respond with `{"status":"confirmed"}` after verifying the
+step, or `{"status":"unconfirmed"}` while any result is unknown.
+
+| Step | Deployment verification |
+| --- | --- |
+| `computerVolume` | The Computer supervisor has fenced the prior leases and stopped the workspace Computer. The storage provisioner then removes and verifies absence of the dedicated filesystem and other online volume replicas. |
+| `exports` | OpenBot streams exports from PostgreSQL. Verify any proxy, CDN or managed export store has no retained workspace copies. User-downloaded files are outside the deployment's control. |
+| `caches`, `indexes` | Fence repopulation and remove entries for the workspace from every configured cache and index replica. |
+| `internalServices` | Use the workspace's resource inventory to remove and verify content in internal services such as Intelligence thread and run storage. PostgreSQL keeps the Assistant and conversation identifiers until this step and index cleanup are verified. |
+| `connections` | Resolve grants from authoritative provider inventory, remove only the closed workspace's bindings, and verify dedicated grants are revoked. Shared grants and installations must continue working for other authorized parties. Return unconfirmed for missing, ambiguous or partially verified provider results. |
+| `backups` | Return `{"status":"confirmed","schedule":[{"store":"PostgreSQL","retentionDays":7,"remainingCopiesExpireBy":"2026-12-01T00:00:00Z"}]}` with the deployment's actual values for every store. The example values are only illustrative. |
+
+Before release, record the production retention period and expiry calculation
+for PostgreSQL snapshots and WAL, Computer volume snapshots, internal service
+storage, and each cache, index or export store that takes backups. Include
+provider-managed replicas in the inventory. The endpoint must calculate each
+expiry from the last backup that could contain the data. The expiry is a
+schedule for backup retention and does not attest to completed deletion.
+
+Preserve committed closure tombstones independently of data snapshots, using
+an authoritative recovery copy with zero loss of acknowledged closure
+transactions. A periodic journal export alone leaves a gap after the last
+export. Keep recovery traffic, workers and downstream services offline until
+reconciliation is complete.
+
+1. From a trusted copy with all acknowledged closure transactions, export the
+   minimal journal with `bun server/scripts/export-workspace-closure-journal.ts`.
+   Set `DATABASE_URL` to that copy. Protect the output as an operator-only file.
+2. Restore and migrate the target database. Preserve the account identity
+   bindings and billing state from their respective recovery sources.
+3. Mount the journal read-only and set `OPENBOT_CLOSURE_RESTORE_JOURNAL` to
+   its path on the Personal SaaS server. Point the reconciler at the recovery
+   environment. Startup replays the access fences, removes restored sessions
+   and workspace integration grants, then verifies cleanup and remote
+   reconciliation before opening the listener. A missing identity or
+   conflicting journal record blocks startup.
+4. After verification, remove the recovery-only setting before normal
+   restarts. Keep the authoritative tombstones for as long as older backups
+   can be restored. Exercise this procedure in a disposable deployment before
+   enabling closure for real users.

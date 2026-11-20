@@ -2,6 +2,8 @@ import { eq } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { personalWorkspaceClosures } from "../db/schema/personal-saas";
 
+import { onlineCleanupSteps } from "./closure-cleanup-contract";
+
 export async function workspaceClosure(
   database: Pick<Database, "select">,
   accountId: string,
@@ -24,8 +26,15 @@ export function closureProgress(
       work: record.workCutoff ?? "pending",
       computer: record.computerCutoff ?? "pending",
     },
-    onlineCleanup: "pending",
-    remoteRevocation: "pending",
-    backups: "pending",
+    onlineCleanup: Object.fromEntries(
+      onlineCleanupSteps.map((step) => [
+        step,
+        record.cleanup[step] ?? { status: "pending" },
+      ]),
+    ),
+    remoteRevocation: record.cleanup.connections ?? { status: "pending" },
+    backups: record.backupSchedule
+      ? { status: "scheduled", stores: record.backupSchedule }
+      : { status: "pending", stores: [] },
   };
 }

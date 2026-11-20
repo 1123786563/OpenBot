@@ -16,6 +16,7 @@ import {
   workItems,
 } from "../db/schema";
 import { accountDecision, type createAccountAccess } from "./account-access";
+import { onlineCleanupSteps } from "./closure-cleanup-contract";
 import { reconcileDecisionHistory } from "./decision-access";
 import { cookieOptions, sessionCookie } from "./session-revocation";
 import { personalSaasStore } from "./store";
@@ -25,6 +26,15 @@ import {
   workspaceComputerLeaseMs,
 } from "./workspace-computer";
 import { latestSuspension } from "./workspace-suspension";
+
+const cleanupLabels = {
+  postgres: "Workspace database",
+  computerVolume: "Computer volume",
+  exports: "Export copies",
+  caches: "Caches",
+  indexes: "Indexes",
+  internalServices: "Internal services",
+} satisfies Record<(typeof onlineCleanupSteps)[number], string>;
 
 const statusCookie = "__Host-openbot-closure-status";
 const proofCookie = "__Host-openbot-closure-proof";
@@ -290,9 +300,13 @@ export function workspaceClosureRoutes({
         <dt>Application sessions</dt><dd>Revoked</dd>
         <dt>Work cutoff</dt><dd>${progress.executionCutoff.work}</dd>
         <dt>Computer exit</dt><dd>${progress.executionCutoff.computer}</dd>
-        <dt>Online data cleanup</dt><dd>${progress.onlineCleanup}</dd>
-        <dt>Third-party revocation</dt><dd>${progress.remoteRevocation}</dd>
-        <dt>Backup expiration</dt><dd>${progress.backups}</dd>
+        <dt>Online data cleanup</dt><dd><ul>${onlineCleanupSteps.map((step) => html`<li>${cleanupLabels[step]}: ${progress.onlineCleanup[step]?.status ?? "pending"}</li>`)}</ul></dd>
+        <dt>Third-party revocation</dt><dd>${progress.remoteRevocation.status}</dd>
+        <dt>Backup expiration</dt><dd>${
+          progress.backups.stores.length
+            ? html`<ul>${progress.backups.stores.map((store) => html`<li>${store.store}: ${store.retentionDays} days, expires by <time datetime="${store.remainingCopiesExpireBy}">${store.remainingCopiesExpireBy}</time></li>`)}</ul>`
+            : "Schedule pending"
+        }</dd>
       </dl>
       <p><a href="${settings}/progress">Refresh progress</a></p>
     `,

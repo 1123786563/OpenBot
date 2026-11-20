@@ -208,6 +208,7 @@ function newApp(
   computer?: WorkspaceComputerConfig,
   quotas?: Partial<import("../src/personal-saas/quotas").WorkspaceQuotaLimits>,
   botRuntime?: ReturnType<typeof createPersonalBotRuntime>,
+  cleanup?: Parameters<typeof createPersonalSaasApp>[0]["closureCleanup"],
 ) {
   return createPersonalSaasApp(
     {
@@ -215,6 +216,7 @@ function newApp(
       supportSubjects: [supportSubject, otherSupportSubject],
       now,
       botRuntime,
+      closureCleanup: cleanup,
       computer: typeof dependency === "function" ? computer : dependency,
       runPersonalBot: typeof dependency === "function" ? dependency : undefined,
       quotas: {
@@ -4525,9 +4527,9 @@ test("concurrent closure confirmation revokes browser, native and cached grants,
     expect(progress).toMatchObject({
       operationId: expect.any(String),
       executionCutoff: { sessions: "revoked" },
-      onlineCleanup: "pending",
-      remoteRevocation: "pending",
-      backups: "pending",
+      onlineCleanup: { postgres: { status: "pending" } },
+      remoteRevocation: { status: "pending" },
+      backups: { status: "pending" },
     });
     expect((await send("/api/workspace", { headers: native })).status).toBe(
       401,
@@ -4575,6 +4577,128 @@ test("concurrent closure confirmation revokes browser, native and cached grants,
       expect(result).not.toHaveProperty("token");
       expect(result).not.toHaveProperty("workspaceId");
     }
+  });
+});
+
+test("closure records partial cleanup and retries only unconfirmed steps", async () => {
+  const owner = await isolationOwner();
+  const other = await isolationOwner();
+  const integrations = workspaceIntegrationGrants(database);
+  const [identity] = await database
+    .select()
+    .from(personalSaasAccounts)
+    .where(eq(personalSaasAccounts.subject, owner.account.sub));
+  const grant = await integrations.issueAssistantRead({
+    accountId: identity.id,
+    workspaceId: owner.workspaceId,
+    botId: owner.botId,
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+  if (!grant) throw new Error("Missing integration fixture");
+  const access = {
+    ...grant,
+    workspaceId: owner.workspaceId,
+    botId: owner.botId,
+    action: "assistant.read",
+  };
+  expect(await integrations.execute(access)).toBeDefined();
+  const namespace = workspaceResourceOwner(owner.workspaceId);
+  const toolkit = crypto.randomUUID();
+  await database.insert(brokeredConnections).values([
+    {
+      provider: "composio",
+      app: toolkit,
+      holder: "person",
+      userId: namespace,
+      vendorUserId: "fixture-dedicated",
+    },
+    {
+      provider: "composio",
+      app: toolkit,
+      holder: "deployment",
+      vendorUserId: "fixture-shared",
+    },
+  ]);
+  const connectionRows = () =>
+    database
+      .select()
+      .from(brokeredConnections)
+      .where(eq(brokeredConnections.app, toolkit));
+  const grantsAtProvider = new Set(["fixture-dedicated", "fixture-shared"]);
+  const workspaceBindings = new Set(grantsAtProvider);
+  const stores = [
+    {
+      store: "PostgreSQL",
+      retentionDays: 7,
+      remainingCopiesExpireBy: new Date(
+        Date.now() + 7 * 86_400_000,
+      ).toISOString(),
+    },
+  ];
+  const response = await confirmClosure(
+    await proveClosure(owner.session, owner.account),
+  );
+  expect(await integrations.execute(access)).toBeUndefined();
+  const status = cookie(response, "__Host-openbot-closure-status=");
+  const { operationId } = await response.json();
+  const calls = new Map<string, number>();
+  const worker = newApp(
+    database,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    async (step, target) => {
+      if (target.workspaceId !== owner.workspaceId)
+        return { status: "unconfirmed" };
+      expect(target.id).toBe(operationId);
+      calls.set(step, (calls.get(step) ?? 0) + 1);
+      if (step === "computerVolume" && calls.get(step) === 1)
+        throw new Error("storage offline");
+      if (step === "connections") {
+        workspaceBindings.clear();
+        if (calls.get(step) === 1) return { status: "unconfirmed" };
+        grantsAtProvider.delete("fixture-dedicated");
+      }
+      if (step === "backups") return { status: "confirmed", schedule: stores };
+      return { status: "confirmed" };
+    },
+  );
+  await worker.sweepWorkspaceClosures();
+  expect(await (await closureStatus(status)).json()).toMatchObject({
+    onlineCleanup: {
+      postgres: { status: "confirmed" },
+      computerVolume: { status: "retrying" },
+      indexes: { status: "confirmed" },
+    },
+    remoteRevocation: { status: "unconfirmed" },
+  });
+  expect(await connectionRows()).toHaveLength(2);
+  expect(
+    await database.select().from(agents).where(eq(agents.id, owner.botId)),
+  ).toHaveLength(0);
+  await worker.sweepWorkspaceClosures();
+  expect(await (await closureStatus(status)).json()).toMatchObject({
+    backups: { status: "scheduled", stores },
+    onlineCleanup: { computerVolume: { status: "confirmed" } },
+    remoteRevocation: { status: "confirmed" },
+  });
+  expect(await connectionRows()).toMatchObject([
+    { holder: "deployment", vendorUserId: "fixture-shared" },
+  ]);
+  expect(grantsAtProvider).toEqual(new Set(["fixture-shared"]));
+  expect(workspaceBindings.size).toBe(0);
+  expect(
+    await database
+      .select()
+      .from(personalSaasAccounts)
+      .where(eq(personalSaasAccounts.id, identity.id)),
+  ).toHaveLength(1);
+  expect(calls.get("indexes")).toBe(1);
+  expect(calls.get("computerVolume")).toBe(2);
+  expect(calls.get("connections")).toBe(2);
+  expect(await workspace(other.session)).toMatchObject({
+    id: other.workspaceId,
   });
 });
 

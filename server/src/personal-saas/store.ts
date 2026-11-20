@@ -49,6 +49,7 @@ function liveSession(token: string) {
 export function personalConversationScope(
   database: Pick<Database, "select">,
   scope: SQL | undefined,
+  includeDeleted = false,
 ) {
   const otherAgents = alias(channelAgents, "other_agents");
   // A trial conversation belongs to the workspace through its dedicated Assistant.
@@ -80,8 +81,8 @@ export function personalConversationScope(
     .where(
       and(
         scope,
-        isNull(agentProfiles.deletedAt),
-        isNull(channels.deletedAt),
+        includeDeleted ? undefined : isNull(agentProfiles.deletedAt),
+        includeDeleted ? undefined : isNull(channels.deletedAt),
         isNull(channels.packageId),
         notExists(
           database

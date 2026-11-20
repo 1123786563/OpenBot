@@ -11,6 +11,12 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { z } from "zod";
+import type {
+  backupSchedule,
+  CleanupResult,
+  CleanupStep,
+} from "../../personal-saas/closure-cleanup-contract";
 import {
   maxSupportSeconds,
   type SupportResource,
@@ -195,5 +201,11 @@ export const personalWorkspaceClosures = pgTable(
     }).notNull(),
     computerCutoff: text("computer_cutoff", { enum: ["confirmed", "failed"] }),
     workCutoff: text("work_cutoff", { enum: ["confirmed", "failed"] }),
+    cleanup: jsonb()
+      .$type<Partial<Record<CleanupStep, CleanupResult>>>()
+      .notNull()
+      .default({}),
+    backupSchedule:
+      jsonb("backup_schedule").$type<z.output<typeof backupSchedule>>(),
   },
 );

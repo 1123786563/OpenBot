@@ -1,10 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, notExists } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/client";
 import {
-  personalSaasAccounts,
   personalWorkspaceIntegrationGrants as grants,
+  personalSaasAccounts,
+  personalWorkspaceClosures,
   personalWorkspaceDefaultBots,
   personalWorkspaces,
 } from "../db/schema/personal-saas";
@@ -90,6 +91,14 @@ export function workspaceIntegrationGrants(database: Database) {
             eq(grants.credentialHash, hash(target.credential)),
             eq(grants.action, target.action),
             gt(grants.expiresAt, new Date()),
+            notExists(
+              database
+                .select({ id: personalWorkspaceClosures.id })
+                .from(personalWorkspaceClosures)
+                .where(
+                  eq(personalWorkspaceClosures.workspaceId, grants.workspaceId),
+                ),
+            ),
           ),
         );
       return bot;
