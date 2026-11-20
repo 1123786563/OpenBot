@@ -1510,20 +1510,10 @@ console.info(
  * time out, it will close a stream halfway through, and none of that is exceptional.
  *
  * Logged loudly rather than swallowed. A process that hides unhandled rejections is worse than one
- * that dies, so this prints the full reason and keeps serving; what it must never do is stay quiet.
+ * that dies, so this records the failure and keeps serving; what it must never do is stay quiet.
  */
-process.on("unhandledRejection", (reason) => {
-  console.error(
-    JSON.stringify({
-      type: "unhandled-rejection",
-      message: reason instanceof Error ? reason.message : String(reason),
-      code:
-        reason && typeof reason === "object" && "code" in reason
-          ? String((reason as { code: unknown }).code)
-          : undefined,
-      note: "The server kept running. A remote agent's connection failing must not stop everyone else.",
-    }),
-  );
+process.on("unhandledRejection", () => {
+  writeRuntimeLog("api_unhandled_rejection");
 });
 
 /**
@@ -3375,22 +3365,23 @@ const app = createApp(
   profileStore,
 );
 
-startHttpServer({
-  port,
-  config,
-  resolveRequestActor,
-  agentProfileStore,
-  computerGateway,
-  app,
-});
+try {
+  startHttpServer({
+    port,
+    config,
+    resolveRequestActor,
+    agentProfileStore,
+    computerGateway,
+    app,
+  });
+} catch {
+  writeRuntimeLog("api_listen_failed", { port });
+  process.exit(1);
+}
 
 if (config.singleUser) {
   // Loud, every boot. A server that is not checking who is asking should never be a quiet default.
-  console.warn(
-    "No identity provider is configured, so every request is treated as " +
-      `${DEV_ACTOR.email} (administrator). Configure GOOGLE_OAUTH_*, ` +
-      "MICROSOFT_OAUTH_* or OKTA_OAUTH_* before anybody else can reach this.",
-  );
+  writeRuntimeLog("single_user_mode_enabled");
 }
 
 // Each listener holds a connection of its own for the life of the process. Released on the way out,
