@@ -694,6 +694,13 @@
       "when": 1795181647838,
       "tag": "0098_direct_chat_learning_publication",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1795183415159,
+      "tag": "0099_scheduled_direct_chat_learning",
+      "breakpoints": true
     }
   ]
 }

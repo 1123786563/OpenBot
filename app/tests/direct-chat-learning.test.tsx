@@ -27,10 +27,30 @@ test("Learn now starts analysis and shows its pending proposal and source", asyn
     latest: null,
     lastResult: null,
     proposals: [],
+    schedule: {
+      enabled: false,
+      intervalHours: 24,
+      nextAt: null,
+      lastResult: null,
+    },
   };
   const running = { ...initial, latest: { ...analysis, state: "running" } };
   const proposed = { ...analysis, state: "proposed" };
   let started = false;
+  let configured = false;
+  const scheduled = {
+    ...initial,
+    schedule: {
+      enabled: true,
+      intervalHours: 6,
+      nextAt: "2026-11-20T16:00:00Z",
+      lastResult: {
+        ...analysis,
+        state: "skipped",
+        reason: "insufficient_credits",
+      },
+    },
+  };
   let reviewed = false;
   let readsAfterStart = 0;
   const transport = spyOn(globalThis, "fetch").mockImplementation(
@@ -55,7 +75,15 @@ test("Learn now starts analysis and shows its pending proposal and source", asyn
           started = true;
           return Response.json(running, { status: 202 });
         }
-        if (!started) return Response.json(initial);
+        if (options?.method === "PUT") {
+          expect(JSON.parse(String(options.body))).toEqual({
+            enabled: true,
+            intervalHours: 6,
+          });
+          configured = true;
+          return Response.json(scheduled);
+        }
+        if (!started) return Response.json(configured ? scheduled : initial);
         if (readsAfterStart++ === 0) return Response.json(running);
 
         return Response.json({
@@ -115,6 +143,20 @@ test("Learn now starts analysis and shows its pending proposal and source", asyn
       view.getByRole("button", { name: "Approve for this conversation" }),
     );
     await view.findByText(/Published for this conversation/);
+    started = false;
+    fireEvent.click(
+      view.getByRole("checkbox", { name: /Allow scheduled analysis/ }),
+    );
+    fireEvent.change(
+      view.getByRole("spinbutton", { name: "Analysis interval in hours" }),
+      { target: { value: "6" } },
+    );
+    fireEvent.click(view.getByRole("button", { name: "Save schedule" }));
+    await view.findByText(/Next analysis/);
+    await view.findByText(
+      "Last scheduled result · There are not enough Test Credits.",
+    );
+    expect(view.getByRole("button", { name: "Learn now" })).toBeTruthy();
   } finally {
     cleanup();
     client.clear();

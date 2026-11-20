@@ -28,6 +28,7 @@ const reasons: Record<string, string> = {
   no_procedure: "No reusable procedure was found.",
   invalid_model_result: "The model returned an invalid proposal.",
   analysis_interrupted: "The analysis was interrupted.",
+  schedule_disabled: "Scheduled Learning was turned off.",
   learning_disabled: "Learning was turned off.",
   evidence_unavailable: "The conversation evidence is unavailable.",
 };
@@ -71,7 +72,11 @@ export function DirectChatLearning({
       return directChatLearning.parse(await response.json());
     },
     refetchInterval: (query) =>
-      open && inProgress(query.state.data?.latest) ? 1000 : false,
+      open && inProgress(query.state.data?.latest)
+        ? 1000
+        : open && query.state.data?.schedule?.enabled
+          ? 30_000
+          : false,
     retry: false,
   });
   const start = useMutation({
@@ -82,6 +87,19 @@ export function DirectChatLearning({
         fallback: "Couldn't start Learning.",
       });
       return directChatLearning.parse(await response.json());
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey }),
+  });
+  const configure = useMutation({
+    mutationFn: async (settings: {
+      enabled: boolean;
+      intervalHours: number;
+    }) => {
+      await client(path, {
+        method: "PUT",
+        body: settings,
+        fallback: "Couldn't save scheduled Learning.",
+      });
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey }),
   });
@@ -146,6 +164,70 @@ export function DirectChatLearning({
             {working && data.latest && <p>{analysisText(data.latest)}</p>}
             {last && <p>Last result · {analysisText(last)}</p>}
           </div>
+          {data.schedule && (
+            <form
+              key={`${data.schedule.enabled}-${data.schedule.intervalHours}`}
+              className="space-y-2 rounded-md border p-3 text-sm"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const fields = new FormData(event.currentTarget);
+                configure.mutate({
+                  enabled: fields.has("enabled"),
+                  intervalHours: Number(fields.get("intervalHours")),
+                });
+              }}
+            >
+              <label className="flex items-center gap-2 font-medium">
+                <input
+                  type="checkbox"
+                  name="enabled"
+                  defaultChecked={data.schedule.enabled}
+                />
+                Allow scheduled analysis to spend Test Credits
+              </label>
+              <label className="flex items-center gap-2">
+                Run every
+                <input
+                  aria-label="Analysis interval in hours"
+                  className="w-20 rounded border bg-background px-2 py-1"
+                  type="number"
+                  name="intervalHours"
+                  min={1}
+                  max={168}
+                  step={1}
+                  required
+                  defaultValue={data.schedule.intervalHours}
+                />
+                hours
+              </label>
+              <p role="status">
+                {data.schedule.nextAt
+                  ? `Next analysis · ${new Date(data.schedule.nextAt).toLocaleString()}`
+                  : data.schedule.enabled
+                    ? "Scheduled analysis is paused."
+                    : "Scheduled analysis is off."}
+              </p>
+              {data.schedule.lastResult && (
+                <p>
+                  Last scheduled result ·{" "}
+                  {analysisText(data.schedule.lastResult)}
+                </p>
+              )}
+              {configure.error && (
+                <p className="text-destructive" role="alert">
+                  {configure.error.message}
+                </p>
+              )}
+              <Button
+                type="submit"
+                size="sm"
+                variant="outline"
+                disabled={configure.isPending}
+              >
+                Save schedule
+              </Button>
+            </form>
+          )}
           <label className="flex items-start gap-2 text-sm">
             <input
               type="checkbox"
