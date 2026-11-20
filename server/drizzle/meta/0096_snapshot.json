@@ -1,5 +1,5 @@
 {
-  "id": "c1f3fbb2-4a94-4d56-a1bd-9f1bf62e1b51",
+  "id": "d83607de-2471-463b-a362-9f9656d1e9fa",
   "prevId": "09f059bf-3a1c-4ef5-8d0d-fb5a14c4e711",
   "version": "7",
   "dialect": "postgresql",
@@ -6245,66 +6245,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.hindsight_memory_projections": {
-      "name": "hindsight_memory_projections",
-      "schema": "",
-      "columns": {
-        "memory_id": {
-          "name": "memory_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "projected_version": {
-          "name": "projected_version",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "first_deleted_at": {
-          "name": "first_deleted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "next_check_at": {
-          "name": "next_check_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "hindsight_memory_projections_due_idx": {
-          "name": "hindsight_memory_projections_due_idx",
-          "columns": [
-            {
-              "expression": "next_check_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.memory_sources": {
       "name": "memory_sources",
       "schema": "",
@@ -6580,13 +6520,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "version": {
-          "name": "version",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
         },
         "created_at": {
           "name": "created_at",
@@ -8944,6 +8877,24 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "dispatched_at": {
+          "name": "dispatched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "external_outcome": {
+          "name": "external_outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stop_reason": {
+          "name": "stop_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "event_cursor": {
           "name": "event_cursor",

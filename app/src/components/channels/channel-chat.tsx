@@ -33,6 +33,7 @@ import {
 import { VoiceCallWidget } from "@/components/channels/voice-call-widget";
 import { HandoffResumeNotice } from "@/components/computer/handoff-resume-notice";
 import { StarterSuggestions } from "@/components/starter-tour/starter-suggestions";
+import { Button } from "@/components/ui/button";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
   answerPersonQuestionMutationOptions,
@@ -72,7 +73,9 @@ import {
 import { releaseServerOwnedInterrupts } from "@/lib/copilot/server-owned-interrupts";
 import { followLastRun, stoppedReason } from "@/lib/copilot/stopped-turn";
 import {
+  controlThreadRun,
   readThreadMessages,
+  type StoredRun,
   withCurrentA2uiVersions,
 } from "@/lib/copilot/thread-messages";
 import { modelCatalogueQueryOptions } from "@/lib/models/queries";
@@ -606,6 +609,45 @@ export function ChannelChat({
     "ready" | "unavailable"
   >("ready");
   const [historyReadFailed, setHistoryReadFailed] = useState(false);
+  const [storedRuns, setStoredRuns] = useState<StoredRun[]>();
+  const activeRun = storedRuns?.find((run) => run.status === "running");
+  const unresolvedRun = storedRuns?.find(
+    (run) => run.externalOutcome === "unknown",
+  );
+  const latestRun = storedRuns?.at(-1);
+  const runControl = useMutation({
+    mutationFn: async ({
+      runId,
+      action,
+    }: {
+      runId?: string;
+      action: "stop" | "reconcile";
+    }) => {
+      let id = runId;
+      if (!id) {
+        const thread = await readThreadMessages(
+          channel.threadId,
+          runtimeAgentId,
+        );
+        if (!thread.runs) throw new Error("Could not check the run status.");
+        id = thread.runs.find((run) => run.status === "running")?.id;
+      }
+      if (id) {
+        await controlThreadRun({
+          threadId: channel.threadId,
+          agentId: runtimeAgentId,
+          runId: id,
+          action,
+        });
+      }
+    },
+    onSuccess: (_, { action }) => {
+      if (action === "stop")
+        void queries.invalidateQueries(approvalInboxOptions());
+      else setRunError(null);
+    },
+    onSettled: () => pullHistoryRef.current?.(),
+  });
   /**
    * Why the last run ended without an answer, drawn under the transcript.
    *
@@ -696,6 +738,7 @@ export function ChannelChat({
          * is unreadable is exactly the case where silence would read as "this conversation is empty".
          */
         if (isCurrent) {
+          if (stored.availability === "ready") setStoredRuns(stored.runs);
           setUnreadable(stored.unreadable);
           setHistoryAvailability(stored.availability);
           // A gateway snapshot may be partial; neither it nor a later send proves this read succeeded.
@@ -806,11 +849,14 @@ export function ChannelChat({
             continue;
           }
           sawReady = true;
+          setStoredRuns(stored.runs);
           // A ready read owns the notice even when every readable id is already on screen.
           setUnreadable(stored.unreadable);
           setHistoryAvailability("ready");
           setHistoryReadFailed(false);
           const current = agentRef.current;
+          // A live direct-chat stream owns its transcript until it ends.
+          if (stored.runs && current.isRunning) return;
           const messages = mergeStoredMessages(
             withCurrentA2uiVersions(current.messages),
             stored.messages,
@@ -976,6 +1022,14 @@ export function ChannelChat({
     };
   }, []);
   const [runsInFlight, setRunsInFlight] = useState(0);
+
+  const refreshRunStatus =
+    storedRuns !== undefined && Boolean(activeRun || runsInFlight);
+  useEffect(() => {
+    if (!refreshRunStatus) return;
+    const timer = setInterval(() => pullHistoryRef.current?.(), 3_000);
+    return () => clearInterval(timer);
+  }, [refreshRunStatus]);
 
   /*
    * THE THIRD FACT: THE SERVER HAS THE TURN. When the person answers an approval, the run that asked
@@ -1297,8 +1351,13 @@ export function ChannelChat({
     // enabled and inert.
     if (!trimmed && attachments.length === 0) return "";
 
+    if (unresolvedRun) {
+      throw new Error(
+        "Check the previous run’s outcome before sending another message.",
+      );
+    }
     // Voice and typed requests share this turn boundary, including gaps between frontend tools.
-    if (turnsRef.current > 0 || agentRef.current.isRunning) {
+    if (activeRun || turnsRef.current > 0 || agentRef.current.isRunning) {
       throw new Error(
         "This Bot is still working on something. Wait for it, or stop it first.",
       );
@@ -1336,6 +1395,7 @@ export function ChannelChat({
       }
       // And the conversation open now, if the person came back, reads what this turn stored.
       if (!onScreen.current) turnFinishedAway(channel.id);
+      else if (storedRuns !== undefined) pullHistoryRef.current?.();
     }
   };
 
@@ -1503,7 +1563,12 @@ export function ChannelChat({
   const stopTask = () => {
     awaitingReply.current = false;
     stopEpoch.current++;
-    copilotkit.stopAgent({ agent });
+    if (storedRuns !== undefined) {
+      if (!runControl.isPending)
+        runControl.mutate({ action: "stop", runId: activeRun?.id });
+    } else {
+      copilotkit.stopAgent({ agent });
+    }
   };
 
   /**
@@ -1592,6 +1657,7 @@ export function ChannelChat({
                   disabled={
                     !channel.active ||
                     historyLoading ||
+                    Boolean(activeRun || unresolvedRun) ||
                     agent.isRunning ||
                     turnsInFlight > 0 ||
                     carryingOn ||
@@ -1630,8 +1696,7 @@ export function ChannelChat({
                 value={runModel.value}
               />
             }
-            // Readiness is handled by `say`; deletion is the only disabled-chat state.
-            disabled={!channel.active}
+            disabled={!channel.active || Boolean(unresolvedRun)}
             messages={withVoiceChats(
               transcriptMessages(agent.messages, seed).map(shownAnswer),
               voiceArchive.entries,
@@ -1692,6 +1757,49 @@ export function ChannelChat({
                     {historyNotice}
                   </p>
                 ) : null}
+                {(unresolvedRun ||
+                  activeRun?.waitingForApproval ||
+                  latestRun?.stopReason ||
+                  latestRun?.externalOutcome === "not_dispatched" ||
+                  (latestRun?.status === "failed" &&
+                    latestRun.externalOutcome === "executed")) && (
+                  <div className="flex flex-wrap items-center gap-2 pb-2 text-sm text-muted-foreground">
+                    <p role="status">
+                      {unresolvedRun
+                        ? "The previous run’s external outcome is unknown. Check the outcome before sending again."
+                        : activeRun?.waitingForApproval
+                          ? "The run is waiting for approval."
+                          : latestRun?.externalOutcome === "not_dispatched"
+                            ? "The action was not dispatched. Send your request again to retry."
+                            : latestRun?.externalOutcome === "executed"
+                              ? "The outcome was verified and added to the conversation."
+                              : latestRun?.stopReason === "stopped"
+                                ? "The run was stopped."
+                                : "The run ended when access was revoked."}
+                    </p>
+                    {unresolvedRun && channel.active && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={runControl.isPending}
+                        onClick={() =>
+                          runControl.mutate({
+                            action: "reconcile",
+                            runId: unresolvedRun.id,
+                          })
+                        }
+                      >
+                        {runControl.isPending ? "Checking…" : "Check outcome"}
+                      </Button>
+                    )}
+                  </div>
+                )}
+                {runControl.error && (
+                  <p className="pb-2 text-sm text-destructive" role="alert">
+                    {runControl.error.message}
+                  </p>
+                )}
                 {answer.error ? (
                   <p className="pb-2 text-sm text-destructive" role="alert">
                     {answer.error.message}
@@ -1727,36 +1835,19 @@ export function ChannelChat({
               }
               await say(draft.text, draft.attachments);
             }}
-            /**
-             * Stop through the core so the abort signal reaches frontend tools; `say` repairs any
-             * unanswered tool call before the next turn.
-             */
             onStop={stopTask}
-            /*
-             * The turn, not the run. A browser action ends one run and starts another, and telling the
-             * conversation it is idle in between is what would drain a parked correction into the
-             * middle of an answer: a second turn racing the first on one thread, with a fabricated
-             * result stitched over a tool call that is still executing.
-             */
-            pending={agent.isRunning || turnsInFlight > 0 || carryingOn}
-            /*
-             * A channel outlives its turns, so it is the screen where waiting is worth offering. A
-             * correction typed mid-answer is held here, in this tab, and runs as one follow-up turn the
-             * moment this one is over — including when it is over because somebody pressed the button
-             * above.
-             */
-            queueWhileBusy
+            pending={
+              Boolean(activeRun) ||
+              agent.isRunning ||
+              turnsInFlight > 0 ||
+              carryingOn
+            }
+            queueWhileBusy={storedRuns === undefined}
             restoring={historyLoading}
-            /*
-             * The run, not the turn. Stop reaches a run through the core's abort controller, and that
-             * controller does not exist until `say` has finished waiting for the runtime agent — so
-             * this is the one place the narrower fact is the honest one to draw a button from.
-             */
-            /*
-             * Not while the server carries the conversation on after an approval: this tab has no
-             * run of its own for Stop to reach then, and a Stop that does nothing is worse than none.
-             */
-            stoppable={agent.isRunning || runsInFlight > 0}
+            stoppable={
+              !runControl.isPending &&
+              (Boolean(activeRun) || agent.isRunning || runsInFlight > 0)
+            }
             /*
              * At the END OF THE TRANSCRIPT rather than above the composer, which is where this used to
              * be. A turn that ends without an answer leaves a gap exactly where the reply was going to
