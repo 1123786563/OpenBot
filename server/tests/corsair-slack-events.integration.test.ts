@@ -6,6 +6,7 @@ import { loadConfig } from "../src/config";
 import { createDatabase } from "../src/db/client";
 import {
   agents,
+  corsairAccounts,
   corsairEventDispatches,
   corsairEvents,
   responsibilities,
@@ -18,6 +19,7 @@ import {
 } from "../src/db/schema";
 import { createSlackEventReader } from "../src/plugins/corsair/slack/event-reader";
 import { createSlackEventPilot } from "../src/plugins/corsair/slack/events";
+import { createRevocation } from "../src/plugins/corsair/revocation";
 import { RESPONSIBILITY_RUN_KIND } from "../src/responsibilities/engine";
 import { createResponsibilityStore } from "../src/responsibilities/store";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -238,6 +240,7 @@ test("isolates read grants and recovers per-trigger fanout, then blocks a queued
   );
 
   let unavailable = true;
+  const membershipChecks: string[] = [];
   const pilot = createSlackEventPilot({
     database,
     workspaceId,
@@ -245,6 +248,7 @@ test("isolates read grants and recovers per-trigger fanout, then blocks a queued
     secret,
     retryMs: 0,
     checkMember: async ({ slackUserId }) => {
+      membershipChecks.push(slackUserId);
       if (slackUserId === "U122") return "denied";
       if (slackUserId === "U121" && unavailable)
         throw new Error("Slack timeout");
@@ -332,9 +336,12 @@ test("isolates read grants and recovers per-trigger fanout, then blocks a queued
   expect(final.get(triggerIds[0])?.runId).toBe(first.get(triggerIds[0])?.runId);
   const runId = final.get(triggerIds[1])?.runId;
   if (!runId) throw new Error("Expected the recovered run");
-  await database
-    .delete(slackPilotConnections)
-    .where(eq(slackPilotConnections.id, connectionIds[1]));
+  const revocation = createRevocation({ database, verify: async () => false });
+  await revocation.disconnect(
+    eq(corsairAccounts.id, connectionIds[1]),
+    personIds[1],
+  );
+  membershipChecks.length = 0;
   const store = createResponsibilityStore(database, {
     resolveTarget: async () => ({ threadId: "fixture-thread" }),
     slackEventAccess: pilot,
@@ -360,6 +367,22 @@ test("isolates read grants and recovers per-trigger fanout, then blocks a queued
     .from(responsibilityRuns)
     .where(eq(responsibilityRuns.responsibilityId, goalIds[1]));
   expect(ownerRuns).toHaveLength(1);
+  expect(membershipChecks).not.toContain("U121");
+
+  await revocation.disconnect(
+    eq(corsairAccounts.sharedWorkspaceId, workspaceId),
+    personIds[0],
+  );
+  membershipChecks.length = 0;
+  expect(
+    (await pilot.routes.request("/webhook", delivery("Ev125"))).status,
+  ).toBe(200);
+  await pilot.sweep();
+  expect(membershipChecks).toEqual([]);
+  const otherRunId = final.get(triggerIds[0])?.runId;
+  if (!otherRunId) throw new Error("Expected the first queued run");
+  expect(await store.beginRun(otherRunId)).toBeNull();
+  expect(membershipChecks).toEqual([]);
 });
 
 test("the Slack reader distinguishes a timeout from a completed membership denial", async () => {

@@ -1,6 +1,7 @@
 import { createCorsair } from "corsair";
 import { z } from "zod";
 import { slackChannel, slackTeam } from "./provider";
+import { revokeSlackToken } from "./revoke-token";
 
 export const slackInstallationIdentity = z.strictObject({
   appId: z.string().regex(/^A[A-Z0-9]+$/),
@@ -61,6 +62,7 @@ export function createSharedSlackProvider(
   }
   return {
     identity,
+    revoke: () => revokeSlackToken(transport, token),
     async verifyIdentity() {
       const result = await request(
         "auth.test",

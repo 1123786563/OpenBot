@@ -4,7 +4,12 @@ import { eq } from "drizzle-orm";
 import { createApprovalStore } from "../src/approvals/store";
 import { createAuditReader, createAuditStore } from "../src/audit";
 import { createDatabase } from "../src/db/client";
-import { agents, githubPilotRepositories, users } from "../src/db/schema";
+import {
+  agents,
+  corsairAccounts,
+  githubPilotRepositories,
+  users,
+} from "../src/db/schema";
 import { createGithubPilotProvider } from "../src/plugins/corsair/github";
 import { createGithubPilotRoutes } from "../src/plugins/corsair/routes";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -13,13 +18,11 @@ const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 
 test("only the initiating workspace and Person can finish a single-use GitHub authorization", async () => {
   const person = randomUUID();
-  await database
-    .insert(users)
-    .values({
-      id: person,
-      name: "Pilot Person",
-      email: `${person}@example.test`,
-    });
+  await database.insert(users).values({
+    id: person,
+    name: "Pilot Person",
+    email: `${person}@example.test`,
+  });
   const exchangeCodes: string[] = [];
   const challenges = new Map<string, string>();
   let now = new Date();
@@ -42,6 +45,11 @@ test("only the initiating workspace and Person can finish a single-use GitHub au
           token_type: "bearer",
           expires_in: 28800,
         });
+      }
+      if (request.url === "https://api.github.com/applications/fixture/token") {
+        expect(request.method).toBe("DELETE");
+        expect(await request.json()).toEqual({ access_token: "ghu_fixture" });
+        return new Response(null, { status: 204 });
       }
       if (
         request.url === "https://api.github.com/user" &&
@@ -80,7 +88,7 @@ test("only the initiating workspace and Person can finish a single-use GitHub au
         c.set("actor", {
           id: c.req.header("x-person") ?? person,
           email: "person@example.test",
-          role: "user",
+          role: c.req.header("x-admin") ? "admin" : "user",
         });
         await next();
       },
@@ -135,6 +143,65 @@ test("only the initiating workspace and Person can finish a single-use GitHub au
       connections: [],
       defaultConnectionId: null,
     });
+
+    const listed = await (await a.request("/connections")).json();
+    const connectionId = listed.connections[0].id;
+    const path = `/connections/${connectionId}/revocation`;
+    const headers = { "X-OpenBot-Pilot": "github" };
+    expect((await b.request(path, { method: "DELETE", headers })).status).toBe(
+      404,
+    );
+    const disconnected = await a.request(path, { method: "DELETE", headers });
+    expect(disconnected.status).toBe(200);
+    expect(await disconnected.json()).toMatchObject({
+      status: "pending",
+      access: "provider",
+      refresh: "unconfirmed",
+    });
+    expect(await (await a.request("/connections")).json()).toEqual({
+      connections: [],
+      defaultConnectionId: null,
+    });
+    const manual = {
+      method: "PUT",
+      body: JSON.stringify({
+        capability: "refresh",
+        evidenceRef: "provider-review/42",
+      }),
+    };
+    expect(
+      (await a.request(`${path}/evidence`, { ...manual, headers })).status,
+    ).toBe(403);
+    const confirmed = await a.request(`${path}/evidence`, {
+      ...manual,
+      headers: { ...headers, "x-admin": "true" },
+    });
+    expect(await confirmed.json()).toMatchObject({
+      status: "revoked",
+      access: "provider",
+      refresh: "manual",
+    });
+    const [retired] = await database
+      .select({ credential: corsairAccounts.credential })
+      .from(corsairAccounts)
+      .where(eq(corsairAccounts.id, connectionId));
+    expect(retired?.credential).toBe("");
+    const { events } = await createAuditReader(database).list({
+      actorUserId: person,
+      eventType: "corsair.authorization.revocation_checked",
+      limit: 10,
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        targetId: connectionId,
+        payload: expect.objectContaining({
+          access: "provider",
+          refresh: "manual",
+          evidenceRef: "provider-review/42",
+        }),
+      }),
+    );
+    expect(JSON.stringify(events)).not.toContain("ghu_fixture");
   } finally {
     await database.delete(users).where(eq(users.id, person));
   }
@@ -145,21 +212,17 @@ test("a reviewed GitHub write needs a live Bot Grant, selected repository, match
   const bot = randomUUID();
   const workspaceId = randomUUID();
   const registration = "pilot/9";
-  await database
-    .insert(users)
-    .values({
-      id: person,
-      name: "Pilot Admin",
-      email: `${person}@example.test`,
-    });
-  await database
-    .insert(agents)
-    .values({
-      id: bot,
-      name: "Pilot Bot",
-      type: "built_in",
-      configuration: {},
-    });
+  await database.insert(users).values({
+    id: person,
+    name: "Pilot Admin",
+    email: `${person}@example.test`,
+  });
+  await database.insert(agents).values({
+    id: bot,
+    name: "Pilot Bot",
+    type: "built_in",
+    configuration: {},
+  });
   let userCanAccess = true;
   let identity = 12;
   const writes: unknown[] = [];

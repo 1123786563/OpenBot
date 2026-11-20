@@ -8,7 +8,15 @@ import {
   slackPilotDefaults as defaults,
   slackPilotStates as states,
 } from "../../../db/schema/corsair-slack";
+import { corsairAccounts } from "../../../db/schema/corsair-storage";
 import { brokeredAccounts } from "../../../db/schema/plugins";
+import {
+  canReconnect,
+  clearRevocation,
+  createRevocation,
+  derivedAccountKeys,
+  dispatchWhileConnected,
+} from "../revocation";
 import { SlackIdentityMismatch, type SlackPilotProvider } from "./provider";
 
 const evidence = z.strictObject({
@@ -111,6 +119,7 @@ export function slackAccounts({
     const [record] = await database
       .select({ id: defaults.connectionId })
       .from(defaults)
+      .innerJoin(connections, eq(connections.id, defaults.connectionId))
       .where(
         and(
           eq(defaults.workspaceId, workspaceId),
@@ -123,6 +132,25 @@ export function slackAccounts({
   return {
     find,
     defaultConnectionId,
+    revocationScope: and(
+      eq(corsairAccounts.kind, "slack-personal"),
+      eq(corsairAccounts.workspaceId, workspaceId),
+      eq(corsairAccounts.registration, registration),
+      eq(corsairAccounts.subjectScope, provider.subjectScope),
+    ),
+    revocation: createRevocation({
+      database,
+      clock,
+      async verify(account, capability) {
+        if (!account.credential) return false;
+        const tokens = storedTokens.parse(
+          JSON.parse(await decryptSecret(encryptionKey, account.credential)),
+        );
+        return provider.revoke(
+          capability === "access" ? tokens.accessToken : tokens.refreshToken,
+        );
+      },
+    }),
     async list(personId: string) {
       return {
         connections: await database
@@ -179,7 +207,7 @@ export function slackAccounts({
             gt(states.expiresAt, clock()),
           ),
         )
-        .returning({ stateHash: states.stateHash });
+        .returning({ expiresAt: states.expiresAt });
       if (!pending)
         throw new SlackPilotRefusal(
           "This Slack authorization attempt is invalid, expired, or already used.",
@@ -207,9 +235,11 @@ export function slackAccounts({
       );
       const [record] = matchingEvidence;
       return database.transaction(async (tx) => {
-        const [connection] = await tx
-          .insert(connections)
+        const [saved] = await tx
+          .insert(corsairAccounts)
           .values({
+            ...derivedAccountKeys,
+            kind: "slack-personal",
             ...owner(personId),
             subjectScope,
             userId: verified.userId,
@@ -217,16 +247,28 @@ export function slackAccounts({
           })
           .onConflictDoUpdate({
             target: [
-              connections.storageKind,
-              connections.workspaceId,
-              connections.registration,
-              connections.personId,
-              connections.subjectScope,
-              connections.userId,
+              corsairAccounts.kind,
+              corsairAccounts.workspaceId,
+              corsairAccounts.registration,
+              corsairAccounts.personId,
+              corsairAccounts.subjectScope,
+              corsairAccounts.userId,
             ],
-            set: update,
+            set: { ...update, config: clearRevocation },
+            setWhere: canReconnect(
+              new Date(pending.expiresAt.getTime() - 600_000),
+            ),
           })
-          .returning(publicIdentity);
+          .returning({ id: corsairAccounts.id });
+        if (!saved)
+          throw new SlackPilotRefusal(
+            "Finish the pending revocation before reconnecting.",
+            409,
+          );
+        const [connection] = await tx
+          .select(publicIdentity)
+          .from(connections)
+          .where(eq(connections.id, saved.id));
         if (!connection) throw new Error("Slack Connection was not saved.");
         if (
           matchingEvidence.length !== 1 ||
@@ -316,7 +358,9 @@ export function slackAccounts({
         );
       if (result.kind === "current") {
         try {
-          await provider.identity(result.token, result.userId);
+          await dispatchWhileConnected(database, connectionId, revision, () =>
+            provider.identity(result.token, result.userId),
+          );
         } catch (error) {
           if (error instanceof SlackIdentityMismatch)
             await database

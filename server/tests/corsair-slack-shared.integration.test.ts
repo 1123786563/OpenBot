@@ -42,6 +42,7 @@ const identity = {
 };
 let authenticatedBot = identity.botId;
 let memberOfChannel = true;
+let revocationAttempts = 0;
 const writes: unknown[] = [];
 const provider = createSharedSlackProvider(
   { ...identity, token: "xoxb-fixture" },
@@ -51,6 +52,9 @@ const provider = createSharedSlackProvider(
       const url = new URL(req.url);
       expect(req.headers.get("authorization")).toBe("Bearer xoxb-fixture");
       switch (url.pathname) {
+        case "/api/auth.revoke":
+          revocationAttempts++;
+          return Response.json({ ok: true, revoked: true });
         case "/api/auth.test":
           return Response.json({
             ok: true,
@@ -370,4 +374,60 @@ test("workspaces sharing one Slack installation keep independent channels, grant
   expect(writes.slice(count)).toEqual([
     expect.objectContaining({ channel: "C456" }),
   ]);
+});
+
+test("Shared Slack disconnect is local and remote revocation requires a current impact confirmation", async () => {
+  const first = pilot();
+  const second = pilot();
+  await enroll(first);
+  await grant(first);
+  await policy(first);
+  const requested = await call(first, "/approvals", "POST", action);
+  expect(requested.status).toBe(201);
+  const { id } = await requested.json();
+  await approve(first, id);
+  const local = await call(first, "/installation", "DELETE", undefined, true);
+  expect(await local.json()).toMatchObject({ status: "pending" });
+  expect(revocationAttempts).toBe(0);
+  expect((await call(first, `/approvals/${id}/execute`, "POST")).status).toBe(
+    404,
+  );
+  const impact = "/installation/revocation/impact";
+  const revoke = "/installation/revocation";
+  const preview = await (
+    await call(first, impact, "GET", undefined, true)
+  ).json();
+  await enroll(second);
+  expect(
+    (
+      await call(
+        first,
+        revoke,
+        "POST",
+        { confirmation: preview.confirmation },
+        true,
+      )
+    ).status,
+  ).toBe(409);
+  const updated = await (
+    await call(first, impact, "GET", undefined, true)
+  ).json();
+  expect(updated.installations.length).toBeGreaterThan(
+    preview.installations.length,
+  );
+  const body = { confirmation: updated.confirmation };
+  expect((await call(first, revoke, "POST", body)).status).toBe(403);
+  expect(revocationAttempts).toBe(0);
+  const result = await call(first, revoke, "POST", body, true);
+  expect(result.status).toBe(200);
+  expect(await result.json()).toMatchObject({
+    status: "revoked",
+    access: "provider",
+    refresh: "not_applicable",
+  });
+  expect(revocationAttempts).toBe(1);
+  const status = await call(second, "/installation", "GET", undefined, true);
+  expect(await status.json()).toMatchObject({
+    revocation: { status: "pending" },
+  });
 });

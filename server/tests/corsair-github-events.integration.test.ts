@@ -3,22 +3,18 @@ import { createHmac, randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { z } from "zod";
-import { createApprovalRoutes } from "../src/approvals/routes";
 import { createApprovalResumeTick } from "../src/approvals/resume-sweep";
+import { createApprovalRoutes } from "../src/approvals/routes";
 import { createApprovalService } from "../src/approvals/service";
-import { withApprovalContext } from "../src/approvals/types";
-import type { AppVariables } from "../src/auth/guards";
-import { createSlackGoalAction } from "../src/plugins/corsair/slack/goal-action";
-import { createSlackPilotProvider } from "../src/plugins/corsair/slack/provider";
-import { createSlackPilotRoutes } from "../src/plugins/corsair/slack/routes";
 import { createApprovalStore } from "../src/approvals/store";
+import { withApprovalContext } from "../src/approvals/types";
 import { createAuditReader, createAuditStore } from "../src/audit";
+import type { AppVariables } from "../src/auth/guards";
 import { encryptSecret } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
 import {
   agents,
   auditEvents,
-  slackPilotConnections,
   githubPilotConnections,
   githubPilotEventReceipts,
   githubPilotRepositories,
@@ -35,6 +31,9 @@ import {
 } from "../src/plugins/corsair/event-triggers";
 import { createGithubPilotProvider } from "../src/plugins/corsair/github";
 import { createGithubPilotRoutes } from "../src/plugins/corsair/routes";
+import { createSlackGoalAction } from "../src/plugins/corsair/slack/goal-action";
+import { createSlackPilotProvider } from "../src/plugins/corsair/slack/provider";
+import { createSlackPilotRoutes } from "../src/plugins/corsair/slack/routes";
 import {
   createResponsibilityEngine,
   RESPONSIBILITY_RUN_KIND,
@@ -660,9 +659,7 @@ test.each(["disconnected", "write scope revoked"])(
     const f = await waitingSlackGoal();
     try {
       if (change === "disconnected") {
-        await database
-          .delete(slackPilotConnections)
-          .where(eq(slackPilotConnections.id, f.connectionId));
+        await f.disconnect();
       } else {
         f.revokeWriteScope();
       }
@@ -983,6 +980,17 @@ async function waitingSlackGoal(ambiguous?: "found" | "unknown") {
     deliveryId,
     connectionId,
     connect,
+    disconnect: async () => {
+      const response = await slack.request(
+        `/connections/${connectionId}/revocation`,
+        {
+          method: "DELETE",
+          headers: { "X-OpenBot-Pilot": "slack" },
+        },
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ status: "pending" });
+    },
     useDefault,
     revokeWriteScope: () => {
       hasWriteScope = false;

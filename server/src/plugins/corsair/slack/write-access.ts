@@ -7,9 +7,12 @@ import type { AgentActor } from "../../../agents/profile-types";
 import type { ApprovalAction, ApprovalStore } from "../../../approvals/types";
 import type { AuditStore } from "../../../audit";
 import type { AppVariables } from "../../../auth/guards";
+import type { ActionPolicy } from "../../../computer/policy";
 import { pluginGrants as grants } from "../../../db/schema/plugins";
+import { migratedPolicyAllows } from "../migration-policy";
 import { corsairGrantRef } from "../grants";
-import { slackAccounts, SlackPilotRefusal } from "./accounts";
+import { dispatchWhileConnected } from "../revocation";
+import { SlackPilotRefusal, slackAccounts } from "./accounts";
 import { SlackWritePermissionUnavailable, slackChannel } from "./provider";
 
 export const tool = {
@@ -37,6 +40,7 @@ export type Options = Omit<
   "clock" | "legacyDefaults"
 > & {
   clock?: () => Date;
+  legacyPolicy?: () => ActionPolicy;
   legacyDefaults?: Parameters<typeof slackAccounts>[0]["legacyDefaults"];
   allowedChannels: ReadonlySet<string>;
   approvals: Pick<
@@ -155,12 +159,18 @@ export function createSlackWriteAccess({
       connection.revision,
     );
     try {
-      await provider.checkChannel({
-        token,
-        channelId: input.channelId,
-        userId: connection.userId,
-        verifyWriteScope,
-      });
+      await dispatchWhileConnected(
+        database,
+        connection.id,
+        connection.revision,
+        () =>
+          provider.checkChannel({
+            token,
+            channelId: input.channelId,
+            userId: connection.userId,
+            verifyWriteScope,
+          }),
+      );
     } catch (error) {
       if (error instanceof SlackWritePermissionUnavailable)
         throw new SlackPilotRefusal(
@@ -172,7 +182,7 @@ export function createSlackWriteAccess({
         403,
       );
     }
-    return { token, userId: connection.userId };
+    return { token, userId: connection.userId, revision: connection.revision };
   }
 
   async function checkBinding(
@@ -196,6 +206,24 @@ export function createSlackWriteAccess({
     )
       throw new SlackPilotRefusal(
         "A current Slack Bot Grant is required.",
+        403,
+      );
+    if (
+      !(await migratedPolicyAllows(tx ?? database, {
+        workspaceId,
+        app: "slack",
+        registration,
+        kind: "personal",
+        botId: input.botId,
+        connectionId: input.connectionId,
+        resource: input.channelId,
+        actorId: actor.id,
+        unknownInitiator: action.dispatch === "corsair-slack-goal",
+        legacyPolicy: options.legacyPolicy,
+      }))
+    )
+      throw new SlackPilotRefusal(
+        "The migrated Slack policy does not admit this action.",
         403,
       );
     if (

@@ -142,6 +142,7 @@ import { createGithubEventIngress } from "./plugins/corsair/event-ingress";
 import { createCorsairEventOperationRoutes } from "./plugins/corsair/event-operation-routes";
 import type { CorsairEventOperations } from "./plugins/corsair/event-operations";
 import { createGithubEventTriggerRoutes } from "./plugins/corsair/event-triggers";
+import { createCorsairReadinessRoutes } from "./plugins/corsair/readiness";
 import { createGithubPilotRoutes } from "./plugins/corsair/routes";
 import { createSlackPilotRoutes } from "./plugins/corsair/slack/routes";
 import { createSharedSlackPilot } from "./plugins/corsair/slack/shared-routes";
@@ -460,6 +461,10 @@ export function createApp(
     productTelemetry?: ProductTelemetry;
     approvals?: ApprovalService;
     corsairEventOperations?: CorsairEventOperations;
+    corsairReadiness?: Omit<
+      Parameters<typeof createCorsairReadinessRoutes>[0],
+      "requireUser"
+    >;
     githubEvents?: Parameters<typeof createGithubEventIngress>[0] &
       Pick<Parameters<typeof createGithubEventTriggerRoutes>[0], "triggers">;
     githubPilot?: Omit<
@@ -1683,6 +1688,17 @@ export function createApp(
           "X-Content-Type-Options": "nosniff",
         });
       },
+    );
+  }
+
+  if (coworker?.corsairReadiness) {
+    app.route(
+      "/api/corsair/migration",
+      createCorsairReadinessRoutes({
+        ...coworker.corsairReadiness,
+        requireUser,
+        canUseBot,
+      }),
     );
   }
 

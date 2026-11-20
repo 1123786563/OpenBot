@@ -1,7 +1,7 @@
 import { beforeAll, expect, test } from "bun:test";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createApprovalStore } from "../src/approvals/store";
-import { createAuditStore } from "../src/audit";
+import { type AuditStore, createAuditStore } from "../src/audit";
 import { createDatabase } from "../src/db/client";
 import { agents, brokeredAccounts, users } from "../src/db/schema";
 import type { SlackLegacyDefault } from "../src/plugins/corsair/slack/accounts";
@@ -27,6 +27,8 @@ let membership = true;
 let refreshedUser = "U111";
 let refreshes = 0;
 let exchanges = 0;
+let refuseRefreshRevocation = true;
+const revocations: string[] = [];
 const provider = createSlackPilotProvider(
   {
     appId: "A123",
@@ -61,6 +63,13 @@ const provider = createSlackPilotProvider(
           ...installation,
           authed_user: { id, ...credential(id) },
         });
+      }
+      if (url.pathname.endsWith("/auth.revoke")) {
+        const token = request.headers.get("authorization") ?? "";
+        revocations.push(token);
+        if (token.startsWith("Bearer xoxe-") && refuseRefreshRevocation)
+          return new Response(null, { status: 503 });
+        return Response.json({ ok: true, revoked: true });
       }
       const user = request.headers
         .get("authorization")
@@ -111,7 +120,11 @@ const provider = createSlackPilotProvider(
   ),
 );
 const encryptionKey = randomBytes(32).toString("base64");
-const routes = (workspace: string, legacyDefaults: SlackLegacyDefault[] = []) =>
+const routes = (
+  workspace: string,
+  legacyDefaults: SlackLegacyDefault[] = [],
+  audit: AuditStore = createAuditStore(db),
+) =>
   createSlackPilotRoutes({
     database: db,
     legacyDefaults,
@@ -120,7 +133,7 @@ const routes = (workspace: string, legacyDefaults: SlackLegacyDefault[] = []) =>
     provider,
     allowedChannels: new Set(["C123"]),
     approvals: createApprovalStore(db),
-    audit: createAuditStore(db),
+    audit,
     encryptionKey,
     clock: () => new Date(now),
     canUseBot: async (_actor, id) => id === bot,
@@ -157,15 +170,13 @@ function call(
 }
 
 beforeAll(async () => {
-  await db
-    .insert(users)
-    .values(
-      [person, outsider].map((id) => ({
-        id,
-        name: "Slack Person",
-        email: `${id}@example.test`,
-      })),
-    );
+  await db.insert(users).values(
+    [person, outsider].map((id) => ({
+      id,
+      name: "Slack Person",
+      email: `${id}@example.test`,
+    })),
+  );
 });
 
 async function start(a: ReturnType<typeof routes>, code: string) {
@@ -382,4 +393,153 @@ test("only verified evidence for the exact stable Slack subject inherits a curre
   expect(await relinked.json()).toMatchObject({
     connection: { id: connection.id, userId: "U111" },
   });
+});
+
+test("disconnect immediately blocks an approved Slack write and retries missing refresh evidence", async () => {
+  const a = routes(randomUUID());
+  const linked = await call(a, await start(a, "first"));
+  const { connection } = await linked.json();
+  const path = `/connections/${connection.id}/revocation`;
+  const input = {
+    botId: bot,
+    connectionId: connection.id,
+    channelId: "C123",
+    text: "queued",
+  };
+  expect(
+    (
+      await call(a, `/bots/${bot}/grant`, {
+        method: "PUT",
+        body: { enabled: true },
+        admin: true,
+      })
+    ).status,
+  ).toBe(200);
+  const requested = await call(a, "/approvals", {
+    method: "POST",
+    body: input,
+  });
+  expect(requested.status).toBe(201);
+  const { id } = await requested.json();
+  expect(
+    (
+      await call(a, `/approvals/${id}/decision`, {
+        method: "POST",
+        body: { decision: "allow_once" },
+      })
+    ).status,
+  ).toBe(200);
+
+  expect(
+    (await call(a, path, { method: "DELETE", actor: outsider })).status,
+  ).toBe(404);
+  const lateCallback = await start(a, "first");
+  const disconnected = await call(a, path, { method: "DELETE" });
+  expect(disconnected.status).toBe(200);
+  expect(await disconnected.json()).toMatchObject({
+    status: "pending",
+    access: "provider",
+    refresh: "unconfirmed",
+  });
+  expect((await call(a, path)).status).toBe(200);
+  expect(
+    await (await call(a, "/connections/revocations")).json(),
+  ).toMatchObject({
+    connections: [{ id: connection.id, revocation: { status: "pending" } }],
+  });
+  expect(
+    (await call(a, "/approvals", { method: "POST", body: input })).status,
+  ).toBe(403);
+  const count = writes.length;
+  expect(
+    (
+      await call(a, `/approvals/${id}/execute`, {
+        method: "POST",
+        body: input,
+      })
+    ).status,
+  ).toBe(403);
+  expect(writes).toHaveLength(count);
+  expect((await call(a, await start(a, "first"))).status).toBe(409);
+
+  refuseRefreshRevocation = false;
+  const retry = await call(a, path, { method: "POST" });
+  expect(await retry.json()).toMatchObject({
+    status: "revoked",
+    access: "provider",
+    refresh: "provider",
+  });
+  expect(revocations).toEqual([
+    "Bearer xoxe.xoxp-U111",
+    "Bearer xoxe-U111",
+    "Bearer xoxe-U111",
+  ]);
+  expect((await call(a, lateCallback)).status).toBe(409);
+  now += 1;
+  expect((await call(a, await start(a, "first"))).status).toBe(200);
+});
+
+test("disconnect wins if an approved Slack write has been consumed but has not reached dispatch", async () => {
+  const began = Promise.withResolvers<void>();
+  const resume = Promise.withResolvers<void>();
+  const audit = createAuditStore(db);
+  const a = routes(randomUUID(), [], {
+    async insert(event) {
+      await audit.insert(event);
+      if (event.eventType === "corsair.slack.write_started") {
+        began.resolve();
+        await resume.promise;
+      }
+    },
+  });
+  const linked = await call(a, await start(a, "first"));
+  const { connection } = await linked.json();
+  const input = {
+    botId: bot,
+    connectionId: connection.id,
+    channelId: "C123",
+    text: "staged",
+  };
+  expect(
+    (
+      await call(a, `/bots/${bot}/grant`, {
+        method: "PUT",
+        body: { enabled: true },
+        admin: true,
+      })
+    ).status,
+  ).toBe(200);
+  const opened = await call(a, "/approvals", { method: "POST", body: input });
+  expect(opened.status).toBe(201);
+  const { id } = await opened.json();
+  expect(
+    (
+      await call(a, `/approvals/${id}/decision`, {
+        method: "POST",
+        body: { decision: "allow_once" },
+      })
+    ).status,
+  ).toBe(200);
+  const count = writes.length;
+  const executing = Promise.resolve(
+    call(a, `/approvals/${id}/execute`, { method: "POST", body: input }),
+  );
+  try {
+    await Promise.race([
+      began.promise,
+      executing.then((result) => {
+        throw new Error(`Execution returned early with ${result.status}`);
+      }),
+    ]);
+    const disconnected = await call(
+      a,
+      `/connections/${connection.id}/revocation`,
+      { method: "DELETE" },
+    );
+    expect(disconnected.status).toBe(200);
+  } finally {
+    resume.resolve();
+  }
+  expect((await executing).status).toBe(409);
+  expect(writes).toHaveLength(count);
 });

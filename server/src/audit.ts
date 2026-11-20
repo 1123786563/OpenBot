@@ -155,6 +155,10 @@ export const auditEventTypes = [
    */
   "mcp.tools_discovered",
   "mcp.call_succeeded",
+  "corsair.authorization.disconnected",
+  "corsair.authorization.revocation_checked",
+  "corsair.migration_readiness_decided",
+  "corsair.migration_policy_copied",
   "corsair.github.connected",
   "corsair.slack.connected",
   "corsair.slack.event_delivery",
@@ -1084,7 +1088,9 @@ export function addAuditTap(tap: AuditTap): () => void {
   return () => auditTaps.delete(tap);
 }
 
-export function createAuditStore(database: Database): AuditStore {
+export function createAuditStore(
+  database: Pick<Database, "insert">,
+): AuditStore {
   return {
     insert: async ({ initiator, ...event }) => {
       const row = {
