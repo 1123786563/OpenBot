@@ -33,6 +33,18 @@ function matchesSource(source: Source) {
   );
 }
 
+function matchesInstallation(
+  agentId: string,
+  command: string,
+  expectedVersionId: number,
+) {
+  return and(
+    eq(skillMarketInstallations.agentId, agentId),
+    eq(skillMarketInstallations.command, command),
+    eq(skillMarketInstallations.versionId, expectedVersionId),
+  );
+}
+
 // Match the existing slash parser and the managed skill slug length limit.
 const slashCommand = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -64,10 +76,51 @@ export function marketSkillMethods(database: Database) {
       return taken ? null : source.slug;
     },
 
+    async listMarketInstallations(agentId: string) {
+      return database
+        .select({
+          command: skillMarketInstallations.command,
+          namespace: skillMarketSources.namespace,
+          slug: skillMarketSources.slug,
+          registry: skillMarketSources.registry,
+          title: skillMarketInstallations.title,
+          version: skillMarketInstallations.version,
+          versionId: skillMarketInstallations.versionId,
+        })
+        .from(skillMarketInstallations)
+        .innerJoin(
+          skillMarketSources,
+          eq(skillMarketInstallations.command, skillMarketSources.command),
+        )
+        .where(eq(skillMarketInstallations.agentId, agentId))
+        .orderBy(asc(skillMarketInstallations.command));
+    },
+
+    async uninstallMarketSkill(
+      actor: Actor,
+      agentId: string,
+      command: string,
+      expectedVersionId: number,
+    ) {
+      return database.transaction(async (transaction) => {
+        const [target] = await registeredBotProfiles(transaction)
+          .where(and(manageableBy(actor), eq(agents.id, agentId)))
+          .for("share");
+        if (!target) return "forbidden";
+
+        const [removed] = await transaction
+          .delete(skillMarketInstallations)
+          .where(matchesInstallation(agentId, command, expectedVersionId))
+          .returning({ command: skillMarketInstallations.command });
+        return removed ? "uninstalled" : "stale-installation";
+      });
+    },
+
     async installMarketSkill(
       actor: Actor,
       agentId: string,
       { preview }: QualifiedMarketVersion,
+      expectedVersionId?: number,
     ) {
       return database.transaction(async (transaction) => {
         const [target] = await registeredBotProfiles(transaction)
@@ -80,6 +133,8 @@ export function marketSkillMethods(database: Database) {
           .from(skillMarketSources)
           .where(matchesSource(preview));
         if (!source) {
+          if (expectedVersionId !== undefined)
+            return { kind: "stale-installation" } as const;
           if (preview.slug.length > 40 || !slashCommand.test(preview.slug))
             return { kind: "command-unavailable" } as const;
           // The managed skill slug index arbitrates between both kinds of Skill, including
@@ -126,20 +181,31 @@ export function marketSkillMethods(database: Database) {
           summary,
           instructions,
         } = preview;
+        const snapshot = {
+          version,
+          versionId,
+          registrySkillId,
+          fingerprint,
+          title,
+          summary,
+          instructions,
+          installedBy: actor.id,
+        };
+        // Both writes use the same qualified payload and transaction boundary.
+        if (expectedVersionId !== undefined) {
+          const [updated] = await transaction
+            .update(skillMarketInstallations)
+            .set(snapshot)
+            .where(matchesInstallation(agentId, command, expectedVersionId))
+            .returning({ command: skillMarketInstallations.command });
+          return updated
+            ? ({ kind: "switched", command, version } as const)
+            : ({ kind: "stale-installation" } as const);
+        }
+
         const [inserted] = await transaction
           .insert(skillMarketInstallations)
-          .values({
-            agentId,
-            command,
-            version,
-            versionId,
-            registrySkillId,
-            fingerprint,
-            title,
-            summary,
-            instructions,
-            installedBy: actor.id,
-          })
+          .values({ agentId, command, ...snapshot })
           .onConflictDoNothing()
           .returning({ command: skillMarketInstallations.command });
         if (inserted) return { kind: "installed", command, version } as const;

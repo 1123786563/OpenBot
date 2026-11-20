@@ -10,6 +10,14 @@ import type { SkillMarketConfig } from "./config";
 import type { marketSkillMethods } from "./installations";
 
 const installBody = z.strictObject({ agentId: z.string().trim().min(1) });
+const expectedVersion = z.strictObject({
+  expectedVersionId: z.number().int().positive(),
+});
+const switchBody = installBody.extend(expectedVersion.shape);
+const forbidden = "You cannot manage skills on this Bot.";
+const stale =
+  "The installed version has changed. Review the current installation and try again.";
+const unavailable = "Skill installation is unavailable.";
 const commandUnavailable =
   "This market skill needs an unused slash command assigned by an administrator.";
 
@@ -52,28 +60,71 @@ export function createSkillMarketRoutes(
     return context.json({ bots });
   });
 
+  routes.get("/bots/:agentId/installations", async (context) => {
+    if (!installations) return context.json({ error: unavailable }, 503);
+    const { agentId } = context.req.param();
+    if (
+      !(await installations.marketInstallTargets(context.var.actor, agentId))
+        .length
+    )
+      return context.json({ error: forbidden }, 403);
+    return context.json({
+      installations: await installations.listMarketInstallations(agentId),
+    });
+  });
+
+  routes.delete("/bots/:agentId/installations/:command", async (context) => {
+    if (!installations) return context.json({ error: unavailable }, 503);
+    const body = expectedVersion.safeParse(
+      await context.req.json().catch(() => null),
+    );
+    if (!body.success)
+      return context.json({ error: "Choose an installed version." }, 400);
+    const { agentId, command } = context.req.param();
+    const result = await installations.uninstallMarketSkill(
+      context.var.actor,
+      agentId,
+      command,
+      body.data.expectedVersionId,
+    );
+    switch (result) {
+      case "forbidden":
+        return context.json({ error: forbidden }, 403);
+      case "stale-installation":
+        return context.json({ error: stale }, 409);
+      case "uninstalled":
+        return context.body(null, 204);
+    }
+  });
+
   routes.post(
-    "/:namespace/:slug/versions/:version/install",
+    "/:namespace/:slug/versions/:version/:operation{install|switch}",
     async (context) => {
-      if (!installations)
+      if (!installations) return context.json({ error: unavailable }, 503);
+      const { namespace, slug, version, operation } = context.req.param();
+      const input = await context.req.json().catch(() => null);
+      const body =
+        operation === "switch"
+          ? switchBody.safeParse(input)
+          : installBody
+              .transform((data) => ({ ...data, expectedVersionId: undefined }))
+              .safeParse(input);
+      if (!body.success)
         return context.json(
-          { error: "Skill installation is unavailable." },
-          503,
+          {
+            error:
+              operation === "switch"
+                ? "Choose the Bot and installed version."
+                : "Choose a Bot.",
+          },
+          400,
         );
-      const body = installBody.safeParse(
-        await context.req.json().catch(() => null),
-      );
-      if (!body.success) return context.json({ error: "Choose a Bot." }, 400);
-      const { agentId } = body.data;
+      const { agentId, expectedVersionId } = body.data;
       const { actor } = context.var;
       if (!(await installations.marketInstallTargets(actor, agentId)).length) {
-        return context.json(
-          { error: "You cannot manage skills on this Bot." },
-          403,
-        );
+        return context.json({ error: forbidden }, 403);
       }
 
-      const { namespace, slug, version } = context.req.param();
       const qualified = await market.qualifyInstallation(
         namespace,
         slug,
@@ -86,13 +137,13 @@ export function createSkillMarketRoutes(
         actor,
         agentId,
         qualified,
+        expectedVersionId,
       );
       switch (result.kind) {
         case "forbidden":
-          return context.json(
-            { error: "You cannot manage skills on this Bot." },
-            403,
-          );
+          return context.json({ error: forbidden }, 403);
+        case "stale-installation":
+          return context.json({ error: stale }, 409);
         case "command-unavailable":
           return context.json({ error: commandUnavailable }, 409);
         case "different-version":
@@ -102,6 +153,7 @@ export function createSkillMarketRoutes(
           );
         case "installed":
         case "already-installed":
+        case "switched":
           return context.json(
             { command: result.command, version: result.version },
             result.kind === "installed" ? 201 : 200,

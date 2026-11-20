@@ -33,6 +33,9 @@ test("searches the shared market and shows the selected version's instructions a
         const items = url.searchParams.get("q") === "notes" ? [skill] : [];
         return Response.json({ items, hasMore: false });
       }
+      if (url.pathname === "/api/skill-market/install-targets") {
+        return Response.json({ bots: [] });
+      }
       if (url.pathname === "/api/skill-market/catalog/summarize") {
         return Response.json({ versions: ["2.0.0", "1.0.0"], hasMore: false });
       }
@@ -145,11 +148,149 @@ test("installs the previewed version only on a Bot the server offers to manage",
 
   canManage = true;
   const owner = await openPreview();
-  await owner.findByRole("option", { name: "Managed Bot" });
+  await owner.findByRole("combobox", { name: "Bot" });
   fireEvent.change(owner.getByRole("combobox", { name: "Bot" }), {
     target: { value: "managed" },
   });
   fireEvent.click(owner.getByRole("button", { name: "Install on Bot" }));
   await owner.findByText("Installed 1.0.0. Use /summarize on Managed Bot.");
   expect(installs).toEqual([{ agentId: "managed" }]);
+});
+
+test("manages a Bot's saved installation even when the catalog is offline", async () => {
+  const removals: unknown[] = [];
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const { pathname } = new URL(String(input), "http://localhost");
+      switch (pathname) {
+        case "/api/skill-market/install-targets":
+          return Response.json({
+            bots: [{ id: "managed", title: "Managed Bot" }],
+          });
+        case "/api/skill-market/bots/managed/installations":
+          return Response.json({
+            installations: removals.length
+              ? []
+              : [
+                  {
+                    command: "summarize",
+                    namespace: "catalog",
+                    slug: "summarize",
+                    registry: "https://registry.example",
+                    title: "Summarize",
+                    version: "1.0.0",
+                    versionId: 3,
+                  },
+                ],
+          });
+        case "/api/skill-market/bots/managed/installations/summarize":
+          expect(init?.method).toBe("DELETE");
+          removals.push(JSON.parse(String(init?.body)));
+          return new Response(null, { status: 204 });
+        default:
+          return new Response(null, { status: 502 });
+      }
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = render(
+    <QueryClientProvider client={new QueryClient()}>
+      <SkillMarket />
+    </QueryClientProvider>,
+  );
+  await view.findByRole("option", { name: "Managed Bot" });
+  fireEvent.change(
+    view.getByRole("combobox", { name: "Manage installed skills on" }),
+    {
+      target: { value: "managed" },
+    },
+  );
+  await view.findByText("Installed version 1.0.0");
+  fireEvent.click(view.getByRole("button", { name: "Uninstall Summarize" }));
+  await view.findByText("This Bot has no installed market skills.");
+  expect(removals).toEqual([{ expectedVersionId: 3 }]);
+});
+
+test("uses the published version picker to upgrade and roll back a single Bot", async () => {
+  const snapshot = {
+    command: "summarize",
+    namespace: "catalog",
+    slug: "summarize",
+    registry: "https://registry.example",
+    title: "Summarize",
+    version: "1.0.0",
+    versionId: 3,
+  };
+  const changes: unknown[] = [];
+  const source = "/api/skill-market/catalog/summarize";
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const { pathname } = new URL(String(input), "http://localhost");
+      switch (pathname) {
+        case "/api/skill-market":
+          return Response.json({ items: [], hasMore: false });
+        case "/api/skill-market/install-targets":
+          return Response.json({
+            bots: [{ id: "managed", title: "Managed Bot" }],
+          });
+        case "/api/skill-market/bots/managed/installations":
+          return Response.json({ installations: [snapshot] });
+        case source:
+          return Response.json({
+            versions: ["2.0.0", "1.0.0"],
+            hasMore: false,
+          });
+        case `${source}/versions/1.0.0`:
+        case `${source}/versions/2.0.0`:
+          return Response.json({
+            ...snapshot,
+            version: pathname.endsWith("1.0.0") ? "1.0.0" : "2.0.0",
+            source: snapshot.registry,
+            installable: true,
+            instructions: "Summarize the notes.",
+          });
+        case `${source}/versions/1.0.0/switch`:
+        case `${source}/versions/2.0.0/switch`:
+          expect(init?.method).toBe("POST");
+          changes.push(JSON.parse(String(init?.body)));
+          snapshot.version = pathname.includes("/1.0.0/") ? "1.0.0" : "2.0.0";
+          snapshot.versionId = snapshot.version === "1.0.0" ? 3 : 4;
+          return Response.json({
+            command: snapshot.command,
+            version: snapshot.version,
+          });
+        default:
+          return new Response(null, { status: 404 });
+      }
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = render(
+    <QueryClientProvider client={new QueryClient()}>
+      <SkillMarket />
+    </QueryClientProvider>,
+  );
+  await view.findByRole("option", { name: "Managed Bot" });
+  fireEvent.change(
+    view.getByRole("combobox", { name: "Manage installed skills on" }),
+    {
+      target: { value: "managed" },
+    },
+  );
+  fireEvent.click(
+    await view.findByRole("button", { name: "Change version of Summarize" }),
+  );
+  await view.findByRole("option", { name: "2.0.0" });
+  const versions = view.getByRole("combobox", { name: "Published version" });
+  fireEvent.change(versions, { target: { value: "2.0.0" } });
+  fireEvent.click(await view.findByRole("button", { name: "Switch to 2.0.0" }));
+  await view.findByText("Switched to 2.0.0.");
+  await view.findByText("Installed version 2.0.0");
+  fireEvent.change(versions, { target: { value: "1.0.0" } });
+  fireEvent.click(await view.findByRole("button", { name: "Switch to 1.0.0" }));
+  await view.findByText("Installed version 1.0.0");
+  expect(changes).toEqual([
+    { agentId: "managed", expectedVersionId: 3 },
+    { agentId: "managed", expectedVersionId: 4 },
+  ]);
 });

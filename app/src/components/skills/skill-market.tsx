@@ -11,11 +11,11 @@ type Skill = {
   slug: string;
   title: string;
   summary: string;
-  publisher: string | null;
   latestVersion: string;
 };
 
 type VersionPreview = Skill & {
+  publisher: string | null;
   source: string;
   version: string;
   instructions: string;
@@ -31,6 +31,7 @@ async function load<T>(path: string, signal: AbortSignal): Promise<T> {
 
 export function SkillMarket() {
   const searchId = useId();
+  const previewId = useId();
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<Skill>();
@@ -51,6 +52,7 @@ export function SkillMarket() {
       title="Skill market"
       description="Browse skills curated by your deployment administrator."
     >
+      <InstalledMarketSkills />
       <form
         className="mt-3 flex flex-wrap items-end gap-2"
         onSubmit={(event) => {
@@ -96,9 +98,7 @@ export function SkillMarket() {
             </div>
             <Button
               aria-controls={
-                skill.slug === selected?.slug
-                  ? "market-skill-preview"
-                  : undefined
+                skill.slug === selected?.slug ? previewId : undefined
               }
               aria-expanded={skill.slug === selected?.slug}
               aria-label={`Preview ${skill.title}`}
@@ -145,6 +145,7 @@ export function SkillMarket() {
       {selected && (
         <MarketPreview
           key={selected.slug}
+          id={previewId}
           skill={selected}
           version={version}
           selectVersion={setVersion}
@@ -155,11 +156,15 @@ export function SkillMarket() {
 }
 
 function MarketPreview({
+  id,
+  installed,
   skill,
   version,
   selectVersion,
 }: {
-  skill: Skill;
+  id: string;
+  installed?: { agentId: string; skill: InstalledSkill };
+  skill: Pick<Skill, "namespace" | "slug" | "title">;
   version: string;
   selectVersion: (version: string) => void;
 }) {
@@ -184,10 +189,10 @@ function MarketPreview({
   return (
     <section
       className="grid gap-3 rounded-lg border p-4"
-      id="market-skill-preview"
-      aria-labelledby="market-preview-heading"
+      id={id}
+      aria-labelledby={`${id}-heading`}
     >
-      <h3 className="font-semibold" id="market-preview-heading">
+      <h3 className="font-semibold" id={`${id}-heading`}>
         {skill.title}
       </h3>
       <div className="flex flex-wrap items-end gap-2">
@@ -259,13 +264,29 @@ function MarketPreview({
               </>
             )}
           </div>
-          {preview.data.installable && preview.data.command && (
-            <MarketInstall
-              key={versionPath}
-              command={preview.data.command}
-              versionPath={versionPath}
-            />
-          )}
+          {preview.data.installable &&
+            preview.data.command &&
+            (installed ? (
+              preview.data.source === installed.skill.registry &&
+              preview.data.command === installed.skill.command ? (
+                <MarketSwitch
+                  key={versionPath}
+                  installed={installed}
+                  version={version}
+                  versionPath={versionPath}
+                />
+              ) : (
+                <p role="alert">
+                  This version belongs to a different market source.
+                </p>
+              )
+            ) : (
+              <MarketInstall
+                key={versionPath}
+                command={preview.data.command}
+                versionPath={versionPath}
+              />
+            ))}
           <div>
             <h4 className="font-medium">Instructions</h4>
             <pre className="whitespace-pre-wrap break-words text-sm">
@@ -280,6 +301,211 @@ function MarketPreview({
 
 type InstallTarget = { id: string; title: string };
 
+function useInstallTargets() {
+  return useQuery({
+    queryKey: ["skill-market", "install-targets"],
+    queryFn: ({ signal }) =>
+      load<{ bots: InstallTarget[] }>("/install-targets", signal),
+    retry: false,
+  });
+}
+
+type InstalledSkill = {
+  command: string;
+  namespace: string;
+  slug: string;
+  registry: string;
+  title: string;
+  version: string;
+  versionId: number;
+};
+
+function installationsKey(agentId: string) {
+  return ["skill-market", "installations", agentId];
+}
+
+function installationsPath(agentId: string) {
+  return `/bots/${encodeURIComponent(agentId)}/installations`;
+}
+
+function refreshBotSkills(
+  queryClient: ReturnType<typeof useQueryClient>,
+  agentId: string,
+) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: installationsKey(agentId) }),
+    queryClient.invalidateQueries({ queryKey: pluginKeys.forAgent(agentId) }),
+  ]);
+}
+
+function InstalledMarketSkills() {
+  const targets = useInstallTargets();
+  const [agentId, setAgentId] = useState("");
+  if (targets.isPending) return <p role="status">Loading Bots…</p>;
+  if (targets.isError)
+    return (
+      <p role="alert">
+        Couldn't load Bots for skill management.{" "}
+        <Button variant="link" onClick={() => void targets.refetch()}>
+          Try again
+        </Button>
+      </p>
+    );
+  if (!targets.data.bots.length) return null;
+  return (
+    <div className="mt-3 grid gap-2">
+      <label className="grid w-fit gap-1 text-sm">
+        Manage installed skills on
+        <select
+          className="rounded-md border bg-background px-2 py-1"
+          value={agentId}
+          onChange={(event) => setAgentId(event.target.value)}
+        >
+          <option value="">Choose a Bot</option>
+          {targets.data.bots.map((bot) => (
+            <option key={bot.id} value={bot.id}>
+              {bot.title}
+            </option>
+          ))}
+        </select>
+      </label>
+      {agentId && <BotMarketInstallations key={agentId} agentId={agentId} />}
+    </div>
+  );
+}
+
+function BotMarketInstallations({ agentId }: { agentId: string }) {
+  const id = useId();
+  const queryClient = useQueryClient();
+  const [command, setCommand] = useState("");
+  const [version, selectVersion] = useState("");
+  const path = installationsPath(agentId);
+  const list = useQuery({
+    queryKey: installationsKey(agentId),
+    queryFn: ({ signal }) =>
+      load<{ installations: InstalledSkill[] }>(path, signal),
+    retry: false,
+  });
+  const uninstall = useMutation({
+    mutationFn: (skill: InstalledSkill) =>
+      client(`/api/skill-market${path}/${encodeURIComponent(skill.command)}`, {
+        method: "DELETE",
+        body: { expectedVersionId: skill.versionId },
+        fallback: "Couldn't uninstall this skill.",
+      }),
+    onSettled: () => refreshBotSkills(queryClient, agentId),
+  });
+  const selected = list.data?.installations.find(
+    (skill) => skill.command === command,
+  );
+
+  return (
+    <>
+      {list.isPending && <p role="status">Loading installed skills…</p>}
+      {list.isError && (
+        <p role="alert">
+          Couldn't load installed skills.{" "}
+          <Button variant="link" onClick={() => void list.refetch()}>
+            Try again
+          </Button>
+        </p>
+      )}
+      {list.data?.installations.length === 0 && (
+        <p>This Bot has no installed market skills.</p>
+      )}
+      <ul className="divide-y divide-border">
+        {list.data?.installations.map((skill) => (
+          <li
+            key={skill.command}
+            className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
+          >
+            <div>
+              <p>
+                {skill.title} <code>/{skill.command}</code>
+              </p>
+              <p className="text-muted-foreground">
+                Installed version {skill.version}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                aria-label={`Change version of ${skill.title}`}
+                aria-expanded={command === skill.command}
+                aria-controls={command === skill.command ? id : undefined}
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setCommand(command === skill.command ? "" : skill.command);
+                  selectVersion(skill.version);
+                }}
+              >
+                Change version
+              </Button>
+              <Button
+                aria-label={`Uninstall ${skill.title}`}
+                variant="outline"
+                size="sm"
+                disabled={uninstall.isPending}
+                onClick={() => uninstall.mutate(skill)}
+              >
+                Uninstall
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {uninstall.error && <p role="alert">{uninstall.error.message}</p>}
+      {uninstall.isSuccess && (
+        <p role="status">Uninstalled {uninstall.variables.title}.</p>
+      )}
+      {selected && (
+        <MarketPreview
+          key={selected.command}
+          id={id}
+          installed={{ agentId, skill: selected }}
+          skill={selected}
+          version={version}
+          selectVersion={selectVersion}
+        />
+      )}
+    </>
+  );
+}
+
+function MarketSwitch({
+  installed: { agentId, skill },
+  version,
+  versionPath,
+}: {
+  installed: { agentId: string; skill: InstalledSkill };
+  version: string;
+  versionPath: string;
+}) {
+  const queryClient = useQueryClient();
+  const changeVersion = useMutation({
+    mutationFn: (expectedVersionId: number) =>
+      client(`/api/skill-market${versionPath}/switch`, {
+        method: "POST",
+        body: { agentId, expectedVersionId },
+        fallback: "Couldn't change the installed version.",
+      }),
+    onSettled: () => refreshBotSkills(queryClient, agentId),
+  });
+  return (
+    <div>
+      <Button
+        size="sm"
+        disabled={version === skill.version || changeVersion.isPending}
+        onClick={() => changeVersion.mutate(skill.versionId)}
+      >
+        {changeVersion.isPending ? "Switching…" : `Switch to ${version}`}
+      </Button>
+      {changeVersion.error && <p role="alert">{changeVersion.error.message}</p>}
+      {changeVersion.isSuccess && <p role="status">Switched to {version}.</p>}
+    </div>
+  );
+}
+
 function MarketInstall({
   command,
   versionPath,
@@ -289,12 +515,7 @@ function MarketInstall({
 }) {
   const [agentId, setAgentId] = useState("");
   const queryClient = useQueryClient();
-  const targets = useQuery({
-    queryKey: ["skill-market", "install-targets"],
-    queryFn: ({ signal }) =>
-      load<{ bots: InstallTarget[] }>("/install-targets", signal),
-    retry: false,
-  });
+  const targets = useInstallTargets();
   const install = useMutation({
     mutationFn: async (bot: InstallTarget) => {
       const response = await client(`/api/skill-market${versionPath}/install`, {
@@ -306,8 +527,7 @@ function MarketInstall({
         await response.json();
       return { ...result, botTitle: bot.title };
     },
-    onSuccess: (_result, bot) =>
-      queryClient.invalidateQueries({ queryKey: pluginKeys.forAgent(bot.id) }),
+    onSuccess: (_result, bot) => refreshBotSkills(queryClient, bot.id),
   });
 
   if (targets.isPending) return <p role="status">Loading Bots…</p>;
