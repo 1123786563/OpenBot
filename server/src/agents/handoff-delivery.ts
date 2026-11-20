@@ -226,7 +226,15 @@ export function createHandoffDelivery(options: {
   } = options;
 
   return {
-    async deliver({ work, message, shown, assertion }) {
+    async deliver({
+      work,
+      message,
+      shown,
+      assertion,
+      signal,
+      beforeDispatch,
+      onText,
+    }) {
       /*
        * Admitted before anything else, as every headless turn is: refused if the person paused the
        * Bot while this hop waited, or if "Use Bots" or the model allowlist refuse it, before the Bot
@@ -240,6 +248,7 @@ export function createHandoffDelivery(options: {
         ownerUserId: work.actorId,
         agentId: work.toBotId,
         threadId: work.answerIn ?? undefined,
+        signal,
       });
       /*
        * An answer going home is said, not generated. The Bot that was asked has already answered;
@@ -316,8 +325,10 @@ export function createHandoffDelivery(options: {
                 const type = String(emitted?.event?.type ?? "");
                 seen.last = type;
                 if (type === "TEXT_MESSAGE_START") saying = "";
-                if (type === "TEXT_MESSAGE_CONTENT")
+                if (type === "TEXT_MESSAGE_CONTENT") {
                   saying += String(emitted?.event?.delta ?? "");
+                  onText?.([...said, saying].join("\n"));
+                }
                 if (type === "TEXT_MESSAGE_END" && saying.trim().length > 0)
                   said.push(saying.trim());
                 config?.onEvent?.(emitted);
@@ -517,6 +528,31 @@ export function createHandoffDelivery(options: {
           () => !lockLost.signal.aborted,
         );
         try {
+          const input = await (
+            options.prepareRunInput ?? (async (input) => input)
+          )(
+            {
+              threadId: where.threadId,
+              runId,
+              /*
+               * The same conversation the agent was given, so the run's own record of what it was
+               * asked agrees with what it read.
+               */
+              messages: asked,
+              tools: [],
+              context: [],
+              state: {},
+              /*
+               * The deployment's own statement of what this run is, carrying how deep the chain has
+               * gone. It is what stops the addressed Bot handing the work on for ever, and it is
+               * signed, so the Bot cannot edit its own depth on the way past.
+               */
+              forwardedProps: { openbotRun: assertion },
+            },
+            work,
+          );
+          await beforeDispatch?.();
+          paused.throwIfAborted();
           await settled(
             runner.run({
               ...(recordStop ? { recordStop } : {}),
@@ -547,29 +583,7 @@ export function createHandoffDelivery(options: {
                * What makes this run legitimate is the lock itself: the gateway compares the run id on
                * every event to the one the lock holds. Taking the lock is the whole of the ceremony.
                */
-              input: await (
-                options.prepareRunInput ?? (async (input) => input)
-              )(
-                {
-                  threadId: where.threadId,
-                  runId,
-                  /*
-                   * The same conversation the agent was given, so the run's own record of what it was
-                   * asked agrees with what it read.
-                   */
-                  messages: asked,
-                  tools: [],
-                  context: [],
-                  state: {},
-                  /*
-                   * The deployment's own statement of what this run is, carrying how deep the chain has
-                   * gone. It is what stops the addressed Bot handing the work on for ever, and it is
-                   * signed, so the Bot cannot edit its own depth on the way past.
-                   */
-                  forwardedProps: { openbotRun: assertion },
-                },
-                work,
-              ),
+              input,
             }),
             deadlineMs,
             AbortSignal.any([paused, lockLost.signal]),

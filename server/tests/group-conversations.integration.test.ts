@@ -23,9 +23,13 @@ import {
   agents,
   channels,
   intelligenceChannelMappings,
+  personalSaasAccounts,
+  personalWorkspaces,
+  personalWorkspaceSuspensions,
   users,
   workItems,
 } from "../src/db/schema";
+import { workspaceResourceOwner } from "../src/personal-saas/workspace-principal";
 import { createPrivateShareCheck } from "../src/proactive/private-share";
 import { createTeamBots } from "../src/team-bots/team-bots";
 import { createWorkQueue } from "../src/work/queue";
@@ -65,8 +69,9 @@ afterAll(async () => {
   await database.$client.close();
 });
 
-async function person(): Promise<AgentActor> {
-  const id = `${prefix}-user-${randomUUID()}`;
+async function person(
+  id = `${prefix}-user-${randomUUID()}`,
+): Promise<AgentActor> {
   await database
     .insert(users)
     .values({ id, email: `${id}@example.test`, name: "Group Test" });
@@ -977,4 +982,70 @@ describe("group conversations in PostgreSQL", () => {
         GroupNotFoundError,
       );
   });
+});
+
+test("a workspace pause stops a group message before the first Bot dispatches", async () => {
+  const accountId = randomUUID();
+  const workspaceId = randomUUID();
+  const owner = await person(workspaceResourceOwner(workspaceId));
+  const now = Date.now();
+  await database.insert(personalSaasAccounts).values({
+    id: accountId,
+    issuer: "test",
+    subject: accountId,
+    email: "group@example.test",
+    status: {
+      source: "active",
+      observedAt: now,
+      confirmedAt: now,
+      epoch: 0,
+      disablements: [],
+    },
+  });
+  await database
+    .insert(personalWorkspaces)
+    .values({ id: workspaceId, ownerId: accountId });
+  try {
+    const ada = await bot(owner, "Ada");
+    const grace = await bot(owner, "Grace");
+    const { conversations, calls } = service({
+      replies: { [ada]: () => "Ada", [grace]: () => "Grace" },
+    });
+    const channel = await conversations.create(owner.id, {
+      agentIds: [ada, grace],
+    });
+    const key = `${prefix}-personal-pause`;
+    await conversations.send(owner.id, channel.id, {
+      id: key,
+      text: "Check this",
+    });
+    await database.insert(personalWorkspaceSuspensions).values({
+      workspaceId,
+      action: "pause",
+      operator: "test",
+      reason: "test",
+      effectiveAt: new Date(),
+    });
+    await drain(conversations);
+    expect(calls).toEqual([]);
+    expect(
+      await createWorkQueue(database).interrupted(GROUP_TURN_KIND, accountId),
+    ).toMatchObject([
+      {
+        key,
+        interruption: { reason: "workspace_paused", outcomeUnknown: false },
+      },
+    ]);
+  } finally {
+    await database.delete(workItems).where(eq(workItems.accountId, accountId));
+    await database
+      .delete(personalWorkspaceSuspensions)
+      .where(eq(personalWorkspaceSuspensions.workspaceId, workspaceId));
+    await database
+      .delete(personalWorkspaces)
+      .where(eq(personalWorkspaces.id, workspaceId));
+    await database
+      .delete(personalSaasAccounts)
+      .where(eq(personalSaasAccounts.id, accountId));
+  }
 });

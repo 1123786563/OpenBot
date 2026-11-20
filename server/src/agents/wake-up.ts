@@ -25,7 +25,8 @@ import type { AgentChannel } from "../channels/routes";
 import type { Database } from "../db/client";
 import { workItems } from "../db/schema/work";
 import { REFUSAL_MARKER } from "../plugins/tools";
-import type { WorkQueue } from "../work/queue";
+import { createWorkQueue, type WorkQueue } from "../work/queue";
+import { runAuthorizedWork } from "../work/execution";
 import { BotPausedError } from "./lifecycle";
 import type { AgentActor } from "./profile-types";
 
@@ -198,12 +199,16 @@ export function createWakeUpStore(
           throw new WakeUpRefusedError(
             `This Bot has scheduled ${WAKE_UP_MAX_PER_DAY} follow-ups today, which is the most it may.`,
           );
-        await transaction.insert(workItems).values({
+        const offered = await createWorkQueue(transaction, () =>
+          now().getTime(),
+        ).offer({
           kind: WAKE_UP_KIND,
           key: id,
           runAt: input.dueAt,
           payload,
         });
+        if (offered === "refused")
+          throw new WakeUpRefusedError("Bot work authorization ended.");
       });
       await audit(
         "bot.follow_up_scheduled",
@@ -389,6 +394,9 @@ export function wakeUpInstruction(payload: WakeUpPayload): string {
 }
 
 export type WakeUpTurn = (input: {
+  signal?: AbortSignal;
+  beforeDispatch?: () => Promise<void>;
+  onText?: (text: string) => void;
   telemetry?: Parameters<
     import("@openbot/toolkit/run-turn").TurnRunner
   >[0]["telemetry"];
@@ -408,7 +416,7 @@ export type WakeUpTurn = (input: {
  * surprise this feature must not produce.
  */
 export function createWakeUpRunner(options: {
-  queue: Pick<WorkQueue, "claim" | "finish" | "purge">;
+  queue: Pick<WorkQueue, "claim" | "finish" | "purge" | "executionExpiry">;
   store: WakeUpStore;
   owner: string;
   actorFor: (ownerUserId: string) => Promise<AgentActor>;
@@ -477,38 +485,56 @@ export function createWakeUpRunner(options: {
             id: `follow-up:${item.key}`,
           };
           try {
-            const { replyText } = await runTurn({
-              ownerUserId: payload.ownerUserId,
-              routineId: `follow-up:${item.key}`,
-              telemetry: {
-                trigger: "followup",
-                rootTaskId: `follow-up:${item.key}`,
-                attempt: item.attempts,
+            await runAuthorizedWork(
+              queue,
+              item,
+              owner,
+              async (guard) => {
+                const { replyText } = await runTurn({
+                  ...guard,
+                  ownerUserId: payload.ownerUserId,
+                  routineId: `follow-up:${item.key}`,
+                  telemetry: {
+                    trigger: "followup",
+                    rootTaskId: `follow-up:${item.key}`,
+                    attempt: item.attempts,
+                  },
+                  agentId: payload.agentId,
+                  threadId: channel.threadId,
+                  instruction: wakeUpInstruction(payload),
+                  initiator,
+                });
+                await channels.recordActivity(
+                  actor,
+                  channel.id,
+                  { text: replyText, agentId: payload.agentId, at: new Date() },
+                  { id: `follow-up:${item.key}` },
+                );
+                await guard?.beforeDispatch();
+                await notify?.(
+                  {
+                    ownerUserId: payload.ownerUserId,
+                    channelId: channel.id,
+                    agentId: payload.agentId,
+                    threadId: channel.threadId,
+                  },
+                  {
+                    id: `follow-up:${item.key}`,
+                    text: replyText,
+                    kind: "reply",
+                  },
+                ).catch((error: unknown) =>
+                  console.warn("Could not notify about a follow-up.", error),
+                );
               },
-              agentId: payload.agentId,
-              threadId: channel.threadId,
-              instruction: wakeUpInstruction(payload),
-              initiator,
-            });
-            await channels.recordActivity(
-              actor,
-              channel.id,
-              { text: replyText, agentId: payload.agentId, at: new Date() },
-              { id: `follow-up:${item.key}` },
+              {
+                safeFailure: (error) =>
+                  error instanceof BotPausedError ||
+                  error instanceof HeadlessToolSuspension,
+              },
             );
             await done("succeeded");
             report.ran.push(item.key);
-            await notify?.(
-              {
-                ownerUserId: payload.ownerUserId,
-                channelId: channel.id,
-                agentId: payload.agentId,
-                threadId: channel.threadId,
-              },
-              { id: `follow-up:${item.key}`, text: replyText, kind: "reply" },
-            ).catch((error: unknown) =>
-              console.warn("Could not notify about a follow-up.", error),
-            );
           } catch (error) {
             if (error instanceof BotPausedError) {
               await done("skipped", error.message);

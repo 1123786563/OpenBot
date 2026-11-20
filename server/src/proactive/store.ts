@@ -505,7 +505,6 @@ export function createProactiveStore(database: Database) {
           .update(proactiveSettings)
           .set({
             nextRunAt: sql`${fromServerClock(at)} + make_interval(mins => ${proactiveSettings.intervalMinutes})`,
-            updatedAt: at,
           })
           .where(
             and(
@@ -530,7 +529,6 @@ export function createProactiveStore(database: Database) {
           lastStatus: status,
           lastError: error?.slice(0, 500) ?? null,
           ...(status === "running" ? { lastRunAt: new Date() } : {}),
-          updatedAt: new Date(),
         })
         .where(eq(proactiveSettings.id, id));
     },
@@ -850,6 +848,7 @@ export function createProactiveStore(database: Database) {
           and(
             eq(workItems.kind, PROACTIVE_RUN_KIND),
             isNull(workItems.finishedAt),
+            isNull(workItems.interruption),
             sql`${workItems.payload}->>'settingId' = ${settingId}`,
           ),
         )

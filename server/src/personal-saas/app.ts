@@ -6,7 +6,7 @@ import { html } from "hono/html";
 import { z } from "zod";
 import { seal, unseal } from "../auth/signed-value";
 import type { Database } from "../db/client";
-import { createWorkQueue } from "../work/queue";
+import { createWorkQueue, unattendedWorkLabels } from "../work/queue";
 import {
   type AccountGrant,
   accountDecision,
@@ -608,6 +608,33 @@ export function createPersonalSaasApp(
     }),
   );
 
+  async function unattendedHistory(accountId: string) {
+    const queue = createWorkQueue(database, now);
+    const history = await Promise.all(
+      Object.entries(unattendedWorkLabels).map(async ([kind, label]) => {
+        await queue.reconcilePersonalWork(kind, accountId);
+        return (await queue.interrupted(kind, accountId)).flatMap((item) => {
+          if (!item.interruption) return [];
+          const summary =
+            item.payload.reason ?? item.payload.task ?? item.payload.text;
+          return [
+            {
+              key: item.key,
+              kind,
+              label,
+              summary:
+                typeof summary === "string" ? summary.slice(0, 500) : undefined,
+              output: item.output,
+              ...item.interruption,
+              reasonMessage: recoveryReason[item.interruption.reason],
+            },
+          ];
+        });
+      }),
+    );
+    return history.flat().sort((a, b) => b.recordedAt - a.recordedAt);
+  }
+
   app.get("/workspace", async (context) => {
     const token = getCookie(context, sessionCookie);
     const session = await authorize(token);
@@ -635,7 +662,10 @@ export function createPersonalSaasApp(
     const computerStatus = await computer
       ?.status(workspace.id)
       .catch(() => undefined);
-    const recovery = await botWork.history(session.grant.accountId);
+    const [recovery, unattended] = await Promise.all([
+      botWork.history(session.grant.accountId),
+      unattendedHistory(session.grant.accountId),
+    ]);
     if (!(await remainingAccess(token, session.grant)))
       return context.redirect("/workspace");
     return context.html(
@@ -709,6 +739,21 @@ export function createPersonalSaasApp(
         )}</ul></section>`
           : ""
       }
+      ${
+        unattended.length
+          ? html`<section aria-labelledby="unattended-work"><h2 id="unattended-work">Stopped background work</h2>
+          <ul>${unattended.map(
+            (item) => html`<li>
+            <p><strong>${item.label}</strong></p>
+            ${item.summary ? html`<p>${item.summary}</p>` : ""}
+            <p>${item.reasonMessage}</p>
+            ${item.output ? html`<p>Output before interruption</p><pre>${item.output}</pre>` : ""}
+            ${item.outcomeUnknown ? html`<p>Check any external actions before starting new work. Their outcome is unknown.</p>` : ""}
+          </li>`,
+          )}</ul>
+        </section>`
+          : ""
+      }
       </div>
       <script src="/assets/session.js" data-workspace-view="${workspaceViewBinding(token, session.grant)}" defer></script>`,
       ),
@@ -773,17 +818,23 @@ export function createPersonalSaasApp(
     if (session.kind === "signed-out")
       return context.json({ error: "sign_in_required" }, 401);
     const workspace = await store.workspace(session.grant.accountId);
-    const recovery = workspace
-      ? await botWork.history(session.grant.accountId)
-      : [];
+    const [recovery, unattended] = workspace
+      ? await Promise.all([
+          botWork.history(session.grant.accountId),
+          unattendedHistory(session.grant.accountId),
+        ])
+      : [[], []];
     const accessMs = await remainingAccess(token, session.grant);
     if (!accessMs) return context.json({ error: "authorization_changed" }, 403);
     if (workspace) context.header("OpenBot-Access-Ms", String(accessMs));
     return workspace
       ? context.json(
-          recovery.length
+          recovery.length || unattended.length
             ? {
                 ...workspace,
+                ...(unattended.length
+                  ? { interruptedBackgroundWork: unattended }
+                  : {}),
                 recovery: recovery.map((item) => ({
                   ...item,
                   reasonMessage: recoveryReason[item.reason],

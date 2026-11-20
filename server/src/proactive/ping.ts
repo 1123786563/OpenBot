@@ -34,10 +34,15 @@ import type { Database } from "../db/client";
 import { agents, users } from "../db/schema/core";
 import { botLifecycle } from "../db/schema/lifecycle";
 import {
+  personalSaasAccounts,
+  personalWorkspaces,
+} from "../db/schema/personal-saas";
+import {
   proactivePeople,
   proactivePings,
   proactiveSuggestions,
 } from "../db/schema/proactive";
+import { workspaceResourceOwner } from "../personal-saas/workspace-principal";
 import type { AttentionItem, AttentionPing } from "./contracts";
 
 /** The least time between two pings to one person. */
@@ -121,9 +126,39 @@ export function pingText(items: readonly AttentionItem[]): {
  * An item a ping may carry: open, carried by no ping yet, from a Bot its person has not told to
  * notify them of nothing, while they have check-ins on.
  */
+const afterLastExecutionCutoff = (
+  owner:
+    | typeof proactiveSuggestions.ownerUserId
+    | typeof proactivePings.ownerUserId,
+  created:
+    | typeof proactiveSuggestions.createdAt
+    | typeof proactivePings.createdAt,
+) =>
+  sql`not exists (
+    select 1
+    from ${personalSaasAccounts}
+    cross join lateral jsonb_array_elements(coalesce((
+      case jsonb_typeof(${personalSaasAccounts.status})
+        when 'string' then (${personalSaasAccounts.status} #>> '{}')::jsonb
+        else ${personalSaasAccounts.status}
+      end
+    )->'executionCutoffs', '[]'::jsonb)) as cutoff
+    where (${personalSaasAccounts.id}::text = ${owner}
+      or exists (
+        select 1 from ${personalWorkspaces}
+        where ${personalWorkspaces.ownerId} = ${personalSaasAccounts.id}
+          and (${workspaceResourceOwner("")}::text || ${personalWorkspaces.id}::text) = ${owner}
+      ))
+    and (cutoff->>'cutoffAt')::bigint >= extract(epoch from ${created}) * 1000
+  )`;
+
 const pingableItem = and(
   eq(proactiveSuggestions.status, "open"),
   isNull(proactiveSuggestions.pingId),
+  afterLastExecutionCutoff(
+    proactiveSuggestions.ownerUserId,
+    proactiveSuggestions.createdAt,
+  ),
   sql`not exists (select 1 from ${botLifecycle} where ${botLifecycle.ownerUserId} = ${proactiveSuggestions.ownerUserId} and ${botLifecycle.agentId} = ${proactiveSuggestions.agentId} and ${botLifecycle.notify} = 'none')`,
   sql`not exists (select 1 from ${users} where ${users.id} = ${proactiveSuggestions.ownerUserId} and ${users.preferences}->>'proactive' = 'off')`,
 );
@@ -180,7 +215,10 @@ export function createPingStore(database: Database) {
            * still open: it was open when the ping was written, so the ping names it truthfully.
            */
           const items = await transaction
-            .select(itemColumns)
+            .select({
+              ...itemColumns,
+              createdAt: proactiveSuggestions.createdAt,
+            })
             .from(proactiveSuggestions)
             .innerJoin(agents, eq(agents.id, proactiveSuggestions.agentId))
             .where(pingable(ownerUserId))
@@ -209,7 +247,14 @@ export function createPingStore(database: Database) {
                 items.map((item) => item.suggestionId),
               ),
             );
-          return { pingId, ownerUserId, text, pushBody, items };
+          return {
+            pingId,
+            ownerUserId,
+            text,
+            pushBody,
+            authorizedSince: items[0]?.createdAt.getTime(),
+            items: items.map(({ createdAt: _createdAt, ...item }) => item),
+          };
         });
       } catch (error) {
         if (error instanceof TransactionRollbackError) return null;
@@ -256,6 +301,10 @@ export function createPingStore(database: Database) {
         .where(
           and(
             isNull(proactivePings.offeredAt),
+            afterLastExecutionCutoff(
+              proactivePings.ownerUserId,
+              proactivePings.createdAt,
+            ),
             lte(
               proactivePings.createdAt,
               sql`now() - make_interval(secs => ${olderThanMs / 1000})`,
@@ -268,7 +317,11 @@ export function createPingStore(database: Database) {
         .limit(limit);
       if (pings.length === 0) return [];
       const items = await database
-        .select({ ...itemColumns, pingId: proactiveSuggestions.pingId })
+        .select({
+          ...itemColumns,
+          pingId: proactiveSuggestions.pingId,
+          createdAt: proactiveSuggestions.createdAt,
+        })
         .from(proactiveSuggestions)
         .innerJoin(agents, eq(agents.id, proactiveSuggestions.agentId))
         .where(
@@ -281,15 +334,20 @@ export function createPingStore(database: Database) {
           asc(proactiveSuggestions.createdAt),
           asc(proactiveSuggestions.id),
         );
-      return pings.map((ping) => ({
-        pingId: ping.id,
-        ownerUserId: ping.ownerUserId,
-        text: ping.text,
-        pushBody: ping.pushBody,
-        items: items
-          .filter((item) => item.pingId === ping.id)
-          .map(({ pingId: _, ...item }) => item),
-      }));
+      return pings.map((ping) => {
+        const carried = items.filter((item) => item.pingId === ping.id);
+        return {
+          pingId: ping.id,
+          ownerUserId: ping.ownerUserId,
+          text: ping.text,
+          pushBody: ping.pushBody,
+          authorizedSince:
+            carried[0]?.createdAt.getTime() ?? ping.createdAt.getTime(),
+          items: carried.map(
+            ({ pingId: _, createdAt: _createdAt, ...item }) => item,
+          ),
+        };
+      });
     },
 
     /** Delivery rows were offered for this ping. */

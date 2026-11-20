@@ -1,3 +1,4 @@
+import { runAuthorizedWork } from "../work/execution";
 /**
  * One conversation with several Bots.
  *
@@ -43,10 +44,9 @@ import {
   users,
 } from "../db/schema/core";
 import { groupBotThreads, groupMessages } from "../db/schema/group";
-import { workItems } from "../db/schema/work";
 import { leadingSkillCommand } from "../plugins/picked-skill";
 import type { CheckPrivateShare } from "../proactive/private-share";
-import type { WorkQueue } from "../work/queue";
+import { createWorkQueue, type WorkQueue } from "../work/queue";
 
 export const GROUP_TURN_KIND = "group.turn";
 
@@ -400,13 +400,14 @@ export async function submitGroupTurn(tx: Transaction, turn: GroupTurn) {
     text: turn.text,
     details: { agentIds: turn.agentIds },
   });
-  await tx
-    .insert(workItems)
-    .values({ kind: GROUP_TURN_KIND, key: turn.messageId, payload: turn })
-    .onConflictDoNothing();
-  await tx.execute(
-    sql`select pg_notify('openbot_work_offered', ${GROUP_TURN_KIND})`,
-  );
+  if (
+    (await createWorkQueue(tx).offer({
+      kind: GROUP_TURN_KIND,
+      key: turn.messageId,
+      payload: turn,
+    })) === "refused"
+  )
+    throw new GroupRefusedError("Bot work authorization ended.");
 }
 
 /**
@@ -780,7 +781,15 @@ export function createGroupConversations(deps: {
       });
   }
 
-  async function runBot(turn: GroupTurn, agentId: string) {
+  async function runBot(
+    turn: GroupTurn,
+    agentId: string,
+    guard?: {
+      signal: AbortSignal;
+      beforeDispatch: () => Promise<void>;
+      onText: (text: string) => void;
+    },
+  ) {
     const id = `${turn.messageId}:${agentId}`;
     const bots = await orderedRoster(turn.ownerUserId, turn.channelId);
     const bot = bots?.find((candidate) => candidate.id === agentId);
@@ -864,9 +873,11 @@ export function createGroupConversations(deps: {
     };
     try {
       const result = await deps.runTurn({
+        ...guard,
         ...(turn.depth ? { depth: turn.depth } : {}),
         onText: (text) => {
           latest = text;
+          if (!deps.privateShare) guard?.onText(text);
           flush();
         },
         ownerUserId: turn.ownerUserId,
@@ -903,6 +914,7 @@ export function createGroupConversations(deps: {
           : PERSON_INITIATOR,
       });
       await writing;
+      await guard?.beforeDispatch();
       const gate = await shareGate({
         ownerUserId: turn.ownerUserId,
         channelId: turn.channelId,
@@ -923,6 +935,7 @@ export function createGroupConversations(deps: {
         await deps.store.finish(id, gate.message, "failed");
         return;
       }
+      await guard?.beforeDispatch();
       await deps.store.finish(id, result.replyText, "completed");
       saved = true;
       savedReply = result.replyText;
@@ -932,6 +945,20 @@ export function createGroupConversations(deps: {
       relayStarted = true;
       await relay(turn, bot, id, result.replyText, bots, runId);
     } catch (error) {
+      if (guard?.signal.aborted) {
+        await writing;
+        if (!saved)
+          await deps.store.finish(
+            id,
+            "Bot work authorization ended.",
+            "failed",
+            {
+              message: "Bot work authorization ended.",
+              outcomeUnknown: true,
+            },
+          );
+        throw error;
+      }
       // The reply is already saved: a fault handing it on is not this Bot's answer failing, and
       // writing it over the row would replace a good reply with an error that no retry repairs.
       if (saved) {
@@ -1276,20 +1303,23 @@ export function createGroupConversations(deps: {
       if (!item) return false;
       const turn = turnSchema.parse(item.payload);
       try {
-        await deps.busy?.(turn, true).catch(() => {});
-        // One Bot after another, so each later Bot reads what the earlier ones said.
-        for (const agentId of turn.agentIds) {
-          if (
-            !(await deps.queue.renew({
-              kind: item.kind,
-              key: item.key,
-              owner: deps.owner,
-              leaseMs: 15 * 60_000,
-            }))
-          )
-            throw new Error("The group turn lease was lost.");
-          await runBot(turn, agentId);
-        }
+        await runAuthorizedWork(deps.queue, item, deps.owner, async (guard) => {
+          await deps.busy?.(turn, true).catch(() => {});
+          // One Bot after another, so each later Bot reads what the earlier ones said.
+          for (const agentId of turn.agentIds) {
+            if (
+              !(await deps.queue.renew({
+                kind: item.kind,
+                key: item.key,
+                owner: deps.owner,
+                leaseMs: 15 * 60_000,
+              }))
+            )
+              throw new Error("The group turn lease was lost.");
+            await runBot(turn, agentId, guard);
+            guard?.signal.throwIfAborted();
+          }
+        });
         await deps.queue.finish({
           kind: item.kind,
           key: item.key,

@@ -13,6 +13,9 @@ import {
   routines,
 } from "../db/schema";
 import { workspaceConversations } from "./store";
+import { workspaceResourceOwner } from "./workspace-principal";
+
+export { workspaceResourceOwner } from "./workspace-principal";
 
 export const exportWorkspaceId = z.uuid().brand<"PersonalWorkspaceId">();
 export type ExportTarget = {
@@ -57,14 +60,6 @@ export async function canExportWorkspace(
 ) {
   const [bot] = await workspaceBot(database, target);
   return bot !== undefined;
-}
-
-// Reuse the resource stores' owner columns with a distinct principal for each
-// workspace lifecycle. Legacy users and Casdoor email addresses are separate.
-export function workspaceResourceOwner(
-  workspaceId: ExportTarget["workspaceId"],
-) {
-  return `personal-workspace:${workspaceId}`;
 }
 
 export function readWorkspaceExport(database: Database, target: ExportTarget) {

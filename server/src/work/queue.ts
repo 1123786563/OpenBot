@@ -29,11 +29,103 @@ import {
 } from "drizzle-orm";
 import postgres from "postgres";
 import type { Database } from "../db/client";
-import { workItems } from "../db/schema";
+import {
+  deliveryOutbox,
+  personalSaasAccounts,
+  personalWorkspaces,
+  proactiveSettings,
+  responsibilities,
+  responsibilityRuns,
+  workItems,
+} from "../db/schema";
 import { readExecutionAccess } from "../personal-saas/account-access";
+import { workspaceResourceOwner } from "../personal-saas/workspace-principal";
+import { currentWorkGrant } from "./execution";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type WorkRow = typeof workItems.$inferSelect;
+// These payloads are produced by server-side writers, never by a client.
+function unattendedPrincipal(
+  tx: Transaction,
+  kind: string,
+  payload: Record<string, unknown>,
+  key: string,
+) {
+  switch (kind) {
+    case "group.turn":
+    case "bot.wakeup":
+      return typeof payload.ownerUserId === "string"
+        ? payload.ownerUserId
+        : undefined;
+    case "delivery.outbound":
+      return typeof payload.ownerUserId === "string"
+        ? payload.ownerUserId
+        : tx
+            .select({ owner: deliveryOutbox.ownerUserId })
+            .from(deliveryOutbox)
+            .where(eq(deliveryOutbox.id, key));
+    case "bot.message":
+      return typeof payload.actorId === "string" ? payload.actorId : undefined;
+    case "proactive.run":
+      return typeof payload.ownerUserId === "string"
+        ? payload.ownerUserId
+        : tx
+            .select({ owner: proactiveSettings.ownerUserId })
+            .from(proactiveSettings)
+            .where(eq(proactiveSettings.id, String(payload.settingId)));
+    case "responsibility.run":
+      return typeof payload.ownerUserId === "string"
+        ? payload.ownerUserId
+        : tx
+            .select({ owner: responsibilities.ownerUserId })
+            .from(responsibilityRuns)
+            .innerJoin(
+              responsibilities,
+              eq(responsibilities.id, responsibilityRuns.responsibilityId),
+            )
+            .where(eq(responsibilityRuns.id, String(payload.runId)));
+  }
+}
+
+export const unattendedWorkLabels = {
+  "group.turn": "Group run",
+  "bot.wakeup": "Bot follow-up",
+  "bot.message": "Bot handoff",
+  "proactive.run": "Check-in",
+  "responsibility.run": "Responsibility",
+  "delivery.outbound": "Background notification",
+};
+
+const unattendedKinds = new Set(Object.keys(unattendedWorkLabels));
+
+async function unattendedAccount(
+  tx: Transaction,
+  kind: string,
+  payload: Record<string, unknown>,
+  key: string,
+) {
+  const source = unattendedPrincipal(tx, kind, payload, key);
+  const principal =
+    typeof source === "string" ? source : (await source)?.[0]?.owner;
+  if (!principal) return;
+  const prefix = workspaceResourceOwner("");
+  if (principal.startsWith(prefix)) {
+    const [workspace] = await tx
+      .select({ ownerId: personalWorkspaces.ownerId })
+      .from(personalWorkspaces)
+      .where(
+        sql`${personalWorkspaces.id}::text = ${principal.slice(prefix.length)}`,
+      );
+    // A workspace principal never becomes a local user when its workspace disappears.
+    return workspace?.ownerId ?? null;
+  }
+  const [account] = await tx
+    .select({ id: personalSaasAccounts.id })
+    .from(personalSaasAccounts)
+    .where(sql`${personalSaasAccounts.id}::text = ${principal}`);
+  return account?.id;
+}
+
 type Interruption = NonNullable<WorkRow["interruption"]>;
 type HeldWork = { kind: string; key: string; owner: string };
 
@@ -128,6 +220,8 @@ export type WorkQueue = {
     payload?: Record<string, unknown>;
     runAt?: Date;
     accountId?: string;
+    expectedEpoch?: number;
+    authorizedSince?: number;
     /**
      * Refuse this if the prefix is already that full.
      *
@@ -148,6 +242,7 @@ export type WorkQueue = {
     limit?: number;
     maxAttempts?: number;
   }) => Promise<WorkItem[]>;
+  executionExpiry?: (input: HeldWork) => Promise<number | undefined>;
   /** Keep a claim alive while the work runs. False means it was already taken away. */
   renew: (input: {
     kind: string;
@@ -267,7 +362,7 @@ export function createWorkQueue(
 
   async function underClaim<T>(
     input: HeldWork,
-    operation: (tx: Transaction) => Promise<T>,
+    operation: (tx: Transaction, expiresAt?: number) => Promise<T>,
   ) {
     return database.transaction(async (tx) => {
       const [row] = await tx
@@ -280,6 +375,7 @@ export function createWorkQueue(
         // when it needs the account lock after locking a queue row.
         const access = await authorize(tx, row);
         if (access?.kind !== "active") return;
+        return operation(tx, access.expiresAt);
       }
       return operation(tx);
     });
@@ -305,10 +401,20 @@ export function createWorkQueue(
     );
 
   const queue: WorkQueue = {
-    async offer({ kind, key, payload = {}, runAt, atMost, accountId }) {
+    async offer({
+      kind,
+      key,
+      payload = {},
+      runAt,
+      atMost,
+      accountId,
+      expectedEpoch,
+      authorizedSince,
+    }) {
       const write = async (
         transaction: Pick<Database, "insert">,
         accountEpoch?: number,
+        boundAccountId?: string,
       ) =>
         transaction
           .insert(workItems)
@@ -316,7 +422,7 @@ export function createWorkQueue(
             kind,
             key,
             payload,
-            accountId,
+            accountId: boundAccountId,
             accountEpoch,
             ...(runAt ? { runAt } : {}),
           })
@@ -334,20 +440,46 @@ export function createWorkQueue(
           // there. Nothing is written on conflict, so this comes back empty for a duplicate.
           .returning({ key: workItems.key });
 
-      if (!atMost && !accountId) {
+      if (!atMost && !accountId && !unattendedKinds.has(kind)) {
         const [written] = await write(database);
         if (written) await announceOffered(database, kind);
         return written ? "queued" : "already";
       }
 
       return database.transaction(async (transaction) => {
-        const access = accountId
-          ? await readExecutionAccess(transaction, accountId, now)
+        const boundAccountId =
+          accountId ??
+          (await unattendedAccount(transaction, kind, payload, key));
+        if (boundAccountId === null) return "refused";
+        const parent = currentWorkGrant();
+        if (parent?.accountId === boundAccountId && parent?.signal.aborted)
+          return "refused";
+        const access = boundAccountId
+          ? await readExecutionAccess(
+              transaction,
+              boundAccountId,
+              now,
+              parent?.accountId === boundAccountId
+                ? (parent?.epoch ?? expectedEpoch)
+                : expectedEpoch,
+            )
           : undefined;
-        if (accountId && access?.kind !== "active") return "refused";
+        if (boundAccountId && access?.kind !== "active") return "refused";
+        if (boundAccountId && authorizedSince !== undefined) {
+          const [account] = await transaction
+            .select({ status: personalSaasAccounts.status })
+            .from(personalSaasAccounts)
+            .where(eq(personalSaasAccounts.id, boundAccountId));
+          if (
+            account?.status?.executionCutoffs?.some(
+              (event) => event.cutoffAt >= authorizedSince,
+            )
+          )
+            return "refused";
+        }
         const epoch = access?.kind === "active" ? access.epoch : undefined;
         if (!atMost) {
-          const [written] = await write(transaction, epoch);
+          const [written] = await write(transaction, epoch, boundAccountId);
           if (written) await announceOffered(transaction, kind);
           return written ? "queued" : "already";
         }
@@ -383,7 +515,7 @@ export function createWorkQueue(
           .limit(1);
         if (already.length > 0) return "already";
         if ((row?.total ?? 0) >= atMost.max) return "refused";
-        const [written] = await write(transaction, epoch);
+        const [written] = await write(transaction, epoch, boundAccountId);
         if (written) await announceOffered(transaction, kind);
         return written ? "queued" : "already";
       });
@@ -409,7 +541,10 @@ export function createWorkQueue(
             and(
               eq(workItems.kind, kind),
               unfinished,
-              lt(workItems.attempts, maxAttempts),
+              or(
+                lt(workItems.attempts, maxAttempts),
+                isNotNull(workItems.accountId),
+              ),
               lte(workItems.runAt, sql`now()`),
               or(
                 isNull(workItems.leaseUntil),
@@ -423,6 +558,34 @@ export function createWorkQueue(
 
         const claimed: WorkItem[] = [];
         for (const stored of due) {
+          if (stored.accountId === null && unattendedKinds.has(kind)) {
+            const accountId = await unattendedAccount(
+              transaction,
+              kind,
+              stored.payload,
+              stored.key,
+            );
+            if (accountId === null) {
+              await stop(transaction, stored, {
+                reason: "account_status_unconfirmed",
+                cutoffAt: null,
+              });
+              continue;
+            }
+            if (accountId) {
+              const [bound] = await transaction
+                .update(workItems)
+                .set({ accountId })
+                .where(keyed(stored.kind, stored.key))
+                .returning();
+              if (bound)
+                await stop(transaction, bound, {
+                  reason: "account_status_unconfirmed",
+                  cutoffAt: null,
+                });
+              continue;
+            }
+          }
           const access = await authorize(transaction, stored, true);
           if (stored.accountId !== null && access?.kind !== "active") continue;
           if (stored.accountId !== null && stored.attempts > 0) {
@@ -466,6 +629,16 @@ export function createWorkQueue(
           }
         }
         return claimed;
+      });
+    },
+
+    executionExpiry(input) {
+      return underClaim(input, async (tx, expiresAt) => {
+        const [held] = await tx
+          .select({ key: workItems.key })
+          .from(workItems)
+          .where(ours(input.kind, input.key, input.owner));
+        return held ? expiresAt : undefined;
       });
     },
 

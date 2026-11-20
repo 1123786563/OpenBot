@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { eq } from "drizzle-orm";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
+import { createWakeUpStore } from "../src/agents/wake-up";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { botSeat, seatText } from "../src/computer/computer-key";
 import { createDatabase } from "../src/db/client";
@@ -32,6 +33,7 @@ import { createPersonalSaasApp } from "../src/personal-saas/app";
 import { PERSONAL_BOT_WORK } from "../src/personal-saas/bot-work";
 import { workspaceIntegrationGrants } from "../src/personal-saas/integration-grants";
 import { personalSaasStore } from "../src/personal-saas/store";
+import { workspaceResourceOwner } from "../src/personal-saas/workspace-principal";
 import { workspaceBots } from "../src/personal-saas/workspace-bots";
 import type { WorkspaceComputerConfig } from "../src/personal-saas/workspace-computer";
 import { createWorkQueue } from "../src/work/queue";
@@ -2643,6 +2645,14 @@ for (const reason of [
     );
     await enter(signedIn);
     const target = await workspace(signedIn);
+    const followUp = await createWakeUpStore(database, {
+      now: () => new Date(now()),
+    }).schedule({
+      ownerUserId: workspaceResourceOwner(target.id),
+      agentId: target.personalAssistant.id,
+      dueAt: new Date(now() + 120_000),
+      reason: "Check the delivery status",
+    });
     const started = Promise.withResolvers<string>();
     const calls: string[] = [];
     const runApp = newApp(
@@ -2738,7 +2748,16 @@ for (const reason of [
           : cookie(await authenticate(account), "__Host-openbot-personal=");
       const state = await request("/api/workspace", restored);
       expect(state.status).toBe(200);
-      const { recovery } = await state.json();
+      const { recovery, interruptedBackgroundWork } = await state.json();
+      expect(interruptedBackgroundWork).toMatchObject([
+        {
+          key: followUp.id,
+          label: "Bot follow-up",
+          reason,
+          outcomeUnknown: false,
+          summary: "Check the delivery status",
+        },
+      ]);
       expect(recovery).toHaveLength(2);
       const [active, queued] = recovery;
       expect(active).toMatchObject({

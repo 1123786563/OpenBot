@@ -27,6 +27,7 @@ import {
   proactiveSuggestions,
 } from "../db/schema/proactive";
 import { workItems } from "../db/schema/work";
+import { createWorkQueue } from "../work/queue";
 import {
   type BindingTransport,
   type DeliveryBinding,
@@ -446,6 +447,7 @@ export function createDeliveryStore(database: Database) {
     async offerOutbox(
       input: DeliveryScope & {
         dedupeKey: string;
+        authorizedSince?: number;
         bindingId: string | null;
         deviceId: string | null;
         transport: BindingTransport | "push";
@@ -454,13 +456,24 @@ export function createDeliveryStore(database: Database) {
         requestId: string | null;
       },
     ) {
+      const { authorizedSince, ...delivery } = input;
       return database.transaction(async (tx) => {
         const [row] = await tx
           .insert(deliveryOutbox)
-          .values({ ...input, id: randomUUID() })
+          .values({ ...delivery, id: randomUUID() })
           .onConflictDoNothing()
           .returning();
-        if (row) await enqueue(tx, "delivery.outbound", row.id);
+        if (
+          row &&
+          (await createWorkQueue(tx).offer({
+            kind: "delivery.outbound",
+            key: row.id,
+            payload: { ownerUserId: row.ownerUserId },
+            authorizedSince,
+          })) === "refused"
+        ) {
+          throw new DeliveryRefusedError("Bot work authorization ended.");
+        }
         return row ?? null;
       });
     },

@@ -8,7 +8,7 @@ import {
   responsibilityRuns,
   responsibilityTriggers,
 } from "../db/schema/responsibilities";
-import { workItems } from "../db/schema/work";
+import { createWorkQueue } from "../work/queue";
 import { RESPONSIBILITY_RUN_KIND } from "./engine";
 import {
   type GoalRepeats,
@@ -57,12 +57,18 @@ export function createResponsibilityStore(
   async function queueRun(
     transaction: Transaction,
     runId: string,
+    ownerUserId: string,
     key = runId,
   ) {
-    await transaction
-      .insert(workItems)
-      .values({ kind: RESPONSIBILITY_RUN_KIND, key, payload: { runId } })
-      .onConflictDoNothing();
+    if (
+      (await createWorkQueue(transaction).offer({
+        kind: RESPONSIBILITY_RUN_KIND,
+        key,
+        payload: { runId, ownerUserId },
+      })) === "refused"
+    ) {
+      throw new ResponsibilityRefusedError("Bot work authorization ended.");
+    }
   }
   /**
    * Why this goal runs again and again (`GoalRepeats`), read where it already lives: its own flag,
@@ -342,7 +348,7 @@ export function createResponsibilityStore(
           await transaction
             .insert(responsibilityRuns)
             .values({ id: runId, responsibilityId: goal.id, eventId });
-          await queueRun(transaction, runId);
+          await queueRun(transaction, runId, goal.ownerUserId);
           runIds.push(runId);
         }
         return { eventId, duplicate: false, runIds };
@@ -545,7 +551,12 @@ export function createResponsibilityStore(
             error: null,
           })
           .where(eq(responsibilityRuns.id, runId));
-        await queueRun(transaction, runId, `${runId}:resume:${randomUUID()}`);
+        await queueRun(
+          transaction,
+          runId,
+          goal.ownerUserId,
+          `${runId}:resume:${randomUUID()}`,
+        );
         return true;
       });
     },

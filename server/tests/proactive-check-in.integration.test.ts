@@ -26,6 +26,7 @@ import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
 import { modelUsage } from "../src/db/schema/admin";
 import { agents, channels, users } from "../src/db/schema/core";
+import { personalSaasAccounts } from "../src/db/schema/personal-saas";
 import { deliveryOutbox } from "../src/db/schema/delivery";
 import { botLifecycle } from "../src/db/schema/lifecycle";
 import { mcpServers, mcpTools } from "../src/db/schema/plugins";
@@ -72,7 +73,7 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const suite = randomUUID().slice(0, 8);
-const owner = `check-in-owner-${suite}`;
+const owner = randomUUID();
 const inboxBot = `check-in-inbox-${suite}`;
 const calendarBot = `check-in-calendar-${suite}`;
 const mail = `check-in-mail-${suite}`;
@@ -2176,4 +2177,53 @@ describe("what a check-in costs and how it is asked", () => {
       await controls.stop();
     }
   });
+});
+
+test("a manual Check-in issued before a disablement does not replay after recovery", async () => {
+  const { engine, requests } = replica({});
+  const at = Date.now();
+  const active = {
+    source: "active" as const,
+    observedAt: at,
+    confirmedAt: at,
+    epoch: 0,
+    disablements: [],
+  };
+  await database.insert(personalSaasAccounts).values({
+    id: owner,
+    issuer: "test",
+    subject: owner,
+    email: "check-in@example.test",
+    status: active,
+  });
+  try {
+    expect(await engine.runNow(owner, inbox.id)).toEqual({ queued: true });
+    await database
+      .update(personalSaasAccounts)
+      .set({
+        status: {
+          ...active,
+          epoch: 1,
+          executionCutoffs: [
+            { epoch: 1, reason: "account_disabled", cutoffAt: at + 60_000 },
+          ],
+        },
+      })
+      .where(eq(personalSaasAccounts.id, owner));
+    await engine.sweep();
+    expect(requests).toHaveLength(0);
+    expect(
+      await createWorkQueue(database).interrupted("proactive.run", owner),
+    ).toMatchObject([
+      { interruption: { reason: "account_disabled", outcomeUnknown: false } },
+    ]);
+    expect(await engine.runNow(owner, inbox.id)).toEqual({ queued: true });
+    await engine.sweep();
+    expect(requests).toHaveLength(1);
+  } finally {
+    await database.delete(workItems).where(eq(workItems.accountId, owner));
+    await database
+      .delete(personalSaasAccounts)
+      .where(eq(personalSaasAccounts.id, owner));
+  }
 });
