@@ -28,8 +28,17 @@ const readBody = z.strictObject({
 });
 
 type Session =
-  | { kind: "authorized"; accountId: string; subject: string }
-  | { kind: "unconfirmed" }
+  | {
+      kind: "authorized";
+      accountId: string;
+      subject: string;
+      isLive: () => Promise<boolean>;
+      remainingMs: () => number;
+      run: <T>(
+        operation: (support: ReturnType<typeof supportAccess>) => Promise<T>,
+      ) => Promise<T | undefined>;
+    }
+  | { kind: "unconfirmed"; reason: string; cutoffAt: number | null }
   | { kind: "signed-out" };
 
 export function supportRoutes(input: {
@@ -53,7 +62,10 @@ export function supportRoutes(input: {
   routes.use(`${operator}/*`, async (context, next) => {
     const session = await input.authorize(context);
     if (session.kind === "unconfirmed")
-      return context.json({ error: "account_status_unconfirmed" }, 503);
+      return context.json(
+        { error: session.reason, cutoffAt: session.cutoffAt },
+        503,
+      );
     if (session.kind === "signed-out")
       return context.json({ error: "sign_in_required" }, 401);
     if (!subjects.has(session.subject))
@@ -65,7 +77,10 @@ export function supportRoutes(input: {
   routes.use(`${owner}/*`, async (context, next) => {
     const session = await input.authorize(context);
     if (session.kind === "unconfirmed")
-      return context.json({ error: "account_status_unconfirmed" }, 503);
+      return context.json(
+        { error: session.reason, cutoffAt: session.cutoffAt },
+        503,
+      );
     if (session.kind === "signed-out")
       return context.json({ error: "sign_in_required" }, 401);
     context.set("session", session);
@@ -76,7 +91,7 @@ export function supportRoutes(input: {
     const target = workspaceParams.safeParse(context.req.param());
     const data =
       target.success && (await support.metadata(target.data.workspaceId));
-    return data
+    return data && (await context.var.session.isLive())
       ? context.json(data)
       : context.json({ error: "workspace_not_found" }, 404);
   });
@@ -88,13 +103,15 @@ export function supportRoutes(input: {
     );
     if (!target.success || !body.success)
       return context.json({ error: "invalid_support_request" }, 400);
-    const { accountId, subject } = context.var.session;
-    const result = await support.request({
-      ...target.data,
-      ...body.data,
-      operatorId: accountId,
-      actorSubject: subject,
-    });
+    const { accountId, subject, run } = context.var.session;
+    const result = await run((support) =>
+      support.request({
+        ...target.data,
+        ...body.data,
+        operatorId: accountId,
+        actorSubject: subject,
+      }),
+    );
     return result
       ? context.json(result, 201)
       : context.json({ error: "workspace_not_found" }, 404);
@@ -109,14 +126,16 @@ export function supportRoutes(input: {
     );
     if (!target.success || !body.success)
       return context.json({ error: "invalid_support_read" }, 400);
-    const { accountId, subject } = context.var.session;
-    const result = await support.read({
-      ...target.data,
-      ...body.data,
-      operatorId: accountId,
-      actorSubject: subject,
-    });
-    return result
+    const { accountId, subject, run, isLive } = context.var.session;
+    const result = await run((support) =>
+      support.read({
+        ...target.data,
+        ...body.data,
+        operatorId: accountId,
+        actorSubject: subject,
+      }),
+    );
+    return result && (await isLive())
       ? context.json(result)
       : context.json({ error: "resource_unavailable" }, 404);
   });
@@ -129,7 +148,7 @@ export function supportRoutes(input: {
         target.data.workspaceId,
         context.var.session.accountId,
       ));
-    return history
+    return history && (await context.var.session.isLive())
       ? context.json(history)
       : context.json({ error: "workspace_not_found" }, 404);
   });
@@ -142,7 +161,8 @@ export function supportRoutes(input: {
       workspaceId,
       context.var.session.accountId,
     );
-    if (!history) return context.notFound();
+    if (!history || !(await context.var.session.isLive()))
+      return context.notFound();
     const path = `/api/workspaces/${workspaceId}/support-requests`;
     const tickets = new Map(
       history.requests.map(({ id, ticketId }) => [id, ticketId]),
@@ -201,6 +221,7 @@ export function supportRoutes(input: {
           : html`<p>No support accesses.</p>`
       }
       </section>
+      <script src="/assets/session.js" data-access-ms="${context.var.session.remainingMs()}" defer></script>
     `,
       ),
     );
@@ -210,10 +231,12 @@ export function supportRoutes(input: {
     const target = ownerAction.safeParse(context.req.param());
     const updated =
       target.success &&
-      (await support.decide({
-        ...target.data,
-        accountId: context.var.session.accountId,
-      }));
+      (await context.var.session.run((support) =>
+        support.decide({
+          ...target.data,
+          accountId: context.var.session.accountId,
+        }),
+      ));
     if (!updated || !target.success)
       return context.json({ error: "support_request_unavailable" }, 404);
     if (

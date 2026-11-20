@@ -26,6 +26,7 @@ import {
   personalWorkspaceDefaultBots,
   personalWorkspaces,
 } from "../db/schema/personal-saas";
+import { type AccountGrant, accountDecision } from "./account-access";
 
 export const sessionSeconds = 8 * 60 * 60;
 
@@ -33,7 +34,7 @@ function digest(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+export type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 function liveSession(token: string) {
   return and(
@@ -100,37 +101,95 @@ export function personalConversationScope(
     );
 }
 
-export function personalSaasStore(database: Database | Transaction) {
+export function personalSaasStore(
+  database: Database | Transaction,
+  now = Date.now,
+) {
+  async function withAuthorizedSession<T>(
+    grant: AccountGrant,
+    token: string,
+    operation: (tx: Transaction) => Promise<T>,
+  ) {
+    const { accountId } = grant;
+    return database.transaction(async (tx) => {
+      const [account] = await tx
+        .select({ status: personalSaasAccounts.status })
+        .from(personalSaasAccounts)
+        .where(eq(personalSaasAccounts.id, accountId))
+        .for("update");
+      const access = accountDecision(account?.status ?? null, now());
+      if (
+        access.kind === "denied" ||
+        access.epoch !== grant.epoch ||
+        now() >= grant.expiresAt
+      )
+        return { authorized: false } as const;
+      const [session] = await tx
+        .select({ tokenHash: personalSaasSessions.tokenHash })
+        .from(personalSaasSessions)
+        .where(
+          and(
+            liveSession(token),
+            eq(personalSaasSessions.accountId, accountId),
+          ),
+        )
+        .for("update");
+      if (!session) return { authorized: false } as const;
+
+      return { authorized: true, result: await operation(tx) } as const;
+    });
+  }
+
   return {
-    async signIn(input: {
+    withAuthorizedSession,
+    async bindIdentity(input: {
       issuer: string;
       subject: string;
       email: string;
+    }) {
+      const [account] = await database
+        .insert(personalSaasAccounts)
+        .values({
+          issuer: input.issuer,
+          subject: input.subject,
+          email: input.email,
+        })
+        .onConflictDoUpdate({
+          target: [personalSaasAccounts.issuer, personalSaasAccounts.subject],
+          set: { email: input.email },
+        })
+        .returning({ id: personalSaasAccounts.id });
+      if (!account) throw new Error("Personal account was not saved");
+      return account.id;
+    },
+    async signIn(input: {
+      accountId: string;
+      loginStartedAt: number;
       encryptedAccessToken: string;
     }) {
       const token = randomBytes(32).toString("base64url");
-      await database.transaction(async (tx) => {
+      return database.transaction(async (tx) => {
         const [account] = await tx
-          .insert(personalSaasAccounts)
-          .values({
-            issuer: input.issuer,
-            subject: input.subject,
-            email: input.email,
-          })
-          .onConflictDoUpdate({
-            target: [personalSaasAccounts.issuer, personalSaasAccounts.subject],
-            set: { email: input.email },
-          })
-          .returning({ id: personalSaasAccounts.id });
-        if (!account) throw new Error("Personal account was not saved");
+          .select({ status: personalSaasAccounts.status })
+          .from(personalSaasAccounts)
+          .where(eq(personalSaasAccounts.id, input.accountId))
+          .for("update");
+        const access = accountDecision(account?.status ?? null, now());
+        const disabledAt = account?.status?.disablements.at(-1)?.effectiveAt;
+        if (
+          access.kind === "denied" ||
+          (disabledAt !== undefined && input.loginStartedAt <= disabledAt)
+        )
+          return undefined;
+
         await tx.insert(personalSaasSessions).values({
           tokenHash: digest(token),
-          accountId: account.id,
+          accountId: input.accountId,
           casdoorAccessToken: input.encryptedAccessToken,
           expiresAt: new Date(Date.now() + sessionSeconds * 1000),
         });
+        return token;
       });
-      return token;
     },
     async session(token: string) {
       const [session] = await database
@@ -138,7 +197,8 @@ export function personalSaasStore(database: Database | Transaction) {
           accountId: personalSaasAccounts.id,
           issuer: personalSaasAccounts.issuer,
           subject: personalSaasAccounts.subject,
-          encryptedAccessToken: personalSaasSessions.casdoorAccessToken,
+          status: personalSaasAccounts.status,
+          expiresAt: personalSaasSessions.expiresAt,
         })
         .from(personalSaasSessions)
         .innerJoin(
@@ -148,13 +208,6 @@ export function personalSaasStore(database: Database | Transaction) {
         .where(liveSession(token));
       return session;
     },
-    async isSessionLive(token: string) {
-      const [session] = await database
-        .select({ tokenHash: personalSaasSessions.tokenHash })
-        .from(personalSaasSessions)
-        .where(liveSession(token));
-      return session !== undefined;
-    },
     async signOut(token: string) {
       await database
         .delete(personalSaasSessions)
@@ -162,7 +215,7 @@ export function personalSaasStore(database: Database | Transaction) {
     },
     async revokeAllSessions(input: { token: string; accountId: string }) {
       return database.transaction(async (tx) => {
-        // Sign-in's account upsert and all-device revocation serialize on this row.
+        // Sign-in and all-device revocation serialize on this row.
         const [account] = await tx
           .select({ id: personalSaasAccounts.id })
           .from(personalSaasAccounts)
@@ -215,8 +268,9 @@ export function personalSaasStore(database: Database | Transaction) {
         )
         .limit(50);
     },
-    async provision(accountId: string) {
-      return database.transaction(async (tx) => {
+    async provision(grant: AccountGrant, token: string) {
+      const { accountId } = grant;
+      const outcome = await withAuthorizedSession(grant, token, async (tx) => {
         await tx
           .insert(personalWorkspaces)
           .values({ ownerId: accountId })
@@ -254,6 +308,7 @@ export function personalSaasStore(database: Database | Transaction) {
           .insert(personalWorkspaceDefaultBots)
           .values({ workspaceId: workspace.id, agentId });
       });
+      return outcome.authorized;
     },
   };
 }

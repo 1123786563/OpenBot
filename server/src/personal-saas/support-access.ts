@@ -23,7 +23,7 @@ import {
   routineRuns,
   routines,
 } from "../db/schema";
-import { personalConversationScope } from "./store";
+import { personalConversationScope, type Transaction } from "./store";
 import type { SupportResource } from "./support-contract";
 
 type RequestRow = typeof personalSupportRequests.$inferSelect;
@@ -103,7 +103,7 @@ async function supportResourceContent(
   }
 }
 
-export function supportAccess(database: Database) {
+export function supportAccess(database: Database | Transaction) {
   const requests = personalSupportRequests;
   const accesses = personalSupportAccesses;
   const unexpired = gt(requests.expiresAt, sql`clock_timestamp()`);

@@ -24,9 +24,8 @@ const exchangeRequest = clientState
   .extend({ code: proof, code_verifier: proof })
   .strict();
 const sessionIdentity = z.object({
-  issuer: z.string(),
-  subject: z.string(),
-  email: z.string(),
+  accountId: z.uuid(),
+  loginStartedAt: z.number(),
   encryptedAccessToken: z.string(),
 });
 export type NativeAttempt = z.infer<typeof startRequest>;
@@ -47,9 +46,11 @@ export function bearerSession(header: string | undefined) {
 export function nativeAuth({
   database,
   encryptionKey,
+  now,
 }: {
   database: Database;
   encryptionKey: string;
+  now: () => number;
 }) {
   const routes = new Hono();
 
@@ -88,9 +89,9 @@ export function nativeAuth({
         handoffSeal,
       );
       if (!identity) throw new Error("Could not decrypt native handoff");
-      return personalSaasStore(tx).signIn(
-        sessionIdentity.parse(JSON.parse(identity)),
-      );
+      const pending = sessionIdentity.safeParse(JSON.parse(identity));
+      if (!pending.success) return null;
+      return personalSaasStore(tx, now).signIn(pending.data);
     });
     if (!token) return context.json({ error: "invalid_exchange" }, 400);
     return context.json({ token, expiresIn: sessionSeconds });

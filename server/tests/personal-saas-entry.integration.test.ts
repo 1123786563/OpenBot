@@ -15,6 +15,10 @@ import {
   workItems,
 } from "../src/db/schema";
 import { personalSaasNativeCodes } from "../src/db/schema/personal-saas";
+import {
+  type AccountDisablement,
+  createAccountAccess,
+} from "../src/personal-saas/account-access";
 import { createPersonalSaasApp } from "../src/personal-saas/app";
 import { workspaceIntegrationGrants } from "../src/personal-saas/integration-grants";
 import { personalSaasStore } from "../src/personal-saas/store";
@@ -42,6 +46,7 @@ type Account = {
   email: string;
   verified?: boolean;
   active?: boolean;
+  disablements?: AccountDisablement[];
 };
 const authorizeCodes = new Map<
   string,
@@ -53,7 +58,11 @@ const authorizeCodes = new Map<
     redirectUri?: string;
   }
 >();
+const statusAccounts = new Map<string, Account>();
+let clockTime: number | undefined;
+const now = () => clockTime ?? Date.now();
 const accessTokens = new Map<string, Account>();
+const snapshotGates = new WeakMap<Account, () => Promise<void>>();
 const introspectionGates = new WeakMap<Account, () => Promise<void>>();
 let provider: ReturnType<typeof Bun.serve>;
 let app: ReturnType<typeof createPersonalSaasApp>;
@@ -96,6 +105,9 @@ beforeAll(() => {
             return new Response(null, { status: 400 });
           const access = crypto.randomUUID();
           accessTokens.set(access, entry.account);
+          if ((entry.redirectUri ?? callback) === callback) {
+            statusAccounts.set(entry.account.sub, entry.account);
+          }
           const id = await new SignJWT({
             nonce: entry.nonce,
             auth_time: entry.authTime,
@@ -126,6 +138,28 @@ beforeAll(() => {
             email_verified: account.verified,
           });
         }
+        case "/account-status": {
+          const form = await request.formData();
+          const subject = String(form.get("subject"));
+          const account = statusAccounts.get(subject);
+          if (
+            form.get("client_id") !== clientId ||
+            form.get("client_secret") !== clientSecret ||
+            account?.active === undefined
+          )
+            return new Response(null, { status: 503 });
+          const snapshot = Response.json({
+            issuer,
+            subject,
+            active: account.active,
+            observedAt: now(),
+            disablements: account.disablements ?? [],
+          });
+          const gate = snapshotGates.get(account);
+          snapshotGates.delete(account);
+          await gate?.();
+          return snapshot;
+        }
         case "/api/login/oauth/introspect": {
           const form = await request.formData();
           if (
@@ -154,6 +188,7 @@ function newApp(db = database) {
     {
       origin,
       supportSubjects: [supportSubject, otherSupportSubject],
+      now,
       encryptionKey: Buffer.alloc(32, 7).toString("base64"),
       casdoor: {
         issuer,
@@ -161,6 +196,7 @@ function newApp(db = database) {
           "/.well-known/openid-configuration",
           provider.url,
         ),
+        accountStatusUrl: new URL("/account-status", provider.url),
         clientId,
         clientSecret,
         allowLoopbackHttp: true,
@@ -408,17 +444,31 @@ test("status loss during preparation blocks entry and the original session can r
     verified: true,
     active: true,
   };
-  const session = cookie(
-    await authenticate(account),
-    "__Host-openbot-personal=",
-  );
-  account.active = undefined;
-  expect((await enter(session)).status).toBe(503);
-  account.active = true;
-  expect(
-    (await send("/api/workspace", { headers: { cookie: session } })).status,
-  ).toBe(202);
-  expect((await enter(session)).headers.get("location")).toBe("/workspace");
+  const confirmedAt = Date.now();
+  clockTime = confirmedAt;
+  try {
+    const session = cookie(
+      await authenticate(account),
+      "__Host-openbot-personal=",
+    );
+    account.active = undefined;
+    clockTime = confirmedAt + 59_999;
+    const headers = { cookie: session };
+    expect((await send("/api/workspace", { headers })).status).toBe(202);
+    clockTime = confirmedAt + 60_000;
+    const denied = await send("/api/workspace", { headers });
+    expect(denied.status).toBe(503);
+    expect(await denied.json()).toEqual({
+      error: "account_status_unconfirmed",
+      cutoffAt: confirmedAt + 60_000,
+    });
+    expect((await enter(session)).status).toBe(503);
+    account.active = true;
+    expect((await send("/api/workspace", { headers })).status).toBe(202);
+    expect((await enter(session)).headers.get("location")).toBe("/workspace");
+  } finally {
+    clockTime = undefined;
+  }
 });
 
 test("cross-site forms cannot provision or end a Personal SaaS session", async () => {
@@ -490,14 +540,14 @@ function exchangeNative(body: Record<string, unknown>, requestOrigin?: string) {
   });
 }
 
-test("Web, iOS, and Android share the owner’s workspace and conversation history", async () => {
+test("Web, Desktop, iOS, and Android share the owner’s workspace and conversation history", async () => {
   const owner = {
     sub: crypto.randomUUID(),
     email: "mobile@example.com",
     active: true,
     verified: true,
   };
-  const native = async (client: "ios" | "android") => {
+  const native = async (client: "ios" | "android" | "desktop") => {
     const { start, ...proof } = await nativeAttempt(client);
     const finish = await completeBrowserLogin(start, owner);
     expect(
@@ -507,7 +557,9 @@ test("Web, iOS, and Android share the owner’s workspace and conversation histo
     ).toBe(false);
     const deepLink = new URL(finish.headers.get("location") ?? "");
     expect(`${deepLink.protocol}//${deepLink.host}${deepLink.pathname}`).toBe(
-      "openbotmobile://auth/personal-saas",
+      client === "desktop"
+        ? "openbot://auth/personal-saas"
+        : "openbotmobile://auth/personal-saas",
     );
     expect(deepLink.searchParams.get("state")).toBe(proof.state);
     const exchange = await exchangeNative({
@@ -520,12 +572,13 @@ test("Web, iOS, and Android share the owner’s workspace and conversation histo
     return { authorization: `Bearer ${token}` };
   };
   const before = await botProfiles.list(profileReader);
-  const [web, ios, android] = await Promise.all([
+  const [web, ios, android, desktop] = await Promise.all([
     authenticate(owner).then((reply) =>
       cookie(reply, "__Host-openbot-personal="),
     ),
     native("ios"),
     native("android"),
+    native("desktop"),
   ]);
   expect(ios.authorization).not.toBe(android.authorization);
   expect(web).not.toContain(ios.authorization.slice(7));
@@ -537,18 +590,22 @@ test("Web, iOS, and Android share the owner’s workspace and conversation histo
       })
     ).status,
   ).toBe(403);
-  const preparing = await send("/api/workspace", { headers: ios });
+  const preparing = await send("/api/workspace", { headers: desktop });
   expect(preparing.status).toBe(202);
-  const [webReady, iosReady, androidReady] = await Promise.all([
+  const [webReady, iosReady, androidReady, desktopReady] = await Promise.all([
     enter(web),
     send("/workspace/prepare", { method: "POST", headers: ios }),
     send("/workspace/prepare", { method: "POST", headers: android }),
+    send("/workspace/prepare", { method: "POST", headers: desktop }),
   ]);
-  expect([webReady.status, iosReady.status, androidReady.status]).toEqual([
-    303, 204, 204,
-  ]);
+  expect([
+    webReady.status,
+    iosReady.status,
+    androidReady.status,
+    desktopReady.status,
+  ]).toEqual([303, 204, 204, 204]);
   const expected = await workspace(web);
-  for (const headers of [ios, android]) {
+  for (const headers of [ios, android, desktop]) {
     const ready = await send("/api/workspace", { headers });
     expect(ready.status).toBe(200);
     expect(await ready.json()).toEqual(expected);
@@ -613,7 +670,7 @@ test("Web, iOS, and Android share the owner’s workspace and conversation histo
   const ownHistory = [
     { id: ownChannel, title: "Weekend <plans>", preview: "Saturday at nine" },
   ];
-  for (const headers of [{ cookie: web }, ios, android]) {
+  for (const headers of [{ cookie: web }, ios, android, desktop]) {
     const history = await send(historyPath, { headers });
     expect(history.status).toBe(200);
     expect(history.headers.get("cache-control")).toBe("no-store");
@@ -692,6 +749,38 @@ test("native exchange is bound to its app proof and can only start one session",
   ]);
   expect(outcomes.map((reply) => reply.status).sort()).toEqual([200, 400]);
   expect((await exchangeNative(exchange)).status).toBe(400);
+});
+
+test("a Desktop handoff issued before a disablement cannot create a session after recovery", async () => {
+  const account: Account = {
+    sub: crypto.randomUUID(),
+    email: "desktop-cutoff@example.com",
+    active: true,
+    verified: true,
+  };
+  const { start, ...proof } = await nativeAttempt("desktop");
+  const finish = await completeBrowserLogin(start, account);
+  const link = new URL(finish.headers.get("location") ?? "");
+  const code = link.searchParams.get("code");
+  expect(code).toBeTruthy();
+
+  account.disablements = [{ id: crypto.randomUUID(), effectiveAt: now() }];
+  await app.refreshAccounts();
+  expect((await exchangeNative({ ...proof, code })).status).toBe(400);
+
+  const next = await nativeAttempt("desktop");
+  const nextFinish = await completeBrowserLogin(next.start, account);
+  const nextLink = new URL(nextFinish.headers.get("location") ?? "");
+  expect(
+    (
+      await exchangeNative({
+        client: next.client,
+        state: next.state,
+        code_verifier: next.code_verifier,
+        code: nextLink.searchParams.get("code"),
+      })
+    ).status,
+  ).toBe(200);
 });
 
 test("the native handoff expires and only returns to registered apps", async () => {
@@ -940,12 +1029,10 @@ test("fresh same-identity verification revokes every old session and a later sig
   await enter(unrelated);
   const original = await workspace(second);
   const sessions = personalSaasStore(database);
-  const sharedToken = await sessions.signIn({
-    issuer,
-    subject: account.sub,
-    email: account.email,
-    encryptedAccessToken: "not used at the store boundary",
-  });
+  const sharedToken = cookie(
+    await authenticate(account),
+    "__Host-openbot-personal=",
+  ).slice("__Host-openbot-personal=".length);
   expect(await sessions.session(sharedToken)).toBeDefined();
   await withReplica(async (connect) => {
     const live = await Promise.all(
@@ -1635,3 +1722,138 @@ test("support content requires the owner's approval for the exact operator, tick
     "Expired",
   );
 }, 15000);
+test("a short disablement revokes both sessions even after Casdoor recovers", async () => {
+  const account: Account = {
+    sub: crypto.randomUUID(),
+    email: "brief@example.com",
+    verified: true,
+    active: true,
+  };
+  const first = cookie(await authenticate(account), "__Host-openbot-personal=");
+  const second = cookie(
+    await authenticate(account),
+    "__Host-openbot-personal=",
+  );
+  const stream = await send("/api/auth/session/events", {
+    headers: { cookie: second },
+  });
+  expect(stream.status).toBe(200);
+  account.active = false;
+  account.disablements = [{ id: crypto.randomUUID(), effectiveAt: now() - 1 }];
+  account.active = true;
+  expect(
+    (await send("/api/workspace", { headers: { cookie: first } })).status,
+  ).toBe(401);
+  expect(await stream.text()).toContain("event: signed-out");
+  expect(
+    (await send("/api/workspace", { headers: { cookie: second } })).status,
+  ).toBe(401);
+  expect((await authenticate(account)).status).toBe(303);
+});
+
+test("a late active response cannot undo a recorded disablement across replicas", async () => {
+  const account: Account = {
+    sub: crypto.randomUUID(),
+    email: "race@example.com",
+    verified: true,
+    active: true,
+  };
+  const session = cookie(
+    await authenticate(account),
+    "__Host-openbot-personal=",
+  );
+  const stored = await personalSaasStore(database).session(
+    session.split("=")[1],
+  );
+  if (!stored) throw new Error("Expected an Application Session");
+  const access = createAccountAccess(
+    database,
+    () => Promise.reject(new Error("offline")),
+    now,
+  );
+  const permit = await access.decision(stored.accountId);
+  if (permit.kind !== "active") throw new Error("Expected an execution grant");
+  const grant = {
+    accountId: stored.accountId,
+    epoch: permit.epoch,
+    expiresAt: permit.expiresAt,
+  };
+
+  const captured = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  snapshotGates.set(account, () => {
+    captured.resolve();
+    return release.promise;
+  });
+  const request = new Request(new URL("/api/workspace", origin), {
+    headers: { cookie: session },
+  });
+  const pending = newApp().fetch(request.clone());
+  try {
+    await captured.promise;
+    account.active = false;
+    const effectiveAt = now();
+    account.disablements = [{ id: crypto.randomUUID(), effectiveAt }];
+    expect((await app.fetch(request)).status).toBe(401);
+    expect(await access.verify(grant)).toEqual({
+      kind: "denied",
+      reason: "account_disabled",
+      cutoffAt: effectiveAt + 60_000,
+    });
+    release.resolve();
+    expect((await pending).status).toBe(401);
+    expect((await access.verify(grant)).kind).toBe("denied");
+    account.active = true;
+    expect((await authenticate(account)).status).toBe(303);
+    expect((await access.verify(grant)).kind).toBe("denied");
+  } finally {
+    release.resolve();
+    await pending;
+  }
+});
+
+test("an idle live stream closes at the established deadline during an account status outage", async () => {
+  const account: Account = {
+    sub: crypto.randomUUID(),
+    email: "offline@example.com",
+    verified: true,
+    active: true,
+  };
+  const confirmedAt = Date.now();
+  clockTime = confirmedAt;
+  try {
+    const session = cookie(
+      await authenticate(account),
+      "__Host-openbot-personal=",
+    );
+    const headers = { cookie: session };
+    const response = await send("/api/auth/session/events", { headers });
+    const reader = await readSessionStream(response);
+    try {
+      account.active = undefined;
+      clockTime = confirmedAt + 60_000;
+      const denial = await send("/api/workspace", { headers });
+      expect(denial.status).toBe(503);
+      expect(await denial.json()).toEqual({
+        error: "account_status_unconfirmed",
+        cutoffAt: confirmedAt + 60_000,
+      });
+      const decoder = new TextDecoder();
+      let events = "";
+      for (
+        let chunk = await reader.read();
+        !chunk.done;
+        chunk = await reader.read()
+      ) {
+        events += decoder.decode(chunk.value, { stream: true });
+      }
+      expect(events).toContain("event: account-status-unconfirmed");
+      account.active = true;
+      expect((await send("/api/workspace", { headers })).status).toBe(202);
+    } finally {
+      await reader.cancel();
+    }
+  } finally {
+    clockTime = undefined;
+  }
+});

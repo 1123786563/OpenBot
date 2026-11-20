@@ -16,6 +16,14 @@ import {
 } from "../../personal-saas/support-contract";
 import { agentProfiles } from "./coworker";
 
+export type AccountStatus = {
+  source: "active" | "disabled" | "ambiguous";
+  observedAt: number;
+  confirmedAt: number | null;
+  epoch: number;
+  disablements: { id: string; effectiveAt: number }[];
+};
+
 export const personalSaasAccounts = pgTable(
   "personal_saas_accounts",
   {
@@ -23,6 +31,7 @@ export const personalSaasAccounts = pgTable(
     issuer: text().notNull(),
     subject: text().notNull(),
     email: text().notNull(),
+    status: jsonb("account_status").$type<AccountStatus>(),
   },
   (table) => [unique().on(table.issuer, table.subject)],
 );
