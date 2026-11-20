@@ -26,6 +26,7 @@ import {
   type PageFrameStore,
 } from "./computer/page-frames";
 import type { ProactiveStore } from "./proactive/store";
+import { writeRuntimeLog } from "./telemetry/runtime-log";
 
 /**
  * The advisory lock this takes, as an arbitrary but fixed number.
@@ -185,25 +186,21 @@ export function startRetentionSweeps(
         });
     }
     if (!sweepsAudit || !retentionDays) return;
+    const startedAt = performance.now();
     void sweepAuditTrail(databaseUrl, retentionDays)
       .then(({ deleted }) => {
         if (deleted === null || deleted === 0) return;
-        console.info(
-          JSON.stringify({
-            type: "audit-retention-swept",
-            deleted,
-            retentionDays,
-          }),
-        );
+        writeRuntimeLog("audit_retention_swept", {
+          deleted,
+          retention_days: retentionDays,
+          duration_ms: performance.now() - startedAt,
+        });
       })
-      .catch((error) => {
-        console.error(
-          JSON.stringify({
-            type: "audit-retention-failed",
-            note: "Old audit rows were not removed. The trail is intact; it is only larger than the policy asks for.",
-            error: String(error),
-          }),
-        );
+      .catch(() => {
+        writeRuntimeLog("audit_retention_failed", {
+          retention_days: retentionDays,
+          duration_ms: performance.now() - startedAt,
+        });
       });
   };
 

@@ -22,6 +22,7 @@
 import { join } from "node:path";
 import postgres, { type Sql } from "postgres";
 import { applyMigrations } from "../src/db/apply-migrations";
+import { writeRuntimeLog } from "../src/telemetry/runtime-log";
 
 /**
  * The whole run against one connection, and the connection released afterwards.
@@ -34,6 +35,7 @@ export async function runMigrations(
   migrationsFolder: string,
   apply: typeof applyMigrations = applyMigrations,
 ): Promise<void> {
+  const startedAt = performance.now();
   try {
     /*
      * Guarded, because the migrator's own idea of "applied" is one number.
@@ -45,8 +47,10 @@ export async function runMigrations(
      * unguarded migrator walks past them and prints the line below anyway.
      */
     await apply(client, migrationsFolder);
-    console.info(JSON.stringify({ type: "migrations-applied", status: "ok" }));
   } catch (failure) {
+    writeRuntimeLog("migration_failed", {
+      duration_ms: performance.now() - startedAt,
+    });
     /*
      * Released whatever happened, so a failure exits rather than hanging on an open socket — but
      * NOT with an awaited `end()` in a `finally`. A rejection there replaces the error in flight,
@@ -54,19 +58,21 @@ export async function runMigrations(
      * migrations a database walked past would leave as a bare socket error. The release's own
      * failure is reported beside it, and the run's failure is the one that propagates.
      */
-    await client.end({ timeout: 5 }).catch((teardown: unknown) => {
-      console.error(
-        JSON.stringify({
-          type: "migrations-connection-release-failed",
-          error:
-            teardown instanceof Error ? teardown.message : String(teardown),
-        }),
-      );
+    await client.end({ timeout: 5 }).catch(() => {
+      writeRuntimeLog("migration_connection_release_failed");
     });
     throw failure;
   }
   // After a clean run a failed release has nothing to hide, so it is the run's outcome.
-  await client.end({ timeout: 5 });
+  try {
+    await client.end({ timeout: 5 });
+  } catch (failure) {
+    writeRuntimeLog("migration_connection_release_failed");
+    throw failure;
+  }
+  writeRuntimeLog("migrations_applied", {
+    duration_ms: performance.now() - startedAt,
+  });
 }
 
 if (import.meta.main) {

@@ -41,7 +41,7 @@ export type OpenBotRuntimeRecord = OpenBotEnvelope<
   typeof RUNTIME_SCHEMA_VERSION
 > & {
   stream: "openbot_runtime";
-  canonical_source: "openbot.stdout";
+  canonical_source: "openbot.stdout" | "openbot.stderr";
   data_class: "runtime";
   occurred_at: string;
   severity: "debug" | "info" | "warn" | "error";
