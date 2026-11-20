@@ -61,7 +61,8 @@ const config = loadConfig(
     INTELLIGENCE_BROWSER_GATEWAY_WS_URL: "ws://localhost:7103",
   }),
 );
-if (!config.runtime.intelligence) throw new Error("Expected configured Intelligence fixture.");
+if (!config.runtime.intelligence)
+  throw new Error("Expected configured Intelligence fixture.");
 const intelligenceApi = config.runtime.intelligence.apiUrl.replace(/\/$/, "");
 const roleRepository: RoleRepository = { rolesForUser: async () => ["user"] };
 const getSession = async ({ headers }: { headers: Headers }) => {

@@ -52,6 +52,7 @@ import {
   stopRecorder,
 } from "@openbot/toolkit/run-stop";
 import { historyOrEmpty } from "@openbot/toolkit/thread-history";
+import { Hono } from "hono";
 import { defer, from, switchMap } from "rxjs";
 import { z } from "zod";
 import {
@@ -66,6 +67,7 @@ import {
   type PlanModelConfig,
   planModelForEnvironment,
 } from "./agents/plan-model";
+import type { AgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
 import {
   type RefusingProvider,
@@ -98,15 +100,13 @@ import {
   resolveAttachmentParts,
   type StoredAttachment,
 } from "./channels/attachment-parts";
+import { createDirectChatRoutes } from "./channels/direct-chat";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { DeploymentConfig } from "./config";
+import type { Database } from "./db/client";
 import { observeModelConnection } from "./desktop-connection-failure";
 import { desktopTelemetryProperties } from "./desktop-telemetry";
 import { currentEdition } from "./edition";
-import { Hono } from "hono";
-import type { AgentProfileStore } from "./agents/profile-store";
-import { createDirectChatRoutes } from "./channels/direct-chat";
-import type { Database } from "./db/client";
 import {
   createIntelligenceClient,
   observeIntelligenceAuthentication,
@@ -125,11 +125,11 @@ import {
   type PersonalSkillSources,
 } from "./learning/runtime";
 import type { LearningSettingsStore } from "./learning/settings";
+import { createManagedModel } from "./managed-model";
 import {
   type LoadPersonalMemory,
   PersonalMemoryMiddleware,
 } from "./memory/tools";
-import { createManagedModel } from "./managed-model";
 import { providerName } from "./model-billing";
 import { modelSourceFor, type RunChoice } from "./model-catalogue";
 import { pickedSkillGuidance } from "./plugins/picked-skill";
