@@ -6,15 +6,20 @@
  * is one journal out of step is to run it against such a database, which is what
  * `tests/migration-reach.integration.test.ts` does through this function.
  *
- * See `./migration-reach` for what is being checked and why the answer is a refusal rather than a
- * repair.
+ * See `./migration-reach` for the check that refuses unrecognized histories. This runner can
+ * reconcile the known pre-merge Personal SaaS trial journal.
  */
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { Sql, TransactionSql } from "postgres";
 import {
   type AppliedMigration,
+  type FolderMigration,
   type MigrationsJournal,
+  migratorHighWaterMark,
   migrationsOutOfReach,
   outOfReachRefusal,
   readMigrationFolder,
@@ -89,6 +94,75 @@ export class MigrationsOutOfReachError extends Error {
  */
 const MIGRATION_LOCK = "openbot:apply-migrations";
 
+const DIRECT_CHAT = {
+  tag: "0089_direct_chat_runs",
+  when: 1795157993281,
+  hash: "2d552c3475153bd86a04b0d069be6fe8702724ce3833efbcb043d9beaef4e540",
+};
+const TRIAL_ENTRY_HASH =
+  "4a64cab123b72eedff7d3e92ba3cb1f56e4a6abd2996c3dd4e97eb15efc73eec";
+const TRIAL_FIRST_STAMP = 1795158327499;
+const TRIAL_LAST_STAMP = 1795184939036;
+
+/** The trial shipped newer stamps before it received main's independent direct-chat table. */
+async function applyMissingDirectChatForTrial(
+  tx: TransactionSql,
+  journal: MigrationsJournal,
+  migrationsFolder: string,
+  folder: readonly FolderMigration[],
+  applied: readonly AppliedMigration[],
+  outOfReach: readonly FolderMigration[],
+): Promise<boolean> {
+  const [missing] = outOfReach;
+  if (
+    outOfReach.length !== 1 ||
+    missing?.tag !== DIRECT_CHAT.tag ||
+    missing.when !== DIRECT_CHAT.when ||
+    missing.hash !== DIRECT_CHAT.hash
+  ) {
+    return false;
+  }
+
+  const mark = migratorHighWaterMark(applied);
+  if (
+    mark === undefined ||
+    mark < TRIAL_FIRST_STAMP ||
+    mark > TRIAL_LAST_STAMP
+  ) {
+    return false;
+  }
+  const expected = folder.filter(
+    ({ when }) => when <= mark && when !== missing.when,
+  );
+  // Every applied hash must match its original stamp, including the shared history.
+  const appliedByStamp = new Map(
+    applied.map(({ createdAt, hash }) => [createdAt, hash]),
+  );
+  if (
+    appliedByStamp.get(TRIAL_FIRST_STAMP) !== TRIAL_ENTRY_HASH ||
+    appliedByStamp.size !== applied.length ||
+    applied.length !== expected.length ||
+    expected.some(({ when, hash }) => appliedByStamp.get(when) !== hash)
+  ) {
+    return false;
+  }
+
+  const sql = await readFile(
+    join(migrationsFolder, `${missing.tag}.sql`),
+    "utf8",
+  );
+  if (createHash("sha256").update(sql).digest("hex") !== missing.hash) {
+    return false;
+  }
+  for (const statement of sql.split("--> statement-breakpoint")) {
+    await tx.unsafe(statement);
+  }
+  const { migrationsSchema, migrationsTable } = journal;
+  await tx`insert into ${tx(migrationsSchema)}.${tx(migrationsTable)} (hash, created_at)
+    values (${missing.hash}, ${missing.when})`;
+  return true;
+}
+
 /**
  * Check, then migrate, with nothing able to commit in between.
  *
@@ -123,7 +197,17 @@ export async function applyMigrations(
 
     const applied = await appliedMigrations(tx, journal);
     const outOfReach = migrationsOutOfReach(folder, applied);
-    if (outOfReach.length > 0) {
+    if (
+      outOfReach.length > 0 &&
+      !(await applyMissingDirectChatForTrial(
+        tx,
+        journal,
+        migrationsFolder,
+        folder,
+        applied,
+        outOfReach,
+      ))
+    ) {
       throw new MigrationsOutOfReachError(
         outOfReachRefusal(outOfReach, folder, applied, journal),
       );

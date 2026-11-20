@@ -25,6 +25,15 @@ Apply the server migrations first. From the repository root:
 bun run --filter server start:personal-saas
 ```
 
+The merged journal keeps main's `0089_direct_chat_runs` and renumbers the
+trial migrations to `0090` through `0101`. Their SQL and journal timestamps
+are preserved. When the database has a complete prefix of the original trial
+journal, the migration command applies and records the missing direct-chat
+migration under the migration lock, then runs any pending trial migrations
+in the same transaction. An unrecognized journal with unreachable migrations
+still requires operator review. Keep the existing trial database and use the
+migration command above during rollout.
+
 The landing page sends participants to Casdoor for registration, verification, sign-in and account recovery. OpenBot uses the issuer and stable subject to retain ownership after a verified email change. Returning participants see their existing workspace. An interrupted setup can be retried from the preparation page. First entry creates the workspace and its default Personal Assistant Bot in one transaction. The workspace owns the Bot through `personal_workspace_default_bots`, and `/api/workspace` returns the canonical Bot ID. Bot execution is opt-in for private acceptance. Connections and Computers remain disabled in this trial entry point.
 
 Use the existing deployment commands for enterprise or local Personal edition.
@@ -212,7 +221,7 @@ and the actual Web, mobile, and desktop builds before setting trial capacity.
 
 ## Workspace closure cleanup and disaster recovery
 
-Apply migrations through `0100_personal_intelligence_cleanup` before rolling
+Apply migrations through `0101_personal_intelligence_cleanup` before rolling
 out this worker. Drain older trial workers during the rollout so every new
 Intelligence dispatch records its locator. The closure operation remains the access fence. Its PostgreSQL cleanup
 removes workspace content and the dedicated Assistant but keeps the workspace

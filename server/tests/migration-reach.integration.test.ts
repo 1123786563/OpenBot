@@ -1,7 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import {
   applyMigrations,
@@ -9,6 +10,7 @@ import {
   type MigrationsJournal,
   MigrationsOutOfReachError,
 } from "../src/db/apply-migrations";
+import { readMigrationFolder } from "../src/db/migration-reach";
 import { testDatabaseUrl } from "./support/database";
 
 /**
@@ -101,6 +103,78 @@ const exists = async (client: postgres.Sql, table: string) => {
   `;
   return row?.present !== null && row?.present !== undefined;
 };
+
+test.each(["main", "early trial", "full trial", "divergent trial"] as const)(
+  "migrating from the %s journal across the direct-chat and Personal SaaS merge",
+  async (startingPoint) => {
+    const folder = fileURLToPath(new URL("../drizzle", import.meta.url));
+    const migrations = await readMigrationFolder(folder);
+    const fromMain = startingPoint === "main";
+    const historical = migrations.filter(({ tag, when }) =>
+      fromMain
+        ? when <= 1795157993281
+        : tag !== "0089_direct_chat_runs" &&
+          when <=
+            (startingPoint === "early trial" ? 1795158327499 : 1795184939036),
+    );
+    const legacyFolder = await folderOf(
+      await Promise.all(
+        historical.map(async ({ tag, when }) => ({
+          tag,
+          when,
+          sql: await readFile(join(folder, `${tag}.sql`), "utf8"),
+        })),
+      ),
+    );
+    const client = postgres(await throwawayDatabase(), {
+      max: 1,
+      onnotice: () => {},
+    });
+    try {
+      await applyMigrations(client, legacyFolder);
+      const directChat = "direct_chat_runs";
+      expect(await exists(client, directChat)).toBe(fromMain);
+      if (!fromMain) {
+        await client`insert into personal_saas_accounts (issuer, subject, email)
+          values ('https://casdoor.example', 'participant', 'participant@example.test')`;
+        await client`insert into personal_workspaces (owner_id)
+          select id from personal_saas_accounts where subject = 'participant'`;
+      }
+      if (startingPoint === "divergent trial") {
+        await client`update drizzle.__drizzle_migrations set created_at = created_at + 1
+          where created_at = 1795184939036`;
+        await expect(applyMigrations(client, folder)).rejects.toBeInstanceOf(
+          MigrationsOutOfReachError,
+        );
+        expect(await exists(client, directChat)).toBe(false);
+        return;
+      }
+
+      await applyMigrations(client, folder);
+      await applyMigrations(client, folder);
+      expect(await exists(client, directChat)).toBe(true);
+      expect(await exists(client, "personal_intelligence_runs")).toBe(true);
+      expect([
+        ...(await client`select hash, created_at::text
+        from drizzle.__drizzle_migrations order by created_at::bigint`),
+      ]).toEqual(
+        migrations.map(({ hash, when }) => ({
+          hash,
+          created_at: String(when),
+        })),
+      );
+      if (!fromMain) {
+        expect([
+          ...(await client`select email from personal_saas_accounts
+          join personal_workspaces on personal_workspaces.owner_id = personal_saas_accounts.id
+          where subject = 'participant'`),
+        ]).toEqual([{ email: "participant@example.test" }]);
+      }
+    } finally {
+      await client.end({ timeout: 5 });
+    }
+  },
+);
 
 describe("a database that ran a branch before the branch was merged", () => {
   test("is refused, rather than migrated past the work it cannot reach", async () => {
