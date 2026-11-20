@@ -306,14 +306,15 @@ export function createTriggerIngressRoutes(deps: TriggerIngressDeps) {
             : undefined,
         );
         const bodyId = signedBodyId(raw);
+        const { occurredAt } = githubEventSubject(eventType, payload);
         const receipt =
-          deps.corsairEvents && repositoryId.success
+          deps.corsairEvents?.tracks("github") && repositoryId.success
             ? await deps.corsairEvents.receiveLegacy({
                 provider: "github",
                 source: String(repositoryId.data),
                 eventKey: bodyId.slice("body-".length),
                 eventType,
-                occurredAt: githubEventSubject(eventType, payload).occurredAt,
+                occurredAt,
                 triggerIds: [trigger.id],
               })
             : null;
@@ -323,6 +324,30 @@ export function createTriggerIngressRoutes(deps: TriggerIngressDeps) {
             queued: false,
             reason: "Corsair owns this source.",
           });
+        if (receipt && deps.corsairEvents) {
+          if (
+            !(await deps.corsairEvents.legacyDispatchable(receipt.id)).has(
+              trigger.id,
+            )
+          )
+            return context.json({
+              accepted: true,
+              queued: false,
+              reason: "Trigger already reconciled.",
+            });
+          if (occurredAt && trigger.createdAt > occurredAt) {
+            const outcome = {
+              status: "ignored" as const,
+              reason: "trigger-created-after-event",
+            };
+            await deps.corsairEvents.finishLegacy(
+              receipt.id,
+              trigger.id,
+              outcome,
+            );
+            return context.json(outcomeBody(outcome));
+          }
+        }
         return deliver(
           { deliveryId: bodyId, type: eventType, payload },
           true,

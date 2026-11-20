@@ -23,7 +23,7 @@ const handoffType = "openbot.events.handoff";
 const incidentType = "openbot.events.incident";
 const replayType = "openbot.events.replay";
 const evidenceType = "openbot.events.raw-evidence";
-const retentionMs = 7 * 24 * 60 * 60 * 1000;
+const evidenceCutoff = sql`clock_timestamp() - interval '168 hours'`;
 const alertMs = 15 * 60 * 1000;
 const digest = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -194,6 +194,7 @@ export function createCorsairEventOperations(
   }
 
   return {
+    tracks: (provider: Source["provider"]) => !!registrationFor(provider),
     async nativeOwner(
       tx: EventTransaction,
       key: Source,
@@ -236,7 +237,7 @@ export function createCorsairEventOperations(
           native && native.dispatch !== false
             ? "corsair"
             : await sourceOwner(tx, key, occurredAt ?? receivedAt);
-        await tx
+        const [inserted] = await tx
           .insert(events)
           .values({
             id,
@@ -260,17 +261,18 @@ export function createCorsairEventOperations(
                 : {}),
             },
           })
-          .onConflictDoNothing();
+          .onConflictDoNothing()
+          .returning({ id: events.id });
         const [row] = await tx
           .select({ payload: events.payload })
           .from(events)
           .where(eq(events.id, id));
         const pinned = journalPayload.parse(row?.payload).owner;
-        if (triggerIds.length) {
+        if (triggerIds.length && (inserted || provider === "github")) {
           await tx
             .insert(dispatches)
             .values(
-              triggerIds.map((triggerId) => ({
+              triggerIds.map<typeof dispatches.$inferInsert>((triggerId) => ({
                 receiptId: id,
                 triggerId,
                 outcome: pinned === "legacy" ? "pending" : "ineligible",
@@ -280,6 +282,18 @@ export function createCorsairEventOperations(
         }
         return { id, owner: pinned };
       });
+    },
+    async legacyDispatchable(receiptId: string) {
+      const rows = await database
+        .select({ triggerId: dispatches.triggerId })
+        .from(dispatches)
+        .where(
+          and(
+            eq(dispatches.receiptId, receiptId),
+            inArray(dispatches.outcome, ["pending", "retry", "queued"]),
+          ),
+        );
+      return new Set(rows.map((row) => row.triggerId));
     },
     async finishLegacy(
       receiptId: string,
@@ -465,18 +479,21 @@ export function createCorsairEventOperations(
     },
     async alert(now = new Date()) {
       return database.transaction(async (tx) => {
+        const provider = sql<string>`case when ${events.eventType} = ${journalType} then ${events.payload}->>'provider'
+            when ${events.eventType} = ${nativeSlack} then 'slack' else 'github' end`;
+        const source = sql<string>`case when ${events.eventType} = ${journalType} then ${events.payload}->>'source'
+            when ${events.eventType} = ${nativeSlack} then concat(${events.payload}->>'teamId', '/', ${events.payload}->>'channelId')
+            else ${events.repositoryId} end`;
+        const eventKey = sql<string>`case when ${events.eventType} = ${journalType} then ${events.payload}->>'eventKey'
+            when ${events.eventType} = ${nativeSlack} then ${events.payload}->>'eventId' else ${events.bodyHash} end`;
         const overdue = await tx
           .select({
             receiptId: events.id,
             triggerId: dispatches.triggerId,
             outcome: dispatches.outcome,
-            provider: sql<string>`case when ${events.eventType} = ${journalType} then ${events.payload}->>'provider'
-            when ${events.eventType} = ${nativeSlack} then 'slack' else 'github' end`,
-            source: sql<string>`case when ${events.eventType} = ${journalType} then ${events.payload}->>'source'
-            when ${events.eventType} = ${nativeSlack} then concat(${events.payload}->>'teamId', '/', ${events.payload}->>'channelId')
-            else ${events.repositoryId} end`,
-            eventKey: sql<string>`case when ${events.eventType} = ${journalType} then ${events.payload}->>'eventKey'
-            when ${events.eventType} = ${nativeSlack} then ${events.payload}->>'eventId' else ${events.bodyHash} end`,
+            provider,
+            source,
+            eventKey,
           })
           .from(dispatches)
           .innerJoin(events, eq(events.id, dispatches.receiptId))
@@ -485,7 +502,22 @@ export function createCorsairEventOperations(
               scope,
               lt(events.createdAt, new Date(now.getTime() - alertMs)),
               sql`(${dispatches.outcome} in ('pending', 'retry') or
-              (${dispatches.outcome} = 'review' and ${events.disposition} is distinct from 'observed'))`,
+                (${dispatches.outcome} = 'review' and
+                  (${events.disposition} is distinct from 'observed' or not exists (
+                    select 1 from corsair_events old
+                    join corsair_event_dispatches outcome on outcome.receipt_id = old.id
+                    where old.account_id = ${accountId} and old.event_type = ${journalType}
+                      and old.payload->>'provider' = (${provider})
+                      and old.payload->>'source' = (${source})
+                      and old.payload->>'eventKey' = (${eventKey})
+                      and outcome.outcome in ('queued', 'denied', 'ineligible')
+                      and (outcome.trigger_id = ${dispatches.triggerId} or
+                        (${events.deliveryId} is not null and exists (
+                          select 1 from responsibility_triggers legacy
+                          join corsair_entities native on native.goal_id = legacy.responsibility_id
+                          where native.id = ${dispatches.triggerId} and legacy.id = outcome.trigger_id
+                        )))
+                  ))))`,
               sql`not exists (select 1 from corsair_events a
               where a.id = 'openbot:overdue:' || ${events.id} || ':' || ${dispatches.triggerId})`,
             ),
@@ -498,7 +530,7 @@ export function createCorsairEventOperations(
         const inserted = await tx
           .insert(events)
           .values(
-            overdue.map((row) => ({
+            overdue.map<typeof events.$inferInsert>((row) => ({
               id: `openbot:overdue:${row.receiptId}:${row.triggerId}`,
               accountId,
               workspaceId,
@@ -616,7 +648,7 @@ export function createCorsairEventOperations(
         .where(
           and(
             eq(events.id, idFor(evidenceType, receiptId)),
-            sql`${events.createdAt} > clock_timestamp() - interval '7 days'`,
+            sql`${events.createdAt} > ${evidenceCutoff}`,
           ),
         );
       const parsed = z.object({ sealed: z.string() }).safeParse(row?.payload);
@@ -630,14 +662,14 @@ export function createCorsairEventOperations(
           )
         : null;
     },
-    async expireEvidence(now = new Date()) {
+    async expireEvidence() {
       await database
         .delete(events)
         .where(
           and(
             eq(events.accountId, accountId),
             eq(events.eventType, evidenceType),
-            sql`${events.createdAt} <= ${new Date(now.getTime() - retentionMs)}`,
+            sql`${events.createdAt} <= ${evidenceCutoff}`,
           ),
         );
     },

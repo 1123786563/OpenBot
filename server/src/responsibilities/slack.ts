@@ -79,6 +79,7 @@ export type SlackIngestResult = {
 export function slackTriggerMatches(
   trigger: ResolvedTrigger,
   event: SlackTriggerEvent,
+  { checkAge = true } = {},
 ): boolean {
   // The author's identity never decides whose trigger fires. The ingest checks each owner's own
   // access to the channel, so a colleague who never linked OpenBot still fires the owner's trigger.
@@ -87,7 +88,10 @@ export function slackTriggerMatches(
   if (event.isBot || event.subtype) return false;
   // Pre-existing messages never fire: both the delivery and the message itself must be new.
   const created = Math.floor(trigger.createdAt.getTime() / 1000);
-  if (event.eventTime < created || Number.parseFloat(event.ts) < created)
+  if (
+    checkAge &&
+    (event.eventTime < created || Number.parseFloat(event.ts) < created)
+  )
     return false;
   if (config.channels.length > 0 && !config.channels.includes(event.channelId))
     return false;
@@ -123,7 +127,7 @@ export function createSlackTriggerIngest(
     const matching = triggers.filter((trigger) =>
       slackTriggerMatches(trigger, event),
     );
-    const receipt = deps.corsairEvents
+    const receipt = deps.corsairEvents?.tracks("slack")
       ? await deps.corsairEvents.receiveLegacy({
           provider: "slack",
           source: `${event.teamId}/${event.channelId}`,
@@ -134,8 +138,11 @@ export function createSlackTriggerIngest(
       : null;
     const deliveries: SlackIngestResult["deliveries"] = [];
     if (receipt?.owner === "corsair") return { matched: 0, deliveries };
+    const recorded =
+      receipt && (await deps.corsairEvents?.legacyDispatchable(receipt.id));
     const verdicts = new Map<string, Promise<string | null>>();
     for (const trigger of matching) {
+      if (recorded && !recorded.has(trigger.id)) continue;
       // Access is re-checked for every event, not only when the trigger was saved: an owner who
       // unlinked Slack or left the channel stops hearing it. Fail closed.
       let verdict = verdicts.get(trigger.ownerUserId);

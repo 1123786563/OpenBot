@@ -58,6 +58,7 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
   });
   const key = { provider: "github", source: "321" } as const;
   const legacyTrigger = randomUUID();
+  const nativeTrigger = randomUUID();
   const { createGithubEventIngress } = await import(
     "../src/plugins/corsair/event-ingress"
   );
@@ -72,26 +73,9 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
   const eventKey = createHash("sha256").update(body).digest("hex");
   const proof = {
     eventKeys: [eventKey],
-    triggerPairs: [{ legacy: legacyTrigger, corsair: "new" }],
+    triggerPairs: [{ legacy: legacyTrigger, corsair: nativeTrigger }],
     providerHistoryRef: "record-27",
   };
-  const ingress = createGithubEventIngress({
-    database,
-    workspaceId: workspace,
-    registration,
-    secret: "local-fixture",
-    operations,
-  });
-  const deliver = (raw: string) =>
-    ingress.request("/webhook", {
-      method: "POST",
-      headers: {
-        "x-github-event": "issues",
-        "x-github-delivery": randomUUID(),
-        "x-hub-signature-256": `sha256=${createHmac("sha256", "local-fixture").update(raw).digest("hex")}`,
-      },
-      body: raw,
-    });
   expect(await operations.handoff(key, "operator", proof)).toBeNull();
   const old = await operations.receiveLegacy({
     ...key,
@@ -101,26 +85,17 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
     triggerIds: [legacyTrigger],
   });
   expect(old.owner).toBe("legacy");
-  const initial = await deliver(body);
-  expect(initial.status).toBe(202);
-  expect(await operations.handoff(key, "operator", proof)).toBeNull();
   const { eq } = await import("drizzle-orm");
-  const { corsairEvents, corsairEventDispatches } = await import(
-    "../src/db/schema/corsair-storage"
-  );
-  const [shadow] = await operations
-    .report(key)
-    .then((rows) => rows.filter((row) => row.entry === "corsair"));
-  if (!shadow) throw new Error("Missing native receipt");
-  await database
-    .update(corsairEvents)
-    .set({ disposition: "observed", fanoutAt: new Date() })
-    .where(eq(corsairEvents.id, shadow.id));
-  await database
-    .insert(corsairEventDispatches)
-    .values({ receiptId: shadow.id, triggerId: "new", outcome: "review" });
-  const { users, agents, responsibilities, responsibilityTriggers } =
-    await import("../src/db/schema");
+  const {
+    users,
+    agents,
+    responsibilities,
+    responsibilityTriggers,
+    responsibilityRuns,
+    githubPilotConnections,
+    githubPilotRepositories,
+    githubPilotEventTriggers,
+  } = await import("../src/db/schema");
   const { createResponsibilityStore } = await import(
     "../src/responsibilities/store"
   );
@@ -130,26 +105,22 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
   await database
     .insert(users)
     .values({ id: person, email: `${person}@example.test` });
-  await database
-    .insert(agents)
-    .values({
-      id: agent,
-      name: "Test bot",
-      type: "built_in",
-      configuration: {},
-    });
-  await database
-    .insert(responsibilities)
-    .values({
-      id: goal,
-      ownerUserId: person,
-      agentId: agent,
-      channelId: "fixture",
-      threadId: "fixture",
-      title: "Test",
-      instruction: "Test",
-      successCriteria: "Test",
-    });
+  await database.insert(agents).values({
+    id: agent,
+    name: "Test bot",
+    type: "built_in",
+    configuration: {},
+  });
+  await database.insert(responsibilities).values({
+    id: goal,
+    ownerUserId: person,
+    agentId: agent,
+    channelId: "fixture",
+    threadId: "fixture",
+    title: "Test",
+    instruction: "Test",
+    successCriteria: "Test",
+  });
   await database.insert(responsibilityTriggers).values({
     id: legacyTrigger,
     ownerUserId: person,
@@ -162,6 +133,87 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
     },
     createdAt: new Date(occurredAt.getTime() - 1000),
   });
+  const { encryptSecret } = await import("../src/credentials");
+  const { createGithubEventTriggers } = await import(
+    "../src/plugins/corsair/event-triggers"
+  );
+  const { createGithubEventDispatch } = await import(
+    "../src/plugins/corsair/event-dispatch"
+  );
+  const scope = { workspaceId: workspace, registration };
+  const encryptionKey = Buffer.alloc(32, 27).toString("base64");
+  const connectionId = randomUUID();
+  const revision = randomUUID();
+  await database.insert(githubPilotConnections).values({
+    ...scope,
+    id: connectionId,
+    revision,
+    personId: person,
+    githubUserId: "1",
+    login: "owner",
+    credential: await encryptSecret(encryptionKey, "fixture-token"),
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+  const resource = { installationId: "654", repositoryId: "321" };
+  await database.insert(githubPilotRepositories).values({
+    ...scope,
+    ...resource,
+    nodeId: "fixture-node",
+    name: "owner/repo",
+  });
+  await database.insert(githubPilotEventTriggers).values({
+    ...scope,
+    ...resource,
+    id: nativeTrigger,
+    goalId: goal,
+    connectionId,
+    connectionRevision: revision,
+    repositoryNodeId: "fixture-node",
+    eventTypes: ["issues.opened"],
+    createdAt: new Date(occurredAt.getTime() - 1000),
+  });
+  let providerAvailable = false;
+  const triggers = createGithubEventTriggers({
+    ...scope,
+    database,
+    encryptionKey,
+    checkRepository: async () => (providerAvailable ? "allowed" : "retry"),
+  });
+  const dispatcher = createGithubEventDispatch({
+    ...scope,
+    database,
+    operations,
+    triggers,
+    isolatedSources: new Set(),
+    retryMs: 0,
+  });
+  const ingress = createGithubEventIngress({
+    database,
+    workspaceId: workspace,
+    registration,
+    secret: "local-fixture",
+    operations,
+    planAccepted: dispatcher.planAccepted,
+  });
+  const deliver = (raw: string) =>
+    ingress.request("/webhook", {
+      method: "POST",
+      headers: {
+        "x-github-event": "issues",
+        "x-github-delivery": randomUUID(),
+        "x-hub-signature-256": `sha256=${createHmac("sha256", "local-fixture").update(raw).digest("hex")}`,
+      },
+      body: raw,
+    });
+  const initial = await deliver(body);
+  expect(initial.status).toBe(202);
+  const [shadow] = await operations
+    .report(key)
+    .then((rows) => rows.filter((row) => row.entry === "corsair"));
+  expect(shadow?.outcomes).toEqual([
+    expect.objectContaining({ triggerId: nativeTrigger, outcome: "review" }),
+  ]);
+  expect(await operations.handoff(key, "operator", proof)).toBeNull();
   const { createTriggerIngressRoutes } = await import(
     "../src/responsibilities/trigger-routes"
   );
@@ -217,7 +269,7 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
     }),
   ).toEqual(old);
   expect(await (await deliver(body)).json()).toEqual({
-    receiptId: shadow.id,
+    receiptId: shadow?.id,
     duplicate: true,
   });
   const postCutoffEvent = JSON.stringify({
@@ -245,12 +297,133 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
     queued: true,
     duplicate: true,
   });
-  expect((await deliver(postCutoffEvent)).status).toBe(202);
+  const postCutoff = await deliver(postCutoffEvent);
+  expect(postCutoff.status).toBe(202);
+  const { receiptId } = await postCutoff.json();
+  await dispatcher.sweep();
   expect(await operations.report(key)).toContainEqual(
     expect.objectContaining({
       eventKey: postKey,
       entry: "corsair",
       pilotDispatch: true,
+      outcomes: [
+        expect.objectContaining({ triggerId: nativeTrigger, outcome: "retry" }),
+      ],
     }),
   );
+  const recovery = {
+    receiptId,
+    triggerId: nativeTrigger,
+    historyRef: "provider-delivery-history",
+  };
+  expect(await operations.replay(key, "operator", recovery)).toBe(true);
+  providerAvailable = true;
+  await dispatcher.sweep();
+  await dispatcher.sweep();
+  expect(await operations.replay(key, "operator", recovery)).toBe(false);
+  expect(await (await deliver(postCutoffEvent)).json()).toMatchObject({
+    duplicate: true,
+    receiptId,
+  });
+  expect(
+    await database
+      .select()
+      .from(responsibilityRuns)
+      .where(eq(responsibilityRuns.responsibilityId, goal)),
+  ).toHaveLength(2);
+});
+
+test("captures only selected signed deliveries and expires private evidence after seven days", async () => {
+  const { createHmac, randomBytes } = await import("node:crypto");
+  const { eq, sql } = await import("drizzle-orm");
+  const { corsairEvents } = await import("../src/db/schema/corsair-storage");
+  const { createGithubEventIngress } = await import(
+    "../src/plugins/corsair/event-ingress"
+  );
+  const workspaceId = randomUUID();
+  const registration = randomUUID();
+  const captureId = randomUUID();
+  const operations = createCorsairEventOperations(database, workspaceId, {
+    githubRegistration: registration,
+    rawEvidence: {
+      encryptionKey: randomBytes(32).toString("base64"),
+      deliveries: new Set([`github:${captureId}`]),
+    },
+  });
+  const secret = "issue-27-evidence-fixture";
+  const ingress = createGithubEventIngress({
+    database,
+    workspaceId,
+    registration,
+    secret,
+    operations,
+  });
+  const body = (number: number) =>
+    JSON.stringify({
+      action: "opened",
+      installation: { id: 654 },
+      repository: { id: 321, full_name: "owner/repo" },
+      issue: {
+        id: number,
+        number,
+        created_at: new Date().toISOString(),
+        body: "private content",
+      },
+    });
+  const send = (id: string, raw: string, signingKey = secret) =>
+    ingress.request("/webhook", {
+      method: "POST",
+      body: raw,
+      headers: {
+        "x-github-event": "issues",
+        "x-github-delivery": id,
+        "x-hub-signature-256": `sha256=${createHmac("sha256", signingKey).update(raw).digest("hex")}`,
+      },
+    });
+  const selected = body(1);
+  expect((await send(captureId, selected, "invalid")).status).toBe(401);
+  const result = await send(captureId, selected);
+  expect(result.status).toBe(202);
+  const { receiptId } = await result.json();
+  let allowed = true;
+  expect(await operations.readEvidence(receiptId, async () => allowed)).toEqual(
+    Buffer.from(selected),
+  );
+  allowed = false;
+  expect(
+    await operations.readEvidence(receiptId, async () => allowed),
+  ).toBeNull();
+
+  const later = await send(randomUUID(), body(2));
+  expect(later.status).toBe(202);
+  expect(
+    await operations.readEvidence(
+      (await later.json()).receiptId,
+      async () => true,
+    ),
+  ).toBeNull();
+  const rows = await database
+    .select()
+    .from(corsairEvents)
+    .where(eq(corsairEvents.workspaceId, workspaceId));
+  expect(JSON.stringify(rows)).not.toContain("private content");
+  const evidence = rows.find(
+    (row) => row.eventType === "openbot.events.raw-evidence",
+  );
+  if (!evidence) throw new Error("Missing encrypted evidence");
+  await database
+    .update(corsairEvents)
+    .set({ createdAt: sql`clock_timestamp() - interval '168 hours'` })
+    .where(eq(corsairEvents.id, evidence.id));
+  expect(await operations.readEvidence(receiptId, async () => true)).toBeNull();
+  await operations.expireEvidence();
+  expect(
+    await database
+      .select()
+      .from(corsairEvents)
+      .where(eq(corsairEvents.id, evidence.id)),
+  ).toEqual([]);
+  expect(
+    await operations.report({ provider: "github", source: "321" }),
+  ).toHaveLength(2);
 });

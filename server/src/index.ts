@@ -2550,28 +2550,29 @@ const slackEventSweep = slackEvents
       }
     }, 2_000)
   : null;
-const corsairEventOperationsSweep = corsairEventOperations
-  ? repeatAfterEach(async () => {
-      try {
-        for (const alert of await corsairEventOperations.alert()) {
-          console.warn(
-            JSON.stringify({
-              type: "corsair-event-dispatch-overdue",
-              ...alert,
-            }),
-          );
-        }
-        await corsairEventOperations.expireEvidence();
-      } catch (error) {
-        console.warn(
-          JSON.stringify({
-            type: "corsair-event-operations-sweep-failed",
-            errorType: error instanceof Error ? error.name : "unknown",
-          }),
-        );
-      }
-    }, 5_000)
-  : null;
+const eventMaintenance =
+  corsairEventOperations ??
+  createCorsairEventOperations(database, deploymentId);
+const corsairEventOperationsSweep = repeatAfterEach(async () => {
+  try {
+    for (const alert of await eventMaintenance.alert()) {
+      console.warn(
+        JSON.stringify({
+          type: "corsair-event-dispatch-overdue",
+          ...alert,
+        }),
+      );
+    }
+    await eventMaintenance.expireEvidence();
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        type: "corsair-event-operations-sweep-failed",
+        errorType: error instanceof Error ? error.name : "unknown",
+      }),
+    );
+  }
+}, 5_000);
 const responsibilitySweep = repeatAfterEach(async () => {
   try {
     const report = await responsibilityEngine.dispatch({
@@ -3653,7 +3654,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     responsibilitySweep.stop();
     githubEventSweep?.stop();
     slackEventSweep?.stop();
-    corsairEventOperationsSweep?.stop();
+    corsairEventOperationsSweep.stop();
     wakeUpSweep.stop();
     wakeUpReaper.stop();
     memorySweep.stop();

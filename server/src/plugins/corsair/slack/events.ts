@@ -169,6 +169,7 @@ export function createSlackEventPilot({
         config: triggers.config,
         enabled: triggers.enabled,
         responsibilityStatus: goals.status,
+        goalUpdatedAt: goals.updatedAt,
         secret: sql<null>`null`,
       })
       .from(triggers)
@@ -277,6 +278,7 @@ export function createSlackEventPilot({
     outcome: string,
     triggerId?: string,
     runId?: string,
+    reason?: string,
   ) {
     await tx.insert(auditEvents).values({
       eventType: "corsair.slack.event_delivery",
@@ -292,6 +294,7 @@ export function createSlackEventPilot({
         outcome,
         triggerId,
         runId,
+        reason,
       },
     });
   }
@@ -317,14 +320,26 @@ export function createSlackEventPilot({
       let outcome: Dispatch["outcome"] =
         access.kind === "allowed" ? "denied" : access.kind;
       let runId: string | undefined;
+      let reason =
+        access.kind === "denied" ? "source-read-access-unavailable" : undefined;
       if (access.kind === "allowed") {
         const [trigger] = await candidates(tx, dispatch.triggerId).for(
           "update",
           { of: goals },
         );
-        if (trigger?.responsibilityStatus !== "active") outcome = "ineligible";
-        else if (historyUnknown) outcome = "review";
-        else if (await access.check(tx, trigger.ownerUserId)) {
+        if (trigger?.responsibilityStatus !== "active") {
+          outcome = "ineligible";
+          reason = "goal-inactive";
+        } else if (
+          historyUnknown ||
+          (operations &&
+            receipt.occurredAt &&
+            trigger.goalUpdatedAt.getTime() >=
+              receipt.occurredAt.getTime() + 1_000)
+        ) {
+          outcome = "review";
+          reason = "history-unverified";
+        } else if (await access.check(tx, trigger.ownerUserId)) {
           const eventId = randomUUID();
           runId = randomUUID();
           await tx.insert(responsibilityEvents).values({
@@ -356,23 +371,37 @@ export function createSlackEventPilot({
         .set({ outcome, runId, nextAttemptAt: new Date(Date.now() + retryMs) })
         .where(dispatchKey(dispatch));
       if (outcome !== "retry" || current.outcome !== "retry")
-        await audit(tx, receipt, outcome, dispatch.triggerId, runId);
+        await audit(tx, receipt, outcome, dispatch.triggerId, runId, reason);
     });
   }
 
   async function planReceipt(tx: EventTransaction, receipt: Receipt) {
     const event = slackTriggerEventSchema.parse(receipt.payload);
     const matching = (await candidates(tx)).filter((trigger) =>
-      slackTriggerMatches(trigger, event),
+      slackTriggerMatches(trigger, event, { checkAge: !operations }),
     );
-    if (matching.length)
-      await tx.insert(dispatches).values(
-        matching.map((trigger) => ({
-          receiptId: receipt.id,
-          triggerId: trigger.id,
-          outcome: receipt.pilotDispatch === false ? "review" : "pending",
-        })),
-      );
+    const shadow = receipt.pilotDispatch === false;
+    const planned = matching.map<typeof dispatches.$inferInsert>((trigger) => ({
+      receiptId: receipt.id,
+      triggerId: trigger.id,
+      outcome: !slackTriggerMatches(trigger, event)
+        ? "ineligible"
+        : shadow
+          ? "review"
+          : "pending",
+    }));
+    if (planned.length) await tx.insert(dispatches).values(planned);
+    for (const result of planned) {
+      if (result.outcome === "ineligible")
+        await audit(
+          tx,
+          receipt,
+          result.outcome,
+          String(result.triggerId),
+          undefined,
+          "trigger-created-after-event",
+        );
+    }
     await tx
       .update(corsairEvents)
       .set({

@@ -1,4 +1,5 @@
 import { Hono, type MiddlewareHandler } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { type AppVariables, requireAdmin } from "../../auth/guards";
 import { type CorsairEventOperations, eventSource } from "./event-operations";
@@ -24,6 +25,7 @@ export function createCorsairEventOperationRoutes(
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
+  routes.use("*", bodyLimit({ maxSize: 1024 * 1024 }));
   for (const path of ["/receipts", "/handoff", "/replay", "/incidents"]) {
     routes.use(path, requireUser, async (context, next) => {
       const denied = requireAdmin(context);

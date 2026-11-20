@@ -60,12 +60,14 @@ export function createGithubEventDispatch({
       outcome,
       runId,
       personId,
+      reason,
     }: {
       receipt: Receipt;
       triggerId?: string;
       outcome: string;
       runId?: string;
       personId?: string;
+      reason?: string;
     },
   ) {
     await tx.insert(auditEvents).values({
@@ -84,6 +86,7 @@ export function createGithubEventDispatch({
         triggerId,
         outcome,
         runId,
+        reason,
       },
     });
   }
@@ -105,10 +108,7 @@ export function createGithubEventDispatch({
         ),
       );
     if (!repo) return "unenrolled";
-    if (
-      !receipt.occurredAt ||
-      !githubPilotEventType.safeParse(receipt.eventType).success
-    )
+    if (!githubPilotEventType.safeParse(receipt.eventType).success)
       return "review";
     const owns =
       receipt.pilotDispatch &&
@@ -134,21 +134,32 @@ export function createGithubEventDispatch({
         ),
       );
     for (const { trigger, personId } of candidates) {
-      const outcome =
-        trigger.createdAt > receipt.occurredAt ||
-        trigger.disabledAt ||
-        trigger.repositoryNodeId !== repo.nodeId
-          ? "ineligible"
-          : owns
-            ? "pending"
-            : "review";
+      const reason =
+        receipt.occurredAt && trigger.createdAt > receipt.occurredAt
+          ? "trigger-created-after-event"
+          : trigger.disabledAt
+            ? "trigger-disabled"
+            : trigger.repositoryNodeId !== repo.nodeId
+              ? "source-binding-changed"
+              : undefined;
+      const outcome = reason
+        ? "ineligible"
+        : owns && receipt.occurredAt
+          ? "pending"
+          : "review";
       await tx
         .insert(outcomes)
         .values({ receiptId: receipt.id, triggerId: trigger.id, outcome });
       if (outcome !== "pending")
-        await audit(tx, { receipt, triggerId: trigger.id, personId, outcome });
+        await audit(tx, {
+          receipt,
+          triggerId: trigger.id,
+          personId,
+          outcome,
+          reason,
+        });
     }
-    return owns ? "planned" : "observed";
+    return !receipt.occurredAt ? "review" : owns ? "planned" : "observed";
   }
 
   async function planReceipt(tx: EventTransaction, receipt: Receipt) {
@@ -207,6 +218,9 @@ export function createGithubEventDispatch({
       );
       let result: Outcome["outcome"] = isolated ? "denied" : "ineligible";
       let runId: string | undefined;
+      let reason = isolated
+        ? "source-read-access-unavailable"
+        : "legacy-owns-source";
       if (
         isolated &&
         binding &&
@@ -217,16 +231,20 @@ export function createGithubEventDispatch({
           binding.personId,
         ))
       ) {
-        if (goal.status !== "active") result = "ineligible";
-        else if (
+        if (goal.status !== "active") {
+          result = "ineligible";
+          reason = "goal-inactive";
+        } else if (
           !receipt.occurredAt ||
           (goal.updatedAt > receipt.occurredAt &&
             goal.updatedAt <= receipt.receivedAt)
         )
           result = "review";
         else if (access === "retry") result = "retry";
-        else if (access === "allowed" && historyUnknown) result = "review";
-        else if (access === "allowed") {
+        else if (access === "allowed" && historyUnknown) {
+          result = "review";
+          reason = "history-unverified";
+        } else if (access === "allowed") {
           const eventId = randomUUID();
           runId = randomUUID();
           await tx.insert(responsibilityEvents).values({
@@ -263,6 +281,8 @@ export function createGithubEventDispatch({
           personId: binding?.personId,
           outcome: result,
           runId,
+          reason:
+            result === "queued" || result === "retry" ? undefined : reason,
         });
     });
   }
