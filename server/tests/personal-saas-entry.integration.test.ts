@@ -3794,6 +3794,36 @@ test("the mounted workspace recovers each stopped background capability as fresh
     }),
   ).toBe("queued");
 
+  const relay = `relay:${directHandoff}`;
+  expect(
+    await queue.offer({
+      kind: "bot.message",
+      key: relay,
+      payload: {
+        actorId: ownerUserId,
+        fromBotId: agentId,
+        toBotId: sourceBotId,
+        threadId: directThreadId,
+        answerIn: directThreadId,
+        runId: crypto.randomUUID(),
+        depth: 1,
+        task: "Relay the recorded answer",
+      },
+    }),
+  ).toBe("queued");
+  const notification = crypto.randomUUID();
+  const session = await personalSaasStore(database).session(
+    initial.split("=")[1],
+  );
+  if (!session) throw new Error("Expected a live session");
+  expect(
+    await queue.offer({
+      kind: "delivery.outbound",
+      key: notification,
+      accountId: session.accountId,
+    }),
+  ).toBe("queued");
+
   const calls: string[] = [];
   const runApp = newApp(database, async ({ routineId, beforeDispatch }) => {
     await beforeDispatch?.();
@@ -3846,7 +3876,30 @@ test("the mounted workspace recovers each stopped background capability as fresh
     state.interruptedBackgroundWork
       .map((item: { key: string }) => item.key)
       .sort(),
-  ).toEqual([checkIn, responsibility, group, handoff, directHandoff].sort());
+  ).toEqual(
+    [
+      checkIn,
+      responsibility,
+      group,
+      handoff,
+      directHandoff,
+      relay,
+      notification,
+    ].sort(),
+  );
+  for (const key of [relay, notification]) {
+    expect(state.interruptedBackgroundWork).toContainEqual(
+      expect.objectContaining({ key, recoveryCanRetry: false }),
+    );
+    expect((await retry(key, restored, true)).status).toBe(403);
+    const cancelled = await request(
+      `/api/workspace/recovery/${encodeURIComponent(key)}`,
+      restored,
+      { action: "cancel" },
+    );
+    expect(cancelled.status).toBe(200);
+    expect(await cancelled.json()).toEqual({ action: "cancel" });
+  }
   await sweep();
   expect(calls).toEqual([]);
   expect((await retry(handoff, restored)).status).toBe(409);

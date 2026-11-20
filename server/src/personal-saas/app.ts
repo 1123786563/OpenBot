@@ -666,7 +666,9 @@ export function createPersonalSaasApp(
               ...item.interruption,
               recovery: item.recovery,
               recoveryCanRetry:
-                Boolean(backgroundWorkers) && kind !== "delivery.outbound",
+                Boolean(backgroundWorkers) &&
+                kind !== "delivery.outbound" &&
+                !(kind === "bot.message" && item.payload.answerIn),
               reasonMessage: recoveryReason[item.interruption.reason],
             },
           ];
