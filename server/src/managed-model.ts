@@ -17,7 +17,12 @@ const dispatch = z.discriminatedUnion("state", [
   z.object({ state: z.literal("completed"), text: z.string().trim().min(1) }),
   denied,
   z.object({ state: z.literal("reconciling") }),
-  z.object({ state: z.literal("existing") }),
+  z.object({
+    state: z.literal("existing"),
+    operation: z
+      .object({ resultText: z.string().nullable().optional() })
+      .optional(),
+  }),
   z.object({ state: z.enum(["settled", "released"]) }),
 ]);
 const reconciliation = z.object({
@@ -31,13 +36,17 @@ type ModelScope = {
   conversationId: string;
   botId: string;
 };
-export type ModelOperation = { scope: ModelScope; step: string };
+export type ModelOperation = {
+  scope: ModelScope;
+  step: string;
+  budget?: { id: string; stepId?: string };
+};
 type ModelMessage = {
   role: "system" | "user" | "assistant";
   content: string;
 };
 
-function operationId({ scope, step }: ModelOperation) {
+function operationId({ scope, step, budget }: ModelOperation) {
   return createHash("sha256")
     .update(
       JSON.stringify([
@@ -48,6 +57,8 @@ function operationId({ scope, step }: ModelOperation) {
         scope.botId,
         scope.runId,
         step,
+        budget?.id ?? null,
+        budget?.stepId ?? null,
       ]),
     )
     .digest("hex");
@@ -134,6 +145,9 @@ export function createManagedModel({
               rerunOfOperationId: input.rerunOf && operationId(input.rerunOf),
               route: input.route,
               priceVersion: input.priceVersion,
+              ...(input.budget
+                ? { budgetId: input.budget.id, stepId: input.budget.stepId }
+                : {}),
             },
             5_000,
           ),
@@ -166,6 +180,8 @@ export function createManagedModel({
         );
         if (result.state === "denied") return { state: result.reason };
         if (result.state === "existing") {
+          if (result.operation?.resultText)
+            return { state: "completed", text: result.operation.resultText };
           const state = await reconcile(input);
           return {
             state:

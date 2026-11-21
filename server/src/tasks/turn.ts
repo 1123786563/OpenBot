@@ -11,6 +11,7 @@ export type TaskScope = {
   channelId: string;
   agentId: string;
   threadId: string;
+  budgetId?: string | null;
 };
 
 /** One run of a task's turn. `final` is its last: if it fails, the task has failed. */
@@ -28,6 +29,7 @@ export type TaskTurnInput = {
   final: boolean;
   /** Which run of the turn this is, counting from 1. A retry shares its first run's ask. */
   attempt?: number;
+  budgetId?: string | null;
 };
 
 export type TaskTurn = (
@@ -92,6 +94,9 @@ export function createTaskTurn(deps: {
         userMessage: { id: input.askId, role: "user", content: input.text },
         initiator: PERSON_INITIATOR,
         signal: input.signal,
+        ...(input.budgetId
+          ? { budget: { id: input.budgetId, stepId: input.runId } }
+          : {}),
       });
       /*
        * Recorded as how the reply ends, its next step, not how it starts: the task list shows this

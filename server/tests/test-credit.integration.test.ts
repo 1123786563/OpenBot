@@ -7,14 +7,15 @@ import {
   publish,
   verify,
 } from "../src/admin/bifrost-catalog";
-import { createBifrostCreditExecutor } from "../src/billing/test-credit-bifrost";
 import { createTestCreditLedger } from "../src/billing/test-credit";
+import { createBifrostCreditExecutor } from "../src/billing/test-credit-bifrost";
 import { createTestCreditRoutes } from "../src/billing/test-credit-routes";
 import { createDatabase } from "../src/db/client";
 import {
   enterpriseSettings,
   testCreditAccounts,
   testCreditBatches,
+  testCreditBudgets,
   testCreditEnrollments,
   testCreditEvidence,
   testCreditOperations,
@@ -22,6 +23,64 @@ import {
 import { createManagedModel, type ModelOperation } from "../src/managed-model";
 import { fixtureTraceReport } from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
+
+test("execution budgets authorize each step and preserve completed steps across resume", async () => {
+  const database = createDatabase(testDatabaseUrl(), TEST_POOL);
+  const ledger = createTestCreditLedger(database);
+  const identity = {
+    issuer: `https://casdoor.example.test/${crypto.randomUUID()}`,
+    subject: crypto.randomUUID(),
+  };
+  const batchId = crypto.randomUUID();
+  try {
+    await ledger.enroll({ identity, batchId, amount: 5n });
+    await ledger.claim(identity, batchId);
+    const budget = await ledger.createBudget(identity, {
+      budgetId: `task-${crypto.randomUUID()}`,
+      creditType: "test",
+      limitMicrocredits: 2n,
+    });
+    expect(budget).toMatchObject({
+      creditType: "test",
+      limitMicrocredits: "2",
+    });
+    await expect(
+      ledger.reserve(identity, {
+        operationId: crypto.randomUUID(),
+        route: "missing",
+        priceVersion: crypto.randomUUID(),
+        budgetId: budget.budgetId,
+      }),
+    ).resolves.toMatchObject({ state: "route_unavailable" });
+  } finally {
+    await database.transaction(async (tx) => {
+      const accounts = tx
+        .select({ id: testCreditAccounts.id })
+        .from(testCreditAccounts)
+        .where(eq(testCreditAccounts.issuer, identity.issuer));
+      await tx
+        .delete(testCreditOperations)
+        .where(inArray(testCreditOperations.accountId, accounts));
+      await tx
+        .delete(testCreditBudgets)
+        .where(inArray(testCreditBudgets.accountId, accounts));
+      const removed = await tx
+        .delete(testCreditEnrollments)
+        .where(inArray(testCreditEnrollments.accountId, accounts))
+        .returning({ batchId: testCreditEnrollments.batchId });
+      await tx
+        .delete(testCreditAccounts)
+        .where(eq(testCreditAccounts.issuer, identity.issuer));
+      await tx.delete(testCreditBatches).where(
+        inArray(
+          testCreditBatches.id,
+          removed.map(({ batchId }) => batchId),
+        ),
+      );
+    });
+    await database.$client.close();
+  }
+});
 
 test("pilot routes isolate accounts and settle one of two concurrent admissions exactly once", async () => {
   const database = createDatabase(testDatabaseUrl(), TEST_POOL);

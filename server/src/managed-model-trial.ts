@@ -29,13 +29,17 @@ type ModelScope = {
   conversationId: string;
   botId: string;
 };
-type ModelOperation = { scope: ModelScope; step: string };
+type ModelOperation = {
+  scope: ModelScope;
+  step: string;
+  budget?: { id: string; stepId?: string };
+};
 type ModelMessage = {
   role: "system" | "user" | "assistant";
   content: string;
 };
 
-function operationId({ scope, step }: ModelOperation) {
+function operationId({ scope, step, budget }: ModelOperation) {
   return createHash("sha256")
     .update(
       JSON.stringify([
@@ -46,6 +50,8 @@ function operationId({ scope, step }: ModelOperation) {
         scope.botId,
         scope.runId,
         step,
+        budget?.id ?? null,
+        budget?.stepId ?? null,
       ]),
     )
     .digest("hex");
@@ -116,6 +122,9 @@ export function createManagedModel({
               scope: input.scope,
               step: input.step,
               route: input.route,
+              ...(input.budget
+                ? { budgetId: input.budget.id, stepId: input.budget.stepId }
+                : {}),
             },
             5_000,
           ),

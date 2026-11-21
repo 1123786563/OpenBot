@@ -10,10 +10,11 @@ import type { Database } from "../db/client";
 import {
   testCreditAccounts as accounts,
   testCreditBatches as batches,
+  testCreditBudgets as budgets,
   testCreditEnrollments as enrollments,
   enterpriseSettings,
-  testCreditOperations as operations,
   testCreditEvidence as evidence,
+  testCreditOperations as operations,
 } from "../db/schema";
 
 export type VerifiedBillingIdentity = { issuer: string; subject: string };
@@ -35,7 +36,11 @@ const operationFilter = (accountId: string, id: string) =>
   and(eq(operations.accountId, accountId), eq(operations.id, id));
 
 const denied = (
-  reason: "not_authorized" | "route_unavailable" | "insufficient_credits",
+  reason:
+    | "not_authorized"
+    | "route_unavailable"
+    | "insufficient_credits"
+    | "execution_limit",
 ) => ({ state: "denied", reason }) as const;
 
 async function activeRoutes(database: Database | Transaction, lock = false) {
@@ -138,6 +143,9 @@ function operationReceipt(operation: Operation, verified?: Evidence) {
     dispatchedAt,
     inputTokens,
     outputTokens,
+    budgetId,
+    stepId,
+    resultText,
   } = operation;
   const held =
     state === "pending" || state === "reserved"
@@ -176,6 +184,9 @@ function operationReceipt(operation: Operation, verified?: Evidence) {
     dispatchedAt,
     inputTokens: (inputTokens ?? verified?.inputTokens)?.toString() ?? null,
     outputTokens: (outputTokens ?? verified?.outputTokens)?.toString() ?? null,
+    budgetId,
+    stepId,
+    resultText,
   };
 }
 
@@ -281,6 +292,34 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
     return row;
   }
 
+  async function budget(accountId: string, id: string, tx: Transaction) {
+    const [row] = await tx
+      .select()
+      .from(budgets)
+      .where(and(eq(budgets.accountId, accountId), eq(budgets.id, id)));
+    return row;
+  }
+
+  async function budgetUsage(
+    accountId: string,
+    budgetId: string,
+    tx: Transaction,
+  ) {
+    const [row] = await tx
+      .select({
+        used: sql<string>`coalesce(sum(case when ${operations.state} = 'settled' then ${operations.charged} else coalesce(${operations.cutoffHold}, ${operations.reserved}) end), 0)::text`,
+      })
+      .from(operations)
+      .where(
+        and(
+          eq(operations.accountId, accountId),
+          eq(operations.budgetId, budgetId),
+          sql`${operations.state} <> 'released'`,
+        ),
+      );
+    return BigInt(row?.used ?? "0");
+  }
+
   return {
     async sweepCutoffs(limit = cutoffBatchSize) {
       if (!Number.isInteger(limit) || limit < 1 || limit > cutoffBatchSize) {
@@ -367,6 +406,112 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       });
     },
 
+    async createBudget(
+      identity: VerifiedBillingIdentity,
+      input: {
+        budgetId: string;
+        creditType: "test";
+        limitMicrocredits: bigint;
+        confirmed?: boolean;
+      },
+    ) {
+      if (!/^[a-zA-Z0-9_-]{1,128}$/.test(input.budgetId))
+        throw new Error("Invalid execution budget ID");
+      if (input.limitMicrocredits <= 0n)
+        throw new Error("Execution budget must be positive");
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return undefined;
+        const existing = await budget(accountId, input.budgetId, tx);
+        if (existing) {
+          if (existing.creditType !== input.creditType)
+            throw new Error("Execution budget Credit type differs");
+          if (existing.limitMicrocredits !== input.limitMicrocredits)
+            throw new Error("Execution budget limit differs");
+          return {
+            budgetId: existing.id,
+            creditType: existing.creditType,
+            limitMicrocredits: existing.limitMicrocredits.toString(),
+            state: existing.state,
+            confirmed: existing.confirmedAt !== null,
+          };
+        }
+        const [row] = await tx
+          .insert(budgets)
+          .values({
+            accountId,
+            id: input.budgetId,
+            creditType: input.creditType,
+            limitMicrocredits: input.limitMicrocredits,
+            confirmedAt: input.confirmed === false ? null : new Date(),
+          })
+          .returning();
+        if (!row) throw new Error("Execution budget could not be created");
+        return {
+          budgetId: row.id,
+          creditType: row.creditType,
+          limitMicrocredits: row.limitMicrocredits.toString(),
+          state: row.state,
+          confirmed: row.confirmedAt !== null,
+        };
+      });
+    },
+
+    async confirmBudget(
+      identity: VerifiedBillingIdentity,
+      budgetId: string,
+      limitMicrocredits?: bigint,
+    ) {
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return undefined;
+        const row = await budget(accountId, budgetId, tx);
+        if (!row) return undefined;
+        const nextLimit = limitMicrocredits ?? row.limitMicrocredits;
+        if (nextLimit <= 0n || nextLimit < row.limitMicrocredits)
+          throw new Error("Execution budget limit can only increase");
+        const [updated] = await tx
+          .update(budgets)
+          .set({
+            limitMicrocredits: nextLimit,
+            confirmedAt: new Date(),
+            state: "active",
+          })
+          .where(
+            and(eq(budgets.accountId, accountId), eq(budgets.id, budgetId)),
+          )
+          .returning();
+        return (
+          updated && {
+            budgetId: updated.id,
+            creditType: updated.creditType,
+            limitMicrocredits: updated.limitMicrocredits.toString(),
+            state: updated.state,
+            confirmed: updated.confirmedAt !== null,
+          }
+        );
+      });
+    },
+
+    async budget(identity: VerifiedBillingIdentity, budgetId: string) {
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return undefined;
+        const row = await budget(accountId, budgetId, tx);
+        if (!row) return undefined;
+        return {
+          budgetId: row.id,
+          creditType: row.creditType,
+          limitMicrocredits: row.limitMicrocredits.toString(),
+          usedMicrocredits: (
+            await budgetUsage(accountId, budgetId, tx)
+          ).toString(),
+          state: row.state,
+          confirmed: row.confirmedAt !== null,
+        };
+      });
+    },
+
     async modelOptions() {
       const active = await activeRoutes(database);
       return active?.options.map(modelOption) ?? [];
@@ -438,6 +583,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         route: string;
         priceVersion: string;
         rerunOfOperationId?: string;
+        budgetId?: string;
+        stepId?: string;
       },
     ) {
       return database.transaction(async (tx) => {
@@ -461,7 +608,10 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           const sameQuote =
             existing.route.id === input.route &&
             existing.priceVersion === input.priceVersion &&
-            existing.rerunOfOperationId === (input.rerunOfOperationId ?? null);
+            existing.rerunOfOperationId ===
+              (input.rerunOfOperationId ?? null) &&
+            existing.budgetId === (input.budgetId ?? null) &&
+            existing.stepId === (input.stepId ?? null);
           if (
             existing.rerunOfOperationId !== (input.rerunOfOperationId ?? null)
           )
@@ -484,6 +634,17 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             ?.dispatchedAt
         )
           return denied("not_authorized");
+        const executionBudget = input.budgetId
+          ? await budget(accountId, input.budgetId, tx)
+          : undefined;
+        if (input.budgetId && executionBudget?.creditType !== "test")
+          return denied("not_authorized");
+        if (
+          executionBudget &&
+          (executionBudget.state !== "active" ||
+            executionBudget.confirmedAt === null)
+        )
+          return denied("execution_limit");
         const active = await activeRoutes(tx, true);
         const route = active?.options.find(({ id }) => id === input.route);
         if (!route || active?.priceVersion !== input.priceVersion)
@@ -492,6 +653,11 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         const reserved = BigInt(route.maxChargeMicrocredits);
         if (balance.granted === 0n) return denied("not_authorized");
         if (balance.available < reserved) return denied("insufficient_credits");
+        if (executionBudget) {
+          const used = await budgetUsage(accountId, executionBudget.id, tx);
+          if (used + reserved > executionBudget.limitMicrocredits)
+            return denied("execution_limit");
+        }
         const [row] = await tx
           .insert(operations)
           .values({
@@ -503,6 +669,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             createdAt: now,
             rerunOfOperationId: input.rerunOfOperationId,
             state: "reserved",
+            budgetId: input.budgetId,
+            stepId: input.stepId,
           })
           .returning();
         if (!row)
@@ -576,6 +744,24 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
     },
 
     recordEvidence,
+    async recordResult(accountId: string, id: string, text: string) {
+      if (!text.trim()) throw new Error("Test Credit result must not be empty");
+      return database.transaction(async (tx) => {
+        if (!(await lockAccount(tx, accountId))) return undefined;
+        const row = await operation(accountId, id, tx);
+        if (!row || (row.state !== "pending" && row.state !== "settled"))
+          return undefined;
+        const [updated] = await tx
+          .update(operations)
+          .set({ resultText: text })
+          .where(operationFilter(accountId, id))
+          .returning();
+        return (
+          updated &&
+          operationReceipt(updated, await eligibleEvidence(tx, updated))
+        );
+      });
+    },
     settleRecorded,
 
     async reconcile(identity: VerifiedBillingIdentity, id: string) {

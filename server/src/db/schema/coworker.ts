@@ -130,6 +130,7 @@ export const routines = pgTable(
      * the goal's id in its instruction) or when its firing runs one with `run_goal`. A goal a routine
      * runs repeats, and is listed with it. Cleared when the goal is deleted.
      */
+    budgetId: text("budget_id"),
     goalId: text("goal_id").references(() => responsibilities.id, {
       onDelete: "set null",
     }),

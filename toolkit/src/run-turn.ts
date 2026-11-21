@@ -85,6 +85,7 @@ export type TurnRunner = (input: {
   agentId: string;
   threadId: string; // the owner's thread for the routine's channel
   instruction: string; // the user message of this turn
+  budget?: { id: string; stepId?: string };
   initiator?: AuditInitiator;
   signal?: AbortSignal;
   continuation?: {

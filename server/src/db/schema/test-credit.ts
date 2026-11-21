@@ -4,8 +4,8 @@ import {
   check,
   foreignKey,
   index,
-  numeric,
   jsonb,
+  numeric,
   pgTable,
   primaryKey,
   text,
@@ -56,6 +56,34 @@ export const testCreditOutcomes = [
   "platform_failure",
 ] as const;
 
+export const testCreditBudgets = pgTable(
+  "test_credit_budgets",
+  {
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => testCreditAccounts.id),
+    id: text().notNull(),
+    creditType: text("credit_type", { enum: ["test"] }).notNull(),
+    limitMicrocredits: bigint("limit_microcredits", {
+      mode: "bigint",
+    }).notNull(),
+    state: text({ enum: ["active", "paused", "completed"] })
+      .notNull()
+      .default("active"),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.accountId, table.id] }),
+    check(
+      "test_credit_budget_limit_positive",
+      sql`${table.limitMicrocredits} > 0`,
+    ),
+  ],
+);
+
 export const testCreditOperations = pgTable(
   "test_credit_operations",
   {
@@ -80,12 +108,20 @@ export const testCreditOperations = pgTable(
     cutoffHold: bigint("cutoff_hold", { mode: "bigint" }),
     eligibleEvidenceId: text("eligible_evidence_id"),
     dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    budgetId: text("budget_id"),
+    stepId: text("step_id"),
+    resultText: text("result_text"),
   },
   (table) => [
     primaryKey({ columns: [table.accountId, table.id] }),
     index("test_credit_operations_due_cutoff_idx")
       .on(table.dispatchedAt, table.accountId, table.id)
       .where(sql`${table.state} = 'pending' AND ${table.cutoffHold} IS NULL`),
+    foreignKey({
+      name: "test_credit_budget_fk",
+      columns: [table.accountId, table.budgetId],
+      foreignColumns: [testCreditBudgets.accountId, testCreditBudgets.id],
+    }),
     foreignKey({
       name: "test_credit_rerun_original_fk",
       columns: [table.accountId, table.rerunOfOperationId],

@@ -673,6 +673,13 @@
       "when": 1795189760199,
       "tag": "0095_test_credit_cutoff_index",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1795189760200,
+      "tag": "0096_test_credit_execution_budgets",
+      "breakpoints": true
     }
   ]
 }

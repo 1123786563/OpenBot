@@ -266,6 +266,7 @@ export function createTaskRunner(deps: {
       signal,
       final: attempt >= TASK_RUNS,
       attempt,
+      budgetId: task.budgetId,
     });
   }
 

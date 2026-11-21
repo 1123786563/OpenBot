@@ -2,8 +2,8 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { ReleasedBifrostRoute } from "../admin/bifrost-catalog";
-import { UnsentBifrostRequest } from "./test-credit-bifrost";
 import type { TestCreditLedger, VerifiedBillingIdentity } from "./test-credit";
+import { UnsentBifrostRequest } from "./test-credit-bifrost";
 
 const operationId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const operation = z.strictObject({ operationId });
@@ -11,6 +11,8 @@ const reserve = operation.extend({
   route: z.string().min(1).max(64),
   priceVersion: z.uuid(),
   rerunOfOperationId: operationId.optional(),
+  budgetId: operationId.optional(),
+  stepId: operationId.optional(),
 });
 const messages = z
   .array(
@@ -83,9 +85,68 @@ export function createTestCreditRoutes({
   api.use("/balance", authorize("account"));
   api.use("/claim", authorize("account"));
   api.use("/operations/*", authorize("account"));
+  api.use("/budgets", authorize("account"));
+  api.use("/budgets/*", authorize("account"));
   api.onError((_error, context) =>
     context.json({ error: "Test Credit service unavailable." }, 503),
   );
+
+  api.post("/budgets", async (context) => {
+    const input = z
+      .strictObject({
+        budgetId: operationId,
+        creditType: z.literal("test"),
+        limitMicrocredits: z.string().regex(/^[1-9]\d*$/),
+        confirmed: z.boolean().optional(),
+      })
+      .safeParse(await context.req.json().catch(() => undefined));
+    if (!input.success)
+      return context.json({ error: "Invalid execution budget." }, 400);
+    const budget = await ledger.createBudget(context.var.identity, {
+      ...input.data,
+      limitMicrocredits: BigInt(input.data.limitMicrocredits),
+    });
+    return budget
+      ? context.json(budget)
+      : context.json({ error: "Billing Account unavailable." }, 404);
+  });
+
+  api.post("/budgets/:id/confirm", async (context) => {
+    const id = operationId.safeParse(context.req.param("id"));
+    const body = z
+      .strictObject({
+        limitMicrocredits: z
+          .string()
+          .regex(/^[1-9]\d*$/)
+          .optional(),
+      })
+      .safeParse(await context.req.json().catch(() => ({})));
+    if (!id.success || !body.success)
+      return context.json(
+        { error: "Invalid execution budget confirmation." },
+        400,
+      );
+    const budget = await ledger.confirmBudget(
+      context.var.identity,
+      id.data,
+      body.data.limitMicrocredits === undefined
+        ? undefined
+        : BigInt(body.data.limitMicrocredits),
+    );
+    return budget
+      ? context.json(budget)
+      : context.json({ error: "Execution budget unavailable." }, 404);
+  });
+
+  api.get("/budgets/:id", async (context) => {
+    const id = operationId.safeParse(context.req.param("id"));
+    if (!id.success)
+      return context.json({ error: "Invalid execution budget." }, 400);
+    const budget = await ledger.budget(context.var.identity, id.data);
+    return budget
+      ? context.json(budget)
+      : context.json({ error: "Execution budget unavailable." }, 404);
+  });
 
   api.get("/quote", async (context) => {
     const quote = await ledger.quote();
@@ -159,6 +220,12 @@ export function createTestCreditRoutes({
           messages: input.data.messages,
         }),
       );
+      if ("text" in completed)
+        await ledger.recordResult(
+          admission.accountId,
+          input.data.operationId,
+          completed.text,
+        );
       const recorded = await ledger.recordEvidence(
         admission.accountId,
         input.data.operationId,
