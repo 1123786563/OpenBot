@@ -119,6 +119,9 @@ type BotRunSubmission =
       error: keyof typeof botRunSubmissionError;
       status: 402 | 403 | 404 | 409 | 422 | 503;
     };
+type BotRunCreditAdmission =
+  | Extract<BotRunSubmission, { error: string }>
+  | { quote: z.infer<typeof botRunCreditQuote> };
 
 const recoveryReason = {
   account_disabled: "The account was disabled.",
@@ -1759,7 +1762,7 @@ export function createPersonalSaasApp(
           .digest("hex")
       : crypto.randomUUID();
     const admission = managedCredits
-      ? await (async () => {
+      ? await (async (): Promise<BotRunCreditAdmission> => {
           if (input.requiresComputer)
             return {
               error: "managed_computer_unavailable",
