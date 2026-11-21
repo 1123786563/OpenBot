@@ -635,50 +635,22 @@
     {
       "idx": 90,
       "version": "7",
-      "when": 1795175780567,
-      "tag": "0090_corsair_github_pilot",
+      "when": 1795183869296,
+      "tag": "0090_skill_market_installations",
       "breakpoints": true
     },
     {
       "idx": 91,
       "version": "7",
-      "when": 1795175780568,
-      "tag": "0091_github_pilot_defaults",
+      "when": 1795185049024,
+      "tag": "0091_skill_market_version_disablements",
       "breakpoints": true
     },
     {
       "idx": 92,
       "version": "7",
-      "when": 1795175780569,
-      "tag": "0092_corsair_github_events",
-      "breakpoints": true
-    },
-    {
-      "idx": 93,
-      "version": "7",
-      "when": 1795175780570,
-      "tag": "0093_corsair_slack_personal",
-      "breakpoints": true
-    },
-    {
-      "idx": 94,
-      "version": "7",
-      "when": 1795175780571,
-      "tag": "0094_corsair_slack_shared",
-      "breakpoints": true
-    },
-    {
-      "idx": 95,
-      "version": "7",
-      "when": 1795175780572,
-      "tag": "0095_corsair_shared_storage",
-      "breakpoints": true
-    },
-    {
-      "idx": 96,
-      "version": "7",
-      "when": 1795175780573,
-      "tag": "0096_corsair_revocation",
+      "when": 1795189760196,
+      "tag": "0092_skill_market_runs",
       "breakpoints": true
     }
   ]

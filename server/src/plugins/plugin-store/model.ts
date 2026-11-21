@@ -31,6 +31,7 @@ import type {
 } from "../broker";
 import { type CatalogueEntry, resolveServerUrl } from "../catalogue";
 import { type ListedTool, McpServerError } from "../mcp";
+import type { PickableSkill } from "../picked-skill";
 import type { AccountMode } from "../shared-accounts";
 import type { SharedUseGate } from "../shared-use-store";
 
@@ -305,6 +306,7 @@ export type GrantedPlugins = {
     title: string;
     summary: string;
     instructions: string;
+    marketVersion?: PickableSkill["marketVersion"];
     /**
      * What this skill says it needs, as refs. Never a superset of `tools` above in effect: selection
      * intersects the two, because a skill naming a tool the Bot lacks must load nothing rather than

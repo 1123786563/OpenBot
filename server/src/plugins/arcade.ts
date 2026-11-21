@@ -6,6 +6,10 @@ import { appsPage } from "../edition";
  */
 
 import { cutAtCodeUnits } from "../channels/text";
+import {
+  type MarketDispatch,
+  MarketRunPaused,
+} from "../skill-market/disablements";
 import { flagOf } from "./broker";
 import { type ListedTool, MAX_RESULT_CHARS, type McpCallResult } from "./mcp";
 import { fitJsonResult } from "./result-fit";
@@ -108,11 +112,14 @@ export type ArcadeActions = {
     limit: number;
     offset: number;
   }): Promise<{ items: unknown[]; total_count?: number }>;
-  execute(r: {
-    tool_name: string;
-    input: Record<string, unknown>;
-    user_id: string;
-  }): Promise<{
+  execute(
+    r: {
+      tool_name: string;
+      input: Record<string, unknown>;
+      user_id: string;
+    },
+    marketDispatch?: MarketDispatch,
+  ): Promise<{
     success?: boolean;
     output?: {
       value?: unknown;
@@ -674,7 +681,11 @@ const notAllowedResult = (toolName: string): McpCallResult => ({
  * `stacktrace` are the vendor's words and stay out of `text`.
  */
 export async function callTool(
-  connection: { url: string; actorId?: string },
+  connection: {
+    url: string;
+    actorId?: string;
+    marketDispatch?: MarketDispatch;
+  },
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<McpCallResult> {
@@ -689,11 +700,14 @@ export async function callTool(
     );
   }
   try {
-    const answer = await installed.execute({
-      tool_name: toolName,
-      input: args,
-      user_id: connection.actorId,
-    });
+    const answer = await installed.execute(
+      {
+        tool_name: toolName,
+        input: args,
+        user_id: connection.actorId,
+      },
+      connection.marketDispatch,
+    );
     if (answer.output?.authorization) return notAllowedResult(toolName);
     if (answer.success === false || answer.output?.error) {
       return failureResult(`Arcade could not run ${toolName}.`);
@@ -718,6 +732,7 @@ export async function callTool(
       isError: false,
     };
   } catch (thrown) {
+    if (thrown instanceof MarketRunPaused) throw thrown;
     const failure = arcadeFailure(thrown);
     if (failure && isAuthorizationRequired(failure)) {
       return notAllowedResult(toolName);

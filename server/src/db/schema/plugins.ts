@@ -1,3 +1,4 @@
+import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -911,6 +912,100 @@ export const skills = pgTable(
   (table) => [
     uniqueIndex("skills_slug_key").on(table.slug),
     index("skills_owner_idx").on(table.ownerUserId),
+  ],
+);
+
+export const SKILL_MARKET_RESERVATION = "skill-market-reservation";
+
+export const skillMarketSources = pgTable(
+  "skill_market_sources",
+  {
+    command: text("command")
+      .primaryKey()
+      .references(() => skills.slug),
+    registry: text("registry").notNull(),
+    namespace: text("namespace").notNull(),
+    slug: text("slug").notNull(),
+  },
+  (table) => [
+    uniqueIndex("skill_market_source_key").on(
+      table.registry,
+      table.namespace,
+      table.slug,
+    ),
+  ],
+);
+
+export const skillMarketInstallations = pgTable(
+  "skill_market_installations",
+  {
+    command: text("command")
+      .notNull()
+      .references(() => skillMarketSources.command),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    version: text("version").notNull(),
+    versionId: integer("version_id").notNull(),
+    registrySkillId: integer("registry_skill_id").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    title: text("title").notNull(),
+    summary: text("summary").notNull(),
+    instructions: text("instructions").notNull(),
+    installedBy: text("installed_by").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [primaryKey({ columns: [table.agentId, table.command] })],
+);
+
+export const skillMarketVersionDisablements = pgTable(
+  "skill_market_version_disablements",
+  {
+    source: text("registry").notNull(),
+    namespace: text("namespace").notNull(),
+    slug: text("slug").notNull(),
+    registrySkillId: integer("registry_skill_id").notNull(),
+    versionId: integer("version_id").notNull(),
+    version: text("version").notNull(),
+    reason: text("reason").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.source, table.registrySkillId, table.versionId],
+    }),
+  ],
+);
+
+export const skillMarketRuns = pgTable(
+  "skill_market_runs",
+  {
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    botId: text("bot_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    threadId: text("thread_id").notNull(),
+    runId: text("run_id").notNull(),
+    source: text("registry").notNull(),
+    registrySkillId: integer("registry_skill_id").notNull(),
+    versionId: integer("version_id").notNull(),
+    pauseReason: text("pause_reason"),
+    snapshot: jsonb("snapshot").$type<MarketSkillSnapshot>(),
+    computerToolCalls: text("computer_tool_calls")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.actorId, table.botId, table.threadId, table.runId],
+    }),
+    index("skill_market_runs_version_idx").on(
+      table.source,
+      table.registrySkillId,
+      table.versionId,
+    ),
   ],
 );
 

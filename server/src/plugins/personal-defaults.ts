@@ -1,4 +1,4 @@
-import { and, eq, isNull, like, sql } from "drizzle-orm";
+import { and, eq, isNull, like, ne, sql } from "drizzle-orm";
 import {
   type AuditStore,
   DEPLOYMENT_INITIATOR,
@@ -13,6 +13,7 @@ import {
   mcpServers,
   mcpTools,
   pluginGrants,
+  SKILL_MARKET_RESERVATION,
   skills,
 } from "../db/schema/plugins";
 import { currentEdition } from "../edition";
@@ -490,7 +491,10 @@ export function personalDefaultsDeps(database: Database): PersonalDefaultsDeps {
       return rows.map((row) => row.id);
     },
     async skills() {
-      const rows = await database.select({ slug: skills.slug }).from(skills);
+      const rows = await database
+        .select({ slug: skills.slug })
+        .from(skills)
+        .where(ne(skills.origin, SKILL_MARKET_RESERVATION));
       return rows.map((row) => row.slug);
     },
     async heldSkills(agentId) {

@@ -14,12 +14,13 @@ import {
   routineRuns,
 } from "../db/schema";
 import type { DeliveryScope } from "../delivery/types";
-import { GithubEventAccessRetry } from "../plugins/corsair/event-run-access";
-import type { createSlackGoalAction } from "../plugins/corsair/slack/goal-action";
 import type { ResponsibilityStore } from "../responsibilities/types";
+import {
+  isMarketVersionPause,
+  marketRunPauseReason,
+} from "../skill-market/disablements";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import type { ApprovalResumeDependencies, ApprovalService } from "./service";
-import { ApprovalRefusedError } from "./types";
 
 /**
  * One pass of the approval resume loop: claim a decided approval, carry it out, and pick the waiting
@@ -34,8 +35,7 @@ export function createApprovalResumeTick(deps: {
   approvalService: ApprovalService;
   executeApprovedAction: ApprovalResumeDependencies["execute"];
   database: Database;
-  slackGoalAction?: ReturnType<typeof createSlackGoalAction>;
-  responsibilityStore: ResponsibilityStore;
+  responsibilityStore: Pick<ResponsibilityStore, "resumeWaiting">;
   groupConversations: Pick<GroupConversations, "continueWaiting">;
   approvalContinuationRunner: TurnRunner;
   channelStore: Pick<ChannelStore, "recordActivity">;
@@ -89,34 +89,6 @@ export function createApprovalResumeTick(deps: {
             approvalId: z.string().min(1),
           })
           .parse(item.payload);
-        const request = await approvalService.store.get(
-          input.ownerUserId,
-          input.approvalId,
-        );
-        const finish = async () => {
-          if (
-            !(await approvalQueue.finish({
-              kind: item.kind,
-              key: item.key,
-              owner: approvalOwner,
-            }))
-          )
-            throw new Error(
-              "The approval work lease was lost before completion.",
-            );
-        };
-        if (
-          request.action.dispatch === "corsair-slack-goal" &&
-          deps.slackGoalAction
-        ) {
-          const outcome = await deps.slackGoalAction.resume(
-            request,
-            responsibilityStore,
-          );
-          if (outcome === "retry") throw new GithubEventAccessRetry();
-          await finish();
-          return;
-        }
         const resumeDependencies: ApprovalResumeDependencies = {
           // Asked before the action runs: with Use Bots off, or the Bot's model off the allowlist,
           // nothing is carried out and the refusal is final rather than retried.
@@ -126,22 +98,25 @@ export function createApprovalResumeTick(deps: {
               agentId: action.botId,
               threadId: action.threadId,
             }),
-          validate: (action) => {
-            if (action.dispatch === "corsair-slack-goal")
-              throw new ApprovalRefusedError(
-                "The Slack pilot registration is unavailable.",
-              );
-            return approvalService.validateReentry(action, () =>
+          validate: (action) =>
+            approvalService.validateReentry(action, () =>
               executeApprovedAction(action),
-            );
-          },
+            ),
           execute: executeApprovedAction,
           continue: async ({
             continuation: snapshot,
             result,
             messageId,
             approvalId,
+            pauseReason,
           }) => {
+            const request = await approvalService.store.get(
+              input.ownerUserId,
+              approvalId,
+            );
+            pauseReason ??=
+              (await marketRunPauseReason(database, request.action)) ??
+              undefined;
             const [waitingRun] = await database
               .select({ id: responsibilityRuns.id })
               .from(responsibilityRuns)
@@ -153,6 +128,23 @@ export function createApprovalResumeTick(deps: {
               )
               .limit(1);
             if (waitingRun) {
+              if (pauseReason) {
+                await database
+                  .update(responsibilityRuns)
+                  .set({
+                    status: "skipped",
+                    error: pauseReason,
+                    finishedAt: new Date(),
+                    waiting: null,
+                  })
+                  .where(
+                    and(
+                      eq(responsibilityRuns.id, waitingRun.id),
+                      eq(responsibilityRuns.status, "waiting"),
+                    ),
+                  );
+                return { pauseReason };
+              }
               await responsibilityStore.resumeWaiting(
                 input.ownerUserId,
                 waitingRun.id,
@@ -160,11 +152,6 @@ export function createApprovalResumeTick(deps: {
               );
               return;
             }
-            const request = await approvalService.store.get(
-              input.ownerUserId,
-              approvalId,
-            );
-            if (request.action.dispatch === "corsair-shared-goal") return;
             /*
              * ASKING AGAIN IS WHERE THE TURN STOPS, NOT A FAILURE. A carried-on turn that reaches
              * another action needing the person opens its own request and stops on it, nothing
@@ -190,18 +177,26 @@ export function createApprovalResumeTick(deps: {
                     initiator: snapshot.initiator ?? PERSON_INITIATOR,
                     continuation: { snapshot, result, messageId },
                   }),
+                pauseReason,
               );
             } catch (error) {
-              if (!(error instanceof HeadlessToolSuspension)) throw error;
-              waitingOn = {
-                message: error.message,
-                ...(typeof error.waiting.approvalId === "string"
-                  ? { approvalId: error.waiting.approvalId }
-                  : {}),
-              };
-              outcome = { replyText: "" };
+              if (error instanceof HeadlessToolSuspension) {
+                waitingOn = {
+                  message: error.message,
+                  ...(typeof error.waiting.approvalId === "string"
+                    ? { approvalId: error.waiting.approvalId }
+                    : {}),
+                };
+                outcome = { replyText: "" };
+              } else if (
+                error instanceof Error &&
+                isMarketVersionPause(error.message)
+              ) {
+                pauseReason = error.message;
+                outcome = { replyText: pauseReason };
+              } else throw error;
             }
-            if (outcome.replyText)
+            if (outcome.replyText && !pauseReason)
               await deps.transcriptHolds?.({
                 ownerUserId: input.ownerUserId,
                 threadId: snapshot.threadId,
@@ -270,9 +265,9 @@ export function createApprovalResumeTick(deps: {
             await database
               .update(routineRuns)
               .set({
-                status: "succeeded",
+                status: pauseReason ? "skipped" : "succeeded",
                 finishedAt: new Date(),
-                error: null,
+                error: pauseReason ?? null,
                 waiting: null,
               })
               .where(
@@ -281,6 +276,7 @@ export function createApprovalResumeTick(deps: {
                   sql`${routineRuns.waiting}->>'approvalId' = ${approvalId}`,
                 ),
               );
+            if (pauseReason) return { pauseReason };
           },
         };
         abandon = (reason) =>
@@ -295,20 +291,18 @@ export function createApprovalResumeTick(deps: {
           input.approvalId,
           resumeDependencies,
         );
-        await finish();
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        if (error instanceof GithubEventAccessRetry) {
-          await approvalQueue.release({
+        if (
+          !(await approvalQueue.finish({
             kind: item.kind,
             key: item.key,
             owner: approvalOwner,
-            delayMs: 10_000,
-            reason,
-            uncounted: true,
-          });
-          return;
-        }
+          }))
+        )
+          throw new Error(
+            "The approval work lease was lost before completion.",
+          );
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
         // The queue will not hand this item out again, so the conversation hears now or never.
         if (abandon && item.attempts >= DEFAULT_MAX_ATTEMPTS) {
           try {

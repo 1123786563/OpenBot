@@ -18,6 +18,7 @@ import {
   buildComposioClient,
   createComposioClient,
 } from "../src/plugins/composio-adapter";
+import { MarketRunPaused } from "../src/skill-market/disablements";
 import {
   A_CRASH,
   expectOnlyRefusal,
@@ -9150,4 +9151,48 @@ describe("accounts named by holder", () => {
       /COMPOSIO_API_KEY/,
     );
   });
+});
+
+test("a market run paused during Composio's action lookup cannot send the action", async () => {
+  const realFetch = globalThis.fetch;
+  const requests: string[] = [];
+  let paused = false;
+  globalThis.fetch = Object.assign(
+    async (input: Parameters<typeof realFetch>[0], init?: RequestInit) => {
+      const method =
+        init?.method ?? (input instanceof Request ? input.method : "GET");
+      requests.push(method);
+      if (method === "GET") {
+        paused = true;
+        return Response.json({
+          slug: "GMAIL_SEND_EMAIL",
+          name: "Send email",
+          toolkit: { slug: "gmail", name: "Gmail" },
+        });
+      }
+      return Response.json({ successful: true, data: {}, error: null });
+    },
+    { preconnect: realFetch.preconnect },
+  );
+  try {
+    const { actions } = createComposioClient("never-dialled");
+    await expect(
+      actions.execute(
+        {
+          toolkit: "gmail",
+          slug: "GMAIL_SEND_EMAIL",
+          userId: "person",
+          version: "20250909_00",
+          marketDispatch: async (start) => {
+            if (paused) throw new MarketRunPaused("Review in progress");
+            return start();
+          },
+        },
+        {},
+      ),
+    ).rejects.toThrow("Review in progress");
+    expect(requests).toEqual(["GET"]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

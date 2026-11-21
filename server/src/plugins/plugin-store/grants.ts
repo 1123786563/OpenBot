@@ -1,18 +1,15 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { recordAuditEvent } from "../../audit";
 import {
-  mcpServers,
-  vendorNameOf,
   mcpTools,
   pluginGrants,
+  SKILL_MARKET_RESERVATION,
+  skillMarketInstallations,
+  skillMarketSources,
+  skillMarketVersionDisablements,
   skills,
 } from "../../db/schema";
 import { catalogueEntry, classifyTool } from "../catalogue";
-import {
-  corsairBrokerInputSchema,
-  supportedBrokerAction,
-} from "../corsair/broker-action";
-import { createCorsairCutover, legacyCorsairScope } from "../corsair/cutover";
 import type { StoreContext } from "./context";
 import {
   type GrantedPlugins,
@@ -238,7 +235,6 @@ export function grantMethods(context: StoreContext) {
         .select()
         .from(pluginGrants)
         .where(eq(pluginGrants.agentId, agentId));
-      if (held.length === 0) return { tools: [], skills: [] };
 
       const toolRefs = held
         .filter((row) => row.kind === "mcp")
@@ -267,73 +263,32 @@ export function grantMethods(context: StoreContext) {
         grantedServers.length === 0
           ? []
           : await database
-              .select({
-                tool: mcpTools,
-                vendorName: vendorNameOf(),
-                server: {
-                  url: mcpServers.url,
-                  provenance: mcpServers.provenance,
-                  accountMode: mcpServers.accountMode,
-                },
-              })
+              .select()
               .from(mcpTools)
-              .innerJoin(mcpServers, eq(mcpTools.serverId, mcpServers.id))
               .where(inArray(mcpTools.serverId, grantedServers))
               .orderBy(asc(mcpTools.name));
       // A set, so this is a lookup per row rather than a walk of the grants per row.
       const granted = new Set(toolRefs);
-      const states = new Map<
-        string,
-        ReturnType<ReturnType<typeof createCorsairCutover>["read"]>
-      >();
-      const grantedTools: GrantedPlugins["tools"] = [];
-      for (const { tool: row, server, vendorName } of toolRows) {
-        const ref = `${row.serverId}/${row.name}`;
-        if (!granted.has(ref)) continue;
-        const scope = legacyCorsairScope(
-          context.options.deploymentId,
-          server.provenance,
-          server.url,
-        );
-        let inputSchema = row.inputSchema as Record<string, unknown>;
-        if (scope) {
-          let state = states.get(scope.app);
-          if (!state) {
-            state = createCorsairCutover(database, scope).read();
-            states.set(scope.app, state);
-          }
-          const route = await state;
-          if (route.kind !== "legacy") {
-            if (
-              !supportedBrokerAction(scope.app, vendorName ?? row.name) ||
-              !(await context.options.corsairBotWrites?.advertised(
-                scope,
-                ref,
-                agentId,
-                server.accountMode === "shared" ? "shared" : "personal",
-                route.excluded,
-              ))
-            )
-              continue;
-            inputSchema = corsairBrokerInputSchema(scope.app);
-          }
-        }
-        grantedTools.push({
-          ref,
-          toolName: toolNameFor(ref),
-          description: row.description,
-          inputSchema,
-          destructive: row.destructive,
-          // The same answer `callTool` gates the call on, so a read here is a read there.
-          read:
-            classifyTool(
-              catalogueEntry(row.serverId),
-              row.name,
-              true,
-              row.effect,
-            ) === "read",
+      const grantedTools = toolRows
+        .filter((row) => granted.has(`${row.serverId}/${row.name}`))
+        .map((row) => {
+          const ref = `${row.serverId}/${row.name}`;
+          return {
+            ref,
+            toolName: toolNameFor(ref),
+            description: row.description,
+            inputSchema: row.inputSchema as Record<string, unknown>,
+            destructive: row.destructive,
+            // The same answer `callTool` gates the call on, so a read here is a read there.
+            read:
+              classifyTool(
+                catalogueEntry(row.serverId),
+                row.name,
+                true,
+                row.effect,
+              ) === "read",
+          };
         });
-      }
 
       const skillRows =
         skillSlugs.length === 0
@@ -341,7 +296,53 @@ export function grantMethods(context: StoreContext) {
           : await database
               .select()
               .from(skills)
-              .where(inArray(skills.slug, skillSlugs));
+              .where(
+                and(
+                  inArray(skills.slug, skillSlugs),
+                  ne(skills.origin, SKILL_MARKET_RESERVATION),
+                ),
+              );
+
+      const pinnedSkills = await database
+        .select({
+          slug: skillMarketInstallations.command,
+          title: skillMarketInstallations.title,
+          summary: skillMarketInstallations.summary,
+          instructions: skillMarketInstallations.instructions,
+          identity: {
+            source: skillMarketSources.registry,
+            namespace: skillMarketSources.namespace,
+            slug: skillMarketSources.slug,
+            registrySkillId: skillMarketInstallations.registrySkillId,
+            versionId: skillMarketInstallations.versionId,
+            version: skillMarketInstallations.version,
+            fingerprint: skillMarketInstallations.fingerprint,
+          },
+          disableReason: skillMarketVersionDisablements.reason,
+        })
+        .from(skillMarketInstallations)
+        .innerJoin(
+          skillMarketSources,
+          eq(skillMarketSources.command, skillMarketInstallations.command),
+        )
+        .leftJoin(
+          skillMarketVersionDisablements,
+          and(
+            eq(
+              skillMarketVersionDisablements.source,
+              skillMarketSources.registry,
+            ),
+            eq(
+              skillMarketVersionDisablements.registrySkillId,
+              skillMarketInstallations.registrySkillId,
+            ),
+            eq(
+              skillMarketVersionDisablements.versionId,
+              skillMarketInstallations.versionId,
+            ),
+          ),
+        )
+        .where(eq(skillMarketInstallations.agentId, agentId));
 
       /*
        * What each skill says it needs, carried alongside rather than folded into `tools`.
@@ -354,13 +355,20 @@ export function grantMethods(context: StoreContext) {
 
       return {
         tools: grantedTools,
-        skills: skillRows.map((row) => ({
-          slug: row.slug,
-          title: row.title,
-          summary: row.summary,
-          instructions: row.instructions,
-          tools: declared.get(row.id) ?? [],
-        })),
+        skills: [
+          ...pinnedSkills.map(({ identity, disableReason, ...skill }) => ({
+            ...skill,
+            tools: [],
+            marketVersion: { identity, disableReason },
+          })),
+          ...skillRows.map((row) => ({
+            slug: row.slug,
+            title: row.title,
+            summary: row.summary,
+            instructions: row.instructions,
+            tools: declared.get(row.id) ?? [],
+          })),
+        ],
       };
     },
   };

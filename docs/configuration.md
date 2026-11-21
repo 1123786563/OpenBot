@@ -829,6 +829,10 @@ them, including a saved off. See [automatic-learning.md](automatic-learning.md).
 | `OPENBOT_MEMORY_SOURCE_DEFAULTS`         | `false` or `0` stops OpenBot making each app a person connected into a memory source for the Bots they talk to. On otherwise. Existing sources are left as they are. |
 | `OPENBOT_PROACTIVE_DEFAULTS`             | `true` or `1` switches on an hourly check-in on everything a Bot can read the first time a person talks to it alone, as OpenBot did before. Off otherwise: a Bot offers a check-in on one thing in the conversation, and it runs only once the person accepts. Existing settings are left as they are. |
 
+## Skill market
+
+See [Deploy the SkillHub catalog](skill-market.md) for the registry version, reader identity, and OpenBot server settings.
+
 ## OpenTelemetry export
 
 When configured, OpenBot sends an allowlisted copy of each committed audit row over OTLP/HTTP.

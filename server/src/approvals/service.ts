@@ -14,7 +14,10 @@ import {
 } from "@openbot/shared/approval-outcomes";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { PERSON_INITIATOR } from "../audit";
-import { GithubEventAccessRetry } from "../plugins/corsair/event-run-access";
+import {
+  isMarketVersionPause,
+  MarketRunPaused,
+} from "../skill-market/disablements";
 import { productRunForwardedProps } from "../telemetry/product";
 import {
   decideAction,
@@ -143,7 +146,9 @@ export type ApprovalResumeDependencies = {
     messageId: string;
     continuation: ApprovalContinuation;
     result: { content: string; error?: string };
-  }): Promise<void>;
+    pauseReason?: string;
+    // biome-ignore lint/suspicious/noConfusingVoidType: Existing continuations may return no outcome.
+  }): Promise<{ pauseReason: string } | void>;
 };
 export type ApprovalService = ReturnType<typeof createApprovalService>;
 
@@ -158,6 +163,13 @@ export function createApprovalService(
   options: {
     /** The deployment's configured model, for auto-review and pre-approval checks. */
     review?: ReviewModel;
+    marketPause?: (action: ApprovalAction) => Promise<string | null>;
+    marketComputerCall?: (input: {
+      actorId: string;
+      botId: string;
+      threadId: string;
+      callId: string;
+    }) => Promise<boolean>;
   } = {},
 ) {
   /**
@@ -242,12 +254,13 @@ export function createApprovalService(
      * same one (./reviewer-guidance.ts). Absent where none is configured, and then the gate fails closed.
      */
     reviewer: options.review,
+    marketComputerCall: options.marketComputerCall,
     async frontendAction(ownerUserId: string, botId: string, input: unknown) {
       if (!frontend)
         throw new ApprovalRefusedError(
           "Computer approvals are unavailable in this deployment.",
         );
-      const snapshot = parseApprovalContinuation(input);
+      const snapshot = parseApprovalContinuation(input, "frontend");
       snapshot.initiator = PERSON_INITIATOR;
       // Frontend snapshots come from the browser, which cannot supply server telemetry.
       snapshot.forwardedProps = productRunForwardedProps(
@@ -317,13 +330,7 @@ export function createApprovalService(
           authority.owner === approved.actorId &&
           authority.digest === approved.actionDigest
         )
-          return candidate.requireOneTime
-            ? {
-                approvalId: authority.approvalId,
-                approvalDigest: authority.digest,
-                complete: async () => undefined,
-              }
-            : undefined;
+          return;
       }
       /*
        * The person's own earlier answer in this conversation comes first, before any policy that
@@ -406,28 +413,17 @@ export function createApprovalService(
        * withdraw what the task is waiting on. Only a stricter answer, a hand-off or a refusal,
        * keeps its own source.
        */
-      let outcome = evaluated;
-      if (
+      const outcome: ApprovalPolicyOutcome | undefined =
+        taskAsks &&
         evaluated?.behaviour !== "hand_off" &&
         evaluated?.behaviour !== "deny"
-      ) {
-        if (candidate.requireOneTime) {
-          outcome = {
-            behaviour: "ask",
-            source: "safety",
-            closed: true,
-            reason: "This Corsair action requires one-time Approval.",
-            ...(evaluated?.review ? { review: evaluated.review } : {}),
-          };
-        } else if (taskAsks) {
-          outcome = {
-            behaviour: "ask",
-            source: "task",
-            reason: TASK_ASKS,
-            ...(evaluated?.review ? { review: evaluated.review } : {}),
-          };
-        }
-      }
+          ? {
+              behaviour: "ask",
+              source: "task",
+              reason: TASK_ASKS,
+              ...(evaluated?.review ? { review: evaluated.review } : {}),
+            }
+          : evaluated;
       if (outcome) {
         if (outcome.behaviour === "allow") return;
       } else if (
@@ -460,12 +456,9 @@ export function createApprovalService(
         throw new ApprovalAlreadyAnsweredError(DECLINED_BY_PERSON);
       if (
         request.status === "approved" &&
-        candidate.dispatch !== "corsair-shared-goal" &&
-        (!candidate.requireOneTime || request.decision === "allow_once") &&
         (await store.consume(action.actorId, request.id, action.actionDigest))
       )
         return {
-          ...(candidate.requireOneTime ? { approvalId: request.id } : {}),
           complete: async (output) => {
             const content =
               typeof output === "string" ? output : JSON.stringify(output);
@@ -542,7 +535,19 @@ export function createApprovalService(
         : [undefined, undefined, []];
       return {
         enabled: await store.enabled(ownerUserId),
-        requests: requests.map(publicApproval),
+        requests: await Promise.all(
+          requests.map(async (request) =>
+            publicApproval(
+              request,
+              request.result?.pauseReason ??
+                (request.status !== "completed" &&
+                request.result &&
+                request.action.continuation?.marketSkill
+                  ? await options.marketPause?.(request.action)
+                  : undefined),
+            ),
+          ),
+        ),
         rules: await store.rules(ownerUserId),
         teamRules,
         conversationGrants: (
@@ -671,8 +676,9 @@ export function createApprovalService(
           "The interrupted conversation is unavailable.",
         );
       let result = request.result;
+      const pauseReason = await options.marketPause?.(request.action);
       const refused =
-        !result && dependencies.refusal
+        !result && !pauseReason && dependencies.refusal
           ? await dependencies.refusal(request.action)
           : null;
       if (refused) {
@@ -703,7 +709,8 @@ export function createApprovalService(
           return;
         result = { content: reason, error: reason };
       } else if (!result) {
-        if (request.status === "denied")
+        if (pauseReason) result = { content: pauseReason, error: pauseReason };
+        else if (request.status === "denied")
           result = { content: DECLINED_BY_PERSON, error: DECLINED_BY_PERSON };
         else if (request.decision === "handled")
           result = { content: HANDLED_BY_PERSON };
@@ -717,13 +724,6 @@ export function createApprovalService(
           let current: ApprovalAction | undefined;
           let refusal: string | undefined;
           try {
-            if (
-              request.action.requireOneTime &&
-              request.decision !== "allow_once"
-            )
-              throw new ApprovalRefusedError(
-                "This Corsair action requires one-time Approval.",
-              );
             current = await dependencies.validate(request.action);
             if (
               current.actorId !== ownerUserId ||
@@ -732,19 +732,7 @@ export function createApprovalService(
               throw new ApprovalRefusedError(
                 "The approved action or resolved target has changed.",
               );
-            if (
-              current.dispatch !== request.action.dispatch ||
-              (current.dispatch === "corsair-shared-goal" &&
-                !current.requireOneTime)
-            )
-              throw new ApprovalRefusedError(
-                "The approved dispatch has changed.",
-              );
-            // Shared Goal dispatch claims the Approval after it checks live source access.
-            if (
-              current.dispatch !== "corsair-shared-goal" &&
-              !(await store.consume(ownerUserId, id, current.actionDigest))
-            ) {
+            if (!(await store.consume(ownerUserId, id, current.actionDigest))) {
               // Still `approved`: an "Always allow" whose rule was revoked before it ran. Anything
               // else means another replica took the request, and it continues the conversation.
               if ((await store.get(ownerUserId, id)).status !== "approved")
@@ -775,7 +763,11 @@ export function createApprovalService(
                     digest: approved.actionDigest,
                     owner: ownerUserId,
                   },
-                  () => dependencies.execute(approved),
+                  async () => {
+                    const reason = await options.marketPause?.(request.action);
+                    if (reason) throw new MarketRunPaused(reason);
+                    return dependencies.execute(approved);
+                  },
                 ),
               );
               const content =
@@ -784,11 +776,6 @@ export function createApprovalService(
                 throw new Error("The approved action returned no result.");
               result = { content };
             } catch (error) {
-              if (
-                current.dispatch === "corsair-shared-goal" &&
-                error instanceof GithubEventAccessRetry
-              )
-                throw error;
               const reason =
                 error instanceof Error ? error.message : String(error);
               result = { content: reason, error: reason };
@@ -798,13 +785,20 @@ export function createApprovalService(
         // Saved by one process only: whichever saves the answer is the one that continues.
         if (!(await store.saveResult(ownerUserId, id, result))) return;
       }
-      await dependencies.continue({
+      const finalPause =
+        pauseReason ?? (await options.marketPause?.(request.action));
+      const outcome = await dependencies.continue({
+        ...(finalPause ? { pauseReason: finalPause } : {}),
         approvalId: id,
         messageId: `approval:${id}`,
         continuation,
         result,
       });
-      await store.finish(ownerUserId, id);
+      await store.finish(
+        ownerUserId,
+        id,
+        outcome?.pauseReason ?? finalPause ?? undefined,
+      );
     },
     /**
      * The work item carrying this resume ran out of tries. Left alone, the request stayed approved
@@ -833,14 +827,15 @@ export function createApprovalService(
           return;
         result = { content: text, error: text };
       }
-      if (continuation)
-        await dependencies.continue({
-          approvalId: id,
-          messageId: `approval:${id}`,
-          continuation,
-          result,
-        });
-      await store.finish(ownerUserId, id);
+      const outcome = continuation
+        ? await dependencies.continue({
+            approvalId: id,
+            messageId: `approval:${id}`,
+            continuation,
+            result,
+          })
+        : undefined;
+      await store.finish(ownerUserId, id, outcome?.pauseReason);
     },
   };
 }
@@ -880,11 +875,27 @@ function publicGrant(grant: ApprovalConversationGrant) {
     createdAt: grant.createdAt,
   };
 }
-function publicApproval(request: ApprovalRecord) {
+function publicApproval(request: ApprovalRecord, pauseReason?: string | null) {
   const { action, ...record } = request;
+  // Older requests can carry an explicit pause in their saved result.
+  const savedError = request.result?.error ?? null;
+  if (action.continuation?.marketSkill && isMarketVersionPause(savedError))
+    pauseReason ??= savedError;
   return {
     ...record,
-    result: request.result ? { error: request.result.error } : null,
+    result: request.result
+      ? {
+          error: request.result.error,
+          ...(pauseReason
+            ? {
+                pauseReason,
+                ...(request.result.content === pauseReason
+                  ? {}
+                  : { content: request.result.content }),
+              }
+            : {}),
+        }
+      : null,
     action: {
       botId: action.botId,
       toolRef: action.toolRef,

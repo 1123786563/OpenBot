@@ -8,6 +8,10 @@ import {
   clearDesktopConnectionFailure,
   recordDesktopConnectionFailure,
 } from "../desktop-connection-failure";
+import {
+  type MarketDispatch,
+  startMarketRequest,
+} from "../skill-market/disablements";
 
 // Use the model contract of the runtime we actually ship, without a second AI SDK version.
 export type PlanLanguageModel = Extract<
@@ -201,6 +205,7 @@ export class PlanModel implements PlanLanguageModel {
      * plan's line. Absent: the harness falls back to a model its plan offers.
      */
     private readonly choice?: { model: string; reasoningEffort?: string },
+    private readonly marketDispatch?: MarketDispatch,
   ) {
     this.provider = `openbot-${config.provider}-plan`;
     this.modelId = config.provider;
@@ -297,15 +302,20 @@ export class PlanModel implements PlanLanguageModel {
     const agent = new HttpAgent({
       url: this.config.endpoint.href,
       headers: { "x-openbot-agent-token": this.config.token },
-      fetch: (url, init) =>
-        fetch(url, {
-          ...init,
-          redirect: "error",
-          signal: AbortSignal.any([
-            ...(init?.signal ? [init.signal] : []),
-            ...(options.abortSignal ? [options.abortSignal] : []),
-          ]),
-        }),
+      fetch: (url, init) => {
+        const start = () =>
+          fetch(url, {
+            ...init,
+            redirect: "error",
+            signal: AbortSignal.any([
+              ...(init?.signal ? [init.signal] : []),
+              ...(options.abortSignal ? [options.abortSignal] : []),
+            ]),
+          });
+        return this.marketDispatch
+          ? this.marketDispatch(start)
+          : startMarketRequest(start);
+      },
     });
     let subscription: Subscription | undefined;
     const stream = new ReadableStream<Part>({
