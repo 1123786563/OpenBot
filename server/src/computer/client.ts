@@ -1,4 +1,8 @@
 import type { HandoffRequest } from "@openbot/shared/computer-control";
+import {
+  MarketRunPaused,
+  startMarketRequest,
+} from "../skill-market/disablements";
 import type { NavigateResult } from "./schema";
 import { checkNavigationTarget } from "./target";
 
@@ -304,18 +308,21 @@ export function createComputerTransport(
     const target = url.replace(/\/$/, "");
     let response: Response;
     try {
-      response = await doFetch(`${target}${path}`, {
-        ...init,
-        headers: {
-          ...(init?.headers as Record<string, string> | undefined),
-          ...seatHeaders(botId),
-          ...(token ? { "x-openbot-computer-token": token } : {}),
-        },
-        signal: caller
-          ? AbortSignal.any([caller, AbortSignal.timeout(timeoutMs)])
-          : AbortSignal.timeout(timeoutMs),
-      });
+      response = await startMarketRequest(() =>
+        doFetch(`${target}${path}`, {
+          ...init,
+          headers: {
+            ...(init?.headers as Record<string, string> | undefined),
+            ...seatHeaders(botId),
+            ...(token ? { "x-openbot-computer-token": token } : {}),
+          },
+          signal: caller
+            ? AbortSignal.any([caller, AbortSignal.timeout(timeoutMs)])
+            : AbortSignal.timeout(timeoutMs),
+        }),
+      );
     } catch (error) {
+      if (error instanceof MarketRunPaused) throw error;
       /*
        * The caller's own abort is answered first, and says what the check above the fetch says.
        *

@@ -4,6 +4,7 @@ import { bodyLimit } from "hono/body-limit";
 import type { AppVariables } from "../auth/guards";
 import { afterExposureChange } from "../plugins/exposure-change";
 import type { SharedUseStore } from "../plugins/shared-use-store";
+import { isMarketVersionPause } from "../skill-market/disablements";
 import type { ResponsibilityBindingStore } from "./bindings";
 import { inboundAddressFor } from "./email";
 import type { ResponsibilityEngine } from "./engine";
@@ -258,7 +259,15 @@ export function createResponsibilityRoutes(
   });
   routes.get("/:id/runs", async (context) =>
     context.json({
-      runs: await store.listRuns(context.var.actor.id, context.req.param("id")),
+      runs: (
+        await store.listRuns(context.var.actor.id, context.req.param("id"))
+      ).map((run) => ({
+        ...run,
+        status:
+          run.status === "skipped" && isMarketVersionPause(run.error)
+            ? "paused"
+            : run.status,
+      })),
     }),
   );
   for (const [action, status] of [

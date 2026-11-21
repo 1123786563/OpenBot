@@ -1,4 +1,9 @@
-import { Composio } from "@composio/core";
+import {
+  Composio,
+  handleToolExecutionError,
+  ToolExecuteResponseSchema,
+} from "@composio/core";
+import { MarketRunPaused, withMarketFetch } from "../skill-market/disablements";
 import type { ComposioBroker, ConnectedAppBroker } from "./broker";
 import type { ComposioActions } from "./composio";
 import { accountMethods } from "./composio-client/accounts";
@@ -224,7 +229,34 @@ export function createComposioClient(apiKey: string): {
       list: (query) => client.tools.list(query),
       getRawComposioToolBySlug: (slug, options) =>
         composio.tools.getRawComposioToolBySlug(slug, options),
-      execute: (slug, body) => composio.tools.execute(slug, body),
+      execute: (slug, body, dispatch) => {
+        if (!dispatch) return composio.tools.execute(slug, body);
+        // The action has already been resolved and checked against the connection's
+        // toolkit and file restrictions. The generated client lets us gate its fetch.
+        return withMarketFetch(dispatch, async (fetch) => {
+          try {
+            const response = await client
+              .withOptions({ fetch, maxRetries: 0 })
+              .tools.execute(slug, {
+                arguments: body.arguments,
+                user_id: body.userId,
+                version: body.version,
+                connected_account_id: body.connectedAccountId,
+              });
+            return ToolExecuteResponseSchema.parse({
+              data: response.data,
+              error: response.error,
+              successful: response.successful,
+              logId: response.log_id,
+              sessionInfo: response.session_info,
+            });
+          } catch (error) {
+            if (error instanceof MarketRunPaused || !(error instanceof Error))
+              throw error;
+            throw handleToolExecutionError(slug, error);
+          }
+        });
+      },
     },
     toolkits: {
       list: (query) => client.toolkits.list(query),

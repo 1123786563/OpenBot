@@ -184,3 +184,35 @@ test("on the Bot's page, the row says what the Bot wants to do, over the app's n
   ).toBeTruthy();
   expect(view.container.textContent).not.toContain("composio");
 });
+
+test("a paused approval shows the result of the action already sent", async () => {
+  global.fetch = Object.assign(
+    async () =>
+      Response.json({
+        enabled: true,
+        rules: [],
+        teamRules: [],
+        questions: [],
+        requests: [
+          {
+            ...request("mcp", "requests/get_request", "requests", {}),
+            status: "completed",
+            result: {
+              content: "The request was updated",
+              pauseReason: "Run paused. Review in progress",
+            },
+          },
+        ],
+      }),
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = draw(
+    <InlineApproval
+      toolCallId="call-mcp"
+      fallback={<p>Waiting for a result</p>}
+    />,
+  );
+  const outcome = await view.findByRole("region", { name: "Paused action" });
+  expect(outcome.textContent).toContain("The request was updated");
+  expect(outcome.textContent).toContain("Review in progress");
+});
