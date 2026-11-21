@@ -183,6 +183,7 @@ afterAll(async () => {
     );
   await database.delete(mcpServers).where(eq(mcpServers.id, app));
   await database.delete(users).where(inArray(users.id, [owner, member]));
+  await database.$client.end();
 });
 
 const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (

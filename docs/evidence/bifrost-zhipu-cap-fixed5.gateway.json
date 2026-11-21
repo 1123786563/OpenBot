@@ -1,0 +1,30 @@
+[
+  {
+    "id": "40b1bcca-1c67-43b2-8acb-965f0adc092f",
+    "provider": "zhipu",
+    "model": "glm-5.3-flash",
+    "stream": 0,
+    "token_usage": "{\"prompt_tokens\":20,\"prompt_tokens_details\":{\"cached_tokens\":0},\"completion_tokens\":8,\"completion_tokens_details\":{\"reasoning_tokens\":5},\"total_tokens\":28}",
+    "stop_reason": "length",
+    "number_of_retries": 0,
+    "fallback_index": 0,
+    "status": "success",
+    "params": "{\"max_completion_tokens\":8}",
+    "raw_request": "",
+    "passthrough_request_body": ""
+  },
+  {
+    "id": "d17f9b17-cc8b-4bef-bc12-3a9bf14f7c14",
+    "provider": "zhipu",
+    "model": "glm-5.3-flash",
+    "stream": 1,
+    "token_usage": "{\"prompt_tokens\":20,\"prompt_tokens_details\":{\"cached_tokens\":0},\"completion_tokens\":8,\"completion_tokens_details\":{\"reasoning_tokens\":5},\"total_tokens\":28}",
+    "stop_reason": "length",
+    "number_of_retries": 0,
+    "fallback_index": 0,
+    "status": "success",
+    "params": "{\"max_completion_tokens\":8,\"stream_options\":{\"include_usage\":true}}",
+    "raw_request": "",
+    "passthrough_request_body": ""
+  }
+]
