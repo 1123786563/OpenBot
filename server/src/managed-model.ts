@@ -153,7 +153,9 @@ export function createManagedModel({
         const prepared = await input.beforeDispatch?.();
         if (prepared === false) return { state: "not_authorized" };
         const messages =
-          prepared === undefined || prepared === true ? input.messages : prepared;
+          prepared === undefined || prepared === true
+            ? input.messages
+            : prepared;
         const result = dispatch.parse(
           await post(
             "dispatch",

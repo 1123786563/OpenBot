@@ -539,6 +539,10 @@ const OWN_TOOLS: Record<string, OwnTool> = {
     running: "Checking its memory of you",
     done: "Checked its memory of you",
   },
+  reflect_personal_memory: {
+    running: "Reflecting on its memory of you",
+    done: "Reflected on its memory of you",
+  },
   remember_personal_fact: {
     running: "Saving a memory",
     done: "Saved a memory",

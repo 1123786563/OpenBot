@@ -44,6 +44,7 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
 
   const hasStart = start?.state === "pending";
   useEffect(() => {
+    void attempt;
     if (!hasStart) return;
     let current = true;
     void resumeConversationStart(queryClient, owner, startId, (next) => {

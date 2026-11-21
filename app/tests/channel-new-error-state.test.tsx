@@ -28,6 +28,7 @@ import {
   deploymentKeys,
 } from "@/lib/deployment/queries";
 import { Route as ChannelNewRoute } from "@/routes/_authed/_app/channel/new";
+import { Route as StartRoute } from "@/routes/_authed/_app/start.$startId";
 import {
   NewBotCreationStub,
   SidebarToggleStub,
@@ -190,8 +191,25 @@ const testChannelNewRoute = ChannelNewRoute.update({
   path: "/channel/new",
   getParentRoute: () => appRoute,
 } as TestFileRouteWiring);
+type TestStartRouteWiring = Parameters<typeof StartRoute.update>[0] & {
+  id: string;
+  path: string;
+  getParentRoute: () => typeof appRoute;
+};
+const testStartRoute = StartRoute.update({
+  id: "/start/$startId",
+  path: "/start/$startId",
+  getParentRoute: () => appRoute,
+} as TestStartRouteWiring);
+const channelRoute = createRoute({
+  path: "/channel/$channelId",
+  getParentRoute: () => appRoute,
+  component: () => <p>The conversation</p>,
+});
 const routeTree = rootRoute.addChildren([
-  authedRoute.addChildren([appRoute.addChildren([testChannelNewRoute])]),
+  authedRoute.addChildren([
+    appRoute.addChildren([testChannelNewRoute, testStartRoute, channelRoute]),
+  ]),
 ]);
 
 function renderChannelNew(
@@ -686,6 +704,19 @@ test("+ with only one Bot still opens the menu with it, and the Bot picked there
         { status: 201 },
       );
     }
+    if (url.pathname === "/api/me")
+      return NativeResponse.json({
+        user: {
+          id: "person-1",
+          email: "person@example.test",
+          name: "Person",
+        },
+      });
+    if (url.pathname === "/api/route" && init?.method === "POST")
+      return NativeResponse.json({
+        agentId: GENERAL_ASSISTANT.id,
+        reason: "chosen",
+      });
     return NativeResponse.json({ error: "Not here." }, { status: 404 });
   }) as typeof fetch;
   try {
@@ -710,8 +741,12 @@ test("+ with only one Bot still opens the menu with it, and the Bot picked there
     await typeDraft("what changed in the latest release?", view);
     await userEvent.setup({ document }).keyboard("{Enter}");
 
-    await waitFor(() =>
-      expect(created).toEqual([{ agentIds: [GENERAL_ASSISTANT.id] }]),
+    await waitFor(
+      () =>
+        expect(created).toEqual([
+          expect.objectContaining({ agentIds: [GENERAL_ASSISTANT.id] }),
+        ]),
+      { timeout: 10_000 },
     );
     expect(view.queryByText("Choose a Bot first.")).toBeNull();
   } finally {

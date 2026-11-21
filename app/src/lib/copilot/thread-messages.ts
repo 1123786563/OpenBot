@@ -51,7 +51,9 @@ const storedRuns = z.array(
     externalOutcome: z
       .enum(["dispatching", "unknown", "executed", "not_dispatched"])
       .optional(),
-    stopReason: z.enum(["stopped", "access_revoked", "context_revoked"]).optional(),
+    stopReason: z
+      .enum(["stopped", "access_revoked", "context_revoked"])
+      .optional(),
   }),
 );
 

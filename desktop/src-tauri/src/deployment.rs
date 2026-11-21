@@ -1257,9 +1257,7 @@ mod tests {
         let repository = crate::deployment_release::distribution(&root)
             .unwrap()
             .repository;
-        let source_url = format!(
-            "https://github.com/{repository}/archive/refs/tags/v0.0.7.tar.gz"
-        );
+        let source_url = format!("https://github.com/{repository}/archive/refs/tags/v0.0.7.tar.gz");
         let images_url = format!(
             "https://github.com/{repository}/releases/download/v0.0.7/container-images.json"
         );
@@ -1317,9 +1315,8 @@ mod tests {
         let repository = crate::deployment_release::distribution(&root)
             .unwrap()
             .repository;
-        let source_url = format!(
-            "https://github.com/{repository}/archive/refs/tags/v0.0.16.tar.gz"
-        );
+        let source_url =
+            format!("https://github.com/{repository}/archive/refs/tags/v0.0.16.tar.gz");
         let images_url = format!(
             "https://github.com/{repository}/releases/download/v0.0.16/container-images.json"
         );

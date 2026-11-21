@@ -2,6 +2,7 @@ import { MutationObserver, type QueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import type { ComposerDraft } from "@/components/channels/composer";
+import { stashFirstMessage } from "@/components/channels/transcript-messages";
 import {
   createGroupMutationOptions,
   groupQueryOptions,
@@ -10,7 +11,10 @@ import {
 import { saveConversationModel } from "@/lib/models/mutations";
 import type { ConversationModel } from "@/lib/models/queries";
 import { newId } from "@/lib/new-id";
-import { createChannelMutationOptions } from "./mutations";
+import {
+  createChannelMutationOptions,
+  deleteChannelMutationOptions,
+} from "./mutations";
 import {
   finishPendingStart,
   pendingAttachmentRefs,
@@ -219,7 +223,17 @@ export function resumeConversationStart(
       });
       const pick = draft.model;
       if (!group && pick && (pick.model !== null || pick.effort !== null)) {
-        await saveConversationModel(channel.id, pick);
+        try {
+          await saveConversationModel(channel.id, pick);
+        } catch (error) {
+          await new MutationObserver(
+            queryClient,
+            deleteChannelMutationOptions(queryClient, true),
+          )
+            .mutate(channel.id)
+            .catch(() => undefined);
+          throw error;
+        }
       }
       const latest = readPendingStart(owner, id);
       if (latest?.state === "finished") return latest;
@@ -229,6 +243,7 @@ export function resumeConversationStart(
           : { phase: "ready", channelId: channel.id };
       save({ state: "pending", draft, progress });
       queryClient.setQueryData(channelKeys.detail(channel.id), channel);
+      if (!group) stashFirstMessage(channel.id, draft.text);
     }
     const channelId = progress.channelId;
     if (!group) return { state: "pending", draft, progress };
@@ -261,8 +276,7 @@ export function resumeConversationStart(
   const run = (async () =>
     navigator.locks
       ? navigator.locks.request(`openbot:start:${key}`, work)
-      : work()
-  )().finally(() => startsInProgress.delete(key));
+      : work())().finally(() => startsInProgress.delete(key));
   startsInProgress.set(key, run);
   return run;
 }

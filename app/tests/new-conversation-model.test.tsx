@@ -19,6 +19,7 @@ import { type AgentChannel, channelQueryOptions } from "@/lib/channels/queries";
 import type { ConversationModel, ModelCatalogue } from "@/lib/models/queries";
 import { queryClient } from "@/query-client";
 import { Route as ChannelNewRoute } from "@/routes/_authed/_app/channel/new";
+import { Route as StartRoute } from "@/routes/_authed/_app/start.$startId";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -119,6 +120,14 @@ beforeAll(() => {
       );
       const method =
         init?.method ?? (input instanceof Request ? input.method : "GET");
+      if (url.pathname === "/api/me")
+        return NativeResponse.json({
+          user: {
+            id: "person-1",
+            email: "person@example.test",
+            name: "Person",
+          },
+        });
       if (url.pathname === "/api/channels" && method === "POST") {
         trail.push("create");
         return NativeResponse.json({ channel }, { status: 201 });
@@ -232,6 +241,16 @@ const testChannelNewRoute = ChannelNewRoute.update({
   path: "/channel/new",
   getParentRoute: () => appRoute,
 } as TestFileRouteWiring);
+type TestStartRouteWiring = Parameters<typeof StartRoute.update>[0] & {
+  id: string;
+  path: string;
+  getParentRoute: () => typeof appRoute;
+};
+const testStartRoute = StartRoute.update({
+  id: "/start/$startId",
+  path: "/start/$startId",
+  getParentRoute: () => appRoute,
+} as TestStartRouteWiring);
 
 /** The channel screen, as far as sending goes: the channel record and `ChannelChat` on it. */
 function ChannelScreen() {
@@ -246,7 +265,7 @@ const channelRoute = createRoute({
 });
 const routeTree = rootRoute.addChildren([
   authedRoute.addChildren([
-    appRoute.addChildren([testChannelNewRoute, channelRoute]),
+    appRoute.addChildren([testChannelNewRoute, testStartRoute, channelRoute]),
   ]),
 ]);
 

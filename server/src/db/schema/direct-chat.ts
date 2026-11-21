@@ -44,7 +44,9 @@ export const directChatRuns = pgTable(
     externalOutcome: text("external_outcome").$type<
       "dispatching" | "unknown" | "executed" | "not_dispatched"
     >(),
-    stopReason: text("stop_reason").$type<"stopped" | "access_revoked" | "context_revoked">(),
+    stopReason: text("stop_reason").$type<
+      "stopped" | "access_revoked" | "context_revoked"
+    >(),
     eventCursor: integer("event_cursor").notNull().default(0),
     partialMessageId: text("partial_message_id"),
     partialReply: text("partial_reply"),

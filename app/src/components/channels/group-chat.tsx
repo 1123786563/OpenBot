@@ -150,7 +150,7 @@ export function GroupChat({
     messages.find(({ id }) => id === runId);
   useLayoutEffect(() => {
     if (linkedRun) focus.current?.scrollIntoView({ block: "nearest" });
-  }, [linkedRun?.id]);
+  }, [linkedRun]);
 
   if (group.isPending) return null;
   if (group.isError)

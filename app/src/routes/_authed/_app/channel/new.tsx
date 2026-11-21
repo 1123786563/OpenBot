@@ -202,7 +202,6 @@ function NewConversation({ composition }: { composition: string }) {
   const skillCommands = useSkillCommands(
     group ? "" : (recipients[0]?.id ?? ""),
   );
-
   const submit = async (draft: ComposerDraft) => {
     const recipient = recipients[0];
     if (!recipient || !canSend(recipients, draft.text)) return;
@@ -232,7 +231,13 @@ function NewConversation({ composition }: { composition: string }) {
         <span className="text-sm text-muted-foreground">To:</span>
         <Combobox
           // Do not auto-open when a recipient is already chosen; the field is already answered.
-          open={pickerOpen ?? (!chosen && !loadError && !waitingForUrlAgent)}
+          open={
+            pickerOpen ??
+            (!chosen &&
+              selected.length === 0 &&
+              !loadError &&
+              !waitingForUrlAgent)
+          }
           onOpenChange={setPickerOpen}
           autoHighlight
           multiple
@@ -277,7 +282,7 @@ function NewConversation({ composition }: { composition: string }) {
               // The popup opening is not enough on its own: typing filters through this input, so
               // the caret starts here whenever the recipient question is still open. A recipient
               // already chosen means the composer takes focus instead.
-              autoFocus={!chosen}
+              autoFocus={!chosen && selected.length === 0}
               placeholder={
                 selected.length
                   ? "Add another Bot for a group…"

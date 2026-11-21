@@ -227,7 +227,7 @@ export const directChatLearningSchedules = pgTable(
   ],
 );
 
-// A review fixes both the decision and its complete delivery scope. An approval is the publication.
+// The decision and its complete delivery scope are recorded together. Approval publishes it.
 export const directChatProposalReviews = pgTable(
   "direct_chat_proposal_reviews",
   {

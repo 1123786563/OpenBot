@@ -1177,6 +1177,7 @@ describe("channel store integration", () => {
     expect(await persistentStore.get(actor, created.id)).toEqual({
       ...created,
       active: false,
+      direct: false,
     });
   });
 
