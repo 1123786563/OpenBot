@@ -39,10 +39,26 @@ test("execution budgets authorize each step and preserve completed steps across 
       budgetId: `task-${crypto.randomUUID()}`,
       creditType: "test",
       limitMicrocredits: 2n,
+      confirmed: false,
     });
     expect(budget).toMatchObject({
       creditType: "test",
       limitMicrocredits: "2",
+      confirmed: false,
+    });
+    await expect(
+      ledger.reserve(identity, {
+        operationId: crypto.randomUUID(),
+        route: "missing",
+        priceVersion: crypto.randomUUID(),
+        budgetId: budget.budgetId,
+      }),
+    ).resolves.toMatchObject({ state: "execution_limit" });
+    await expect(
+      ledger.confirmBudget(identity, budget.budgetId, 3n),
+    ).resolves.toMatchObject({
+      limitMicrocredits: "3",
+      confirmed: true,
     });
     await expect(
       ledger.reserve(identity, {
