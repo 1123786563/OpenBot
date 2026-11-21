@@ -41,6 +41,8 @@ import {
   pluginGrants,
   proactiveSettings,
   proactiveSuggestions,
+  skillMarketSources,
+  skills,
   users,
   workItems,
 } from "../src/db/schema";
@@ -49,6 +51,7 @@ import { createMemoryRoutes } from "../src/memory/routes";
 import { createMemoryStore } from "../src/memory/store";
 import { createPluginStore } from "../src/plugins/store";
 import {
+  grantedSkills,
   grantedTools,
   REFUSAL_MARKER,
   vendorAnswer,
@@ -97,6 +100,7 @@ const COMMENT = "notion-create-comment";
 const SEARCH = "web_search_exa";
 const ref = (server: string, tool: string) => `${server}/${tool}`;
 const modelName = (server: string, tool: string) => `mcp__${server}__${tool}`;
+const marketSlug = `approval-snapshot-${suite}`;
 const refreshToken = `refresh-${suite}`;
 
 const profileStore = createAgentProfileStore(
@@ -518,20 +522,25 @@ const memoryIngestion = createMemoryIngestion({
     (await plugins.agentOwner(botId)) === ownerId,
 });
 const roster = new Map<string, RegisteredAgent>();
-const resolver = createActorAgentResolver({
-  loadAgents: async () => [...roster.values()],
-  model: { provider: "openai", defaultModel: "gpt-5.5" },
-  resolveModelApiKey: async () => "test-key",
-  loadPersonalMemoryForActor: (ownerId) => (botId) =>
-    memoryIngestion.contextFor(ownerId, botId),
-  loadToolsForActor: (actorId, initiator) => (botId) =>
-    grantedTools({
-      store: plugins,
-      botId,
-      actorId,
-      ...(initiator ? { initiator } : {}),
+const newResolver = () =>
+  createActorAgentResolver({
+    selectionForActor: () => ({
+      loadSkills: (botId) => grantedSkills({ store: plugins, botId }),
+      choose: async () => null,
     }),
-});
+    loadAgents: async () => [...roster.values()],
+    model: { provider: "openai", defaultModel: "gpt-5.5" },
+    resolveModelApiKey: async () => "test-key",
+    loadPersonalMemoryForActor: (ownerId) => (botId) =>
+      memoryIngestion.contextFor(ownerId, botId),
+    loadToolsForActor: (actorId, initiator) => (botId) =>
+      grantedTools({
+        store: plugins,
+        botId,
+        actorId,
+        ...(initiator ? { initiator } : {}),
+      }),
+  });
 
 const runner: RunnerLike = {
   run: ({ agent, input }) =>
@@ -547,21 +556,29 @@ const runner: RunnerLike = {
 };
 
 /** The approval continuation runner, as index.ts builds it. */
-const runTurn = createTurnRunner({
-  admission: serverTurnAdmission,
-  intelligence: {
-    getOrCreateThread: async () => undefined,
-    getThreadMessages: async () => ({ messages: [] }),
-    ɵacquireThreadLock: async () => undefined,
-    ɵrenewThreadLock: async () => undefined,
-    ɵcleanupThreadLock: async () => undefined,
-  },
-  runner,
-  buildAgentFor: ({ ownerUserId, agentId, initiator }) =>
-    resolver.resolveAgentForActor({ id: ownerUserId, role: "user" }, agentId, {
-      initiator,
-    }),
-});
+const newRunTurn = () =>
+  createTurnRunner({
+    admission: serverTurnAdmission,
+    intelligence: {
+      getOrCreateThread: async () => undefined,
+      getThreadMessages: async () => ({ messages: [] }),
+      ɵacquireThreadLock: async () => undefined,
+      ɵrenewThreadLock: async () => undefined,
+      ɵcleanupThreadLock: async () => undefined,
+    },
+    runner,
+    buildAgentFor: ({ ownerUserId, agentId, initiator, marketSkill }) =>
+      newResolver().resolveAgentForActor(
+        { id: ownerUserId, role: "user" },
+        agentId,
+        {
+          initiator,
+          marketSkill,
+        },
+      ),
+  });
+
+const runTurn = newRunTurn();
 
 const scopeFor = async (
   ownerUserId: string,
@@ -590,42 +607,43 @@ const tasks = createTaskRunner({
   retryMs: 0,
 });
 
-const resumeApproval = createApprovalResumeTick({
-  approvalQueue: queue,
-  approvalOwner: `tasks-apps-${suite}-approval`,
-  approvalService,
-  contextCurrent: ({ actorId, botId, continuation }) =>
-    memoryIngestion.memoryVersionsCurrent(
-      actorId,
-      botId,
-      continuation?.sourceVersions?.filter(({ kind }) => kind === "memory") ??
-        [],
-    ),
-  executeApprovedAction: createApprovedActionExecutor({
-    sourceFor: async () => ({}),
-    gate: approvalService.gate,
-    computerTools: async () => [],
-    hostTools: () => [],
-    callTool: (input) => plugins.callTool(input),
-    credentialActorFor: async (actorId) => actorId,
-    coordinationCall: async () => null,
-    answer: vendorAnswer,
-    privateShareToolRef: PRIVATE_SHARE_TOOL_REF,
-    refusalMarker: REFUSAL_MARKER,
-    personInitiator: PERSON_INITIATOR,
-  }),
-  database,
-  // Read only for a responsibility's waiting run, which these turns never are.
-  responsibilityStore: {} as ResponsibilityStore,
-  groupConversations: {
-    continueWaiting: (_approvalId, run) => run(),
-    pauseWaiting: async () => {},
-  },
-  approvalContinuationRunner: runTurn,
-  channelStore,
-  actorFor,
-  notify: async () => undefined,
-});
+const newResumeApproval = () =>
+  createApprovalResumeTick({
+    approvalQueue: queue,
+    approvalOwner: `tasks-apps-${suite}-approval`,
+    approvalService,
+    contextCurrent: ({ actorId, botId, continuation }) =>
+      memoryIngestion.memoryVersionsCurrent(
+        actorId,
+        botId,
+        continuation?.sourceVersions?.filter(({ kind }) => kind === "memory") ??
+          [],
+      ),
+    executeApprovedAction: createApprovedActionExecutor({
+      sourceFor: async () => ({}),
+      gate: approvalService.gate,
+      computerTools: async () => [],
+      hostTools: () => [],
+      callTool: (input) => plugins.callTool(input),
+      credentialActorFor: async (actorId) => actorId,
+      coordinationCall: async () => null,
+      answer: vendorAnswer,
+      privateShareToolRef: PRIVATE_SHARE_TOOL_REF,
+      refusalMarker: REFUSAL_MARKER,
+      personInitiator: PERSON_INITIATOR,
+    }),
+    database,
+    // Read only for a responsibility's waiting run, which these turns never are.
+    responsibilityStore: {} as ResponsibilityStore,
+    groupConversations: {
+      continueWaiting: (_approvalId, run) => run(),
+      pauseWaiting: async () => {},
+    },
+    approvalContinuationRunner: newRunTurn(),
+    channelStore,
+    actorFor,
+    notify: async () => undefined,
+  });
 
 /* ------------------------------------------------------------------------------------------------
  * A person, their Bot holding the apps, and an item a check-in raised.
@@ -700,6 +718,7 @@ const pendingFor = (owner: string) =>
 
 async function allowOnce(owner: string, id: string) {
   await approvalService.decide(owner, id, "allow_once");
+  const resumeApproval = newResumeApproval();
   for (let tick = 0; tick < 10; tick += 1) {
     await resumeApproval();
     if ((await approvalStore.get(owner, id)).status === "completed") return;
@@ -757,6 +776,10 @@ afterAll(async () => {
     .delete(agentProfiles)
     .where(inArray(agentProfiles.agentId, bots));
   await database.delete(agents).where(inArray(agents.id, bots));
+  await database
+    .delete(skillMarketSources)
+    .where(eq(skillMarketSources.command, marketSlug));
+  await database.delete(skills).where(eq(skills.slug, marketSlug));
   await database.$client.close();
 });
 
@@ -987,6 +1010,100 @@ describe("a task works with the apps the person connected", () => {
         },
       });
       expect(calls).toBe(1);
+    },
+  );
+
+  test.each(["version switch", "uninstall"])(
+    "Allow once resumes with the original SkillHub instructions after %s",
+    async (change) => {
+      const { owner, own, botId } = await seed();
+      const actor = { ...owner, email: `${owner.id}@example.test` };
+      const original = "Follow the original heliotrope workflow.";
+      const replacement = "Follow the replacement marigold workflow.";
+      const version = (versionId: number, instructions: string) => ({
+        kind: "qualified" as const,
+        preview: {
+          source: "https://skillhub.example.test",
+          namespace: "catalog",
+          slug: marketSlug,
+          title: "Approval snapshot",
+          summary: "A workflow for sending a reply.",
+          version: `${versionId}.0.0`,
+          versionId,
+          registrySkillId: 123,
+          fingerprint: `published-${versionId}`,
+          publisher: null,
+          latestVersion: "2.0.0",
+          compatibility: null,
+          runtimeRequirements: null,
+          reasons: [],
+          installable: true,
+          instructions,
+        },
+      });
+      expect(
+        (await plugins.installMarketSkill(actor, botId, version(1, original)))
+          .kind,
+      ).toBe("installed");
+
+      const prompts: string[] = [];
+      script = (request) => {
+        prompts.push(
+          JSON.stringify(
+            request.messages.filter(
+              (message) => String(message.role) === "developer",
+            ),
+          ),
+        );
+        return answeredSinceAsk(request) === 0
+          ? {
+              toolCalls: [
+                {
+                  name: modelName(NOTION, COMMENT),
+                  arguments: JSON.stringify({
+                    page_id: "r-1",
+                    text: "Friday works.",
+                  }),
+                },
+              ],
+            }
+          : { content: "I replied to Sam." };
+      };
+      const content = `/${marketSlug} Tell Sam Friday works.`;
+      await expect(
+        runTurn({
+          ownerUserId: owner.id,
+          routineId: `tasks-apps-${suite}-skill-snapshot`,
+          agentId: botId,
+          threadId: own.threadId,
+          instruction: content,
+          userMessage: { id: randomUUID(), role: "user", content },
+          initiator: PERSON_INITIATOR,
+        }),
+      ).rejects.toThrow("This action is waiting for your approval.");
+      expect(prompts.at(-1)).toContain(original);
+      expect(callsOf(COMMENT)).toEqual([]);
+      const waiting = await pendingFor(owner.id);
+      expect(waiting).toHaveLength(1);
+      if (change === "version switch") {
+        const switched = await plugins.installMarketSkill(
+          actor,
+          botId,
+          version(2, replacement),
+          1,
+        );
+        expect(switched.kind).toBe("switched");
+      } else {
+        expect(
+          await plugins.uninstallMarketSkill(actor, botId, marketSlug, 1),
+        ).toBe("uninstalled");
+      }
+
+      prompts.length = 0;
+      await allowOnce(owner.id, waiting[0]?.id ?? "");
+      expect(callsOf(COMMENT)).toHaveLength(1);
+      expect(prompts.at(-1)).toContain(original);
+      expect(prompts.at(-1)).not.toContain(replacement);
     },
   );
 

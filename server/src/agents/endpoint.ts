@@ -3,6 +3,7 @@ import {
   checkNavigationTarget,
   isNeverAllowedHostname,
 } from "../computer/target";
+import { startMarketRequest } from "../skill-market/disablements";
 import { isManagedEndpoint } from "./managed-endpoint";
 
 /**
@@ -402,10 +403,12 @@ export function createAgentFetch(
       }
       // `manual` is what makes this a check rather than a comment: the caller sees the redirect, and
       // the underlying fetch cannot quietly follow one on its own.
-      const response = await doFetch(dialled, {
-        ...carried,
-        redirect: "manual",
-      });
+      const response = await startMarketRequest(() =>
+        doFetch(dialled, {
+          ...carried,
+          redirect: "manual",
+        }),
+      );
       if (!REDIRECT_STATUSES.has(response.status)) return response;
 
       const location = response.headers.get("location");

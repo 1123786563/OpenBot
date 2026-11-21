@@ -30,6 +30,7 @@ import type { AgentActor } from "../agents/profile-types";
 import { BackgroundConversationBusy } from "../channels/direct-chat";
 import type { ChannelStore } from "../channels/routes";
 import type { mountCopilotRuntime } from "../copilot";
+import { isMarketVersionPause } from "../skill-market/disablements";
 import type { RoutineStore } from "./store";
 
 export type RoutineRunner = { run(routineRunId: string): Promise<void> };
@@ -217,6 +218,11 @@ export function createRoutineRunner(options: {
           return;
         }
         const reason = reasonOf(error);
+        if (isMarketVersionPause(reason)) {
+          await routineStore.finishRun(routineRunId, "skipped", reason);
+          await say(reason);
+          return;
+        }
         await routineStore.finishRun(routineRunId, "failed", reason);
 
         /*

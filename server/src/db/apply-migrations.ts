@@ -9,9 +9,11 @@
  * See `./migration-reach` for what is being checked and why the answer is a refusal rather than a
  * repair.
  */
+import { readMigrationFiles } from "drizzle-orm/migrator";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import type { Sql, TransactionSql } from "postgres";
+import { canMergeMigrationHistories } from "./merge-migration-histories";
 import {
   type AppliedMigration,
   type MigrationsJournal,
@@ -123,10 +125,33 @@ export async function applyMigrations(
 
     const applied = await appliedMigrations(tx, journal);
     const outOfReach = migrationsOutOfReach(folder, applied);
-    if (outOfReach.length > 0) {
+    if (
+      outOfReach.length > 0 &&
+      !canMergeMigrationHistories(folder, applied, outOfReach)
+    ) {
       throw new MigrationsOutOfReachError(
         outOfReachRefusal(outOfReach, folder, applied, journal),
       );
+    }
+
+    // Fill the verified fork gaps before Drizzle applies entries above the high-water mark.
+    if (outOfReach.length > 0) {
+      const missing = new Set(
+        outOfReach.map(({ hash, when }) => `${when}:${hash}`),
+      );
+      for (const migration of readMigrationFiles({ migrationsFolder })) {
+        if (!missing.delete(`${migration.folderMillis}:${migration.hash}`))
+          continue;
+        for (const statement of migration.sql) {
+          await tx.unsafe(statement);
+        }
+        await tx`
+          insert into ${tx(journal.migrationsSchema)}.${tx(journal.migrationsTable)} (hash, created_at)
+          values (${migration.hash}, ${migration.folderMillis})
+        `;
+      }
+      if (missing.size > 0)
+        throw new Error("Migration files changed during upgrade");
     }
 
     await migrate(drizzle(withinTransaction(client, tx)), {

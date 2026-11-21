@@ -779,6 +779,10 @@ address: its page and the Bot both say inbound email is not configured on this d
 Cloud Learning settings and reviews live in OpenBot. The legacy service-token and container
 configuration applies to installations using the legacy runtime. See [Automatic Learning](automatic-learning.md).
 
+## Skill market
+
+See [Deploy the SkillHub catalog](skill-market.md) for the registry version, reader identity, and OpenBot server settings.
+
 ## OpenTelemetry export
 
 When configured, OpenBot sends an allowlisted copy of each committed audit row over OTLP/HTTP.

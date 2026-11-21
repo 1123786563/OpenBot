@@ -705,19 +705,40 @@
     {
       "idx": 100,
       "version": "7",
+      "when": 1795183869296,
+      "tag": "0090_skill_market_installations",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
       "when": 1795183878647,
       "tag": "0100_learning_evidence",
       "breakpoints": true
     },
     {
-      "idx": 101,
+      "idx": 102,
+      "version": "7",
+      "when": 1795185049024,
+      "tag": "0091_skill_market_version_disablements",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
       "version": "7",
       "when": 1795185919612,
       "tag": "0101_intelligence_deletion_cleanup",
       "breakpoints": true
     },
     {
-      "idx": 102,
+      "idx": 104,
+      "version": "7",
+      "when": 1795189760196,
+      "tag": "0092_skill_market_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
       "version": "7",
       "when": 1795228622495,
       "tag": "0102_background_conversation_runs",

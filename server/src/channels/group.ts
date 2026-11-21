@@ -54,6 +54,7 @@ import { workItems } from "../db/schema/work";
 import { withdrawLearningEvidence } from "../learning/evidence";
 import { leadingSkillCommand } from "../plugins/picked-skill";
 import type { CheckPrivateShare } from "../proactive/private-share";
+import { isMarketVersionPause } from "../skill-market/disablements";
 import type { WorkQueue } from "../work/queue";
 import { stopDirectChatRun } from "./direct-chat-replay";
 import { CHANNEL_ACTIVITY_TOPIC } from "./events";
@@ -1173,6 +1174,10 @@ export function createGroupConversations(deps: {
           message: error.message,
           ...chainOf(turn),
         });
+      else if (error instanceof Error && isMarketVersionPause(error.message))
+        await deps.store.finish(id, error.message, "completed", {
+          pauseReason: error.message,
+        });
       else
         await deps.store.finish(
           id,
@@ -1220,8 +1225,16 @@ export function createGroupConversations(deps: {
     async continueWaiting(
       approvalId: string,
       run: () => Promise<{ replyText: string }>,
+      pauseReason?: string,
     ): Promise<{ replyText: string }> {
       const row = await deps.store.waitingFor(approvalId);
+      if (pauseReason) {
+        if (row)
+          await deps.store.finish(row.id, pauseReason, "completed", {
+            pauseReason,
+          });
+        return { replyText: pauseReason };
+      }
       if (!row?.agentId) return run();
       const agentId = row.agentId;
       const accessibleBots = await orderedRoster(
@@ -1307,6 +1320,10 @@ export function createGroupConversations(deps: {
             ...error.waiting,
             message: error.message,
             ...chainFrom(row.details),
+          });
+        else if (error instanceof Error && isMarketVersionPause(error.message))
+          await deps.store.finish(row.id, error.message, "completed", {
+            pauseReason: error.message,
           });
         else
           await deps.store.finish(
@@ -1427,6 +1444,9 @@ export function createGroupConversations(deps: {
         })),
         messages: messages.map(({ details, ...message }) => ({
           ...message,
+          ...(typeof details.pauseReason === "string"
+            ? { status: "paused" as const, reason: details.pauseReason }
+            : {}),
           // A reply in progress has not been through the owner's share check yet (that runs once the
           // turn ends), so only the person whose Bot it is reads it as it arrives.
           ...(deps.privateShare &&

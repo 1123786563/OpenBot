@@ -60,6 +60,7 @@ import {
   routineSweeps,
   routines,
 } from "../db/schema";
+import { isMarketVersionPause } from "../skill-market/disablements";
 import { describeCron, nextOccurrence, ScheduleRefusedError } from "./schedule";
 
 const SWEEP_ID = "routines";
@@ -111,6 +112,7 @@ const TOO_MANY_ENABLED = `You already have ${MAX_ENABLED_ROUTINES} routines swit
 const MAX_NAMED_CHANNELS = 5;
 
 export type RoutineRunOutcome = "succeeded" | "failed" | "skipped" | "waiting";
+type RoutineRunDisplayStatus = RoutineRunOutcome | "paused";
 
 export type Routine = {
   id: string;
@@ -162,7 +164,10 @@ export type RoutineSummary = {
   /** Whether the target channel was deleted. A broken routine is shown, not hidden. */
   channelDeleted: boolean;
   /** The most recent firing, or null when it has never fired. */
-  lastRun: { status: RoutineRunOutcome | null; finishedAt: Date | null } | null;
+  lastRun: {
+    status: RoutineRunDisplayStatus | null;
+    finishedAt: Date | null;
+  } | null;
 };
 
 export type RoutineInput = {
@@ -933,13 +938,14 @@ export function createRoutineStore(database: Database): RoutineStore {
       const routineIds = rows.map((row) => row.routine.id);
       const lastRuns = new Map<
         string,
-        { status: RoutineRunOutcome | null; finishedAt: Date | null }
+        { status: RoutineRunDisplayStatus | null; finishedAt: Date | null }
       >();
       if (routineIds.length > 0) {
         const runRows = await database
           .selectDistinctOn([routineRuns.routineId], {
             routineId: routineRuns.routineId,
             status: routineRuns.status,
+            error: routineRuns.error,
             finishedAt: routineRuns.finishedAt,
           })
           .from(routineRuns)
@@ -955,7 +961,10 @@ export function createRoutineStore(database: Database): RoutineStore {
           );
         for (const run of runRows) {
           lastRuns.set(run.routineId, {
-            status: run.status,
+            status:
+              run.status === "skipped" && isMarketVersionPause(run.error)
+                ? "paused"
+                : run.status,
             finishedAt: run.finishedAt,
           });
         }

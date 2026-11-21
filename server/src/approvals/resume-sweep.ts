@@ -28,6 +28,10 @@ import {
 } from "../db/schema";
 import type { DeliveryScope } from "../delivery/types";
 import type { ResponsibilityStore } from "../responsibilities/types";
+import {
+  isMarketVersionPause,
+  marketRunPauseReason,
+} from "../skill-market/disablements";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import type { ApprovalResumeDependencies, ApprovalService } from "./service";
 import type { ApprovalAction } from "./types";
@@ -47,7 +51,7 @@ export function createApprovalResumeTick(deps: {
   contextCurrent?: (action: ApprovalAction) => Promise<boolean>;
   traceRuns?: boolean;
   database: Database;
-  responsibilityStore: ResponsibilityStore;
+  responsibilityStore: Pick<ResponsibilityStore, "resumeWaiting">;
   groupConversations: Pick<
     GroupConversations,
     "continueWaiting" | "pauseWaiting"
@@ -56,7 +60,7 @@ export function createApprovalResumeTick(deps: {
   backgroundApproval?: ReturnType<
     typeof createDirectChatRoutes
   >["backgroundApproval"];
-  channelStore: ChannelStore;
+  channelStore: Pick<ChannelStore, "recordActivity">;
   actorFor: (ownerUserId: string) => Promise<AgentActor>;
   notify: (
     scope: DeliveryScope,
@@ -209,6 +213,7 @@ export function createApprovalResumeTick(deps: {
             result,
             messageId,
             approvalId,
+            pauseReason,
           }) => {
             if (
               result.error === CONTEXT_REVOKED_MESSAGE ||
@@ -219,6 +224,9 @@ export function createApprovalResumeTick(deps: {
             }
             // The original Routine or handoff worker picks up the saved result and resumes its Run.
             if (background) return;
+            pauseReason ??=
+              (await marketRunPauseReason(database, request.action)) ??
+              undefined;
             const [waitingRun] = await database
               .select({ id: responsibilityRuns.id })
               .from(responsibilityRuns)
@@ -230,6 +238,23 @@ export function createApprovalResumeTick(deps: {
               )
               .limit(1);
             if (waitingRun) {
+              if (pauseReason) {
+                await database
+                  .update(responsibilityRuns)
+                  .set({
+                    status: "skipped",
+                    error: pauseReason,
+                    finishedAt: new Date(),
+                    waiting: null,
+                  })
+                  .where(
+                    and(
+                      eq(responsibilityRuns.id, waitingRun.id),
+                      eq(responsibilityRuns.status, "waiting"),
+                    ),
+                  );
+                return { pauseReason };
+              }
               await responsibilityStore.resumeWaiting(
                 input.ownerUserId,
                 waitingRun.id,
@@ -265,22 +290,30 @@ export function createApprovalResumeTick(deps: {
                       continuation: { snapshot, result, messageId },
                     });
                   }),
+                pauseReason,
               );
             } catch (error) {
               if (error instanceof RunContextRevokedError) {
                 await pause();
                 return;
               }
-              if (!(error instanceof HeadlessToolSuspension)) throw error;
-              waitingOn = {
-                message: error.message,
-                ...(typeof error.waiting.approvalId === "string"
-                  ? { approvalId: error.waiting.approvalId }
-                  : {}),
-              };
-              outcome = { replyText: "" };
+              if (error instanceof HeadlessToolSuspension) {
+                waitingOn = {
+                  message: error.message,
+                  ...(typeof error.waiting.approvalId === "string"
+                    ? { approvalId: error.waiting.approvalId }
+                    : {}),
+                };
+                outcome = { replyText: "" };
+              } else if (
+                error instanceof Error &&
+                isMarketVersionPause(error.message)
+              ) {
+                pauseReason = error.message;
+                outcome = { replyText: pauseReason };
+              } else throw error;
             }
-            if (outcome.replyText)
+            if (outcome.replyText && !pauseReason)
               await deps.transcriptHolds?.({
                 ownerUserId: input.ownerUserId,
                 threadId: snapshot.threadId,
@@ -349,9 +382,9 @@ export function createApprovalResumeTick(deps: {
             await database
               .update(routineRuns)
               .set({
-                status: "succeeded",
+                status: pauseReason ? "skipped" : "succeeded",
                 finishedAt: new Date(),
-                error: null,
+                error: pauseReason ?? null,
                 waiting: null,
               })
               .where(
@@ -360,6 +393,7 @@ export function createApprovalResumeTick(deps: {
                   sql`${routineRuns.waiting}->>'approvalId' = ${approvalId}`,
                 ),
               );
+            if (pauseReason) return { pauseReason };
           },
         };
         abandon = (reason) =>

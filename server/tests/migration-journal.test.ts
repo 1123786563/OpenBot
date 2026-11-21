@@ -137,6 +137,7 @@ const columnIn = (snapshot: Snapshot, table: string, column: string) =>
  */
 const declared = (tail: string): { type: string; notNull: boolean } => ({
   type: tail
+    .replace(/\s+GENERATED ALWAYS AS .+ STORED$/is, "")
     .replace(/\bNOT NULL\b/gi, " ")
     .replace(
       /\bDEFAULT\s+(?:'(?:[^']|'')*'(?:\s*::\s*[\w.]+(?:\[\])?)*|[^\s;]+)/gi,
@@ -503,11 +504,25 @@ describe("the migration journal", () => {
      */
     const entries = await readJournal();
 
+    // Keep both parents' published tags. The snapshots use the merged chronological indices.
+    const historicalTags = new Map([
+      [100, "0090_skill_market_installations"],
+      [101, "0100_learning_evidence"],
+      [102, "0091_skill_market_version_disablements"],
+      [103, "0101_intelligence_deletion_cleanup"],
+      [104, "0092_skill_market_runs"],
+      [105, "0102_background_conversation_runs"],
+    ]);
     const mislabelled = entries
-      .filter(
-        (entry) =>
-          entry.tag.split("_")[0] !== String(entry.idx).padStart(4, "0"),
-      )
+      .filter((entry, index) => {
+        const tag = historicalTags.get(index);
+        return (
+          entry.idx !== index ||
+          (tag
+            ? entry.tag !== tag
+            : entry.tag.split("_")[0] !== String(index).padStart(4, "0"))
+        );
+      })
       .map((entry) => `${entry.tag} is entry idx ${entry.idx}`);
 
     expect(mislabelled).toEqual([]);

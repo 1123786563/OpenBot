@@ -9,7 +9,10 @@ import {
   type RunAgentInput,
 } from "@ag-ui/client";
 import { Observable, type Subscription } from "rxjs";
-import { withApprovalContext } from "./continuation";
+import {
+  marketSkillForContinuation,
+  withApprovalContext,
+} from "./continuation";
 import {
   HeadlessToolSuspension,
   OPENBOT_WAITING_METADATA,
@@ -105,6 +108,7 @@ export async function executeNativeApprovalTool<T>(
     context: run.input.context,
     forwardedProps: run.input.forwardedProps,
     initiator,
+    ...marketSkillForContinuation(run.input),
   };
   const pending = Promise.resolve().then(() =>
     withApprovalContext(continuation, dispatch),

@@ -23,7 +23,7 @@ const needsConversation = (outcome: unknown) =>
   typeof outcome === "object" &&
   (outcome as { needsConversation?: unknown }).needsConversation === true;
 
-/** What the Bot is told when a step in a conversation that asks first has nowhere to ask. */
+/** What the Bot is told when its tool call cannot be tied to the conversation. */
 const NOT_ASKED =
   "Not done: this conversation asks before every step, and this step couldn't be asked about here.";
 
@@ -49,12 +49,13 @@ const writes = new Set([
 async function asksEveryStep(
   queries: QueryClient,
   threadId: string | undefined,
+  tool?: { botId: string; toolCallId: string },
 ): Promise<boolean> {
   if (!threadId) return false;
   try {
     return (
       (await queries.fetchQuery({
-        ...threadAsksEveryStepQueryOptions(threadId),
+        ...threadAsksEveryStepQueryOptions(threadId, tool),
         retry: false,
       })) !== false
     );
@@ -137,8 +138,16 @@ export function useFrontendTool<T extends Record<string, unknown>>(
     context: Parameters<NonNullable<ReactFrontendTool<T>["handler"]>>[1],
   ): Promise<unknown> {
     let direct: unknown;
-    const everyStep = await asksEveryStep(queryClient, context.agent?.threadId);
-    if (!writes.has(tool.name) && !everyStep) {
+    const botId = botOf(context.agent);
+    const toolCallId = context.toolCall?.id;
+    const requiresGate = await asksEveryStep(
+      queryClient,
+      context.agent?.threadId,
+      tool.name.startsWith("computer_") && !writes.has(tool.name) && toolCallId
+        ? { botId, toolCallId }
+        : undefined,
+    );
+    if (!writes.has(tool.name) && !requiresGate) {
       direct = await tool.handler?.(args, context);
       if (!needsConversation(direct)) return direct;
     }
@@ -152,14 +161,14 @@ export function useFrontendTool<T extends Record<string, unknown>>(
        * Not in a conversation that asks before every step: sent without its conversation,
        * the server could not tell, so the step is not taken at all.
        */
-      if (everyStep) return { ok: false, reason: NOT_ASKED };
+      if (requiresGate) return { ok: false, reason: NOT_ASKED };
       return direct ?? tool.handler?.(args, context);
     }
     let response: Response;
     try {
       // The gate of the Bot whose run this is, which the person may have navigated away from.
       response = await tryClient(
-        `/api/approvals/computer/${encodeURIComponent(botOf(context.agent))}`,
+        `/api/approvals/computer/${encodeURIComponent(botId)}`,
         { method: "POST", body: snapshot, signal: context.signal },
       );
     } catch (error) {

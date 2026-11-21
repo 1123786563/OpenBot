@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AbstractAgent, BaseEvent, RunAgentInput } from "@ag-ui/client";
+import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
 import { EventType } from "@ag-ui/client";
 import { OUTCOME_UNKNOWN } from "@openbot/shared/approval-outcomes";
 import {
@@ -58,6 +59,7 @@ import {
   routines,
   users,
 } from "../db/schema";
+import { marketRunPauseReason } from "../skill-market/disablements";
 import {
   createDirectChatLearning,
   LearningEvidenceUnavailable,
@@ -271,6 +273,7 @@ export function createDirectChatRoutes(deps: {
     actor: AgentActor,
     agentId: string,
     initiator?: AuditInitiator,
+    marketSkill?: MarketSkillSnapshot | null,
   ) => Promise<AbstractAgent | null>;
 }) {
   const { database, profiles, traceRuns } = deps;
@@ -1225,6 +1228,7 @@ export function createDirectChatRoutes(deps: {
       }
     | { kind: "waiting" }
     | { kind: "unknown" }
+    | { kind: "paused"; reason: string }
   > {
     if (!run.waitingApprovalId) return { kind: "ready" };
     const request = await approvalCheckpoint(
@@ -1246,6 +1250,22 @@ export function createDirectChatRoutes(deps: {
         { traceRuns, externalOutcome: "unknown" },
       );
       return { kind: "unknown" };
+    }
+    const reason =
+      request.result.pauseReason ??
+      (await marketRunPauseReason(database, request.action));
+    if (reason) {
+      await appendDirectChatEvent(
+        database,
+        key,
+        {
+          type: EventType.RUN_ERROR,
+          message: reason,
+          code: "MARKET_SKILL_PAUSED",
+        },
+        { traceRuns },
+      );
+      return { kind: "paused", reason };
     }
     return {
       kind: "ready",
@@ -1477,10 +1497,16 @@ export function createDirectChatRoutes(deps: {
             continue;
           }
         }
+        const marketPause = await marketRunPauseReason(database, {
+          ...key,
+          actorId: actor.id,
+          botId: input.agentId,
+        });
         throw backgroundRefusal(
           run.externalOutcome === "unknown"
             ? "The Run has an unverified external outcome."
-            : "The Bot Run failed. See the conversation for its status.",
+            : (marketPause ??
+                "The Bot Run failed. See the conversation for its status."),
         );
       }
       if (!run.dispatchedAt) {
@@ -1490,6 +1516,8 @@ export function createDirectChatRoutes(deps: {
             "The Bot run is waiting for an approval.",
           );
         if (checkpoint.kind === "unknown") continue;
+        if (checkpoint.kind === "paused")
+          throw backgroundRefusal(checkpoint.reason);
         const controller = new AbortController();
         const workerId = workerKey(key);
         if (!workers.has(workerId)) {
@@ -1573,7 +1601,14 @@ export function createDirectChatRoutes(deps: {
       trial || reflectQuery || background?.literalAnswer
         ? null
         : await deps
-            .agentFor(actor, agentId, background?.initiator)
+            .agentFor(
+              actor,
+              agentId,
+              background?.initiator,
+              continuation
+                ? (continuation.snapshot.marketSkill ?? null)
+                : undefined,
+            )
             .catch(() => null);
     let runnable = true;
     const shouldContinue = async () => {
@@ -1817,6 +1852,7 @@ export function createDirectChatRoutes(deps: {
         continuation,
       });
       let failure = false;
+      let marketPause: string | undefined;
       let waitingApprovalId: string | undefined;
       const completion = withRunContext(runContext, async () => {
         await verifyRunContext();
@@ -1832,8 +1868,14 @@ export function createDirectChatRoutes(deps: {
               if (waiting.success) waitingApprovalId = waiting.data.approvalId;
               return;
             }
-            if (event.type === EventType.RUN_ERROR) failure = true;
-            else if (event.type !== EventType.RUN_FINISHED) {
+            if (event.type === EventType.RUN_ERROR) {
+              failure = true;
+              if (
+                event.code === "MARKET_SKILL_PAUSED" &&
+                typeof event.message === "string"
+              )
+                marketPause = event.message;
+            } else if (event.type !== EventType.RUN_FINISHED) {
               writes = writes
                 .then(async () => {
                   if (
@@ -1899,6 +1941,22 @@ export function createDirectChatRoutes(deps: {
             .where(and(matchingRun(key), eq(directChatRuns.status, "running")));
           return;
         }
+      }
+      if (marketPause) {
+        await appendDirectChatEvent(
+          database,
+          key,
+          {
+            type: EventType.RUN_ERROR,
+            message: marketPause,
+            code: "MARKET_SKILL_PAUSED",
+          },
+          {
+            traceRuns,
+            ...(background && { externalOutcome: "unknown" as const }),
+          },
+        );
+        return;
       }
       if (writeFailed || failure || !reply || typeof reply.content !== "string")
         throw new Error("Bot returned no text.");

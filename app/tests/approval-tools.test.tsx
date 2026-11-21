@@ -392,13 +392,14 @@ async function navigateWith(
   }
 }
 
-/** The server's answer to "does this conversation ask before every step?", then `rest` for the gate. */
+const lookCheck =
+  "/api/approvals/threads/thread?botId=default&toolCallId=navigate-call";
+
+/** The server's answer to whether this call needs its run context, then the approval gate. */
 const threadAnswers =
   (asksEveryStep: boolean, rest: () => Promise<Response>) =>
   async (path: string) =>
-    path === "/api/approvals/threads/thread"
-      ? Response.json({ asksEveryStep })
-      : rest();
+    path === lookCheck ? Response.json({ asksEveryStep }) : rest();
 
 test("a look a rule asks about goes again through the gate, with its conversation", async () => {
   looked.length = 0;
@@ -417,10 +418,7 @@ test("a look a rule asks about goes again through the gate, with its conversatio
     ),
   );
   expect(looked).toHaveLength(1);
-  expect(paths).toEqual([
-    "/api/approvals/threads/thread",
-    "/api/approvals/computer/default",
-  ]);
+  expect(paths).toEqual([lookCheck, "/api/approvals/computer/default"]);
   expect(result).toEqual({ waiting: true });
   expect(stopped).toHaveLength(1);
 });
@@ -435,8 +433,26 @@ test("a look nothing asks about goes straight to the computer and nowhere else",
   );
   expect(looked).toHaveLength(1);
   // Asked once about the conversation, and the answer kept: it never changes.
-  expect(paths).toEqual(["/api/approvals/threads/thread"]);
+  expect(paths).toEqual([lookCheck]);
   expect(result).toEqual({ ok: true, title: "Example Domain" });
+});
+
+test("a market run sends an otherwise direct look through the run-bound gate", async () => {
+  looked.length = 0;
+  const { paths, result } = await navigateWith(async (path) =>
+    path === lookCheck
+      ? Response.json({ asksEveryStep: false, requiresRunContext: true })
+      : Response.json(
+          { error: "Run paused. Review in progress" },
+          { status: 400 },
+        ),
+  );
+  expect(looked).toEqual([]);
+  expect(paths).toEqual([lookCheck, "/api/approvals/computer/default"]);
+  expect(result).toMatchObject({
+    ok: false,
+    reason: "Run paused. Review in progress",
+  });
 });
 
 test("in a task's own conversation, opened with no conversation list loaded, a look goes to the gate first", async () => {
@@ -453,10 +469,7 @@ test("in a task's own conversation, opened with no conversation list loaded, a l
     ),
   );
   expect(looked).toEqual([]);
-  expect(paths).toEqual([
-    "/api/approvals/threads/thread",
-    "/api/approvals/computer/default",
-  ]);
+  expect(paths).toEqual([lookCheck, "/api/approvals/computer/default"]);
   expect(result).toEqual({ waiting: true });
   expect(stopped).toHaveLength(1);
 });
@@ -465,15 +478,12 @@ test("a look whose conversation couldn't be checked goes through the gate, where
   looked.length = 0;
   lookOutcome = { ok: true, title: "Example Domain" };
   const { result, paths } = await navigateWith(async (path) =>
-    path === "/api/approvals/threads/thread"
+    path === lookCheck
       ? Response.json({ error: "Unavailable." }, { status: 503 })
       : Response.json({ result: { ok: true, title: "Example Domain" } }),
   );
   expect(looked).toEqual([]);
-  expect(paths).toEqual([
-    "/api/approvals/threads/thread",
-    "/api/approvals/computer/default",
-  ]);
+  expect(paths).toEqual([lookCheck, "/api/approvals/computer/default"]);
   expect(result).toEqual({ ok: true, title: "Example Domain" });
 });
 
@@ -487,7 +497,7 @@ test("in a task's own conversation, a look with no conversation to ask in is not
     { observed: false },
   );
   expect(looked).toEqual([]);
-  expect(paths).toEqual(["/api/approvals/threads/thread"]);
+  expect(paths).toEqual([lookCheck]);
   expect(result).toEqual({
     ok: false,
     reason:

@@ -3,6 +3,7 @@ import { RunAgentInputSchema } from "@ag-ui/core/schemas";
 import {
   type ApprovalContinuation,
   currentApprovalContext,
+  marketSkillSnapshotSchema,
   withApprovalContext,
 } from "@openbot/toolkit/continuation";
 import { runContextVersion } from "@openbot/toolkit/run-context";
@@ -177,7 +178,7 @@ export type ApprovalRecord = {
   action: ApprovalAction;
   status: "pending" | "approved" | "denied" | "consumed" | "completed";
   decision: ApprovalDecision | null;
-  result: { content: string; error?: string } | null;
+  result: { content: string; error?: string; pauseReason?: string } | null;
   createdAt: Date;
   decidedAt: Date | null;
   consumedAt: Date | null;
@@ -401,7 +402,7 @@ export type ApprovalStore = {
     id: string,
     result: { content: string; error?: string },
   ): Promise<boolean>;
-  finish(ownerUserId: string, id: string): Promise<void>;
+  finish(ownerUserId: string, id: string, pauseReason?: string): Promise<void>;
   rules(ownerUserId: string): Promise<ApprovalRule[]>;
   revoke(ownerUserId: string, id: string): Promise<void>;
   /**
@@ -521,6 +522,7 @@ export function parseApprovalResult(value: unknown): {
 }
 export function parseApprovalContinuation(
   value: unknown,
+  source: "stored" | "frontend" = "stored",
 ): ApprovalContinuation {
   if (!value || typeof value !== "object")
     throw new ApprovalRefusedError(
@@ -543,6 +545,11 @@ export function parseApprovalContinuation(
     .safeParse(input.sourceVersions);
   if (!parsed.success || !versions.success)
     throw new ApprovalRefusedError("The interrupted conversation is invalid.");
+  const marketSkill = marketSkillSnapshotSchema
+    .optional()
+    .safeParse(source === "stored" ? input.marketSkill : undefined);
+  if (!marketSkill.success)
+    throw new ApprovalRefusedError("The interrupted Skill version is invalid.");
   return {
     runId: parsed.data.runId,
     threadId: parsed.data.threadId,
@@ -555,6 +562,7 @@ export function parseApprovalContinuation(
     forwardedProps: parsed.data.forwardedProps,
     ...(input.initiator ? { initiator: input.initiator } : {}),
     ...(versions.data ? { sourceVersions: versions.data } : {}),
+    ...(marketSkill.data ? { marketSkill: marketSkill.data } : {}),
   };
 }
 function canonical(value: unknown): string {

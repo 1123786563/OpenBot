@@ -14,7 +14,7 @@ export type GroupMessage = {
   ownerUserId: string;
   agentId: string | null;
   text: string;
-  status: "queued" | "running" | "waiting" | "completed" | "failed";
+  status: "queued" | "running" | "waiting" | "completed" | "failed" | "paused";
   createdAt: string;
   /** Why a Bot is waiting or paused. */
   reason?: string;

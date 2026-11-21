@@ -1,6 +1,7 @@
 import { researchRoleOf } from "@openbot/shared/research";
 import { textOf } from "../agents/message-text";
 import { researchRoleFor } from "./catalogue";
+import type { PickableSkill } from "./picked-skill";
 /**
  * Choosing which of a Bot's tools to put in front of the model, one run at a time.
  *
@@ -33,18 +34,11 @@ import { researchRoleFor } from "./catalogue";
  */
 
 /** One granted skill, as much of it as choosing needs. */
-export type SelectableSkill = {
-  slug: string;
-  title: string;
+export type SelectableSkill = PickableSkill & {
   /** The one line the model reads. This is the index; see K3. */
   summary: string;
   /** What the skill says it needs, as `<serverId>/<toolName>` refs. A declaration, not a grant. */
   tools: readonly string[];
-  /**
-   * What the skill tells the Bot, as stored. Not read by narrowing; a run whose message picks the
-   * skill is given it (`picked-skill.ts`).
-   */
-  instructions?: string;
 };
 
 /** A granted tool, as much of it as narrowing needs. */

@@ -1,5 +1,6 @@
 import { PlanModel, type PlanModelConfig } from "../agents/plan-model";
 import type { RuntimeModel } from "../copilot";
+import { startMarketRequest } from "../skill-market/disablements";
 
 /**
  * One model call on the deployment's own model, for the router, the approval reviewer and the tool
@@ -123,66 +124,68 @@ export function createModelCompleter(deps: {
       key: string,
       schema?: ModelAnswerSchema,
     ): Promise<Response> {
-      return fetch(
-        anthropic
-          ? anthropicMessagesUrl(process.env)
-          : chatCompletionsUrl(process.env),
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            ...(anthropic
-              ? { "x-api-key": key, "anthropic-version": "2023-06-01" }
-              : { authorization: `Bearer ${key}` }),
-          },
-          body: JSON.stringify({
-            model,
-            /*
-             * No temperature.
-             *
-             * It was zero, for a router that answers the same way twice. Reasoning models refuse the
-             * setting outright — "Unsupported value: 'temperature' does not support 0 with this model.
-             * Only the default (1) value is supported" — and this call treats a throw as "not sure", so
-             * every routing decision quietly became the default coworker and the roster was never
-             * consulted. A question naming Google Drive went to a Bot holding no Drive tools, which is
-             * the exact failure the roster exists to prevent, and nothing said so.
-             *
-             * Omitted rather than set per model, because a list of which models accept it is a list that
-             * goes stale. `response_format` and a prompt that asks for one object keep the answer tight,
-             * and the confidence floor still sends an unsure match to the default.
-             */
-            ...(anthropic
-              ? {
-                  max_tokens: deps.maxTokens ?? 1024,
-                  ...(schema
-                    ? {
-                        output_config: {
-                          format: {
-                            type: "json_schema",
-                            schema: schema.schema,
+      return startMarketRequest(() =>
+        fetch(
+          anthropic
+            ? anthropicMessagesUrl(process.env)
+            : chatCompletionsUrl(process.env),
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              ...(anthropic
+                ? { "x-api-key": key, "anthropic-version": "2023-06-01" }
+                : { authorization: `Bearer ${key}` }),
+            },
+            body: JSON.stringify({
+              model,
+              /*
+               * No temperature.
+               *
+               * It was zero, for a router that answers the same way twice. Reasoning models refuse the
+               * setting outright — "Unsupported value: 'temperature' does not support 0 with this model.
+               * Only the default (1) value is supported" — and this call treats a throw as "not sure", so
+               * every routing decision quietly became the default coworker and the roster was never
+               * consulted. A question naming Google Drive went to a Bot holding no Drive tools, which is
+               * the exact failure the roster exists to prevent, and nothing said so.
+               *
+               * Omitted rather than set per model, because a list of which models accept it is a list that
+               * goes stale. `response_format` and a prompt that asks for one object keep the answer tight,
+               * and the confidence floor still sends an unsure match to the default.
+               */
+              ...(anthropic
+                ? {
+                    max_tokens: deps.maxTokens ?? 1024,
+                    ...(schema
+                      ? {
+                          output_config: {
+                            format: {
+                              type: "json_schema",
+                              schema: schema.schema,
+                            },
                           },
-                        },
-                      }
-                    : {}),
-                }
-              : {
-                  response_format: schema
-                    ? {
-                        type: "json_schema",
-                        json_schema: {
-                          name: schema.name,
-                          schema: schema.schema,
-                          strict: true,
-                        },
-                      }
-                    : { type: "json_object" },
-                }),
-            messages: [{ role: "user", content: prompt }],
-          }),
-          signal: signal
-            ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
-            : AbortSignal.timeout(timeoutMs),
-        },
+                        }
+                      : {}),
+                  }
+                : {
+                    response_format: schema
+                      ? {
+                          type: "json_schema",
+                          json_schema: {
+                            name: schema.name,
+                            schema: schema.schema,
+                            strict: true,
+                          },
+                        }
+                      : { type: "json_object" },
+                  }),
+              messages: [{ role: "user", content: prompt }],
+            }),
+            signal: signal
+              ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+              : AbortSignal.timeout(timeoutMs),
+          },
+        ),
       );
     }
   };

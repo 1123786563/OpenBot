@@ -781,6 +781,7 @@ for (const outcome of [
   "stop",
   "revoke",
   "lose the worker during",
+  "pause a disabled SkillHub version in",
 ] as const) {
   test(`a background approval can ${outcome} the original Routine Run`, async () => {
     const actor = await person();
@@ -792,7 +793,12 @@ for (const outcome of [
     });
     const approvals = createApprovalStore(database);
     await approvals.setEnabled(actor.id, true);
-    const service = createApprovalService(approvals);
+    const marketPause =
+      "Run paused. Market skill version 1.0.0 is disabled by an OpenBot administrator. Reason: withdrawn";
+    let pauseReason: string | null = null;
+    const service = createApprovalService(approvals, undefined, undefined, {
+      marketPause: async () => pauseReason,
+    });
     let executions = 0;
     let resumes = 0;
     const action = async () => {
@@ -901,6 +907,8 @@ for (const outcome of [
       post({ decision: "allow_once" }),
     );
     expect(decision.status).toBe(200);
+    if (outcome === "pause a disabled SkillHub version in")
+      pauseReason = marketPause;
     if (outcome === "stop") {
       const stopped = await app.request(
         `${thread}/runs/${runId}/stop?agentId=${bot.id}`,
@@ -958,6 +966,17 @@ for (const outcome of [
     if (outcome === "lose the worker during") {
       expect(await history()).toMatchObject({
         runs: [{ id: runId, externalOutcome: "unknown" }],
+      });
+    }
+    if (pauseReason) {
+      const [routineRun] = await database
+        .select({ status: routineRuns.status, error: routineRuns.error })
+        .from(routineRuns)
+        .where(eq(routineRuns.id, runId));
+      expect(routineRun).toEqual({ status: "skipped", error: pauseReason });
+      expect(await approvals.get(actor.id, approval.id)).toMatchObject({
+        status: "completed",
+        result: { pauseReason },
       });
     }
     expect(executions).toBe(completed ? 1 : 0);
@@ -1490,13 +1509,10 @@ test("a granted cloud Chat tool waits for approval and resumes the original Run 
     } while (Date.now() < until);
     expect((await store.get(actor.id, request.id)).status).toBe("completed");
     expect(writes).toBe(1);
-    const resume = await restarted.request(
-      `${path}/resume`,
-      {
-        ...post({ threadId: channel.threadId, runId, cursor: 0 }),
-        signal: AbortSignal.timeout(15_000),
-      },
-    );
+    const resume = await restarted.request(`${path}/resume`, {
+      ...post({ threadId: channel.threadId, runId, cursor: 0 }),
+      signal: AbortSignal.timeout(15_000),
+    });
     expect(events(await resume.text())).toContainEqual({
       type: EventType.RUN_FINISHED,
       threadId: channel.threadId,
@@ -3118,28 +3134,37 @@ test("Memory withdrawn after model dispatch pauses the original Run before its n
     encryptionKey: Buffer.alloc(32, 7).toString("base64"),
     policy: () => ({ mode: "enforce", deny: [], allow: ["true"] }),
   });
-  const ingestion = createMemoryIngestion({store, plugins, canUseBot: async (person, id) => person === actor.id && id === bot.id});
+  const ingestion = createMemoryIngestion({
+    store,
+    plugins,
+    canUseBot: async (person, id) => person === actor.id && id === bot.id,
+  });
   const memory = createMemoryRoutes(store, ingestion, async (c, next) => {
     c.set("actor", actor);
     await next();
   });
-  const created = await memory.request("/", post({content: "Private Memory fixture."}));
+  const created = await memory.request(
+    "/",
+    post({ content: "Private Memory fixture." }),
+  );
   expect(created.status).toBe(201);
-  const {memory: fact} = await created.json();
+  const { memory: fact } = await created.json();
   const provider = new LLMock();
   const base = process.env.OPENAI_BASE_URL;
   const loaded = Promise.withResolvers<string>();
   const respond = Promise.withResolvers<void>();
   let modelCalls = 0;
   let actions = 0;
-  provider.on({predicate: () => true}, async (request) => {
+  provider.on({ predicate: () => true }, async (request) => {
     modelCalls += 1;
-    if (modelCalls > 1) return {content: "Unexpected continuation."};
+    if (modelCalls > 1) return { content: "Unexpected continuation." };
     loaded.resolve(JSON.stringify(request.messages));
     await respond.promise;
     return {
       content: "Output already in flight.",
-      toolCalls: [{id: "fixture-action", name: "mcp__fixture__write", arguments: "{}"}],
+      toolCalls: [
+        { id: "fixture-action", name: "mcp__fixture__write", arguments: "{}" },
+      ],
     };
   });
   process.env.OPENAI_BASE_URL = await provider.start();
@@ -3147,37 +3172,69 @@ test("Memory withdrawn after model dispatch pauses the original Run before its n
   try {
     const makeAgent = async () => {
       const agents = await buildAgents(
-        [{id: bot.id, name: bot.name, type: "built_in", systemPrompt: "Answer the question."}],
-        {provider: "openai", defaultModel: "gpt-5.5"},
+        [
+          {
+            id: bot.id,
+            name: bot.name,
+            type: "built_in",
+            systemPrompt: "Answer the question.",
+          },
+        ],
+        { provider: "openai", defaultModel: "gpt-5.5" },
         "fixture-key",
         undefined,
-        async () => [{
-          ref: "fixture/write",
-          name: "mcp__fixture__write",
-          description: "Record that the external action was called.",
-          parameters: z.object({}),
-          execute: async () => { actions += 1; return "Action dispatched."; },
-        }],
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined,
-        undefined, undefined, undefined, undefined,
+        async () => [
+          {
+            ref: "fixture/write",
+            name: "mcp__fixture__write",
+            description: "Record that the external action was called.",
+            parameters: z.object({}),
+            execute: async () => {
+              actions += 1;
+              return "Action dispatched.";
+            },
+          },
+        ],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
         () => ingestion.contextFor(actor.id, bot.id),
       );
       const agent = agents[bot.id];
       if (!agent) throw new Error("Test Bot unavailable.");
       return agent;
     };
-    const client = web(database, actor, bot.id, async () => {}, {makeAgent});
-    const opened = await client.request("/api/channels", post({agentIds: [bot.id]}));
-    const {channel} = await opened.json();
+    const client = web(database, actor, bot.id, async () => {}, { makeAgent });
+    const opened = await client.request(
+      "/api/channels",
+      post({ agentIds: [bot.id] }),
+    );
+    const { channel } = await opened.json();
     channelId = channel.id;
     const runId = "memory-revoked";
     const route = `/api/copilotkit/agent/${bot.id}`;
-    const original = await client.request(`${route}/run`, post({
-      threadId: channel.threadId, runId,
-      messages: [{id: "ask-memory", role: "user", content: "Use the fixture."}],
-    }));
+    const original = await client.request(
+      `${route}/run`,
+      post({
+        threadId: channel.threadId,
+        runId,
+        messages: [
+          { id: "ask-memory", role: "user", content: "Use the fixture." },
+        ],
+      }),
+    );
     expect(await loaded.promise).toContain("Private Memory fixture.");
-    expect((await memory.request(`/${fact.id}`, {method: "DELETE"})).status).toBe(204);
+    expect(
+      (await memory.request(`/${fact.id}`, { method: "DELETE" })).status,
+    ).toBe(204);
     respond.resolve();
     const originalEvents = await original.text();
     expect(originalEvents).toContain("context_revoked");
@@ -3187,8 +3244,12 @@ test("Memory withdrawn after model dispatch pauses the original Run before its n
         .map(({ delta }) => delta)
         .join("");
     expect(output(originalEvents)).toBe("Output already in flight.");
-    const reconnected = await web(database, actor, bot.id, async () => {}, {makeAgent})
-      .request(`${route}/resume`, post({threadId: channel.threadId, runId, cursor: 0}));
+    const reconnected = await web(database, actor, bot.id, async () => {}, {
+      makeAgent,
+    }).request(
+      `${route}/resume`,
+      post({ threadId: channel.threadId, runId, cursor: 0 }),
+    );
     const replay = await reconnected.text();
     expect(replay).toContain(runId);
     expect(replay).toContain("context_revoked");
@@ -3200,7 +3261,8 @@ test("Memory withdrawn after model dispatch pauses the original Run before its n
     if (base === undefined) delete process.env.OPENAI_BASE_URL;
     else process.env.OPENAI_BASE_URL = base;
     await provider.stop();
-    if (channelId) await database.delete(channels).where(eq(channels.id, channelId));
+    if (channelId)
+      await database.delete(channels).where(eq(channels.id, channelId));
     await database.delete(agents).where(eq(agents.id, bot.id));
     await database.delete(users).where(eq(users.id, actor.id));
   }
