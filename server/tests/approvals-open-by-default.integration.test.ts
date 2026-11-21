@@ -57,8 +57,10 @@ const tool = (
   name: string,
   args: Record<string, unknown>,
   botId = `${prefix}-bot`,
+  destructive = false,
 ): Omit<ApprovalCandidate, "actorId"> => ({
   botId,
+  ...(destructive ? { destructive: true as const } : {}),
   toolRef: `${server}/${name}`,
   effect: "write",
   scope: server,
@@ -71,12 +73,13 @@ const tool = (
   },
 });
 
-const slackSend = (text: string, botId?: string) =>
+const slackSend = (text: string, botId?: string, destructive = false) =>
   tool(
     "composio-slack",
     "SLACK_SEND_MESSAGE",
     { channel: "C0PROJECT", text },
     botId,
+    destructive,
   );
 
 /** Runs the gate in `threadId`: undefined if it ran, the waiting request if it asked. */
@@ -186,7 +189,11 @@ describe("Allow for this conversation", () => {
   test("later sends of the same tool in the same conversation run without a card, each on the audit trail", async () => {
     const owner = await person();
     const here = thread();
-    const first = await gate(owner, here, slackSend("Draft is up."));
+    const first = await gate(
+      owner,
+      here,
+      slackSend("Draft is up.", undefined, true),
+    );
     expect(first?.action.policy).toMatchObject({
       behaviour: "ask",
       source: "safety",
@@ -233,7 +240,11 @@ describe("Allow for this conversation", () => {
   test("it doesn't carry to another conversation, another tool or another Bot", async () => {
     const owner = await person();
     const here = thread();
-    const first = await gate(owner, here, slackSend("Draft is up."));
+    const first = await gate(
+      owner,
+      here,
+      slackSend("Draft is up.", undefined, true),
+    );
     await service.decide(owner, first?.id ?? "", "allow_conversation");
 
     expect(
@@ -266,13 +277,21 @@ describe("Allow for this conversation", () => {
   test("it ends when turned off, and when the conversation is deleted", async () => {
     const owner = await person();
     const here = thread();
-    const first = await gate(owner, here, slackSend("Draft is up."));
+    const first = await gate(
+      owner,
+      here,
+      slackSend("Draft is up.", undefined, true),
+    );
     await service.decide(owner, first?.id ?? "", "allow_conversation");
-    expect(await gate(owner, here, slackSend("Again."))).toBeUndefined();
+    expect(
+      await gate(owner, here, slackSend("Again.", undefined, true)),
+    ).toBeUndefined();
 
     const [grant] = (await service.inbox(owner)).conversationGrants;
     await service.revokeConversationGrant(owner, grant?.id ?? "");
-    expect(await gate(owner, here, slackSend("And again."))).toMatchObject({
+    expect(
+      await gate(owner, here, slackSend("And again.", undefined, true)),
+    ).toMatchObject({
       status: "pending",
     });
     const [revoked] = await database
@@ -299,16 +318,22 @@ describe("Allow for this conversation", () => {
     await database
       .insert(intelligenceChannelMappings)
       .values({ userId: owner, channelId, threadId: elsewhere });
-    const asked = await gate(owner, elsewhere, slackSend("Hi."));
+    const asked = await gate(
+      owner,
+      elsewhere,
+      slackSend("Hi.", undefined, true),
+    );
     await service.decide(owner, asked?.id ?? "", "allow_conversation");
     expect(
-      await gate(owner, elsewhere, slackSend("Hi again.")),
+      await gate(owner, elsewhere, slackSend("Hi again.", undefined, true)),
     ).toBeUndefined();
     await database
       .update(channels)
       .set({ deletedAt: sql`now()` })
       .where(eq(channels.id, channelId));
-    expect(await gate(owner, elsewhere, slackSend("Still?"))).toMatchObject({
+    expect(
+      await gate(owner, elsewhere, slackSend("Still?", undefined, true)),
+    ).toMatchObject({
       status: "pending",
     });
     expect((await service.inbox(owner)).conversationGrants).toEqual([]);
@@ -318,7 +343,11 @@ describe("Allow for this conversation", () => {
 describe("Always allow here, on a send", () => {
   test("is offered, saved for sends of that tool, and honoured in any conversation, with audit rows", async () => {
     const owner = await person();
-    const first = await gate(owner, thread(), slackSend("Draft is up."));
+    const first = await gate(
+      owner,
+      thread(),
+      slackSend("Draft is up.", undefined, true),
+    );
     await service.decide(owner, first?.id ?? "", "allow_always");
     expect(await store.rules(owner)).toEqual([
       expect.objectContaining({
@@ -355,7 +384,9 @@ describe("Always allow here, on a send", () => {
       ),
     ).toBeUndefined();
     // ...and a send still asks, as it did before it.
-    expect(await gate(owner, thread(), slackSend("Hi."))).toMatchObject({
+    expect(
+      await gate(owner, thread(), slackSend("Hi.", undefined, true)),
+    ).toMatchObject({
       status: "pending",
     });
   });
@@ -365,7 +396,11 @@ describe("an admin closes a kind", () => {
   test("sending set to ask every time asks over the person's answers, and offers Allow once and Deny only", async () => {
     const owner = await person();
     const here = thread();
-    const first = await gate(owner, here, slackSend("Draft is up."));
+    const first = await gate(
+      owner,
+      here,
+      slackSend("Draft is up.", undefined, true),
+    );
     await service.decide(owner, first?.id ?? "", "allow_conversation");
     const other = await gate(owner, thread(), slackSend("Elsewhere."));
     await service.decide(owner, other?.id ?? "", "allow_always");
@@ -411,7 +446,11 @@ describe("an admin closes a kind", () => {
   test("a team rule that asks beats the person's conversation answer", async () => {
     const owner = await person();
     const here = thread();
-    const first = await gate(owner, here, slackSend("Draft is up."));
+    const first = await gate(
+      owner,
+      here,
+      slackSend("Draft is up.", undefined, true),
+    );
     await service.decide(owner, first?.id ?? "", "allow_conversation");
     const rule = await service.createTeamRule(admin, {
       botId: "*",
