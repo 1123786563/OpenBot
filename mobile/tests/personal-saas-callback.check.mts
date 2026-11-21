@@ -80,3 +80,22 @@ test("workspace usage keeps a full Bot limit and an unknown Computer count", () 
   });
   deepStrictEqual(parsed.quotas, quotas);
 });
+
+test("workspace recovery preserves an interrupted background run with its own action eligibility", () => {
+  const item = {
+    key: "notification:123",
+    label: "Background notification",
+    reasonMessage: "The workspace was paused.",
+    recordedAt: 1_750_000_000_000,
+    output: "Partial output",
+    outcomeUnknown: true,
+    recoveryCanRetry: false,
+    recovery: null,
+  };
+  const workspace = personalWorkspace.parse({
+    id: "workspace-1",
+    personalAssistant: { id: "bot-1", name: "My Assistant" },
+    interruptedBackgroundWork: [item],
+  });
+  deepStrictEqual(workspace.interruptedBackgroundWork, [item]);
+});

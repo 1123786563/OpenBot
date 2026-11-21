@@ -3281,9 +3281,47 @@ for (const cutoff of automationCutoffs) {
       ).toBe(404);
       const overview = await request(base, restored, "GET", "text/html");
       expect(await overview.text()).toContain(`action="${path}/resume"`);
-      expect((await request(`${path}/resume`, restored, "POST")).status).toBe(
-        204,
-      );
+      const native = await nativeSessionHeaders("desktop", alice.account);
+      const nativeOverview = await worker.request("/api/workspace", {
+        headers: native,
+      });
+      expect(nativeOverview.status).toBe(200);
+      expect(await nativeOverview.json()).toMatchObject({
+        automation: {
+          routines: [
+            { id: a.routineId, blockedReason: "manual_resume_required" },
+          ],
+        },
+      });
+      const summary = await worker.request(`${path}/runs?format=summary`, {
+        headers: native,
+      });
+      expect(await summary.json()).toMatchObject({
+        runs: expect.arrayContaining([
+          expect.objectContaining({
+            id: expect.any(String),
+            timestamp: expect.any(String),
+            outcome: "skipped",
+            reason: expect.any(String),
+          }),
+        ]),
+      });
+      expect(
+        (
+          await worker.request(
+            `${base}/routines/${b.routineId}/runs?format=summary`,
+            { headers: native },
+          )
+        ).status,
+      ).toBe(404);
+      expect(
+        (
+          await worker.request(`${path}/resume`, {
+            method: "POST",
+            headers: native,
+          })
+        ).status,
+      ).toBe(204);
       await sweepAutomation(worker);
       expect(calls).toEqual([b.routineId]);
       const resumed = await request(base, restored);

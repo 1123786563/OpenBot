@@ -4,6 +4,9 @@ import { Alert, AppState, Button, ScrollView, Text, View } from "react-native";
 import {
   openPersonalWorkspace,
   openWorkspaceClosure,
+  openWorkspaceExport,
+  readAutomationHistory,
+  runWorkspaceAction,
   PersonalSaasActionError,
   recoverPersonalWork,
   signInPersonalSaas,
@@ -12,9 +15,19 @@ import {
 } from "./personal-saas";
 
 import type {
+  AutomationResource,
   ClosedWorkspace,
+  WorkspaceAction,
   PausedWorkspace,
 } from "./personal-saas-contract";
+
+type AutomationItem = {
+  id: string;
+  title: string;
+  blockedReason: string | null;
+  enabled: boolean;
+  resource: AutomationResource;
+};
 
 type Screen =
   | { kind: "loading" | "preparing" | "signed-out" }
@@ -28,6 +41,11 @@ type Screen =
 
 export function PersonalSaasHome() {
   const [screen, setScreen] = useState<Screen>({ kind: "loading" });
+  const [history, setHistory] = useState<{
+    workspaceId: string;
+    key: string;
+    runs: Awaited<ReturnType<typeof readAutomationHistory>>;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [authError, setAuthError] = useState("");
   const working = useRef(false);
@@ -39,6 +57,7 @@ export function PersonalSaasHome() {
     (kind: "loading" | "workspace-error" | "admissions-paused") => {
       generation.current++;
       access.current = null;
+      setHistory(null);
       setScreen({ kind });
     },
     [],
@@ -59,6 +78,7 @@ export function PersonalSaasHome() {
         if (current !== generation.current) return;
         if (!workspace) {
           access.current = null;
+          setHistory(null);
           setScreen({ kind: "signed-out" });
           return;
         }
@@ -90,6 +110,7 @@ export function PersonalSaasHome() {
       if (!next) {
         generation.current++;
         access.current = null;
+        setHistory(null);
         setScreen((previous) =>
           previous.kind === "ready" ? { kind: "loading" } : previous,
         );
@@ -111,10 +132,11 @@ export function PersonalSaasHome() {
         state.isConnected === false || state.isInternetReachable === false;
       const reconnected = wasOffline && !offline && state.isConnected;
       wasOffline = offline;
-      if (!active.current || working.current) return;
+      if (!active.current) return;
       if (offline) {
         generation.current++;
         access.current = null;
+        setHistory(null);
         setScreen((previous) =>
           previous.kind === "ready" ||
           previous.kind === "preparing" ||
@@ -172,18 +194,94 @@ export function PersonalSaasHome() {
     }
   }
 
+  function updateWorkspace(work: () => Promise<void>) {
+    if (!active.current || !access.current || access.current() <= 0) return;
+    const current = generation.current;
+    void act(async () => {
+      await work();
+      if (current === generation.current) await load(true);
+    });
+  }
+
   function resolve(
     key: string,
     action: "cancel" | "retry",
     acknowledged = false,
   ) {
-    if (!active.current || !access.current || access.current() <= 0) return;
+    updateWorkspace(() => recoverPersonalWork(key, action, acknowledged));
+  }
+
+  function showHistory(resource: AutomationResource, id: string) {
+    if (
+      screen.kind !== "ready" ||
+      !active.current ||
+      !access.current ||
+      access.current() <= 0
+    )
+      return;
+    const workspaceId = screen.workspace.id;
     const current = generation.current;
     void act(async () => {
-      await recoverPersonalWork(key, action, acknowledged);
-      if (current === generation.current) await load(true);
+      const runs = await readAutomationHistory(resource, id);
+      if (
+        current === generation.current &&
+        access.current &&
+        access.current() > 0
+      )
+        setHistory({ workspaceId, key: `${resource}/${id}`, runs });
     });
   }
+
+  const workspace =
+    screen.kind === "ready" && access.current && access.current() > 0
+      ? screen.workspace
+      : null;
+  const stoppedWork = workspace
+    ? [
+        ...workspace.recovery.map(({ instruction, ...item }) => ({
+          ...item,
+          label: instruction,
+          summary: undefined,
+          canRetry: workspace.recoveryCanRetry,
+          retryText: item.outcomeUnknown ? "Retry as a new run" : "Requeue",
+          retryResult: "Queued as a new run",
+        })),
+        ...workspace.interruptedBackgroundWork.map((item) => ({
+          ...item,
+          canRetry: item.recoveryCanRetry,
+          retryText: "Start fresh work",
+          retryResult: "Started as fresh work",
+        })),
+      ]
+    : [];
+  const automation = workspace?.automation;
+  const automations = automation
+    ? [
+        ...automation.routines.map<AutomationItem>(
+          ({ id, title, blockedReason, enabled }) => ({
+            id,
+            title: title ?? "Routine",
+            blockedReason,
+            enabled,
+            resource: "routines",
+          }),
+        ),
+        ...automation.bindings.map<AutomationItem>(
+          ({ id, transport, blockedReason }) => ({
+            id,
+            title: transport,
+            blockedReason,
+            enabled: true,
+            resource: "bindings",
+          }),
+        ),
+      ]
+    : [];
+  const computer = workspace?.computer;
+  const computerAction: WorkspaceAction = {
+    kind: "computer",
+    action: computer?.status === "running" ? "stop" : "start",
+  };
 
   return (
     <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
@@ -334,67 +432,170 @@ export function PersonalSaasHome() {
             ))}
           </>
         )}
-      {access.current &&
-        access.current() > 0 &&
-        screen.kind === "ready" &&
-        screen.workspace.recovery.length > 0 && (
-          <View style={{ gap: 12 }}>
-            <Text accessibilityRole="header">Stopped work</Text>
-            {screen.workspace.recovery.map((item) => (
-              <View key={item.key} style={{ gap: 6 }}>
-                <Text>{item.instruction}</Text>
-                <Text>{item.reasonMessage}</Text>
-                {item.output ? (
-                  <Text>Output before interruption: {item.output}</Text>
-                ) : null}
-                {item.outcomeUnknown && (
-                  <Text>
-                    Check any external actions before retrying. Their outcome is
-                    unknown.
-                  </Text>
-                )}
-                {item.recovery ? (
-                  <Text>
-                    {item.recovery.action === "retry"
-                      ? "Queued as a new run"
-                      : "Cancelled"}
-                  </Text>
-                ) : (
-                  <>
-                    {screen.workspace.recoveryCanRetry && (
-                      <Button
-                        title={
-                          item.outcomeUnknown ? "Retry as a new run" : "Requeue"
-                        }
-                        disabled={busy}
-                        onPress={() => {
-                          if (!item.outcomeUnknown)
-                            return resolve(item.key, "retry");
-                          Alert.alert(
-                            "Check external actions",
-                            "Confirm you checked the external actions before retrying.",
-                            [
-                              { text: "Back", style: "cancel" },
-                              {
-                                text: "I checked",
-                                onPress: () => resolve(item.key, "retry", true),
-                              },
-                            ],
-                          );
-                        }}
-                      />
-                    )}
+      {stoppedWork.length > 0 && (
+        <View style={{ gap: 12 }}>
+          <Text accessibilityRole="header">Stopped work</Text>
+          {stoppedWork.map((item) => (
+            <View key={item.key} style={{ gap: 6 }}>
+              <Text>{item.label}</Text>
+              {item.summary && <Text>{item.summary}</Text>}
+              {item.recordedAt && (
+                <Text>{new Date(item.recordedAt).toLocaleString()}</Text>
+              )}
+              <Text>{item.reasonMessage}</Text>
+              {item.output ? (
+                <Text>Output before interruption: {item.output}</Text>
+              ) : null}
+              {item.outcomeUnknown && (
+                <Text>
+                  Check any external actions before retrying. Their outcome is
+                  unknown.
+                </Text>
+              )}
+              {item.recovery ? (
+                <Text>
+                  {item.recovery.action === "retry"
+                    ? item.retryResult
+                    : "Cancelled"}
+                </Text>
+              ) : (
+                <>
+                  {item.canRetry && (
                     <Button
-                      title="Cancel item"
+                      title={item.retryText}
                       disabled={busy}
-                      onPress={() => resolve(item.key, "cancel")}
+                      onPress={() => {
+                        if (!item.outcomeUnknown)
+                          return resolve(item.key, "retry");
+                        Alert.alert(
+                          "Check external actions",
+                          "Confirm you checked the external actions before retrying.",
+                          [
+                            { text: "Back", style: "cancel" },
+                            {
+                              text: "I checked",
+                              onPress: () => resolve(item.key, "retry", true),
+                            },
+                          ],
+                        );
+                      }}
                     />
-                  </>
+                  )}
+                  <Button
+                    title="Cancel item"
+                    disabled={busy}
+                    onPress={() => resolve(item.key, "cancel")}
+                  />
+                </>
+              )}
+            </View>
+          ))}
+        </View>
+      )}
+      {workspace?.computer !== undefined && (
+        <View>
+          <Text accessibilityRole="header">Computer</Text>
+          <Text>
+            {computer
+              ? {
+                  not_started: "Ready to set up",
+                  starting: "Starting",
+                  running: "Running",
+                  stopping: "Stopping",
+                  restart_required:
+                    "Stopped. Your saved files and settings are kept.",
+                }[computer.status]
+              : "Computer status unavailable"}
+          </Text>
+          {computer?.cutoff === "failed" && (
+            <Text>
+              Computer exit could not be confirmed by the authorization
+              deadline.
+            </Text>
+          )}
+          {computer &&
+            computer.status !== "starting" &&
+            computer.status !== "stopping" && (
+              <Button
+                title={
+                  computerAction.action === "start"
+                    ? "Start Computer"
+                    : "Stop Computer"
+                }
+                disabled={busy}
+                onPress={() =>
+                  updateWorkspace(() => runWorkspaceAction(computerAction))
+                }
+              />
+            )}
+        </View>
+      )}
+      {automations.length > 0 && (
+        <View style={{ gap: 12 }}>
+          <Text accessibilityRole="header">Routines and inbound bindings</Text>
+          {automations.map(
+            ({ id, title, resource, blockedReason, enabled }) => (
+              <View key={`${resource}/${id}`}>
+                <Text>
+                  {resource === "routines" ? "Routine" : "Inbound binding"} ·{" "}
+                  {title}
+                </Text>
+                {blockedReason === "manual_resume_required" ? (
+                  <Text>Resume this item to accept new work.</Text>
+                ) : blockedReason ? (
+                  <Text>Execution paused ({blockedReason}).</Text>
+                ) : (
+                  !enabled && <Text>Switched off</Text>
                 )}
+                {blockedReason === "manual_resume_required" && (
+                  <Button
+                    title="Resume"
+                    disabled={busy}
+                    onPress={() =>
+                      updateWorkspace(() =>
+                        runWorkspaceAction({ kind: "resume", resource, id }),
+                      )
+                    }
+                  />
+                )}
+                <Button
+                  title="View history"
+                  disabled={busy}
+                  onPress={() => showHistory(resource, id)}
+                />
+                {history?.workspaceId === workspace?.id &&
+                  history?.key === `${resource}/${id}` &&
+                  (history.runs.length > 0 ? (
+                    history.runs.map((run) => (
+                      <Text key={run.id}>
+                        {new Date(run.timestamp).toLocaleString()} ·{" "}
+                        {run.outcome}
+                        {run.reason ? ` · ${run.reason}` : ""}
+                      </Text>
+                    ))
+                  ) : (
+                    <Text>No history yet.</Text>
+                  ))}
               </View>
-            ))}
-          </View>
-        )}
+            ),
+          )}
+        </View>
+      )}
+      {workspace && workspace.invalidatedApprovals.length > 0 && (
+        <View>
+          <Text accessibilityRole="header">Invalidated approvals</Text>
+          {workspace.invalidatedApprovals.map((item) => (
+            <Text key={item.id}>{item.tool} · Invalidated</Text>
+          ))}
+        </View>
+      )}
+      {workspace && (
+        <Button
+          title="Export workspace data in browser"
+          disabled={busy}
+          onPress={() => void act(openWorkspaceExport)}
+        />
+      )}
       {(screen.kind === "ready" ||
         screen.kind === "workspace-error" ||
         screen.kind === "admissions-paused") && (

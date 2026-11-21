@@ -4,6 +4,26 @@ import { flushSync } from "react-dom";
 
 export const CLOUD_FRAGMENT = "personal-cloud";
 
+type WorkInterruption = {
+  key: string;
+  reasonMessage: string;
+  outcomeUnknown: boolean;
+  output: string | null;
+  recordedAt?: number | null;
+  recovery: { action: "retry" | "cancel" } | null;
+};
+
+type AutomationResource = "routines" | "bindings";
+type WorkspaceAction =
+  | { kind: "computer"; action: "start" | "stop" }
+  | { kind: "resume" | "history"; resource: AutomationResource; id: string };
+type AutomationRun = {
+  id: string;
+  timestamp: string;
+  outcome: string;
+  reason: string | null;
+};
+
 export type CloudView =
   | { kind: "unavailable" }
   | { kind: "signedOut" }
@@ -35,14 +55,35 @@ export type CloudView =
         { used: number | null; limit: number }
       > | null;
       recoveryCanRetry?: boolean;
-      recovery?: {
-        key: string;
-        instruction: string;
-        reasonMessage: string;
-        outcomeUnknown: boolean;
-        output: string | null;
-        recovery: { action: "retry" | "cancel" } | null;
-      }[];
+      recovery?: (WorkInterruption & { instruction: string })[];
+      interruptedBackgroundWork?: (WorkInterruption & {
+        label: string;
+        summary: string | null;
+        recoveryCanRetry: boolean;
+      })[];
+      computer?: {
+        status:
+          | "not_started"
+          | "starting"
+          | "running"
+          | "stopping"
+          | "restart_required";
+        cutoff: "confirmed" | "failed" | null;
+      } | null;
+      automation?: {
+        routines: {
+          id: string;
+          title: string | null;
+          enabled: boolean;
+          blockedReason: string | null;
+        }[];
+        bindings: {
+          id: string;
+          transport: string;
+          blockedReason: string | null;
+        }[];
+      };
+      invalidatedApprovals?: { id: string; tool: string }[];
       conversations: { id: string; title: string; preview: string | null }[];
     };
 
@@ -52,22 +93,48 @@ export type CloudAction =
   | "cancel"
   | "prepare"
   | "signOut"
-  | "closure";
+  | "closure"
+  | "export";
 
 const cloudRequest = (action: CloudAction) =>
   invoke<CloudView>("personal_cloud_action", { action });
+const recoverWork = (
+  key: string,
+  action: "cancel" | "retry",
+  acknowledged: boolean,
+) => invoke<void>("personal_cloud_recover", { key, action, acknowledged });
+const workspaceRequest = (action: WorkspaceAction) =>
+  invoke<{ runs: AutomationRun[] } | null>("personal_cloud_workspace", {
+    action,
+  });
 const openLocal = () => invoke<void>("personal_cloud_show_local");
+type AutomationItem = {
+  id: string;
+  title: string;
+  blockedReason: string | null;
+  enabled: boolean;
+  resource: AutomationResource;
+};
 const ACCESS_ERROR = "Could not check your cloud workspace. Try again.";
 const PREPARE_ERROR = "Could not prepare your Personal Workspace. Try again.";
 
 export function PersonalCloud({
   request = cloudRequest,
   showLocal = openLocal,
+  recover = recoverWork,
+  workspaceAction = workspaceRequest,
 }: {
   request?: (action: CloudAction) => Promise<CloudView>;
   showLocal?: () => Promise<void>;
+  recover?: typeof recoverWork;
+  workspaceAction?: typeof workspaceRequest;
 }) {
   const [view, setView] = useState<CloudView | null>(null);
+  const [history, setHistory] = useState<{
+    workspaceId: string;
+    key: string;
+    runs: AutomationRun[];
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -79,6 +146,7 @@ export function PersonalCloud({
   const withdraw = useCallback((message: string | null) => {
     generation.current++;
     access.current = null;
+    setHistory(null);
     setView((current) => (current?.kind === "workspace" ? null : current));
     setFailure(message);
   }, []);
@@ -107,6 +175,7 @@ export function PersonalCloud({
         access.current = remaining;
       } else {
         access.current = null;
+        setHistory(null);
       }
       return next;
     },
@@ -229,35 +298,112 @@ export function PersonalCloud({
     }
   }
 
-  async function recover(
-    key: string,
-    action: "cancel" | "retry",
-    acknowledged: boolean,
-  ) {
+  async function manageWorkspace(work: () => Promise<void>, message: string) {
     if (busy || !foreground.current || !access.current || access.current() <= 0)
       return;
     const current = ++generation.current;
     setBusy(true);
     setFailure(null);
     try {
-      await invoke("personal_cloud_recover", { key, action, acknowledged });
+      await work();
       if (current !== generation.current) return;
       const next = await read("status");
       if (next) setView(next);
     } catch (error) {
       if (current === generation.current) {
-        if (error === "Your workspace has reached its Bot run limit.")
+        if (
+          error === "Your workspace has reached its Bot run limit." ||
+          error === "Your workspace has reached its resource limit."
+        )
           setFailure(error);
-        else withdraw("Could not update stopped work. Try again.");
+        else withdraw(message);
       }
     } finally {
       setBusy(false);
     }
   }
 
+  function update(action: WorkspaceAction) {
+    void manageWorkspace(async () => {
+      await workspaceAction(action);
+    }, "Could not update this workspace item. Try again.");
+  }
+
+  function showHistory(resource: AutomationResource, id: string) {
+    if (view?.kind !== "workspace") return;
+    const workspaceId = view.id;
+    void manageWorkspace(async () => {
+      const current = generation.current;
+      const result = await workspaceAction({ kind: "history", resource, id });
+      if (
+        result &&
+        current === generation.current &&
+        access.current &&
+        access.current() > 0
+      )
+        setHistory({
+          workspaceId,
+          key: `${resource}/${id}`,
+          runs: result.runs,
+        });
+    }, "Could not load this history. Try again.");
+  }
+
+  function resolve(
+    key: string,
+    action: "cancel" | "retry",
+    acknowledged: boolean,
+  ) {
+    void manageWorkspace(
+      () => recover(key, action, acknowledged),
+      "Could not update stopped work. Try again.",
+    );
+  }
+
+  const workspace = view?.kind === "workspace" ? view : null;
+  const stoppedWork = [
+    ...(workspace?.recovery ?? []).map(({ instruction, ...item }) => ({
+      ...item,
+      label: instruction,
+      summary: null,
+      canRetry: workspace?.recoveryCanRetry,
+      retryText: item.outcomeUnknown ? "Retry as a new run" : "Requeue",
+      retryResult: "Queued as a new run",
+    })),
+    ...(workspace?.interruptedBackgroundWork ?? []).map((item) => ({
+      ...item,
+      canRetry: item.recoveryCanRetry,
+      retryText: "Start fresh work",
+      retryResult: "Started as fresh work",
+    })),
+  ];
+  const automation = workspace?.automation;
+  const automations = [
+    ...(automation?.routines ?? []).map<AutomationItem>(
+      ({ id, title, enabled, blockedReason }) => ({
+        id,
+        title: title ?? "Routine",
+        enabled,
+        blockedReason,
+        resource: "routines",
+      }),
+    ),
+    ...(automation?.bindings ?? []).map<AutomationItem>(
+      ({ id, transport, blockedReason }) => ({
+        id,
+        title: transport,
+        enabled: true,
+        blockedReason,
+        resource: "bindings",
+      }),
+    ),
+  ];
+  const computer = workspace?.computer;
+  const computerAction = computer?.status === "running" ? "stop" : "start";
+
   return (
     <main>
-      <div className="sheet">
+      <section className="sheet" aria-label="OpenBot Cloud">
         <h1>OpenBot Cloud</h1>
         {view === null && !failure && (
           <p role="status">Checking your cloud workspace…</p>
@@ -437,13 +583,17 @@ export function PersonalCloud({
                   </ul>
                 </section>
               )}
-              {Boolean(view.recovery?.length) && (
+              {stoppedWork.length > 0 && (
                 <section aria-labelledby="stopped-work">
                   <h3 id="stopped-work">Stopped work</h3>
                   <ul>
-                    {view.recovery?.map((item) => (
+                    {stoppedWork.map((item) => (
                       <li key={item.key}>
-                        <p>{item.instruction}</p>
+                        <p>{item.label}</p>
+                        {item.summary && <p>{item.summary}</p>}
+                        {item.recordedAt && (
+                          <p>{new Date(item.recordedAt).toLocaleString()}</p>
+                        )}
                         <p>{item.reasonMessage}</p>
                         {item.output && (
                           <>
@@ -460,7 +610,7 @@ export function PersonalCloud({
                         {item.recovery ? (
                           <p>
                             {item.recovery.action === "retry"
-                              ? "Queued as a new run"
+                              ? item.retryResult
                               : "Cancelled"}
                           </p>
                         ) : (
@@ -470,10 +620,11 @@ export function PersonalCloud({
                               const checked = new FormData(
                                 event.currentTarget,
                               ).has("acknowledged");
-                              void recover(item.key, "retry", checked);
+                              if (item.canRetry)
+                                resolve(item.key, "retry", checked);
                             }}
                           >
-                            {view.recoveryCanRetry && (
+                            {item.canRetry && (
                               <>
                                 {item.outcomeUnknown && (
                                   <label>
@@ -485,18 +636,12 @@ export function PersonalCloud({
                                     I checked the external actions.
                                   </label>
                                 )}
-                                <button type="submit">
-                                  {item.outcomeUnknown
-                                    ? "Retry as a new run"
-                                    : "Requeue"}
-                                </button>
+                                <button type="submit">{item.retryText}</button>
                               </>
                             )}
                             <button
                               type="button"
-                              onClick={() =>
-                                void recover(item.key, "cancel", false)
-                              }
+                              onClick={() => resolve(item.key, "cancel", false)}
                             >
                               Cancel item
                             </button>
@@ -507,6 +652,130 @@ export function PersonalCloud({
                   </ul>
                 </section>
               )}
+              {(computer ||
+                (view.computer === null &&
+                  view.quotas?.computer.used === null)) && (
+                <section aria-labelledby="workspace-computer">
+                  <h3 id="workspace-computer">Computer</h3>
+                  <p>
+                    {computer
+                      ? {
+                          not_started: "Ready to set up",
+                          starting: "Starting",
+                          running: "Running",
+                          stopping: "Stopping",
+                          restart_required:
+                            "Stopped. Your saved files and settings are kept.",
+                        }[computer.status]
+                      : "Computer status unavailable"}
+                  </p>
+                  {computer?.cutoff === "failed" && (
+                    <p>
+                      Computer exit could not be confirmed by the authorization
+                      deadline.
+                    </p>
+                  )}
+                  {computer &&
+                    computer.status !== "starting" &&
+                    computer.status !== "stopping" && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          update({ kind: "computer", action: computerAction })
+                        }
+                      >
+                        {computerAction === "start"
+                          ? "Start Computer"
+                          : "Stop Computer"}
+                      </button>
+                    )}
+                </section>
+              )}
+              {automations.length > 0 && (
+                <section aria-labelledby="workspace-automation">
+                  <h3 id="workspace-automation">
+                    Routines and inbound bindings
+                  </h3>
+                  <ul>
+                    {automations.map(
+                      ({ id, title, resource, blockedReason, enabled }) => (
+                        <li key={`${resource}/${id}`}>
+                          <p>
+                            {resource === "routines"
+                              ? "Routine"
+                              : "Inbound binding"}{" "}
+                            · {title}
+                          </p>
+                          {blockedReason === "manual_resume_required" ? (
+                            <p>Resume this item to accept new work.</p>
+                          ) : blockedReason ? (
+                            <p>Execution paused ({blockedReason}).</p>
+                          ) : (
+                            !enabled && <p>Switched off</p>
+                          )}
+                          {blockedReason === "manual_resume_required" && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                update({ kind: "resume", resource, id })
+                              }
+                            >
+                              Resume
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => showHistory(resource, id)}
+                          >
+                            View history
+                          </button>
+                          {history?.workspaceId === view.id &&
+                            history.key === `${resource}/${id}` &&
+                            (history.runs.length > 0 ? (
+                              <ul>
+                                {history.runs.map((item) => (
+                                  <li key={item.id}>
+                                    <time dateTime={item.timestamp}>
+                                      {new Date(
+                                        item.timestamp,
+                                      ).toLocaleString()}
+                                    </time>
+                                    {" · "}
+                                    {item.outcome}
+                                    {item.reason ? ` · ${item.reason}` : ""}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p>No history yet.</p>
+                            ))}
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                </section>
+              )}
+              {Boolean(view.invalidatedApprovals?.length) && (
+                <section aria-labelledby="invalidated-approvals">
+                  <h3 id="invalidated-approvals">Invalidated approvals</h3>
+                  <ul>
+                    {view.invalidatedApprovals?.map((item) => (
+                      <li key={item.id}>{item.tool} · Invalidated</li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+              <button
+                type="button"
+                onClick={() =>
+                  void run(
+                    "export",
+                    "Could not open workspace export. Try again.",
+                  )
+                }
+              >
+                Export workspace data in browser
+              </button>
               <section aria-labelledby="recent-conversations">
                 <h3 id="recent-conversations">Recent conversations</h3>
                 {view.conversations.length === 0 ? (
@@ -551,7 +820,7 @@ export function PersonalCloud({
             Open local OpenBot
           </button>
         </div>
-      </div>
+      </section>
     </main>
   );
 }

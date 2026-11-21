@@ -6,6 +6,9 @@ import { openAuthSessionAsync } from "expo-web-browser";
 import { Linking, Platform } from "react-native";
 import { serverUrl } from "./auth";
 import {
+  automationHistory,
+  type AutomationResource,
+  type WorkspaceAction,
   nativeExchange,
   parsePersonalSaasCallback,
   personalConversationHistory,
@@ -216,4 +219,57 @@ export async function recoverPersonalWork(
     throw new PersonalSaasActionError(
       "Could not update stopped work. Try again.",
     );
+}
+
+async function workspaceRequest(path: string, method: "GET" | "POST") {
+  const token = await SecureStore.getItemAsync(sessionKey, keyOptions);
+  if (!token)
+    throw new PersonalSaasActionError("Sign in to manage your workspace.");
+  return request(path, {
+    method,
+    headers: { authorization: `Bearer ${token}` },
+  });
+}
+
+function automationResourcePath(resource: AutomationResource, id: string) {
+  return `/api/workspace/automation/${resource}/${encodeURIComponent(id)}`;
+}
+
+export async function runWorkspaceAction(action: WorkspaceAction) {
+  const path =
+    action.kind === "computer"
+      ? `/api/workspace/computer/${action.action}`
+      : `${automationResourcePath(action.resource, action.id)}/resume`;
+  const reply = await workspaceRequest(path, "POST");
+  if (reply.status === 429)
+    throw new PersonalSaasActionError(
+      "Your workspace has reached its resource limit.",
+    );
+  if (!reply.ok)
+    throw new PersonalSaasActionError(
+      "Could not update this workspace item. Try again.",
+    );
+}
+
+export async function readAutomationHistory(
+  resource: AutomationResource,
+  id: string,
+) {
+  const reply = await workspaceRequest(
+    `${automationResourcePath(resource, id)}/runs?format=summary`,
+    "GET",
+  );
+  if (!reply.ok)
+    throw new PersonalSaasActionError(
+      "Could not load this history. Try again.",
+    );
+  return automationHistory.parse(await reply.json()).runs;
+}
+
+export async function openWorkspaceExport() {
+  if (!serverUrl.startsWith("https://"))
+    throw new PersonalSaasActionError(
+      "Personal SaaS requires an HTTPS deployment URL.",
+    );
+  await Linking.openURL(new URL("/workspace", serverUrl).href);
 }

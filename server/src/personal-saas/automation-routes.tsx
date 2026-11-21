@@ -211,6 +211,17 @@ export function workspaceAutomationRoutes({
         ),
       );
     }
+    if (context.req.query("format") === "summary") {
+      return context.json({
+        runs: result.result.map((run) => ({
+          id: run.id,
+          timestamp: "status" in run ? run.startedAt : run.receivedAt,
+          outcome:
+            "status" in run ? (run.status ?? "Queued or running") : run.state,
+          reason: run.error ? (automationReason[run.error] ?? run.error) : null,
+        })),
+      });
+    }
     return context.json({ runs: result.result });
   });
   automationRoutes.post("/:resource/:id/:action", async (context) => {

@@ -217,3 +217,102 @@ test("an offline foreground transition discards an outstanding successful cloud 
   });
   await screen.findByText("Private title");
 });
+
+test("restored access shows stopped background work, outcomes and per-item recovery", async () => {
+  const confirmedActions: [string, string, boolean][] = [];
+  const status = {
+    kind: "workspace",
+    id: "workspace-1",
+    personalAssistant: { id: "bot-1", name: "My Assistant" },
+    conversations: [],
+    accessMs: 60_000,
+    interruptedBackgroundWork: [
+      {
+        key: "handoff:1",
+        label: "Bot handoff",
+        summary: "Prepare the briefing",
+        reasonMessage: "The workspace was paused.",
+        outcomeUnknown: true,
+        output: "Partial briefing",
+        recoveryCanRetry: true,
+        recovery: null,
+      },
+      {
+        key: "notification:1",
+        label: "Background notification",
+        summary: null,
+        reasonMessage: "The workspace was paused.",
+        outcomeUnknown: true,
+        output: null,
+        recoveryCanRetry: false,
+        recovery: null,
+      },
+    ],
+    computer: { status: "restart_required", cutoff: "confirmed" },
+    automation: {
+      routines: [
+        {
+          id: "routine-1",
+          title: "Morning briefing",
+          enabled: true,
+          blockedReason: "manual_resume_required",
+        },
+      ],
+      bindings: [],
+    },
+  } satisfies CloudView;
+  const actions: object[] = [];
+  const screen = within(
+    render(
+      <PersonalCloud
+        request={async () => status}
+        recover={async (key, action, acknowledged) => {
+          confirmedActions.push([key, action, acknowledged]);
+        }}
+        workspaceAction={async (action) => {
+          actions.push(action);
+          return action.kind === "history"
+            ? {
+                runs: [
+                  {
+                    id: "run-1",
+                    timestamp: "2026-11-21T01:00:00.000Z",
+                    outcome: "skipped",
+                    reason: "The workspace was paused.",
+                  },
+                ],
+              }
+            : null;
+        }}
+      />,
+    ).container,
+  );
+  const user = userEvent.setup({ document });
+  const stopped = within(
+    await screen.findByRole("region", { name: "Stopped work" }),
+  );
+  expect(stopped.getByText("Partial briefing")).toBeTruthy();
+  expect(
+    stopped.getAllByRole("button", { name: "Start fresh work" }),
+  ).toHaveLength(1);
+  await user.click(stopped.getByRole("button", { name: "Start fresh work" }));
+  expect(confirmedActions).toEqual([]);
+  await user.click(
+    stopped.getByRole("checkbox", { name: "I checked the external actions." }),
+  );
+  await user.click(stopped.getByRole("button", { name: "Start fresh work" }));
+  expect(confirmedActions).toEqual([["handoff:1", "retry", true]]);
+  await user.click(
+    await screen.findByRole("button", { name: "Start Computer" }),
+  );
+  await user.click(await screen.findByRole("button", { name: "View history" }));
+  await screen.findByText(/skipped · The workspace was paused/);
+  await user.click(await screen.findByRole("button", { name: "Resume" }));
+  expect(actions).toEqual([
+    { kind: "computer", action: "start" },
+    { kind: "history", resource: "routines", id: "routine-1" },
+    { kind: "resume", resource: "routines", id: "routine-1" },
+  ]);
+  await act(async () => window.dispatchEvent(new Event("offline")));
+  expect(screen.queryByText(/skipped · The workspace was paused/)).toBeNull();
+});

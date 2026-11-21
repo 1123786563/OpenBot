@@ -56,19 +56,72 @@ const quotaUsage = z.object({
   limit: z.number().int().nonnegative(),
 });
 
+const stoppedWork = z.object({
+  key: z.string().min(1).max(1024),
+  reasonMessage: z.string(),
+  recordedAt: z.number().optional(),
+  output: z.string().nullable(),
+  outcomeUnknown: z.boolean(),
+  recovery: z.object({ action: z.enum(["cancel", "retry"]) }).nullable(),
+});
+const automationResource = z.object({
+  id: z.string(),
+  blockedReason: z.string().nullable(),
+});
+export const automationHistory = z.object({
+  runs: z.array(
+    z.object({
+      id: z.string(),
+      timestamp: z.iso.datetime(),
+      outcome: z.string(),
+      reason: z.string().nullable(),
+    }),
+  ),
+});
+export type AutomationResource = "routines" | "bindings";
+export type WorkspaceAction =
+  | { kind: "computer"; action: "start" | "stop" }
+  | { kind: "resume"; resource: AutomationResource; id: string };
+
 export const personalWorkspace = z.object({
   id: z.string().min(1),
   recovery: z
+    .array(stoppedWork.extend({ instruction: z.string() }))
+    .default([]),
+  interruptedBackgroundWork: z
     .array(
-      z.object({
-        key: z.uuid(),
-        instruction: z.string(),
-        reasonMessage: z.string(),
-        output: z.string().nullable(),
-        outcomeUnknown: z.boolean(),
-        recovery: z.object({ action: z.enum(["cancel", "retry"]) }).nullable(),
+      stoppedWork.extend({
+        label: z.string(),
+        summary: z.string().optional(),
+        recoveryCanRetry: z.boolean(),
       }),
     )
+    .default([]),
+  automation: z
+    .object({
+      routines: z.array(
+        automationResource.extend({
+          title: z.string().nullable(),
+          enabled: z.boolean(),
+        }),
+      ),
+      bindings: z.array(automationResource.extend({ transport: z.string() })),
+    })
+    .optional(),
+  computer: z
+    .object({
+      status: z.enum([
+        "not_started",
+        "starting",
+        "running",
+        "stopping",
+        "restart_required",
+      ]),
+      cutoff: z.enum(["confirmed", "failed"]).optional(),
+    })
+    .nullish(),
+  invalidatedApprovals: z
+    .array(z.object({ id: z.string(), tool: z.string() }))
     .default([]),
   quotas: z
     .object({

@@ -150,6 +150,7 @@ pub enum Action {
     Prepare,
     SignOut,
     Closure,
+    Export,
 }
 
 #[derive(Serialize)]
@@ -176,6 +177,8 @@ pub enum View {
         recovery: Vec<StoppedWork>,
         #[serde(rename = "recoveryCanRetry")]
         recovery_can_retry: bool,
+        #[serde(flatten)]
+        workspace_recovery: WorkspaceRecovery,
     },
 }
 
@@ -195,6 +198,8 @@ struct Workspace {
     recovery: Vec<StoppedWork>,
     #[serde(default)]
     recovery_can_retry: bool,
+    #[serde(flatten)]
+    workspace_recovery: WorkspaceRecovery,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -213,9 +218,144 @@ struct QuotaUsage {
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct WorkspaceRecovery {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    interrupted_background_work: Vec<InterruptedBackgroundWork>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    automation: Option<WorkspaceAutomation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    invalidated_approvals: Vec<InvalidatedApproval>,
+    #[serde(default)]
+    computer: Option<WorkspaceComputer>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InterruptedBackgroundWork {
+    label: String,
+    summary: Option<String>,
+    recovery_can_retry: bool,
+    #[serde(flatten)]
+    interruption: WorkInterruption,
+}
+
+#[derive(Deserialize, Serialize)]
+struct WorkspaceComputer {
+    status: ComputerStatus,
+    cutoff: Option<ComputerCutoff>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ComputerStatus {
+    NotStarted,
+    Starting,
+    Running,
+    Stopping,
+    RestartRequired,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ComputerCutoff {
+    Confirmed,
+    Failed,
+}
+
+#[derive(Deserialize, Serialize)]
+struct WorkspaceAutomation {
+    routines: Vec<WorkspaceRoutine>,
+    bindings: Vec<WorkspaceBinding>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkspaceRoutine {
+    id: String,
+    title: Option<String>,
+    enabled: bool,
+    blocked_reason: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkspaceBinding {
+    id: String,
+    transport: String,
+    blocked_reason: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct InvalidatedApproval {
+    id: String,
+    tool: String,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct AutomationHistory {
+    runs: Vec<AutomationRun>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct AutomationRun {
+    id: String,
+    timestamp: String,
+    outcome: String,
+    reason: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutomationResource {
+    Routines,
+    Bindings,
+}
+
+impl AutomationResource {
+    fn path_segment(&self) -> &'static str {
+        match self {
+            Self::Routines => "routines",
+            Self::Bindings => "bindings",
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComputerAction {
+    Start,
+    Stop,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WorkspaceAction {
+    Computer {
+        action: ComputerAction,
+    },
+    Resume {
+        resource: AutomationResource,
+        id: String,
+    },
+    History {
+        resource: AutomationResource,
+        id: String,
+    },
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StoppedWork {
-    key: String,
     instruction: String,
+    #[serde(flatten)]
+    interruption: WorkInterruption,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkInterruption {
+    key: String,
+    recorded_at: Option<u64>,
     reason_message: String,
     output: Option<String>,
     outcome_unknown: bool,
@@ -350,11 +490,16 @@ impl Cloud {
             });
         }
 
-        let action = if matches!(action, Action::Closure) {
-            open(endpoint(origin, "/auth/closure/start"))?;
-            Action::Status
-        } else {
-            action
+        let action = match action {
+            Action::Closure => {
+                open(endpoint(origin, "/auth/closure/start"))?;
+                Action::Status
+            }
+            Action::Export => {
+                open(endpoint(origin, "/workspace"))?;
+                Action::Status
+            }
+            _ => action,
         };
         if let (Action::Status, SignIn::Closed(details)) = (action, &*sign_in) {
             return Ok(View::Closed(details.clone()));
@@ -540,6 +685,7 @@ impl<'a> Api<'a> {
                     quotas,
                     recovery,
                     recovery_can_retry,
+                    workspace_recovery,
                 } = result.json().map_err(|_| NETWORK_ERROR)?;
                 let history = self
                     .http
@@ -560,6 +706,7 @@ impl<'a> Api<'a> {
                             quotas,
                             recovery,
                             recovery_can_retry,
+                            workspace_recovery,
                         })
                     }
                     StatusCode::UNAUTHORIZED => {
@@ -705,6 +852,66 @@ pub async fn personal_cloud_recover<R: Runtime>(
             return Err(NETWORK_ERROR);
         }
         Ok(())
+    })
+    .await
+    .map_err(|_| NETWORK_ERROR)?
+    .map_err(str::to_owned)
+}
+
+#[tauri::command]
+pub async fn personal_cloud_workspace<R: Runtime>(
+    window: WebviewWindow<R>,
+    action: WorkspaceAction,
+) -> Result<Option<AutomationHistory>, String> {
+    require_cloud_window(&window)?;
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let cloud = app.state::<Cloud>();
+        let origin = cloud.origin.as_ref().ok_or(NETWORK_ERROR)?;
+        let token = credential(origin)?
+            .get_password()
+            .map_err(|_| STORE_ERROR)?;
+        let api = Api::new(origin)?;
+        let mut url = endpoint(origin, "/api/workspace");
+        {
+            let mut parts = url.path_segments_mut().map_err(|_| NETWORK_ERROR)?;
+            match &action {
+                WorkspaceAction::Computer { action } => parts.extend([
+                    "computer",
+                    match action {
+                        ComputerAction::Start => "start",
+                        ComputerAction::Stop => "stop",
+                    },
+                ]),
+                WorkspaceAction::Resume { resource, id } => {
+                    parts.extend(["automation", resource.path_segment(), id, "resume"])
+                }
+                WorkspaceAction::History { resource, id } => {
+                    parts.extend(["automation", resource.path_segment(), id, "runs"])
+                }
+            };
+        }
+        let read = matches!(action, WorkspaceAction::History { .. });
+        let request = if read {
+            url.query_pairs_mut().append_pair("format", "summary");
+            api.http.get(url)
+        } else {
+            api.http.post(url)
+        };
+        let reply = request
+            .bearer_auth(token)
+            .send()
+            .map_err(|_| NETWORK_ERROR)?;
+        if reply.status() == StatusCode::TOO_MANY_REQUESTS {
+            return Err("Your workspace has reached its resource limit.");
+        }
+        if !reply.status().is_success() {
+            return Err(NETWORK_ERROR);
+        }
+        if read {
+            return reply.json().map(Some).map_err(|_| NETWORK_ERROR);
+        }
+        Ok(None)
     })
     .await
     .map_err(|_| NETWORK_ERROR)?

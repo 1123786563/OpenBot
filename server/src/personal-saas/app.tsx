@@ -1369,33 +1369,59 @@ export function createPersonalSaasApp(
           unattendedHistory(session.grant.accountId),
         ])
       : [[], []];
+    const native = workspace && bearer(context);
+    const [computerStatus, nativeAutomation, invalidatedApprovals] = workspace
+      ? await Promise.all([
+          computer?.status(workspace.id).catch(() => undefined),
+          native
+            ? store.withAuthorizedSession(session.grant, native, (tx) =>
+                automation.list(tx, session.grant.accountId),
+              )
+            : undefined,
+          native
+            ? approvalHistory(session.grant.accountId).then((requests) =>
+                requests.filter((request) => request.invalidated),
+              )
+            : undefined,
+        ])
+      : [];
+    const automationOverview = nativeAutomation?.authorized
+      ? nativeAutomation.result
+      : undefined;
     const quotaUsage = workspace
       ? await workspaceQuotaUsage(
           session.grant.accountId,
           workspace.id,
-          await computer?.status(workspace.id).catch(() => undefined),
+          computerStatus,
         )
       : undefined;
     const accessMs = await remainingAccess(token, session.grant);
     if (!accessMs) return context.json({ error: "authorization_changed" }, 403);
     if (workspace) context.header("OpenBot-Access-Ms", String(accessMs));
     return workspace
-      ? context.json(
-          recovery.length || unattended.length
+      ? context.json({
+          ...workspace,
+          quotas: quotaUsage,
+          ...(native && computer ? { computer: computerStatus ?? null } : {}),
+          ...(automationOverview &&
+          (automationOverview.routines.length ||
+            automationOverview.bindings.length)
+            ? { automation: automationOverview }
+            : {}),
+          ...(invalidatedApprovals?.length ? { invalidatedApprovals } : {}),
+          ...(unattended.length
+            ? { interruptedBackgroundWork: unattended }
+            : {}),
+          ...(recovery.length || unattended.length
             ? {
-                ...workspace,
-                quotas: quotaUsage,
-                ...(unattended.length
-                  ? { interruptedBackgroundWork: unattended }
-                  : {}),
                 recovery: recovery.map((item) => ({
                   ...item,
                   reasonMessage: recoveryReason[item.reason],
                 })),
                 recoveryCanRetry: Boolean(runPersonalBot),
               }
-            : { ...workspace, quotas: quotaUsage },
-        )
+            : {}),
+        })
       : config.admissionsPaused
         ? context.json({ error: "workspace_admissions_paused" }, 503)
         : context.json({ status: "preparing" }, 202);

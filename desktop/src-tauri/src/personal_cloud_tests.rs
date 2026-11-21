@@ -97,7 +97,7 @@ fn signed_in_cloud_view_loads_workspace_and_owner_history_with_the_same_session(
         for (path, body, access_ms) in [
             (
                 "/api/workspace",
-                r#"{"id":"workspace-1","personalAssistant":{"id":"bot-1","name":"My Assistant"},"quotas":{"bot":{"used":4,"limit":4},"computer":{"used":null,"limit":1},"storage":{"used":32,"limit":64},"automation":{"used":0,"limit":30}}}"#,
+                r#"{"id":"workspace-1","personalAssistant":{"id":"bot-1","name":"My Assistant"},"quotas":{"bot":{"used":4,"limit":4},"computer":{"used":null,"limit":1},"storage":{"used":32,"limit":64},"automation":{"used":0,"limit":30}},"computer":{"status":"restart_required","cutoff":"confirmed"},"interruptedBackgroundWork":[{"key":"bot.handoff:1","label":"Bot handoff","recoveryCanRetry":true,"reasonMessage":"Paused","recordedAt":1750000000000,"outcomeUnknown":true,"output":"Partial output","recovery":null}]}"#,
                 42_000,
             ),
             (
@@ -150,6 +150,18 @@ fn signed_in_cloud_view_loads_workspace_and_owner_history_with_the_same_session(
             "accessMs": 1000,
             "recovery": [],
             "recoveryCanRetry": false,
+            "computer": {"status": "restart_required", "cutoff": "confirmed"},
+            "interruptedBackgroundWork": [{
+                "key": "bot.handoff:1",
+                "label": "Bot handoff",
+                "summary": null,
+                "recoveryCanRetry": true,
+                "reasonMessage": "Paused",
+                "recordedAt": 1750000000000i64,
+                "outcomeUnknown": true,
+                "output": "Partial output",
+                "recovery": null
+            }],
             "id": "workspace-1",
             "personalAssistant": {"id": "bot-1", "name": "My Assistant"},
             "quotas": {
