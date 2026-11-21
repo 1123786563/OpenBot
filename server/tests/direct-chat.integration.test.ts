@@ -1581,17 +1581,23 @@ test("a disconnected direct chat resumes after its last delivered event", async 
       }),
     );
     const reader = first.body?.getReader();
+    if (!reader) throw new Error("Missing Run stream.");
     await started.promise;
-    const frame = await reader?.read();
-    await reader?.cancel();
+    const decoder = new TextDecoder();
+    let cursor: string | undefined;
+    while (cursor === undefined) {
+      const { done, value } = await reader.read();
+      if (done) throw new Error("Run stream closed before sending a cursor.");
+      cursor = decoder.decode(value).match(/^id: (\d+)$/m)?.[1];
+    }
+    await reader.cancel();
     release.resolve();
-    const header = new TextDecoder().decode(frame?.value).match(/^id: (\d+)$/m);
+    expect(cursor).toBe("1");
     const replay = await app.request(
       `${path}/resume`,
-      post({ ...input, cursor: Number(header?.[1] ?? 1) }),
+      post({ ...input, cursor: Number(cursor) }),
     );
     expect(replay.status).toBe(200);
-    expect(header?.[1]).toBe("1");
     const replayed = await replay.text();
     expect(replayed.match(/^id: (\d+)$/gm)).toEqual([
       "id: 2",
