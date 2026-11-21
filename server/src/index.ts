@@ -255,8 +255,8 @@ import { assertActivatable, providerDecision } from "./plugins/broker";
 import { useRoutineTools } from "./plugins/builtin-routines";
 import { useComposioClient } from "./plugins/composio";
 import { createComposioClient } from "./plugins/composio-adapter";
-import { createGithubEventDispatch } from "./plugins/corsair/event-dispatch";
 import { createCorsairCloudClient } from "./plugins/corsair/cloud";
+import { createGithubEventDispatch } from "./plugins/corsair/event-dispatch";
 import { createCorsairEventOperations } from "./plugins/corsair/event-operations";
 import { createGithubEventReader } from "./plugins/corsair/event-reader";
 import { createGithubEventTriggers } from "./plugins/corsair/event-triggers";
@@ -1369,6 +1369,7 @@ const corsairCloud = process.env.CORSAIR_CLOUD_KEY?.trim()
   ? createCorsairCloudClient({
       apiKey: process.env.CORSAIR_CLOUD_KEY.trim(),
       baseUrl: process.env.CORSAIR_CLOUD_BASE_URL?.trim(),
+      instanceKey: process.env.CORSAIR_CLOUD_INSTANCE?.trim(),
     })
   : undefined;
 const githubEventSecret = process.env.CORSAIR_GITHUB_WEBHOOK_SECRET?.trim();
