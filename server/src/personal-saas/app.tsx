@@ -68,6 +68,10 @@ import { supportAccess } from "./support-access";
 import { supportRoutes } from "./support-routes";
 import { botRunCreditQuote, personalTestCreditExecution } from "./test-credit";
 import { page, pageStyleAttributePolicy, registerPageStyles } from "./web-page";
+import {
+  type WeKnoraEmbeddingExecutor,
+  weknoraEmbeddingRoutes,
+} from "./weknora-embedding-routes";
 import { weknoraGrantRoutes } from "./weknora-grant-routes";
 import {
   workspaceAttachmentDrafts,
@@ -160,6 +164,11 @@ export type PersonalSaasConfig = {
   testCredits?: {
     ledger: TestCreditLedger;
     execute?: TestCreditExecutor;
+    weknora?: {
+      serviceToken: string;
+      routeId: string;
+      execute: WeKnoraEmbeddingExecutor;
+    };
     grant: OneTimeTestCreditGrantConfig;
   };
 };
@@ -780,6 +789,15 @@ export function createPersonalSaasApp(
         requestSession: (context) => getCookie(context, sessionCookie),
         authorize,
         now,
+      }),
+    );
+  if (config.testCredits?.weknora)
+    app.route(
+      "/api/weknora/embeddings",
+      weknoraEmbeddingRoutes({
+        ...config.testCredits.weknora,
+        issuer: config.casdoor.issuer,
+        ledger: config.testCredits.ledger,
       }),
     );
   app.route(

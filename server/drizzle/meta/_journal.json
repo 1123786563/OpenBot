@@ -785,6 +785,13 @@
       "when": 1795273407366,
       "tag": "0111_weknora_external_spending",
       "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1795275600000,
+      "tag": "0112_test_credit_embedding_replay",
+      "breakpoints": true
     }
   ]
 }

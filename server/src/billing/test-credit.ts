@@ -588,6 +588,65 @@ export function createTestCreditLedger(
       });
     },
 
+    async embeddingRoute(id: string) {
+      const active = await activeRoutes(database);
+      const route = active?.options.find(
+        (option) => option.id === id && option.purpose === "embedding",
+      );
+      if (route && active?.priceVersion)
+        return { route, priceVersion: active.priceVersion };
+    },
+
+    async embeddingReplay(
+      identity: VerifiedBillingIdentity,
+      input: {
+        operationId: string;
+        scope: ExternalSpendingScope;
+        inputDigest: string;
+      },
+    ) {
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return undefined;
+        const row = await operation(accountId, input.operationId, tx);
+        if (!row) return undefined;
+        const authorization = await externalAuthorization(
+          tx,
+          accountId,
+          input.scope,
+        );
+        const now = await currentTime(tx);
+        if (
+          !authorization ||
+          row.externalAuthorizationId !== authorization.id ||
+          row.embeddingInputDigest !== input.inputDigest
+        )
+          return { state: "conflict" } as const;
+        if (!row.dispatchedAt && row.state === "reserved") return undefined;
+        if (
+          row.embeddingResult &&
+          row.embeddingResultExpiresAt &&
+          row.embeddingResultExpiresAt > now
+        ) {
+          return {
+            state: "completed",
+            vectors: row.embeddingResult,
+            receipt: await settlePending(tx, accountId, input.operationId),
+          } as const;
+        }
+        return { state: "unavailable" } as const;
+      });
+    },
+
+    async sweepEmbeddingResults() {
+      await database
+        .update(operations)
+        .set({ embeddingResult: null, embeddingResultExpiresAt: null })
+        .where(
+          sql`${operations.embeddingResultExpiresAt} <= statement_timestamp()`,
+        );
+    },
+
     async modelOptions() {
       const active = await activeRoutes(database);
       return (
@@ -738,6 +797,7 @@ export function createTestCreditLedger(
         priceVersion: string;
         rerunOfOperationId?: string;
         scope?: ExternalSpendingScope;
+        embeddingInputDigest?: string;
       },
     ) {
       return database.transaction(async (tx) => {
@@ -771,7 +831,11 @@ export function createTestCreditLedger(
           );
         const existing = await operation(accountId, input.operationId, tx);
         if (existing) {
-          if (existing.externalAuthorizationId !== (authorization?.id ?? null))
+          if (
+            existing.externalAuthorizationId !== (authorization?.id ?? null) ||
+            existing.embeddingInputDigest !==
+              (input.embeddingInputDigest ?? null)
+          )
             return denied("not_authorized");
           const sameQuote =
             existing.route.id === input.route &&
@@ -859,6 +923,7 @@ export function createTestCreditLedger(
             createdAt: now,
             rerunOfOperationId: input.rerunOfOperationId,
             externalAuthorizationId: authorization?.id,
+            embeddingInputDigest: input.embeddingInputDigest,
             externalAccountEpoch:
               authorization && access.kind === "active"
                 ? access.epoch
@@ -886,6 +951,7 @@ export function createTestCreditLedger(
         operationId: string;
         permit: string;
         scope?: ExternalSpendingScope;
+        embeddingInputDigest?: string;
       },
     ) {
       return database.transaction(async (tx) => {
@@ -897,6 +963,7 @@ export function createTestCreditLedger(
         if (
           !row ||
           row.permit !== input.permit ||
+          row.embeddingInputDigest !== (input.embeddingInputDigest ?? null) ||
           row.externalAuthorizationId !== (input.scope?.authorizationId ?? null)
         )
           return denied("not_authorized");
@@ -966,6 +1033,29 @@ export function createTestCreditLedger(
     recordEvidence,
     settleRecorded,
 
+    async settleEmbedding(
+      accountId: string,
+      id: string,
+      input: {
+        evidenceId: string;
+        inputTokens: bigint;
+        vectors?: number[][];
+      },
+    ) {
+      const recorded = await recordEvidence(
+        accountId,
+        id,
+        {
+          evidenceId: input.evidenceId,
+          outcome: input.vectors ? "completed" : "partial",
+          inputTokens: input.inputTokens,
+          outputTokens: 0n,
+        },
+        { vectors: input.vectors },
+      );
+      return recorded && settleRecorded(accountId, id);
+    },
+
     async reconcile(identity: VerifiedBillingIdentity, id: string) {
       return database.transaction(async (tx) => {
         const accountId = await account(identity, tx);
@@ -1000,6 +1090,7 @@ export function createTestCreditLedger(
     accountId: string,
     id: string,
     verified: Evidence,
+    embedding?: { vectors?: number[][] },
   ) {
     return database.transaction(async (tx) => {
       if (!(await lockAccount(tx, accountId))) return undefined;
@@ -1007,6 +1098,11 @@ export function createTestCreditLedger(
       await applyCutoff(tx, accountId, now);
       const row = await operation(accountId, id, tx);
       if (!row?.dispatchedAt) return undefined;
+      if (
+        embedding &&
+        (row.route.purpose !== "embedding" || !row.embeddingInputDigest)
+      )
+        return undefined;
       const { evidenceId, outcome, inputTokens, outputTokens } = verified;
       const maxBigint = 9_223_372_036_854_775_807n;
       if (
@@ -1042,6 +1138,17 @@ export function createTestCreditLedger(
           cost,
           recordedAt: now,
         });
+        if (embedding?.vectors) {
+          await tx
+            .update(operations)
+            .set({
+              embeddingResult: sql`${JSON.stringify(embedding.vectors)}::text::jsonb`,
+              embeddingResultExpiresAt: new Date(
+                now.getTime() + reconciliationMilliseconds,
+              ),
+            })
+            .where(operationFilter(accountId, id));
+        }
         if (
           row.state === "pending" &&
           row.eligibleEvidenceId === null &&

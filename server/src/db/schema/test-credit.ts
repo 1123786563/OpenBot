@@ -129,6 +129,11 @@ export const testCreditOperations = pgTable(
     permit: uuid().notNull().defaultRandom(),
     externalAuthorizationId: uuid("external_authorization_id"),
     externalAccountEpoch: bigint("external_account_epoch", { mode: "number" }),
+    embeddingInputDigest: text("embedding_input_digest"),
+    embeddingResult: jsonb("embedding_result").$type<number[][]>(),
+    embeddingResultExpiresAt: timestamp("embedding_result_expires_at", {
+      withTimezone: true,
+    }),
     priceVersion: uuid("price_version").notNull(),
     route: jsonb().$type<ReleasedBifrostRoute>().notNull(),
     reserved: bigint({ mode: "bigint" }).notNull(),
@@ -160,6 +165,9 @@ export const testCreditOperations = pgTable(
       "test_credit_operation_external_binding",
       sql`(${table.externalAuthorizationId} IS NULL) = (${table.externalAccountEpoch} IS NULL)`,
     ),
+    index("test_credit_embedding_result_expiry_idx")
+      .on(table.embeddingResultExpiresAt)
+      .where(sql`${table.embeddingResultExpiresAt} IS NOT NULL`),
     index("test_credit_operations_external_authorization_idx")
       .on(table.accountId, table.externalAuthorizationId)
       .where(sql`${table.externalAuthorizationId} IS NOT NULL`),

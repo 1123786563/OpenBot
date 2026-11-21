@@ -194,6 +194,40 @@ With managed Test Credit execution enabled, the deployment's headless Bot runner
 is disabled. Managed Computer runs, unattended model execution and manual
 execution retries of stopped billed work require a separate billing integration.
 
+### WeKnora text ingestion with Test Credits
+
+Publish an embedding route with v3 qualification evidence and input-only pricing.
+Set `OPENBOT_WEKNORA_EMBEDDING_ROUTE` to its catalog ID. Configure the shared
+`OPENBOT_WEKNORA_SERVICE_TOKEN` on the OpenBot and WeKnora servers. Set
+`OPENBOT_WEKNORA_BIFROST_URL` and `OPENBOT_WEKNORA_BIFROST_TOKEN` for the HTTPS
+Bifrost embeddings endpoint. Set `OPENBOT_WEKNORA_INPUT_METER_URL` and
+`OPENBOT_WEKNORA_INPUT_METER_TOKEN` for the HTTPS meter for that exact request.
+The configured `OPENBOT_WEKNORA_GATEWAY_REVISION`,
+`OPENBOT_WEKNORA_GATEWAY_IMAGE_DIGEST`, and `OPENBOT_WEKNORA_METERING_REVISION`
+must match the evidence of the published route. The meter returns the request
+UUID, request SHA-256, gateway revision, meter revision, and input token upper
+bound. The gateway must return ordered or indexed float vectors and trusted
+input token usage.
+
+The owner submits explicit spending consent with a signed-in OpenBot Web session
+to `POST /api/weknora/ingestion-grants`. Supply an `Idempotency-Key` UUID and a
+JSON body with `confirmed: true`, the ISO `expiresAt`, the string
+`maxMicrocredits`, and `resourceId` in the form
+`weknora:tenant:<resource tenant ID>:kb:<knowledge base ID>`. The Web session can
+end after consent. The durable grant can be revoked with
+`POST /api/weknora/ingestion-grants/<authorizationId>/revoke` using the same
+`resourceId`.
+
+WeKnora's service authenticates to `POST /api/weknora/embeddings` with the shared
+bearer token. Send the server-verified Casdoor `subject`, `authorizationId`,
+`resourceId`, per-batch UUID `operationId`, and `input` array. The batch can
+contain up to 32 strings within a 256 KiB request and the route's verified token
+ceiling. A completed request returns vectors and a receipt. Reuse the exact
+operation ID, scope, and input after a lost response. Completed vectors can be
+replayed for up to 24 hours. HTTP 409 indicates a conflicting operation or an
+outcome that needs reconciliation. A retry of the same operation cannot create
+a second dispatch. OpenBot retains the billing receipt after vector expiry.
+
 ## Routine and inbound automation
 
 The workspace’s **Routines and inbound bindings** page lists existing items and their history. The same owner-scoped API accepts a session cookie or native bearer session.

@@ -22,6 +22,7 @@ import {
   testCreditOperations,
 } from "../src/db/schema";
 import { createAccountAccess } from "../src/personal-saas/account-access";
+import { weknoraEmbeddingRoutes } from "../src/personal-saas/weknora-embedding-routes";
 import { suspensionRoutes } from "../src/personal-saas/workspace-suspension";
 import { fixtureEmbeddingReport } from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -307,6 +308,84 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
     expect((await restarted.beginDispatch(identity, consume)).state).not.toBe(
       "dispatch",
     );
+    const httpScope = { ...grant, authorizationId: crypto.randomUUID() };
+    await authorizeFresh(httpScope);
+    const serviceToken = crypto.randomUUID();
+    const handle = (
+      execute: Parameters<typeof weknoraEmbeddingRoutes>[0]["execute"],
+    ) =>
+      weknoraEmbeddingRoutes({
+        issuer: identity.issuer,
+        serviceToken,
+        routeId: "pilot",
+        ledger: createTestCreditLedger(database, () => new Date(now)),
+        execute,
+      });
+    const body = {
+      subject: identity.subject,
+      resourceId: httpScope.resourceId,
+      authorizationId: httpScope.authorizationId,
+      operationId: crypto.randomUUID(),
+      input: ["first"],
+    };
+    const request = (input = body, token = serviceToken) => ({
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(input),
+    });
+    const started = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    let gatewayCalls = 0;
+    const app = handle(async ({ beforeDispatch }) => {
+      if (!(await beforeDispatch({ requestId: "trusted-provider-request" })))
+        throw new Error("Fixture dispatch rejected");
+      gatewayCalls++;
+      started.resolve();
+      await finish.promise;
+      return {
+        outcome: "complete",
+        vectors: [[0.125, -0.25]],
+        usage: { inputTokens: 2, outputTokens: 0 },
+      };
+    });
+    expect((await app.request("/", request(body, "invalid"))).status).toBe(401);
+    expect(
+      (await app.request("/", request({ ...body, subject: "other" }))).status,
+    ).toBe(403);
+    const inFlight = app.request("/", request());
+    try {
+      await Promise.race([
+        started.promise,
+        inFlight.then(async (response) => {
+          throw new Error(`Expected dispatch, received ${response.status}`);
+        }),
+      ]);
+      expect((await app.request("/", request())).status).toBe(409);
+      const changed = { ...body, input: ["second"] };
+      expect((await app.request("/", request(changed))).status).toBe(409);
+      now += 60_000;
+      const blocked = { ...body, operationId: crypto.randomUUID() };
+      expect((await app.request("/", request(blocked))).status).toBe(403);
+    } finally {
+      finish.resolve();
+    }
+    const accepted = await inFlight;
+    expect(accepted.status).toBe(200);
+    const result: unknown = await accepted.json();
+    expect(result).toMatchObject({
+      vectors: [[0.125, -0.25]],
+      receipt: { state: "settled", chargedMicrocredits: "1" },
+    });
+    const freshApp = handle(async () => {
+      throw new Error("Replaying must not dispatch");
+    });
+    const replayed = await freshApp.request("/", request());
+    expect(replayed.status).toBe(200);
+    expect(await replayed.json()).toEqual(result);
+    expect(gatewayCalls).toBe(1);
   } finally {
     await database.transaction(async (tx) => {
       const [billingAccount] = await tx

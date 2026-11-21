@@ -2,6 +2,7 @@ import { inArray } from "drizzle-orm";
 import { z } from "zod";
 import { configureBotLifecycle } from "../agents/lifecycle";
 import { createTestCreditLedger } from "../billing/test-credit";
+import { createBifrostEmbeddingExecutor } from "../billing/test-credit-embedding-bifrost";
 import { createDatabase } from "../db/client";
 import { personalWorkspaceClosures } from "../db/schema";
 import { repeatAfterEach } from "../work/loop";
@@ -97,6 +98,46 @@ if (
   grantConfig.some((value) => value === undefined)
 )
   throw new Error("Configure all Test Credit grant settings together");
+const weknoraSettings = z.object({
+  OPENBOT_WEKNORA_SERVICE_TOKEN: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  OPENBOT_WEKNORA_EMBEDDING_ROUTE: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
+  OPENBOT_WEKNORA_BIFROST_URL: httpsUrl,
+  OPENBOT_WEKNORA_BIFROST_TOKEN: z.string().trim().min(1),
+  OPENBOT_WEKNORA_GATEWAY_REVISION: z.string().trim().min(1),
+  OPENBOT_WEKNORA_GATEWAY_IMAGE_DIGEST: z
+    .string()
+    .regex(/^sha256:[a-f0-9]{64}$/),
+  OPENBOT_WEKNORA_INPUT_METER_URL: httpsUrl,
+  OPENBOT_WEKNORA_INPUT_METER_TOKEN: z.string().trim().min(1),
+  OPENBOT_WEKNORA_METERING_REVISION: z.string().trim().min(1),
+});
+const weknora = (() => {
+  const configured = Object.keys(weknoraSettings.shape).some(
+    (key) => process.env[key] !== undefined && process.env[key] !== "",
+  );
+  if (!configured) return undefined;
+  const parsed = weknoraSettings.safeParse(process.env);
+  if (!parsed.success || grantConfig.some((value) => value === undefined))
+    throw new Error(
+      "WeKnora embeddings require all embedding and Test Credit grant settings",
+    );
+  const config = parsed.data;
+  return {
+    serviceToken: config.OPENBOT_WEKNORA_SERVICE_TOKEN,
+    routeId: config.OPENBOT_WEKNORA_EMBEDDING_ROUTE,
+    execute: createBifrostEmbeddingExecutor({
+      endpoint: new URL(config.OPENBOT_WEKNORA_BIFROST_URL),
+      gatewayToken: config.OPENBOT_WEKNORA_BIFROST_TOKEN,
+      gatewayRevision: config.OPENBOT_WEKNORA_GATEWAY_REVISION,
+      gatewayImageDigest: config.OPENBOT_WEKNORA_GATEWAY_IMAGE_DIGEST,
+      meterEndpoint: new URL(config.OPENBOT_WEKNORA_INPUT_METER_URL),
+      meterToken: config.OPENBOT_WEKNORA_INPUT_METER_TOKEN,
+      meteringRevision: config.OPENBOT_WEKNORA_METERING_REVISION,
+    }),
+  };
+})();
 const executeTestCredit = loadPersonalTestCreditExecutor(process.env);
 const executionEnabled =
   process.env.OPENBOT_PERSONAL_SAAS_BOT_EXECUTION === "on";
@@ -189,6 +230,7 @@ const app = createPersonalSaasApp(
           testCredits: {
             ledger: testCreditLedger,
             execute: executeTestCredit,
+            weknora,
             grant: {
               budgetId: "personal-saas-trial",
               budget: env.OPENBOT_TEST_CREDIT_GRANT_BUDGET_MICROCREDITS,
@@ -299,7 +341,7 @@ repeatAfterEach(async () => {
   }
 }, 1_000);
 
-if (executeTestCredit)
+if (executeTestCredit || weknora)
   repeatAfterEach(async () => {
     try {
       await testCreditLedger.sweepCutoffs();
@@ -311,6 +353,19 @@ if (executeTestCredit)
       );
     }
   }, 1_000);
+
+if (weknora)
+  repeatAfterEach(async () => {
+    try {
+      await testCreditLedger.sweepEmbeddingResults();
+    } catch {
+      console.warn(
+        JSON.stringify({
+          type: "personal-saas-embedding-result-sweep-failure",
+        }),
+      );
+    }
+  }, 60_000);
 
 if (botRuntime)
   repeatAfterEach(async () => {
