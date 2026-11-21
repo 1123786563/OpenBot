@@ -316,3 +316,25 @@ test("restored access shows stopped background work, outcomes and per-item recov
   await act(async () => window.dispatchEvent(new Event("offline")));
   expect(screen.queryByText(/skipped · The workspace was paused/)).toBeNull();
 });
+
+test("the authorized workspace opens export in the system browser", async () => {
+  const actions: CloudAction[] = [];
+  const workspace: CloudView = {
+    kind: "workspace",
+    accessMs: 60_000,
+    id: "workspace-1",
+    personalAssistant: { id: "bot-1", name: "My Assistant" },
+    conversations: [],
+  };
+  const request = async (action: CloudAction) => {
+    actions.push(action);
+    return workspace;
+  };
+  const screen = within(render(<PersonalCloud request={request} />).container);
+  const user = userEvent.setup({ document });
+  const button = { name: "Export workspace data in browser" };
+  await user.click(await screen.findByRole("button", button));
+  expect(actions.filter((action) => action === "export")).toEqual(["export"]);
+  await act(async () => window.dispatchEvent(new Event("offline")));
+  expect(screen.queryByRole("button", button)).toBeNull();
+});
