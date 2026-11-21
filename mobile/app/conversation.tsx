@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { api, type Conversation, type TranscriptMessage } from "../src/api";
 import { authClient } from "../src/auth";
+import { DirectConversationScreen } from "../src/direct-conversation-screen";
 import { useLoad } from "../src/use-load";
 export default function ConversationScreen() {
   const {
@@ -23,21 +24,85 @@ export default function ConversationScreen() {
     draft?: string;
   }>();
   const { data: session, isPending } = authClient.useSession();
+  if (!session) return isPending ? null : <Redirect href="/" />;
+  return (
+    <SignedInConversation
+      key={JSON.stringify([
+        session.user.id,
+        channelId,
+        requestedAgentId,
+        draft,
+      ])}
+      channelId={channelId}
+      requestedAgentId={requestedAgentId}
+      draft={draft}
+    />
+  );
+}
+
+function SignedInConversation({
+  channelId,
+  requestedAgentId,
+  draft,
+}: {
+  channelId: string;
+  requestedAgentId?: string;
+  draft?: string;
+}) {
+  const load = useCallback(async () => {
+    const [detail, capabilities] = await Promise.all([
+      api<{ channel: Conversation }>(
+        `/api/channels/${encodeURIComponent(channelId)}`,
+      ),
+      api<{ mode?: string }>("/api/capabilities"),
+    ]);
+    return { ...detail, mode: capabilities.mode };
+  }, [channelId]);
+  const { data, error } = useLoad(load);
+  if (!data)
+    return (
+      <Text accessibilityRole={error ? "alert" : undefined}>
+        {error || "Loading conversation…"}
+      </Text>
+    );
+  const { channel, mode } = data;
+  const agentId = channel.agentIds[0];
+  if (mode === "openbot" && channel.direct && agentId) {
+    return (
+      <DirectConversationScreen
+        conversation={channel}
+        agentId={agentId}
+        draft={draft}
+      />
+    );
+  }
+  if (error) return <Text accessibilityRole="alert">{error}</Text>;
+  return (
+    <DeliveryConversation
+      channelId={channelId}
+      conversation={channel}
+      requestedAgentId={requestedAgentId}
+      draft={draft}
+    />
+  );
+}
+
+function DeliveryConversation({
+  channelId,
+  conversation,
+  requestedAgentId,
+  draft,
+}: {
+  channelId: string;
+  conversation: Conversation;
+  requestedAgentId?: string;
+  draft?: string;
+}) {
   const [agentId, setAgentId] = useState("");
   // A Bot profile's "Add routine" arrives with its sentence started for the person to finish.
   const [text, setText] = useState(draft ?? "");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reload for whoever is signed in now, not the previous person
-  const loadChannels = useCallback(
-    () =>
-      api<{ channel: Conversation }>(
-        `/api/channels/${encodeURIComponent(channelId ?? "")}`,
-      ),
-    [channelId, session?.user.id],
-  );
-  const channels = useLoad(loadChannels, Boolean(session));
-  const conversation = channels.data?.channel;
   useEffect(() => {
     if (conversation && !agentId)
       setAgentId(
@@ -53,8 +118,7 @@ export default function ConversationScreen() {
       ),
     [channelId, agentId],
   );
-  const history = useLoad(loadHistory, Boolean(session && agentId));
-  if (!session && !isPending) return <Redirect href="/" />;
+  const history = useLoad(loadHistory, Boolean(agentId));
   const messages = Array.isArray(history.data?.history)
     ? history.data.history
     : history.data?.history.messages;
@@ -95,9 +159,9 @@ export default function ConversationScreen() {
           />
         ))}
       </View>
-      {(error || channels.error || history.error) && (
+      {(error || history.error) && (
         <Text accessibilityRole="alert" style={{ color: "#b42318" }}>
-          {error || channels.error || history.error}
+          {error || history.error}
         </Text>
       )}
       <ScrollView

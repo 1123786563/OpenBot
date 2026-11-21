@@ -122,6 +122,7 @@ jobs:
       # existing desktop/server installation contract. CI installs its own reviewed lockfile.
       - run: npm ci --prefix mobile --ignore-scripts
       - run: npm run --prefix mobile typecheck
+      - run: npm test --prefix mobile
 
   # The agent-computer tests that launch a real Chromium. They are asked for by name because a
   # machine running `bun test` is not required to have a browser, and these are the only tests that
