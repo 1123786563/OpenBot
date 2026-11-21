@@ -1071,6 +1071,24 @@ export function createPersonalSaasApp(
                   ) : (
                     ""
                   )}
+                  {testCredits.quote ? (
+                    <>
+                      <Text as="p">
+                        {testCredits.quote.model} costs{" "}
+                        {testCredits.quote.price.inputPerMillion} microcredits
+                        per million input tokens and{" "}
+                        {testCredits.quote.price.outputPerMillion} microcredits
+                        per million output tokens.
+                      </Text>
+                      <Text as="p">
+                        Maximum reservation per run:{" "}
+                        {testCredits.quote.maxChargeMicrocredits} microcredits.{" "}
+                        {testCredits.quote.usageDisclosure}
+                      </Text>
+                    </>
+                  ) : (
+                    ""
+                  )}
                 </section>
               ) : (
                 ""

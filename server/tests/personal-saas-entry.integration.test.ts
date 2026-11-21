@@ -827,6 +827,15 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
         quote: { creditType: "test", maxChargeMicrocredits: "3" },
       },
     });
+    const quotePage = await send("/workspace", {
+      headers: { cookie: session },
+    });
+    expect(quotePage.status).toBe(200);
+    const quoteContent = await quotePage.text();
+    expect(quoteContent).toContain("model-a costs 1000000 microcredits");
+    expect(quoteContent).toContain(
+      "Maximum reservation per run: 3 microcredits.",
+    );
     const priorConversation = {
       id: crypto.randomUUID(),
       title: "Existing history",

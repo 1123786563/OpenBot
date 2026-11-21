@@ -88,7 +88,17 @@ test("workspace retains pending and used-up Test Credits", () => {
   };
   for (const testCredits of [
     { ...credit, state: "pending", usedUp: false },
-    { ...credit, state: "issued", usedUp: true },
+    {
+      ...credit,
+      state: "issued",
+      usedUp: true,
+      quote: {
+        model: "Pilot model",
+        price: { inputPerMillion: 1_000, outputPerMillion: 2_000 },
+        maxChargeMicrocredits: "250",
+        usageDisclosure: "Interrupted requests may still use Test Credits.",
+      },
+    },
   ]) {
     const workspace = personalWorkspace.parse({
       id: "workspace-1",

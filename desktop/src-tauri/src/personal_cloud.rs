@@ -212,6 +212,23 @@ pub struct TestCredits {
     amount_microcredits: String,
     balance: TestCreditBalance,
     used_up: bool,
+    quote: Option<TestCreditQuote>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TestCreditQuote {
+    model: String,
+    price: TestCreditPrice,
+    max_charge_microcredits: String,
+    usage_disclosure: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TestCreditPrice {
+    input_per_million: u64,
+    output_per_million: u64,
 }
 
 #[derive(Deserialize, Serialize)]

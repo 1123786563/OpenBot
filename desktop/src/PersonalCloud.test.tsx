@@ -54,6 +54,12 @@ test("a cancelled browser sign-in can be restarted and returned to the existing 
       amountMicrocredits: "100",
       balance: { availableMicrocredits: "0" },
       usedUp: true,
+      quote: {
+        model: "Pilot model",
+        price: { inputPerMillion: 1_000, outputPerMillion: 2_000 },
+        maxChargeMicrocredits: "250",
+        usageDisclosure: "Interrupted requests may still use Test Credits.",
+      },
     },
     conversations: [
       {
@@ -67,6 +73,10 @@ test("a cancelled browser sign-in can be restarted and returned to the existing 
   await screen.findByText("My Assistant");
   await screen.findByRole("heading", { name: "Recent conversations" });
   expect(screen.getByText("Test Credits are used up.")).toBeTruthy();
+  expect(screen.getByText(/Pilot model costs 1000 microcredits/)).toBeTruthy();
+  expect(
+    screen.getByText(/Maximum reservation per run: 250 microcredits/),
+  ).toBeTruthy();
   expect(screen.getByText("Weekend <plans>")).toBeTruthy();
   expect(screen.getByText("Saturday at nine")).toBeTruthy();
   expect(screen.getByText("Bot runs: 4 / 4")).toBeTruthy();

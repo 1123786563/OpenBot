@@ -408,6 +408,26 @@ export function PersonalSaasHome() {
                 {screen.workspace.testCredits.usedUp && (
                   <Text>Test Credits are used up.</Text>
                 )}
+                {screen.workspace.testCredits.quote && (
+                  <>
+                    <Text>
+                      {screen.workspace.testCredits.quote.model} costs{" "}
+                      {screen.workspace.testCredits.quote.price.inputPerMillion}{" "}
+                      microcredits per million input tokens and{" "}
+                      {
+                        screen.workspace.testCredits.quote.price
+                          .outputPerMillion
+                      }{" "}
+                      microcredits per million output tokens.
+                    </Text>
+                    <Text>
+                      Maximum reservation per run:{" "}
+                      {screen.workspace.testCredits.quote.maxChargeMicrocredits}{" "}
+                      microcredits.{" "}
+                      {screen.workspace.testCredits.quote.usageDisclosure}
+                    </Text>
+                  </>
+                )}
               </View>
             )}
             {screen.workspace.quotas && (

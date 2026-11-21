@@ -59,6 +59,12 @@ export type CloudView =
         amountMicrocredits: string;
         balance: { availableMicrocredits: string };
         usedUp: boolean;
+        quote?: {
+          model: string;
+          price: { inputPerMillion: number; outputPerMillion: number };
+          maxChargeMicrocredits: string;
+          usageDisclosure: string;
+        } | null;
       } | null;
       recoveryCanRetry?: boolean;
       recovery?: (WorkInterruption & { instruction: string })[];
@@ -795,6 +801,22 @@ export function PersonalCloud({
                     <p>Your one-time grant is pending.</p>
                   )}
                   {view.testCredits.usedUp && <p>Test Credits are used up.</p>}
+                  {view.testCredits.quote && (
+                    <>
+                      <p>
+                        {view.testCredits.quote.model} costs{" "}
+                        {view.testCredits.quote.price.inputPerMillion}{" "}
+                        microcredits per million input tokens and{" "}
+                        {view.testCredits.quote.price.outputPerMillion}{" "}
+                        microcredits per million output tokens.
+                      </p>
+                      <p>
+                        Maximum reservation per run:{" "}
+                        {view.testCredits.quote.maxChargeMicrocredits}{" "}
+                        microcredits. {view.testCredits.quote.usageDisclosure}
+                      </p>
+                    </>
+                  )}
                 </section>
               )}
               <section aria-labelledby="recent-conversations">

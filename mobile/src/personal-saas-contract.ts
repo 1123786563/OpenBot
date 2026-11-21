@@ -137,6 +137,17 @@ export const personalWorkspace = z.object({
       amountMicrocredits: z.string(),
       balance: z.object({ availableMicrocredits: z.string() }),
       usedUp: z.boolean(),
+      quote: z
+        .object({
+          model: z.string(),
+          price: z.object({
+            inputPerMillion: z.number().int().nonnegative(),
+            outputPerMillion: z.number().int().nonnegative(),
+          }),
+          maxChargeMicrocredits: z.string(),
+          usageDisclosure: z.string(),
+        })
+        .optional(),
     })
     .optional(),
   recoveryCanRetry: z.boolean().default(false),
