@@ -706,9 +706,32 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             state: "existing",
             operation: operationReceipt(row, await eligibleEvidence(tx, row)),
           } as const;
+        const filter = operationFilter(row.accountId, row.id);
+        if (row.budgetId) {
+          const executionBudget = await budget(row.accountId, row.budgetId, tx);
+          const invalid =
+            !executionBudget ||
+            executionBudget.creditType !== "test" ||
+            executionBudget.state !== "active" ||
+            executionBudget.confirmedAt === null;
+          const overLimit = executionBudget
+            ? (await budgetUsage(row.accountId, row.budgetId, tx)) >
+              executionBudget.limitMicrocredits
+            : false;
+          if (invalid || overLimit) {
+            await tx
+              .update(operations)
+              .set({ state: "released" })
+              .where(filter);
+            return denied(
+              invalid && !executionBudget
+                ? "not_authorized"
+                : "execution_limit",
+            );
+          }
+        }
         const active = await activeRoutes(tx, true);
         const eligible = routeEligible(active, row.route);
-        const filter = operationFilter(row.accountId, row.id);
         const dispatchedAt = await currentTime(tx);
         if (
           !eligible ||
