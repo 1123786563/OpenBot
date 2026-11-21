@@ -59,4 +59,26 @@ describe("Corsair Cloud client", () => {
       },
     ]);
   });
+
+  test("calls tenant-scoped Corsair entity methods with positional arguments", async () => {
+    const requests: Request[] = [];
+    const client = createCorsairCloudClient({
+      apiKey: "ck_cloud_demo.slug",
+      fetch: async (input, init) => {
+        requests.push(new Request(input, init));
+        return Response.json({ data: [] });
+      },
+    });
+
+    await client.callEntity("person-1", "github", "issues", "findMany", [
+      { repository: "openbot" },
+    ]);
+
+    expect(requests[0]?.url).toBe(
+      "https://api.corsair.cloud/demo/api/corsair/person-1/github/db/issues/findMany",
+    );
+    expect(await requests[0]?.json()).toEqual({
+      args: [{ repository: "openbot" }],
+    });
+  });
 });

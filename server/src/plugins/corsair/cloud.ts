@@ -5,6 +5,8 @@ import type { AppVariables } from "../../auth/guards";
 const pluginSlug = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,99}$/);
 const tenantId = z.string().trim().min(1).max(200);
 const operation = z.string().regex(/^[a-zA-Z0-9_.-]{1,200}$/);
+const entityType = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
+const entityMethod = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const json = z.unknown();
 const operationsResponse = z.object({
   plugins: z.record(z.string(), z.array(operation)),
@@ -117,6 +119,22 @@ export function createCorsairCloudClient(config: CorsairCloudConfig) {
         },
         json,
       ),
+    callEntity: (
+      tenant: string,
+      plugin: string,
+      type: string,
+      method: string,
+      args: unknown[] = [],
+    ) =>
+      request(
+        `/${encodeURIComponent(tenantId.parse(tenant))}/${encodeURIComponent(pluginSlug.parse(plugin))}/db/${encodeURIComponent(entityType.parse(type))}/${encodeURIComponent(entityMethod.parse(method))}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ args }),
+        },
+        json,
+      ),
   };
 }
 
@@ -160,6 +178,25 @@ export function createCorsairCloudRoutes({
         context.var.actor.id,
         body.plugin,
         body.operation,
+        body.args,
+      ),
+    );
+  });
+  routes.post("/db", async (context) => {
+    const body = z
+      .object({
+        plugin: pluginSlug,
+        entityType,
+        method: entityMethod,
+        args: z.array(z.unknown()).default([]),
+      })
+      .parse(await context.req.json());
+    return context.json(
+      await client.callEntity(
+        context.var.actor.id,
+        body.plugin,
+        body.entityType,
+        body.method,
         body.args,
       ),
     );
