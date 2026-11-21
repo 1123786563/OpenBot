@@ -19,7 +19,7 @@ import {
   testCreditOperations as operations,
   personalSaasAccounts,
 } from "../db/schema";
-
+import type { AccountStatus } from "../db/schema/personal-saas";
 import { accountDecision } from "../personal-saas/account-access";
 
 export type ExternalSpendingScope = {
@@ -211,6 +211,26 @@ function eligibleCharge(
 ) {
   if (verified.outcome === "platform_failure") return 0n;
   return verified.cost > row.reserved ? row.reserved : verified.cost;
+}
+
+function externalReservationStillAuthorized(
+  status: AccountStatus | null,
+  reservedEpoch: number | null,
+) {
+  if (!status || reservedEpoch === null) return false;
+
+  // Each intervening epoch must be accounted for by an OpenBot workspace pause.
+  const workspacePauseEpochs = new Set(
+    status.executionCutoffs
+      ?.filter(
+        (event) =>
+          event.reason === "workspace_paused" &&
+          event.epoch > reservedEpoch &&
+          event.epoch <= status.epoch,
+      )
+      .map((event) => event.epoch),
+  );
+  return workspacePauseEpochs.size === status.epoch - reservedEpoch;
 }
 
 export function createTestCreditLedger(
@@ -764,8 +784,10 @@ export function createTestCreditLedger(
               existing.state === "reserved" &&
               sameQuote &&
               (existing.externalAccountEpoch === null ||
-                (access.kind === "active" &&
-                  existing.externalAccountEpoch === access.epoch))
+                externalReservationStillAuthorized(
+                  status,
+                  existing.externalAccountEpoch,
+                ))
                 ? existing.permit
                 : undefined,
           } as const;
@@ -886,7 +908,10 @@ export function createTestCreditLedger(
             authorization.revokedAt !== null ||
             authorization.expiresAt <= dispatchedAt ||
             access.kind !== "active" ||
-            access.epoch !== row.externalAccountEpoch
+            !externalReservationStillAuthorized(
+              status,
+              row.externalAccountEpoch,
+            )
           )
             return denied("not_authorized");
         }

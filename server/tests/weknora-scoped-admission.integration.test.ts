@@ -13,6 +13,7 @@ import {
   enterpriseSettings,
   personalSaasAccounts,
   personalWorkspaceSuspensions,
+  personalWorkspaces,
   testCreditAccounts,
   testCreditBatches,
   testCreditEnrollments,
@@ -20,6 +21,8 @@ import {
   testCreditExternalAuthorizations,
   testCreditOperations,
 } from "../src/db/schema";
+import { createAccountAccess } from "../src/personal-saas/account-access";
+import { suspensionRoutes } from "../src/personal-saas/workspace-suspension";
 import { fixtureTraceReport } from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
@@ -87,6 +90,7 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
   const { catalog, release } = publish(verified, ["pilot"], "pilot", "fixture");
 
   const batchId = crypto.randomUUID();
+  const workspaceId = crypto.randomUUID();
   try {
     await database
       .insert(enterpriseSettings)
@@ -113,14 +117,6 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
       maxMicrocredits: 6n,
     });
 
-    await database.insert(personalWorkspaceSuspensions).values({
-      workspaceId: crypto.randomUUID(),
-      accountId: account.id,
-      action: "pause",
-      operator: "fixture",
-      reason: "fixture",
-      effectiveAt: new Date(now),
-    });
     const restarted = createTestCreditLedger(database, () => new Date(now));
     const first = await restarted.reserve(identity, reserve("first"));
     const second = await restarted.reserve(identity, reserve("second"));
@@ -132,6 +128,30 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
         scope: { ...grant, resourceId: "tenant-1/document-2" },
       }),
     ).resolves.toEqual({ state: "denied", reason: "not_authorized" });
+    await database
+      .insert(personalWorkspaces)
+      .values({ id: workspaceId, ownerId: account.id });
+    const operator = { id: "fixture", token: crypto.randomUUID() };
+    const suspension = await suspensionRoutes(
+      database,
+      operator,
+      () => now,
+    ).request(`/api/operator/workspaces/${workspaceId}/suspension`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${operator.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ action: "pause", reason: "fixture" }),
+    });
+    expect(suspension.status).toBe(201);
+    await expect(
+      restarted.reserve(identity, reserve("first")),
+    ).resolves.toMatchObject({
+      state: "existing",
+      permit: first.permit,
+    });
+
     const competing = await Promise.all([
       restarted.reserve(identity, reserve("third")),
       restarted.reserve(identity, reserve("fourth")),
@@ -173,18 +193,14 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
         scope: grant,
       }),
     ).resolves.toEqual({ state: "denied", reason: "not_authorized" });
-    await database
-      .update(personalSaasAccounts)
-      .set({
-        status: {
-          source: "disabled",
-          observedAt: now,
-          confirmedAt: now - 60_000,
-          epoch: 1,
-          disablements: [{ id: "casdoor-disablement", effectiveAt: now }],
-        },
-      })
-      .where(eq(personalSaasAccounts.id, account.id));
+    const disablements = [{ id: "casdoor-disablement", effectiveAt: now }];
+    let active = false;
+    const casdoorAccess = createAccountAccess(
+      database,
+      async () => ({ ...identity, observedAt: now, active, disablements }),
+      () => now,
+    );
+    expect(await casdoorAccess.check(identity)).toBe(false);
     await expect(
       restarted.reserve(identity, reserve("disabled")),
     ).resolves.toEqual({
@@ -201,20 +217,8 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
       chargedMicrocredits: "1",
     });
     now += 1_000;
-    await database
-      .update(personalSaasAccounts)
-      .set({
-        status: {
-          source: "active",
-          observedAt: now,
-          confirmedAt: now,
-          epoch: 1,
-          disablements: [
-            { id: "casdoor-disablement", effectiveAt: now - 1_000 },
-          ],
-        },
-      })
-      .where(eq(personalSaasAccounts.id, account.id));
+    active = true;
+    expect(await casdoorAccess.check(identity)).toBe(true);
     const secondDispatch = {
       operationId: "second",
       permit: second.permit,
@@ -256,18 +260,7 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
     if (lateDispatch.state !== "dispatch")
       throw new Error("Expected late-evidence fixture dispatch");
     now += 24 * 3_600_000;
-    await database
-      .update(personalSaasAccounts)
-      .set({
-        status: {
-          source: "active",
-          observedAt: now,
-          confirmedAt: now,
-          epoch: 2,
-          disablements: [],
-        },
-      })
-      .where(eq(personalSaasAccounts.id, account.id));
+    expect(await casdoorAccess.check(identity)).toBe(true);
     expect((await longReserve("replacement")).state).toBe("reserved");
     await expect(
       restarted.settle(lateDispatch.accountId, "late", {
@@ -340,6 +333,9 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
       await tx
         .delete(personalWorkspaceSuspensions)
         .where(eq(personalWorkspaceSuspensions.accountId, account.id));
+      await tx
+        .delete(personalWorkspaces)
+        .where(eq(personalWorkspaces.id, workspaceId));
       await tx
         .delete(personalSaasAccounts)
         .where(eq(personalSaasAccounts.id, account.id));
