@@ -12543,15 +12543,15 @@
       "checkConstraints": {
         "test_credit_budget_credit_type": {
           "name": "test_credit_budget_credit_type",
-          "value": "\"test_credit_budgets\".\"credit_type\" = 'test'"
+          "value": "\"credit_type\" = 'test'"
         },
         "test_credit_budget_state": {
           "name": "test_credit_budget_state",
-          "value": "\"test_credit_budgets\".\"state\" IN ('active', 'paused', 'completed')"
+          "value": "\"state\" IN ('active', 'paused', 'completed')"
         },
         "test_credit_budget_limit_positive": {
           "name": "test_credit_budget_limit_positive",
-          "value": "\"test_credit_budgets\".\"limit_microcredits\" > 0"
+          "value": "\"limit_microcredits\" > 0"
         }
       },
       "isRLSEnabled": false

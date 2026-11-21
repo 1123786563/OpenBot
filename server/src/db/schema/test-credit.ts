@@ -83,14 +83,17 @@ export const testCreditBudgets = pgTable(
       columns: [table.accountId],
       foreignColumns: [testCreditAccounts.id],
     }),
-    check("test_credit_budget_credit_type", sql`${table.creditType} = 'test'`),
+    check(
+      "test_credit_budget_credit_type",
+      sql`${sql.identifier(table.creditType.name)} = 'test'`,
+    ),
     check(
       "test_credit_budget_state",
-      sql`${table.state} IN ('active', 'paused', 'completed')`,
+      sql`${sql.identifier(table.state.name)} IN ('active', 'paused', 'completed')`,
     ),
     check(
       "test_credit_budget_limit_positive",
-      sql`${table.limitMicrocredits} > 0`,
+      sql`${sql.identifier(table.limitMicrocredits.name)} > 0`,
     ),
   ],
 );
