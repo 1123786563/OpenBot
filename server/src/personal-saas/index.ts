@@ -1,6 +1,7 @@
 import { inArray } from "drizzle-orm";
 import { z } from "zod";
 import { configureBotLifecycle } from "../agents/lifecycle";
+import { createTestCreditLedger } from "../billing/test-credit";
 import { createDatabase } from "../db/client";
 import { personalWorkspaceClosures } from "../db/schema";
 import { repeatAfterEach } from "../work/loop";
@@ -67,6 +68,15 @@ const trial = z.object({
   OPENBOT_CLOSURE_RESTORE_JOURNAL: z.string().trim().min(1).optional(),
   DATABASE_URL: z.string().min(1),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
+  OPENBOT_TEST_CREDIT_GRANT_BUDGET_MICROCREDITS: z.coerce
+    .bigint()
+    .nonnegative()
+    .optional(),
+  OPENBOT_TEST_CREDIT_GRANT_AMOUNT_MICROCREDITS: z.coerce
+    .bigint()
+    .positive()
+    .optional(),
+  OPENBOT_TEST_CREDIT_GRANT_BATCH_ID: z.uuid().optional(),
 });
 
 const result = trial.safeParse(process.env);
@@ -76,6 +86,16 @@ if (!result.success) {
   );
 }
 const env = result.data;
+const grantConfig = [
+  env.OPENBOT_TEST_CREDIT_GRANT_BUDGET_MICROCREDITS,
+  env.OPENBOT_TEST_CREDIT_GRANT_AMOUNT_MICROCREDITS,
+  env.OPENBOT_TEST_CREDIT_GRANT_BATCH_ID,
+];
+if (
+  grantConfig.some((value) => value !== undefined) &&
+  grantConfig.some((value) => value === undefined)
+)
+  throw new Error("Configure all Test Credit grant settings together");
 const operatorId = env.OPENBOT_SUSPENSION_OPERATOR_ID;
 const operatorToken = env.OPENBOT_SUSPENSION_OPERATOR_TOKEN;
 const suspensionSupport = env.OPENBOT_SUSPENSION_SUPPORT_EMAIL;
@@ -100,6 +120,7 @@ if (Boolean(cleanupUrl) !== Boolean(cleanupToken))
   throw new Error("Configure the closure cleanup URL and token together");
 
 const database = createDatabase(env.DATABASE_URL);
+const testCreditLedger = createTestCreditLedger(database);
 const restoreJournal = env.OPENBOT_CLOSURE_RESTORE_JOURNAL;
 const restoredClosures = restoreJournal
   ? closureRestoreJournal.parse(await Bun.file(restoreJournal).json())
@@ -150,6 +171,21 @@ const app = createPersonalSaasApp(
       clientId: env.CASDOOR_CLIENT_ID,
       clientSecret: env.CASDOOR_CLIENT_SECRET,
     },
+    ...(env.OPENBOT_TEST_CREDIT_GRANT_BUDGET_MICROCREDITS !== undefined &&
+    env.OPENBOT_TEST_CREDIT_GRANT_AMOUNT_MICROCREDITS !== undefined &&
+    env.OPENBOT_TEST_CREDIT_GRANT_BATCH_ID
+      ? {
+          testCredits: {
+            ledger: testCreditLedger,
+            grant: {
+              budgetId: "personal-saas-trial",
+              budget: env.OPENBOT_TEST_CREDIT_GRANT_BUDGET_MICROCREDITS,
+              amount: env.OPENBOT_TEST_CREDIT_GRANT_AMOUNT_MICROCREDITS,
+              batchId: env.OPENBOT_TEST_CREDIT_GRANT_BATCH_ID,
+            },
+          },
+        }
+      : {}),
   },
   database,
 );

@@ -17,6 +17,9 @@ Set these variables in the trial process environment:
 | `DATABASE_URL` | A dedicated OpenBot trial PostgreSQL database with pgvector |
 | `KEY_ENCRYPTION_KEY` | A deployment-specific key generated with `openssl rand -base64 32` |
 | `PORT` | The local trial port, default `3001` |
+| `OPENBOT_TEST_CREDIT_GRANT_BUDGET_MICROCREDITS` | The global bounded Test Credit issuance budget. Configure together with the grant amount and batch UUID. |
+| `OPENBOT_TEST_CREDIT_GRANT_AMOUNT_MICROCREDITS` | The one-time amount issued to each stable Casdoor identity. |
+| `OPENBOT_TEST_CREDIT_GRANT_BATCH_ID` | A stable UUID for the grant batch. Keep it unchanged while the trial is running. |
 
 Apply the server migrations first. From the repository root:
 
@@ -35,6 +38,8 @@ still requires operator review. Keep the existing trial database and use the
 migration command above during rollout.
 
 The landing page sends participants to Casdoor for registration, verification, sign-in and account recovery. OpenBot uses the issuer and stable subject to retain ownership after a verified email change. Returning participants see their existing workspace. An interrupted setup can be retried from the preparation page. First entry creates the workspace and its default Personal Assistant Bot in one transaction. The workspace owns the Bot through `personal_workspace_default_bots`, and `/api/workspace` returns the canonical Bot ID. Bot execution is opt-in for private acceptance. Connections and Computers remain disabled in this trial entry point.
+
+When the three Test Credit settings are present, first workspace preparation creates one issuance record per Casdoor issuer and subject. The issuance locks the configured amount to the stable identity and atomically consumes the global budget. A budget shortage leaves the issuance pending and does not block workspace preparation. The next workspace entry retries the same issuance after the operator restores the budget. The Web workspace shows the grant and balance, and `GET /api/workspace` returns the same `testCredits` object for Web and native clients. Issuances remain attached to the billing account after workspace closure, so reprovisioning cannot create another grant.
 
 Use the existing deployment commands for enterprise or local Personal edition.
 

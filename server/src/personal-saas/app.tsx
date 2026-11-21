@@ -12,6 +12,10 @@ import { z } from "zod";
 import { createApprovalRoutes } from "../approvals/routes";
 import { createApprovalStore } from "../approvals/store";
 import { seal, unseal } from "../auth/signed-value";
+import type {
+  OneTimeTestCreditGrantConfig,
+  TestCreditLedger,
+} from "../billing/test-credit";
 import type { Database } from "../db/client";
 import { createWorkQueue, unattendedWorkLabels } from "../work/queue";
 import { backgroundBotKinds } from "../work/unattended-kinds";
@@ -117,6 +121,15 @@ export type PersonalSaasConfig = {
   quotas?: Partial<WorkspaceQuotaLimits>;
   encryptionKey: string;
   casdoor: CasdoorConfig;
+  testCredits?: {
+    ledger: Pick<TestCreditLedger, "ensureOneTimeGrant" | "balance">;
+    grant: OneTimeTestCreditGrantConfig;
+  };
+};
+
+type AuthorizedSession = {
+  subject: string;
+  grant: AccountGrant;
 };
 
 function statusPage(
@@ -180,6 +193,38 @@ export function createPersonalSaasApp(
     (config.runPersonalBot &&
       trackIntelligenceRuns(database, now, config.runPersonalBot));
   const store = personalSaasStore(database, now);
+  async function testCreditStatus(session: AuthorizedSession) {
+    if (!config.testCredits) return undefined;
+    try {
+      const identity = {
+        issuer: config.casdoor.issuer,
+        subject: session.subject,
+      };
+      const grant = await config.testCredits.ledger.ensureOneTimeGrant(
+        identity,
+        config.testCredits.grant,
+      );
+      const balance = await config.testCredits.ledger.balance(identity);
+      return {
+        ...grant,
+        balance: balance ?? {
+          creditType: "test" as const,
+          grantedMicrocredits: "0",
+          reservedMicrocredits: "0",
+          chargedMicrocredits: "0",
+          availableMicrocredits: "0",
+        },
+        usedUp:
+          grant.state === "issued" &&
+          (balance?.availableMicrocredits ?? "0") === "0",
+      };
+    } catch {
+      console.warn(
+        JSON.stringify({ type: "personal-saas-test-credit-failure" }),
+      );
+      return undefined;
+    }
+  }
   const approvals = createApprovalStore(database, now);
   async function approvalHistory(owner: string) {
     return (await approvals.list(owner)).map((request) => ({
@@ -873,6 +918,7 @@ export function createPersonalSaasApp(
       workspace.id,
       computerStatus,
     );
+    const testCredits = await testCreditStatus(session);
     if (!(await remainingAccess(token, session.grant)))
       return context.redirect("/workspace");
     return context.html(
@@ -990,6 +1036,25 @@ export function createPersonalSaasApp(
                   </List>
                 )}
               </section>
+              {testCredits ? (
+                <section aria-labelledby="test-credits">
+                  <Heading level={2} id="test-credits">
+                    Test Credits
+                  </Heading>
+                  <Text as="p">
+                    {testCredits.state === "issued"
+                      ? `Granted ${testCredits.amountMicrocredits} microcredits. Available ${testCredits.balance.availableMicrocredits}.`
+                      : "Your Test Credits are pending while the trial budget is restored."}
+                  </Text>
+                  {testCredits.usedUp ? (
+                    <Text as="p">Your Test Credits are used up.</Text>
+                  ) : (
+                    ""
+                  )}
+                </section>
+              ) : (
+                ""
+              )}
               {computerStatus ? (
                 <section aria-labelledby="computer">
                   <Heading level={2} id="computer">
@@ -1298,6 +1363,7 @@ export function createPersonalSaasApp(
         return isNative
           ? context.json({ error: "authorization_changed" }, 403)
           : context.redirect("/workspace", 303);
+      await testCreditStatus(session);
       if (isNative) return context.body(null, 204);
       return context.redirect("/workspace", 303);
     } catch {
@@ -1406,12 +1472,14 @@ export function createPersonalSaasApp(
           computerStatus,
         )
       : undefined;
+    const testCredits = await testCreditStatus(session);
     const accessMs = await remainingAccess(token, session.grant);
     if (!accessMs) return context.json({ error: "authorization_changed" }, 403);
     if (workspace) context.header("OpenBot-Access-Ms", String(accessMs));
     return workspace
       ? context.json({
           ...workspace,
+          ...(testCredits ? { testCredits } : {}),
           quotas: quotaUsage,
           ...(native && computer ? { computer: computerStatus ?? null } : {}),
           ...(automationOverview &&

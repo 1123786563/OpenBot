@@ -12,8 +12,10 @@ import {
   testCreditBatches as batches,
   testCreditEnrollments as enrollments,
   enterpriseSettings,
-  testCreditOperations as operations,
   testCreditEvidence as evidence,
+  testCreditIssuanceBudgets as issuanceBudgets,
+  testCreditIssuances as issuances,
+  testCreditOperations as operations,
 } from "../db/schema";
 
 export type VerifiedBillingIdentity = { issuer: string; subject: string };
@@ -100,6 +102,20 @@ function quoteFor(route: ReleasedBifrostRoute, priceVersion: string) {
 }
 
 export type TestCreditQuote = ReturnType<typeof quoteFor>;
+
+export type OneTimeTestCreditGrantConfig = {
+  budgetId: string;
+  batchId: string;
+  amount: bigint;
+  budget: bigint;
+};
+
+export type OneTimeTestCreditGrant = {
+  state: "pending" | "issued";
+  amountMicrocredits: string;
+  budgetId: string;
+  batchId: string;
+};
 
 async function totals(database: Database | Transaction, accountId: string) {
   // PostgreSQL sums bigint values as numeric. Parse its exact decimal output.
@@ -346,6 +362,138 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           .values({ accountId, batchId })
           .onConflictDoNothing();
       });
+    },
+
+    /**
+     * Admit the stable account identity to one bounded grant. The budget row is
+     * locked before the issued amount is changed, so concurrent workspaces can
+     * never consume the same global budget twice.
+     */
+    async ensureOneTimeGrant(
+      identity: VerifiedBillingIdentity,
+      config: OneTimeTestCreditGrantConfig,
+    ): Promise<OneTimeTestCreditGrant> {
+      if (config.amount <= 0n || config.budget < 0n)
+        throw new RangeError("Invalid Test Credit grant configuration");
+      return database.transaction(async (tx) => {
+        await tx
+          .insert(batches)
+          .values({ id: config.batchId, amount: config.amount })
+          .onConflictDoNothing();
+        const [batch] = await tx
+          .select({ amount: batches.amount })
+          .from(batches)
+          .where(eq(batches.id, config.batchId));
+        if (!batch || batch.amount !== config.amount)
+          throw new Error("Test Credit grant batch amount differs");
+
+        await tx.insert(accounts).values(identity).onConflictDoNothing();
+        const accountId = await account(identity, tx);
+        if (!accountId) throw new Error("Billing Account could not be created");
+
+        await tx
+          .insert(issuanceBudgets)
+          .values({
+            id: config.budgetId,
+            total: config.budget,
+          })
+          .onConflictDoNothing();
+        const [budget] = await tx
+          .select()
+          .from(issuanceBudgets)
+          .where(eq(issuanceBudgets.id, config.budgetId))
+          .for("update");
+        if (!budget) throw new Error("Test Credit issuance budget unavailable");
+        await tx
+          .insert(issuances)
+          .values({
+            accountId,
+            budgetId: config.budgetId,
+            batchId: config.batchId,
+            amount: config.amount,
+            state: "pending",
+          })
+          .onConflictDoNothing();
+        const [grant] = await tx
+          .select()
+          .from(issuances)
+          .where(eq(issuances.accountId, accountId))
+          .for("update");
+        if (!grant) throw new Error("Test Credit grant was not saved");
+        if (grant.state === "issued")
+          return {
+            state: "issued",
+            amountMicrocredits: grant.amount.toString(),
+            budgetId: grant.budgetId,
+            batchId: grant.batchId,
+          };
+        if (budget.total - budget.issued < grant.amount)
+          return {
+            state: "pending",
+            amountMicrocredits: grant.amount.toString(),
+            budgetId: grant.budgetId,
+            batchId: grant.batchId,
+          };
+
+        const issuedAt = await currentTime(tx);
+        await tx
+          .update(issuanceBudgets)
+          .set({ issued: budget.issued + grant.amount })
+          .where(eq(issuanceBudgets.id, grant.budgetId));
+        await tx
+          .update(issuances)
+          .set({ state: "issued", issuedAt })
+          .where(eq(issuances.accountId, accountId));
+        await tx
+          .insert(enrollments)
+          .values({
+            accountId,
+            batchId: grant.batchId,
+            claimedAt: issuedAt,
+          })
+          .onConflictDoNothing();
+        return {
+          state: "issued",
+          amountMicrocredits: grant.amount.toString(),
+          budgetId: grant.budgetId,
+          batchId: grant.batchId,
+        };
+      });
+    },
+
+    async grantStatus(
+      identity: VerifiedBillingIdentity,
+      budgetId: string,
+    ): Promise<OneTimeTestCreditGrant | undefined> {
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return undefined;
+        const [grant] = await tx
+          .select()
+          .from(issuances)
+          .where(
+            and(
+              eq(issuances.accountId, accountId),
+              eq(issuances.budgetId, budgetId),
+            ),
+          );
+        return grant
+          ? {
+              state: grant.state,
+              amountMicrocredits: grant.amount.toString(),
+              budgetId: grant.budgetId,
+              batchId: grant.batchId,
+            }
+          : undefined;
+      });
+    },
+
+    async restoreOneTimeGrantBudget(budgetId: string, total: bigint) {
+      if (total < 0n) throw new RangeError("Invalid Test Credit budget");
+      await database
+        .update(issuanceBudgets)
+        .set({ total })
+        .where(eq(issuanceBudgets.id, budgetId));
     },
 
     async claim(identity: VerifiedBillingIdentity, batchId: string) {

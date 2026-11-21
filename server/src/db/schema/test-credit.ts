@@ -4,8 +4,8 @@ import {
   check,
   foreignKey,
   index,
-  numeric,
   jsonb,
+  numeric,
   pgTable,
   primaryKey,
   text,
@@ -32,6 +32,47 @@ export const testCreditBatches = pgTable(
     amount: bigint({ mode: "bigint" }).notNull(),
   },
   (table) => [check("test_credit_batch_positive", sql`${table.amount} > 0`)],
+);
+
+export const testCreditIssuanceBudgets = pgTable(
+  "test_credit_issuance_budgets",
+  {
+    id: text().primaryKey(),
+    total: bigint({ mode: "bigint" }).notNull(),
+    issued: bigint({ mode: "bigint" }).notNull().default(0n),
+  },
+  (table) => [
+    check("test_credit_issuance_budget_total", sql`${table.total} >= 0`),
+    check(
+      "test_credit_issuance_budget_issued",
+      sql`${table.issued} >= 0 AND ${table.issued} <= ${table.total}`,
+    ),
+  ],
+);
+
+export const testCreditIssuances = pgTable(
+  "test_credit_issuances",
+  {
+    accountId: uuid("account_id")
+      .primaryKey()
+      .references(() => testCreditAccounts.id),
+    budgetId: text("budget_id")
+      .notNull()
+      .references(() => testCreditIssuanceBudgets.id),
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => testCreditBatches.id),
+    amount: bigint({ mode: "bigint" }).notNull(),
+    state: text({ enum: ["pending", "issued"] as const }).notNull(),
+    issuedAt: timestamp("issued_at", { withTimezone: true }),
+  },
+  (table) => [
+    check("test_credit_issuance_amount_positive", sql`${table.amount} > 0`),
+    check(
+      "test_credit_issuance_state",
+      sql`(${table.state} = 'pending' AND ${table.issuedAt} IS NULL) OR (${table.state} = 'issued' AND ${table.issuedAt} IS NOT NULL)`,
+    ),
+  ],
 );
 
 export const testCreditEnrollments = pgTable(

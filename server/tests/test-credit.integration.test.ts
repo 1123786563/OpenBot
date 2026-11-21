@@ -7,8 +7,8 @@ import {
   publish,
   verify,
 } from "../src/admin/bifrost-catalog";
-import { createBifrostCreditExecutor } from "../src/billing/test-credit-bifrost";
 import { createTestCreditLedger } from "../src/billing/test-credit";
+import { createBifrostCreditExecutor } from "../src/billing/test-credit-bifrost";
 import { createTestCreditRoutes } from "../src/billing/test-credit-routes";
 import { createDatabase } from "../src/db/client";
 import {
@@ -17,6 +17,8 @@ import {
   testCreditBatches,
   testCreditEnrollments,
   testCreditEvidence,
+  testCreditIssuanceBudgets,
+  testCreditIssuances,
   testCreditOperations,
 } from "../src/db/schema";
 import { createManagedModel, type ModelOperation } from "../src/managed-model";
@@ -832,5 +834,75 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     } finally {
       await database.$client.close();
     }
+  }
+});
+
+test("one-time workspace grants serialize the global budget and retry pending identities", async () => {
+  const database = createDatabase(testDatabaseUrl(), TEST_POOL);
+  const ledger = createTestCreditLedger(database);
+  const issuer = `https://casdoor.example.test/${crypto.randomUUID()}`;
+  const first = { issuer, subject: crypto.randomUUID() };
+  const second = { issuer, subject: crypto.randomUUID() };
+  const config = {
+    budgetId: `personal-${crypto.randomUUID()}`,
+    batchId: crypto.randomUUID(),
+    amount: 2n,
+    budget: 3n,
+  } as const;
+  try {
+    const outcomes = await Promise.all([
+      ledger.ensureOneTimeGrant(first, config),
+      ledger.ensureOneTimeGrant(second, config),
+    ]);
+    expect(outcomes.map((outcome) => outcome.state).sort()).toEqual([
+      "issued",
+      "pending",
+    ]);
+    const issuedIdentity = outcomes[0]?.state === "issued" ? first : second;
+    const pendingIdentity = issuedIdentity === first ? second : first;
+    expect(
+      await ledger.ensureOneTimeGrant(issuedIdentity, config),
+    ).toMatchObject({
+      state: "issued",
+    });
+    expect((await ledger.balance(issuedIdentity))?.grantedMicrocredits).toBe(
+      "2",
+    );
+    expect((await ledger.balance(pendingIdentity))?.grantedMicrocredits).toBe(
+      "0",
+    );
+
+    await ledger.restoreOneTimeGrantBudget(config.budgetId, 4n);
+    expect(
+      await ledger.ensureOneTimeGrant(pendingIdentity, config),
+    ).toMatchObject({
+      state: "issued",
+    });
+    expect((await ledger.balance(pendingIdentity))?.grantedMicrocredits).toBe(
+      "2",
+    );
+  } finally {
+    await database.transaction(async (tx) => {
+      const accountIds = tx
+        .select({ id: testCreditAccounts.id })
+        .from(testCreditAccounts)
+        .where(eq(testCreditAccounts.issuer, issuer));
+      await tx
+        .delete(testCreditIssuances)
+        .where(inArray(testCreditIssuances.accountId, accountIds));
+      await tx
+        .delete(testCreditEnrollments)
+        .where(inArray(testCreditEnrollments.accountId, accountIds));
+      await tx
+        .delete(testCreditAccounts)
+        .where(eq(testCreditAccounts.issuer, issuer));
+      await tx
+        .delete(testCreditIssuanceBudgets)
+        .where(eq(testCreditIssuanceBudgets.id, config.budgetId));
+      await tx
+        .delete(testCreditBatches)
+        .where(eq(testCreditBatches.id, config.batchId));
+    });
+    await database.$client.close();
   }
 });
