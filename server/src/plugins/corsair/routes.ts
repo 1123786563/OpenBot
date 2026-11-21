@@ -1,3 +1,4 @@
+import { corsairWebReturn } from "./oauth-return";
 import { PluginRefusedError } from "../plugin-store/model";
 import type { BotWrite } from "./bot-write";
 import { finishExplicitWrite } from "./write-completion";
@@ -128,6 +129,8 @@ export function createGithubPilotRoutes({
     await next();
   });
   routes.onError((error, context) => {
+    const landing = corsairWebReturn(context, "github", "failed");
+    if (landing) return landing;
     if (error instanceof PilotRefusal || error instanceof RevocationRefusal)
       return context.json({ error: error.message }, error.status);
     if (error instanceof ApprovalNotFoundError)
@@ -461,7 +464,10 @@ export function createGithubPilotRoutes({
           : {}),
       },
     });
-    return c.json({ connectionId: connection.id, identity });
+    return (
+      corsairWebReturn(c, "github", "connected") ??
+      c.json({ connectionId: connection.id, identity })
+    );
   });
 
   routes.get("/connections", async (c) => {

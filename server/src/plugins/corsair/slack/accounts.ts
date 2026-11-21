@@ -153,6 +153,7 @@ export function slackAccounts({
     }),
     async list(personId: string) {
       return {
+        teamId: provider.teamId,
         connections: await database
           .select(publicIdentity)
           .from(connections)
