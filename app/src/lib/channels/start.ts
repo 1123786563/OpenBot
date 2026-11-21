@@ -258,11 +258,11 @@ export function resumeConversationStart(
   };
 
   // Web Locks serialize the stored handoff across tabs even while a routing request is in flight.
-  const run = (
+  const run = (async () =>
     navigator.locks
       ? navigator.locks.request(`openbot:start:${key}`, work)
       : work()
-  ).finally(() => startsInProgress.delete(key));
+  )().finally(() => startsInProgress.delete(key));
   startsInProgress.set(key, run);
   return run;
 }

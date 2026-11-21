@@ -78,6 +78,7 @@ export function renderHome(queryClient: QueryClient, entry = "/") {
   const startRouteOptions = {
     path: "/start/$startId",
     getParentRoute: () => rootRoute,
+    component: StartRoute.options.component,
   };
   const routeTree = rootRoute.addChildren([
     createRoute({
