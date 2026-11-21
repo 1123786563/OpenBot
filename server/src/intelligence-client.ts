@@ -193,7 +193,7 @@ export function unavailableIntelligenceClient<T extends CopilotKitIntelligence>(
         return value.bind(target);
       return async () => {
         throw new PlatformRequestError(
-          "The backend is not configured.",
+          "Intelligence is not configured.",
           503,
           false,
         );

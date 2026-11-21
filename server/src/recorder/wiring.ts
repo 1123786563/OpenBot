@@ -213,7 +213,7 @@ export function createRecorderExtension(deps: {
             ids,
           })
         : Promise.reject(
-            new Error("Recording summaries require a configured backend."),
+            new Error("Recording summaries require Intelligence."),
           ),
   });
 
