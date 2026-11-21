@@ -9,7 +9,7 @@ import {
   withRunContext,
 } from "@openbot/toolkit/run-context";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, exists, inArray, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { headlessTurnRefusal } from "../admin/controls";
 import type { AgentActor } from "../agents/profile-types";
@@ -20,6 +20,7 @@ import type { GroupConversations } from "../channels/group";
 import type { ChannelStore } from "../channels/routes";
 import type { Database } from "../db/client";
 import {
+  approvalRequests,
   directChatRuns,
   intelligenceChannelMappings,
   responsibilityRuns,
@@ -130,11 +131,27 @@ export function createApprovalResumeTick(deps: {
           if (threadId)
             await database.transaction(async (tx) => {
               const key = { threadId, runId };
-              if (beforeExecution && background)
+              if (background) {
+                // A consumed approval with a saved success resolves dispatch even on redelivery.
+                // An execution error can leave the effect uncertain.
+                const savedSuccess = tx
+                  .select({ id: approvalRequests.id })
+                  .from(approvalRequests)
+                  .where(
+                    and(
+                      eq(approvalRequests.id, request.id),
+                      eq(approvalRequests.ownerUserId, input.ownerUserId),
+                      eq(approvalRequests.runId, runId),
+                      sql`${approvalRequests.action}->>'threadId' = ${threadId}`,
+                      isNotNull(approvalRequests.consumedAt),
+                      sql`${approvalRequests.result}->>'content' is not null`,
+                      sql`${approvalRequests.result}->>'error' is null`,
+                    ),
+                  );
                 // Only the worker that consumed this checkpoint can prove it skipped execution.
                 await tx
                   .update(directChatRuns)
-                  .set({ externalOutcome: null })
+                  .set({ externalOutcome: beforeExecution ? null : "executed" })
                   .where(
                     and(
                       matchingRun(key),
@@ -143,13 +160,16 @@ export function createApprovalResumeTick(deps: {
                         "dispatching",
                         "unknown",
                       ]),
+                      beforeExecution ? undefined : exists(savedSuccess),
                     ),
                   );
+              }
               await stopDirectChatRun(
                 tx,
                 key,
                 CONTEXT_REVOKED,
                 Boolean(deps.traceRuns),
+                background ? request.id : undefined,
               );
             });
           if (!background)

@@ -320,11 +320,15 @@ test.each([
   "group",
   "pre-execution race",
   "lost dispatch",
+  "saved result",
+  "recovered result",
 ] as const)(
   "approval worker withdrawal persisted state on %s",
   async (kind) => {
     const lostDispatch = kind === "lost dispatch";
     const lateWithdrawal = kind === "pre-execution race";
+    const savedResult = kind === "saved result" || kind === "recovered result";
+    const resultContent = "Fixture tool called";
     const actor = await person();
     const bot = await profiles.create(actor, {
       name: "Worker boundary fixture",
@@ -476,11 +480,17 @@ test.each([
       });
       expect(reply.status).toBe(204);
     };
-    if (lostDispatch)
+    if (lostDispatch || kind === "recovered result")
       expect(
         await approvalStore.consume(actor.id, request.id, action.actionDigest),
       ).toBe(true);
-    if (!lateWithdrawal) await withdraw();
+    if (kind === "recovered result")
+      expect(
+        await approvalStore.saveResult(actor.id, request.id, {
+          content: resultContent,
+        }),
+      ).toBe(true);
+    if (!lateWithdrawal && kind !== "saved result") await withdraw();
     let checks = 0;
     let tools = 0;
     let runs = 0;
@@ -490,16 +500,18 @@ test.each([
         await (await app.backgroundApproval?.(action, request.id))?.check(),
       ).toBeFalsy();
     }
+    const approvalQueue = createWorkQueue(database);
     const worker = () =>
       createApprovalResumeTick({
         backgroundApproval: app.backgroundApproval,
-        approvalQueue: createWorkQueue(database),
+        approvalQueue,
         approvalOwner: crypto.randomUUID(),
         approvalService,
         executeApprovedAction: async (candidate) => {
           await approvalService.gate(candidate);
           tools++;
-          return "Fixture tool called";
+          if (kind === "saved result") await withdraw();
+          return resultContent;
         },
         contextCurrent: async (candidate) => {
           const current = await ingestion.memoryVersionsCurrent(
@@ -524,15 +536,26 @@ test.each([
         notify: async () => undefined,
       });
     await worker()();
+    if (savedResult)
+      await approvalQueue.offer({
+        kind: "approval.resume",
+        key: `redelivery:${request.id}`,
+        payload: { ownerUserId: actor.id, approvalId: request.id },
+      });
     await worker()();
-    expect({ tools, runs }).toEqual({ tools: 0, runs: 0 });
+    expect({ tools, runs }).toEqual({
+      tools: kind === "saved result" ? 1 : 0,
+      runs: 0,
+    });
     expect(await approvalStore.get(actor.id, request.id)).toMatchObject({
       status: "completed",
-      result: {
-        error: lostDispatch
-          ? OUTCOME_UNKNOWN
-          : "The run paused because Memory or Learned skill access changed.",
-      },
+      result: savedResult
+        ? { content: resultContent }
+        : {
+            error: lostDispatch
+              ? OUTCOME_UNKNOWN
+              : "The run paused because Memory or Learned skill access changed.",
+          },
     });
     if (kind === "group") {
       const transcript = await (
@@ -561,6 +584,20 @@ test.each([
         ),
       ).toBe("run");
       return;
+    }
+    if (savedResult) {
+      const events = await database
+        .select({ event: directChatRunEvents.event })
+        .from(directChatRunEvents)
+        .where(
+          and(
+            eq(directChatRunEvents.threadId, threadId),
+            eq(directChatRunEvents.runId, runId),
+          ),
+        );
+      expect(
+        events.filter(({ event }) => event.type === EventType.RUN_ERROR),
+      ).toHaveLength(1);
     }
     const transcript = await (
       await app.request(
@@ -592,25 +629,31 @@ test.each([
         partialReply: text,
       }),
     ]);
-    expect(sharedTranscript.backgroundRuns[0].externalOutcome).toBe(
-      lostDispatch ? "unknown" : null,
+    const admission = await group.start(
+      {
+        ownerUserId: actor.id,
+        channelId: channel.id,
+        messageId: crypto.randomUUID(),
+        agentIds: [conversationBotId],
+        text: "Next fixture turn.",
+      },
+      conversationBotId,
+      threadId,
     );
-    expect(transcript.runs[0].externalOutcome).toBe(
-      lostDispatch ? "unknown" : undefined,
-    );
-    expect(
-      await group.start(
-        {
-          ownerUserId: actor.id,
-          channelId: channel.id,
-          messageId: crypto.randomUUID(),
-          agentIds: [conversationBotId],
-          text: "Next fixture turn.",
-        },
-        conversationBotId,
-        threadId,
-      ),
-    ).toBe(lostDispatch ? "busy" : "run");
+    const externalOutcome = lostDispatch
+      ? "unknown"
+      : savedResult
+        ? "executed"
+        : null;
+    expect({
+      shared: sharedTranscript.backgroundRuns[0].externalOutcome,
+      thread: transcript.runs[0].externalOutcome,
+      admission,
+    }).toEqual({
+      shared: externalOutcome,
+      thread: externalOutcome ?? undefined,
+      admission: lostDispatch ? "busy" : "run",
+    });
   },
   120_000,
 );

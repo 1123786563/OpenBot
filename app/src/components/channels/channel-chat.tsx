@@ -1817,14 +1817,14 @@ export function ChannelChat({
                         ? "The previous run’s external outcome is unknown. Check the outcome before sending again."
                         : activeRun?.waitingForApproval
                           ? "The run is waiting for approval."
-                          : latestRun?.externalOutcome === "not_dispatched"
-                            ? "The action was not dispatched. Send your request again to retry."
-                            : latestRun?.externalOutcome === "executed"
-                              ? "The outcome was verified and added to the conversation."
-                              : latestRun?.stopReason === "stopped"
-                                ? "The run was stopped."
-                                : latestRun?.stopReason === "context_revoked"
-                                  ? "The run paused because Memory or Learned skill access changed."
+                          : latestRun?.stopReason === "context_revoked"
+                            ? "The run paused because Memory or Learned skill access changed."
+                            : latestRun?.externalOutcome === "not_dispatched"
+                              ? "The action was not dispatched. Send your request again to retry."
+                              : latestRun?.externalOutcome === "executed"
+                                ? "The outcome was verified and added to the conversation."
+                                : latestRun?.stopReason === "stopped"
+                                  ? "The run was stopped."
                                   : "The run ended when access was revoked."}
                     </p>
                     {unresolvedRun && channel.active && (
