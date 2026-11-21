@@ -944,7 +944,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           inputTokens: verified.inputTokens,
           outputTokens: verified.outputTokens,
           amountMicrocredits: charged,
-          occurredAt: settled.dispatchedAt ?? new Date(),
+          occurredAt: verified.recordedAt,
           state: "pending",
         })
         .onConflictDoNothing();
