@@ -595,25 +595,27 @@ export function createDirectChatRoutes(deps: {
       await expireDirectChatRuns(tx, threadId, traceRuns);
       const runs = await history(tx, threadId);
       const active = runs.find((run) => run.status === "running");
-      const waitingForApproval = active
-        ? (
-            await pendingRunApprovals(
-              tx,
-              { threadId, runId: active.id },
-              actor.id,
-            )
-          ).length > 0
-        : false;
-      return { runs, active, waitingForApproval };
+      const pendingApprovals = active
+        ? await pendingRunApprovals(
+            tx,
+            { threadId, runId: active.id },
+            actor.id,
+          )
+        : [];
+      return { runs, active, pendingApprovals };
     });
     if (!result) return context.json(absent, 404);
-    const { runs, active, waitingForApproval } = result;
+    const { runs, active, pendingApprovals } = result;
     return context.json({
       messages: messagesFor(runs),
       runs: runs.map((run) => ({
         id: run.id,
         status: run.status,
-        ...(run === active && waitingForApproval && { waitingForApproval }),
+        ...(run === active &&
+          pendingApprovals.length > 0 && {
+            waitingForApproval: true,
+            pendingApprovals,
+          }),
         userMessageId: run.userMessageId,
         assistantMessageId: run.assistantMessageId,
         ...(run.externalOutcome && { externalOutcome: run.externalOutcome }),
@@ -886,7 +888,7 @@ export function createDirectChatRoutes(deps: {
           )
             continue;
         }
-        if (deps.reflect && !signal.aborted && Date.now() >= nextHeartbeat) {
+        if (!signal.aborted && Date.now() >= nextHeartbeat) {
           heartbeat();
           nextHeartbeat = Date.now() + 5_000;
         }
