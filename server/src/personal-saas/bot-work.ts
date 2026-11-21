@@ -33,6 +33,9 @@ export const queuedBotWorkInput = botWorkInput.extend({
   testCredit: botRunCreditQuote.optional(),
 });
 
+// Give local timers and abort propagation time before the grant expires.
+const localAbortLeadMs = 250;
+
 const workspaceFileTools = [
   "computer_list_files",
   "computer_read_file",
@@ -133,8 +136,9 @@ export function personalBotWork(
           localCutoffAt = expiresAt;
           controller.abort();
         }
-        if (now() >= expiresAt) expire();
-        else deadline = setTimeout(expire, expiresAt - now());
+        const remainingMs = expiresAt - localAbortLeadMs - now();
+        if (remainingMs <= 0) expire();
+        else deadline = setTimeout(expire, remainingMs);
       }
 
       async function recheck() {

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, jest, test } from "bun:test";
 import { createHash, randomBytes } from "node:crypto";
 import { EventType, HttpAgent, type RunAgentInput } from "@ag-ui/client";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
@@ -3673,7 +3673,7 @@ for (const reason of [
   }, 30_000);
 }
 
-test("a running Bot aborts on its local grant deadline while its database check is blocked", async () => {
+test("a running Bot aborts before its local grant deadline while its database check is blocked", async () => {
   const account = {
     sub: crypto.randomUUID(),
     email: "worker-offline@example.com",
@@ -3694,13 +3694,19 @@ test("a running Bot aborts on its local grant deadline while its database check 
   const cutoff = stored.status.confirmedAt + 60_000;
 
   const running = Promise.withResolvers<void>();
-  const aborted = Promise.withResolvers<void>();
+  let aborted = false;
   const runApp = newApp(database, async ({ signal }) => {
-    running.resolve();
-    await new Promise<void>((resolve) =>
-      signal?.addEventListener("abort", () => resolve(), { once: true }),
-    );
-    aborted.resolve();
+    await new Promise<void>((resolve) => {
+      signal?.addEventListener(
+        "abort",
+        () => {
+          aborted = true;
+          resolve();
+        },
+        { once: true },
+      );
+      running.resolve();
+    });
     signal?.throwIfAborted();
     return { replyText: "" };
   });
@@ -3709,6 +3715,7 @@ test("a running Bot aborts on its local grant deadline while its database check 
   const locked = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
   let blocking: Promise<unknown> | undefined;
+  let sweep: Promise<boolean> | undefined;
   try {
     const key = crypto.randomUUID();
     expect(
@@ -3723,7 +3730,8 @@ test("a running Bot aborts on its local grant deadline while its database check 
         },
       }),
     ).toBe("queued");
-    const sweep = runApp.sweepBotWork();
+    jest.useFakeTimers();
+    sweep = runApp.sweepBotWork();
     await Promise.race([
       running.promise,
       sweep.then(() => {
@@ -3740,12 +3748,12 @@ test("a running Bot aborts on its local grant deadline while its database check 
       await release.promise;
     });
     await locked.promise;
-    expect(
-      await Promise.race([
-        aborted.promise.then(() => "aborted"),
-        Bun.sleep(4_000).then(() => "still running"),
-      ]),
-    ).toBe("aborted");
+    clockTime = cutoff - 500;
+    jest.advanceTimersByTime(2_000);
+    expect(aborted).toBe(false);
+    clockTime = cutoff - 100;
+    jest.advanceTimersByTime(400);
+    expect(aborted).toBe(true);
     release.resolve();
     await blocking;
     expect(await sweep).toBe(true);
@@ -3758,6 +3766,10 @@ test("a running Bot aborts on its local grant deadline while its database check 
   } finally {
     release.resolve();
     await blocking;
+    clockTime = cutoff;
+    jest.advanceTimersByTime(100);
+    jest.useRealTimers();
+    await sweep;
     clockTime = undefined;
   }
 }, 15_000);
