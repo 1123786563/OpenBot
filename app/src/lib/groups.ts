@@ -16,7 +16,7 @@ export type GroupMessage = {
   text: string;
   status: "queued" | "running" | "waiting" | "completed" | "failed";
   createdAt: string;
-  /** Why a waiting Bot is waiting, when it is. */
+  /** Why a Bot is waiting or paused. */
   reason?: string;
   /** For an answer relayed from another Bot through `message_bot`: which Bot answered. */
   answeredBy?: string;
@@ -37,6 +37,8 @@ export type GroupBackgroundRun = {
   threadId: string;
   status: "running" | "completed" | "failed";
   waitingForApproval: boolean;
+  reason?: string;
+  partialReply: string | null;
   externalOutcome:
     | "dispatching"
     | "unknown"

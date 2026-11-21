@@ -1,5 +1,6 @@
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import {
+  CONTEXT_REVOKED,
   CONTEXT_REVOKED_MESSAGE,
   RunContextRevokedError,
   createRunContext,
@@ -8,16 +9,18 @@ import {
   withRunContext,
 } from "@openbot/toolkit/run-context";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { headlessTurnRefusal } from "../admin/controls";
 import type { AgentActor } from "../agents/profile-types";
 import { PERSON_INITIATOR } from "../audit";
+import { matchingRun, stopDirectChatRun } from "../channels/direct-chat-replay";
 import type { createDirectChatRoutes } from "../channels/direct-chat";
 import type { GroupConversations } from "../channels/group";
 import type { ChannelStore } from "../channels/routes";
 import type { Database } from "../db/client";
 import {
+  directChatRuns,
   intelligenceChannelMappings,
   responsibilityRuns,
   routineRuns,
@@ -41,9 +44,13 @@ export function createApprovalResumeTick(deps: {
   approvalService: ApprovalService;
   executeApprovedAction: ApprovalResumeDependencies["execute"];
   contextCurrent?: (action: ApprovalAction) => Promise<boolean>;
+  traceRuns?: boolean;
   database: Database;
   responsibilityStore: ResponsibilityStore;
-  groupConversations: Pick<GroupConversations, "continueWaiting">;
+  groupConversations: Pick<
+    GroupConversations,
+    "continueWaiting" | "pauseWaiting"
+  >;
   approvalContinuationRunner: TurnRunner;
   backgroundApproval?: ReturnType<
     typeof createDirectChatRoutes
@@ -88,10 +95,8 @@ export function createApprovalResumeTick(deps: {
   const withSavedContext = <T>(action: ApprovalAction, run: () => Promise<T>) =>
     withRunContext(createRunContext(), async () => {
       const versions = action.continuation?.sourceVersions;
-      if (versions?.length) {
+      if (versions?.length)
         trackRunContext(() => contextCurrent(action), versions);
-        await verifyRunContext();
-      }
       return run();
     });
   return async () => {
@@ -120,6 +125,39 @@ export function createApprovalResumeTick(deps: {
           request.action,
           request.id,
         );
+        const pause = async (beforeExecution = false) => {
+          const { threadId, runId } = request.action;
+          if (threadId)
+            await database.transaction(async (tx) => {
+              const key = { threadId, runId };
+              if (beforeExecution && background)
+                // Only the worker that consumed this checkpoint can prove it skipped execution.
+                await tx
+                  .update(directChatRuns)
+                  .set({ externalOutcome: null })
+                  .where(
+                    and(
+                      matchingRun(key),
+                      eq(directChatRuns.waitingApprovalId, request.id),
+                      inArray(directChatRuns.externalOutcome, [
+                        "dispatching",
+                        "unknown",
+                      ]),
+                    ),
+                  );
+              await stopDirectChatRun(
+                tx,
+                key,
+                CONTEXT_REVOKED,
+                Boolean(deps.traceRuns),
+              );
+            });
+          if (!background)
+            await groupConversations.pauseWaiting(
+              input.ownerUserId,
+              request.id,
+            );
+        };
         const resumeDependencies: ApprovalResumeDependencies = {
           // Asked before the action runs: with Use Bots off, or the Bot's model off the allowlist,
           // nothing is carried out and the refusal is final rather than retried.
@@ -135,18 +173,32 @@ export function createApprovalResumeTick(deps: {
             approvalService.validateReentry(action, () =>
               executeApprovedAction(action),
             ),
+          beforeConsume: (action) => withSavedContext(action, verifyRunContext),
           execute: (action) =>
-            withSavedContext(action, () => executeApprovedAction(action)),
+            withSavedContext(action, async () => {
+              try {
+                await verifyRunContext();
+              } catch (error) {
+                if (error instanceof RunContextRevokedError) await pause(true);
+                throw error;
+              }
+              return executeApprovedAction(action);
+            }),
           continue: async ({
             continuation: snapshot,
             result,
             messageId,
             approvalId,
           }) => {
+            if (
+              result.error === CONTEXT_REVOKED_MESSAGE ||
+              !(await contextCurrent(request.action))
+            ) {
+              await pause();
+              return;
+            }
             // The original Routine or handoff worker picks up the saved result and resumes its Run.
             if (background) return;
-            if (result.error === CONTEXT_REVOKED_MESSAGE) return;
-            if (!(await contextCurrent(request.action))) return;
             const [waitingRun] = await database
               .select({ id: responsibilityRuns.id })
               .from(responsibilityRuns)
@@ -181,8 +233,9 @@ export function createApprovalResumeTick(deps: {
               outcome = await groupConversations.continueWaiting(
                 approvalId,
                 () =>
-                  withSavedContext(request.action, () =>
-                    approvalContinuationRunner({
+                  withSavedContext(request.action, async () => {
+                    await verifyRunContext();
+                    return approvalContinuationRunner({
                       ownerUserId: input.ownerUserId,
                       routineId: "approval",
                       agentId: request.action.botId,
@@ -190,11 +243,14 @@ export function createApprovalResumeTick(deps: {
                       instruction: "",
                       initiator: snapshot.initiator ?? PERSON_INITIATOR,
                       continuation: { snapshot, result, messageId },
-                    }),
-                  ),
+                    });
+                  }),
               );
             } catch (error) {
-              if (error instanceof RunContextRevokedError) return;
+              if (error instanceof RunContextRevokedError) {
+                await pause();
+                return;
+              }
               if (!(error instanceof HeadlessToolSuspension)) throw error;
               waitingOn = {
                 message: error.message,

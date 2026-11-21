@@ -22,6 +22,11 @@
 import { createHash } from "node:crypto";
 import type { Message } from "@ag-ui/client";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
+import {
+  CONTEXT_REVOKED,
+  CONTEXT_REVOKED_MESSAGE,
+  RunContextRevokedError,
+} from "@openbot/toolkit/run-context";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { and, asc, desc, eq, isNull, min, or, sql } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
@@ -117,6 +122,8 @@ export type GroupStore = {
       threadId: string;
       status: "running" | "completed" | "failed";
       externalOutcome: (typeof directChatRuns.$inferSelect)["externalOutcome"];
+      stopReason: (typeof directChatRuns.$inferSelect)["stopReason"];
+      partialReply: string | null;
       waitingApprovalId: string | null;
       startedAt: Date;
     }[]
@@ -149,6 +156,7 @@ export type GroupStore = {
   /** The group's Bots in the order they were chosen. Bots with no thread yet are not listed. */
   order(channelId: string): Promise<string[]>;
   /** The waiting row a paused approval belongs to, if it is a group turn's. */
+  pauseWaiting(ownerUserId: string, approvalId: string): Promise<void>;
   waitingFor(approvalId: string): Promise<GroupMessage | null>;
   /** Which group thread a thread id is, for relaying an answer into the shared transcript. */
   threadRow(threadId: string): Promise<{
@@ -206,6 +214,10 @@ export function createGroupStore(
           threadId: groupBotThreads.threadId,
           status: directChatRuns.status,
           externalOutcome: directChatRuns.externalOutcome,
+          stopReason: directChatRuns.stopReason,
+          partialReply: sql<
+            string | null
+          >`case when ${directChatRuns.stopReason} = ${CONTEXT_REVOKED} then ${directChatRuns.partialReply} end`,
           waitingApprovalId: directChatRuns.waitingApprovalId,
           startedAt: directChatRuns.startedAt,
         })
@@ -345,6 +357,18 @@ export function createGroupStore(
           asc(groupBotThreads.agentId),
         );
       return rows.map((row) => row.agentId);
+    },
+    async pauseWaiting(ownerUserId, approvalId) {
+      await database
+        .update(groupMessages)
+        .set({ status: "failed", details: { stopReason: CONTEXT_REVOKED } })
+        .where(
+          and(
+            eq(groupMessages.ownerUserId, ownerUserId),
+            eq(groupMessages.status, "waiting"),
+            sql`${groupMessages.details}->>'approvalId' = ${approvalId}`,
+          ),
+        );
     },
     async waitingFor(approvalId) {
       const [row] = await database
@@ -1192,6 +1216,7 @@ export function createGroupConversations(deps: {
      * An approval that paused a group turn was decided: run the continuation, then write what the Bot
      * said into the transcript row that was waiting. Not a group turn's approval: just runs it.
      */
+    pauseWaiting: deps.store.pauseWaiting,
     async continueWaiting(
       approvalId: string,
       run: () => Promise<{ replyText: string }>,
@@ -1276,6 +1301,7 @@ export function createGroupConversations(deps: {
           );
         return outcome;
       } catch (error) {
+        if (error instanceof RunContextRevokedError) throw error;
         if (error instanceof HeadlessToolSuspension)
           await deps.store.finish(row.id, "", "waiting", {
             ...error.waiting,
@@ -1385,6 +1411,9 @@ export function createGroupConversations(deps: {
         )
         .map(({ waitingApprovalId, ...run }) => ({
           ...run,
+          ...(run.stopReason === CONTEXT_REVOKED && {
+            reason: CONTEXT_REVOKED_MESSAGE,
+          }),
           waitingForApproval:
             run.status === "running" && waitingApprovalId !== null,
         }));
@@ -1412,6 +1441,10 @@ export function createGroupConversations(deps: {
           ...(details.consent && typeof details.consent === "object"
             ? { consent: details.consent }
             : {}),
+          ...(details.stopReason === CONTEXT_REVOKED && {
+            stopReason: CONTEXT_REVOKED,
+            reason: CONTEXT_REVOKED_MESSAGE,
+          }),
           ...(message.status === "waiting"
             ? {
                 reason:

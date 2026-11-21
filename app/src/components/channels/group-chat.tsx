@@ -205,16 +205,26 @@ export function GroupChat({
               ref={run.id === runId ? focus : undefined}
               className="items-center"
             >
-              <strong>{names.get(run.agentId)}</strong>{" "}
-              {run.externalOutcome === "unknown"
-                ? "The external outcome needs verification."
-                : run.waitingForApproval
-                  ? "Waiting for your approval."
-                  : run.status === "running"
-                    ? "Running"
-                    : run.status === "completed"
-                      ? "Run completed"
-                      : "Run ended"}
+              <MessageContent>
+                <strong>{names.get(run.agentId)}</strong>
+                {run.partialReply && (
+                  <p className="whitespace-pre-wrap">{run.partialReply}</p>
+                )}
+                <p>
+                  {run.reason ??
+                    (run.waitingForApproval
+                      ? "Waiting for your approval."
+                      : run.status === "running"
+                        ? "Running"
+                        : run.status === "completed"
+                          ? "Run completed"
+                          : run.externalOutcome !== "unknown"
+                            ? "Run ended"
+                            : null)}
+                  {run.externalOutcome === "unknown" &&
+                    " The external outcome needs verification."}
+                </p>
+              </MessageContent>
               {run.waitingForApproval && (
                 <Button
                   disabled={stopRun.isPending}
@@ -371,7 +381,10 @@ function GroupLine({
           )
         ) : message.status === "failed" ? (
           <p className="text-sm text-destructive" role="alert">
-            {message.text || "This Bot couldn't answer."}
+            {message.text}
+            {message.text && message.reason && <br />}
+            {message.reason ??
+              (message.text ? null : "This Bot couldn't answer.")}
           </p>
         ) : (
           <Bubble

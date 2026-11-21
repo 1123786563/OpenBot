@@ -6,7 +6,6 @@ import {
 import { computerGuidance } from "@openbot/shared/bot-prompt";
 import { isPersonBrowserId } from "@openbot/shared/openbot-browser";
 import { workOwner } from "@openbot/shared/work-owner";
-import { CONTEXT_REVOKED } from "@openbot/toolkit/run-context";
 import { createTurnRunner } from "@openbot/toolkit/run-turn";
 import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -107,10 +106,7 @@ import {
 } from "./channels/attachments";
 import { purgeDeletedConversations } from "./channels/deletion-cleanup";
 import type { DirectChatReflect } from "./channels/direct-chat";
-import {
-  expireDirectChatEvents,
-  stopDirectChatRun,
-} from "./channels/direct-chat-replay";
+import { expireDirectChatEvents } from "./channels/direct-chat-replay";
 import {
   createChannelEventHub,
   startChannelActivityListener,
@@ -2637,13 +2633,8 @@ const approvalSweep = repeatAfterEach(
     approvalOwner,
     approvalService,
     executeApprovedAction,
-    contextCurrent: async ({
-      actorId,
-      botId,
-      runId,
-      threadId,
-      continuation,
-    }) => {
+    traceRuns: Boolean(config.opik),
+    contextCurrent: async ({ actorId, botId, threadId, continuation }) => {
       const versions = continuation?.sourceVersions;
       if (!versions?.length) return true;
       const memories = versions.filter(({ kind }) => kind === "memory");
@@ -2664,15 +2655,6 @@ const approvalSweep = repeatAfterEach(
             ))))
       )
         return true;
-      if (threadId)
-        await database.transaction((tx) =>
-          stopDirectChatRun(
-            tx,
-            { threadId, runId },
-            CONTEXT_REVOKED,
-            Boolean(config.opik),
-          ),
-        );
       return false;
     },
     backgroundApproval: copilotRuntime.backgroundApproval,

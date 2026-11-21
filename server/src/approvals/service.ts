@@ -13,6 +13,7 @@ import {
   WITHDRAWN_RULE_ALLOWS,
 } from "@openbot/shared/approval-outcomes";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
+import { RunContextRevokedError } from "@openbot/toolkit/run-context";
 import { PERSON_INITIATOR } from "../audit";
 import { productRunForwardedProps } from "../telemetry/product";
 import {
@@ -135,6 +136,8 @@ export type ApprovalResumeDependencies = {
   refusal?(action: ApprovalAction): Promise<string | null>;
   /** Resolve the target again and recheck current policy/grants; never trust approval as authority. */
   validate(action: ApprovalAction): Promise<ApprovalAction>;
+  /** Verify the saved context before consumption records an external dispatch. */
+  beforeConsume?(action: ApprovalAction): Promise<void>;
   execute(action: ApprovalAction): Promise<unknown>;
   /** Persist this deterministic tool result and resume its canonical conversation. */
   continue(input: {
@@ -705,6 +708,7 @@ export function createApprovalService(
               throw new ApprovalRefusedError(
                 "The approved action or resolved target has changed.",
               );
+            await dependencies.beforeConsume?.(current);
             if (!(await store.consume(ownerUserId, id, current.actionDigest))) {
               // Still `approved`: an "Always allow" whose rule was revoked before it ran. Anything
               // else means another replica took the request, and it continues the conversation.
@@ -715,13 +719,19 @@ export function createApprovalService(
               );
             }
           } catch (error) {
-            if (!(error instanceof ApprovalRefusedError) && !isPermanent(error))
+            if (error instanceof RunContextRevokedError)
+              refusal = error.message;
+            else if (
+              !(error instanceof ApprovalRefusedError) &&
+              !isPermanent(error)
+            )
               throw error;
-            refusal = notDoneOnRecheck(
-              error instanceof ApprovalRefusedError
-                ? error.message
-                : permanentReason(error),
-            );
+            else
+              refusal = notDoneOnRecheck(
+                error instanceof ApprovalRefusedError
+                  ? error.message
+                  : permanentReason(error),
+              );
           }
           if (refusal !== undefined || !current) {
             const reason = refusal ?? NOT_DONE;

@@ -12,6 +12,7 @@ import {
   runContextVersions,
 } from "@openbot/toolkit/run-context";
 import { z } from "zod";
+import { OUTCOME_UNKNOWN } from "@openbot/shared/approval-outcomes";
 import { answerMessageId } from "@openbot/shared/handoff-markers";
 import {
   HeadlessToolSuspension,
@@ -36,7 +37,7 @@ import { createApprovalResumeTick } from "../src/approvals/resume-sweep";
 import { createApprovalRoutes } from "../src/approvals/routes";
 import { createApprovalService } from "../src/approvals/service";
 import { createApprovalStore } from "../src/approvals/store";
-import { withApprovalContext } from "../src/approvals/types";
+import { approvalAction, withApprovalContext } from "../src/approvals/types";
 import { createAuditStore } from "../src/audit";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import {
@@ -44,7 +45,11 @@ import {
   createChannelAttachmentRoutes,
 } from "../src/channels/attachments";
 import type { DirectChatReflect } from "../src/channels/direct-chat";
-import { expireDirectChatEvents } from "../src/channels/direct-chat-replay";
+import {
+  appendDirectChatEvent,
+  backgroundMessageId,
+  expireDirectChatEvents,
+} from "../src/channels/direct-chat-replay";
 import {
   createGroupConversations,
   createGroupRoutes,
@@ -202,7 +207,9 @@ function web(
   const agentFor = async (_actor: unknown, id: string) => {
     if (id !== botId) throw new Error("Unexpected Bot.");
     await prepare?.();
-    return makeAgent?.() ?? buildAgent?.() ?? new AnsweringAgent(answer, partial);
+    return (
+      makeAgent?.() ?? buildAgent?.() ?? new AnsweringAgent(answer, partial)
+    );
   };
   const groupStore = createGroupStore(db, () => crypto.randomUUID());
   const groupConversations = createGroupConversations({
@@ -240,6 +247,7 @@ function web(
         groupThread: groupStore.thread,
         publishGroupReply: groupConversations.announceHandoff,
         backgroundActor: async () => actor,
+        mayAddress: async () => true,
       },
     },
   );
@@ -295,9 +303,311 @@ function web(
     routineRunner,
     runBackground: copilot.runBackground,
     backgroundApproval: copilot.backgroundApproval,
+    groupConversations,
     channelStore,
   });
 }
+
+test.each([
+  "shared",
+  "handoff",
+  "group",
+  "pre-execution race",
+  "lost dispatch",
+] as const)(
+  "approval worker withdrawal persisted state on %s",
+  async (kind) => {
+    const lostDispatch = kind === "lost dispatch";
+    const lateWithdrawal = kind === "pre-execution race";
+    const actor = await person();
+    const bot = await profiles.create(actor, {
+      name: "Worker boundary fixture",
+      title: "Bot",
+      roleDescription: "Offline fixture",
+      visibility: "private",
+    });
+    const peer = await profiles.create(actor, {
+      name: "Worker peer fixture",
+      title: "Bot",
+      roleDescription: "Offline fixture",
+      visibility: "private",
+    });
+    const app = web(database, actor, bot.id, async () => {
+      throw new Error("Unexpected model call");
+    });
+    const channelReply = await app.request(
+      "/api/channels",
+      post({ agentIds: [bot.id, peer.id] }),
+    );
+    expect(channelReply.status).toBe(201);
+    const { channel } = await channelReply.json();
+    const group = createGroupStore(database, () => crypto.randomUUID());
+    const conversationBotId = kind === "handoff" ? peer.id : bot.id;
+    const backgroundSource =
+      kind === "group" ? undefined : kind === "handoff" ? "handoff" : "routine";
+    const threadId = await group.thread(
+      actor.id,
+      channel.id,
+      conversationBotId,
+    );
+    let runId = crypto.randomUUID();
+    if (backgroundSource === "routine") {
+      const routine = await createRoutineStore(database).create({
+        ownerUserId: actor.id,
+        channelId: channel.id,
+        agentId: bot.id,
+        instruction: "Fixture Routine",
+        cron: "0 9 * * *",
+      });
+      const fired = await app.request(
+        `/api/routines/${routine.id}/run`,
+        post({}),
+      );
+      expect(fired.status).toBe(202);
+      runId = (await fired.json()).runId;
+    }
+    const messageId = crypto.randomUUID();
+    const text = "Output delivered before approval.";
+    const approvalStore = createApprovalStore(database);
+    const approvalService = createApprovalService(approvalStore);
+    const memoryStore = createMemoryStore(database);
+    const memory = await memoryStore.create(actor.id, {
+      content: "Fixture context.",
+    });
+    const pluginStore = createPluginStore({
+      brokerProvider: "composio",
+      database,
+      auditStore: createAuditStore(database),
+      credentials: createCredentialStore(database),
+      encryptionKey: Buffer.alloc(32, 7).toString("base64"),
+      policy: () => ({ mode: "enforce", deny: [], allow: ["true"] }),
+    });
+    const ingestion = createMemoryIngestion({
+      store: memoryStore,
+      plugins: pluginStore,
+      canUseBot: async () => true,
+    });
+    const memoryRoutes = createMemoryRoutes(
+      memoryStore,
+      ingestion,
+      async (ctx, next) => {
+        ctx.set("actor", actor);
+        await next();
+      },
+    );
+    const action = approvalAction({
+      actorId: actor.id,
+      botId: bot.id,
+      toolRef: "fixture:write",
+      effect: "write",
+      scope: "fixture",
+      args: {},
+      continuation: {
+        runId,
+        threadId,
+        toolCallId: crypto.randomUUID(),
+        toolName: "fixture_write",
+        args: {},
+        messages: [],
+        state: {},
+        context: [],
+        forwardedProps: {},
+        sourceVersions: [
+          { kind: "memory", id: memory.id, version: memory.version },
+        ],
+      },
+    });
+    const request = await approvalStore.open(action);
+    if (kind === "group") {
+      const turn = {
+        ownerUserId: actor.id,
+        channelId: channel.id,
+        messageId,
+        agentIds: [bot.id],
+        text: "Group fixture.",
+      };
+      expect(await group.start(turn, bot.id, threadId)).toBe("run");
+      await group.finish(`${messageId}:${bot.id}`, text, "waiting", {
+        approvalId: request.id,
+        message: "This action is waiting for your approval.",
+      });
+    } else {
+      await database.insert(directChatRuns).values({
+        id: runId,
+        threadId,
+        groupThreadId: threadId,
+        status: "running",
+        waitingApprovalId: request.id,
+        userMessageId: backgroundSource
+          ? backgroundMessageId(backgroundSource, runId)
+          : messageId,
+        ...(kind === "handoff" ? { handoffFromBotId: peer.id } : {}),
+        prompt: "Fixture prompt.",
+      });
+      await appendDirectChatEvent(
+        database,
+        { threadId, runId },
+        {
+          type: EventType.TEXT_MESSAGE_START,
+          messageId: `partial-${runId}`,
+          role: "assistant",
+        },
+      );
+      await appendDirectChatEvent(
+        database,
+        { threadId, runId },
+        {
+          type: EventType.TEXT_MESSAGE_CONTENT,
+          messageId: `partial-${runId}`,
+          delta: text,
+        },
+      );
+    }
+    await approvalService.decide(actor.id, request.id, "allow_once");
+    const withdraw = async () => {
+      const reply = await memoryRoutes.request(`/${memory.id}`, {
+        method: "DELETE",
+      });
+      expect(reply.status).toBe(204);
+    };
+    if (lostDispatch)
+      expect(
+        await approvalStore.consume(actor.id, request.id, action.actionDigest),
+      ).toBe(true);
+    if (!lateWithdrawal) await withdraw();
+    let checks = 0;
+    let tools = 0;
+    let runs = 0;
+    if (backgroundSource) {
+      expect(await app.backgroundApproval?.(action, request.id)).toBeDefined();
+      expect(
+        await (await app.backgroundApproval?.(action, request.id))?.check(),
+      ).toBeFalsy();
+    }
+    const worker = () =>
+      createApprovalResumeTick({
+        backgroundApproval: app.backgroundApproval,
+        approvalQueue: createWorkQueue(database),
+        approvalOwner: crypto.randomUUID(),
+        approvalService,
+        executeApprovedAction: async (candidate) => {
+          await approvalService.gate(candidate);
+          tools++;
+          return "Fixture tool called";
+        },
+        contextCurrent: async (candidate) => {
+          const current = await ingestion.memoryVersionsCurrent(
+            candidate.actorId,
+            candidate.botId,
+            candidate.continuation?.sourceVersions ?? [],
+          );
+          if (lateWithdrawal && ++checks === 1) await withdraw();
+          return current;
+        },
+        database,
+        groupConversations: app.groupConversations,
+        responsibilityStore: createResponsibilityStore(database, {
+          resolveTarget: async () => null,
+        }),
+        approvalContinuationRunner: async () => {
+          runs++;
+          return { replyText: "Unexpected continuation" };
+        },
+        channelStore: app.channelStore,
+        actorFor: async () => actor,
+        notify: async () => undefined,
+      });
+    await worker()();
+    await worker()();
+    expect({ tools, runs }).toEqual({ tools: 0, runs: 0 });
+    expect(await approvalStore.get(actor.id, request.id)).toMatchObject({
+      status: "completed",
+      result: {
+        error: lostDispatch
+          ? OUTCOME_UNKNOWN
+          : "The run paused because Memory or Learned skill access changed.",
+      },
+    });
+    if (kind === "group") {
+      const transcript = await (
+        await app.request(`/api/groups/${channel.id}`)
+      ).json();
+      expect(transcript.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            status: "failed",
+            text,
+            stopReason: "context_revoked",
+          }),
+        ]),
+      );
+      expect(
+        await group.start(
+          {
+            ownerUserId: actor.id,
+            channelId: channel.id,
+            messageId: crypto.randomUUID(),
+            agentIds: [bot.id],
+            text: "Next fixture turn.",
+          },
+          bot.id,
+          threadId,
+        ),
+      ).toBe("run");
+      return;
+    }
+    const transcript = await (
+      await app.request(
+        `/api/copilotkit/threads/${threadId}/messages?agentId=${conversationBotId}`,
+      )
+    ).json();
+    expect(transcript.runs).toEqual([
+      expect.objectContaining({
+        id: runId,
+        status: "failed",
+        stopReason: "context_revoked",
+      }),
+    ]);
+    expect(transcript.runs[0].waitingForApproval).toBeUndefined();
+    expect(transcript.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: "assistant", content: text }),
+      ]),
+    );
+    const sharedTranscript = await (
+      await app.request(`/api/groups/${channel.id}`)
+    ).json();
+    expect(sharedTranscript.backgroundRuns).toEqual([
+      expect.objectContaining({
+        id: runId,
+        status: "failed",
+        waitingForApproval: false,
+        stopReason: "context_revoked",
+        partialReply: text,
+      }),
+    ]);
+    expect(sharedTranscript.backgroundRuns[0].externalOutcome).toBe(
+      lostDispatch ? "unknown" : null,
+    );
+    expect(transcript.runs[0].externalOutcome).toBe(
+      lostDispatch ? "unknown" : undefined,
+    );
+    expect(
+      await group.start(
+        {
+          ownerUserId: actor.id,
+          channelId: channel.id,
+          messageId: crypto.randomUUID(),
+          agentIds: [conversationBotId],
+          text: "Next fixture turn.",
+        },
+        conversationBotId,
+        threadId,
+      ),
+    ).toBe(lostDispatch ? "busy" : "run");
+  },
+  120_000,
+);
 
 test("Run now has the same Conversation Run after redelivery to a restarted worker", async () => {
   const actor = await person();
@@ -577,6 +887,9 @@ for (const outcome of [
         resolveTarget: async () => null,
       }),
       groupConversations: {
+        pauseWaiting: async () => {
+          throw new Error("Wrong continuation path.");
+        },
         continueWaiting: async () => {
           throw new Error("Wrong continuation path.");
         },

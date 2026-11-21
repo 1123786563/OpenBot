@@ -617,7 +617,10 @@ const resumeApproval = createApprovalResumeTick({
   database,
   // Read only for a responsibility's waiting run, which these turns never are.
   responsibilityStore: {} as ResponsibilityStore,
-  groupConversations: { continueWaiting: (_approvalId, run) => run() },
+  groupConversations: {
+    continueWaiting: (_approvalId, run) => run(),
+    pauseWaiting: async () => {},
+  },
   approvalContinuationRunner: runTurn,
   channelStore,
   actorFor,
