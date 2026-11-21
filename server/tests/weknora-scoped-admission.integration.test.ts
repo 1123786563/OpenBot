@@ -23,7 +23,7 @@ import {
 } from "../src/db/schema";
 import { createAccountAccess } from "../src/personal-saas/account-access";
 import { suspensionRoutes } from "../src/personal-saas/workspace-suspension";
-import { fixtureTraceReport } from "./support/bifrost-evidence";
+import { fixtureEmbeddingReport } from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 test("a durable WeKnora grant gates new credit operations and preserves prior settlement across Casdoor cutoff", async () => {
@@ -68,14 +68,15 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
     harnessImage,
     routes: {
       pilot: {
+        purpose: "embedding",
         provider: "fixture-a",
         model: "model-a",
         gatewayRevision: "a",
         meteringRevision: "a",
         maxInputTokens: 3,
-        maxOutputTokens: 16,
+        maxOutputTokens: 0,
         tools: false,
-        price: { inputPerMillion: 250_000, outputPerMillion: 78_125 },
+        price: { inputPerMillion: 500_000, outputPerMillion: 0 },
       },
     },
   });
@@ -84,10 +85,10 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
   const verified = verify(
     configured,
     "pilot",
-    fixtureTraceReport(harnessImage, route),
+    fixtureEmbeddingReport(harnessImage, route),
     "fixture",
   );
-  const { catalog, release } = publish(verified, ["pilot"], "pilot", "fixture");
+  const { catalog, release } = publish(verified, ["pilot"], null, "fixture");
 
   const batchId = crypto.randomUUID();
   const workspaceId = crypto.randomUUID();
@@ -101,6 +102,15 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
       });
     await ledger.enroll({ identity, batchId, amount: 20n });
     await ledger.claim(identity, batchId);
+    await expect(ledger.modelOptions()).resolves.toEqual([]);
+    await expect(ledger.quote()).resolves.toBeUndefined();
+    await expect(
+      ledger.reserve(identity, {
+        operationId: "unscoped",
+        route: "pilot",
+        priceVersion: release.id,
+      }),
+    ).resolves.toEqual({ state: "denied", reason: "route_unavailable" });
     const reserve = (operationId: string) => ({
       operationId,
       route: "pilot",
@@ -209,8 +219,8 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
     });
     await expect(
       restarted.settle(dispatched.accountId, "first", {
-        inputTokens: 3n,
-        outputTokens: 4n,
+        inputTokens: 2n,
+        outputTokens: 0n,
       }),
     ).resolves.toMatchObject({
       state: "settled",
@@ -265,7 +275,7 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
     await expect(
       restarted.settle(lateDispatch.accountId, "late", {
         inputTokens: 3n,
-        outputTokens: 16n,
+        outputTokens: 0n,
       }),
     ).resolves.toMatchObject({ state: "released", chargedMicrocredits: null });
     await expect(

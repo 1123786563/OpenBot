@@ -65,8 +65,9 @@ function routeEligible(
 ) {
   return (
     active?.options.some(
-      ({ id, revision, verification }) =>
+      ({ id, purpose, revision, verification }) =>
         id === frozen.id &&
+        purpose === frozen.purpose &&
         revision === frozen.revision &&
         verification.report.artifactDigest ===
           frozen.verification.report.artifactDigest &&
@@ -589,7 +590,11 @@ export function createTestCreditLedger(
 
     async modelOptions() {
       const active = await activeRoutes(database);
-      return active?.options.map(modelOption) ?? [];
+      return (
+        active?.options
+          .filter(({ purpose }) => purpose !== "embedding")
+          .map(modelOption) ?? []
+      );
     },
 
     async resolveQuote(
@@ -603,10 +608,12 @@ export function createTestCreditLedger(
           ? "bot"
           : "harness";
       const saved = preferences.conversation ?? preferences.bot;
-      const route = active?.options.find(({ id, revision }) =>
-        saved
-          ? id === saved.id && revision === saved.revision
-          : id === active.defaultRoute,
+      const route = active?.options.find(
+        ({ id, revision, purpose }) =>
+          purpose !== "embedding" &&
+          (saved
+            ? id === saved.id && revision === saved.revision
+            : id === active.defaultRoute),
       );
       if (route && active?.priceVersion)
         return { source, quote: quoteFor(route, active.priceVersion) } as const;
@@ -799,7 +806,11 @@ export function createTestCreditLedger(
         )
           return denied("not_authorized");
         const active = await activeRoutes(tx, true);
-        const route = active?.options.find(({ id }) => id === input.route);
+        const route = active?.options.find(
+          ({ id, purpose }) =>
+            id === input.route &&
+            (purpose === "embedding") === Boolean(authorization),
+        );
         if (!route || active?.priceVersion !== input.priceVersion)
           return denied("route_unavailable");
         const balance = await totals(tx, accountId);
@@ -917,6 +928,7 @@ export function createTestCreditLedger(
         }
         if (
           !eligible ||
+          (row.route.purpose === "embedding") !== Boolean(authorization) ||
           dispatchedAt.getTime() - row.createdAt.getTime() >=
             reservationMilliseconds
         ) {

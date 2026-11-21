@@ -8,7 +8,10 @@ import {
   verify,
   view,
 } from "../src/admin/bifrost-catalog";
-import { fixtureTraceReport } from "./support/bifrost-evidence";
+import {
+  fixtureEmbeddingReport,
+  fixtureTraceReport,
+} from "./support/bifrost-evidence";
 
 const route = {
   provider: "openai",
@@ -244,4 +247,48 @@ test.each([
   const report = fixtureTraceReport(harnessImage, initial.routes.a!);
   alterReport(report);
   expect(() => verify(initial, "a", report, "admin")).toThrow("evidence");
+});
+
+test("a verified embedding route can be published without becoming the chat default", () => {
+  const embedding = {
+    ...other,
+    purpose: "embedding" as const,
+    maxOutputTokens: 0,
+    tools: false,
+    price: { inputPerMillion: 10_000, outputPerMillion: 0 },
+  };
+  const initial = configure(emptyCatalog, {
+    harnessImage,
+    routes: { embed: embedding },
+  });
+  const entry = initial.routes.embed!;
+  const chat = fixtureTraceReport(harnessImage, entry);
+  expect(() => verify(initial, "embed", chat, "admin")).toThrow("evidence");
+
+  const report = fixtureEmbeddingReport(harnessImage, entry);
+  expect(() =>
+    verify(
+      initial,
+      "embed",
+      {
+        ...report,
+        completed: {
+          ...report.completed,
+          gateway: { ...report.completed.gateway, inputTokens: 11 },
+        },
+      },
+      "admin",
+    ),
+  ).toThrow("evidence");
+  const verified = verify(initial, "embed", report, "admin");
+  expect(() => publish(verified, ["embed"], "embed", "admin")).toThrow(
+    "default",
+  );
+  const { catalog } = publish(verified, ["embed"], null, "admin");
+  expect(view(catalog)).toMatchObject({
+    defaultRoute: null,
+    options: [
+      { id: "embed", purpose: "embedding", maxChargeMicrocredits: "10" },
+    ],
+  });
 });

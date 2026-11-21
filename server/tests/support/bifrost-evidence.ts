@@ -1,5 +1,5 @@
-import type { configuration } from "../../src/admin/bifrost-catalog";
 import type { z } from "zod";
+import type { configuration } from "../../src/admin/bifrost-catalog";
 
 type Route = z.infer<typeof configuration>["routes"][string];
 
@@ -106,5 +106,41 @@ export function fixtureTraceReport(
         result: { ...completed(toolRunId), toolResultFor: "fixture-call" },
       },
     }),
+  };
+}
+
+export function fixtureEmbeddingReport(
+  harnessImage: string,
+  route: Route & { revision: string },
+) {
+  const trace = fixtureTraceReport(harnessImage, route);
+  const { provider, model, gatewayRevision, meteringRevision } = route;
+  const { requestSha256, meter, gateway, upstream } = trace.stream;
+  const { usage: _usage, ...gatewayTrace } = gateway;
+  const inputTokens = Math.min(10, route.maxInputTokens);
+  return {
+    version: 3,
+    source: "live-provider",
+    revision: route.revision,
+    harnessImage,
+    provider,
+    model,
+    gatewayRevision,
+    meteringRevision,
+    artifactDigest: trace.artifactDigest,
+    gatewayImageDigest: trace.gatewayImageDigest,
+    completed: {
+      requestSha256,
+      meter,
+      gateway: { ...gatewayTrace, inputTokens, vectors: 2 },
+      upstream: {
+        requestId: upstream.requestId,
+        gatewayRequestId: upstream.gatewayRequestId,
+        provider,
+        model,
+        inputTokens,
+      },
+    },
+    inputLimit: trace.inputLimit,
   };
 }
