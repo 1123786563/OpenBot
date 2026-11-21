@@ -130,7 +130,7 @@ test("the release is created right after the images, and the signing runs are st
   const tag = release.steps?.[publishAt]?.run ?? "";
   expect(tag).toContain("assets=(container-images.json)");
   expect(tag).toContain("assets+=(desktop-images.json)");
-  expect(tag).toContain('gh release create "$VERSION" "${assets[@]}"');
+  expect(tag).toContain(`gh release create "$VERSION" "\${assets[@]}"`);
   // Nothing in this job waits for, or attaches, a desktop build.
   expect(JSON.stringify(release)).not.toContain("openbot-desktop-");
 });
