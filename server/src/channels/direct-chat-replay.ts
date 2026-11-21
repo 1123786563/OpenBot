@@ -142,6 +142,7 @@ export async function stopDirectChatRun(
   key: RunKey,
   reason: NonNullable<Run["stopReason"]>,
   traceRuns: boolean,
+  waitingApprovalId?: string,
 ) {
   const [run] = await tx
     .update(directChatRuns)
@@ -151,7 +152,15 @@ export async function stopDirectChatRun(
       eventCursor: sql`${directChatRuns.eventCursor} + 1`,
       externalOutcome: sql`case when ${directChatRuns.externalOutcome} = 'dispatching' then 'unknown' else ${directChatRuns.externalOutcome} end`,
     })
-    .where(and(matchingRun(key), eq(directChatRuns.status, "running")))
+    .where(
+      and(
+        matchingRun(key),
+        eq(directChatRuns.status, "running"),
+        waitingApprovalId === undefined
+          ? undefined
+          : eq(directChatRuns.waitingApprovalId, waitingApprovalId),
+      ),
+    )
     .returning({ cursor: directChatRuns.eventCursor, ...traceFields });
   if (!run) return false;
   await tx.insert(directChatRunEvents).values({
