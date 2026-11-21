@@ -21,6 +21,7 @@
  * Without a database it still works in memory. Tests that only care about decision logic do not need
  * Postgres.
  */
+import { isDeepStrictEqual } from "node:util";
 import { eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { actionPolicy } from "../db/schema";
@@ -55,11 +56,17 @@ export const DEFAULT_ACTION_POLICY: ActionPolicy = {
   allow: ["true"],
 };
 
+export class ActionPolicyChangedError extends Error {}
+
 export type PolicyStore = {
   /** Synchronous on purpose: this is asked on every action. */
   get: () => ActionPolicy;
   /** Persisted before the in-memory copy changes, so a reported success is a saved rule. */
-  set: (policy: ActionPolicy, by?: string) => Promise<void>;
+  set: (
+    policy: ActionPolicy,
+    by?: string,
+    expected?: ActionPolicy,
+  ) => Promise<void>;
   /** Back to what configuration says, forgetting the saved one. */
   reset: () => Promise<void>;
   /** Read the saved policy at boot. Returns where the live policy came from. */
@@ -84,7 +91,7 @@ export function createPolicyStore(
   return {
     get: () => current,
 
-    set: async (policy, by) => {
+    set: async (policy, by, expected) => {
       const next = clone(policy);
       if (database) {
         // Written before it is enforced. If the write fails this throws and the caller reports a
@@ -95,6 +102,17 @@ export function createPolicyStore(
         // rolls back announces nothing, and there is no window where the row has changed and the
         // other servers have not been told. Same shape as `channels/routes.ts`.
         await database.transaction(async (transaction) => {
+          await transaction.execute(
+            sql`select pg_advisory_xact_lock(hashtext(${ACTION_POLICY_TOPIC}))`,
+          );
+          if (expected) {
+            const [row] = await transaction
+              .select()
+              .from(actionPolicy)
+              .where(eq(actionPolicy.id, CURRENT))
+              .limit(1);
+            checkExpectedPolicy(row ? fromRow(row) : configured, expected);
+          }
           await transaction
             .insert(actionPolicy)
             .values({
@@ -122,6 +140,8 @@ export function createPolicyStore(
           // already has.
           await announce(transaction);
         });
+      } else if (expected) {
+        checkExpectedPolicy(current, expected);
       }
       current = next;
     },
@@ -132,6 +152,9 @@ export function createPolicyStore(
       // changes what it enforces, which is what an operator expects of a reset.
       if (database) {
         await database.transaction(async (transaction) => {
+          await transaction.execute(
+            sql`select pg_advisory_xact_lock(hashtext(${ACTION_POLICY_TOPIC}))`,
+          );
           await transaction
             .delete(actionPolicy)
             .where(eq(actionPolicy.id, CURRENT));
@@ -168,6 +191,19 @@ export function createPolicyStore(
       current = row ? fromRow(row) : clone(configured);
     },
   };
+}
+
+function checkExpectedPolicy(current: ActionPolicy, expected: ActionPolicy) {
+  if (
+    !isDeepStrictEqual(
+      { ...current, labels: current.labels ?? {} },
+      { ...expected, labels: expected.labels ?? {} },
+    )
+  ) {
+    throw new ActionPolicyChangedError(
+      "The boundaries changed while you were reviewing them.",
+    );
+  }
 }
 
 /**

@@ -1,0 +1,57 @@
+name: openbot-agents
+
+services:
+  agent-bot:
+    extends:
+      file: ${OPENBOT_AGENT_SOURCE:?Set OPENBOT_AGENT_SOURCE}/docker-compose.yml
+      service: agent-bot
+    build:
+      context: ${OPENBOT_AGENT_SOURCE:?Set OPENBOT_AGENT_SOURCE}
+    restart: unless-stopped
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY}
+      MANAGED_AGENT_TOKEN: ${MANAGED_AGENT_TOKEN:?Set MANAGED_AGENT_TOKEN}
+
+  agent-langgraph:
+    extends:
+      file: ${OPENBOT_AGENT_SOURCE:?Set OPENBOT_AGENT_SOURCE}/docker-compose.yml
+      service: agent-langgraph
+    build:
+      context: ${OPENBOT_AGENT_SOURCE:?Set OPENBOT_AGENT_SOURCE}
+    restart: unless-stopped
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY}
+      MANAGED_AGENT_TOKEN: ${MANAGED_AGENT_TOKEN:?Set MANAGED_AGENT_TOKEN}
+
+  agent-computer:
+    extends:
+      file: ${OPENBOT_AGENT_SOURCE:?Set OPENBOT_AGENT_SOURCE}/docker-compose.yml
+      service: agent-computer
+    build:
+      context: ${OPENBOT_AGENT_SOURCE:?Set OPENBOT_AGENT_SOURCE}
+      args:
+        UBUNTU_MIRROR: ${UBUNTU_MIRROR:-http://azure.archive.ubuntu.com/ubuntu}
+    restart: unless-stopped
+    environment:
+      COMPUTER_TOKEN: ${COMPUTER_TOKEN:?Set COMPUTER_TOKEN}
+
+  supervisor:
+    extends:
+      file: ${OPENBOT_AGENT_SOURCE:?Set OPENBOT_AGENT_SOURCE}/docker-compose.yml
+      service: supervisor
+    build:
+      context: ${OPENBOT_AGENT_SOURCE:?Set OPENBOT_AGENT_SOURCE}
+    restart: unless-stopped
+    environment:
+      SUPERVISOR_TOKEN: ${SUPERVISOR_TOKEN:?Set SUPERVISOR_TOKEN}
+      COMPUTER_TOKEN: ${COMPUTER_TOKEN:?Set COMPUTER_TOKEN}
+      COMPUTER_NAMESPACE: openbot-agents
+      COMPUTER_NETWORK: openbot-agents_default
+      SPIRE_SOCKET:
+      SPIRE_AGENT_SOCKET_VOLUME:
+    volumes: !override
+      - ${ENGINE_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
+
+volumes:
+  agent-workspace:
+  agent-profiles:

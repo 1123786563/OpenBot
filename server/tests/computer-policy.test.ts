@@ -5,7 +5,11 @@ import {
   type PolicyContext,
   policyInitiator,
 } from "../src/computer/policy";
-import { parseActionPolicy } from "../src/computer/policy-store";
+import {
+  ActionPolicyChangedError,
+  createPolicyStore,
+  parseActionPolicy,
+} from "../src/computer/policy-store";
 
 /**
  * These test the decision, not the plumbing.
@@ -30,6 +34,23 @@ function context(overrides: Partial<PolicyContext> = {}): PolicyContext {
 }
 
 const permissive: ActionPolicy = { mode: "enforce", deny: [], allow: ["true"] };
+
+test("a confirmed policy cannot overwrite a newer boundary", async () => {
+  const store = createPolicyStore(permissive);
+  const observed = store.get();
+  const addedRule = { ...observed, deny: ['tool.name == "computer_click"'] };
+  await store.set(addedRule);
+  await expect(
+    store.set({ ...observed, mode: "dry-run" }, "admin@example.test", observed),
+  ).rejects.toBeInstanceOf(ActionPolicyChangedError);
+  expect(store.get()).toEqual(addedRule);
+  await store.set(
+    { ...addedRule, mode: "dry-run" },
+    "admin@example.test",
+    addedRule,
+  );
+  expect(store.get()).toEqual({ ...addedRule, mode: "dry-run" });
+});
 
 describe("evaluateActionPolicy", () => {
   test("an absent policy refuses, rather than permitting everything", () => {

@@ -529,6 +529,14 @@ export function createApprovalService(
         );
       return questions.dismiss(ownerUserId, id);
     },
+    async threadInbox(ownerUserId: string, threadId: string) {
+      const requests = await store.list(ownerUserId, threadId);
+      return {
+        requests: requests.map((request) =>
+          publicApproval(request, request.result?.pauseReason),
+        ),
+      };
+    },
     async inbox(ownerUserId: string) {
       const requests = await store.list(ownerUserId);
       const policy = store.policy;

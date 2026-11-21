@@ -1,0 +1,23 @@
+name: openbot-openobserve
+
+services:
+  openobserve:
+    image: ${OPENOBSERVE_IMAGE:-openobserve/openobserve@sha256:26618f379c86b253c0d91624c487dd14b71293699845ecbc8457c94dca14819f}
+    restart: unless-stopped
+    environment:
+      ZO_ROOT_USER_EMAIL: ${OPENOBSERVE_ROOT_EMAIL:?Set OPENOBSERVE_ROOT_EMAIL}
+      ZO_ROOT_USER_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD:?Set OPENOBSERVE_ROOT_PASSWORD}
+      ZO_DATA_DIR: /data
+      ZO_LOCAL_MODE: "true"
+    volumes:
+      - openobserve-data:/data
+    ports:
+      - "127.0.0.1:${OPENOBSERVE_PORT:-15080}:5080"
+    networks: [openobserve]
+
+networks:
+  openobserve:
+
+volumes:
+  openobserve-data:
+    name: ${OPENOBSERVE_VOLUME:-openbot-middleware_openobserve-data}

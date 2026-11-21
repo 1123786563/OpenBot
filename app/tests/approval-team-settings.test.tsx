@@ -149,6 +149,9 @@ test("an administrator sets the team-wide controls", async () => {
     }),
   );
   await user.click(await view.findByRole("option", { name: "Never" }));
+  expect(sent).toEqual([]);
+  expect(await view.findByRole("alertdialog")).toBeTruthy();
+  await user.click(view.getByRole("button", { name: "Change team setting" }));
   await waitFor(() =>
     expect(sent).toContainEqual({
       path: "/api/approvals/team",

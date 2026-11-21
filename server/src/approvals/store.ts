@@ -143,13 +143,27 @@ export function createApprovalStore(
       await reconcile(owner);
       return get(owner, id);
     },
-    async list(owner) {
+    async list(owner, threadId) {
       await reconcile(owner);
       return database
         .select()
         .from(approvalRequests)
-        .where(eq(approvalRequests.ownerUserId, owner))
-        .orderBy(desc(approvalRequests.createdAt))
+        .where(
+          and(
+            eq(approvalRequests.ownerUserId, owner),
+            threadId === undefined
+              ? undefined
+              : sql`${approvalRequests.action}->>'threadId' = ${threadId}`,
+          ),
+        )
+        .orderBy(
+          ...(threadId === undefined
+            ? []
+            : [
+                sql`case when ${approvalRequests.status} = 'completed' then 1 else 0 end`,
+              ]),
+          desc(approvalRequests.createdAt),
+        )
         .limit(100);
     },
     async open(action) {

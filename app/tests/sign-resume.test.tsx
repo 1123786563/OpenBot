@@ -119,7 +119,10 @@ function signedInContext() {
   return { queryClient };
 }
 
-async function redirectFrom(search: { flow_id?: string }) {
+async function redirectFrom(search: {
+  flow_id?: string;
+  openfuse_request?: string;
+}) {
   const beforeLoad = Route.options.beforeLoad as (a: unknown) => Promise<void>;
   try {
     await beforeLoad({ context: signedInContext(), search });
@@ -128,6 +131,20 @@ async function redirectFrom(search: { flow_id?: string }) {
   }
   throw new Error("expected a redirect");
 }
+
+test("OpenFuse resumes only a registered sign-in request on the same origin", async () => {
+  const handle = "a".repeat(64);
+  const path = `/api/auth/openfuse/continue?request=${handle}`;
+  expect(resumeUrlFor("https://app.example", undefined, handle)).toBe(
+    `https://app.example${path}`,
+  );
+  expect((await redirectFrom({ openfuse_request: handle })).options.href).toBe(
+    path,
+  );
+  expect(
+    resumeUrlFor("https://app.example", undefined, "https://other.example/"),
+  ).toBe("https://app.example");
+});
 
 test("a signed-in arrival with a handle goes to the verifier, without one to /", async () => {
   const withHandle = await redirectFrom({ flow_id: "f 1" });
@@ -348,7 +365,7 @@ test("only same-origin Web pages can be resumed, and an existing flow takes prio
   ]) {
     expect(appReturnPath(value)).toBeUndefined();
   }
-  expect(resumeUrlFor(origin, "flow", webReturn)).toBe(
+  expect(resumeUrlFor(origin, "flow", undefined, webReturn)).toBe(
     `${origin}/api/plugins/arcade/verify?flow_id=flow`,
   );
 });

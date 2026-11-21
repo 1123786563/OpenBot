@@ -1,4 +1,6 @@
 import type { Message } from "@ag-ui/core";
+import { Button } from "@astryxdesign/core/Button";
+import { Stack } from "@astryxdesign/core/Stack";
 import {
   type Attachment,
   CopilotChatConfigurationProvider,
@@ -25,12 +27,9 @@ import { ModelPicker } from "@/components/channels/composer/model-picker";
 import { ConversationIntro } from "@/components/channels/conversation-intro";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { ProgressRow } from "@/components/channels/progress-row";
-import {
-  seedMessage,
-  takeFirstMessage,
-  transcriptMessages,
-} from "@/components/channels/transcript-messages";
+import { transcriptMessages } from "@/components/channels/transcript-messages";
 import { VoiceCallWidget } from "@/components/channels/voice-call-widget";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { HandoffResumeNotice } from "@/components/computer/handoff-resume-notice";
 import { StarterSuggestions } from "@/components/starter-tour/starter-suggestions";
 import { agentListQueryOptions } from "@/lib/agents/queries";
@@ -39,11 +38,20 @@ import {
   approvalInboxOptions,
   carryingOnAfterApproval,
 } from "@/lib/approvals";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { attachmentUrl } from "@/lib/channels/attachments";
 import {
   recordChannelActivityMutationOptions,
   setChannelBusy,
 } from "@/lib/channels/mutations";
+import {
+  claimFirstSend,
+  findFirstMessage,
+  finishPendingStart,
+  readPendingStart,
+  restorePendingAttachments,
+  savePendingStart,
+} from "@/lib/channels/pending-start";
 import {
   type AgentChannel,
   type ChannelSummary,
@@ -62,6 +70,7 @@ import {
 } from "@/lib/copilot/approval-context";
 import { offerItsOwnTools } from "@/lib/copilot/bot-offer";
 import { isBrokenStream, STREAM_BROKE } from "@/lib/copilot/broken-stream";
+import { ConversationReadError } from "./conversation-status";
 import { ConversationProvider } from "@/lib/copilot/conversation";
 import { afterMs, joinWithin } from "@/lib/copilot/join-thread";
 import {
@@ -527,18 +536,37 @@ export function ChannelChat({
     return observeApprovalAgent(agent);
   }, [agent, runtimeAgentId, queries]);
 
-  /**
-   * First-message seed from the compose screen. It is taken once per mount and retained until the
-   * agent has its own messages because joining a fresh thread can temporarily empty the agent.
-   */
-  const [first] = useState(() => {
-    const pending = takeFirstMessage(channel.id);
-    return pending ? { seed: seedMessage(pending.text, newId()) } : null;
-  });
-  const seed = first?.seed ?? null;
+  const { data: user } = useQuery(currentUserQueryOptions());
+  const [first, setFirst] = useState(() =>
+    user ? findFirstMessage(user.id, channel.id) : null,
+  );
+  const firstOwner = useRef(user?.id);
+  firstOwner.current = user?.id;
+  const [firstAttempt, setFirstAttempt] = useState(0);
+  const [firstError, setFirstError] = useState<{
+    message: string;
+    action: "retry" | "check";
+  } | null>(null);
+  const [copyStatus, setCopyStatus] = useState("");
+  const {
+    requestConfirmation: requestDraftDiscard,
+    confirmation: draftDiscard,
+  } = useActionConfirmation();
+  const seed: Message | null = first
+    ? {
+        id: first.id,
+        role: "user",
+        content: toMessageContent(
+          first.start.draft.text,
+          restorePendingAttachments(first.start.draft),
+        ),
+      }
+    : null;
 
-  /** Cleared by the send-on-mount effect without restarting it. */
-  const seedRef = useRef(first);
+  useEffect(() => {
+    if (user)
+      setFirst((known) => known ?? findFirstMessage(user.id, channel.id));
+  }, [user, channel.id]);
 
   /** Promise gate for ordering the first message after the thread join when possible. */
   const openJoinGate = useRef<() => void>(() => {});
@@ -606,6 +634,7 @@ export function ChannelChat({
     "ready" | "unavailable"
   >("ready");
   const [historyReadFailed, setHistoryReadFailed] = useState(false);
+  const [retryingHistory, setRetryingHistory] = useState(false);
   /**
    * Why the last run ended without an answer, drawn under the transcript.
    *
@@ -902,6 +931,29 @@ export function ChannelChat({
     historyReadFailed,
     unreadable,
   });
+  const retryHistory = async () => {
+    if (retryingHistory) return;
+    setRetryingHistory(true);
+    const version = ++historyReadVersion.current;
+    try {
+      const stored = await readThreadMessages(channel.threadId, runtimeAgentId);
+      if (version !== historyReadVersion.current) return;
+      setUnreadable(stored.unreadable);
+      setHistoryAvailability(stored.availability);
+      setHistoryReadFailed(stored.availability === "unavailable");
+      const messages = mergeStoredMessages(
+        withCurrentA2uiVersions(agent.messages),
+        stored.messages,
+      );
+      if (messages !== agent.messages) agent.setMessages(messages);
+    } finally {
+      setRetryingHistory(false);
+    }
+  };
+  const retryArchive = () => {
+    if (historyReadFailed) void retryHistory();
+    if (voiceArchive.error) void voiceArchive.refetch();
+  };
 
   const awaitingReply = useRef(false);
   /**
@@ -1079,6 +1131,7 @@ export function ChannelChat({
     trimmed: string,
     attachments: Attachment[],
     sent?: Message,
+    beforeFirstSend?: () => Promise<void>,
   ) => {
     // Wait briefly for the runtime agent instance before adding the message.
     if (!isReadyRef.current) {
@@ -1169,6 +1222,7 @@ export function ChannelChat({
         ),
       );
 
+    if (beforeFirstSend) await beforeFirstSend();
     target.addMessage(
       sent ?? {
         content: toMessageContent(trimmed, attachments),
@@ -1290,6 +1344,7 @@ export function ChannelChat({
     attachments: Attachment[] = [],
     /** The message to send for `text`, when it is more than the words: an answer to a question. */
     sent?: Message,
+    beforeFirstSend?: () => Promise<void>,
   ) => {
     const trimmed = text.trim();
     // A pasted screenshot with no caption is still a message to send: `canSendDraft` already
@@ -1310,7 +1365,7 @@ export function ChannelChat({
       void setChannelBusy({ channelId: channel.id, busy: true });
     }
     try {
-      const reply = await deliver(trimmed, attachments, sent);
+      const reply = await deliver(trimmed, attachments, sent, beforeFirstSend);
       /*
        * The person left while this turn was running (holding control of the Bot's browser, say) and the turn went on
        * without this screen. The run-finished subscription that tells the roster what the Bot said went with it, so the
@@ -1520,27 +1575,154 @@ export function ChannelChat({
     void sayRef.current(text).catch(() => undefined);
   }, []);
 
-  /**
-   * Send the create-channel seed once. No waiting of its own: `say` owns that for every turn, and a
-   * second copy of the ordering here was the one that could disagree with it.
-   */
   useEffect(() => {
-    const pending = seedRef.current;
-    if (!pending) return;
-    seedRef.current = null;
+    const owner = user?.id;
+    if (!first || !owner) return;
+    if (!channel.active || !isReady) {
+      const timer = setTimeout(
+        () => {
+          setFirstError({
+            action: "check",
+            message: channel.active
+              ? "The Bot hasn’t connected. Your message is saved here."
+              : "This Bot is unavailable. Your message is saved here.",
+          });
+        },
+        channel.active ? SEND_WITHOUT_RUNTIME_AFTER_MS : 0,
+      );
+      return () => clearTimeout(timer);
+    }
+    setFirstError(null);
+    const { id } = first;
+    let current = true;
 
-    // Swallowed for the reason `askFromComponent` above records: `say` throws on a failed turn, and
-    // the seed has no box to go back into — it was typed on a screen that has already navigated
-    // away. The transcript keeps the seeded message and the notice under it says what happened.
-    // A `/` skill is still at the start of its words, where the server finds it.
-    void sayRef
-      .current(
-        typeof pending.seed.content === "string" ? pending.seed.content : "",
+    const attempt = async () => {
+      await joinedPromise;
+      if (!current || firstOwner.current !== owner) return;
+      const stored = readPendingStart(owner, id);
+      if (!stored || stored.state === "finished") {
+        setFirst(null);
+        return;
+      }
+      const verify = async () => {
+        const history = await readThreadMessages(
+          channel.threadId,
+          runtimeAgentId,
+        );
+        if (
+          history.availability === "ready" &&
+          history.messages.some(
+            (message) => message.id === id && message.role === "user",
+          )
+        ) {
+          const target = agentRef.current;
+          const merged = mergeStoredMessages(target.messages, history.messages);
+          if (merged !== target.messages) target.setMessages(merged);
+          finishPendingStart(owner, id, channel.id, false);
+          if (current) setFirst(null);
+          return;
+        }
+        if (current) {
+          setFirstError({
+            action: "check",
+            message:
+              history.availability === "ready"
+                ? "Your message is saved here. It hasn’t appeared in the Thread yet. Check again to see whether it arrived."
+                : "Your message is saved here, but the Thread couldn’t be checked. Check again when you’re back online.",
+          });
+        }
+      };
+
+      if (stored.progress.phase === "submitted") {
+        await verify();
+        return;
+      }
+      if (
+        stored.progress.phase !== "ready" ||
+        stored.progress.channelId !== channel.id
       )
-      .catch(() => undefined);
+        return;
 
-    // Keep `seed` in state; transcriptMessages gives it up once the agent holds a user turn.
-  }, []);
+      let submitted = false;
+      try {
+        const attachments = restorePendingAttachments(stored.draft);
+        await sayRef.current(
+          stored.draft.text,
+          attachments,
+          {
+            id,
+            role: "user",
+            content: toMessageContent(stored.draft.text, attachments),
+          },
+          async () => {
+            if (!current || firstOwner.current !== owner)
+              throw new Error("The conversation was closed.");
+            const latest = readPendingStart(owner, id);
+            if (
+              latest?.state !== "pending" ||
+              latest.progress.phase !== "ready"
+            ) {
+              submitted = true;
+              throw new Error("The message is already being checked.");
+            }
+            const claimed = await claimFirstSend(owner, id);
+            submitted = true;
+            const beforeSend = readPendingStart(owner, id);
+            if (
+              beforeSend?.state === "pending" &&
+              beforeSend.progress.phase === "ready"
+            ) {
+              savePendingStart(owner, id, {
+                ...beforeSend,
+                progress: { phase: "submitted", channelId: channel.id },
+              });
+            }
+            if (
+              !claimed ||
+              beforeSend?.state !== "pending" ||
+              !current ||
+              firstOwner.current !== owner
+            ) {
+              throw new Error("The message is already being checked.");
+            }
+          },
+        );
+        finishPendingStart(owner, id, channel.id, false);
+        if (current) setFirst(null);
+      } catch {
+        if (submitted) {
+          await verify();
+        } else if (current) {
+          setFirstError({
+            action: "retry",
+            message: "Your message is saved here. Try again to send it.",
+          });
+        }
+      }
+    };
+
+    void attempt().catch(() => {
+      if (current)
+        setFirstError({
+          action: "check",
+          message:
+            "Your message is saved here. Check again to see whether it arrived.",
+        });
+    });
+    return () => {
+      current = false;
+    };
+  }, [
+    channel.active,
+    channel.id,
+    channel.threadId,
+    first,
+    firstAttempt,
+    isReady,
+    joinedPromise,
+    runtimeAgentId,
+    user?.id,
+  ]);
 
   return (
     // Activity renderers resolve their agent through this SDK context. It must match useAgent's
@@ -1591,6 +1773,7 @@ export function ChannelChat({
                   channelId={channel.id}
                   disabled={
                     !channel.active ||
+                    Boolean(first) ||
                     historyLoading ||
                     agent.isRunning ||
                     turnsInFlight > 0 ||
@@ -1630,8 +1813,7 @@ export function ChannelChat({
                 value={runModel.value}
               />
             }
-            // Readiness is handled by `say`; deletion is the only disabled-chat state.
-            disabled={!channel.active}
+            disabled={!channel.active || Boolean(first)}
             messages={withVoiceChats(
               transcriptMessages(agent.messages, seed).map(shownAnswer),
               voiceArchive.entries,
@@ -1652,7 +1834,81 @@ export function ChannelChat({
                * it — and they are independent, so neither is an `else` for the other.
                */
               <>
+                {first && firstError ? (
+                  <Stack gap={2}>
+                    <ConversationReadError
+                      title="Couldn't confirm the first message."
+                      description={firstError.message}
+                      retryLabel={
+                        firstError.action === "check"
+                          ? "Check again"
+                          : "Try again"
+                      }
+                      retry={() => {
+                        setFirstError(null);
+                        setFirstAttempt((attempt) => attempt + 1);
+                      }}
+                      retrying={false}
+                    />
+
+                    <Stack direction="horizontal" gap={2} wrap="wrap">
+                      {first.start.draft.text && navigator.clipboard ? (
+                        <Button
+                          size="sm"
+                          label="Copy draft"
+                          onClick={() =>
+                            void navigator.clipboard
+                              .writeText(first.start.draft.text)
+                              .then(
+                                () => setCopyStatus("Draft copied."),
+                                () =>
+                                  setCopyStatus(
+                                    "Couldn't copy the draft. You can select it in the conversation.",
+                                  ),
+                              )
+                          }
+                        />
+                      ) : null}
+                      <Button
+                        size="sm"
+                        label="Discard browser copy"
+                        onClick={(event) => {
+                          const owner = user?.id;
+                          if (!owner) return;
+                          requestDraftDiscard({
+                            title: "Discard the copy saved in this browser?",
+                            description:
+                              "The message may have reached the Thread. This removes the saved copy from this browser and leaves any delivered message in the Thread.",
+                            confirmLabel: "Discard browser copy",
+                            pendingLabel: "Discarding copy…",
+                            failureMessage:
+                              "Couldn't remove the saved copy. Try again.",
+                            successMessage: "Browser copy discarded.",
+                            trigger: event.currentTarget,
+                            run: async () => {
+                              finishPendingStart(
+                                owner,
+                                first.id,
+                                channel.id,
+                                false,
+                              );
+                              setFirst(null);
+                            },
+                          });
+                        }}
+                      />
+                    </Stack>
+                    {copyStatus ? <p role="status">{copyStatus}</p> : null}
+                  </Stack>
+                ) : first ? (
+                  <p role="status">
+                    {turnsInFlight > 0
+                      ? "Sending first message…"
+                      : "Preparing first message…"}
+                  </p>
+                ) : null}
                 {/* What the person allowed for this conversation, each with Turn off. */}
+                {draftDiscard}
                 {channel.active ? (
                   <ConversationAllowances threadId={channel.threadId} />
                 ) : null}
@@ -1671,10 +1927,24 @@ export function ChannelChat({
                     }
                   }}
                 />
-                {voiceArchive.error && (
-                  <p className="pb-2 text-sm text-destructive" role="alert">
-                    Couldn’t load voice chats. Reload the page.
-                  </p>
+                {(voiceArchive.error ||
+                  (historyReadFailed && historyNotice)) && (
+                  <ConversationReadError
+                    title={
+                      voiceArchive.error && historyReadFailed
+                        ? "Couldn't load earlier messages or voice chats."
+                        : voiceArchive.error
+                          ? "Couldn't load voice chats."
+                          : (historyNotice ?? "Couldn't load earlier messages.")
+                    }
+                    description={
+                      voiceArchive.error
+                        ? "You can keep using this conversation."
+                        : undefined
+                    }
+                    retry={retryArchive}
+                    retrying={retryingHistory || voiceArchive.fetching}
+                  />
                 )}
                 {voiceContextNotice && (
                   <p
@@ -1684,7 +1954,7 @@ export function ChannelChat({
                     {voiceContextNotice}
                   </p>
                 )}
-                {historyNotice ? (
+                {historyNotice && !historyReadFailed ? (
                   <p
                     className="pb-2 text-sm text-muted-foreground"
                     role="status"

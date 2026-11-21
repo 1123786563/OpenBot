@@ -113,7 +113,10 @@ export type PolicyAuthoring = { source: "english"; text: string };
 export function saveActionPolicyMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
     mutationFn: (
-      next: ActionPolicy & { authoring?: PolicyAuthoring },
+      next: ActionPolicy & {
+        authoring?: PolicyAuthoring;
+        expected?: ActionPolicy;
+      },
     ): Promise<ActionPolicy> =>
       client("/api/computers/policy", "policy", {
         method: "PUT",

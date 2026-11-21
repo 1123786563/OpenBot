@@ -273,6 +273,15 @@ async function authenticate(account: Account) {
   return completeBrowserLogin(start, account);
 }
 
+async function waitForFreshLoginAfterSuspension(resumed: Response) {
+  expect(resumed.status).toBe(201);
+  const { effectiveAt } = await resumed.json();
+  const resumedAt = Date.parse(effectiveAt);
+  // The OIDC attempt is stamped by the wall clock.
+  while (Date.now() <= resumedAt) await Bun.sleep(1);
+  clockTime = undefined;
+}
+
 async function completeBrowserLogin(start: Response, account: Account) {
   expect(start.status).toBe(302);
   const authorization = new URL(start.headers.get("location") ?? "");
@@ -3063,10 +3072,7 @@ for (const reason of [
           }),
         ).toBe("refused");
       if (reason === "workspace_paused") {
-        const resumedWorkspace = await operate("resume");
-        expect(resumedWorkspace.status).toBe(201);
-        const { effectiveAt } = await resumedWorkspace.json();
-        clockTime = Math.max(Date.now(), Date.parse(effectiveAt) + 1);
+        await waitForFreshLoginAfterSuspension(await operate("resume"));
       }
       account.active = true;
       const restored =
@@ -3465,12 +3471,14 @@ async function restoreAutomation(
   owner: Awaited<ReturnType<typeof isolationOwner>>,
   cutoff: (typeof automationCutoffs)[number],
 ) {
-  if (cutoff === "workspace_paused")
-    expect(
-      (await operateAutomationWorkspace(owner.workspaceId, "resume")).status,
-    ).toBe(201);
+  if (cutoff === "workspace_paused") {
+    await waitForFreshLoginAfterSuspension(
+      await operateAutomationWorkspace(owner.workspaceId, "resume"),
+    );
+  } else {
+    clockTime = now() + 1;
+  }
   Object.assign(owner.account, { active: true });
-  clockTime = now() + 1;
   return cookie(await authenticate(owner.account), "__Host-openbot-personal=");
 }
 

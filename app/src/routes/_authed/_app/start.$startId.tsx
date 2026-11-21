@@ -1,123 +1,183 @@
-import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Navigate } from "@tanstack/react-router";
-import type { Message } from "@ag-ui/core";
-import { useLayoutEffect, useState } from "react";
+import { Banner } from "@astryxdesign/core/Banner";
+import { Stack } from "@astryxdesign/core/Stack";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import {
   ConversationIntro,
   ConversationIntroPlaceholder,
 } from "@/components/channels/conversation-intro";
+import {
+  ConversationLoading,
+  ConversationReadError,
+} from "@/components/channels/conversation-status";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { seedMessage } from "@/components/channels/transcript-messages";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { agentListQueryOptions, agentQueryOptions } from "@/lib/agents/queries";
-import {
-  readPendingStart,
-  startedChannelFor,
-} from "@/lib/channels/pending-start";
-import { cn } from "@/lib/utils";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { readPendingStart } from "@/lib/channels/pending-start";
+import { resumeConversationStart } from "@/lib/channels/start";
 
 export const Route = createFileRoute("/_authed/_app/start/$startId")({
   component: RouteComponent,
 });
 
-/**
- * The conversation a message from home is starting, before it exists.
- *
- * Drawn with the conversation screen's own parts, not a copy of them: its header, and the same
- * `ConversationView` the real one renders, holding the message as its first turn, busy, so the
- * "Thinking" line, the notification offer and the composer are the real ones in the real places,
- * with the Bot's intro above the message (or its footprint, while a Bot is still being picked). A
- * hand-drawn copy put the message 48px higher than the conversation lands it, without the intro
- * above it or the scrollbar's gutter beside it, so the message jumped down and sideways the moment
- * the conversation replaced it. Everything here is read-only: the composer is disabled
- * because there is no channel yet for anything typed to go to.
- */
 function RouteComponent() {
   const { startId } = Route.useParams();
-  // Read once: the start forgets itself when it is done, a beat before this screen is replaced, and
-  // that must not redirect home in between. The message is made once too, so it keeps its identity.
-  const [pending] = useState(() => readPendingStart(startId));
-  const [seed] = useState(() =>
-    pending ? seedMessage(pending.text, `pending-${startId}`) : null,
-  );
-  /*
-   * The Bot an `@` named, from the roster the home page already loaded, so its name, avatar and
-   * intro are on the first frame rather than after a request. A Bot the roster hides (reached by
-   * name, not listed) is fetched on its own.
-   */
-  const agentId = pending?.agentId ?? null;
+  const { data: user } = useQuery(currentUserQueryOptions());
+  return user ? (
+    <StartHandoff
+      owner={user.id}
+      startId={startId}
+      key={`${user.id}:${startId}`}
+    />
+  ) : null;
+}
+
+function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
+  const queryClient = useQueryClient();
+  const [start, setStart] = useState(() => readPendingStart(owner, startId));
+  const [attempt, setAttempt] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  const hasStart = start?.state === "pending";
+  useEffect(() => {
+    if (!hasStart) return;
+    let current = true;
+    void resumeConversationStart(queryClient, owner, startId, (next) => {
+      if (current) setStart(next);
+    }).then(
+      (next) => {
+        if (current) setStart(next);
+      },
+      (cause: unknown) => {
+        if (!current) return;
+        setStart(readPendingStart(owner, startId));
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Try again to continue with your saved message.",
+        );
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [attempt, hasStart, owner, queryClient, startId]);
+
+  const draft = hasStart ? start.draft : undefined;
+  const agentId =
+    draft?.recipient.kind === "direct" ? draft.recipient.agentId : undefined;
   const roster = useQuery(agentListQueryOptions());
-  const listed = agentId
-    ? roster.data?.find((agent) => agent.id === agentId)
-    : undefined;
+  const listed = roster.data?.find((agent) => agent.id === agentId);
   const fetched = useQuery({
     ...agentQueryOptions(agentId ?? ""),
     enabled: Boolean(agentId) && roster.data !== undefined && !listed,
   });
   const bot = listed ?? fetched.data;
-  /*
-   * The message goes in one commit after the intro, not with it. The conversation that replaces
-   * this lands its first message the same way: its seed is swapped for the thread's own copy, a new
-   * row, and the scroller pins a newly arrived message of the person's near the top, with the end of
-   * the intro showing above it. Drawn in the first commit, the message is not "arrived" but simply
-   * there, and sits under the whole intro, a hand's width lower than the conversation puts it. A
-   * layout effect, so both commits land before the first paint.
-   */
-  const [shown, setShown] = useState<readonly Message[]>([]);
-  useLayoutEffect(() => {
-    if (seed) setShown([seed]);
-  }, [seed]);
 
-  // Back to a placeholder whose conversation now exists: that conversation is what they came for.
-  const [started] = useState(() => startedChannelFor(startId));
-  if (started)
-    return (
+  if (start?.state === "finished") {
+    return start.group ? (
       <Navigate
-        params={{ channelId: started }}
+        params={{ channelId: start.channelId }}
+        replace
+        to="/group/$channelId"
+      />
+    ) : (
+      <Navigate
+        params={{ channelId: start.channelId }}
         replace
         to="/channel/$channelId"
       />
     );
-  // A reload, or a link: nothing is being started under this id, so there is nothing to show.
-  if (!pending || !seed) return <Navigate replace to="/" />;
+  }
+  if (
+    start?.state === "pending" &&
+    start.draft.recipient.kind === "direct" &&
+    start.progress.phase !== "creating"
+  ) {
+    return (
+      <Navigate
+        params={{ channelId: start.progress.channelId }}
+        replace
+        to="/channel/$channelId"
+      />
+    );
+  }
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <div
-        className="min-h-12 border-b border-border sticky top-0 flex flex-row flex-wrap items-center justify-between px-3 py-2 gap-2"
+    <Stack className="flex-1" minHeight={0}>
+      <Stack
+        direction="horizontal"
+        align="center"
+        justify="between"
+        paddingInline={3}
+        paddingBlock={2}
+        gap={3}
         data-slot="conversation-header"
       >
-        <div className="flex min-w-0 items-center gap-1.5">
+        <Stack
+          direction="horizontal"
+          align="center"
+          gap={2}
+          className="min-w-0"
+        >
           <SidebarToggle />
           {agentId ? (
             <ChannelAvatar participantIds={[agentId]} size={22} />
           ) : null}
-          <span
-            className={cn(
-              "min-w-0 text-sm tracking-tight truncate",
-              agentId ? null : "text-muted-foreground",
-            )}
-          >
-            {agentId ? (bot?.name ?? "") : "Picking a Bot"}
-          </span>
-        </div>
-      </div>
-      <ConversationView
-        busy
-        disabled
-        intro={
-          // The Bot's own intro when an `@` named it, and its footprint while one is being picked:
-          // the conversation that replaces this has an intro above the message either way.
-          bot ? (
-            <ConversationIntro agent={bot} />
-          ) : (
-            <ConversationIntroPlaceholder />
-          )
-        }
-        messages={shown}
-        onSubmit={() => undefined}
-      />
-    </div>
+          <h1 className="min-w-0 text-sm truncate">
+            {bot?.name ?? "New conversation"}
+          </h1>
+        </Stack>
+        <Link to="/">Back to Home</Link>
+      </Stack>
+      {start?.state === "pending" && draft ? (
+        <ConversationView
+          disabled
+          intro={
+            bot ? (
+              <ConversationIntro agent={bot} />
+            ) : (
+              <ConversationIntroPlaceholder />
+            )
+          }
+          messages={[seedMessage(draft.text, startId)]}
+          notice={
+            error ? (
+              <ConversationReadError
+                title="Couldn't continue the conversation."
+                description={error}
+                retry={() => {
+                  setError(null);
+                  setAttempt((value) => value + 1);
+                }}
+                retrying={false}
+              />
+            ) : (
+              <ConversationLoading
+                label={
+                  draft.recipient.kind === "route"
+                    ? "Picking a Bot…"
+                    : start.progress.phase === "creating"
+                      ? "Creating conversation…"
+                      : "Checking the first message…"
+                }
+              />
+            )
+          }
+          onSubmit={() => undefined}
+        />
+      ) : (
+        <Banner
+          status="warning"
+          title="This conversation start is unavailable."
+          description="Starts can be recovered in the browser where they were submitted."
+          endContent={<Link to="/channel/new">New conversation</Link>}
+        />
+      )}
+    </Stack>
   );
 }
