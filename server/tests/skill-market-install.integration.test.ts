@@ -1010,7 +1010,12 @@ test("a browser computer approval carries on with the market version that emitte
           throw new Error("Unexpected responsibility");
         },
       },
-      groupConversations: { continueWaiting: (_id, run) => run() },
+      groupConversations: {
+        continueWaiting: (_id, run) => run(),
+        pauseWaiting: async () => {
+          throw new Error("Unexpected context withdrawal");
+        },
+      },
       approvalContinuationRunner: async (input) => {
         const carry = input.continuation;
         if (!carry) throw new Error("Missing continuation");
@@ -1557,6 +1562,7 @@ for (const phase of [
           groupConversations: {
             continueWaiting: async (_id, run, reason) =>
               reason ? { replyText: reason } : run(),
+            pauseWaiting: never,
           },
           approvalContinuationRunner: never,
           channelStore: { recordActivity: never },

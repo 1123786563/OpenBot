@@ -360,7 +360,7 @@ test.each([
       channel.id,
       conversationBotId,
     );
-    let runId = crypto.randomUUID();
+    let runId: string = crypto.randomUUID();
     if (backgroundSource === "routine") {
       const routineStore = createRoutineStore(database);
       const routine = await routineStore.create({
