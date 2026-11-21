@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { createAuxiliaryModelCompleter } from "../src/billing/auxiliary-model";
+import {
+  createAuxiliaryModelCompleter,
+  type AuxiliaryModelBilling,
+} from "../src/billing/auxiliary-model";
 
 const scope = {
   source: "routing" as const,
@@ -60,9 +63,9 @@ test("an auxiliary call uses one stable managed operation and explicit user budg
       scope,
       step: "route",
     });
-    expect(calls[1]?.body.messages).toEqual([
-      { role: "user", content: "Pick a coworker" },
-    ]);
+    expect(
+      (calls[1]?.body as { messages?: unknown } | undefined)?.messages,
+    ).toEqual([{ role: "user", content: "Pick a coworker" }]);
   } finally {
     await server.stop(true);
   }
@@ -77,7 +80,13 @@ test("a platform-funded auxiliary call requires an explicit bounded budget", asy
     });
     await expect(
       complete("Pick", undefined, {
-        billing: { ...scope, step: "route", funding: { kind: "platform" } },
+        billing: {
+          ...scope,
+          step: "route",
+          funding: {
+            kind: "platform",
+          } as unknown as AuxiliaryModelBilling["funding"],
+        },
       }),
     ).rejects.toThrow("bounded platform budget");
   } finally {
