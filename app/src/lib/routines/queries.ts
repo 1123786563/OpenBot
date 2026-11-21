@@ -68,6 +68,7 @@ export const routineKeys = {
 /** One firing of a routine, scheduled or Run now. */
 export type RoutineRunRecord = {
   id: string;
+  conversationRunId?: string;
   status: "running" | "succeeded" | "failed" | "skipped" | "waiting";
   startedAt: string;
   finishedAt: string | null;

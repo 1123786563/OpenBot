@@ -203,9 +203,12 @@ function RoutineRuns({ routine }: { routine: RoutineRecord }) {
               <Link
                 className="text-muted-foreground underline underline-offset-2 hover:text-foreground"
                 params={{ channelId: routine.channel.id }}
+                search={{ runId: run.conversationRunId }}
                 to="/channel/$channelId"
               >
-                Open conversation
+                {run.conversationRunId
+                  ? "Open Conversation Run"
+                  : "Open conversation"}
               </Link>
             )}
             {run.error ? (

@@ -1515,6 +1515,7 @@ describe("the runner's read of one firing", () => {
     expect(await store.runContext(runId)).toEqual({
       routineId: routine.id,
       source: "schedule",
+      status: null,
       ownerUserId: owner.id,
       agentId,
       channelId: channel.id,

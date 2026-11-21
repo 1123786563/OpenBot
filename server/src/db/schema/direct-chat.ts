@@ -13,15 +13,25 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { intelligenceChannelMappings } from "./core";
+import { groupBotThreads } from "./group";
 
 export const directChatRuns = pgTable(
   "direct_chat_runs",
   {
-    threadId: text("thread_id")
-      .notNull()
+    threadId: text("thread_id").notNull(),
+    groupThreadId: text("group_thread_id").references(
+      () => groupBotThreads.threadId,
+      { onDelete: "cascade" },
+    ),
+    directThreadId: text("direct_thread_id")
+      .generatedAlwaysAs(
+        sql`case when group_thread_id is null then thread_id end`,
+      )
       .references(() => intelligenceChannelMappings.threadId, {
         onDelete: "cascade",
       }),
+    waitingApprovalId: text("waiting_approval_id"),
+    handoffFromBotId: text("handoff_from_bot_id"),
     id: text("id").notNull(),
     userMessageId: text("user_message_id").notNull(),
     prompt: text("prompt").notNull(),
@@ -44,6 +54,10 @@ export const directChatRuns = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.threadId, table.id] }),
+    check(
+      "direct_chat_runs_group_thread_check",
+      sql`${table.groupThreadId} is null or ${table.groupThreadId} = ${table.threadId}`,
+    ),
     uniqueIndex("direct_chat_runs_request_idx").on(
       table.threadId,
       table.userMessageId,

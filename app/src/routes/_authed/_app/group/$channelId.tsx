@@ -1,11 +1,12 @@
 import { learningEvidencePermission } from "@openbot/shared/direct-chat-learning";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { z } from "zod";
 import { BotPausedBanner } from "@/components/bot-profile/pause-banner";
 import { ChannelAvatar } from "@/components/channels/avatar";
+import { ConversationSurface } from "@/components/channels/conversation-surface";
 import { GroupChat } from "@/components/channels/group-chat";
 import { GroupPeopleButton } from "@/components/channels/group-people";
-import { ConversationSurface } from "@/components/channels/conversation-surface";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { useMarkOpenChannelRead } from "@/lib/channels/mark-read";
 import { channelQueryOptions } from "@/lib/channels/queries";
@@ -14,10 +15,12 @@ import { client, tryClient } from "@/lib/client";
 /** A conversation with several Bots. The channel is an ordinary channel with more than one Bot. */
 export const Route = createFileRoute("/_authed/_app/group/$channelId")({
   component: RouteComponent,
+  validateSearch: z.object({ runId: z.string().optional() }),
 });
 
 function RouteComponent() {
   const { channelId } = Route.useParams();
+  const { runId } = Route.useSearch();
   const navigate = Route.useNavigate();
   const channel = useQuery(channelQueryOptions(channelId));
   useMarkOpenChannelRead(channelId);
@@ -45,7 +48,7 @@ function RouteComponent() {
         <BotPausedBanner agentId={agentId} key={agentId} />
       ))}
       {/* Remounted per channel so one group's transcript never flashes in another. */}
-      <GroupChat channelId={channelId} key={channelId} />
+      <GroupChat channelId={channelId} key={channelId} runId={runId} />
     </ConversationSurface>
   );
 }

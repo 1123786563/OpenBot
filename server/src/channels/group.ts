@@ -23,7 +23,7 @@ import { createHash } from "node:crypto";
 import type { Message } from "@ag-ui/client";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
-import { and, asc, desc, eq, isNull, min, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, min, or, sql } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import type { HandoffCaps } from "../agents/handoff";
@@ -43,12 +43,14 @@ import {
   intelligenceChannelMappings,
   users,
 } from "../db/schema/core";
+import { directChatRuns } from "../db/schema/direct-chat";
 import { groupBotThreads, groupMessages } from "../db/schema/group";
 import { workItems } from "../db/schema/work";
 import { withdrawLearningEvidence } from "../learning/evidence";
 import { leadingSkillCommand } from "../plugins/picked-skill";
 import type { CheckPrivateShare } from "../proactive/private-share";
 import type { WorkQueue } from "../work/queue";
+import { stopDirectChatRun } from "./direct-chat-replay";
 import { CHANNEL_ACTIVITY_TOPIC } from "./events";
 
 export const GROUP_TURN_KIND = "group.turn";
@@ -105,6 +107,20 @@ export class GroupRefusedError extends Error {
 
 export type GroupStore = {
   list(channelId: string): Promise<GroupMessage[]>;
+  backgroundRuns?(
+    ownerUserId: string,
+    channelId: string,
+  ): Promise<
+    {
+      id: string;
+      agentId: string;
+      threadId: string;
+      status: "running" | "completed" | "failed";
+      externalOutcome: (typeof directChatRuns.$inferSelect)["externalOutcome"];
+      waitingApprovalId: string | null;
+      startedAt: Date;
+    }[]
+  >;
   thread(
     ownerUserId: string,
     channelId: string,
@@ -115,7 +131,7 @@ export type GroupStore = {
     turn: GroupTurn,
     agentId: string,
     threadId: string | null,
-  ): Promise<"run" | "done" | "unknown">;
+  ): Promise<"run" | "done" | "unknown" | "busy">;
   finish(
     id: string,
     text: string,
@@ -140,6 +156,7 @@ export type GroupStore = {
     channelId: string;
     agentId: string;
   } | null>;
+  hasMessage?(id: string): Promise<boolean>;
   /** Append a finished Bot line once; the same id again is a no-op. */
   append(row: {
     id: string;
@@ -181,6 +198,31 @@ export function createGroupStore(
         .limit(200);
       return rows.reverse();
     },
+    async backgroundRuns(ownerUserId, channelId) {
+      return database
+        .select({
+          id: directChatRuns.id,
+          agentId: groupBotThreads.agentId,
+          threadId: groupBotThreads.threadId,
+          status: directChatRuns.status,
+          externalOutcome: directChatRuns.externalOutcome,
+          waitingApprovalId: directChatRuns.waitingApprovalId,
+          startedAt: directChatRuns.startedAt,
+        })
+        .from(directChatRuns)
+        .innerJoin(
+          groupBotThreads,
+          eq(groupBotThreads.threadId, directChatRuns.groupThreadId),
+        )
+        .where(
+          and(
+            eq(groupBotThreads.channelId, channelId),
+            eq(groupBotThreads.ownerUserId, ownerUserId),
+          ),
+        )
+        .orderBy(desc(directChatRuns.startedAt))
+        .limit(250);
+    },
     async thread(ownerUserId, channelId, agentId) {
       const scope = and(
         eq(groupBotThreads.ownerUserId, ownerUserId),
@@ -205,9 +247,50 @@ export function createGroupStore(
     },
     async start(turn, agentId, threadId) {
       const id = `${turn.messageId}:${agentId}`;
-      const [created] = await database
-        .insert(groupMessages)
-        .values({
+      return database.transaction(async (tx) => {
+        await lockGroupMembership(tx, {
+          channelId: turn.channelId,
+          userId: turn.ownerUserId,
+        });
+        const [existing] = await tx
+          .select({ status: groupMessages.status })
+          .from(groupMessages)
+          .where(eq(groupMessages.id, id));
+        if (existing) return existing.status === "running" ? "unknown" : "done";
+        if (threadId) {
+          const [blocked] = await tx
+            .select({ id: directChatRuns.id })
+            .from(directChatRuns)
+            .where(
+              and(
+                eq(directChatRuns.groupThreadId, threadId),
+                or(
+                  eq(directChatRuns.status, "running"),
+                  eq(directChatRuns.externalOutcome, "unknown"),
+                ),
+              ),
+            )
+            .limit(1);
+          if (blocked) return "busy";
+          const [group] = await tx
+            .select({ id: groupMessages.id })
+            .from(groupMessages)
+            .where(
+              and(
+                eq(groupMessages.threadId, threadId),
+                or(
+                  eq(groupMessages.status, "running"),
+                  and(
+                    eq(groupMessages.status, "waiting"),
+                    sql`${groupMessages.details}->'privateShare' is null`,
+                  ),
+                ),
+              ),
+            )
+            .limit(1);
+          if (group) return "busy";
+        }
+        await tx.insert(groupMessages).values({
           id,
           channelId: turn.channelId,
           ownerUserId: turn.ownerUserId,
@@ -215,16 +298,9 @@ export function createGroupStore(
           threadId,
           text: "",
           status: "running",
-        })
-        .onConflictDoNothing()
-        .returning({ id: groupMessages.id });
-      if (created) return "run";
-      const [row] = await database
-        .select()
-        .from(groupMessages)
-        .where(eq(groupMessages.id, id))
-        .limit(1);
-      return row?.status === "running" ? "unknown" : "done";
+        });
+        return "run";
+      });
     },
     async finish(id, text, status, details = {}) {
       await database
@@ -295,6 +371,13 @@ export function createGroupStore(
         .limit(1);
       return row ?? null;
     },
+    async hasMessage(id) {
+      const [row] = await database
+        .select({ id: groupMessages.id })
+        .from(groupMessages)
+        .where(eq(groupMessages.id, id));
+      return Boolean(row);
+    },
     async append(row) {
       const created = await database
         .insert(groupMessages)
@@ -345,6 +428,25 @@ export function createGroupStore(
               eq(channelMemberships.userId, userId),
             ),
           );
+        const openRuns = await tx
+          .select({
+            threadId: directChatRuns.threadId,
+            runId: directChatRuns.id,
+          })
+          .from(directChatRuns)
+          .innerJoin(
+            groupBotThreads,
+            eq(groupBotThreads.threadId, directChatRuns.groupThreadId),
+          )
+          .where(
+            and(
+              eq(groupBotThreads.channelId, channelId),
+              eq(groupBotThreads.ownerUserId, userId),
+              eq(directChatRuns.status, "running"),
+            ),
+          );
+        for (const run of openRuns)
+          await stopDirectChatRun(tx, run, "access_revoked", false);
         await withdrawLearningEvidence(tx, owner, {
           kind: "conversation",
           id: channelId,
@@ -855,6 +957,7 @@ export function createGroupConversations(deps: {
       ? await deps.store.thread(turn.ownerUserId, turn.channelId, agentId)
       : null;
     const started = await deps.store.start(turn, agentId, threadId);
+    if (started === "busy") return false;
     if (started === "done") return;
     if (started === "unknown") {
       await deps.store.finish(
@@ -1139,7 +1242,7 @@ export function createGroupConversations(deps: {
         // Holding it for the owner's permission must not drop that handoff.
         const bots = await orderedRoster(row.ownerUserId, row.channelId);
         const bot = bots?.find((candidate) => candidate.id === agentId);
-        if (bots && bot)
+        if (bots && bot && !row.details.backgroundRun)
           await relay(shown, bot, row.id, held.text, bots, runIdFor(row.id));
         return { replyText: held.text };
       }
@@ -1198,15 +1301,19 @@ export function createGroupConversations(deps: {
       actorId: string;
       agentId: string;
       text: string;
+      conversationRunId?: string;
     }): Promise<boolean> {
       const thread = await deps.store.threadRow(input.threadId);
       if (!thread || thread.ownerUserId !== input.actorId) return false;
       const bots = await orderedRoster(thread.ownerUserId, thread.channelId);
       if (!bots?.some((bot) => bot.id === thread.agentId)) return true;
-      const id = `handoff:${createHash("sha256")
-        .update(`${input.threadId}\n${input.agentId}\n${input.text}`)
-        .digest("hex")
-        .slice(0, 32)}`;
+      const id =
+        input.conversationRunId ??
+        `handoff:${createHash("sha256")
+          .update(`${input.threadId}\n${input.agentId}\n${input.text}`)
+          .digest("hex")
+          .slice(0, 32)}`;
+      if (await deps.store.hasMessage?.(id)) return true;
       const gate = await shareGate({
         ownerUserId: thread.ownerUserId,
         channelId: thread.channelId,
@@ -1216,7 +1323,13 @@ export function createGroupConversations(deps: {
         runId: runIdFor(id),
         text: input.text,
       });
-      const relayed = { via: "message_bot", answeredBy: input.agentId };
+      const relayed = {
+        ...(input.conversationRunId && { backgroundRun: true }),
+        ...(input.agentId !== thread.agentId && {
+          via: "message_bot",
+          answeredBy: input.agentId,
+        }),
+      };
       if (gate.status !== "allowed") {
         await deps.store.append({
           id,
@@ -1262,8 +1375,22 @@ export function createGroupConversations(deps: {
       const bots = await roster(owner, channel);
       const messages = await deps.store.list(channel);
       const people = await deps.store.people(channel);
+      const published = new Set(messages.map(({ id }) => id));
+      const visibleBots = new Set(bots.map(({ id }) => id));
+      const backgroundRuns = (
+        (await deps.store.backgroundRuns?.(owner, channel)) ?? []
+      )
+        .filter(
+          ({ id, agentId }) => !published.has(id) && visibleBots.has(agentId),
+        )
+        .map(({ waitingApprovalId, ...run }) => ({
+          ...run,
+          waitingForApproval:
+            run.status === "running" && waitingApprovalId !== null,
+        }));
       return {
         bots,
+        backgroundRuns,
         people: people.map((person, index) => ({
           ...person,
           // The first member made the group, and is the one who may take others out of it.
@@ -1351,7 +1478,17 @@ export function createGroupConversations(deps: {
             }))
           )
             throw new Error("The group turn lease was lost.");
-          await runBot(turn, agentId);
+          if ((await runBot(turn, agentId)) === false) {
+            await deps.queue.release({
+              kind: item.kind,
+              key: item.key,
+              owner: deps.owner,
+              delayMs: 10_000,
+              reason: "This Bot's conversation has an unfinished Run.",
+              uncounted: true,
+            });
+            return true;
+          }
         }
         await deps.queue.finish({
           kind: item.kind,
@@ -1359,6 +1496,14 @@ export function createGroupConversations(deps: {
           owner: deps.owner,
         });
       } catch (error) {
+        if (error instanceof GroupNotFoundError) {
+          await deps.queue.finish({
+            kind: item.kind,
+            key: item.key,
+            owner: deps.owner,
+          });
+          return true;
+        }
         await deps.queue.release({
           kind: item.kind,
           key: item.key,

@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { IntelligenceAgentRunner } from "@copilotkit/runtime/v2";
 import { workOwner } from "@openbot/shared/work-owner";
 import { eq, inArray } from "drizzle-orm";
 import { type AuditStore, handoffInitiator } from "../audit";
+import { BackgroundConversationBusy } from "../channels/direct-chat";
 import type { GroupConversations } from "../channels/group";
 import type { ChannelStore } from "../channels/routes";
 import type { ThreadIdentity } from "../channels/thread-identity";
@@ -28,8 +29,12 @@ import {
   type WorkOfferedListener,
 } from "../work/queue";
 import { HANDOFF_KIND } from "./handoff";
-import { createHandoffDelivery } from "./handoff-delivery";
-import { createHandoffRunner, type HandoffWork } from "./handoff-runner";
+import { createHandoffDelivery, ThreadBusyError } from "./handoff-delivery";
+import {
+  createHandoffRunner,
+  type HandoffDelivery,
+  type HandoffWork,
+} from "./handoff-runner";
 import { signHandoffDeliveryRun } from "./handoff-signing";
 import type { AgentActor } from "./profile-types";
 import { serverTurnAdmission } from "./turn-admission";
@@ -93,6 +98,63 @@ export function botNamesFrom(database: Database) {
     );
 }
 
+export function createOpenBotHandoffDelivery(options: {
+  runBackground: NonNullable<
+    ReturnType<typeof mountCopilotRuntime>["runBackground"]
+  >;
+  actorFor: (personId: string) => Promise<AgentActor>;
+  mayAddress: (fromBotId: string, toBotId: string) => Promise<boolean>;
+  channelStore: ChannelStore;
+}): HandoffDelivery {
+  return {
+    async deliver({ work, message, shown, key }) {
+      const runId = createHash("sha256").update(key).digest("hex");
+      const conversationBotId = work.answerIn ? work.toBotId : work.fromBotId;
+      const threadId = work.answerIn ?? work.threadId;
+      const authorize = async () => {
+        const actor = await options.actorFor(work.actorId).catch(() => null);
+        if (
+          !actor ||
+          (!work.answerIn &&
+            !(await options.mayAddress(work.fromBotId, work.toBotId)))
+        )
+          return null;
+        return actor;
+      };
+      const result = await options
+        .runBackground({
+          source: "handoff",
+          id: runId,
+          threadId,
+          conversationBotId,
+          personId: work.actorId,
+          agentId: work.toBotId,
+          prompt: message,
+          shown: shown ?? (work.answerIn ? "" : work.task),
+          ...(work.answerIn &&
+            work.answer !== undefined && {
+              literalAnswer: { botId: work.fromBotId, text: work.answer },
+            }),
+          authorize,
+          initiator: handoffInitiator(work.fromBotId, work.initiator),
+          ...(!work.answerIn && { handoffFromBotId: work.fromBotId }),
+        })
+        .catch((error: unknown) => {
+          if (error instanceof BackgroundConversationBusy) {
+            throw new ThreadBusyError(error.message);
+          }
+          throw error;
+        });
+      await options.channelStore.signalWork(threadId).catch(() => {});
+      return {
+        answer: result.replyText,
+        conversationRunId: runId,
+        relayRequired: result.shared,
+      };
+    },
+  };
+}
+
 /**
  * Handing work between Bots, started on this replica: the runner that claims hops, the delivery
  * that runs the addressed Bot, and the loop and queue wake-up that drive them.
@@ -106,6 +168,7 @@ export async function startHandoffDelivery(deps: {
   database: Database;
   bootAuditStore: AuditStore;
   actorFor: (ownerUserId: string) => Promise<AgentActor>;
+  mayAddress: (fromBotId: string, toBotId: string) => Promise<boolean>;
   copilotRuntime: ReturnType<typeof mountCopilotRuntime>;
   threadIdentity: ThreadIdentity;
   groupConversations: GroupConversations;
@@ -135,101 +198,109 @@ export async function startHandoffDelivery(deps: {
     // The asking conversation, told what it is waiting on once the queue has moved for a hop.
     onSettled: (work) => channelStore.signalWork(work.threadId),
     answerGone: answerGoneFrom(database),
-    delivery: createHandoffDelivery({
-      ...(productTelemetry
-        ? {
-            prepareRunInput: (input, work) =>
-              productHandoffInput(
-                productTelemetry,
-                input,
-                work.actorId,
-                work.runId,
-              ),
-            onKnownStop: productTelemetry.stopKnown,
-            analyticsContextFor: (run, work) =>
-              productHandoffAnalyticsContext(
-                productTelemetry,
-                run,
-                work.actorId,
-                work.runId,
-              ),
-          }
-        : {}),
-      admission: serverTurnAdmission,
-      /*
-       * Built as the person, WITH THEIR ROLE. The desk resolved it to decide the hop was allowed; a
-       * delivery that then rebuilt them as an ordinary user could not find the Bot the desk had just
-       * agreed to, and the person was told it never answered.
-       */
-      agentFor: async ({ actorId, botId, fromBotId, initiator }) => {
-        const actor = await actorFor(actorId).catch(() => null);
-        if (!actor) {
-          throw new Error(
-            "who this is for could not be confirmed, so the Bot was not run",
-          );
-        }
-        return copilotRuntime.agentFor({
-          actor,
-          botId,
-          initiator: handoffInitiator(fromBotId, initiator),
-        });
-      },
-      history: copilotRuntime.history,
-      lock: copilotRuntime.threadLock,
-      recordStopFor: copilotRuntime.stopRecorder,
-      /*
-       * A scratch thread of the addressed Bot's own, one per hop.
-       *
-       * An Intelligence thread has exactly one agent, so a second Bot cannot answer inside the first
-       * Bot's conversation however it asks. Its turn runs here instead, unmapped to any channel, and
-       * what it said comes back to the conversation that asked through the relay, written there
-       * word for word as its own message. Minted with the deployment's own identity, like every
-       * thread this deployment starts.
-       */
-      mintThreadId: () => threadIdentity.mint(),
-      /*
-       * The roster, told that a relayed answer landed. The delivery knows only the thread it ran
-       * in; this resolves which channel shows that thread — a scratch thread maps to nothing and
-       * announces nowhere, which is the point of a scratch thread.
-       */
-      announce: async (input) => {
-        const [mapped] = await database
-          .select({ channelId: intelligenceChannelMappings.channelId })
-          .from(intelligenceChannelMappings)
-          .where(eq(intelligenceChannelMappings.threadId, input.threadId))
-          .limit(1);
-        // A Bot's group thread maps to no channel; its answer goes to the shared transcript, marked
-        // as the answering Bot's rather than the thread's own.
-        if (!mapped) {
-          await groupConversations.announceHandoff({
-            threadId: input.threadId,
-            actorId: input.actorId,
-            agentId: input.answeredBy ?? input.agentId,
-            text: input.text,
-          });
-          return;
-        }
-        const actor = await actorFor(input.actorId).catch(() => null);
-        if (!actor) return;
-        await channelStore.recordActivity(actor, mapped.channelId, {
-          text: input.text,
-          agentId: input.agentId,
-          at: new Date(),
-        });
-      },
-      // The asking conversation shown as working while a hop runs in it. Keyed by thread, resolved
-      // to its channel by the store; a scratch thread maps to none and signals nowhere.
-      setBusy: (input) => channelStore.signalBusy(input.threadId, input.busy),
-      // Who answered, for another Bot's answer in the conversation a forward hop quotes.
-      botNames: botNamesFrom(database),
-      newRunId: () => randomUUID(),
-      // The same address and the same token the runtime uses. Assembling either from configuration
-      // produced a runner every join was refused for, because the thread's active run is a lock the
-      // platform issues rather than something an API key can claim.
-      runner: new IntelligenceAgentRunner(
-        copilotRuntime.runnerConnection(),
-      ) as never,
-    }),
+    delivery: copilotRuntime.runBackground
+      ? createOpenBotHandoffDelivery({
+          runBackground: copilotRuntime.runBackground,
+          actorFor,
+          mayAddress: deps.mayAddress,
+          channelStore,
+        })
+      : createHandoffDelivery({
+          ...(productTelemetry
+            ? {
+                prepareRunInput: (input, work) =>
+                  productHandoffInput(
+                    productTelemetry,
+                    input,
+                    work.actorId,
+                    work.runId,
+                  ),
+                onKnownStop: productTelemetry.stopKnown,
+                analyticsContextFor: (run, work) =>
+                  productHandoffAnalyticsContext(
+                    productTelemetry,
+                    run,
+                    work.actorId,
+                    work.runId,
+                  ),
+              }
+            : {}),
+          admission: serverTurnAdmission,
+          /*
+           * Built as the person, WITH THEIR ROLE. The desk resolved it to decide the hop was allowed; a
+           * delivery that then rebuilt them as an ordinary user could not find the Bot the desk had just
+           * agreed to, and the person was told it never answered.
+           */
+          agentFor: async ({ actorId, botId, fromBotId, initiator }) => {
+            const actor = await actorFor(actorId).catch(() => null);
+            if (!actor) {
+              throw new Error(
+                "who this is for could not be confirmed, so the Bot was not run",
+              );
+            }
+            return copilotRuntime.agentFor({
+              actor,
+              botId,
+              initiator: handoffInitiator(fromBotId, initiator),
+            });
+          },
+          history: copilotRuntime.history,
+          lock: copilotRuntime.threadLock,
+          recordStopFor: copilotRuntime.stopRecorder,
+          /*
+           * A scratch thread of the addressed Bot's own, one per hop.
+           *
+           * An Intelligence thread has exactly one agent, so a second Bot cannot answer inside the first
+           * Bot's conversation however it asks. Its turn runs here instead, unmapped to any channel, and
+           * what it said comes back to the conversation that asked through the relay, written there
+           * word for word as its own message. Minted with the deployment's own identity, like every
+           * thread this deployment starts.
+           */
+          mintThreadId: () => threadIdentity.mint(),
+          /*
+           * The roster, told that a relayed answer landed. The delivery knows only the thread it ran
+           * in; this resolves which channel shows that thread — a scratch thread maps to nothing and
+           * announces nowhere, which is the point of a scratch thread.
+           */
+          announce: async (input) => {
+            const [mapped] = await database
+              .select({ channelId: intelligenceChannelMappings.channelId })
+              .from(intelligenceChannelMappings)
+              .where(eq(intelligenceChannelMappings.threadId, input.threadId))
+              .limit(1);
+            // A Bot's group thread maps to no channel; its answer goes to the shared transcript, marked
+            // as the answering Bot's rather than the thread's own.
+            if (!mapped) {
+              await groupConversations.announceHandoff({
+                threadId: input.threadId,
+                actorId: input.actorId,
+                agentId: input.answeredBy ?? input.agentId,
+                text: input.text,
+              });
+              return;
+            }
+            const actor = await actorFor(input.actorId).catch(() => null);
+            if (!actor) return;
+            await channelStore.recordActivity(actor, mapped.channelId, {
+              text: input.text,
+              agentId: input.agentId,
+              at: new Date(),
+            });
+          },
+          // The asking conversation shown as working while a hop runs in it. Keyed by thread, resolved
+          // to its channel by the store; a scratch thread maps to none and signals nowhere.
+          setBusy: (input) =>
+            channelStore.signalBusy(input.threadId, input.busy),
+          // Who answered, for another Bot's answer in the conversation a forward hop quotes.
+          botNames: botNamesFrom(database),
+          newRunId: () => randomUUID(),
+          // The same address and the same token the runtime uses. Assembling either from configuration
+          // produced a runner every join was refused for, because the thread's active run is a lock the
+          // platform issues rather than something an API key can claim.
+          runner: new IntelligenceAgentRunner(
+            copilotRuntime.runnerConnection(),
+          ) as never,
+        }),
   });
 
   const sweep = async () => {

@@ -493,9 +493,11 @@ function authoredComponents(): ReadonlySet<string> {
 export function ChannelChat({
   channel,
   runtimeAgentId,
+  focusRunId,
 }: {
   channel: AgentChannel;
   runtimeAgentId: string;
+  focusRunId?: string;
 }) {
   // The core attaches the frontend tool registry; direct agent runs do not.
   const { copilotkit } = useCopilotKit();
@@ -610,6 +612,7 @@ export function ChannelChat({
   >("ready");
   const [historyReadFailed, setHistoryReadFailed] = useState(false);
   const [storedRuns, setStoredRuns] = useState<StoredRun[]>();
+  const focusedRun = storedRuns?.find((run) => run.id === focusRunId);
   const [accessEnded, setAccessEnded] = useState(false);
   const durableChat = storedRuns !== undefined;
   const activeRun = storedRuns?.find((run) => run.status === "running");
@@ -1667,7 +1670,8 @@ export function ChannelChat({
           />
           <ConversationView
             // Remounted per conversation, so opening one puts the caret in its composer once.
-            autoFocus
+            autoFocus={!focusRunId}
+            focusMessageId={focusedRun?.userMessageId}
             threadId={channel.threadId}
             // The clock beside `+`: a routine for the Bot this conversation talks to, posting here.
             routine={
