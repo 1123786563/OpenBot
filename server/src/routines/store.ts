@@ -117,6 +117,7 @@ export type Routine = {
   title: string | null;
   /** The goal it runs, when it was made for one or its firing ran one. See `routineRunsGoal`. */
   goalId: string | null;
+  budgetId: string | null;
   cron: string;
   timezone: string;
   enabled: boolean;
@@ -186,6 +187,7 @@ export type RoutineInput = {
    * id the instruction names, if any. Never found from a title: see `routineRunsGoal`.
    */
   goalId?: string;
+  budgetId?: string;
   cron: string;
   timezone?: string;
 };
@@ -204,6 +206,7 @@ export type RoutineRunContext = {
   agentId: string;
   channelId: string;
   instruction: string;
+  budgetId?: string | null;
   /**
    * Read at the moment of running, so a routine switched off after its firing was dispatched (or a
    * Run now that raced a pause) is closed as skipped instead of run. Paused never runs.
@@ -360,6 +363,7 @@ function toRoutine(row: RoutineRow): Routine {
     instruction: row.instruction,
     title: row.title,
     goalId: row.goalId,
+    budgetId: row.budgetId,
     cron: row.cron,
     timezone: row.timezone,
     enabled: row.enabled,
@@ -885,6 +889,7 @@ export function createRoutineStore(database: Database): RoutineStore {
               instruction,
               title,
               goalId: goal?.id ?? null,
+              budgetId: input.budgetId ?? null,
               cron: input.cron,
               timezone,
               nextRunAt,
@@ -1170,6 +1175,7 @@ export function createRoutineStore(database: Database): RoutineStore {
           agentId: routines.agentId,
           channelId: routines.channelId,
           instruction: routines.instruction,
+          budgetId: routines.budgetId,
           enabled: routines.enabled,
         })
         .from(routineRuns)

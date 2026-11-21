@@ -21,6 +21,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { IDBFactory } from "fake-indexeddb";
 import { ChannelChat } from "@/components/channels/channel-chat";
 import { STARTER_SUGGESTIONS } from "@/components/starter-tour/suggestions";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
@@ -28,6 +29,7 @@ import { type AgentChannel, channelQueryOptions } from "@/lib/channels/queries";
 import { queryClient } from "@/query-client";
 import { Route as ChannelNewRoute } from "@/routes/_authed/_app/channel/new";
 import { Route as HomeRoute } from "@/routes/_authed/_app/index";
+import { Route as StartRoute } from "@/routes/_authed/_app/start.$startId";
 import { settleReactWork } from "./settle-react-work";
 
 /** Real home/new routes hand the selected starter prompt to real ChannelChat and its HTTP run. */
@@ -68,17 +70,17 @@ const channel: AgentChannel = {
 /** The run inputs that actually left the browser, in order. */
 let runs: RunAgentInput[] = [];
 let runPaths: string[] = [];
-let creates: { agentIds: string[] }[] = [];
+let creates: { agentIds: string[]; requestId: string }[] = [];
 let chosen: { agentId?: string; text?: string }[] = [];
 let preferences: { starterTourChannelId?: string } = {};
 let failModel = false;
 let modelSaveGate: Promise<void> | undefined;
 let failRun = false;
 let runModels: (string | null)[] = [];
-let deletes = 0;
 let saved = { model: null as string | null, effort: null as string | null };
 
 let originalFetch: typeof fetch;
+let originalIndexedDb: IDBFactory;
 
 function sse(events: unknown[]) {
   return new NativeResponse(
@@ -98,6 +100,8 @@ beforeAll(() => {
   Range.prototype.getBoundingClientRect = () =>
     ({ ...caret, right: 9, bottom: 24, toJSON: () => caret }) as DOMRect;
   originalFetch = globalThis.fetch;
+  originalIndexedDb = globalThis.indexedDB;
+  globalThis.indexedDB = new IDBFactory();
   globalThis.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = new URL(
@@ -135,9 +139,13 @@ beforeAll(() => {
         return NativeResponse.json({ channels: [], nextCursor: null });
       if (url.pathname === "/api/channels" && method === "POST") {
         const body = JSON.parse(String(init?.body));
-        creates.push(body);
-        channel.id = `tour-channel-${creates.length}`;
-        channel.threadId = `tour-thread-${creates.length}`;
+        const existing = creates.findIndex(
+          ({ requestId }) => requestId === body.requestId,
+        );
+        if (existing < 0) creates.push(body);
+        const number = existing < 0 ? creates.length : existing + 1;
+        channel.id = `tour-channel-${number}`;
+        channel.threadId = `tour-thread-${number}`;
         channel.agentIds = body.agentIds;
         preferences.starterTourChannelId ??= channel.id;
         return NativeResponse.json({ channel }, { status: 201 });
@@ -177,18 +185,6 @@ beforeAll(() => {
           saved = JSON.parse(String(init?.body));
         }
         return NativeResponse.json(saved);
-      }
-      if (
-        url.pathname === `/api/channels/${channel.id}` &&
-        method === "DELETE"
-      ) {
-        deletes++;
-        if (
-          url.searchParams.get("discardFailedStart") === "true" &&
-          preferences.starterTourChannelId === channel.id
-        )
-          preferences = {};
-        return new NativeResponse(null, { status: 204 });
       }
       if (url.pathname === "/api/agents")
         return NativeResponse.json({ agents: [bot] });
@@ -267,13 +263,15 @@ afterEach(() => {
   modelSaveGate = undefined;
   failRun = false;
   runModels = [];
-  deletes = 0;
   saved = { model: null, effort: null };
 });
 
 afterAll(async () => {
   await settleReactWork();
   globalThis.fetch = originalFetch;
+  if (originalIndexedDb === undefined)
+    Reflect.deleteProperty(globalThis, "indexedDB");
+  else globalThis.indexedDB = originalIndexedDb;
   GlobalRegistrator.unregister();
 });
 
@@ -312,9 +310,17 @@ const channelRoute = createRoute({
   getParentRoute: () => appRoute,
   component: ChannelScreen,
 });
+const startRouteOptions = {
+  id: "/start/$startId",
+  path: "/start/$startId",
+  getParentRoute: () => appRoute,
+  component: StartRoute.options.component,
+};
+const testStartRoute = StartRoute.update(startRouteOptions);
 const routeTree = rootRoute.addChildren([
   authedRoute.addChildren([
     appRoute.addChildren([
+      testStartRoute,
       testChannelNewRoute,
       channelRoute,
       createRoute({
@@ -349,7 +355,9 @@ for (const path of ["/", `/channel/new?agent=${BOT}`]) {
       await view.findByRole("button", { name: STARTER_SUGGESTIONS[0].title }),
     );
     await waitFor(() => expect(runs).toHaveLength(1), { timeout: 5000 });
-    expect(creates).toEqual([{ agentIds: [BOT] }]);
+    expect(creates).toEqual([
+      { agentIds: [BOT], requestId: expect.any(String) },
+    ]);
     expect(chosen[0]?.agentId).toBe(BOT);
     expect(
       runs[0]?.messages.find((message) => message.role === "user")?.content,
@@ -396,7 +404,7 @@ for (const path of ["/", `/channel/new?agent=${BOT}`]) {
   });
 }
 
-test("new conversation model save failure discards the claim and lets the starter task retry", async () => {
+test("new conversation model save failure can retry on the saved conversation", async () => {
   const view = draw(`/channel/new?agent=${BOT}`);
   const user = userEvent.setup({ document });
   await user.click(
@@ -411,17 +419,15 @@ test("new conversation model save failure discards the claim and lets the starte
   fireEvent.click(
     await view.findByRole("button", { name: STARTER_SUGGESTIONS[0].title }),
   );
-  await waitFor(() => expect(deletes).toBe(1));
-  expect(runs).toHaveLength(0);
   await view.findByText("Model save failed. Try again.");
-  const retry = await view.findByRole("button", {
-    name: STARTER_SUGGESTIONS[0].title,
-  });
+  expect(runs).toHaveLength(0);
+  const retry = await view.findByRole("button", { name: /retry|try again/i });
   failModel = false;
   fireEvent.click(retry);
   await waitFor(() => expect(runs).toHaveLength(1), { timeout: 5000 });
-  expect(creates).toHaveLength(2);
-  expect(preferences.starterTourChannelId).toBe("tour-channel-2");
+  expect(creates).toHaveLength(1);
+  expect(preferences.starterTourChannelId).toBe("tour-channel-1");
+  expect(runModels).toEqual(["alternate-model"]);
   expect(
     runs[0]?.messages.find((message) => message.role === "user")?.content,
   ).toBe(STARTER_SUGGESTIONS[0].message);

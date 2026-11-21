@@ -39,6 +39,7 @@ export const botTasks = pgTable(
     channelId: text("channel_id")
       .notNull()
       .references(() => channels.id, { onDelete: "cascade" }),
+    budgetId: text("budget_id"),
     suggestionId: text("suggestion_id").references(
       () => proactiveSuggestions.id,
       { onDelete: "set null" },

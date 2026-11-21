@@ -1255,14 +1255,15 @@ mod tests {
         std::fs::write(images_path(&root), &images).unwrap();
         assert!(needs_fetch(&root, "v0.0.7"));
 
+        let repository = crate::deployment_release::compiled_distribution().repository;
+        let source_url = format!("https://github.com/{repository}/archive/refs/tags/v0.0.7.tar.gz");
+        let manifest_url = format!(
+            "https://github.com/{repository}/releases/download/v0.0.7/container-images.json"
+        );
         let get = |url: &str| -> Result<Vec<u8>, String> {
             match url {
-                "https://github.com/CopilotKit/OpenBot/archive/refs/tags/v0.0.7.tar.gz" => {
-                    Ok(tarball.clone())
-                }
-                "https://github.com/CopilotKit/OpenBot/releases/download/v0.0.7/container-images.json" => {
-                    Ok(images.clone())
-                }
+                url if url == source_url => Ok(tarball.clone()),
+                url if url == manifest_url => Ok(images.clone()),
                 other => Err(format!("unexpected download {other}")),
             }
         };
@@ -1307,14 +1308,16 @@ mod tests {
         );
         let published: Vec<&str> = IMAGE_VARIABLES.iter().map(|(name, _)| *name).collect();
         let images = serde_json::to_vec(&manifest(&published)).unwrap();
+        let repository = crate::deployment_release::compiled_distribution().repository;
+        let source_url =
+            format!("https://github.com/{repository}/archive/refs/tags/v0.0.16.tar.gz");
+        let manifest_url = format!(
+            "https://github.com/{repository}/releases/download/v0.0.16/container-images.json"
+        );
         let get = |url: &str| -> Result<Vec<u8>, String> {
             match url {
-                "https://github.com/CopilotKit/OpenBot/archive/refs/tags/v0.0.16.tar.gz" => {
-                    Ok(tarball.clone())
-                }
-                "https://github.com/CopilotKit/OpenBot/releases/download/v0.0.16/container-images.json" => {
-                    Ok(images.clone())
-                }
+                url if url == source_url => Ok(tarball.clone()),
+                url if url == manifest_url => Ok(images.clone()),
                 other => Err(format!("unexpected download {other}")),
             }
         };

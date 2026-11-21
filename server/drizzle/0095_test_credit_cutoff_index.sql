@@ -1,0 +1,1 @@
+CREATE INDEX "test_credit_operations_due_cutoff_idx" ON "test_credit_operations" USING btree ("dispatched_at","account_id","id") WHERE "test_credit_operations"."state" = 'pending' AND "test_credit_operations"."cutoff_hold" IS NULL;

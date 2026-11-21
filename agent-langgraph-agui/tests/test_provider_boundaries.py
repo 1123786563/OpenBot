@@ -344,8 +344,10 @@ async def test_anthropic_selection_reaches_anthropic_boundary_without_openai_key
         headers.get("x-api-key") == "sk-ant-openbot-ci"
         or headers.get("authorization") == "Bearer sk-ant-openbot-ci"
     )
-    with Anthropic(api_key="sk-ant-openbot-ci") as sdk:
-        assert headers["anthropic-version"] == sdk.default_headers["anthropic-version"]
+    # The Messages API version is part of the wire contract. Keep it stable when the SDK
+    # changes its client default so an unrelated dependency release cannot alter provider
+    # routing semantics.
+    assert headers["anthropic-version"] == "2023-06-01"
     assert captured[0]["body"]["model"] == request_model
     assert captured[0]["body"]["messages"] == [
         {"role": "user", "content": "Say hello."}

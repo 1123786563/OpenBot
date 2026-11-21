@@ -44,6 +44,7 @@ export type NewTask = {
   ownerUserId: string;
   agentId: string;
   channelId: string;
+  budgetId?: string | null;
   title: string;
   why: string | null;
   origin: BotTaskOrigin;

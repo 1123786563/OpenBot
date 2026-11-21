@@ -1521,6 +1521,7 @@ describe("the runner's read of one firing", () => {
       // Read at dispatch so a routine paused after it was queued still does not run.
       enabled: true,
       instruction: "Post the standup summary.",
+      budgetId: null,
     });
   });
 

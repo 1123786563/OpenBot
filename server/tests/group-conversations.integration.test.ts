@@ -499,7 +499,11 @@ describe("group conversations in PostgreSQL", () => {
       },
     });
     const routes = createGroupRoutes(conversations, async (context, next) => {
-      context.set("actor", { id: owner.id, email: owner.email, role: "user" });
+      context.set("actor", {
+        id: owner.id,
+        email: `${owner.id}@example.test`,
+        role: "user",
+      });
       await next();
     });
     const channel = await conversations.create(owner.id, {

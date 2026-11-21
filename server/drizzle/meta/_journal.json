@@ -652,6 +652,41 @@
       "when": 1795189760196,
       "tag": "0092_skill_market_runs",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1795189760197,
+      "tag": "0093_test_credit",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1795189760198,
+      "tag": "0094_test_credit_reconciliation",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1795189760199,
+      "tag": "0095_test_credit_cutoff_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1795189760200,
+      "tag": "0096_test_credit_execution_budgets",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1795274391980,
+      "tag": "0097_lago_usage_events",
+      "breakpoints": true
     }
   ]
 }

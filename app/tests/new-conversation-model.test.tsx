@@ -13,12 +13,14 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { IDBFactory } from "fake-indexeddb";
 import { ChannelChat } from "@/components/channels/channel-chat";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
 import { type AgentChannel, channelQueryOptions } from "@/lib/channels/queries";
 import type { ConversationModel, ModelCatalogue } from "@/lib/models/queries";
 import { queryClient } from "@/query-client";
 import { Route as ChannelNewRoute } from "@/routes/_authed/_app/channel/new";
+import { Route as StartRoute } from "@/routes/_authed/_app/start.$startId";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -96,6 +98,7 @@ const catalogue: ModelCatalogue = {
 let trail: string[] = [];
 let saved: ConversationModel = { model: null, effort: null };
 let originalFetch: typeof fetch;
+let originalIndexedDb: IDBFactory;
 
 function sse(events: unknown[]) {
   return new NativeResponse(
@@ -107,6 +110,8 @@ function sse(events: unknown[]) {
 beforeAll(() => {
   GlobalRegistrator.register({ url: "http://localhost/" });
   originalFetch = globalThis.fetch;
+  originalIndexedDb = globalThis.indexedDB;
+  globalThis.indexedDB = new IDBFactory();
   globalThis.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = new URL(
@@ -119,6 +124,15 @@ beforeAll(() => {
       );
       const method =
         init?.method ?? (input instanceof Request ? input.method : "GET");
+      if (url.pathname === "/api/me")
+        return NativeResponse.json({
+          user: {
+            id: "person",
+            name: "Sam",
+            email: "sam@example.com",
+            role: "user",
+          },
+        });
       if (url.pathname === "/api/channels" && method === "POST") {
         trail.push("create");
         return NativeResponse.json({ channel }, { status: 201 });
@@ -208,6 +222,9 @@ afterEach(() => {
 afterAll(async () => {
   await settleReactWork();
   globalThis.fetch = originalFetch;
+  if (originalIndexedDb === undefined)
+    Reflect.deleteProperty(globalThis, "indexedDB");
+  else globalThis.indexedDB = originalIndexedDb;
   GlobalRegistrator.unregister();
 });
 
@@ -244,9 +261,16 @@ const channelRoute = createRoute({
   getParentRoute: () => appRoute,
   component: ChannelScreen,
 });
+const startRouteOptions = {
+  id: "/start/$startId",
+  path: "/start/$startId",
+  getParentRoute: () => appRoute,
+  component: StartRoute.options.component,
+};
+const testStartRoute = StartRoute.update(startRouteOptions);
 const routeTree = rootRoute.addChildren([
   authedRoute.addChildren([
-    appRoute.addChildren([testChannelNewRoute, channelRoute]),
+    appRoute.addChildren([testStartRoute, testChannelNewRoute, channelRoute]),
   ]),
 ]);
 

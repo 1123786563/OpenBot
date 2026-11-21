@@ -233,17 +233,14 @@ test("opt-out prevents preparation, audit collection, and sending", async () => 
     payload: {},
   });
   expect(f.sent).toHaveLength(0);
-  expect(
-    (
-      await f.telemetry.prepare({
-        actorUserId: "private",
-        threadId: "thread",
-        runId: "run",
-        trigger: "human",
-        surface: "web",
-      })
-    )?.context,
-  ).toBeUndefined();
+  const prepared = await f.telemetry.prepare({
+    actorUserId: "private",
+    threadId: "thread",
+    runId: "run",
+    trigger: "human",
+    surface: "web",
+  });
+  expect(prepared).not.toHaveProperty("context");
 });
 test("existing audit IDs produce stable allowlisted events without customer content", async () => {
   const f = await adapter();

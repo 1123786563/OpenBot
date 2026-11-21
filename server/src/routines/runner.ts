@@ -87,8 +87,15 @@ export function createRoutineRunner(options: {
       return;
     }
 
-    const { routineId, ownerUserId, agentId, channelId, instruction, source } =
-      context;
+    const {
+      routineId,
+      ownerUserId,
+      agentId,
+      channelId,
+      instruction,
+      budgetId,
+      source,
+    } = context;
     // Everything below is done AS the owner: their channel, their thread, their grants.
     const owner: AgentActor = { id: ownerUserId, role: "user" };
 
@@ -168,6 +175,9 @@ export function createRoutineRunner(options: {
           agentId,
           threadId,
           instruction,
+          ...(budgetId
+            ? { budget: { id: budgetId, stepId: routineRunId } }
+            : {}),
         }));
       } catch (error) {
         if (error instanceof HeadlessToolSuspension) {

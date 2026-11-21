@@ -8,7 +8,10 @@ import { computerGuidance } from "@openbot/shared/bot-prompt";
 import { isPersonBrowserId } from "@openbot/shared/openbot-browser";
 import { workOwner } from "@openbot/shared/work-owner";
 import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
-import { createTurnRunner as createToolkitTurnRunner } from "@openbot/toolkit/run-turn";
+import {
+  createTurnRunner as createToolkitTurnRunner,
+  EXECUTION_BUDGET_PROP,
+} from "@openbot/toolkit/run-turn";
 import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { createActivityStore } from "./activity/activity";
@@ -91,6 +94,7 @@ import { createRoleRepository } from "./auth/guards";
 import { createIdentityProviderStore } from "./auth/identity-provider-store";
 import { createOrganizationAuth } from "./auth/organization";
 import { organizationUserStore } from "./auth/organization-store";
+import { createTestCreditLedger } from "./billing/test-credit";
 import { openbotAddress } from "./browser/address";
 import { botBrowserNetwork } from "./browser/bot-browser";
 import { personBrowserEgressPolicy } from "./browser/egress";
@@ -1673,6 +1677,20 @@ const recorderExtension = createRecorderExtension({
   // A connection is made or ended exactly when its row is written: both in one transaction.
   auditFor: createAuditStore,
 });
+const testCreditLedger = createTestCreditLedger(database);
+const testCreditCutoffSweep = repeatAfterEach(async () => {
+  try {
+    await testCreditLedger.sweepCutoffs();
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        type: "test-credit-cutoff-sweep-error",
+        error: error instanceof Error ? error.name : "UnknownError",
+      }),
+    );
+  }
+}, 60_000);
+
 /*
  * Connections whose lifetime has run out already resolve to nobody; this ends them for good, with the sealed
  * organization session any of them still held, and writes their rows. Every replica runs it, and each row is ended once.
@@ -2299,6 +2317,9 @@ const actorAgentResolver = createActorAgentResolver({
         botId,
         threadId: input.threadId,
         runId: input.runId,
+        ...(typeof input.forwardedProps?.[EXECUTION_BUDGET_PROP] === "string"
+          ? { budgetId: input.forwardedProps[EXECUTION_BUDGET_PROP] }
+          : {}),
         // The subagent carries on the asking run's task, on the asking run's surface.
         ...productTelemetry.lineageOf(actorId, input.forwardedProps),
         auditRootTaskId:
@@ -2569,7 +2590,12 @@ const groupConversations = createGroupConversations({
       busy,
     ),
   createChannel: async (ownerUserId, agentIds, requestId) =>
-    channelStore.create(await actorFor(ownerUserId), agentIds, undefined, requestId),
+    channelStore.create(
+      await actorFor(ownerUserId),
+      agentIds,
+      undefined,
+      requestId,
+    ),
   // The owner says whether a Bot's words may reach the other people in a group.
   privateShare: createPrivateShareCheck({ approvals: approvalService.store }),
   // A Team Bot's consent card raised in a group turn is drawn in the shared transcript.
@@ -3462,6 +3488,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     personResponseSweep.stop();
     groupSweep.stop();
     recorderExpirySweep.stop();
+    testCreditCutoffSweep.stop();
     if (firstAutoApproveSweep) clearTimeout(firstAutoApproveSweep);
     if (autoApproveTimer) clearInterval(autoApproveTimer);
     for (const sweep of deliverySweeps) sweep.stop();

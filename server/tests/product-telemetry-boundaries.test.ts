@@ -196,8 +196,10 @@ test("a run retains verified audit lineage with product telemetry disabled", asy
     telemetry: { trigger: "routine" },
   });
   expect(telemetry.enabled()).toBe(false);
-  expect(enriched.forwardedProps?.openbotTelemetry).toBeUndefined();
-  expect(enriched.forwardedProps?.__copilotkitAnalyticsContext).toBeUndefined();
+  expect(enriched.forwardedProps).not.toHaveProperty("openbotTelemetry");
+  expect(enriched.forwardedProps).not.toHaveProperty(
+    "__copilotkitAnalyticsContext",
+  );
   expect(telemetry.auditLineageOf("actor", enriched)).toMatchObject({
     attemptId: input.runId,
     rootTaskId: expect.stringMatching(/^[a-f0-9]{64}$/),

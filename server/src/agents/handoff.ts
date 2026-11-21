@@ -473,6 +473,7 @@ export function createHandoffDesk(options: {
           actorId: from.actorId,
           threadId: from.threadId,
           runId: from.runId,
+          ...(from.budgetId ? { budgetId: from.budgetId } : {}),
           /*
            * One deeper than the run that asked. The receiving Bot's own assertion is minted from
            * this, so the cap keeps counting across every pod the chain touches.
