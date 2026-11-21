@@ -332,6 +332,7 @@ export const delegatedWork = z.object({
   actorId: z.string().min(1),
   threadId: z.string().min(1),
   runId: z.string().min(1),
+  budgetId: z.string().min(1).optional(),
   depth: z.number().int().nonnegative(),
   task: z.string(),
   initiator: z

@@ -35,8 +35,8 @@ import { createTurnRunner } from "@openbot/toolkit/run-turn";
 import { z } from "zod";
 import { currentApprovalContext } from "../approvals/types";
 import type { AuditInitiator } from "../audit";
-import type { ProductSurface } from "../telemetry/product";
 import { REFUSAL_MARKER } from "../plugins/tools";
+import type { ProductSurface } from "../telemetry/product";
 
 const parameters = z.object({
   task: z
@@ -61,6 +61,7 @@ export const SUBAGENT_HANDED_BACK =
 /** The run asking, as this deployment knows it. */
 export type SubagentParent = {
   runId?: string;
+  budgetId?: string;
   /** The asking run's root task, as its analytics context states it; the subagent works for it. */
   rootTaskId?: string;
   auditRootTaskId?: string | null;
@@ -193,6 +194,9 @@ export function createSubagents(options: {
               agentId: parent.botId,
               threadId,
               runId,
+              ...(parent.budgetId
+                ? { budget: { id: parent.budgetId, stepId: runId } }
+                : {}),
               instruction: parsed.data.task,
               userMessage: {
                 id: crypto.randomUUID(),

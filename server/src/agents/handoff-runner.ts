@@ -29,6 +29,8 @@ export type HandoffWork = {
   actorId: string;
   threadId: string;
   runId: string;
+  /** Shared parent execution budget, carried across queued retries and redelegation. */
+  budgetId?: string;
   depth: number;
   /** What started the original run, preserved across queued delivery and relay hops. */
   initiator?: AuditInitiator;

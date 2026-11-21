@@ -8,7 +8,10 @@ import { computerGuidance } from "@openbot/shared/bot-prompt";
 import { isPersonBrowserId } from "@openbot/shared/openbot-browser";
 import { workOwner } from "@openbot/shared/work-owner";
 import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
-import { createTurnRunner as createToolkitTurnRunner } from "@openbot/toolkit/run-turn";
+import {
+  createTurnRunner as createToolkitTurnRunner,
+  EXECUTION_BUDGET_PROP,
+} from "@openbot/toolkit/run-turn";
 import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { createActivityStore } from "./activity/activity";
@@ -2314,6 +2317,9 @@ const actorAgentResolver = createActorAgentResolver({
         botId,
         threadId: input.threadId,
         runId: input.runId,
+        ...(typeof input.forwardedProps?.[EXECUTION_BUDGET_PROP] === "string"
+          ? { budgetId: input.forwardedProps[EXECUTION_BUDGET_PROP] }
+          : {}),
         // The subagent carries on the asking run's task, on the asking run's surface.
         ...productTelemetry.lineageOf(actorId, input.forwardedProps),
         auditRootTaskId:
