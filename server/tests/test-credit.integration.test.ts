@@ -81,6 +81,9 @@ test("execution budgets authorize each step and preserve completed steps across 
         .delete(testCreditOperations)
         .where(inArray(testCreditOperations.accountId, accounts));
       await tx
+        .delete(lagoUsageEvents)
+        .where(inArray(lagoUsageEvents.accountId, accounts));
+      await tx
         .delete(testCreditBudgets)
         .where(inArray(testCreditBudgets.accountId, accounts));
       const removed = await tx
@@ -896,6 +899,9 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
         await tx
           .delete(testCreditOperations)
           .where(inArray(testCreditOperations.accountId, accountIds));
+        await tx
+          .delete(lagoUsageEvents)
+          .where(inArray(lagoUsageEvents.accountId, accountIds));
         const removedEnrollments = await tx
           .delete(testCreditEnrollments)
           .where(inArray(testCreditEnrollments.accountId, accountIds))
