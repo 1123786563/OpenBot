@@ -7,6 +7,7 @@ import {
   type UseQueryOptions,
   useQuery,
 } from "@tanstack/react-query";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { SkillFiles } from "@/components/learning/skill-files";
 import { Button } from "@/components/ui/button";
 import {
@@ -106,7 +107,7 @@ export function ProposalDialog<TKey extends QueryKey>({
   const removal = proposal?.operation === "remove";
   return (
     <Dialog onOpenChange={(next) => (next ? undefined : onClose())} open>
-      <DialogContent>
+      <DialogContent {...astryxScope}>
         <DialogHeader>
           <DialogTitle>
             {proposal
@@ -155,7 +156,7 @@ export function ProposalDialog<TKey extends QueryKey>({
             </p>
           )}
         </DialogBody>
-        <DialogFooter className="mt-4">
+        <DialogFooter className="mt-4 flex-wrap">
           {onDecide && status === "pending_review" ? (
             <>
               <Button

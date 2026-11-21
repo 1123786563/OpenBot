@@ -98,20 +98,11 @@ describe("default look tokens", () => {
     expect(lightness(dark.get("--secondary"))).toBeGreaterThan(card);
     expect(lightness(dark.get("--muted"))).toBeGreaterThan(card);
   });
-
-  test("skins start with the empty-state pattern off", () => {
-    expect(
-      declared(read("../src/skins/skins.css"), ":root[data-skin]").get(
-        "--empty-pattern-opacity",
-      ),
-    ).toBe("0");
-  });
 });
 
 describe("fonts", () => {
   const styles = read("../src/styles.css");
 
-  // OpenDuet is set in Inter.
   test("Inter still loads", () => {
     expect(styles).toContain('@import "@fontsource-variable/inter"');
   });

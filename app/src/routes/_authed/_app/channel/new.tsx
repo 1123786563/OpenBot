@@ -3,6 +3,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { NewBotSheet } from "@/components/agents/new-bot-sheet";
 import AgentOrb from "@/components/agents/orb/agent-orb";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import {
   canSend,
@@ -15,6 +16,7 @@ import {
   toAgentOptions,
 } from "@/components/channels/composer";
 import { ModelPicker } from "@/components/channels/composer/model-picker";
+import { ConversationSurface } from "@/components/channels/conversation-surface";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { StarterSuggestions } from "@/components/starter-tour/starter-suggestions";
@@ -221,9 +223,9 @@ function NewConversation({ composition }: { composition: string }) {
   if (profiles === undefined && !rosterError) return null;
 
   return (
-    <div className="flex h-full flex-col">
+    <ConversationSurface>
       <div
-        className="h-12 border-b border-border sticky top-0 flex flex-row px-2 items-center"
+        className="sticky top-0 flex min-h-12 shrink-0 flex-row items-center border-b border-border px-2"
         data-slot="conversation-header"
       >
         <SidebarToggle className="mr-1" />
@@ -256,7 +258,8 @@ function NewConversation({ composition }: { composition: string }) {
         >
           <ComboboxChips
             ref={anchor}
-            className="flex-1 border-none bg-transparent! focus-within:ring-0 dark:bg-transparent!"
+            className="min-w-0 flex-1 border-none bg-transparent! focus-within:ring-0 dark:bg-transparent!"
+            data-conversation-recipients=""
           >
             {selected.map((profile) => (
               <ComboboxChip
@@ -269,6 +272,7 @@ function NewConversation({ composition }: { composition: string }) {
               </ComboboxChip>
             ))}
             <ComboboxChipsInput
+              aria-label="Recipients"
               ref={pickerInput}
               // The popup opening is not enough on its own: typing filters through this input, so
               // the caret starts here whenever the recipient question is still open. A recipient
@@ -283,8 +287,9 @@ function NewConversation({ composition }: { composition: string }) {
           </ComboboxChips>
           {/* Allow max-w to constrain the popup even though its anchor is full-width. */}
           <ComboboxContent
+            {...astryxScope}
             anchor={anchor}
-            className="flex min-w-0 max-w-lg flex-col"
+            className="flex min-w-0 max-w-lg flex-col data-[astryx-pilot]:min-w-0! data-[astryx-pilot]:max-w-[min(32rem,var(--available-width))]!"
             sideOffset={12}
           >
             <div className="shrink-0 border-b p-1">
@@ -318,6 +323,7 @@ function NewConversation({ composition }: { composition: string }) {
       </div>
       <NewBotSheet
         open={creatingBot}
+        returnFocus={() => pickerInput.current}
         onClose={() => setCreatingBot(false)}
         onCreated={(agentId) => {
           setCreatingBot(false);
@@ -415,6 +421,6 @@ function NewConversation({ composition }: { composition: string }) {
         }
         onSubmit={submit}
       />
-    </div>
+    </ConversationSurface>
   );
 }

@@ -3,7 +3,7 @@ import type {
   GetTrajectoryLearningContainerIds,
 } from "@copilotkit/runtime/v2";
 import { eq } from "drizzle-orm";
-import type { AuditStore } from "../audit";
+import type { AuditStore, TransactionAuditStore } from "../audit";
 import type { AuthenticatedActor, RoleRepository } from "../auth/guards";
 import {
   ORGANIZATION_SESSION_COOKIE,
@@ -104,7 +104,7 @@ export function createRecorderExtension(deps: {
    * `createAuditStore` over it. Absent, `auditStore` as it is: a test's own, which keeps a row whether or not the
    * transaction commits.
    */
-  auditFor?: (executor: Database) => AuditStore;
+  auditFor?: TransactionAuditStore;
   /** How Intelligence is reached for recording summaries; `fetch` unless a test says otherwise. */
   intelligenceFetch?: typeof fetch;
 }): RecorderExtensionDeps & {
@@ -199,18 +199,22 @@ export function createRecorderExtension(deps: {
         }
       : async () => null;
 
-  const { apiUrl, apiKey } = config.runtime.intelligence;
+  const intelligence = config.runtime.intelligence;
   const recordings = createRecordings({
     pageForUser: trajectoryBindings.pageForUser,
     isBoundTo: trajectoryBindings.isBoundTo,
     boundTo: trajectoryBindings.boundTo,
     summaries: (ids) =>
-      fetchTrajectorySummaries({
-        apiUrl,
-        apiKey,
-        fetch: deps.intelligenceFetch ?? fetch,
-        ids,
-      }),
+      intelligence
+        ? fetchTrajectorySummaries({
+            apiUrl: intelligence.apiUrl,
+            apiKey: intelligence.apiKey,
+            fetch: deps.intelligenceFetch ?? fetch,
+            ids,
+          })
+        : Promise.reject(
+            new Error("Recording summaries require Intelligence."),
+          ),
   });
 
   return {

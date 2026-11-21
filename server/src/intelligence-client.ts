@@ -175,14 +175,44 @@ export async function runtimeEntitlementStatus(
  * The same class as the runtime's, so a question whose "no" is ordinary (a thread the browser
  * remembers that is gone) is answered without the base client printing the "no" as a failure.
  */
+/** Local sink for a legacy runner that still needs to be constructed in OpenBot mode. */
+export const disabledIntelligenceSettings: IntelligenceSettings = {
+  apiUrl: "http://127.0.0.1:1",
+  gatewayWsUrl: "ws://127.0.0.1:1",
+  apiKey: "disabled",
+};
+
+export function unavailableIntelligenceClient<T extends CopilotKitIntelligence>(
+  client: T,
+): T {
+  return new Proxy(client, {
+    get(target, property) {
+      const value: unknown = Reflect.get(target, property, target);
+      if (typeof value !== "function") return value;
+      if (property === "ɵgetRunnerWsUrl" || property === "ɵgetRunnerAuthToken")
+        return value.bind(target);
+      return async () => {
+        throw new PlatformRequestError(
+          "Intelligence is not configured.",
+          503,
+          false,
+        );
+      };
+    },
+  });
+}
+
 export function createIntelligenceClient(
-  settings: IntelligenceSettings,
+  settings?: IntelligenceSettings,
 ): CopilotKitIntelligence {
-  return observeIntelligenceAuthentication(
-    new IntelligenceKnowingANewThread({
-      apiUrl: settings.apiUrl,
-      wsUrl: settings.gatewayWsUrl,
-      apiKey: settings.apiKey,
-    }),
-  );
+  const { apiUrl, gatewayWsUrl, apiKey } =
+    settings ?? disabledIntelligenceSettings;
+  const client = new IntelligenceKnowingANewThread({
+    apiUrl,
+    wsUrl: gatewayWsUrl,
+    apiKey,
+  });
+  return settings
+    ? observeIntelligenceAuthentication(client)
+    : unavailableIntelligenceClient(client);
 }

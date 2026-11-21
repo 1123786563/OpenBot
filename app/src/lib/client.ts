@@ -33,6 +33,8 @@ export type ClientOptions = {
    * is the sentence that reaches the screen when the server is the one that broke.
    */
   fallback?: string;
+  /** For endpoints that send their error details in a Better Auth response. */
+  errorMessageKey?: "message";
   /** For the calls a Bot makes on a person's behalf, which are abandoned when the turn is. */
   signal?: AbortSignal;
 };
@@ -100,7 +102,18 @@ export async function client<T>(
      */
     const message = await response
       .json()
-      .then((body: { error?: string }) => body.error)
+      .then((body: unknown) => {
+        if (!body || typeof body !== "object") return undefined;
+        if ("error" in body && typeof body.error === "string")
+          return body.error;
+        if (
+          options.errorMessageKey === "message" &&
+          "message" in body &&
+          typeof body.message === "string"
+        ) {
+          return body.message;
+        }
+      })
       .catch(() => undefined);
     throw new ClientError(
       message ?? options.fallback ?? "That request failed.",

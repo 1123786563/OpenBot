@@ -1,3 +1,4 @@
+import { AstryxAdminPage } from "@/components/admin/astryx-admin-page";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -7,7 +8,6 @@ import {
   ProviderSection,
 } from "@/components/admin/controls/model-sections";
 import { availableModelsQueryOptions } from "@/lib/models/queries";
-import { PageShell } from "@/components/layout/page-shell";
 
 export const Route = createFileRoute("/_authed/admin/providers")({
   component: ProvidersPage,
@@ -25,7 +25,7 @@ export function ProvidersPage() {
   const available = useQuery(availableModelsQueryOptions());
   const team = available.data?.exposure === "allowed";
   return (
-    <PageShell
+    <AstryxAdminPage
       description={
         team
           ? "See which provider serves your Bots' models, and choose which models people may pick. All changes appear in Audit."
@@ -37,6 +37,6 @@ export function ProvidersPage() {
       <ModelChoiceSection />
       {team ? <ModelAllowlistSection /> : null}
       <ModelUsageSection team={team} />
-    </PageShell>
+    </AstryxAdminPage>
   );
 }

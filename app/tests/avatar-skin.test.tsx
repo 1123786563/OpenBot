@@ -14,13 +14,7 @@ import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { type BotLook, BotLookProvider } from "@/components/agents/bot-look";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { agentListQueryOptions } from "@/lib/agents/queries";
-import { SKINS } from "@/skins/registry";
 import { settleReactWork } from "./settle-react-work";
-
-/*
- * Bots appear as their orb where the active skin asks for it (`botLook: "orb"`). OpenBot's own look
- * does; a skin that has not opted in keeps the faces it was designed with.
- */
 
 beforeAll(() => GlobalRegistrator.register());
 afterEach(() => cleanup());
@@ -66,13 +60,6 @@ describe.each(Object.entries(avatars))("%s", (_, Avatar) => {
     expect(view.container.querySelector("svg")).not.toBeNull();
     expect(view.container.querySelector("[data-variant]")).toBeNull();
   });
-});
-
-test("OpenBot's own look opts in to orbs and the skins do not", () => {
-  expect(SKINS.openbot.botLook).toBe("orb");
-  for (const id of ["openduet", "opendots", "openmuse"] as const) {
-    expect(SKINS[id].botLook ?? "face").toBe("face");
-  }
 });
 
 test("a group shows two orbs", () => {

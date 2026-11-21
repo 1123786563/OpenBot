@@ -112,6 +112,7 @@ test("for a team admin, links to Admin › Audit narrowed to this Bot", async ()
     .getByText("Every action this Bot took")
     .closest("a") as HTMLAnchorElement;
   expect(link.getAttribute("href")).toBe(`/admin/audit?bot=${BOT}`);
+  expect(view.queryByRole("link", { name: "Open in OpenObserve" })).toBeNull();
 });
 
 test("a team member, who cannot open the trail, is not sent to it", async () => {

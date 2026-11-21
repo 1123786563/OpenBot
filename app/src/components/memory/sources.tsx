@@ -1,5 +1,6 @@
 import { IconPlugConnected, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { Fragment, useId, useState } from "react";
 import {
   PageEmpty,
@@ -219,7 +220,7 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
         </p>
       )}
       <Dialog onOpenChange={setAdding} open={adding}>
-        <DialogContent>
+        <DialogContent {...astryxScope}>
           <DialogHeader>
             <DialogTitle>Add a source</DialogTitle>
             <DialogDescription>

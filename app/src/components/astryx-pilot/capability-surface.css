@@ -1,0 +1,40 @@
+.astryx-capability-surface {
+  --card-foreground: var(--color-text-primary);
+  --secondary: var(--color-background-card);
+  --secondary-foreground: var(--color-text-primary);
+  --accent: var(--color-background-card);
+  --accent-foreground: var(--color-text-primary);
+}
+
+.astryx-capability-surface [data-slot="page-title"] {
+  font-family: var(--font-family-heading);
+}
+
+.astryx-capability-surface [data-slot="page-header"] {
+  gap: var(--spacing-2);
+}
+
+.astryx-capability-surface [data-slot="item-content"] {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.astryx-capability-surface :is(a, button):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.astryx-capability-surface .astryx-component-tile,
+.astryx-capability-surface .astryx-playground-preview {
+  border-radius: var(--radius-container);
+  background: var(--color-background-card);
+}
+
+.astryx-capability-surface .astryx-component-tile:focus-visible {
+  outline-offset: -3px;
+}
+
+.astryx-capability-surface .astryx-playground-notice {
+  color: var(--color-text-primary);
+  background: var(--color-background-card);
+}

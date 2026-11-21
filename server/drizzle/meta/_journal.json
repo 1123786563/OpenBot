@@ -624,6 +624,34 @@
       "when": 1794274563155,
       "tag": "0088_approval_reviewer_guidance",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1795157993281,
+      "tag": "0089_direct_chat_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1795183869296,
+      "tag": "0090_skill_market_installations",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1795185049024,
+      "tag": "0091_skill_market_version_disablements",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1795189760196,
+      "tag": "0092_skill_market_runs",
+      "breakpoints": true
     }
   ]
 }

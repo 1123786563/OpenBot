@@ -20,6 +20,7 @@ import {
   fireEvent,
   render,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AppSidebar } from "@/components/app-sidebar/app-sidebar";
@@ -212,7 +213,7 @@ function renderSidebar() {
   const routeTree = createRootRoute({
     component: () => (
       <SidebarProvider>
-        <AppSidebar />
+        <AppSidebar navId="test-navigation" returnFocus={{ current: null }} />
       </SidebarProvider>
     ),
   });
@@ -236,7 +237,9 @@ function activeObserver() {
 test("message emphasis updates mounted rows from the account preferences cache", async () => {
   const view = renderSidebar();
   const agent = await view.findByText("Recent conversation");
-  const thread = view.getByText("New conversation");
+  const thread = within(
+    view.getByRole("link", { name: /Recent conversation/ }),
+  ).getByText("New conversation");
   expect(thread.className).toContain("text-sm");
   act(() =>
     clients[0]?.setQueryData(userPreferencesQueryOptions("user").queryKey, {

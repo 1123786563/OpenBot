@@ -971,6 +971,7 @@ describe("OpenTelemetry export", () => {
     });
     const { createOtelEventExporter } = await import("../src/telemetry/otel");
     const exporter = createOtelEventExporter({
+      DEPLOYMENT_ID: "enterprise-controls-fixture",
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: `http://127.0.0.1:${collector.port}/v1/logs`,
     });
     expect(exporter).toBeDefined();

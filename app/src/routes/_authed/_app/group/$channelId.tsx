@@ -4,6 +4,7 @@ import { BotPausedBanner } from "@/components/bot-profile/pause-banner";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { GroupChat } from "@/components/channels/group-chat";
 import { GroupPeopleButton } from "@/components/channels/group-people";
+import { ConversationSurface } from "@/components/channels/conversation-surface";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { useMarkOpenChannelRead } from "@/lib/channels/mark-read";
 import { channelQueryOptions } from "@/lib/channels/queries";
@@ -18,7 +19,7 @@ function RouteComponent() {
   const channel = useQuery(channelQueryOptions(channelId));
   useMarkOpenChannelRead(channelId);
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <ConversationSurface>
       <div
         className="sticky top-0 flex min-h-12 flex-row items-center gap-1.5 border-b border-border px-3 py-2"
         data-slot="conversation-header"
@@ -38,6 +39,6 @@ function RouteComponent() {
       ))}
       {/* Remounted per channel so one group's transcript never flashes in another. */}
       <GroupChat channelId={channelId} key={channelId} />
-    </div>
+    </ConversationSurface>
   );
 }

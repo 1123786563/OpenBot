@@ -50,9 +50,14 @@ const BOT: AgentProfile = {
   mine: true,
 };
 
-function serving() {
+function serving(
+  capabilities: { cloudBrowser?: boolean; cloudComputer?: boolean } = {},
+) {
   global.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
+    if (url.endsWith("/api/admin/enterprise/me")) {
+      return Response.json({ capabilities, enforced: true });
+    }
     if (url.includes("/shared-use/bot/")) {
       return Response.json({
         apps: [{ serverId: "gmail", title: "Gmail", covered: false }],
@@ -116,3 +121,28 @@ test("the Message row shows the chevron every row that goes somewhere carries", 
   const row = (await view.findByText("Message Expenses")).closest("a");
   expect(row?.querySelector(".tabler-icon-chevron-right")).not.toBeNull();
 });
+
+test("the Bot profile links directly to Computer without a saved conversation", async () => {
+  serving();
+  const view = draw(BOT);
+  const link = await view.findByRole("link", { name: "Open Computer" });
+  expect(link.getAttribute("href")).toBe("/bot?agent=expenses&watch=true");
+});
+
+test.each([
+  ["deployment policy", BOT, { cloudBrowser: false, cloudComputer: false }],
+  [
+    "a teammate's computer",
+    { ...BOT, visibility: "private", canManage: false },
+    {},
+  ],
+] as const)(
+  "the profile hides Computer when %s blocks access",
+  async (_name, agent, capabilities) => {
+    serving(capabilities);
+    const view = draw(agent);
+    await view.findByText("Message Expenses");
+    await settleReactWork();
+    expect(view.queryByRole("link", { name: "Open Computer" })).toBeNull();
+  },
+);

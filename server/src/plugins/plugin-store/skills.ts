@@ -1,11 +1,13 @@
 import { and, asc, eq, isNull, ne, or } from "drizzle-orm";
 import { recordAuditEvent } from "../../audit";
+import type { Database } from "../../db/client";
 import {
   agentProfiles,
   agents,
   mcpServers,
   mcpTools,
   pluginGrants,
+  SKILL_MARKET_RESERVATION,
   skills,
   skillTools,
   vendorNameOf,
@@ -13,6 +15,16 @@ import {
 import { currentEdition } from "../../edition";
 import type { StoreContext } from "./context";
 import { PluginRefusedError, type SkillActor, type SkillRecord } from "./model";
+
+export function registeredBotProfiles(database: Pick<Database, "select">) {
+  return database
+    .select({
+      id: agents.id,
+      title: agentProfiles.title,
+    })
+    .from(agents)
+    .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id));
+}
 
 /** Skills, and what the store answers about Bots and servers for the routes and the desk. */
 export function skillMethods(context: StoreContext) {
@@ -33,7 +45,7 @@ export function skillMethods(context: StoreContext) {
       const rows = await database
         .select()
         .from(skills)
-        .where(visible)
+        .where(and(visible, ne(skills.origin, SKILL_MARKET_RESERVATION)))
         .orderBy(asc(skills.title));
       const grants = await grantsFor(
         "skill",
@@ -59,7 +71,12 @@ export function skillMethods(context: StoreContext) {
       const [row] = await database
         .select({ ownerUserId: skills.ownerUserId })
         .from(skills)
-        .where(eq(skills.slug, slug))
+        .where(
+          and(
+            eq(skills.slug, slug),
+            ne(skills.origin, SKILL_MARKET_RESERVATION),
+          ),
+        )
         .limit(1);
       return row ? row.ownerUserId : undefined;
     },
@@ -98,10 +115,7 @@ export function skillMethods(context: StoreContext) {
      * to stop, arriving from the other side.
      */
     async agentIsRegistered(agentId: string): Promise<boolean> {
-      const [row] = await database
-        .select({ id: agents.id })
-        .from(agents)
-        .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
+      const [row] = await registeredBotProfiles(database)
         .where(and(eq(agents.id, agentId), isNull(agentProfiles.deletedAt)))
         .limit(1);
       return row !== undefined;
@@ -208,7 +222,7 @@ export function skillMethods(context: StoreContext) {
         }
       }
 
-      await database
+      const [saved] = await database
         .insert(skills)
         .values({
           id: input.slug,
@@ -225,6 +239,7 @@ export function skillMethods(context: StoreContext) {
         // `installed_by` is left alone too: it records who first installed it, not who last saved.
         .onConflictDoUpdate({
           target: skills.slug,
+          setWhere: ne(skills.origin, SKILL_MARKET_RESERVATION),
           set: {
             title: input.title,
             summary: input.summary,
@@ -244,7 +259,14 @@ export function skillMethods(context: StoreContext) {
             origin: input.origin ?? "yours",
             updatedAt: new Date(),
           },
-        });
+        })
+        .returning({ id: skills.id });
+      if (!saved) {
+        throw new PluginRefusedError(
+          "This command is reserved by a market skill.",
+          null,
+        );
+      }
 
       /*
        * Replaced wholesale rather than merged. What a skill needs is a set the author is editing, so
@@ -287,7 +309,14 @@ export function skillMethods(context: StoreContext) {
           .where(
             and(eq(pluginGrants.kind, "skill"), eq(pluginGrants.ref, slug)),
           );
-        await transaction.delete(skills).where(eq(skills.slug, slug));
+        await transaction
+          .delete(skills)
+          .where(
+            and(
+              eq(skills.slug, slug),
+              ne(skills.origin, SKILL_MARKET_RESERVATION),
+            ),
+          );
       });
       await recordAuditEvent(auditStore, {
         eventType: "configuration.changed",

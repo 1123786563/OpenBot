@@ -447,7 +447,7 @@ describe("a connection's row is written with it", () => {
 
       // Nothing changed, the code included: the next try, with the trail back, connects.
       const real = createRecorderConnectionStore(database, {
-        auditFor: (executor) => createAuditStore(executor),
+        auditFor: createAuditStore,
       });
       const made = await real.exchange({
         code,

@@ -16,7 +16,7 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import type { ComponentType } from "react";
 import { EditSkill } from "@/components/skills/edit-skill";
 import { type PluginsPage, pluginKeys } from "@/lib/plugins/queries";
@@ -209,10 +209,31 @@ test("the admin skills page says the skills failed to load, not that there are n
   );
   await waitForFailedRead(client);
 
-  expect(
-    await view.findByText("Couldn't load skills. Reload the page."),
-  ).toBeTruthy();
+  expect(await view.findByText("Couldn't load skills.")).toBeTruthy();
   expect(view.queryByText("No skills yet")).toBeNull();
+});
+
+test("the admin can retry a failed skills read in place", async () => {
+  const client = failingQueryClient();
+  const view = renderAlone(
+    client,
+    AdminSkillsRoute.options.component as ComponentType,
+  );
+  await waitForFailedRead(client);
+  const fail = global.fetch;
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0]) => {
+      if (String(input).split("?")[0] === "/api/plugins") {
+        return Response.json(answeredEmpty().getQueryData(pluginKeys.page()));
+      }
+      return fail(input);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+
+  fireEvent.click(view.getByRole("button", { name: "Retry" }));
+  expect(await view.findByText("No skills yet")).toBeTruthy();
+  expect(view.queryByRole("button", { name: "Retry" })).toBeNull();
 });
 
 test("a deployment with genuinely no skills still says so on the admin page", async () => {
@@ -224,7 +245,7 @@ test("a deployment with genuinely no skills still says so on the admin page", as
   await waitForFailedRead(client);
 
   expect(await view.findByText("No skills yet")).toBeTruthy();
-  expect(view.queryByText("Couldn't load skills. Reload the page.")).toBeNull();
+  expect(view.queryByText("Couldn't load skills.")).toBeNull();
 });
 
 test("opening a skill to edit says it failed to load, not that it no longer exists", async () => {

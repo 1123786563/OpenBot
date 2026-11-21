@@ -13,7 +13,7 @@ import {
 import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { authKeys } from "@/lib/auth/queries";
-import { resumeUrlFor } from "@/lib/auth/resume";
+import { appReturnPath, resumeUrlFor } from "@/lib/auth/resume";
 
 /*
  * The Better Auth client is replaced at the module boundary: its fetch is captured when it is built,
@@ -157,11 +157,14 @@ test("a signed-in arrival with a handle goes to the verifier, without one to /",
 });
 
 /** The sign screen on `/sign?flow_id=h1`, with whichever ways in the deployment offers. */
-function renderSignScreen(options: {
-  providers: string[];
-  sso: boolean;
-  ssoRequired: boolean;
-}) {
+function renderSignScreen(
+  options: {
+    providers: string[];
+    sso: boolean;
+    ssoRequired: boolean;
+  },
+  initialEntry = "/sign?flow_id=h1",
+) {
   const queryClient = new QueryClient();
   queryClient.setQueryData(authKeys.providers(), options);
 
@@ -176,7 +179,7 @@ function renderSignScreen(options: {
   const router = createRouter({
     routeTree: root.addChildren([sign]),
     context: { queryClient },
-    history: createMemoryHistory({ initialEntries: ["/sign?flow_id=h1"] }),
+    history: createMemoryHistory({ initialEntries: [initialEntry] }),
   } as never) as never;
   const view = render(
     <QueryClientProvider client={queryClient}>
@@ -230,7 +233,11 @@ test("the company-account form gets the resume URL as its callbackURL", async ()
     await view.findByPlaceholderText("you@company.com"),
     "someone@company.com",
   );
-  await user.click(await view.findByText(/Continue with your company account/));
+  await user.click(
+    await view.findByRole("button", {
+      name: "Continue with your company account",
+    }),
+  );
   await waitFor(() => expect(asked).toHaveLength(1));
   expect(asked[0]).toBe(`${window.location.origin}${RESUME_URL}`);
 });
@@ -316,5 +323,63 @@ test("a signed-in arrival with a handle lands on the verifier, not back on the h
       configurable: true,
       value: realLocation,
     });
+  }
+});
+
+test("sign-in retries by keyboard and returns to the requested page with its search and hash", async () => {
+  const asked: (string | undefined)[] = [];
+  signInSpy = async (_provider, _start, callbackURL) => {
+    asked.push(callbackURL);
+    if (asked.length === 1) throw new Error("Sign-in provider unavailable");
+  };
+  const target = "/settings/notifications?source=invite#updates";
+  const { view, user } = renderSignScreen(
+    { providers: ["google"], sso: false, ssoRequired: false },
+    `/sign?returnTo=${encodeURIComponent(target)}`,
+  );
+  const button = await view.findByRole("button", {
+    name: "Continue with Google",
+  });
+  await user.tab();
+  expect(document.activeElement).toBe(button);
+  await user.keyboard("{Enter}");
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "Sign-in provider unavailable",
+  );
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(asked).toHaveLength(2));
+  expect(asked).toEqual(Array(2).fill(`${window.location.origin}${target}`));
+});
+
+test("only same-origin Web pages can be resumed, and an existing flow takes priority", () => {
+  const origin = "https://app.example";
+  const webReturn = "/desktop-return?app=calendar#done";
+  expect(appReturnPath(webReturn)).toBe(webReturn);
+  for (const value of [
+    "https://elsewhere.example/",
+    "//elsewhere.example/",
+    "/sign",
+    "/onboarding",
+    "/api/me",
+    42,
+  ]) {
+    expect(appReturnPath(value)).toBeUndefined();
+  }
+  expect(resumeUrlFor(origin, "flow", webReturn)).toBe(
+    `${origin}/api/plugins/arcade/verify?flow_id=flow`,
+  );
+});
+
+test("returns to a Web deep link without the newer URL.parse API", () => {
+  const descriptor = Object.getOwnPropertyDescriptor(URL, "parse");
+  Object.defineProperty(URL, "parse", { value: undefined, configurable: true });
+  try {
+    expect(appReturnPath("/bots?new=true#details")).toBe(
+      "/bots?new=true#details",
+    );
+    expect(appReturnPath("//outside.example/bots")).toBeUndefined();
+  } finally {
+    if (descriptor) Object.defineProperty(URL, "parse", descriptor);
+    else Reflect.deleteProperty(URL, "parse");
   }
 });

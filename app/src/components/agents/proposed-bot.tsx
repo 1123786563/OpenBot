@@ -1,7 +1,8 @@
+import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { type ComponentProps, useEffect, useRef, useState } from "react";
+
 import { Badge, GalleryFrame } from "@/components/gallery/frame";
-import { Button } from "@/components/ui/button";
 import type { AgentFormValues } from "@/lib/agents/form";
 import {
   botCardAnswer,
@@ -167,9 +168,14 @@ export function ProposedBotCard({
        * hides the second half of an instruction that will run on somebody's behalf from the one
        * person being asked to agree to it; a scroller keeps every character reachable.
        */}
-      <p className="mt-1 max-h-56 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+      <section
+        aria-label="Bot instructions"
+        className="mt-1 max-h-56 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border bg-muted/40 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: The scrollable instructions need a keyboard focus target.
+        tabIndex={0}
+      >
         {values.roleDescription}
-      </p>
+      </section>
 
       <p className="mt-2 text-muted-foreground text-xs">
         It starts private, with no apps. Apps are added on its page afterwards.
@@ -181,24 +187,41 @@ export function ProposedBotCard({
         </p>
       ) : null}
 
-      <div className="mt-4 flex justify-end gap-2">
-        <Button
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <ProposalAction
           disabled={Boolean(sending)}
+          label={sending === "decline" ? "Declining…" : "Don't create"}
           onClick={() => void decline()}
-          size="sm"
-          variant="outline"
-        >
-          {sending === "decline" ? "…" : "Don't create"}
-        </Button>
-        <Button
+          secondary
+        />
+        <ProposalAction
           disabled={Boolean(sending)}
+          label={sending === "create" ? "Creating…" : "Create it"}
           onClick={() => void make()}
-          size="sm"
-        >
-          {sending === "create" ? "Creating…" : "Create it"}
-        </Button>
+        />
       </div>
     </GalleryFrame>
+  );
+}
+
+function ProposalAction({
+  disabled,
+  label,
+  onClick,
+  secondary,
+}: Pick<ComponentProps<"button">, "disabled" | "onClick"> & {
+  label: string;
+  secondary?: boolean;
+}) {
+  return (
+    <AstryxButton
+      isDisabled={disabled}
+      label={label}
+      onClick={onClick}
+      size="sm"
+      type="button"
+      variant={secondary ? "secondary" : "primary"}
+    />
   );
 }
 

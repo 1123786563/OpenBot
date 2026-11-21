@@ -14,6 +14,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment, useId, useState } from "react";
 import { Streamdown } from "streamdown";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -112,9 +113,11 @@ export function summaryFor(
 export function ResponsibilityDialog({
   goal,
   onClose,
+  returnFocus,
 }: {
   goal: ResponsibilityRecord;
   onClose: () => void;
+  returnFocus: React.RefObject<HTMLButtonElement | null>;
 }) {
   const formId = useId();
   const [showRuns, setShowRuns] = useState(false);
@@ -145,7 +148,7 @@ export function ResponsibilityDialog({
 
   return (
     <Dialog onOpenChange={(next) => !next && onClose()} open>
-      <DialogContent>
+      <DialogContent {...astryxScope} finalFocus={returnFocus}>
         <DialogHeader>
           <DialogTitle>{goal.title}</DialogTitle>
           <DialogDescription>
@@ -396,6 +399,7 @@ const RUN_LABEL: Record<string, string> = {
   succeeded: "Succeeded",
   failed: "Failed",
   skipped: "Skipped",
+  paused: "Paused",
 };
 function runStatusClass(status: string) {
   return status === "failed"

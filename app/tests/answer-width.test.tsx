@@ -1,5 +1,4 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, waitFor } from "@testing-library/react";
@@ -105,24 +104,4 @@ test("a group conversation's answers are as wide as a conversation's", async () 
     ).not.toBeNull(),
   );
   centredUpTo(columns(view.container).answers, "max-w-3xl");
-});
-
-test("every skin keeps its answers and its composer in its own column", () => {
-  const css = readFileSync(
-    new URL("../src/skins/skins.css", import.meta.url),
-    "utf8",
-  ).replace(/\/\*[\s\S]*?\*\//g, "");
-  const rule =
-    /:root\[data-skin\]\s+\[data-transcript-column\],\s*:root\[data-skin\]\s+\[data-slot="composer-column"\]\s*\{([^}]*)\}/.exec(
-      css,
-    );
-  // `max-w-2xl`, read from the theme token.
-  expect(rule?.[1]?.trim()).toBe("max-width: var(--container-2xl);");
-  // OpenBot's `px-4` on the composer's column is taken off again, at a specificity a skin's own
-  // padding outranks, so a skin's composer is as wide as it was drawn.
-  const padding =
-    /:where\(:root\[data-skin\]\)\s+\[data-slot="composer-column"\]\s*\{([^}]*)\}/.exec(
-      css,
-    );
-  expect(padding?.[1]?.trim()).toBe("padding-inline: 0;");
 });

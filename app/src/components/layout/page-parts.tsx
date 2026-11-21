@@ -82,14 +82,17 @@ export function PageColumn({
 export function PageHeader({
   action,
   description,
+  eyebrow,
   title,
 }: {
   action?: React.ReactNode;
   description?: React.ReactNode;
+  eyebrow?: React.ReactNode;
   title: string;
 }) {
   return (
     <header className="flex flex-col gap-2" data-slot="page-header">
+      {eyebrow}
       <div className="flex flex-row items-center justify-between gap-4">
         <h1
           className="font-semibold text-2xl tracking-tight"
