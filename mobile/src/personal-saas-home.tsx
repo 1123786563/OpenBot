@@ -144,7 +144,7 @@ export function PersonalSaasHome() {
             ? { kind: "workspace-error" }
             : previous,
         );
-      } else if (reconnected) {
+      } else if (reconnected && !working.current) {
         void load();
       }
     });
