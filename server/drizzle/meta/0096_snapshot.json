@@ -12515,8 +12515,8 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "test_credit_budgets_account_id_test_credit_accounts_id_fk": {
-          "name": "test_credit_budgets_account_id_test_credit_accounts_id_fk",
+        "test_credit_budgets_account_fk": {
+          "name": "test_credit_budgets_account_fk",
           "tableFrom": "test_credit_budgets",
           "tableTo": "test_credit_accounts",
           "columnsFrom": [
@@ -12530,8 +12530,8 @@
         }
       },
       "compositePrimaryKeys": {
-        "test_credit_budgets_account_id_id_pk": {
-          "name": "test_credit_budgets_account_id_id_pk",
+        "test_credit_budgets_pk": {
+          "name": "test_credit_budgets_pk",
           "columns": [
             "account_id",
             "id"
@@ -12541,6 +12541,14 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "test_credit_budget_credit_type": {
+          "name": "test_credit_budget_credit_type",
+          "value": "\"test_credit_budgets\".\"credit_type\" = 'test'"
+        },
+        "test_credit_budget_state": {
+          "name": "test_credit_budget_state",
+          "value": "\"test_credit_budgets\".\"state\" IN ('active', 'paused', 'completed')"
+        },
         "test_credit_budget_limit_positive": {
           "name": "test_credit_budget_limit_positive",
           "value": "\"test_credit_budgets\".\"limit_microcredits\" > 0"
@@ -12821,6 +12829,33 @@
         }
       },
       "indexes": {
+        "test_credit_operations_budget_idx": {
+          "name": "test_credit_operations_budget_idx",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "budget_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "test_credit_operations_due_cutoff_idx": {
           "name": "test_credit_operations_due_cutoff_idx",
           "columns": [

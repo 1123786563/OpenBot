@@ -59,9 +59,7 @@ export const testCreditOutcomes = [
 export const testCreditBudgets = pgTable(
   "test_credit_budgets",
   {
-    accountId: uuid("account_id")
-      .notNull()
-      .references(() => testCreditAccounts.id),
+    accountId: uuid("account_id").notNull(),
     id: text().notNull(),
     creditType: text("credit_type", { enum: ["test"] }).notNull(),
     limitMicrocredits: bigint("limit_microcredits", {
@@ -76,7 +74,20 @@ export const testCreditBudgets = pgTable(
       .defaultNow(),
   },
   (table) => [
-    primaryKey({ columns: [table.accountId, table.id] }),
+    primaryKey({
+      name: "test_credit_budgets_pk",
+      columns: [table.accountId, table.id],
+    }),
+    foreignKey({
+      name: "test_credit_budgets_account_fk",
+      columns: [table.accountId],
+      foreignColumns: [testCreditAccounts.id],
+    }),
+    check("test_credit_budget_credit_type", sql`${table.creditType} = 'test'`),
+    check(
+      "test_credit_budget_state",
+      sql`${table.state} IN ('active', 'paused', 'completed')`,
+    ),
     check(
       "test_credit_budget_limit_positive",
       sql`${table.limitMicrocredits} > 0`,
@@ -114,6 +125,11 @@ export const testCreditOperations = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.accountId, table.id] }),
+    index("test_credit_operations_budget_idx").on(
+      table.accountId,
+      table.budgetId,
+      table.state,
+    ),
     index("test_credit_operations_due_cutoff_idx")
       .on(table.dispatchedAt, table.accountId, table.id)
       .where(sql`${table.state} = 'pending' AND ${table.cutoffHold} IS NULL`),
