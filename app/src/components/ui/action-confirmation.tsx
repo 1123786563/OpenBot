@@ -1,0 +1,175 @@
+import { Button } from "@astryxdesign/core/Button";
+import { useRef, useState } from "react";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ClientError } from "@/lib/client";
+
+export class ActionUnavailable extends Error {}
+
+export class ActionIncomplete extends Error {}
+
+type Confirmation = {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  pendingLabel: string;
+  failureMessage: string;
+  run: () => Promise<void | string>;
+  trigger?: HTMLElement | undefined;
+  fallbackFocus?: (() => HTMLElement | null) | undefined;
+  variant?: "default" | "destructive";
+  successMessage?: string;
+  refresh?: () => Promise<unknown>;
+};
+
+type ConfirmationState =
+  | { phase: "ready" | "pending"; action: Confirmation }
+  | { phase: "retry" | "unavailable"; action: Confirmation; message: string };
+
+export function useActionConfirmation() {
+  const [state, setState] = useState<ConfirmationState | null>(null);
+  const [notice, setNotice] = useState("");
+  const remembered = useRef<Confirmation | null>(null);
+  const submitting = useRef(false);
+  const cancelButton = useRef<HTMLButtonElement>(null);
+  const status = useRef<HTMLParagraphElement>(null);
+  const close = () => setState(null);
+
+  function requestConfirmation(action: Confirmation) {
+    if (submitting.current) return;
+    remembered.current = action;
+    setNotice("");
+    setState({ phase: "ready", action });
+  }
+
+  async function submit(action: Confirmation) {
+    if (submitting.current) return;
+    submitting.current = true;
+    setState({ phase: "pending", action });
+    try {
+      const result = await action.run();
+      setNotice(result ?? action.successMessage ?? "Change saved.");
+      close();
+    } catch (error) {
+      const message =
+        error instanceof ActionUnavailable
+          ? error.message
+          : error instanceof ClientError
+            ? unavailableMessage(error.status)
+            : undefined;
+      if (message !== undefined) {
+        await action.refresh?.().catch(() => undefined);
+        setState({ phase: "unavailable", action, message });
+        cancelButton.current?.focus();
+      } else {
+        setState({
+          phase: "retry",
+          action,
+          message:
+            error instanceof ActionIncomplete
+              ? error.message
+              : action.failureMessage,
+        });
+      }
+    } finally {
+      submitting.current = false;
+    }
+  }
+
+  const pending = state?.phase === "pending";
+  const unavailable = state?.phase === "unavailable";
+  const action = state?.action ?? remembered.current;
+
+  return {
+    requestConfirmation,
+    confirmation: (
+      <>
+        <p ref={status} role="status" tabIndex={-1}>
+          {notice}
+        </p>
+        <Dialog
+          disablePointerDismissal
+          open={state !== null}
+          onOpenChange={(open, event) => {
+            if (open) return;
+            if (submitting.current) {
+              event.cancel();
+              return;
+            }
+            close();
+          }}
+        >
+          <DialogContent
+            className="break-words"
+            finalFocus={() => {
+              const opener = remembered.current?.trigger;
+              if (
+                opener?.isConnected &&
+                !opener.matches(":disabled, [aria-disabled=true]")
+              ) {
+                return opener;
+              }
+              return (
+                remembered.current?.fallbackFocus?.() ?? status.current ?? true
+              );
+            }}
+            initialFocus={cancelButton}
+            role="alertdialog"
+            showCloseButton={false}
+          >
+            <DialogTitle>{action?.title}</DialogTitle>
+            <DialogBody>
+              <DialogDescription>{action?.description}</DialogDescription>
+              {state && "message" in state && (
+                <p className="text-destructive" role="alert">
+                  {state.message}
+                </p>
+              )}
+            </DialogBody>
+            <DialogFooter className="flex-wrap">
+              <Button
+                ref={cancelButton}
+                isDisabled={pending}
+                label={unavailable ? "Close" : "Cancel"}
+                onClick={close}
+                variant="secondary"
+              />
+              {action && !unavailable && (
+                <Button
+                  isLoading={pending}
+                  label={
+                    pending
+                      ? action.pendingLabel
+                      : state?.phase === "retry"
+                        ? "Try again"
+                        : action.confirmLabel
+                  }
+                  onClick={() => void submit(action)}
+                  variant={
+                    action.variant === "default" ? "primary" : "destructive"
+                  }
+                />
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </>
+    ),
+  };
+}
+
+function unavailableMessage(status: number): string | undefined {
+  if (status === 401)
+    return "Your session has ended. Sign in again to continue.";
+  if (status === 403)
+    return "You no longer have permission to make this change.";
+  if (status === 404 || status === 409) {
+    return "The current state no longer matches this confirmation. Close this dialog and review the list.";
+  }
+}

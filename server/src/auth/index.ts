@@ -28,6 +28,7 @@ import {
 } from "../db/schema";
 import { DOMAIN_REFUSAL_MESSAGE, emailDomainAllowed } from "./email-domain";
 import { encryptSsoConfig } from "./encrypt-sso-config";
+import { openFuseAuth } from "./openfuse";
 import { SIGN_OUT_UNFINISHED } from "./organization";
 import { applyConfiguredAdmin, isConfiguredAdmin, seedRole } from "./roles";
 import { recordProvisioned, scimOptions } from "./scim";
@@ -241,6 +242,7 @@ export function createAuth(
      */
     ...(scimPluginOptions ? [scim(scimPluginOptions)] : []),
     electron({ clientID: "openbot-desktop", codeExpiresIn: 120 }),
+    openFuseAuth(config.appUrl),
     ...(authConfig.okta
       ? [
           genericOAuth({

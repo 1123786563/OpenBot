@@ -5,24 +5,21 @@ import { createRoot } from "react-dom/client";
 import { queryClient } from "./query-client";
 import { router } from "./router";
 import "@astryxdesign/core/reset.css";
+import "@astryxdesign/core/astryx.css";
+import "@astryxdesign/theme-neutral/theme.css";
 import "@copilotkit/react-core/v2/styles.css";
 import "./styles.css";
-import "./components/astryx-pilot/styles";
 
-function renderApp() {
-  const rootElement = document.getElementById("root");
+const rootElement = document.getElementById("root");
 
-  if (!rootElement) {
-    throw new Error("OpenBot could not find the application root element.");
-  }
-
-  createRoot(rootElement).render(
-    <StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} context={{ queryClient }} />
-      </QueryClientProvider>
-    </StrictMode>,
-  );
+if (!rootElement) {
+  throw new Error("OpenBot could not find the application root element.");
 }
 
-renderApp();
+createRoot(rootElement).render(
+  <StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} context={{ queryClient }} />
+    </QueryClientProvider>
+  </StrictMode>,
+);

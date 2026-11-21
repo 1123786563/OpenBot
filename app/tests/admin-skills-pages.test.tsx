@@ -310,8 +310,9 @@ describe("a skill's page", () => {
       await view.findByRole("button", { name: /^Delete People can.t run it/ }),
     );
     expect(writes).toEqual([]);
-    const dialog = await view.findByRole("dialog");
-    expect(within(dialog).getByText("Delete Triage the inbox?")).toBeTruthy();
+    const dialog = await view.findByRole("alertdialog", {
+      name: "Delete Triage the inbox?",
+    });
     await user.click(within(dialog).getByRole("button", { name: "Delete" }));
     await waitFor(() =>
       expect(router.state.location.pathname).toBe("/admin/skills"),

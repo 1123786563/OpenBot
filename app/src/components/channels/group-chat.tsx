@@ -1,4 +1,4 @@
-import { Text } from "@astryxdesign/core/Text";
+import { Stack } from "@astryxdesign/core/Stack";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useLayoutEffect, useRef } from "react";
@@ -34,6 +34,10 @@ import {
 import { newId } from "@/lib/new-id";
 import { ChannelAvatar } from "./avatar";
 import { Composer, toAgentOptions } from "./composer";
+import {
+  ConversationLoading,
+  ConversationReadError,
+} from "./conversation-status";
 import { TeamBotConsentCard } from "./team-bot-consent";
 
 /**
@@ -56,6 +60,11 @@ export function GroupChat({ channelId }: { channelId: string }) {
   const send = useMutation(
     sendGroupMessageMutationOptions(queryClient, channelId),
   );
+  const pendingMessage = useRef<{
+    id: string;
+    text: string;
+    agentId: string | null;
+  } | null>(null);
   const bots = group.data?.bots ?? [];
   const names = new Map(bots.map((bot) => [bot.id, bot.name]));
   const messages = group.data?.messages ?? [];
@@ -122,16 +131,31 @@ export function GroupChat({ channelId }: { channelId: string }) {
     }
   }, [lastKey, newestIsMine]);
 
-  if (group.isPending) return null;
-  if (group.isError)
+  if (group.isPending)
+    return <ConversationLoading label="Opening group conversation…" />;
+  if (!group.data) {
     return (
-      <p className="p-8 text-sm text-destructive" role="alert">
-        {group.error.message}
-      </p>
+      <Stack padding={5}>
+        <ConversationReadError
+          title="Couldn't open this group conversation."
+          description="Try again to load messages and participants."
+          retry={() => void group.refetch()}
+          retrying={group.isFetching}
+        />
+      </Stack>
     );
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {group.isError && (
+        <ConversationReadError
+          title="Couldn't update group messages."
+          description="You can still read the messages already loaded."
+          retry={() => void group.refetch()}
+          retrying={group.isFetching}
+        />
+      )}
       <div
         className="min-h-0 flex-1 overflow-y-auto"
         onScroll={(event) => {
@@ -174,12 +198,14 @@ export function GroupChat({ channelId }: { channelId: string }) {
       <div className="mx-auto w-full max-w-2xl shrink-0 pb-4">
         {send.error ? (
           <p className="pb-2 text-sm text-destructive" role="alert">
-            {send.error.message}
+            Couldn't confirm your message was sent. Your draft is still here.
+            Send it again to retry.
           </p>
         ) : null}
         {answer.error ? (
           <p className="pb-2 text-sm text-destructive" role="alert">
-            {answer.error.message}
+            Couldn't confirm your answer. Check whether the question is still
+            waiting before replying again.
           </p>
         ) : null}
         {/* The same drawer a conversation with one Bot draws its question in. */}
@@ -212,11 +238,15 @@ export function GroupChat({ channelId }: { channelId: string }) {
               await answerTo(draft.text, question);
               return;
             }
-            await send.mutateAsync({
-              id: newId(),
-              text: draft.text,
-              agentId: draft.agentId,
-            });
+            const previous = pendingMessage.current;
+            const message =
+              previous?.text === draft.text &&
+              previous.agentId === draft.agentId
+                ? previous
+                : { id: newId(), text: draft.text, agentId: draft.agentId };
+            pendingMessage.current = message;
+            await send.mutateAsync(message);
+            pendingMessage.current = null;
           }}
         />
       </div>
@@ -307,12 +337,6 @@ function GroupLine({
               {message.consent.serverId} account.
             </p>
           )
-        ) : message.status === "paused" ? (
-          <section aria-label="Paused Bot run" role="status">
-            <Text as="p" type="supporting">
-              {message.reason ?? message.text}
-            </Text>
-          </section>
         ) : message.status === "failed" ? (
           <p className="text-sm text-destructive" role="alert">
             {message.text || "This Bot couldn't answer."}

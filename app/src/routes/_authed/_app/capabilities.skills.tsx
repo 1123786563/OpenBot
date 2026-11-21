@@ -1,17 +1,17 @@
 import { IconDots, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
 import { z } from "zod";
-import { CapabilitySurface } from "@/components/astryx-pilot/capability-surface";
-import { astryxScope } from "@/components/astryx-pilot/theme";
 import { CapabilitiesShell } from "@/components/capabilities/capabilities-shell";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { StaggerItem } from "@/components/layout/stagger";
 import { EditSkill } from "@/components/skills/edit-skill";
 import { NewSkill } from "@/components/skills/new-skill";
-import { SkillMarket } from "@/components/skills/skill-market";
+import {
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -30,7 +30,6 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
-import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { removeSkillMutationOptions } from "@/lib/plugins/mutations";
 import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
 
@@ -57,18 +56,17 @@ export const Route = createFileRoute("/_authed/_app/capabilities/skills")({
 
 function SkillsPage() {
   const queryClient = useQueryClient();
-  const { data: deploymentCapabilities } = useQuery(
-    deploymentCapabilitiesQueryOptions(),
-  );
   const { new: isCreating, edit: editingSlug } = Route.useSearch();
   const navigate = Route.useNavigate();
   // Creating wins if both are somehow set: it is the more recent intent, the same rule the agents
   // roster uses when `new` and `agent` arrive together.
   const showCreate = isCreating === true;
   const showEdit = !showCreate && editingSlug !== undefined;
-  const { data, isPending: skillsPending } = useQuery(
-    pluginsPageQueryOptions(),
-  );
+  const {
+    data,
+    isPending: skillsPending,
+    refetch: refetchSkills,
+  } = useQuery(pluginsPageQueryOptions());
   const { data: me, isPending: mePending } = useQuery(
     currentUserQueryOptions(),
   );
@@ -77,13 +75,8 @@ function SkillsPage() {
    * them and the list is empty for a reason that is not "you have no skills".
    */
   const loading = skillsPending || mePending;
-  const [error, setError] = useState<string | null>(null);
-
-  const removeSkill = useMutation({
-    ...removeSkillMutationOptions(queryClient),
-    onError: (thrown: Error) => setError(thrown.message),
-    onSuccess: () => setError(null),
-  });
+  const { requestConfirmation, confirmation } = useActionConfirmation();
+  const removeSkill = useMutation(removeSkillMutationOptions(queryClient));
 
   /*
    * The server has ALREADY excluded skills this person may not see — `listSkills` scopes the query
@@ -102,28 +95,21 @@ function SkillsPage() {
     <DetailPanel
       detail={
         showCreate ? (
-          <CapabilitySurface>
-            <NewSkill />
-          </CapabilitySurface>
+          <NewSkill />
         ) : editingSlug ? (
-          <CapabilitySurface>
-            <EditSkill slug={editingSlug} />
-          </CapabilitySurface>
+          <EditSkill slug={editingSlug} />
         ) : null
       }
       onClose={() => navigate({ search: {} })}
       open={showCreate || showEdit}
     >
       <CapabilitiesShell>
-        {error ? (
-          <p className="mt-4 text-sm text-destructive" role="alert">
-            {error}
-          </p>
-        ) : null}
+        {confirmation}
 
         <PageSection
           action={
             <Button
+              id="new-personal-skill"
               render={(props) => (
                 <Link
                   search={{ new: true }}
@@ -186,12 +172,17 @@ function SkillsPage() {
                       <DropdownMenu>
                         <DropdownMenuTrigger
                           render={
-                            <Button variant="ghost" size="icon-sm">
+                            <Button
+                              aria-label={`Actions for ${skill.title}`}
+                              id={`skill-actions-${skill.id}`}
+                              variant="ghost"
+                              size="icon-sm"
+                            >
                               <IconDots />
                             </Button>
                           }
                         ></DropdownMenuTrigger>
-                        <DropdownMenuContent {...astryxScope}>
+                        <DropdownMenuContent>
                           <DropdownMenuGroup>
                             <DropdownMenuItem
                               onClick={() =>
@@ -200,16 +191,49 @@ function SkillsPage() {
                             >
                               Edit
                             </DropdownMenuItem>
-                            {/*
-                             * Deleting is immediate and there is no undo. It is behind a menu rather
-                             * than sitting on the row for that reason, and the skill is named in the
-                             * label so the destructive item says WHICH skill it destroys — a menu
-                             * opened over the wrong row is the ordinary way this goes wrong.
-                             */}
                             <DropdownMenuItem
                               onClick={() => {
-                                setError(null);
-                                removeSkill.mutate(skill.slug);
+                                requestConfirmation({
+                                  title: `Delete ${skill.title}?`,
+                                  description:
+                                    "Your Bots will stop offering this skill. Deletion is permanent.",
+                                  confirmLabel: "Delete skill",
+                                  pendingLabel: "Deleting…",
+                                  failureMessage:
+                                    "Couldn't delete this skill. Try again.",
+                                  successMessage: "Skill deleted.",
+                                  trigger:
+                                    document.getElementById(
+                                      `skill-actions-${skill.id}`,
+                                    ) ?? undefined,
+                                  fallbackFocus: () =>
+                                    document.getElementById(
+                                      "new-personal-skill",
+                                    ),
+                                  refresh: () => refetchSkills(),
+                                  run: async () => {
+                                    const { data: latest } =
+                                      await refetchSkills({
+                                        throwOnError: true,
+                                      });
+                                    const current = latest?.skills.find(
+                                      (candidate) =>
+                                        candidate.slug === skill.slug,
+                                    );
+                                    if (
+                                      current?.id !== skill.id ||
+                                      current.ownerUserId !== me?.id ||
+                                      current.title !== skill.title ||
+                                      current.instructions !==
+                                        skill.instructions
+                                    ) {
+                                      throw new ActionUnavailable(
+                                        "This skill changed or is no longer available. Return to the list to review it.",
+                                      );
+                                    }
+                                    await removeSkill.mutateAsync(skill.slug);
+                                  },
+                                });
                               }}
                               variant="destructive"
                             >
@@ -269,9 +293,6 @@ function SkillsPage() {
          * the real one now. `SkillRow` below is still parked, because its per-Bot grant toggles have
          * no equivalent in the redesigned rows yet.
          */}
-        {deploymentCapabilities?.skillMarket && (
-          <SkillMarket isAdmin={me?.role === "admin"} />
-        )}
       </CapabilitiesShell>
     </DetailPanel>
   );
