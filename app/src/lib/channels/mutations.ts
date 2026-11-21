@@ -11,14 +11,17 @@ import { type AgentChannel, type ChannelPage, channelKeys } from "./queries";
 /**
  * Start a new channel with one or more coworkers.
  *
- * Deliberately not idempotent: every call creates a channel with its own thread.
+ * The request ID preserves the Conversation and Thread when the response is interrupted.
  */
 export function createChannelMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
-    mutationFn: async (agentIds: string[]): Promise<AgentChannel> => {
+    mutationFn: async (input: {
+      agentIds: string[];
+      requestId: string;
+    }): Promise<AgentChannel> => {
       const response = await client("/api/channels", {
         method: "POST",
-        body: { agentIds },
+        body: input,
         fallback: "Couldn't start a conversation.",
       });
       return ((await response.json()) as { channel: AgentChannel }).channel;

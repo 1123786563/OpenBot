@@ -1,0 +1,74 @@
+name: openbot-server
+
+x-openbot: &openbot
+  image: ${OPENBOT_IMAGE:?Set OPENBOT_IMAGE}
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  migrate:
+    <<: *openbot
+    restart: "no"
+    command: ["bun", "--no-env-file", "scripts/migrate.ts"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+    networks: [postgres]
+
+  server:
+    <<: *openbot
+    env_file: .env.server
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      WORKER_SHARED_SECRET: ${WORKER_SHARED_SECRET:?Set WORKER_SHARED_SECRET}
+      PORT: "3001"
+      APP_PORT: ${OPENBOT_PORT:-18001}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const r = await fetch('http://127.0.0.1:3001/health'); process.exit(r.ok ? 0 : 1)"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+    networks:
+      default: {}
+      postgres: {}
+      agents:
+        aliases: [openbot-api]
+      telemetry: {}
+
+  worker:
+    <<: *openbot
+    command: ["bun", "--no-env-file", "../worker/src/index.ts"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      SERVER_INTERNAL_URL: http://server:3001
+      WORKER_SHARED_SECRET: ${WORKER_SHARED_SECRET:?Set WORKER_SHARED_SECRET}
+    depends_on:
+      server:
+        condition: service_healthy
+    networks: [default, postgres]
+
+  local-access:
+    <<: *openbot
+    command: ["bun", "--no-env-file", "/relay.cjs"]
+    network_mode: service:server
+    depends_on:
+      server:
+        condition: service_healthy
+        restart: true
+    volumes:
+      - ./relay.cjs:/relay.cjs:ro
+      - ${OPENBOT_SOCKET_DIR:?Set OPENBOT_SOCKET_DIR}:/socket
+
+networks:
+  postgres:
+    external: true
+    name: 1panel-network
+  agents:
+    external: true
+    name: openbot-agents_default
+  telemetry:
+    external: true
+    name: openbot-observability

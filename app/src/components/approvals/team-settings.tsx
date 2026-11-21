@@ -1,3 +1,4 @@
+import { ruleTitle } from "@openbot/shared/tool-name";
 import {
   IconChecklist,
   IconChevronRight,
@@ -14,7 +15,7 @@ import {
   IconTrash,
   IconUserCog,
 } from "@tabler/icons-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment } from "react";
 import {
@@ -22,6 +23,10 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import {
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
 import {
   Item,
   ItemActions,
@@ -35,14 +40,17 @@ import { Switch } from "@/components/ui/switch";
 import {
   type ActionKind,
   type ActionKindPolicy,
+  type ApprovalInboxData,
+  type ApprovalRuleRow,
   approvalInboxOptions,
+  BEHAVIOUR_LABELS,
   createTeamApprovalRuleMutationOptions,
   revokeTeamApprovalRuleMutationOptions,
+  type setTeamApprovalSettings,
   teamApprovalSettingsMutationOptions,
   updateTeamApprovalRuleMutationOptions,
 } from "@/lib/approvals";
 import { reviewerGuidanceQueryOptions } from "@/lib/reviewer-guidance/queries";
-import { queryClient } from "@/query-client";
 import { HOST_LABELS, LabelSelect, RuleForm, RuleRow } from "./rules";
 import { SharedUseRequests } from "./shared-use-requests";
 
@@ -80,12 +88,16 @@ const ACTION_KIND_LABELS: Record<ActionKindPolicy, string> = {
   hand_off: "Members do it themselves",
 };
 
+type TeamSettings = NonNullable<ApprovalInboxData["team"]>;
+type TeamSettingsChange = Parameters<typeof setTeamApprovalSettings>[0];
+
 /**
  * What every member's Bots must do, set by an administrator: the team-wide controls, the rules that
  * apply to everyone, and requests to use a shared account. Members read the team rules, locked, in
  * Settings → Approvals.
  */
 export function TeamApprovalSettings() {
+  const queryClient = useQueryClient();
   const inbox = useQuery(approvalInboxOptions());
   const guidance = useQuery(reviewerGuidanceQueryOptions());
   const team = useMutation(teamApprovalSettingsMutationOptions(queryClient));
@@ -98,14 +110,103 @@ export function TeamApprovalSettings() {
   const revokeTeam = useMutation(
     revokeTeamApprovalRuleMutationOptions(queryClient),
   );
-  const error =
-    inbox.error ?? team.error ?? changeTeamRule.error ?? revokeTeam.error;
+  const { requestConfirmation, confirmation } = useActionConfirmation();
+  const error = inbox.error;
   if (inbox.isPending && !error) return null;
   const settings = inbox.data?.team;
   const teamRules = inbox.data?.teamRules ?? [];
 
+  function confirmSetting({
+    id,
+    title,
+    description,
+    changed,
+    input,
+  }: {
+    id: string;
+    title: string;
+    description: string;
+    changed: (latest: TeamSettings) => boolean;
+    input: TeamSettingsChange;
+  }) {
+    requestConfirmation({
+      title,
+      description,
+      confirmLabel: "Change team setting",
+      pendingLabel: "Saving…",
+      failureMessage: "Couldn't change this team setting. Try again.",
+      trigger: document.getElementById(id) ?? undefined,
+      variant: "default",
+      refresh: () => inbox.refetch(),
+      run: async () => {
+        const { data } = await inbox.refetch({ throwOnError: true });
+        if (!data?.team || changed(data.team)) {
+          throw new ActionUnavailable(
+            "This team setting changed. Close this dialog to review the current setting.",
+          );
+        }
+        await team.mutateAsync(input);
+      },
+    });
+  }
+
+  function confirmRule(
+    rule: ApprovalRuleRow,
+    behaviour?: ApprovalRuleRow["behaviour"],
+  ) {
+    const { title } = ruleTitle(rule);
+    const target = [
+      rule.botId === "*" ? "all Bots" : `Bots matching ${rule.botId}`,
+      rule.scope !== "*" && `scope ${rule.scope}`,
+      rule.account && `account ${rule.account}`,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    requestConfirmation({
+      title: behaviour
+        ? `Change the team rule for ${title}?`
+        : `Remove the team rule for ${title}?`,
+      description: behaviour
+        ? `For matching actions (${target}), the behaviour changes from “${BEHAVIOUR_LABELS[rule.behaviour]}” to “${BEHAVIOUR_LABELS[behaviour]}”. You can change it again here.`
+        : `For matching actions (${target}), other applicable rules and defaults will determine what happens. To restore this rule, add it again.`,
+      confirmLabel: behaviour ? "Change rule" : "Remove rule",
+      pendingLabel: behaviour ? "Saving…" : "Removing…",
+      failureMessage: "Couldn't update this team rule. Try again.",
+      trigger:
+        document.getElementById(
+          `team-rule-${behaviour ? "behaviour" : "remove"}-${rule.id}`,
+        ) ?? undefined,
+      fallbackFocus: () => document.getElementById("describe-team-rule"),
+      variant: behaviour ? "default" : "destructive",
+      refresh: () => inbox.refetch(),
+      run: async () => {
+        const { data } = await inbox.refetch({ throwOnError: true });
+        const current = data?.teamRules.find(
+          (candidate) => candidate.id === rule.id,
+        );
+        if (
+          !current ||
+          current.behaviour !== rule.behaviour ||
+          current.toolRef !== rule.toolRef ||
+          current.scope !== rule.scope ||
+          current.botId !== rule.botId ||
+          current.account !== rule.account ||
+          current.effect !== rule.effect
+        ) {
+          throw new ActionUnavailable(
+            "This team rule changed or is no longer available. Return to the list to review the current rules.",
+          );
+        }
+        if (behaviour)
+          await changeTeamRule.mutateAsync({ id: rule.id, behaviour });
+        else await revokeTeam.mutateAsync(rule.id);
+      },
+    });
+  }
+
   return (
     <>
+      {confirmation}
       {error ? (
         <p className="mt-6 text-destructive text-sm" role="alert">
           {error.message}
@@ -126,10 +227,22 @@ export function TeamApprovalSettings() {
               <ItemActions>
                 <Switch
                   aria-labelledby="enforce-auto-review-title"
+                  id="enforce-auto-review"
                   checked={settings.enforceAutoReview}
                   disabled={team.isPending}
                   onCheckedChange={(enforceAutoReview) =>
-                    team.mutate({ enforceAutoReview })
+                    confirmSetting({
+                      id: "enforce-auto-review",
+                      title: enforceAutoReview
+                        ? "Require auto-review for everyone?"
+                        : "Let members choose auto-review?",
+                      description: enforceAutoReview
+                        ? "All team members’ approval requests will use auto-review. You can let members choose again here."
+                        : "Team members’ own auto-review preferences will apply. You can require it again here.",
+                      changed: (latest) =>
+                        latest.enforceAutoReview !== settings.enforceAutoReview,
+                      input: { enforceAutoReview },
+                    })
                   }
                 />
               </ItemActions>
@@ -167,10 +280,23 @@ export function TeamApprovalSettings() {
               <ItemActions>
                 <Switch
                   aria-labelledby="custom-rules-title"
+                  id="custom-rules"
                   checked={settings.customRulesEnabled}
                   disabled={team.isPending}
                   onCheckedChange={(customRulesEnabled) =>
-                    team.mutate({ customRulesEnabled })
+                    confirmSetting({
+                      id: "custom-rules",
+                      title: customRulesEnabled
+                        ? "Let members use personal rules?"
+                        : "Turn off personal rules for members?",
+                      description: customRulesEnabled
+                        ? "Team members’ saved personal rules can apply again wherever team rules leave that choice to members. You can turn them off here."
+                        : "Team members’ personal rules will stop applying. Their rules remain saved and will be available if you turn them back on.",
+                      changed: (latest) =>
+                        latest.customRulesEnabled !==
+                        settings.customRulesEnabled,
+                      input: { customRulesEnabled },
+                    })
                   }
                 />
               </ItemActions>
@@ -188,11 +314,19 @@ export function TeamApprovalSettings() {
               </ItemContent>
               <ItemActions>
                 <LabelSelect
+                  id="host-commands-cap"
                   disabled={team.isPending}
                   label="Commands on members' computers, at most"
                   labels={HOST_LABELS}
                   onChange={(hostCommandsCap) =>
-                    team.mutate({ hostCommandsCap })
+                    confirmSetting({
+                      id: "host-commands-cap",
+                      title: "Change the command limit on members’ computers?",
+                      description: `The team limit changes from “${HOST_LABELS[settings.hostCommandsCap]}” to “${HOST_LABELS[hostCommandsCap]}”. A member’s own stricter setting still applies. You can change this limit again here.`,
+                      changed: (latest) =>
+                        latest.hostCommandsCap !== settings.hostCommandsCap,
+                      input: { hostCommandsCap },
+                    })
                   }
                   value={settings.hostCommandsCap}
                 />
@@ -219,11 +353,20 @@ export function TeamApprovalSettings() {
                   </ItemContent>
                   <ItemActions>
                     <LabelSelect
+                      id={`approval-action-${kind}`}
                       disabled={team.isPending}
                       label={title}
                       labels={ACTION_KIND_LABELS}
                       onChange={(policy) =>
-                        team.mutate({ actionKinds: { [kind]: policy } })
+                        confirmSetting({
+                          id: `approval-action-${kind}`,
+                          title: `Change the team policy for ${title.toLowerCase()}?`,
+                          description: `For all team members, this policy changes from “${ACTION_KIND_LABELS[settings.actionKinds?.[kind] ?? "open"]}” to “${ACTION_KIND_LABELS[policy]}”. You can change it again here.`,
+                          changed: (latest) =>
+                            (latest.actionKinds?.[kind] ?? "open") !==
+                            (settings.actionKinds?.[kind] ?? "open"),
+                          input: { actionKinds: { [kind]: policy } },
+                        })
                       }
                       value={settings.actionKinds?.[kind] ?? "open"}
                     />
@@ -246,17 +389,20 @@ export function TeamApprovalSettings() {
             <Fragment key={rule.id}>
               <RuleRow
                 disabled={revokeTeam.isPending || changeTeamRule.isPending}
-                onChange={(behaviour) =>
-                  changeTeamRule.mutate({ id: rule.id, behaviour })
-                }
-                onRevoke={() => revokeTeam.mutate(rule.id)}
+                onChange={(behaviour) => confirmRule(rule, behaviour)}
+                onRevoke={() => confirmRule(rule)}
                 rule={rule}
                 team
               />
               <Separator />
             </Fragment>
           ))}
-          <Item render={<Link to="/admin/approvals/describe" />} size="sm">
+          <Item
+            render={
+              <Link id="describe-team-rule" to="/admin/approvals/describe" />
+            }
+            size="sm"
+          >
             <ItemMedia variant="icon">
               <IconSparkles />
             </ItemMedia>

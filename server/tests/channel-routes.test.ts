@@ -161,6 +161,22 @@ describe("channel input parser", () => {
     expect(parseChannelInput({ agentIds })).toEqual({ ok: false, error });
   });
 
+  test("accepts an optional recovery identity and rejects malformed values", () => {
+    const requestId = "60000000-0000-4000-8000-000000000001";
+    expect(parseChannelInput({ agentIds: ["bot"], requestId })).toEqual({
+      ok: true,
+      value: { agentIds: ["bot"], requestId },
+    });
+    for (const invalid of [null, "", "malformed", 50]) {
+      expect(
+        parseChannelInput({ agentIds: ["bot"], requestId: invalid }),
+      ).toEqual({
+        ok: false,
+        error: "The conversation request ID is invalid.",
+      });
+    }
+  });
+
   test("trims, sorts, and whitelists channel input", () => {
     expect(
       parseChannelInput({

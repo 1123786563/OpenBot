@@ -1,24 +1,26 @@
-import {
-  MutationObserver,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
-import { useNavigate, useRouter } from "@tanstack/react-router";
-import { stashFirstMessage } from "@/components/channels/transcript-messages";
+import { MutationObserver, type QueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
+import { useRef, useState } from "react";
+import type { ComposerDraft } from "@/components/channels/composer";
 import {
   createGroupMutationOptions,
+  groupQueryOptions,
   sendGroupMessageMutationOptions,
 } from "@/lib/groups";
 import { saveConversationModel } from "@/lib/models/mutations";
 import type { ConversationModel } from "@/lib/models/queries";
 import { newId } from "@/lib/new-id";
+import { createChannelMutationOptions } from "./mutations";
 import {
-  createChannelMutationOptions,
-  deleteChannelMutationOptions,
-} from "./mutations";
-import { pendingStartPath, settlePendingStart } from "./pending-start";
+  finishPendingStart,
+  pendingAttachmentRefs,
+  readPendingStart,
+  savePendingStart,
+  type StartRecipient,
+  type StartRecord,
+} from "./pending-start";
 import { channelKeys } from "./queries";
-import { routeMessage } from "./route";
+import { CoworkerRoutingRefusedError, routeMessage } from "./route";
 
 /**
  * Start a channel with a coworker the person chose themselves, and say so first.
@@ -105,113 +107,162 @@ export async function startWithModel(input: {
   await input.open(channel.id);
 }
 
-/**
- * Start a channel from a just-submitted first message, then navigate there.
- *
- * Ordering matters: create, seed the channel cache, stash the first message, then navigate. That
- * keeps the first message visible while the channel thread joins.
- *
- * Started from a placeholder (`pendingId`, see `pending-start.ts`), the conversation replaces the
- * placeholder only while the person is still looking at it. Somebody who went elsewhere while it
- * was being made is not pulled back; the conversation is in their sidebar, and its first message
- * stays stashed until they open it, which is when it is sent. Going back to the placeholder opens
- * it too (`settlePendingStart`).
- */
-export function useStartChannel() {
-  const queryClient = useQueryClient();
+/** Persist before leaving the composer so even an interrupted navigation is recoverable. */
+export function useSubmitConversationStart(owner: string | undefined) {
   const navigate = useNavigate();
-  const router = useRouter();
-  const createChannel = useMutation(createChannelMutationOptions(queryClient));
-  const createGroup = useMutation(createGroupMutationOptions(queryClient));
-  const deleteChannel = useMutation(deleteChannelMutationOptions(queryClient));
-  const discardFailedStart = useMutation(
-    deleteChannelMutationOptions(queryClient, true),
-  );
+  const submitting = useRef(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async (
+    draft: ComposerDraft,
+    recipient: StartRecipient,
+    model: ConversationModel | null = null,
+  ) => {
+    if (!owner || submitting.current) return;
+    submitting.current = true;
+    setError(null);
+    try {
+      const id = newId();
+      const attachments = pendingAttachmentRefs(draft.attachments);
+      savePendingStart(owner, id, {
+        state: "pending",
+        progress: { phase: "creating" },
+        draft: {
+          text: draft.text,
+          commandIds: draft.commandIds,
+          attachments,
+          recipient,
+          model,
+        },
+      });
 
-  const start = (
-    agentId: string,
-    text: string,
-    /** A model and effort picked before the conversation existed, saved before its first message runs. */
-    pick?: ConversationModel | null,
-    /** The placeholder this was started behind, if any; see the hook's own comment. */
-    pendingId?: string,
-  ) =>
-    startWithModel({
-      pick: pick ?? null,
-      create: async () => {
-        const channel = await createChannel.mutateAsync([agentId]);
-        queryClient.setQueryData(channelKeys.detail(channel.id), channel);
-        return channel;
-      },
-      save: saveConversationModel,
-      discard: async (channelId) => {
-        await discardFailedStart.mutateAsync(channelId);
-      },
-      open: async (channelId) => {
-        stashFirstMessage(channelId, text);
-        if (pendingId !== undefined) {
-          // Remembered whether or not they are looking, so coming back to the placeholder opens it.
-          settlePendingStart(pendingId, channelId);
-          if (router.state.location.pathname !== pendingStartPath(pendingId))
-            return;
-        }
-        await navigate({
-          params: { channelId },
-          replace: true,
-          to: "/channel/$channelId",
+      const open = () =>
+        navigate({ to: "/start/$startId", params: { startId: id } });
+      if (recipient.kind === "direct") {
+        await startWithChosen({
+          text: draft.text,
+          agentId: recipient.agentId,
+          record: routeMessage,
+          start: open,
         });
-      },
-    });
-
-  const startGroup = (
-    agentIds: string[],
-    text: string,
-    /** The one Bot the first message is addressed to with `@`, or null for every Bot in turn. */
-    agentId: string | null = null,
-  ) =>
-    startGroupWith({
-      agentIds,
-      text,
-      create: async (ids) => {
-        const channel = await createGroup.mutateAsync(ids);
-        queryClient.setQueryData(channelKeys.detail(channel.id), channel);
-        return channel;
-      },
-      // The group's id only exists once it is made, so the send's factory is bound here, per
-      // group, and run through an observer rather than a hook created ahead of time.
-      send: (channelId, message) =>
-        new MutationObserver(
-          queryClient,
-          sendGroupMessageMutationOptions(queryClient, channelId),
-        ).mutate({ id: newId(), text: message, agentId }),
-      discard: async (channelId) => {
-        await deleteChannel.mutateAsync(channelId);
-      },
-      open: (channelId) =>
-        navigate({
-          params: { channelId },
-          replace: true,
-          to: "/group/$channelId",
-        }),
-    });
-
-  return {
-    pending: createChannel.isPending || createGroup.isPending,
-    /** Two or more Bots: a group, answering in the order given. */
-    startGroup,
-    start,
-    /** `start`, for a coworker the person chose: the choice is recorded first. */
-    startChosen: (
-      agentId: string,
-      text: string,
-      pick?: ConversationModel | null,
-      pendingId?: string,
-    ) =>
-      startWithChosen({
-        agentId,
-        text,
-        record: routeMessage,
-        start: (id, message) => start(id, message, pick, pendingId),
-      }),
+      } else {
+        await open();
+      }
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Couldn’t save your message. Try again.",
+      );
+      throw cause;
+    } finally {
+      submitting.current = false;
+    }
   };
+  return { submit, error };
+}
+
+type ProgressUpdate = (start: StartRecord) => void;
+const startsInProgress = new Map<string, Promise<StartRecord>>();
+
+/** Same-tab mounts share the handoff. Across refreshes, creation and group sends reuse their IDs. */
+export function resumeConversationStart(
+  queryClient: QueryClient,
+  owner: string,
+  id: string,
+  update: ProgressUpdate,
+): Promise<StartRecord> {
+  const key = JSON.stringify([owner, id]);
+  const existing = startsInProgress.get(key);
+  if (existing) return existing;
+
+  const work = async (): Promise<StartRecord> => {
+    const start = readPendingStart(owner, id);
+    if (!start)
+      throw new Error("Your saved message is unavailable in this browser.");
+    if (start.state === "finished") return start;
+    const save = (next: StartRecord) => {
+      savePendingStart(owner, id, next);
+      update(next);
+    };
+    let { draft, progress } = start;
+    if (draft.recipient.kind === "route") {
+      let agentId: string | undefined;
+      try {
+        agentId = (await routeMessage(draft.text, undefined, draft.commandIds))
+          .agentId;
+      } catch (error) {
+        if (
+          draft.commandIds.length ||
+          error instanceof CoworkerRoutingRefusedError
+        )
+          throw error;
+        agentId = draft.recipient.fallbackId;
+      }
+      if (!agentId)
+        throw new Error("No Bot is available to receive your message.");
+      draft = { ...draft, recipient: { kind: "direct", agentId } };
+      save({ state: "pending", draft, progress });
+    }
+    const target = draft.recipient;
+    if (target.kind === "route") throw new Error("A Bot is required.");
+    const group = target.kind === "group";
+    if (progress.phase === "creating") {
+      // A delayed tab must not undo progress already saved by a second tab.
+      const channel = await new MutationObserver(
+        queryClient,
+        group
+          ? createGroupMutationOptions(queryClient)
+          : createChannelMutationOptions(queryClient),
+      ).mutate({
+        requestId: id,
+        agentIds: group ? target.agentIds : [target.agentId],
+      });
+      const pick = draft.model;
+      if (!group && pick && (pick.model !== null || pick.effort !== null)) {
+        await saveConversationModel(channel.id, pick);
+      }
+      const latest = readPendingStart(owner, id);
+      if (latest?.state === "finished") return latest;
+      progress =
+        latest?.state === "pending" && latest.progress.phase !== "creating"
+          ? latest.progress
+          : { phase: "ready", channelId: channel.id };
+      save({ state: "pending", draft, progress });
+      queryClient.setQueryData(channelKeys.detail(channel.id), channel);
+    }
+    const channelId = progress.channelId;
+    if (!group) return { state: "pending", draft, progress };
+
+    if (progress.phase === "submitted") {
+      const current = await queryClient.fetchQuery({
+        ...groupQueryOptions(channelId),
+        staleTime: 0,
+      });
+      if (current.messages.some((message) => message.id === id)) {
+        finishPendingStart(owner, id, channelId, true);
+        return { state: "finished", channelId, group: true };
+      }
+    } else {
+      save({
+        state: "pending",
+        draft,
+        progress: { phase: "submitted", channelId },
+      });
+    }
+    await new MutationObserver(
+      queryClient,
+      sendGroupMessageMutationOptions(queryClient, channelId),
+    ).mutate({ id, text: draft.text, agentId: target.addressedAgentId });
+    finishPendingStart(owner, id, channelId, true);
+    return { state: "finished", channelId, group: true };
+  };
+
+  // Web Locks serialize the stored handoff across tabs even while a routing request is in flight.
+  const run = (async () =>
+    navigator.locks
+      ? navigator.locks.request(`openbot:start:${key}`, work)
+      : work()
+  )().finally(() => startsInProgress.delete(key));
+  startsInProgress.set(key, run);
+  return run;
 }

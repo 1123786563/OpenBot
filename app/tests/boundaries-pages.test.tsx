@@ -88,7 +88,10 @@ function serving(policy: ActionPolicy) {
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input);
     if (path.endsWith("/api/computers/policy") && init?.method === "PUT") {
-      stored = JSON.parse(String(init.body)) as ActionPolicy;
+      const { expected: _expected, ...updated } = JSON.parse(
+        String(init.body),
+      ) as ActionPolicy & { expected?: ActionPolicy };
+      stored = updated;
       saved.push(stored);
       return Response.json({ policy: stored });
     }
@@ -213,6 +216,38 @@ test("removing a rule is confirmed, and takes its name with it", async () => {
   await waitFor(() => expect(saved).toHaveLength(1));
   expect(saved[0]?.deny).toEqual([template.rule]);
   expect(saved[0]?.labels).toEqual({});
+});
+
+test("changing Trial mode reviews impact and declines to overwrite a newer policy", async () => {
+  serving({ mode: "enforce", deny: [], allow: ["true"] });
+  const { view } = open("/admin/boundaries");
+  const control = await view.findByRole("switch", { name: "Trial mode" });
+
+  fireEvent.click(control);
+  expect(
+    await view.findByRole("alertdialog", { name: "Turn on Trial mode?" }),
+  ).toBeTruthy();
+  expect(saved).toHaveLength(0);
+  stored = { ...stored, deny: [custom] };
+  fireEvent.click(view.getByRole("button", { name: "Turn on Trial mode" }));
+  expect(
+    await view.findByText(
+      /The boundaries changed while you were reviewing them/,
+    ),
+  ).toBeTruthy();
+  expect(saved).toHaveLength(0);
+  fireEvent.click(view.getByRole("button", { name: "Close" }));
+  await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
+
+  fireEvent.click(control);
+  fireEvent.click(
+    await view.findByRole("button", { name: "Turn on Trial mode" }),
+  );
+  await waitFor(() =>
+    expect(saved).toEqual([
+      { mode: "dry-run", deny: [custom], allow: ["true"] },
+    ]),
+  );
 });
 
 const salesforceWrites = 'mcp.server == "salesforce" && mcp.effect == "write"';

@@ -1,0 +1,29 @@
+name: openbot-bifrost
+
+services:
+  bifrost:
+    image: ${BIFROST_IMAGE:-maximhq/bifrost:v2.4.0}
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      BIFROST_SETUP_TOKEN: ${BIFROST_SETUP_TOKEN:?Set BIFROST_SETUP_TOKEN}
+      BIFROST_DB_HOST: ${BIFROST_DB_HOST:?Set BIFROST_DB_HOST}
+      BIFROST_DB_PORT: ${BIFROST_DB_PORT:-5432}
+      BIFROST_DB_NAME: ${BIFROST_DB_NAME:-bifrost}
+      BIFROST_DB_USER: ${BIFROST_DB_USER:-bifrost}
+      BIFROST_DB_PASSWORD: ${BIFROST_DB_PASSWORD:?Set BIFROST_DB_PASSWORD}
+      BIFROST_DB_SSL_MODE: ${BIFROST_DB_SSL_MODE:-require}
+    volumes:
+      - bifrost-data:/app/data
+      - ./bifrost.json:/app/data/config.json:ro
+    ports:
+      - "127.0.0.1:${BIFROST_PORT:-18080}:8080"
+    networks: [bifrost]
+
+networks:
+  bifrost:
+
+volumes:
+  bifrost-data:
+    name: ${BIFROST_VOLUME:-openbot-middleware_bifrost-data}

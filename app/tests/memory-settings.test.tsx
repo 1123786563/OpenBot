@@ -1,7 +1,13 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryList, RememberFact } from "@/components/memory/memories";
@@ -129,6 +135,41 @@ test("each memory's switch is named for the memory it turns on or off", async ()
       name: "Use this memory: Receipts go to finance@.",
     }),
   ).toBeTruthy();
+});
+
+test("forgetting a memory requires confirmation and can retry a failed deletion", async () => {
+  serving();
+  const view = draw(<MemoryList />);
+  const user = userEvent.setup({ document });
+  const opener = await view.findByRole("button", {
+    name: "Forget memory: I prefer mornings.",
+  });
+  await user.click(opener);
+  let dialog = await view.findByRole("alertdialog", {
+    name: "Forget this memory?",
+  });
+  expect(
+    within(dialog).getByText(/I prefer mornings.*Your Bots will stop using it/),
+  ).toBeTruthy();
+  await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
+  expect(writes).toEqual([]);
+
+  refuseWrite = "The connection was interrupted.";
+  await user.click(opener);
+  dialog = await view.findByRole("alertdialog");
+  await user.click(
+    within(dialog).getByRole("button", { name: "Forget memory" }),
+  );
+  expect((await within(dialog).findByRole("alert")).textContent).toMatch(
+    /Couldn't forget/,
+  );
+  await user.click(within(dialog).getByRole("button", { name: "Try again" }));
+  await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
+  expect(writes.map(({ request }) => request)).toEqual([
+    "DELETE /api/memory/m1",
+    "DELETE /api/memory/m1",
+  ]);
 });
 
 test("reopening Remember a fact after a failure starts clean", async () => {

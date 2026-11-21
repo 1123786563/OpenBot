@@ -777,6 +777,7 @@ export function createGroupConversations(deps: {
   createChannel?: (
     ownerUserId: string,
     agentIds: string[],
+    requestId?: string,
   ) => Promise<{ id: string }>;
   /** How often a running reply's partial text is written for the transcript to show. */
   progressEveryMs?: number;
@@ -1194,13 +1195,18 @@ export function createGroupConversations(deps: {
       const body = z
         .strictObject({
           agentIds: z.array(z.string().min(1)).min(2).max(20),
+          requestId: z.string().optional(),
         })
         .parse(input);
       if (new Set(body.agentIds).size !== body.agentIds.length)
         throw new GroupRefusedError("Each Bot can be in a group once.");
       if (!deps.createChannel)
         throw new GroupRefusedError("Groups cannot be created here.");
-      const channel = await deps.createChannel(owner, body.agentIds);
+      const channel = await deps.createChannel(
+        owner,
+        body.agentIds,
+        body.requestId,
+      );
       await deps.store.seedOrder(owner, channel.id, body.agentIds);
       return channel;
     },

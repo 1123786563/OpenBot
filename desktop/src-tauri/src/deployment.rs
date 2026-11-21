@@ -1254,16 +1254,23 @@ mod tests {
         let images = serde_json::to_vec(&manifest(&published)).unwrap();
         std::fs::write(images_path(&root), &images).unwrap();
         assert!(needs_fetch(&root, "v0.0.7"));
+        let repository = crate::deployment_release::distribution(&root)
+            .unwrap()
+            .repository;
+        let source_url = format!(
+            "https://github.com/{repository}/archive/refs/tags/v0.0.7.tar.gz"
+        );
+        let images_url = format!(
+            "https://github.com/{repository}/releases/download/v0.0.7/container-images.json"
+        );
 
         let get = |url: &str| -> Result<Vec<u8>, String> {
-            match url {
-                "https://github.com/CopilotKit/OpenBot/archive/refs/tags/v0.0.7.tar.gz" => {
-                    Ok(tarball.clone())
-                }
-                "https://github.com/CopilotKit/OpenBot/releases/download/v0.0.7/container-images.json" => {
-                    Ok(images.clone())
-                }
-                other => Err(format!("unexpected download {other}")),
+            if url == source_url {
+                Ok(tarball.clone())
+            } else if url == images_url {
+                Ok(images.clone())
+            } else {
+                Err(format!("unexpected download {url}"))
             }
         };
         fetch_with(&root, "v0.0.7", &get).expect("Install lays the same release out again");
@@ -1307,15 +1314,22 @@ mod tests {
         );
         let published: Vec<&str> = IMAGE_VARIABLES.iter().map(|(name, _)| *name).collect();
         let images = serde_json::to_vec(&manifest(&published)).unwrap();
+        let repository = crate::deployment_release::distribution(&root)
+            .unwrap()
+            .repository;
+        let source_url = format!(
+            "https://github.com/{repository}/archive/refs/tags/v0.0.16.tar.gz"
+        );
+        let images_url = format!(
+            "https://github.com/{repository}/releases/download/v0.0.16/container-images.json"
+        );
         let get = |url: &str| -> Result<Vec<u8>, String> {
-            match url {
-                "https://github.com/CopilotKit/OpenBot/archive/refs/tags/v0.0.16.tar.gz" => {
-                    Ok(tarball.clone())
-                }
-                "https://github.com/CopilotKit/OpenBot/releases/download/v0.0.16/container-images.json" => {
-                    Ok(images.clone())
-                }
-                other => Err(format!("unexpected download {other}")),
+            if url == source_url {
+                Ok(tarball.clone())
+            } else if url == images_url {
+                Ok(images.clone())
+            } else {
+                Err(format!("unexpected download {url}"))
             }
         };
         fetch_with(&root, "v0.0.16", &get).expect("a host-server release moves to latest");

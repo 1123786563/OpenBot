@@ -6,8 +6,9 @@ import {
 } from "@tabler/icons-react";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { PageRows } from "@/components/layout/page-shell";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -37,9 +38,73 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { setCapabilityMutationOptions } from "@/lib/enterprise/mutations";
-import type { EnterpriseOverview } from "@/lib/enterprise/queries";
+import {
+  type EnterpriseOverview,
+  enterpriseKeys,
+} from "@/lib/enterprise/queries";
 import { queryClient } from "@/query-client";
 import { ControlsSection } from "./controls-section";
+
+type Capability = EnterpriseOverview["capabilities"][number];
+type OverrideScope =
+  | { kind: "role"; id: "admin" | "user"; label: string }
+  | { kind: "group"; id: string; label: string };
+
+function usePermissionConfirmation() {
+  const { requestConfirmation, confirmation } = useActionConfirmation();
+  const save = useMutation(setCapabilityMutationOptions(queryClient));
+
+  function confirmPermission({
+    capability,
+    scope,
+    allowed,
+    trigger,
+  }: {
+    capability: Capability;
+    scope: OverrideScope | { kind: "organization"; id: ""; label: string };
+    allowed: boolean | null;
+    trigger?: HTMLElement | undefined;
+  }) {
+    const expected =
+      scope.kind === "organization"
+        ? capability.organization
+        : scope.kind === "role"
+          ? (capability.roles[scope.id] ?? null)
+          : (capability.groups[scope.id] ?? null);
+    if (expected === allowed) return;
+
+    const change =
+      allowed === null ? "Remove override" : allowed ? "Enable" : "Disable";
+    const impact =
+      scope.kind === "organization"
+        ? "This sets the default across the organization. Role and group overrides still apply."
+        : scope.kind === "role"
+          ? "This changes access for people with this role. Group grants still apply."
+          : "This changes access for members of this group. Access granted by other scopes still applies.";
+    requestConfirmation({
+      title: `${change} ${capability.title}?`,
+      description: `${scope.label}. ${impact} You can change this setting again in Permissions.`,
+      confirmLabel: change,
+      pendingLabel: "Saving permission…",
+      failureMessage: "Couldn't save this permission. Try again.",
+      successMessage: "Permission saved.",
+      variant: allowed === true ? "default" : "destructive",
+      trigger,
+      refresh: () =>
+        queryClient.invalidateQueries({ queryKey: enterpriseKeys.all }),
+      run: () =>
+        save.mutateAsync({
+          scopeKind: scope.kind,
+          scopeId: scope.id,
+          capability: capability.capability,
+          allowed,
+          expected,
+        }),
+    });
+  }
+
+  return { confirmation, confirmPermission };
+}
 
 /**
  * Admin, Permissions: what people may do, for the whole organization, with the row that opens the
@@ -47,9 +112,10 @@ import { ControlsSection } from "./controls-section";
  */
 export function CapabilitiesSection() {
   const [overridesOpen, setOverridesOpen] = useState(false);
+  const { confirmation, confirmPermission } = usePermissionConfirmation();
   return (
     <ControlsSection>
-      {({ data, setCapability, saving }) => {
+      {({ data }) => {
         const overrideCount = data.capabilities.reduce(
           (count, capability) =>
             count +
@@ -63,7 +129,7 @@ export function CapabilitiesSection() {
               {data.capabilities.map((capability) => {
                 const effective = capability.organization ?? capability.default;
                 return (
-                  <div key={capability.capability}>
+                  <Fragment key={capability.capability}>
                     <Item size="sm">
                       <ItemMedia variant="icon">
                         <IconToggleRight />
@@ -80,15 +146,28 @@ export function CapabilitiesSection() {
                         <Switch
                           aria-label={capability.title}
                           checked={effective}
-                          disabled={saving}
-                          onCheckedChange={(checked) =>
-                            setCapability(capability.capability, checked)
-                          }
+                          onCheckedChange={(checked, details) => {
+                            const target = details.event.target;
+                            const trigger =
+                              target instanceof Element
+                                ? target.closest<HTMLElement>("[role=switch]")
+                                : null;
+                            confirmPermission({
+                              capability,
+                              scope: {
+                                kind: "organization",
+                                id: "",
+                                label: "Organization",
+                              },
+                              allowed: checked,
+                              trigger: trigger ?? undefined,
+                            });
+                          }}
                         />
                       </ItemActions>
                     </Item>
                     <Separator />
-                  </div>
+                  </Fragment>
                 );
               })}
               <Item
@@ -139,6 +218,7 @@ export function CapabilitiesSection() {
               onOpenChange={setOverridesOpen}
               open={overridesOpen}
             />
+            {confirmation}
           </>
         );
       }}
@@ -157,18 +237,21 @@ function OverridesDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const setCapability = useMutation(setCapabilityMutationOptions(queryClient));
-  const scopes: { kind: "role" | "group"; id: string; label: string }[] = [
+  const { confirmation, confirmPermission } = usePermissionConfirmation();
+  const scopes: OverrideScope[] = [
     { kind: "role", id: "admin", label: "Admins" },
     { kind: "role", id: "user", label: "Members" },
-    ...data.groups.map((group) => ({
-      kind: "group" as const,
-      id: group,
-      label: `Group: ${group}`,
-    })),
+    ...data.groups.map(
+      (group): OverrideScope => ({
+        kind: "group",
+        id: group,
+        label: `Group: ${group}`,
+      }),
+    ),
   ];
-  const [scopeIndex, setScopeIndex] = useState(0);
-  const scope = scopes[scopeIndex] ?? scopes[0];
+  const [scopeKey, setScopeKey] = useState("role:admin");
+  const scope =
+    scopes.find((item) => `${item.kind}:${item.id}` === scopeKey) ?? scopes[0];
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -178,18 +261,18 @@ function OverridesDialog({
         </DialogHeader>
         <DialogBody className="mt-4 space-y-4 overflow-y-auto">
           <Select
-            onValueChange={(value) => setScopeIndex(Number(value))}
-            value={String(scopeIndex)}
+            onValueChange={(value) => value && setScopeKey(value)}
+            value={scope ? `${scope.kind}:${scope.id}` : null}
           >
             <SelectTrigger aria-label="Scope">
               <SelectValue>{scope?.label}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
-                {scopes.map((candidate, index) => (
+                {scopes.map((candidate) => (
                   <SelectItem
                     key={`${candidate.kind}:${candidate.id}`}
-                    value={String(index)}
+                    value={`${candidate.kind}:${candidate.id}`}
                   >
                     {candidate.label}
                   </SelectItem>
@@ -202,58 +285,16 @@ function OverridesDialog({
               ? "A group can only add. Grant gives its members the capability even when the organization has it off."
               : "A role's setting replaces the organization switch for everybody with that role."}
           </p>
-          {scope
-            ? data.capabilities.map((capability) => {
-                const stored =
-                  scope.kind === "role"
-                    ? capability.roles[scope.id as "admin" | "user"]
-                    : capability.groups[scope.id];
-                const value: Tri =
-                  stored === undefined ? "inherit" : stored ? "on" : "off";
-                return (
-                  <div
-                    className="flex items-center justify-between gap-4"
-                    key={capability.capability}
-                  >
-                    <Label>{capability.title}</Label>
-                    <Select
-                      onValueChange={(next) =>
-                        setCapability.mutate({
-                          scopeKind: scope.kind,
-                          scopeId: scope.id,
-                          capability: capability.capability,
-                          allowed: next === "inherit" ? null : next === "on",
-                        })
-                      }
-                      value={value}
-                    >
-                      <SelectTrigger
-                        aria-label={`${capability.title} for ${scope.label}`}
-                        className="w-36"
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="inherit">Inherit</SelectItem>
-                          <SelectItem value="on">
-                            {scope.kind === "group" ? "Grant" : "On"}
-                          </SelectItem>
-                          {scope.kind === "role" ? (
-                            <SelectItem value="off">Off</SelectItem>
-                          ) : null}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                );
-              })
-            : null}
-          {setCapability.error ? (
-            <p className="text-destructive text-sm" role="alert">
-              {setCapability.error.message}
-            </p>
-          ) : null}
+          {scope &&
+            data.capabilities.map((capability) => (
+              <PermissionOverrideRow
+                capability={capability}
+                confirmPermission={confirmPermission}
+                key={capability.capability}
+                scope={scope}
+              />
+            ))}
+          {confirmation}
         </DialogBody>
         <DialogFooter className="mt-4">
           <Button onClick={() => onOpenChange(false)} size="sm" type="button">
@@ -262,5 +303,65 @@ function OverridesDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function PermissionOverrideRow({
+  capability,
+  confirmPermission,
+  scope,
+}: {
+  capability: Capability;
+  confirmPermission: ReturnType<
+    typeof usePermissionConfirmation
+  >["confirmPermission"];
+  scope: OverrideScope;
+}) {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const stored =
+    scope.kind === "role"
+      ? capability.roles[scope.id]
+      : capability.groups[scope.id];
+  const value: Tri = stored === undefined ? "inherit" : stored ? "on" : "off";
+
+  return (
+    <Item size="sm">
+      <ItemContent>
+        <Label>{capability.title}</Label>
+      </ItemContent>
+      <ItemActions>
+        <Select<Tri>
+          onValueChange={(next) => {
+            if (!next) return;
+            confirmPermission({
+              scope,
+              capability,
+              allowed: next === "inherit" ? null : next === "on",
+              trigger: trigger.current ?? undefined,
+            });
+          }}
+          value={value}
+        >
+          <SelectTrigger
+            aria-label={`${capability.title} for ${scope.label}`}
+            className="w-36"
+            ref={trigger}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="inherit">Inherit</SelectItem>
+              <SelectItem value="on">
+                {scope.kind === "group" ? "Grant" : "On"}
+              </SelectItem>
+              {scope.kind === "role" && (
+                <SelectItem value="off">Off</SelectItem>
+              )}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </ItemActions>
+    </Item>
   );
 }

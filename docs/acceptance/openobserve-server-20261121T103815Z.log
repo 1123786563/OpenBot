@@ -1,0 +1,1 @@
+{"anonymous_query": 401, "collector_audit_readback": "88653223-75d1-43b1-9e92-6e90fd2c9a7b", "direct_audit_ingest": "accepted", "direct_runtime_ingest": "accepted", "docker_runtime_readback_hits": 100, "health": "ok", "ingestion_token_query": 401, "retention": {"openbot_audit": 90, "openbot_runtime": 30}}

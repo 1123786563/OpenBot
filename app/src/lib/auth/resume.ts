@@ -1,4 +1,18 @@
-/** The flow handle only ever becomes a query value on this deployment’s verifier. */
+/**
+ * Where somebody goes once they are signed in, when they were sent to sign-in carrying a handle.
+ *
+ * This is the return half of the decision `signInUrlFor` makes on the way out (server/src/plugins/
+ * routes.ts): the verifier sends a browser with no session here carrying its `flow_id`, and this is
+ * what lets signing back in as the same person pick that flow up where it was left.
+ *
+ * THE HANDLE IS A VALUE, NEVER A DESTINATION. `flow_id` arrives in a URL and is therefore somebody
+ * else's input. It is encoded into a path this code builds, on an origin this code was given. It is
+ * never used as a redirect target, never concatenated into one, and there is no `next=`: a return
+ * address somebody else gets a say in is an open redirect, and a handle that can only ever be a
+ * query value on this deployment's own verifier cannot be pointed anywhere else.
+ */
+
+/** The route that resumes a flow. This deployment's own, on its own origin. */
 const VERIFIER_PATH = "/api/plugins/arcade/verify";
 
 /**
@@ -24,16 +38,13 @@ export function verifierPathFor(flowId: string | undefined): string | null {
 }
 
 /**
- * Where sign-in should send the browser back to: the verifier carrying the handle,
- * the requested Web page, or the origin itself when neither applies.
+ * Where sign-in should send the browser back to: the verifier carrying the handle, or the origin
+ * itself when there is none. Pure, so the resume is pinned without a DOM, a router or Better Auth.
  */
-export function resumeUrlFor(
-  origin: string,
-  flowId: string | undefined,
-  returnTo?: string,
-): string {
-  const path = verifierPathFor(flowId) ?? appReturnPath(returnTo);
-  return path ? `${origin}${path}` : origin;
+export function openFuseResumePath(handle: string | undefined): string | null {
+  if (!handle || !/^[a-f0-9]{64}$/.test(handle)) return null;
+  const query = new URLSearchParams({ request: handle });
+  return `/api/auth/openfuse/continue?${query}`;
 }
 
 /** Only a root-relative Web page can be resumed after sign-in or onboarding. */
@@ -57,4 +68,16 @@ export function appReturnPath(value: unknown): string | undefined {
   if (path === "/sign" || path === "/onboarding" || /^\/api(?:\/|$)/.test(path))
     return;
   return `${url.pathname}${url.search}${url.hash}`;
+}
+
+export function resumeUrlFor(
+  origin: string,
+  flowId: string | undefined,
+  openFuseRequestOrReturnTo?: string,
+): string {
+  const path =
+    openFuseResumePath(openFuseRequestOrReturnTo) ??
+    verifierPathFor(flowId) ??
+    appReturnPath(openFuseRequestOrReturnTo);
+  return path == null ? origin : `${origin}${path}`;
 }

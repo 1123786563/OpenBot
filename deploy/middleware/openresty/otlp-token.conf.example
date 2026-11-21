@@ -1,0 +1,1 @@
+set $openbot_otlp_authorization "Bearer REPLACE_WITH_RANDOM_TOKEN";
