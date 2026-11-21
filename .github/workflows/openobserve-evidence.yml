@@ -1,0 +1,78 @@
+name: OpenObserve evidence
+
+on:
+  push:
+    paths:
+      - "docs/acceptance/openobserve-server-*.log"
+      - "docs/acceptance/openobserve-server-*.json"
+      - ".github/workflows/openobserve-evidence.yml"
+  pull_request:
+    paths:
+      - "docs/acceptance/openobserve-server-*.log"
+      - "docs/acceptance/openobserve-server-*.json"
+      - ".github/workflows/openobserve-evidence.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate acceptance evidence
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate evidence files
+        env:
+          EVIDENCE_DIR: docs/acceptance
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          root = Path(os.environ["EVIDENCE_DIR"])
+          metadata_files = sorted(root.glob("openobserve-server-*.json"))
+          if not metadata_files:
+              raise SystemExit("No OpenObserve evidence metadata file found")
+
+          secret_pattern = re.compile(
+              r"(?i)(password|authorization:|bearer\s+|basic\s+[A-Za-z0-9+/=]{12,}|token=|secret=)"
+          )
+          required = {
+              "health": "ok",
+              "anonymous_query": 401,
+              "ingestion_token_query": 401,
+              "direct_audit_ingest": "accepted",
+              "direct_runtime_ingest": "accepted",
+          }
+
+          for metadata_path in metadata_files:
+              metadata = json.loads(metadata_path.read_text())
+              log_path = metadata_path.with_suffix(".log")
+              if not log_path.is_file() or not log_path.read_text().strip():
+                  raise SystemExit(f"Missing or empty evidence log: {log_path}")
+              if metadata.get("result") != "passed":
+                  raise SystemExit(f"Evidence result is not passed: {metadata_path}")
+              if metadata.get("secrets_redacted") is not True:
+                  raise SystemExit(f"Evidence is not marked redacted: {metadata_path}")
+              if hashlib.sha256(log_path.read_bytes()).hexdigest() != metadata.get("sha256"):
+                  raise SystemExit(f"Evidence hash mismatch: {metadata_path}")
+
+              payload = json.loads(log_path.read_text())
+              for key, expected in required.items():
+                  if payload.get(key) != expected:
+                      raise SystemExit(f"{log_path}: {key} != {expected!r}")
+              if payload.get("retention") != {"openbot_audit": 90, "openbot_runtime": 30}:
+                  raise SystemExit(f"Unexpected retention policy: {log_path}")
+              if payload.get("docker_runtime_readback_hits", 0) < 1:
+                  raise SystemExit(f"Docker runtime readback is empty: {log_path}")
+              if secret_pattern.search(log_path.read_text()) or secret_pattern.search(metadata_path.read_text()):
+                  raise SystemExit(f"Possible secret found in evidence: {log_path}")
+
+          print(f"Validated {len(metadata_files)} OpenObserve evidence bundle(s)")
+          PY

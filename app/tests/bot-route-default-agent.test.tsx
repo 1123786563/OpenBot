@@ -192,9 +192,8 @@ test("/bot with an empty agent query uses the normal default Bot", async () => {
 test("/bot reports a failed initial roster load instead of claiming there are no Bots", async () => {
   const view = renderBot(queryClientWithFailingAgents());
 
-  expect(
-    await view.findByText("Couldn't load your Bots. Reload the page."),
-  ).toBeTruthy();
+  expect(await view.findByText("Couldn't load your Bots.")).toBeTruthy();
+  expect(view.getByRole("button", { name: "Try again" })).toBeTruthy();
   expect(view.queryByText("There are no Bots yet.")).toBeNull();
 });
 
@@ -279,9 +278,9 @@ test("/bot reports an explicit agent detail load failure", async () => {
     "/bot?agent=error-bot",
   );
 
-  expect((await view.findByRole("alert")).textContent).toBe(
-    "Couldn't load this Bot. Reload the page.",
-  );
+  const message = await view.findByText("Couldn't load this Bot.");
+  expect(message.closest('[role="alert"]')).toBeTruthy();
+  expect(view.getByRole("button", { name: "Try again" })).toBeTruthy();
   expect(view.queryByTestId("copilot-chat")).toBeNull();
 });
 

@@ -2583,8 +2583,8 @@ const groupConversations = createGroupConversations({
       turn.channelId,
       busy,
     ),
-  createChannel: async (ownerUserId, agentIds) =>
-    channelStore.create(await actorFor(ownerUserId), agentIds),
+  createChannel: async (ownerUserId, agentIds, requestId) =>
+    channelStore.create(await actorFor(ownerUserId), agentIds, undefined, requestId),
   // The owner says whether a Bot's words may reach the other people in a group.
   privateShare: createPrivateShareCheck({ approvals: approvalService.store }),
   // A Team Bot's consent card raised in a group turn is drawn in the shared transcript.

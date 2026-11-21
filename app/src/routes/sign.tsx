@@ -1,11 +1,11 @@
-import { Button as AstryxButton } from "@astryxdesign/core/Button";
-import { TextInput } from "@astryxdesign/core/TextInput";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
-import { AstryxBrand, AstryxSurface } from "@/components/astryx-pilot/theme";
+import AgentOrb from "@/components/agents/orb/agent-orb";
 import { ProviderLogo } from "@/components/auth/provider-logo";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
   providerName,
@@ -13,7 +13,7 @@ import {
   signInWithEmailDomain,
 } from "@/lib/auth/client";
 import {
-  appReturnPath,
+  openFuseResumePath,
   resumeUrlFor,
   verifierPathFor,
 } from "@/lib/auth/resume";
@@ -47,13 +47,10 @@ export const Route = createFileRoute("/sign")({
    */
   validateSearch: (
     search: Record<string, unknown>,
-  ): { flow_id?: string; returnTo?: string } => {
-    const returnTo = appReturnPath(search.returnTo);
-    return {
-      ...searchTextEntry("flow_id", search.flow_id),
-      ...("returnTo" in search ? { returnTo } : {}),
-    };
-  },
+  ): { flow_id?: string; openfuse_request?: string } => ({
+    ...searchTextEntry("flow_id", search.flow_id),
+    ...searchTextEntry("openfuse_request", search.openfuse_request),
+  }),
   beforeLoad: async ({ context, search }) => {
     const user = await context.queryClient.ensureQueryData(
       currentUserQueryOptions(),
@@ -72,12 +69,12 @@ export const Route = createFileRoute("/sign")({
        * the verifier was ever made. `reloadDocument` makes this a document navigation, which is
        * the only kind that leaves the app and therefore the only kind that arrives.
        */
-      const verifier = verifierPathFor(search.flow_id);
+      const verifier =
+        openFuseResumePath(search.openfuse_request) ??
+        verifierPathFor(search.flow_id);
       throw verifier
         ? redirect({ href: verifier, reloadDocument: true })
-        : search.returnTo
-          ? redirect({ href: search.returnTo, replace: true })
-          : redirect({ to: "/" });
+        : redirect({ to: "/" });
     }
     // Loaded here so the screen paints with its buttons rather than painting empty and then
     // growing them, which reads as "no providers" for exactly as long as the request takes.
@@ -87,7 +84,8 @@ export const Route = createFileRoute("/sign")({
 });
 
 function SignScreen() {
-  const { flow_id: flowId, returnTo } = Route.useSearch();
+  const { flow_id: flowId, openfuse_request: openFuseRequest } =
+    Route.useSearch();
   // Which provider is being opened, rather than whether one is: with three buttons, a single
   // boolean would put "Opening…" on all of them.
   const [opening, setOpening] = useState<AuthProviderId | "sso" | null>(null);
@@ -104,7 +102,6 @@ function SignScreen() {
    */
   async function handleDomainSignIn(submission: React.FormEvent) {
     submission.preventDefault();
-    if (opening !== null || !email.trim()) return;
     setError(null);
     setOpening("sso");
 
@@ -112,7 +109,7 @@ function SignScreen() {
       await signInWithEmailDomain(
         email,
         undefined,
-        resumeUrlFor(window.location.origin, flowId, returnTo),
+        resumeUrlFor(window.location.origin, flowId, openFuseRequest),
       );
     } catch (caughtError) {
       setError(
@@ -125,7 +122,6 @@ function SignScreen() {
   }
 
   async function handleSignIn(provider: AuthProviderId) {
-    if (opening !== null) return;
     setError(null);
     setOpening(provider);
 
@@ -133,7 +129,7 @@ function SignScreen() {
       await signInWith(
         provider,
         undefined,
-        resumeUrlFor(window.location.origin, flowId, returnTo),
+        resumeUrlFor(window.location.origin, flowId, openFuseRequest),
       );
     } catch (caughtError) {
       setError(
@@ -156,17 +152,24 @@ function SignScreen() {
          * same size and weight throughout is also the honest presentation: a deployment
          * that configured three has three, and none of them is the recommended one.
          */
-        <AstryxButton
-          className="w-full"
-          icon={<ProviderLogo provider={provider} />}
-          isDisabled={opening !== null && opening !== provider}
-          isLoading={opening === provider}
-          size="lg"
+        <Button
+          className="h-10 w-full justify-start gap-3 px-3 tracking-tight"
+          disabled={opening !== null}
           key={provider}
-          label={`Continue with ${providerName(provider)}`}
           onClick={() => handleSignIn(provider)}
-          variant="secondary"
-        />
+          size="lg"
+          variant="outline"
+        >
+          <ProviderLogo provider={provider} />
+          {/* Centred against the button, not against the space left of the mark. */}
+          <span className="flex-1 text-center">
+            {opening === provider
+              ? `Opening ${providerName(provider)}…`
+              : `Continue with ${providerName(provider)}`}
+          </span>
+          {/* Balances the mark so the label sits in the middle of the button. */}
+          <span aria-hidden="true" className="size-[18px]" />
+        </Button>
       ))}
     </div>
   );
@@ -182,104 +185,100 @@ function SignScreen() {
   };
 
   return (
-    <AstryxSurface className="min-h-svh">
-      <main className={"grid min-h-svh place-items-center px-4 py-10"}>
+    <div className="flex flex-col h-dvh w-full items-center justify-center -mt-12">
+      <motion.div
+        animate="shown"
+        className="flex-1 flex w-full max-w-82 flex-col items-center justify-center p-4"
+        initial="hidden"
+        variants={{
+          hidden: {},
+          shown: { transition: { staggerChildren: ENTRANCE_STAGGER_SECONDS } },
+        }}
+      >
         <motion.div
-          animate="shown"
-          className="flex-1 flex w-full max-w-82 flex-col items-center justify-center p-4"
-          initial="hidden"
-          variants={{
-            hidden: {},
-            shown: {
-              transition: { staggerChildren: ENTRANCE_STAGGER_SECONDS },
-            },
-          }}
+          transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
+          variants={{ hidden, shown }}
+          className="flex items-center justify-center"
         >
-          <motion.div
-            transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
-            variants={{ hidden, shown }}
-            className="flex items-center justify-center"
-          >
-            <AstryxBrand />
-          </motion.div>
-          <motion.h1
-            className="text-2xl font-medium tracking-tight text-center mt-8"
-            transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
-            variants={{ hidden, shown }}
-          >
-            Sign in to {appConfig.brand.productName}
-          </motion.h1>
-          <motion.div
-            className="mt-8 w-full"
-            transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
-            variants={{ hidden, shown }}
-          >
-            {options?.ssoRequired ? (
-              <p className="mb-3 text-center text-sm text-muted-foreground">
-                Your organization requires you to sign in with your company
-                account.
-              </p>
-            ) : null}
-            {providers.length > 0 && !options?.ssoRequired ? (
-              providerButtons
-            ) : options?.sso || options?.ssoRequired ? null : (
-              <p className="text-center text-sm text-muted-foreground">
-                Sign-in isn't set up yet. An admin has to set it up first.
-              </p>
-            )}
-            {/*
-             * The way in for a company that runs its own identity provider.
-             *
-             * Below the buttons, because a deployment with both has more people arriving through the
-             * buttons: the registered providers are for the companies whose IdP was added by hand.
-             */}
-            {options?.sso ? (
-              <form className="mt-3" onSubmit={handleDomainSignIn}>
-                {providers.length > 0 ? (
-                  <div className="mb-3 flex items-center gap-3">
-                    <Separator className="flex-1" />
-                    <span className="text-muted-foreground text-xs">or</span>
-                    <Separator className="flex-1" />
-                  </div>
-                ) : null}
-                <div className="grid gap-3">
-                  <TextInput
-                    autoComplete="email"
-                    isRequired
-                    label="Company email"
-                    onChange={setEmail}
-                    placeholder="you@company.com"
-                    type="email"
-                    value={email}
-                    width="100%"
-                  />
-                  <AstryxButton
-                    isDisabled={opening !== null && opening !== "sso"}
-                    isLoading={opening === "sso"}
-                    label="Continue with your company account"
-                    type="submit"
-                    variant="secondary"
-                  />
-                </div>
-              </form>
-            ) : null}
-            {/* The administrators' audited break-glass while SSO is required; everybody else is refused. */}
-            {options?.ssoRequired && providers.length > 0 ? (
-              <details className="mt-4 text-sm">
-                <summary className="cursor-pointer text-center text-muted-foreground">
-                  Admin sign-in
-                </summary>
-                <div className="mt-3">{providerButtons}</div>
-              </details>
-            ) : null}
-            {error ? (
-              <p className="mt-3 text-sm text-destructive" role="alert">
-                {error}
-              </p>
-            ) : null}
-          </motion.div>
+          <AgentOrb size="56px" />
         </motion.div>
-      </main>
-    </AstryxSurface>
+        <motion.h1
+          className="text-2xl font-medium tracking-tight text-center mt-8"
+          transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
+          variants={{ hidden, shown }}
+        >
+          Sign in to {appConfig.brand.productName}
+        </motion.h1>
+        <motion.div
+          className="mt-8 w-full"
+          transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
+          variants={{ hidden, shown }}
+        >
+          {options?.ssoRequired ? (
+            <p className="mb-3 text-center text-sm text-muted-foreground">
+              Your organization requires you to sign in with your company
+              account.
+            </p>
+          ) : null}
+          {providers.length > 0 && !options?.ssoRequired ? (
+            providerButtons
+          ) : options?.sso || options?.ssoRequired ? null : (
+            <p className="text-center text-sm text-muted-foreground">
+              Sign-in isn't set up yet. An admin has to set it up first.
+            </p>
+          )}
+          {/*
+           * The way in for a company that runs its own identity provider.
+           *
+           * Below the buttons, because a deployment with both has more people arriving through the
+           * buttons: the registered providers are for the companies whose IdP was added by hand.
+           */}
+          {options?.sso ? (
+            <form className="mt-3" onSubmit={handleDomainSignIn}>
+              {providers.length > 0 ? (
+                <div className="mb-3 flex items-center gap-3">
+                  <Separator className="flex-1" />
+                  <span className="text-muted-foreground text-xs">or</span>
+                  <Separator className="flex-1" />
+                </div>
+              ) : null}
+              <Input
+                autoComplete="email"
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="you@company.com"
+                required
+                type="email"
+                value={email}
+              />
+              <Button
+                className="mt-2 h-10 w-full tracking-tight"
+                disabled={opening !== null || email.trim().length === 0}
+                size="lg"
+                type="submit"
+                variant="outline"
+              >
+                {opening === "sso"
+                  ? "Opening…"
+                  : "Continue with your company account"}
+              </Button>
+            </form>
+          ) : null}
+          {/* The administrators' audited break-glass while SSO is required; everybody else is refused. */}
+          {options?.ssoRequired && providers.length > 0 ? (
+            <details className="mt-4 text-sm">
+              <summary className="cursor-pointer text-center text-muted-foreground">
+                Admin sign-in
+              </summary>
+              <div className="mt-3">{providerButtons}</div>
+            </details>
+          ) : null}
+          {error ? (
+            <p className="mt-3 text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </motion.div>
+      </motion.div>
+    </div>
   );
 }

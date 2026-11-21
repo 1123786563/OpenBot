@@ -124,10 +124,14 @@ export type BotThread = {
    * nobody can currently say which. `"ready"` covers every case where that question was either
    * answered or never needed asking.
    */
-  history: "ready" | "unavailable";
+  history: "ready" | "unavailable" | "missing";
+  retryHistory: () => void;
+  checkingHistory: boolean;
   /** Mints a fresh thread and starts using it from now on, independent of whatever was
    * remembered. */
   startNew: () => void;
+  starting: boolean;
+  startFailed: boolean;
 };
 
 /**
@@ -136,7 +140,10 @@ export type BotThread = {
  */
 export function useBotThread(agentId: string): BotThread {
   const [threadId, setThreadId] = useState<string | undefined>(undefined);
-  const [history, setHistory] = useState<"ready" | "unavailable">("ready");
+  const [history, setHistory] = useState<BotThread["history"]>("ready");
+  const [checkingHistory, setCheckingHistory] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [startFailed, setStartFailed] = useState(false);
   // Mirrors the effect's own `current` flag so `startNew` — which runs from an event handler, not
   // from the effect — can tell whether it is still safe to touch state: the agent may have changed
   // or the component may have unmounted while its mint was in flight.
@@ -157,7 +164,7 @@ export function useBotThread(agentId: string): BotThread {
     setThreadId(undefined);
     setHistory("ready");
 
-    const adoptFresh = () => {
+    const adoptFresh = (history: BotThread["history"] = "ready") => {
       mintingRef.current = true;
       void mint().then((minted) => {
         mintingRef.current = false;
@@ -167,7 +174,7 @@ export function useBotThread(agentId: string): BotThread {
         const next = minted ?? newId();
         if (minted) remember(agentId, minted);
         setThreadId(next);
-        setHistory("ready");
+        setHistory(history);
       });
     };
 
@@ -190,7 +197,7 @@ export function useBotThread(agentId: string): BotThread {
           setThreadId(existing);
           setHistory(outcome.unavailable ? "unavailable" : "ready");
         } else {
-          adoptFresh();
+          adoptFresh("missing");
         }
       });
     }
@@ -204,13 +211,19 @@ export function useBotThread(agentId: string): BotThread {
   const startNew = useCallback(() => {
     if (mintingRef.current) return;
     mintingRef.current = true;
+    setStarting(true);
+    setStartFailed(false);
     void mint().then((minted) => {
       mintingRef.current = false;
       if (!mountedRef.current) return;
+      setStarting(false);
       // Leaving the current thread alone here matters: a person pressing "New chat" should never
       // end up worse off — mid-conversation and suddenly unable to send — than before they pressed
       // it.
-      if (!minted) return;
+      if (!minted) {
+        setStartFailed(true);
+        return;
+      }
       /*
        * Latched here rather than at the press, and the difference is a blank screen.
        *
@@ -231,5 +244,25 @@ export function useBotThread(agentId: string): BotThread {
     });
   }, [agentId]);
 
-  return { threadId, history, startNew };
+  const retryHistory = () => {
+    if (!threadId || checkingHistory) return;
+    const checkedThread = threadId;
+    setCheckingHistory(true);
+    void checkKnown(checkedThread).then(({ known, unavailable }) => {
+      if (!mountedRef.current) return;
+      setCheckingHistory(false);
+      if (remembered(agentId) !== checkedThread || unavailable) return;
+      setHistory(known === false ? "missing" : "ready");
+    });
+  };
+
+  return {
+    threadId,
+    history,
+    startNew,
+    retryHistory,
+    checkingHistory,
+    starting,
+    startFailed,
+  };
 }

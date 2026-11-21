@@ -1,15 +1,20 @@
-import { TelemetryAssistantMessage } from "@/components/channels/telemetry-assistant-message";
+import { Banner } from "@astryxdesign/core/Banner";
+import { Button as AstryxButton } from "@astryxdesign/core/Button";
+import { Stack } from "@astryxdesign/core/Stack";
 import { CopilotChat } from "@copilotkit/react-core/v2";
 import { IconPlus } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { ConversationApprovals } from "@/components/approvals/inline-approval";
+import {
+  ConversationLoading,
+  ConversationReadError,
+} from "@/components/channels/conversation-status";
+import { TelemetryAssistantMessage } from "@/components/channels/telemetry-assistant-message";
 import { ComputerChatControls } from "@/components/computer/computer-controls";
 import { ComputerViewPanel } from "@/components/computer/computer-panel";
-import { useOpenComputerOnRequest } from "@/lib/computers/panel-view";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
-import { Button } from "@/components/ui/button";
 import { defaultAgentId } from "@/lib/agents/default-agent";
 import {
   type AgentProfile,
@@ -17,6 +22,7 @@ import {
   agentListQueryOptions,
 } from "@/lib/agents/queries";
 import { tryClient } from "@/lib/client";
+import { useOpenComputerOnRequest } from "@/lib/computers/panel-view";
 import { useActiveBot } from "@/lib/copilot/active-bot";
 import { useBotActivity } from "@/lib/copilot/bot-activity";
 import { useBotThread } from "@/lib/copilot/bot-thread";
@@ -85,6 +91,8 @@ function RouteComponent() {
     data: agents,
     isError,
     isPending,
+    isFetching,
+    refetch,
   } = useQuery(agentListQueryOptions());
   const agentId = agent ?? defaultAgentId(agents);
   const listedBot = agents?.find((candidate) => candidate.id === agentId);
@@ -95,6 +103,8 @@ function RouteComponent() {
     data: detail,
     isError: isDetailError,
     isPending: isDetailPending,
+    isFetching: isDetailFetching,
+    refetch: refetchDetail,
   } = useQuery({
     enabled: shouldLoadExplicitBot,
     queryKey: agentKeys.botRouteDetail(detailAgentId),
@@ -105,34 +115,48 @@ function RouteComponent() {
     listedBot ?? (detail?.status === "found" ? detail.bot : undefined);
   const known = bot !== undefined;
 
-  if (isPending || (shouldLoadExplicitBot && isDetailPending)) return null;
+  if (isPending || (shouldLoadExplicitBot && isDetailPending)) {
+    return <ConversationLoading label="Finding your Bot…" />;
+  }
   if (isError && agents === undefined) {
     return (
-      <div className="flex h-screen items-center justify-center p-6">
-        <p className="text-destructive text-sm" role="alert">
-          Couldn't load your Bots. Reload the page.
-        </p>
-      </div>
+      <Stack padding={5}>
+        <ConversationReadError
+          title="Couldn't load your Bots."
+          description="Try loading the Bot list again."
+          retry={() => void refetch()}
+          retrying={isFetching}
+        />
+      </Stack>
     );
   }
   if (shouldLoadExplicitBot && isDetailError) {
     return (
-      <div className="flex h-screen items-center justify-center p-6">
-        <p className="text-destructive text-sm" role="alert">
-          Couldn't load this Bot. Reload the page.
-        </p>
-      </div>
+      <Stack padding={5}>
+        <ConversationReadError
+          title="Couldn't load this Bot."
+          description="Try opening the Bot again."
+          retry={() => void refetchDetail()}
+          retrying={isDetailFetching}
+        />
+      </Stack>
     );
   }
   if (!agentId || !known) {
     return (
-      <div className="flex h-screen items-center justify-center p-6">
-        <p className="text-muted-foreground text-sm">
-          {agent
-            ? `There's no Bot called "${agent}".`
-            : "There are no Bots yet."}
-        </p>
-      </div>
+      <Stack padding={5}>
+        <Banner
+          status="info"
+          title={
+            agent
+              ? `There's no Bot called "${agent}".`
+              : "There are no Bots yet."
+          }
+          endContent={
+            <AstryxButton label="Browse Bots" href="/bots" size="sm" />
+          }
+        />
+      </Stack>
     );
   }
 
@@ -153,7 +177,15 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
    * page can say so instead of letting the Bot answer as if nothing were missing. `startNew`
    * mints another fresh thread on demand for the New chat control below.
    */
-  const { threadId, history, startNew } = useBotThread(agentId);
+  const {
+    threadId,
+    history,
+    startNew,
+    retryHistory,
+    checkingHistory,
+    starting,
+    startFailed,
+  } = useBotThread(agentId);
   /*
    * A turn that ends without an answer has to be said out loud here, because the packaged chat says
    * nothing. It reports a failed run to an `onError` prop and otherwise carries on as though the
@@ -204,10 +236,15 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
                 open={watch === true}
                 onOpenChange={showComputer}
               />
-              <Button onClick={startNew} size="sm" variant="ghost">
-                <IconPlus />
-                New chat
-              </Button>
+              <AstryxButton
+                icon={<IconPlus />}
+                isLoading={starting}
+                isDisabled={!threadId}
+                label="New chat"
+                onClick={startNew}
+                size="sm"
+                variant="ghost"
+              />
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
@@ -220,14 +257,29 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
          * depending on which conditions are true.
          */}
         {history === "unavailable" ? (
-          <p
-            className="border-b bg-destructive/10 px-6 py-2 text-destructive text-sm"
-            data-testid="bot-chat-history-unavailable"
-            role="alert"
-          >
-            Couldn't load earlier messages. The Bot is answering without them.
-          </p>
+          <ConversationReadError
+            title="Couldn't check your earlier messages."
+            description="You're still in the same conversation."
+            retry={retryHistory}
+            retrying={checkingHistory}
+          />
         ) : null}
+        {history === "missing" && (
+          <Banner
+            status="warning"
+            title="Earlier messages are no longer available."
+            description="You can start a new conversation with this Bot."
+            role="status"
+          />
+        )}
+        {startFailed && (
+          <ConversationReadError
+            title="Couldn't start a new chat."
+            description="Your current conversation is still open."
+            retry={startNew}
+            retrying={starting}
+          />
+        )}
         {/*
          * Under the header rather than at the end of the transcript, which is where the missing answer
          * was going to be and where the channel draws its own version of this. The packaged chat owns
@@ -262,7 +314,9 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
               key={`${agentId}:${threadId}`}
               threadId={threadId}
             />
-          ) : null}
+          ) : (
+            <ConversationLoading label="Opening conversation…" />
+          )}
         </div>
       </div>
     </DetailPanel>

@@ -1,0 +1,7 @@
+services:
+  bifrost:
+    networks: [bifrost, postgres]
+networks:
+  postgres:
+    external: true
+    name: 1panel-network

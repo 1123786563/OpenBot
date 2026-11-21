@@ -1,12 +1,8 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { PageSection } from "@/components/layout/page-shell";
+import { setEnterpriseSettingMutationOptions } from "@/lib/enterprise/mutations";
 import {
-  setCapabilityMutationOptions,
-  setEnterpriseSettingMutationOptions,
-} from "@/lib/enterprise/mutations";
-import {
-  type CapabilityKey,
   type EnterpriseOverview,
   type EnterpriseSettings,
   enterpriseOverviewQueryOptions,
@@ -20,8 +16,6 @@ export type Controls = {
     key: K,
     value: EnterpriseSettings[K],
   ) => void;
-  /** At the organization's scope. Roles and groups are set in the overrides dialog. */
-  setCapability: (capability: CapabilityKey, allowed: boolean) => void;
   saving: boolean;
 };
 
@@ -45,7 +39,6 @@ export function ControlsSection({
   children: (controls: Controls) => ReactNode;
 }) {
   const overview = useQuery(enterpriseOverviewQueryOptions());
-  const setCapability = useMutation(setCapabilityMutationOptions(queryClient));
   const setSetting = useMutation(
     setEnterpriseSettingMutationOptions(queryClient),
   );
@@ -63,7 +56,7 @@ export function ControlsSection({
         </p>
       </PageSection>
     );
-  const failure = setCapability.error ?? setSetting.error;
+  const failure = setSetting.error;
   return (
     <PageSection
       description={
@@ -81,14 +74,7 @@ export function ControlsSection({
       {children({
         data: overview.data,
         setSetting: (key, value) => setSetting.mutate({ key, value }),
-        setCapability: (capability, allowed) =>
-          setCapability.mutate({
-            scopeKind: "organization",
-            scopeId: "",
-            capability,
-            allowed,
-          }),
-        saving: setCapability.isPending || setSetting.isPending,
+        saving: setSetting.isPending,
       })}
     </PageSection>
   );

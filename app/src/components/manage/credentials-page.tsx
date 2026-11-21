@@ -1,14 +1,18 @@
 import { IconKey, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { DeviceAction } from "@/components/astryx-pilot/device-action";
-import { DevicePage } from "@/components/astryx-pilot/device-page";
+import { useRef } from "react";
 import {
   PageEmpty,
   PageRows,
   PageSection,
+  PageShell,
 } from "@/components/layout/page-shell";
 import { StaggerItem } from "@/components/layout/stagger";
+import {
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import {
   Item,
@@ -25,6 +29,8 @@ import { useManagePaths } from "@/lib/manage-paths";
 
 export function CredentialsPage() {
   const paths = useManagePaths();
+  const addButton = useRef<HTMLAnchorElement>(null);
+  const { requestConfirmation, confirmation } = useActionConfirmation();
   // Called Keys in the personal edition, which links here from Connections too.
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
@@ -35,11 +41,13 @@ export function CredentialsPage() {
   );
 
   return (
-    <DevicePage
+    <PageShell
       action={
         // Its own screen, `credentials_.new.tsx`, which says why the form is not on this page.
         <Button
-          render={(props) => <Link {...props} {...paths.newCredential()} />}
+          render={(props) => (
+            <Link {...props} {...paths.newCredential()} ref={addButton} />
+          )}
           size="sm"
           variant="ghost"
         >
@@ -55,24 +63,22 @@ export function CredentialsPage() {
       title={paths.credentialsLabel}
     >
       <PageSection title="Saved credentials">
-        {revokeCredential.isError ? (
-          <p className="mt-4 text-destructive text-sm" role="alert">
-            Couldn't revoke the credential. Try Revoke again.
-          </p>
-        ) : null}
-        {credentials.isPending ? null : credentials.error ? (
-          <div className="mt-4 flex flex-col items-start gap-2">
-            <p className="text-destructive text-sm" role="alert">
-              Couldn't load credentials. {credentials.error.message}
+        {confirmation}
+        {credentials.isPending ? (
+          <p role="status">Loading credentials…</p>
+        ) : credentials.error && !credentials.data ? (
+          <>
+            <p className="mt-4 text-destructive text-sm" role="alert">
+              Couldn't load credentials.
             </p>
-            <DeviceAction
+            <Button
               onClick={() => void credentials.refetch()}
               size="sm"
               variant="outline"
             >
               Try again
-            </DeviceAction>
-          </div>
+            </Button>
+          </>
         ) : credentials.data?.length === 0 ? (
           <PageEmpty
             action={
@@ -105,17 +111,44 @@ export function CredentialsPage() {
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
-                    <DeviceAction
-                      disabled={
-                        Boolean(credential.revokedAt) ||
-                        revokeCredential.isPending
+                    <Button
+                      aria-label={`Revoke ${credential.keyId} for ${credential.provider}`}
+                      disabled={Boolean(credential.revokedAt)}
+                      onClick={(event) =>
+                        requestConfirmation({
+                          title: `Revoke ${credential.keyId} for ${credential.provider}?`,
+                          description: personal
+                            ? "Apps or models using this credential may stop working. Revocation is permanent. Add a replacement credential to restore access."
+                            : "This revokes the credential for this deployment. Any apps or models using it may stop working. Revocation is permanent. Add a replacement credential to restore access.",
+                          confirmLabel: "Revoke credential",
+                          pendingLabel: "Revoking credential…",
+                          failureMessage:
+                            "Revocation could not be confirmed. Try again to check the credential’s status.",
+                          successMessage: `${credential.keyId} was revoked.`,
+                          trigger: event.currentTarget,
+                          fallbackFocus: () => addButton.current,
+                          refresh: () => credentials.refetch(),
+                          run: async () => {
+                            const latest = await credentials.refetch({
+                              throwOnError: true,
+                            });
+                            const current = latest.data?.find(
+                              (item) => item.id === credential.id,
+                            );
+                            if (!current || current.revokedAt) {
+                              throw new ActionUnavailable(
+                                "This credential is missing or already revoked. Close this dialog and review the list.",
+                              );
+                            }
+                            await revokeCredential.mutateAsync(credential.id);
+                          },
+                        })
                       }
-                      onClick={() => revokeCredential.mutate(credential.id)}
                       size="sm"
                       variant="outline"
                     >
                       Revoke
-                    </DeviceAction>
+                    </Button>
                   </ItemActions>
                 </Item>
                 {index !== (credentials.data?.length ?? 0) - 1 && <Separator />}
@@ -124,6 +157,6 @@ export function CredentialsPage() {
           </PageRows>
         )}
       </PageSection>
-    </DevicePage>
+    </PageShell>
   );
 }
