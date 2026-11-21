@@ -229,10 +229,11 @@ export function workspaceCleanup({
     await tx
       .update(personalWorkspaceClosures)
       .set({
-        cleanup: {
+        // Bind JSON text before casting so Bun SQL stores the JSON value itself.
+        cleanup: sql`${JSON.stringify({
           ...closure.cleanup,
           [key]: { status, checkedAt: new Date(now()).toISOString() },
-        },
+        })}::text::jsonb`,
       })
       .where(eq(personalWorkspaceClosures.id, id));
   }
@@ -309,7 +310,9 @@ export function workspaceCleanup({
           if (!parsed.success) return;
           await tx
             .update(personalWorkspaceClosures)
-            .set({ backupSchedule: parsed.data })
+            .set({
+              backupSchedule: sql`${JSON.stringify(parsed.data)}::text::jsonb`,
+            })
             .where(eq(personalWorkspaceClosures.id, closure.id));
         } catch {
           // Keep the schedule pending until the deployment can verify it.
@@ -372,7 +375,7 @@ export async function reapplyWorkspaceClosures(
         })
         .onConflictDoUpdate({
           target: personalWorkspaceClosures.id,
-          set: { cleanup: {}, backupSchedule: null },
+          set: { cleanup: sql`'{}'::jsonb`, backupSchedule: null },
           setWhere: and(
             eq(personalWorkspaceClosures.accountId, record.accountId),
             eq(personalWorkspaceClosures.workspaceId, record.workspaceId),

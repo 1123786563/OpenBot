@@ -37,6 +37,7 @@ import {
 import {
   personalSaasAccounts,
   personalSaasNativeCodes,
+  personalWorkspaceClosures,
 } from "../src/db/schema/personal-saas";
 import {
   type AccountDisablement,
@@ -5744,6 +5745,19 @@ test("closure records partial cleanup and retries only unconfirmed steps", async
   ]);
   expect(grantsAtProvider).toEqual(new Set(["fixture-shared"]));
   expect(workspaceBindings.size).toBe(0);
+  const [stored] = await database
+    .select({
+      cleanupType: sql<string>`jsonb_typeof(${personalWorkspaceClosures.cleanup})`,
+      connections: sql<string>`${personalWorkspaceClosures.cleanup}->'connections'->>'status'`,
+      backupType: sql<string>`jsonb_typeof(${personalWorkspaceClosures.backupSchedule})`,
+    })
+    .from(personalWorkspaceClosures)
+    .where(eq(personalWorkspaceClosures.id, operationId));
+  expect(stored).toEqual({
+    cleanupType: "object",
+    connections: "confirmed",
+    backupType: "array",
+  });
   expect(
     await database
       .select()
@@ -5977,11 +5991,16 @@ test("closure rolls back partial acceptance, stops an in-flight Bot and fences q
       executionCutoff: { work: "confirmed" },
     });
     const [stopped] = await database
-      .select()
+      .select({
+        claimedBy: workItems.claimedBy,
+        interruption: workItems.interruption,
+        storedReason: sql<string>`${workItems.interruption}->>'reason'`,
+      })
       .from(workItems)
       .where(eq(workItems.key, runId));
     expect(stopped).toMatchObject({
       claimedBy: null,
+      storedReason: "workspace_closed",
       interruption: {
         reason: "workspace_closed",
         outcomeUnknown: true,
