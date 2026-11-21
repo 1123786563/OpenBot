@@ -362,19 +362,15 @@ test.each([
     );
     let runId = crypto.randomUUID();
     if (backgroundSource === "routine") {
-      const routine = await createRoutineStore(database).create({
+      const routineStore = createRoutineStore(database);
+      const routine = await routineStore.create({
         ownerUserId: actor.id,
         channelId: channel.id,
         agentId: bot.id,
         instruction: "Fixture Routine",
         cron: "0 9 * * *",
       });
-      const fired = await app.request(
-        `/api/routines/${routine.id}/run`,
-        post({}),
-      );
-      expect(fired.status).toBe(202);
-      runId = (await fired.json()).runId;
+      ({ runId } = await routineStore.startManualRun(actor.id, routine.id));
     }
     const messageId = crypto.randomUUID();
     const text = "Output delivered before approval.";
