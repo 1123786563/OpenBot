@@ -4596,9 +4596,9 @@ test("replicas share Bot admission and retain history when a slot is released", 
       error: "workspace_quota_exceeded",
       resource: "bot",
     });
-    const { runId } = await concurrent
-      .find((response) => response.status === 202)
-      ?.json();
+    const accepted = concurrent.find((response) => response.status === 202);
+    if (!accepted) throw new Error("Expected one accepted Bot run");
+    const { runId } = await accepted.json();
     expect((await workspace(owner.session)).quotas.bot).toEqual({
       used: 1,
       limit: 1,
@@ -4904,9 +4904,9 @@ test("attachment storage admits one of two concurrent uploads and releases a wit
   expect(
     await concurrent.find((response) => response.status === 429)?.json(),
   ).toMatchObject({ resource: "storage", used: 12, limit: 12 });
-  const { id } = await concurrent
-    .find((response) => response.status === 201)
-    ?.json();
+  const created = concurrent.find((response) => response.status === 201);
+  if (!created) throw new Error("Expected one uploaded attachment");
+  const { id } = await created.json();
   const other = await isolationOwner();
   expect(
     (
@@ -5036,6 +5036,7 @@ test("a stopped running Bot holds its slot until the worker exits", async () => 
       });
       started.resolve();
       await cancelled;
+      onText?.("Text emitted after cancellation");
       aborted.resolve();
       await exit.promise;
       signal?.throwIfAborted();

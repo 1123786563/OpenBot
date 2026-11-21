@@ -106,6 +106,7 @@ export function personalBotWork(
       let checkpoint: Promise<void> | undefined;
 
       function saveOutput(text: string) {
+        if (controller.signal.aborted) return;
         if (now() >= expiresAt) {
           localCutoffAt = expiresAt;
           controller.abort();
