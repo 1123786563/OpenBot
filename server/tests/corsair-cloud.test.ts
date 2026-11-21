@@ -12,7 +12,9 @@ describe("Corsair Cloud client", () => {
       },
     });
 
-    await client.call("person-1", "notion", "pages.searchPage", { query: "OpenBot" });
+    await client.call("person-1", "notion", "pages.searchPage", {
+      query: "OpenBot",
+    });
 
     expect(requests).toHaveLength(1);
     expect(requests[0]?.url).toBe(
@@ -22,5 +24,39 @@ describe("Corsair Cloud client", () => {
       "Bearer ck_cloud_demo.slug",
     );
     expect(await requests[0]?.json()).toEqual({ args: { query: "OpenBot" } });
+  });
+
+  test("builds a fail-closed operation catalog for every runtime plugin", async () => {
+    const client = createCorsairCloudClient({
+      apiKey: "ck_cloud_demo.slug",
+      fetch: async () =>
+        Response.json({
+          plugins: {
+            slack: ["messages.send", "messages.list"],
+            github: ["issues.create"],
+          },
+        }),
+    });
+
+    await expect(client.listOperations()).resolves.toEqual([
+      {
+        plugin: "github",
+        operation: "issues.create",
+        riskLevel: "write",
+        approvalRequired: true,
+      },
+      {
+        plugin: "slack",
+        operation: "messages.list",
+        riskLevel: "write",
+        approvalRequired: true,
+      },
+      {
+        plugin: "slack",
+        operation: "messages.send",
+        riskLevel: "write",
+        approvalRequired: true,
+      },
+    ]);
   });
 });

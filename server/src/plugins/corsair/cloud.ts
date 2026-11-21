@@ -6,6 +6,17 @@ const pluginSlug = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,99}$/);
 const tenantId = z.string().trim().min(1).max(200);
 const operation = z.string().regex(/^[a-zA-Z0-9_.-]{1,200}$/);
 const json = z.unknown();
+const operationsResponse = z.object({
+  plugins: z.record(z.string(), z.array(operation)),
+});
+
+export type CorsairOperation = {
+  plugin: string;
+  operation: string;
+  /** Corsair defaults unannotated operations to writes. Keep that fail-closed default. */
+  riskLevel: "write";
+  approvalRequired: true;
+};
 
 export type CorsairCloudConfig = {
   apiKey: string;
@@ -24,7 +35,11 @@ export function createCorsairCloudClient(config: CorsairCloudConfig) {
   const transport = config.fetch ?? fetch;
   const baseUrl = cloudBaseUrl(config.apiKey, config.baseUrl);
 
-  async function request<T extends z.ZodType>(path: string, init: RequestInit, schema: T) {
+  async function request<T extends z.ZodType>(
+    path: string,
+    init: RequestInit,
+    schema: T,
+  ) {
     const response = await transport(`${baseUrl}${path}`, {
       ...init,
       headers: {
@@ -46,8 +61,33 @@ export function createCorsairCloudClient(config: CorsairCloudConfig) {
   return {
     baseUrl,
     listPlugins: () => request("/plugins", { method: "GET" }, json),
+    listOperations: async (): Promise<CorsairOperation[]> => {
+      const result = await request(
+        "/call",
+        { method: "GET" },
+        operationsResponse,
+      );
+      return Object.entries(result.plugins)
+        .flatMap(([plugin, operations]) =>
+          operations.map((name) => ({
+            plugin,
+            operation: name,
+            riskLevel: "write" as const,
+            approvalRequired: true as const,
+          })),
+        )
+        .sort((left, right) =>
+          `${left.plugin}.${left.operation}`.localeCompare(
+            `${right.plugin}.${right.operation}`,
+          ),
+        );
+    },
     getPlugin: (plugin: string) =>
-      request(`/plugins/${encodeURIComponent(pluginSlug.parse(plugin))}`, { method: "GET" }, json),
+      request(
+        `/plugins/${encodeURIComponent(pluginSlug.parse(plugin))}`,
+        { method: "GET" },
+        json,
+      ),
     connectionStatus: (tenant: string) =>
       request(
         `/connection-status?tenantId=${encodeURIComponent(tenantId.parse(tenant))}`,
@@ -94,6 +134,9 @@ export function createCorsairCloudRoutes({
   routes.get("/plugins", async (context) =>
     context.json(await client.listPlugins()),
   );
+  routes.get("/operations", async (context) =>
+    context.json(await client.listOperations()),
+  );
   routes.get("/plugins/:plugin", async (context) =>
     context.json(await client.getPlugin(context.req.param("plugin"))),
   );
@@ -101,7 +144,9 @@ export function createCorsairCloudRoutes({
     context.json(await client.connectionStatus(context.var.actor.id)),
   );
   routes.post("/connect/link", async (context) => {
-    const body = z.object({ plugin: pluginSlug }).parse(await context.req.json());
+    const body = z
+      .object({ plugin: pluginSlug })
+      .parse(await context.req.json());
     return context.json(
       await client.createConnectLink(body.plugin, context.var.actor.id),
     );
@@ -111,12 +156,22 @@ export function createCorsairCloudRoutes({
       .object({ plugin: pluginSlug, operation, args: z.unknown().default({}) })
       .parse(await context.req.json());
     return context.json(
-      await client.call(context.var.actor.id, body.plugin, body.operation, body.args),
+      await client.call(
+        context.var.actor.id,
+        body.plugin,
+        body.operation,
+        body.args,
+      ),
     );
   });
   routes.onError((error, context) =>
     context.json(
-      { error: error instanceof Error ? error.message : "Corsair Cloud request failed." },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Corsair Cloud request failed.",
+      },
       502,
     ),
   );
