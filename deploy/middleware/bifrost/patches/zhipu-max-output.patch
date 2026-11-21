@@ -1,0 +1,32 @@
+--- a/zhipu-core/providers/openai/chat.go
++++ b/zhipu-core/providers/openai/chat.go
+@@ -33,12 +33,28 @@
+ 
+ 	if bifrostReq.Params != nil {
+ 		openaiReq.ChatParameters = *bifrostReq.Params
+-		if openaiReq.ChatParameters.MaxCompletionTokens != nil && *openaiReq.ChatParameters.MaxCompletionTokens < MinMaxCompletionTokens {
++		isZhipuGLM := bifrostReq.Model == "glm-5.3-flash"
++		if isZhipuGLM {
++			// Zhipu's native chat API enforces max_tokens, including reasoning usage.
++			openaiReq.MaxTokens = openaiReq.ChatParameters.MaxCompletionTokens
++			openaiReq.ChatParameters.MaxCompletionTokens = nil
++		} else if openaiReq.ChatParameters.MaxCompletionTokens != nil && *openaiReq.ChatParameters.MaxCompletionTokens < MinMaxCompletionTokens {
+ 			openaiReq.ChatParameters.MaxCompletionTokens = schemas.Ptr(MinMaxCompletionTokens)
+ 		}
+ 		// Drop user field if it exceeds OpenAI's 64 character limit
+ 		openaiReq.ChatParameters.User = SanitizeUserField(openaiReq.ChatParameters.User)
+ 		openaiReq.ExtraParams = bifrostReq.Params.ExtraParams
++		if isZhipuGLM && openaiReq.ExtraParams != nil {
++			// The HTTP layer may merge passthrough extra params after this conversion.
++			// Remove the OpenAI spelling so it cannot overwrite the native Zhipu cap.
++			extraParams := make(map[string]interface{}, len(openaiReq.ExtraParams))
++			for key, value := range openaiReq.ExtraParams {
++				if key != "max_completion_tokens" && key != "max_tokens" {
++					extraParams[key] = value
++				}
++			}
++			openaiReq.ExtraParams = extraParams
++		}
+ 
+ 		// Normalize tool parameters for deterministic JSON serialization (improves prompt caching)
+ 		if len(openaiReq.ChatParameters.Tools) > 0 {
