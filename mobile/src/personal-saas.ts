@@ -20,6 +20,7 @@ const keyOptions = {
 };
 
 export class PersonalSaasActionError extends Error {}
+export class WorkspaceAdmissionsPaused extends Error {}
 
 function base64url(base64: string) {
   return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -142,6 +143,11 @@ export async function openPersonalWorkspace(onPreparing: () => void) {
   if (reply.status === 401) {
     await clearSession(token);
     return null;
+  }
+  if (reply.status === 503) {
+    const response = await reply.json().catch(() => null);
+    if (response?.error === "workspace_admissions_paused")
+      throw new WorkspaceAdmissionsPaused();
   }
   if (reply.status !== 200)
     throw new PersonalSaasActionError(

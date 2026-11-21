@@ -20,6 +20,9 @@ const httpsUrl = z.url({ protocol: /^https$/ }).refine((value) => {
 
 const trial = z.object({
   OPENBOT_PERSONAL_SAAS_MODE: z.literal("private-trial"),
+  OPENBOT_WORKSPACE_ADMISSIONS_PAUSED: z
+    .enum(["true", "false"])
+    .default("false"),
   OPENBOT_PERSONAL_SAAS_URL: httpsUrl.refine(
     (value) => new URL(value).href === `${new URL(value).origin}/`,
   ),
@@ -111,6 +114,7 @@ const botRuntime =
     : undefined;
 const app = createPersonalSaasApp(
   {
+    admissionsPaused: env.OPENBOT_WORKSPACE_ADMISSIONS_PAUSED === "true",
     closureCleanup:
       cleanupUrl && cleanupToken
         ? closureCleanupClient(cleanupUrl, cleanupToken)

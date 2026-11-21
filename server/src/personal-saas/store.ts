@@ -126,6 +126,48 @@ export function workspaceConversations(
   );
 }
 
+export async function createPersonalWorkspace(
+  tx: Transaction,
+  accountId: string,
+) {
+  await tx
+    .insert(personalWorkspaces)
+    .values({ ownerId: accountId })
+    .onConflictDoNothing({ target: personalWorkspaces.ownerId });
+  const [workspace] = await tx
+    .select({ id: personalWorkspaces.id })
+    .from(personalWorkspaces)
+    .where(eq(personalWorkspaces.ownerId, accountId))
+    .for("update");
+  if (!workspace) throw new Error("Personal Workspace was not saved");
+  const [assistant] = await tx
+    .select({ id: personalWorkspaceDefaultBots.agentId })
+    .from(personalWorkspaceDefaultBots)
+    .where(eq(personalWorkspaceDefaultBots.workspaceId, workspace.id));
+  if (assistant) return;
+
+  const agentId = `agent_${randomUUID()}`;
+  await tx.insert(agents).values({
+    id: agentId,
+    name: "Personal Assistant",
+    type: "built_in",
+    configuration: {
+      systemPrompt: "You are the user's Personal Assistant.",
+    },
+  });
+  // The workspace link owns this Bot. No enterprise or local user is bound to its profile.
+  await tx.insert(agentProfiles).values({
+    agentId,
+    title: "Personal Assistant",
+    roleDescription: "Help with personal tasks and questions.",
+    avatarSeed: agentId,
+    visibility: "private",
+  });
+  await tx
+    .insert(personalWorkspaceDefaultBots)
+    .values({ workspaceId: workspace.id, agentId });
+}
+
 export function personalSaasStore(
   database: Database | Transaction,
   now = Date.now,
@@ -202,6 +244,9 @@ export function personalSaasStore(
         const access = accountDecision(account?.status ?? null, now());
         const suspension = await latestSuspension(tx, input.accountId);
         const disabledAt = account?.status?.disablements.at(-1)?.effectiveAt;
+        const closedAt = account?.status?.executionCutoffs?.findLast(
+          (event) => event.reason === "workspace_closed",
+        )?.cutoffAt;
         if (
           access.kind === "denied" ||
           (await workspaceClosure(tx, input.accountId)) ||
@@ -210,7 +255,8 @@ export function personalSaasStore(
               input.loginStartedAt <= suspension.effectiveAt.getTime() ||
               (account?.status?.observedAt ?? 0) <=
                 suspension.effectiveAt.getTime())) ||
-          (disabledAt !== undefined && input.loginStartedAt <= disabledAt)
+          (disabledAt !== undefined && input.loginStartedAt <= disabledAt) ||
+          (closedAt !== undefined && input.loginStartedAt <= closedAt)
         )
           return undefined;
 
@@ -298,47 +344,17 @@ export function personalSaasStore(
         .limit(50);
       return rows.map(({ id, title, preview }) => ({ id, title, preview }));
     },
-    async provision(grant: AccountGrant, token: string) {
+    async provision(grant: AccountGrant, token: string, paused: boolean) {
       const { accountId } = grant;
       const outcome = await withAuthorizedSession(grant, token, async (tx) => {
-        await tx
-          .insert(personalWorkspaces)
-          .values({ ownerId: accountId })
-          .onConflictDoNothing({ target: personalWorkspaces.ownerId });
-        const [workspace] = await tx
-          .select({ id: personalWorkspaces.id })
-          .from(personalWorkspaces)
-          .where(eq(personalWorkspaces.ownerId, accountId))
-          .for("update");
-        if (!workspace) throw new Error("Personal Workspace was not saved");
-        const [assistant] = await tx
-          .select({ id: personalWorkspaceDefaultBots.agentId })
-          .from(personalWorkspaceDefaultBots)
-          .where(eq(personalWorkspaceDefaultBots.workspaceId, workspace.id));
-        if (assistant) return;
-
-        const agentId = `agent_${randomUUID()}`;
-        await tx.insert(agents).values({
-          id: agentId,
-          name: "Personal Assistant",
-          type: "built_in",
-          configuration: {
-            systemPrompt: "You are the user's Personal Assistant.",
-          },
-        });
-        // The workspace link owns this Bot. No enterprise or local user is bound to its profile.
-        await tx.insert(agentProfiles).values({
-          agentId,
-          title: "Personal Assistant",
-          roleDescription: "Help with personal tasks and questions.",
-          avatarSeed: agentId,
-          visibility: "private",
-        });
-        await tx
-          .insert(personalWorkspaceDefaultBots)
-          .values({ workspaceId: workspace.id, agentId });
+        if (await workspaceClosure(tx, accountId)) return "closed";
+        const existing = await personalSaasStore(tx, now).workspace(accountId);
+        if (existing) return "prepared";
+        if (paused) return "paused";
+        await createPersonalWorkspace(tx, accountId);
+        return "prepared";
       });
-      return outcome.authorized;
+      return outcome.authorized ? outcome.result : "denied";
     },
   };
 }

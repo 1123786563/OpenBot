@@ -209,6 +209,7 @@ function newApp(
   quotas?: Partial<import("../src/personal-saas/quotas").WorkspaceQuotaLimits>,
   botRuntime?: ReturnType<typeof createPersonalBotRuntime>,
   cleanup?: Parameters<typeof createPersonalSaasApp>[0]["closureCleanup"],
+  admissionsPaused = false,
 ) {
   return createPersonalSaasApp(
     {
@@ -217,6 +218,7 @@ function newApp(
       now,
       botRuntime,
       closureCleanup: cleanup,
+      admissionsPaused,
       computer: typeof dependency === "function" ? computer : dependency,
       runPersonalBot: typeof dependency === "function" ? dependency : undefined,
       quotas: {
@@ -5021,3 +5023,153 @@ test("closure rolls back partial acceptance, stops an in-flight Bot and fences q
     app = previousApp;
   }
 }, 25_000);
+
+test("a returning owner explicitly opens one empty workspace after recorded cleanup", async () => {
+  const owner = await isolationOwner();
+  expect(
+    (await operateAutomationWorkspace(owner.workspaceId, "pause")).status,
+  ).toBe(201);
+  const pausedLogin = await authenticate(owner.account);
+  const pausedSession = cookie(pausedLogin, "__Host-openbot-closure-status=");
+  const closed = await confirmClosure(
+    await proveClosure(pausedSession, owner.account),
+  );
+  expect(closed.status).toBe(200);
+  const { operationId } = await closed.json();
+  const status = cookie(
+    await authenticate(owner.account),
+    "__Host-openbot-closure-status=",
+  );
+  const open = (session: string) =>
+    send("/workspace/closure/reprovision", {
+      method: "POST",
+      headers: {
+        cookie: session,
+        origin,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ operationId }),
+    });
+  expect((await open(status)).status).toBe(409);
+
+  let remoteConfirmed = false;
+  const worker = newApp(
+    database,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    async (step, target) => ({
+      status:
+        target.workspaceId === owner.workspaceId &&
+        step !== "backups" &&
+        (step !== "connections" || remoteConfirmed)
+          ? "confirmed"
+          : "unconfirmed",
+    }),
+  );
+  await worker.sweepWorkspaceClosures();
+  expect((await open(status)).status).toBe(409);
+  remoteConfirmed = true;
+  await worker.sweepWorkspaceClosures();
+
+  const returning = await authenticate(owner.account);
+  expect(returning.headers.get("location")).toBe("/workspace/closure/progress");
+  const returningStatus = cookie(returning, "__Host-openbot-closure-status=");
+  expect((await open(returningStatus)).status).toBe(409);
+  expect(
+    (await operateAutomationWorkspace(owner.workspaceId, "resume")).status,
+  ).toBe(201);
+  const prior = app;
+  app = newApp(
+    database,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    true,
+  );
+  try {
+    expect((await closureStatus(returningStatus)).status).toBe(200);
+    expect((await open(returningStatus)).status).toBe(503);
+  } finally {
+    app = prior;
+  }
+  const progress = await send("/workspace/closure/progress", {
+    headers: { cookie: returningStatus },
+  });
+  expect(await progress.text()).toContain("Open a new workspace");
+  const attempts = await Promise.all([
+    open(returningStatus),
+    open(returningStatus),
+  ]);
+  expect(attempts.map(({ status }) => status).sort()).toEqual([303, 409]);
+  const signedIn = await authenticate({
+    ...owner.account,
+    email: "changed@example.com",
+  });
+  const newSession = cookie(signedIn, "__Host-openbot-personal=");
+  const replacement = await workspace(newSession);
+  expect(replacement.id).not.toBe(owner.workspaceId);
+  expect(replacement.personalAssistant.id).not.toBe(owner.botId);
+  expect(
+    await (
+      await send("/api/workspace/conversations", {
+        headers: { cookie: newSession },
+      })
+    ).json(),
+  ).toEqual({ conversations: [] });
+  expect(
+    (await send("/api/workspace", { headers: { cookie: owner.session } }))
+      .status,
+  ).toBe(401);
+  await worker.sweepWorkspaceClosures();
+  expect(await workspace(newSession)).toMatchObject({ id: replacement.id });
+});
+
+test("admissions pause leaves existing workspaces usable and lets first-time users retry", async () => {
+  const existing = await isolationOwner();
+  const account = {
+    sub: crypto.randomUUID(),
+    email: "first-opening@example.com",
+    verified: true,
+    active: true,
+  };
+  const prior = app;
+  app = newApp(
+    database,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    true,
+  );
+  try {
+    expect(await workspace(existing.session)).toMatchObject({
+      id: existing.workspaceId,
+    });
+    const signedIn = await authenticate(account);
+    const session = cookie(signedIn, "__Host-openbot-personal=");
+    const pending = await send("/workspace", { headers: { cookie: session } });
+    expect(pending.status).toBe(503);
+    expect(await pending.text()).toContain(
+      "Workspace opening temporarily paused",
+    );
+    expect((await enter(session)).status).toBe(503);
+
+    const native = await send("/api/workspace", {
+      headers: { authorization: `Bearer ${session.split("=")[1]}` },
+    });
+    expect(await native.json()).toEqual({
+      error: "workspace_admissions_paused",
+    });
+
+    app = prior;
+    expect((await enter(session)).status).toBe(303);
+    expect(await workspace(session)).toMatchObject({ id: expect.any(String) });
+  } finally {
+    app = prior;
+  }
+});

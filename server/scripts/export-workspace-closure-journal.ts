@@ -11,23 +11,28 @@ if (!url)
 
 const database = createDatabase(url);
 try {
-  const { id, accountId, workspaceId, acceptedAt } = personalWorkspaceClosures;
+  const { id, accountId, workspaceId, acceptedAt, retiredIntelligence } =
+    personalWorkspaceClosures;
   const operations = await database.transaction(
     async (tx) => {
       const closures = await tx
-        .select({ id, accountId, workspaceId, acceptedAt })
+        .select({ id, accountId, workspaceId, acceptedAt, retiredIntelligence })
         .from(personalWorkspaceClosures)
         .orderBy(asc(acceptedAt), asc(id));
       const inventory = await readIntelligenceInventory(
         tx,
-        closures.map(({ accountId }) => accountId),
+        closures
+          .filter(({ retiredIntelligence }) => retiredIntelligence === null)
+          .map(({ accountId }) => accountId),
       );
       const byAccount = Map.groupBy(inventory, ({ accountId }) => accountId);
-      return closures.map((closure) => ({
+      return closures.map(({ retiredIntelligence, ...closure }) => ({
         ...closure,
-        intelligence: (byAccount.get(closure.accountId) ?? []).map(
-          ({ agentId, threadId, runId }) => ({ agentId, threadId, runId }),
-        ),
+        intelligence:
+          retiredIntelligence ??
+          (byAccount.get(closure.accountId) ?? []).map(
+            ({ agentId, threadId, runId }) => ({ agentId, threadId, runId }),
+          ),
       }));
     },
     { isolationLevel: "repeatable read", accessMode: "read only" },
