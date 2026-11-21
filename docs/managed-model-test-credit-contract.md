@@ -12,6 +12,8 @@ The OpenBot runtime can send Web direct-chat text turns through a single version
 
 Set all three values on the OpenBot runtime deployment to enable the trial. The route applies to direct chat in that deployment. Account eligibility is checked by the controlled entry point. Chat sends server-persisted user and assistant text and returns the completed reply using the existing AG-UI stream. Other execution paths require their own integration with this client before they can use platform credentials.
 
+These settings select the service-token contract below. The billed Conversation pilot (#90) uses an execution identity bound to the persisted Conversation and an explicit Price Version. Its entry point expects a different reservation request. Use the #90 adapter when connecting that entry point.
+
 ## HTTP contract
 
 OpenBot posts JSON with the configured service bearer token. Return typed business outcomes as HTTP success responses. An unsuccessful HTTP status, timeout or invalid response cannot grant a dispatch permit.
