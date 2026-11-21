@@ -83,8 +83,9 @@ const legacyEvidence = evidenceIdentity.extend({
     .optional(),
 });
 
+const traceUuid = z.uuid().toLowerCase();
 const meterProof = z.strictObject({
-  requestId: z.uuid(),
+  requestId: traceUuid,
   gatewayRevision: reference,
   meteringRevision: reference,
   requestSha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -96,14 +97,14 @@ const usage = z.strictObject({
 });
 const providerTrace = z.strictObject({
   requestId: reference,
-  gatewayRequestId: z.uuid(),
+  gatewayRequestId: traceUuid,
   provider: id,
   model: reference,
   outputCap: tokens,
 });
 const gatewayTrace = z.strictObject({
-  requestId: z.uuid(),
-  runId: z.uuid(),
+  requestId: traceUuid,
+  runId: traceUuid,
   provider: id,
   model: reference,
   retryCount: z.literal(0),
@@ -134,8 +135,8 @@ const traceEvidence = evidenceIdentity.extend({
     }),
   }),
   inputLimit: z.strictObject({
-    requestId: z.uuid(),
-    runId: z.uuid(),
+    requestId: traceUuid,
+    runId: traceUuid,
     requestSha256: meterProof.shape.requestSha256,
     meter: meterProof,
     gatewayRequests: z.literal(0),

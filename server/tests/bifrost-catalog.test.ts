@@ -177,6 +177,19 @@ test.each([
     },
   ],
   [
+    "reused gateway request UUID with different casing",
+    (report) => {
+      const requestId = "abcdef12-3456-4789-8abc-def123456789";
+      report.stream.gateway.requestId = requestId;
+      report.stream.meter.requestId = requestId;
+      report.stream.upstream.gatewayRequestId = requestId;
+      const duplicate = requestId.toUpperCase();
+      report.outputLimit.gateway.requestId = duplicate;
+      report.outputLimit.meter.requestId = duplicate;
+      report.outputLimit.upstream.gatewayRequestId = duplicate;
+    },
+  ],
+  [
     "provider trace linked to a different gateway request",
     (report) => {
       report.stream.upstream.gatewayRequestId =
