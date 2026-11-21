@@ -201,6 +201,8 @@ async def test_streams_pinned_bounded_request_through_managed_harness(
     assert result[-1]["type"] == "RUN_FINISHED"
     (meter,), (gateway,) = seen["meter"], seen["gateway"]
     assert meter.content == gateway.content
+    assert gateway.headers["x-request-id"] == meter.headers["x-request-id"]
+    assert gateway.headers["x-bf-lh-openbot-request-sha256"] == hashlib.sha256(gateway.content).hexdigest()
     assert meter.headers["authorization"] == "Bearer synthetic-meter"
     assert gateway.headers["authorization"] == "Bearer synthetic-gateway"
     for header in ("openai-organization", "openai-project"):
@@ -301,6 +303,7 @@ async def test_typed_tool_result_is_remetered_in_same_run(probe, followup_count)
 
     assert any(event["type"] == "TOOL_CALL_START" for event in result)
     assert len(seen["meter"]) == 2
+    assert len({m.headers["x-request-id"] for m in seen["meter"]}) == 2
     followup = json.loads(seen["meter"][1].content)
     assert followup["messages"][-1] == {
         "role": "tool",
