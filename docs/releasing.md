@@ -905,13 +905,8 @@ the server reaches the supervisor, the supervisor builds a computer, the gateway
 browser acts, and the trail records it. It cannot run in CI, and this is not a gap to be closed
 later.
 
-OpenBot only runs in Intelligence mode, and `loadConfig` refuses to start without the project's
-Intelligence values, which a hosted runner has no business holding. The `image` check gets around
-this with placeholder values, because nothing is contacted at start-up, but the journey asserts
-`licenseStatus` is `valid`, and no placeholder can make that true.
-
-So it is a step a person takes, on a machine with real Intelligence credentials, before merging
-the release PR:
+CI boots the cloud image with network access disabled and asserts that OpenBot reports its own
+durable runtime. Run the signed-in smoke journey against a fresh deployment before the release:
 
 ```sh
 bash scripts/start.sh
@@ -919,7 +914,7 @@ export OPENBOT_SMOKE_COOKIE='better-auth.session_token=...'   # from a signed-in
 bun run test:smoke
 ```
 
-The session is the second half of "a machine with real credentials": the routes the journey proves
+The routes the journey proves
 are behind `requireUser`, so a run without one answers 401 three times and says nothing about the
 release. See [development.md](development.md#quality-checks) for where the cookie comes from.
 

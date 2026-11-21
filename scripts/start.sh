@@ -181,8 +181,8 @@ identifies_as_openbot() {
   case "$name" in
     # A field of this server's own payload. A stray 200 does not carry it.
     server)
-      curl -fsS --max-time 3 "http://localhost:$port/api/copilotkit/info" 2>/dev/null \
-        | grep -q '"licenseStatus"'
+      curl -fsS --max-time 3 "http://localhost:$port/api/capabilities" 2>/dev/null \
+        | grep -Eq '"mode"[[:space:]]*:[[:space:]]*"(openbot|intelligence)"'
       ;;
     # The app is static HTML with nothing to interrogate, so its title is the identity available.
     app)
@@ -244,27 +244,21 @@ echo
 echo "OpenBot"
 echo "======="
 
-# Provision the installation's Composio project with the existing CLI sign-in, independently of
-# Learning. The helper preserves supplied keys and Arcade. The server reads the resulting .env on
-# launch. Bun preserves exported values over .env, including empty strings. A child cannot change
-# this shell's environment, so clear only blank overrides before setup and later server processes.
-#
-# Best-effort, like Learning below. It used to run bare under `set -e`, so a checkout with no key
-# could not start at all while offline, signed out of the CLI, on a CLI without
-# `integrations composio provision`, or against an Ops without the provisioning service. A failure
-# is now the helper's one-line reason, and OpenBot starts with apps unavailable.
+# Bun preserves exported values over .env. Clear a blank export before starting the server.
 if [[ "${COMPOSIO_API_KEY:-}" != *[![:space:]]* ]]; then
   unset COMPOSIO_API_KEY
 fi
-COMPOSIO_BEFORE="$(setting COMPOSIO_API_KEY "")"
-if COMPOSIO_LINE="$(bun scripts/setup-composio.ts 2>&1 | tail -1)"; then
-  info "  $COMPOSIO_LINE"
-else
-  red "  Composio: apps are unavailable this run. ${COMPOSIO_LINE:-The Composio setup did not run.}"
-fi
-# Whatever the helper reported, a key that is new in .env must reach a server that is already up.
-if [ -z "$COMPOSIO_BEFORE" ] && [ -n "$(setting COMPOSIO_API_KEY "")" ]; then
-  SECRETS_ROTATED=true
+# The optional Composio helper may download a CLI and use a hosted sign-in. Only run it on opt-in.
+if [ "$(setting OPENBOT_COMPOSIO_AUTO_SETUP false)" = "true" ]; then
+  COMPOSIO_BEFORE="$(setting COMPOSIO_API_KEY "")"
+  if COMPOSIO_LINE="$(bun scripts/setup-composio.ts 2>&1 | tail -1)"; then
+    info "  $COMPOSIO_LINE"
+  else
+    red "  Composio: apps are unavailable this run. ${COMPOSIO_LINE:-The Composio setup did not run.}"
+  fi
+  if [ -z "$COMPOSIO_BEFORE" ] && [ -n "$(setting COMPOSIO_API_KEY "")" ]; then
+    SECRETS_ROTATED=true
+  fi
 fi
 
 info "1/4  Docker services"
@@ -344,20 +338,6 @@ green "  coworker tables migrated"
 # quote, which swallowed the script up to the next one and ran the words in later comments.
 MANAGED_ENDPOINT_LINE="none (the personal edition's Bot runs in the server)"
 green "  managed coworker endpoint: ${MANAGED_AGENT_AG_UI_URL:-$MANAGED_ENDPOINT_LINE}"
-
-# Automatic Learning collects nothing until a container is assigned. The server assigns this
-# project's `openbot` container on its own once it exists (server/src/learning/auto-assign.ts), but
-# the runtime key it holds cannot create one. A CopilotKit CLI login can, whether or not a project is
-# selected here, and so can INTELLIGENCE_SERVICE_TOKEN on a local evaluation install, so make sure the
-# container exists before the server looks. Never fatal and never interactive: one line, whatever
-# happens, and with nothing that can create it the line says exactly what to run.
-LEARNING_CONTAINER="$(setting CPK_INTELLIGENCE_LEARNING_CONTAINER_ID "")"
-LEARNING_AUTO_ASSIGN="$(setting OPENBOT_LEARNING_AUTO_ASSIGN true)"
-if [ -z "$LEARNING_CONTAINER" ] && [ "$LEARNING_AUTO_ASSIGN" != "false" ] \
-   && [ "$LEARNING_AUTO_ASSIGN" != "0" ] && { [ -n "$(setting CPK_INTELLIGENCE_API_KEY "")" ] || [ -n "$(setting INTELLIGENCE_API_KEY "")" ]; }; then
-  LEARNING_LINE="$(bun scripts/setup-learning.ts --non-interactive 2>>"$LOGS/learning-setup.log" | tail -1 || true)"
-  info "  ${LEARNING_LINE:-Automatic Learning: the container check did not run. Log: $LOGS/learning-setup.log}"
-fi
 
 # The personal edition's own browser: the person's installed Chrome or Edge, as a window on their
 # desktop with the Recorder in it (docs/personal-edition.md). It runs on the host and runs nobody
@@ -512,26 +492,18 @@ else
 fi
 
 info "3/4  Runtime health"
-INFO="$(curl -fsS --max-time 8 "http://localhost:$SERVER_PORT/api/copilotkit/info")"
+INFO="$(curl -fsS --max-time 8 "http://localhost:$SERVER_PORT/api/capabilities")"
 # Read with Bun, which every run of this script already needs, rather than python3, which not every
 # machine has. On Windows `python3` is usually the Microsoft Store alias, which prints "Python was not
 # found" and exits 49, so the run stopped here with the server and worker up and the app never
 # started.
 bun run - "$INFO" <<'JS'
 const info = JSON.parse(process.argv[2]);
-const status = info.licenseStatus;
-const agents = Object.keys(info.agents ?? {});
-if (status !== "valid") {
-  console.log(`\x1b[31m  licence is '${status}', not 'valid'.\x1b[0m`);
-  console.log("\x1b[31m  Check CPK_INTELLIGENCE_API_KEY (or INTELLIGENCE_API_KEY): npx copilotkit@latest login && npx copilotkit@latest project select\x1b[0m");
-  console.log("\x1b[31m  See README.md for Intelligence setup.\x1b[0m");
+if (info.durableHistory !== true || !["openbot", "intelligence"].includes(info.mode)) {
+  console.error("  OpenBot did not report a ready conversation runtime.");
   process.exit(1);
 }
-if (agents.length === 0) {
-  console.log("\x1b[31m  No Bots registered.\x1b[0m");
-  process.exit(1);
-}
-console.log(`\x1b[32m  licence valid · mode ${info.mode} · Bots: ${agents.join(", ")}\x1b[0m`);
+console.log(`\x1b[32m  runtime ready · mode ${info.mode}\x1b[0m`);
 JS
 
 info "4/4  App"

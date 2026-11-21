@@ -24,37 +24,9 @@ For tenant branding, production build commands, and artifact rollback, see the [
 | ----------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                | PostgreSQL connection string.                                                                         |
 | `KEY_ENCRYPTION_KEY`          | Base64-encoded 32-byte key for encrypted stored credentials. Generate with `openssl rand -base64 32`. |
-| `INTELLIGENCE_API_URL`        | CopilotKit Intelligence API URL.                                                                      |
-| `INTELLIGENCE_GATEWAY_WS_URL` | CopilotKit Intelligence realtime gateway URL.                                                         |
-| `CPK_INTELLIGENCE_API_KEY` | Runtime key written by the CopilotKit CLI. Preferred when non-empty. |
-| `INTELLIGENCE_API_KEY` | Legacy runtime key; used when `CPK_INTELLIGENCE_API_KEY` is empty or absent. |
 
-All five above stop server startup if missing. The three `INTELLIGENCE_` values are additionally
-checked as a set, so a partial set is refused as a misconfiguration rather than treated as
-unconfigured.
-
-The browser opens the Intelligence gateway's socket itself, at the address the server gives it. Where
-the server reaches the gateway somewhere a browser cannot, two variables cover it.
-`INTELLIGENCE_BROWSER_GATEWAY_WS_URL` names a second address for the same gateway (OpenBot Desktop's
-container uses it). `INTELLIGENCE_GATEWAY_PROXY=on` has the server carry the socket itself, at
-`/api/intelligence/client` on its own address, for an Intelligence nobody outside the cluster can
-reach: the Helm chart sets it for the Intelligence it installs, so one port-forward or one Ingress
-host is enough. The socket needs a signed-in session, and the gateway still checks the join token on
-it. Set one of the two, not both; `off` or unset is neither, and any other value of
-`INTELLIGENCE_GATEWAY_PROXY` refuses to start. With the proxy on and no
-`OPENBOT_PUBLIC_URL`, the page is told the socket as a path and resolves it against itself. The
-OpenBot Recorder is not on the page, so its capture pass names the socket on the address the
-Recorder reached OpenBot at, and only where that is this machine's loopback, as over
-`kubectl port-forward`. A Recorder that reaches OpenBot any other way needs `OPENBOT_PUBLIC_URL`.
-
-`COPILOTKIT_LICENSE_TOKEN` is optional: managed Intelligence issues no license token, and a
-self-hosted Intelligence that has one sets this and has it forwarded to the runtime. That
-Intelligence needs the same license on its own deployment as well, or it refuses memory and the
-other licensed features while conversations carry on. OpenBot asks Intelligence at boot and logs
-`intelligence-entitlement-not-ready`, naming the fix, when the answer is not ready. An
-Intelligence still starting, as one installed beside OpenBot is while its migrations run, is asked
-again for up to ten minutes, with one `intelligence-entitlement-waiting` line; only one still not
-answering then is logged as `intelligence-entitlement-unreadable`. A refused key is logged at once.
+Fresh cloud deployments use OpenBot mode. Standalone local Desktop manages the settings for its
+existing Intelligence runtime separately.
 
 `MANAGED_AGENT_AG_UI_URL` names the Bot in the box: the default endpoint for coworkers created in
 the product. It needs `MANAGED_AGENT_TOKEN` beside it, or the server refuses to start. Unset, the
@@ -72,7 +44,7 @@ at `agent-langgraph` on a laptop.
 | `OPENBOT_EDITION`    | `team`                             | `personal` runs OpenBot for one person with no sign-in, one computer and no Admin. See [personal-edition.md](personal-edition.md). Any value other than `team` or `personal` refuses to start. `personal` also refuses to start with a sign-in provider or `OPENBOT_ORGANIZATION_AUTH_URL` configured, without `OPENBOT_SINGLE_USER=true`, or without one shared computer (`AGENT_COMPUTER_URL`, with no `COMPUTER_SUPERVISOR_URL` or `COMPUTER_SANDBOX_NAMESPACE`). |
 | `NODE_ENV`           | unset                              | `production` refuses the example `KEY_ENCRYPTION_KEY` and `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true`. It does not decide whether sign-in is required; see `OPENBOT_SINGLE_USER`. |
 | `TENANT_PACKAGE_DIR` | `../examples/fintech`              | Tenant package directory, resolved from `server/`.                  |
-| `DEPLOYMENT_ID`      | the tenant package's id            | Names this deployment inside a shared Intelligence project, and prefixes the identity a Shared app's account is held under at the vendor. That identity is fixed when the app is made Shared, so changing this later does not move it. |
+| `DEPLOYMENT_ID`      | the tenant package's id            | Names this deployment and prefixes the identity a Shared app's account is held under at the vendor. That identity is fixed when the app is made Shared, so changing this later does not move it. |
 | `OPENAI_API_KEY`     | unset                              | Default model key for built-in agents and both shipped Bots.        |
 | `OPENAI_BASE_URL`    | unset                              | OpenAI-compatible endpoint that key is spent against. See below.    |
 | `COPILOTKIT_OPENAI_API` | unset                          | Which OpenAI API the built-in Bots call behind an `OPENAI_BASE_URL` that is not OpenAI or Azure: `responses` or `chat`. Unset, the model decides. See [OpenAI-compatible endpoints](#openai-compatible-endpoints). |
@@ -804,21 +776,8 @@ address: its page and the Bot both say inbound email is not configured on this d
 
 ## Automatic Learning
 
-Learning is on by default; with no container assigned, nothing is collected or delivered and the
-deployment still starts and chats. Until something is saved, the server assigns its Intelligence
-project's `openbot` container as the default by itself once that container exists. The variables
-below are optional; an administrator's saved settings under **Admin → Automatic Learning** override
-them, including a saved off. See [automatic-learning.md](automatic-learning.md).
-
-| Variable                                 | Meaning                                                                                       |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `CPK_INTELLIGENCE_LEARNING_CONTAINER_ID` | Default Learning container for this deployment's Bots. 1 to 64 lowercase letters, digits and single hyphens, or the server refuses to start. Checked at start: a container the configured Intelligence does not have is logged (`configured_absent`) and ignored, and automatic assignment runs as though it was unset. |
-| `CPK_INTELLIGENCE_SKILLS_REVISION`       | An exact published skills revision to pin. Read only beside a container id. Unset follows the latest. |
-| `OPENBOT_LEARNING_AUTO_ASSIGN`           | `false` or `0` stops the server assigning the project's `openbot` container automatically. On otherwise. Stands aside for a `CPK_INTELLIGENCE_LEARNING_CONTAINER_ID` the configured Intelligence has. |
-| `INTELLIGENCE_SERVICE_TOKEN`             | An Intelligence service token that creates the `openbot` Learning container (local evaluation installs only; see [Creating the container](automatic-learning.md#creating-the-container)). Requires `INTELLIGENCE_PROJECT_ID`. |
-| `INTELLIGENCE_PROJECT_ID`                | The numeric ID of the runtime key's Intelligence project, where the service token creates the container. Set both or neither, or the server refuses to start. |
-| `OPENBOT_MEMORY_SOURCE_DEFAULTS`         | `false` or `0` stops OpenBot making each app a person connected into a memory source for the Bots they talk to. On otherwise. Existing sources are left as they are. |
-| `OPENBOT_PROACTIVE_DEFAULTS`             | `true` or `1` switches on an hourly check-in on everything a Bot can read the first time a person talks to it alone, as OpenBot did before. Off otherwise: a Bot offers a check-in on one thing in the conversation, and it runs only once the person accepts. Existing settings are left as they are. |
+Cloud Learning settings and reviews live in OpenBot. The legacy service-token and container
+configuration applies to installations using the legacy runtime. See [Automatic Learning](automatic-learning.md).
 
 ## OpenTelemetry export
 

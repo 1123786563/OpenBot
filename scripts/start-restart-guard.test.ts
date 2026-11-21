@@ -27,13 +27,14 @@ async function writeExecutable(path: string, contents: string) {
  * all.
  */
 type Run = {
+  capabilities?: { mode: "openbot" | "intelligence"; durableHistory: boolean };
   otherWorker?: boolean;
   shell?: "bash" | "sh";
   omitFromEnv?: readonly string[];
   settings?: Record<string, string>;
   processEnvironment?: Record<string, string>;
   unavailableHealthPorts?: readonly number[];
-  composioSetup?: "configured" | "failed" | "real-helper" | "real-cli";
+  composioSetup?: "configured" | "failed" | "real-helper" | "real-cli" | "unexpected";
   /** What `npx` does when the real helper runs the CopilotKit CLI. */
   cli?: "missing-provision" | "provisions";
   probeBrokerEnvironment?: { composioKey?: string; arcadeKey?: string };
@@ -42,6 +43,7 @@ type Run = {
 async function runStartWithStaleServerProbe(
   status: 401 | 404,
   {
+    capabilities = { mode: "openbot", durableHistory: true },
     otherWorker = false,
     shell = "bash",
     omitFromEnv = [],
@@ -171,8 +173,8 @@ if [[ "$args" == *"/internal/routines/run"* ]]; then
   printf '${status}'
   exit 0
 fi
-if [[ "$args" == *"/api/copilotkit/info"* ]]; then
-  printf '{"licenseStatus":"valid","mode":"test","agents":{"analyst":{}}}'
+if [[ "$args" == *"/api/capabilities"* ]]; then
+  printf '%s' '${JSON.stringify(capabilities)}'
   exit 0
 fi
 if [[ "$args" == *"http://localhost:3010/"* ]]; then
@@ -209,7 +211,7 @@ exit 0
   // The Learning container check answers with one line, which start.sh relays.
   await writeExecutable(
     join(fakeBin, "bun"),
-    '#!/usr/bin/env bash\nif [ "$1" = run ] && [ "$2" = - ]; then\n  if [ -n "$BROKER_ENVIRONMENT_PROBE" ]; then "$REAL_BUN" --env-file=.env scripts/probe-broker-environment.ts; fi\n  exec "$REAL_BUN" "$@"\nfi\nif [ "$1" = scripts/setup-learning.ts ]; then echo "noise"; echo "LEARNING-CHECK $*"; fi\nif [ "$1" = scripts/setup-composio.ts ]; then\n  if [ "$TEST_COMPOSIO_SETUP" = real-helper ] || [ "$TEST_COMPOSIO_SETUP" = real-cli ]; then exec "$REAL_BUN" "$@"; fi\n  if [ "$TEST_COMPOSIO_SETUP" = failed ]; then echo "Composio setup failed. Sign in and retry." >&2; exit 1; fi\n  if [ "$TEST_COMPOSIO_SETUP" = configured ]; then printf "COMPOSIO_API_KEY=synthetic-project-key\\n" >> .env; echo "COMPOSIO-CONFIGURED"; fi\nfi\nexit 0\n',
+    '#!/usr/bin/env bash\nif [ "$1" = run ] && [ "$2" = - ]; then\n  if [ -n "$BROKER_ENVIRONMENT_PROBE" ]; then "$REAL_BUN" --env-file=.env scripts/probe-broker-environment.ts; fi\n  exec "$REAL_BUN" "$@"\nfi\nif [ "$1" = scripts/setup-learning.ts ]; then echo "noise"; echo "LEARNING-CHECK $*"; fi\nif [ "$1" = scripts/setup-composio.ts ]; then\n  if [ "$TEST_COMPOSIO_SETUP" = unexpected ]; then echo "COMPOSIO-SETUP-RAN"; fi\n  if [ "$TEST_COMPOSIO_SETUP" = real-helper ] || [ "$TEST_COMPOSIO_SETUP" = real-cli ]; then exec "$REAL_BUN" "$@"; fi\n  if [ "$TEST_COMPOSIO_SETUP" = failed ]; then echo "Composio setup failed. Sign in and retry." >&2; exit 1; fi\n  if [ "$TEST_COMPOSIO_SETUP" = configured ]; then printf "COMPOSIO_API_KEY=synthetic-project-key\\n" >> .env; echo "COMPOSIO-CONFIGURED"; fi\nfi\nexit 0\n',
   );
   // What `python3` is on a stock Windows machine: the Microsoft Store alias, which runs nothing. A
   // script that still needed it would stop at the health check in every test in this file.
@@ -229,6 +231,9 @@ exit 0
         DOCKER_LOG: dockerLogPath,
         CURL_LOG: curlLogPath,
         TEST_COMPOSIO_SETUP: composioSetup ?? "preserved",
+        ...(composioSetup && composioSetup !== "unexpected"
+          ? { OPENBOT_COMPOSIO_AUTO_SETUP: "true" }
+          : {}),
         ...(probeBrokerEnvironment
           ? {
               BROKER_ENVIRONMENT_PROBE: brokerEnvironmentPath,
@@ -414,24 +419,24 @@ describe("start.sh automatic Composio setup", () => {
 });
 
 describe("start.sh runtime health", () => {
-  /**
-   * THE LICENCE IS CHECKED WITHOUT PYTHON.
-   *
-   * The check used to be a `python3` heredoc. On Windows `python3` is usually the Microsoft Store
-   * alias, which exits 49, so `set -e` ended the run at "3/4 Runtime health" with the server and
-   * worker already up and the app never started. The fake `python3` beside this file's other fakes
-   * is that alias; the line below is only printed if the check ran, in Bun, and passed.
-   */
-  test("checks the licence and names the Bots without python3", async () => {
-    const result = await runStartWithStaleServerProbe(401);
+  test("starts OpenBot mode without an Intelligence licence or provisioning", async () => {
+    const result = await runStartWithStaleServerProbe(401, { composioSetup: "unexpected" });
 
-    expect({ exitCode: result.exitCode, stderr: result.stderr }).toEqual({
-      exitCode: 0,
-      stderr: "",
+    expect(result.stdout).toContain("Ready. http://localhost:3010");
+    expect(result.stdout).not.toContain("COMPOSIO-SETUP-RAN");
+    expect(result.stdout).not.toContain("LEARNING-CHECK");
+    expect(result.exitCode).toBe(0);
+  });
+
+  test("reports legacy runtime mode without invoking the Learning setup helper", async () => {
+    const result = await runStartWithStaleServerProbe(401, {
+      capabilities: { mode: "intelligence", durableHistory: true },
+      settings: { INTELLIGENCE_API_KEY: "unused-legacy-key" },
     });
-    expect(result.stdout).toContain(
-      "licence valid · mode test · Bots: analyst",
-    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("runtime ready · mode intelligence");
+    expect(result.stdout).not.toContain("LEARNING-CHECK");
   });
 });
 
@@ -550,50 +555,6 @@ describe("start.sh one computer each", () => {
         "compose up -d --build postgres supervisor agent-computer agent-bot agent-langgraph",
       );
     }
-  });
-});
-
-describe("start.sh Learning container check", () => {
-  /**
-   * The server assigns `openbot` once it exists, but its runtime key cannot create it. start.sh asks
-   * the setup helper, without a browser or a prompt, to make sure it exists, and relays its last line.
-   */
-  test.each(["INTELLIGENCE_API_KEY", "CPK_INTELLIGENCE_API_KEY"])(
-    "runs the non-interactive check when %s is set",
-    async (keyName) => {
-      const result = await runStartWithStaleServerProbe(401, {
-        settings: { [keyName]: "cpk-synthetic" },
-      });
-
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain(
-        "LEARNING-CHECK scripts/setup-learning.ts --non-interactive",
-      );
-      expect(result.stdout).not.toContain("noise");
-    },
-  );
-
-  test.each([
-    [
-      "a container is named",
-      { CPK_INTELLIGENCE_LEARNING_CONTAINER_ID: "mine" },
-    ],
-    ["it is switched off", { OPENBOT_LEARNING_AUTO_ASSIGN: "false" }],
-    ["it is switched off with 0", { OPENBOT_LEARNING_AUTO_ASSIGN: "0" }],
-  ])("is skipped when %s", async (_, settings) => {
-    const result = await runStartWithStaleServerProbe(401, {
-      settings: { INTELLIGENCE_API_KEY: "cpk-synthetic", ...settings },
-    });
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).not.toContain("LEARNING-CHECK");
-  });
-
-  test("is skipped without a runtime key", async () => {
-    const result = await runStartWithStaleServerProbe(401);
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).not.toContain("LEARNING-CHECK");
   });
 });
 
