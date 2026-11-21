@@ -277,6 +277,7 @@ import {
   createSharedSlackProvider,
   sharedSlackRegistration,
 } from "./plugins/corsair/slack/shared-provider";
+import { useCorsairCloudClient } from "./plugins/corsair/transport";
 import { backfillBrokeredLogos } from "./plugins/logos";
 import { redirectUriFor } from "./plugins/oauth";
 import {
@@ -1372,6 +1373,20 @@ const corsairCloud = process.env.CORSAIR_CLOUD_KEY?.trim()
       instanceKey: process.env.CORSAIR_CLOUD_INSTANCE?.trim(),
     })
   : undefined;
+useCorsairCloudClient(corsairCloud ?? null);
+if (corsairCloud) {
+  try {
+    await pluginStore.addServer({
+      key: "corsair-cloud",
+      by: "openbot:deployment",
+    });
+    await pluginStore.refreshTools("corsair-cloud");
+  } catch (error) {
+    console.warn(
+      `Corsair Cloud operation discovery failed; existing tools were kept. ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
 const githubEventSecret = process.env.CORSAIR_GITHUB_WEBHOOK_SECRET?.trim();
 const githubEventScope =
   githubPilot && githubEventSecret

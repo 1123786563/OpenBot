@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { createCorsairCloudClient } from "../src/plugins/corsair/cloud";
+import {
+  callTool as callCorsairTool,
+  listTools as listCorsairTools,
+  useCorsairCloudClient,
+} from "../src/plugins/corsair/transport";
 
 describe("Corsair Cloud client", () => {
   test("derives the cloud endpoint and forwards tenant-scoped calls", async () => {
@@ -106,5 +111,43 @@ describe("Corsair Cloud client", () => {
       integration: "github",
       signing_secret: "provider-secret",
     });
+  });
+
+  test("publishes every runtime operation through the governed OpenBot transport", async () => {
+    const requests: Request[] = [];
+    const client = createCorsairCloudClient({
+      apiKey: "ck_cloud_demo.slug",
+      fetch: async (input, init) => {
+        const request = new Request(input, init);
+        requests.push(request);
+        if (request.url.endsWith("/call"))
+          return Response.json({ plugins: { github: ["issues.create"] } });
+        return Response.json({ ok: true });
+      },
+    });
+
+    useCorsairCloudClient(client);
+    try {
+      await expect(
+        listCorsairTools({ url: "corsair://cloud" }),
+      ).resolves.toEqual([
+        expect.objectContaining({
+          name: "github.issues.create",
+          effect: "write",
+        }),
+      ]);
+      await expect(
+        callCorsairTool(
+          { url: "corsair://cloud", actorId: "person-1" },
+          "github.issues.create",
+          { args: { title: "OpenBot" } },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+      expect(await requests.at(-1)?.json()).toEqual({
+        args: { title: "OpenBot" },
+      });
+    } finally {
+      useCorsairCloudClient(null);
+    }
   });
 });
