@@ -899,9 +899,6 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
         await tx
           .delete(testCreditOperations)
           .where(inArray(testCreditOperations.accountId, accountIds));
-        await tx
-          .delete(lagoUsageEvents)
-          .where(inArray(lagoUsageEvents.accountId, accountIds));
         const removedEnrollments = await tx
           .delete(testCreditEnrollments)
           .where(inArray(testCreditEnrollments.accountId, accountIds))
