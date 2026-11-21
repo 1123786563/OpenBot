@@ -5,6 +5,7 @@ import { VStack } from "@astryxdesign/core/Layout";
 import { Link } from "@astryxdesign/core/Link";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Text } from "@astryxdesign/core/Text";
+import { TextArea } from "@astryxdesign/core/TextArea";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
@@ -91,6 +92,33 @@ import {
 const attemptPrefix = "__Host-openbot-oidc-";
 const callbackPath = "/auth/casdoor/callback";
 const sessionSeal = "personal-saas-access-token";
+const webBotRunsPath = "/workspace/bot-runs";
+const botRunRefreshPath = "/assets/bot-run-refresh.js";
+const webBotRunInput = botWorkInput.omit({ requiresComputer: true }).extend({
+  requestId: z.uuid(),
+  ...botRunCreditQuote.shape,
+});
+const webBotRunKey = z.string().regex(/^[a-f0-9]{64}$/);
+const botRunSubmissionError = {
+  authorization_changed: "Your workspace access changed. Sign in to try again.",
+  bot_unavailable: "The Personal Assistant is unavailable.",
+  insufficient_credits: "Not enough Test Credits to reserve this Bot run.",
+  managed_computer_unavailable: "This Bot run can only process text.",
+  test_credit_quote_changed:
+    "Test Credit pricing changed. Review the current price in your workspace before sending a new message.",
+  test_credit_route_unavailable:
+    "Managed Bot runs are temporarily unavailable.",
+};
+const botRunSubmissionInput = botWorkInput.extend({
+  execution: z.literal("test-credit").optional(),
+});
+type BotRunSubmission =
+  | { runId: string }
+  | {
+      error: keyof typeof botRunSubmissionError;
+      status: 402 | 403 | 404 | 409 | 422 | 503;
+    };
+
 const recoveryReason = {
   account_disabled: "The account was disabled.",
   account_status_unconfirmed: "Account status could not be confirmed.",
@@ -428,6 +456,13 @@ export function createPersonalSaasApp(
         `requestAnimationFrame(() => requestAnimationFrame(() => document.getElementById('prepare')?.requestSubmit()));`,
         { headers: { "content-type": "text/javascript; charset=utf-8" } },
       ),
+  );
+  app.get(
+    botRunRefreshPath,
+    () =>
+      new Response("setTimeout(() => window.location.reload(), 3000);", {
+        headers: { "content-type": "text/javascript; charset=utf-8" },
+      }),
   );
 
   app.get("/", (context) => {
@@ -1085,9 +1120,63 @@ export function createPersonalSaasApp(
                         {testCredits.quote.maxChargeMicrocredits} microcredits.{" "}
                         {testCredits.quote.usageDisclosure}
                       </Text>
+                      {testCredits.state === "issued" &&
+                      BigInt(testCredits.balance.availableMicrocredits) >=
+                        BigInt(testCredits.quote.maxChargeMicrocredits) ? (
+                        <form action={webBotRunsPath} method="post">
+                          <input
+                            type="hidden"
+                            name="workspaceId"
+                            value={workspace.id}
+                          />
+                          <input
+                            type="hidden"
+                            name="botId"
+                            value={workspace.personalAssistant.id}
+                          />
+                          <input
+                            type="hidden"
+                            name="requestId"
+                            value={crypto.randomUUID()}
+                          />
+                          <input
+                            type="hidden"
+                            name="route"
+                            value={testCredits.quote.route}
+                          />
+                          <input
+                            type="hidden"
+                            name="priceVersion"
+                            value={testCredits.quote.priceVersion}
+                          />
+                          <VStack gap={3}>
+                            <TextArea
+                              label="Message to Personal Assistant"
+                              htmlName="instruction"
+                              value=""
+                              isRequired
+                              htmlMaxLength={20_000}
+                            />
+                            <Button
+                              variant="primary"
+                              type="submit"
+                              label="Send to Personal Assistant"
+                            />
+                          </VStack>
+                        </form>
+                      ) : testCredits.state === "issued" &&
+                        !testCredits.usedUp ? (
+                        <Text as="p">
+                          Not enough Test Credits to reserve another Bot run.
+                        </Text>
+                      ) : null}
                     </>
                   ) : (
-                    ""
+                    managedCredits && (
+                      <Text as="p">
+                        Managed Bot runs are temporarily unavailable.
+                      </Text>
+                    )
                   )}
                 </section>
               ) : (
@@ -1618,31 +1707,58 @@ export function createPersonalSaasApp(
       return context.json({ error: "authorization_required" }, 403);
     if (!runPersonalBot && !executeManaged)
       return context.json({ error: "bot_execution_unavailable" }, 503);
-    const input = botWorkInput.safeParse(
+    const input = botRunSubmissionInput.safeParse(
       await context.req.json().catch(() => null),
     );
     if (!input.success) return context.json({ error: "invalid_request" }, 400);
-    const accountId = session.grant.accountId;
+    const { execution, ...work } = input.data;
+    if (execution === "test-credit" && !managedCredits)
+      return context.json({ error: "bot_execution_unavailable" }, 503);
     const retryKey = managedCredits
       ? context.req.header("Idempotency-Key")
       : undefined;
     const requestId = z.uuid().optional().safeParse(retryKey);
     if (!requestId.success)
       return context.json({ error: "invalid_idempotency_key" }, 400);
-    const key = requestId.data
+    const result = await submitBotRun({
+      token,
+      session,
+      input: work,
+      requestId: requestId.data,
+    });
+    return "runId" in result
+      ? context.json({ runId: result.runId }, 202)
+      : context.json({ error: result.error }, result.status);
+  });
+
+  async function submitBotRun({
+    token,
+    session,
+    input,
+    requestId,
+    disclosedQuote,
+  }: {
+    token: string;
+    session: AuthorizedSession;
+    input: z.infer<typeof botWorkInput>;
+    requestId?: string;
+    disclosedQuote?: z.infer<typeof botRunCreditQuote>;
+  }): Promise<BotRunSubmission> {
+    const accountId = session.grant.accountId;
+    const key = requestId
       ? createHash("sha256")
           .update(
             JSON.stringify([
               PERSONAL_BOT_WORK,
               accountId,
-              requestId.data.toLowerCase(),
+              requestId.toLowerCase(),
             ]),
           )
           .digest("hex")
       : crypto.randomUUID();
     const admission = managedCredits
       ? await (async () => {
-          if (input.data.requiresComputer)
+          if (input.requiresComputer)
             return {
               error: "managed_computer_unavailable",
               status: 422,
@@ -1658,6 +1774,15 @@ export function createPersonalSaasApp(
                 return {
                   error: "test_credit_route_unavailable",
                   status: 503,
+                } as const;
+              if (
+                disclosedQuote &&
+                (quote.route !== disclosedQuote.route ||
+                  quote.priceVersion !== disclosedQuote.priceVersion)
+              )
+                return {
+                  error: "test_credit_quote_changed",
+                  status: 409,
                 } as const;
               if (
                 BigInt(balance?.availableMicrocredits ?? "0") <
@@ -1678,14 +1803,14 @@ export function createPersonalSaasApp(
     const outcome = await store.withAuthorizedSession(
       session.grant,
       token,
-      async (tx) => {
+      async (tx): Promise<BotRunSubmission> => {
         const queue = createWorkQueue(tx, now);
         if (
-          requestId.data &&
+          requestId &&
           (await queue.personalStatus(PERSONAL_BOT_WORK, accountId, key))
         )
           return { runId: key };
-        if (!(await workspaceBots(tx).get({ ...input.data, accountId })))
+        if (!(await workspaceBots(tx).get({ ...input, accountId })))
           return { error: "bot_unavailable", status: 404 } as const;
         if (admission && "error" in admission) return admission;
         await quotas.admitBot(tx, accountId);
@@ -1694,7 +1819,7 @@ export function createPersonalSaasApp(
           key,
           accountId,
           payload: {
-            ...input.data,
+            ...input,
             ...(admission ? { testCredit: admission.quote } : {}),
           },
         });
@@ -1704,11 +1829,60 @@ export function createPersonalSaasApp(
       },
     );
     if (!outcome.authorized)
-      return context.json({ error: "authorization_changed" }, 403);
-    const result = outcome.result;
-    return "runId" in result
-      ? context.json({ runId: result.runId }, 202)
-      : context.json({ error: result.error }, result.status);
+      return { error: "authorization_changed", status: 403 } as const;
+    return outcome.result;
+  }
+
+  const webRunError = (
+    context: Context,
+    message: string,
+    status: 400 | 402 | 403 | 404 | 409 | 422 | 503,
+  ) =>
+    context.html(
+      statusPage(
+        "Couldn't submit Bot run",
+        message,
+        "/workspace",
+        "Back to workspace",
+      ),
+      status,
+    );
+
+  app.post(webBotRunsPath, async (context) => {
+    const token = getCookie(context, sessionCookie);
+    const session = await authorize(token);
+    if (!token || session.kind !== "authorized")
+      return webRunError(context, "Sign in to submit a Bot run.", 403);
+    if (!managedCredits)
+      return webRunError(
+        context,
+        botRunSubmissionError.test_credit_route_unavailable,
+        503,
+      );
+    const form = webBotRunInput.safeParse(
+      await context.req.parseBody().catch(() => null),
+    );
+    if (!form.success)
+      return webRunError(
+        context,
+        "Enter a message of 1 to 20,000 characters.",
+        400,
+      );
+    const { route, priceVersion, requestId, ...input } = form.data;
+    const result = await submitBotRun({
+      token,
+      session,
+      input,
+      requestId,
+      disclosedQuote: { route, priceVersion },
+    });
+    if ("runId" in result)
+      return context.redirect(`${webBotRunsPath}/${result.runId}`, 303);
+    return webRunError(
+      context,
+      botRunSubmissionError[result.error],
+      result.status,
+    );
   });
 
   app.post("/api/workspace/bot-runs/:key/stop", async (context) => {
@@ -1741,13 +1915,26 @@ export function createPersonalSaasApp(
       return context.json({ error: "authorization_required" }, 403);
     const key = z.string().min(1).max(1024).safeParse(context.req.param("key"));
     if (!key.success) return context.json({ error: "work_not_found" }, 404);
+    const result = await readBotRun(token, session, key.data);
+    if (!result.authorized)
+      return context.json({ error: "authorization_changed" }, 403);
+    return result.run
+      ? context.json(result.run)
+      : context.json({ error: "work_not_found" }, 404);
+  });
+
+  async function readBotRun(
+    token: string | undefined,
+    session: AuthorizedSession,
+    key: string,
+  ) {
     const accountId = session.grant.accountId;
     const queue = createWorkQueue(database, now);
     await queue.reconcilePersonalWork(PERSONAL_BOT_WORK, accountId);
     const result = await queue.personalStatus(
       PERSONAL_BOT_WORK,
       accountId,
-      key.data,
+      key,
     );
     const testCredit =
       result &&
@@ -1757,14 +1944,86 @@ export function createPersonalSaasApp(
             issuer: config.casdoor.issuer,
             subject: session.subject,
           },
-          key.data,
+          key,
         )
         .catch(() => undefined));
     if (!(await stillAuthorized(token, session.grant)))
-      return context.json({ error: "authorization_changed" }, 403);
-    return result
-      ? context.json({ ...result, ...(testCredit ? { testCredit } : {}) })
-      : context.json({ error: "work_not_found" }, 404);
+      return { authorized: false } as const;
+    return {
+      authorized: true,
+      run: result && { ...result, ...(testCredit ? { testCredit } : {}) },
+    } as const;
+  }
+
+  app.get(`${webBotRunsPath}/:key`, async (context) => {
+    const token = getCookie(context, sessionCookie);
+    const session = await authorize(token);
+    if (session.kind === "signed-out") return context.redirect("/");
+    if (session.kind !== "authorized") return context.redirect("/workspace");
+    const key = webBotRunKey.safeParse(context.req.param("key"));
+    if (!key.success) return context.notFound();
+    const result = await readBotRun(token, session, key.data);
+    if (!result.authorized) return context.redirect("/workspace");
+    if (!result.run) return context.notFound();
+    const { state, output, interruption, testCredit } = result.run;
+    const active =
+      state === "queued" || state === "running" || state === "waiting";
+    const statuses = {
+      queued: "Your Bot run is queued.",
+      running: "The Personal Assistant is working on your message.",
+      waiting: "Your Bot run is waiting.",
+      completed: "Your Bot run is complete.",
+      stopped: interruption
+        ? recoveryReason[interruption.reason]
+        : "Your Bot run stopped.",
+    };
+    return context.html(
+      page(
+        "Personal Assistant Bot run",
+        <>
+          <Text as="p" role="status">
+            {statuses[state]}
+          </Text>
+          {output ? <pre>{output}</pre> : null}
+          {testCredit ? (
+            <section aria-labelledby="bot-run-receipt">
+              <Heading level={2} id="bot-run-receipt">
+                Test Credit receipt
+              </Heading>
+              <Text as="p">{testCredit.model}</Text>
+              <Text as="p">
+                Reserved: {testCredit.reservedMicrocredits} microcredits
+              </Text>
+              {testCredit.heldMicrocredits !== "0" ? (
+                <Text as="p">
+                  Held: {testCredit.heldMicrocredits} microcredits
+                </Text>
+              ) : null}
+              {testCredit.chargedMicrocredits !== null ? (
+                <Text as="p">
+                  Charged: {testCredit.chargedMicrocredits} microcredits
+                </Text>
+              ) : null}
+              {testCredit.releasedMicrocredits !== null ? (
+                <Text as="p">
+                  Released: {testCredit.releasedMicrocredits} microcredits
+                </Text>
+              ) : null}
+              {testCredit.state === "pending" ? (
+                <Text as="p">Final charge is pending.</Text>
+              ) : null}
+            </section>
+          ) : null}
+          {active || testCredit?.state === "pending" ? (
+            <Link href={`${webBotRunsPath}/${key.data}`}>
+              Refresh run status
+            </Link>
+          ) : null}
+          {active ? <script src={botRunRefreshPath} defer /> : null}
+          <Link href="/workspace">Back to workspace</Link>
+        </>,
+      ),
+    );
   });
 
   app.post("/api/workspace/recovery/:key", async (context) => {

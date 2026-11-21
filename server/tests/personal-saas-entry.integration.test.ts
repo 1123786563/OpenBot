@@ -713,7 +713,7 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
     budgetId: crypto.randomUUID(),
     batchId: crypto.randomUUID(),
     amount: 3n,
-    budget: 3n,
+    budget: 6n,
   };
   const harnessImage = `agent-langgraph-agui@sha256:${"b".repeat(64)}`;
   const catalog = configure(emptyCatalog, {
@@ -872,6 +872,7 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
           workspaceId: initial.id,
           botId: initial.personalAssistant.id,
           instruction,
+          ...(headers.authorization ? { execution: "test-credit" } : {}),
         }),
       });
     const stopped = await submit(native, "Stop while metering");
@@ -988,6 +989,99 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
     expect(await persisted.json()).toMatchObject({
       testCredits: { usedUp: true, balance: { availableMicrocredits: "0" } },
     });
+
+    const browserOwner = { ...owner, sub: crypto.randomUUID() };
+    const browserCookie = cookie(
+      await authenticate(browserOwner),
+      "__Host-openbot-personal=",
+    );
+    await enter(browserCookie);
+    const browserHeaders = { cookie: browserCookie };
+    const workspaceMarkup = await (
+      await send("/workspace", { headers: browserHeaders })
+    ).text();
+    const formSelector = 'form[action="/workspace/bot-runs"]';
+    let formAction = "";
+    const formData = new URLSearchParams();
+    await new HTMLRewriter()
+      .on(formSelector, {
+        element(form) {
+          formAction = form.getAttribute("action") ?? "";
+        },
+      })
+      .on(`${formSelector} input[type="hidden"]`, {
+        element(input) {
+          formData.set(
+            input.getAttribute("name") ?? "",
+            input.getAttribute("value") ?? "",
+          );
+        },
+      })
+      .transform(new Response(workspaceMarkup))
+      .text();
+    expect(formAction).toBe("/workspace/bot-runs");
+    expect(workspaceMarkup).toContain('name="instruction"');
+    expect(workspaceMarkup).toContain("Send to Personal Assistant");
+    formData.set("instruction", "Run this from the Web workspace");
+    const submitForm = (body = formData) =>
+      send(formAction, {
+        method: "POST",
+        headers: { ...browserHeaders, origin, accept: "text/html" },
+        body,
+      });
+    const staleForm = new URLSearchParams(formData);
+    staleForm.set("priceVersion", crypto.randomUUID());
+    const stale = await submitForm(staleForm);
+    expect(stale.status).toBe(409);
+    expect(await stale.text()).toContain("Test Credit pricing changed");
+    const submitted = await submitForm();
+    expect(submitted.status).toBe(303);
+    const runPath = submitted.headers.get("location");
+    if (!runPath) throw new Error("Missing Web Bot run status page");
+    const queued = await send(runPath, { headers: browserHeaders });
+    expect(await queued.text()).toContain("Your Bot run is queued.");
+    expect(await app.sweepBotWork()).toBe(true);
+    const completed = await send(runPath, { headers: browserHeaders });
+    const receiptMarkup = await completed.text();
+    expect(receiptMarkup).toContain("Managed response");
+    expect(receiptMarkup).toContain("Test Credit receipt");
+    expect(receiptMarkup).toContain("Charged: 3 microcredits");
+    expect(receiptMarkup).toContain("Released: 0 microcredits");
+    const browserReplay = await submitForm();
+    expect(browserReplay.status).toBe(303);
+    expect(browserReplay.headers.get("location")).toBe(runPath);
+    const newForm = new URLSearchParams(formData);
+    newForm.set("requestId", crypto.randomUUID());
+    const browserExhausted = await submitForm(newForm);
+    expect(browserExhausted.status).toBe(402);
+    expect(await browserExhausted.text()).toContain("Not enough Test Credits");
+    expect((await send(runPath, { headers: { cookie: session } })).status).toBe(
+      404,
+    );
+    expect(requests).toHaveLength(2);
+
+    app = newApp(database, async () => {
+      throw new Error("Managed instructions must not reach the headless Bot");
+    });
+    const staleClient = await send("/api/workspace/bot-runs", {
+      method: "POST",
+      headers: {
+        ...native,
+        "content-type": "application/json",
+        "Idempotency-Key": crypto.randomUUID(),
+      },
+      body: JSON.stringify({
+        workspaceId: initial.id,
+        botId: initial.personalAssistant.id,
+        instruction: "Run this with Test Credits",
+        execution: "test-credit",
+      }),
+    });
+    expect(staleClient.status).toBe(503);
+    expect(await staleClient.json()).toEqual({
+      error: "bot_execution_unavailable",
+    });
+    expect((await submitForm()).status).toBe(503);
   } finally {
     app = prior;
     gateway.stop(true);
@@ -997,7 +1091,7 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
         .delete(enterpriseSettings)
         .where(eq(enterpriseSettings.key, pilotCatalogKey));
   }
-}, 20_000);
+}, 30_000);
 
 test("Web, Desktop, iOS, and Android share the owner’s workspace and conversation history", async () => {
   const owner = {

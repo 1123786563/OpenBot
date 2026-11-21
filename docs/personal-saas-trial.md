@@ -172,7 +172,12 @@ It uses the Personal SaaS server's durable work queue and the Test Credit tables
 its PostgreSQL database. The workspace API returns the published quote. The Bot-run
 status endpoint returns the owner's receipt when the ledger has an operation.
 Supply a UUID `Idempotency-Key` on managed submissions to reuse the same run when
-retrying a request. A new request with insufficient available credit returns HTTP
+retrying a request. Clients that display the managed quote send
+`execution: "test-credit"` in the request body so the API returns HTTP 503 if
+managed execution is unavailable. In the Web workspace, the Test Credits
+section accepts a message after showing the price and reservation limit. The
+run page shows the Bot's response and the owner's receipt.
+A new request with insufficient available credit returns HTTP
 402. A concurrent submission may be accepted into the queue and stop at
 reservation if another run has already reserved the available credit. Existing
 history and workspace resource management remain available.

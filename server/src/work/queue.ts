@@ -884,15 +884,16 @@ export function createWorkQueue(
         .where(and(forAccount(kind, accountId), keyed(kind, key)));
       if (!row) return;
       const { attempts, parked, ...result } = row;
-      const state = row.interruption
-        ? "stopped"
-        : row.finishedAt
-          ? "completed"
-          : parked
-            ? "waiting"
-            : attempts
-              ? "running"
-              : "queued";
+      const state: "stopped" | "completed" | "waiting" | "running" | "queued" =
+        row.interruption
+          ? "stopped"
+          : row.finishedAt
+            ? "completed"
+            : parked
+              ? "waiting"
+              : attempts
+                ? "running"
+                : "queued";
       return { ...result, state };
     },
     async requestPersonalStop(kind: string, accountId: string, key: string) {
