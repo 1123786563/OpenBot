@@ -65,6 +65,11 @@ export function callMethods(context: StoreContext) {
   } = context;
   const accounts = accountBook(context);
   return {
+    configureCorsairBotWrites(
+      writes: NonNullable<typeof options.corsairBotWrites>,
+    ) {
+      options.corsairBotWrites = writes;
+    },
     /**
      * May this Bot use this plugin?
      *

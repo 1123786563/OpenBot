@@ -14,6 +14,8 @@ import {
   routineRuns,
 } from "../db/schema";
 import type { DeliveryScope } from "../delivery/types";
+import { GithubEventAccessRetry } from "../plugins/corsair/event-run-access";
+import type { createSlackGoalAction } from "../plugins/corsair/slack/goal-action";
 import type { ResponsibilityStore } from "../responsibilities/types";
 import {
   isMarketVersionPause,
@@ -21,6 +23,7 @@ import {
 } from "../skill-market/disablements";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import type { ApprovalResumeDependencies, ApprovalService } from "./service";
+import { ApprovalRefusedError } from "./types";
 
 /**
  * One pass of the approval resume loop: claim a decided approval, carry it out, and pick the waiting
@@ -35,7 +38,8 @@ export function createApprovalResumeTick(deps: {
   approvalService: ApprovalService;
   executeApprovedAction: ApprovalResumeDependencies["execute"];
   database: Database;
-  responsibilityStore: Pick<ResponsibilityStore, "resumeWaiting">;
+  slackGoalAction?: ReturnType<typeof createSlackGoalAction>;
+  responsibilityStore: ResponsibilityStore;
   groupConversations: Pick<GroupConversations, "continueWaiting">;
   approvalContinuationRunner: TurnRunner;
   channelStore: Pick<ChannelStore, "recordActivity">;
@@ -89,6 +93,34 @@ export function createApprovalResumeTick(deps: {
             approvalId: z.string().min(1),
           })
           .parse(item.payload);
+        const request = await approvalService.store.get(
+          input.ownerUserId,
+          input.approvalId,
+        );
+        const finish = async () => {
+          if (
+            !(await approvalQueue.finish({
+              kind: item.kind,
+              key: item.key,
+              owner: approvalOwner,
+            }))
+          )
+            throw new Error(
+              "The approval work lease was lost before completion.",
+            );
+        };
+        if (
+          request.action.dispatch === "corsair-slack-goal" &&
+          deps.slackGoalAction
+        ) {
+          const outcome = await deps.slackGoalAction.resume(
+            request,
+            responsibilityStore,
+          );
+          if (outcome === "retry") throw new GithubEventAccessRetry();
+          await finish();
+          return;
+        }
         const resumeDependencies: ApprovalResumeDependencies = {
           // Asked before the action runs: with Use Bots off, or the Bot's model off the allowlist,
           // nothing is carried out and the refusal is final rather than retried.
@@ -98,10 +130,15 @@ export function createApprovalResumeTick(deps: {
               agentId: action.botId,
               threadId: action.threadId,
             }),
-          validate: (action) =>
-            approvalService.validateReentry(action, () =>
+          validate: (action) => {
+            if (action.dispatch === "corsair-slack-goal")
+              throw new ApprovalRefusedError(
+                "The Slack pilot registration is unavailable.",
+              );
+            return approvalService.validateReentry(action, () =>
               executeApprovedAction(action),
-            ),
+            );
+          },
           execute: executeApprovedAction,
           continue: async ({
             continuation: snapshot,
@@ -291,16 +328,7 @@ export function createApprovalResumeTick(deps: {
           input.approvalId,
           resumeDependencies,
         );
-        if (
-          !(await approvalQueue.finish({
-            kind: item.kind,
-            key: item.key,
-            owner: approvalOwner,
-          }))
-        )
-          throw new Error(
-            "The approval work lease was lost before completion.",
-          );
+        await finish();
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         // The queue will not hand this item out again, so the conversation hears now or never.
@@ -330,7 +358,9 @@ export function createApprovalResumeTick(deps: {
           owner: approvalOwner,
           delayMs: 10_000,
           reason,
+          uncounted: error instanceof GithubEventAccessRetry,
         });
+        if (error instanceof GithubEventAccessRetry) return;
         throw error;
       }
     } catch (error) {
