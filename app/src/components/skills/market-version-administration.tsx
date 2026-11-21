@@ -6,7 +6,6 @@ import { StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useId } from "react";
 import { Input } from "@/components/ui/input";
 import { client } from "@/lib/client";
 
@@ -49,12 +48,10 @@ export function MarketVersionAdministration() {
       <Heading level={4} accessibilityLevel={3}>
         Emergency version controls
       </Heading>
-      {versions.isPending && (
-        <p role="status">Loading installed and disabled versions…</p>
-      )}
+      {versions.isPending && <p role="status">Loading market versions…</p>}
       {versions.isError && (
         <p role="alert">
-          Couldn't load installed and disabled versions.{" "}
+          Couldn't load market versions.{" "}
           <Button
             variant="ghost"
             size="sm"
@@ -63,9 +60,7 @@ export function MarketVersionAdministration() {
           />
         </p>
       )}
-      {versions.data?.length === 0 && (
-        <p>No installed or disabled market versions.</p>
-      )}
+      {versions.data?.length === 0 && <p>No market versions to manage.</p>}
       {versions.data && versions.data.length > 0 && (
         <List hasDividers edge="flush">
           {versions.data.map((version) => (
@@ -104,7 +99,6 @@ export function MarketVersionControl({
   version: MarketVersionIdentity;
   disableReason: string | null;
 }) {
-  const reasonId = useId();
   const queryClient = useQueryClient();
   const update = useMutation({
     mutationFn: async (reason: string | null) => {
@@ -163,9 +157,9 @@ export function MarketVersionControl({
         >
           <HStack align="end" gap={2} wrap="wrap">
             <StackItem size="fill">
-              <VStack as="label" gap={1} htmlFor={reasonId}>
+              <VStack as="label" gap={1}>
                 <Text type="label">Disable reason</Text>
-                <Input id={reasonId} maxLength={500} name="reason" required />
+                <Input maxLength={500} name="reason" required />
               </VStack>
             </StackItem>
             <Button

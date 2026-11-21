@@ -47,7 +47,6 @@ async function load<T>(path: string, signal: AbortSignal): Promise<T> {
 }
 
 export function SkillMarket({ isAdmin = false }: { isAdmin?: boolean }) {
-  const searchId = useId();
   const previewId = useId();
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
@@ -84,9 +83,9 @@ export function SkillMarket({ isAdmin = false }: { isAdmin?: boolean }) {
         >
           <HStack align="end" gap={2} wrap="wrap">
             <StackItem size="fill">
-              <VStack as="label" gap={1} htmlFor={searchId}>
+              <VStack as="label" gap={1}>
                 <Text type="label">Search shared skills</Text>
-                <Input id={searchId} maxLength={200} name="q" type="search" />
+                <Input maxLength={200} name="q" type="search" />
               </VStack>
             </StackItem>
             <Button type="submit" label="Search" />
@@ -365,7 +364,6 @@ function MarketPreview({
 }
 
 function MarketCommandAssignment({ path }: { path: string }) {
-  const inputId = useId();
   const helpId = useId();
   const queryClient = useQueryClient();
   const assign = useMutation({
@@ -392,10 +390,9 @@ function MarketCommandAssignment({ path }: { path: string }) {
     >
       <VStack gap={2}>
         <HStack align="end" gap={2} wrap="wrap">
-          <VStack as="label" gap={1} htmlFor={inputId}>
+          <VStack as="label" gap={1}>
             <Text type="label">New slash command</Text>
             <Input
-              id={inputId}
               aria-describedby={helpId}
               name="command"
               autoComplete="off"
