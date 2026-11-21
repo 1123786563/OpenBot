@@ -652,6 +652,34 @@
       "when": 1795189760196,
       "tag": "0092_skill_market_runs",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1795175780570,
+      "tag": "0093_corsair_slack_personal",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1795175780571,
+      "tag": "0094_corsair_slack_shared",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1795175780572,
+      "tag": "0095_corsair_shared_storage",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1795175780573,
+      "tag": "0096_corsair_revocation",
+      "breakpoints": true
     }
   ]
 }

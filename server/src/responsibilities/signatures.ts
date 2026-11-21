@@ -29,12 +29,15 @@ function fromHex(value: string) {
 
 export function verifyGithubSignature(
   secret: string,
-  raw: string,
+  raw: string | Uint8Array,
   header: string | undefined,
 ) {
   const match = /^sha256=([0-9a-f]{64})$/i.exec(header?.trim() ?? "");
   const supplied = match?.[1] ? fromHex(match[1]) : null;
-  return !!supplied && safeEqual(supplied, hexHmac(secret, raw));
+  return (
+    !!supplied &&
+    safeEqual(supplied, createHmac("sha256", secret).update(raw).digest())
+  );
 }
 
 export function verifyLinearSignature(

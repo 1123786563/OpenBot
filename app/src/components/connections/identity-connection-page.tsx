@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ConnectionPage } from "@/components/connections/connection-surface";
+import { CorsairAccounts } from "@/components/connections/corsair-accounts";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { GithubSources } from "@/components/settings/github-sources";
 import {
@@ -43,9 +44,11 @@ import {
  */
 export function IdentityConnectionPage({
   linked,
+  outcome,
   provider,
 }: {
   linked: string | undefined;
+  outcome?: string;
   provider: LinkableProvider;
 }) {
   const title = linkableProviderTitle(provider);
@@ -84,6 +87,7 @@ export function IdentityConnectionPage({
           {notice.text}
         </p>
       ) : null}
+      <CorsairAccounts key={provider} provider={provider} outcome={outcome} />
       <LinkedAccountSection provider={provider} />
       {provider === "github" ? (
         <>
