@@ -30,6 +30,12 @@ Trusted adapters call `recordEvidence` with a stable source evidence ID and cumu
 
 A retry keeps the operation ID and returns the existing receipt without sending another request. For an explicit rerun, persist a fresh execution identifier and pass the original operation as `rerunOf` to the managed model. The new request has its own permit, quote, and hold. Account authentication scopes the original operation lookup and the receipt shows the link.
 
+## Cumulative execution budgets
+
+Routine and persistent Task rows may bind to a confirmed Test Credit execution budget. Each managed-model step carries the budget ID and a stable step ID into reservation and dispatch. The ledger counts reserved, pending, and settled operations against the same budget, rejects unconfirmed or exhausted budgets, and rechecks the cumulative limit immediately before dispatch. Repeating one step with the same operation and step identity is idempotent. A managed-model result is stored on the operation so a paused task can resume from its completed result after the user confirms a larger limit.
+
+The focused verification covers budget confirmation, cumulative-limit refusal, dispatch-time revalidation, repeated-step binding, and result preservation. The database-backed execution-budget test runs against an isolated PostgreSQL database and verifies that a budget can be confirmed and enlarged before the next step.
+
 ## Integration gates
 
 The ledger migration and fixture verification run on the billing branch. Mounting the account routes, displaying the quote and receipt in Personal SaaS, connecting the persisted Conversation and Worker entry points, and wiring user confirmation for explicit reruns require the accepted #53 authorization path and the #32 caller integration. When combining migrations, reconcile billing migrations `0089` through `0091` and the journal with Personal SaaS's migration sequence. The client in this branch changes the candidate's execution credentials and reservation payload, so wire those together in the same integration.
