@@ -36,6 +36,7 @@ jobs:
       pull-requests: read
     outputs:
       is_release: ${{ steps.release.outputs.is_release }}
+      cloud_only: ${{ steps.release.outputs.cloud_only }}
       version: ${{ steps.release.outputs.version }}
       prerelease: ${{ steps.release.outputs.prerelease }}
       final_from_candidate: ${{ steps.release.outputs.final_from_candidate }}
@@ -50,6 +51,7 @@ jobs:
             const branch = context.ref.replace(/^refs\/heads\//, "");
             const notRelease = (why) => {
               core.setOutput("is_release", "false");
+              core.setOutput("cloud_only", "false");
               core.setOutput("version", "");
               core.setOutput("prerelease", "false");
               core.setOutput("final_from_candidate", "false");
@@ -107,6 +109,7 @@ jobs:
               return;
             }
             core.setOutput("is_release", "true");
+            core.setOutput("cloud_only", String(pull.labels.some((label) => label.name === "cloud-only")));
             core.setOutput("version", version);
             core.setOutput("prerelease", String(prerelease));
             core.setOutput("final_from_candidate", String(finalFromCandidate));
@@ -308,7 +311,7 @@ jobs:
     with:
       ref: ${{ github.sha }}
       tags: ${{ needs.metadata.outputs.version }}
-      latest: ${{ needs.verify.outputs.becomes_latest == 'true' }}
+      latest: ${{ needs.metadata.outputs.cloud_only == 'false' && needs.verify.outputs.becomes_latest == 'true' }}
       manifest_version: ${{ needs.metadata.outputs.version }}
     permissions:
       contents: read
@@ -336,7 +339,7 @@ jobs:
     needs: [metadata, verify, images]
     if: >-
       !cancelled() && needs.metadata.outputs.prerelease == 'true' &&
-      needs.images.result == 'success'
+      needs.metadata.outputs.cloud_only == 'false' && needs.images.result == 'success'
     uses: $/.github/workflows/desktop-build.yml
     with:
       ref: ${{ github.sha }}
@@ -363,7 +366,7 @@ jobs:
     if: >-
       !cancelled() && needs.metadata.outputs.is_release == 'true' &&
       needs.verify.result == 'success' && needs.images.result == 'success' &&
-      needs.image-list.result == 'success'
+      (needs.metadata.outputs.cloud_only == 'true' || needs.image-list.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -388,10 +391,13 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ needs.images.outputs.manifest-artifact }}
-      # The list `image-list` wrote, attached beside it, so the release is never without it.
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      # Desktop releases publish the CLI image list with the cloud assets.
+      # A publish-only rerun can reuse the successful image-list job from an earlier attempt.
+      - name: Download the Desktop image list
+        if: needs.metadata.outputs.cloud_only == 'false'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: desktop-images-${{ github.run_id }}-${{ github.run_attempt }}
+          artifact-ids: ${{ needs.image-list.outputs.artifact_id }}
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: v3.19.0
@@ -450,6 +456,7 @@ jobs:
           VERSION: ${{ needs.metadata.outputs.version }}
           PRERELEASE: ${{ needs.metadata.outputs.prerelease }}
           FINAL_FROM_CANDIDATE: ${{ needs.metadata.outputs.final_from_candidate }}
+          CLOUD_ONLY: ${{ needs.metadata.outputs.cloud_only }}
           BECOMES_LATEST: ${{ needs.verify.outputs.becomes_latest }}
         run: |
           set -euo pipefail
@@ -483,6 +490,13 @@ jobs:
               -f "ref=refs/tags/$VERSION" -f "sha=$GITHUB_SHA" >/dev/null
           fi
 
+          assets=(container-images.json)
+          if [ "$CLOUD_ONLY" = false ]; then
+            test -s desktop-images.json
+            assets+=(desktop-images.json)
+          fi
+          assets+=(release-assets/*)
+
           if [ -n "${OPENBOT_PUBLISHED_ASSETS:-}" ]; then
             # Release-specific source/chart URLs are immutable after first publication. A rerun
             # fills in what is missing. Every asset that was published already was compared by
@@ -491,7 +505,7 @@ jobs:
             # never published, and desktop-images.json, the list of images to copy, which this
             # run wrote again from the same inputs.
             gh release edit "$VERSION" --title "$VERSION" --notes-file notes.md "${edit_flags[@]}"
-            for artifact in container-images.json desktop-images.json release-assets/*; do
+            for artifact in "${assets[@]}"; do
               name="$(basename "$artifact")"
               published="$OPENBOT_PUBLISHED_ASSETS/$name"
               if [ ! -e "$published" ]; then
@@ -505,8 +519,13 @@ jobs:
               fi
             done
           else
-            gh release create "$VERSION" container-images.json desktop-images.json release-assets/* \
+            gh release create "$VERSION" "${assets[@]}" \
               --title "$VERSION" --notes-file notes.md "${create_flags[@]}"
+          fi
+
+          if [ "$CLOUD_ONLY" = true ]; then
+            echo "Published versioned cloud assets for $VERSION." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
 
           # Where the installers come from. A stable release carries only the signing runs' builds;
@@ -536,6 +555,7 @@ jobs:
       # once every signed installer is on it, when `verify` said it should
       # (scripts/release-make-latest.sh).
       - name: Start signing the Mac build
+        if: needs.metadata.outputs.cloud_only == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.metadata.outputs.version }}
@@ -548,6 +568,7 @@ jobs:
       # -setup.exe, pinned like the unsigned one for a candidate, and carries the same Latest
       # decision as Mac signing.
       - name: Start signing the Windows build
+        if: needs.metadata.outputs.cloud_only == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.metadata.outputs.version }}
@@ -568,11 +589,14 @@ jobs:
     needs: [metadata, verify, images]
     if: >-
       !cancelled() && needs.metadata.outputs.is_release == 'true' &&
+      needs.metadata.outputs.cloud_only == 'false' &&
       needs.verify.result == 'success' && needs.images.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
       contents: read
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -599,7 +623,8 @@ jobs:
           cargo run --locked --manifest-path desktop/src-tauri/Cargo.toml --example release_images -- \
             docker-compose.yml container-images.json desktop/src-tauri/cli-bundle/cli/index.js > desktop-images.json
           cat desktop-images.json
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-images-${{ github.run_id }}-${{ github.run_attempt }}
           path: desktop-images.json

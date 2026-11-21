@@ -1,7 +1,7 @@
 /**
  * AWS Partner Revenue Measurement, rendered by real Helm from the real chart: every AWS resource this
  * chart has a controller create carries CopilotKit's tag, so the usage it drives is credited to
- * CopilotKit. The same key and value as the bundled Intelligence's own Ingress, and the same rules.
+ * CopilotKit.
  *
  * What must not regress, because each one is attribution silently lost, a customer's own tags
  * silently dropped, or another partner's credit taken away:
@@ -69,7 +69,7 @@ function refusal(...args: string[]): string {
   return "";
 }
 
-/** This chart's own resources, not the bundled Intelligence's. */
+/** This chart's own resources. */
 const openbot = (doc: Doc) =>
   doc.metadata.labels?.["app.kubernetes.io/name"] === "openbot";
 
@@ -249,20 +249,5 @@ describe.skipIf(!helm)("AWS usage attribution", () => {
       expect(service?.spec?.type).toBe(type);
       expect(service?.metadata.annotations).toBeUndefined();
     }
-  });
-
-  test("the bundled Intelligence's own Ingress keeps its single tag", () => {
-    const ingress = render(
-      ...(surfaces[0] as Surface).on,
-      "--set",
-      "intelligence.ingress.enabled=true",
-    ).find(
-      (d) =>
-        d.kind === "Ingress" &&
-        d.metadata.labels?.["app.kubernetes.io/part-of"] === "intelligence",
-    );
-    expect(
-      ingress?.metadata.annotations?.["alb.ingress.kubernetes.io/tags"],
-    ).toBe(ourTag);
   });
 });

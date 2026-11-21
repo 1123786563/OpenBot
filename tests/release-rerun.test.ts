@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 // A namespace import, so each test fails on its own if a function it drives is missing.
 import * as releaseManifest from "../scripts/release-manifest";
 import { parseReleaseManifest } from "../shared/release-manifest";
@@ -384,13 +384,84 @@ describe("the release workflow", () => {
     expect(steps[index("Save portable provenance bundle")]!.run).toContain(
       "bun scripts/release-manifest.ts --adopt-provenance release-assets/release-provenance.sigstore.json",
     );
+  });
+
+  test.each([
+    ["cloud-only", true],
+    ["Desktop", false],
+  ])("publishes and completes a %s release", (_mode, cloudOnly) => {
+    const cwd = scratch("openbot-publish-");
+    const version = "v0.3.0";
+    const assets = [
+      "container-images.json",
+      ...(cloudOnly ? [] : ["desktop-images.json"]),
+      "release-assets/openbot-0.1.4.tgz",
+      "release-assets/openbot-source.tar.gz",
+      "release-assets/release-manifest.json",
+      "release-assets/release-provenance.sigstore.json",
+    ];
+    mkdirSync(join(cwd, "release-assets"));
+    writeFileSync(join(cwd, "CHANGELOG.md"), "## 0.3.0\nRelease notes\n");
+    for (const asset of assets) writeFileSync(join(cwd, asset), asset);
+
     const publish = steps[index("Tag and publish")]!.run!;
-    expect(publish).toContain('elif ! cmp -s "$artifact" "$published"; then');
-    expect(publish).toContain(
-      'gh release upload "$VERSION" "$artifact" --clobber',
-    );
-    expect(publish).toContain(
-      'gh release create "$VERSION" container-images.json desktop-images.json release-assets/*',
-    );
+    const gh = String.raw`
+gh() {
+  case "$1" in
+    api) echo '{"object":{"sha":"release-commit"}}' ;;
+    release) printf '%s\n' "$*" ;;
+    *) return 1 ;;
+  esac
+}
+`;
+    function runPublish(published = "") {
+      const result = Bun.spawnSync(["bash", "-c", gh + publish], {
+        cwd,
+        env: {
+          PATH: process.env.PATH,
+          VERSION: version,
+          PRERELEASE: "false",
+          FINAL_FROM_CANDIDATE: "false",
+          CLOUD_ONLY: String(cloudOnly),
+          GITHUB_REPOSITORY: "acme/openbot",
+          GITHUB_SHA: "release-commit",
+          GITHUB_STEP_SUMMARY: join(cwd, "summary.md"),
+          OPENBOT_PUBLISHED_ASSETS: published,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      expect(result.stderr.toString()).toBe("");
+      expect(result.exitCode).toBe(0);
+      return result.stdout.toString().trim().split("\n");
+    }
+    expect(runPublish()).toEqual([
+      [
+        "release create",
+        version,
+        ...assets,
+        "--title",
+        version,
+        "--notes-file notes.md --latest=false",
+      ].join(" "),
+    ]);
+
+    const published = scratch("openbot-partial-release-");
+    for (const asset of assets) {
+      const name = basename(asset);
+      if (name === "release-manifest.json") continue;
+      copyFileSync(join(cwd, asset), join(published, name));
+    }
+    writeFileSync(join(published, BUNDLE), "obsolete bundle");
+    if (cloudOnly) writeFileSync(join(cwd, "desktop-images.json"), "stale");
+    else writeFileSync(join(published, "desktop-images.json"), "obsolete list");
+    expect(runPublish(published)).toEqual([
+      "release edit v0.3.0 --title v0.3.0 --notes-file notes.md",
+      ...(cloudOnly
+        ? []
+        : ["release upload v0.3.0 desktop-images.json --clobber"]),
+      "release upload v0.3.0 release-assets/release-manifest.json",
+      "release upload v0.3.0 release-assets/release-provenance.sigstore.json --clobber",
+    ]);
   });
 });
