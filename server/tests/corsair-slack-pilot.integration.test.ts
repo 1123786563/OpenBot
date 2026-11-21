@@ -392,31 +392,35 @@ test("only verified evidence for the exact stable Slack subject inherits a curre
     })
     .returning({ id: brokeredAccounts.id });
   if (!broker) throw new Error("Broker fixture was not saved");
-  const a = routes(workspace, [
-    {
-      workspaceId: workspace,
-      registration: "A123/client/T123",
-      personId: person,
-      brokeredAccountId: broker.id,
-      subjectScope: "T123",
-      userId: "U111",
-      evidenceRef: "provider-fixture",
-    },
-  ]);
-  expect((await call(a, await start(a, "second"))).status).toBe(200);
-  expect(await (await call(a, "/connections")).json()).toMatchObject({
-    defaultConnectionId: null,
-  });
-  const linked = await call(a, await start(a, "first"));
-  expect(linked.status).toBe(200);
-  const { connection } = await linked.json();
-  expect(await (await call(a, "/connections")).json()).toMatchObject({
-    defaultConnectionId: connection.id,
-  });
-  const relinked = await call(a, await start(a, "first"));
-  expect(await relinked.json()).toMatchObject({
-    connection: { id: connection.id, userId: "U111" },
-  });
+  try {
+    const a = routes(workspace, [
+      {
+        workspaceId: workspace,
+        registration: "A123/client/T123",
+        personId: person,
+        brokeredAccountId: broker.id,
+        subjectScope: "T123",
+        userId: "U111",
+        evidenceRef: "provider-fixture",
+      },
+    ]);
+    expect((await call(a, await start(a, "second"))).status).toBe(200);
+    expect(await (await call(a, "/connections")).json()).toMatchObject({
+      defaultConnectionId: null,
+    });
+    const linked = await call(a, await start(a, "first"));
+    expect(linked.status).toBe(200);
+    const { connection } = await linked.json();
+    expect(await (await call(a, "/connections")).json()).toMatchObject({
+      defaultConnectionId: connection.id,
+    });
+    const relinked = await call(a, await start(a, "first"));
+    expect(await relinked.json()).toMatchObject({
+      connection: { id: connection.id, userId: "U111" },
+    });
+  } finally {
+    await db.delete(brokeredAccounts).where(eq(brokeredAccounts.id, broker.id));
+  }
 });
 
 test("disconnect immediately blocks an approved Slack write and retries missing refresh evidence", async () => {

@@ -42,6 +42,9 @@ afterAll(async () => {
             inArray(workItems.key, runIds),
           ),
         );
+      await database
+        .delete(responsibilities)
+        .where(inArray(responsibilities.id, fixtureGoalIds));
     }
   } finally {
     await database.$client.close();
