@@ -23,7 +23,7 @@ import {
   groupBotThreads,
   intelligenceChannelMappings,
 } from "../db/schema";
-import type { ManagedModel, ManagedModelResult } from "../managed-model";
+import type { ManagedModel, ManagedModelResult } from "../managed-model-trial";
 
 const id = z.string().min(1).max(256);
 const runBody = z.object({

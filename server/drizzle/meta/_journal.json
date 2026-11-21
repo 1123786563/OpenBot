@@ -743,6 +743,27 @@
       "when": 1795231535117,
       "tag": "0105_personal_workspace_reprovision",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1795231535118,
+      "tag": "0106_test_credit",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1795231535119,
+      "tag": "0107_test_credit_reconciliation",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1795231535120,
+      "tag": "0108_test_credit_cutoff_index",
+      "breakpoints": true
     }
   ]
 }

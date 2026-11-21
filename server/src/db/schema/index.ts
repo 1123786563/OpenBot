@@ -25,5 +25,6 @@ export * from "./scim";
 export * from "./shared-use";
 export * from "./tasks";
 export * from "./team-bots";
+export * from "./test-credit";
 export * from "./voice";
 export * from "./work";

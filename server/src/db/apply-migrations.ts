@@ -149,18 +149,8 @@ async function reconcileTrialJournal(
     directChatIndex + Number(hasDirectChat),
     trialIndex,
   );
-  for (const { tag, hash, when } of missingMain) {
-    const sql = await readFile(join(migrationsFolder, `${tag}.sql`), "utf8");
-    if (createHash("sha256").update(sql).digest("hex") !== hash) {
-      throw new Error(
-        `Migration ${tag} changed while reconciling the trial journal.`,
-      );
-    }
-    for (const statement of sql.split("--> statement-breakpoint")) {
-      await tx.unsafe(statement);
-    }
-    await tx`insert into ${table} (hash, created_at) values (${hash}, ${when})`;
-  }
+  for (const migration of missingMain)
+    await applyJournalEntry(tx, journal, migrationsFolder, migration);
   for (const [index, { hash, when }] of trial.entries()) {
     const original = TRIAL_STAMPS[index];
     if (original !== undefined && original !== when) {
@@ -168,6 +158,71 @@ async function reconcileTrialJournal(
         where hash = ${hash} and created_at = ${original}`;
     }
   }
+  return true;
+}
+
+async function applyJournalEntry(
+  tx: TransactionSql,
+  { migrationsSchema, migrationsTable }: MigrationsJournal,
+  migrationsFolder: string,
+  { tag, hash, when }: FolderMigration,
+) {
+  const sql = await readFile(join(migrationsFolder, `${tag}.sql`), "utf8");
+  if (createHash("sha256").update(sql).digest("hex") !== hash)
+    throw new Error(`Migration ${tag} changed while reconciling the journal.`);
+  for (const statement of sql.split("--> statement-breakpoint"))
+    await tx.unsafe(statement);
+  await tx`insert into ${tx(migrationsSchema)}.${tx(migrationsTable)}
+    (hash, created_at) values (${hash}, ${when})`;
+}
+
+/** Apply the independent SaaS migrations to a verified billing trial prefix. */
+async function reconcileBillingJournal(
+  tx: TransactionSql,
+  journal: MigrationsJournal,
+  migrationsFolder: string,
+  folder: readonly FolderMigration[],
+  applied: readonly AppliedMigration[],
+): Promise<boolean> {
+  const stamps = [1795189760197, 1795189760198, 1795189760199];
+  const tags = [
+    "0106_test_credit",
+    "0107_test_credit_reconciliation",
+    "0108_test_credit_cutoff_index",
+  ];
+  const billingLength =
+    stamps.findIndex((stamp) => stamp === migratorHighWaterMark(applied)) + 1;
+  if (!billingLength) return false;
+
+  const firstBilling = folder.findIndex(({ tag }) => tag === tags[0]);
+  const firstSaas = folder.findIndex(({ tag }) => tag === FIRST_TRIAL_TAG);
+  if (firstSaas < 0 || firstBilling <= firstSaas) return false;
+
+  const shared = folder.slice(0, firstSaas);
+  const billing = folder.slice(firstBilling, firstBilling + billingLength);
+  const appliedByStamp = new Map(
+    applied.map(({ createdAt, hash }) => [createdAt, hash]),
+  );
+  if (
+    billing.length !== billingLength ||
+    appliedByStamp.size !== applied.length ||
+    applied.length !== shared.length + billingLength ||
+    shared.some(({ hash, when }) => appliedByStamp.get(when) !== hash) ||
+    billing.some(
+      ({ hash, tag }, index) =>
+        tag !== tags[index] ||
+        appliedByStamp.get(stamps[index] ?? null) !== hash,
+    )
+  )
+    return false;
+
+  for (const migration of folder.slice(firstSaas, firstBilling))
+    await applyJournalEntry(tx, journal, migrationsFolder, migration);
+
+  const table = tx`${tx(journal.migrationsSchema)}.${tx(journal.migrationsTable)}`;
+  for (const [index, { hash, when }] of billing.entries())
+    await tx`update ${table} set created_at = ${when}
+      where hash = ${hash} and created_at = ${stamps[index] ?? null}`;
   return true;
 }
 
@@ -207,13 +262,20 @@ export async function applyMigrations(
     let outOfReach = migrationsOutOfReach(folder, applied);
     if (
       outOfReach.length > 0 &&
-      (await reconcileTrialJournal(
+      ((await reconcileTrialJournal(
         tx,
         journal,
         migrationsFolder,
         folder,
         applied,
-      ))
+      )) ||
+        (await reconcileBillingJournal(
+          tx,
+          journal,
+          migrationsFolder,
+          folder,
+          applied,
+        )))
     ) {
       applied = await appliedMigrations(tx, journal);
       outOfReach = migrationsOutOfReach(folder, applied);

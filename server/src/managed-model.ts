@@ -11,12 +11,14 @@ const denied = z.object({ state: z.literal("denied"), reason: denial });
 const reservation = z.discriminatedUnion("state", [
   z.object({ state: z.literal("reserved"), permit: z.string().min(1) }),
   denied,
-  z.object({ state: z.literal("existing") }),
+  z.object({ state: z.literal("existing"), permit: z.uuid().optional() }),
 ]);
 const dispatch = z.discriminatedUnion("state", [
   z.object({ state: z.literal("completed"), text: z.string().trim().min(1) }),
   denied,
   z.object({ state: z.literal("reconciling") }),
+  z.object({ state: z.literal("existing") }),
+  z.object({ state: z.enum(["settled", "released"]) }),
 ]);
 const reconciliation = z.object({
   state: z.enum(["pending", "settled", "released", "absent"]),
@@ -29,7 +31,7 @@ type ModelScope = {
   conversationId: string;
   botId: string;
 };
-type ModelOperation = { scope: ModelScope; step: string };
+export type ModelOperation = { scope: ModelScope; step: string };
 type ModelMessage = {
   role: "system" | "user" | "assistant";
   content: string;
@@ -64,23 +66,33 @@ export type ManagedModelResult =
 
 export function createManagedModel({
   url,
-  token,
+  executionHeaders,
 }: {
   url: URL;
-  token: string;
+  // Supply credentials bound to the verified owner of this persisted execution.
+  executionHeaders(operation: ModelOperation): Promise<HeadersInit>;
 }) {
+  if (
+    url.protocol !== "https:" &&
+    !(
+      url.protocol === "http:" &&
+      ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+    )
+  )
+    throw new Error("The managed model entry point requires HTTPS.");
+
   async function post(
+    operation: ModelOperation,
     path: string,
     body: object,
     timeout: number,
   ): Promise<unknown> {
+    const headers = new Headers(await executionHeaders(operation));
+    headers.set("content-type", "application/json");
     const response = await fetch(new URL(`v1/${path}`, url), {
       method: "POST",
       redirect: "error",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
+      headers,
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeout),
     });
@@ -91,7 +103,12 @@ export function createManagedModel({
 
   async function reconcile(operation: ModelOperation) {
     return reconciliation.parse(
-      await post("reconcile", { operationId: operationId(operation) }, 5_000),
+      await post(
+        operation,
+        "reconcile",
+        { operationId: operationId(operation) },
+        5_000,
+      ),
     ).state;
   }
 
@@ -99,7 +116,9 @@ export function createManagedModel({
     reconcile,
     async complete(
       input: ModelOperation & {
+        rerunOf?: ModelOperation;
         route: string;
+        priceVersion: string;
         messages: readonly ModelMessage[];
       },
     ): Promise<ManagedModelResult> {
@@ -108,14 +127,13 @@ export function createManagedModel({
       try {
         admission = reservation.parse(
           await post(
+            input,
             "reserve",
             {
               operationId: id,
-              application: "openbot",
-              creditType: "test",
-              scope: input.scope,
-              step: input.step,
+              rerunOfOperationId: input.rerunOf && operationId(input.rerunOf),
               route: input.route,
+              priceVersion: input.priceVersion,
             },
             5_000,
           ),
@@ -125,7 +143,7 @@ export function createManagedModel({
         return { state: "unavailable" };
       }
       if (admission.state === "denied") return { state: admission.reason };
-      if (admission.state === "existing") {
+      if (!admission.permit) {
         const state = await reconcile(input).catch(() => undefined);
         return {
           state:
@@ -136,6 +154,7 @@ export function createManagedModel({
       try {
         const result = dispatch.parse(
           await post(
+            input,
             "dispatch",
             {
               operationId: id,
@@ -146,12 +165,18 @@ export function createManagedModel({
           ),
         );
         if (result.state === "denied") return { state: result.reason };
+        if (result.state === "existing") {
+          const state = await reconcile(input);
+          return {
+            state:
+              state === "settled" || state === "released"
+                ? state
+                : "reconciling",
+          };
+        }
         return result;
       } catch {
         return { state: "reconciling" };
-      } finally {
-        // The authoritative ledger also reconciles orphaned operations after a process crash.
-        await reconcile(input).catch(() => undefined);
       }
     },
   };
