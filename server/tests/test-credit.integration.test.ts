@@ -53,7 +53,7 @@ test("execution budgets authorize each step and preserve completed steps across 
         priceVersion: crypto.randomUUID(),
         budgetId: budget.budgetId,
       }),
-    ).resolves.toMatchObject({ state: "execution_limit" });
+    ).resolves.toMatchObject({ state: "denied", reason: "execution_limit" });
     await expect(
       ledger.confirmBudget(identity, budget.budgetId, 3n),
     ).resolves.toMatchObject({
@@ -67,7 +67,7 @@ test("execution budgets authorize each step and preserve completed steps across 
         priceVersion: crypto.randomUUID(),
         budgetId: budget.budgetId,
       }),
-    ).resolves.toMatchObject({ state: "route_unavailable" });
+    ).resolves.toMatchObject({ state: "denied", reason: "route_unavailable" });
   } finally {
     await database.transaction(async (tx) => {
       const accounts = tx
