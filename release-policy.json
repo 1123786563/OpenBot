@@ -13,7 +13,7 @@
         "0082_routine_goal",
         "0077_channel_opening"
       ],
-      "to": "0088_approval_reviewer_guidance",
+      "to": "0101_personal_intelligence_cleanup",
       "rollbackCompatible": false
     },
     "intelligenceCapabilities": []
