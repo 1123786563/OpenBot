@@ -276,7 +276,6 @@ describe("channel activity", () => {
         summary: null,
         // Only a person's message opens a conversation, and this one was the Bot's.
         opening: null,
-        direct: true,
         lastMessage: "Categorized three expenses.",
         lastMessageAgentId: agentId,
         lastMessageAt: at,
