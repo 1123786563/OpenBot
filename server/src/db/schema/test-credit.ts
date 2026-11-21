@@ -206,3 +206,36 @@ export const testCreditEvidence = pgTable(
     ),
   ],
 );
+
+export const lagoUsageEvents = pgTable(
+  "lago_usage_events",
+  {
+    eventId: text("event_id").primaryKey(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => testCreditAccounts.id),
+    operationId: text("operation_id").notNull(),
+    resource: text().notNull(),
+    inputTokens: bigint("input_tokens", { mode: "bigint" }).notNull(),
+    outputTokens: bigint("output_tokens", { mode: "bigint" }).notNull(),
+    amountMicrocredits: bigint("amount_microcredits", {
+      mode: "bigint",
+    }).notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    state: text({ enum: ["pending", "accepted", "paused"] })
+      .notNull()
+      .default("pending"),
+    failure: text(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique().on(table.accountId, table.operationId),
+    index("lago_usage_events_pending_idx").on(table.state, table.createdAt),
+    check(
+      "lago_usage_events_amounts",
+      sql`${table.inputTokens} >= 0 AND ${table.outputTokens} >= 0 AND ${table.amountMicrocredits} >= 0`,
+    ),
+  ],
+);

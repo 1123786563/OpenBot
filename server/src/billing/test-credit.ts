@@ -14,6 +14,7 @@ import {
   testCreditEnrollments as enrollments,
   enterpriseSettings,
   testCreditEvidence as evidence,
+  lagoUsageEvents,
   testCreditOperations as operations,
 } from "../db/schema";
 
@@ -932,6 +933,22 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       )
       .where(operationFilter(accountId, id))
       .returning();
+    if (settled && verified && settled.state === "settled") {
+      await tx
+        .insert(lagoUsageEvents)
+        .values({
+          eventId: `lago:${accountId}:${id}`,
+          accountId,
+          operationId: id,
+          resource: settled.route.model,
+          inputTokens: verified.inputTokens,
+          outputTokens: verified.outputTokens,
+          amountMicrocredits: charged,
+          occurredAt: settled.dispatchedAt ?? new Date(),
+          state: "pending",
+        })
+        .onConflictDoNothing();
+    }
     return settled && operationReceipt(settled, verified);
   }
 }

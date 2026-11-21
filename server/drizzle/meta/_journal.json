@@ -680,6 +680,13 @@
       "when": 1795189760200,
       "tag": "0096_test_credit_execution_budgets",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1795274391980,
+      "tag": "0097_lago_usage_events",
+      "breakpoints": true
     }
   ]
 }
