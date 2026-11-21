@@ -15,6 +15,7 @@
 export type ClientOptions = {
   /** Absent means GET. */
   method?: string;
+  headers?: Record<string, string>;
   /** Serialised as JSON, which is also what sets the content type. */
   body?: unknown;
   /**
@@ -37,8 +38,8 @@ async function send(path: string, options: ClientOptions): Promise<Response> {
     credentials: "include",
     headers:
       options.body === undefined
-        ? undefined
-        : { "content-type": "application/json" },
+        ? options.headers
+        : { ...options.headers, "content-type": "application/json" },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
     ...(options.signal ? { signal: options.signal } : {}),
   });

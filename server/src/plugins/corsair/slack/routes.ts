@@ -1,3 +1,4 @@
+import { corsairWebReturn } from "../oauth-return";
 import { PluginRefusedError } from "../../plugin-store/model";
 import type { BotWrite } from "../bot-write";
 import type { ApprovalAction } from "../../../approvals/types";
@@ -65,6 +66,8 @@ export function createSlackPilotRoutes({
     await next();
   });
   routes.onError((error, c) => {
+    const landing = corsairWebReturn(c, "slack", "failed");
+    if (landing) return landing;
     if (
       error instanceof SlackPilotRefusal ||
       error instanceof RevocationRefusal
@@ -120,7 +123,10 @@ export function createSlackPilotRoutes({
       connectionId,
       { subjectScope, userId, inheritedFrom: result.inheritedFrom },
     );
-    return c.json({ connection: result.connection });
+    return (
+      corsairWebReturn(c, "slack", "connected") ??
+      c.json({ connection: result.connection })
+    );
   });
   routes.get("/connections", async (c) =>
     c.json(await accounts.list(c.var.actor.id)),

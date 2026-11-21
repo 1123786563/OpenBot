@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { useConnectApp } from "@/lib/connections/connect-app";
+import { corsairAccountsQueryOptions } from "@/lib/connections/corsair";
 import {
   type ConnectionRow,
   connectionRows,
@@ -296,6 +297,12 @@ function RouteComponent() {
   const [search, setSearch] = React.useState("");
   const plugins = useQuery(pluginsPageQueryOptions());
   const connections = useQuery(connectionsQueryOptions());
+  const github = useQuery(corsairAccountsQueryOptions("github"));
+  const slack = useQuery(corsairAccountsQueryOptions("slack"));
+  const corsair = {
+    github: github.data?.accounts,
+    slack: slack.data?.accounts,
+  };
 
   /*
    * ONLY THE PERSON'S OWN. A Shared app's row is the deployment's, not this person's, and the
@@ -383,6 +390,7 @@ function RouteComponent() {
         connected,
         links: links.data ?? [],
         providers: providers.data,
+        corsair,
       })
     : connectionRows({
         catalogue: yours,
@@ -391,6 +399,7 @@ function RouteComponent() {
         connected,
         links: links.data ?? [],
         providers: providers.data,
+        corsair,
       });
   const matching = rows.filter((row) =>
     `${row.title} ${row.summary}`.toLocaleLowerCase().includes(query),

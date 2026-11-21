@@ -1,0 +1,130 @@
+import { queryOptions } from "@tanstack/react-query";
+import { z } from "zod";
+import { client, tryClient } from "@/lib/client";
+
+export type CorsairProvider = "github" | "slack";
+
+const connection = z.object({
+  id: z.uuid(),
+  expiresAt: z.iso.datetime({ offset: true }),
+});
+const accountList = z.object({ defaultConnectionId: z.uuid().nullable() });
+const githubList = accountList.extend({
+  connections: z.array(
+    connection.extend({
+      login: z.string(),
+      githubUserId: z.string(),
+    }),
+  ),
+});
+const slackList = accountList.extend({
+  teamId: z.string(),
+  connections: z.array(
+    connection.extend({
+      label: z.string(),
+      userId: z.string(),
+      subjectScope: z.string(),
+      verificationRequiredAt: z.iso.datetime({ offset: true }).nullable(),
+    }),
+  ),
+});
+const revocations = z.object({
+  connections: z.array(
+    z.object({
+      id: z.uuid(),
+      label: z.string(),
+      revocation: z.object({ status: z.enum(["pending", "revoked"]) }),
+    }),
+  ),
+});
+
+export type CorsairAccount = {
+  id: string;
+  label: string;
+  identity: string;
+  needsAuthorization: boolean;
+};
+
+export const corsairKeys = {
+  accounts: (provider: CorsairProvider) =>
+    ["corsair", provider, "accounts"] as const,
+  revocations: (provider: CorsairProvider) =>
+    ["corsair", provider, "revocations"] as const,
+};
+
+export function corsairAccountsQueryOptions(provider: CorsairProvider) {
+  return queryOptions({
+    queryKey: corsairKeys.accounts(provider),
+    queryFn: async ({
+      signal,
+    }): Promise<{
+      accounts: CorsairAccount[];
+      defaultConnectionId: string | null;
+    } | null> => {
+      const response = await tryClient(`/api/corsair/${provider}/connections`, {
+        signal,
+      });
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error("Couldn't load your tool accounts.");
+      const data: unknown = await response.json();
+      if (provider === "github") {
+        const { connections, defaultConnectionId } = githubList.parse(data);
+        return {
+          defaultConnectionId,
+          accounts: connections.map((row) => ({
+            id: row.id,
+            label: row.login,
+            identity: `GitHub user ${row.githubUserId}`,
+            needsAuthorization: Date.parse(row.expiresAt) <= Date.now(),
+          })),
+        };
+      }
+
+      const { connections, defaultConnectionId, teamId } =
+        slackList.parse(data);
+      return {
+        defaultConnectionId,
+        accounts: connections.map((row) => ({
+          id: row.id,
+          label: row.label,
+          identity: `Workspace ${teamId} · User ${row.userId}${
+            row.subjectScope === teamId
+              ? ""
+              : ` · Enterprise ${row.subjectScope}`
+          }`,
+          // An expired Slack access token can be refreshed by the server.
+          needsAuthorization: row.verificationRequiredAt !== null,
+        })),
+      };
+    },
+  });
+}
+
+export function corsairRevocationsQueryOptions(provider: CorsairProvider) {
+  return queryOptions({
+    queryKey: corsairKeys.revocations(provider),
+    queryFn: async ({ signal }) => {
+      const response = await client(
+        `/api/corsair/${provider}/connections/revocations`,
+        {
+          signal,
+          fallback: "Couldn't load revocation status.",
+        },
+      );
+      return revocations.parse(await response.json()).connections;
+    },
+  });
+}
+
+export function corsairWrite(
+  provider: CorsairProvider,
+  path: string,
+  method: "POST" | "PUT" | "DELETE",
+  body?: unknown,
+) {
+  return client(`/api/corsair/${provider}/${path}`, {
+    method,
+    body,
+    headers: { "X-OpenBot-Pilot": provider },
+  });
+}
