@@ -613,7 +613,10 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             existing.budgetId === (input.budgetId ?? null) &&
             existing.stepId === (input.stepId ?? null);
           if (
-            existing.rerunOfOperationId !== (input.rerunOfOperationId ?? null)
+            existing.rerunOfOperationId !==
+              (input.rerunOfOperationId ?? null) ||
+            existing.budgetId !== (input.budgetId ?? null) ||
+            existing.stepId !== (input.stepId ?? null)
           )
             return denied("not_authorized");
           return {
