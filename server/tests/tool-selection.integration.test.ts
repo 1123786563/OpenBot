@@ -258,12 +258,13 @@ function answerWith(chosen: string[]) {
 const recorded: Selection<GrantedTool>[] = [];
 
 function selection(overrides: { floor?: number } = {}) {
+  const complete = createModelCompleter({
+    model,
+    resolveApiKey: async () => "test-key",
+  });
   return {
     loadSkills: async () => skills,
-    choose: createModelCompleter({
-      model,
-      resolveApiKey: async () => "test-key",
-    }),
+    choose: (prompt: string, signal?: AbortSignal) => complete(prompt, signal),
     record: async (_botId: string, entry: Selection<GrantedTool>) => {
       recorded.push(entry);
     },
@@ -1179,10 +1180,11 @@ describe("the discovery record", () => {
         undefined,
         {
           loadSkills: async () => skills,
-          choose: createModelCompleter({
-            model,
-            resolveApiKey: async () => "test-key",
-          }),
+          choose: (prompt: string, signal?: AbortSignal) =>
+            createModelCompleter({
+              model,
+              resolveApiKey: async () => "test-key",
+            })(prompt, signal),
           record: async () => {
             throw new Error(
               "audit table is gone at postgres://fixture:secret@localhost/private",
@@ -1252,10 +1254,11 @@ describe("the discovery record", () => {
         undefined,
         {
           loadSkills: async () => skills,
-          choose: createModelCompleter({
-            model,
-            resolveApiKey: async () => "test-key",
-          }),
+          choose: (prompt: string, signal?: AbortSignal) =>
+            createModelCompleter({
+              model,
+              resolveApiKey: async () => "test-key",
+            })(prompt, signal),
         },
       );
       await ask(agents.analyst as never, "read the Drive doc");

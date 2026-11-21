@@ -143,7 +143,9 @@ test("Auto-review on a plan still fails closed when the plan does not answer in 
 test("the router on a plan picks the Bot the message is for, not the default", async () => {
   hang = false;
   requests.length = 0;
-  const decision = await createIntentRouter({ complete }).route(
+  const decision = await createIntentRouter({
+    complete: (prompt, options) => complete(prompt, undefined, options),
+  }).route(
     "Look up the latest OpenBot release on the web.",
     [
       {
