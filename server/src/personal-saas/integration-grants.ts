@@ -1,27 +1,26 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, eq, gt, notExists } from "drizzle-orm";
+import { and, eq, exists, gt } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/client";
 import {
   personalWorkspaceIntegrationGrants as grants,
-  personalSaasAccounts,
-  personalWorkspaceClosures,
   personalWorkspaceDefaultBots,
   personalWorkspaces,
 } from "../db/schema/personal-saas";
+import { readExecutionAccess } from "./account-access";
 import {
   assistantBinding,
   assistantInWorkspace,
   assistantTarget,
 } from "./workspace-bots";
 
-import { workspaceClosure } from "./workspace-closure-record";
-import { latestSuspension } from "./workspace-suspension";
-
 const readAction = "assistant.read";
-const issuance = assistantTarget.extend({
+const ownerTarget = assistantTarget.extend({
   accountId: z.uuid(),
-  expiresAt: z.date(),
+});
+const issuance = ownerTarget.extend({ expiresAt: z.date() });
+const revocation = ownerTarget.extend({
+  grantId: z.string().regex(/^[a-f0-9]{64}$/),
 });
 const request = assistantTarget
   .extend({
@@ -30,30 +29,22 @@ const request = assistantTarget
   })
   .strict();
 
-function hash(credential: string) {
+export function assistantReadGrantId(credential: string) {
   return createHash("sha256").update(credential).digest("hex");
 }
 
-export function workspaceIntegrationGrants(database: Database) {
+export function workspaceIntegrationGrants(
+  database: Pick<Database, "transaction" | "delete" | "select">,
+  now = Date.now,
+) {
   return {
-    // The issuing adapter must supply the authenticated owner's account ID.
     async issueAssistantRead(input: z.input<typeof issuance>) {
       const parsed = issuance.safeParse(input);
-      if (!parsed.success || parsed.data.expiresAt.getTime() <= Date.now())
-        return;
+      if (!parsed.success) return;
       const target = parsed.data;
       return database.transaction(async (tx) => {
-        const [owner] = await tx
-          .select({ id: personalSaasAccounts.id })
-          .from(personalSaasAccounts)
-          .where(eq(personalSaasAccounts.id, target.accountId))
-          .for("share");
-        if (
-          !owner ||
-          (await workspaceClosure(tx, owner.id)) ||
-          (await latestSuspension(tx, owner.id))?.action === "pause"
-        )
-          return;
+        const access = await readExecutionAccess(tx, target.accountId, now);
+        if (access?.kind !== "active") return;
         const [bot] = await assistantBinding(tx)
           .where(
             and(
@@ -62,10 +53,17 @@ export function workspaceIntegrationGrants(database: Database) {
             ),
           )
           .for("share");
-        if (!bot) return;
+        const issuedAt = now();
+        if (
+          !bot ||
+          issuedAt >= access.expiresAt ||
+          issuedAt >= target.expiresAt.getTime()
+        )
+          return;
+
         const credential = randomBytes(32).toString("base64url");
         await tx.insert(grants).values({
-          credentialHash: hash(credential),
+          credentialHash: assistantReadGrantId(credential),
           agentId: bot.id,
           workspaceId: target.workspaceId,
           expiresAt: target.expiresAt,
@@ -75,33 +73,79 @@ export function workspaceIntegrationGrants(database: Database) {
       });
     },
 
+    async revokeAssistantRead(input: z.input<typeof revocation>) {
+      const parsed = revocation.safeParse(input);
+      if (!parsed.success) return false;
+      const target = parsed.data;
+      return database.transaction(async (tx) => {
+        const access = await readExecutionAccess(tx, target.accountId, now);
+        if (access?.kind !== "active") return false;
+        const [revoked] = await tx
+          .delete(grants)
+          .where(
+            and(
+              eq(grants.workspaceId, target.workspaceId),
+              eq(grants.agentId, target.botId),
+              eq(grants.credentialHash, target.grantId),
+              eq(grants.action, readAction),
+              exists(
+                assistantBinding(tx).where(
+                  and(
+                    assistantInWorkspace(target),
+                    eq(personalWorkspaces.ownerId, target.accountId),
+                  ),
+                ),
+              ),
+            ),
+          )
+          .returning({ id: grants.credentialHash });
+        return Boolean(revoked);
+      });
+    },
+
     async execute(input: unknown) {
       const parsed = request.safeParse(input);
       if (!parsed.success) return;
       const target = parsed.data;
-      const [bot] = await assistantBinding(database)
-        .innerJoin(
-          grants,
-          eq(grants.agentId, personalWorkspaceDefaultBots.agentId),
-        )
-        .where(
-          and(
-            assistantInWorkspace(target),
-            eq(grants.workspaceId, target.workspaceId),
-            eq(grants.credentialHash, hash(target.credential)),
-            eq(grants.action, target.action),
-            gt(grants.expiresAt, new Date()),
-            notExists(
-              database
-                .select({ id: personalWorkspaceClosures.id })
-                .from(personalWorkspaceClosures)
-                .where(
-                  eq(personalWorkspaceClosures.workspaceId, grants.workspaceId),
-                ),
-            ),
-          ),
+      return database.transaction(async (tx) => {
+        const credentialHash = assistantReadGrantId(target.credential);
+        const credentialBinding = and(
+          eq(grants.workspaceId, target.workspaceId),
+          eq(grants.agentId, target.botId),
+          eq(grants.credentialHash, credentialHash),
+          eq(grants.action, target.action),
+          gt(grants.expiresAt, new Date(now())),
         );
-      return bot;
+        const [workspace] = await tx
+          .select({
+            ownerId: personalWorkspaces.ownerId,
+            expiresAt: grants.expiresAt,
+          })
+          .from(grants)
+          .innerJoin(
+            personalWorkspaces,
+            eq(personalWorkspaces.id, grants.workspaceId),
+          )
+          .where(credentialBinding);
+        if (!workspace) return;
+        const access = await readExecutionAccess(tx, workspace.ownerId, now);
+        if (access?.kind !== "active") return;
+        const [match] = await assistantBinding(tx)
+          .innerJoin(
+            grants,
+            eq(grants.agentId, personalWorkspaceDefaultBots.agentId),
+          )
+          .where(
+            and(
+              assistantInWorkspace(target),
+              eq(personalWorkspaces.ownerId, workspace.ownerId),
+              credentialBinding,
+            ),
+          );
+        if (now() >= Math.min(workspace.expiresAt.getTime(), access.expiresAt))
+          return;
+        return match;
+      });
     },
   };
 }

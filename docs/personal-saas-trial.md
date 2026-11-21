@@ -79,7 +79,9 @@ Web, iOS, and Android display the same workspace, default Assistant, and recent 
 
 The owner can read the default Assistant at `GET /api/workspaces/{workspaceId}/bots/{botId}` and rename it at `POST /api/workspaces/{workspaceId}/bots/{botId}/name` with a JSON `name`. Use the IDs returned by `/api/workspace`. The access check uses the authenticated account and the workspace's Assistant binding. Foreign and unknown IDs return the same `404`. The trial sends `Cache-Control: no-store` on workspace responses.
 
-The internal integration service issues an expiring credential for `assistant.read` on one workspace and Assistant. The caller that issues a credential must supply an authenticated owner identity. When a delivery or Worker entry point is enabled, it must also apply the account and workspace execution cutoff checks before dispatch. The trial has no integration credential issuance or execution HTTP route.
+A workspace owner can issue a 15-minute `assistant.read` credential with an empty `POST /api/workspaces/{workspaceId}/bots/{botId}/integration-grants`. Use the owner's Application Session and send the trial `Origin` header for browser sessions. The response contains the grant `id`, the bearer `credential`, and `expiresAt`. The API returns the bearer credential during issuance. Pass it only to the intended integration.
+
+The integration sends `Authorization: Bearer <credential>` to `GET /api/integrations/workspaces/{workspaceId}/bots/{botId}` to read the bound Assistant's ID and name. The owner revokes the grant with `POST /api/workspaces/{workspaceId}/bots/{botId}/integration-grants/{id}/revoke`. Account authorization changes, workspace suspension, and workspace closure invalidate the grant.
 
 Recent conversation history requires an OpenBot Application Session. The authenticated account determines the workspace and Assistant. Assistant integration credentials cannot read conversation history.
 

@@ -1,10 +1,12 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/client";
 import {
   type AccountStatus,
   personalSaasAccounts,
   personalSaasSessions,
+  personalWorkspaceIntegrationGrants,
+  personalWorkspaces,
 } from "../db/schema/personal-saas";
 
 import { reconcileDecisionHistory } from "./decision-access";
@@ -232,6 +234,19 @@ export function createAccountAccess(
         .update(personalSaasAccounts)
         .set({ status })
         .where(eq(personalSaasAccounts.id, account.id));
+      if (epochChanged) {
+        await tx
+          .delete(personalWorkspaceIntegrationGrants)
+          .where(
+            inArray(
+              personalWorkspaceIntegrationGrants.workspaceId,
+              tx
+                .select({ id: personalWorkspaces.id })
+                .from(personalWorkspaces)
+                .where(eq(personalWorkspaces.ownerId, account.id)),
+            ),
+          );
+      }
       if (newDisablement || source === "disabled") {
         await tx
           .delete(personalSaasSessions)

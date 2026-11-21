@@ -41,6 +41,7 @@ import {
 import { browserAttempt, type CasdoorConfig, casdoor } from "./casdoor";
 import type { ClosureCleanup } from "./closure-cleanup-contract";
 import { ensureDecisionActor } from "./decision-actor";
+import { integrationGrantRoutes } from "./integration-grant-routes";
 import { trackIntelligenceRuns } from "./intelligence-inventory";
 import { bearerSession, type NativeAttempt, nativeAuth } from "./native-auth";
 import {
@@ -266,7 +267,11 @@ export function createPersonalSaasApp(
     if (context.req.path === inboundRelayPath) return true;
     if (context.req.path.startsWith(`${automationPath}/`))
       return Boolean(bearer(context));
-    if (/^\/api\/workspaces\/[^/]+\/exports$/.test(context.req.path))
+    if (
+      /^\/api\/workspaces\/[^/]+\/(?:exports|bots\/[^/]+\/integration-grants(?:\/[^/]+\/revoke)?)$/.test(
+        context.req.path,
+      )
+    )
       return Boolean(bearer(context));
     if (
       context.req.path.startsWith("/api/workspace/recovery/") ||
@@ -657,6 +662,10 @@ export function createPersonalSaasApp(
     }),
   );
   app.route("/", closure.routes);
+  app.route(
+    "/api",
+    integrationGrantRoutes({ database, now, store, requestSession, authorize }),
+  );
   app.route(
     "/",
     sessionEventRoutes({

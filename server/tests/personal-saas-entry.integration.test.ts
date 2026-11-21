@@ -1356,6 +1356,203 @@ function botPath(workspaceId: string, botId: string) {
   return `/api/workspaces/${workspaceId}/bots/${botId}`;
 }
 
+function integrationGrantPath(
+  owner: Awaited<ReturnType<typeof isolationOwner>>,
+) {
+  return `${botPath(owner.workspaceId, owner.botId)}/integration-grants`;
+}
+
+function integrationGrantMutation(
+  path: string,
+  session: string,
+  requestOrigin = origin,
+) {
+  return send(path, {
+    method: "POST",
+    headers: { origin: requestOrigin, cookie: session },
+  });
+}
+
+function integrationRead(
+  owner: Awaited<ReturnType<typeof isolationOwner>>,
+  credential: string,
+) {
+  return send(
+    `/api/integrations/workspaces/${owner.workspaceId}/bots/${owner.botId}`,
+    {
+      headers: { authorization: `Bearer ${credential}` },
+    },
+  );
+}
+
+async function issueIntegrationGrant(
+  owner: Awaited<ReturnType<typeof isolationOwner>>,
+) {
+  const response = await integrationGrantMutation(
+    integrationGrantPath(owner),
+    owner.session,
+  );
+  expect(response.status).toBe(201);
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  const { credential, id, expiresAt } = await response.json();
+  expect(credential).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  expect(id).toMatch(/^[a-f0-9]{64}$/);
+  expect(Number.isFinite(Date.parse(expiresAt))).toBe(true);
+  return { credential, id, expiresAt };
+}
+
+test("Assistant integration grant API isolates ownership and bearer scope and lets the owner revoke", async () => {
+  const alice = await isolationOwner();
+  const bob = await isolationOwner();
+  const path = integrationGrantPath(alice);
+  const { id, credential } = await issueIntegrationGrant(alice);
+
+  expect((await integrationGrantMutation(path, bob.session)).status).toBe(404);
+  expect(
+    (
+      await integrationGrantMutation(
+        path,
+        alice.session,
+        "https://foreign.example",
+      )
+    ).status,
+  ).toBe(403);
+  expect(
+    (await integrationGrantMutation(`${path}/${id}/revoke`, bob.session))
+      .status,
+  ).toBe(404);
+  const read = await integrationRead(alice, credential);
+  expect(read.status).toBe(200);
+  expect(read.headers.get("cache-control")).toBe("no-store");
+  expect(await read.json()).toEqual({
+    id: alice.botId,
+    name: "Personal Assistant",
+  });
+  expect((await integrationRead(bob, credential)).status).toBe(404);
+  expect(
+    (await integrationRead({ ...alice, botId: bob.botId }, credential)).status,
+  ).toBe(404);
+  expect(
+    (
+      await integrationRead(
+        { ...alice, workspaceId: bob.workspaceId },
+        credential,
+      )
+    ).status,
+  ).toBe(404);
+  expect(
+    (
+      await send("/api/workspace/conversations", {
+        headers: { authorization: `Bearer ${credential}` },
+      })
+    ).status,
+  ).toBe(401);
+  expect(
+    (await integrationGrantMutation(`${path}/${id}/revoke`, alice.session))
+      .status,
+  ).toBe(204);
+  expect((await integrationRead(alice, credential)).status).toBe(404);
+});
+
+test("Assistant integration grant API expires a credential even with continuously verified account status", async () => {
+  const owner = await isolationOwner();
+  clockTime = Date.now();
+  try {
+    const { credential, expiresAt } = await issueIntegrationGrant(owner);
+    const cutoff = Date.parse(expiresAt);
+    for (let time = clockTime + 55_000; time < cutoff; time += 55_000) {
+      clockTime = time;
+      const check = await send("/api/workspace", {
+        headers: { cookie: owner.session },
+      });
+      expect(check.status).toBe(200);
+    }
+    clockTime = cutoff - 1;
+    expect((await integrationRead(owner, credential)).status).toBe(200);
+    clockTime = cutoff;
+    expect((await integrationRead(owner, credential)).status).toBe(404);
+    expect((await issueIntegrationGrant(owner)).credential).not.toBe(
+      credential,
+    );
+  } finally {
+    clockTime = undefined;
+  }
+});
+
+test("Assistant integration grant API applies the account cutoff and revokes a grant after a short disablement", async () => {
+  const confirmedAt = Date.now() - 70_000;
+  clockTime = confirmedAt;
+  try {
+    const owner = await isolationOwner();
+    const { credential } = await issueIntegrationGrant(owner);
+    owner.account.active = undefined;
+    clockTime = confirmedAt + 59_999;
+    expect((await integrationRead(owner, credential)).status).toBe(200);
+    clockTime = confirmedAt + 60_000;
+    expect((await integrationRead(owner, credential)).status).toBe(404);
+    expect(
+      (
+        await integrationGrantMutation(
+          integrationGrantPath(owner),
+          owner.session,
+        )
+      ).status,
+    ).toBe(503);
+    owner.account.active = true;
+    owner.account.disablements = [
+      { id: crypto.randomUUID(), effectiveAt: clockTime - 1 },
+    ];
+    clockTime += 1;
+    await send("/api/workspace", { headers: { cookie: owner.session } });
+    expect((await integrationRead(owner, credential)).status).toBe(404);
+    const recovered = await authenticate(owner.account);
+    expect(recovered.status).toBe(303);
+    const session = cookie(recovered, "__Host-openbot-personal=");
+    const fresh = await issueIntegrationGrant({ ...owner, session });
+    expect((await integrationRead(owner, fresh.credential)).status).toBe(200);
+    expect((await integrationRead(owner, credential)).status).toBe(404);
+  } finally {
+    clockTime = undefined;
+  }
+});
+
+test("Assistant integration grant API denies issuance and dispatch after suspension and closure", async () => {
+  const suspended = await isolationOwner();
+  const closed = await isolationOwner();
+  const pausedGrant = await issueIntegrationGrant(suspended);
+  const closedGrant = await issueIntegrationGrant(closed);
+  const pause = await send(
+    `/api/operator/workspaces/${suspended.workspaceId}/suspension`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${operatorToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ action: "pause", reason: "Trial verification" }),
+    },
+  );
+  expect(pause.status).toBe(201);
+  expect(
+    (await confirmClosure(await proveClosure(closed.session, closed.account)))
+      .status,
+  ).toBe(200);
+  for (const [owner, credential] of [
+    [suspended, pausedGrant.credential],
+    [closed, closedGrant.credential],
+  ] as const) {
+    expect((await integrationRead(owner, credential)).status).toBe(404);
+    expect(
+      (
+        await integrationGrantMutation(
+          integrationGrantPath(owner),
+          owner.session,
+        )
+      ).status,
+    ).toBe(401);
+  }
+});
+
 test("an owner can read and rename their Assistant while swapped workspace and Bot IDs return the same result as missing IDs", async () => {
   const alice = await isolationOwner();
   const bob = await isolationOwner();
