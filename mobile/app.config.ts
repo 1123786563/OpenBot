@@ -12,6 +12,8 @@ const config: ExpoConfig = {
     "expo-router",
     "expo-secure-store",
     ["expo-notifications", { defaultChannel: "openbot" }],
+    "./plugins/with-sdwebimage-deployment-target.cjs",
+    "./plugins/with-ios-scene.cjs",
   ],
   extra: { ...(projectId ? { eas: { projectId } } : {}) },
 };
