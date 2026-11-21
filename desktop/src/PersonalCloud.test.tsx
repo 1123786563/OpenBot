@@ -359,7 +359,7 @@ test("the authorized workspace opens export in the system browser", async () => 
 });
 
 test("an authorized owner can submit a managed text run and read its settled charge", async () => {
-  let requestIdBeforeFailure: string | undefined;
+  let requestIdBeforeFailure = "";
   const originalVersion = "00000000-0000-4000-8000-000000000000";
   const updatedVersion = "00000000-0000-4000-8000-000000000001";
   let version = originalVersion;
