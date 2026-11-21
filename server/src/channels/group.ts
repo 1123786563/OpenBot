@@ -1496,6 +1496,14 @@ export function createGroupConversations(deps: {
           owner: deps.owner,
         });
       } catch (error) {
+        if (error instanceof GroupNotFoundError) {
+          await deps.queue.finish({
+            kind: item.kind,
+            key: item.key,
+            owner: deps.owner,
+          });
+          return true;
+        }
         await deps.queue.release({
           kind: item.kind,
           key: item.key,
