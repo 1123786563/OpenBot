@@ -1,3 +1,5 @@
+import { CodeBlock } from "@astryxdesign/core/CodeBlock";
+import { Text } from "@astryxdesign/core/Text";
 import { offersStandingRule } from "@openbot/shared/standing-rule";
 import { approvalPhrase } from "@openbot/shared/tool-name";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -150,11 +152,15 @@ export function InlineApproval({
       </AnimatePresence>
       {request?.result?.pauseReason ? (
         <section aria-label="Paused action">
-          <p>{request.result.pauseReason}</p>
+          <Text as="p">{request.result.pauseReason}</Text>
           {request.result.content && (
-            <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-              {request.result.content}
-            </p>
+            <CodeBlock
+              code={request.result.content}
+              container="section"
+              hasCopyButton={false}
+              isWrapped
+              width="100%"
+            />
           )}
         </section>
       ) : pending ? null : (
