@@ -75,6 +75,10 @@ export function queryClientWithAgents(
 
 export function renderHome(queryClient: QueryClient, entry = "/") {
   const rootRoute = createRootRoute({ component: Outlet });
+  const startRouteOptions = {
+    path: "/start/$startId",
+    getParentRoute: () => rootRoute,
+  };
   const routeTree = rootRoute.addChildren([
     createRoute({
       getParentRoute: () => rootRoute,
@@ -82,10 +86,7 @@ export function renderHome(queryClient: QueryClient, entry = "/") {
       validateSearch: HomeRoute.options.validateSearch,
       component: HomeRoute.options.component,
     }),
-    StartRoute.update({
-      path: "/start/$startId",
-      getParentRoute: () => rootRoute,
-    }),
+    StartRoute.update(startRouteOptions),
     createRoute({
       getParentRoute: () => rootRoute,
       path: "/channel/$channelId",

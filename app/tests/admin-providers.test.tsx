@@ -319,12 +319,12 @@ test("Permissions previews the organization's changes before writing them", asyn
   });
   expect(confirmation.textContent).toContain("across the organization");
   expect(writes).toEqual([]);
-  fireEvent.click(view.getByRole("button", { name: "Cancel", exact: true }));
+  fireEvent.click(view.getByRole("button", { name: /^Cancel$/ }));
   await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
   expect(writes).toEqual([]);
   fireEvent.click(trigger);
   await view.findByRole("alertdialog", { name: "Disable Use Bots?" });
-  fireEvent.click(view.getByRole("button", { name: "Disable", exact: true }));
+  fireEvent.click(view.getByRole("button", { name: /^Disable$/ }));
   await waitFor(() =>
     expect(writes).toContainEqual({
       path: "/api/admin/enterprise/capabilities",

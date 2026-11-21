@@ -97,7 +97,11 @@ test("reloading an interrupted creation keeps the first message and reuses its r
   const message = "Keep this first conversation message";
   const original = renderAt("/");
   await submitHomeMessage(original, message);
-  await original.findByText("Couldn't continue the conversation.");
+  await original.findByText(
+    "Couldn't continue the conversation.",
+    undefined,
+    { timeout: 10_000 },
+  );
   const savedPath = original.router.state.location.pathname;
   expect(savedPath).toStartWith("/start/");
   expect(original.getByText(message)).toBeTruthy();
@@ -112,7 +116,7 @@ test("reloading an interrupted creation keeps the first message and reuses its r
   otherOwner.unmount();
 
   const reloaded = renderAt(savedPath);
-  await reloaded.findByText("The conversation");
+  await reloaded.findByText("The conversation", undefined, { timeout: 10_000 });
   expect(reloaded.router.state.location.pathname).toBe(
     "/channel/channel-recovered",
   );

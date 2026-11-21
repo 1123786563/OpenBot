@@ -134,7 +134,7 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
         </Stack>
         <Link to="/">Back to Home</Link>
       </Stack>
-      {draft ? (
+      {start?.state === "pending" && draft ? (
         <ConversationView
           disabled
           intro={

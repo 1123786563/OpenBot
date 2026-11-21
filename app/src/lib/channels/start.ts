@@ -175,7 +175,7 @@ export function resumeConversationStart(
   const existing = startsInProgress.get(key);
   if (existing) return existing;
 
-  const work = async () => {
+  const work = async (): Promise<StartRecord> => {
     const start = readPendingStart(owner, id);
     if (!start)
       throw new Error("Your saved message is unavailable in this browser.");
