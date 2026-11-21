@@ -2,6 +2,7 @@ import { RESEARCH_ROLES } from "@openbot/shared/research";
 import { IconChevronRight, IconPlugOff, IconWorld } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { PageRows } from "@/components/layout/page-shell";
 import { PluginLogo } from "@/components/plugins/plugin-logo";
 import { Button } from "@/components/ui/button";
@@ -229,7 +230,7 @@ export function SkillTools({
         open={current !== undefined}
       >
         {current ? (
-          <DialogContent>
+          <DialogContent {...astryxScope}>
             <DialogHeader>
               <DialogTitle>{current.title}</DialogTitle>
               <DialogDescription>

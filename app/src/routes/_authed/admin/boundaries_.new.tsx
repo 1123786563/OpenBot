@@ -12,6 +12,7 @@ import {
 } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { GovernancePage } from "@/components/astryx-pilot/governance";
 import {
   DescribeRule,
   type WrittenRule,
@@ -22,7 +23,6 @@ import {
   PageCard,
   PageRows,
   PageSection,
-  PageShell,
 } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -211,7 +211,7 @@ function NewRulePage() {
   ];
 
   return (
-    <PageShell
+    <GovernancePage
       backButton={BACK}
       description="Define an action that no Bot may take. This boundary applies to every Bot’s next action."
       title="Add rule"
@@ -388,7 +388,7 @@ function NewRulePage() {
           </form>
         </PageSection>
       ) : null}
-    </PageShell>
+    </GovernancePage>
   );
 }
 

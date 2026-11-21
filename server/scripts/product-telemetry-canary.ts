@@ -63,7 +63,7 @@ const input: RunAgentInput = {
   state: {},
   tools: [],
   context: [],
-  forwardedProps: { openbotTelemetry: context },
+  forwardedProps: { openbotTelemetry: context?.context },
 };
 await lastValueFrom(
   telemetry.middleware(actor)(input, new CanaryAgent()).pipe(toArray()),

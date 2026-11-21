@@ -1,6 +1,8 @@
+import { Switch as AstryxSwitch } from "@astryxdesign/core/Switch";
 import { IconMoon } from "@tabler/icons-react";
 import { createFileRoute } from "@tanstack/react-router";
 import React from "react";
+import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import {
   PageRows,
   PageSection,
@@ -21,9 +23,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import { formatHotkey, HOTKEYS } from "@/lib/hotkeys/hotkeys";
-import { SkinPicker } from "@/skins/skin-picker";
 
 export const Route = createFileRoute("/_authed/settings/")({
   component: RouteComponent,
@@ -60,31 +60,32 @@ function RouteComponent() {
       <AiModelSection />
       {/* Only in OpenBot Desktop, which sends usage data and keeps this choice. */}
       <UsageDataSection />
-      <PageSection title="Appearance">
-        <PageRows>
-          <Item size="sm">
-            <ItemMedia variant="icon">
-              <IconMoon />
-            </ItemMedia>
-            <ItemContent>
-              <ItemTitle>Dark theme</ItemTitle>
-              <ItemDescription>
-                Use the dark appearance across OpenBot.
-              </ItemDescription>
-            </ItemContent>
-            <ItemActions>
-              <Switch
-                aria-label="Dark theme"
-                checked={dark}
-                onCheckedChange={setDark}
-              />
-            </ItemActions>
-          </Item>
-          <Separator />
-          <SkinPicker />
-        </PageRows>
-        <MessageListPreference />
-      </PageSection>
+      <AstryxSurface className="min-w-0 rounded-[var(--radius-container)]">
+        <PageSection title="Appearance">
+          <PageRows>
+            <Item size="sm">
+              <ItemMedia variant="icon">
+                <IconMoon />
+              </ItemMedia>
+              <ItemContent>
+                <ItemTitle>Dark theme</ItemTitle>
+                <ItemDescription>
+                  Use the dark appearance across OpenBot.
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <AstryxSwitch
+                  label="Dark theme"
+                  isLabelHidden
+                  value={dark}
+                  onChange={setDark}
+                />
+              </ItemActions>
+            </Item>
+          </PageRows>
+          <MessageListPreference />
+        </PageSection>
+      </AstryxSurface>
       {/*
        * Drawn from the same registry the listeners match against, so this list is what the keys
        * actually do rather than what somebody remembered they did. Read-only on purpose: these

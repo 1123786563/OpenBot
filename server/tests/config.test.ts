@@ -2,9 +2,7 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { configuredAuthProviders, loadConfig } from "../src/config";
 
-// Intelligence is part of the MINIMUM contract, so it belongs in the base environment every other
-// case builds on. Leaving it out of the base would make most of this file assert the behaviour of a
-// deployment that is not allowed to exist.
+// This fixture also covers the legacy, explicitly configured Intelligence deployment.
 const baseEnvironment = {
   DATABASE_URL: "postgres://openbot:openbot@localhost:5432/openbot",
   KEY_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
@@ -59,14 +57,14 @@ describe("deployment configuration", () => {
         INTELLIGENCE_API_KEY: legacy,
         CPK_INTELLIGENCE_API_KEY: "  cpk-current-project  ",
       });
-      expect(config.runtime.intelligence.apiKey).toBe("cpk-current-project");
+      expect(config.runtime.intelligence?.apiKey).toBe("cpk-current-project");
     },
   );
 
   test("an empty CLI key preserves legacy-only deployments", () => {
     expect(
       loadConfig({ ...baseEnvironment, CPK_INTELLIGENCE_API_KEY: "  " }).runtime
-        .intelligence.apiKey,
+        .intelligence?.apiKey,
     ).toBe("tenant-api-key");
   });
 
@@ -79,9 +77,9 @@ describe("deployment configuration", () => {
     expect(config.singleUser).toBe(false);
     expect(config.auth).toBeUndefined();
     expect(config.organizationAuthUrl).toBe("https://openbot.company.example");
-    expect(config.runtime.intelligence.apiKey).toBe("tenant-api-key");
+    expect(config.runtime.intelligence?.apiKey).toBe("tenant-api-key");
   });
-  test("resolves the Intelligence runtime, which is the only runtime", () => {
+  test("resolves the explicitly configured Intelligence runtime", () => {
     const config = loadConfig(baseEnvironment);
 
     expect(config.runtime).toEqual({
@@ -118,7 +116,7 @@ describe("deployment configuration", () => {
     expect(config.auth).toBeUndefined();
   });
 
-  // The product does not have a mode without Intelligence, so each of these is a refusal to boot
+  // Partial Intelligence configuration is a refusal to boot
   // rather than a degraded capability. Named individually because a deployment that sets three of
   // four is the likeliest real mistake, and the message has to say which one is missing.
   test.each([
@@ -147,8 +145,8 @@ describe("deployment configuration", () => {
     if (config.runtime.mode !== "intelligence") {
       throw new Error("expected the Intelligence runtime");
     }
-    expect(config.runtime.intelligence.licenseToken).toBeUndefined();
-    expect(config.runtime.intelligence.apiKey).toBe(
+    expect(config.runtime.intelligence?.licenseToken).toBeUndefined();
+    expect(config.runtime.intelligence?.apiKey).toBe(
       baseEnvironment.INTELLIGENCE_API_KEY,
     );
   });
@@ -164,10 +162,10 @@ describe("deployment configuration", () => {
     if (config.runtime.mode !== "intelligence") {
       throw new Error("expected the Intelligence runtime");
     }
-    expect(config.runtime.intelligence.gatewayWsUrl).toBe(
+    expect(config.runtime.intelligence?.gatewayWsUrl).toBe(
       "ws://host.docker.internal:14401",
     );
-    expect(config.runtime.intelligence.browserGatewayWsUrl).toBe(
+    expect(config.runtime.intelligence?.browserGatewayWsUrl).toBe(
       "ws://localhost:14401",
     );
 
@@ -175,7 +173,7 @@ describe("deployment configuration", () => {
     if (without.runtime.mode !== "intelligence") {
       throw new Error("expected the Intelligence runtime");
     }
-    expect(without.runtime.intelligence.browserGatewayWsUrl).toBeUndefined();
+    expect(without.runtime.intelligence?.browserGatewayWsUrl).toBeUndefined();
 
     expect(() =>
       loadConfig({
@@ -198,12 +196,12 @@ describe("deployment configuration", () => {
     if (proxied.runtime.mode !== "intelligence") {
       throw new Error("expected the Intelligence runtime");
     }
-    expect(proxied.runtime.intelligence.gatewayProxy).toBe(true);
-    expect(proxied.runtime.intelligence.browserGatewayWsUrl).toBe(
+    expect(proxied.runtime.intelligence?.gatewayProxy).toBe(true);
+    expect(proxied.runtime.intelligence?.browserGatewayWsUrl).toBe(
       "/api/intelligence/client",
     );
     // The server still reaches the gateway where it is.
-    expect(proxied.runtime.intelligence.gatewayWsUrl).toBe(
+    expect(proxied.runtime.intelligence?.gatewayWsUrl).toBe(
       "ws://openbot-intelligence-realtime-gateway:4401",
     );
 
@@ -215,7 +213,7 @@ describe("deployment configuration", () => {
     if (published.runtime.mode !== "intelligence") {
       throw new Error("expected the Intelligence runtime");
     }
-    expect(published.runtime.intelligence.browserGatewayWsUrl).toBe(
+    expect(published.runtime.intelligence?.browserGatewayWsUrl).toBe(
       "wss://openbot.example.com/api/intelligence/client",
     );
 
@@ -226,8 +224,8 @@ describe("deployment configuration", () => {
     if (off.runtime.mode !== "intelligence") {
       throw new Error("expected the Intelligence runtime");
     }
-    expect(off.runtime.intelligence.gatewayProxy).toBeUndefined();
-    expect(off.runtime.intelligence.browserGatewayWsUrl).toBeUndefined();
+    expect(off.runtime.intelligence?.gatewayProxy).toBeUndefined();
+    expect(off.runtime.intelligence?.browserGatewayWsUrl).toBeUndefined();
 
     expect(() =>
       loadConfig({
@@ -250,20 +248,21 @@ describe("deployment configuration", () => {
     if (config.runtime.mode !== "intelligence") {
       throw new Error("expected the Intelligence runtime");
     }
-    expect(config.runtime.intelligence.licenseToken).toBe(
+    expect(config.runtime.intelligence?.licenseToken).toBe(
       "self-hosted-licence",
     );
   });
 
-  test("refuses to start when Intelligence is absent entirely, rather than degrading", () => {
-    expect(() =>
-      loadConfig({
-        DATABASE_URL: baseEnvironment.DATABASE_URL,
-        KEY_ENCRYPTION_KEY: baseEnvironment.KEY_ENCRYPTION_KEY,
-        MANAGED_AGENT_AG_UI_URL: baseEnvironment.MANAGED_AGENT_AG_UI_URL,
-        MANAGED_AGENT_TOKEN: baseEnvironment.MANAGED_AGENT_TOKEN,
-      }),
-    ).toThrow("CopilotKit Intelligence is required and is not configured");
+  test("starts with OpenBot-owned history when Intelligence is absent", () => {
+    const config = loadConfig({
+      OPENBOT_SINGLE_USER: "true",
+      DATABASE_URL: baseEnvironment.DATABASE_URL,
+      KEY_ENCRYPTION_KEY: baseEnvironment.KEY_ENCRYPTION_KEY,
+      MANAGED_AGENT_AG_UI_URL: baseEnvironment.MANAGED_AGENT_AG_UI_URL,
+      MANAGED_AGENT_TOKEN: baseEnvironment.MANAGED_AGENT_TOKEN,
+    });
+    expect(config.runtime.mode).toBe("openbot");
+    expect(config.runtime.durableHistory).toBe(true);
   });
 
   test("rejects incomplete OAuth client configuration", () => {

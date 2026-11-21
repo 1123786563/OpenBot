@@ -1,6 +1,8 @@
+import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import { IconBrain, IconPlus, IconRobot, IconUser } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment, type ReactNode, useId, useState } from "react";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
@@ -50,23 +52,21 @@ export function RememberFact() {
   const [content, setContent] = useState("");
   const formId = useId();
   const remember = useMutation(createMemoryMutationOptions(queryClient));
+  function openForm() {
+    setContent("");
+    remember.reset();
+    setOpen(true);
+  }
   return (
     <>
-      <Button
-        onClick={() => {
-          // Opening starts clean: no draft or failure left from an earlier attempt.
-          setContent("");
-          remember.reset();
-          setOpen(true);
-        }}
-        size="sm"
-        variant="ghost"
-      >
-        <IconPlus />
-        Remember a fact
-      </Button>
+      <AstryxButton
+        icon={<IconPlus aria-hidden size={16} />}
+        label="Remember a fact"
+        onClick={openForm}
+        variant="primary"
+      />
       <Dialog onOpenChange={setOpen} open={open}>
-        <DialogContent>
+        <DialogContent {...astryxScope}>
           <DialogHeader>
             <DialogTitle>Remember a fact</DialogTitle>
             <DialogDescription>All your Bots will know it.</DialogDescription>
@@ -321,7 +321,7 @@ function EditMemoryDialog({
   const id = useId();
   return (
     <Dialog onOpenChange={(next) => !next && onClose()} open>
-      <DialogContent>
+      <DialogContent {...astryxScope}>
         <DialogHeader>
           <DialogTitle>Edit memory</DialogTitle>
           <DialogDescription>{memory.provenance}</DialogDescription>

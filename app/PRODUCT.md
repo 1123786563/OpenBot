@@ -31,7 +31,7 @@ Bots are coworkers, and you own them. Each Bot has a computer of its own (a real
 ## Capabilities and Constraints
 
 - Light and dark mode must both ship finished.
-- The skin system stays. This redesign replaces the default `openbot` skin. The other skins stay as alternates.
+- The Web UI is moving to Astryx Neutral with OpenBot branding. The four existing skins remain available during the migration. Visual approval of the Bots pilot gates the remaining batches. Retire the skins after their navigation and workflows have a place in the unified UI. See [the migration decision](../docs/adr/0003-pilot-astryx-for-web.md).
 - Desktop and mobile must both work at native quality.
 - Dense admin screens (audit log, approvals, tables, settings) must stay easy to scan.
 - Stack: React 19, Vite, Tailwind 4, shadcn and Base UI components, Tabler icons, Motion.

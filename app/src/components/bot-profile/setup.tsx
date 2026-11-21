@@ -13,13 +13,12 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment, useState } from "react";
 import type { ZodType } from "zod";
 import { CallbackTokenPanel } from "@/components/agents/callback-token-panel";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { BusinessComputerLink } from "@/components/edition/team-features-dialog";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogBody,
-  DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -67,6 +66,7 @@ import { isComposing } from "@/lib/composing";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { myCapabilitiesQueryOptions } from "@/lib/enterprise/queries";
 import { queryClient } from "@/query-client";
+import { BotDetailDialog, BotDetailFormAction } from "./detail-surface";
 
 type TextField = "name" | "title" | "roleDescription" | "instructions";
 
@@ -277,7 +277,7 @@ function VisibilityRow({
             <SelectTrigger className="w-28">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent {...astryxScope}>
               <SelectItem value="private">Private</SelectItem>
               <SelectItem value="public">Public</SelectItem>
             </SelectContent>
@@ -414,6 +414,7 @@ function EditTextDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submit = async () => {
+    if (saving) return;
     const parsed = schema.safeParse(draft);
     if (!parsed.success) {
       setError(
@@ -437,7 +438,7 @@ function EditTextDialog({
   };
   return (
     <Dialog onOpenChange={(next) => !next && onClose()} open>
-      <DialogContent>
+      <BotDetailDialog>
         <DialogHeader>
           <DialogTitle>{label}</DialogTitle>
         </DialogHeader>
@@ -471,19 +472,18 @@ function EditTextDialog({
           ) : null}
         </DialogBody>
         <DialogFooter className="mt-4">
-          <Button
+          <BotDetailFormAction
             disabled={saving}
             onClick={onClose}
-            size="sm"
             variant="outline"
           >
             Cancel
-          </Button>
-          <Button disabled={saving} onClick={() => void submit()} size="sm">
+          </BotDetailFormAction>
+          <BotDetailFormAction disabled={saving} onClick={() => void submit()}>
             {saving ? "Saving…" : "Save"}
-          </Button>
+          </BotDetailFormAction>
         </DialogFooter>
-      </DialogContent>
+      </BotDetailDialog>
     </Dialog>
   );
 }

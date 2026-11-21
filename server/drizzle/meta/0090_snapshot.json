@@ -1,6 +1,6 @@
 {
-  "id": "0436ee77-4d5c-49b8-bb1d-b9edeebb99ed",
-  "prevId": "fdaa8b94-d369-4713-b4b3-068dfe7f2f5d",
+  "id": "fdaa8b94-d369-4713-b4b3-068dfe7f2f5d",
+  "prevId": "2695aaa7-3562-427f-8b3f-c4f85b34c702",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -12010,97 +12010,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.test_credit_evidence": {
-      "name": "test_credit_evidence",
-      "schema": "",
-      "columns": {
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "operation_id": {
-          "name": "operation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "evidence_id": {
-          "name": "evidence_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "input_tokens": {
-          "name": "input_tokens",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "output_tokens": {
-          "name": "output_tokens",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cost": {
-          "name": "cost",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "recorded_at": {
-          "name": "recorded_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "test_credit_evidence_operation_fk": {
-          "name": "test_credit_evidence_operation_fk",
-          "tableFrom": "test_credit_evidence",
-          "tableTo": "test_credit_operations",
-          "columnsFrom": [
-            "account_id",
-            "operation_id"
-          ],
-          "columnsTo": [
-            "account_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "test_credit_evidence_account_id_operation_id_evidence_id_pk": {
-          "name": "test_credit_evidence_account_id_operation_id_evidence_id_pk",
-          "columns": [
-            "account_id",
-            "operation_id",
-            "evidence_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "test_credit_evidence_amounts": {
-          "name": "test_credit_evidence_amounts",
-          "value": "\n      \"test_credit_evidence\".\"input_tokens\" >= 0 AND \"test_credit_evidence\".\"output_tokens\" >= 0 AND \"test_credit_evidence\".\"cost\" >= 0\n      AND (\"test_credit_evidence\".\"outcome\" <> 'zero_cost' OR \"test_credit_evidence\".\"cost\" = 0)\n    "
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.test_credit_operations": {
       "name": "test_credit_operations",
       "schema": "",
@@ -12173,24 +12082,6 @@
           "notNull": true,
           "default": "now()"
         },
-        "rerun_of_operation_id": {
-          "name": "rerun_of_operation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cutoff_hold": {
-          "name": "cutoff_hold",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "eligible_evidence_id": {
-          "name": "eligible_evidence_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "dispatched_at": {
           "name": "dispatched_at",
           "type": "timestamp with time zone",
@@ -12212,21 +12103,6 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
-        },
-        "test_credit_rerun_original_fk": {
-          "name": "test_credit_rerun_original_fk",
-          "tableFrom": "test_credit_operations",
-          "tableTo": "test_credit_operations",
-          "columnsFrom": [
-            "account_id",
-            "rerun_of_operation_id"
-          ],
-          "columnsTo": [
-            "account_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -12241,21 +12117,124 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "test_credit_cutoff_hold_amount": {
-          "name": "test_credit_cutoff_hold_amount",
-          "value": "\"test_credit_operations\".\"cutoff_hold\" BETWEEN 0 AND \"test_credit_operations\".\"reserved\""
-        },
-        "test_credit_rerun_distinct": {
-          "name": "test_credit_rerun_distinct",
-          "value": "\"test_credit_operations\".\"rerun_of_operation_id\" <> \"test_credit_operations\".\"id\""
-        },
         "test_credit_operation_amounts": {
           "name": "test_credit_operation_amounts",
           "value": "\n    \"test_credit_operations\".\"reserved\" >= 0 AND\n    (\"test_credit_operations\".\"charged\" IS NULL OR \"test_credit_operations\".\"charged\" BETWEEN 0 AND \"test_credit_operations\".\"reserved\")\n  "
         },
         "test_credit_operation_state": {
           "name": "test_credit_operation_state",
-          "value": "\n    ((\"test_credit_operations\".\"state\" = 'released' OR (\"test_credit_operations\".\"state\" = 'reserved' AND \"test_credit_operations\".\"dispatched_at\" IS NULL))\n      AND \"test_credit_operations\".\"charged\" IS NULL AND \"test_credit_operations\".\"input_tokens\" IS NULL AND \"test_credit_operations\".\"output_tokens\" IS NULL)\n    OR (\"test_credit_operations\".\"state\" = 'pending' AND \"test_credit_operations\".\"dispatched_at\" IS NOT NULL\n      AND \"test_credit_operations\".\"charged\" IS NULL AND \"test_credit_operations\".\"input_tokens\" IS NULL AND \"test_credit_operations\".\"output_tokens\" IS NULL)\n    OR (\"test_credit_operations\".\"state\" = 'settled' AND \"test_credit_operations\".\"dispatched_at\" IS NOT NULL\n      AND \"test_credit_operations\".\"charged\" IS NOT NULL AND \"test_credit_operations\".\"input_tokens\" IS NOT NULL AND \"test_credit_operations\".\"output_tokens\" IS NOT NULL\n      AND \"test_credit_operations\".\"input_tokens\" >= 0 AND \"test_credit_operations\".\"output_tokens\" >= 0)\n  "
+          "value": "\n    (\"test_credit_operations\".\"state\" IN ('reserved', 'released') AND \"test_credit_operations\".\"dispatched_at\" IS NULL\n      AND \"test_credit_operations\".\"charged\" IS NULL AND \"test_credit_operations\".\"input_tokens\" IS NULL AND \"test_credit_operations\".\"output_tokens\" IS NULL)\n    OR (\"test_credit_operations\".\"state\" = 'pending' AND \"test_credit_operations\".\"dispatched_at\" IS NOT NULL\n      AND \"test_credit_operations\".\"charged\" IS NULL AND \"test_credit_operations\".\"input_tokens\" IS NULL AND \"test_credit_operations\".\"output_tokens\" IS NULL)\n    OR (\"test_credit_operations\".\"state\" = 'settled' AND \"test_credit_operations\".\"dispatched_at\" IS NOT NULL\n      AND \"test_credit_operations\".\"charged\" IS NOT NULL AND \"test_credit_operations\".\"input_tokens\" IS NOT NULL AND \"test_credit_operations\".\"output_tokens\" IS NOT NULL\n      AND \"test_credit_operations\".\"input_tokens\" >= 0 AND \"test_credit_operations\".\"output_tokens\" >= 0)\n  "
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.direct_chat_runs": {
+      "name": "direct_chat_runs",
+      "schema": "",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_message_id": {
+          "name": "user_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prompt": {
+          "name": "prompt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assistant_message_id": {
+          "name": "assistant_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reply": {
+          "name": "reply",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "direct_chat_runs_request_idx": {
+          "name": "direct_chat_runs_request_idx",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "direct_chat_runs_thread_id_intelligence_channel_mappings_thread_id_fk": {
+          "name": "direct_chat_runs_thread_id_intelligence_channel_mappings_thread_id_fk",
+          "tableFrom": "direct_chat_runs",
+          "tableTo": "intelligence_channel_mappings",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "thread_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "direct_chat_runs_thread_id_id_pk": {
+          "name": "direct_chat_runs_thread_id_id_pk",
+          "columns": [
+            "thread_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "direct_chat_runs_status_check": {
+          "name": "direct_chat_runs_status_check",
+          "value": "\"direct_chat_runs\".\"status\" in ('running', 'completed', 'failed')"
         }
       },
       "isRLSEnabled": false

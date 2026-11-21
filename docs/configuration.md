@@ -14,6 +14,10 @@ Fill the required values, then run:
 bash scripts/start.sh
 ```
 
+## Web bundle
+
+For tenant branding, production build commands, and artifact rollback, see the [Astryx Web rollout guide](astryx-web-rollout.md).
+
 ## Required API server variables
 
 | Variable                      | Meaning                                                                                               |
@@ -818,20 +822,30 @@ them, including a saved off. See [automatic-learning.md](automatic-learning.md).
 
 ## OpenTelemetry export
 
-Every audit row is also sent as an OTLP log record over HTTP, so a SIEM or an OpenTelemetry
-Collector receives the same events the **Audit** page shows, as they happen. Each record carries
-`openbot.surface`: `bot`, `identity` or `control_plane`. Export never stops a request: when the
-collector cannot be reached, records are dropped after the SDK's retries, and the row in PostgreSQL
-is still the record.
+When configured, OpenBot sends an allowlisted copy of each committed audit row over OTLP/HTTP.
+Each record carries `openbot.surface` with one of `bot`, `identity`, or `control_plane`.
+The PostgreSQL row is authoritative. If the Collector is unreachable, OpenBot continues serving
+requests and may drop batches after the SDK's retries. For runtime delivery and the deployment-wide
+pause procedure, see the [OpenObserve runbook](openobserve-runbook.md).
 
 | Variable                           | Meaning                                                                                                |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `DEPLOYMENT_ID`                  | Required stable deployment identifier for audit export. |
 | `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | Where log records go, used exactly as written. Takes precedence over the next one.                    |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`      | Collector base URL; OpenBot appends `/v1/logs`. Setting either endpoint switches export on.           |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`      | Collector base URL. OpenBot appends `/v1/logs`.           |
 | `OTEL_EXPORTER_OTLP_LOGS_HEADERS`  | Headers for the logs endpoint, as `key=value` pairs separated by commas (for a collector's API key).  |
 | `OTEL_EXPORTER_OTLP_HEADERS`       | The same, used when `OTEL_EXPORTER_OTLP_LOGS_HEADERS` is unset.                                        |
 | `OTEL_SERVICE_NAME`                | The `service.name` on every record. Defaults to `openbot`.                                             |
-| `OPENBOT_OTEL_EXPORT`              | `off` turns export off while an endpoint is still set.                                                 |
+| `OPENBOT_OTEL_EXPORT`              | `off` pauses the API audit exporter. Set it on the deployment Collector to pause both streams.                                                 |
+
+### OpenObserve link in Admin Audit
+
+Set `OPENBOT_OPENOBSERVE_URL` in the server environment (or in the root `.env` for
+Compose and source installs) to show **Open in OpenObserve** in Admin → Audit.
+Use an absolute HTTP(S) URL without credentials, a query string, or a fragment.
+The link is hidden when the value is missing or invalid. OpenObserve or its
+identity gateway authenticates administrators and handles queries. The browser
+URL is independent of the Collector endpoint.
 
 ## Computer and supervisor
 

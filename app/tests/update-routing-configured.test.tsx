@@ -64,8 +64,9 @@ function draw() {
 }
 
 const checked = (element: HTMLElement) =>
-  element.getAttribute("aria-checked") === "true" ||
-  element.hasAttribute("data-checked");
+  element instanceof HTMLInputElement
+    ? element.checked
+    : element.getAttribute("aria-checked") === "true";
 const disabled = (element: HTMLElement) =>
   element.getAttribute("aria-disabled") === "true" ||
   element.hasAttribute("data-disabled") ||

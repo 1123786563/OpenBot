@@ -26,6 +26,7 @@ import {
   type PageFrameStore,
 } from "./computer/page-frames";
 import type { ProactiveStore } from "./proactive/store";
+import { writeRuntimeLog } from "./telemetry/runtime-log";
 
 /**
  * The advisory lock this takes, as an arbitrary but fixed number.
@@ -153,57 +154,38 @@ export function startRetentionSweeps(
         .purge(FRAME_RETENTION_MS)
         .then((removed) => {
           if (removed === 0) return;
-          console.info(JSON.stringify({ type: "page-frames-swept", removed }));
+          writeRuntimeLog("page_frame_retention_swept", { deleted: removed });
         })
-        .catch((error) => {
-          console.error(
-            JSON.stringify({
-              type: "page-frames-sweep-failed",
-              note: "Old turn screenshots were not removed. Nothing is broken; the table is larger than it should be.",
-              error: String(error),
-            }),
-          );
-        });
+        .catch(() => writeRuntimeLog("page_frame_retention_failed"));
     }
     if (proactive) {
       void proactive
         .prune()
         .then(({ runs, pings }) => {
           if (runs === 0 && pings === 0) return;
-          console.info(
-            JSON.stringify({ type: "proactive-ledger-swept", runs, pings }),
-          );
+          writeRuntimeLog("proactive_retention_swept", {
+            deleted_runs: runs,
+            deleted_pings: pings,
+          });
         })
-        .catch((error) => {
-          console.error(
-            JSON.stringify({
-              type: "proactive-ledger-sweep-failed",
-              note: "Old check-in runs and pings were not removed. Nothing is broken; the tables are larger than they need to be.",
-              error: String(error),
-            }),
-          );
-        });
+        .catch(() => writeRuntimeLog("proactive_retention_failed"));
     }
     if (!sweepsAudit || !retentionDays) return;
+    const startedAt = performance.now();
     void sweepAuditTrail(databaseUrl, retentionDays)
       .then(({ deleted }) => {
         if (deleted === null || deleted === 0) return;
-        console.info(
-          JSON.stringify({
-            type: "audit-retention-swept",
-            deleted,
-            retentionDays,
-          }),
-        );
+        writeRuntimeLog("audit_retention_swept", {
+          deleted,
+          retention_days: retentionDays,
+          duration_ms: performance.now() - startedAt,
+        });
       })
-      .catch((error) => {
-        console.error(
-          JSON.stringify({
-            type: "audit-retention-failed",
-            note: "Old audit rows were not removed. The trail is intact; it is only larger than the policy asks for.",
-            error: String(error),
-          }),
-        );
+      .catch(() => {
+        writeRuntimeLog("audit_retention_failed", {
+          retention_days: retentionDays,
+          duration_ms: performance.now() - startedAt,
+        });
       });
   };
 

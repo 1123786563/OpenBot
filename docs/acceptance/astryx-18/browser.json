@@ -1,0 +1,492 @@
+{
+  "integrationBase": "8569d4d929fc0839972915e2679a5650f58975b7",
+  "postgresql": "17.12 with pgvector",
+  "playwrightCore": "1.62.1",
+  "pilotFlag": "unset",
+  "editions": {
+    "personal": {
+      "edition": "personal",
+      "phase": "retired",
+      "checks": [
+        {
+          "restoredSkin": "openmuse"
+        },
+        {
+          "restoredTheme": "dark"
+        },
+        {
+          "path": "/bots",
+          "destination": "/bots",
+          "content": "Issue 17 personal Bot"
+        },
+        {
+          "skin": "openbot",
+          "shell": "Astryx"
+        },
+        {
+          "path": "/bots",
+          "destination": "/bots",
+          "content": "Issue 17 personal Bot"
+        },
+        {
+          "skin": "openduet",
+          "shell": "Astryx"
+        },
+        {
+          "path": "/bots",
+          "destination": "/bots",
+          "content": "Issue 17 personal Bot"
+        },
+        {
+          "skin": "opendots",
+          "shell": "Astryx"
+        },
+        {
+          "path": "/bots",
+          "destination": "/bots",
+          "content": "Issue 17 personal Bot"
+        },
+        {
+          "skin": "openmuse",
+          "shell": "Astryx"
+        },
+        {
+          "path": "/agents?agent=agent_51bcc393-fca6-4835-a482-b20d951ea9e0",
+          "destination": "/bots/agent_51bcc393-fca6-4835-a482-b20d951ea9e0",
+          "content": "Issue 17 personal Bot"
+        },
+        {
+          "theme": "light",
+          "brand": "Northstar QA",
+          "customMarkAndAccent": true
+        },
+        {
+          "path": "/agents?agent=agent_51bcc393-fca6-4835-a482-b20d951ea9e0",
+          "destination": "/bots/agent_51bcc393-fca6-4835-a482-b20d951ea9e0",
+          "content": "Issue 17 personal Bot"
+        },
+        {
+          "theme": "dark",
+          "brand": "Northstar QA",
+          "customMarkAndAccent": true
+        },
+        {
+          "path": "/settings",
+          "destination": "/settings",
+          "content": "Appearance"
+        },
+        {
+          "themeControl": "light and dark persist",
+          "skinPicker": "absent"
+        },
+        {
+          "path": "/channel/channel_867673b2-65d6-4956-b8a2-2a1f69b71013",
+          "destination": "/channel/channel_867673b2-65d6-4956-b8a2-2a1f69b71013",
+          "content": "Issue 17 personal Bot"
+        },
+        {
+          "path": "/channel/new?agent=agent_51bcc393-fca6-4835-a482-b20d951ea9e0",
+          "destination": "/channel/new?agent=agent_51bcc393-fca6-4835-a482-b20d951ea9e0",
+          "content": "Issue 17 personal Bot"
+        },
+        {
+          "unsentComposerTextSurvivesReload": false
+        },
+        {
+          "path": "/s/tasks",
+          "destination": "/tasks",
+          "content": "Bot tasks"
+        },
+        {
+          "path": "/s/unknown",
+          "destination": "/",
+          "content": "Browse Bots"
+        },
+        {
+          "path": "/s/routines",
+          "destination": "/routines",
+          "content": "Routines"
+        },
+        {
+          "path": "/s/memories",
+          "destination": "/bots",
+          "content": "Bots"
+        },
+        {
+          "path": "/s/activity",
+          "destination": "/s/activity",
+          "content": "Activity"
+        },
+        {
+          "path": "/s/ideas",
+          "destination": "/ideas",
+          "content": "Ideas"
+        },
+        {
+          "path": "/s/goals",
+          "destination": "/responsibilities?view=goals",
+          "content": "Goals"
+        },
+        {
+          "path": "/group/new",
+          "destination": "/channel/new",
+          "content": "To:"
+        },
+        {
+          "path": "/agents",
+          "destination": "/bots",
+          "content": "Bots"
+        },
+        {
+          "path": "/team-bots",
+          "destination": "/bots",
+          "content": "Bots"
+        },
+        {
+          "path": "/skills",
+          "destination": "/capabilities/skills",
+          "content": "Skills"
+        },
+        {
+          "path": "/capabilities",
+          "destination": "/capabilities/skills",
+          "content": "Skills"
+        },
+        {
+          "path": "/memory",
+          "destination": "/bots",
+          "content": "Bots"
+        },
+        {
+          "path": "/settings/memory",
+          "destination": "/bots",
+          "content": "Bots"
+        },
+        {
+          "path": "/approvals",
+          "destination": "/settings/approvals",
+          "content": "Approvals"
+        },
+        {
+          "path": "/reachability",
+          "destination": "/settings/notifications",
+          "content": "Notifications"
+        },
+        {
+          "path": "/settings/connected-accounts",
+          "destination": "/connections",
+          "content": "Connections"
+        },
+        {
+          "path": "/settings/connected-accounts/parallel",
+          "destination": "/connections/parallel",
+          "content": "Parallel Search"
+        },
+        {
+          "path": "/connections/parallel/bots/agent_51bcc393-fca6-4835-a482-b20d951ea9e0",
+          "destination": "/connections/parallel",
+          "content": "Parallel Search"
+        },
+        {
+          "path": "/connections/parallel/tools/search",
+          "destination": "/connections/parallel",
+          "content": "Parallel Search"
+        },
+        {
+          "path": "/settings/plugins/parallel",
+          "destination": "/connections/parallel",
+          "content": "Parallel Search"
+        },
+        {
+          "path": "/admin/plugins/parallel",
+          "destination": "/connections/parallel",
+          "content": "Parallel Search"
+        },
+        {
+          "path": "/settings/connected-accounts/parallel?action=search",
+          "destination": "/connections/parallel?action=search",
+          "content": "Parallel Search"
+        },
+        {
+          "path": "/s/activity",
+          "destination": "/s/activity",
+          "content": "View Issue 17 personal Bot"
+        },
+        {
+          "path": "/bots",
+          "destination": "/bots",
+          "content": "Bots"
+        },
+        {
+          "narrowKeyboardNavigation": "opened with Enter and closed with Escape, focus restored"
+        },
+        {
+          "path": "/agents?new=true",
+          "destination": "/bots?new=true",
+          "content": "Create Bot dialog"
+        },
+        {
+          "createdBot": "Issue 18 personal 1795179971326",
+          "destination": "/bots/agent_05082999-fb80-4316-a652-897d7e147ec0"
+        },
+        {
+          "path": "/bots",
+          "destination": "/bots",
+          "content": "Issue 18 personal 1795179971326"
+        },
+        {
+          "path": "/admin/audit",
+          "destination": "/settings/activity"
+        },
+        {
+          "bot": "agent_51bcc393-fca6-4835-a482-b20d951ea9e0",
+          "conversation": "channel_867673b2-65d6-4956-b8a2-2a1f69b71013",
+          "draft": "Issue 17 personal saved component draft",
+          "authorization": "Personal admin"
+        }
+      ],
+      "indexHtmlSha256": "e3e223c3f8421d873a59fe95729c2ab3e4c7b56bd2a17b9faddb4055f32eb35a"
+    },
+    "team": {
+      "edition": "team",
+      "phase": "retired",
+      "checks": [
+        {
+          "restoredSkin": "openmuse"
+        },
+        {
+          "restoredTheme": "dark"
+        },
+        {
+          "path": "/bots",
+          "destination": "/bots",
+          "content": "Issue 17 team Bot"
+        },
+        {
+          "skin": "openbot",
+          "shell": "Astryx"
+        },
+        {
+          "path": "/bots",
+          "destination": "/bots",
+          "content": "Issue 17 team Bot"
+        },
+        {
+          "skin": "openduet",
+          "shell": "Astryx"
+        },
+        {
+          "path": "/bots",
+          "destination": "/bots",
+          "content": "Issue 17 team Bot"
+        },
+        {
+          "skin": "opendots",
+          "shell": "Astryx"
+        },
+        {
+          "path": "/bots",
+          "destination": "/bots",
+          "content": "Issue 17 team Bot"
+        },
+        {
+          "skin": "openmuse",
+          "shell": "Astryx"
+        },
+        {
+          "path": "/agents?agent=agent_11f6ee36-6798-42c9-bb43-1d604508092b",
+          "destination": "/bots/agent_11f6ee36-6798-42c9-bb43-1d604508092b",
+          "content": "Issue 17 team Bot"
+        },
+        {
+          "theme": "light",
+          "brand": "Northstar QA",
+          "customMarkAndAccent": true
+        },
+        {
+          "path": "/agents?agent=agent_11f6ee36-6798-42c9-bb43-1d604508092b",
+          "destination": "/bots/agent_11f6ee36-6798-42c9-bb43-1d604508092b",
+          "content": "Issue 17 team Bot"
+        },
+        {
+          "theme": "dark",
+          "brand": "Northstar QA",
+          "customMarkAndAccent": true
+        },
+        {
+          "path": "/settings",
+          "destination": "/settings",
+          "content": "Appearance"
+        },
+        {
+          "themeControl": "light and dark persist",
+          "skinPicker": "absent"
+        },
+        {
+          "path": "/channel/channel_061b8db5-0086-4f59-a51c-8aaa4edef3ac",
+          "destination": "/channel/channel_061b8db5-0086-4f59-a51c-8aaa4edef3ac",
+          "content": "Issue 17 team Bot"
+        },
+        {
+          "path": "/channel/new?agent=agent_11f6ee36-6798-42c9-bb43-1d604508092b",
+          "destination": "/channel/new?agent=agent_11f6ee36-6798-42c9-bb43-1d604508092b",
+          "content": "Issue 17 team Bot"
+        },
+        {
+          "unsentComposerTextSurvivesReload": false
+        },
+        {
+          "path": "/s/tasks",
+          "destination": "/tasks",
+          "content": "Bot tasks"
+        },
+        {
+          "path": "/s/unknown",
+          "destination": "/",
+          "content": "Browse Bots"
+        },
+        {
+          "path": "/s/routines",
+          "destination": "/routines",
+          "content": "Routines"
+        },
+        {
+          "path": "/s/memories",
+          "destination": "/capabilities/memory",
+          "content": "Memory"
+        },
+        {
+          "path": "/s/activity",
+          "destination": "/s/activity",
+          "content": "Activity"
+        },
+        {
+          "path": "/s/ideas",
+          "destination": "/ideas",
+          "content": "Ideas"
+        },
+        {
+          "path": "/s/goals",
+          "destination": "/responsibilities?view=goals",
+          "content": "Goals"
+        },
+        {
+          "path": "/group/new",
+          "destination": "/channel/new",
+          "content": "To:"
+        },
+        {
+          "path": "/agents",
+          "destination": "/bots",
+          "content": "Bots"
+        },
+        {
+          "path": "/team-bots",
+          "destination": "/bots",
+          "content": "Bots"
+        },
+        {
+          "path": "/skills",
+          "destination": "/capabilities/skills",
+          "content": "Skills"
+        },
+        {
+          "path": "/capabilities",
+          "destination": "/capabilities/skills",
+          "content": "Skills"
+        },
+        {
+          "path": "/memory",
+          "destination": "/capabilities/memory",
+          "content": "Memory"
+        },
+        {
+          "path": "/settings/memory",
+          "destination": "/capabilities/memory",
+          "content": "Memory"
+        },
+        {
+          "path": "/approvals",
+          "destination": "/settings/approvals",
+          "content": "Approvals"
+        },
+        {
+          "path": "/reachability",
+          "destination": "/settings/notifications",
+          "content": "Notifications"
+        },
+        {
+          "path": "/settings/connected-accounts",
+          "destination": "/connections",
+          "content": "Connections"
+        },
+        {
+          "path": "/settings/connected-accounts/parallel",
+          "destination": "/connections/parallel",
+          "content": "Parallel Search"
+        },
+        {
+          "path": "/connections/parallel/bots/agent_11f6ee36-6798-42c9-bb43-1d604508092b",
+          "destination": "/connections/parallel",
+          "content": "Parallel Search"
+        },
+        {
+          "path": "/connections/parallel/tools/search",
+          "destination": "/connections/parallel",
+          "content": "Parallel Search"
+        },
+        {
+          "path": "/settings/connected-accounts/parallel?action=search",
+          "destination": "/connections/parallel?action=search",
+          "content": "Parallel Search"
+        },
+        {
+          "path": "/s/activity",
+          "destination": "/s/activity",
+          "content": "View Issue 17 team Bot"
+        },
+        {
+          "path": "/bots",
+          "destination": "/bots",
+          "content": "Bots"
+        },
+        {
+          "narrowKeyboardNavigation": "opened with Enter and closed with Escape, focus restored"
+        },
+        {
+          "path": "/agents?new=true",
+          "destination": "/bots?new=true",
+          "content": "Create Bot dialog"
+        },
+        {
+          "createdBot": "Issue 18 team 1795179971463",
+          "destination": "/bots/agent_a342cde6-2a8d-4dfc-ab00-9a107229aabf"
+        },
+        {
+          "path": "/bots",
+          "destination": "/bots",
+          "content": "Issue 18 team 1795179971463"
+        },
+        {
+          "path": "/admin/enterprise",
+          "destination": "/admin"
+        },
+        {
+          "path": "/admin/components/showActivityReport",
+          "content": "Issue 17 team saved component draft"
+        },
+        {
+          "memberPrivateBot": 404,
+          "memberAdminAPI": 403
+        },
+        {
+          "bot": "agent_11f6ee36-6798-42c9-bb43-1d604508092b",
+          "conversation": "channel_061b8db5-0086-4f59-a51c-8aaa4edef3ac",
+          "draft": "Issue 17 team saved component draft",
+          "authorization": "admin and member"
+        }
+      ],
+      "indexHtmlSha256": "e3e223c3f8421d873a59fe95729c2ab3e4c7b56bd2a17b9faddb4055f32eb35a"
+    }
+  }
+}

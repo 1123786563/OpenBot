@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { PageShell } from "@/components/layout/page-shell";
+import { ConnectionPage } from "@/components/connections/connection-surface";
 import { CheckInsSection } from "@/components/settings/check-ins";
 import { NativeDevices, RecentDeliveries } from "@/components/settings/devices";
 import { UpdateRoutingSection } from "@/components/settings/update-routing";
@@ -14,7 +14,7 @@ export const Route = createFileRoute("/_authed/settings/notifications")({
  */
 function NotificationsPage() {
   return (
-    <PageShell
+    <ConnectionPage
       description="Choose where you receive updates when you’re away. Set each Bot’s update frequency on its page."
       title="Notifications"
     >
@@ -22,6 +22,6 @@ function NotificationsPage() {
       <UpdateRoutingSection />
       <NativeDevices />
       <RecentDeliveries />
-    </PageShell>
+    </ConnectionPage>
   );
 }

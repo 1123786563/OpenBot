@@ -6,7 +6,7 @@ import {
   useMatchRoute,
 } from "@tanstack/react-router";
 import type * as React from "react";
-import { PageShell } from "@/components/layout/page-shell";
+import { CapabilityPage } from "@/components/astryx-pilot/capability-surface";
 import { Button } from "@/components/ui/button";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 
@@ -71,19 +71,19 @@ export function CapabilitiesShell({ children }: { children: React.ReactNode }) {
       TABS.find((item) => matchRoute({ ...item.linkOptions, fuzzy: true })) ??
       TABS[0];
     return (
-      <PageShell
+      <CapabilityPage
         backButton={{ label: "Bots", linkProps: linkOptions({ to: "/bots" }) }}
         className="@container"
         title={tab.label}
       >
         {children}
-      </PageShell>
+      </CapabilityPage>
     );
   }
   return (
-    <PageShell className="@container" title="Capabilities">
+    <CapabilityPage className="@container" title="Capabilities">
       <CapabilitiesTabs />
       {children}
-    </PageShell>
+    </CapabilityPage>
   );
 }

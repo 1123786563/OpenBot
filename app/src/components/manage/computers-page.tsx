@@ -7,6 +7,9 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
+import { DeviceAction } from "@/components/astryx-pilot/device-action";
+import { DevicePage } from "@/components/astryx-pilot/device-page";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   ClearBrowserDialog,
   useClearBrowserData,
@@ -15,10 +18,8 @@ import {
   PageEmpty,
   PageRows,
   PageSection,
-  PageShell,
 } from "@/components/layout/page-shell";
 import { StaggerItem } from "@/components/layout/stagger";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -202,7 +203,7 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
   };
 
   return (
-    <PageShell
+    <DevicePage
       description={
         personal
           ? "Your Bots share one computer. Each Bot keeps its own browser profile there, which keeps it signed in. A command one Bot runs can still read another Bot's files."
@@ -315,25 +316,25 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
                   </ItemContent>
                   <ItemActions>
                     {computer.updateAvailable ? (
-                      <Button
+                      <DeviceAction
                         disabled={busy === rowId(computer)}
                         onClick={() => setConfirmingUpdate(computer)}
                         size="sm"
                         variant="outline"
                       >
                         Update computer
-                      </Button>
+                      </DeviceAction>
                     ) : null}
-                    <Button
+                    <DeviceAction
                       disabled={busy === rowId(computer) || !computer.running}
                       onClick={() => void run(computer, "stop")}
                       size="sm"
                       variant="outline"
                     >
                       {busy === rowId(computer) ? "Working…" : "Stop browser"}
-                    </Button>
+                    </DeviceAction>
                     {personal && isOwnBrowser(computer) ? (
-                      <Button
+                      <DeviceAction
                         disabled={
                           busy === rowId(computer) || clearOwnBrowser.isPending
                         }
@@ -342,16 +343,16 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
                         variant="outline"
                       >
                         Clear browser data
-                      </Button>
+                      </DeviceAction>
                     ) : (
-                      <Button
+                      <DeviceAction
                         disabled={busy === rowId(computer)}
                         onClick={() => setConfirming(computer)}
                         size="sm"
                         variant="outline"
                       >
                         Reset
-                      </Button>
+                      </DeviceAction>
                     )}
                   </ItemActions>
                 </Item>
@@ -374,7 +375,7 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
         }}
         open={confirming !== null}
       >
-        <DialogContent>
+        <DialogContent {...astryxScope}>
           <DialogHeader>
             <DialogTitle>
               {personal
@@ -393,14 +394,14 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button
+            <DeviceAction
               onClick={() => setConfirming(null)}
               size="sm"
               variant="ghost"
             >
               Cancel
-            </Button>
-            <Button
+            </DeviceAction>
+            <DeviceAction
               disabled={confirming !== null && busy === rowId(confirming)}
               onClick={() => {
                 if (confirming) void run(confirming, "reset");
@@ -411,7 +412,7 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
               {confirming !== null && busy === rowId(confirming)
                 ? "Resetting…"
                 : "Reset it"}
-            </Button>
+            </DeviceAction>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -428,7 +429,7 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
         }}
         open={confirmingUpdate !== null}
       >
-        <DialogContent>
+        <DialogContent {...astryxScope}>
           <DialogHeader>
             <DialogTitle>
               Update {confirmingUpdate ? titleOf(confirmingUpdate) : ""}?
@@ -440,14 +441,14 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button
+            <DeviceAction
               onClick={() => setConfirmingUpdate(null)}
               size="sm"
               variant="ghost"
             >
               Cancel
-            </Button>
-            <Button
+            </DeviceAction>
+            <DeviceAction
               disabled={
                 confirmingUpdate !== null && busy === rowId(confirmingUpdate)
               }
@@ -459,7 +460,7 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
               {confirmingUpdate !== null && busy === rowId(confirmingUpdate)
                 ? "Updating…"
                 : "Update it"}
-            </Button>
+            </DeviceAction>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -496,7 +497,7 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
         </p>
       )}
       {children}
-    </PageShell>
+    </DevicePage>
   );
 }
 
@@ -600,14 +601,14 @@ function HostFoldersSection({
                   />
                 </ItemContent>
                 <ItemActions>
-                  <Button
+                  <DeviceAction
                     disabled={!connected || requestingBotId === botId}
                     onClick={() => onGrant(botId)}
                     size="sm"
                     variant="outline"
                   >
                     {requestingBotId === botId ? "Waiting…" : "Choose folder"}
-                  </Button>
+                  </DeviceAction>
                 </ItemActions>
               </Item>
               {index !== botIds.length - 1 && <Separator />}
@@ -623,14 +624,14 @@ function HostFoldersSection({
             asks you first.
           </p>
           <div className="flex items-center gap-3">
-            <Button
+            <DeviceAction
               disabled={!connected || stopping}
               onClick={onStop}
               size="sm"
               variant="outline"
             >
               {stopping ? "Stopping…" : "Stop folder access"}
-            </Button>
+            </DeviceAction>
             <Link className="underline" {...paths.audit()}>
               Open {paths.auditLabel}
             </Link>
@@ -678,14 +679,14 @@ function FolderGrantList({
                 : `Approved by ${ownerLabel(grant)} · Read-only`}
             </p>
           </div>
-          <Button
+          <DeviceAction
             disabled={revokingGrantId === grant.id}
             onClick={() => onRevoke(grant.id)}
             size="sm"
             variant="ghost"
           >
             {revokingGrantId === grant.id ? "Revoking…" : "Revoke"}
-          </Button>
+          </DeviceAction>
         </div>
       ))}
       {botPending.map((request) => (

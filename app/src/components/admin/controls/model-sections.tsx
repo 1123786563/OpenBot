@@ -11,6 +11,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { HarnessMark } from "@/components/agents/harness-mark";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { PageEmpty, PageRows } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -41,6 +42,7 @@ import {
   type ModelOption,
   type ModelSource,
 } from "@/lib/models/queries";
+import { DeploymentButton } from "../deployment-button";
 import { ControlsSection } from "./controls-section";
 
 /** Who serves the models, by the name an admin knows it by. */
@@ -328,7 +330,7 @@ export function AllowedModelsDialog({
       }}
       open={open}
     >
-      <DialogContent>
+      <DialogContent {...astryxScope} className={"astryx-admin-dialog"}>
         <DialogHeader>
           <DialogTitle>Allowed models</DialogTitle>
         </DialogHeader>
@@ -426,10 +428,15 @@ export function AllowedModelsDialog({
           ) : null}
         </DialogBody>
         <DialogFooter className="mt-4">
-          <Button onClick={onClose} size="sm" type="button" variant="outline">
+          <DeploymentButton
+            onClick={onClose}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
             Cancel
-          </Button>
-          <Button
+          </DeploymentButton>
+          <DeploymentButton
             onClick={() => {
               onSave(selected);
               onClose();
@@ -438,7 +445,7 @@ export function AllowedModelsDialog({
             type="button"
           >
             Save
-          </Button>
+          </DeploymentButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>

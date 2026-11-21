@@ -12,6 +12,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { Fragment, useId, useState } from "react";
 import {
   PeopleProposalsSection,
@@ -60,7 +61,11 @@ import {
 import { queryClient as appQueryClient } from "@/query-client";
 
 export const Route = createFileRoute("/_authed/admin/learning")({
-  component: LearningPage,
+  component: () => (
+    <AstryxSurface className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <LearningPage />
+    </AstryxSurface>
+  ),
 });
 const selectClass = "w-full rounded-md border bg-background px-3 py-2 text-sm";
 

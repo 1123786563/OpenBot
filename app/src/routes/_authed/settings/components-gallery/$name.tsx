@@ -2,12 +2,9 @@ import { IconCode, IconTag } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { CapabilityPage } from "@/components/astryx-pilot/capability-surface";
 import { ComponentPreview } from "@/components/component-preview";
-import {
-  PageRows,
-  PageSection,
-  PageShell,
-} from "@/components/layout/page-shell";
+import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { SettingsItemBackground } from "@/components/settings/background";
 import { Button } from "@/components/ui/button";
 import {
@@ -77,11 +74,11 @@ function RouteComponent() {
 
   if (components.error) {
     return (
-      <PageShell backButton={BACK} title="Components gallery">
+      <CapabilityPage backButton={BACK} title="Components gallery">
         <p className="mt-8 text-destructive text-sm" role="alert">
           Couldn't load components. Reload the page.
         </p>
-      </PageShell>
+      </CapabilityPage>
     );
   }
 
@@ -95,7 +92,7 @@ function RouteComponent() {
 
   if (!component) {
     return (
-      <PageShell
+      <CapabilityPage
         backButton={BACK}
         description="There's no component with that name."
         title="No such component"
@@ -115,12 +112,12 @@ function RouteComponent() {
             Back to the gallery
           </Button>
         </Empty>
-      </PageShell>
+      </CapabilityPage>
     );
   }
 
   return (
-    <PageShell
+    <CapabilityPage
       backButton={BACK}
       // What it shows, in the person's words; see the gallery's own page for why not the model's.
       description={
@@ -152,6 +149,6 @@ function RouteComponent() {
           </FactRow>
         </PageRows>
       </PageSection>
-    </PageShell>
+    </CapabilityPage>
   );
 }

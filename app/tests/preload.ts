@@ -31,6 +31,8 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 GlobalRegistrator.register();
 /* `@base-ui/utils` is not a dependency of this package; the react package that owns it is. */
 await import("@base-ui/react/dialog");
+// Astryx fields schedule their first animation frame at import time.
+await import("@astryxdesign/core/TextArea");
 printNodesShortly(globalThis.Node);
 GlobalRegistrator.unregister();
 

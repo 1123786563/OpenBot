@@ -1,8 +1,3 @@
-/**
- * What the runtime can do. There is exactly one answer because CopilotKit Intelligence is required
- * for durable threads and memory. Configuration the product cannot function without belongs at the
- * boot boundary.
- */
 import { intelligenceApiKey } from "@openbot/shared/intelligence-key";
 import {
   isLearningContainerId,
@@ -30,11 +25,13 @@ import type { BrokerProvider } from "./plugins/access";
 import { type VoiceConfig, voiceConfig } from "./voice/config";
 import { type WebBotAuth, webBotAuthFromEnv } from "./web-bot-auth";
 
-export type RuntimeCapabilities = {
-  mode: "intelligence";
-  durableHistory: true;
-  intelligence: IntelligenceSettings;
-};
+export type RuntimeCapabilities =
+  | {
+      mode: "intelligence";
+      durableHistory: true;
+      intelligence: IntelligenceSettings;
+    }
+  | { mode: "openbot"; durableHistory: true; intelligence?: undefined };
 
 /**
  * The Intelligence contract. Three values are required; see runtimeCapabilities.
@@ -367,8 +364,10 @@ export type DeploymentConfig = {
    * deployment serving both from one origin.
    */
   appUrl: string | undefined;
+  openObserveUrl?: string;
   tenantPackageDirectory: string;
   runtime: RuntimeCapabilities;
+  managedModelTrial?: { url: URL; token: string; route: string };
   /**
    * How long a Bot's stream may say nothing before this deployment ends the turn, in milliseconds.
    *
@@ -1163,19 +1162,7 @@ function oktaAuth(
   return { ...client, issuer };
 }
 
-/**
- * Resolve the Intelligence contract, or refuse to start.
- *
- * The three addressing values are required together. A partial set is the more dangerous shape than
- * none at all: it means somebody intended to configure Intelligence and got it wrong, so failing on
- * the partial set alone (as this did) let a completely unconfigured deployment through as if that
- * were a choice.
- *
- * COPILOTKIT_LICENSE_TOKEN IS NO LONGER ONE OF THEM. Managed Intelligence issues a single project
- * key and derives entitlement from it, and requiring a second credential here sent people hunting
- * for a token the platform had stopped handing out. It is still read and still forwarded when a
- * deployment sets one, which is what a self-hosted Intelligence with its own licence needs.
- */
+/** Keep the configured legacy runtime available while direct conversations migrate. */
 function runtimeCapabilities(environment: Environment): RuntimeCapabilities {
   const settings = {
     apiUrl: url(environment, "INTELLIGENCE_API_URL"),
@@ -1192,6 +1179,14 @@ function runtimeCapabilities(environment: Environment): RuntimeCapabilities {
     .filter(([, value]) => !value)
     .map(([name]) => name);
 
+  if (
+    missing.length === 3 &&
+    !settings.licenseToken &&
+    !optional(environment, "INTELLIGENCE_BROWSER_GATEWAY_WS_URL") &&
+    !onOrOff(environment, "INTELLIGENCE_GATEWAY_PROXY")
+  ) {
+    return { mode: "openbot", durableHistory: true };
+  }
   if (missing.length > 0) {
     throw new Error(
       `CopilotKit Intelligence is required and is not configured. Missing: ${missing.join(", ")}`,
@@ -1616,6 +1611,46 @@ function serverPort(environment: Environment): number {
   return port ?? serverPort ?? DEFAULT_PORT;
 }
 
+function openObserveUrl(environment: Environment): string | undefined {
+  const value = optional(environment, "OPENBOT_OPENOBSERVE_URL");
+  if (!value || /[?#\\\s]/.test(value)) return undefined;
+  const authority = /^https?:\/\/([^/]+)/i.exec(value)?.[1];
+  if (!authority || authority.includes("@")) return undefined;
+  return URL.parse(value)?.href;
+}
+
+function managedModelTrial(
+  environment: Environment,
+  runtime: RuntimeCapabilities,
+): DeploymentConfig["managedModelTrial"] {
+  const name = "OPENBOT_MANAGED_MODEL_TRIAL_URL";
+  const origin = optionalHttpUrl(environment, name);
+  const token = optional(environment, "OPENBOT_MANAGED_MODEL_TRIAL_TOKEN");
+  const route = optional(environment, "OPENBOT_MANAGED_MODEL_TRIAL_ROUTE");
+  if (!origin && !token && !route) return undefined;
+  if (!origin || !token || !route || runtime.mode !== "openbot") {
+    throw new Error(
+      "The managed model trial requires URL, TOKEN, ROUTE, and the OpenBot runtime.",
+    );
+  }
+  const loopback = ["127.0.0.1", "[::1]", "localhost"].includes(
+    origin.hostname,
+  );
+  if (
+    (origin.protocol !== "https:" && !loopback) ||
+    origin.username ||
+    origin.password ||
+    origin.pathname !== "/" ||
+    origin.search ||
+    origin.hash
+  ) {
+    throw new Error(
+      `${name} must be an HTTPS origin (HTTP allowed for loopback tests).`,
+    );
+  }
+  return { url: origin, token, route };
+}
+
 export function loadConfig(
   environment: Environment = process.env,
 ): DeploymentConfig {
@@ -1654,6 +1689,7 @@ export function loadConfig(
   )?.replace(/\/+$/, "");
 
   const edition = parseEdition(optional(environment, "OPENBOT_EDITION"));
+  const runtime = runtimeCapabilities(environment);
 
   // Built first and checked after, so every refusal the team edition gives keeps its order.
   const loaded = {
@@ -1676,9 +1712,11 @@ export function loadConfig(
     brokerProvider: brokerProvider(environment),
     publicUrl,
     appUrl,
+    openObserveUrl: openObserveUrl(environment),
     tenantPackageDirectory:
       optional(environment, "TENANT_PACKAGE_DIR") ?? "../examples/fintech",
-    runtime: runtimeCapabilities(environment),
+    runtime,
+    managedModelTrial: managedModelTrial(environment, runtime),
     recorder: { extraExtensionIds: recorderExtraExtensionIds(environment) },
     learning: learningDefault(environment),
     learningAutoAssign: learningAutoAssignEnabled(environment),

@@ -1,12 +1,13 @@
 import { IconDeviceMobile, IconDevices, IconSend } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment } from "react";
+import { DeviceAction } from "@/components/astryx-pilot/device-action";
+import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
 import {
   Item,
   ItemActions,
@@ -71,48 +72,50 @@ export function NativeDevices() {
   const remove = useMutation(removePushDeviceMutationOptions(queryClient));
   const error = reach.error ?? remove.error;
   return (
-    <PageSection
-      description="Sign in to the OpenBot app on your phone and turn on notifications to add it here."
-      title="Your devices"
-    >
-      {error ? (
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          {error.message}
-        </p>
-      ) : null}
-      {reach.isPending || !reach.data ? null : reach.data.devices.length ===
-        0 ? (
-        <PageEmpty icon={IconDevices} title="No devices yet">
-          Phones and computers you sign in on show up here.
-        </PageEmpty>
-      ) : (
-        <PageRows>
-          {reach.data.devices.map((device, index) => (
-            <Fragment key={device.id}>
-              {index > 0 ? <Separator /> : null}
-              <Item size="sm">
-                <ItemMedia variant="icon">
-                  <IconDeviceMobile />
-                </ItemMedia>
-                <ItemContent>
-                  <ItemTitle>{PLATFORM[device.platform]}</ItemTitle>
-                </ItemContent>
-                <ItemActions>
-                  <Button
-                    disabled={remove.isPending}
-                    onClick={() => remove.mutate(device.id)}
-                    size="sm"
-                    variant="outline"
-                  >
-                    Remove
-                  </Button>
-                </ItemActions>
-              </Item>
-            </Fragment>
-          ))}
-        </PageRows>
-      )}
-    </PageSection>
+    <AstryxSurface className="min-w-0">
+      <PageSection
+        description="Sign in to the OpenBot app on your phone and turn on notifications to add it here."
+        title="Your devices"
+      >
+        {error ? (
+          <p className="mt-4 text-destructive text-sm" role="alert">
+            {error.message}
+          </p>
+        ) : null}
+        {reach.isPending || !reach.data ? null : reach.data.devices.length ===
+          0 ? (
+          <PageEmpty icon={IconDevices} title="No devices yet">
+            Phones and computers you sign in on show up here.
+          </PageEmpty>
+        ) : (
+          <PageRows>
+            {reach.data.devices.map((device, index) => (
+              <Fragment key={device.id}>
+                {index > 0 ? <Separator /> : null}
+                <Item size="sm">
+                  <ItemMedia variant="icon">
+                    <IconDeviceMobile />
+                  </ItemMedia>
+                  <ItemContent>
+                    <ItemTitle>{PLATFORM[device.platform]}</ItemTitle>
+                  </ItemContent>
+                  <ItemActions>
+                    <DeviceAction
+                      disabled={remove.isPending}
+                      onClick={() => remove.mutate(device.id)}
+                      size="sm"
+                      variant="outline"
+                    >
+                      Remove
+                    </DeviceAction>
+                  </ItemActions>
+                </Item>
+              </Fragment>
+            ))}
+          </PageRows>
+        )}
+      </PageSection>
+    </AstryxSurface>
   );
 }
 

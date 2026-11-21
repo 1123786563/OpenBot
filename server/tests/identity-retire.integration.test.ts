@@ -4,6 +4,7 @@ import { eq, inArray, like } from "drizzle-orm";
 import {
   type AuditEventInput,
   type AuditStore,
+  addAuditTap,
   createAuditStore,
 } from "../src/audit";
 import { createCredentialStore } from "../src/credentials";
@@ -20,6 +21,7 @@ import {
 } from "../src/identity/retire";
 import { createIdentityStore, identityUserLock } from "../src/identity/store";
 import { IdentityLinkError } from "../src/identity/types";
+import { createOtelEventExporter } from "../src/telemetry/otel";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
@@ -251,7 +253,7 @@ test("a directory remover is recorded in the payload only, never as the acting u
   });
 });
 
-test("an audit row that fails to write rolls the retirement back, so a retry retires and audits every link", async () => {
+test("OTLP only receives identity retirement rows after the whole transaction commits", async () => {
   const userId = user();
   const linkIds = [randomUUID(), randomUUID()];
   for (const id of linkIds)
@@ -264,34 +266,71 @@ test("an audit row that fails to write rolls the retirement back, so a retry ret
       verifiedBy: "challenge",
       status: "active",
     });
-  let written = 0;
-  const failing: AuditStore = {
-    insert: async () => {
-      written += 1;
-      if (written === 2) throw new Error("audit store down");
+
+  const requests: string[] = [];
+  const collector = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: async (request) => {
+      requests.push(await request.text());
+      return new Response("{}");
     },
+  });
+  const exportRetirement = async (failSecond: boolean) => {
+    const exporter = createOtelEventExporter({
+      DEPLOYMENT_ID: "identity-retirement-fixture",
+      OTEL_EXPORTER_OTLP_ENDPOINT: collector.url.href,
+    });
+    if (!exporter) throw new Error("Fixture exporter did not initialize");
+    const removeTap = addAuditTap(exporter.emit);
+    let written = 0;
+    try {
+      return await retireIdentityLinks(
+        database,
+        vault,
+        (executor, deferTap) => {
+          const store = createAuditStore(executor, deferTap);
+          return {
+            async insert(event, options) {
+              written += 1;
+              if (failSecond && written === 2)
+                throw new Error("audit store down");
+              await store.insert(event, options);
+            },
+          };
+        },
+        userId,
+        ADMIN,
+      );
+    } finally {
+      removeTap();
+      await exporter.shutdown();
+    }
   };
 
-  await expect(
-    retireIdentityLinks(database, vault, () => failing, userId, ADMIN),
-  ).rejects.toThrow("audit store down");
-  for (const id of linkIds) expect((await statusOf(id))?.status).toBe("active");
+  try {
+    await expect(exportRetirement(true)).rejects.toThrow("audit store down");
+    for (const id of linkIds)
+      expect((await statusOf(id))?.status).toBe("active");
+    const auditRows = () =>
+      database
+        .select()
+        .from(auditEvents)
+        .where(inArray(auditEvents.targetId, linkIds));
+    expect(await auditRows()).toEqual([]);
+    expect(requests).toEqual([]);
 
-  const audit = recorder();
-  expect(
-    await retireIdentityLinks(
-      database,
-      vault,
-      () => audit.store,
-      userId,
-      ADMIN,
-    ),
-  ).toBe(2);
-  expect(audit.rows.map((row) => row.targetId).sort()).toEqual(
-    [...linkIds].sort(),
-  );
-  for (const id of linkIds)
-    expect((await statusOf(id))?.status).toBe("needs_reconnect");
+    expect(await exportRetirement(false)).toBe(2);
+    const committed = await auditRows();
+    expect(committed.map((row) => row.targetId).sort()).toEqual(
+      [...linkIds].sort(),
+    );
+    for (const { id } of committed) expect(requests.join("")).toContain(id);
+    for (const id of linkIds)
+      expect((await statusOf(id))?.status).toBe("needs_reconnect");
+  } finally {
+    collector.stop(true);
+  }
 });
 
 test("the audit trail's own store writes the rows inside the retirement's transaction", async () => {
@@ -308,13 +347,7 @@ test("the audit trail's own store writes the rows inside the retirement's transa
   });
 
   expect(
-    await retireIdentityLinks(
-      database,
-      vault,
-      (executor) => createAuditStore(executor),
-      userId,
-      ADMIN,
-    ),
+    await retireIdentityLinks(database, vault, createAuditStore, userId, ADMIN),
   ).toBe(1);
 
   const rows = await database

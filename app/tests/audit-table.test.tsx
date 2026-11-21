@@ -102,9 +102,11 @@ test("the page fills the shell's panel and only the table scrolls", async () => 
   expect(page?.className).toContain("flex-1");
   expect(page?.className).toContain("min-h-0");
   expect(heading.closest(".max-w-3xl")).toBeNull();
-  const scroller = view.container.querySelector(
-    "[data-slot=table-container]",
-  ) as HTMLElement;
+  const scroller =
+    view.queryByRole("region", { name: "Audit events" }) ??
+    (view.container.querySelector(
+      "[data-slot=table-container]",
+    ) as HTMLElement);
   expect(scroller.className).toContain("overflow-auto");
   expect(scroller.className).toContain("flex-1");
   expect(scroller.contains(heading)).toBe(false);
@@ -192,4 +194,11 @@ test("recording history shares a page scroller with the bounded audit log", asyn
   expect(pageScroller?.contains(tableScroller)).toBe(true);
   expect(tableScroller?.contains(recording)).toBe(false);
   expect(recording.textContent).toContain("Command 99");
+});
+
+test("the event log is a named keyboard stop for scrolling its table", async () => {
+  const view = await renderAudit();
+  const log = view.getByRole("region", { name: "Audit events" });
+  expect(log.tabIndex).toBe(0);
+  expect(log.contains(view.getByRole("table"))).toBe(true);
 });
