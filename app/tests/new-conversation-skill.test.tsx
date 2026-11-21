@@ -234,11 +234,13 @@ const channelRoute = createRoute({
   getParentRoute: () => appRoute,
   component: ChannelScreen,
 });
-const testStartRoute = StartRoute.update({
+const startRouteOptions = {
   id: "/start/$startId",
   path: "/start/$startId",
   getParentRoute: () => appRoute,
-} as TestFileRouteWiring);
+  component: StartRoute.options.component,
+};
+const testStartRoute = StartRoute.update(startRouteOptions);
 const routeTree = rootRoute.addChildren([
   authedRoute.addChildren([
     appRoute.addChildren([testStartRoute, testChannelNewRoute, channelRoute]),
