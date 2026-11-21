@@ -2,7 +2,11 @@ import {
   createManagedModel,
   type ManagedModelResult,
 } from "../managed-model-trial";
-import type { ModelCallOptions, ModelCompleter } from "../routing/model";
+import type {
+  ModelBillingContext,
+  ModelCallOptions,
+  ModelCompleter,
+} from "../routing/model";
 
 export type AuxiliaryModelSource =
   | "routing"
@@ -10,23 +14,7 @@ export type AuxiliaryModelSource =
   | "approval"
   | "admin";
 
-type Scope = {
-  source: AuxiliaryModelSource;
-  personId: string;
-  conversationId: string;
-  botId: string;
-  runId: string;
-};
-
-type Funding =
-  | { kind: "user"; budget?: { id: string; stepId?: string } }
-  | { kind: "platform"; budget: { id: string; stepId?: string } };
-
-export type AuxiliaryModelBilling = Scope & {
-  step: string;
-  funding: Funding;
-};
-
+export type AuxiliaryModelBilling = ModelBillingContext;
 export type AuxiliaryModelOptions = Omit<ModelCallOptions, "billing"> & {
   billing: AuxiliaryModelBilling;
 };

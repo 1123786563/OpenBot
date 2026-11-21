@@ -9,8 +9,9 @@ const scope = {
   runId: "run-1",
 };
 
-function controlServer(options: { dispatch?: (body: any) => Response }) {
-  const calls: { path: string; body: any }[] = [];
+type JsonBody = Record<string, unknown>;
+function controlServer(options: { dispatch?: (body: JsonBody) => Response }) {
+  const calls: { path: string; body: JsonBody | undefined }[] = [];
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,

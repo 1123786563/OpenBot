@@ -37,7 +37,21 @@ export type ModelAnswerSchema = {
   schema: Record<string, unknown>;
 };
 
+export type ModelBillingContext = {
+  source: "routing" | "tool-selection" | "approval" | "admin";
+  personId: string;
+  conversationId: string;
+  botId: string;
+  runId: string;
+  step: string;
+  funding:
+    | { kind: "user"; budget?: { id: string; stepId?: string } }
+    | { kind: "platform"; budget: { id: string; stepId?: string } };
+};
+
 export type ModelCallOptions = {
+  /** Explicit billing context for a metered auxiliary model call. */
+  billing?: ModelBillingContext;
   /**
    * Asks the provider for structured output: `response_format` `json_schema` (strict) on Chat
    * Completions, `output_config.format` on Anthropic's Messages. Without it the call asks for a JSON
