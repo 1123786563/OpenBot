@@ -261,8 +261,7 @@ export function resumeConversationStart(
   const run = (async () =>
     navigator.locks
       ? navigator.locks.request(`openbot:start:${key}`, work)
-      : work()
-  )().finally(() => startsInProgress.delete(key));
+      : work())().finally(() => startsInProgress.delete(key));
   startsInProgress.set(key, run);
   return run;
 }
