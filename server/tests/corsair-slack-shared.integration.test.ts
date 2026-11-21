@@ -1,16 +1,17 @@
 import { mintRunAssertion } from "../src/agents/callback-token";
 import { createApprovalService } from "../src/approvals/service";
 import { withApprovalContext } from "../src/approvals/types";
-import { createCredentialStore } from "../src/credentials";
+import { createApprovedActionExecutor } from "../src/approvals/execute";
+import { encryptSecret, createCredentialStore } from "../src/credentials";
 import { createCorsairCutover } from "../src/plugins/corsair/cutover";
 import { createPluginStore } from "../src/plugins/store";
 import { beforeAll, expect, test } from "bun:test";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createApp } from "../src/app";
 import { createApprovalStore } from "../src/approvals/store";
-import { createAuditStore } from "../src/audit";
+import { createAuditStore, PERSON_INITIATOR } from "../src/audit";
 import { loadConfig } from "../src/config";
 import { createDatabase } from "../src/db/client";
 import {
@@ -18,6 +19,8 @@ import {
   agents,
   auditEvents,
   brokeredConnections,
+  githubPilotConnections,
+  githubPilotRepositories,
   mcpServers,
   mcpTools,
   slackSharedInstallations,
@@ -26,6 +29,11 @@ import {
   responsibilityRuns,
   users,
 } from "../src/db/schema";
+import { createGithubEventDispatch } from "../src/plugins/corsair/event-dispatch";
+import { createGithubEventIngress } from "../src/plugins/corsair/event-ingress";
+import { createGithubEventTriggers } from "../src/plugins/corsair/event-triggers";
+import { GithubEventAccessRetry } from "../src/plugins/corsair/event-run-access";
+import { createResponsibilityStore } from "../src/responsibilities/store";
 import { createSharedSlackProvider } from "../src/plugins/corsair/slack/shared-provider";
 import {
   createSharedUseGate,
@@ -445,7 +453,7 @@ test("Shared Slack disconnect is local and remote revocation requires a current 
   });
 });
 
-test("normal Slack Shared Bot calls use the reviewed installation and still enforce its audience", async () => {
+test("normal Slack Shared Bot calls enforce the reviewed audience and GitHub Goal source", async () => {
   const workspaceId = randomUUID();
   const serverId = randomUUID();
   const sharedVendorUserId = randomUUID();
@@ -458,6 +466,17 @@ test("normal Slack Shared Bot calls use the reviewed installation and still enfo
       KEY_ENCRYPTION_KEY: encryptionKey,
     }),
   );
+  const githubScope = { workspaceId, registration: "github/shared-fixture" };
+  let githubAccess: "allowed" | "retry" | "denied" = "allowed";
+  const github = createGithubEventTriggers({
+    database: db,
+    ...githubScope,
+    encryptionKey,
+    checkRepository: async ({ token }) => {
+      expect(token).toBe("ghu_shared_fixture");
+      return githubAccess;
+    },
+  });
   const stored = createApprovalStore(db);
   const approvals = createApprovalService(stored);
   const audit = createAuditStore(db);
@@ -509,6 +528,7 @@ test("normal Slack Shared Bot calls use the reviewed installation and still enfo
       sharedUse,
       legacyPolicy: policy,
       enforceCutover: true,
+      githubEventAccess: github,
     },
   };
   const mounted = createApp(...args);
@@ -551,7 +571,7 @@ test("normal Slack Shared Bot calls use the reviewed installation and still enfo
       serverId,
       by: admin.id,
       as: "admin",
-      approval: { audience: "owner", outsideInput: false, members: [] },
+      approval: { audience: "owner", outsideInput: true, members: [] },
     });
     const { inventoryRevision, capabilities } = await (
       await mounted.request(migration)
@@ -610,18 +630,22 @@ test("normal Slack Shared Bot calls use the reviewed installation and still enfo
     );
     const toolName = `mcp__${serverId}__${name}`;
     const callArgs = { channel: "C123", text: "Normal shared Bot post" };
-    const invoke = (run: {
-      actorId: string;
-      botId: string;
-      runId: string;
-      threadId: string;
-    }) =>
+    const invoke = (
+      run: {
+        actorId: string;
+        botId: string;
+        runId: string;
+        threadId: string;
+        initiator?: { kind: "responsibility"; id: string; goalRunId: string };
+      },
+      parameters = callArgs,
+    ) =>
       withApprovalContext(
         {
           ...run,
           toolName,
           toolCallId: "shared-fixture-call",
-          args: callArgs,
+          args: parameters,
           messages: [],
           context: [],
           state: {},
@@ -636,7 +660,7 @@ test("normal Slack Shared Bot calls use the reviewed installation and still enfo
             },
             body: JSON.stringify({
               name: toolName,
-              args: callArgs,
+              args: parameters,
               run: mintRunAssertion(run, encryptionKey),
             }),
           }),
@@ -668,10 +692,194 @@ test("normal Slack Shared Bot calls use the reviewed installation and still enfo
     expect(writes.slice(count)).toMatchObject([
       { channel: callArgs.channel, text: callArgs.text },
     ]);
+    const goals = createResponsibilityStore(db, {
+      deploymentId: workspaceId,
+      resolveTarget: async () => ({ threadId: "shared-goal-thread" }),
+      githubEventAccess: github,
+    });
+    const goal = await goals.create(admin.id, {
+      agentId: botId,
+      channelId: "fixture",
+      title: "GitHub Goal",
+      instruction: "Send the report to Slack.",
+      successCriteria: "The report is posted.",
+    });
+    const connectionId = randomUUID();
+    await db.insert(githubPilotConnections).values({
+      ...githubScope,
+      id: connectionId,
+      personId: admin.id,
+      githubUserId: "12",
+      login: "git-fixture",
+      credential: await encryptSecret(encryptionKey, "ghu_shared_fixture"),
+      expiresAt: new Date(Date.now() + 600_000),
+    });
+    await db.insert(githubPilotRepositories).values({
+      ...githubScope,
+      installationId: "20",
+      repositoryId: "30",
+      nodeId: "repo-node",
+      name: "octo/private",
+    });
+    const trigger = await github.create(admin.id, {
+      goalId: goal.id,
+      connectionId,
+      installationId: 20,
+      repositoryId: 30,
+      eventTypes: ["issues.opened"],
+    });
+    if (trigger.kind !== "created") throw new Error("Missing GitHub Trigger");
+
+    const execute = createApprovedActionExecutor({
+      sourceFor: async () => ({ id: goal.threadId }),
+      gate: approvals.gate,
+      computerTools: async () => [],
+      hostTools: () => [],
+      callTool: (input) => pluginStore.callTool(input),
+      credentialActorFor: async () => admin.id,
+      coordinationCall: async () => null,
+      answer: (result) => result.text,
+      privateShareToolRef: "fixture/share",
+      refusalMarker: "REFUSED",
+      personInitiator: PERSON_INITIATOR,
+    });
+    const secret = "github-shared-fixture-secret";
+    const isolatedSources = new Set(["20/30"]);
+    const dispatch = createGithubEventDispatch({
+      database: db,
+      ...githubScope,
+      isolatedSources,
+      triggers: github,
+    });
+    const ingress = createGithubEventIngress({
+      database: db,
+      ...githubScope,
+      isolatedSources,
+      secret,
+      planAccepted: dispatch.planAccepted,
+    });
+    async function askFromGithub(issueId: number) {
+      const signedEvent = JSON.stringify({
+        action: "opened",
+        installation: { id: 20 },
+        repository: { id: 30, full_name: "octo/private" },
+        issue: {
+          id: issueId,
+          number: issueId,
+          title: "Fixture",
+          created_at: new Date().toISOString(),
+        },
+      });
+      const delivery = await ingress.request("/webhook", {
+        method: "POST",
+        headers: {
+          "x-github-delivery": randomUUID(),
+          "x-github-event": "issues",
+          "x-hub-signature-256": `sha256=${createHmac("sha256", secret).update(signedEvent).digest("hex")}`,
+        },
+        body: signedEvent,
+      });
+      expect(delivery.status).toBe(202);
+      const { receiptId } = await delivery.json();
+      await dispatch.sweep();
+      const queued = (await goals.listRuns(admin.id, goal.id))[0];
+      if (!queued) throw new Error("Missing GitHub Run");
+      await goals.beginRun(queued.id);
+      const turn = {
+        ...run,
+        runId: randomUUID(),
+        threadId: goal.threadId,
+        initiator: {
+          kind: "responsibility" as const,
+          id: goal.id,
+          goalRunId: queued.id,
+        },
+      };
+      const parameters = { channel: "C123", text: `GitHub report ${issueId}` };
+      expect(await (await invoke(turn, parameters)).json()).toMatchObject({
+        isError: true,
+        text: expect.stringContaining("waiting for your approval"),
+      });
+      const pending = (await stored.list(admin.id)).find(
+        ({ action }) => action.runId === turn.runId,
+      );
+      if (!pending?.action.continuation)
+        throw new Error("Missing GitHub Goal Approval");
+      expect(pending.action.dispatch).toBe("corsair-shared-goal");
+      await db
+        .update(responsibilityRuns)
+        .set({
+          status: "waiting",
+          waiting: {
+            kind: "approval",
+            approvalId: pending.id,
+            continuation: pending.action.continuation,
+          },
+        })
+        .where(eq(responsibilityRuns.id, queued.id));
+      await stored.decide(admin.id, pending.id, "allow_once");
+      const resume = () =>
+        approvals.resume(admin.id, pending.id, {
+          validate: (action) =>
+            approvals.validateReentry(action, () => execute(action)),
+          execute,
+          continue: async ({ result }) => {
+            await goals.resumeWaiting(admin.id, queued.id, result);
+          },
+        });
+      return { queued, pending, parameters, receiptId, resume };
+    }
+
+    const authorized = await askFromGithub(101);
+    const before = writes.length;
+    githubAccess = "retry";
+    await expect(authorized.resume()).rejects.toBeInstanceOf(
+      GithubEventAccessRetry,
+    );
+    expect((await stored.get(admin.id, authorized.pending.id)).status).toBe(
+      "approved",
+    );
+    expect((await goals.listRuns(admin.id, goal.id))[0]?.status).toBe(
+      "waiting",
+    );
+    expect(writes).toHaveLength(before);
+    githubAccess = "allowed";
+    await authorized.resume();
+    await authorized.resume();
+    expect(writes.slice(before)).toMatchObject([authorized.parameters]);
+    expect((await stored.get(admin.id, authorized.pending.id)).status).toBe(
+      "completed",
+    );
+    const [recorded] = await db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.eventType, "corsair.slack.write_succeeded"))
+      .then((rows) =>
+        rows.filter((row) => row.payload.approvalId === authorized.pending.id),
+      );
+    expect(recorded?.payload).toMatchObject({
+      receiptId: authorized.receiptId,
+      triggerId: trigger.trigger.id,
+      target: { origin: { runId: authorized.queued.id } },
+    });
+
+    const revoked = await askFromGithub(102);
+    githubAccess = "denied";
+    await revoked.resume();
+    expect((await goals.listRuns(admin.id, goal.id))[0]).toMatchObject({
+      id: revoked.queued.id,
+      status: "failed",
+      error: "GitHub event read authorization ended.",
+    });
+    expect(await stored.get(admin.id, revoked.pending.id)).toMatchObject({
+      status: "completed",
+      result: { error: "GitHub event read authorization ended." },
+    });
+    expect(writes).toHaveLength(before + 1);
   } finally {
     await db
       .delete(brokeredConnections)
       .where(eq(brokeredConnections.vendorUserId, sharedVendorUserId));
     await db.delete(mcpServers).where(eq(mcpServers.id, serverId));
   }
-});
+}, 120_000);

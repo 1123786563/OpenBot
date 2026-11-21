@@ -14,6 +14,7 @@ import {
 } from "@openbot/shared/approval-outcomes";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { PERSON_INITIATOR } from "../audit";
+import { GithubEventAccessRetry } from "../plugins/corsair/event-run-access";
 import { productRunForwardedProps } from "../telemetry/product";
 import {
   decideAction,
@@ -319,6 +320,7 @@ export function createApprovalService(
           return candidate.requireOneTime
             ? {
                 approvalId: authority.approvalId,
+                approvalDigest: authority.digest,
                 complete: async () => undefined,
               }
             : undefined;
@@ -458,6 +460,7 @@ export function createApprovalService(
         throw new ApprovalAlreadyAnsweredError(DECLINED_BY_PERSON);
       if (
         request.status === "approved" &&
+        candidate.dispatch !== "corsair-shared-goal" &&
         (!candidate.requireOneTime || request.decision === "allow_once") &&
         (await store.consume(action.actorId, request.id, action.actionDigest))
       )
@@ -729,7 +732,19 @@ export function createApprovalService(
               throw new ApprovalRefusedError(
                 "The approved action or resolved target has changed.",
               );
-            if (!(await store.consume(ownerUserId, id, current.actionDigest))) {
+            if (
+              current.dispatch !== request.action.dispatch ||
+              (current.dispatch === "corsair-shared-goal" &&
+                !current.requireOneTime)
+            )
+              throw new ApprovalRefusedError(
+                "The approved dispatch has changed.",
+              );
+            // Shared Goal dispatch claims the Approval after it checks live source access.
+            if (
+              current.dispatch !== "corsair-shared-goal" &&
+              !(await store.consume(ownerUserId, id, current.actionDigest))
+            ) {
               // Still `approved`: an "Always allow" whose rule was revoked before it ran. Anything
               // else means another replica took the request, and it continues the conversation.
               if ((await store.get(ownerUserId, id)).status !== "approved")
@@ -769,6 +784,11 @@ export function createApprovalService(
                 throw new Error("The approved action returned no result.");
               result = { content };
             } catch (error) {
+              if (
+                current.dispatch === "corsair-shared-goal" &&
+                error instanceof GithubEventAccessRetry
+              )
+                throw error;
               const reason =
                 error instanceof Error ? error.message : String(error);
               result = { content: reason, error: reason };

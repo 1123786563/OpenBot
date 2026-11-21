@@ -136,6 +136,7 @@ export type ApprovalCandidate = {
   ownConnectionRead?: true;
   /** The caller requires a fresh one-time answer even when a standing rule would allow the write. */
   requireOneTime?: true;
+  dispatch?: "explicit" | "corsair-slack-goal" | "corsair-shared-goal";
   /**
    * The app marks this tool as destroying something: MCP's `destructiveHint`, or a broker's
    * destructive flag, as recorded when the app was listed (`mcpTools.destructive`). It asks as
@@ -158,8 +159,6 @@ export type ApprovalCandidate = {
   account?: string;
 };
 export type ApprovalAction = ApprovalCandidate & {
-  /** API actions are consumed by the original surface. Goal actions use the Approval worker. */
-  dispatch?: "explicit" | "corsair-slack-goal";
   runId: string;
   threadId: string;
   toolCallId: string;
@@ -381,6 +380,7 @@ export type ApprovalPolicyStore = {
   }): Promise<void>;
 };
 export type ApprovalPermit = {
+  approvalDigest?: string;
   approvalId?: string;
   replay?: unknown;
   complete(result: unknown): Promise<void>;

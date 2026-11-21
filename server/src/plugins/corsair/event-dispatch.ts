@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import type { Database } from "../../db/client";
-import { auditEvents } from "../../db/schema/core";
+import {
+  type AuditStore,
+  createAuditStore,
+  withAuditTransaction,
+} from "../../audit";
 import {
   githubPilotEventTriggers as bindings,
   githubPilotEventOutcomes as outcomes,
@@ -53,7 +57,7 @@ export function createGithubEventDispatch({
     );
 
   async function audit(
-    tx: EventTransaction,
+    store: AuditStore,
     {
       receipt,
       triggerId,
@@ -70,10 +74,10 @@ export function createGithubEventDispatch({
       reason?: string;
     },
   ) {
-    await tx.insert(auditEvents).values({
+    await store.insert({
       eventType: "corsair.github.event_delivery",
       actorUserId: personId,
-      initiatorKind: "system",
+      initiator: { kind: "system" },
       targetType: "github_event_receipt",
       targetId: receipt.id,
       payload: {
@@ -94,6 +98,7 @@ export function createGithubEventDispatch({
   async function plan(
     tx: EventTransaction,
     receipt: Receipt,
+    store: AuditStore,
   ): Promise<NonNullable<Receipt["disposition"]>> {
     if (!receipt.installationId || !receipt.repositoryId) return "review";
     const [repo] = await tx
@@ -153,7 +158,7 @@ export function createGithubEventDispatch({
         .insert(outcomes)
         .values({ receiptId: receipt.id, triggerId: trigger.id, outcome });
       if (outcome !== "pending")
-        await audit(tx, {
+        await audit(store, {
           receipt,
           triggerId: trigger.id,
           personId,
@@ -164,13 +169,17 @@ export function createGithubEventDispatch({
     return !receipt.occurredAt ? "review" : owns ? "planned" : "observed";
   }
 
-  async function planReceipt(tx: EventTransaction, receipt: Receipt) {
-    const disposition = await plan(tx, receipt);
+  async function planReceipt(
+    tx: EventTransaction,
+    receipt: Receipt,
+    store: AuditStore,
+  ) {
+    const disposition = await plan(tx, receipt, store);
     await tx
       .update(receipts)
       .set({ disposition, fanoutAt: new Date() })
       .where(eq(receipts.id, receipt.id));
-    await audit(tx, { receipt, outcome: disposition });
+    await audit(store, { receipt, outcome: disposition });
   }
 
   async function deliver(receipt: Receipt, outcome: Outcome) {
@@ -190,7 +199,8 @@ export function createGithubEventDispatch({
         receipt.occurredAt,
         receipt.receivedAt,
       ));
-    await database.transaction(async (tx) => {
+    await withAuditTransaction(database, async (tx, deferTap) => {
+      const store = createAuditStore(tx, deferTap);
       const [current] = await tx
         .select()
         .from(outcomes)
@@ -279,7 +289,7 @@ export function createGithubEventDispatch({
         })
         .where(key(outcome));
       if (result !== "retry" || current.outcome !== "retry")
-        await audit(tx, {
+        await audit(store, {
           receipt,
           triggerId: outcome.triggerId,
           personId: binding?.personId,
@@ -292,15 +302,20 @@ export function createGithubEventDispatch({
   }
 
   return {
-    async planAccepted(tx: EventTransaction, receiptId: string) {
+    async planAccepted(
+      tx: EventTransaction,
+      receiptId: string,
+      store: AuditStore,
+    ) {
       const [receipt] = await tx
         .select()
         .from(receipts)
         .where(and(inScope, eq(receipts.id, receiptId)));
-      if (receipt) await planReceipt(tx, receipt);
+      if (receipt) await planReceipt(tx, receipt, store);
     },
     async sweep() {
-      await database.transaction(async (tx) => {
+      await withAuditTransaction(database, async (tx, deferTap) => {
+        const store = createAuditStore(tx, deferTap);
         const batch = await tx
           .select()
           .from(receipts)
@@ -308,7 +323,7 @@ export function createGithubEventDispatch({
           .orderBy(asc(receipts.receivedAt))
           .limit(20)
           .for("update", { skipLocked: true });
-        for (const receipt of batch) await planReceipt(tx, receipt);
+        for (const receipt of batch) await planReceipt(tx, receipt, store);
       });
       const pending = await database
         .select({ receipt: receipts, outcome: outcomes })

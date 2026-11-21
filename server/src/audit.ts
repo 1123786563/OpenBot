@@ -165,6 +165,11 @@ export const auditEventTypes = [
   "corsair.migration_route_changed",
   "corsair.migration_write_reconciled",
   "corsair.migration_policy_copied",
+  "corsair.migration_legacy_operation_verified",
+  "corsair.legacy_cleanup",
+  "corsair.legacy_callback_blocked",
+  "corsair.legacy_authorization_started",
+  "corsair.github.event_delivery",
   "corsair.github.connected",
   "corsair.slack.connected",
   "corsair.slack.event_delivery",
@@ -913,7 +918,8 @@ export type AuditEventInput = {
   targetId?: string;
   actorUserId?: string;
   /** Omitted means a person did it. */
-  initiator?: AuditInitiator;
+  initiator?: AuditInitiator | { kind: "system" };
+  createdAt?: SQL;
   payload: Record<string, unknown>;
 };
 
@@ -1068,10 +1074,14 @@ export function auditSink(store: AuditStore): AuditSink {
   return { record: (event) => recordAuditEvent(store, event) };
 }
 
-function initiatorColumns(initiator: AuditInitiator | undefined) {
+function initiatorColumns(initiator: AuditEventInput["initiator"]) {
   if (!initiator)
     return { initiatorKind: "person" as const, initiatorId: null };
-  if (initiator.kind === "person" || initiator.kind === "deployment") {
+  if (
+    initiator.kind === "person" ||
+    initiator.kind === "deployment" ||
+    initiator.kind === "system"
+  ) {
     return { initiatorKind: initiator.kind, initiatorId: null };
   }
   return { initiatorKind: initiator.kind, initiatorId: initiator.id };
@@ -1125,10 +1135,12 @@ export type TransactionAuditStore = (
 export async function withAuditTransaction<T>(
   database: Database,
   write: (transaction: AuditTransaction, deferTap: DeferAuditTap) => Promise<T>,
+  config?: Parameters<Database["transaction"]>[1],
 ): Promise<T> {
   const pendingTaps: Array<() => void> = [];
-  const result = await database.transaction((transaction) =>
-    write(transaction, (publish) => pendingTaps.push(publish)),
+  const result = await database.transaction(
+    (transaction) => write(transaction, (publish) => pendingTaps.push(publish)),
+    config,
   );
   for (const publish of pendingTaps) publish();
   return result;

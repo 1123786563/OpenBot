@@ -39,8 +39,13 @@ Migrated grants are constrained to the reviewed Connections and resources.
 Dispatch checks the original grant and tool, applicable restrictive approval
 rules, and the deployment boundary. A missing policy or unknown initiator
 context blocks the migrated grant. Goal dispatch via a copied Slack Personal grant is blocked until its legacy
-initiator context can be evaluated. The Slack Shared route retains its Goal
-initiator and checks the copied audience and outside-input rule on each call. Pending and conversation
+initiator context can be evaluated. A GitHub event Goal can use a reviewed
+Slack Shared mapping through the Bot tool. The Approval pins the Goal Run,
+Slack installation, channel and message. Before sending, OpenBot checks the
+original Trigger read authorization, the shared audience and outside-input
+policy, and the target Slack permissions. A temporary GitHub check failure
+leaves the Run waiting. Confirmed source revocation ends the Run and closes
+the Approval. Pending and conversation
 approvals stay on the legacy path. Corsair writes require a fresh one-time
 approval bound to the new action.
 

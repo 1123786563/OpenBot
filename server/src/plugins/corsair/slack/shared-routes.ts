@@ -1,3 +1,9 @@
+import {
+  GITHUB_EVENT_ACCESS_ENDED,
+  GITHUB_EVENT_PREFIX,
+  GithubEventAccessRetry,
+  githubQueuedRunAuthorization,
+} from "../event-run-access";
 import { PluginRefusedError } from "../../plugin-store/model";
 import type { BotWrite } from "../bot-write";
 import { finishExplicitWrite } from "../write-completion";
@@ -122,6 +128,7 @@ export function createSharedSlackPilot({
   canUseBot,
   legacyPolicy,
   enforceCutover,
+  githubEventAccess,
 }: {
   database: Database;
   workspaceId: string;
@@ -130,6 +137,9 @@ export function createSharedSlackPilot({
   canUseBot: BotAccessCheck;
   legacyPolicy?: () => ActionPolicy;
   enforceCutover?: boolean;
+  githubEventAccess?: Parameters<
+    typeof githubQueuedRunAuthorization
+  >[0]["service"];
   approvals: Pick<
     ApprovalStore,
     "open" | "get" | "decide" | "consume" | "saveResult" | "finish"
@@ -485,6 +495,7 @@ export function createSharedSlackPilot({
     actor: Actor,
     bot: string,
     runId: string,
+    binding?: { id: string; threadId: string },
   ): Promise<Origin> {
     const [row] = await database
       .select({
@@ -507,6 +518,15 @@ export function createSharedSlackPilot({
           eq(responsibilities.ownerUserId, actor.id),
           eq(responsibilities.agentId, bot),
           eq(responsibilityEvents.ownerUserId, actor.id),
+          ...(binding
+            ? [
+                eq(responsibilities.id, binding.id),
+                eq(responsibilities.threadId, binding.threadId),
+                eq(responsibilities.status, "active"),
+                eq(responsibilityEvents.source, "github"),
+                sql`starts_with(${responsibilityEvents.externalId}, ${GITHUB_EVENT_PREFIX})`,
+              ]
+            : []),
         ),
       );
     const result = origin.safeParse(row && { kind: "goal", runId, ...row });
@@ -735,6 +755,7 @@ export function createSharedSlackPilot({
     approvalId: string,
     consume: () => Promise<boolean>,
     bot?: Parameters<BotWrite["send"]>[1],
+    approvalDigest?: string,
   ) {
     const pinned = target.parse(action.target);
     const writeAttemptId = randomUUID();
@@ -759,6 +780,8 @@ export function createSharedSlackPilot({
           botId: input.botId,
           tool: tool.ref,
           target: pinned,
+          receiptId: origin?.outcome.receiptId,
+          triggerId: origin?.outcome.triggerId,
           ...details,
         },
         pinned.origin,
@@ -778,6 +801,87 @@ export function createSharedSlackPilot({
           409,
         );
     }
+    const goal = bot && pinned.origin.kind === "goal" ? pinned.origin : null;
+    const waiting = goal
+      ? and(
+          eq(responsibilityRuns.id, goal.runId),
+          eq(responsibilityRuns.status, "waiting"),
+          sql`${responsibilityRuns.waiting}->>'approvalId' = ${approvalId}`,
+        )
+      : undefined;
+    let origin: Awaited<
+      ReturnType<typeof githubQueuedRunAuthorization>
+    >["origin"];
+    async function checkSource() {
+      if (!goal || !waiting) return;
+      const [run] = await database
+        .select({
+          status: responsibilityRuns.status,
+          waiting: responsibilityRuns.waiting,
+        })
+        .from(responsibilityRuns)
+        .where(eq(responsibilityRuns.id, goal.runId));
+      if (run?.status === "running") throw new GithubEventAccessRetry();
+      if (run?.status !== "waiting" || run.waiting?.approvalId !== approvalId)
+        throw new SharedSlackRefusal(
+          "The Goal is no longer waiting for this Approval.",
+          409,
+        );
+      const source = await githubQueuedRunAuthorization({
+        database,
+        service: githubEventAccess,
+        runId: goal.runId,
+        personId: actor.id,
+      });
+      origin = source.origin;
+      if (source.kind === "denied") {
+        throw new RevocationRefusal(GITHUB_EVENT_ACCESS_ENDED, 403);
+      }
+      return source;
+    }
+
+    let source: Awaited<ReturnType<typeof checkSource>>;
+    async function authorizeDispatch(
+      tx: Parameters<NonNullable<typeof bot>>[0],
+    ) {
+      if (!source || !waiting) return;
+      if (!(await source.check(tx, source.origin.outcome.triggerId, actor.id)))
+        throw new RevocationRefusal(GITHUB_EVENT_ACCESS_ENDED, 403);
+      const [run] = await tx
+        .select({ id: responsibilityRuns.id })
+        .from(responsibilityRuns)
+        .innerJoin(
+          responsibilities,
+          eq(responsibilities.id, responsibilityRuns.responsibilityId),
+        )
+        .where(and(waiting, eq(responsibilities.status, "active")))
+        .for("share");
+      if (!run)
+        throw new RevocationRefusal(
+          "The Goal is no longer waiting for this Approval.",
+          409,
+        );
+    }
+
+    async function failIfSourceEnded(error: unknown) {
+      if (
+        !waiting ||
+        !(error instanceof RevocationRefusal) ||
+        error.message !== GITHUB_EVENT_ACCESS_ENDED
+      )
+        return;
+      await database
+        .update(responsibilityRuns)
+        .set({
+          status: "failed",
+          error: error.message,
+          waiting: null,
+          continuation: null,
+          finishedAt: new Date(),
+        })
+        .where(waiting);
+    }
+
     try {
       await checkBinding();
       try {
@@ -800,13 +904,28 @@ export function createSharedSlackPilot({
         );
       }
       await checkBinding();
-      if (!(await consume()))
+      source = await checkSource();
+      const claimed = goal
+        ? approvalDigest &&
+          (await approvals.consume(
+            actor.id,
+            approvalId,
+            approvalDigest,
+            authorizeDispatch,
+          ))
+        : await consume();
+      if (!claimed)
         throw new SharedSlackRefusal(
           "This Approval is no longer available.",
           409,
         );
     } catch (error) {
-      await log("corsair.slack.write_refused", { reason: reason(error) });
+      if (error instanceof GithubEventAccessRetry) throw error;
+      await log("corsair.slack.write_refused", {
+        reason:
+          error instanceof RevocationRefusal ? error.message : reason(error),
+      });
+      await failIfSourceEnded(error);
       throw error;
     }
     await log("corsair.slack.write_started", { writeKey });
@@ -822,7 +941,12 @@ export function createSharedSlackPilot({
             approvalId,
             writeKey,
             writeAttemptId,
-            validate: bot,
+            validate:
+              bot &&
+              (async (tx, excluded) => {
+                await bot(tx, excluded);
+                await authorizeDispatch(tx);
+              }),
             grant: `shared-grant:${input.botId}:${pinned.installationId}`,
           }
         : undefined,
@@ -838,6 +962,7 @@ export function createSharedSlackPilot({
         reason: error.message,
         dispatchRefused: true,
       });
+      await failIfSourceEnded(error);
       if (!bot)
         await finishExplicitWrite(approvals, actor.id, approvalId, {
           content: error.message,
@@ -877,9 +1002,20 @@ export function createSharedSlackPilot({
       actor: Actor,
       raw: unknown,
       connectionId: string,
+      goal?: { id: string; runId: string; threadId: string },
     ): Promise<BotWrite> {
       const input = invocation.parse(raw);
-      const pinned = await permitted(actor, input, { kind: "person" }).catch(
+      const source = goal
+        ? await goalOrigin(actor, input.botId, goal.runId, goal).catch(
+            refuseBotWrite,
+          )
+        : ({ kind: "person" } as const);
+      if (goal && !githubEventAccess)
+        throw new PluginRefusedError(
+          "GitHub event authorization is unavailable.",
+          null,
+        );
+      const pinned = await permitted(actor, input, source).catch(
         refuseBotWrite,
       );
       if (pinned.installationId !== connectionId)
@@ -890,8 +1026,16 @@ export function createSharedSlackPilot({
       const action = actionFor(actor, input, pinned, randomUUID());
       return {
         action,
-        send: (approvalId, validate) =>
-          execute(actor, input, action, approvalId, async () => true, validate),
+        send: (approvalId, validate, approvalDigest) =>
+          execute(
+            actor,
+            input,
+            action,
+            approvalId,
+            async () => true,
+            validate,
+            approvalDigest,
+          ),
       };
     },
   });

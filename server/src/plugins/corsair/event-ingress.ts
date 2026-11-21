@@ -1,3 +1,8 @@
+import {
+  type AuditStore,
+  createAuditStore,
+  withAuditTransaction,
+} from "../../audit";
 import { createHash } from "node:crypto";
 import { and, eq, or } from "drizzle-orm";
 import { Hono } from "hono";
@@ -36,7 +41,11 @@ export function createGithubEventIngress({
   secret: string;
   isolatedSources?: ReadonlySet<string>;
   operations?: CorsairEventOperations;
-  planAccepted?: (tx: EventTransaction, receiptId: string) => Promise<void>;
+  planAccepted?: (
+    tx: EventTransaction,
+    receiptId: string,
+    audit: AuditStore,
+  ) => Promise<void>;
 }) {
   const routes = new Hono();
   routes.use(
@@ -79,59 +88,66 @@ export function createGithubEventIngress({
       parsed.data,
     );
     const bodyHash = createHash("sha256").update(raw).digest("hex");
-    const [inserted] = await database.transaction(async (tx) => {
-      const isolated = !!(
-        installation &&
-        repository &&
-        isolatedSources?.has(`${installation.id}/${repository.id}`)
-      );
-      const owner =
-        operations && installation && repository
-          ? await operations.nativeOwner(
-              tx,
-              { provider: "github", source: String(repository.id) },
-              occurredAt,
-              bodyHash,
-              String(installation.id),
-            )
-          : "legacy";
-      const inserted = await tx
-        .insert(receiptTable)
-        .values({
-          workspaceId,
-          registration,
-          deliveryId,
-          bodyHash,
-          eventType,
-          installationId: installation ? String(installation.id) : null,
-          repositoryId: repository ? String(repository.id) : null,
-          pilotDispatch: isolated || owner === "corsair",
-          occurredAt,
-          payload:
-            occurredAt && issue.success && repository
-              ? {
-                  repository,
-                  issue: { id: issue.data.id, number: issue.data.number },
-                  ...(comment.success
-                    ? { comment: { id: comment.data.id } }
-                    : {}),
-                }
-              : {},
-        })
-        .onConflictDoNothing()
-        .returning({ id: receiptTable.id });
-      if (inserted[0]) {
-        await operations?.captureEvidence(
-          tx,
-          "github",
-          deliveryId,
-          inserted[0].id,
-          raw,
+    const [inserted] = await withAuditTransaction(
+      database,
+      async (tx, deferTap) => {
+        const isolated = !!(
+          installation &&
+          repository &&
+          isolatedSources?.has(`${installation.id}/${repository.id}`)
         );
-        await planAccepted?.(tx, inserted[0].id);
-      }
-      return inserted;
-    });
+        const owner =
+          operations && installation && repository
+            ? await operations.nativeOwner(
+                tx,
+                { provider: "github", source: String(repository.id) },
+                occurredAt,
+                bodyHash,
+                String(installation.id),
+              )
+            : "legacy";
+        const inserted = await tx
+          .insert(receiptTable)
+          .values({
+            workspaceId,
+            registration,
+            deliveryId,
+            bodyHash,
+            eventType,
+            installationId: installation ? String(installation.id) : null,
+            repositoryId: repository ? String(repository.id) : null,
+            pilotDispatch: isolated || owner === "corsair",
+            occurredAt,
+            payload:
+              occurredAt && issue.success && repository
+                ? {
+                    repository,
+                    issue: { id: issue.data.id, number: issue.data.number },
+                    ...(comment.success
+                      ? { comment: { id: comment.data.id } }
+                      : {}),
+                  }
+                : {},
+          })
+          .onConflictDoNothing()
+          .returning({ id: receiptTable.id });
+        if (inserted[0]) {
+          await operations?.captureEvidence(
+            tx,
+            "github",
+            deliveryId,
+            inserted[0].id,
+            raw,
+          );
+          await planAccepted?.(
+            tx,
+            inserted[0].id,
+            createAuditStore(tx, deferTap),
+          );
+        }
+        return inserted;
+      },
+    );
     if (inserted)
       return c.json({ receiptId: inserted.id, duplicate: false }, 202);
     const existing = await database

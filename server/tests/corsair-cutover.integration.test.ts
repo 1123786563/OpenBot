@@ -21,6 +21,7 @@ import {
   corsairWriteKey,
   createCorsairCutover,
   cutoverRefusal,
+  cutoverObservationMs,
   dispatchCorsairWrite,
   withLegacyCorsairRoute,
 } from "../src/plugins/corsair/cutover";
@@ -135,10 +136,22 @@ test("rollback requires current evidence and is permanently blocked once cleanup
       async () => true,
     ),
   ).toEqual({ kind: "legacy" });
-  await cutover.activate("admin", async () => []);
+  const originalNow = Date.now;
+  try {
+    Date.now = () => originalNow() - cutoverObservationMs - 1000;
+    await cutover.activate("admin", async () => []);
+  } finally {
+    Date.now = originalNow;
+  }
+  const evidence = { evidenceRef: "provider-review/3" };
   expect(
-    await cutover.beginCleanup("admin", "provider-review/3"),
-  ).toMatchObject({ kind: "cleanup" });
+    await cutover.beginCleanup("admin", evidence, async () => false),
+  ).toBeNull();
+  expect(
+    await cutover.beginCleanup("admin", evidence, async () => true),
+  ).toMatchObject({
+    kind: "cleanup",
+  });
   await expect(disconnect()).rejects.toThrow(
     "Use the legacy cleanup inventory",
   );

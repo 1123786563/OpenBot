@@ -4,7 +4,8 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { type AppVariables, requireAdmin } from "../../auth/guards";
 import type { Database } from "../../db/client";
-import { auditEvents, githubPilotRepositories } from "../../db/schema";
+import { createAuditStore, withAuditTransaction } from "../../audit";
+import { githubPilotRepositories } from "../../db/schema";
 import { VERSION_ARG } from "../composio";
 import { issueArgs, messageArgs, supportedBrokerAction } from "./broker-action";
 
@@ -516,7 +517,15 @@ export function createCorsairReadinessRoutes(options: Options) {
     }),
     z.strictObject({
       kind: z.literal("begin_cleanup"),
-      evidenceRef: reference,
+      inventoryRevision: verification.shape.inventoryRevision,
+      evidence: z.strictObject({
+        workspaceId: reference,
+        app: apps,
+        observationUntil: z.iso.datetime(),
+        observedAt: z.iso.datetime(),
+        incidentsResolved: z.literal(true),
+        evidenceRef: reference,
+      }),
     }),
   ]);
   routes.get("/:app/cutover", async (c) => {
@@ -571,6 +580,7 @@ export function createCorsairReadinessRoutes(options: Options) {
               key.startsWith("trigger:"),
             );
             for (const trigger of triggers) {
+              if (trigger.status === "disabled") continue;
               if (trigger.status !== "ready") return null;
               const [handoff] = await tx.execute<{ found: boolean }>(sql`
               select exists (
@@ -654,7 +664,34 @@ export function createCorsairReadinessRoutes(options: Options) {
                 );
               },
             )
-          : await cutover.beginCleanup(actorId, change.evidenceRef);
+          : await cutover.beginCleanup(
+              actorId,
+              {
+                evidence: change.evidence,
+                inventoryRevision: change.inventoryRevision,
+              },
+              async (tx, current) => {
+                const { evidence } = change;
+                const observedAt = Date.parse(evidence.observedAt);
+                if (
+                  !options.includeDeploymentLegacy ||
+                  evidence.workspaceId !== options.workspaceId ||
+                  evidence.app !== app ||
+                  evidence.observationUntil !== current.until ||
+                  observedAt < Date.parse(current.until) ||
+                  observedAt > Date.now()
+                )
+                  return false;
+                const report = await readCorsairReadiness(
+                  { ...options, database: tx },
+                  app,
+                );
+                return (
+                  report.ready &&
+                  report.inventoryRevision === change.inventoryRevision
+                );
+              },
+            );
     return state
       ? c.json(state)
       : c.json(
@@ -702,26 +739,29 @@ export function createCorsairReadinessRoutes(options: Options) {
       workspaceId: options.workspaceId,
       app,
     });
-    const reviewed = await cutover.review(actorId, async (tx) => {
-      const [write] = await readUnknownWrites(
-        tx,
-        { workspaceId: options.workspaceId, app },
-        { approvalId: approval.data },
-      );
-      if (!write?.canReconcile) return false;
-      await tx.insert(auditEvents).values({
-        eventType: writeReconciledEvent,
-        targetType: "corsair_migration_scope",
-        targetId: JSON.stringify([options.workspaceId, app]),
-        actorUserId: actorId,
-        payload: {
-          approvalId: write.approvalId,
-          writeAttemptId: write.attemptId,
-          ...review.data,
-        },
-      });
-      return true;
-    });
+    const reviewed = await cutover.review(
+      actorId,
+      async (tx, _state, audit) => {
+        const [write] = await readUnknownWrites(
+          tx,
+          { workspaceId: options.workspaceId, app },
+          { approvalId: approval.data },
+        );
+        if (!write?.canReconcile) return false;
+        await audit.insert({
+          eventType: writeReconciledEvent,
+          targetType: "corsair_migration_scope",
+          targetId: JSON.stringify([options.workspaceId, app]),
+          actorUserId: actorId,
+          payload: {
+            approvalId: write.approvalId,
+            writeAttemptId: write.attemptId,
+            ...review.data,
+          },
+        });
+        return true;
+      },
+    );
     return reviewed
       ? c.body(null, 204)
       : c.json({ error: "Write is unavailable for reconciliation." }, 409);
@@ -755,14 +795,16 @@ export function createCorsairReadinessRoutes(options: Options) {
       workspaceId: options.workspaceId,
       app,
     });
-    const verified = await cutover.review(c.var.actor.id, async (tx) => {
-      const [attempt] = await tx.execute<{
-        actor: string;
-        vendorUserId: string;
-        argumentDigest: string;
-        ref: string;
-        vendorAction: string | null;
-      }>(sql`
+    const verified = await cutover.review(
+      c.var.actor.id,
+      async (tx, _state, audit) => {
+        const [attempt] = await tx.execute<{
+          actor: string;
+          vendorUserId: string;
+          argumentDigest: string;
+          ref: string;
+          vendorAction: string | null;
+        }>(sql`
         select s.actor_user_id as actor, s.target_id as ref,
           s.payload->>'vendorUserId' as "vendorUserId",
           s.payload->>'argumentDigest' as "argumentDigest",
@@ -784,28 +826,28 @@ export function createCorsairReadinessRoutes(options: Options) {
               and coalesce(v.payload->>'writeAttemptId', v.payload->>'approvalId') = ${attemptId.data}
           )
       `);
-      const { providerSubject, resourceId, brokerArgs, evidenceRef } =
-        operation.data;
-      if (
-        !attempt?.actor ||
-        !supportedBrokerAction(
-          app,
-          attempt.vendorAction ?? attempt.ref.split("/").slice(1).join("/"),
-        ) ||
-        corsairWriteKey(
-          attempt.actor,
-          attempt.vendorUserId,
-          attempt.ref,
-          brokerArgs,
-        ) !== attempt.argumentDigest
-      )
-        return false;
-      const { [VERSION_ARG]: _version, ...sourceArgs } = brokerArgs;
-      let args: { title: string; body?: string } | { text: string };
-      if (app === "github") {
-        const issue = issueArgs.safeParse(sourceArgs);
-        if (!issue.success) return false;
-        const [repo] = await tx.execute<{ valid: boolean }>(sql`
+        const { providerSubject, resourceId, brokerArgs, evidenceRef } =
+          operation.data;
+        if (
+          !attempt?.actor ||
+          !supportedBrokerAction(
+            app,
+            attempt.vendorAction ?? attempt.ref.split("/").slice(1).join("/"),
+          ) ||
+          corsairWriteKey(
+            attempt.actor,
+            attempt.vendorUserId,
+            attempt.ref,
+            brokerArgs,
+          ) !== attempt.argumentDigest
+        )
+          return false;
+        const { [VERSION_ARG]: _version, ...sourceArgs } = brokerArgs;
+        let args: { title: string; body?: string } | { text: string };
+        if (app === "github") {
+          const issue = issueArgs.safeParse(sourceArgs);
+          if (!issue.success) return false;
+          const [repo] = await tx.execute<{ valid: boolean }>(sql`
           select exists (
             select 1 from ${githubPilotRepositories}
             where workspace_id = ${options.workspaceId} and registration = ${options.registrations.github ?? null}
@@ -813,33 +855,34 @@ export function createCorsairReadinessRoutes(options: Options) {
               and lower(name) = lower(${`${issue.data.owner}/${issue.data.repo}`})
           ) as valid
         `);
-        if (!repo?.valid) return false;
-        const { title, body } = issue.data;
-        args = { title, ...(body === undefined ? {} : { body }) };
-      } else {
-        const message = messageArgs.safeParse(sourceArgs);
-        if (!message.success || message.data.channel !== resourceId)
-          return false;
-        args = { text: message.data.text };
-      }
-      await tx.insert(auditEvents).values({
-        eventType: legacyOperationVerifiedEvent,
-        targetType: "corsair_migration_scope",
-        targetId: scopeKey,
-        actorUserId: c.var.actor.id,
-        payload: {
-          writeAttemptId: attemptId.data,
-          evidenceRef,
-          writeKey: corsairWriteKey(
-            attempt.actor,
-            providerSubject,
-            resourceId,
-            args,
-          ),
-        },
-      });
-      return true;
-    });
+          if (!repo?.valid) return false;
+          const { title, body } = issue.data;
+          args = { title, ...(body === undefined ? {} : { body }) };
+        } else {
+          const message = messageArgs.safeParse(sourceArgs);
+          if (!message.success || message.data.channel !== resourceId)
+            return false;
+          args = { text: message.data.text };
+        }
+        await audit.insert({
+          eventType: legacyOperationVerifiedEvent,
+          targetType: "corsair_migration_scope",
+          targetId: scopeKey,
+          actorUserId: c.var.actor.id,
+          payload: {
+            writeAttemptId: attemptId.data,
+            evidenceRef,
+            writeKey: corsairWriteKey(
+              attempt.actor,
+              providerSubject,
+              resourceId,
+              args,
+            ),
+          },
+        });
+        return true;
+      },
+    );
     return verified
       ? c.body(null, 204)
       : c.json(
@@ -870,7 +913,7 @@ export function createCorsairReadinessRoutes(options: Options) {
       workspaceId: options.workspaceId,
       app: app.data,
     });
-    const result = await cutover.review(actorId, async (tx) => {
+    const result = await cutover.review(actorId, async (tx, _state, audit) => {
       const report = await readCorsairReadiness(
         { ...options, database: tx },
         app.data,
@@ -880,7 +923,7 @@ export function createCorsairReadinessRoutes(options: Options) {
         !report.capabilities.some(({ key }) => key === body.data.capability)
       )
         return false;
-      await tx.insert(auditEvents).values({
+      await audit.insert({
         eventType: decisionEvent,
         targetType: "corsair_migration_scope",
         targetId: JSON.stringify([options.workspaceId, app.data]),
@@ -907,8 +950,9 @@ export function createCorsairReadinessRoutes(options: Options) {
       return c.json({ error: "Verified policy mapping is required." }, 400);
     const review = body.data;
     const selectedApp = app.data;
-    return options.database.transaction(
-      async (tx) => {
+    return withAuditTransaction(
+      options.database,
+      async (tx, deferTap) => {
         const report = await readCorsairReadiness(
           { ...options, database: tx },
           selectedApp,
@@ -989,14 +1033,18 @@ export function createCorsairReadinessRoutes(options: Options) {
           : app.data === "github"
             ? githubPilotTool.ref
             : slackPilotTool.ref;
-        const copied = await copyVerifiedPolicy(tx, {
-          app: app.data,
-          workspaceId: options.workspaceId,
-          registration,
-          adminId: c.var.actor.id,
-          targetTool,
-          review,
-        });
+        const copied = await copyVerifiedPolicy(
+          tx,
+          createAuditStore(tx, deferTap),
+          {
+            app: app.data,
+            workspaceId: options.workspaceId,
+            registration,
+            adminId: c.var.actor.id,
+            targetTool,
+            review,
+          },
+        );
         if (!copied)
           return c.json(
             {

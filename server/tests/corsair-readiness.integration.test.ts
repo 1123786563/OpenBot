@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { createApprovalStore } from "../src/approvals/store";
-import { createAuditStore } from "../src/audit";
+import {
+  addAuditTap,
+  createAuditStore,
+  type AuditTapEvent,
+} from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
 import { createDatabase } from "../src/db/client";
 import {
@@ -21,16 +25,22 @@ import {
   pluginGrants,
   sharedUseApprovals,
   sharedUseApprovalMembers,
+  responsibilities,
+  responsibilityTriggers,
   slackSharedInstallations,
   users,
   workItems,
 } from "../src/db/schema";
-import { createCorsairCutover } from "../src/plugins/corsair/cutover";
+import {
+  createCorsairCutover,
+  cutoverObservationMs,
+} from "../src/plugins/corsair/cutover";
 import { corsairGrantRef } from "../src/plugins/corsair/grants";
 import { createCorsairReadinessRoutes } from "../src/plugins/corsair/readiness";
 import { createRevocation } from "../src/plugins/corsair/revocation";
 import { createGithubPilotProvider } from "../src/plugins/corsair/github";
 import { createGithubPilotRoutes } from "../src/plugins/corsair/routes";
+import { createResponsibilityStore } from "../src/responsibilities/store";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
@@ -211,6 +221,26 @@ test("reviews are scoped and stale evidence cannot enable a policy copy", async 
           .status,
       ).toBe(409);
     }
+    expect(
+      (await rollback({ kind: "begin_cleanup", evidenceRef: "unchecked/ref" }))
+        .status,
+    ).toBeGreaterThanOrEqual(400);
+    expect(
+      (
+        await rollback({
+          kind: "begin_cleanup",
+          inventoryRevision: rollbackReport.inventoryRevision,
+          evidence: {
+            workspaceId: workspace,
+            app: "github",
+            observationUntil: observing.until,
+            observedAt: observing.until,
+            incidentsResolved: true,
+            evidenceRef: "provider-review/observation",
+          },
+        })
+      ).status,
+    ).toBe(409);
     expect((await rollback({ ...request, evidence })).status).toBe(200);
     const checks = {
       identity: "evidence/identity",
@@ -294,6 +324,40 @@ test("reviews are scoped and stale evidence cannot enable a policy copy", async 
         ),
       );
     expect(grant).toHaveLength(1);
+
+    const originalNow = Date.now;
+    const expired = await (async () => {
+      Date.now = () => originalNow() - cutoverObservationMs - 1000;
+      try {
+        return await cutover.activate("migration-admin", async () => []);
+      } finally {
+        Date.now = originalNow;
+      }
+    })();
+    if (expired?.kind !== "observing")
+      throw new Error("Expected observing route");
+    const cleanupReport = await (await a.request("/github")).json();
+    const cleanupEvidence = {
+      workspaceId: workspace,
+      app: "github",
+      observationUntil: expired.until,
+      observedAt: new Date().toISOString(),
+      incidentsResolved: true,
+      evidenceRef: "provider-review/observation",
+    };
+    const beginCleanup = (evidence: typeof cleanupEvidence) =>
+      rollback({
+        kind: "begin_cleanup",
+        inventoryRevision: cleanupReport.inventoryRevision,
+        evidence,
+      });
+    expect(
+      (await beginCleanup({ ...cleanupEvidence, workspaceId: randomUUID() }))
+        .status,
+    ).toBe(409);
+    const cleaned = await beginCleanup(cleanupEvidence);
+    expect(cleaned.status).toBe(200);
+    expect(await cleaned.json()).toEqual({ kind: "cleanup", excluded: [] });
 
     let remoteRequests = 0;
     const provider = createGithubPilotProvider(
@@ -614,7 +678,15 @@ test("activation rereads current readiness and switches only the reviewed app", 
   const workspaceId = randomUUID();
   const botId = randomUUID();
   const installationId = randomUUID();
-  const app = routes(workspaceId);
+  const owner = randomUUID();
+  const goalId = randomUUID();
+  const triggerId = randomUUID();
+  const app = routes(workspaceId, "admin", true);
+  const tapped: AuditTapEvent[] = [];
+  const detachTap = addAuditTap((event) => {
+    if (event.targetId === JSON.stringify([workspaceId, "slack"]))
+      tapped.push(event);
+  });
   const post = (path: string, body: unknown) =>
     app.request(path, {
       method: "POST",
@@ -626,6 +698,33 @@ test("activation rereads current readiness and switches only the reviewed app", 
     name: botId,
     type: "built_in",
     configuration: {},
+  });
+  await database
+    .insert(users)
+    .values({ id: owner, email: `${owner}@example.test` });
+  await database.insert(responsibilities).values({
+    id: goalId,
+    ownerUserId: owner,
+    agentId: botId,
+    channelId: "fixture-channel",
+    threadId: "fixture-thread",
+    title: "Observe Slack",
+    instruction: "Observe Slack messages",
+    successCriteria: "Observe one message",
+  });
+  await database.insert(responsibilityTriggers).values({
+    id: triggerId,
+    ownerUserId: owner,
+    responsibilityId: goalId,
+    kind: "slack",
+    config: {
+      kind: "slack",
+      teamId: "TFIXTURE",
+      channels: ["CFIXTURE"],
+      mode: "phrase",
+      phrases: ["fixture"],
+      reactions: [],
+    },
   });
   try {
     await database.insert(slackSharedInstallations).values({
@@ -665,17 +764,57 @@ test("activation rereads current readiness and switches only the reviewed app", 
         })
       ).status,
     ).toBe(204);
+    expect((await activate(inventoryRevision)).status).toBe(409);
+    const exclusion = {
+      capability: `trigger:${triggerId}`,
+      decision: {
+        kind: "disabled",
+        inventoryRevision,
+        reason: "Exclude fixture Trigger",
+      },
+    };
+    expect(
+      (
+        await routes(workspaceId, "user", true).request("/slack/decisions", {
+          method: "POST",
+          body: JSON.stringify(exclusion),
+        })
+      ).status,
+    ).toBe(403);
+    expect((await post("/slack/decisions", exclusion)).status).toBe(204);
     expect((await activate("0".repeat(64))).status).toBe(409);
     const activated = await activate(inventoryRevision);
     expect(activated.status).toBe(200);
     expect(await activated.json()).toMatchObject({
       kind: "observing",
-      excluded: [],
+      excluded: [`trigger:${triggerId}`],
     });
+    expect(tapped.map((row) => row.eventType)).toEqual([
+      "corsair.migration_readiness_decided",
+      "corsair.migration_readiness_decided",
+      "corsair.migration_route_changed",
+    ]);
+    const store = createResponsibilityStore(database, {
+      deploymentId: workspaceId,
+      resolveTarget: async () => ({ threadId: "fixture-thread" }),
+    });
+    const result = await store.ingestEvent({
+      ownerUserId: owner,
+      responsibilityId: goalId,
+      triggerId,
+      source: "slack",
+      externalId: randomUUID(),
+      type: "slack.message",
+      payload: {},
+    });
+    expect(result.runIds).toEqual([]);
+    expect(await store.listRuns(owner, goalId)).toEqual([]);
     expect(await (await app.request("/github/cutover")).json()).toEqual({
       kind: "legacy",
     });
   } finally {
+    detachTap();
+    await database.delete(users).where(eq(users.id, owner));
     await database
       .delete(corsairAccounts)
       .where(eq(corsairAccounts.id, installationId));

@@ -1,3 +1,4 @@
+import { createCorsairCutover, corsairApp } from "../plugins/corsair/cutover";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Database } from "../db/client";
@@ -44,6 +45,7 @@ export function createResponsibilityStore(
   database: Database,
   options: {
     resolveTarget: ResponsibilityTargetResolver;
+    deploymentId?: string;
     slackEventAccess?: Pick<
       ReturnType<typeof createSlackEventPilot>,
       "authorizeRun"
@@ -282,7 +284,10 @@ export function createResponsibilityStore(
           // The ingress resolved this trigger server-side; re-checked here so a caller of the store
           // cannot name a trigger that is not this owner's registration for this responsibility.
           const [trigger] = await transaction
-            .select({ id: responsibilityTriggers.id })
+            .select({
+              id: responsibilityTriggers.id,
+              kind: responsibilityTriggers.kind,
+            })
             .from(responsibilityTriggers)
             .where(
               and(
@@ -295,6 +300,15 @@ export function createResponsibilityStore(
               ),
             );
           if (!trigger) throw new ResponsibilityNotFoundError();
+          const app = corsairApp.safeParse(trigger.kind);
+          if (options.deploymentId && app.success) {
+            const exclusions = await createCorsairCutover(database, {
+              workspaceId: options.deploymentId,
+              app: app.data,
+            }).triggerExclusions(transaction);
+            if (exclusions.has(`trigger:${trigger.id}`))
+              return { eventId: "", duplicate: false, runIds: [] };
+          }
         }
         const eventId = randomUUID();
         const inserted = await transaction

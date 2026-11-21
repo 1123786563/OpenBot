@@ -88,6 +88,7 @@ export function createServerResponsibilityEngine(deps: {
         const initiator: AuditInitiator = {
           kind: "responsibility",
           id: context.responsibilityId,
+          goalRunId: context.runId,
         };
         const tools = responsibilityTools({
           store: responsibilityStore,

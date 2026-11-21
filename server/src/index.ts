@@ -1441,6 +1441,7 @@ const slackEvents =
     : undefined;
 
 const responsibilityStore = createResponsibilityStore(database, {
+  deploymentId,
   slackEventAccess: slackEvents,
   githubEventAccess: githubEventTriggers,
   resolveTarget: async (ownerUserId, agentId, channelId) => {
@@ -3414,6 +3415,7 @@ const app = createApp(
           sharedSlackPilot: {
             workspaceId: deploymentId,
             provider: sharedSlackProvider,
+            githubEventAccess: githubEventTriggers,
             enforceCutover: true,
             legacyPolicy: () => policyStore.get(),
             database,

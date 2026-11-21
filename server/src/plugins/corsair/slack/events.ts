@@ -9,7 +9,11 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { Database } from "../../../db/client";
-import { auditEvents } from "../../../db/schema/core";
+import {
+  type AuditStore,
+  createAuditStore,
+  withAuditTransaction,
+} from "../../../audit";
 import {
   slackPilotConnections as connections,
   slackSharedInstallations as installations,
@@ -39,6 +43,7 @@ import { fitPayload } from "../../../responsibilities/triggers";
 import type { CorsairEventOperations } from "../event-operations";
 import type { EventTransaction } from "../event-triggers";
 import { dispatchWhileConnected, RevocationRefusal } from "../revocation";
+import { createCorsairCutover } from "../cutover";
 import { SLACK_EVENT_PREFIX, SlackEventAccessRetry } from "./event-run-access";
 import { slackChannel } from "./provider";
 import type { SharedSlackProvider } from "./shared-provider";
@@ -108,6 +113,7 @@ export function createSlackEventPilot({
   retryMs = 30_000,
   operations,
 }: SlackEventPilotOptions) {
+  const cutover = createCorsairCutover(database, { workspaceId, app: "slack" });
   const registration = [
     identity.appId,
     identity.teamId,
@@ -247,7 +253,11 @@ export function createSlackEventPilot({
         return {
           kind: "allowed",
           async check(tx: EventTransaction, personId: string) {
-            if (personId !== trigger.ownerUserId) return false;
+            if (
+              personId !== trigger.ownerUserId ||
+              (await cutover.triggerExclusions(tx)).has(`trigger:${trigger.id}`)
+            )
+              return false;
             const [current] = await candidates(tx, triggerId).for("share", {
               of: triggers,
             });
@@ -273,16 +283,16 @@ export function createSlackEventPilot({
   }
 
   async function audit(
-    tx: EventTransaction,
+    store: AuditStore,
     receipt: Receipt,
     outcome: string,
     triggerId?: string,
     runId?: string,
     reason?: string,
   ) {
-    await tx.insert(auditEvents).values({
+    await store.insert({
       eventType: "corsair.slack.event_delivery",
-      initiatorKind: "system",
+      initiator: { kind: "system" },
       targetType: "slack_event_receipt",
       targetId: receipt.id,
       payload: {
@@ -310,7 +320,8 @@ export function createSlackEventPilot({
         receipt.occurredAt,
         receipt.createdAt,
       ));
-    await database.transaction(async (tx) => {
+    await withAuditTransaction(database, async (tx, deferTap) => {
+      const store = createAuditStore(tx, deferTap);
       const [current] = await tx
         .select()
         .from(dispatches)
@@ -371,14 +382,21 @@ export function createSlackEventPilot({
         .set({ outcome, runId, nextAttemptAt: new Date(Date.now() + retryMs) })
         .where(dispatchKey(dispatch));
       if (outcome !== "retry" || current.outcome !== "retry")
-        await audit(tx, receipt, outcome, dispatch.triggerId, runId, reason);
+        await audit(store, receipt, outcome, dispatch.triggerId, runId, reason);
     });
   }
 
-  async function planReceipt(tx: EventTransaction, receipt: Receipt) {
+  async function planReceipt(
+    tx: EventTransaction,
+    receipt: Receipt,
+    store: AuditStore,
+  ) {
     const event = slackTriggerEventSchema.parse(receipt.payload);
-    const matching = (await candidates(tx)).filter((trigger) =>
-      slackTriggerMatches(trigger, event, { checkAge: !operations }),
+    const excluded = await cutover.triggerExclusions(tx);
+    const matching = (await candidates(tx)).filter(
+      (trigger) =>
+        !excluded.has(`trigger:${trigger.id}`) &&
+        slackTriggerMatches(trigger, event, { checkAge: !operations }),
     );
     const shadow = receipt.pilotDispatch === false;
     const planned = matching.map<typeof dispatches.$inferInsert>((trigger) => ({
@@ -394,7 +412,7 @@ export function createSlackEventPilot({
     for (const result of planned) {
       if (result.outcome === "ineligible")
         await audit(
-          tx,
+          store,
           receipt,
           result.outcome,
           String(result.triggerId),
@@ -411,7 +429,7 @@ export function createSlackEventPilot({
       })
       .where(eq(corsairEvents.id, receipt.id));
     await audit(
-      tx,
+      store,
       receipt,
       receipt.pilotDispatch === false ? "observed" : "planned",
     );
@@ -493,83 +511,87 @@ export function createSlackEventPilot({
     const payload = normalized.data;
     const id = sha256(JSON.stringify([accountId, payload.eventId]));
     const bodyHash = sha256(raw);
-    const result = await database.transaction(async (tx) => {
-      const occurredAt = new Date(payload.eventTime * 1000);
-      const owner = operations
-        ? await operations.nativeOwner(
-            tx,
-            {
-              provider: "slack",
-              source: `${payload.teamId}/${payload.channelId}`,
-            },
-            occurredAt,
-            payload.eventId,
-          )
-        : "corsair";
-      const installation = await enrolled(tx, payload.channelId);
-      await tx
-        .insert(corsairIntegrations)
-        .values({ id: accountId, name: accountId })
-        .onConflictDoNothing();
-      await tx
-        .insert(corsairAccounts)
-        .values({
-          id: accountId,
-          tenantId: workspaceId,
-          integrationId: accountId,
-          kind: "registration",
-          workspaceId,
-          registration,
-        })
-        .onConflictDoNothing();
-      const [inserted] = await tx
-        .insert(corsairEvents)
-        .values({
-          id,
-          accountId,
-          workspaceId,
-          registration,
-          eventType: receiptType,
-          installationId: installation?.id,
-          occurredAt,
-          pilotDispatch: owner === "corsair",
-          bodyHash,
-          payload: installation
-            ? payload
-            : {
-                eventId: payload.eventId,
-                channelId: payload.channelId,
-                teamId: payload.teamId,
+    const result = await withAuditTransaction(
+      database,
+      async (tx, deferTap) => {
+        const store = createAuditStore(tx, deferTap);
+        const occurredAt = new Date(payload.eventTime * 1000);
+        const owner = operations
+          ? await operations.nativeOwner(
+              tx,
+              {
+                provider: "slack",
+                source: `${payload.teamId}/${payload.channelId}`,
               },
-          ...(installation
-            ? {}
-            : {
-                disposition: "unenrolled",
-                status: "completed",
-                fanoutAt: new Date(),
-              }),
-        })
-        .onConflictDoNothing()
-        .returning();
-      if (inserted) {
-        if (installation)
-          await operations?.captureEvidence(
-            tx,
-            "slack",
-            payload.eventId,
+              occurredAt,
+              payload.eventId,
+            )
+          : "corsair";
+        const installation = await enrolled(tx, payload.channelId);
+        await tx
+          .insert(corsairIntegrations)
+          .values({ id: accountId, name: accountId })
+          .onConflictDoNothing();
+        await tx
+          .insert(corsairAccounts)
+          .values({
+            id: accountId,
+            tenantId: workspaceId,
+            integrationId: accountId,
+            kind: "registration",
+            workspaceId,
+            registration,
+          })
+          .onConflictDoNothing();
+        const [inserted] = await tx
+          .insert(corsairEvents)
+          .values({
             id,
-            raw,
-          );
-        if (!installation) await audit(tx, inserted, "unenrolled");
-        else if (operations) await planReceipt(tx, inserted);
-        return "saved";
-      }
-      const [existing] = await tx
-        .select({ bodyHash: corsairEvents.bodyHash })
-        .from(corsairEvents)
-        .where(eq(corsairEvents.id, id));
-      return existing?.bodyHash === bodyHash ? "duplicate" : "conflict";
-    });
+            accountId,
+            workspaceId,
+            registration,
+            eventType: receiptType,
+            installationId: installation?.id,
+            occurredAt,
+            pilotDispatch: owner === "corsair",
+            bodyHash,
+            payload: installation
+              ? payload
+              : {
+                  eventId: payload.eventId,
+                  channelId: payload.channelId,
+                  teamId: payload.teamId,
+                },
+            ...(installation
+              ? {}
+              : {
+                  disposition: "unenrolled",
+                  status: "completed",
+                  fanoutAt: new Date(),
+                }),
+          })
+          .onConflictDoNothing()
+          .returning();
+        if (inserted) {
+          if (installation)
+            await operations?.captureEvidence(
+              tx,
+              "slack",
+              payload.eventId,
+              id,
+              raw,
+            );
+          if (!installation) await audit(store, inserted, "unenrolled");
+          else if (operations) await planReceipt(tx, inserted, store);
+          return "saved";
+        }
+        const [existing] = await tx
+          .select({ bodyHash: corsairEvents.bodyHash })
+          .from(corsairEvents)
+          .where(eq(corsairEvents.id, id));
+        return existing?.bodyHash === bodyHash ? "duplicate" : "conflict";
+      },
+    );
     if (result === "conflict")
       return c.json({ error: "Conflicting Slack event identity." }, 409);
     return c.body(null, 200);
@@ -577,7 +599,8 @@ export function createSlackEventPilot({
   return {
     routes,
     async sweep() {
-      await database.transaction(async (tx) => {
+      await withAuditTransaction(database, async (tx, deferTap) => {
+        const store = createAuditStore(tx, deferTap);
         const receipts = await tx
           .select()
           .from(corsairEvents)
@@ -585,7 +608,7 @@ export function createSlackEventPilot({
           .orderBy(asc(corsairEvents.createdAt))
           .limit(20)
           .for("update", { skipLocked: true });
-        for (const receipt of receipts) await planReceipt(tx, receipt);
+        for (const receipt of receipts) await planReceipt(tx, receipt, store);
       });
       const pending = await database
         .select({ receipt: corsairEvents, dispatch: dispatches })

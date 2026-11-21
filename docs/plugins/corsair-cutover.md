@@ -17,7 +17,9 @@ points.
 1. Review the current [readiness inventory](corsair-readiness.md). Copy the
    reviewed policy and decide every capability at the reported revision. A
    disabled tool or grant cannot dispatch through its excluded Corsair mapping.
-   Disable any legacy Trigger being retired in its own configuration.
+   An audited Trigger exclusion suppresses its event delivery while Corsair is
+   the active route. Pause the Trigger in its own configuration to retire it
+   permanently.
 2. For each remaining legacy Trigger, complete
    [event reconciliation and handoff](corsair-event-handoff.md). Wait for
    each source's cutoff and check a post-cutoff event delivered one Run.
@@ -112,8 +114,13 @@ The server checks the active observation window, inventory revision and local
 connection records. The administrator attests the broker and provider checks.
 Legacy calls still pass their normal per-call authorization and approval checks.
 
-Before withdrawing old authorization in the broker or provider console, record
-`{ "kind": "begin_cleanup", "evidenceRef": "<ref>" }` at the same endpoint.
+After seven days, resolve the observation incidents and reload the readiness
+inventory and cutover state. Before withdrawing legacy authorization, submit
+`kind: "begin_cleanup"` with the current `inventoryRevision` and an `evidence`
+object containing `workspaceId`, `app`, `observationUntil` from the cutover
+state, `observedAt` at or after the deadline, `incidentsResolved: true`, and
+an `evidenceRef` for the completed observation. OpenBot records this
+administrator attestation with the route change and requires current readiness.
 Cleanup permanently closes the rollback path for that workspace and app.
 Recovery thereafter means fixing the Corsair route and reauthorizing any
 affected Connections. Resolve outstanding writes before sending new ones.

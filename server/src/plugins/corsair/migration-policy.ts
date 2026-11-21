@@ -4,7 +4,7 @@ import type { AuditInitiator } from "../../audit";
 import { globMatches } from "../../approvals/policy";
 import { type ActionPolicy, evaluateActionPolicy } from "../../computer/policy";
 import type { Database } from "../../db/client";
-import { auditEvents } from "../../db/schema";
+import type { AuditStore } from "../../audit";
 import { appCallPolicyContext } from "../plugin-store/call-policy";
 import { corsairGrantRef } from "./grants";
 
@@ -180,6 +180,7 @@ export async function migratedPolicyAllows(
 
 export async function copyVerifiedPolicy(
   tx: Transaction,
+  audit: AuditStore,
   input: {
     app: App;
     workspaceId: string;
@@ -257,7 +258,7 @@ export async function copyVerifiedPolicy(
       `);
   }
   if (!inserted.length) return false;
-  await tx.insert(auditEvents).values({
+  await audit.insert({
     eventType: migratedEvent,
     targetType: "corsair_migration_policy",
     targetId: key,

@@ -88,6 +88,11 @@ export async function deliverToTrigger(
     type: delivery.type.slice(0, 128) || "received",
     payload: fitPayload(delivery.payload),
   });
+  if (!result.eventId)
+    return {
+      status: "ignored",
+      reason: "Trigger excluded from Corsair cutover.",
+    };
   if (deps.auditStore && !result.duplicate)
     await recordAuditEvent(deps.auditStore, {
       eventType: "responsibility.triggered",

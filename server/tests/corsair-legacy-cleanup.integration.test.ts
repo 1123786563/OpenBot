@@ -56,7 +56,11 @@ test("cleanup reconciles remote-only grants and requires both proofs before reti
   await database.execute(sql`insert into audit_events (event_type, target_type, target_id, payload, created_at)
     values ('corsair.migration_route_changed', 'corsair_migration_scope', ${JSON.stringify([workspaceId, "github"])},
       '{"kind":"observing","until":"2000-01-01T00:00:00.000Z","excluded":[]}', clock_timestamp())`);
-  await cutover.beginCleanup("cleanup-admin", "cutover-accepted");
+  await cutover.beginCleanup(
+    "cleanup-admin",
+    { evidenceRef: "cutover-accepted" },
+    async () => true,
+  );
   expect((await post(inventory)).status).toBe(200);
   const request = {
     kind: "requested",

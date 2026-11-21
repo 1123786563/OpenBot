@@ -10,15 +10,24 @@ import { readCorsairReadiness } from "./readiness";
 import { RevocationRefusal } from "./revocation";
 
 type Reader = Pick<Database, "execute">;
-type Validate = (db: Reader, excluded: readonly string[]) => Promise<void>;
+type Validate = NonNullable<
+  NonNullable<
+    Parameters<typeof import("./cutover").dispatchCorsairWrite>[1]
+  >["validate"]
+>;
 export type BotWrite = {
   action: ApprovalAction;
-  send(approvalId: string, validate: Validate): Promise<unknown>;
+  send(
+    approvalId: string,
+    validate: Validate,
+    approvalDigest?: string,
+  ): Promise<unknown>;
 };
 type Prepare = (
   actor: AuthenticatedActor,
   args: unknown,
   connectionId: string,
+  goal?: { id: string; runId: string; threadId: string },
 ) => Promise<BotWrite>;
 type Pilots = Partial<Record<"github" | "slack" | "sharedSlack", Prepare>>;
 type Readiness = Omit<
@@ -120,6 +129,7 @@ export function createCorsairBotWrites(
       botId: string;
       actorId: string;
       kind: "personal" | "shared";
+      goal?: { id: string; runId: string; threadId: string };
       provider: "composio" | "arcade";
       vendorUserId: string;
       pinned?: { id: string; vendorUserId: string; accountId: string | null };
@@ -264,23 +274,28 @@ export function createCorsairBotWrites(
         actor,
         resolved.args,
         resolved.connection.id,
+        input.goal,
       );
       return {
         action: prepared.action,
-        send: (approvalId: string) =>
-          prepared.send(approvalId, async (db, excluded) => {
-            const current = await resolve(db, excluded);
-            if (
-              current.connection.id !== resolved.connection.id ||
-              current.connection.revision !== resolved.connection.revision ||
-              current.connection.externalUserId !==
-                resolved.connection.externalUserId ||
-              current.connection.subjectScope !==
-                resolved.connection.subjectScope ||
-              JSON.stringify(current.args) !== JSON.stringify(resolved.args)
-            )
-              throw unsupported();
-          }),
+        send: (approvalId: string, approvalDigest?: string) =>
+          prepared.send(
+            approvalId,
+            async (db, excluded) => {
+              const current = await resolve(db, excluded);
+              if (
+                current.connection.id !== resolved.connection.id ||
+                current.connection.revision !== resolved.connection.revision ||
+                current.connection.externalUserId !==
+                  resolved.connection.externalUserId ||
+                current.connection.subjectScope !==
+                  resolved.connection.subjectScope ||
+                JSON.stringify(current.args) !== JSON.stringify(resolved.args)
+              )
+                throw unsupported();
+            },
+            approvalDigest,
+          ),
       };
     },
   };

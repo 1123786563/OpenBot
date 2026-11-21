@@ -164,6 +164,7 @@ export function createApprovalResumeTick(deps: {
               input.ownerUserId,
               approvalId,
             );
+            if (request.action.dispatch === "corsair-shared-goal") return;
             /*
              * ASKING AGAIN IS WHERE THE TURN STOPS, NOT A FAILURE. A carried-on turn that reaches
              * another action needing the person opens its own request and stops on it, nothing

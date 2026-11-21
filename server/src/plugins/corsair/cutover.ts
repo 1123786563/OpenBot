@@ -2,7 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../../db/client";
-import { auditEvents } from "../../db/schema";
+import {
+  type AuditStore,
+  createAuditStore,
+  withAuditTransaction,
+} from "../../audit";
 import { dispatchWhileConnected, RevocationRefusal } from "./revocation";
 
 export const corsairApp = z.enum(["github", "slack"]);
@@ -50,21 +54,26 @@ export function createCorsairCutover(
 
   async function transition(
     actorId: string,
-    decide: (current: State, tx: Transaction) => Promise<State | null>,
+    decide: (
+      current: State,
+      tx: Transaction,
+      audit: AuditStore,
+    ) => Promise<State | null>,
     evidence?: Record<string, unknown>,
   ) {
     let acquiring = true;
     try {
-      return await database.transaction(async (tx) => {
+      return await withAuditTransaction(database, async (tx, deferTap) => {
         await tx.execute(
           sql`select set_config('lock_timeout', ${`${drainMs}ms`}, true)`,
         );
         await tx.execute(sql`select pg_advisory_xact_lock(${key})`);
         acquiring = false;
         const current = await read(tx);
-        const next = await decide(current, tx);
+        const audit = createAuditStore(tx, deferTap);
+        const next = await decide(current, tx, audit);
         if (!next || next === current) return next;
-        await tx.insert(auditEvents).values({
+        await audit.insert({
           eventType: changed,
           targetType: "corsair_migration_scope",
           targetId: scope,
@@ -89,12 +98,21 @@ export function createCorsairCutover(
 
   return {
     read: () => read(),
+    async triggerExclusions(tx: Transaction) {
+      await tx.execute(sql`select pg_advisory_xact_lock_shared(${key})`);
+      const current = await read(tx);
+      return new Set(current.kind === "legacy" ? [] : current.excluded);
+    },
     review(
       actorId: string,
-      record: (tx: Transaction, current: State) => Promise<boolean>,
+      record: (
+        tx: Transaction,
+        current: State,
+        audit: AuditStore,
+      ) => Promise<boolean>,
     ) {
-      return transition(actorId, async (current, tx) =>
-        (await record(tx, current)) ? current : null,
+      return transition(actorId, async (current, tx, audit) =>
+        (await record(tx, current, audit)) ? current : null,
       );
     },
     activate(
@@ -135,16 +153,27 @@ export function createCorsairCutover(
         evidence,
       );
     },
-    beginCleanup(actorId: string, evidenceRef: string) {
+    beginCleanup(
+      actorId: string,
+      evidence: Record<string, unknown>,
+      accepted: (
+        tx: Transaction,
+        current: Extract<State, { kind: "observing" }>,
+      ) => Promise<boolean>,
+    ) {
       return transition(
         actorId,
-        async (current) =>
-          current.kind === "legacy"
-            ? null
-            : current.kind === "cleanup"
-              ? current
-              : { kind: "cleanup", excluded: current.excluded },
-        { evidenceRef },
+        async (current, tx) => {
+          if (current.kind === "cleanup") return current;
+          if (
+            current.kind !== "observing" ||
+            Date.parse(current.until) > Date.now() ||
+            !(await accepted(tx, current))
+          )
+            return null;
+          return { kind: "cleanup", excluded: current.excluded };
+        },
+        evidence,
       );
     },
     async disconnectLegacy<T>(
@@ -365,8 +394,11 @@ export async function dispatchTrackedLegacyWrite<
 ): Promise<T> {
   const writeAttemptId = randomUUID();
   const { actorId, ref, ...details } = attempt;
-  const log = (outcome: string, extra = {}) =>
-    database.insert(auditEvents).values({
+  const log = (
+    outcome: "started" | "succeeded" | "unconfirmed" | "refused",
+    extra = {},
+  ) =>
+    createAuditStore(database).insert({
       eventType: `corsair.${scope.app}.write_${outcome}`,
       targetType: "mcp_tool",
       targetId: ref,
@@ -459,7 +491,7 @@ export function dispatchCorsairWrite<T>(
         writeKey: string;
         binding: "personal" | "shared";
         validate?: (
-          db: Pick<Database, "execute">,
+          tx: Transaction,
           excluded: readonly string[],
         ) => Promise<void>;
       })

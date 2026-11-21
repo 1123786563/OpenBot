@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../../db/client";
-import { auditEvents } from "../../db/schema";
+import { createAuditStore } from "../../audit";
 import { corsairApp, createCorsairCutover } from "./cutover";
 
 import { RevocationRefusal } from "./revocation";
@@ -129,7 +129,7 @@ async function read(db: Reader, scope: Scope) {
     db.execute<{ eligible: boolean }>(sql`
       select coalesce((
         select payload->>'kind' = 'cleanup' and (
-          select (previous.payload->>'until')::timestamptz <= clock_timestamp()
+          select (previous.payload->>'until')::timestamptz <= e.created_at
           from audit_events previous where previous.event_type = e.event_type
             and previous.target_type = e.target_type and previous.target_id = e.target_id
             and (previous.created_at, previous.id) < (e.created_at, e.id)
@@ -252,97 +252,101 @@ export async function recordLegacyCleanup(
   actor: string,
   command: Command,
 ) {
-  return createCorsairCutover(database, scope).review(actor, async (tx) => {
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtextextended(${`corsair-legacy-cleanup:${scope.provider}`}, 0))`,
-    );
-    const state = await read(tx, scope);
-    if (!state.eligible) return false;
-    let payload = command;
-    if (command.kind === "inventory") {
-      const submitted = new Map(
-        command.entries.map((item) => [item.ref, item.impact]),
+  return createCorsairCutover(database, scope).review(
+    actor,
+    async (tx, _current, audit) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`corsair-legacy-cleanup:${scope.provider}`}, 0))`,
       );
-      if (
-        submitted.size !== command.entries.length ||
-        state.entries.some(
-          (item) =>
-            !submitted.has(item.ref) ||
-            (item.impact.includes("deployment-account") &&
-              !submitted.get(item.ref)?.includes("deployment-account")),
-        ) ||
-        command.entries.some(
-          (item) =>
-            item.ref.startsWith("local:") &&
-            !state.entries.some((known) => known.ref === item.ref),
+      const state = await read(tx, scope);
+      if (!state.eligible) return false;
+      let payload = command;
+      if (command.kind === "inventory") {
+        const submitted = new Map(
+          command.entries.map((item) => [item.ref, item.impact]),
+        );
+        if (
+          submitted.size !== command.entries.length ||
+          state.entries.some(
+            (item) =>
+              !submitted.has(item.ref) ||
+              (item.impact.includes("deployment-account") &&
+                !submitted.get(item.ref)?.includes("deployment-account")),
+          ) ||
+          command.entries.some(
+            (item) =>
+              item.ref.startsWith("local:") &&
+              !state.entries.some((known) => known.ref === item.ref),
+          )
         )
-      )
-        return false;
-      payload = {
-        ...command,
-        entries: command.entries.map((item) => ({
-          ...item,
-          impact: sorted(item.impact),
-        })),
-      };
-    } else if (
-      command.kind === "retire" ||
-      command.kind === "prepare_retirement"
-    ) {
-      if (state.retired || !(await mayRetire(tx, scope))) return false;
-      if (command.kind === "retire") {
-        const [last] = await tx.execute<{
-          id: string;
-          dependency: string;
-          kind: string;
-        }>(sql`
+          return false;
+        payload = {
+          ...command,
+          entries: command.entries.map((item) => ({
+            ...item,
+            impact: sorted(item.impact),
+          })),
+        };
+      } else if (
+        command.kind === "retire" ||
+        command.kind === "prepare_retirement"
+      ) {
+        if (state.retired || !(await mayRetire(tx, scope))) return false;
+        if (command.kind === "retire") {
+          const [last] = await tx.execute<{
+            id: string;
+            dependency: string;
+            kind: string;
+          }>(sql`
           select id, payload->>'kind' as kind, payload->>'dependencyEvidenceRef' as dependency
           from audit_events where event_type = ${eventType} and target_type = ${targetType}
             and payload->>'provider' = ${scope.provider}
           order by created_at desc, id desc limit 1
         `);
+          if (
+            last?.kind !== "prepare_retirement" ||
+            last.id !== command.preparationRef ||
+            last.dependency !== command.dependencyEvidenceRef
+          )
+            return false;
+        }
+      } else {
+        const item = state.entries.find((item) => item.ref === command.ref);
+        if (!item || !state.covered.has(item.ref) || item.status === "verified")
+          return false;
         if (
-          last?.kind !== "prepare_retirement" ||
-          last.id !== command.preparationRef ||
-          last.dependency !== command.dependencyEvidenceRef
+          command.kind === "verify" &&
+          /^local:(attempt|cancelled_attempt|authorization_started|late_callback):/.test(
+            item.ref,
+          ) &&
+          !command.terminalAttemptEvidenceRef
         )
           return false;
-      }
-    } else {
-      const item = state.entries.find((item) => item.ref === command.ref);
-      if (!item || !state.covered.has(item.ref) || item.status === "verified")
-        return false;
-      if (
-        command.kind === "verify" &&
-        /^local:(attempt|cancelled_attempt|authorization_started|late_callback):/.test(
-          item.ref,
-        ) &&
-        !command.terminalAttemptEvidenceRef
-      )
-        return false;
-      if (command.kind === "confirm_impact") {
-        if (
-          JSON.stringify(item.impact) !== JSON.stringify(sorted(command.impact))
-        )
+        if (command.kind === "confirm_impact") {
+          if (
+            JSON.stringify(item.impact) !==
+            JSON.stringify(sorted(command.impact))
+          )
+            return false;
+        } else if (
+          command.kind !== "query_failed" &&
+          item.impact.length &&
+          !item.confirmed
+        ) {
           return false;
-      } else if (
-        command.kind !== "query_failed" &&
-        item.impact.length &&
-        !item.confirmed
-      ) {
-        return false;
+        }
       }
-    }
-    await tx.insert(auditEvents).values({
-      eventType,
-      targetType,
-      targetId: state.target,
-      actorUserId: actor,
-      createdAt: sql`clock_timestamp()`,
-      payload: { ...payload, provider: scope.provider },
-    });
-    return true;
-  });
+      await audit.insert({
+        eventType,
+        targetType,
+        targetId: state.target,
+        actorUserId: actor,
+        createdAt: sql`clock_timestamp()`,
+        payload: { ...payload, provider: scope.provider },
+      });
+      return true;
+    },
+  );
 }
 
 export async function guardLegacyAuthorization<T>({
@@ -392,7 +396,7 @@ async function recordBlockedReturn(
     .digest("hex");
   await createCorsairCutover(database, scope).review(
     actor,
-    async (tx, state) => {
+    async (tx, state, audit) => {
       if (state.kind === "legacy") return false;
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtextextended(${`corsair-legacy-cleanup:${scope.provider}`}, 0))`,
@@ -402,7 +406,7 @@ async function recordBlockedReturn(
           and target_type = ${targetType} and target_id = ${targetId} limit 1
       `);
       if (!existing.length)
-        await tx.insert(auditEvents).values({
+        await audit.insert({
           eventType: "corsair.legacy_callback_blocked",
           targetType,
           targetId,
@@ -460,7 +464,7 @@ export async function recordLegacyAuthorizationStart(
 ) {
   const app = corsairApp.safeParse(input.toolkit.toLowerCase());
   if (!workspaceId || !app.success) return;
-  await database.insert(auditEvents).values({
+  await createAuditStore(database).insert({
     eventType: "corsair.legacy_authorization_started",
     targetType,
     targetId: randomUUID(),
