@@ -1,0 +1,10 @@
+{
+  "server": "129.28.39.52",
+  "remote_evidence": "/opt/openbot-middleware/evidence/openobserve-e2e-20261121T103815Z.log",
+  "local_evidence": "/Users/wuyj/.local/share/openbot-observe-75/evidence/server-e2e-latest-20261121T103815Z.log",
+  "repository_main_head": "5aa2e78a683cb4c4b0c3607036509edb32fbba30",
+  "captured_at": "2026-11-21T10:38:15Z",
+  "sha256": "896312563c2e59349916f7a92a0ed1652d968aa02818472b6e4ae082ecc9abf1",
+  "secrets_redacted": true,
+  "result": "passed"
+}

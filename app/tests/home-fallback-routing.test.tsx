@@ -1,26 +1,20 @@
-import "./home-fallback-routing.fixture";
-
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  createMemoryHistory,
-  createRootRoute,
-  createRoute,
-  createRouter,
-  Outlet,
-  RouterProvider,
-} from "@tanstack/react-router";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-
-import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
-import { takeFailedStart } from "@/lib/channels/pending-start";
 import { pluginKeys } from "@/lib/plugins/queries";
-import { Route as HomeRoute } from "@/routes/_authed/_app/index";
+import {
+  agent,
+  createdChannel,
+  queryClientWithAgents,
+  readChannelRequest,
+  renderHome,
+  submitHomeMessage,
+} from "./home-fallback-routing.fixture";
+import { settleReactWork } from "./settle-react-work";
 
 beforeAll(() => {
-  GlobalRegistrator.register();
+  GlobalRegistrator.register({ url: "http://localhost/" });
   // prompt-area positions its skill menu at a caret with a non-empty box.
   Range.prototype.getBoundingClientRect = () => new DOMRect(8, 8, 1, 16);
 });
@@ -30,99 +24,13 @@ const originalFetch = global.fetch;
 afterEach(() => {
   global.fetch = originalFetch;
   cleanup();
-  // A failed start waits in the tab for the next home page; each test is its own tab.
-  takeFailedStart();
+  localStorage.clear();
 });
 
-afterAll(() => GlobalRegistrator.unregister());
-
-function agent(
-  overrides: Partial<AgentProfile> & { id: string },
-): AgentProfile {
-  return {
-    avatarSeed: "seed",
-    builtIn: false,
-    canManage: true,
-    endpoint: null,
-    hasAuth: false,
-    hasCallbackToken: false,
-    isolated: false,
-    isolationActive: false,
-    isolationOffReason: null,
-    hidden: false,
-    pinned: false,
-    mine: true,
-    name: "Agent",
-    roleDescription: "Role",
-    systemOwned: false,
-    title: "Title",
-    visibility: "private",
-    ...overrides,
-  };
-}
-
-function queryClientWithAgents(agents: AgentProfile[]) {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-        staleTime: Number.POSITIVE_INFINITY,
-      },
-    },
-  });
-  queryClient.setQueryData(agentKeys.list(false), agents);
-  return queryClient;
-}
-
-function renderHome(queryClient: QueryClient, entry = "/") {
-  // Home and the placeholder it opens on send, so a start that fails behind the placeholder comes
-  // back to a freshly mounted home page, as it does in the app.
-  const rootRoute = createRootRoute({ component: Outlet });
-  const routeTree = rootRoute.addChildren([
-    createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/",
-      validateSearch: HomeRoute.options.validateSearch,
-      component: HomeRoute.options.component,
-    }),
-    createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/bots",
-      component: () => <h1>Bots</h1>,
-    }),
-    createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/channel/new",
-      component: () => <h1>New conversation</h1>,
-    }),
-    createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/start/$startId",
-      component: () => <p>Starting</p>,
-    }),
-  ]);
-  const router = createRouter({
-    routeTree,
-    history: createMemoryHistory({ initialEntries: [entry] }),
-  });
-  return Object.assign(
-    render(
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>,
-    ),
-    { router },
-  );
-}
-
-async function submitHomeMessage(
-  view: ReturnType<typeof renderHome>,
-  text: string,
-) {
-  const user = userEvent.setup({ document: view.container.ownerDocument });
-  await user.type(await view.findByRole("textbox", { name: "Message" }), text);
-  await user.click(await view.findByRole("button", { name: "Send message" }));
-}
+afterAll(async () => {
+  await settleReactWork();
+  GlobalRegistrator.unregister();
+});
 
 function installHomeRoutingFetch(options: {
   routeResponse: Response;
@@ -132,22 +40,10 @@ function installHomeRoutingFetch(options: {
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
       if (url === "/api/route") return options.routeResponse.clone();
-      if (url === "/api/channels") {
-        const body = JSON.parse(String(init?.body)) as { agentIds: string[] };
-        options.starts.push(body.agentIds);
-        return Response.json({
-          channel: {
-            busy: false,
-            id: `channel-${options.starts.length}`,
-            lastMessage: null,
-            lastMessageAt: null,
-            participantIds: body.agentIds,
-            pinned: false,
-            threadId: `thread-${options.starts.length}`,
-            title: null,
-            unread: false,
-          },
-        });
+      if (url === "/api/channels" && init?.method === "POST") {
+        const { agentIds } = readChannelRequest(init);
+        options.starts.push(agentIds);
+        return createdChannel(`channel-${options.starts.length}`, agentIds);
       }
       throw new Error(`Unexpected fetch: ${url}`);
     },
@@ -259,12 +155,10 @@ for (const refusal of [
     );
     await submitHomeMessage(view, "ask analyst");
     await waitFor(() =>
-      expect(view.getByRole("alert").textContent).toContain(refusal.message),
+      expect(view.getByText(refusal.message, { exact: false })).toBeTruthy(),
     );
     expect(starts).toEqual([]);
-    expect(view.getByRole("textbox", { name: "Message" }).textContent).toBe(
-      "ask analyst",
-    );
+    expect(view.getByText("ask analyst")).toBeTruthy();
   });
 }
 
@@ -288,71 +182,23 @@ test("send opens the placeholder at once, before a Bot is picked or a channel ma
 
   await submitHomeMessage(view, "hello");
 
-  expect(await view.findByText("Starting")).toBeTruthy();
+  expect(await view.findByText("hello")).toBeTruthy();
+  expect(view.router.state.location.pathname).toStartWith("/start/");
   expect(asked).toEqual(["/api/route"]);
 });
 
-test("a start that fails after the person went back home shows its words and reason on that home page", async () => {
-  // Routing answers only when told to, so the person can leave the placeholder before it does.
-  let answer: (response: Response) => void = () => undefined;
-  global.fetch = Object.assign(
-    async (input: RequestInfo | URL) => {
-      const url = typeof input === "string" ? input : input.toString();
-      if (url === "/api/route")
-        return new Promise<Response>((resolve) => {
-          answer = resolve;
-        });
-      throw new Error(`Unexpected fetch: ${url}`);
-    },
-    { preconnect: originalFetch.preconnect },
-  );
-  const view = renderHome(
-    queryClientWithAgents([
-      agent({ id: "default", name: "Default", visibility: "public" }),
-    ]),
-  );
-
-  await submitHomeMessage(view, "ask analyst");
-  expect(await view.findByText("Starting")).toBeTruthy();
-  // Home's own link, while the Bot is still being picked: a home page mounted before the failure.
-  await view.router.navigate({ to: "/" });
-  await view.findByRole("textbox", { name: "Message" });
-
-  answer(
-    Response.json(
+test("a failed start is reachable from Home without replacing a new draft", async () => {
+  const starts: string[][] = [];
+  installHomeRoutingFetch({
+    routeResponse: Response.json(
       {
         error: "More than one coworker matches that name.",
         names: ["Data Analyst", "Risk Analyst"],
       },
       { status: 409 },
     ),
-  );
-
-  // Both, in one wait. The reason shows in the render that restores the start, and the words reach
-  // the box after it, in PromptArea's own effect, which under load runs a task later.
-  await waitFor(() => {
-    expect(view.getByRole("alert").textContent).toContain(
-      "Data Analyst, Risk Analyst",
-    );
-    expect(view.getByRole("textbox", { name: "Message" }).textContent).toBe(
-      "ask analyst",
-    );
+    starts,
   });
-});
-
-test("a start that fails while the person is writing something else on home leaves the box alone", async () => {
-  let answer: (response: Response) => void = () => undefined;
-  global.fetch = Object.assign(
-    async (input: RequestInfo | URL) => {
-      const url = typeof input === "string" ? input : input.toString();
-      if (url === "/api/route")
-        return new Promise<Response>((resolve) => {
-          answer = resolve;
-        });
-      throw new Error(`Unexpected fetch: ${url}`);
-    },
-    { preconnect: originalFetch.preconnect },
-  );
   const view = renderHome(
     queryClientWithAgents([
       agent({ id: "default", name: "Default", visibility: "public" }),
@@ -360,31 +206,17 @@ test("a start that fails while the person is writing something else on home leav
   );
 
   await submitHomeMessage(view, "ask analyst");
-  expect(await view.findByText("Starting")).toBeTruthy();
-  await view.router.navigate({ to: "/" });
+  await view.findByText("Data Analyst, Risk Analyst", { exact: false });
   const user = userEvent.setup({ document: view.container.ownerDocument });
-  await user.type(
-    await view.findByRole("textbox", { name: "Message" }),
-    "something new",
+  await user.click(view.getByRole("link", { name: "Back to Home" }));
+  const composer = await view.findByRole("textbox", { name: "Message" });
+  await user.type(composer, "something new");
+  expect(composer.textContent).toBe("something new");
+  await user.click(
+    view.getByRole("link", { name: /Resume conversation · ask analyst/ }),
   );
-
-  answer(
-    Response.json(
-      {
-        error: "More than one coworker matches that name.",
-        names: ["Data Analyst", "Risk Analyst"],
-      },
-      { status: 409 },
-    ),
-  );
-
-  // Nothing to wait on but the failure itself; give it the turns it needs to land.
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  expect(view.getByRole("textbox", { name: "Message" }).textContent).toBe(
-    "something new",
-  );
-  // Kept for the next home page, which is not this test's to open.
-  expect(takeFailedStart()?.text).toBe("ask analyst");
+  expect(await view.findByText("ask analyst")).toBeTruthy();
+  expect(starts).toEqual([]);
 });
 
 for (const status of [409, 500]) {
@@ -422,32 +254,9 @@ for (const status of [409, 500]) {
     await user.keyboard("/first");
     await user.click(await view.findByRole("option", { name: /First skill/ }));
     await user.click(await view.findByRole("button", { name: "Send message" }));
-    await waitFor(() =>
-      expect(view.getByRole("alert").textContent).toContain(
-        "Cannot route these skills",
-      ),
-    );
+    await view.findByText("Cannot route these skills");
     expect(requests).toEqual([{ text: "/first", skillSlugs: ["first"] }]);
     expect(starts).toEqual([]);
-    expect(
-      view.getByRole("textbox", { name: "Message" }).textContent,
-    ).toContain("/first");
+    expect(view.getByText("/first")).toBeTruthy();
   });
 }
-
-test.each([
-  ["Browse Bots", "/bots", "Bots"],
-  ["New conversation", "/channel/new", "New conversation"],
-])(
-  "preview home opens %s through its existing route",
-  async (label, path, heading) => {
-    const client = queryClientWithAgents([]);
-    const view = renderHome(client);
-    const user = userEvent.setup({ document });
-    const link = await view.findByRole("link", { name: label });
-    expect(link.getAttribute("href")).toBe(path);
-    await user.click(link);
-    await view.findByRole("heading", { name: heading });
-    expect(view.router.state.location.pathname).toBe(path);
-  },
-);

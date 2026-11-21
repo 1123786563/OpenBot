@@ -12,6 +12,15 @@
  * guessed the envelope would be a client that had to be argued with.
  */
 
+export class ClientError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 export type ClientOptions = {
   /** Absent means GET. */
   method?: string;
@@ -107,7 +116,10 @@ export async function client<T>(
         }
       })
       .catch(() => undefined);
-    throw new Error(message ?? options.fallback ?? "That request failed.");
+    throw new ClientError(
+      message ?? options.fallback ?? "That request failed.",
+      response.status,
+    );
   }
 
   if (key === undefined) return response;

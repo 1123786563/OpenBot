@@ -170,6 +170,8 @@ export function useVoiceArchive(channelId: string) {
         a.startedAt.localeCompare(b.startedAt) || a.id.localeCompare(b.id),
     ),
     error: saved.error,
+    fetching: saved.isFetching,
+    refetch: saved.refetch,
     /**
      * The saved calls have not come back yet. A channel waits on this before showing its history,
      * so a call card is never spliced into a conversation already on screen. False after a failed

@@ -8,6 +8,7 @@ import {
 import type { AgentActor } from "../src/agents/profile-types";
 import {
   ChannelNotFoundError,
+  ChannelStartConflictError,
   createChannelStore,
 } from "../src/channels/routes";
 import { createThreadIdentity } from "../src/channels/thread-identity";
@@ -87,6 +88,38 @@ async function createChannel(owner: AgentActor, agentIds: string[]) {
   createdChannelIds.push(channel.id);
   return channel;
 }
+
+test("a replay recovers the same channel and Thread only for its owner and Bot selection", async () => {
+  const owner = await createUser();
+  const secondOwner = await createUser();
+  const firstBot = await createAgent(owner);
+  const differentBot = await createAgent(owner, "Second Bot");
+  const secondOwnersBot = await createAgent(secondOwner);
+  const requestId = randomUUID();
+
+  const recover = (actor: AgentActor, agentId: string) =>
+    store.create(actor, [agentId], undefined, requestId);
+
+  const first = await recover(owner, firstBot);
+  createdChannelIds.push(first.id);
+  const replays = await Promise.all([
+    recover(owner, firstBot),
+    recover(owner, firstBot),
+  ]);
+  expect(replays.map(({ id, threadId }) => ({ id, threadId }))).toEqual([
+    { id: first.id, threadId: first.threadId },
+    { id: first.id, threadId: first.threadId },
+  ]);
+  await expect(recover(owner, differentBot)).rejects.toBeInstanceOf(
+    ChannelStartConflictError,
+  );
+
+  const unrelated = await recover(secondOwner, secondOwnersBot);
+  createdChannelIds.push(unrelated.id);
+  expect(unrelated.id).not.toBe(first.id);
+  expect(unrelated.threadId).not.toBe(first.threadId);
+  expect(await store.get(owner, unrelated.id)).toBeNull();
+});
 
 /**
  * The sidebar asked for every channel this person has, on every render.

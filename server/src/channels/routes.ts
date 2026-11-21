@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFiring } from "@openbot/shared/routine-firing";
 import { isStarterTourAgent } from "@openbot/shared/starter-tour";
 import {
@@ -204,6 +205,7 @@ export type ChannelStore = {
     actor: AgentActor,
     agentIds: string[],
     transaction?: ChannelTransaction,
+    requestId?: string,
   ): Promise<AgentChannel>;
   /**
    * The one conversation this person has with this Bot alone, made if they have not had one yet.
@@ -392,6 +394,7 @@ export function createChannelStore(
     transaction: ChannelTransaction,
     actor: AgentActor,
     agentIds: string[],
+    id = `channel_${crypto.randomUUID()}`,
   ): Promise<AgentChannel> => {
     // Validated on this transaction, not through `profileStore.get`: the read has to share
     // the connection this transaction already holds, and has to hold the profile so an agent
@@ -406,7 +409,6 @@ export function createChannelStore(
       profilesById.set(agentId, profile);
     }
 
-    const id = `channel_${crypto.randomUUID()}`;
     // Minted rather than a bare random id, so the thread says which deployment it belongs to
     // in a project that may hold more than one. See thread-identity.ts.
     const threadId = threadIdentity.mint();
@@ -511,7 +513,38 @@ export function createChannelStore(
   };
 
   const store: ChannelStore = {
-    create(actor, agentIds, transaction) {
+    async create(actor, agentIds, transaction, requestId) {
+      if (requestId) {
+        // The same operation is addressable after an interrupted response. Scope its identity
+        // to the signed-in person so another account cannot claim or recover it.
+        const id = `channel_${createHash("sha256")
+          .update(JSON.stringify([actor.id, requestId.toLowerCase()]))
+          .digest("hex")
+          .slice(0, 32)}`;
+        const created = await database.transaction(
+          async (tx) => {
+            await tx.execute(
+              sql`select pg_advisory_xact_lock(hashtext(${id}))`,
+            );
+            const [existing] = await tx
+              .select({ id: channels.id })
+              .from(channels)
+              .where(eq(channels.id, id));
+            return existing ? null : makeChannel(tx, actor, agentIds, id);
+          },
+          { isolationLevel: "read committed" },
+        );
+        if (created) return created;
+
+        const channel = await store.get(actor, id);
+        if (!channel) throw new ChannelNotFoundError(id);
+        if (
+          JSON.stringify([...channel.agentIds].sort()) !==
+          JSON.stringify([...agentIds].sort())
+        )
+          throw new ChannelStartConflictError();
+        return channel;
+      }
       if (transaction) return makeChannel(transaction, actor, agentIds);
       return database.transaction(
         async (transaction) => makeChannel(transaction, actor, agentIds),
@@ -1259,11 +1292,22 @@ export class ChannelPackageOwnedError extends Error {
   }
 }
 
+export class ChannelStartConflictError extends Error {
+  constructor() {
+    super(
+      "This conversation was already started with a different Bot selection.",
+    );
+  }
+}
+
+export const CHANNEL_START_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 type ChannelInputParseResult =
-  | { ok: true; value: { agentIds: string[] } }
+  | { ok: true; value: { agentIds: string[]; requestId?: string } }
   | { ok: false; error: string };
 
-type ChannelInputObject = { agentIds?: unknown };
+type ChannelInputObject = { agentIds?: unknown; requestId?: unknown };
 
 /** How long a name a person gives a conversation may be: the same cap the naming sweep keeps to. */
 export const MAX_CHOSEN_TITLE_GRAPHEMES = MAX_TITLE_GRAPHEMES;
@@ -1319,7 +1363,17 @@ export function parseChannelInput(input: unknown): ChannelInputParseResult {
     return { ok: false, error: "Agent IDs must be unique." };
   }
 
-  return { ok: true, value: { agentIds: agentIds.sort() } };
+  const { requestId } = input;
+  if (
+    requestId !== undefined &&
+    (typeof requestId !== "string" || !CHANNEL_START_ID.test(requestId))
+  )
+    return { ok: false, error: "The conversation request ID is invalid." };
+
+  return {
+    ok: true,
+    value: { agentIds: agentIds.sort(), ...(requestId ? { requestId } : {}) },
+  };
 }
 
 function isChannelInputObject(input: unknown): input is ChannelInputObject {
@@ -1476,6 +1530,8 @@ export function createChannelRoutes(
       const channel = await store.create(
         context.var.actor,
         parsed.value.agentIds,
+        undefined,
+        parsed.value.requestId,
       );
       if (
         preferences &&
@@ -1711,6 +1767,8 @@ function channelSummaryDto(
 }
 
 function mapStoreError(context: Context, error: unknown): Response {
+  if (error instanceof ChannelStartConflictError)
+    return context.json({ error: error.message }, 409);
   if (error instanceof AgentNotFoundError) {
     return context.json({ error: "Couldn't find that Bot." }, 404);
   }
