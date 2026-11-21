@@ -335,6 +335,7 @@ import { createRoutineRunner } from "./routines/runner";
 import { createRoutineStore } from "./routines/store";
 import { createIntentRouter } from "./routing/classify";
 import {
+  createMeteredAuxiliaryModelCompleter,
   createModelCompleter,
   createSkillChooser,
   routingModelFor,
@@ -850,6 +851,10 @@ const resolveDeploymentModelKey = () =>
     environment: process.env,
   });
 
+const meteredAuxiliaryModel = config.managedModelTrial
+  ? createMeteredAuxiliaryModelCompleter(config.managedModelTrial)
+  : undefined;
+
 /**
  * Pass one of tool selection, on the model the built-in Bots run on: their key, or their plan's
  * harness. See `createSkillChooser`. Built once rather than per request, because it holds nothing
@@ -858,6 +863,7 @@ const resolveDeploymentModelKey = () =>
 const chooseSkills = createSkillChooser(
   runtimeModel,
   resolveDeploymentModelKey,
+  meteredAuxiliaryModel,
 );
 
 /**
@@ -1550,33 +1556,36 @@ const stallGuard = createStallGuard({
   auditStore: bootAuditStore,
 });
 
+const intentRouterCompleter = createModelCompleter({
+  model: runtimeModel,
+  /*
+   * Picking a Bot sits between send and the conversation opening; see `routingModelFor`. Never a
+   * model the admin's allowlist leaves out: the router then stays on the deployment's own model,
+   * which the allowlist already governs for every run.
+   */
+  fastModel: () => {
+    const fast = routingModelFor(runtimeModel, process.env);
+    const allowlist = enterpriseControls()?.snapshot()?.settings.modelAllowlist;
+    return fast &&
+      (!allowlist?.enabled ||
+        allowlist.models.includes(`${runtimeModel.provider}/${fast}`))
+      ? fast
+      : undefined;
+  },
+  resolveApiKey: () =>
+    resolveModelApiKey({
+      encryptionKey: config.keyEncryptionKey,
+      reader: credentialStore,
+      provider: runtimeModel.provider,
+      keyId: tenantPackage.model.credentialSecretRef,
+      environment: process.env,
+    }),
+});
 const intentRouter = createIntentRouter({
-  complete: createModelCompleter({
-    model: runtimeModel,
-    /*
-     * Picking a Bot sits between send and the conversation opening; see `routingModelFor`. Never a
-     * model the admin's allowlist leaves out: the router then stays on the deployment's own model,
-     * which the allowlist already governs for every run.
-     */
-    fastModel: () => {
-      const fast = routingModelFor(runtimeModel, process.env);
-      const allowlist =
-        enterpriseControls()?.snapshot()?.settings.modelAllowlist;
-      return fast &&
-        (!allowlist?.enabled ||
-          allowlist.models.includes(`${runtimeModel.provider}/${fast}`))
-        ? fast
-        : undefined;
-    },
-    resolveApiKey: () =>
-      resolveModelApiKey({
-        encryptionKey: config.keyEncryptionKey,
-        reader: credentialStore,
-        provider: runtimeModel.provider,
-        keyId: tenantPackage.model.credentialSecretRef,
-        environment: process.env,
-      }),
-  }),
+  complete: (prompt, options) =>
+    options?.billing && meteredAuxiliaryModel
+      ? meteredAuxiliaryModel(prompt, undefined, options)
+      : intentRouterCompleter(prompt, undefined, options),
 });
 
 // Said once at boot: whether the key can call the model the Bots run on. A key without access to it
@@ -2066,7 +2075,24 @@ const selectionForActor = (actorId: string): ToolSelection => ({
   // The deployment's own model and key, the same pair the intent router uses, so selection is
   // never a second thing to configure. It throws on a missing key, which reads as "could not
   // choose" and leaves the whole catalogue offered.
-  choose: chooseSkills,
+  choose: (prompt, signal, scope) =>
+    chooseSkills(
+      prompt,
+      signal,
+      scope
+        ? {
+            billing: {
+              source: "tool-selection",
+              personId: actorId,
+              conversationId: scope.conversationId,
+              botId: scope.botId,
+              runId: scope.runId,
+              step: "select-tools",
+              funding: { kind: "user" },
+            },
+          }
+        : undefined,
+    ),
   record: async (botId, selection) => {
     await recordAuditEvent(bootAuditStore, {
       eventType: "mcp.tools_discovered",

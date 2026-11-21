@@ -13,6 +13,8 @@
  * not sure who to ask" into "your message went nowhere".
  */
 
+import type { ModelCallOptions } from "./model";
+
 export type RoutingCandidate = {
   id: string;
   name: string;
@@ -190,13 +192,14 @@ function onlyCoworkerReaching(
 
 export function createIntentRouter(deps: {
   /** Runs the prompt and returns the model's raw text. May reject; the router absorbs it. */
-  complete: (prompt: string) => Promise<string>;
+  complete: (prompt: string, options?: ModelCallOptions) => Promise<string>;
 }) {
   return {
     async route(
       text: string,
       candidates: readonly RoutingCandidate[],
       defaultId: string,
+      options?: ModelCallOptions,
     ): Promise<RoutingDecision> {
       const byId = new Map(candidates.map((c) => [c.id, c]));
       const fallback = (
@@ -252,7 +255,7 @@ export function createIntentRouter(deps: {
 
       let raw: string;
       try {
-        raw = await this._complete(text, candidates);
+        raw = await this._complete(text, candidates, options);
       } catch {
         return fallback(
           "sent to your default while the router was unreachable",
@@ -323,8 +326,9 @@ export function createIntentRouter(deps: {
     async _complete(
       text: string,
       candidates: readonly RoutingCandidate[],
+      options?: ModelCallOptions,
     ): Promise<string> {
-      return deps.complete(routingPrompt(text, candidates));
+      return deps.complete(routingPrompt(text, candidates), options);
     },
   };
 }

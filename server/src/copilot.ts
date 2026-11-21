@@ -1563,7 +1563,11 @@ async function buildAgent(
       choose: async (prompt, signal) => {
         await marketRun?.check();
         return withMarketDispatch(marketRun?.dispatch, () =>
-          narrowing.choose(prompt, signal),
+          narrowing.choose(prompt, signal, {
+            conversationId: input.threadId,
+            botId: agent.id,
+            runId: input.runId,
+          }),
         );
       },
       signal,
@@ -2005,7 +2009,11 @@ export type ToolSelection = {
     snapshot: MarketSkillSnapshot,
   ) => Promise<MarketRunControl>;
   /** Pass one. Ordinary failures skip narrowing; cancellation stops the run. */
-  choose: (prompt: string, signal?: AbortSignal) => Promise<string | null>;
+  choose: (
+    prompt: string,
+    signal?: AbortSignal,
+    scope?: { conversationId: string; botId: string; runId: string },
+  ) => Promise<string | null>;
   /** Writes the discovery row. Never allowed to fail a run. */
   record?: (botId: string, selection: Selection<GrantedTool>) => Promise<void>;
   /** Overrides the default catalogue size below which nothing is narrowed. */

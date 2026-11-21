@@ -1,4 +1,5 @@
 import { PlanModel, type PlanModelConfig } from "../agents/plan-model";
+import { createAuxiliaryModelCompleter } from "../billing/auxiliary-model";
 import type { RuntimeModel } from "../copilot";
 import { startMarketRequest } from "../skill-market/disablements";
 
@@ -215,7 +216,8 @@ export function createModelCompleter(deps: {
 export function createSkillChooser(
   model: RuntimeModel,
   resolveApiKey: () => Promise<string | null>,
-): (prompt: string, signal?: AbortSignal) => Promise<string> {
+  metered?: ModelCompleter,
+): ModelCompleter {
   const complete = createModelCompleter({ model, resolveApiKey });
   /*
    * Why it could not choose, in the log, once for each reason. The run carries on with every tool
@@ -223,9 +225,13 @@ export function createSkillChooser(
    * a reason that holds for every turn is worth one line rather than one per turn.
    */
   const said = new Set<string>();
-  return async (prompt, signal) => {
+  return async (prompt, signal, options) => {
     try {
-      return await complete(prompt, signal);
+      return await (options?.billing && metered ? metered : complete)(
+        prompt,
+        signal,
+        options,
+      );
     } catch (error) {
       if (!signal?.aborted) {
         const reason = (error instanceof Error ? error.message : String(error))
@@ -245,6 +251,17 @@ export function createSkillChooser(
       throw error;
     }
   };
+}
+
+export function createMeteredAuxiliaryModelCompleter(config: {
+  url: URL;
+  token: string;
+  route: string;
+}): ModelCompleter {
+  return createAuxiliaryModelCompleter({
+    model: { url: config.url, token: config.token },
+    route: config.route,
+  });
 }
 
 /**

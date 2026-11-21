@@ -474,6 +474,17 @@ export function createCoworkerRoutingService(
       input.text,
       candidates,
       preferred.id,
+      {
+        billing: {
+          source: "routing",
+          personId: input.actor.id,
+          conversationId: `routing:${input.actor.id}`,
+          botId: preferred.id,
+          runId: crypto.randomUUID(),
+          step: "route-intent",
+          funding: { kind: "user" },
+        },
+      },
     );
     const result: Extract<CoworkerRouteResult, { kind: "selected" }> = {
       kind: "selected",
