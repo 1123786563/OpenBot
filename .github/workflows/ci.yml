@@ -7,6 +7,7 @@ on:
   # Callable, so publishing a release runs these same checks against the release commit rather than
   # trusting that they ran somewhere earlier.
   workflow_call:
+  workflow_dispatch:
 
 # Least privilege by default. Jobs that need more must declare it locally.
 permissions:
