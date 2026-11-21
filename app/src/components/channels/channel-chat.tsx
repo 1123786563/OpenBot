@@ -610,6 +610,8 @@ export function ChannelChat({
   >("ready");
   const [historyReadFailed, setHistoryReadFailed] = useState(false);
   const [storedRuns, setStoredRuns] = useState<StoredRun[]>();
+  const [accessEnded, setAccessEnded] = useState(false);
+  const durableChat = storedRuns !== undefined;
   const activeRun = storedRuns?.find((run) => run.status === "running");
   const unresolvedRun = storedRuns?.find(
     (run) => run.externalOutcome === "unknown",
@@ -840,6 +842,13 @@ export function ChannelChat({
           );
           if (!isCurrent()) return;
           if (stored.availability === "unavailable") {
+            if (durableChat && stored.accessDenied) {
+              setAccessEnded(true);
+              setStoredRuns([]);
+              agentRef.current.setMessages([]);
+              void queryClient.invalidateQueries(approvalInboxOptions());
+              return;
+            }
             // Only an exhausted refresh with no successful read is a failure to announce. Keep the
             // last known ready notice when the store already answered this refresh cycle.
             if (delayMs === 1500 && !sawReady) {
@@ -849,6 +858,7 @@ export function ChannelChat({
             continue;
           }
           sawReady = true;
+          setAccessEnded(false);
           setStoredRuns(stored.runs);
           // A ready read owns the notice even when every readable id is already on screen.
           setUnreadable(stored.unreadable);
@@ -901,6 +911,7 @@ export function ChannelChat({
   }, [
     channel.id,
     channel.threadId,
+    durableChat,
     joinGatePromise,
     joinedPromise,
     runtimeAgentId,
@@ -1023,13 +1034,11 @@ export function ChannelChat({
   }, []);
   const [runsInFlight, setRunsInFlight] = useState(0);
 
-  const refreshRunStatus =
-    storedRuns !== undefined && Boolean(activeRun || runsInFlight);
   useEffect(() => {
-    if (!refreshRunStatus) return;
+    if (!durableChat) return;
     const timer = setInterval(() => pullHistoryRef.current?.(), 3_000);
     return () => clearInterval(timer);
-  }, [refreshRunStatus]);
+  }, [durableChat]);
 
   /*
    * THE THIRD FACT: THE SERVER HAS THE TURN. When the person answers an approval, the run that asked
@@ -1630,6 +1639,10 @@ export function ChannelChat({
 
     // Keep `seed` in state; transcriptMessages gives it up once the agent holds a user turn.
   }, []);
+
+  if (accessEnded) {
+    return <p role="alert">Conversation access ended.</p>;
+  }
 
   return (
     // Activity renderers resolve their agent through this SDK context. It must match useAgent's

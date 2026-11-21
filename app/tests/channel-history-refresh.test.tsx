@@ -17,6 +17,10 @@ import {
 import { applyChannelEvent } from "@/lib/channels/use-channel-events";
 import { generativeUiProviderOptions, OPENBOT_UI } from "@/lib/copilot/a2ui";
 import { queryClient } from "@/query-client";
+import {
+  installDesktopShell,
+  removeDesktopShell,
+} from "./desktop-shell.fixture";
 
 type ChannelCache = InfiniteData<ChannelPage>;
 const ActivityRequestSchema = z.object({
@@ -225,6 +229,29 @@ async function mounted() {
   await view.findByText("Stored opening");
   return view;
 }
+
+test("the Desktop Conversation clears the transcript and Stop when current access ends", async () => {
+  installDesktopShell();
+  let authorized = true;
+  try {
+    const view = mounting(async () =>
+      authorized
+        ? NativeResponse.json({
+            messages: [initial],
+            runs: [{ id: "active", status: "running", userMessageId: "sent" }],
+          })
+        : new NativeResponse(null, { status: 404 }),
+    );
+    await view.findByText("Stored opening", {}, { timeout: 5_000 });
+    await view.findByRole("button", { name: "Stop the Bot" });
+    authorized = false;
+    await view.findByText("Conversation access ended.", {}, { timeout: 8_000 });
+    expect(view.queryByText("Stored opening")).toBeNull();
+    expect(view.queryByRole("button", { name: "Stop the Bot" })).toBeNull();
+  } finally {
+    removeDesktopShell();
+  }
+}, 15_000);
 
 /**
  * A trip form a Bot drew, as its conversation stores it: a committed surface activity whose operations

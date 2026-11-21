@@ -466,9 +466,10 @@ test("Web direct chat persists messages and one run per send, with only its Pers
       `/api/channels/${channel.id}`,
     );
     expect(readConversation.status).toBe(200);
-    expect((await readConversation.json()).channel.threadId).toBe(
-      channel.threadId,
-    );
+    expect((await readConversation.json()).channel).toMatchObject({
+      threadId: channel.threadId,
+      direct: true,
+    });
     expect(await (await reloaded.request(history)).json()).toEqual(saved);
     expect(
       events(
@@ -1722,6 +1723,7 @@ test("only the owner can stop an active Run and the stopped Run rejects a late a
         id: key.runId,
         status: "running",
         waitingForApproval: true,
+        pendingApprovals: [{ id: request.id, toolCallId: "call" }],
       }),
     );
     expect((await send("next")).status).toBe(409);
