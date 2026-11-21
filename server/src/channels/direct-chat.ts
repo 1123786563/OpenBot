@@ -15,7 +15,7 @@ import {
   turnInput,
   turnMessages,
 } from "@openbot/toolkit/run-turn";
-import { and, eq, exists, isNull, ne, notExists, sql } from "drizzle-orm";
+import { and, eq, exists, isNull, ne, notExists, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 import { headlessTurnRefusal } from "../admin/controls";
@@ -41,8 +41,11 @@ import {
   channels,
   directChatRuns,
   groupBotThreads,
+  groupMessages,
   intelligenceChannelMappings,
   revokedAccess,
+  routineRuns,
+  routines,
   users,
 } from "../db/schema";
 import {
@@ -1059,6 +1062,26 @@ export function createDirectChatRoutes(deps: {
     return Boolean(person);
   }
 
+  async function routineCanContinue(
+    key: RunKey,
+    actorId: string,
+    botId: string,
+  ) {
+    const [routine] = await database
+      .select({ enabled: routines.enabled })
+      .from(routineRuns)
+      .innerJoin(routines, eq(routines.id, routineRuns.routineId))
+      .where(
+        and(
+          eq(routineRuns.id, key.runId),
+          eq(routines.ownerUserId, actorId),
+          eq(routines.agentId, botId),
+          isNull(routineRuns.status),
+        ),
+      );
+    return routine?.enabled === true;
+  }
+
   async function backgroundApproval(
     action: ApprovalAction,
     approvalId: string,
@@ -1089,6 +1112,8 @@ export function createDirectChatRoutes(deps: {
         !profile.deletedAt &&
         !profile.hidden &&
         !(await isBotPaused(actor.id, action.botId)) &&
+        (run.userMessageId !== backgroundMessageId("routine", key.runId) ||
+          (await routineCanContinue(key, action.actorId, action.botId))) &&
         (!run.handoffFromBotId ||
           (await deps.mayAddress?.(run.handoffFromBotId, action.botId)));
       const refusal = allowed
@@ -1242,6 +1267,28 @@ export function createDirectChatRoutes(deps: {
           throw backgroundRefusal(
             "The previous Run has an unverified external outcome.",
           );
+        if (scope === "group") {
+          const [group] = await tx
+            .select({ id: groupMessages.id })
+            .from(groupMessages)
+            .where(
+              and(
+                eq(groupMessages.threadId, key.threadId),
+                or(
+                  eq(groupMessages.status, "running"),
+                  and(
+                    eq(groupMessages.status, "waiting"),
+                    sql`${groupMessages.details}->'privateShare' is null`,
+                  ),
+                ),
+              ),
+            )
+            .limit(1);
+          if (group)
+            throw new BackgroundConversationBusy(
+              "This conversation already has a running Bot.",
+            );
+        }
         const [created] = await tx
           .insert(directChatRuns)
           .values({
@@ -1446,10 +1493,19 @@ export function createDirectChatRoutes(deps: {
     const shouldContinue = async () => {
       if (!runnable || signal.aborted) return false;
       const currentActor = await authorize();
+      const currentProfile =
+        currentActor && background
+          ? await profiles.get(currentActor, agentId)
+          : null;
       if (
         currentActor?.id === actor.id &&
         (await runThreadFor(database, currentActor, threadId, scopeBot)) &&
-        (!background || Boolean(await profiles.get(currentActor, agentId)))
+        (!background ||
+          (currentProfile &&
+            !currentProfile.deletedAt &&
+            !currentProfile.hidden)) &&
+        (background?.source !== "routine" ||
+          (await routineCanContinue(key, actor.id, agentId)))
       ) {
         const [current] = await database
           .select({ status: directChatRuns.status })

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { type Ref, useEffect, useLayoutEffect, useRef } from "react";
 import { Streamdown } from "streamdown";
 import {
   QuestionNotice,
@@ -179,35 +179,33 @@ export function GroupChat({
             </p>
           ) : null}
           {messages.map((message) => (
-            <div
+            <GroupLine
               key={message.id}
-              ref={message.id === runId ? focus : undefined}
-            >
-              <GroupLine
-                message={message}
-                name={
-                  message.agentId
-                    ? (names.get(message.agentId) ?? "A Bot no longer here")
-                    : message.ownerUserId === me?.id
-                      ? "You"
-                      : "A teammate"
-                }
-                answeredBy={
-                  message.answeredBy
-                    ? (names.get(message.answeredBy) ?? "another Bot")
-                    : undefined
-                }
-                mine={message.ownerUserId === me?.id}
-              />
-            </div>
+              rowRef={message.id === runId ? focus : undefined}
+              message={message}
+              name={
+                message.agentId
+                  ? (names.get(message.agentId) ?? "A Bot no longer here")
+                  : message.ownerUserId === me?.id
+                    ? "You"
+                    : "A teammate"
+              }
+              answeredBy={
+                message.answeredBy
+                  ? (names.get(message.answeredBy) ?? "another Bot")
+                  : undefined
+              }
+              mine={message.ownerUserId === me?.id}
+            />
           ))}
           {background.map((run) => (
-            <div
+            <MessageRow
+              align="start"
               key={run.id}
               ref={run.id === runId ? focus : undefined}
-              className="text-sm"
+              className="items-center"
             >
-              <span className="font-medium">{names.get(run.agentId)}</span>{" "}
+              <strong>{names.get(run.agentId)}</strong>{" "}
               {run.externalOutcome === "unknown"
                 ? "The external outcome needs verification."
                 : run.waitingForApproval
@@ -227,7 +225,7 @@ export function GroupChat({
                   Stop run
                 </Button>
               )}
-            </div>
+            </MessageRow>
           ))}
           {stopRun.error && <p role="alert">{stopRun.error.message}</p>}
         </div>
@@ -303,15 +301,17 @@ function GroupLine({
   name,
   answeredBy,
   mine,
+  rowRef,
 }: {
   message: GroupMessage;
   name: string;
   answeredBy?: string;
   mine: boolean;
+  rowRef?: Ref<HTMLDivElement>;
 }) {
   if (message.agentId === null)
     return (
-      <MessageRow align={mine ? "end" : "start"}>
+      <MessageRow align={mine ? "end" : "start"} ref={rowRef}>
         <MessageContent>
           {mine ? null : (
             <MessageHeader className="text-xs font-medium text-muted-foreground">
@@ -327,7 +327,7 @@ function GroupLine({
       </MessageRow>
     );
   return (
-    <MessageRow align="start" data-speaker={message.agentId}>
+    <MessageRow align="start" data-speaker={message.agentId} ref={rowRef}>
       <div className="shrink-0 pt-0.5">
         <ChannelAvatar participantIds={[message.agentId]} size={24} />
       </div>

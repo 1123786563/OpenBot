@@ -65,6 +65,7 @@ import {
   opikRuns,
   recorderConnections,
   revokedAccess,
+  routineRuns,
   userRoles,
   users,
   workItems,
@@ -407,7 +408,12 @@ test("Run now completes in a shared Conversation", async () => {
   expect(dispatches).toBe(1);
 }, 60_000);
 
-for (const outcome of ["allow", "stop", "revoke"] as const) {
+for (const outcome of [
+  "allow",
+  "stop",
+  "revoke",
+  "lose the worker during",
+] as const) {
   test(`a background approval can ${outcome} the original Routine Run`, async () => {
     const actor = await person();
     const bot = await profiles.create(actor, {
@@ -440,7 +446,9 @@ for (const outcome of ["allow", "stop", "revoke"] as const) {
         if (
           input.messages.some(
             (message) =>
-              message.role === "tool" && message.content.includes("done"),
+              message.role === "tool" &&
+              typeof message.content === "string" &&
+              message.content.includes("done"),
           )
         ) {
           resumes++;
@@ -508,6 +516,16 @@ for (const outcome of ["allow", "stop", "revoke"] as const) {
     expect(await history()).toMatchObject({
       runs: [{ id: runId, status: "running", waitingForApproval: true }],
     });
+    await database
+      .update(routineRuns)
+      .set({ startedAt: sql`now() - interval '1 hour'` })
+      .where(eq(routineRuns.id, runId));
+    expect(
+      await createRoutineStore(database).reapAbandonedRuns(
+        30 * 60_000,
+        "Worker expired",
+      ),
+    ).toBe(0);
     const [approval] = await approvals.list(actor.id);
     if (!approval) throw new Error("Missing approval.");
     const decision = await app.request(
@@ -526,6 +544,15 @@ for (const outcome of ["allow", "stop", "revoke"] as const) {
       await database
         .insert(revokedAccess)
         .values({ email: actor.email, revokedBy: actor.id });
+    }
+    if (outcome === "lose the worker during") {
+      expect(
+        await approvals.consume(
+          actor.id,
+          approval.id,
+          approval.action.actionDigest,
+        ),
+      ).toBe(true);
     }
     const tick = createApprovalResumeTick({
       approvalQueue: createWorkQueue(database),
@@ -557,6 +584,11 @@ for (const outcome of ["allow", "stop", "revoke"] as const) {
     expect(await history()).toMatchObject({
       runs: [{ id: runId, status: completed ? "completed" : "failed" }],
     });
+    if (outcome === "lose the worker during") {
+      expect(await history()).toMatchObject({
+        runs: [{ id: runId, externalOutcome: "unknown" }],
+      });
+    }
     expect(executions).toBe(completed ? 1 : 0);
     expect(resumes).toBe(completed ? 1 : 0);
   }, 60_000);

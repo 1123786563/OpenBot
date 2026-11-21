@@ -35,6 +35,7 @@ import {
   isNull,
   lte,
   ne,
+  notExists,
   or,
   sql,
 } from "drizzle-orm";
@@ -47,6 +48,7 @@ import {
 import { oneLine } from "../channels/text";
 import type { Database } from "../db/client";
 import {
+  approvalRequests,
   channelAgents,
   channelMemberships,
   channels,
@@ -1199,13 +1201,31 @@ export function createRoutineStore(database: Database): RoutineStore {
       return database
         .select({ id: routineRuns.id })
         .from(routineRuns)
+        .leftJoin(
+          directChatRuns,
+          eq(
+            directChatRuns.userMessageId,
+            sql`${backgroundMessageId("routine", "")} || ${routineRuns.id}`,
+          ),
+        )
+        .leftJoin(
+          approvalRequests,
+          eq(approvalRequests.id, directChatRuns.waitingApprovalId),
+        )
         .where(
           and(
             isNull(routineRuns.status),
             sql`${routineRuns.startedAt} < now() - interval '15 seconds'`,
           ),
         )
-        .orderBy(asc(routineRuns.startedAt), asc(routineRuns.id))
+        .orderBy(
+          sql`case when ${directChatRuns.status} = 'running'
+              and ${directChatRuns.waitingApprovalId} is not null
+              and ${approvalRequests.status} is distinct from 'completed'
+            then 1 else 0 end`,
+          asc(routineRuns.startedAt),
+          asc(routineRuns.id),
+        )
         .limit(20);
     },
 
@@ -1307,6 +1327,17 @@ export function createRoutineStore(database: Database): RoutineStore {
         .where(
           and(
             isNull(routineRuns.status),
+            notExists(
+              database
+                .select({ id: directChatRuns.id })
+                .from(directChatRuns)
+                .where(
+                  eq(
+                    directChatRuns.userMessageId,
+                    sql`${backgroundMessageId("routine", "")} || ${routineRuns.id}`,
+                  ),
+                ),
+            ),
             lte(
               routineRuns.startedAt,
               sql`now() - (${olderThanMs} * interval '1 millisecond')`,
