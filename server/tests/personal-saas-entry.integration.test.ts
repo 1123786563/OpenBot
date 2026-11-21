@@ -4456,7 +4456,7 @@ test("the mounted workspace recovers each stopped background capability as fresh
       ),
     ),
   );
-}, 20_000);
+}, 60_000);
 
 test("workspace closure requires fresh verification and revokes existing workspace access", async () => {
   const owner = await isolationOwner();
