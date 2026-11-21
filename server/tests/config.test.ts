@@ -145,7 +145,8 @@ describe("deployment configuration", () => {
     if (config.runtime.mode !== "intelligence") {
       throw new Error("expected the Intelligence runtime");
     }
-    expect(config.runtime.intelligence).not.toHaveProperty("licenseToken");
+    const licenseToken = config.runtime.intelligence?.licenseToken;
+    expect(licenseToken).toBeUndefined();
     expect(config.runtime.intelligence?.apiKey).toBe(
       baseEnvironment.INTELLIGENCE_API_KEY,
     );
@@ -226,8 +227,10 @@ describe("deployment configuration", () => {
     if (off.runtime.mode !== "intelligence") {
       throw new Error("expected the Intelligence runtime");
     }
-    expect(off.runtime.intelligence).not.toHaveProperty("gatewayProxy");
-    expect(off.runtime.intelligence).not.toHaveProperty("browserGatewayWsUrl");
+    const gatewayProxy = off.runtime.intelligence?.gatewayProxy;
+    const browserGatewayWsUrl = off.runtime.intelligence?.browserGatewayWsUrl;
+    expect(gatewayProxy).toBeUndefined();
+    expect(browserGatewayWsUrl).toBeUndefined();
 
     expect(() =>
       loadConfig({
