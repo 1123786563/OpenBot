@@ -1,7 +1,16 @@
+import { Button } from "@astryxdesign/core/Button";
+import { CodeBlock } from "@astryxdesign/core/CodeBlock";
+import { Heading } from "@astryxdesign/core/Heading";
+import { HStack } from "@astryxdesign/core/HStack";
+import { List, ListItem } from "@astryxdesign/core/List";
+import { Section } from "@astryxdesign/core/Section";
+import { Selector } from "@astryxdesign/core/Selector";
+import { StackItem } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
+import { VStack } from "@astryxdesign/core/VStack";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { PageSection } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { client } from "@/lib/client";
 import { pluginKeys } from "@/lib/plugins/queries";
@@ -60,107 +69,115 @@ export function SkillMarket({ isAdmin = false }: { isAdmin?: boolean }) {
       title="Skill market"
       description="Browse skills curated by your deployment administrator."
     >
-      <InstalledMarketSkills isAdmin={isAdmin} />
-      {isAdmin && <MarketVersionAdministration />}
-      <form
-        className="mt-3 flex flex-wrap items-end gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const searchText = new FormData(event.currentTarget).get("q");
-          setQuery(typeof searchText === "string" ? searchText.trim() : "");
-          setPage(0);
-          setSelected(undefined);
-        }}
-        aria-label="Skill market"
-      >
-        <label className="grid min-w-0 grow gap-1 text-sm" htmlFor={searchId}>
-          Search shared skills
-          <Input id={searchId} maxLength={200} name="q" type="search" />
-        </label>
-        <Button type="submit" variant="outline">
-          Search
-        </Button>
-      </form>
-      {search.isPending && <p role="status">Loading skills…</p>}
-      {search.isError && (
-        <p role="alert">
-          Couldn't load the skill market.{" "}
-          <Button variant="link" onClick={() => void search.refetch()}>
-            Try again
-          </Button>
-        </p>
-      )}
-      {search.data?.items.length === 0 && (
-        <p role="status">No skills on this page match your search.</p>
-      )}
-      <ul className="divide-y divide-border">
-        {search.data?.items.map((skill) => (
-          <li
-            className="flex flex-wrap items-center justify-between gap-2 py-3"
-            key={skill.slug}
-          >
-            <div className="min-w-0 break-words">
-              <p className="font-medium">{skill.title}</p>
-              {skill.summary && (
-                <p className="text-sm text-muted-foreground">{skill.summary}</p>
-              )}
-            </div>
+      <VStack gap={3} paddingBlockStart={3}>
+        <InstalledMarketSkills isAdmin={isAdmin} />
+        {isAdmin && <MarketVersionAdministration />}
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const searchText = new FormData(event.currentTarget).get("q");
+            setQuery(typeof searchText === "string" ? searchText.trim() : "");
+            setPage(0);
+            setSelected(undefined);
+          }}
+          aria-label="Skill market"
+        >
+          <HStack align="end" gap={2} wrap="wrap">
+            <StackItem size="fill">
+              <VStack as="label" gap={1} htmlFor={searchId}>
+                <Text type="label">Search shared skills</Text>
+                <Input id={searchId} maxLength={200} name="q" type="search" />
+              </VStack>
+            </StackItem>
+            <Button type="submit" label="Search" />
+          </HStack>
+        </form>
+        {search.isPending && <p role="status">Loading skills…</p>}
+        {search.isError && (
+          <p role="alert">
+            Couldn't load the skill market.{" "}
             <Button
-              aria-controls={
-                skill.slug === selected?.slug ? previewId : undefined
-              }
-              aria-expanded={skill.slug === selected?.slug}
-              aria-label={`Preview ${skill.title}`}
-              onClick={() => {
-                if (skill.slug === selected?.slug) {
-                  setSelected(undefined);
-                } else {
-                  setSelected(skill);
-                  setVersion(skill.latestVersion);
-                }
-              }}
+              variant="ghost"
               size="sm"
-              variant="outline"
-            >
-              Preview
-            </Button>
-          </li>
-        ))}
-      </ul>
-      {(page > 0 || search.data?.hasMore) && (
-        <div className="flex gap-2">
-          <Button
-            disabled={page === 0}
-            onClick={() => {
-              setPage(page - 1);
-              setSelected(undefined);
-            }}
-            variant="outline"
-          >
-            Previous results
-          </Button>
-          <Button
-            disabled={!search.data?.hasMore}
-            onClick={() => {
-              setPage(page + 1);
-              setSelected(undefined);
-            }}
-            variant="outline"
-          >
-            Next results
-          </Button>
-        </div>
-      )}
-      {selected && (
-        <MarketPreview
-          key={selected.slug}
-          id={previewId}
-          skill={selected}
-          version={version}
-          selectVersion={setVersion}
-          isAdmin={isAdmin}
-        />
-      )}
+              label="Try again"
+              onClick={() => void search.refetch()}
+            />
+          </p>
+        )}
+        {search.data?.items.length === 0 && (
+          <p role="status">No skills on this page match your search.</p>
+        )}
+        {search.data && search.data.items.length > 0 && (
+          <List edge="flush" hasDividers>
+            {search.data.items.map((skill) => (
+              <ListItem
+                key={skill.slug}
+                label={
+                  <Text type="label" wordBreak="break-word">
+                    {skill.title}
+                  </Text>
+                }
+                description={
+                  skill.summary && (
+                    <Text type="supporting" wordBreak="break-word">
+                      {skill.summary}
+                    </Text>
+                  )
+                }
+                endContent={
+                  <Button
+                    aria-controls={
+                      skill.slug === selected?.slug ? previewId : undefined
+                    }
+                    aria-expanded={skill.slug === selected?.slug}
+                    aria-label={`Preview ${skill.title}`}
+                    label="Preview"
+                    onClick={() => {
+                      if (skill.slug === selected?.slug) {
+                        setSelected(undefined);
+                      } else {
+                        setSelected(skill);
+                        setVersion(skill.latestVersion);
+                      }
+                    }}
+                    size="sm"
+                  />
+                }
+              />
+            ))}
+          </List>
+        )}
+        {(page > 0 || search.data?.hasMore) && (
+          <HStack gap={2} wrap="wrap">
+            <Button
+              isDisabled={page === 0}
+              onClick={() => {
+                setPage(page - 1);
+                setSelected(undefined);
+              }}
+              label="Previous results"
+            />
+            <Button
+              isDisabled={!search.data?.hasMore}
+              onClick={() => {
+                setPage(page + 1);
+                setSelected(undefined);
+              }}
+              label="Next results"
+            />
+          </HStack>
+        )}
+        {selected && (
+          <MarketPreview
+            key={selected.slug}
+            id={previewId}
+            skill={selected}
+            version={version}
+            selectVersion={setVersion}
+            isAdmin={isAdmin}
+          />
+        )}
+      </VStack>
     </PageSection>
   );
 }
@@ -199,124 +216,150 @@ function MarketPreview({
   });
   const versions = new Set([version, ...(detail.data?.versions ?? [])]);
   return (
-    <section
-      className="grid gap-3 rounded-lg border p-4"
-      id={id}
-      aria-labelledby={`${id}-heading`}
-    >
-      <h3 className="font-semibold" id={`${id}-heading`}>
-        {skill.title}
-      </h3>
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="grid gap-1 text-sm">
-          Published version
-          <select
-            className="rounded-md border bg-background px-2 py-1"
-            onChange={(event) => selectVersion(event.target.value)}
-            value={version}
-          >
-            {Array.from(versions, (option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
-        {page > 0 && (
-          <Button size="sm" variant="outline" onClick={() => setPage(page - 1)}>
-            Newer versions
-          </Button>
-        )}
-        {detail.data?.hasMore && (
-          <Button size="sm" variant="outline" onClick={() => setPage(page + 1)}>
-            Older versions
-          </Button>
-        )}
-      </div>
-      {detail.isError && <p role="alert">Couldn't load the version list.</p>}
-      {preview.isPending && <p role="status">Loading version {version}…</p>}
-      {preview.isError && (
-        <p role="alert">Couldn't preview version {version}.</p>
-      )}
-      {preview.data && (
-        <>
-          <dl className="grid gap-2 break-words text-sm">
-            <div>
-              <dt className="font-medium">Source</dt>
-              <dd>
-                {preview.data.source} · {skill.namespace}/{skill.slug}
-              </dd>
-            </div>
-            {preview.data.publisher && (
-              <div>
-                <dt className="font-medium">Publisher</dt>
-                <dd>{preview.data.publisher}</dd>
-              </div>
-            )}
-            <div>
-              <dt className="font-medium">Version</dt>
-              <dd>{preview.data.version}</dd>
-            </div>
-          </dl>
-          <div className="text-sm">
-            <h4 className="font-medium">OpenBot compatibility</h4>
-            {preview.data.runtimeRequirements && (
-              <p>{preview.data.runtimeRequirements}</p>
-            )}
-            {preview.data.installable ? (
-              <p>Confirmed for OpenBot. Requires only SKILL.md.</p>
-            ) : (
-              <>
-                <p>This version cannot be installed.</p>
-                <ul className="list-disc pl-5">
-                  {preview.data.reasons.map((reason) => (
-                    <li key={reason}>{reason}</li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </div>
-          {isAdmin && (
-            <MarketVersionControl
-              key={versionPath}
-              version={preview.data}
-              disableReason={preview.data.disableReason ?? null}
+    <section id={id} aria-labelledby={`${id}-heading`}>
+      <Section variant="muted" padding={3}>
+        <VStack gap={3}>
+          <Heading level={4} accessibilityLevel={3} id={`${id}-heading`}>
+            {skill.title}
+          </Heading>
+          <HStack align="end" gap={2} wrap="wrap">
+            <Selector
+              size="sm"
+              label="Published version"
+              options={Array.from(versions)}
+              onChange={selectVersion}
+              value={version}
             />
-          )}
-          {preview.data.canAssignCommand && (
-            <MarketCommandAssignment path={path} />
-          )}
-          {preview.data.installable &&
-            preview.data.command &&
-            (installed ? (
-              preview.data.source === installed.skill.registry &&
-              preview.data.command === installed.skill.command ? (
-                <MarketSwitch
-                  key={versionPath}
-                  installed={installed}
-                  version={version}
-                  versionPath={versionPath}
-                />
-              ) : (
-                <p role="alert">
-                  This version belongs to a different market source.
-                </p>
-              )
-            ) : (
-              <MarketInstall
-                key={versionPath}
-                command={preview.data.command}
-                versionPath={versionPath}
+            {page > 0 && (
+              <Button
+                size="sm"
+                label="Newer versions"
+                onClick={() => setPage(page - 1)}
               />
-            ))}
-          <div>
-            <h4 className="font-medium">Instructions</h4>
-            <pre className="whitespace-pre-wrap break-words text-sm">
-              {preview.data.instructions}
-            </pre>
-          </div>
-        </>
-      )}
+            )}
+            {detail.data?.hasMore && (
+              <Button
+                size="sm"
+                label="Older versions"
+                onClick={() => setPage(page + 1)}
+              />
+            )}
+          </HStack>
+          {detail.isError && (
+            <p role="alert">Couldn't load the version list.</p>
+          )}
+          {preview.isPending && <p role="status">Loading version {version}…</p>}
+          {preview.isError && (
+            <p role="alert">Couldn't preview version {version}.</p>
+          )}
+          {preview.data && (
+            <>
+              <VStack as="dl" gap={2}>
+                <VStack gap={0.5}>
+                  <dt>
+                    <Text type="label">Source</Text>
+                  </dt>
+                  <dd>
+                    <Text type="supporting" wordBreak="break-word">
+                      {preview.data.source} · {skill.namespace}/{skill.slug}
+                    </Text>
+                  </dd>
+                </VStack>
+                {preview.data.publisher && (
+                  <VStack gap={0.5}>
+                    <dt>
+                      <Text type="label">Publisher</Text>
+                    </dt>
+                    <dd>
+                      <Text type="supporting">{preview.data.publisher}</Text>
+                    </dd>
+                  </VStack>
+                )}
+                <VStack gap={0.5}>
+                  <dt>
+                    <Text type="label">Version</Text>
+                  </dt>
+                  <dd>
+                    <Text type="supporting">{preview.data.version}</Text>
+                  </dd>
+                </VStack>
+              </VStack>
+              <VStack gap={1}>
+                <Heading level={5} accessibilityLevel={4}>
+                  OpenBot compatibility
+                </Heading>
+                {preview.data.runtimeRequirements && (
+                  <Text as="p" wordBreak="break-word">
+                    {preview.data.runtimeRequirements}
+                  </Text>
+                )}
+                {preview.data.installable ? (
+                  <Text as="p">
+                    Confirmed for OpenBot. Requires only SKILL.md.
+                  </Text>
+                ) : (
+                  <>
+                    <Text as="p">This version cannot be installed.</Text>
+                    <List listStyle="disc" density="compact">
+                      {preview.data.reasons.map((reason) => (
+                        <ListItem
+                          key={reason}
+                          label={<Text wordBreak="break-word">{reason}</Text>}
+                        />
+                      ))}
+                    </List>
+                  </>
+                )}
+              </VStack>
+              {isAdmin && (
+                <MarketVersionControl
+                  key={versionPath}
+                  version={preview.data}
+                  disableReason={preview.data.disableReason ?? null}
+                />
+              )}
+              {preview.data.canAssignCommand && (
+                <MarketCommandAssignment path={path} />
+              )}
+              {preview.data.installable &&
+                preview.data.command &&
+                (installed ? (
+                  preview.data.source === installed.skill.registry &&
+                  preview.data.command === installed.skill.command ? (
+                    <MarketSwitch
+                      key={versionPath}
+                      installed={installed}
+                      version={version}
+                      versionPath={versionPath}
+                    />
+                  ) : (
+                    <p role="alert">
+                      This version belongs to a different market source.
+                    </p>
+                  )
+                ) : (
+                  <MarketInstall
+                    key={versionPath}
+                    command={preview.data.command}
+                    versionPath={versionPath}
+                  />
+                ))}
+              <VStack gap={1}>
+                <Heading level={5} accessibilityLevel={4}>
+                  Instructions
+                </Heading>
+                <CodeBlock
+                  code={preview.data.instructions}
+                  container="section"
+                  hasCopyButton={false}
+                  isWrapped
+                  width="100%"
+                />
+              </VStack>
+            </>
+          )}
+        </VStack>
+      </Section>
     </section>
   );
 }
@@ -340,7 +383,6 @@ function MarketCommandAssignment({ path }: { path: string }) {
 
   return (
     <form
-      className="grid gap-2 text-sm"
       onSubmit={(event) => {
         event.preventDefault();
         const command = new FormData(event.currentTarget).get("command");
@@ -348,31 +390,37 @@ function MarketCommandAssignment({ path }: { path: string }) {
           assign.mutate(command);
       }}
     >
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="grid gap-1" htmlFor={inputId}>
-          New slash command
-          <Input
-            id={inputId}
-            aria-describedby={helpId}
-            name="command"
-            autoComplete="off"
-            autoCapitalize="none"
-            spellCheck={false}
-            maxLength={40}
-            pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
-            required
-            disabled={assign.isPending}
+      <VStack gap={2}>
+        <HStack align="end" gap={2} wrap="wrap">
+          <VStack as="label" gap={1} htmlFor={inputId}>
+            <Text type="label">New slash command</Text>
+            <Input
+              id={inputId}
+              aria-describedby={helpId}
+              name="command"
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              maxLength={40}
+              pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+              required
+              disabled={assign.isPending}
+            />
+          </VStack>
+          <Button
+            type="submit"
+            size="sm"
+            variant="primary"
+            isLoading={assign.isPending}
+            label={assign.isPending ? "Assigning…" : "Assign command"}
           />
-        </label>
-        <Button type="submit" size="sm" disabled={assign.isPending}>
-          {assign.isPending ? "Assigning…" : "Assign command"}
-        </Button>
-      </div>
-      <p className="text-muted-foreground" id={helpId}>
-        Use lowercase letters or digits with single hyphens between groups. All
-        Bots that install this skill will use this command.
-      </p>
-      {assign.error && <p role="alert">{assign.error.message}</p>}
+        </HStack>
+        <Text as="p" type="supporting" id={helpId}>
+          Use lowercase letters or digits with single hyphens between groups.
+          All Bots that install this skill will use this command.
+        </Text>
+        {assign.error && <p role="alert">{assign.error.message}</p>}
+      </VStack>
     </form>
   );
 }
@@ -424,29 +472,30 @@ function InstalledMarketSkills({ isAdmin }: { isAdmin: boolean }) {
     return (
       <p role="alert">
         Couldn't load Bots for skill management.{" "}
-        <Button variant="link" onClick={() => void targets.refetch()}>
-          Try again
-        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          label="Try again"
+          onClick={() => void targets.refetch()}
+        />
       </p>
     );
   if (!targets.data.bots.length) return null;
   return (
-    <div className="mt-3 grid gap-2">
-      <label className="grid w-fit gap-1 text-sm">
-        Manage installed skills on
-        <select
-          className="rounded-md border bg-background px-2 py-1"
-          value={agentId}
-          onChange={(event) => setAgentId(event.target.value)}
-        >
-          <option value="">Choose a Bot</option>
-          {targets.data.bots.map((bot) => (
-            <option key={bot.id} value={bot.id}>
-              {bot.title}
-            </option>
-          ))}
-        </select>
-      </label>
+    <VStack gap={2}>
+      <Selector
+        label="Manage installed skills on"
+        placeholder="Choose a Bot"
+        options={[
+          { value: "", label: "Choose a Bot" },
+          ...targets.data.bots.map((bot) => ({
+            value: bot.id,
+            label: bot.title,
+          })),
+        ]}
+        value={agentId}
+        onChange={setAgentId}
+      />
       {agentId && (
         <BotMarketInstallations
           key={agentId}
@@ -454,7 +503,7 @@ function InstalledMarketSkills({ isAdmin }: { isAdmin: boolean }) {
           isAdmin={isAdmin}
         />
       )}
-    </div>
+    </VStack>
   );
 }
 
@@ -495,55 +544,56 @@ function BotMarketInstallations({
       {list.isError && (
         <p role="alert">
           Couldn't load installed skills.{" "}
-          <Button variant="link" onClick={() => void list.refetch()}>
-            Try again
-          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            label="Try again"
+            onClick={() => void list.refetch()}
+          />
         </p>
       )}
       {list.data?.installations.length === 0 && (
         <p>This Bot has no installed market skills.</p>
       )}
-      <ul className="divide-y divide-border">
-        {list.data?.installations.map((skill) => (
-          <li
-            key={skill.command}
-            className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
-          >
-            <div>
-              <p>
-                {skill.title} <code>/{skill.command}</code>
-              </p>
-              <p className="text-muted-foreground">
-                Installed version {skill.version}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                aria-label={`Change version of ${skill.title}`}
-                aria-expanded={command === skill.command}
-                aria-controls={command === skill.command ? id : undefined}
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setCommand(command === skill.command ? "" : skill.command);
-                  selectVersion(skill.version);
-                }}
-              >
-                Change version
-              </Button>
-              <Button
-                aria-label={`Uninstall ${skill.title}`}
-                variant="outline"
-                size="sm"
-                disabled={uninstall.isPending}
-                onClick={() => uninstall.mutate(skill)}
-              >
-                Uninstall
-              </Button>
-            </div>
-          </li>
-        ))}
-      </ul>
+      {list.data && list.data.installations.length > 0 && (
+        <List edge="flush" hasDividers>
+          {list.data.installations.map((skill) => (
+            <ListItem
+              key={skill.command}
+              label={
+                <Text type="label" wordBreak="break-word">
+                  {skill.title} <Text type="code">/{skill.command}</Text>
+                </Text>
+              }
+              description={`Installed version ${skill.version}`}
+              endContent={
+                <HStack gap={2} wrap="wrap" justify="end">
+                  <Button
+                    aria-label={`Change version of ${skill.title}`}
+                    aria-expanded={command === skill.command}
+                    aria-controls={command === skill.command ? id : undefined}
+                    label="Change version"
+                    size="sm"
+                    onClick={() => {
+                      setCommand(
+                        command === skill.command ? "" : skill.command,
+                      );
+                      selectVersion(skill.version);
+                    }}
+                  />
+                  <Button
+                    aria-label={`Uninstall ${skill.title}`}
+                    label="Uninstall"
+                    size="sm"
+                    isDisabled={uninstall.isPending}
+                    onClick={() => uninstall.mutate(skill)}
+                  />
+                </HStack>
+              }
+            />
+          ))}
+        </List>
+      )}
       {uninstall.error && <p role="alert">{uninstall.error.message}</p>}
       {uninstall.isSuccess && (
         <p role="status">Uninstalled {uninstall.variables.title}.</p>
@@ -583,17 +633,18 @@ function MarketSwitch({
     onSettled: () => refreshBotSkills(queryClient, agentId),
   });
   return (
-    <div>
+    <VStack gap={1} align="start">
       <Button
         size="sm"
-        disabled={version === skill.version || changeVersion.isPending}
+        variant="primary"
+        isDisabled={version === skill.version}
+        isLoading={changeVersion.isPending}
         onClick={() => changeVersion.mutate(skill.versionId)}
-      >
-        {changeVersion.isPending ? "Switching…" : `Switch to ${version}`}
-      </Button>
+        label={changeVersion.isPending ? "Switching…" : `Switch to ${version}`}
+      />
       {changeVersion.error && <p role="alert">{changeVersion.error.message}</p>}
       {changeVersion.isSuccess && <p role="status">Switched to {version}.</p>}
-    </div>
+    </VStack>
   );
 }
 
@@ -626,9 +677,12 @@ function MarketInstall({
     return (
       <p role="alert">
         Couldn't load Bots for installation.{" "}
-        <Button variant="link" onClick={() => void targets.refetch()}>
-          Try again
-        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          label="Try again"
+          onClick={() => void targets.refetch()}
+        />
       </p>
     );
   }
@@ -638,50 +692,50 @@ function MarketInstall({
   const selected = targets.data.bots.find((bot) => bot.id === agentId);
   return (
     <form
-      className="grid gap-2 text-sm"
       onSubmit={(event) => {
         event.preventDefault();
         if (selected && !install.isPending) install.mutate(selected);
       }}
     >
-      <p>
-        Slash command <code>/{command}</code>
-      </p>
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="grid gap-1">
-          Bot
-          <select
-            className="rounded-md border bg-background px-2 py-1"
-            disabled={install.isPending}
+      <VStack gap={2}>
+        <Text as="p">
+          Slash command <Text type="code">/{command}</Text>
+        </Text>
+        <HStack align="end" gap={2} wrap="wrap">
+          <Selector
+            label="Bot"
+            placeholder="Choose a Bot"
+            options={[
+              { value: "", label: "Choose a Bot" },
+              ...targets.data.bots.map((bot) => ({
+                value: bot.id,
+                label: bot.title,
+              })),
+            ]}
+            isDisabled={install.isPending}
             value={selected?.id ?? ""}
-            onChange={(event) => {
-              setAgentId(event.target.value);
+            onChange={(value) => {
+              setAgentId(value);
               install.reset();
             }}
-          >
-            <option value="">Choose a Bot</option>
-            {targets.data.bots.map((bot) => (
-              <option key={bot.id} value={bot.id}>
-                {bot.title}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Button
-          type="submit"
-          size="sm"
-          disabled={!selected || install.isPending || install.isSuccess}
-        >
-          {install.isPending ? "Installing…" : "Install on Bot"}
-        </Button>
-      </div>
-      {install.error && <p role="alert">{install.error.message}</p>}
-      {install.data && (
-        <p role="status">
-          Installed {install.data.version}. Use /{install.data.command} on{" "}
-          {install.data.botTitle}.
-        </p>
-      )}
+          />
+          <Button
+            type="submit"
+            size="md"
+            variant="primary"
+            isDisabled={!selected || install.isSuccess}
+            isLoading={install.isPending}
+            label={install.isPending ? "Installing…" : "Install on Bot"}
+          />
+        </HStack>
+        {install.error && <p role="alert">{install.error.message}</p>}
+        {install.data && (
+          <p role="status">
+            Installed {install.data.version}. Use /{install.data.command} on{" "}
+            {install.data.botTitle}.
+          </p>
+        )}
+      </VStack>
     </form>
   );
 }

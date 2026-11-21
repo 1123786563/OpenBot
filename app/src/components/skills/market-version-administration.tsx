@@ -1,6 +1,12 @@
+import { Button } from "@astryxdesign/core/Button";
+import { Heading } from "@astryxdesign/core/Heading";
+import { HStack } from "@astryxdesign/core/HStack";
+import { List, ListItem } from "@astryxdesign/core/List";
+import { StackItem } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
+import { VStack } from "@astryxdesign/core/VStack";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId } from "react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { client } from "@/lib/client";
 
@@ -39,51 +45,55 @@ export function MarketVersionAdministration() {
     retry: false,
   });
   return (
-    <section
-      className="mt-3 grid gap-2 rounded-lg border p-3 text-sm"
-      aria-label="Market version administration"
-    >
-      <h3 className="font-medium">Emergency version controls</h3>
+    <VStack as="section" gap={2} aria-label="Market version administration">
+      <Heading level={4} accessibilityLevel={3}>
+        Emergency version controls
+      </Heading>
       {versions.isPending && (
         <p role="status">Loading installed and disabled versions…</p>
       )}
       {versions.isError && (
         <p role="alert">
           Couldn't load installed and disabled versions.{" "}
-          <Button variant="link" onClick={() => void versions.refetch()}>
-            Try again
-          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            label="Try again"
+            onClick={() => void versions.refetch()}
+          />
         </p>
       )}
       {versions.data?.length === 0 && (
         <p>No installed or disabled market versions.</p>
       )}
       {versions.data && versions.data.length > 0 && (
-        <ul className="grid gap-2 divide-y divide-border">
+        <List hasDividers edge="flush">
           {versions.data.map((version) => (
-            <li
+            <ListItem
               key={JSON.stringify([
                 version.source,
                 version.registrySkillId,
                 version.versionId,
               ])}
-              className="grid gap-2 pt-2"
-            >
-              <p className="break-words font-medium">
-                {version.namespace}/{version.slug} {version.version}
-              </p>
-              <p className="break-words text-muted-foreground">
-                {version.source}
-              </p>
-              <MarketVersionControl
-                version={version}
-                disableReason={version.reason}
-              />
-            </li>
+              label={
+                <VStack gap={1}>
+                  <Text type="label" wordBreak="break-word">
+                    {version.namespace}/{version.slug} {version.version}
+                  </Text>
+                  <Text type="supporting" wordBreak="break-word">
+                    {version.source}
+                  </Text>
+                  <MarketVersionControl
+                    version={version}
+                    disableReason={version.reason}
+                  />
+                </VStack>
+              }
+            />
           ))}
-        </ul>
+        </List>
       )}
-    </section>
+    </VStack>
   );
 }
 
@@ -126,25 +136,24 @@ export function MarketVersionControl({
       ]),
   });
   return (
-    <div className="grid gap-2 text-sm">
+    <VStack gap={2} align="start">
       {disableReason !== null ? (
         <>
-          <p className="font-medium">Disabled by an OpenBot administrator</p>
-          <p className="break-words">{disableReason}</p>
+          <Text as="p" type="label">
+            Disabled by an OpenBot administrator
+          </Text>
+          <Text as="p" wordBreak="break-word">
+            {disableReason}
+          </Text>
           <Button
-            className="justify-self-start"
-            type="button"
             size="sm"
-            variant="outline"
-            disabled={update.isPending}
+            label="Re-enable version"
+            isLoading={update.isPending}
             onClick={() => update.mutate(null)}
-          >
-            Re-enable version
-          </Button>
+          />
         </>
       ) : (
         <form
-          className="flex flex-wrap items-end gap-2"
           onSubmit={(event) => {
             event.preventDefault();
             const reason = new FormData(event.currentTarget).get("reason");
@@ -152,22 +161,25 @@ export function MarketVersionControl({
               update.mutate(reason.trim());
           }}
         >
-          <label className="grid min-w-0 grow gap-1" htmlFor={reasonId}>
-            Disable reason
-            <Input id={reasonId} maxLength={500} name="reason" required />
-          </label>
-          <Button
-            type="submit"
-            size="sm"
-            variant="destructive"
-            disabled={update.isPending}
-          >
-            Disable version
-          </Button>
+          <HStack align="end" gap={2} wrap="wrap">
+            <StackItem size="fill">
+              <VStack as="label" gap={1} htmlFor={reasonId}>
+                <Text type="label">Disable reason</Text>
+                <Input id={reasonId} maxLength={500} name="reason" required />
+              </VStack>
+            </StackItem>
+            <Button
+              type="submit"
+              size="sm"
+              variant="destructive"
+              label="Disable version"
+              isLoading={update.isPending}
+            />
+          </HStack>
         </form>
       )}
       {update.isError && <p role="alert">{update.error.message}</p>}
       {update.isPending && <p role="status">Updating version availability…</p>}
-    </div>
+    </VStack>
   );
 }

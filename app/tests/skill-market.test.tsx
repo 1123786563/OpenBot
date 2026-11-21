@@ -1,7 +1,14 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  type RenderResult,
+  render,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { SkillMarket } from "@/components/skills/skill-market";
 import { settleReactWork } from "./settle-react-work";
 
@@ -16,6 +23,19 @@ afterAll(async () => {
   await settleReactWork();
   GlobalRegistrator.unregister();
 });
+
+async function chooseOption(view: RenderResult, field: string, option: string) {
+  const trigger = await view.findByRole("combobox", { name: field });
+  fireEvent.click(trigger);
+  const listbox = await waitFor(() => {
+    const listbox = view
+      .getAllByRole("listbox")
+      .find((element) => element.id === trigger.getAttribute("aria-controls"));
+    if (!listbox) throw new Error(`No options opened for ${field}`);
+    return listbox;
+  });
+  fireEvent.click(await within(listbox).findByRole("option", { name: option }));
+}
 
 test("searches the shared market and shows the selected version's instructions and eligibility", async () => {
   const skill = {
@@ -69,10 +89,7 @@ test("searches the shared market and shows the selected version's instructions a
     await view.findByRole("button", { name: "Preview Summarize" }),
   );
   await view.findByText("Summarize the notes.");
-  await view.findByRole("option", { name: "1.0.0" });
-  fireEvent.change(view.getByRole("combobox", { name: "Published version" }), {
-    target: { value: "1.0.0" },
-  });
+  await chooseOption(view, "Published version", "1.0.0");
   expect(await view.findByText("Write three bullets.")).toBeTruthy();
   expect(
     view.getByText("https://registry.example · catalog/summarize"),
@@ -148,10 +165,7 @@ test("installs the previewed version only on a Bot the server offers to manage",
 
   canManage = true;
   const owner = await openPreview();
-  await owner.findByRole("combobox", { name: "Bot" });
-  fireEvent.change(owner.getByRole("combobox", { name: "Bot" }), {
-    target: { value: "managed" },
-  });
+  await chooseOption(owner, "Bot", "Managed Bot");
   fireEvent.click(owner.getByRole("button", { name: "Install on Bot" }));
   await owner.findByText("Installed 1.0.0. Use /summarize on Managed Bot.");
   expect(installs).toEqual([{ agentId: "managed" }]);
@@ -198,13 +212,7 @@ test("manages a Bot's saved installation even when the catalog is offline", asyn
       <SkillMarket />
     </QueryClientProvider>,
   );
-  await view.findByRole("option", { name: "Managed Bot" });
-  fireEvent.change(
-    view.getByRole("combobox", { name: "Manage installed skills on" }),
-    {
-      target: { value: "managed" },
-    },
-  );
+  await chooseOption(view, "Manage installed skills on", "Managed Bot");
   await view.findByText("Installed version 1.0.0");
   fireEvent.click(view.getByRole("button", { name: "Uninstall Summarize" }));
   await view.findByText("This Bot has no installed market skills.");
@@ -270,23 +278,15 @@ test("uses the published version picker to upgrade and roll back a single Bot", 
       <SkillMarket />
     </QueryClientProvider>,
   );
-  await view.findByRole("option", { name: "Managed Bot" });
-  fireEvent.change(
-    view.getByRole("combobox", { name: "Manage installed skills on" }),
-    {
-      target: { value: "managed" },
-    },
-  );
+  await chooseOption(view, "Manage installed skills on", "Managed Bot");
   fireEvent.click(
     await view.findByRole("button", { name: "Change version of Summarize" }),
   );
-  await view.findByRole("option", { name: "2.0.0" });
-  const versions = view.getByRole("combobox", { name: "Published version" });
-  fireEvent.change(versions, { target: { value: "2.0.0" } });
+  await chooseOption(view, "Published version", "2.0.0");
   fireEvent.click(await view.findByRole("button", { name: "Switch to 2.0.0" }));
   await view.findByText("Switched to 2.0.0.");
   await view.findByText("Installed version 2.0.0");
-  fireEvent.change(versions, { target: { value: "1.0.0" } });
+  await chooseOption(view, "Published version", "1.0.0");
   fireEvent.click(await view.findByRole("button", { name: "Switch to 1.0.0" }));
   await view.findByText("Installed version 1.0.0");
   expect(changes).toEqual([
