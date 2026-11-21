@@ -7,23 +7,17 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { CapabilityPage } from "@/components/astryx-pilot/capability-surface";
-import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
   PageSection,
+  PageShell,
 } from "@/components/layout/page-shell";
 import { SkillFields } from "@/components/skills/skill-fields";
-import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
 import {
   Item,
   ItemActions,
@@ -64,7 +58,7 @@ export function SkillPage({ slug }: { slug: string }) {
   /* The ones this person has hidden, so a grant one of them holds still has its switch here. */
   const { data: hiddenAgents } = useQuery(agentListQueryOptions(true));
   const [error, setError] = useState<string | null>(null);
-  const [removing, setRemoving] = useState(false);
+  const { requestConfirmation, confirmation } = useActionConfirmation();
 
   const setGrant = useMutation({
     ...setPluginGrantMutationOptions(queryClient),
@@ -81,30 +75,30 @@ export function SkillPage({ slug }: { slug: string }) {
   /* Nothing rather than a placeholder, so no sentence asserts anything while the fetch is open. */
   if (plugins.isPending) {
     return (
-      <CapabilityPage backButton={back} title="Skill">
+      <PageShell backButton={back} title="Skill">
         {null}
-      </CapabilityPage>
+      </PageShell>
     );
   }
 
   /* A list that could not be read is not a missing skill: `isPending` goes false on a failure too. */
   if (!plugins.data) {
     return (
-      <CapabilityPage backButton={back} title="Skill">
+      <PageShell backButton={back} title="Skill">
         <p className="text-destructive text-sm" role="alert">
           Couldn't load this skill. Reload the page.
         </p>
-      </CapabilityPage>
+      </PageShell>
     );
   }
 
   if (!skill) {
     return (
-      <CapabilityPage backButton={back} title="Skill">
+      <PageShell backButton={back} title="Skill">
         <PageEmpty icon={IconFileOff} title="Skill not found">
           It may have been deleted. Go back to Skills to see the ones there are.
         </PageEmpty>
-      </CapabilityPage>
+      </PageShell>
     );
   }
 
@@ -115,7 +109,7 @@ export function SkillPage({ slug }: { slug: string }) {
   });
 
   return (
-    <CapabilityPage
+    <PageShell
       backButton={back}
       {...(skill.summary ? { description: skill.summary } : {})}
       title={skill.title}
@@ -214,7 +208,43 @@ export function SkillPage({ slug }: { slug: string }) {
       <PageSection title="Manage">
         <PageRows>
           <Item
-            render={<button onClick={() => setRemoving(true)} type="button" />}
+            render={
+              <button
+                onClick={(event) =>
+                  requestConfirmation({
+                    title: `Delete ${skill.title}?`,
+                    description:
+                      "Everyone who could run this skill will lose access to it, and no Bot will offer it. Deletion is permanent.",
+                    confirmLabel: "Delete",
+                    pendingLabel: "Deleting…",
+                    failureMessage: "Couldn't delete this skill. Try again.",
+                    trigger: event.currentTarget,
+                    refresh: () => plugins.refetch(),
+                    run: async () => {
+                      const { data } = await plugins.refetch({
+                        throwOnError: true,
+                      });
+                      const current = data?.skills.find(
+                        (candidate) => candidate.slug === skill.slug,
+                      );
+                      if (
+                        current?.id !== skill.id ||
+                        current.title !== skill.title ||
+                        current.instructions !== skill.instructions ||
+                        current.ownerUserId !== skill.ownerUserId
+                      ) {
+                        throw new ActionUnavailable(
+                          "This skill changed or is no longer available. Return to Skills to review it.",
+                        );
+                      }
+                      await removeSkill.mutateAsync(skill.slug);
+                      await navigate(paths.skills());
+                    },
+                  })
+                }
+                type="button"
+              />
+            }
             size="sm"
           >
             <ItemMedia variant="icon">
@@ -234,43 +264,7 @@ export function SkillPage({ slug }: { slug: string }) {
         </PageRows>
       </PageSection>
 
-      <Dialog onOpenChange={setRemoving} open={removing}>
-        <DialogContent {...astryxScope}>
-          <DialogHeader>
-            <DialogTitle>Delete {skill.title}?</DialogTitle>
-            <DialogDescription>
-              People can't run it any more, and no Bot offers it. You can't undo
-              this.
-            </DialogDescription>
-          </DialogHeader>
-          {removeSkill.error ? (
-            <p className="text-destructive text-sm" role="alert">
-              {removeSkill.error.message}
-            </p>
-          ) : null}
-          <DialogFooter>
-            <Button
-              onClick={() => setRemoving(false)}
-              size="sm"
-              variant="ghost"
-            >
-              Cancel
-            </Button>
-            <Button
-              disabled={removeSkill.isPending}
-              onClick={() =>
-                removeSkill.mutate(skill.slug, {
-                  onSuccess: () => navigate(paths.skills()),
-                })
-              }
-              size="sm"
-              variant="destructive"
-            >
-              {removeSkill.isPending ? "Deleting…" : "Delete"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </CapabilityPage>
+      {confirmation}
+    </PageShell>
   );
 }

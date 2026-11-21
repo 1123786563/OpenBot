@@ -153,18 +153,27 @@ export type CapabilitySwitch = Omit<CapabilityRow, "allowed"> & {
   allowed: boolean | null;
 };
 
+function capabilityScope(row: CapabilitySwitch) {
+  return and(
+    eq(capabilitySettings.scopeKind, row.scopeKind),
+    eq(capabilitySettings.scopeId, row.scopeId),
+    eq(capabilitySettings.capability, row.capability),
+  );
+}
+
+async function lockCapabilityWrites(tx: Pick<Database, "execute">) {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtext('enterprise_capability_settings'))`,
+  );
+}
+
 async function writeCapability(
   tx: Pick<Database, "insert" | "delete">,
   row: CapabilitySwitch,
   by: string,
 ) {
-  const where = and(
-    eq(capabilitySettings.scopeKind, row.scopeKind),
-    eq(capabilitySettings.scopeId, row.scopeId),
-    eq(capabilitySettings.capability, row.capability),
-  );
   if (row.allowed === null) {
-    await tx.delete(capabilitySettings).where(where);
+    await tx.delete(capabilitySettings).where(capabilityScope(row));
     return;
   }
   await tx
@@ -243,10 +252,24 @@ export function createEnterpriseStore(database: Database) {
     },
 
     /** `allowed: null` removes the row, returning that scope to whatever sits beneath it. */
-    async setCapability(row: CapabilitySwitch, by: string): Promise<void> {
-      await database.transaction(async (tx) => {
+    async setCapability(
+      row: CapabilitySwitch,
+      by: string,
+      expected?: boolean | null,
+    ): Promise<boolean> {
+      return database.transaction(async (tx) => {
+        await lockCapabilityWrites(tx);
+        if (expected !== undefined) {
+          const [stored] = await tx
+            .select({ allowed: capabilitySettings.allowed })
+            .from(capabilitySettings)
+            .where(capabilityScope(row))
+            .limit(1);
+          if ((stored?.allowed ?? null) !== expected) return false;
+        }
         await writeCapability(tx, row, by);
         await announce(tx);
+        return true;
       });
     },
 
@@ -260,6 +283,7 @@ export function createEnterpriseStore(database: Database) {
       by: string,
     ): Promise<void> {
       await database.transaction(async (tx) => {
+        await lockCapabilityWrites(tx);
         for (const row of rows) await writeCapability(tx, row, by);
         await announce(tx);
       });

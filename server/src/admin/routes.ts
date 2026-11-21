@@ -71,6 +71,7 @@ const capabilityInput = z.strictObject({
   scopeId: z.string().trim().max(200).default(""),
   capability: z.string(),
   allowed: z.boolean().nullable(),
+  expected: z.boolean().nullable().optional(),
 });
 
 const networkInput = z.strictObject({
@@ -223,7 +224,7 @@ export function createEnterpriseAdminRoutes(
         400,
       );
     }
-    const input = parsed.data;
+    const { expected, ...input } = parsed.data;
     if (input.scopeKind === "organization") input.scopeId = "";
     if (
       input.scopeKind === "role" &&
@@ -234,7 +235,17 @@ export function createEnterpriseAdminRoutes(
     if (input.scopeKind === "group" && !input.scopeId) {
       return context.json({ error: "Name the group." }, 400);
     }
-    await controls.store.setCapability(input, context.var.actor.email);
+    const saved = await controls.store.setCapability(
+      input,
+      context.var.actor.email,
+      expected,
+    );
+    if (!saved) {
+      return context.json(
+        { error: "This permission changed while you were reviewing it." },
+        409,
+      );
+    }
     await controls.refresh();
     await recordAuditEvent(controls.deps.auditStore, {
       eventType: "capability.changed",

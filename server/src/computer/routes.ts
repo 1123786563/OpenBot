@@ -42,6 +42,7 @@ import {
   REPLAYABLE_TARGET_TYPES,
 } from "./policy-dry-run";
 import {
+  ActionPolicyChangedError,
   type PolicyStore,
   parseActionPolicy,
   parsePolicyAuthoring,
@@ -929,6 +930,13 @@ export function createComputerRoutes(
     if (!authoring.ok) {
       return context.json({ error: authoring.error }, 400);
     }
+    const expected =
+      body?.expected === undefined
+        ? undefined
+        : parseActionPolicy(body.expected);
+    if (expected && !expected.ok) {
+      return context.json({ error: expected.error }, 400);
+    }
     /*
      * Every rule it adds has to be one the evaluator can run. A deny rule that cannot be evaluated
      * counts as a match, so a typo saved here would stop every action every Bot takes until somebody
@@ -941,8 +949,16 @@ export function createComputerRoutes(
       return context.json({ error: broken.error, rule: broken.rule }, 400);
     }
     try {
-      await policyStore.set(parsed.policy, context.var.actor.email);
-    } catch {
+      await policyStore.set(
+        parsed.policy,
+        context.var.actor.email,
+        expected?.policy,
+      );
+    } catch (error) {
+      if (error instanceof ActionPolicyChangedError) {
+        await policyStore.refresh().catch(() => undefined);
+        return context.json({ error: error.message }, 409);
+      }
       /*
        * Saved, or said so. A boundary that is enforced now and gone after the next restart is worse
        * than one that was never set, so a policy that could not be written is reported as a failure

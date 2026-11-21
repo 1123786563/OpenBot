@@ -1,4 +1,3 @@
-import type { Message } from "@ag-ui/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useRef, useState } from "react";
@@ -19,7 +18,6 @@ import {
 import { ModelPicker } from "@/components/channels/composer/model-picker";
 import { ConversationSurface } from "@/components/channels/conversation-surface";
 import { ConversationView } from "@/components/channels/conversation-view";
-import { seedMessage } from "@/components/channels/transcript-messages";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { StarterSuggestions } from "@/components/starter-tour/starter-suggestions";
 import {
@@ -38,7 +36,8 @@ import {
   agentListQueryOptions,
   agentQueryOptions,
 } from "@/lib/agents/queries";
-import { useStartChannel } from "@/lib/channels/start";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { useSubmitConversationStart } from "@/lib/channels/start";
 import { modelCatalogueQueryOptions } from "@/lib/models/queries";
 import { useDraftModel } from "@/lib/models/run-model";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
@@ -121,7 +120,10 @@ function NewConversation({ composition }: { composition: string }) {
   const [creatingBot, setCreatingBot] = useState(false);
   const [pickerOpen, setPickerOpen] = useState<boolean | undefined>(undefined);
   const navigate = Route.useNavigate();
-  const { startChosen, startGroup, pending } = useStartChannel();
+  const { data: user } = useQuery(currentUserQueryOptions());
+  const { submit: submitStart, error: saveError } = useSubmitConversationStart(
+    user?.id,
+  );
   const { data: profiles, isError: rosterError } = useQuery(
     agentListQueryOptions(),
   );
@@ -130,8 +132,6 @@ function NewConversation({ composition }: { composition: string }) {
   /** Enter or Send was pressed with nobody in To:. Said until a Bot is chosen. */
   const [askedForBot, setAskedForBot] = useState(false);
   const pickerInput = useRef<HTMLInputElement>(null);
-  // Optimistic seed shown before the first channel record exists.
-  const [sent, setSent] = useState<Message | null>(null);
 
   // Stale or private `?agent=` values are ignored because the roster is permission-filtered.
   const listed = profiles?.find((profile) => profile.id === agent);
@@ -206,45 +206,18 @@ function NewConversation({ composition }: { composition: string }) {
   const submit = async (draft: ComposerDraft) => {
     const recipient = recipients[0];
     if (!recipient || !canSend(recipients, draft.text)) return;
-    if (group) {
-      setError(null);
-      try {
-        // An `@` addresses one Bot, as it does in every later message of the group.
-        await startGroup(
-          recipients.map((entry) => entry.id),
-          draft.text,
-          draft.agentId,
-        );
-      } catch (caught) {
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : "Couldn't start the group. Try again.",
-        );
-        throw caught;
-      }
-      return;
-    }
-
     setError(null);
-    setSent(seedMessage(draft.text, newId()));
-
-    try {
-      // Recorded, then started: a coworker picked here is as much a choice as an `@` on the
-      // home screen, and the trail has to say so for both.
-      // A `/` skill stays at the start of the words, where the server finds it, as it does for
-      // every later message.
-      await startChosen(recipient.id, draft.text, draftModel.requested);
-    } catch (caught) {
-      // Preserve the unsent draft when channel creation fails.
-      setSent(null);
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Couldn't start the conversation. Try again.",
-      );
-      throw caught;
-    }
+    await submitStart(
+      draft,
+      group
+        ? {
+            kind: "group",
+            agentIds: recipients.map(({ id }) => id),
+            addressedAgentId: draft.agentId,
+          }
+        : { kind: "direct", agentId: recipient.id },
+      group ? null : draftModel.requested,
+    );
   };
 
   if (profiles === undefined && !rosterError) return null;
@@ -414,12 +387,12 @@ function NewConversation({ composition }: { composition: string }) {
               },
             }
           : {})}
-        messages={sent ? [sent] : []}
+        messages={[]}
         starterSuggestions={
-          !group && !sent ? (
+          !group ? (
             <StarterSuggestions
               agentId={recipients[0]?.id}
-              disabled={pending || Boolean(loadError) || waitingForUrlAgent}
+              disabled={Boolean(loadError) || waitingForUrlAgent}
               onSelect={(text) =>
                 submit({
                   text,
@@ -433,9 +406,9 @@ function NewConversation({ composition }: { composition: string }) {
           ) : undefined
         }
         notice={
-          loadError || error ? (
+          loadError || error || saveError ? (
             <p className="px-3.5 pb-2 text-sm text-destructive" role="alert">
-              {loadError ?? error}
+              {loadError ?? error ?? saveError}
             </p>
           ) : askedForBot && recipients.length === 0 ? (
             <p
@@ -447,7 +420,6 @@ function NewConversation({ composition }: { composition: string }) {
           ) : null
         }
         onSubmit={submit}
-        pending={pending}
       />
     </ConversationSurface>
   );
