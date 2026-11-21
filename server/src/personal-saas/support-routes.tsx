@@ -1,5 +1,10 @@
+import { Button } from "@astryxdesign/core/Button";
+import { Heading } from "@astryxdesign/core/Heading";
+import { VStack } from "@astryxdesign/core/Layout";
+import { Link } from "@astryxdesign/core/Link";
+import { List, ListItem } from "@astryxdesign/core/List";
+import { Text } from "@astryxdesign/core/Text";
 import { type Context, Hono } from "hono";
-import { html } from "hono/html";
 import { z } from "zod";
 import type { Database } from "../db/client";
 import { supportAccess } from "./support-access";
@@ -8,6 +13,7 @@ import {
   supportReason,
   supportResource,
 } from "./support-contract";
+import { page } from "./web-page";
 
 const workspaceParams = z.object({ workspaceId: z.uuid() });
 const ticketParams = workspaceParams.extend({
@@ -45,10 +51,6 @@ export function supportRoutes(input: {
   database: Database;
   authorize: (context: Context) => Promise<Session>;
   subjects: readonly string[];
-  page: (
-    title: string,
-    body: ReturnType<typeof html>,
-  ) => ReturnType<typeof html>;
 }) {
   const routes = new Hono<{
     Variables: { session: Extract<Session, { kind: "authorized" }> };
@@ -168,61 +170,116 @@ export function supportRoutes(input: {
       history.requests.map(({ id, ticketId }) => [id, ticketId]),
     );
     return context.html(
-      input.page(
+      page(
         "Support access",
-        html`
-      <p><a href="/workspace">Back to workspace</a></p>
-      <section aria-labelledby="requests"><h2 id="requests">Requests</h2>
-      ${
-        history.requests.length
-          ? history.requests.map((request) => {
-              const expired =
-                request.expiresAt && request.expiresAt <= new Date();
-              const status = request.revokedAt
-                ? "Revoked"
-                : expired
-                  ? "Expired"
-                  : request.approvedAt
-                    ? "Approved"
-                    : "Pending";
-              const action =
-                status === "Pending"
-                  ? "approve"
-                  : status === "Approved"
-                    ? "revoke"
-                    : undefined;
-              return html`<article>
-          <h3>Ticket ${request.ticketId}</h3>
-          <p>${status} · Requested by ${request.actorSubject} · ${request.durationSeconds} seconds</p>
-          <p>${request.reason}</p>
-          ${request.expiresAt ? html`<p>Expires ${request.expiresAt.toISOString()}</p>` : ""}
-          <ul>${request.resources.map(({ kind, id }) => html`<li>${kind} · ${id}</li>`)}</ul>
-          ${
-            action
-              ? html`<form method="post" action="${path}/${request.id}/${action}">
-            <button type="submit">${action === "approve" ? "Approve access" : "Revoke access"} for ticket ${request.ticketId}</button>
-          </form>`
-              : ""
-          }
-        </article>`;
-            })
-          : html`<p>No support requests.</p>`
-      }
-      </section>
-      <section aria-labelledby="accesses"><h2 id="accesses">Access history</h2>
-      ${
-        history.accesses.length
-          ? html`<ul>${history.accesses.map(
-              (access) => html`
-        <li>${access.accessedAt.toISOString()} · Ticket ${tickets.get(access.requestId) ?? ""}
-          · ${access.actorSubject} · ${access.resource.kind} · ${access.resource.id} · ${access.reason}</li>
-      `,
-            )}</ul>`
-          : html`<p>No support accesses.</p>`
-      }
-      </section>
-      <script src="/assets/session.js" data-access-ms="${context.var.session.remainingMs()}" defer></script>
-    `,
+        <>
+          <Text as="p">
+            <Link href="/workspace">Back to workspace</Link>
+          </Text>
+          <section aria-labelledby="requests">
+            <Heading level={2} id="requests">
+              Requests
+            </Heading>
+            {history.requests.length ? (
+              history.requests.map((request) => {
+                const expired =
+                  request.expiresAt && request.expiresAt <= new Date();
+                const status = request.revokedAt
+                  ? "Revoked"
+                  : expired
+                    ? "Expired"
+                    : request.approvedAt
+                      ? "Approved"
+                      : "Pending";
+                const action =
+                  status === "Pending"
+                    ? "approve"
+                    : status === "Approved"
+                      ? "revoke"
+                      : undefined;
+                return (
+                  <article key={request.id}>
+                    <Heading level={3}>Ticket {request.ticketId}</Heading>
+                    <Text as="p">
+                      {status} · Requested by {request.actorSubject} ·{" "}
+                      {request.durationSeconds} seconds
+                    </Text>
+                    <Text as="p">{request.reason}</Text>
+                    {request.expiresAt ? (
+                      <Text as="p">
+                        Expires {request.expiresAt.toISOString()}
+                      </Text>
+                    ) : (
+                      ""
+                    )}
+                    <List edge="flush" hasDividers>
+                      {request.resources.map(({ kind, id }) => (
+                        <ListItem
+                          key={`${kind}:${id}`}
+                          label={
+                            <VStack gap={2}>
+                              {kind} · {id}
+                            </VStack>
+                          }
+                        />
+                      ))}
+                    </List>
+                    {action ? (
+                      <form
+                        method="post"
+                        action={`${path}/${request.id}/${action}`}
+                      >
+                        <Button
+                          type="submit"
+                          label={
+                            (action === "approve"
+                              ? "Approve access"
+                              : "Revoke access") +
+                            " for ticket " +
+                            request.ticketId
+                          }
+                        />
+                      </form>
+                    ) : (
+                      ""
+                    )}
+                  </article>
+                );
+              })
+            ) : (
+              <Text as="p">No support requests.</Text>
+            )}
+          </section>
+          <section aria-labelledby="accesses">
+            <Heading level={2} id="accesses">
+              Access history
+            </Heading>
+            {history.accesses.length ? (
+              <List edge="flush" hasDividers>
+                {history.accesses.map((access) => (
+                  <ListItem
+                    key={access.id}
+                    label={
+                      <VStack gap={2}>
+                        {access.accessedAt.toISOString()} · Ticket{" "}
+                        {tickets.get(access.requestId) ?? ""}·{" "}
+                        {access.actorSubject} · {access.resource.kind} ·{" "}
+                        {access.resource.id} · {access.reason}
+                      </VStack>
+                    }
+                  />
+                ))}
+              </List>
+            ) : (
+              <Text as="p">No support accesses.</Text>
+            )}
+          </section>
+          <script
+            src="/assets/session.js"
+            data-access-ms={context.var.session.remainingMs()}
+            defer
+          ></script>
+        </>,
       ),
     );
   });

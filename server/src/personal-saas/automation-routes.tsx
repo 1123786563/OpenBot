@@ -1,10 +1,16 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { Button } from "@astryxdesign/core/Button";
+import { Heading } from "@astryxdesign/core/Heading";
+import { VStack } from "@astryxdesign/core/Layout";
+import { Link } from "@astryxdesign/core/Link";
+import { List, ListItem } from "@astryxdesign/core/List";
+import { Text } from "@astryxdesign/core/Text";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { html } from "hono/html";
 import type { AccountGrant } from "./account-access";
 import { inboundMessage, type personalAutomation } from "./automation";
 import type { personalSaasStore } from "./store";
+import { page } from "./web-page";
 
 export const inboundRelayPath = "/api/webhooks/personal-inbound";
 const automationReason: Record<string, string> = {
@@ -38,7 +44,6 @@ export function workspaceAutomationRoutes({
   automation,
   executionEnabled,
   getSession,
-  page,
   withAuthorizedSession,
 }: {
   automation: ReturnType<typeof personalAutomation>;
@@ -46,7 +51,6 @@ export function workspaceAutomationRoutes({
   getSession(
     context: Context,
   ): Promise<{ token: string; grant: AccountGrant } | null>;
-  page(title: string, body: ReturnType<typeof html>): ReturnType<typeof html>;
   withAuthorizedSession: ReturnType<
     typeof personalSaasStore
   >["withAuthorizedSession"];
@@ -72,46 +76,74 @@ export function workspaceAutomationRoutes({
         canRun = false,
       ) => {
         const path = `${automationPath}/${resource}/${encodeURIComponent(id)}`;
-        return html`<li><p>${title}</p>
-          ${reason ? html`<p>${automationReason[reason] ?? reason}</p>` : ""}
-          <a href="${path}/runs">History</a>
-          ${reason === "manual_resume_required" ? html`<form method="post" action="${path}/resume"><button>Resume</button></form>` : ""}
-          ${canRun && !reason ? html`<form method="post" action="${path}/run"><button>Run now</button></form>` : ""}
-        </li>`;
+        return (
+          <ListItem
+            key={id}
+            label={
+              <VStack gap={2}>
+                <Text as="p">{title}</Text>
+                {reason ? (
+                  <Text as="p">{automationReason[reason] ?? reason}</Text>
+                ) : (
+                  ""
+                )}
+                <Link href={`${path}/runs`}>History</Link>
+                {reason === "manual_resume_required" ? (
+                  <form method="post" action={`${path}/resume`}>
+                    <Button type="submit" label="Resume" />
+                  </form>
+                ) : (
+                  ""
+                )}
+                {canRun && !reason ? (
+                  <form method="post" action={`${path}/run`}>
+                    <Button type="submit" label="Run now" />
+                  </form>
+                ) : (
+                  ""
+                )}
+              </VStack>
+            }
+          />
+        );
       };
       return context.html(
         page(
           "Routines and inbound bindings",
-          html`
-        <a href="/workspace">Back to workspace</a>
-        <h2>Routines</h2>
-        ${
-          routines.length
-            ? html`<ul>${routines.map((routine) =>
-                item(
-                  "routines",
-                  routine.id,
-                  routine.title ?? "Routine",
-                  routine.blockedReason,
-                  routine.enabled && executionEnabled,
-                ),
-              )}</ul>`
-            : html`<p>No Routines.</p>`
-        }
-        <h2>Inbound bindings</h2>
-        ${
-          bindings.length
-            ? html`<ul>${bindings.map((binding) =>
-                item(
-                  "bindings",
-                  binding.id,
-                  binding.transport,
-                  binding.blockedReason,
-                ),
-              )}</ul>`
-            : html`<p>No inbound bindings.</p>`
-        }
-      `,
+          <>
+            <Link href="/workspace">Back to workspace</Link>
+            <Heading level={2}>Routines</Heading>
+            {routines.length ? (
+              <List edge="flush" hasDividers>
+                {routines.map((routine) =>
+                  item(
+                    "routines",
+                    routine.id,
+                    routine.title ?? "Routine",
+                    routine.blockedReason,
+                    routine.enabled && executionEnabled,
+                  ),
+                )}
+              </List>
+            ) : (
+              <Text as="p">No Routines.</Text>
+            )}
+            <Heading level={2}>Inbound bindings</Heading>
+            {bindings.length ? (
+              <List edge="flush" hasDividers>
+                {bindings.map((binding) =>
+                  item(
+                    "bindings",
+                    binding.id,
+                    binding.transport,
+                    binding.blockedReason,
+                  ),
+                )}
+              </List>
+            ) : (
+              <Text as="p">No inbound bindings.</Text>
+            )}
+          </>,
         ),
       );
     }
@@ -139,20 +171,43 @@ export function workspaceAutomationRoutes({
       return context.html(
         page(
           resource === "routines" ? "Routine history" : "Inbound history",
-          html`<a href="${automationPath}">Back to Routines and inbound bindings</a>
-        ${
-          runs.length
-            ? html`<ul>${runs.map((run) => {
-                const date = "status" in run ? run.startedAt : run.receivedAt;
-                const outcome =
-                  "status" in run
-                    ? (run.status ?? "queued or running")
-                    : run.state;
-                return html`<li><time datetime="${date.toISOString()}">${date.toISOString()}</time>
-            <p>${outcome}${run.error ? ` · ${automationReason[run.error] ?? run.error}` : ""}</p></li>`;
-              })}</ul>`
-            : html`<p>No history yet.</p>`
-        }`,
+          <>
+            {" "}
+            <Link href={automationPath}>
+              Back to Routines and inbound bindings
+            </Link>
+            {runs.length ? (
+              <List edge="flush" hasDividers>
+                {runs.map((run) => {
+                  const date = "status" in run ? run.startedAt : run.receivedAt;
+                  const outcome =
+                    "status" in run
+                      ? (run.status ?? "queued or running")
+                      : run.state;
+                  return (
+                    <ListItem
+                      key={run.id}
+                      label={
+                        <VStack gap={2}>
+                          <time dateTime={date.toISOString()}>
+                            {date.toISOString()}
+                          </time>
+                          <Text as="p">
+                            {outcome}
+                            {run.error
+                              ? ` · ${automationReason[run.error] ?? run.error}`
+                              : ""}
+                          </Text>
+                        </VStack>
+                      }
+                    />
+                  );
+                })}
+              </List>
+            ) : (
+              <Text as="p">No history yet.</Text>
+            )}{" "}
+          </>,
         ),
       );
     }

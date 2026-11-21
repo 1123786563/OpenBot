@@ -1,8 +1,13 @@
 import { createHmac } from "node:crypto";
+import { Button } from "@astryxdesign/core/Button";
+import { Heading } from "@astryxdesign/core/Heading";
+import { VStack } from "@astryxdesign/core/Layout";
+import { Link } from "@astryxdesign/core/Link";
+import { List, ListItem } from "@astryxdesign/core/List";
+import { Text } from "@astryxdesign/core/Text";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import { html } from "hono/html";
 import { z } from "zod";
 import { createApprovalRoutes } from "../approvals/routes";
 import { createApprovalStore } from "../approvals/store";
@@ -52,6 +57,7 @@ import {
 import { personalSaasStore, sessionSeconds } from "./store";
 import { supportAccess } from "./support-access";
 import { supportRoutes } from "./support-routes";
+import { page, pageStyleAttributePolicy, registerPageStyles } from "./web-page";
 import {
   workspaceAttachmentDrafts,
   workspaceAttachmentRoutes,
@@ -111,13 +117,6 @@ export type PersonalSaasConfig = {
   casdoor: CasdoorConfig;
 };
 
-function page(title: string, body: ReturnType<typeof html>) {
-  return html`<!doctype html><html lang="en"><head><meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>${title} · OpenBot</title><link rel="stylesheet" href="/assets/entry.css"></head>
-    <body><main><header>OpenBot</header><h1>${title}</h1>${body}</main></body></html>`;
-}
-
 function statusPage(
   title: string,
   message: string,
@@ -126,7 +125,13 @@ function statusPage(
 ) {
   return page(
     title,
-    html`<p role="status">${message}</p><a href="${href}">${action}</a>`,
+    <>
+      {" "}
+      <Text as="p" role="status">
+        {message}
+      </Text>
+      <Link href={href}>{action}</Link>{" "}
+    </>,
   );
 }
 
@@ -144,13 +149,17 @@ function preparePage(retry = false) {
     retry
       ? "Couldn't prepare your Personal Workspace"
       : "Preparing your Personal Workspace",
-    html`
-    <p role="status">${retry ? "Try again to open your workspace." : "We're setting up your Personal Assistant. This may take a moment."}</p>
-    <form id="prepare" method="post" action="/workspace/prepare">
-      <button type="submit">${retry ? "Retry" : "Continue"}</button>
-    </form>
-    ${retry ? "" : html`<script src="/assets/prepare.js" defer></script>`}
-  `,
+    <>
+      <Text as="p" role="status">
+        {retry
+          ? "Try again to open your workspace."
+          : "We're setting up your Personal Assistant. This may take a moment."}
+      </Text>
+      <form id="prepare" method="post" action="/workspace/prepare">
+        <Button type="submit" label={retry ? "Retry" : "Continue"} />
+      </form>
+      {retry ? "" : <script src="/assets/prepare.js" defer></script>}
+    </>,
   );
 }
 
@@ -202,7 +211,6 @@ export function createPersonalSaasApp(
     now,
     computer,
     admissionsPaused: config.admissionsPaused ?? false,
-    page,
   });
   const sweepCleanup = workspaceCleanup({
     database,
@@ -282,7 +290,7 @@ export function createPersonalSaasApp(
     context.header("Cache-Control", "no-store");
     context.header(
       "Content-Security-Policy",
-      `default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; form-action 'self' ${config.casdoor.discoveryUrl.origin}; base-uri 'none'; frame-ancestors 'none'`,
+      `default-src 'none'; style-src 'self'; ${pageStyleAttributePolicy}; script-src 'self'; connect-src 'self'; form-action 'self' ${config.casdoor.discoveryUrl.origin}; base-uri 'none'; frame-ancestors 'none'`,
     );
     context.header("Referrer-Policy", "same-origin");
     context.header("X-Content-Type-Options", "nosniff");
@@ -340,25 +348,7 @@ export function createPersonalSaasApp(
 
   app.route("/", suspensionRoutes(database, config.suspensionOperator, now));
   app.get("/health", (context) => context.json({ status: "ok" }));
-  app.get(
-    "/assets/entry.css",
-    () =>
-      new Response(
-        `
-    :root { color-scheme: light dark; font-family: system-ui, sans-serif }
-    body { margin: 0; min-height: 100dvh; display: grid; align-items: center }
-    main { box-sizing: border-box; width: min(100%, 40rem); margin-inline: auto; padding: 2rem }
-    header { font-weight: 700; margin-block-end: 2.5rem }
-    h1 { font-size: clamp(1.75rem, 6vw, 2.75rem); line-height: 1.1; margin: 0 0 1rem }
-    h2 { font-size: 1.125rem }
-    p { line-height: 1.6; margin-block-end: 1.5rem }
-    a, button { font: inherit }
-    .continue, button { display: inline-block; border: 1px solid; border-radius: .5rem; background: CanvasText; color: Canvas; padding: .65rem 1rem; text-decoration: none; cursor: pointer }
-    form { margin-block-start: 1.5rem }
-  `,
-        { headers: { "content-type": "text/css; charset=utf-8" } },
-      ),
-  );
+  registerPageStyles(app);
   app.get(
     "/assets/prepare.js",
     () =>
@@ -374,8 +364,17 @@ export function createPersonalSaasApp(
     return context.html(
       page(
         "Open your Personal Workspace",
-        html`<p>Sign in or create an account in Casdoor using your email address.</p>
-      <a class="continue" href="/auth/casdoor/start">Continue with Casdoor</a>`,
+        <>
+          {" "}
+          <Text as="p">
+            Sign in or create an account in Casdoor using your email address.
+          </Text>
+          <Button
+            variant="primary"
+            href="/auth/casdoor/start"
+            label="Continue with Casdoor"
+          />{" "}
+        </>,
       ),
     );
   });
@@ -509,12 +508,31 @@ export function createPersonalSaasApp(
         return context.html(
           page(
             "Personal Workspace paused",
-            html`<p role="status">Your access to this OpenBot workspace is paused.</p>
-              ${suspension.reason ? html`<p>${suspension.reason}</p>` : ""}
-              <p>Operation ID <code>${suspension.operationId}</code></p>
-              ${suspension.supportEmail ? html`<p>Contact support at <a href="mailto:${suspension.supportEmail}">${suspension.supportEmail}</a>.</p>` : ""}
-              <p><a href="/workspace/closure">Close my workspace</a></p>
-              <a href="/auth/casdoor/start">Sign in again</a>`,
+            <>
+              {" "}
+              <Text as="p" role="status">
+                Your access to this OpenBot workspace is paused.
+              </Text>
+              {suspension.reason ? <Text as="p">{suspension.reason}</Text> : ""}
+              <Text as="p">
+                Operation ID <code>{suspension.operationId}</code>
+              </Text>
+              {suspension.supportEmail ? (
+                <Text as="p">
+                  Contact support at{" "}
+                  <Link href={`mailto:${suspension.supportEmail}`}>
+                    {suspension.supportEmail}
+                  </Link>
+                  .
+                </Text>
+              ) : (
+                ""
+              )}
+              <Text as="p">
+                <Link href="/workspace/closure">Close my workspace</Link>
+              </Text>
+              <Link href="/auth/casdoor/start">Sign in again</Link>{" "}
+            </>,
           ),
           403,
         );
@@ -768,7 +786,6 @@ export function createPersonalSaasApp(
         };
       },
       subjects: config.supportSubjects ?? [],
-      page,
     }),
   );
 
@@ -850,129 +867,394 @@ export function createPersonalSaasApp(
     return context.html(
       page(
         "Personal Workspace",
-        html`<p id="workspace-access" role="status">Checking your workspace…</p>
-      <a id="workspace-retry" href="/workspace" hidden>Retry</a>
-      <noscript>Enable JavaScript to verify workspace access.</noscript>
-      <div id="protected-workspace" hidden>
-      <section aria-labelledby="workspace-usage"><h2 id="workspace-usage">Workspace usage</h2>
-        <ul>
-          <li>Bot runs: ${usage.bot.used} / ${usage.bot.limit}</li>
-          <li>Computers: ${usage.computer.used ?? "Unavailable"} / ${usage.computer.limit}</li>
-          <li>Workspace storage: ${usage.storage.used ?? "Unavailable"} / ${usage.storage.limit} bytes</li>
-          <li>Automation triggers: ${usage.automation.used} / ${usage.automation.limit} per minute</li>
-        </ul>
-        ${
-          drafts.length
-            ? html`<h3>Draft attachments</h3><ul>${drafts.map(
-                (draft) => html`<li>
-          ${draft.name} (${draft.sizeBytes} bytes)
-          <form action="/api/workspace/attachments/${draft.id}/withdraw" method="post">
-            <button>Withdraw ${draft.name}</button>
-          </form>
-        </li>`,
-              )}</ul>`
-            : ""
-        }
-      </section>
-      <p><a href="${automationPath}">Routines and inbound bindings</a></p>
-      <section aria-labelledby="assistant"><h2 id="assistant">${workspace.personalAssistant.name}</h2></section>
-      <section aria-labelledby="conversations"><h2 id="conversations">Recent conversations</h2>
-        ${
-          conversations.length === 0
-            ? html`<p>No conversations yet.</p>`
-            : html`<ul>${conversations.map(
-                ({ title, preview }) =>
-                  html`<li><strong>${title}</strong>${preview ? html`<p>${preview}</p>` : ""}</li>`,
-              )}</ul>`
-        }
-      </section>
-      ${
-        computerStatus
-          ? html`<section aria-labelledby="computer"><h2 id="computer">Computer</h2>
-        <p>${
-          {
-            not_started: "Ready to set up",
-            starting: "Starting. Refresh this page to check progress.",
-            running: "Running",
-            stopping: "Stopping. Refresh this page to check progress.",
-            restart_required:
-              "Stopped. Your saved files and settings are kept.",
-          }[computerStatus.status]
-        }</p>
-        ${computerStatus.cutoff === "failed" ? html`<p>Computer exit could not be confirmed by the authorization deadline.</p>` : ""}
-        ${
-          ["not_started", "restart_required"].includes(computerStatus.status)
-            ? html`<form method="post" action="/api/workspace/computer/start"><button type="submit">Start Computer</button></form>`
-            : html`<form method="post" action="/api/workspace/computer/stop"><button type="submit">Stop Computer</button></form>`
-        }
-      </section>`
-          : ""
-      }
-      <form method="post" action="/api/workspaces/${workspace.id}/exports">
-        <button type="submit">Download workspace data</button>
-      </form>
-      ${
-        history.length
-          ? html`<section aria-labelledby="approval-history">
-        <h2 id="approval-history">Approval history</h2>
-        <ul>${history.map((item) => html`<li>${item.tool} · ${item.invalidated ? "Invalidated" : item.status}</li>`)}</ul>
-      </section>`
-          : ""
-      }
-      <p><a href="/api/workspaces/${workspace.id}/support-requests/view">Support access</a></p>
-      <p><a href="/workspace/closure">Close my workspace</a></p>
-      <form method="post" action="/auth/sign-out"><button type="submit">Sign out</button></form>
-      <form method="post" action="/auth/sign-out-all">
-        <p>Verify your identity with Casdoor to require every device to sign in again.</p>
-        <button type="submit">Sign out all devices</button>
-      </form>
-      ${
-        recovery.length
-          ? html`<section aria-labelledby="work-recovery"><h2 id="work-recovery">Stopped work</h2>
-        <ul>${recovery.map(
-          (item) => html`<li>
-          <p>${item.instruction}</p><p>${recoveryReason[item.reason]}</p>
-          ${item.output ? html`<p>Output before interruption</p><pre>${item.output}</pre>` : ""}
-          ${item.outcomeUnknown ? html`<p>Check any external actions before retrying. Their outcome is unknown.</p>` : ""}
-          ${
-            item.recovery
-              ? html`<p>${item.recovery.action === "retry" ? "Queued as a new run" : "Cancelled"}</p>`
-              : html`<form method="post" action="/api/workspace/recovery/${encodeURIComponent(item.key)}">
-                ${runPersonalBot && item.outcomeUnknown ? html`<label><input type="checkbox" name="acknowledged" value="true"> I checked the external actions.</label>` : ""}
-                ${runPersonalBot ? html`<button name="action" value="retry">${item.outcomeUnknown ? "Retry as a new run" : "Requeue"}</button>` : ""}
-                <button name="action" value="cancel">Cancel item</button>
-              </form>`
-          }
-        </li>`,
-        )}</ul></section>`
-          : ""
-      }
-      ${
-        unattended.length
-          ? html`<section aria-labelledby="unattended-work"><h2 id="unattended-work">Stopped background work</h2>
-          <ul>${unattended.map(
-            (item) => html`<li>
-            <p><strong>${item.label}</strong></p>
-            ${item.summary ? html`<p>${item.summary}</p>` : ""}
-            <p>${item.reasonMessage}</p>
-            ${item.output ? html`<p>Output before interruption</p><pre>${item.output}</pre>` : ""}
-            ${item.outcomeUnknown ? html`<p>Check any external actions before starting new work. Their outcome is unknown.</p>` : ""}
-            ${
-              item.recovery
-                ? html`<p>${item.recovery.action === "retry" ? "Started as fresh work" : "Cancelled"}</p>`
-                : html`<form method="post" action="/api/workspace/recovery/${encodeURIComponent(item.key)}">
-                ${item.recoveryCanRetry && item.outcomeUnknown ? html`<label><input type="checkbox" name="acknowledged" value="true"> I checked the external actions.</label>` : ""}
-                ${item.recoveryCanRetry ? html`<button name="action" value="retry">Start fresh work</button>` : ""}
-                <button name="action" value="cancel">Cancel item</button>
-              </form>`
-            }
-          </li>`,
-          )}</ul>
-        </section>`
-          : ""
-      }
-      </div>
-      <script src="/assets/session.js" data-workspace-view="${workspaceViewBinding(token, session.grant)}" defer></script>`,
+        <>
+          {" "}
+          <Text as="p" id="workspace-access" role="status">
+            Checking your workspace…
+          </Text>
+          <aside id="workspace-retry" hidden>
+            <Link href="/workspace">Retry</Link>
+          </aside>
+          <noscript>Enable JavaScript to verify workspace access.</noscript>
+          <section id="protected-workspace" hidden>
+            <VStack gap={6}>
+              <section aria-labelledby="workspace-usage">
+                <Heading level={2} id="workspace-usage">
+                  Workspace usage
+                </Heading>
+                <List edge="flush" hasDividers>
+                  <ListItem
+                    label={
+                      <VStack gap={2}>
+                        Bot runs: {usage.bot.used} / {usage.bot.limit}
+                      </VStack>
+                    }
+                  />
+                  <ListItem
+                    label={
+                      <VStack gap={2}>
+                        Computers: {usage.computer.used ?? "Unavailable"} /{" "}
+                        {usage.computer.limit}
+                      </VStack>
+                    }
+                  />
+                  <ListItem
+                    label={
+                      <VStack gap={2}>
+                        Workspace storage: {usage.storage.used ?? "Unavailable"}{" "}
+                        / {usage.storage.limit} bytes
+                      </VStack>
+                    }
+                  />
+                  <ListItem
+                    label={
+                      <VStack gap={2}>
+                        Automation triggers: {usage.automation.used} /{" "}
+                        {usage.automation.limit} per minute
+                      </VStack>
+                    }
+                  />
+                </List>
+                {drafts.length ? (
+                  <>
+                    {" "}
+                    <Heading level={3}>Draft attachments</Heading>
+                    <List edge="flush" hasDividers>
+                      {drafts.map((draft) => (
+                        <ListItem
+                          key={draft.id}
+                          label={
+                            <VStack gap={2}>
+                              {draft.name} ({draft.sizeBytes} bytes)
+                              <form
+                                action={
+                                  "/api/workspace/attachments/" +
+                                  draft.id +
+                                  "/withdraw"
+                                }
+                                method="post"
+                              >
+                                <Button
+                                  type="submit"
+                                  label={`Withdraw ${draft.name}`}
+                                />
+                              </form>
+                            </VStack>
+                          }
+                        />
+                      ))}
+                    </List>{" "}
+                  </>
+                ) : (
+                  ""
+                )}
+              </section>
+              <Text as="p">
+                <Link href={automationPath}>Routines and inbound bindings</Link>
+              </Text>
+              <section aria-labelledby="assistant">
+                <Heading level={2} id="assistant">
+                  {workspace.personalAssistant.name}
+                </Heading>
+              </section>
+              <section aria-labelledby="conversations">
+                <Heading level={2} id="conversations">
+                  Recent conversations
+                </Heading>
+                {conversations.length === 0 ? (
+                  <Text as="p">No conversations yet.</Text>
+                ) : (
+                  <List edge="flush" hasDividers>
+                    {conversations.map(({ id, title, preview }) => (
+                      <ListItem
+                        key={id}
+                        label={
+                          <VStack gap={2}>
+                            <strong>{title}</strong>
+                            {preview ? <Text as="p">{preview}</Text> : ""}
+                          </VStack>
+                        }
+                      />
+                    ))}
+                  </List>
+                )}
+              </section>
+              {computerStatus ? (
+                <section aria-labelledby="computer">
+                  <Heading level={2} id="computer">
+                    Computer
+                  </Heading>
+                  <Text as="p">
+                    {
+                      {
+                        not_started: "Ready to set up",
+                        starting:
+                          "Starting. Refresh this page to check progress.",
+                        running: "Running",
+                        stopping:
+                          "Stopping. Refresh this page to check progress.",
+                        restart_required:
+                          "Stopped. Your saved files and settings are kept.",
+                      }[computerStatus.status]
+                    }
+                  </Text>
+                  {computerStatus.cutoff === "failed" ? (
+                    <Text as="p">
+                      Computer exit could not be confirmed by the authorization
+                      deadline.
+                    </Text>
+                  ) : (
+                    ""
+                  )}
+                  {["not_started", "restart_required"].includes(
+                    computerStatus.status,
+                  ) ? (
+                    <form method="post" action="/api/workspace/computer/start">
+                      <Button type="submit" label="Start Computer" />
+                    </form>
+                  ) : (
+                    <form method="post" action="/api/workspace/computer/stop">
+                      <Button type="submit" label="Stop Computer" />
+                    </form>
+                  )}
+                </section>
+              ) : (
+                ""
+              )}
+              <form
+                method="post"
+                action={`/api/workspaces/${workspace.id}/exports`}
+              >
+                <Button type="submit" label="Download workspace data" />
+              </form>
+              {history.length ? (
+                <section aria-labelledby="approval-history">
+                  <Heading level={2} id="approval-history">
+                    Approval history
+                  </Heading>
+                  <List edge="flush" hasDividers>
+                    {history.map((item) => (
+                      <ListItem
+                        key={item.id}
+                        label={
+                          <VStack gap={2}>
+                            {item.tool} ·{" "}
+                            {item.invalidated ? "Invalidated" : item.status}
+                          </VStack>
+                        }
+                      />
+                    ))}
+                  </List>
+                </section>
+              ) : (
+                ""
+              )}
+              <Text as="p">
+                <Link
+                  href={`/api/workspaces/${workspace.id}/support-requests/view`}
+                >
+                  Support access
+                </Link>
+              </Text>
+              <Text as="p">
+                <Link href="/workspace/closure">Close my workspace</Link>
+              </Text>
+              <form method="post" action="/auth/sign-out">
+                <Button type="submit" label="Sign out" />
+              </form>
+              <form method="post" action="/auth/sign-out-all">
+                <Text as="p">
+                  Verify your identity with Casdoor to require every device to
+                  sign in again.
+                </Text>
+                <Button type="submit" label="Sign out all devices" />
+              </form>
+              {recovery.length ? (
+                <section aria-labelledby="work-recovery">
+                  <Heading level={2} id="work-recovery">
+                    Stopped work
+                  </Heading>
+                  <List edge="flush" hasDividers>
+                    {recovery.map((item) => (
+                      <ListItem
+                        key={item.key}
+                        label={
+                          <VStack gap={2}>
+                            <Text as="p">{item.instruction}</Text>
+                            <Text as="p">{recoveryReason[item.reason]}</Text>
+                            {item.output ? (
+                              <>
+                                {" "}
+                                <Text as="p">Output before interruption</Text>
+                                <pre>{item.output}</pre>{" "}
+                              </>
+                            ) : (
+                              ""
+                            )}
+                            {item.outcomeUnknown ? (
+                              <Text as="p">
+                                Check any external actions before retrying.
+                                Their outcome is unknown.
+                              </Text>
+                            ) : (
+                              ""
+                            )}
+                            {item.recovery ? (
+                              <Text as="p">
+                                {item.recovery.action === "retry"
+                                  ? "Queued as a new run"
+                                  : "Cancelled"}
+                              </Text>
+                            ) : (
+                              <form
+                                method="post"
+                                action={
+                                  "/api/workspace/recovery/" +
+                                  encodeURIComponent(item.key)
+                                }
+                              >
+                                {runPersonalBot && item.outcomeUnknown ? (
+                                  <label>
+                                    <input
+                                      type="checkbox"
+                                      name="acknowledged"
+                                      value="true"
+                                    />{" "}
+                                    I checked the external actions.
+                                  </label>
+                                ) : (
+                                  ""
+                                )}
+                                {runPersonalBot ? (
+                                  <Button
+                                    type="submit"
+                                    name="action"
+                                    value="retry"
+                                    label={
+                                      item.outcomeUnknown
+                                        ? "Retry as a new run"
+                                        : "Requeue"
+                                    }
+                                  />
+                                ) : (
+                                  ""
+                                )}
+                                <Button
+                                  type="submit"
+                                  name="action"
+                                  value="cancel"
+                                  label="Cancel item"
+                                />
+                              </form>
+                            )}
+                          </VStack>
+                        }
+                      />
+                    ))}
+                  </List>
+                </section>
+              ) : (
+                ""
+              )}
+              {unattended.length ? (
+                <section aria-labelledby="unattended-work">
+                  <Heading level={2} id="unattended-work">
+                    Stopped background work
+                  </Heading>
+                  <List edge="flush" hasDividers>
+                    {unattended.map((item) => (
+                      <ListItem
+                        key={item.key}
+                        label={
+                          <VStack gap={2}>
+                            <Text as="p">
+                              <strong>{item.label}</strong>
+                            </Text>
+                            {item.summary ? (
+                              <Text as="p">{item.summary}</Text>
+                            ) : (
+                              ""
+                            )}
+                            <Text as="p">{item.reasonMessage}</Text>
+                            {item.output ? (
+                              <>
+                                {" "}
+                                <Text as="p">Output before interruption</Text>
+                                <pre>{item.output}</pre>{" "}
+                              </>
+                            ) : (
+                              ""
+                            )}
+                            {item.outcomeUnknown ? (
+                              <Text as="p">
+                                Check any external actions before starting new
+                                work. Their outcome is unknown.
+                              </Text>
+                            ) : (
+                              ""
+                            )}
+                            {item.recovery ? (
+                              <Text as="p">
+                                {item.recovery.action === "retry"
+                                  ? "Started as fresh work"
+                                  : "Cancelled"}
+                              </Text>
+                            ) : (
+                              <form
+                                method="post"
+                                action={
+                                  "/api/workspace/recovery/" +
+                                  encodeURIComponent(item.key)
+                                }
+                              >
+                                {item.recoveryCanRetry &&
+                                item.outcomeUnknown ? (
+                                  <label>
+                                    <input
+                                      type="checkbox"
+                                      name="acknowledged"
+                                      value="true"
+                                    />{" "}
+                                    I checked the external actions.
+                                  </label>
+                                ) : (
+                                  ""
+                                )}
+                                {item.recoveryCanRetry ? (
+                                  <Button
+                                    type="submit"
+                                    name="action"
+                                    value="retry"
+                                    label="Start fresh work"
+                                  />
+                                ) : (
+                                  ""
+                                )}
+                                <Button
+                                  type="submit"
+                                  name="action"
+                                  value="cancel"
+                                  label="Cancel item"
+                                />
+                              </form>
+                            )}
+                          </VStack>
+                        }
+                      />
+                    ))}
+                  </List>
+                </section>
+              ) : (
+                ""
+              )}
+            </VStack>
+          </section>
+          <script
+            src="/assets/session.js"
+            data-workspace-view={workspaceViewBinding(token, session.grant)}
+            defer
+          ></script>{" "}
+        </>,
       ),
     );
   });
@@ -1177,7 +1459,6 @@ export function createPersonalSaasApp(
       executionEnabled: Boolean(runPersonalBot),
       getSession: automationSession,
       withAuthorizedSession: store.withAuthorizedSession,
-      page,
     }),
   );
   if (config.inboundRelayToken)

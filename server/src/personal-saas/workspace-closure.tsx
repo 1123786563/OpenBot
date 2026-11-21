@@ -1,8 +1,12 @@
 import { createHash } from "node:crypto";
+import { Button } from "@astryxdesign/core/Button";
+import { VStack } from "@astryxdesign/core/Layout";
+import { Link } from "@astryxdesign/core/Link";
+import { List, ListItem } from "@astryxdesign/core/List";
+import { Text } from "@astryxdesign/core/Text";
 import { and, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import { html } from "hono/html";
 import { z } from "zod";
 import { seal, unseal } from "../auth/signed-value";
 import type { Database } from "../db/client";
@@ -18,10 +22,11 @@ import {
 } from "../db/schema";
 import { accountDecision, type createAccountAccess } from "./account-access";
 import { onlineCleanupSteps } from "./closure-cleanup-contract";
-import { readIntelligenceInventory } from "./intelligence-inventory";
 import { reconcileDecisionHistory } from "./decision-access";
+import { readIntelligenceInventory } from "./intelligence-inventory";
 import { cookieOptions, sessionCookie } from "./session-revocation";
 import { createPersonalWorkspace, personalSaasStore } from "./store";
+import { page } from "./web-page";
 import {
   cleanupConfirmed,
   closureProgress,
@@ -67,7 +72,6 @@ export function workspaceClosureRoutes({
   now,
   computer,
   admissionsPaused,
-  page,
 }: {
   database: Database;
   accounts: Pick<ReturnType<typeof createAccountAccess>, "check">;
@@ -75,10 +79,6 @@ export function workspaceClosureRoutes({
   now: () => number;
   computer?: Pick<ReturnType<typeof workspaceComputer>, "stopped">;
   admissionsPaused: boolean;
-  page: (
-    title: string,
-    body: ReturnType<typeof html>,
-  ) => ReturnType<typeof html>;
 }) {
   const routes = new Hono();
   const store = personalSaasStore(database, now);
@@ -153,7 +153,11 @@ export function workspaceClosureRoutes({
     return context.html(
       page(
         "Workspace closure unavailable",
-        html`<p>Sign in and verify your identity to continue.</p><a href="/auth/casdoor/start">Sign in</a>`,
+        <>
+          {" "}
+          <Text as="p">Sign in and verify your identity to continue.</Text>
+          <Link href="/auth/casdoor/start">Sign in</Link>{" "}
+        </>,
       ),
       403,
     );
@@ -167,19 +171,25 @@ export function workspaceClosureRoutes({
     return context.html(
       page(
         "Close your Personal Workspace",
-        html`
-      <p>Closing your workspace is permanent. You will lose access and OpenBot will stop your work.</p>
-      ${
-        session.restricted
-          ? ""
-          : html`<form method="post" action="/api/workspaces/${workspace.id}/exports">
-        <button type="submit">Download workspace data</button>
-      </form>`
-      }
-      <form method="post" action="/auth/verify-closure">
-        <button type="submit">Verify identity with Casdoor</button>
-      </form>
-    `,
+        <>
+          <Text as="p">
+            Closing your workspace is permanent. You will lose access and
+            OpenBot will stop your work.
+          </Text>
+          {session.restricted ? (
+            ""
+          ) : (
+            <form
+              method="post"
+              action={`/api/workspaces/${workspace.id}/exports`}
+            >
+              <Button type="submit" label="Download workspace data" />
+            </form>
+          )}
+          <form method="post" action="/auth/verify-closure">
+            <Button type="submit" label="Verify identity with Casdoor" />
+          </form>
+        </>,
       ),
     );
   });
@@ -332,31 +342,76 @@ export function workspaceClosureRoutes({
     return context.html(
       page(
         "Workspace closure progress",
-        html`
-      <p>Operation ID <code>${progress.operationId}</code></p>
-      <dl>
-        <dt>Application sessions</dt><dd>Revoked</dd>
-        <dt>Work cutoff</dt><dd>${progress.executionCutoff.work}</dd>
-        <dt>Computer exit</dt><dd>${progress.executionCutoff.computer}</dd>
-        <dt>Online data cleanup</dt><dd><ul>${onlineCleanupSteps.map((step) => html`<li>${cleanupLabels[step]}: ${progress.onlineCleanup[step]?.status ?? "pending"}</li>`)}</ul></dd>
-        <dt>Third-party revocation</dt><dd>${progress.remoteRevocation.status}</dd>
-        <dt>Backup expiration</dt><dd>${
-          progress.backups.stores.length
-            ? html`<ul>${progress.backups.stores.map((store) => html`<li>${store.store}: ${store.retentionDays} days, expires by <time datetime="${store.remainingCopiesExpireBy}">${store.remainingCopiesExpireBy}</time></li>`)}</ul>`
-            : "Schedule pending"
-        }</dd>
-      </dl>
-      ${
-        canOpen && (admissionsPaused || suspension?.action === "pause")
-          ? html`<p role="status">${admissionsPaused ? "New workspace openings are temporarily paused. Check back to try again." : "Your workspace suspension must be lifted before you can open a new workspace."}</p>`
-          : canOpen &&
-            html`<form method="post" action="${settings}/reprovision">
-            <input type="hidden" name="operationId" value="${record.id}">
-            <button type="submit">Open a new workspace</button>
-          </form>`
-      }
-      <p><a href="${settings}/progress">Refresh progress</a></p>
-    `,
+        <>
+          <Text as="p">
+            Operation ID <code>{progress.operationId}</code>
+          </Text>
+          <dl>
+            <dt>Application sessions</dt>
+            <dd>Revoked</dd>
+            <dt>Work cutoff</dt>
+            <dd>{progress.executionCutoff.work}</dd>
+            <dt>Computer exit</dt>
+            <dd>{progress.executionCutoff.computer}</dd>
+            <dt>Online data cleanup</dt>
+            <dd>
+              <List edge="flush" hasDividers>
+                {onlineCleanupSteps.map((step) => (
+                  <ListItem
+                    key={step}
+                    label={
+                      <VStack gap={2}>
+                        {cleanupLabels[step]}:{" "}
+                        {progress.onlineCleanup[step]?.status ?? "pending"}
+                      </VStack>
+                    }
+                  />
+                ))}
+              </List>
+            </dd>
+            <dt>Third-party revocation</dt>
+            <dd>{progress.remoteRevocation.status}</dd>
+            <dt>Backup expiration</dt>
+            <dd>
+              {progress.backups.stores.length ? (
+                <List edge="flush" hasDividers>
+                  {progress.backups.stores.map((store) => (
+                    <ListItem
+                      key={store.store}
+                      label={
+                        <VStack gap={2}>
+                          {store.store}: {store.retentionDays} days, expires by{" "}
+                          <time dateTime={store.remainingCopiesExpireBy}>
+                            {store.remainingCopiesExpireBy}
+                          </time>
+                        </VStack>
+                      }
+                    />
+                  ))}
+                </List>
+              ) : (
+                "Schedule pending"
+              )}
+            </dd>
+          </dl>
+          {canOpen && (admissionsPaused || suspension?.action === "pause") ? (
+            <Text as="p" role="status">
+              {admissionsPaused
+                ? "New workspace openings are temporarily paused. Check back to try again."
+                : "Your workspace suspension must be lifted before you can open a new workspace."}
+            </Text>
+          ) : (
+            canOpen && (
+              <form method="post" action={`${settings}/reprovision`}>
+                <input type="hidden" name="operationId" value={record.id} />
+                <Button type="submit" label="Open a new workspace" />
+              </form>
+            )
+          )}
+          <Text as="p">
+            <Link href={`${settings}/progress`}>Refresh progress</Link>
+          </Text>
+        </>,
       ),
     );
   });
@@ -419,8 +474,15 @@ export function workspaceClosureRoutes({
     return context.html(
       page(
         "Workspace opening unavailable",
-        html`<p role="status">${result === "paused" ? "New workspace openings are temporarily paused. Check back to try again." : "This closure is not eligible to open a new workspace."}</p>
-        <a href="${settings}/progress">Check closure progress</a>`,
+        <>
+          {" "}
+          <Text as="p" role="status">
+            {result === "paused"
+              ? "New workspace openings are temporarily paused. Check back to try again."
+              : "This closure is not eligible to open a new workspace."}
+          </Text>
+          <Link href={`${settings}/progress`}>Check closure progress</Link>{" "}
+        </>,
       ),
       result === "paused" ? 503 : 409,
     );
@@ -464,11 +526,21 @@ export function workspaceClosureRoutes({
       return context.html(
         page(
           "Confirm workspace closure",
-          html`
-        <p>This permanently closes your Personal Workspace and stops OpenBot work. Your Casdoor account and shared billing account will remain available.</p>
-        <form method="post" action="${settings}/confirm"><button type="submit">Permanently close workspace</button></form>
-        <a href="${settings}">Cancel</a>
-      `,
+          <>
+            <Text as="p">
+              This permanently closes your Personal Workspace and stops OpenBot
+              work. Your Casdoor account and shared billing account will remain
+              available.
+            </Text>
+            <form method="post" action={`${settings}/confirm`}>
+              <Button
+                type="submit"
+                variant="destructive"
+                label="Permanently close workspace"
+              />
+            </form>
+            <Link href={settings}>Cancel</Link>
+          </>,
         ),
       );
     },
