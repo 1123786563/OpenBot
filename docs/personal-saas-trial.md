@@ -59,6 +59,8 @@ Deploy an account status endpoint at `CASDOOR_ACCOUNT_STATUS_URL`. The endpoint 
 | `observedAt` | When the provider reliably observed this state, in UTC Unix milliseconds |
 | `disablements` | Every effective disablement for this identity, with a stable `id` and an `effectiveAt` timestamp in UTC Unix milliseconds |
 
+The repository includes a [Casdoor SQLite account-status provider](../docker/casdoor-account-status/README.md) for the private trial. Install it before creating accounts in the dedicated trial organization.
+
 The deployment must record each disablement durably as it takes effect. Include disablements that end before OpenBot polls. Return a failure if the endpoint cannot establish current state or provide complete history. Keep observations ordered and synchronize clocks on the status provider and OpenBot hosts. The integration test provides this endpoint in its Casdoor fixture. Before admitting participants, deploy the provider and verify that it captures every Casdoor mutation path, including a brief disablement followed by recovery.
 
 OpenBot stores the history in PostgreSQL and revokes existing Application Sessions as soon as it observes a new disablement. Recovery requires a later active observation and a new sign-in. If Casdoor cannot confirm status, API access and live sessions expire 60 seconds after the last reliable active confirmation. A failed check leaves that deadline in place. After Casdoor confirms activity again, an unexpired Application Session can regain access. The trial polls known accounts even when all clients are offline. Verify polling and stream closure within 60 seconds at the trial's planned concurrent account count.
