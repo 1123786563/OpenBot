@@ -13,7 +13,7 @@
         "0082_routine_goal",
         "0077_channel_opening"
       ],
-      "to": "0102_personal_workspace_reprovision",
+      "to": "0105_personal_workspace_reprovision",
       "rollbackCompatible": false
     },
     "intelligenceCapabilities": []

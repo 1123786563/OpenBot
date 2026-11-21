@@ -2,13 +2,13 @@ import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
+import { isMarketVersionPause } from "../skill-market/disablements";
 import type { RoutineRunner } from "./runner";
 import { MINIMUM_INTERVAL_MS } from "./schedule";
 import {
   NO_SHARED_CHANNEL,
   RoutineNotFoundError,
   RoutineRefusedError,
-  type RoutineRunOutcome,
   type RoutineStore,
   type RoutineSummary,
 } from "./store";
@@ -84,7 +84,10 @@ export function createRoutineRoutes(
       return context.json({
         runs: runs.map((run) => ({
           id: run.id,
-          status: run.status ?? "running",
+          status:
+            run.status === "skipped" && isMarketVersionPause(run.error)
+              ? "paused"
+              : (run.status ?? "running"),
           startedAt: run.startedAt.toISOString(),
           finishedAt: run.finishedAt?.toISOString() ?? null,
           error: run.error,
@@ -248,7 +251,10 @@ type RoutineDto = {
   };
   enabled: boolean;
   nextRunAt: string;
-  lastRun: { status: RoutineRunOutcome | null; at: string | null } | null;
+  lastRun: {
+    status: NonNullable<RoutineSummary["lastRun"]>["status"];
+    at: string | null;
+  } | null;
 };
 
 export const SWEEP_SILENCE_MS = MINIMUM_INTERVAL_MS;

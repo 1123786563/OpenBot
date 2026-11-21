@@ -14,9 +14,9 @@ export type GroupMessage = {
   ownerUserId: string;
   agentId: string | null;
   text: string;
-  status: "queued" | "running" | "waiting" | "completed" | "failed";
+  status: "queued" | "running" | "waiting" | "completed" | "failed" | "paused";
   createdAt: string;
-  /** Why a waiting Bot is waiting, when it is. */
+  /** Why the Bot turn is waiting or paused. */
   reason?: string;
   /** For an answer relayed from another Bot through `message_bot`: which Bot answered. */
   answeredBy?: string;

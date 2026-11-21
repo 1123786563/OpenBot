@@ -1,3 +1,5 @@
+import { CodeBlock } from "@astryxdesign/core/CodeBlock";
+import { Text } from "@astryxdesign/core/Text";
 import { offersStandingRule } from "@openbot/shared/standing-rule";
 import { approvalPhrase } from "@openbot/shared/tool-name";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -148,7 +150,22 @@ export function InlineApproval({
           </motion.section>
         ) : null}
       </AnimatePresence>
-      {pending ? null : fallback}
+      {request?.result?.pauseReason ? (
+        <section aria-label="Paused action">
+          <Text as="p">{request.result.pauseReason}</Text>
+          {request.result.content && (
+            <CodeBlock
+              code={request.result.content}
+              container="section"
+              hasCopyButton={false}
+              isWrapped
+              width="100%"
+            />
+          )}
+        </section>
+      ) : pending ? null : (
+        fallback
+      )}
     </>
   );
 }
@@ -191,7 +208,10 @@ export function PendingApprovals({
   const inbox = useQuery(approvalInboxOptions());
   const waiting = new Set(
     (inbox.data?.requests ?? [])
-      .filter((request) => request.status === "pending")
+      .filter(
+        (request) =>
+          request.status === "pending" || Boolean(request.result?.pauseReason),
+      )
       .flatMap((request) =>
         request.action.toolCallId ? [request.action.toolCallId] : [],
       ),

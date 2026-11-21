@@ -68,15 +68,22 @@ export function createApprovalRoutes(
    * carries no conversation for the gate to ask in. Answered by the rule the gate itself applies
    * (`asksEveryChange`), for the asker's own conversations only: anybody else's reads as no.
    */
-  routes.get("/threads/:threadId", async (context) =>
-    context.json({
-      asksEveryStep:
-        (await service.store.asksEveryChange?.(
-          context.var.actor.id,
-          context.req.param("threadId"),
-        )) === true,
-    }),
-  );
+  routes.get("/threads/:threadId", async (context) => {
+    const actorId = context.var.actor.id;
+    const threadId = context.req.param("threadId");
+    const botId = context.req.query("botId");
+    const callId = context.req.query("toolCallId");
+    const [asksEveryStep, marketCall] = await Promise.all([
+      service.store.asksEveryChange?.(actorId, threadId),
+      botId && callId
+        ? service.marketComputerCall?.({ actorId, botId, threadId, callId })
+        : undefined,
+    ]);
+    return context.json({
+      asksEveryStep: asksEveryStep === true,
+      ...(botId && callId ? { requiresRunContext: marketCall === true } : {}),
+    });
+  });
   routes.post("/computer/:botId", async (context) => {
     try {
       return context.json({

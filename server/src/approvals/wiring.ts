@@ -9,6 +9,13 @@ import { type AuditInitiator, PERSON_INITIATOR } from "../audit";
 import type { DeploymentConfig } from "../config";
 import type { Database } from "../db/client";
 import type { DeliveryScope } from "../delivery/types";
+import {
+  MarketRunPaused,
+  marketDispatchFor,
+  marketRunForComputerCall,
+  marketRunPauseReason,
+  withMarketDispatch,
+} from "../skill-market/disablements";
 import type { ReviewModel } from "./policy";
 import { createApprovalQuestions, type PersonQuestion } from "./questions";
 import { createApprovalService } from "./service";
@@ -179,6 +186,25 @@ export function createServerApprovalService(deps: {
         throw new ApprovalRefusedError(
           "That unanswered tool call is not saved in this conversation.",
         );
+      const marketRun = await marketRunForComputerCall(
+        database,
+        {
+          actorId: ownerUserId,
+          botId,
+          threadId: snapshot.threadId,
+        },
+        snapshot.toolCallId,
+      ).catch((error: unknown) => {
+        if (error instanceof MarketRunPaused)
+          throw new ApprovalRefusedError(error.message);
+        throw error;
+      });
+      if (marketRun?.pauseReason)
+        throw new ApprovalRefusedError(marketRun.pauseReason);
+      if (marketRun) {
+        snapshot.runId = marketRun.runId;
+        snapshot.marketSkill = marketRun.snapshot;
+      }
       const tools = await approvalComputerTools(
         ownerUserId,
         botId,
@@ -189,11 +215,38 @@ export function createServerApprovalService(deps: {
       );
       if (!tool)
         throw new ApprovalRefusedError("That computer tool is not available.");
-      return tool.execute(snapshot.args, {
-        toolCallId: snapshot.toolCallId,
-        signal: new AbortController().signal,
-      });
+      const scope = marketRun
+        ? {
+            actorId: ownerUserId,
+            botId,
+            threadId: snapshot.threadId,
+            runId: marketRun.runId,
+          }
+        : undefined;
+      if (scope) {
+        const pauseReason = await marketRunPauseReason(database, scope);
+        if (pauseReason) throw new ApprovalRefusedError(pauseReason);
+      }
+      try {
+        return await withMarketDispatch(
+          scope ? marketDispatchFor(database, scope) : undefined,
+          () =>
+            tool.execute(snapshot.args, {
+              toolCallId: snapshot.toolCallId,
+              signal: new AbortController().signal,
+            }),
+        );
+      } catch (error) {
+        if (error instanceof MarketRunPaused)
+          throw new ApprovalRefusedError(error.message);
+        throw error;
+      }
     },
-    { review: deps.review },
+    {
+      review: deps.review,
+      marketPause: (action) => marketRunPauseReason(database, action),
+      marketComputerCall: async ({ callId, ...scope }) =>
+        Boolean(await marketRunForComputerCall(database, scope, callId)),
+    },
   );
 }

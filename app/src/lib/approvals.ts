@@ -65,6 +65,7 @@ export type ApprovalInboxData = {
     createdAt: string;
     /** When the person (or a rule) decided it; null while it waits. */
     decidedAt?: string | null;
+    result?: { pauseReason?: string; content?: string; error?: string } | null;
     action: {
       botId: string;
       toolRef: string;
@@ -175,15 +176,26 @@ export const approvalThreadKeys = {
  * the server's gate decides it. Never stale: a conversation is a task's from the moment it exists,
  * or never. Kept apart from `["approvals"]`, which every decision invalidates.
  */
-export const threadAsksEveryStepQueryOptions = (threadId: string) =>
+export const threadAsksEveryStepQueryOptions = (
+  threadId: string,
+  tool?: { botId: string; toolCallId: string },
+) =>
   queryOptions({
-    queryKey: approvalThreadKeys.detail(threadId),
-    queryFn: (): Promise<boolean> =>
-      client(
-        `/api/approvals/threads/${encodeURIComponent(threadId)}`,
-        "asksEveryStep",
-        { fallback: "This conversation's approvals could not be checked." },
-      ),
+    queryKey: tool
+      ? [...approvalThreadKeys.detail(threadId), tool.botId, tool.toolCallId]
+      : approvalThreadKeys.detail(threadId),
+    queryFn: async (): Promise<boolean> => {
+      const path = `/api/approvals/threads/${encodeURIComponent(threadId)}`;
+      const response = await client(
+        tool ? `${path}?${new URLSearchParams(tool)}` : path,
+        {
+          fallback: "This conversation's approvals could not be checked.",
+        },
+      );
+      const decision: { asksEveryStep: boolean; requiresRunContext?: boolean } =
+        await response.json();
+      return decision.asksEveryStep || decision.requiresRunContext === true;
+    },
     staleTime: Number.POSITIVE_INFINITY,
   });
 export const decideApproval = (id: string, decision: ApprovalDecision) =>

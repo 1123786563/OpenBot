@@ -1,3 +1,4 @@
+import { marketSkillMethods } from "../skill-market/installations";
 import { accountMethods } from "./plugin-store/accounts";
 import { appAccessMethods } from "./plugin-store/app-access";
 import { callMethods } from "./plugin-store/calls";
@@ -53,6 +54,7 @@ export function createPluginStore(options: PluginStoreOptions) {
   return {
     ...serverMethods(context),
     ...skillMethods(context),
+    ...marketSkillMethods(context.database),
     ...grantMethods(context),
     ...connectionMethods(context),
     ...callMethods(context),

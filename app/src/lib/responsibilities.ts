@@ -35,7 +35,14 @@ export type ResponsibilityRecord = {
 };
 export type ResponsibilityRunRecord = {
   id: string;
-  status: "queued" | "running" | "waiting" | "succeeded" | "failed" | "skipped";
+  status:
+    | "queued"
+    | "running"
+    | "waiting"
+    | "succeeded"
+    | "failed"
+    | "skipped"
+    | "paused";
   replyText: string | null;
   error: string | null;
   waiting: { kind: string; requestId?: string } | null;

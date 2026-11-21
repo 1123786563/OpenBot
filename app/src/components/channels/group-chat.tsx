@@ -1,3 +1,4 @@
+import { Text } from "@astryxdesign/core/Text";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useLayoutEffect, useRef } from "react";
@@ -306,6 +307,12 @@ function GroupLine({
               {message.consent.serverId} account.
             </p>
           )
+        ) : message.status === "paused" ? (
+          <section aria-label="Paused Bot run" role="status">
+            <Text as="p" type="supporting">
+              {message.reason ?? message.text}
+            </Text>
+          </section>
         ) : message.status === "failed" ? (
           <p className="text-sm text-destructive" role="alert">
             {message.text || "This Bot couldn't answer."}

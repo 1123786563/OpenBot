@@ -351,7 +351,7 @@ A saved skill is on no Bot yet. Granting it is the remaining step, and it stays 
 
 A model picks the right tool reliably out of about ten, and unreliably out of thirty. A deployment that connects two vendors passes that point on its first afternoon, so a Bot holding more than a handful of tools is offered, per run, only the tools of the skills that match the message.
 
-Skills come from two places: a person writes one, or the tenant package ships one in `skills.yaml`. Package skills are seeded on boot as deployment skills, carrying the tool refs they need, which is what lets narrowing work on a fresh clone instead of waiting for somebody to map tools to skills by hand. A slug a person already took stays theirs and the package loses that skill rather than the deployment refusing to start.
+Skills come from three sources. People author skills in OpenBot, tenant packages seed deployment skills from `skills.yaml` on boot, and Bot owners can install exact versions from [the Skill Market](skill-market.md). Package skills carry their tool refs for narrowing on a fresh clone. When a package slug collides with an existing personal skill, OpenBot keeps the personal skill. Market installations pin reviewed instructions and declare no tool grants.
 
 A skill declares the tools it needs (`skill_tools`). Before the run starts, the deployment asks its own model which skills the message needs, and the Bot is built with those skills' tools plus every granted tool no skill claims. A declaration grants nothing: the offer is always intersected with what the Bot was already granted, so writing a skill can never hand anybody a tool.
 

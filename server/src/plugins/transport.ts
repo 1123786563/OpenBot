@@ -1,3 +1,4 @@
+import type { MarketDispatch } from "../skill-market/disablements";
 import * as arcade from "./arcade";
 import * as builtinRoutines from "./builtin-routines";
 import * as composio from "./composio";
@@ -126,6 +127,7 @@ export type VendorTransport = {
        * the person, which is what every call did before a person could hold two.
        */
       accountId?: string;
+      marketDispatch?: MarketDispatch;
     },
     toolName: string,
     args: Record<string, unknown>,

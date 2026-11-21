@@ -488,6 +488,50 @@ describe("group conversations in PostgreSQL", () => {
     expect(calls.map((call) => call.agentId)).toEqual([grace, ada]);
   });
 
+  test("a market pause closes the approval row with its reason in the public transcript", async () => {
+    const owner = await person();
+    const ada = await bot(owner, "Ada");
+    const grace = await bot(owner, "Grace");
+    const approvalId = `${prefix}-market-pause`;
+    const { conversations } = service({
+      replies: {
+        [ada]: () => {
+          throw new HeadlessToolSuspension("Waiting for your approval.", {
+            kind: "approval",
+            approvalId,
+          });
+        },
+      },
+    });
+    const routes = createGroupRoutes(conversations, async (context, next) => {
+      context.set("actor", { id: owner.id, email: owner.email, role: "user" });
+      await next();
+    });
+    const channel = await conversations.create(owner.id, {
+      agentIds: [ada, grace],
+    });
+    await conversations.send(owner.id, channel.id, {
+      id: `${prefix}-market-message`,
+      text: "do it",
+      agentId: ada,
+    });
+    await drain(conversations);
+    const reason =
+      "Run paused. Market skill version 1.0.0 is disabled by an OpenBot administrator. Reason: Review in progress";
+    await conversations.continueWaiting(
+      approvalId,
+      async () => {
+        throw new Error("The paused turn must not resume.");
+      },
+      reason,
+    );
+    const response = await routes.request(`/${channel.id}`);
+    expect(response.status).toBe(200);
+    expect((await response.json()).messages).toContainEqual(
+      expect.objectContaining({ agentId: ada, status: "paused", reason }),
+    );
+  });
+
   test("partial text is visible while a Bot runs, an approval resumes into the row, and a relayed answer is attributed", async () => {
     const owner = await person();
     const ada = await bot(owner, "Ada");

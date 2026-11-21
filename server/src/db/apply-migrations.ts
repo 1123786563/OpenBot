@@ -94,72 +94,80 @@ export class MigrationsOutOfReachError extends Error {
  */
 const MIGRATION_LOCK = "openbot:apply-migrations";
 
-const DIRECT_CHAT = {
-  tag: "0089_direct_chat_runs",
-  when: 1795157993281,
-  hash: "2d552c3475153bd86a04b0d069be6fe8702724ce3833efbcb043d9beaef4e540",
-};
-const TRIAL_ENTRY_HASH =
-  "4a64cab123b72eedff7d3e92ba3cb1f56e4a6abd2996c3dd4e97eb15efc73eec";
-const TRIAL_FIRST_STAMP = 1795158327499;
-const TRIAL_LAST_STAMP = 1795184939036;
+const DIRECT_CHAT_TAG = "0089_direct_chat_runs";
+const FIRST_TRIAL_TAG = "0093_personal_saas_entry";
 
-/** The trial shipped newer stamps before it received main's independent direct-chat table. */
-async function applyMissingDirectChatForTrial(
+// Original Personal SaaS journal stamps, in order through workspace reprovision.
+const TRIAL_STAMPS = [
+  1795158327499, 1795160662134, 1795162001225, 1795173234015, 1795174523931,
+  1795174795281, 1795176012983, 1795177502282, 1795178829465, 1795181383402,
+  1795184138210, 1795184939036, 1795231535117,
+];
+
+/** Move a verified trial prefix onto the merged journal and apply the independent main migrations. */
+async function reconcileTrialJournal(
   tx: TransactionSql,
   journal: MigrationsJournal,
   migrationsFolder: string,
   folder: readonly FolderMigration[],
   applied: readonly AppliedMigration[],
-  outOfReach: readonly FolderMigration[],
 ): Promise<boolean> {
-  const [missing] = outOfReach;
-  if (
-    outOfReach.length !== 1 ||
-    missing?.tag !== DIRECT_CHAT.tag ||
-    missing.when !== DIRECT_CHAT.when ||
-    missing.hash !== DIRECT_CHAT.hash
-  ) {
-    return false;
-  }
-
   const mark = migratorHighWaterMark(applied);
-  if (
-    mark === undefined ||
-    mark < TRIAL_FIRST_STAMP ||
-    mark > TRIAL_LAST_STAMP
-  ) {
-    return false;
-  }
-  const expected = folder.filter(
-    ({ when }) => when <= mark && when !== missing.when,
+  const trialLength = TRIAL_STAMPS.findIndex((when) => when === mark) + 1;
+  if (trialLength === 0) return false;
+
+  const directChatIndex = folder.findIndex(
+    ({ tag }) => tag === DIRECT_CHAT_TAG,
   );
-  // Every applied hash must match its original stamp, including the shared history.
+  const trialIndex = folder.findIndex(({ tag }) => tag === FIRST_TRIAL_TAG);
+  if (directChatIndex < 0 || trialIndex !== directChatIndex + 4) return false;
+
+  const directChat = folder[directChatIndex];
+  if (!directChat) return false;
   const appliedByStamp = new Map(
     applied.map(({ createdAt, hash }) => [createdAt, hash]),
   );
+  const hasDirectChat = appliedByStamp.get(directChat.when) === directChat.hash;
+  const shared = folder.slice(0, directChatIndex + Number(hasDirectChat));
+  const trial = folder.slice(trialIndex, trialIndex + trialLength);
   if (
-    appliedByStamp.get(TRIAL_FIRST_STAMP) !== TRIAL_ENTRY_HASH ||
+    trial.length !== trialLength ||
     appliedByStamp.size !== applied.length ||
-    applied.length !== expected.length ||
-    expected.some(({ when, hash }) => appliedByStamp.get(when) !== hash)
+    applied.length !== shared.length + trial.length ||
+    shared.some(({ when, hash }) => appliedByStamp.get(when) !== hash) ||
+    trial.some(({ hash }, index) => {
+      const stamp = TRIAL_STAMPS[index];
+      return stamp === undefined || appliedByStamp.get(stamp) !== hash;
+    })
   ) {
     return false;
   }
 
-  const sql = await readFile(
-    join(migrationsFolder, `${missing.tag}.sql`),
-    "utf8",
-  );
-  if (createHash("sha256").update(sql).digest("hex") !== missing.hash) {
-    return false;
-  }
-  for (const statement of sql.split("--> statement-breakpoint")) {
-    await tx.unsafe(statement);
-  }
   const { migrationsSchema, migrationsTable } = journal;
-  await tx`insert into ${tx(migrationsSchema)}.${tx(migrationsTable)} (hash, created_at)
-    values (${missing.hash}, ${missing.when})`;
+  const table = tx`${tx(migrationsSchema)}.${tx(migrationsTable)}`;
+  const missingMain = folder.slice(
+    directChatIndex + Number(hasDirectChat),
+    trialIndex,
+  );
+  for (const { tag, hash, when } of missingMain) {
+    const sql = await readFile(join(migrationsFolder, `${tag}.sql`), "utf8");
+    if (createHash("sha256").update(sql).digest("hex") !== hash) {
+      throw new Error(
+        `Migration ${tag} changed while reconciling the trial journal.`,
+      );
+    }
+    for (const statement of sql.split("--> statement-breakpoint")) {
+      await tx.unsafe(statement);
+    }
+    await tx`insert into ${table} (hash, created_at) values (${hash}, ${when})`;
+  }
+  for (const [index, { hash, when }] of trial.entries()) {
+    const original = TRIAL_STAMPS[index];
+    if (original !== undefined && original !== when) {
+      await tx`update ${table} set created_at = ${when}
+        where hash = ${hash} and created_at = ${original}`;
+    }
+  }
   return true;
 }
 
@@ -195,19 +203,22 @@ export async function applyMigrations(
   await client.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK}, 0))`;
 
-    const applied = await appliedMigrations(tx, journal);
-    const outOfReach = migrationsOutOfReach(folder, applied);
+    let applied = await appliedMigrations(tx, journal);
+    let outOfReach = migrationsOutOfReach(folder, applied);
     if (
       outOfReach.length > 0 &&
-      !(await applyMissingDirectChatForTrial(
+      (await reconcileTrialJournal(
         tx,
         journal,
         migrationsFolder,
         folder,
         applied,
-        outOfReach,
       ))
     ) {
+      applied = await appliedMigrations(tx, journal);
+      outOfReach = migrationsOutOfReach(folder, applied);
+    }
+    if (outOfReach.length > 0) {
       throw new MigrationsOutOfReachError(
         outOfReachRefusal(outOfReach, folder, applied, journal),
       );
