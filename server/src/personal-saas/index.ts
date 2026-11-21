@@ -188,6 +188,13 @@ const server = Bun.serve({
       // Export builds the archive and rechecks authorization before sending headers.
       server.timeout(request, 45);
     }
+    if (
+      request.method === "POST" &&
+      pathname === "/api/workspace/computer/start"
+    ) {
+      // Storage admission and the supervisor request can outlast the default timeout.
+      server.timeout(request, 30);
+    }
     return app.fetch(request);
   },
 });
