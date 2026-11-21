@@ -13,10 +13,20 @@ import {
   testCreditEnrollments as enrollments,
   enterpriseSettings,
   testCreditEvidence as evidence,
+  testCreditExternalAuthorizations as externalAuthorizations,
   testCreditIssuanceBudgets as issuanceBudgets,
   testCreditIssuances as issuances,
   testCreditOperations as operations,
+  personalSaasAccounts,
 } from "../db/schema";
+
+import { accountDecision } from "../personal-saas/account-access";
+
+export type ExternalSpendingScope = {
+  authorizationId: string;
+  application: typeof externalAuthorizations.$inferSelect.application;
+  resourceId: string;
+};
 
 export type VerifiedBillingIdentity = { issuer: string; subject: string };
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -294,6 +304,42 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       .select()
       .from(operations)
       .where(operationFilter(accountId, id));
+    return row;
+  }
+
+  async function externalAccount(
+    tx: Transaction,
+    identity: VerifiedBillingIdentity,
+  ) {
+    const [row] = await tx
+      .select({ status: personalSaasAccounts.status })
+      .from(personalSaasAccounts)
+      .where(
+        and(
+          eq(personalSaasAccounts.issuer, identity.issuer),
+          eq(personalSaasAccounts.subject, identity.subject),
+        ),
+      )
+      .for("share");
+    return row?.status ?? null;
+  }
+
+  async function externalAuthorization(
+    tx: Transaction,
+    accountId: string,
+    scope: ExternalSpendingScope,
+  ) {
+    const [row] = await tx
+      .select()
+      .from(externalAuthorizations)
+      .where(
+        and(
+          eq(externalAuthorizations.accountId, accountId),
+          eq(externalAuthorizations.id, scope.authorizationId),
+          eq(externalAuthorizations.application, scope.application),
+          eq(externalAuthorizations.resourceId, scope.resourceId),
+        ),
+      );
     return row;
   }
 
@@ -582,6 +628,63 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       });
     },
 
+    // The caller must authenticate the account holder and obtain explicit consent.
+    async authorizeExternalSpending(
+      identity: VerifiedBillingIdentity,
+      {
+        authorizationId,
+        application,
+        resourceId,
+        ...terms
+      }: ExternalSpendingScope & {
+        expiresAt: Date;
+        maxMicrocredits: bigint;
+      },
+    ) {
+      return database.transaction(async (tx) => {
+        const status = await externalAccount(tx, identity);
+        const accountId = await account(identity, tx);
+        const now = await currentTime(tx);
+        if (
+          !accountId ||
+          accountDecision(status, now.getTime()).kind !== "active" ||
+          terms.expiresAt <= now ||
+          terms.maxMicrocredits <= 0n
+        )
+          return undefined;
+        const [created] = await tx
+          .insert(externalAuthorizations)
+          .values({
+            id: authorizationId,
+            accountId,
+            application,
+            resourceId,
+            ...terms,
+          })
+          .onConflictDoNothing()
+          .returning({ authorizationId: externalAuthorizations.id });
+        return created;
+      });
+    },
+
+    async revokeExternalSpending(
+      identity: VerifiedBillingIdentity,
+      scope: ExternalSpendingScope,
+    ) {
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return false;
+        const authorization = await externalAuthorization(tx, accountId, scope);
+        if (!authorization) return false;
+        if (authorization.revokedAt === null)
+          await tx
+            .update(externalAuthorizations)
+            .set({ revokedAt: await currentTime(tx) })
+            .where(eq(externalAuthorizations.id, authorization.id));
+        return true;
+      });
+    },
+
     async reserve(
       identity: VerifiedBillingIdentity,
       input: {
@@ -589,12 +692,26 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         route: string;
         priceVersion: string;
         rerunOfOperationId?: string;
+        scope?: ExternalSpendingScope;
       },
     ) {
       return database.transaction(async (tx) => {
+        const status = input.scope ? await externalAccount(tx, identity) : null;
         const accountId = await account(identity, tx);
         if (!accountId) return denied("not_authorized");
+        const authorization = input.scope
+          ? await externalAuthorization(tx, accountId, input.scope)
+          : undefined;
         const now = await currentTime(tx);
+        const access = accountDecision(status, now.getTime());
+        if (
+          input.scope &&
+          (!authorization ||
+            authorization.revokedAt !== null ||
+            authorization.expiresAt <= now ||
+            access.kind !== "active")
+        )
+          return denied("not_authorized");
         await applyCutoff(tx, accountId, now);
         const expired = new Date(now.getTime() - reservationMilliseconds);
         await tx
@@ -609,6 +726,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           );
         const existing = await operation(accountId, input.operationId, tx);
         if (existing) {
+          if (existing.externalAuthorizationId !== (authorization?.id ?? null))
+            return denied("not_authorized");
           const sameQuote =
             existing.route.id === input.route &&
             existing.priceVersion === input.priceVersion &&
@@ -624,7 +743,11 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
               await eligibleEvidence(tx, existing),
             ),
             permit:
-              existing.state === "reserved" && sameQuote
+              existing.state === "reserved" &&
+              sameQuote &&
+              (existing.externalAccountEpoch === null ||
+                (access.kind === "active" &&
+                  existing.externalAccountEpoch === access.epoch))
                 ? existing.permit
                 : undefined,
           } as const;
@@ -643,6 +766,37 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         const reserved = BigInt(route.maxChargeMicrocredits);
         if (balance.granted === 0n) return denied("not_authorized");
         if (balance.available < reserved) return denied("insufficient_credits");
+        if (authorization) {
+          const [spending] = await tx
+            .select({
+              amount: sql<string>`coalesce(sum(
+              case
+                when ${operations.state} = 'settled' then ${operations.charged}
+                when ${operations.state} in ('reserved', 'pending')
+                  then coalesce(${operations.cutoffHold}, ${operations.reserved})
+                else 0
+              end
+            ), 0)::text`,
+            })
+            .from(operations)
+            .where(
+              and(
+                eq(operations.accountId, accountId),
+                eq(operations.externalAuthorizationId, authorization.id),
+              ),
+            );
+          if (
+            !spending ||
+            BigInt(spending.amount) + reserved > authorization.maxMicrocredits
+          )
+            return denied("insufficient_credits");
+          const atReservation = await currentTime(tx);
+          if (
+            authorization.expiresAt <= atReservation ||
+            accountDecision(status, atReservation.getTime()).kind !== "active"
+          )
+            return denied("not_authorized");
+        }
         const [row] = await tx
           .insert(operations)
           .values({
@@ -653,6 +807,11 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             reserved,
             createdAt: now,
             rerunOfOperationId: input.rerunOfOperationId,
+            externalAuthorizationId: authorization?.id,
+            externalAccountEpoch:
+              authorization && access.kind === "active"
+                ? access.epoch
+                : undefined,
             state: "reserved",
           })
           .returning();
@@ -672,15 +831,28 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
 
     async beginDispatch(
       identity: VerifiedBillingIdentity,
-      input: { operationId: string; permit: string },
+      input: {
+        operationId: string;
+        permit: string;
+        scope?: ExternalSpendingScope;
+      },
     ) {
       return database.transaction(async (tx) => {
+        const status = input.scope ? await externalAccount(tx, identity) : null;
         const accountId = await account(identity, tx);
         if (!accountId) return denied("not_authorized");
         await applyCutoff(tx, accountId, await currentTime(tx));
         const row = await operation(accountId, input.operationId, tx);
-        if (!row || row.permit !== input.permit)
+        if (
+          !row ||
+          row.permit !== input.permit ||
+          row.externalAuthorizationId !== (input.scope?.authorizationId ?? null)
+        )
           return denied("not_authorized");
+        const authorization = input.scope
+          ? await externalAuthorization(tx, accountId, input.scope)
+          : undefined;
+        if (input.scope && !authorization) return denied("not_authorized");
         if (row.state !== "reserved")
           return {
             state: "existing",
@@ -690,6 +862,16 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         const eligible = routeEligible(active, row.route);
         const filter = operationFilter(row.accountId, row.id);
         const dispatchedAt = await currentTime(tx);
+        if (authorization) {
+          const access = accountDecision(status, dispatchedAt.getTime());
+          if (
+            authorization.revokedAt !== null ||
+            authorization.expiresAt <= dispatchedAt ||
+            access.kind !== "active" ||
+            access.epoch !== row.externalAccountEpoch
+          )
+            return denied("not_authorized");
+        }
         if (
           !eligible ||
           dispatchedAt.getTime() - row.createdAt.getTime() >=

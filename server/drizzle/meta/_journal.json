@@ -778,6 +778,13 @@
       "when": 1795271468046,
       "tag": "0110_personal_workspace_cleanup_jsonb",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1795273407366,
+      "tag": "0111_weknora_external_spending",
+      "breakpoints": true
     }
   ]
 }
