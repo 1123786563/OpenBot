@@ -64,6 +64,8 @@ export async function replayIntelligenceDeletions({
         .select({
           id: projections.memoryId,
           owner: projections.ownerUserId,
+          memoryMissing: isNull(memories.id),
+          firstDeletedAt: projections.firstDeletedAt,
         })
         .from(projections)
         .leftJoin(memories, eq(projections.memoryId, memories.id))
@@ -102,6 +104,19 @@ export async function replayIntelligenceDeletions({
     throw new Error("Restore requires the recorded Opik cleanup destination");
   }
 
+  const replayedAt = new Date();
+  // A cascade can remove the Memory row while leaving its durable projection locator.
+  const withdrawnMemories = [
+    ...journal.memories,
+    ...journal.documents
+      .filter(({ memoryMissing }) => memoryMissing)
+      .map(({ id, owner, firstDeletedAt }) => ({
+        id,
+        owner,
+        at: firstDeletedAt ?? replayedAt,
+      })),
+  ];
+
   await restored.transaction(async (tx) => {
     for (const { id, at } of journal.conversations) {
       const [channel] = await tx
@@ -136,7 +151,7 @@ export async function replayIntelligenceDeletions({
         .for("update");
       if (row) await purgeRecording(tx, id, owner, at);
     }
-    for (const { id, owner, at } of journal.memories) {
+    for (const { id, owner, at } of withdrawnMemories) {
       if (!at) continue;
       await tx
         .update(memories)
@@ -193,7 +208,7 @@ export async function replayIntelligenceDeletions({
   return {
     conversations: journal.conversations.length,
     recordings: journal.recordings.length,
-    memories: journal.memories.length,
+    memories: withdrawnMemories.length,
     grants: journal.grants.length,
     documents: journal.documents.length,
     traces: journal.traces.length,
