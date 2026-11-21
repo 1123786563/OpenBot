@@ -18,6 +18,7 @@ import {
 } from "../src/db/schema/approvals";
 import {
   auditEvents,
+  channelMemberships,
   channels,
   intelligenceChannelMappings,
   users,
@@ -315,6 +316,9 @@ describe("Allow for this conversation", () => {
     await database
       .insert(channels)
       .values({ id: channelId, name: "Launch", description: "" });
+    await database
+      .insert(channelMemberships)
+      .values({ channelId, userId: owner });
     await database
       .insert(intelligenceChannelMappings)
       .values({ userId: owner, channelId, threadId: elsewhere });
