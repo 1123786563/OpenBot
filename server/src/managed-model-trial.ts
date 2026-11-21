@@ -23,7 +23,14 @@ const reconciliation = z.object({
 });
 
 type ModelScope = {
-  source: "direct-chat" | "learning" | "hindsight";
+  source:
+    | "direct-chat"
+    | "learning"
+    | "hindsight"
+    | "routing"
+    | "tool-selection"
+    | "approval"
+    | "admin";
   personId: string;
   runId: string;
   conversationId: string;
