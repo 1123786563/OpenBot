@@ -287,7 +287,8 @@ describe("a recorder bearer works only on the Recorder's own routes", () => {
     expect(threadsFor).toEqual([owner]);
     expect(loadedFor.slice(loaded)).not.toContain(owner);
     const intelligence = config.runtime.intelligence?.apiUrl;
-    if (!intelligence) throw new Error("Expected configured Intelligence fixture.");
+    if (!intelligence)
+      throw new Error("Expected configured Intelligence fixture.");
     expect(dialled.filter((url) => url.startsWith(intelligence))).toEqual([]);
   });
 
