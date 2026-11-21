@@ -28,6 +28,7 @@ import {
   deploymentKeys,
 } from "@/lib/deployment/queries";
 import { Route as ChannelNewRoute } from "@/routes/_authed/_app/channel/new";
+import { Route as StartRoute } from "@/routes/_authed/_app/start.$startId";
 import {
   NewBotCreationStub,
   SidebarToggleStub,
@@ -190,8 +191,15 @@ const testChannelNewRoute = ChannelNewRoute.update({
   path: "/channel/new",
   getParentRoute: () => appRoute,
 } as TestFileRouteWiring);
+const testStartRoute = StartRoute.update({
+  id: "/start/$startId",
+  path: "/start/$startId",
+  getParentRoute: () => appRoute,
+} as TestFileRouteWiring);
 const routeTree = rootRoute.addChildren([
-  authedRoute.addChildren([appRoute.addChildren([testChannelNewRoute])]),
+  authedRoute.addChildren([
+    appRoute.addChildren([testStartRoute, testChannelNewRoute]),
+  ]),
 ]);
 
 function renderChannelNew(
@@ -670,6 +678,15 @@ test("+ with only one Bot still opens the menu with it, and the Bot picked there
           : input.url,
       "http://localhost",
     );
+    if (url.pathname === "/api/me")
+      return NativeResponse.json({
+        user: {
+          id: "person",
+          name: "Sam",
+          email: "sam@example.com",
+          role: "user",
+        },
+      });
     if (url.pathname === "/api/channels" && init?.method === "POST") {
       created.push(JSON.parse(String(init.body)));
       return NativeResponse.json(
@@ -711,7 +728,9 @@ test("+ with only one Bot still opens the menu with it, and the Bot picked there
     await userEvent.setup({ document }).keyboard("{Enter}");
 
     await waitFor(() =>
-      expect(created).toEqual([{ agentIds: [GENERAL_ASSISTANT.id] }]),
+      expect(created).toEqual([
+        { agentIds: [GENERAL_ASSISTANT.id], requestId: expect.any(String) },
+      ]),
     );
     expect(view.queryByText("Choose a Bot first.")).toBeNull();
   } finally {

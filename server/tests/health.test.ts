@@ -51,6 +51,7 @@ describe("runtime capabilities", () => {
       localEvaluation: false,
       // Which product this is. The app trims its screens for the personal edition.
       edition: "team",
+      skillMarket: false,
       transcription: false,
       voice: false,
       // Names only. The sign-in screen reads this to know which buttons to draw.
@@ -79,6 +80,7 @@ describe("runtime capabilities", () => {
       "selfHostBanner",
       "localEvaluation",
       "edition",
+      "skillMarket",
       "transcription",
       "voice",
       "authProviders",
