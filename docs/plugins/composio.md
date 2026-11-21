@@ -57,6 +57,8 @@ starting services. This step is best-effort, like Learning setup. If it cannot c
 `start.sh` prints the helper's reason and starts OpenBot with apps unavailable. To prepare only
 this connection, or to retry, run:
 
+Run it directly or set `OPENBOT_COMPOSIO_AUTO_SETUP=true` before starting from source.
+
 ```sh
 bun run setup:composio
 ```
@@ -85,7 +87,7 @@ continues to create or reuse that project's app authorization config.
 The helper needs a CopilotKit CLI release that supports `integrations composio provision` and a
 CopilotKit deployment with the hosted provisioning service enabled. Missing `npx`, an older CLI,
 an expired sign-in, unavailable provisioning or a network error makes `bun run setup:composio`
-exit with a sanitized action to take, and `start.sh` then starts OpenBot with apps unavailable.
+exit with a sanitized action to take, and the optional startup setup lets OpenBot run with apps unavailable.
 Sign in again and rerun `bun run setup:composio`; the saved identity is retained. Preparing `.env`
 with your own project key remains supported.
 

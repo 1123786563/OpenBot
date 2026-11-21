@@ -100,7 +100,7 @@ const TARGETS = ["vanilla", "self-hosted", "eks", "eks-sandbox", "gke", "aks"];
 
 const component = (doc: Doc) =>
   doc.metadata.labels?.["app.kubernetes.io/component"];
-/** This chart's own objects, not the bundled Intelligence's or PostgreSQL's. */
+/** Objects defined by OpenBot's templates. */
 const own = (doc: Doc) =>
   doc.metadata.labels?.["helm.sh/chart"]?.startsWith("openbot-") === true;
 

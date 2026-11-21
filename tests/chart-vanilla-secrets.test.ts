@@ -1,5 +1,5 @@
 /**
- * A vanilla install from the licence and the model key alone, rendered by real Helm from the real
+ * A vanilla install from a model key alone alone, rendered by real Helm from the real
  * chart: the README's secrets file is those two lines, and the chart makes everything else.
  *
  * What must not regress, because each one is a person stuck before OpenBot ever starts, or a database
@@ -138,7 +138,7 @@ function credentials(docs: Doc[]) {
 }
 
 describe.skipIf(!helm)(
-  "a vanilla install from the licence and the model key",
+  "a vanilla install from a model key alone",
   () => {
     test("generates the key encryption key, the computer token and the database password, into Secrets kept on uninstall", () => {
       const docs = render();
@@ -369,13 +369,10 @@ function podAnnotations(
 }
 
 describe.skipIf(!helm)("an upgrade that changes a secret", () => {
-  // A changed Secret does not change a pod, so without these an upgrade with a new model key or
-  // licence left every pod on the old one: the release looked upgraded and every Bot turn kept
+  // A changed Secret does not change a pod, so without these an upgrade with a new model key left every pod on the old one: the release looked upgraded and every Bot turn kept
   // failing on the key it was meant to replace.
   const given = (...extra: string[]) =>
     render(
-      "--set-string",
-      "secrets.licenseToken=licence-a",
       "--set-string",
       "secrets.computerToken=computer-token-a-0123456789abcdef",
       ...extra,
