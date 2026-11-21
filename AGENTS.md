@@ -2,6 +2,8 @@
 
 Project-specific guidance for AI coding agents.
 
+Run local tests from the worktree root with `bun test --no-env-file --env-file=.env.test`. If a test needs generated app config, first run `bun --no-env-file --env-file=.env.test scripts/generate-app-config.ts`. In a new worktree, link the root `.env.test` to the private copy in the primary checkout. Use `docker compose --env-file .env.test` for local test services.
+
 <!-- ASTRYX:START -->
 Astryx v0.7.16 · 174 components
 CLI: run every command as `astryx <cmd>` (shown below as `astryx ...`).
