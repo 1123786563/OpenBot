@@ -1,3 +1,146 @@
+-- The Corsair pilot migrations originally occupied 0090–0094. The main branch later used
+-- 0090–0092 for Skill Market migrations, so fresh databases can reach this migration without the
+-- legacy pilot tables. Create empty compatibility tables when that older history is absent. On a
+-- database that already has the pilot tables these statements are no-ops and the data-copy below
+-- preserves the existing rows.
+CREATE TABLE IF NOT EXISTS "github_pilot_connections" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"workspace_id" text NOT NULL,
+	"person_id" text NOT NULL,
+	"registration" text NOT NULL,
+	"github_user_id" text NOT NULL,
+	"login" text NOT NULL,
+	"credential" text NOT NULL,
+	"revision" uuid DEFAULT gen_random_uuid() NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "github_pilot_grants" (
+	"workspace_id" text NOT NULL,
+	"registration" text NOT NULL,
+	"bot_id" text NOT NULL,
+	"tool_ref" text NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "github_pilot_repositories" (
+	"workspace_id" text NOT NULL,
+	"registration" text NOT NULL,
+	"repository_id" text NOT NULL,
+	"installation_id" text NOT NULL,
+	"node_id" text NOT NULL,
+	"name" text NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "github_pilot_states" (
+	"state_hash" text PRIMARY KEY NOT NULL,
+	"workspace_id" text NOT NULL,
+	"person_id" text NOT NULL,
+	"registration" text NOT NULL,
+	"verifier" text NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "github_pilot_defaults" (
+	"workspace_id" text NOT NULL,
+	"person_id" text NOT NULL,
+	"registration" text NOT NULL,
+	"github_user_id" text NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "github_pilot_event_outcomes" (
+	"receipt_id" uuid NOT NULL,
+	"trigger_id" uuid NOT NULL,
+	"outcome" text NOT NULL,
+	"next_attempt_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"run_id" text
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "github_pilot_event_receipts" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"workspace_id" text NOT NULL,
+	"registration" text NOT NULL,
+	"delivery_id" text NOT NULL,
+	"body_hash" text NOT NULL,
+	"event_type" text NOT NULL,
+	"installation_id" text,
+	"repository_id" text,
+	"pilot_dispatch" boolean NOT NULL,
+	"occurred_at" timestamp with time zone,
+	"payload" jsonb NOT NULL,
+	"received_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"disposition" text,
+	"fanout_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "github_pilot_event_triggers" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"workspace_id" text NOT NULL,
+	"registration" text NOT NULL,
+	"goal_id" text NOT NULL,
+	"connection_id" uuid NOT NULL,
+	"connection_revision" uuid NOT NULL,
+	"installation_id" text NOT NULL,
+	"repository_id" text NOT NULL,
+	"repository_node_id" text NOT NULL,
+	"event_types" text[] NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"disabled_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "slack_pilot_connections" (
+	"workspace_id" text NOT NULL,
+	"registration" text NOT NULL,
+	"person_id" text NOT NULL,
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"subject_scope" text NOT NULL,
+	"user_id" text NOT NULL,
+	"label" text NOT NULL,
+	"credential" text NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	"revision" uuid NOT NULL,
+	"verification_required_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "slack_pilot_defaults" (
+	"workspace_id" text NOT NULL,
+	"registration" text NOT NULL,
+	"person_id" text NOT NULL,
+	"connection_id" uuid NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "slack_pilot_grants" (
+	"workspace_id" text NOT NULL,
+	"registration" text NOT NULL,
+	"bot_id" text NOT NULL,
+	"tool_ref" text NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "slack_pilot_states" (
+	"workspace_id" text NOT NULL,
+	"registration" text NOT NULL,
+	"person_id" text NOT NULL,
+	"state_hash" text PRIMARY KEY NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "slack_shared_bot_access" (
+	"installation_id" uuid NOT NULL,
+	"bot_id" text NOT NULL,
+	"granted" boolean DEFAULT false NOT NULL,
+	"approval" jsonb
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "slack_shared_installations" (
+	"workspace_id" text PRIMARY KEY NOT NULL,
+	"id" uuid DEFAULT gen_random_uuid() NOT NULL,
+	"app_id" text NOT NULL,
+	"team_id" text NOT NULL,
+	"bot_id" text NOT NULL,
+	"bot_user_id" text NOT NULL,
+	"channel_ids" text[] NOT NULL
+);
+--> statement-breakpoint
+
 CREATE TABLE "corsair_account_defaults" (
 	"openbot_kind" text NOT NULL,
 	"workspace_id" text NOT NULL,
@@ -399,145 +542,3 @@ DROP TABLE slack_pilot_grants;
 DROP TABLE slack_shared_bot_access;
 --> statement-breakpoint
 DROP TABLE slack_shared_installations;
--- The Corsair pilot migrations originally occupied 0090–0094. The main branch later used
--- 0090–0092 for Skill Market migrations, so fresh databases can reach this migration without the
--- legacy pilot tables. Create empty compatibility tables when that older history is absent. On a
--- database that already has the pilot tables these statements are no-ops and the data-copy below
--- preserves the existing rows.
-CREATE TABLE IF NOT EXISTS "github_pilot_connections" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"workspace_id" text NOT NULL,
-	"person_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"github_user_id" text NOT NULL,
-	"login" text NOT NULL,
-	"credential" text NOT NULL,
-	"revision" uuid DEFAULT gen_random_uuid() NOT NULL,
-	"expires_at" timestamp with time zone NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "github_pilot_grants" (
-	"workspace_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"bot_id" text NOT NULL,
-	"tool_ref" text NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "github_pilot_repositories" (
-	"workspace_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"repository_id" text NOT NULL,
-	"installation_id" text NOT NULL,
-	"node_id" text NOT NULL,
-	"name" text NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "github_pilot_states" (
-	"state_hash" text PRIMARY KEY NOT NULL,
-	"workspace_id" text NOT NULL,
-	"person_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"verifier" text NOT NULL,
-	"expires_at" timestamp with time zone NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "github_pilot_defaults" (
-	"workspace_id" text NOT NULL,
-	"person_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"github_user_id" text NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "github_pilot_event_outcomes" (
-	"receipt_id" uuid NOT NULL,
-	"trigger_id" uuid NOT NULL,
-	"outcome" text NOT NULL,
-	"next_attempt_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"run_id" text
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "github_pilot_event_receipts" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"workspace_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"delivery_id" text NOT NULL,
-	"body_hash" text NOT NULL,
-	"event_type" text NOT NULL,
-	"installation_id" text,
-	"repository_id" text,
-	"pilot_dispatch" boolean NOT NULL,
-	"occurred_at" timestamp with time zone,
-	"payload" jsonb NOT NULL,
-	"received_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"disposition" text,
-	"fanout_at" timestamp with time zone
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "github_pilot_event_triggers" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"workspace_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"goal_id" text NOT NULL,
-	"connection_id" uuid NOT NULL,
-	"connection_revision" uuid NOT NULL,
-	"installation_id" text NOT NULL,
-	"repository_id" text NOT NULL,
-	"repository_node_id" text NOT NULL,
-	"event_types" text[] NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"disabled_at" timestamp with time zone
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "slack_pilot_connections" (
-	"workspace_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"person_id" text NOT NULL,
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"subject_scope" text NOT NULL,
-	"user_id" text NOT NULL,
-	"label" text NOT NULL,
-	"credential" text NOT NULL,
-	"expires_at" timestamp with time zone NOT NULL,
-	"revision" uuid NOT NULL,
-	"verification_required_at" timestamp with time zone
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "slack_pilot_defaults" (
-	"workspace_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"person_id" text NOT NULL,
-	"connection_id" uuid NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "slack_pilot_grants" (
-	"workspace_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"bot_id" text NOT NULL,
-	"tool_ref" text NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "slack_pilot_states" (
-	"workspace_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"person_id" text NOT NULL,
-	"state_hash" text PRIMARY KEY NOT NULL,
-	"expires_at" timestamp with time zone NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "slack_shared_bot_access" (
-	"installation_id" uuid NOT NULL,
-	"bot_id" text NOT NULL,
-	"granted" boolean DEFAULT false NOT NULL,
-	"approval" jsonb
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "slack_shared_installations" (
-	"workspace_id" text PRIMARY KEY NOT NULL,
-	"id" uuid DEFAULT gen_random_uuid() NOT NULL,
-	"app_id" text NOT NULL,
-	"team_id" text NOT NULL,
-	"bot_id" text NOT NULL,
-	"bot_user_id" text NOT NULL,
-	"channel_ids" text[] NOT NULL
-);
---> statement-breakpoint
