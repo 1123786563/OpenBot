@@ -294,3 +294,18 @@ reconciliation is complete.
    restarts. Keep the authoritative tombstones for as long as older backups
    can be restored. Exercise this procedure in a disposable deployment before
    enabling closure for real users.
+
+
+### Pause new workspace openings
+
+Set `OPENBOT_WORKSPACE_ADMISSIONS_PAUSED=true` on every Personal SaaS server
+replica and restart them to pause first-time provisioning and reopening after
+closure. Existing workspaces and closure progress remain available. Set it to
+`false` and restart the replicas to accept new openings again.
+
+Returning owners sign in to view closure progress. After execution has stopped
+and online cleanup and dedicated connection revocation are confirmed, they can
+choose **Open a new workspace** and sign in again. An active Workspace
+Suspension continues to block reopening. Backup expiration follows the old
+workspace's original schedule, and provisioning retains the same OpenBot
+account ID and Casdoor issuer and subject for the shared billing boundary.

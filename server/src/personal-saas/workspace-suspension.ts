@@ -34,11 +34,7 @@ export async function latestSuspension(
       effectiveAt: personalWorkspaceSuspensions.effectiveAt,
     })
     .from(personalWorkspaceSuspensions)
-    .innerJoin(
-      personalWorkspaces,
-      eq(personalWorkspaceSuspensions.workspaceId, personalWorkspaces.id),
-    )
-    .where(eq(personalWorkspaces.ownerId, accountId))
+    .where(eq(personalWorkspaceSuspensions.accountId, accountId))
     .orderBy(desc(personalWorkspaceSuspensions.sequence))
     .limit(1);
   return event;
@@ -97,6 +93,12 @@ export function suspensionRoutes(
         .where(eq(personalWorkspaces.id, workspaceId.data))
         .for("update", { of: personalSaasAccounts });
       if (!workspace) return { kind: "missing" } as const;
+      const [currentWorkspace] = await tx
+        .select({ id: personalWorkspaces.id })
+        .from(personalWorkspaces)
+        .where(eq(personalWorkspaces.ownerId, workspace.ownerId));
+      if (currentWorkspace?.id !== workspaceId.data)
+        return { kind: "missing" } as const;
 
       const current = await latestSuspension(tx, workspace.ownerId);
       const paused = current?.action === "pause";
@@ -109,6 +111,7 @@ export function suspensionRoutes(
         .values({
           ...input.data,
           workspaceId: workspaceId.data,
+          accountId: workspace.ownerId,
           operator: operator.id,
           effectiveAt,
         })

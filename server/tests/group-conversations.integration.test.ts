@@ -1020,6 +1020,7 @@ test("a workspace pause stops a group message before the first Bot dispatches", 
       text: "Check this",
     });
     await database.insert(personalWorkspaceSuspensions).values({
+      accountId,
       workspaceId,
       action: "pause",
       operator: "test",

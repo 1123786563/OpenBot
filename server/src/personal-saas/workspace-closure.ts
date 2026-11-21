@@ -7,6 +7,7 @@ import { z } from "zod";
 import { seal, unseal } from "../auth/signed-value";
 import type { Database } from "../db/client";
 import {
+  personalIntelligenceRuns,
   personalSaasAccounts,
   personalSaasSessions,
   personalSupportRequests,
@@ -17,10 +18,15 @@ import {
 } from "../db/schema";
 import { accountDecision, type createAccountAccess } from "./account-access";
 import { onlineCleanupSteps } from "./closure-cleanup-contract";
+import { readIntelligenceInventory } from "./intelligence-inventory";
 import { reconcileDecisionHistory } from "./decision-access";
 import { cookieOptions, sessionCookie } from "./session-revocation";
-import { personalSaasStore } from "./store";
-import { closureProgress, workspaceClosure } from "./workspace-closure-record";
+import { createPersonalWorkspace, personalSaasStore } from "./store";
+import {
+  cleanupConfirmed,
+  closureProgress,
+  workspaceClosure,
+} from "./workspace-closure-record";
 import {
   type workspaceComputer,
   workspaceComputerLeaseMs,
@@ -41,9 +47,14 @@ const proofCookie = "__Host-openbot-closure-proof";
 const settings = "/workspace/closure";
 const lifetime = 10 * 60;
 const workspaceToken = z.string().regex(/^[\w-]{43}$/);
-const statusClaim = z.object({ accountId: z.uuid(), expiresAt: z.number() });
+const statusClaim = z.object({
+  accountId: z.uuid(),
+  expiresAt: z.number(),
+  operationId: z.uuid().optional(),
+});
 const closureProof = statusClaim.extend({
   epoch: z.number().int(),
+  workspaceId: z.uuid(),
   sessionHash: workspaceToken,
 });
 const hash = (value: string) =>
@@ -55,6 +66,7 @@ export function workspaceClosureRoutes({
   encryptionKey,
   now,
   computer,
+  admissionsPaused,
   page,
 }: {
   database: Database;
@@ -62,6 +74,7 @@ export function workspaceClosureRoutes({
   encryptionKey: string;
   now: () => number;
   computer?: Pick<ReturnType<typeof workspaceComputer>, "stopped">;
+  admissionsPaused: boolean;
   page: (
     title: string,
     body: ReturnType<typeof html>,
@@ -113,6 +126,7 @@ export function workspaceClosureRoutes({
       return {
         ...account,
         accountId: account.id,
+        operationId: claim.data.operationId,
         token,
         restricted: true as const,
       };
@@ -193,7 +207,15 @@ export function workspaceClosureRoutes({
         .for("update");
       const access = accountDecision(owner?.status ?? null, now());
       if (!owner?.status || access.kind !== "active") return;
-      const existing = await workspaceClosure(tx, account.id);
+      const [existing] = await tx
+        .select()
+        .from(personalWorkspaceClosures)
+        .where(
+          and(
+            eq(personalWorkspaceClosures.accountId, account.id),
+            eq(personalWorkspaceClosures.workspaceId, proof.data.workspaceId),
+          ),
+        );
       if (existing) return existing;
       if (access.epoch !== proof.data.epoch) return;
       if (token === normalToken) {
@@ -206,7 +228,7 @@ export function workspaceClosureRoutes({
         .select()
         .from(personalWorkspaces)
         .where(eq(personalWorkspaces.ownerId, account.id));
-      if (!workspace) return;
+      if (!workspace || workspace.id !== proof.data.workspaceId) return;
       const acceptedAt = new Date(now());
       const [closure] = await tx
         .insert(personalWorkspaceClosures)
@@ -277,7 +299,10 @@ export function workspaceClosureRoutes({
     // Keep the paused flow's original status cookie so its retried POST
     // can still authenticate. Normal workspace proofs bind to the other cookie.
     if (token === normalToken)
-      await setClaim(context, statusCookie, { accountId: account.id });
+      await setClaim(context, statusCookie, {
+        accountId: account.id,
+        operationId: record.id,
+      });
     if (context.req.header("accept")?.includes("application/json"))
       return context.json(closureProgress(record));
     return context.redirect(`${settings}/progress`, 303);
@@ -286,8 +311,21 @@ export function workspaceClosureRoutes({
   routes.get(`${settings}/progress`, async (context) => {
     const user = await statusSession(context);
     if (!user || !(await accounts.check(user))) return denied(context);
-    const record = await workspaceClosure(database, user.accountId);
+    const active = await workspaceClosure(database, user.accountId);
+    const [record] = user.operationId
+      ? await database
+          .select()
+          .from(personalWorkspaceClosures)
+          .where(
+            and(
+              eq(personalWorkspaceClosures.id, user.operationId),
+              eq(personalWorkspaceClosures.accountId, user.accountId),
+            ),
+          )
+      : [active];
     if (!record) return denied(context);
+    const suspension = await latestSuspension(database, user.accountId);
+    const canOpen = active?.id === record.id && cleanupConfirmed(record);
     const progress = closureProgress(record);
     if (context.req.header("accept")?.includes("application/json"))
       return context.json(progress);
@@ -308,18 +346,96 @@ export function workspaceClosureRoutes({
             : "Schedule pending"
         }</dd>
       </dl>
+      ${
+        canOpen && (admissionsPaused || suspension?.action === "pause")
+          ? html`<p role="status">${admissionsPaused ? "New workspace openings are temporarily paused. Check back to try again." : "Your workspace suspension must be lifted before you can open a new workspace."}</p>`
+          : canOpen &&
+            html`<form method="post" action="${settings}/reprovision">
+            <input type="hidden" name="operationId" value="${record.id}">
+            <button type="submit">Open a new workspace</button>
+          </form>`
+      }
       <p><a href="${settings}/progress">Refresh progress</a></p>
     `,
       ),
     );
   });
 
+  routes.post(`${settings}/reprovision`, async (context) => {
+    const user = await statusSession(context);
+    if (!user?.operationId || !(await accounts.check(user)))
+      return denied(context);
+    const request = z
+      .object({ operationId: z.uuid() })
+      .safeParse(await context.req.parseBody().catch(() => undefined));
+    if (!request.success || user.operationId !== request.data.operationId)
+      return denied(context);
+
+    const result = await database.transaction(async (tx) => {
+      const [owner] = await tx
+        .select()
+        .from(personalSaasAccounts)
+        .where(eq(personalSaasAccounts.id, user.accountId))
+        .for("update");
+      if (accountDecision(owner?.status ?? null, now()).kind !== "active")
+        return "denied";
+      const active = await workspaceClosure(tx, user.accountId);
+      if (active?.id !== request.data.operationId) return "unavailable";
+      const suspension = await latestSuspension(tx, user.accountId);
+      if (
+        suspension &&
+        (suspension.action === "pause" ||
+          (owner?.status?.observedAt ?? 0) <= suspension.effectiveAt.getTime())
+      )
+        return "unavailable";
+      const [record] = await tx
+        .select()
+        .from(personalWorkspaceClosures)
+        .where(eq(personalWorkspaceClosures.id, active.id))
+        .for("update");
+      if (!record || !cleanupConfirmed(record)) return "unavailable";
+      if (admissionsPaused) return "paused";
+      const inventory = await readIntelligenceInventory(tx, [user.accountId]);
+      await tx
+        .update(personalWorkspaceClosures)
+        .set({
+          retiredIntelligence: inventory.map(
+            ({ agentId, threadId, runId }) => ({ agentId, threadId, runId }),
+          ),
+        })
+        .where(eq(personalWorkspaceClosures.id, record.id));
+      await tx
+        .delete(personalIntelligenceRuns)
+        .where(eq(personalIntelligenceRuns.accountId, user.accountId));
+      await tx
+        .delete(personalWorkspaces)
+        .where(eq(personalWorkspaces.id, record.workspaceId));
+      await createPersonalWorkspace(tx, user.accountId);
+      return "opened";
+    });
+    if (result === "denied") return denied(context);
+    if (result === "opened")
+      return context.redirect("/auth/casdoor/start", 303);
+    return context.html(
+      page(
+        "Workspace opening unavailable",
+        html`<p role="status">${result === "paused" ? "New workspace openings are temporarily paused. Check back to try again." : "This closure is not eligible to open a new workspace."}</p>
+        <a href="${settings}/progress">Check closure progress</a>`,
+      ),
+      result === "paused" ? 503 : 409,
+    );
+  });
+
   return {
     routes,
     subject,
-    issueStatusCookie(context: Context, accountId: string) {
+    issueStatusCookie(
+      context: Context,
+      accountId: string,
+      operationId?: string,
+    ) {
       deleteCookie(context, proofCookie, cookieOptions);
-      return setClaim(context, statusCookie, { accountId });
+      return setClaim(context, statusCookie, { accountId, operationId });
     },
     clearCookies(context: Context) {
       deleteCookie(context, statusCookie, cookieOptions);
@@ -337,8 +453,11 @@ export function workspaceClosureRoutes({
         session.epoch !== proof.epoch
       )
         return denied(context);
+      const workspace = await store.workspace(proof.accountId);
+      if (!workspace) return denied(context);
       await setClaim(context, proofCookie, {
         accountId: proof.accountId,
+        workspaceId: workspace.id,
         epoch: proof.epoch,
         sessionHash: hash(proof.token),
       });

@@ -715,6 +715,13 @@
       "when": 1795184939036,
       "tag": "0101_personal_intelligence_cleanup",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1795231535117,
+      "tag": "0102_personal_workspace_reprovision",
+      "breakpoints": true
     }
   ]
 }

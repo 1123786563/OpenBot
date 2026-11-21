@@ -10,6 +10,7 @@ export type CloudView =
   | { kind: "waiting" }
   | { kind: "signInFailed"; message: string }
   | { kind: "preparing" }
+  | { kind: "admissionsPaused" }
   | {
       kind: "closed";
       operationId: string;
@@ -338,6 +339,15 @@ export function PersonalCloud({
               <dt>Backup expiration</dt>
               <dd>{view.backups}</dd>
             </dl>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                void run("start", "Could not open browser sign-in. Try again.")
+              }
+            >
+              Sign in again
+            </button>
           </>
         )}
         {(view?.kind === "paused" ||
@@ -370,6 +380,18 @@ export function PersonalCloud({
               }
             >
               Cancel sign-in
+            </button>
+          </>
+        )}
+        {view?.kind === "admissionsPaused" && (
+          <>
+            <p role="status">New workspace openings are temporarily paused.</p>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void run("prepare", PREPARE_ERROR)}
+            >
+              Retry setup
             </button>
           </>
         )}
@@ -503,7 +525,9 @@ export function PersonalCloud({
             </>
           )}
         <div className="row">
-          {(view?.kind === "preparing" || view?.kind === "workspace") && (
+          {(view?.kind === "preparing" ||
+            view?.kind === "admissionsPaused" ||
+            view?.kind === "workspace") && (
             <button
               type="button"
               className="secondary"

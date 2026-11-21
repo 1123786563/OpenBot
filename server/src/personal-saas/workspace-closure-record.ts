@@ -1,18 +1,49 @@
-import { eq } from "drizzle-orm";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import type { Database } from "../db/client";
-import { personalWorkspaceClosures } from "../db/schema/personal-saas";
+import {
+  personalWorkspaceClosures,
+  personalWorkspaces,
+} from "../db/schema/personal-saas";
 
-import { onlineCleanupSteps } from "./closure-cleanup-contract";
+import { cleanupSteps, onlineCleanupSteps } from "./closure-cleanup-contract";
 
 export async function workspaceClosure(
   database: Pick<Database, "select">,
   accountId: string,
 ) {
   const [record] = await database
-    .select()
+    .select({ closure: personalWorkspaceClosures })
     .from(personalWorkspaceClosures)
-    .where(eq(personalWorkspaceClosures.accountId, accountId));
-  return record;
+    .leftJoin(personalWorkspaces, eq(personalWorkspaces.ownerId, accountId))
+    .where(
+      and(
+        eq(personalWorkspaceClosures.accountId, accountId),
+        or(
+          isNull(personalWorkspaces.id),
+          eq(personalWorkspaceClosures.workspaceId, personalWorkspaces.id),
+        ),
+      ),
+    )
+    .orderBy(
+      desc(personalWorkspaceClosures.acceptedAt),
+      desc(personalWorkspaceClosures.id),
+    )
+    .limit(1);
+  return record?.closure;
+}
+
+export function cleanupConfirmed(
+  record: typeof personalWorkspaceClosures.$inferSelect,
+) {
+  // PostgreSQL cleanup requires drained work, and volume cleanup requires
+  // observed Computer exit. Preserve the original cutoff deadline outcome.
+  return Boolean(
+    record.workCutoff &&
+      record.computerCutoff &&
+      cleanupSteps.every(
+        (step) => record.cleanup[step]?.status === "confirmed",
+      ),
+  );
 }
 
 export function closureProgress(

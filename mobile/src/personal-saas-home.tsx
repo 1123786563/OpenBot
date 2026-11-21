@@ -8,6 +8,7 @@ import {
   recoverPersonalWork,
   signInPersonalSaas,
   signOutPersonalSaas,
+  WorkspaceAdmissionsPaused,
 } from "./personal-saas";
 
 import type {
@@ -21,7 +22,7 @@ type Screen =
       kind: "ready";
       workspace: NonNullable<Awaited<ReturnType<typeof openPersonalWorkspace>>>;
     }
-  | { kind: "workspace-error" }
+  | { kind: "workspace-error" | "admissions-paused" }
   | { kind: "paused"; status: PausedWorkspace }
   | { kind: "closed"; status: ClosedWorkspace };
 
@@ -34,11 +35,14 @@ export function PersonalSaasHome() {
   const generation = useRef(0);
   const access = useRef<(() => number) | null>(null);
 
-  const withdraw = useCallback((kind: "loading" | "workspace-error") => {
-    generation.current++;
-    access.current = null;
-    setScreen({ kind });
-  }, []);
+  const withdraw = useCallback(
+    (kind: "loading" | "workspace-error" | "admissions-paused") => {
+      generation.current++;
+      access.current = null;
+      setScreen({ kind });
+    },
+    [],
+  );
 
   const load = useCallback(
     async (refresh = false) => {
@@ -67,8 +71,13 @@ export function PersonalSaasHome() {
         }
         access.current = remaining;
         setScreen({ kind: "ready", workspace });
-      } catch {
-        if (current === generation.current) withdraw("workspace-error");
+      } catch (error) {
+        if (current === generation.current)
+          withdraw(
+            error instanceof WorkspaceAdmissionsPaused
+              ? "admissions-paused"
+              : "workspace-error",
+          );
       }
     },
     [withdraw],
@@ -234,11 +243,15 @@ export function PersonalSaasHome() {
           }}
         />
       )}
-      {(screen.kind === "signed-out" || screen.kind === "paused") && (
+      {(screen.kind === "signed-out" ||
+        screen.kind === "paused" ||
+        screen.kind === "closed") && (
         <Button
           disabled={busy}
           title={
-            screen.kind === "paused" ? "Sign in again" : "Continue with Casdoor"
+            screen.kind === "signed-out"
+              ? "Continue with Casdoor"
+              : "Sign in again"
           }
           onPress={() => {
             void act(async () => {
@@ -252,10 +265,13 @@ export function PersonalSaasHome() {
           }}
         />
       )}
-      {screen.kind === "workspace-error" && (
+      {(screen.kind === "workspace-error" ||
+        screen.kind === "admissions-paused") && (
         <>
           <Text accessibilityRole="alert">
-            Could not open your Personal Workspace.
+            {screen.kind === "admissions-paused"
+              ? "New workspace openings are temporarily paused."
+              : "Could not open your Personal Workspace."}
           </Text>
           <Button
             disabled={busy}
@@ -379,7 +395,9 @@ export function PersonalSaasHome() {
             ))}
           </View>
         )}
-      {(screen.kind === "ready" || screen.kind === "workspace-error") && (
+      {(screen.kind === "ready" ||
+        screen.kind === "workspace-error" ||
+        screen.kind === "admissions-paused") && (
         <Button
           disabled={busy}
           title="Sign out"

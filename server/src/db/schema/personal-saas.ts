@@ -17,6 +17,7 @@ import type {
   backupSchedule,
   CleanupResult,
   CleanupStep,
+  intelligenceLocator,
 } from "../../personal-saas/closure-cleanup-contract";
 import {
   maxSupportSeconds,
@@ -174,16 +175,17 @@ export const personalWorkspaceSuspensions = pgTable(
   {
     sequence: serial().primaryKey(),
     id: uuid().notNull().defaultRandom().unique(),
-    workspaceId: uuid("workspace_id")
+    workspaceId: uuid("workspace_id").notNull(),
+    accountId: uuid("account_id")
       .notNull()
-      .references(() => personalWorkspaces.id),
+      .references(() => personalSaasAccounts.id),
     action: text({ enum: ["pause", "resume"] }).notNull(),
     operator: text().notNull(),
     reason: text().notNull(),
     displayReason: text("display_reason"),
     effectiveAt: timestamp("effective_at", { withTimezone: true }).notNull(),
   },
-  (table) => [index().on(table.workspaceId, table.sequence)],
+  (table) => [index().on(table.accountId, table.sequence)],
 );
 
 export const personalWorkspaceClosures = pgTable(
@@ -192,7 +194,6 @@ export const personalWorkspaceClosures = pgTable(
     id: uuid().primaryKey().defaultRandom(),
     accountId: uuid("account_id")
       .notNull()
-      .unique()
       .references(() => personalSaasAccounts.id),
     // Preserve the operation after online workspace deletion.
     workspaceId: uuid("workspace_id").notNull().unique(),
@@ -208,7 +209,11 @@ export const personalWorkspaceClosures = pgTable(
       .default({}),
     backupSchedule:
       jsonb("backup_schedule").$type<z.output<typeof backupSchedule>>(),
+    retiredIntelligence: jsonb("retired_intelligence").$type<
+      z.output<typeof intelligenceLocator>[]
+    >(),
   },
+  (table) => [index().on(table.accountId)],
 );
 
 export const personalIntelligenceRuns = pgTable(

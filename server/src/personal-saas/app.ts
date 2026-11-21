@@ -105,6 +105,7 @@ export type PersonalSaasConfig = {
   suspensionSupport?: string;
   computer?: WorkspaceComputerConfig;
   closureCleanup?: ClosureCleanup;
+  admissionsPaused?: boolean;
   quotas?: Partial<WorkspaceQuotaLimits>;
   encryptionKey: string;
   casdoor: CasdoorConfig;
@@ -126,6 +127,15 @@ function statusPage(
   return page(
     title,
     html`<p role="status">${message}</p><a href="${href}">${action}</a>`,
+  );
+}
+
+function admissionsPausedPage() {
+  return statusPage(
+    "Workspace opening temporarily paused",
+    "Check back to try opening your Personal Workspace again.",
+    "/workspace",
+    "Retry",
   );
 }
 
@@ -191,6 +201,7 @@ export function createPersonalSaasApp(
     encryptionKey: config.encryptionKey,
     now,
     computer,
+    admissionsPaused: config.admissionsPaused ?? false,
     page,
   });
   const sweepCleanup = workspaceCleanup({
@@ -485,9 +496,11 @@ export function createPersonalSaasApp(
       const suspension = nativeAttempt
         ? undefined
         : await pausedWorkspace(database, accountId, config.suspensionSupport);
-      if (!nativeAttempt && (await workspaceClosure(database, accountId))) {
+      const closedWorkspace =
+        !nativeAttempt && (await workspaceClosure(database, accountId));
+      if (closedWorkspace) {
         deleteCookie(context, sessionCookie, cookieOptions);
-        await closure.issueStatusCookie(context, accountId);
+        await closure.issueStatusCookie(context, accountId, closedWorkspace.id);
         return context.redirect("/workspace/closure/progress", 303);
       }
       if (suspension) {
@@ -814,7 +827,10 @@ export function createPersonalSaasApp(
       : [];
     if (!(await remainingAccess(token, session.grant)))
       return context.redirect("/workspace");
-    if (!workspace) return context.html(preparePage());
+    if (!workspace)
+      return config.admissionsPaused
+        ? context.html(admissionsPausedPage(), 503)
+        : context.html(preparePage());
     const computerStatus = await computer
       ?.status(workspace.id)
       .catch(() => undefined);
@@ -976,7 +992,16 @@ export function createPersonalSaasApp(
     if (session.kind === "signed-out" || !token)
       return context.redirect("/workspace", 303);
     try {
-      if (!(await store.provision(session.grant, token)))
+      const result = await store.provision(
+        session.grant,
+        token,
+        config.admissionsPaused ?? false,
+      );
+      if (result === "paused")
+        return isNative
+          ? context.json({ error: "workspace_admissions_paused" }, 503)
+          : context.html(admissionsPausedPage(), 503);
+      if (result !== "prepared")
         return isNative
           ? context.json({ error: "authorization_changed" }, 403)
           : context.redirect("/workspace", 303);
@@ -1089,7 +1114,9 @@ export function createPersonalSaasApp(
               }
             : { ...workspace, quotas: quotaUsage },
         )
-      : context.json({ status: "preparing" }, 202);
+      : config.admissionsPaused
+        ? context.json({ error: "workspace_admissions_paused" }, 503)
+        : context.json({ status: "preparing" }, 202);
   });
 
   if (config.botRuntime) {

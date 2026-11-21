@@ -162,6 +162,7 @@ pub enum View {
         message: &'static str,
     },
     Preparing,
+    AdmissionsPaused,
     Paused(PausedWorkspace),
     Closed(ClosedWorkspace),
     Workspace {
@@ -520,6 +521,7 @@ impl<'a> Api<'a> {
                     clear_credential(store)?;
                     return Ok(View::SignedOut);
                 }
+                StatusCode::SERVICE_UNAVAILABLE => return admissions_status(result),
                 _ => return Err(NETWORK_ERROR),
             }
         }
@@ -568,12 +570,25 @@ impl<'a> Api<'a> {
                 }
             }
             StatusCode::ACCEPTED => Ok(View::Preparing),
+            StatusCode::SERVICE_UNAVAILABLE => admissions_status(result),
             StatusCode::UNAUTHORIZED => {
                 clear_credential(store)?;
                 Ok(View::SignedOut)
             }
             _ => Err(NETWORK_ERROR),
         }
+    }
+}
+
+fn admissions_status(result: reqwest::blocking::Response) -> Result<View, &'static str> {
+    #[derive(Deserialize)]
+    struct WorkspaceError {
+        error: String,
+    }
+    let response: WorkspaceError = result.json().map_err(|_| NETWORK_ERROR)?;
+    match response.error.as_str() {
+        "workspace_admissions_paused" => Ok(View::AdmissionsPaused),
+        _ => Err(NETWORK_ERROR),
     }
 }
 

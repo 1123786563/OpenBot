@@ -265,7 +265,7 @@ export function workspaceCleanup({
           ),
         )
         .limit(1);
-      if (claimed) continue;
+      if (claimed && record.retiredIntelligence === null) continue;
       for (const key of [
         "computerVolume",
         "exports",
@@ -346,10 +346,24 @@ export async function reapplyWorkspaceClosures(
         .select({ id: personalWorkspaces.id })
         .from(personalWorkspaces)
         .where(eq(personalWorkspaces.ownerId, record.accountId));
-      if (workspace && workspace.id !== record.workspaceId)
+      if (workspace && workspace.id !== record.workspaceId) {
+        const [retired] = await tx
+          .select({ id: personalWorkspaceClosures.id })
+          .from(personalWorkspaceClosures)
+          .where(
+            and(
+              eq(personalWorkspaceClosures.id, record.id),
+              eq(personalWorkspaceClosures.accountId, record.accountId),
+              eq(personalWorkspaceClosures.workspaceId, record.workspaceId),
+              eq(personalWorkspaceClosures.acceptedAt, record.acceptedAt),
+              isNotNull(personalWorkspaceClosures.retiredIntelligence),
+            ),
+          );
+        if (retired) continue;
         throw new Error(
           "Closure restore journal does not match the restored workspace",
         );
+      }
       const [closure] = await tx
         .insert(personalWorkspaceClosures)
         .values({
