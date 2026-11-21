@@ -710,10 +710,9 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         if (row.budgetId) {
           const executionBudget = await budget(row.accountId, row.budgetId, tx);
           const invalid =
-            !executionBudget ||
-            executionBudget.creditType !== "test" ||
-            executionBudget.state !== "active" ||
-            executionBudget.confirmedAt === null;
+            executionBudget?.creditType !== "test" ||
+            executionBudget?.state !== "active" ||
+            executionBudget?.confirmedAt === null;
           const overLimit = executionBudget
             ? (await budgetUsage(row.accountId, row.budgetId, tx)) >
               executionBudget.limitMicrocredits
