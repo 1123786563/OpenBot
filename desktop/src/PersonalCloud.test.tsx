@@ -56,6 +56,8 @@ test("a cancelled browser sign-in can be restarted and returned to the existing 
       usedUp: true,
       quote: {
         model: "Pilot model",
+        route: "pilot",
+        priceVersion: "00000000-0000-4000-8000-000000000000",
         price: { inputPerMillion: 1_000, outputPerMillion: 2_000 },
         maxChargeMicrocredits: "250",
         usageDisclosure: "Interrupted requests may still use Test Credits.",
@@ -358,12 +360,16 @@ test("the authorized workspace opens export in the system browser", async () => 
 
 test("an authorized owner can submit a managed text run and read its settled charge", async () => {
   let requestIdBeforeFailure: string | undefined;
+  const originalVersion = "00000000-0000-4000-8000-000000000000";
+  const updatedVersion = "00000000-0000-4000-8000-000000000001";
+  let version = originalVersion;
+  let attempts = 0;
   const screen = within(
     render(
       <PersonalCloud
         request={async () => ({
           kind: "workspace",
-          accessMs: 60_000,
+          accessMs: 2500,
           id: "workspace-1",
           personalAssistant: { id: "bot-1", name: "My Assistant" },
           testCredits: {
@@ -372,7 +378,12 @@ test("an authorized owner can submit a managed text run and read its settled cha
             balance: { availableMicrocredits: "1000" },
             usedUp: false,
             quote: {
-              model: "Pilot model",
+              model:
+                version === originalVersion
+                  ? "Pilot model"
+                  : "Updated pilot model",
+              route: "pilot",
+              priceVersion: version,
               price: { inputPerMillion: 1000, outputPerMillion: 2000 },
               maxChargeMicrocredits: "250",
               usageDisclosure:
@@ -382,18 +393,41 @@ test("an authorized owner can submit a managed text run and read its settled cha
           conversations: [],
         })}
         botRuns={{
-          start: async ({ workspaceId, botId, instruction, requestId }) => {
+          start: async ({
+            workspaceId,
+            botId,
+            instruction,
+            requestId,
+            quote,
+          }) => {
             expect({ workspaceId, botId, instruction }).toEqual({
               workspaceId: "workspace-1",
               botId: "bot-1",
               instruction: "Hello",
             });
             expect(requestId).toMatch(/^[a-f\d-]{36}$/i);
-            if (!requestIdBeforeFailure) {
+            attempts++;
+            if (attempts === 1) {
+              expect(quote).toEqual({
+                route: "pilot",
+                priceVersion: originalVersion,
+              });
               requestIdBeforeFailure = requestId;
               throw "The response was lost.";
             }
-            expect(requestId).toBe(requestIdBeforeFailure);
+            if (attempts === 2) {
+              expect(requestId).toBe(requestIdBeforeFailure);
+              expect(quote).toEqual({
+                route: "pilot",
+                priceVersion: originalVersion,
+              });
+              return { error: "test_credit_quote_changed" };
+            }
+            expect(requestId).not.toBe(requestIdBeforeFailure);
+            expect(quote).toEqual({
+              route: "pilot",
+              priceVersion: updatedVersion,
+            });
             return { runId: "run-1" };
           },
           status: async (runId) => {
@@ -422,6 +456,19 @@ test("an authorized owner can submit a managed text run and read its settled cha
   );
   await screen.findByText("The response was lost.");
   await user.click(screen.getByRole("button", { name: "Retry submission" }));
+  await screen.findByText(/Test Credit pricing changed/);
+  expect(
+    screen.getByRole<HTMLButtonElement>("button", {
+      name: "Run with Test Credits",
+    }).disabled,
+  ).toBe(true);
+  version = updatedVersion;
+  await screen.findByText(/Updated pilot model costs/, undefined, {
+    timeout: 3000,
+  });
+  await user.click(
+    screen.getByRole("button", { name: "Run with Test Credits" }),
+  );
   await screen.findByText("Managed answer");
   expect(screen.getByText(/Charged 3 microcredits/)).toBeTruthy();
 

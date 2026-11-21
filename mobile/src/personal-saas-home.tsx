@@ -443,6 +443,7 @@ export function PersonalSaasHome() {
                 workspaceId={screen.workspace.id}
                 botId={screen.workspace.personalAssistant.id}
                 initialRunId={runId}
+                quote={screen.workspace.testCredits?.quote}
                 onAccept={(id) => {
                   lastRun.current = {
                     workspaceId: screen.workspace.id,

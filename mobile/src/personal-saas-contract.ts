@@ -140,6 +140,8 @@ export const personalWorkspace = z.object({
       quote: z
         .object({
           model: z.string(),
+          route: z.string(),
+          priceVersion: z.uuid(),
           price: z.object({
             inputPerMillion: z.number().int().nonnegative(),
             outputPerMillion: z.number().int().nonnegative(),
@@ -157,6 +159,10 @@ export const personalWorkspace = z.object({
   }),
 });
 export type PersonalWorkspace = z.infer<typeof personalWorkspace>;
+export type TestCreditQuoteRef = Pick<
+  NonNullable<NonNullable<PersonalWorkspace["testCredits"]>["quote"]>,
+  "route" | "priceVersion"
+>;
 export const personalConversationHistory = z.object({
   conversations: z.array(
     z.object({

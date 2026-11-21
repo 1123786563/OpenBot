@@ -3,23 +3,32 @@ import { useEffect, useRef, useState } from "react";
 import { Button, Text, TextInput, View } from "react-native";
 import { mobileBotRuns } from "./personal-saas";
 import { BotRunActionError, type BotRunStatus } from "./personal-saas-bot-runs";
+import type { TestCreditQuoteRef } from "./personal-saas-contract";
 
 export function PersonalSaasBotRun({
   workspaceId,
   botId,
   canStart,
+  quote,
   initialRunId,
   onAccept,
 }: {
   workspaceId: string;
   botId: string;
   canStart: boolean;
+  quote?: TestCreditQuoteRef | null;
   initialRunId: string | null;
   onAccept: (runId: string) => void;
 }) {
   const runs = mobileBotRuns;
   const [instruction, setInstruction] = useState("");
-  const [requestId, setRequestId] = useState<string | null>(null);
+  const [pending, setPending] = useState<{
+    requestId: string;
+    quote: TestCreditQuoteRef;
+  } | null>(null);
+  const [rejectedQuote, setRejectedQuote] = useState<TestCreditQuoteRef | null>(
+    null,
+  );
   const [runId, setRunId] = useState(initialRunId);
   const [status, setStatus] = useState<BotRunStatus | null>(null);
   const [refresh, setRefresh] = useState(0);
@@ -27,6 +36,13 @@ export function PersonalSaasBotRun({
   const [statusError, setStatusError] = useState(false);
   const [busy, setBusy] = useState(false);
   const working = useRef(false);
+  const availableQuote =
+    canStart &&
+    quote &&
+    (quote.route !== rejectedQuote?.route ||
+      quote.priceVersion !== rejectedQuote?.priceVersion)
+      ? quote
+      : null;
   const terminal = status?.state === "completed" || status?.state === "stopped";
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: A manual refresh or stop restarts the poll immediately.
@@ -58,31 +74,46 @@ export function PersonalSaasBotRun({
   }, [runId, refresh]);
 
   async function start() {
+    const frozenQuote = pending?.quote ?? availableQuote;
     if (
       working.current ||
       !instruction.trim() ||
       (runId && !terminal) ||
-      (!requestId && !canStart)
+      !frozenQuote
     )
       return;
     working.current = true;
     setBusy(true);
     setError(null);
     try {
-      const id = requestId ?? randomUUID();
-      setRequestId(id);
+      const submission = pending ?? {
+        requestId: randomUUID(),
+        quote: {
+          route: frozenQuote.route,
+          priceVersion: frozenQuote.priceVersion,
+        },
+      };
+      setPending(submission);
       const accepted = await runs.start({
         workspaceId,
         botId,
         instruction: instruction.trim(),
-        requestId: id,
+        ...submission,
       });
+      if ("error" in accepted) {
+        setPending(null);
+        setRejectedQuote(submission.quote);
+        setError(
+          "Test Credit pricing changed. Review the updated quote before submitting again.",
+        );
+        return;
+      }
       onAccept(accepted.runId);
       setRunId(accepted.runId);
       setStatus(null);
       setStatusError(false);
       setInstruction("");
-      setRequestId(null);
+      setPending(null);
     } catch (failure) {
       setError(
         failure instanceof BotRunActionError
@@ -117,7 +148,7 @@ export function PersonalSaasBotRun({
       <Text>Instruction</Text>
       <TextInput
         accessibilityLabel="Instruction"
-        editable={requestId === null}
+        editable={pending === null}
         value={instruction}
         onChangeText={setInstruction}
         multiline
@@ -128,18 +159,16 @@ export function PersonalSaasBotRun({
           busy ||
           !instruction.trim() ||
           Boolean(runId && !terminal) ||
-          (!canStart && !requestId)
+          (!availableQuote && !pending)
         }
         onPress={() => void start()}
-        title={
-          requestId && !busy ? "Retry submission" : "Run with Test Credits"
-        }
+        title={pending && !busy ? "Retry submission" : "Run with Test Credits"}
       />
-      {requestId && !busy && (
+      {pending && !busy && (
         <Button
           title="Clear instruction"
           onPress={() => {
-            setRequestId(null);
+            setPending(null);
             setInstruction("");
             setError(null);
           }}

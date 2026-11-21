@@ -5,11 +5,13 @@ import { personalBotRuns } from "../src/personal-saas-bot-runs.ts";
 test("mobile sends the original submission key and reads a settled Test Credit receipt", async () => {
   const runId = "a".repeat(64);
   const requestId = "00000000-0000-4000-8000-000000000000";
+  const quote = { route: "pilot", priceVersion: requestId };
   const input = {
     workspaceId: "workspace-1",
     botId: "bot-1",
     instruction: "Hello",
     requestId,
+    quote,
   };
   const status = {
     state: "completed",
@@ -34,6 +36,7 @@ test("mobile sends the original submission key and reads a settled Test Credit r
         botId: "bot-1",
         instruction: "Hello",
         execution: "test-credit",
+        quote,
       });
       return Response.json({ runId }, { status: 202 });
     }
@@ -41,7 +44,12 @@ test("mobile sends the original submission key and reads a settled Test Credit r
     return Response.json(status);
   });
 
-  const accepted = await runs.start(input);
-  deepStrictEqual(accepted, { runId });
-  deepStrictEqual(await runs.status(accepted.runId), status);
+  deepStrictEqual(await runs.start(input), { runId });
+  deepStrictEqual(await runs.status(runId), status);
+
+  const changedPrice = { error: "test_credit_quote_changed" };
+  const changedRuns = personalBotRuns(async () =>
+    Response.json(changedPrice, { status: 409 }),
+  );
+  deepStrictEqual(await changedRuns.start(input), changedPrice);
 });

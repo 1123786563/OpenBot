@@ -1,11 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
 
+export type TestCreditQuoteRef = { route: string; priceVersion: string };
+
 type StartRun = {
   workspaceId: string;
   botId: string;
   instruction: string;
   requestId: string;
+  quote: TestCreditQuoteRef;
 };
 
 type RunStatus = {
@@ -22,7 +25,10 @@ type RunStatus = {
 
 export const cloudBotRuns = {
   start: (input: StartRun) =>
-    invoke<{ runId: string }>("personal_cloud_start_bot_run", { input }),
+    invoke<{ runId: string } | { error: "test_credit_quote_changed" }>(
+      "personal_cloud_start_bot_run",
+      { input },
+    ),
   status: (runId: string) =>
     invoke<RunStatus>("personal_cloud_bot_run", { runId, stop: false }),
   stop: (runId: string) =>
@@ -33,6 +39,7 @@ export function PersonalCloudBotRun({
   workspaceId,
   botId,
   canStart,
+  quote,
   initialRunId,
   onAccept,
   runs,
@@ -40,12 +47,19 @@ export function PersonalCloudBotRun({
   workspaceId: string;
   botId: string;
   canStart: boolean;
+  quote?: TestCreditQuoteRef | null;
   initialRunId: string | null;
   onAccept: (runId: string) => void;
   runs: typeof cloudBotRuns;
 }) {
   const [instruction, setInstruction] = useState("");
-  const [requestId, setRequestId] = useState<string | null>(null);
+  const [pending, setPending] = useState<{
+    requestId: string;
+    quote: TestCreditQuoteRef;
+  } | null>(null);
+  const [rejectedQuote, setRejectedQuote] = useState<TestCreditQuoteRef | null>(
+    null,
+  );
   const [runId, setRunId] = useState(initialRunId);
   const [status, setStatus] = useState<RunStatus | null>(null);
   const [refresh, setRefresh] = useState(0);
@@ -53,6 +67,13 @@ export function PersonalCloudBotRun({
   const [statusError, setStatusError] = useState(false);
   const [busy, setBusy] = useState(false);
   const working = useRef(false);
+  const availableQuote =
+    canStart &&
+    quote &&
+    (quote.route !== rejectedQuote?.route ||
+      quote.priceVersion !== rejectedQuote?.priceVersion)
+      ? quote
+      : null;
   const terminal = status?.state === "completed" || status?.state === "stopped";
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: A manual refresh or stop restarts the poll immediately.
@@ -84,31 +105,46 @@ export function PersonalCloudBotRun({
   }, [runId, runs, refresh]);
 
   async function start() {
+    const frozenQuote = pending?.quote ?? availableQuote;
     if (
       working.current ||
       !instruction.trim() ||
       (runId && !terminal) ||
-      (!requestId && !canStart)
+      !frozenQuote
     )
       return;
     working.current = true;
     setBusy(true);
     setError(null);
     try {
-      const id = requestId ?? crypto.randomUUID();
-      setRequestId(id);
+      const submission = pending ?? {
+        requestId: crypto.randomUUID(),
+        quote: {
+          route: frozenQuote.route,
+          priceVersion: frozenQuote.priceVersion,
+        },
+      };
+      setPending(submission);
       const accepted = await runs.start({
         workspaceId,
         botId,
         instruction: instruction.trim(),
-        requestId: id,
+        ...submission,
       });
+      if ("error" in accepted) {
+        setPending(null);
+        setRejectedQuote(submission.quote);
+        setError(
+          "Test Credit pricing changed. Review the updated quote before submitting again.",
+        );
+        return;
+      }
       onAccept(accepted.runId);
       setRunId(accepted.runId);
       setStatus(null);
       setStatusError(false);
       setInstruction("");
-      setRequestId(null);
+      setPending(null);
     } catch (failure) {
       setError(
         typeof failure === "string"
@@ -154,7 +190,7 @@ export function PersonalCloudBotRun({
           rows={3}
           value={instruction}
           maxLength={20_000}
-          readOnly={requestId !== null}
+          readOnly={pending !== null}
           onChange={(event) => setInstruction(event.currentTarget.value)}
         />
         <p>
@@ -164,16 +200,16 @@ export function PersonalCloudBotRun({
               busy ||
               !instruction.trim() ||
               Boolean(runId && !terminal) ||
-              (!canStart && !requestId)
+              (!availableQuote && !pending)
             }
           >
-            {requestId && !busy ? "Retry submission" : "Run with Test Credits"}
+            {pending && !busy ? "Retry submission" : "Run with Test Credits"}
           </button>
-          {requestId && !busy && (
+          {pending && !busy && (
             <button
               type="button"
               onClick={() => {
-                setRequestId(null);
+                setPending(null);
                 setInstruction("");
                 setError(null);
               }}

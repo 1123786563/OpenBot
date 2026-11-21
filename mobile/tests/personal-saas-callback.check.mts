@@ -94,6 +94,8 @@ test("workspace retains pending and used-up Test Credits", () => {
       usedUp: true,
       quote: {
         model: "Pilot model",
+        route: "pilot",
+        priceVersion: "00000000-0000-4000-8000-000000000000",
         price: { inputPerMillion: 1_000, outputPerMillion: 2_000 },
         maxChargeMicrocredits: "250",
         usageDisclosure: "Interrupted requests may still use Test Credits.",

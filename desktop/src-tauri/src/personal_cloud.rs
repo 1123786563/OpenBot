@@ -218,6 +218,8 @@ pub struct TestCredits {
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TestCreditQuote {
+    #[serde(flatten)]
+    reference: TestCreditQuoteRef,
     model: String,
     price: TestCreditPrice,
     max_charge_microcredits: String,
@@ -962,6 +964,13 @@ pub async fn personal_cloud_workspace<R: Runtime>(
     .map_err(str::to_owned)
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TestCreditQuoteRef {
+    route: String,
+    price_version: String,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BotRunInput {
@@ -969,12 +978,20 @@ pub struct BotRunInput {
     bot_id: String,
     instruction: String,
     request_id: String,
+    quote: TestCreditQuoteRef,
 }
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BotRunAccepted {
     run_id: String,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum BotRunSubmission {
+    Accepted(BotRunAccepted),
+    QuoteChanged { error: &'static str },
 }
 
 #[derive(Deserialize, Serialize)]
@@ -1018,7 +1035,7 @@ pub struct BotRunStatus {
 pub async fn personal_cloud_start_bot_run<R: Runtime>(
     window: WebviewWindow<R>,
     input: BotRunInput,
-) -> Result<BotRunAccepted, String> {
+) -> Result<BotRunSubmission, String> {
     require_cloud_window(&window)?;
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {
@@ -1037,11 +1054,29 @@ pub async fn personal_cloud_start_bot_run<R: Runtime>(
                 "botId": input.bot_id,
                 "instruction": input.instruction,
                 "execution": "test-credit",
+                "quote": input.quote,
             }))
             .send()
             .map_err(|_| NETWORK_ERROR)?;
         match reply.status() {
-            StatusCode::ACCEPTED => reply.json().map_err(|_| NETWORK_ERROR),
+            StatusCode::ACCEPTED => reply
+                .json()
+                .map(BotRunSubmission::Accepted)
+                .map_err(|_| NETWORK_ERROR),
+            StatusCode::CONFLICT => {
+                let error = reply
+                    .json::<serde_json::Value>()
+                    .map_err(|_| NETWORK_ERROR)?;
+                if error.get("error").and_then(serde_json::Value::as_str)
+                    == Some("test_credit_quote_changed")
+                {
+                    Ok(BotRunSubmission::QuoteChanged {
+                        error: "test_credit_quote_changed",
+                    })
+                } else {
+                    Err(NETWORK_ERROR)
+                }
+            }
             StatusCode::PAYMENT_REQUIRED => Err("There are not enough Test Credits for this run."),
             StatusCode::TOO_MANY_REQUESTS => Err("Your workspace has reached its Bot run limit."),
             _ => Err(NETWORK_ERROR),

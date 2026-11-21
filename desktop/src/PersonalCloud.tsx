@@ -1,7 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { cloudBotRuns, PersonalCloudBotRun } from "./PersonalCloudBotRun";
+import {
+  cloudBotRuns,
+  PersonalCloudBotRun,
+  type TestCreditQuoteRef,
+} from "./PersonalCloudBotRun";
 
 export const CLOUD_FRAGMENT = "personal-cloud";
 
@@ -60,12 +64,14 @@ export type CloudView =
         amountMicrocredits: string;
         balance: { availableMicrocredits: string };
         usedUp: boolean;
-        quote?: {
-          model: string;
-          price: { inputPerMillion: number; outputPerMillion: number };
-          maxChargeMicrocredits: string;
-          usageDisclosure: string;
-        } | null;
+        quote?:
+          | (TestCreditQuoteRef & {
+              model: string;
+              price: { inputPerMillion: number; outputPerMillion: number };
+              maxChargeMicrocredits: string;
+              usageDisclosure: string;
+            })
+          | null;
       } | null;
       recoveryCanRetry?: boolean;
       recovery?: (WorkInterruption & { instruction: string })[];
@@ -836,6 +842,7 @@ export function PersonalCloud({
                   workspaceId={view.id}
                   botId={view.personalAssistant.id}
                   initialRunId={runId}
+                  quote={view.testCredits?.quote}
                   onAccept={(id) => {
                     lastRun.current = { workspaceId: view.id, id };
                   }}

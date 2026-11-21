@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { TestCreditQuoteRef } from "./personal-saas-contract";
 
 const basePath = "/api/workspace/bot-runs";
 const runId = z.string().regex(/^[a-f0-9]{64}$/);
@@ -37,11 +38,13 @@ export function personalBotRuns(
       botId,
       instruction,
       requestId,
+      quote,
     }: {
       workspaceId: string;
       botId: string;
       instruction: string;
       requestId: string;
+      quote: TestCreditQuoteRef;
     }) {
       const reply = await request(basePath, {
         method: "POST",
@@ -54,8 +57,18 @@ export function personalBotRuns(
           botId,
           instruction,
           execution: "test-credit",
+          quote,
         }),
       });
+      if (reply.status === 409) {
+        const conflict = z.object({
+          error: z.literal("test_credit_quote_changed"),
+        });
+        const changed = conflict.safeParse(
+          await reply.json().catch(() => null),
+        );
+        if (changed.success) return changed.data;
+      }
       if (reply.status === 402)
         throw new BotRunActionError(
           "There are not enough Test Credits for this run.",
