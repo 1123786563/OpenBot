@@ -1,7 +1,7 @@
 import { IconBuildingBank, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { SignInSection } from "@/components/admin/controls/sign-in-section";
 import {
   PageEmpty,
@@ -10,6 +10,10 @@ import {
   PageShell,
 } from "@/components/layout/page-shell";
 import { StaggerItem } from "@/components/layout/stagger";
+import {
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -56,6 +60,8 @@ const EMPTY = {
 
 function IdentityProvidersPage() {
   const providers = useQuery(identityProviderListQueryOptions());
+  const addButton = useRef<HTMLButtonElement>(null);
+  const { requestConfirmation, confirmation } = useActionConfirmation();
   const register = useMutation(
     registerIdentityProviderMutationOptions(queryClient),
   );
@@ -65,10 +71,6 @@ function IdentityProvidersPage() {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(EMPTY);
   const formId = useId();
-
-  // A removal failure belongs on the page: there is no dialog to put it in. A registration failure
-  // is shown inside the dialog instead, where the person who caused it is looking.
-  const failure = remove.error;
 
   function submit(submission: React.FormEvent) {
     submission.preventDefault();
@@ -102,7 +104,7 @@ function IdentityProvidersPage() {
   return (
     <PageShell
       action={
-        <Button onClick={() => setOpen(true)} size="lg">
+        <Button onClick={() => setOpen(true)} ref={addButton} size="lg">
           Add a provider
         </Button>
       }
@@ -113,15 +115,22 @@ function IdentityProvidersPage() {
         description="Google, Microsoft and Okta are set in the environment. They don't show here."
         title="Registered"
       >
-        {failure ? (
-          <p className="mt-4 text-destructive text-sm" role="alert">
-            {failure.message}
-          </p>
-        ) : null}
-        {providers.isPending ? null : providers.error ? (
-          <p className="mt-4 text-destructive text-sm" role="alert">
-            Couldn't load identity providers. Reload the page.
-          </p>
+        {confirmation}
+        {providers.isPending ? (
+          <p role="status">Loading identity providers…</p>
+        ) : providers.error && !providers.data ? (
+          <>
+            <p className="mt-4 text-destructive text-sm" role="alert">
+              Couldn't load identity providers.
+            </p>
+            <Button
+              onClick={() => void providers.refetch()}
+              size="sm"
+              variant="outline"
+            >
+              Try again
+            </Button>
+          </>
         ) : providers.data?.length === 0 ? (
           <PageEmpty
             action={
@@ -151,8 +160,41 @@ function IdentityProvidersPage() {
                   </ItemContent>
                   <ItemActions>
                     <Button
-                      disabled={remove.isPending}
-                      onClick={() => remove.mutate(provider.providerId)}
+                      aria-label={`Remove identity provider ${provider.providerId}`}
+                      onClick={(event) =>
+                        requestConfirmation({
+                          title: `Remove ${provider.providerId}?`,
+                          description: `People with email addresses at ${provider.domain} will lose this ${provider.protocol.toUpperCase()} sign-in option. If they rely on it, they may be unable to sign in. To restore it, register the provider again.`,
+                          confirmLabel: "Remove provider",
+                          pendingLabel: "Removing provider…",
+                          failureMessage:
+                            "Removal could not be confirmed. Try again to check whether the provider is still registered.",
+                          successMessage: `${provider.providerId} was removed.`,
+                          trigger: event.currentTarget,
+                          fallbackFocus: () => addButton.current,
+                          refresh: () => providers.refetch(),
+                          run: async () => {
+                            const latest = await providers.refetch({
+                              throwOnError: true,
+                            });
+                            const current = latest.data?.find(
+                              (item) => item.providerId === provider.providerId,
+                            );
+                            if (
+                              !current ||
+                              current.domain !== provider.domain ||
+                              current.issuer !== provider.issuer ||
+                              current.protocol !== provider.protocol ||
+                              current.registeredBy !== provider.registeredBy
+                            ) {
+                              throw new ActionUnavailable(
+                                "This provider was removed or its setup changed. Close this dialog and review the list.",
+                              );
+                            }
+                            await remove.mutateAsync(provider.providerId);
+                          },
+                        })
+                      }
                       size="sm"
                       variant="destructive"
                     >

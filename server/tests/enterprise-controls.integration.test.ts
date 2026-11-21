@@ -255,6 +255,35 @@ describe("capability switches", () => {
     });
   });
 
+  test("only one admin can save an override based on the same previous state", async () => {
+    const path = "/api/admin/enterprise/capabilities";
+    const change = {
+      scopeKind: "role",
+      scopeId: "admin",
+      capability: "localComputer",
+      allowed: false,
+      expected: null,
+    };
+    const results = await Promise.all([
+      put(asAdmin, path, change),
+      put(asAdmin, path, change),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual([200, 409]);
+    try {
+      const overview = await (
+        await asAdmin.request("/api/admin/enterprise")
+      ).json();
+      expect(overview.capabilities).toContainEqual(
+        expect.objectContaining({
+          capability: "localComputer",
+          roles: expect.objectContaining({ admin: false }),
+        }),
+      );
+    } finally {
+      await put(asAdmin, path, { ...change, allowed: null, expected: false });
+    }
+  });
+
   test("the store guard refuses a Slack link that never crosses the gate", async () => {
     await put(asAdmin, "/api/admin/enterprise/capabilities", {
       scopeKind: "group",

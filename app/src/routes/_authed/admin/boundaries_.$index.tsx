@@ -20,13 +20,9 @@ import {
 } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -62,6 +58,10 @@ const BACK = {
 function RulePage() {
   const { index } = Route.useParams();
   const stored = useQuery(actionPolicyQueryOptions());
+  const { requestConfirmation, confirmation } = useActionConfirmation();
+  const navigate = Route.useNavigate();
+  const queryClient = useQueryClient();
+  const savePolicy = useMutation(saveActionPolicyMutationOptions(queryClient));
   const policy = stored.data;
   const rule = policy?.deny[Number(index)];
 
@@ -79,6 +79,7 @@ function RulePage() {
   if (rule === undefined) {
     return (
       <PageShell backButton={BACK} title="Rule">
+        {confirmation}
         <p className="text-muted-foreground text-sm">
           This rule isn't in place anymore. It may have been removed.
         </p>
@@ -86,14 +87,68 @@ function RulePage() {
     );
   }
   // Keyed by the rule, so a saved change starts the editor and its preview afresh from what is stored.
-  return <RuleDetail key={rule} policy={policy} rule={rule} />;
+  return (
+    <>
+      {confirmation}
+      <RuleDetail
+        key={rule}
+        policy={policy}
+        rule={rule}
+        onRemove={(trigger) => {
+          const label = ruleLabel(policy, rule);
+          requestConfirmation({
+            title: `Remove “${label.name}”?`,
+            description:
+              "This boundary will stop applying to every Bot. Other boundaries and permissions still apply. To restore it, add the rule again.",
+            confirmLabel: "Remove",
+            pendingLabel: "Removing…",
+            failureMessage: "Couldn't remove this boundary. Try again.",
+            trigger,
+            refresh: () => stored.refetch(),
+            run: async () => {
+              const { data: latest } = await stored.refetch({
+                throwOnError: true,
+              });
+              if (
+                !latest ||
+                JSON.stringify(latest) !== JSON.stringify(policy)
+              ) {
+                throw new ActionUnavailable(
+                  "The boundaries changed while you were reviewing them. Close this dialog and review the current policy.",
+                );
+              }
+              try {
+                await savePolicy.mutateAsync({
+                  ...withoutRule(latest, rule),
+                  expected: latest,
+                });
+              } catch (error) {
+                const { data: verified } = await stored.refetch();
+                if (verified && !verified.deny.includes(rule)) {
+                  throw new ActionUnavailable(
+                    "This boundary has been removed, but saving wasn't confirmed. Check Audit before making another change.",
+                  );
+                }
+                throw error;
+              }
+              await navigate({ to: "/admin/boundaries" });
+            },
+          });
+        }}
+      />
+    </>
+  );
 }
 
-function RuleDetail({ policy, rule }: { policy: ActionPolicy; rule: string }) {
-  const navigate = Route.useNavigate();
-  const queryClient = useQueryClient();
-  const savePolicy = useMutation(saveActionPolicyMutationOptions(queryClient));
-  const [removing, setRemoving] = useState(false);
+function RuleDetail({
+  policy,
+  rule,
+  onRemove,
+}: {
+  policy: ActionPolicy;
+  rule: string;
+  onRemove: (trigger: HTMLElement) => void;
+}) {
   const label = ruleLabel(policy, rule);
 
   /*
@@ -102,11 +157,6 @@ function RuleDetail({ policy, rule }: { policy: ActionPolicy; rule: string }) {
    * and its app calls alike, so a rule about an app shows the calls it stopped.
    */
   const reach = useQuery(policyDryRunQueryOptions(withoutRule(policy, rule)));
-
-  const remove = () =>
-    savePolicy.mutate(withoutRule(policy, rule), {
-      onSuccess: () => void navigate({ to: "/admin/boundaries" }),
-    });
 
   return (
     <PageShell
@@ -157,50 +207,17 @@ function RuleDetail({ policy, rule }: { policy: ActionPolicy; rule: string }) {
       </PageSection>
 
       <PageSection
-        description="Bots can do this again from their next action."
+        description="This boundary will stop applying to every Bot."
         title="Remove"
       >
         <Button
           className="mt-4"
-          onClick={() => setRemoving(true)}
+          onClick={(event) => onRemove(event.currentTarget)}
           variant="destructive"
         >
           Remove rule
         </Button>
       </PageSection>
-
-      <Dialog onOpenChange={setRemoving} open={removing}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Remove “{label.name}”?</DialogTitle>
-            <DialogDescription>
-              Every Bot can do this again from its next action.
-            </DialogDescription>
-          </DialogHeader>
-          {savePolicy.error ? (
-            <p className="text-destructive text-sm" role="alert">
-              {savePolicy.error.message}
-            </p>
-          ) : null}
-          <DialogFooter>
-            <Button
-              onClick={() => setRemoving(false)}
-              size="sm"
-              variant="ghost"
-            >
-              Cancel
-            </Button>
-            <Button
-              disabled={savePolicy.isPending}
-              onClick={remove}
-              size="sm"
-              variant="destructive"
-            >
-              {savePolicy.isPending ? "Removing…" : "Remove"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </PageShell>
   );
 }

@@ -310,9 +310,21 @@ test("unticking the default says it stays offered, and what Only allowed models 
   );
 });
 
-test("Permissions holds the organization's switches", async () => {
+test("Permissions previews the organization's changes before writing them", async () => {
   const view = await draw(PermissionsPage);
-  fireEvent.click(await view.findByRole("switch", { name: "Use Bots" }));
+  const trigger = await view.findByRole("switch", { name: "Use Bots" });
+  fireEvent.click(trigger);
+  const confirmation = await view.findByRole("alertdialog", {
+    name: "Disable Use Bots?",
+  });
+  expect(confirmation.textContent).toContain("across the organization");
+  expect(writes).toEqual([]);
+  fireEvent.click(view.getByRole("button", { name: "Cancel", exact: true }));
+  await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
+  expect(writes).toEqual([]);
+  fireEvent.click(trigger);
+  await view.findByRole("alertdialog", { name: "Disable Use Bots?" });
+  fireEvent.click(view.getByRole("button", { name: "Disable", exact: true }));
   await waitFor(() =>
     expect(writes).toContainEqual({
       path: "/api/admin/enterprise/capabilities",
@@ -321,9 +333,11 @@ test("Permissions holds the organization's switches", async () => {
         scopeId: "",
         capability: "useBots",
         allowed: false,
+        expected: null,
       },
     }),
   );
+  await view.findByText("Permission saved.");
   expect(view.getByRole("button", { name: /Role and group overrides/ }));
 });
 

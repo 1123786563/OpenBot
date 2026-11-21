@@ -1,19 +1,9 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import {
-  createFileRoute,
-  Link,
-  useNavigate,
-  useRouter,
-  useSearch,
-} from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
+import { useState } from "react";
 import { z } from "zod";
 import { AgentCard } from "@/components/agents/agent-card";
-import {
-  Composer,
-  type ComposerDraft,
-  toAgentOptions,
-} from "@/components/channels/composer";
+import { Composer, toAgentOptions } from "@/components/channels/composer";
 import { WorkingNow } from "@/components/channels/working-now";
 import { BusinessLink } from "@/components/edition/business-link";
 import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
@@ -24,23 +14,11 @@ import { defaultAgentProfile } from "@/lib/agents/default-agent";
 import { agentListQueryOptions, isSharedWithYou } from "@/lib/agents/queries";
 import { firstConversationGreeting } from "@/lib/auth/greeting";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
-import {
-  beginPendingStart,
-  endPendingStart,
-  onFailedStart,
-  pendingStartPath,
-  stashFailedStart,
-  takeFailedStart,
-} from "@/lib/channels/pending-start";
 import { channelListQueryOptions } from "@/lib/channels/queries";
-import {
-  CoworkerRoutingRefusedError,
-  routeMessage,
-} from "@/lib/channels/route";
-import { useStartChannel } from "@/lib/channels/start";
+import { pendingStartsFor } from "@/lib/channels/pending-start";
+import { useSubmitConversationStart } from "@/lib/channels/start";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { editionOf } from "@/lib/edition-guard";
-import { newId } from "@/lib/new-id";
 import { useAnyBotSkillCommands } from "@/lib/plugins/skill-commands";
 
 /** How many Bots the home page shows before pointing to the rest. Two rows of two. */
@@ -76,35 +54,10 @@ function RouteComponent() {
    * not true of it. A Bots list that fails to load is said under the composer already.
    */
   const personal = capabilities.data?.edition === "personal";
-  const { start, startChosen, pending } = useStartChannel();
-  const router = useRouter();
-  const navigate = useNavigate();
-  // A start that failed behind its placeholder comes back here: its words in the box, its reason
-  // under it, the way a failed send always left them. Taken on mount, and again whenever one fails
-  // while this page is open (somebody who came back here before it failed is looking at it).
-  const [restored, setRestored] = useState(takeFailedStart);
-  // Read once, as the box reads its words once: the words a link handed over (`ask`).
+  const { submit, error: saveError } = useSubmitConversationStart(user?.id);
+  const savedStarts = user ? pendingStartsFor(user.id) : [];
   const ask = useSearch({ strict: false }).ask;
   const [asked] = useState(ask);
-  const [restores, setRestores] = useState(0);
-  const [error, setError] = useState<string | null>(restored?.error ?? null);
-  /*
-   * Whether the person has typed in the box since it was last filled. A start that fails while they
-   * are writing something else does not overwrite it: it stays stashed, for the next home page.
-   */
-  const typed = useRef(false);
-  useEffect(
-    () =>
-      onFailedStart(() => {
-        if (typed.current) return;
-        const failed = takeFailedStart();
-        if (!failed) return;
-        setRestored(failed);
-        setRestores((count) => count + 1);
-        setError(failed.error);
-      }),
-    [],
-  );
 
   /** Default recipient when the composer draft has no mention. */
   /*
@@ -119,58 +72,6 @@ function RouteComponent() {
     agents,
     agents?.find((agent) => agent.visibility === "public"),
   );
-
-  /**
-   * Pick the Bot and make the channel behind the placeholder `pendingId`.
-   *
-   * A channel is pinned to one coworker for the life of its thread, so the coworker is chosen now,
-   * before it is created. An `@` is an explicit choice and is honoured as-is. With no `@`, the
-   * message is routed to the coworker it is for; if that routing cannot run, it falls back to the
-   * same default the composer used to always use.
-   *
-   * Runs on after this page has unmounted, which is the point. A failure goes back to the home
-   * composer with the words and the reason, and the person is taken there only if they are still
-   * looking at the placeholder; otherwise the next home page they open shows it.
-   */
-  const startBehind = async (pendingId: string, draft: ComposerDraft) => {
-    // A `/` skill stays at the start of the words, where the server finds it and gives the Bot its
-    // instructions, only if the Bot holds it (server/src/plugins/picked-skill.ts).
-    try {
-      if (draft.agentId) {
-        // Recorded and started as one sequence, shared with `/channel/new`: the person already
-        // decided, and the trail has to say so wherever they decided it.
-        await startChosen(draft.agentId, draft.text, undefined, pendingId);
-        return;
-      }
-      let agentId: string | undefined;
-      try {
-        agentId = (await routeMessage(draft.text, undefined, draft.commandIds))
-          .agentId;
-      } catch (caught) {
-        if (
-          draft.commandIds.length ||
-          caught instanceof CoworkerRoutingRefusedError
-        )
-          throw caught;
-        agentId = fallback?.id;
-      }
-      if (!agentId)
-        throw new Error("There's no Bot to send this to. Reload the page.");
-      await start(agentId, draft.text, undefined, pendingId);
-    } catch (caught) {
-      stashFailedStart({
-        text: draft.text,
-        error:
-          caught instanceof Error
-            ? caught.message
-            : "Couldn't start the conversation. Try again.",
-      });
-      if (router.state.location.pathname === pendingStartPath(pendingId))
-        await navigate({ replace: true, to: "/" });
-    } finally {
-      endPendingStart(pendingId);
-    }
-  };
 
   return (
     <>
@@ -188,21 +89,36 @@ function RouteComponent() {
             )}
           </h1>
         </div>
-        <div
-          className="mt-8 w-full flex flex-col items-center"
-          onKeyDownCapture={() => {
-            typed.current = true;
-          }}
-          onPasteCapture={() => {
-            typed.current = true;
-          }}
-        >
+        <div className="mt-8 w-full flex flex-col items-center">
+          {savedStarts.length > 0 ? (
+            <ul className="mb-3 w-full max-w-2xl space-y-1">
+              {savedStarts.map(({ id, start }) => (
+                <li key={id} className="min-w-0">
+                  <Link
+                    className="block truncate text-sm underline"
+                    params={{ startId: id }}
+                    to="/start/$startId"
+                  >
+                    Resume conversation · {start.draft.text || "Attachment"}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <StarterSuggestions
             agentId={fallback?.id}
-            disabled={pending}
             onSelect={async (message) => {
               if (!fallback) return;
-              await startChosen(fallback.id, message);
+              await submit(
+                {
+                  text: message,
+                  commandIds: [],
+                  attachments: [],
+                  agentId: fallback.id,
+                  isEmpty: false,
+                },
+                { kind: "direct", agentId: fallback.id },
+              );
             }}
           />
           <Composer
@@ -210,30 +126,15 @@ function RouteComponent() {
             commands={skillCommands}
             className="w-full max-w-2xl"
             disabled={!fallback}
-            // The box reads its words once, when it mounts; a start that fails while this page is
-            // open is a new box with them in it.
-            key={restores}
-            {...(restored
-              ? { initialValue: restored.text }
-              : asked
-                ? { initialValue: asked, autoFocus: true }
-                : {})}
-            onSubmit={async (draft) => {
-              // The conversation opens NOW, as a placeholder showing the message, and the Bot is
-              // picked and the channel made behind it; see `pending-start.ts`. Waiting here for
-              // both is what kept send looking dead for seconds.
-              setError(null);
-              const pendingId = newId();
-              beginPendingStart(pendingId, {
-                text: draft.text,
-                agentId: draft.agentId,
-              });
-              await navigate({
-                params: { startId: pendingId },
-                to: "/start/$startId",
-              });
-              void startBehind(pendingId, draft);
-            }}
+            {...(asked ? { initialValue: asked, autoFocus: true } : {})}
+            onSubmit={(draft) =>
+              submit(
+                draft,
+                draft.agentId
+                  ? { kind: "direct", agentId: draft.agentId }
+                  : { kind: "route", fallbackId: fallback?.id },
+              )
+            }
           />
           {fallback ? (
             // Said out loud: a message that silently reaches somebody you did not choose is the
@@ -242,14 +143,15 @@ function RouteComponent() {
               OpenBot picks the right Bot. Type <code>@</code> to choose one.
             </p>
           ) : null}
-          {error ? (
+          {saveError ? (
             <p
               className="mt-2 w-full max-w-2xl text-sm text-destructive"
               role="alert"
             >
-              {error}
+              {saveError}
             </p>
-          ) : failed && agents === undefined ? (
+          ) : null}
+          {failed && agents === undefined ? (
             // The composer above is `disabled={!fallback}`, and a failed query does not by
             // itself mean `fallback` is undefined: TanStack Query keeps its last good `data`
             // across a failed background refetch, and `!fallback` alone is also true of a query

@@ -213,6 +213,7 @@ export function RuleRow({
         ) : (
           <>
             <LabelSelect
+              id={team ? `team-rule-behaviour-${rule.id}` : undefined}
               disabled={disabled}
               label={`Behaviour for ${title}`}
               labels={labels}
@@ -220,6 +221,7 @@ export function RuleRow({
               value={rule.behaviour}
             />
             <Button
+              id={team ? `team-rule-remove-${rule.id}` : undefined}
               disabled={disabled}
               onClick={onRevoke}
               size="sm"

@@ -24,6 +24,7 @@ export function setCapabilityMutationOptions(queryClient: QueryClient) {
       scopeId: string;
       capability: CapabilityKey;
       allowed: boolean | null;
+      expected?: boolean | null;
     }) => {
       await client("/api/admin/enterprise/capabilities", {
         method: "PUT",

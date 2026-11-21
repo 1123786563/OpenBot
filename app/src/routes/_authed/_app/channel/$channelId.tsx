@@ -188,7 +188,8 @@ function RouteComponent() {
       <ChannelBody
         channel={channel.data}
         isPending={channel.isPending}
-        hasError={Boolean(channel.error)}
+        retry={() => void channel.refetch()}
+        retrying={channel.isFetching}
       />
     </DetailPanel>
   );
@@ -201,19 +202,25 @@ function RouteComponent() {
 function ChannelBody({
   channel,
   isPending,
-  hasError,
+  retry,
+  retrying,
 }: {
   channel: AgentChannel | undefined;
   isPending: boolean;
-  hasError: boolean;
+  retry: () => void;
+  retrying: boolean;
 }) {
-  // Nothing while the channel loads: a placeholder inside a local round-trip is a flicker.
-  if (isPending) return null;
-  if (hasError || !channel) {
+  if (isPending) return <ConversationLoading label="Opening conversation…" />;
+  if (!channel) {
     return (
-      <p className="p-8 text-sm text-destructive" role="alert">
-        Couldn't load this conversation. Reload the page.
-      </p>
+      <Stack padding={5}>
+        <ConversationReadError
+          title="Couldn't open this conversation."
+          description="Try again. If the conversation was removed, you can open another from the sidebar."
+          retry={retry}
+          retrying={retrying}
+        />
+      </Stack>
     );
   }
 
@@ -240,3 +247,8 @@ function ChannelBody({
     />
   );
 }
+import { Stack } from "@astryxdesign/core/Stack";
+import {
+  ConversationLoading,
+  ConversationReadError,
+} from "@/components/channels/conversation-status";

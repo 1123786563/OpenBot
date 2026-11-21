@@ -6,6 +6,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useRef } from "react";
 import {
   PageEmpty,
   PageRows,
@@ -13,6 +14,10 @@ import {
   PageShell,
 } from "@/components/layout/page-shell";
 import { StaggerItem } from "@/components/layout/stagger";
+import {
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import {
   Item,
@@ -47,8 +52,9 @@ function BoundariesPage() {
   const queryClient = useQueryClient();
   const stored = useQuery(actionPolicyQueryOptions());
   const savePolicy = useMutation(saveActionPolicyMutationOptions(queryClient));
-  /* What the server stored wins once a save lands: it normalises what it keeps. */
-  const policy = savePolicy.data ?? stored.data ?? null;
+  const { requestConfirmation, confirmation } = useActionConfirmation();
+  const trialSwitch = useRef<HTMLButtonElement>(null);
+  const policy = stored.data;
 
   const addRule = (
     <Button
@@ -141,6 +147,7 @@ function BoundariesPage() {
       </PageSection>
 
       <PageSection title="How rules apply">
+        {confirmation}
         <PageRows>
           <Item size="sm">
             <ItemContent>
@@ -156,12 +163,57 @@ function BoundariesPage() {
                 aria-label="Trial mode"
                 checked={trial}
                 disabled={savePolicy.isPending}
-                onCheckedChange={(checked) =>
-                  savePolicy.mutate({
-                    ...policy,
-                    mode: checked ? "dry-run" : "enforce",
-                  })
-                }
+                ref={trialSwitch}
+                onCheckedChange={(checked) => {
+                  const mode = checked ? "dry-run" : "enforce";
+                  requestConfirmation({
+                    title: checked
+                      ? "Turn on Trial mode?"
+                      : "Turn off Trial mode?",
+                    description: checked
+                      ? "For every Bot in this deployment, matches will go ahead if otherwise permitted and be recorded in Audit. You can turn enforcement back on here."
+                      : "For every Bot in this deployment, actions that match a boundary will be stopped. You can return to Trial mode here.",
+                    confirmLabel: checked
+                      ? "Turn on Trial mode"
+                      : "Enforce boundaries",
+                    pendingLabel: "Saving…",
+                    failureMessage: "Couldn't update Trial mode. Try again.",
+                    successMessage: checked
+                      ? "Trial mode is on."
+                      : "Boundaries are enforced.",
+                    trigger: trialSwitch.current ?? undefined,
+                    variant: "default",
+                    refresh: () => stored.refetch(),
+                    run: async () => {
+                      const { data: latest } = await stored.refetch({
+                        throwOnError: true,
+                      });
+                      if (
+                        !latest ||
+                        JSON.stringify(latest) !== JSON.stringify(policy)
+                      ) {
+                        throw new ActionUnavailable(
+                          "The boundaries changed while you were reviewing them. Close this dialog and review the current policy.",
+                        );
+                      }
+                      try {
+                        await savePolicy.mutateAsync({
+                          ...latest,
+                          mode,
+                          expected: latest,
+                        });
+                      } catch (error) {
+                        const { data: verified } = await stored.refetch();
+                        if (verified?.mode === mode) {
+                          throw new ActionUnavailable(
+                            "The new mode is in effect, but saving wasn't confirmed. Check Audit before making another change.",
+                          );
+                        }
+                        throw error;
+                      }
+                    },
+                  });
+                }}
               />
             </ItemActions>
           </Item>
@@ -203,11 +255,6 @@ function BoundariesPage() {
             </ItemContent>
           </Item>
         </PageRows>
-        {savePolicy.error ? (
-          <p className="mt-3 text-destructive text-sm" role="alert">
-            {savePolicy.error.message}
-          </p>
-        ) : null}
       </PageSection>
     </PageShell>
   );

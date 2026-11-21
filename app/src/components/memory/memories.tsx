@@ -6,6 +6,10 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import {
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -53,6 +57,7 @@ export function RememberFact() {
   return (
     <>
       <Button
+        id="remember-fact"
         onClick={() => {
           // Opening starts clean: no draft or failure left from an earlier attempt.
           setContent("");
@@ -138,6 +143,8 @@ export function MemoryList({
 } = {}) {
   const memories = useQuery(memoriesQueryOptions());
   const agents = useQuery(agentListQueryOptions());
+  const forget = useMutation(deleteMemoryMutationOptions(queryClient));
+  const { requestConfirmation, confirmation } = useActionConfirmation();
   const botName = (id: string | null) =>
     agents.data?.find((agent) => agent.id === id)?.name ?? "your Bot";
   return (
@@ -146,6 +153,7 @@ export function MemoryList({
       description={description}
       title="Your memories"
     >
+      {confirmation}
       {memories.isPending ? null : memories.error ? (
         <p role="alert" className="mt-4 text-destructive text-sm">
           {memories.error.message}
@@ -158,6 +166,34 @@ export function MemoryList({
               <MemoryRow
                 botName={botName(memory.formedByAgentId)}
                 memory={memory}
+                onForget={(trigger) =>
+                  requestConfirmation({
+                    title: "Forget this memory?",
+                    description: `“${clip(memory.content)}” will be removed from your memories. Your Bots will stop using it. You can't undo this.`,
+                    confirmLabel: "Forget memory",
+                    pendingLabel: "Forgetting…",
+                    failureMessage: "Couldn't forget this memory. Try again.",
+                    successMessage: "Memory forgotten.",
+                    trigger,
+                    fallbackFocus: () =>
+                      document.getElementById("remember-fact"),
+                    refresh: () => memories.refetch(),
+                    run: async () => {
+                      const { data: latest } = await memories.refetch({
+                        throwOnError: true,
+                      });
+                      const current = latest?.find(
+                        (candidate) => candidate.id === memory.id,
+                      );
+                      if (!current || current.content !== memory.content) {
+                        throw new ActionUnavailable(
+                          "This memory changed or is no longer available. Return to the list to review it.",
+                        );
+                      }
+                      await forget.mutateAsync(memory.id);
+                    },
+                  })
+                }
               />
             </Fragment>
           ))}
@@ -178,13 +214,14 @@ export function MemoryList({
 function MemoryRow({
   memory,
   botName,
+  onForget,
 }: {
   memory: MemoryRecord;
   botName: string;
+  onForget: (trigger: HTMLElement) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const save = useMutation(updateMemoryMutationOptions(queryClient));
-  const forget = useMutation(deleteMemoryMutationOptions(queryClient));
   const update = (input: {
     content?: string;
     enabled?: boolean;
@@ -253,18 +290,18 @@ function MemoryRow({
               </Button>
             )}
             <Button
+              aria-label={`Forget memory: ${clip(memory.content)}`}
               size="sm"
               variant="outline"
-              disabled={forget.isPending}
-              onClick={() => forget.mutate(memory.id)}
+              onClick={(event) => onForget(event.currentTarget)}
             >
               Forget
             </Button>
           </div>
         </ItemFooter>
-        {!editing && (save.error || forget.error) && (
+        {!editing && save.error && (
           <p role="alert" className="text-destructive text-sm">
-            {save.error?.message || forget.error?.message}
+            {save.error.message}
           </p>
         )}
       </ItemContent>
