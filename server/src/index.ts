@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { AbstractAgent } from "@ag-ui/client";
 import {
   CopilotKitIntelligence,
@@ -6,7 +7,8 @@ import {
 import { computerGuidance } from "@openbot/shared/bot-prompt";
 import { isPersonBrowserId } from "@openbot/shared/openbot-browser";
 import { workOwner } from "@openbot/shared/work-owner";
-import { createTurnRunner } from "@openbot/toolkit/run-turn";
+import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
+import { createTurnRunner as createToolkitTurnRunner } from "@openbot/toolkit/run-turn";
 import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { createActivityStore } from "./activity/activity";
@@ -336,6 +338,12 @@ import {
 import { createSelfHostBanner } from "./self-host-banner";
 import { createSetupSources, modelKeyOf } from "./setup/checklist";
 import { createComputerCheck } from "./setup/computer-check";
+import {
+  MarketRunPaused,
+  type MarketRunScope,
+  marketDispatchFor,
+  withMarketDispatch,
+} from "./skill-market/disablements";
 import { createTaskRunner } from "./tasks/runner";
 import { createTaskStore } from "./tasks/store";
 import { createTaskTurn } from "./tasks/turn";
@@ -1999,8 +2007,44 @@ const loadVendors = async () =>
  * be wrong without a Bot gaining anything. That is also why every failure below is silent and
  * lands on the whole catalogue: the narrowing is worth an accuracy point, never a capability.
  */
+const restoredMarketRun = new AsyncLocalStorage<MarketRunScope>();
+function createTurnRunner(
+  options: Parameters<typeof createToolkitTurnRunner>[0],
+) {
+  const run = createToolkitTurnRunner({
+    ...options,
+    executeTool: async ({ ownerUserId, agentId, threadId, runId }, execute) => {
+      const scope = { actorId: ownerUserId, botId: agentId, threadId, runId };
+      const reason = await pluginStore.marketRunPauseReason(scope);
+      if (reason) throw new MarketRunPaused(reason);
+      return withMarketDispatch(marketDispatchFor(database, scope), execute);
+    },
+  });
+  return (turn: Parameters<typeof run>[0]) => {
+    const previous = turn.continuation?.snapshot;
+    return previous
+      ? restoredMarketRun.run(
+          {
+            actorId: turn.ownerUserId,
+            botId: turn.agentId,
+            threadId: previous.threadId,
+            runId: previous.runId,
+          },
+          () => run(turn),
+        )
+      : run(turn);
+  };
+}
+
 const selectionForActor = (actorId: string): ToolSelection => ({
   loadSkills: (botId) => grantedSkills({ store: pluginStore, botId }),
+  registerMarketRun: (scope, version, snapshot) =>
+    pluginStore.registerMarketRun(
+      { ...scope, actorId },
+      version,
+      restoredMarketRun.getStore()?.runId,
+      snapshot,
+    ),
   // The deployment's own model and key, the same pair the intent router uses, so selection is
   // never a second thing to configure. It throws on a missing key, which reads as "could not
   // choose" and leaves the whole catalogue offered.
@@ -2091,6 +2135,7 @@ const buildAgentFor = async ({
   initiator,
   depth,
   subagent,
+  marketSkill,
 }: {
   ownerUserId: string;
   agentId: string;
@@ -2098,6 +2143,7 @@ const buildAgentFor = async ({
   depth?: number;
   /** A subagent's run: the same Bot with no coordination. See agents/subagent.ts. */
   subagent?: boolean;
+  marketSkill?: MarketSkillSnapshot | null;
 }) => {
   const actor = await actorFor(ownerUserId);
   let agent: AbstractAgent | undefined;
@@ -2105,6 +2151,7 @@ const buildAgentFor = async ({
     agent = await actorAgentResolver.resolveAgentForActor(actor, agentId, {
       initiator,
       depth,
+      marketSkill,
       ...(subagent ? { subagent } : {}),
     });
   } catch (error) {
@@ -2412,7 +2459,7 @@ const responsibilitySweep = repeatAfterEach(async () => {
 
 const approvalQueue = createWorkQueue(database);
 const approvalOwner = workOwner("approval");
-const executeApprovedAction = createApprovedActionExecutor({
+const approvedActionExecutor = createApprovedActionExecutor({
   sourceFor: sourceForCoordinationRun,
   gate: approvalService.gate,
   computerTools: approvalComputerTools,
@@ -2434,6 +2481,12 @@ const executeApprovedAction = createApprovedActionExecutor({
   refusalMarker: REFUSAL_MARKER,
   personInitiator: PERSON_INITIATOR,
 });
+const executeApprovedAction = (
+  action: Parameters<typeof approvedActionExecutor>[0],
+) =>
+  withMarketDispatch(marketDispatchFor(database, action), () =>
+    approvedActionExecutor(action),
+  );
 const approvalContinuationRunner = createTurnRunner({
   prepareRunInput: prepareProductRunInput,
   onKnownStop: productTelemetry.stopKnown,

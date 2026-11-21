@@ -20,18 +20,22 @@ import {
 } from "../../db/schema";
 import { isProactiveInitiator } from "../../proactive/initiator";
 import {
+  MarketRunPaused,
+  registeredMarketDispatch,
+} from "../../skill-market/disablements";
+import { accountArgumentFor } from "../account-argument";
+import {
   classifyTool,
   labelledRead,
   reviewedRead,
   tokenHeaderFor,
 } from "../catalogue";
-import { accountArgumentFor } from "../account-argument";
 import { VERSION_ARG } from "../composio";
 import { inspectToolArguments } from "../content-governance";
 import { shareTargetOf } from "../share-target";
 import { type AccountMode, filedUnderPerson } from "../shared-accounts";
-import { transportFor } from "../transport";
 import { withReadRetries } from "../transient";
+import { transportFor } from "../transport";
 import { withVendorDeadline } from "../vendor-deadline";
 import { accountBook, type PinnedAccount } from "./accounts";
 import { appCallPolicyContext } from "./call-policy";
@@ -121,6 +125,8 @@ export function callMethods(context: StoreContext) {
        * through its signed run assertion. See the transport's `threadId`.
        */
       threadId?: string;
+      /** Set only by a verified callback; local calls get their run from the tool continuation. */
+      runId?: string;
     }): Promise<{ text: string; isError: boolean }> {
       const [serverId, ...rest] = input.ref.split("/");
       const toolName = rest.join("/");
@@ -138,6 +144,37 @@ export function callMethods(context: StoreContext) {
        * name to is not the deployment having acted.
        */
       const auditActor = input.actorId || UNATTRIBUTED_ACTOR;
+
+      const continuation = currentApprovalContext();
+      const threadId = input.threadId ?? continuation?.threadId;
+      const runId = input.runId ?? continuation?.runId;
+      const scope =
+        threadId && runId
+          ? { actorId: input.actorId, botId: input.botId, threadId, runId }
+          : undefined;
+      let marketDispatch: Awaited<ReturnType<typeof registeredMarketDispatch>>;
+      if (scope) {
+        try {
+          marketDispatch = await registeredMarketDispatch(database, scope);
+        } catch (error) {
+          if (!(error instanceof MarketRunPaused)) throw error;
+          await recordAuditEvent(auditStore, {
+            eventType: "mcp.call_rejected",
+            targetType: "mcp_tool",
+            targetId: input.ref,
+            ...(input.initiator ? { initiator: input.initiator } : {}),
+            payload: {
+              actor: auditActor,
+              bot: input.botId,
+              server: serverId,
+              tool: toolName,
+              refusal: "market_run_paused",
+              reason: error.message,
+            },
+          });
+          throw new PluginRefusedError(error.message, null);
+        }
+      }
 
       const decision = await this.decide("mcp", input.ref, input.botId);
       if (!decision.allowed) {
@@ -719,6 +756,7 @@ export function callMethods(context: StoreContext) {
           vendor(
             {
               url: effectiveUrl(row, entry),
+              ...(marketDispatch ? { marketDispatch } : {}),
               token,
               tokenHeader: tokenHeaderFor(entry),
               actorId: runsAs ?? input.credentialActorId ?? input.actorId,
@@ -746,7 +784,11 @@ export function callMethods(context: StoreContext) {
           );
         const result =
           effect === "read"
-            ? await withReadRetries(callVendor)
+            ? await withReadRetries(
+                callVendor,
+                undefined,
+                (error) => error instanceof MarketRunPaused,
+              )
             : await callVendor();
         await recordAuditEvent(auditStore, {
           eventType: result.isError ? "mcp.call_failed" : "mcp.call_succeeded",
@@ -783,6 +825,20 @@ export function callMethods(context: StoreContext) {
         refused = result.accountGone ? "account" : "action";
         reachedVendorAs = runsAs;
       } catch (error) {
+        if (error instanceof MarketRunPaused) {
+          await recordAuditEvent(auditStore, {
+            eventType: "mcp.call_rejected",
+            targetType: "mcp_tool",
+            targetId: input.ref,
+            ...(input.initiator ? { initiator: input.initiator } : {}),
+            payload: {
+              ...decided,
+              refusal: "market_run_paused",
+              reason: error.message,
+            },
+          });
+          throw new PluginRefusedError(error.message, null);
+        }
         /*
          * Recorded, then rethrown unchanged. The caller's behaviour is unaffected — what changes is
          * that the failure now exists in the trail, which is where somebody asking "is this connector

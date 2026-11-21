@@ -1,5 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { inArray } from "drizzle-orm";
 import { createApprovalQuestions } from "../src/approvals/questions";
 import { createApprovalService } from "../src/approvals/service";
 import { createApprovalStore } from "../src/approvals/store";
@@ -9,6 +10,7 @@ import {
   personalSaasAccounts,
   personalWorkspaces,
   users,
+  workItems,
 } from "../src/db/schema";
 import { createAccountAccess } from "../src/personal-saas/account-access";
 import { suspensionRoutes } from "../src/personal-saas/workspace-suspension";
@@ -16,12 +18,23 @@ import { createWorkQueue } from "../src/work/queue";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
-afterAll(() => database.$client.end({ timeout: 5 }));
+const accountIds: string[] = [];
+afterAll(async () => {
+  try {
+    if (accountIds.length)
+      await database
+        .delete(workItems)
+        .where(inArray(workItems.accountId, accountIds));
+  } finally {
+    await database.$client.end({ timeout: 5 });
+  }
+});
 
 test.each(["pause", "disablement", "expired status"] as const)(
   "%s invalidates pending approvals and decisions queued before recovery",
   async (cutoff) => {
     const owner = randomUUID();
+    accountIds.push(owner);
     let now = Date.now();
     const clock = () => now;
     const active = {

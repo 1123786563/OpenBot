@@ -3,6 +3,7 @@ import Arcade, { APIError } from "@arcadeai/arcadejs";
 import { callTool, useArcadeClient } from "../src/plugins/arcade";
 import { createArcadeClient } from "../src/plugins/arcade-adapter";
 import { BrokerRefusalError } from "../src/plugins/broker";
+import { MarketRunPaused } from "../src/skill-market/disablements";
 
 /**
  * Same pattern as `composio-adapter.test.ts` ("the key becoming a vendor"): `new Arcade({ apiKey })`
@@ -68,6 +69,37 @@ describe("createArcadeClient", () => {
       });
     createArcadeClient("never-dialled");
     expect(calls).toEqual([]);
+  });
+
+  test("a paused market run cannot send an Arcade action", async () => {
+    const realFetch = globalThis.fetch;
+    let sent = false;
+    globalThis.fetch = Object.assign(
+      async () => {
+        sent = true;
+        return Response.json({ success: true, output: { value: "sent" } });
+      },
+      { preconnect: realFetch.preconnect },
+    );
+    restores.push(() => {
+      globalThis.fetch = realFetch;
+    });
+    useArcadeClient(createArcadeClient("never-dialled").actions);
+
+    await expect(
+      callTool(
+        {
+          url: "arcade://Gmail",
+          actorId: "u1",
+          marketDispatch: async () => {
+            throw new MarketRunPaused("Review in progress");
+          },
+        },
+        "Gmail.SendEmail",
+        {},
+      ),
+    ).rejects.toThrow("Review in progress");
+    expect(sent).toBe(false);
   });
 
   test("listApps counts actions across the FULL paged listing", async () => {

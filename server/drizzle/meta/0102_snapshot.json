@@ -1,6 +1,6 @@
 {
-  "id": "e96c6212-8033-4ef4-95b5-1cb0ba9a1bf1",
-  "prevId": "446a4a96-b059-40c1-a66c-330e0ecd70d6",
+  "id": "7362829d-4ca2-45f3-8d93-84376923bfa7",
+  "prevId": "24b1f421-e659-4612-b2f9-fcc5a65fb853",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -8652,117 +8652,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.direct_chat_runs": {
-      "name": "direct_chat_runs",
-      "schema": "",
-      "columns": {
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_message_id": {
-          "name": "user_message_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "prompt": {
-          "name": "prompt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "assistant_message_id": {
-          "name": "assistant_message_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reply": {
-          "name": "reply",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "direct_chat_runs_request_idx": {
-          "name": "direct_chat_runs_request_idx",
-          "columns": [
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_message_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "direct_chat_runs_thread_id_intelligence_channel_mappings_thread_id_fk": {
-          "name": "direct_chat_runs_thread_id_intelligence_channel_mappings_thread_id_fk",
-          "tableFrom": "direct_chat_runs",
-          "tableTo": "intelligence_channel_mappings",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "thread_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "direct_chat_runs_thread_id_id_pk": {
-          "name": "direct_chat_runs_thread_id_id_pk",
-          "columns": [
-            "thread_id",
-            "id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "direct_chat_runs_status_check": {
-          "name": "direct_chat_runs_status_check",
-          "value": "\"direct_chat_runs\".\"status\" in ('running', 'completed', 'failed')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.group_bot_threads": {
       "name": "group_bot_threads",
       "schema": "",
@@ -10820,67 +10709,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.personal_intelligence_runs": {
-      "name": "personal_intelligence_runs",
-      "schema": "",
-      "columns": {
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "personal_intelligence_runs_account_id_personal_saas_accounts_id_fk": {
-          "name": "personal_intelligence_runs_account_id_personal_saas_accounts_id_fk",
-          "tableFrom": "personal_intelligence_runs",
-          "tableTo": "personal_saas_accounts",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "personal_intelligence_runs_account_id_thread_id_run_id_agent_id_pk": {
-          "name": "personal_intelligence_runs_account_id_thread_id_run_id_agent_id_pk",
-          "columns": [
-            "account_id",
-            "thread_id",
-            "run_id",
-            "agent_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.personal_saas_accounts": {
       "name": "personal_saas_accounts",
       "schema": "",
@@ -11311,44 +11139,9 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "cleanup": {
-          "name": "cleanup",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "backup_schedule": {
-          "name": "backup_schedule",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "retired_intelligence": {
-          "name": "retired_intelligence",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         }
       },
-      "indexes": {
-        "personal_workspace_closures_account_id_index": {
-          "name": "personal_workspace_closures_account_id_index",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "personal_workspace_closures_account_id_personal_saas_accounts_id_fk": {
           "name": "personal_workspace_closures_account_id_personal_saas_accounts_id_fk",
@@ -11366,6 +11159,13 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
+        "personal_workspace_closures_account_id_unique": {
+          "name": "personal_workspace_closures_account_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "account_id"
+          ]
+        },
         "personal_workspace_closures_workspace_id_unique": {
           "name": "personal_workspace_closures_workspace_id_unique",
           "nullsNotDistinct": false,
@@ -11567,12 +11367,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
         "action": {
           "name": "action",
           "type": "text",
@@ -11605,11 +11399,11 @@
         }
       },
       "indexes": {
-        "personal_workspace_suspensions_account_id_sequence_index": {
-          "name": "personal_workspace_suspensions_account_id_sequence_index",
+        "personal_workspace_suspensions_workspace_id_sequence_index": {
+          "name": "personal_workspace_suspensions_workspace_id_sequence_index",
           "columns": [
             {
-              "expression": "account_id",
+              "expression": "workspace_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -11628,12 +11422,12 @@
         }
       },
       "foreignKeys": {
-        "personal_workspace_suspensions_account_id_personal_saas_accounts_id_fk": {
-          "name": "personal_workspace_suspensions_account_id_personal_saas_accounts_id_fk",
+        "personal_workspace_suspensions_workspace_id_personal_workspaces_id_fk": {
+          "name": "personal_workspace_suspensions_workspace_id_personal_workspaces_id_fk",
           "tableFrom": "personal_workspace_suspensions",
-          "tableTo": "personal_saas_accounts",
+          "tableTo": "personal_workspaces",
           "columnsFrom": [
-            "account_id"
+            "workspace_id"
           ],
           "columnsTo": [
             "id"
@@ -12943,6 +12737,514 @@
         }
       },
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.direct_chat_runs": {
+      "name": "direct_chat_runs",
+      "schema": "",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_message_id": {
+          "name": "user_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prompt": {
+          "name": "prompt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assistant_message_id": {
+          "name": "assistant_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reply": {
+          "name": "reply",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "direct_chat_runs_request_idx": {
+          "name": "direct_chat_runs_request_idx",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "direct_chat_runs_thread_id_intelligence_channel_mappings_thread_id_fk": {
+          "name": "direct_chat_runs_thread_id_intelligence_channel_mappings_thread_id_fk",
+          "tableFrom": "direct_chat_runs",
+          "tableTo": "intelligence_channel_mappings",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "thread_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "direct_chat_runs_thread_id_id_pk": {
+          "name": "direct_chat_runs_thread_id_id_pk",
+          "columns": [
+            "thread_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "direct_chat_runs_status_check": {
+          "name": "direct_chat_runs_status_check",
+          "value": "\"direct_chat_runs\".\"status\" in ('running', 'completed', 'failed')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.skill_market_installations": {
+      "name": "skill_market_installations",
+      "schema": "",
+      "columns": {
+        "command": {
+          "name": "command",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version_id": {
+          "name": "version_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registry_skill_id": {
+          "name": "registry_skill_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instructions": {
+          "name": "instructions",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "installed_by": {
+          "name": "installed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "skill_market_installations_command_skill_market_sources_command_fk": {
+          "name": "skill_market_installations_command_skill_market_sources_command_fk",
+          "tableFrom": "skill_market_installations",
+          "tableTo": "skill_market_sources",
+          "columnsFrom": [
+            "command"
+          ],
+          "columnsTo": [
+            "command"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "skill_market_installations_agent_id_agents_id_fk": {
+          "name": "skill_market_installations_agent_id_agents_id_fk",
+          "tableFrom": "skill_market_installations",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "skill_market_installations_agent_id_command_pk": {
+          "name": "skill_market_installations_agent_id_command_pk",
+          "columns": [
+            "agent_id",
+            "command"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.skill_market_runs": {
+      "name": "skill_market_runs",
+      "schema": "",
+      "columns": {
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bot_id": {
+          "name": "bot_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registry": {
+          "name": "registry",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registry_skill_id": {
+          "name": "registry_skill_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version_id": {
+          "name": "version_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pause_reason": {
+          "name": "pause_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "snapshot": {
+          "name": "snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "computer_tool_calls": {
+          "name": "computer_tool_calls",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        }
+      },
+      "indexes": {
+        "skill_market_runs_version_idx": {
+          "name": "skill_market_runs_version_idx",
+          "columns": [
+            {
+              "expression": "registry",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "registry_skill_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "version_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "skill_market_runs_actor_id_users_id_fk": {
+          "name": "skill_market_runs_actor_id_users_id_fk",
+          "tableFrom": "skill_market_runs",
+          "tableTo": "users",
+          "columnsFrom": [
+            "actor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "skill_market_runs_bot_id_agents_id_fk": {
+          "name": "skill_market_runs_bot_id_agents_id_fk",
+          "tableFrom": "skill_market_runs",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "bot_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "skill_market_runs_actor_id_bot_id_thread_id_run_id_pk": {
+          "name": "skill_market_runs_actor_id_bot_id_thread_id_run_id_pk",
+          "columns": [
+            "actor_id",
+            "bot_id",
+            "thread_id",
+            "run_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.skill_market_sources": {
+      "name": "skill_market_sources",
+      "schema": "",
+      "columns": {
+        "command": {
+          "name": "command",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "registry": {
+          "name": "registry",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "namespace": {
+          "name": "namespace",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "skill_market_source_key": {
+          "name": "skill_market_source_key",
+          "columns": [
+            {
+              "expression": "registry",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "namespace",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "skill_market_sources_command_skills_slug_fk": {
+          "name": "skill_market_sources_command_skills_slug_fk",
+          "tableFrom": "skill_market_sources",
+          "tableTo": "skills",
+          "columnsFrom": [
+            "command"
+          ],
+          "columnsTo": [
+            "slug"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.skill_market_version_disablements": {
+      "name": "skill_market_version_disablements",
+      "schema": "",
+      "columns": {
+        "registry": {
+          "name": "registry",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "namespace": {
+          "name": "namespace",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registry_skill_id": {
+          "name": "registry_skill_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version_id": {
+          "name": "version_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "skill_market_version_disablements_registry_registry_skill_id_version_id_pk": {
+          "name": "skill_market_version_disablements_registry_registry_skill_id_version_id_pk",
+          "columns": [
+            "registry",
+            "registry_skill_id",
+            "version_id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

@@ -104,19 +104,37 @@ const exists = async (client: postgres.Sql, table: string) => {
   return row?.present !== null && row?.present !== undefined;
 };
 
-test.each(["main", "early trial", "full trial", "divergent trial"] as const)(
-  "migrating from the %s journal across the direct-chat and Personal SaaS merge",
-  async (startingPoint) => {
+// Stamps recorded by the trial before its migrations moved after SkillHub.
+const originalTrialStamps = [
+  1795158327499, 1795160662134, 1795162001225, 1795173234015, 1795174523931,
+  1795174795281, 1795176012983, 1795177502282, 1795178829465, 1795181383402,
+  1795184138210, 1795184939036, 1795231535117,
+];
+
+test.each([
+  { startingPoint: "fresh", mainThrough: 0, trialLength: 0 },
+  { startingPoint: "main", mainThrough: 93, trialLength: 0 },
+  { startingPoint: "early trial", mainThrough: 89, trialLength: 1 },
+  {
+    startingPoint: "full pre-direct-chat trial",
+    mainThrough: 89,
+    trialLength: 12,
+  },
+  { startingPoint: "current integration", mainThrough: 90, trialLength: 13 },
+  { startingPoint: "divergent trial", mainThrough: 89, trialLength: 12 },
+])(
+  "migrating from the $startingPoint journal into SkillHub and Personal SaaS",
+  async ({ startingPoint, mainThrough, trialLength }) => {
     const folder = fileURLToPath(new URL("../drizzle", import.meta.url));
     const migrations = await readMigrationFolder(folder);
-    const fromMain = startingPoint === "main";
-    const historical = migrations.filter(({ tag, when }) =>
-      fromMain
-        ? when <= 1795157993281
-        : tag !== "0089_direct_chat_runs" &&
-          when <=
-            (startingPoint === "early trial" ? 1795158327499 : 1795184939036),
-    );
+    const historical = [
+      ...migrations.slice(0, mainThrough),
+      ...migrations.slice(93, 93 + trialLength).map((entry, index) => {
+        const when = originalTrialStamps[index];
+        if (when === undefined) throw new Error("Missing trial stamp");
+        return { ...entry, when };
+      }),
+    ];
     const legacyFolder = await folderOf(
       await Promise.all(
         historical.map(async ({ tag, when }) => ({
@@ -131,10 +149,10 @@ test.each(["main", "early trial", "full trial", "divergent trial"] as const)(
       onnotice: () => {},
     });
     try {
-      await applyMigrations(client, legacyFolder);
+      if (historical.length) await applyMigrations(client, legacyFolder);
       const directChat = "direct_chat_runs";
-      expect(await exists(client, directChat)).toBe(fromMain);
-      if (!fromMain) {
+      expect(await exists(client, directChat)).toBe(mainThrough >= 90);
+      if (trialLength) {
         await client`insert into personal_saas_accounts (issuer, subject, email)
           values ('https://casdoor.example', 'participant', 'participant@example.test')`;
         await client`insert into personal_workspaces (owner_id)
@@ -154,6 +172,11 @@ test.each(["main", "early trial", "full trial", "divergent trial"] as const)(
       await applyMigrations(client, folder);
       expect(await exists(client, directChat)).toBe(true);
       expect(await exists(client, "personal_intelligence_runs")).toBe(true);
+      expect(await exists(client, "skill_market_installations")).toBe(true);
+      expect(await exists(client, "skill_market_version_disablements")).toBe(
+        true,
+      );
+      expect(await exists(client, "skill_market_runs")).toBe(true);
       expect([
         ...(await client`select hash, created_at::text
         from drizzle.__drizzle_migrations order by created_at::bigint`),
@@ -163,7 +186,7 @@ test.each(["main", "early trial", "full trial", "divergent trial"] as const)(
           created_at: String(when),
         })),
       );
-      if (!fromMain) {
+      if (trialLength) {
         expect([
           ...(await client`select email from personal_saas_accounts
           join personal_workspaces on personal_workspaces.owner_id = personal_saas_accounts.id
@@ -174,6 +197,7 @@ test.each(["main", "early trial", "full trial", "divergent trial"] as const)(
       await client.end({ timeout: 5 });
     }
   },
+  60_000,
 );
 
 describe("a database that ran a branch before the branch was merged", () => {

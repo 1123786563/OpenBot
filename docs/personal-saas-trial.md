@@ -221,7 +221,7 @@ and the actual Web, mobile, and desktop builds before setting trial capacity.
 
 ## Workspace closure cleanup and disaster recovery
 
-Apply migrations through `0101_personal_intelligence_cleanup` before rolling
+Apply migrations through `0104_personal_intelligence_cleanup` before rolling
 out this worker. Drain older trial workers during the rollout so every new
 Intelligence dispatch records its locator. The closure operation remains the access fence. Its PostgreSQL cleanup
 removes workspace content and the dedicated Assistant but keeps the workspace

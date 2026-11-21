@@ -1,5 +1,9 @@
 import { cutAtCodeUnits } from "../channels/text";
 import { appsPage, itsAppPage } from "../edition";
+import {
+  type MarketDispatch,
+  MarketRunPaused,
+} from "../skill-market/disablements";
 import { BrokerAccountGoneError, brokerSentence, flagOf } from "./broker";
 import { type ActionShape, shapeOf } from "./composio-shapes";
 import { type ListedTool, MAX_RESULT_CHARS, type McpCallResult } from "./mcp";
@@ -198,6 +202,7 @@ export type ComposioActions = {
    */
   execute(
     call: {
+      marketDispatch?: MarketDispatch;
       /** The app the connection's url names, resolved by {@link toolkitOf} at call time. */
       toolkit: string;
       slug: string;
@@ -1824,7 +1829,12 @@ function reportedFailure(
  * classifies a failure twice. See {@link ActionAnswer} for what reading `isError` as a verdict cost.
  */
 export async function callTool(
-  connection: { url: string; actorId?: string; accountId?: string | null },
+  connection: {
+    url: string;
+    actorId?: string;
+    accountId?: string | null;
+    marketDispatch?: MarketDispatch;
+  },
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<McpCallResult> {
@@ -1877,7 +1887,12 @@ export type ActionAnswer = {
  * being sorted into a kind afterwards by matching on the sentence it happens to carry.
  */
 export async function askAction(
-  connection: { url: string; actorId?: string; accountId?: string | null },
+  connection: {
+    url: string;
+    actorId?: string;
+    accountId?: string | null;
+    marketDispatch?: MarketDispatch;
+  },
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<ActionAnswer> {
@@ -1975,6 +1990,9 @@ export async function askAction(
       {
         toolkit,
         slug: toolName,
+        ...(connection.marketDispatch
+          ? { marketDispatch: connection.marketDispatch }
+          : {}),
         userId,
         version,
         /*
@@ -2014,6 +2032,7 @@ export async function askAction(
      * made the request; a failure it cannot explain stays a plain `Error` and falls through to the
      * vendor's own words below, exactly as before.
      */
+    if (error instanceof MarketRunPaused) throw error;
     const authored = brokerSentence(error);
     /*
      * THE ONE AUTHORED CONDITION THAT TRAVELS AS A FACT AS WELL AS A SENTENCE. An account the

@@ -58,7 +58,7 @@ import { EventType } from "@ag-ui/client";
 import { NOT_RUN_WHILE_WAITING } from "@openbot/shared/approval-outcomes";
 import { NOT_SHOWN } from "@openbot/shared/component-markers";
 import { frameFiring } from "@openbot/shared/routine-firing";
-import type { ApprovalContinuation } from "./continuation";
+import type { ApprovalContinuation, MarketSkillSnapshot } from "./continuation";
 import {
   type HeadlessTool,
   HeadlessToolSuspension,
@@ -708,6 +708,8 @@ export function createTurnRunner(options: {
     agentId: string;
     initiator: AuditInitiator;
     depth?: number;
+    /** Null on a continuation without recorded market provenance, including legacy rows. */
+    marketSkill?: MarketSkillSnapshot | null;
   }) => Promise<AbstractAgent>;
   toolsForTurn?: (input: {
     ownerUserId: string;
@@ -716,6 +718,15 @@ export function createTurnRunner(options: {
     threadId: string;
     runId: string;
   }) => Promise<HeadlessTool[]>;
+  executeTool?: (
+    scope: {
+      ownerUserId: string;
+      agentId: string;
+      threadId: string;
+      runId: string;
+    },
+    execute: () => Promise<unknown>,
+  ) => Promise<unknown>;
   /**
    * The governed gallery, so a turn with no browser can still answer with a chart. Offered and
    * decided exactly as the browser would for this Bot. Absent, nothing is offered and nothing is
@@ -871,6 +882,9 @@ export function createTurnRunner(options: {
       agentId,
       initiator,
       ...(depth ? { depth } : {}),
+      ...(continuation
+        ? { marketSkill: continuation.snapshot.marketSkill ?? null }
+        : {}),
     });
     agent.threadId = threadId;
     /*
@@ -911,8 +925,23 @@ export function createTurnRunner(options: {
         initiator,
       })) ?? []),
     ];
-    if (headlessTools.length > 0)
-      agent.use(new HeadlessToolsMiddleware(headlessTools, initiator));
+    if (headlessTools.length > 0) {
+      const executeTool = options.executeTool;
+      agent.use(
+        new HeadlessToolsMiddleware(
+          executeTool
+            ? headlessTools.map((tool) => ({
+                ...tool,
+                execute: (args, context) =>
+                  executeTool({ ownerUserId, agentId, threadId, runId }, () =>
+                    tool.execute(args, context),
+                  ),
+              }))
+            : headlessTools,
+          initiator,
+        ),
+      );
+    }
     if (signal?.aborted) throw new Error("The headless turn was cancelled.");
 
     let input = turnInput({

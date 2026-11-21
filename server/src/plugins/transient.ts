@@ -153,19 +153,27 @@ export async function withReadRetries<
   read: () => Promise<T>,
   sleep: (milliseconds: number) => Promise<unknown> = (milliseconds) =>
     new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  retryRefused?: (error: unknown) => boolean,
 ): Promise<T> {
+  let previous: { answer: T } | { error: unknown } | undefined;
   const tries = READ_RETRY_DELAYS_MS.length + 1;
   for (let attempt = 1; ; attempt++) {
     let answer: T;
     try {
       answer = await read();
     } catch (error) {
+      if (previous && retryRefused?.(error)) {
+        if ("answer" in previous) return previous.answer;
+        throw previous.error;
+      }
       if (!transientFailure(error)) throw error;
       if (attempt >= tries) throw saysItWasTried(error, tries);
+      previous = { error };
       await sleep(READ_RETRY_DELAYS_MS[attempt - 1] ?? 0);
       continue;
     }
     if (!transientAnswer(answer) || attempt >= tries) return answer;
+    previous = { answer };
     await sleep(READ_RETRY_DELAYS_MS[attempt - 1] ?? 0);
   }
 }
