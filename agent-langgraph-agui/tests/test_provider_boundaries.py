@@ -12,6 +12,7 @@ from threading import Thread
 
 import httpx2
 import pytest
+from anthropic import Anthropic
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -343,7 +344,9 @@ async def test_anthropic_selection_reaches_anthropic_boundary_without_openai_key
         headers.get("x-api-key") == "sk-ant-openbot-ci"
         or headers.get("authorization") == "Bearer sk-ant-openbot-ci"
     )
-    # ChatAnthropic explicitly uses the Messages API version below.
+    # The Messages API version is part of the wire contract. Keep it stable when the SDK
+    # changes its client default so an unrelated dependency release cannot alter provider
+    # routing semantics.
     assert headers["anthropic-version"] == "2023-06-01"
     assert captured[0]["body"]["model"] == request_model
     assert captured[0]["body"]["messages"] == [
