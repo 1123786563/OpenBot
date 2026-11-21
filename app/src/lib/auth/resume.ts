@@ -52,6 +52,32 @@ export function resumeUrlFor(
   flowId: string | undefined,
   openFuseRequest?: string,
 ): string {
-  const path = openFuseResumePath(openFuseRequest) ?? verifierPathFor(flowId);
-  return path === null ? origin : `${origin}${path}`;
+  const path =
+    openFuseResumePath(openFuseRequest) ??
+    verifierPathFor(flowId) ??
+    appReturnPath(openFuseRequest);
+  return path ? `${origin}${path}` : origin;
+}
+
+/** Only a root-relative Web page can be resumed after sign-in or onboarding. */
+export function appReturnPath(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.startsWith("/")) return;
+  const base = "https://openbot.invalid";
+  let url: URL;
+  try {
+    url = new URL(value, base);
+  } catch {
+    return;
+  }
+  if (
+    value.startsWith("//") ||
+    value.includes("\\") ||
+    url.origin !== base ||
+    url.pathname.startsWith("//")
+  )
+    return;
+  const path = url.pathname.replace(/\/+$/, "");
+  if (path === "/sign" || path === "/onboarding" || /^\/api(?:\/|$)/.test(path))
+    return;
+  return `${url.pathname}${url.search}${url.hash}`;
 }
