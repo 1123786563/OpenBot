@@ -20,6 +20,7 @@ import {
   testCreditOperations,
 } from "../src/db/schema";
 import { createManagedModel, type ModelOperation } from "../src/managed-model";
+import { fixtureTraceReport } from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 test("pilot routes isolate accounts and settle one of two concurrent admissions exactly once", async () => {
@@ -168,58 +169,19 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
         alternate: { ...route, provider: "fixture-b", model: "model-b" },
       },
     });
+    const primary = catalog.routes.pilot;
+    const alternate = catalog.routes.alternate;
+    if (!primary || !alternate) throw new Error("Missing fixture route");
     const verified = verify(
       catalog,
       "pilot",
-      {
-        revision: catalog.routes.pilot?.revision,
-        harnessImage,
-        provider: route.provider,
-        model: route.model,
-        gatewayRevision: "a",
-        meteringRevision: "a",
-        source: "live-provider",
-        artifactDigest: `sha256:${"c".repeat(64)}`,
-        gatewayImageDigest: `sha256:${"d".repeat(64)}`,
-        retryCount: 0,
-        fallbacks: [],
-        stream: {
-          requestId: "stream",
-          upstreamRequestId: "upstream",
-          outputChunks: 2,
-          inputTokens: 1,
-          outputTokens: 4,
-        },
-        cancellation: {
-          requestId: "cancel",
-          upstreamRequestId: "upstream-cancel",
-          upstreamOutcome: "cancelled",
-        },
-        limits: {
-          requestId: "limits",
-          upstreamRequestId: "upstream-limits",
-          rejectedRequestId: "rejected",
-          inputCap: 3,
-          outputCap: 16,
-          oversizedInput: "rejected-before-upstream",
-          outputStop: "length",
-        },
-      },
+      fixtureTraceReport(harnessImage, primary),
       "fixture",
     );
-    const primaryEvidence = verified.routes.pilot?.verification?.report;
-    const alternate = verified.routes.alternate;
-    if (!primaryEvidence || !alternate)
-      throw new Error("Missing fixture route");
     const bothVerified = verify(
       verified,
       "alternate",
-      {
-        ...primaryEvidence,
-        revision: alternate.revision,
-        provider: alternate.provider,
-        model: alternate.model,
-      },
+      fixtureTraceReport(harnessImage, alternate),
       "fixture",
     );
     const { catalog: published, release } = publish(
@@ -241,7 +203,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     expect(
       await ledger.resolveQuote({
         bot: pick,
-        conversation: { id: "pilot", revision: primaryEvidence.revision },
+        conversation: { id: "pilot", revision: primary.revision },
       }),
     ).toMatchObject({ source: "conversation", quote: { route: "pilot" } });
     expect(

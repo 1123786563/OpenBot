@@ -9,7 +9,7 @@ from contextlib import aclosing, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 from ag_ui.core import RunAgentInput, RunErrorEvent, Tool
@@ -215,6 +215,7 @@ def create_app() -> FastAPI:
             raise RunRefused("Only the configured Bifrost probe tool may be offered.")
         messages = model_messages(state["messages"])
         run_id = _run_id.get()
+        request_id = str(uuid4())
         refusal = None
         input_upper_bound: int | None = None
 
@@ -240,6 +241,7 @@ def create_app() -> FastAPI:
                 or request.url != completion_url
                 or request.headers.get("authorization") != f"Bearer {gateway_token}"
                 or request.headers.get("x-openbot-operation-id") != run_id
+                or request.headers.get("x-request-id") != request_id
                 or not isinstance(body, dict)
                 or body.keys() - allowed
                 or body.get("model") != model_id
@@ -262,6 +264,7 @@ def create_app() -> FastAPI:
                             "content-type": "application/json",
                             "authorization": f"Bearer {meter_token}",
                             "x-openbot-operation-id": run_id,
+                            "x-request-id": request_id,
                             "x-openbot-bifrost-gateway-revision": route.gateway_revision,
                             "x-openbot-bifrost-metering-revision": route.metering_revision,
                         },
@@ -283,6 +286,8 @@ def create_app() -> FastAPI:
                 raise RunRefused(refusal)
             if probe.closed:
                 raise asyncio.CancelledError
+            request.headers["x-bf-lh-openbot-operation-id"] = run_id
+            request.headers["x-bf-lh-openbot-request-sha256"] = digest
             input_upper_bound = proof.input_token_upper_bound
 
         async with httpx.AsyncClient(
@@ -304,7 +309,10 @@ def create_app() -> FastAPI:
                     max_retries=0,
                     timeout=85,
                     http_async_client=gateway,
-                    default_headers={"x-openbot-operation-id": run_id},
+                    default_headers={
+                        "x-openbot-operation-id": run_id,
+                        "x-request-id": request_id,
+                    },
                 )
                 reply = await bind_tools(model).ainvoke(messages)
             except RunRefused:

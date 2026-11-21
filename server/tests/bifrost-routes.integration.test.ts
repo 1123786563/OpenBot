@@ -6,6 +6,7 @@ import { eq, like, or } from "drizzle-orm";
 import { createBifrostAdminRoutes } from "../src/admin/bifrost-routes";
 import { createDatabase } from "../src/db/client";
 import { enterpriseSettings } from "../src/db/schema";
+import { fixtureTraceReport } from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 test("admin verification imports trusted evidence and publishes durable Price Versions", async () => {
@@ -60,40 +61,7 @@ test("admin verification imports trusted evidence and publishes durable Price Ve
     expect(configure.status).toBe(200);
     const { catalog } = await configure.json();
     const revision = catalog.routes.a.revision;
-    const report = {
-      revision,
-      harnessImage,
-      provider: a.provider,
-      model: a.model,
-      gatewayRevision: "a",
-      meteringRevision: "a",
-      source: "live-provider",
-      artifactDigest: `sha256:${"c".repeat(64)}`,
-      gatewayImageDigest: `sha256:${"d".repeat(64)}`,
-      retryCount: 0,
-      fallbacks: [],
-      stream: {
-        requestId: "stream",
-        upstreamRequestId: "upstream-stream",
-        outputChunks: 2,
-        inputTokens: 5,
-        outputTokens: 2,
-      },
-      cancellation: {
-        requestId: "cancel",
-        upstreamRequestId: "upstream-cancel",
-        upstreamOutcome: "cancelled",
-      },
-      limits: {
-        requestId: "limits",
-        upstreamRequestId: "upstream-limits",
-        rejectedRequestId: "input-rejected",
-        inputCap: 100,
-        outputCap: 10,
-        oversizedInput: "rejected-before-upstream",
-        outputStop: "length",
-      },
-    };
+    const report = fixtureTraceReport(harnessImage, { ...a, revision });
     const publish = () =>
       request("/publication", "POST", { routes: ["a"], defaultRoute: "a" });
     expect((await request("/routes/a/verify", "POST", report)).status).toBe(
@@ -103,7 +71,15 @@ test("admin verification imports trusted evidence and publishes durable Price Ve
       (await request("/routes/a/verify", "POST", { revision })).status,
     ).toBe(409);
     expect((await publish()).status).toBe(409);
-    await Bun.write(join(dir, `${revision}.json`), JSON.stringify(report));
+    const wrongModel = structuredClone(report);
+    wrongModel.stream.upstream.model = "unapproved-model";
+    const file = join(dir, `${revision}.json`);
+    await Bun.write(file, JSON.stringify(wrongModel));
+    expect(
+      (await request("/routes/a/verify", "POST", { revision })).status,
+    ).toBe(409);
+    expect((await publish()).status).toBe(409);
+    await Bun.write(file, JSON.stringify(report));
     expect(
       (await request("/routes/a/verify", "POST", { revision })).status,
     ).toBe(200);

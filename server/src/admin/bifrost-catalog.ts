@@ -37,7 +37,7 @@ export const configuration = z
     );
   }, "The pilot supports two distinct models on distinct providers.");
 
-const evidence = z.strictObject({
+const evidenceIdentity = z.strictObject({
   revision: z.uuid(),
   harnessImage: harness,
   provider: id,
@@ -47,6 +47,10 @@ const evidence = z.strictObject({
   source: z.literal("live-provider"),
   artifactDigest: sha256,
   gatewayImageDigest: sha256,
+});
+
+// Keep historical Price Versions readable after changing qualification.
+const legacyEvidence = evidenceIdentity.extend({
   retryCount: z.literal(0),
   fallbacks: z.tuple([]),
   stream: z.strictObject({
@@ -79,11 +83,85 @@ const evidence = z.strictObject({
     .optional(),
 });
 
+const meterProof = z.strictObject({
+  requestId: z.uuid(),
+  gatewayRevision: reference,
+  meteringRevision: reference,
+  requestSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  inputTokenUpperBound: z.number().int().nonnegative(),
+});
+const usage = z.strictObject({
+  inputTokens: tokens,
+  outputTokens: z.number().int().nonnegative().max(10_000_000),
+});
+const providerTrace = z.strictObject({
+  requestId: reference,
+  gatewayRequestId: z.uuid(),
+  provider: id,
+  model: reference,
+  outputCap: tokens,
+});
+const gatewayTrace = z.strictObject({
+  requestId: z.uuid(),
+  runId: z.uuid(),
+  provider: id,
+  model: reference,
+  retryCount: z.literal(0),
+  fallbackIndex: z.literal(0),
+  fallbackCount: z.literal(0),
+});
+const step = z.strictObject({
+  requestSha256: meterProof.shape.requestSha256,
+  meter: meterProof,
+  gateway: gatewayTrace,
+  upstream: providerTrace,
+});
+const completedStep = step.extend({
+  gateway: gatewayTrace.extend({ usage }),
+  upstream: providerTrace.extend({ usage }),
+});
+const traceEvidence = evidenceIdentity.extend({
+  version: z.literal(2),
+  stream: completedStep.extend({
+    outputChunks: z.number().int().min(2),
+  }),
+  cancellation: step.extend({
+    outputChunks: z.number().int().min(1),
+    clientAbortedAt: z.iso.datetime(),
+    upstream: providerTrace.extend({
+      outcome: z.literal("cancelled"),
+      terminatedAt: z.iso.datetime(),
+    }),
+  }),
+  inputLimit: z.strictObject({
+    requestId: z.uuid(),
+    runId: z.uuid(),
+    requestSha256: meterProof.shape.requestSha256,
+    meter: meterProof,
+    gatewayRequests: z.literal(0),
+    upstreamAttempts: z.literal(0),
+  }),
+  outputLimit: completedStep.extend({
+    upstream: completedStep.shape.upstream.extend({
+      stopReason: z.literal("length"),
+    }),
+  }),
+  failure: step.extend({
+    upstream: providerTrace.extend({ outcome: z.literal("failed") }),
+  }),
+  tool: z
+    .strictObject({
+      invocation: completedStep.extend({ toolCallId: reference }),
+      result: completedStep.extend({ toolResultFor: reference }),
+    })
+    .optional(),
+});
+
 const configuredRoute = route.extend({
   revision: z.uuid(),
   verification: z
     .strictObject({
-      report: evidence,
+      report: z.union([traceEvidence, legacyEvidence]),
       by: z.string(),
       at: z.iso.datetime(),
     })
@@ -149,6 +227,86 @@ export function configure(current: Catalog, input: Configuration): Catalog {
   };
 }
 
+type TraceEvidence = z.infer<typeof traceEvidence>;
+type ConfiguredRoute = z.infer<typeof configuredRoute>;
+
+function matchesTrace(
+  report: TraceEvidence,
+  entry: ConfiguredRoute,
+  harnessImage: Catalog["harnessImage"],
+) {
+  const { stream, cancellation, inputLimit, outputLimit, failure, tool } =
+    report;
+  const completed = tool
+    ? [stream, outputLimit, tool.invocation, tool.result]
+    : [stream, outputLimit];
+  const steps = [...completed, cancellation, failure];
+  const runIds = [
+    stream.gateway.runId,
+    cancellation.gateway.runId,
+    inputLimit.runId,
+    outputLimit.gateway.runId,
+    failure.gateway.runId,
+    ...(tool ? [tool.invocation.gateway.runId] : []),
+  ];
+  const gatewayIds = [
+    ...steps.map(({ gateway }) => gateway.requestId),
+    inputLimit.requestId,
+  ];
+  const upstreamIds = steps.map(({ upstream }) => upstream.requestId);
+  const matchesMeter = (
+    {
+      meter,
+      requestSha256,
+    }: Pick<z.infer<typeof step>, "meter" | "requestSha256">,
+    requestId: string,
+  ) =>
+    meter.requestId === requestId &&
+    meter.requestSha256 === requestSha256 &&
+    meter.gatewayRevision === entry.gatewayRevision &&
+    meter.meteringRevision === entry.meteringRevision;
+
+  return (
+    report.revision === entry.revision &&
+    report.harnessImage === harnessImage &&
+    report.provider === entry.provider &&
+    report.model === entry.model &&
+    report.gatewayRevision === entry.gatewayRevision &&
+    report.meteringRevision === entry.meteringRevision &&
+    Boolean(tool) === entry.tools &&
+    (!tool ||
+      (tool.invocation.gateway.runId === tool.result.gateway.runId &&
+        tool.invocation.toolCallId === tool.result.toolResultFor)) &&
+    Date.parse(cancellation.upstream.terminatedAt) >=
+      Date.parse(cancellation.clientAbortedAt) &&
+    matchesMeter(inputLimit, inputLimit.requestId) &&
+    inputLimit.meter.inputTokenUpperBound > entry.maxInputTokens &&
+    new Set(runIds).size === runIds.length &&
+    new Set(gatewayIds).size === gatewayIds.length &&
+    new Set(upstreamIds).size === upstreamIds.length &&
+    steps.every(
+      (sample) =>
+        matchesMeter(sample, sample.gateway.requestId) &&
+        sample.meter.inputTokenUpperBound <= entry.maxInputTokens &&
+        sample.gateway.provider === entry.provider &&
+        sample.gateway.model === entry.model &&
+        sample.upstream.gatewayRequestId === sample.gateway.requestId &&
+        sample.upstream.provider === entry.provider &&
+        sample.upstream.model === entry.model &&
+        sample.upstream.outputCap === entry.maxOutputTokens,
+    ) &&
+    completed.every(
+      ({ meter, gateway, upstream }) =>
+        gateway.usage.inputTokens === upstream.usage.inputTokens &&
+        gateway.usage.outputTokens === upstream.usage.outputTokens &&
+        upstream.usage.inputTokens <= meter.inputTokenUpperBound &&
+        upstream.usage.outputTokens <= upstream.outputCap,
+    ) &&
+    stream.upstream.usage.outputTokens > 0 &&
+    outputLimit.upstream.usage.outputTokens > 0
+  );
+}
+
 export function verify(
   current: Catalog,
   id: string,
@@ -158,31 +316,11 @@ export function verify(
   const entry = Object.hasOwn(current.routes, id)
     ? current.routes[id]
     : undefined;
-  const parsed = evidence.safeParse(input);
+  const parsed = traceEvidence.safeParse(input);
   if (!entry || !parsed.success)
     throw new CatalogConflict("Missing valid live-provider evidence.");
   const report = parsed.data;
-  const requests = [
-    report.stream.requestId,
-    report.cancellation.requestId,
-    report.limits.requestId,
-    report.limits.rejectedRequestId,
-  ];
-  if (report.tool) requests.push(report.tool.requestId);
-  if (
-    report.revision !== entry.revision ||
-    report.harnessImage !== current.harnessImage ||
-    report.provider !== entry.provider ||
-    report.model !== entry.model ||
-    report.gatewayRevision !== entry.gatewayRevision ||
-    report.meteringRevision !== entry.meteringRevision ||
-    report.limits.inputCap !== entry.maxInputTokens ||
-    report.limits.outputCap !== entry.maxOutputTokens ||
-    report.stream.inputTokens > entry.maxInputTokens ||
-    report.stream.outputTokens > entry.maxOutputTokens ||
-    (entry.tools && !report.tool) ||
-    new Set(requests).size !== requests.length
-  ) {
+  if (!matchesTrace(report, entry, current.harnessImage)) {
     throw new CatalogConflict(
       "Live-provider evidence does not match the configured route and capabilities.",
     );
@@ -227,7 +365,11 @@ export function publish(
     const entry = Object.hasOwn(current.routes, id)
       ? current.routes[id]
       : undefined;
-    if (!entry?.verification)
+    if (
+      !entry?.verification ||
+      !("version" in entry.verification.report) ||
+      !matchesTrace(entry.verification.report, entry, current.harnessImage)
+    )
       throw new CatalogConflict("Each published route requires verification.");
     const million = 1_000_000n;
     const scaledCharge =
@@ -257,9 +399,11 @@ export function publish(
 
 export function view(current: Catalog) {
   const options = (current.publication?.routes ?? []).filter(
-    ({ id, revision }) =>
-      Object.hasOwn(current.routes, id) &&
-      current.routes[id]?.revision === revision,
+    (option) =>
+      Object.hasOwn(current.routes, option.id) &&
+      current.routes[option.id]?.revision === option.revision &&
+      "version" in option.verification.report &&
+      matchesTrace(option.verification.report, option, current.harnessImage),
   );
   const defaultRoute = current.publication?.defaultRoute;
   return {
