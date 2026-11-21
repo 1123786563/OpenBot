@@ -29,9 +29,9 @@ import { ConversationView } from "@/components/channels/conversation-view";
 import { ProgressRow } from "@/components/channels/progress-row";
 import { transcriptMessages } from "@/components/channels/transcript-messages";
 import { VoiceCallWidget } from "@/components/channels/voice-call-widget";
-import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { HandoffResumeNotice } from "@/components/computer/handoff-resume-notice";
 import { StarterSuggestions } from "@/components/starter-tour/starter-suggestions";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
   answerPersonQuestionMutationOptions,
@@ -70,7 +70,6 @@ import {
 } from "@/lib/copilot/approval-context";
 import { offerItsOwnTools } from "@/lib/copilot/bot-offer";
 import { isBrokenStream, STREAM_BROKE } from "@/lib/copilot/broken-stream";
-import { ConversationReadError } from "./conversation-status";
 import { ConversationProvider } from "@/lib/copilot/conversation";
 import { afterMs, joinWithin } from "@/lib/copilot/join-thread";
 import {
@@ -104,6 +103,7 @@ import {
 import { useVoiceCall } from "@/lib/voice/use-voice-call";
 import { queryClient } from "@/query-client";
 import { newId } from "../../lib/new-id";
+import { ConversationReadError } from "./conversation-status";
 
 /**
  * How long a stalled thread join is worth waiting for before it is ended.
@@ -1575,6 +1575,7 @@ export function ChannelChat({
     void sayRef.current(text).catch(() => undefined);
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Retry increments firstAttempt to resend the saved first message.
   useEffect(() => {
     const owner = user?.id;
     if (!first || !owner) return;

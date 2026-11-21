@@ -97,11 +97,9 @@ test("reloading an interrupted creation keeps the first message and reuses its r
   const message = "Keep this first conversation message";
   const original = renderAt("/");
   await submitHomeMessage(original, message);
-  await original.findByText(
-    "Couldn't continue the conversation.",
-    undefined,
-    { timeout: 10_000 },
-  );
+  await original.findByText("Couldn't continue the conversation.", undefined, {
+    timeout: 10_000,
+  });
   const savedPath = original.router.state.location.pathname;
   expect(savedPath).toStartWith("/start/");
   expect(original.getByText(message)).toBeTruthy();
