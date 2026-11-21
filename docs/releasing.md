@@ -898,6 +898,15 @@ it when it is not. Signed desktop builds are the exception: they read the `macos
 `windows-signing` environments described above and in [Windows signing](windows-signing.md).
 Downloads sync signs in to AWS with GitHub's OIDC token rather than a stored key.
 
+## First cloud release
+
+Apply the `cloud-only` label to the release PR before merge. This publishes the versioned images,
+image manifest, source archive and Helm chart independently of Desktop builds and signing.
+Deploy using the version or digest from that release. The `latest` image tag and GitHub Latest
+release remain on the existing release line for Desktop. Standalone local Desktop follows its
+separate release schedule.
+
+
 ## The one thing CI cannot do
 
 The smoke journey in `tests/smoke` is the only check that proves the parts are wired to each other:

@@ -8,8 +8,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
  * the gateway decides before the browser acts, the browser acts, and the trail records it. Nearly
  * every defect worth catching late lives in those joins rather than inside any one of them.
  *
- * Not part of `bun run test`. It needs a deployment that is actually up, with a licence, a model key
- * and Docker, so it is asked for by name:
+ * Not part of `bun run test`. It needs a deployment that is actually up, with a model key and Docker, so it is asked for by name:
  *
  *   bash scripts/start.sh
  *   bun run test:smoke

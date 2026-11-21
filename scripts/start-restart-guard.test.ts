@@ -34,7 +34,12 @@ type Run = {
   settings?: Record<string, string>;
   processEnvironment?: Record<string, string>;
   unavailableHealthPorts?: readonly number[];
-  composioSetup?: "configured" | "failed" | "real-helper" | "real-cli" | "unexpected";
+  composioSetup?:
+    | "configured"
+    | "failed"
+    | "real-helper"
+    | "real-cli"
+    | "unexpected";
   /** What `npx` does when the real helper runs the CopilotKit CLI. */
   cli?: "missing-provision" | "provisions";
   probeBrokerEnvironment?: { composioKey?: string; arcadeKey?: string };
@@ -420,7 +425,9 @@ describe("start.sh automatic Composio setup", () => {
 
 describe("start.sh runtime health", () => {
   test("starts OpenBot mode without an Intelligence licence or provisioning", async () => {
-    const result = await runStartWithStaleServerProbe(401, { composioSetup: "unexpected" });
+    const result = await runStartWithStaleServerProbe(401, {
+      composioSetup: "unexpected",
+    });
 
     expect(result.stdout).toContain("Ready. http://localhost:3010");
     expect(result.stdout).not.toContain("COMPOSIO-SETUP-RAN");

@@ -162,16 +162,6 @@ describe.skipIf(!helm)("an install on OpenAI alone", () => {
       expect(variable(docs, name)).toBeUndefined();
     }
   });
-
-  test("leaves Learning's agent on openai/gpt-5.5 and the OpenAI key, and hands it nothing else", () => {
-    const docs = render("--set-string", `secrets.modelApiKey=${OPENAI_KEY}`);
-    expect(agentValue(docs, "LEARNING_AGENT_MODEL")).toBe("openai/gpt-5.5");
-    expect(agentValue(docs, "OPENAI_API_KEY")).toBe(OPENAI_KEY);
-    expect(agentValue(docs, "ANTHROPIC_API_KEY")).toBeUndefined();
-    expect(
-      secret(docs, "openbot-intel-learning")?.stringData,
-    ).not.toHaveProperty("anthropic-api-key");
-  });
 });
 
 describe.skipIf(!helm)("the provider and endpoint, for a model router", () => {

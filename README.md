@@ -83,7 +83,7 @@ OpenBot is built on [CopilotKit](https://www.copilotkit.ai), which is [used in p
 
 ## Architecture
 
-OpenBot has three parts. On your laptop, setup runs the backend and Intelligence for you. For a team, the Helm chart deploys both on Kubernetes in your own infrastructure.
+For a team, the Helm chart deploys OpenBot on Kubernetes in your own infrastructure.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-overview-dark.svg">
@@ -147,6 +147,9 @@ requires amd64 nodes, a default StorageClass, Helm, `kubectl` and a model key.
    ```
 
    Open <http://127.0.0.1:3001>. This configuration is single-user: anyone who can reach it is an administrator. Keep the port-forward local.
+
+For an unreleased checkout, pin the chart to an image built from that checkout. Use the chart
+with its matching image when deploying a published release.
 
 Use a fresh namespace, release name and database for the first cloud deployment. Keep legacy
 installations and their data in place. The Helm guide covers team authentication, TLS, databases,
@@ -461,9 +464,6 @@ Microsoft or Okta settings above (your Kubernetes OpenBot can serve this role). 
 HTTPS origin; HTTP is accepted only on loopback for local tests. Provider client secrets stay on
 that authority. The authority verifies the person and their current role; organization mode never
 substitutes `dev@openbot.local`, and it decides sign-in ahead of `OPENBOT_SINGLE_USER`.
-
-This optional URL is separate from `INTELLIGENCE_API_URL`, `INTELLIGENCE_GATEWAY_WS_URL` and
-`CPK_INTELLIGENCE_API_KEY`. Each deployment keeps its own Intelligence project credential.
 
 OpenBot Desktop does not offer organization sign-in. It installs the personal edition, which
 refuses `OPENBOT_ORGANIZATION_AUTH_URL`, and removes that setting from its `.env` on every Start.

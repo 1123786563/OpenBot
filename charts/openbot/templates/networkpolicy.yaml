@@ -70,6 +70,7 @@ spec:
         - port: 4100
           protocol: TCP
     {{- end }}
+    # Private Hindsight and Opik services can be admitted through extraEgress.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
