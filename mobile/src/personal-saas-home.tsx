@@ -392,6 +392,24 @@ export function PersonalSaasHome() {
             >
               {screen.workspace.personalAssistant.name}
             </Text>
+            {screen.workspace.testCredits && (
+              <View>
+                <Text accessibilityRole="header">Test Credits</Text>
+                {screen.workspace.testCredits.state === "issued" ? (
+                  <Text>
+                    Granted {screen.workspace.testCredits.amountMicrocredits}{" "}
+                    microcredits. Available{" "}
+                    {screen.workspace.testCredits.balance.availableMicrocredits}
+                    .
+                  </Text>
+                ) : (
+                  <Text>Your one-time grant is pending.</Text>
+                )}
+                {screen.workspace.testCredits.usedUp && (
+                  <Text>Test Credits are used up.</Text>
+                )}
+              </View>
+            )}
             {screen.workspace.quotas && (
               <View>
                 <Text accessibilityRole="header">Workspace usage</Text>

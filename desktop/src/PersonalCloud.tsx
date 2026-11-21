@@ -54,6 +54,12 @@ export type CloudView =
         "bot" | "computer" | "storage" | "automation",
         { used: number | null; limit: number }
       > | null;
+      testCredits?: {
+        state: "pending" | "issued";
+        amountMicrocredits: string;
+        balance: { availableMicrocredits: string };
+        usedUp: boolean;
+      } | null;
       recoveryCanRetry?: boolean;
       recovery?: (WorkInterruption & { instruction: string })[];
       interruptedBackgroundWork?: (WorkInterruption & {
@@ -776,6 +782,21 @@ export function PersonalCloud({
               >
                 Export workspace data in browser
               </button>
+              {view.testCredits && (
+                <section aria-labelledby="test-credits">
+                  <h3 id="test-credits">Test Credits</h3>
+                  {view.testCredits.state === "issued" ? (
+                    <p>
+                      Granted {view.testCredits.amountMicrocredits}{" "}
+                      microcredits. Available{" "}
+                      {view.testCredits.balance.availableMicrocredits}.
+                    </p>
+                  ) : (
+                    <p>Your one-time grant is pending.</p>
+                  )}
+                  {view.testCredits.usedUp && <p>Test Credits are used up.</p>}
+                </section>
+              )}
               <section aria-labelledby="recent-conversations">
                 <h3 id="recent-conversations">Recent conversations</h3>
                 {view.conversations.length === 0 ? (

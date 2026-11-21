@@ -81,6 +81,24 @@ test("workspace usage keeps a full Bot limit and an unknown Computer count", () 
   deepStrictEqual(parsed.quotas, quotas);
 });
 
+test("workspace retains pending and used-up Test Credits", () => {
+  const credit = {
+    amountMicrocredits: "100",
+    balance: { availableMicrocredits: "0" },
+  };
+  for (const testCredits of [
+    { ...credit, state: "pending", usedUp: false },
+    { ...credit, state: "issued", usedUp: true },
+  ]) {
+    const workspace = personalWorkspace.parse({
+      id: "workspace-1",
+      personalAssistant: { id: "bot-1", name: "My Assistant" },
+      testCredits,
+    });
+    deepStrictEqual(workspace.testCredits, testCredits);
+  }
+});
+
 test("workspace recovery preserves an interrupted background run with its own action eligibility", () => {
   const item = {
     key: "notification:123",

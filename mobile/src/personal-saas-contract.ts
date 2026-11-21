@@ -131,6 +131,14 @@ export const personalWorkspace = z.object({
       automation: quotaUsage,
     })
     .optional(),
+  testCredits: z
+    .object({
+      state: z.enum(["pending", "issued"]),
+      amountMicrocredits: z.string(),
+      balance: z.object({ availableMicrocredits: z.string() }),
+      usedUp: z.boolean(),
+    })
+    .optional(),
   recoveryCanRetry: z.boolean().default(false),
   personalAssistant: z.object({
     id: z.string().min(1),

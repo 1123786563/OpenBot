@@ -174,6 +174,8 @@ pub enum View {
         #[serde(rename = "accessMs")]
         access_ms: u64,
         quotas: Option<WorkspaceQuotas>,
+        #[serde(rename = "testCredits")]
+        test_credits: Option<TestCredits>,
         recovery: Vec<StoppedWork>,
         #[serde(rename = "recoveryCanRetry")]
         recovery_can_retry: bool,
@@ -194,12 +196,35 @@ struct Workspace {
     id: String,
     personal_assistant: Assistant,
     quotas: Option<WorkspaceQuotas>,
+    test_credits: Option<TestCredits>,
     #[serde(default)]
     recovery: Vec<StoppedWork>,
     #[serde(default)]
     recovery_can_retry: bool,
     #[serde(flatten)]
     workspace_recovery: WorkspaceRecovery,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestCredits {
+    state: TestCreditState,
+    amount_microcredits: String,
+    balance: TestCreditBalance,
+    used_up: bool,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum TestCreditState {
+    Pending,
+    Issued,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TestCreditBalance {
+    available_microcredits: String,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -683,6 +708,7 @@ impl<'a> Api<'a> {
                     id,
                     personal_assistant,
                     quotas,
+                    test_credits,
                     recovery,
                     recovery_can_retry,
                     workspace_recovery,
@@ -704,6 +730,7 @@ impl<'a> Api<'a> {
                             conversations,
                             access_ms,
                             quotas,
+                            test_credits,
                             recovery,
                             recovery_can_retry,
                             workspace_recovery,
