@@ -3761,6 +3761,80 @@ test("a running Bot aborts on its local grant deadline while its database check 
   }
 }, 15_000);
 
+test("a delayed text callback cannot checkpoint output after the local grant deadline", async () => {
+  const account = {
+    sub: crypto.randomUUID(),
+    email: "worker-output-fence@example.com",
+    verified: true,
+    active: true,
+  };
+  const session = cookie(
+    await authenticate(account),
+    "__Host-openbot-personal=",
+  );
+  await enter(session);
+  const target = await workspace(session);
+  const stored = await personalSaasStore(database).session(
+    session.split("=")[1],
+  );
+  if (!stored?.status?.confirmedAt)
+    throw new Error("Expected an account grant");
+  const cutoff = stored.status.confirmedAt + 60_000;
+  const running = Promise.withResolvers<void>();
+  const aborted = Promise.withResolvers<void>();
+  let emitText: ((text: string) => void) | undefined;
+  const runApp = newApp(
+    database,
+    async ({ signal, beforeDispatch, onText }) => {
+      await beforeDispatch?.();
+      emitText = onText;
+      running.resolve();
+      await new Promise<void>((resolve) =>
+        signal?.addEventListener("abort", () => resolve(), { once: true }),
+      );
+      aborted.resolve();
+      signal?.throwIfAborted();
+      return { replyText: "" };
+    },
+  );
+  const queue = createWorkQueue(database, now);
+  const key = crypto.randomUUID();
+  clockTime = cutoff - 2_500;
+  try {
+    expect(
+      await queue.offer({
+        kind: PERSONAL_BOT_WORK,
+        key,
+        accountId: stored.accountId,
+        payload: {
+          workspaceId: target.id,
+          botId: target.personalAssistant.id,
+          instruction: "Keep the text before the cutoff",
+        },
+      }),
+    ).toBe("queued");
+    const sweep = runApp.sweepBotWork();
+    await running.promise;
+    emitText?.("before cutoff");
+    clockTime = cutoff + 1;
+    emitText?.("after cutoff");
+    await aborted.promise;
+    expect(await sweep).toBe(true);
+    expect(
+      await queue.personalStatus(PERSONAL_BOT_WORK, stored.accountId, key),
+    ).toMatchObject({
+      state: "stopped",
+      output: "before cutoff",
+      interruption: {
+        cutoffAt: cutoff,
+        reason: "account_status_unconfirmed",
+      },
+    });
+  } finally {
+    clockTime = undefined;
+  }
+}, 15_000);
+
 test("the Bot worker rejects Computer work authorized before a restart and dispatches a fresh manual retry", async () => {
   const session = cookie(
     await authenticate({
