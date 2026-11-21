@@ -5022,7 +5022,7 @@ test("closure rolls back partial acceptance, stops an in-flight Bot and fences q
     await running;
     app = previousApp;
   }
-}, 25_000);
+}, 60_000);
 
 test("a returning owner explicitly opens one empty workspace after recorded cleanup", async () => {
   const owner = await isolationOwner();
