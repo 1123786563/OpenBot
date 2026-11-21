@@ -64,25 +64,20 @@ let customerFiles: string[] = [];
 beforeAll(async () => {
   if (!helm) return;
   work = mkdtempSync(join(tmpdir(), "openbot-promotion-helm-"));
-  // The packaged chart is the artifact a release pins. Packaging needs the bundled PostgreSQL and
-  // Intelligence subcharts in charts/, which `helm dependency build` fetches when this checkout has
-  // not.
-  cpSync(chartSource, join(work, "openbot"), { recursive: true });
-  const vendored = existsSync(join(work, "openbot", "charts"))
-    ? readdirSync(join(work, "openbot", "charts"))
-    : [];
-  if (
-    !["postgresql-", "intelligence-"].every((prefix) =>
-      vendored.some((name) => name.startsWith(prefix)),
-    )
-  )
-    await runCommand(["helm", "dependency", "build", join(work, "openbot")], {
-      cwd: work,
-    });
-  await runCommand(
-    ["helm", "package", join(work, "openbot"), "--destination", work],
+  // Helm checks the vendored dependencies against Chart.yaml before packaging.
+  const chartDir = join(work, "openbot");
+  cpSync(chartSource, chartDir, { recursive: true });
+  const dependencies = await runCommand(
+    ["helm", "dependency", "list", chartDir],
     { cwd: work },
   );
+  const dependencyRows = dependencies.trim().split("\n").slice(1);
+  if (dependencyRows.some((row) => !row.trimEnd().endsWith("\tok"))) {
+    await runCommand(["helm", "dependency", "build", chartDir], { cwd: work });
+  }
+  await runCommand(["helm", "package", chartDir, "--destination", work], {
+    cwd: work,
+  });
   chart = join(
     work,
     readdirSync(work).find((name) => name.endsWith(".tgz")) ?? "",

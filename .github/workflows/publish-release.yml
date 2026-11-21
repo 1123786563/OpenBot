@@ -392,10 +392,12 @@ jobs:
         with:
           name: ${{ needs.images.outputs.manifest-artifact }}
       # Desktop releases publish the CLI image list with the cloud assets.
-      - if: needs.metadata.outputs.cloud_only == 'false'
+      # A publish-only rerun can reuse the successful image-list job from an earlier attempt.
+      - name: Download the Desktop image list
+        if: needs.metadata.outputs.cloud_only == 'false'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: desktop-images-${{ github.run_id }}-${{ github.run_attempt }}
+          artifact-ids: ${{ needs.image-list.outputs.artifact_id }}
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: v3.19.0
@@ -593,6 +595,8 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -619,7 +623,8 @@ jobs:
           cargo run --locked --manifest-path desktop/src-tauri/Cargo.toml --example release_images -- \
             docker-compose.yml container-images.json desktop/src-tauri/cli-bundle/cli/index.js > desktop-images.json
           cat desktop-images.json
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-images-${{ github.run_id }}-${{ github.run_attempt }}
           path: desktop-images.json

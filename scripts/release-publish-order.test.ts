@@ -225,10 +225,27 @@ test("a cloud-only release publishes versioned cloud assets without starting Des
   const desktopSteps = (job("github-release").steps ?? []).filter(
     (step) =>
       step.name?.startsWith("Start signing") ||
-      String(step.with?.name).startsWith("desktop-images-"),
+      step.name === "Download the Desktop image list",
   );
   expect(desktopSteps).toHaveLength(3);
   for (const step of desktopSteps) {
     expect(step.if).toBe(`${cloudOnly} == 'false'`);
   }
+});
+
+test("a publish-only rerun downloads the Desktop image list from its producer", () => {
+  const upload = job("image-list").steps?.find((step) =>
+    step.uses?.startsWith("actions/upload-artifact@"),
+  );
+  expect(upload?.id).toBeDefined();
+  expect(upload?.with?.path).toBe("desktop-images.json");
+  expect(job("image-list").outputs?.artifact_id).toBe(
+    expression(`steps.${upload?.id}.outputs.artifact-id`),
+  );
+  const download = job("github-release").steps?.find(
+    (step) => step.name === "Download the Desktop image list",
+  );
+  expect(download?.with).toEqual({
+    "artifact-ids": expression("needs.image-list.outputs.artifact_id"),
+  });
 });
