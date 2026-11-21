@@ -35,13 +35,15 @@ test("execution budgets authorize each step and preserve completed steps across 
   try {
     await ledger.enroll({ identity, batchId, amount: 5n });
     await ledger.claim(identity, batchId);
+    const budgetId = `task-${crypto.randomUUID()}`;
     const budget = await ledger.createBudget(identity, {
-      budgetId: `task-${crypto.randomUUID()}`,
+      budgetId,
       creditType: "test",
       limitMicrocredits: 2n,
       confirmed: false,
     });
     expect(budget).toMatchObject({
+      budgetId,
       creditType: "test",
       limitMicrocredits: "2",
       confirmed: false,
@@ -51,11 +53,11 @@ test("execution budgets authorize each step and preserve completed steps across 
         operationId: crypto.randomUUID(),
         route: "missing",
         priceVersion: crypto.randomUUID(),
-        budgetId: budget.budgetId,
+        budgetId,
       }),
     ).resolves.toMatchObject({ state: "denied", reason: "execution_limit" });
     await expect(
-      ledger.confirmBudget(identity, budget.budgetId, 3n),
+      ledger.confirmBudget(identity, budgetId, 3n),
     ).resolves.toMatchObject({
       limitMicrocredits: "3",
       confirmed: true,
@@ -65,7 +67,7 @@ test("execution budgets authorize each step and preserve completed steps across 
         operationId: crypto.randomUUID(),
         route: "missing",
         priceVersion: crypto.randomUUID(),
-        budgetId: budget.budgetId,
+        budgetId,
       }),
     ).resolves.toMatchObject({ state: "denied", reason: "route_unavailable" });
   } finally {
