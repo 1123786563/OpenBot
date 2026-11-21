@@ -166,6 +166,12 @@ Set `TEST_CREDIT_INPUT_METER_URL` and `TEST_CREDIT_INPUT_METER_TOKEN` for the tr
 HTTPS input meter. `TEST_CREDIT_GATEWAY_REVISION`,
 `TEST_CREDIT_GATEWAY_IMAGE_DIGEST`, and `TEST_CREDIT_METERING_REVISION` must match
 the verified default route published in the shared billing catalog.
+The meter receives the exact Chat Completions JSON that OpenBot sends to
+Bifrost. Use the request headers and response format from the
+[managed Harness probe](../scripts/billing-pilot/bifrost.md#run-the-managed-harness-probe).
+The meter must support non-streaming text requests and return their input
+token upper bound, request SHA-256, and the pinned gateway and metering
+revisions.
 
 This mode serves single-instruction text requests through the existing Bot-run API.
 It uses the Personal SaaS server's durable work queue and the Test Credit tables in

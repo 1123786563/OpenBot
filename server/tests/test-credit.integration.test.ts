@@ -37,7 +37,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
   let token = firstToken;
   const secondToken = crypto.randomUUID();
   let sends = 0;
-  const sent: { model: string; max_tokens: number }[] = [];
+  const sent: { model: string; max_completion_tokens: number }[] = [];
   const externalGateway = process.env.OPENBOT_TEST_BIFROST_FIXTURE_URL;
   let lastOperationId: string | null = null;
   let lastDispatchAccountId: string | undefined;
@@ -75,7 +75,8 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     endpoint: new URL("/v1/chat/completions", externalGateway ?? gateway.url),
     gatewayRevision: "a",
     meteringRevision: "a",
-    countInputTokens: async (_route, messages) => {
+    countInputTokens: async (_route, { body }) => {
+      const { messages } = JSON.parse(body);
       if (messages[0]?.content === "withdraw-while-metering")
         await duringMetering?.();
       return messages[0]?.content === "oversized" ? 4 : 1;
@@ -750,11 +751,11 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     expect(sent).toHaveLength(4);
     expect(sent[0]).toMatchObject({
       model: externalGateway ? "model-a" : "fixture-a/model-a",
-      [externalGateway ? "max_completion_tokens" : "max_tokens"]: 16,
+      max_completion_tokens: 16,
     });
     expect(sent[3]).toMatchObject({
       model: externalGateway ? "model-b" : "fixture-b/model-b",
-      [externalGateway ? "max_completion_tokens" : "max_tokens"]: 16,
+      max_completion_tokens: 16,
     });
     const emergencyBatch = crypto.randomUUID();
     await ledger.enroll({

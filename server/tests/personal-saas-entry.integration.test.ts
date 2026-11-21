@@ -748,11 +748,14 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
   const requests: { operationId: string | null; input: unknown }[] = [];
   const meterStarted = Promise.withResolvers<void>();
   const releaseMeter = Promise.withResolvers<void>();
+  const meteredRequests = new Map<string | null, string>();
   const gateway = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
-      const input = await request.json();
+      const body = await request.text();
+      const input = JSON.parse(body);
+      const requestId = request.headers.get("x-request-id");
       if (new URL(request.url).pathname === "/meter") {
         expect(request.headers.get("authorization")).toBe(
           "Bearer fixture-meter",
@@ -761,11 +764,26 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
           meterStarted.resolve();
           await releaseMeter.promise;
         }
-        return Response.json({ ...input, inputTokens: 1 });
+        expect(requestId).toBeTruthy();
+        meteredRequests.set(requestId, body);
+        return Response.json({
+          gatewayRevision: request.headers.get(
+            "x-openbot-bifrost-gateway-revision",
+          ),
+          meteringRevision: request.headers.get(
+            "x-openbot-bifrost-metering-revision",
+          ),
+          inputTokenUpperBound: 1,
+          requestSha256:
+            input.messages[0]?.content === "Return a mismatched meter proof"
+              ? "0".repeat(64)
+              : new Bun.CryptoHasher("sha256").update(body).digest("hex"),
+        });
       }
       expect(request.headers.get("authorization")).toBe(
         "Bearer fixture-gateway",
       );
+      expect(meteredRequests.get(requestId)).toBe(body);
       requests.push({
         operationId: request.headers.get("x-openbot-operation-id"),
         input,
@@ -889,6 +907,19 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
     expect(await staleQuote.json()).toEqual({
       error: "test_credit_quote_changed",
     });
+    const mismatched = await submit(native, "Return a mismatched meter proof");
+    expect(mismatched.status).toBe(202);
+    const { runId: mismatchedId } = await mismatched.json();
+    expect(await app.sweepBotWork()).toBe(true);
+    const mismatchedStatus = await send(
+      `/api/workspace/bot-runs/${mismatchedId}`,
+      { headers: native },
+    );
+    expect(await mismatchedStatus.json()).toMatchObject({
+      state: "stopped",
+      testCredit: { state: "released", dispatchedAt: null },
+    });
+    expect(requests).toEqual([]);
     const stopped = await submit(native, "Stop while metering");
     expect(stopped.status).toBe(202);
     const { runId: stoppedId } = await stopped.json();
@@ -943,7 +974,7 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
         input: {
           model: "fixture-a/model-a",
           messages: [{ role: "user", content: "Spend the shared grant" }],
-          max_tokens: 2,
+          max_completion_tokens: 2,
           stream: false,
         },
       },

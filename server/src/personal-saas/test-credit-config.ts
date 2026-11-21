@@ -19,11 +19,10 @@ const settings = z.object({
 });
 
 const measurement = z.object({
-  provider: setting,
-  model: setting,
   gatewayRevision: setting,
   meteringRevision: setting,
-  inputTokens: z.number().int().nonnegative(),
+  inputTokenUpperBound: z.number().int().nonnegative(),
+  requestSha256: z.string().regex(/^[a-f0-9]{64}$/),
 });
 
 export function loadPersonalTestCreditExecutor(
@@ -61,39 +60,37 @@ export function loadPersonalTestCreditExecutor(
     gatewayToken: config.TEST_CREDIT_BIFROST_TOKEN,
     meteringRevision: config.TEST_CREDIT_METERING_REVISION,
     async countInputTokens(
-      { provider, model, gatewayRevision, meteringRevision },
-      messages,
+      { gatewayRevision, meteringRevision },
+      { body, digest, requestId, operationId },
       signal,
     ) {
       const timeout = AbortSignal.timeout(5_000);
+      const headers = new Headers({
+        authorization: `Bearer ${config.TEST_CREDIT_INPUT_METER_TOKEN}`,
+        "content-type": "application/json",
+        "x-request-id": requestId,
+        "x-openbot-bifrost-gateway-revision": gatewayRevision,
+        "x-openbot-bifrost-metering-revision": meteringRevision,
+      });
+      if (operationId) headers.set("x-openbot-operation-id", operationId);
       const response = await fetch(meter, {
         method: "POST",
         redirect: "error",
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-        headers: {
-          authorization: `Bearer ${config.TEST_CREDIT_INPUT_METER_TOKEN}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          provider,
-          model,
-          gatewayRevision,
-          meteringRevision,
-          messages,
-        }),
+        headers,
+        body,
       });
       if (!response.ok) throw new Error("Test Credit input meter unavailable.");
       const measured = measurement.parse(await response.json());
       if (
-        measured.provider !== provider ||
-        measured.model !== model ||
         measured.gatewayRevision !== gatewayRevision ||
-        measured.meteringRevision !== meteringRevision
+        measured.meteringRevision !== meteringRevision ||
+        measured.requestSha256 !== digest
       )
         throw new Error(
-          "Test Credit input meter returned an unverified revision.",
+          "Test Credit input meter returned an invalid request proof.",
         );
-      return measured.inputTokens;
+      return measured.inputTokenUpperBound;
     },
   });
   return (input: Parameters<TestCreditExecutor>[0]) => {

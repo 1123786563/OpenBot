@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { ReleasedBifrostRoute } from "../admin/bifrost-catalog";
 
@@ -45,7 +46,12 @@ export function createBifrostCreditExecutor({
   // Use the verified model's chat template and include all provider-side framing.
   countInputTokens(
     route: Route,
-    messages: Messages,
+    request: {
+      body: string;
+      digest: string;
+      requestId: string;
+      operationId?: string;
+    },
     signal?: AbortSignal,
   ): Promise<number>;
 }) {
@@ -84,8 +90,20 @@ export function createBifrostCreditExecutor({
     ) {
       throw new UnsentBifrostRequest("route_unavailable");
     }
+    const body = JSON.stringify({
+      model: `${route.provider}/${route.model}`,
+      messages,
+      max_completion_tokens: route.maxOutputTokens,
+      stream: false,
+    });
+    const digest = createHash("sha256").update(body).digest("hex");
+    const requestId = randomUUID();
     const counted = tokens.safeParse(
-      await countInputTokens(route, messages, signal).catch(() => undefined),
+      await countInputTokens(
+        route,
+        { body, digest, requestId, operationId },
+        signal,
+      ).catch(() => undefined),
     );
     if (!counted.success) throw new UnsentBifrostRequest("route_unavailable");
     if (counted.data > route.maxInputTokens) {
@@ -101,21 +119,23 @@ export function createBifrostCreditExecutor({
 
     // The isolated gateway deployment for this revision must disable retries, routing fallbacks
     // and request transformations. The adapter sends one explicit provider/model request.
-    const headers = new Headers({ "content-type": "application/json" });
+    const headers = new Headers({
+      "content-type": "application/json",
+      "x-request-id": requestId,
+      "x-bf-lh-openbot-request-sha256": digest,
+    });
     if (gatewayToken) headers.set("authorization", `Bearer ${gatewayToken}`);
-    if (operationId) headers.set("x-openbot-operation-id", operationId);
+    if (operationId) {
+      headers.set("x-openbot-operation-id", operationId);
+      headers.set("x-bf-lh-openbot-operation-id", operationId);
+    }
     const timeout = AbortSignal.timeout(85_000);
     const response = await fetch(url, {
       method: "POST",
       redirect: "error",
       signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       headers,
-      body: JSON.stringify({
-        model: `${route.provider}/${route.model}`,
-        messages,
-        max_tokens: route.maxOutputTokens,
-        stream: false,
-      }),
+      body,
     });
     if (!response.ok) throw new Error("Test Credit gateway request failed.");
 
