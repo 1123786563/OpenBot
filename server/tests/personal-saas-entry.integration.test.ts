@@ -6206,3 +6206,125 @@ test("admissions pause leaves existing workspaces usable and lets first-time use
     app = prior;
   }
 });
+
+test("a Casdoor session can consent to scoped WeKnora spending and only its owner can revoke it", async () => {
+  const previous = app;
+  const ledger = createTestCreditLedger(database);
+  app = newApp(
+    database,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    false,
+    {
+      ledger,
+      grant: {
+        budgetId: "weknora-fixture",
+        batchId: crypto.randomUUID(),
+        amount: 5n,
+        budget: 5n,
+      },
+    },
+  );
+  try {
+    const account = {
+      sub: crypto.randomUUID(),
+      email: "weknora-owner@example.com",
+      verified: true,
+      active: true,
+    };
+    const owner = cookie(
+      await authenticate(account),
+      "__Host-openbot-personal=",
+    );
+    const otherAccount = {
+      sub: crypto.randomUUID(),
+      email: "weknora-other@example.com",
+      verified: true,
+      active: true,
+    };
+    const other = cookie(
+      await authenticate(otherAccount),
+      "__Host-openbot-personal=",
+    );
+    const identity = { issuer, subject: account.sub };
+    await ledger.enroll({
+      identity,
+      batchId: crypto.randomUUID(),
+      amount: 10n,
+    });
+    const path = "/api/weknora/ingestion-grants";
+    const consentId = crypto.randomUUID();
+    const terms = {
+      resourceId: "tenant-1/document-1",
+      maxMicrocredits: "5",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      confirmed: true,
+    };
+    const post = (
+      route: string,
+      session: string,
+      body: object,
+      requestOrigin = origin,
+    ) =>
+      send(route, {
+        method: "POST",
+        headers: {
+          cookie: session,
+          origin: requestOrigin,
+          "content-type": "application/json",
+          "idempotency-key": consentId,
+        },
+        body: JSON.stringify(body),
+      });
+    expect((await post(path, "", terms)).status).toBe(401);
+    expect(
+      (await post(path, owner, terms, "https://other.example")).status,
+    ).toBe(403);
+    expect(
+      (await post(path, owner, { ...terms, confirmed: false })).status,
+    ).toBe(400);
+    expect(
+      (await post(path, owner, { ...terms, subject: otherAccount.sub })).status,
+    ).toBe(400);
+    const issued = await post(path, owner, terms);
+    expect(issued.status).toBe(201);
+    const grant = await issued.json();
+    const authorizationId = consentId;
+    expect(grant).toEqual({
+      authorizationId,
+      revoked: false,
+      application: "weknora",
+      resourceId: terms.resourceId,
+      maxMicrocredits: terms.maxMicrocredits,
+      expiresAt: terms.expiresAt,
+    });
+    const retried = await post(path, owner, terms);
+    expect(retried.status).toBe(200);
+    expect(await retried.json()).toEqual(grant);
+    expect(
+      (await post(path, owner, { ...terms, maxMicrocredits: "6" })).status,
+    ).toBe(403);
+    const revokePath = `${path}/${authorizationId}/revoke`;
+    const denied = await post(revokePath, other, {
+      resourceId: terms.resourceId,
+    });
+    expect({ status: denied.status, body: await denied.json() }).toEqual({
+      status: 404,
+      body: { error: "spending_authorization_not_found" },
+    });
+    expect(
+      (await post(revokePath, owner, { resourceId: terms.resourceId })).status,
+    ).toBe(204);
+    expect(
+      (await post(revokePath, owner, { resourceId: terms.resourceId })).status,
+    ).toBe(204);
+    const revokedReplay = await post(path, owner, terms);
+    expect(revokedReplay.status).toBe(200);
+    expect(await revokedReplay.json()).toEqual({ ...grant, revoked: true });
+  } finally {
+    app = previous;
+  }
+});

@@ -68,6 +68,7 @@ import { supportAccess } from "./support-access";
 import { supportRoutes } from "./support-routes";
 import { botRunCreditQuote, personalTestCreditExecution } from "./test-credit";
 import { page, pageStyleAttributePolicy, registerPageStyles } from "./web-page";
+import { weknoraGrantRoutes } from "./weknora-grant-routes";
 import {
   workspaceAttachmentDrafts,
   workspaceAttachmentRoutes,
@@ -770,6 +771,17 @@ export function createPersonalSaasApp(
     "/api",
     integrationGrantRoutes({ database, now, store, requestSession, authorize }),
   );
+  if (config.testCredits)
+    app.route(
+      "/api/weknora/ingestion-grants",
+      weknoraGrantRoutes({
+        issuer: config.casdoor.issuer,
+        store,
+        requestSession: (context) => getCookie(context, sessionCookie),
+        authorize,
+        now,
+      }),
+    );
   app.route(
     "/",
     sessionEventRoutes({

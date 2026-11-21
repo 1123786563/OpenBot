@@ -232,6 +232,78 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
       state: "denied",
       reason: "not_authorized",
     });
+    const freshScope = { ...grant, authorizationId: crypto.randomUUID() };
+    const authorizeFresh = (scope: typeof freshScope) =>
+      restarted.authorizeExternalSpending(identity, {
+        ...scope,
+        expiresAt: new Date(now + 26 * 3_600_000),
+        maxMicrocredits: 2n,
+      });
+    await authorizeFresh(freshScope);
+    const longReserve = (operationId: string) =>
+      restarted.reserve(identity, {
+        ...reserve(operationId),
+        scope: freshScope,
+      });
+    const late = await longReserve("late");
+    if (late.state !== "reserved")
+      throw new Error("Expected late-evidence fixture reservation");
+    const lateDispatch = await restarted.beginDispatch(identity, {
+      operationId: "late",
+      permit: late.permit,
+      scope: freshScope,
+    });
+    if (lateDispatch.state !== "dispatch")
+      throw new Error("Expected late-evidence fixture dispatch");
+    now += 24 * 3_600_000;
+    await database
+      .update(personalSaasAccounts)
+      .set({
+        status: {
+          source: "active",
+          observedAt: now,
+          confirmedAt: now,
+          epoch: 2,
+          disablements: [],
+        },
+      })
+      .where(eq(personalSaasAccounts.id, account.id));
+    expect((await longReserve("replacement")).state).toBe("reserved");
+    await expect(
+      restarted.settle(lateDispatch.accountId, "late", {
+        inputTokens: 3n,
+        outputTokens: 16n,
+      }),
+    ).resolves.toMatchObject({ state: "released", chargedMicrocredits: null });
+    await expect(
+      restarted.reconciliationCost(lateDispatch.accountId, "late"),
+    ).resolves.toBe("2");
+
+    const raceScope = { ...grant, authorizationId: crypto.randomUUID() };
+    await authorizeFresh(raceScope);
+    const racing = await restarted.reserve(identity, {
+      ...reserve("racing"),
+      scope: raceScope,
+    });
+    if (racing.state !== "reserved")
+      throw new Error("Expected racing fixture reservation");
+    const consume = {
+      operationId: "racing",
+      permit: racing.permit,
+      scope: raceScope,
+    };
+    const [revoked, ...admissions] = await Promise.all([
+      restarted.revokeExternalSpending(identity, raceScope),
+      restarted.beginDispatch(identity, consume),
+      restarted.beginDispatch(identity, consume),
+    ]);
+    expect(revoked).toBe(true);
+    expect(
+      admissions.filter(({ state }) => state === "dispatch").length,
+    ).toBeLessThanOrEqual(1);
+    expect((await restarted.beginDispatch(identity, consume)).state).not.toBe(
+      "dispatch",
+    );
   } finally {
     await database.transaction(async (tx) => {
       const [billingAccount] = await tx

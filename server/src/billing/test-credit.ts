@@ -213,7 +213,10 @@ function eligibleCharge(
   return verified.cost > row.reserved ? row.reserved : verified.cost;
 }
 
-export function createTestCreditLedger(database: Database, clock?: () => Date) {
+export function createTestCreditLedger(
+  database: Database | Transaction,
+  clock?: () => Date,
+) {
   async function currentTime(tx: Transaction) {
     if (clock) return clock();
     const [row] = await tx.execute<{ time: string }>(
@@ -663,7 +666,22 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           })
           .onConflictDoNothing()
           .returning({ authorizationId: externalAuthorizations.id });
-        return created;
+        if (created) return { ...created, created: true, revoked: false };
+        const existing = await externalAuthorization(tx, accountId, {
+          authorizationId,
+          application,
+          resourceId,
+        });
+        if (
+          existing?.expiresAt.getTime() !== terms.expiresAt.getTime() ||
+          existing.maxMicrocredits !== terms.maxMicrocredits
+        )
+          return undefined;
+        return {
+          authorizationId: existing.id,
+          created: false,
+          revoked: existing.revokedAt !== null,
+        };
       });
     },
 
