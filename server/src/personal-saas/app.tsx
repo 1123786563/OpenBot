@@ -1472,7 +1472,7 @@ export function createPersonalSaasApp(
           computerStatus,
         )
       : undefined;
-    const testCredits = await testCreditStatus(session);
+    const testCredits = workspace ? await testCreditStatus(session) : undefined;
     const accessMs = await remainingAccess(token, session.grant);
     if (!accessMs) return context.json({ error: "authorization_changed" }, 403);
     if (workspace) context.header("OpenBot-Access-Ms", String(accessMs));

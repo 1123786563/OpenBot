@@ -872,12 +872,27 @@ test("one-time workspace grants serialize the global budget and retry pending id
       "0",
     );
 
-    await ledger.restoreOneTimeGrantBudget(config.budgetId, 4n);
+    const replacement = {
+      budgetId: `${config.budgetId}-replacement`,
+      batchId: crypto.randomUUID(),
+      amount: 5n,
+      budget: 10n,
+    };
     expect(
-      await ledger.ensureOneTimeGrant(pendingIdentity, config),
-    ).toMatchObject({
-      state: "issued",
-    });
+      await ledger.ensureOneTimeGrant(pendingIdentity, replacement),
+    ).toMatchObject({ state: "pending", budgetId: config.budgetId });
+    await ledger.restoreOneTimeGrantBudget(config.budgetId, 4n);
+    const retries = await Promise.all([
+      ledger.ensureOneTimeGrant(pendingIdentity, config),
+      ledger.ensureOneTimeGrant(pendingIdentity, replacement),
+    ]);
+    for (const retry of retries)
+      expect(retry).toEqual({
+        state: "issued",
+        budgetId: config.budgetId,
+        batchId: config.batchId,
+        amountMicrocredits: "2",
+      });
     expect((await ledger.balance(pendingIdentity))?.grantedMicrocredits).toBe(
       "2",
     );

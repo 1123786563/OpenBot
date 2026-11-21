@@ -39,7 +39,7 @@ export const testCreditIssuanceBudgets = pgTable(
   {
     id: text().primaryKey(),
     total: bigint({ mode: "bigint" }).notNull(),
-    issued: bigint({ mode: "bigint" }).notNull().default(0n),
+    issued: bigint({ mode: "bigint" }).notNull().default(sql`0`),
   },
   (table) => [
     check("test_credit_issuance_budget_total", sql`${table.total} >= 0`),

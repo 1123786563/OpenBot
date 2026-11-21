@@ -41,6 +41,16 @@ The landing page sends participants to Casdoor for registration, verification, s
 
 When the three Test Credit settings are present, first workspace preparation creates one issuance record per Casdoor issuer and subject. The issuance locks the configured amount to the stable identity and atomically consumes the global budget. A budget shortage leaves the issuance pending and does not block workspace preparation. The next workspace entry retries the same issuance after the operator restores the budget. The Web workspace shows the grant and balance, and `GET /api/workspace` returns the same `testCredits` object for Web and native clients. Issuances remain attached to the billing account after workspace closure, so reprovisioning cannot create another grant.
 
+The budget environment variable seeds the trial budget. When the budget row already exists, set `new_total` to the approved cumulative budget in microcredits and run this statement against the trial database using `psql`:
+
+```sql
+UPDATE test_credit_issuance_budgets
+SET total = :'new_total'::bigint
+WHERE id = 'personal-saas-trial'
+  AND total < :'new_total'::bigint
+RETURNING total, issued;
+```
+
 Use the existing deployment commands for enterprise or local Personal edition.
 
 ## Sign out

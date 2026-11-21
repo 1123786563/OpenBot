@@ -376,50 +376,43 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       if (config.amount <= 0n || config.budget < 0n)
         throw new RangeError("Invalid Test Credit grant configuration");
       return database.transaction(async (tx) => {
-        await tx
-          .insert(batches)
-          .values({ id: config.batchId, amount: config.amount })
-          .onConflictDoNothing();
-        const [batch] = await tx
-          .select({ amount: batches.amount })
-          .from(batches)
-          .where(eq(batches.id, config.batchId));
-        if (!batch || batch.amount !== config.amount)
-          throw new Error("Test Credit grant batch amount differs");
-
         await tx.insert(accounts).values(identity).onConflictDoNothing();
         const accountId = await account(identity, tx);
         if (!accountId) throw new Error("Billing Account could not be created");
 
-        await tx
-          .insert(issuanceBudgets)
-          .values({
-            id: config.budgetId,
-            total: config.budget,
-          })
-          .onConflictDoNothing();
-        const [budget] = await tx
-          .select()
-          .from(issuanceBudgets)
-          .where(eq(issuanceBudgets.id, config.budgetId))
-          .for("update");
-        if (!budget) throw new Error("Test Credit issuance budget unavailable");
-        await tx
-          .insert(issuances)
-          .values({
-            accountId,
-            budgetId: config.budgetId,
-            batchId: config.batchId,
-            amount: config.amount,
-            state: "pending",
-          })
-          .onConflictDoNothing();
-        const [grant] = await tx
+        const [existing] = await tx
           .select()
           .from(issuances)
-          .where(eq(issuances.accountId, accountId))
-          .for("update");
-        if (!grant) throw new Error("Test Credit grant was not saved");
+          .where(eq(issuances.accountId, accountId));
+        let grant = existing;
+        if (!grant) {
+          await tx
+            .insert(batches)
+            .values({ id: config.batchId, amount: config.amount })
+            .onConflictDoNothing();
+          const [batch] = await tx
+            .select({ amount: batches.amount })
+            .from(batches)
+            .where(eq(batches.id, config.batchId));
+          if (!batch || batch.amount !== config.amount)
+            throw new Error("Test Credit grant batch amount differs");
+          await tx
+            .insert(issuanceBudgets)
+            .values({ id: config.budgetId, total: config.budget })
+            .onConflictDoNothing();
+          const [pending] = await tx
+            .insert(issuances)
+            .values({
+              accountId,
+              budgetId: config.budgetId,
+              batchId: config.batchId,
+              amount: config.amount,
+              state: "pending",
+            })
+            .returning();
+          if (!pending) throw new Error("Test Credit grant was not saved");
+          grant = pending;
+        }
         if (grant.state === "issued")
           return {
             state: "issued",
@@ -427,6 +420,12 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             budgetId: grant.budgetId,
             batchId: grant.batchId,
           };
+        const [budget] = await tx
+          .select()
+          .from(issuanceBudgets)
+          .where(eq(issuanceBudgets.id, grant.budgetId))
+          .for("no key update");
+        if (!budget) throw new Error("Test Credit issuance budget unavailable");
         if (budget.total - budget.issued < grant.amount)
           return {
             state: "pending",
@@ -451,7 +450,11 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             batchId: grant.batchId,
             claimedAt: issuedAt,
           })
-          .onConflictDoNothing();
+          .onConflictDoUpdate({
+            target: [enrollments.accountId, enrollments.batchId],
+            set: { claimedAt: issuedAt },
+            setWhere: isNull(enrollments.claimedAt),
+          });
         return {
           state: "issued",
           amountMicrocredits: grant.amount.toString(),

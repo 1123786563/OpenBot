@@ -9,6 +9,7 @@ import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createWakeUpStore } from "../src/agents/wake-up";
 import { createApprovalStore } from "../src/approvals/store";
 import { approvalAction } from "../src/approvals/types";
+import { createTestCreditLedger } from "../src/billing/test-credit";
 import { botSeat, seatText } from "../src/computer/computer-key";
 import { createDatabase } from "../src/db/client";
 import {
@@ -210,6 +211,7 @@ function newApp(
   botRuntime?: ReturnType<typeof createPersonalBotRuntime>,
   cleanup?: Parameters<typeof createPersonalSaasApp>[0]["closureCleanup"],
   admissionsPaused = false,
+  testCredits?: Parameters<typeof createPersonalSaasApp>[0]["testCredits"],
 ) {
   return createPersonalSaasApp(
     {
@@ -219,6 +221,7 @@ function newApp(
       botRuntime,
       closureCleanup: cleanup,
       admissionsPaused,
+      testCredits,
       computer: typeof dependency === "function" ? computer : dependency,
       runPersonalBot: typeof dependency === "function" ? dependency : undefined,
       quotas: {
@@ -614,6 +617,78 @@ async function nativeSessionHeaders(
   const { token } = await exchange.json();
   return { authorization: `Bearer ${token}` };
 }
+
+test("workspace entry preserves a pending grant across Web and native retries and an email change", async () => {
+  const owner = {
+    sub: crypto.randomUUID(),
+    email: "test-credit@example.com",
+    active: true,
+    verified: true,
+  };
+  const identity = { issuer, subject: owner.sub };
+  const ledger = createTestCreditLedger(database);
+  const grant = {
+    budgetId: crypto.randomUUID(),
+    batchId: crypto.randomUUID(),
+    amount: 2n,
+    budget: 0n,
+  };
+  const prior = app;
+  app = newApp(
+    database,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    false,
+    { ledger, grant },
+  );
+  try {
+    const session = cookie(
+      await authenticate(owner),
+      "__Host-openbot-personal=",
+    );
+    const web = { cookie: session };
+    expect((await send("/api/workspace", { headers: web })).status).toBe(202);
+    expect(await ledger.balance(identity)).toBeUndefined();
+
+    const ios = await nativeSessionHeaders("ios", owner);
+    const desktop = await nativeSessionHeaders("desktop", owner);
+    const preparations = await Promise.all([
+      enter(session),
+      ...[ios, desktop].map((headers) =>
+        send("/workspace/prepare", { method: "POST", headers }),
+      ),
+    ]);
+    expect(preparations.map(({ status }) => status)).toEqual([303, 204, 204]);
+    expect(await workspace(session)).toMatchObject({
+      testCredits: { state: "pending", balance: { grantedMicrocredits: "0" } },
+    });
+    expect(await (await send("/workspace", { headers: web })).text()).toContain(
+      "Your Test Credits are pending",
+    );
+
+    await ledger.restoreOneTimeGrantBudget(grant.budgetId, 2n);
+    const updated = cookie(
+      await authenticate({ ...owner, email: "test-credit-new@example.com" }),
+      "__Host-openbot-personal=",
+    );
+    const responses = await Promise.all(
+      [{ cookie: updated }, ios, desktop].map((headers) =>
+        send("/api/workspace", { headers }),
+      ),
+    );
+    for (const response of responses) {
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        testCredits: { state: "issued", balance: { grantedMicrocredits: "2" } },
+      });
+    }
+  } finally {
+    app = prior;
+  }
+}, 20_000);
 
 test("Web, Desktop, iOS, and Android share the owner’s workspace and conversation history", async () => {
   const owner = {
