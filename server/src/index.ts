@@ -254,6 +254,7 @@ import { useRoutineTools } from "./plugins/builtin-routines";
 import { useComposioClient } from "./plugins/composio";
 import { createComposioClient } from "./plugins/composio-adapter";
 import { createGithubEventDispatch } from "./plugins/corsair/event-dispatch";
+import { createCorsairCloudClient } from "./plugins/corsair/cloud";
 import { createCorsairEventOperations } from "./plugins/corsair/event-operations";
 import { createGithubEventReader } from "./plugins/corsair/event-reader";
 import { createGithubEventTriggers } from "./plugins/corsair/event-triggers";
@@ -1356,6 +1357,12 @@ startPersonalDefaultApps(
  */
 startBrokeredRelist(pluginStore);
 const githubPilot = githubPilotRegistration(process.env, config.publicUrl);
+const corsairCloud = process.env.CORSAIR_CLOUD_KEY?.trim()
+  ? createCorsairCloudClient({
+      apiKey: process.env.CORSAIR_CLOUD_KEY.trim(),
+      baseUrl: process.env.CORSAIR_CLOUD_BASE_URL?.trim(),
+    })
+  : undefined;
 const githubEventSecret = process.env.CORSAIR_GITHUB_WEBHOOK_SECRET?.trim();
 const githubEventScope =
   githubPilot && githubEventSecret
@@ -3385,6 +3392,7 @@ const app = createApp(
         : {}),
       ...(sharedSlack ? { sharedSlackRegistration: sharedSlack.appId } : {}),
     },
+    ...(corsairCloud ? { corsairCloud } : {}),
     ...(githubPilot
       ? {
           githubPilot: {

@@ -146,6 +146,10 @@ import { createCorsairEventOperationRoutes } from "./plugins/corsair/event-opera
 import type { CorsairEventOperations } from "./plugins/corsair/event-operations";
 import { createGithubEventTriggerRoutes } from "./plugins/corsair/event-triggers";
 import { createCorsairReadinessRoutes } from "./plugins/corsair/readiness";
+import {
+  createCorsairCloudRoutes,
+  type CorsairCloudClient,
+} from "./plugins/corsair/cloud";
 import { createGithubPilotRoutes } from "./plugins/corsair/routes";
 import { createSlackPilotRoutes } from "./plugins/corsair/slack/routes";
 import { createSharedSlackPilot } from "./plugins/corsair/slack/shared-routes";
@@ -468,6 +472,7 @@ export function createApp(
       Parameters<typeof createCorsairReadinessRoutes>[0],
       "requireUser"
     >;
+    corsairCloud?: CorsairCloudClient;
     githubEvents?: Parameters<typeof createGithubEventIngress>[0] &
       Pick<Parameters<typeof createGithubEventTriggerRoutes>[0], "triggers">;
     githubPilot?: Omit<
@@ -1711,6 +1716,15 @@ export function createApp(
       }),
     );
   }
+
+  if (coworker?.corsairCloud)
+    app.route(
+      "/api/corsair/cloud",
+      createCorsairCloudRoutes({
+        client: coworker.corsairCloud,
+        requireUser,
+      }),
+    );
 
   if (coworker?.githubEvents) {
     app.route(
