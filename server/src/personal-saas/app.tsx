@@ -14,6 +14,7 @@ import { createApprovalStore } from "../approvals/store";
 import { seal, unseal } from "../auth/signed-value";
 import type { Database } from "../db/client";
 import { createWorkQueue, unattendedWorkLabels } from "../work/queue";
+import { backgroundBotKinds } from "../work/unattended-kinds";
 import {
   type AccountGrant,
   accountDecision,
@@ -239,6 +240,7 @@ export function createPersonalSaasApp(
       now,
       config.encryptionKey,
       runPersonalBot,
+      quotas,
     );
 
   function bearer(context: Context) {
@@ -1629,17 +1631,19 @@ export function createPersonalSaasApp(
                 },
               }
             : {
-                startFresh: (transaction, payload) =>
-                  runPersonalBot
-                    ? retryBackgroundWork(
-                        transaction,
-                        now,
-                        accountId,
-                        kind,
-                        payload,
-                        runPersonalBot,
-                      )
-                    : Promise.resolve(undefined),
+                async startFresh(transaction, payload) {
+                  if (!runPersonalBot || !backgroundBotKinds.includes(kind))
+                    return;
+                  await quotas.admitBot(transaction, accountId);
+                  return retryBackgroundWork(
+                    transaction,
+                    now,
+                    accountId,
+                    kind,
+                    payload,
+                    runPersonalBot,
+                  );
+                },
               }),
         });
       },

@@ -42,6 +42,7 @@ import {
 import { readExecutionAccess } from "../personal-saas/account-access";
 import { workspaceResourceOwner } from "../personal-saas/workspace-principal";
 import { currentWorkGrant } from "./execution";
+import { unattendedWorkLabels } from "./unattended-kinds";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type WorkRow = typeof workItems.$inferSelect;
@@ -88,14 +89,7 @@ function unattendedPrincipal(
   }
 }
 
-export const unattendedWorkLabels = {
-  "group.turn": "Group run",
-  "bot.wakeup": "Bot follow-up",
-  "bot.message": "Bot handoff",
-  "proactive.run": "Check-in",
-  "responsibility.run": "Responsibility",
-  "delivery.outbound": "Background notification",
-};
+export { unattendedWorkLabels } from "./unattended-kinds";
 
 const unattendedKinds = new Set(Object.keys(unattendedWorkLabels));
 

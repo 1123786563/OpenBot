@@ -3795,6 +3795,106 @@ test("replicas share Bot admission and retain history when a slot is released", 
   }
 });
 
+test("background Bot dispatch and retry share the workspace Bot limit", async () => {
+  const owner = await isolationOwner();
+  const target = await workspace(owner.session);
+  const session = await personalSaasStore(database).session(
+    owner.session.split("=")[1],
+  );
+  if (!session) throw new Error("Expected an active test session");
+
+  const wakeUps = createWakeUpStore(database, { now: () => new Date(now()) });
+  function schedule(reason: string) {
+    return wakeUps.schedule({
+      ownerUserId: workspaceResourceOwner(target.id),
+      agentId: target.personalAssistant.id,
+      dueAt: new Date(now() + 120_000),
+      reason,
+    });
+  }
+  const followUp = await schedule("Run after the workspace has capacity");
+  const interrupted = await schedule("Retry after the workspace has capacity");
+  const queue = createWorkQueue(database, now);
+  expect(
+    await queue.requestPersonalStop(
+      "bot.wakeup",
+      session.accountId,
+      interrupted.id,
+    ),
+  ).toBe(true);
+  function makeDue() {
+    return database
+      .update(workItems)
+      .set({ runAt: new Date(0) })
+      .where(
+        and(eq(workItems.kind, "bot.wakeup"), eq(workItems.key, followUp.id)),
+      );
+  }
+
+  const started = Promise.withResolvers<void>();
+  const finish = Promise.withResolvers<void>();
+  const runApp = newApp(
+    database,
+    async ({ routineId }) => {
+      if (routineId === `follow-up:${followUp.id}`) {
+        started.resolve();
+        await finish.promise;
+      }
+      return { replyText: "Completed" };
+    },
+    undefined,
+    { bot: 1 },
+  );
+  const background = runApp.backgroundWorkers;
+  if (!background) throw new Error("Expected background workers");
+  const request = (path: string, body: object) =>
+    runApp.request(new URL(path, origin), {
+      method: "POST",
+      headers: {
+        origin,
+        cookie: owner.session,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  const direct = () =>
+    request("/api/workspace/bot-runs", {
+      workspaceId: target.id,
+      botId: target.personalAssistant.id,
+      instruction: "Direct turn",
+    });
+  const retry = () =>
+    request(`/api/workspace/recovery/${interrupted.id}`, {
+      action: "retry",
+      acknowledged: true,
+    });
+
+  expect((await direct()).status).toBe(202);
+  expect((await retry()).status).toBe(429);
+  await makeDue();
+  expect(await background.wakeUp()).toEqual({ ran: [], skipped: [] });
+  expect(await runApp.sweepBotWork()).toBe(true);
+
+  await makeDue();
+  const sweep = background.wakeUp();
+  try {
+    expect(
+      await Promise.race([
+        started.promise.then(() => "started"),
+        sweep.then(() => "finished"),
+      ]),
+    ).toBe("started");
+    expect((await direct()).status).toBe(429);
+    expect((await retry()).status).toBe(429);
+  } finally {
+    finish.resolve();
+    await sweep;
+  }
+
+  expect(await sweep).toEqual({ ran: [followUp.id], skipped: [] });
+  expect((await retry()).status).toBe(200);
+}, 30_000);
+
 test("manual and scheduled automation share the trigger limit and retain history", async () => {
   const owner = await isolationOwner();
   const manual = await exportFixture(owner, "quota manual");
@@ -4468,7 +4568,10 @@ test("the mounted workspace recovers each stopped background capability as fresh
     expect(await (await retry(key, restored, true)).json()).toEqual(recovery);
     fresh.set(key, newKey);
   }
-  await sweep();
+  await workers.checkIn();
+  await workers.responsibility();
+  await workers.group();
+  await workers.handoff();
   const recoveredHandoff = fresh.get(handoff);
   const recoveredDirectHandoff = fresh.get(directHandoff);
   if (!recoveredHandoff || !recoveredDirectHandoff)

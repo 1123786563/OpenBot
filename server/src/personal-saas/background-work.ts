@@ -54,6 +54,7 @@ import {
 import { markUntrusted } from "../untrusted-content";
 import { currentWorkGrant } from "../work/execution";
 import { createWorkQueue } from "../work/queue";
+import type { workspaceQuotas } from "./quotas";
 import { type Transaction, workspaceConversations } from "./store";
 import { workspaceBots } from "./workspace-bots";
 import { workspaceResourceOwner } from "./workspace-principal";
@@ -222,10 +223,11 @@ function checkIns(
   now: () => number,
   accountFor: (owner: string) => string | undefined,
   runTurn: TurnRunner,
+  queue = createWorkQueue(database, now, { personalOnly: true }),
 ) {
   return createProactiveEngine({
     store: createProactiveStore(database),
-    queue: createWorkQueue(database, now, { personalOnly: true }),
+    queue,
     owner: crypto.randomUUID(),
     runTurn,
     resolveScope: async (ownerUserId, channelId, agentId) => {
@@ -398,8 +400,24 @@ export function personalBackgroundWorkers(
   now: () => number,
   encryptionKey: string,
   runTurn: TurnRunner,
+  quotas: ReturnType<typeof workspaceQuotas>,
 ) {
-  const queue = createWorkQueue(database, now, { personalOnly: true });
+  const personalQueue = createWorkQueue(database, now, { personalOnly: true });
+  const queue: typeof personalQueue = {
+    ...personalQueue,
+    claim: (input) =>
+      personalQueue.claim({
+        ...input,
+        async mayClaim(tx, row) {
+          if (
+            !row.accountId ||
+            !(await quotas.mayClaim(tx, row.accountId, true))
+          )
+            return false;
+          return input.mayClaim ? input.mayClaim(tx, row) : true;
+        },
+      }),
+  };
   const owner = crypto.randomUUID();
   const auditStore = createAuditStore(database);
   const groupStore = createGroupStore(database, () => crypto.randomUUID());
@@ -421,7 +439,7 @@ export function personalBackgroundWorkers(
     return runTurn({ ...input, ownerUserId: accountId });
   };
 
-  const checkIn = checkIns(database, now, accountFor, checkedTurn);
+  const checkIn = checkIns(database, now, accountFor, checkedTurn, queue);
   const responsibilities = createResponsibilityEngine({
     queue,
     store: createResponsibilityStore(database, {

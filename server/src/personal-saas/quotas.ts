@@ -10,6 +10,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 import { attachments, workItems } from "../db/schema";
+import { backgroundBotKinds } from "../work/unattended-kinds";
 import { type Transaction, workspaceConversations } from "./store";
 
 export const PERSONAL_BOT_WORK = "personal.bot.turn";
@@ -70,7 +71,7 @@ export class WorkspaceQuotaExceeded extends Error {
 export function workspaceQuotas(limits: WorkspaceQuotaLimits) {
   function lock(tx: Transaction, accountId: string) {
     return tx.execute(
-      sql`select pg_advisory_xact_lock(hashtextextended(${"personal-workspace-quota:" + accountId}, 0))`,
+      sql`select pg_advisory_xact_lock(hashtextextended(${`personal-workspace-quota:${accountId}`}, 0))`,
     );
   }
 
@@ -89,6 +90,10 @@ export function workspaceQuotas(limits: WorkspaceQuotaLimits) {
             ? inArray(workItems.kind, automationKinds)
             : or(
                 inArray(workItems.kind, botKinds),
+                and(
+                  inArray(workItems.kind, backgroundBotKinds),
+                  sql`${workItems.leaseUntil} > clock_timestamp()`,
+                ),
                 claimedOnly
                   ? and(
                       inArray(workItems.kind, decisionKinds),
@@ -158,9 +163,12 @@ export function workspaceQuotas(limits: WorkspaceQuotaLimits) {
         check("automation", await workUsage(tx, accountId, "automation"));
       check("bot", await workUsage(tx, accountId, "bot"));
     },
-    async mayClaim(tx: Transaction, accountId: string) {
+    async mayClaim(tx: Transaction, accountId: string, unreserved = false) {
       await lock(tx, accountId);
-      return (await workUsage(tx, accountId, "bot", true)) < limits.bot;
+      return (
+        (await workUsage(tx, accountId, "bot", true)) < limits.bot &&
+        (!unreserved || (await workUsage(tx, accountId, "bot")) < limits.bot)
+      );
     },
     async admitStorage(
       tx: Transaction,
