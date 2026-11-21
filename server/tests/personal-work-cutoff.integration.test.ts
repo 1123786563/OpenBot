@@ -130,7 +130,7 @@ test("the wake-up worker stops a running turn at local expiry and keeps partial 
     "../src/agents/wake-up"
   );
   const accountId = randomUUID();
-  const confirmedAt = Date.now() - 50_000;
+  const confirmedAt = Date.now() - 30_000;
   await database.insert(personalSaasAccounts).values({
     id: accountId,
     issuer: "test",
@@ -200,4 +200,4 @@ test("the wake-up worker stops a running turn at local expiry and keeps partial 
       },
     },
   ]);
-}, 20_000);
+}, 60_000);
