@@ -14,7 +14,10 @@ import {
 } from "@openbot/shared/approval-outcomes";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { PERSON_INITIATOR } from "../audit";
-import { MarketRunPaused } from "../skill-market/disablements";
+import {
+  isMarketVersionPause,
+  MarketRunPaused,
+} from "../skill-market/disablements";
 import { productRunForwardedProps } from "../telemetry/product";
 import {
   decideAction,
@@ -144,7 +147,8 @@ export type ApprovalResumeDependencies = {
     continuation: ApprovalContinuation;
     result: { content: string; error?: string };
     pauseReason?: string;
-  }): Promise<void>;
+    // biome-ignore lint/suspicious/noConfusingVoidType: Existing continuations may return no outcome.
+  }): Promise<{ pauseReason: string } | void>;
 };
 export type ApprovalService = ReturnType<typeof createApprovalService>;
 
@@ -535,9 +539,12 @@ export function createApprovalService(
           requests.map(async (request) =>
             publicApproval(
               request,
-              request.result && request.action.continuation?.marketSkill
-                ? await options.marketPause?.(request.action)
-                : undefined,
+              request.result?.pauseReason ??
+                (request.status !== "completed" &&
+                request.result &&
+                request.action.continuation?.marketSkill
+                  ? await options.marketPause?.(request.action)
+                  : undefined),
             ),
           ),
         ),
@@ -780,14 +787,18 @@ export function createApprovalService(
       }
       const finalPause =
         pauseReason ?? (await options.marketPause?.(request.action));
-      await dependencies.continue({
+      const outcome = await dependencies.continue({
         ...(finalPause ? { pauseReason: finalPause } : {}),
         approvalId: id,
         messageId: `approval:${id}`,
         continuation,
         result,
       });
-      await store.finish(ownerUserId, id);
+      await store.finish(
+        ownerUserId,
+        id,
+        outcome?.pauseReason ?? finalPause ?? undefined,
+      );
     },
     /**
      * The work item carrying this resume ran out of tries. Left alone, the request stayed approved
@@ -816,14 +827,15 @@ export function createApprovalService(
           return;
         result = { content: text, error: text };
       }
-      if (continuation)
-        await dependencies.continue({
-          approvalId: id,
-          messageId: `approval:${id}`,
-          continuation,
-          result,
-        });
-      await store.finish(ownerUserId, id);
+      const outcome = continuation
+        ? await dependencies.continue({
+            approvalId: id,
+            messageId: `approval:${id}`,
+            continuation,
+            result,
+          })
+        : undefined;
+      await store.finish(ownerUserId, id, outcome?.pauseReason);
     },
   };
 }
@@ -865,6 +877,10 @@ function publicGrant(grant: ApprovalConversationGrant) {
 }
 function publicApproval(request: ApprovalRecord, pauseReason?: string | null) {
   const { action, ...record } = request;
+  // Older requests can carry an explicit pause in their saved result.
+  const savedError = request.result?.error ?? null;
+  if (action.continuation?.marketSkill && isMarketVersionPause(savedError))
+    pauseReason ??= savedError;
   return {
     ...record,
     result: request.result

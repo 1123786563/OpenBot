@@ -176,7 +176,7 @@ export type ApprovalRecord = {
   action: ApprovalAction;
   status: "pending" | "approved" | "denied" | "consumed" | "completed";
   decision: ApprovalDecision | null;
-  result: { content: string; error?: string } | null;
+  result: { content: string; error?: string; pauseReason?: string } | null;
   createdAt: Date;
   decidedAt: Date | null;
   consumedAt: Date | null;
@@ -400,7 +400,7 @@ export type ApprovalStore = {
     id: string,
     result: { content: string; error?: string },
   ): Promise<boolean>;
-  finish(ownerUserId: string, id: string): Promise<void>;
+  finish(ownerUserId: string, id: string, pauseReason?: string): Promise<void>;
   rules(ownerUserId: string): Promise<ApprovalRule[]>;
   revoke(ownerUserId: string, id: string): Promise<void>;
   /**

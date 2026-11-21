@@ -15,7 +15,10 @@ import {
 } from "../db/schema";
 import type { DeliveryScope } from "../delivery/types";
 import type { ResponsibilityStore } from "../responsibilities/types";
-import { marketRunPauseReason } from "../skill-market/disablements";
+import {
+  isMarketVersionPause,
+  marketRunPauseReason,
+} from "../skill-market/disablements";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import type { ApprovalResumeDependencies, ApprovalService } from "./service";
 
@@ -140,7 +143,7 @@ export function createApprovalResumeTick(deps: {
                       eq(responsibilityRuns.status, "waiting"),
                     ),
                   );
-                return;
+                return { pauseReason };
               }
               await responsibilityStore.resumeWaiting(
                 input.ownerUserId,
@@ -177,14 +180,21 @@ export function createApprovalResumeTick(deps: {
                 pauseReason,
               );
             } catch (error) {
-              if (!(error instanceof HeadlessToolSuspension)) throw error;
-              waitingOn = {
-                message: error.message,
-                ...(typeof error.waiting.approvalId === "string"
-                  ? { approvalId: error.waiting.approvalId }
-                  : {}),
-              };
-              outcome = { replyText: "" };
+              if (error instanceof HeadlessToolSuspension) {
+                waitingOn = {
+                  message: error.message,
+                  ...(typeof error.waiting.approvalId === "string"
+                    ? { approvalId: error.waiting.approvalId }
+                    : {}),
+                };
+                outcome = { replyText: "" };
+              } else if (
+                error instanceof Error &&
+                isMarketVersionPause(error.message)
+              ) {
+                pauseReason = error.message;
+                outcome = { replyText: pauseReason };
+              } else throw error;
             }
             if (outcome.replyText && !pauseReason)
               await deps.transcriptHolds?.({
@@ -266,6 +276,7 @@ export function createApprovalResumeTick(deps: {
                   sql`${routineRuns.waiting}->>'approvalId' = ${approvalId}`,
                 ),
               );
+            if (pauseReason) return { pauseReason };
           },
         };
         abandon = (reason) =>

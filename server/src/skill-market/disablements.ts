@@ -3,7 +3,7 @@ import {
   type MarketSkillSnapshot,
   marketSkillSnapshotSchema,
 } from "@openbot/toolkit/continuation";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/client";
 import {
@@ -82,6 +82,16 @@ export async function qualifyMarketVersionForWrite(
 
 export function marketVersionDisabledMessage(version: string, reason: string) {
   return `Market skill version ${version} is disabled by an OpenBot administrator. Reason: ${reason}`;
+}
+
+// Routine and responsibility histories already persist this reason with the terminal run.
+export function isMarketVersionPause(reason: string | null): reason is string {
+  return (
+    reason !== null &&
+    /^Run paused\. Market skill version \S+ is disabled by an OpenBot administrator\. Reason: /.test(
+      reason,
+    )
+  );
 }
 
 function pausedVersionMessage(version: string, reason: string) {
@@ -332,6 +342,17 @@ export function marketVersionMethods(database: Database) {
           skillMarketSources,
           eq(skillMarketSources.command, skillMarketInstallations.command),
         );
+      const pinned = await database
+        .selectDistinct({
+          source: skillMarketRuns.source,
+          namespace: sql`${skillMarketRuns.snapshot}->'market'->>'namespace'`,
+          slug: sql`${skillMarketRuns.snapshot}->'market'->>'slug'`,
+          registrySkillId: skillMarketRuns.registrySkillId,
+          versionId: skillMarketRuns.versionId,
+          version: sql`${skillMarketRuns.snapshot}->'market'->>'version'`,
+        })
+        .from(skillMarketRuns)
+        .where(isNotNull(skillMarketRuns.snapshot));
       const disabled = await database.select().from(disablements);
       const versions = new Map<
         string,
@@ -342,6 +363,14 @@ export function marketVersionMethods(database: Database) {
           { ...version, reason: null },
         ]),
       );
+      for (const row of pinned) {
+        const version = marketVersionIdentity.safeParse(row);
+        if (version.success && !versions.has(versionKey(version.data)))
+          versions.set(versionKey(version.data), {
+            ...version.data,
+            reason: null,
+          });
+      }
       for (const version of disabled)
         versions.set(versionKey(version), version);
       return [...versions.values()];

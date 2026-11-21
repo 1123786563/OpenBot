@@ -47,6 +47,11 @@ import {
   auditEvents,
   mcpServers,
   mcpTools,
+  responsibilities,
+  responsibilityEvents,
+  responsibilityRuns,
+  routineRuns,
+  routines,
   skillMarketSources,
   skills,
   users,
@@ -56,6 +61,10 @@ import { admitPickedSkill } from "../src/plugins/picked-skill";
 import { createPluginRoutes } from "../src/plugins/routes";
 import { createPluginStore, PluginRefusedError } from "../src/plugins/store";
 import { grantedSkills } from "../src/plugins/tools";
+import { createResponsibilityRoutes } from "../src/responsibilities/routes";
+import { createResponsibilityStore } from "../src/responsibilities/store";
+import { createRoutineRoutes } from "../src/routines/routes";
+import { createRoutineStore } from "../src/routines/store";
 import { createSkillMarketRoutes } from "../src/skill-market/routes";
 import { createWorkQueue } from "../src/work/queue";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -147,7 +156,11 @@ afterEach(() => {
 });
 
 afterAll(async () => {
-  const approvalIds = (await approvals.list(owner)).map(({ id }) => id);
+  const approvalIds = (
+    await Promise.all([approvals.list(owner), approvals.list(member)])
+  )
+    .flat()
+    .map(({ id }) => id);
   if (approvalIds.length)
     await database
       .delete(workItems)
@@ -636,7 +649,7 @@ test("switches and uninstalls only the selected Bot snapshot", async () => {
   });
 });
 
-test("a live Bot run keeps its sent instructions when its installation is removed", async () => {
+test("an administrator can disable a version pinned by a live Bot after the final uninstall and catalog outage", async () => {
   secondVersionCompatible = true;
   state = "newer";
   expect((await install(emptyBot, "2.0.0", owner)).status).toBe(201);
@@ -691,6 +704,13 @@ test("a live Bot run keeps its sent instructions when its installation is remove
       {
         loadSkills: (botId) => grantedSkills({ store, botId }),
         choose: async () => null,
+        registerMarketRun: (scope, version, snapshot) =>
+          store.registerMarketRun(
+            { ...scope, actorId: owner },
+            version,
+            undefined,
+            snapshot,
+          ),
       },
     );
     const agent = runtime[emptyBot]?.clone();
@@ -718,6 +738,29 @@ test("a live Bot run keeps its sent instructions when its installation is remove
       );
       expect(removed.status).toBe(204);
       expect(await slash(emptyBot)).toBeUndefined();
+      const identity = {
+        ...disablementIdentity,
+        version: "2.0.0",
+        versionId: 4,
+      };
+      const listed = await routes.request("/version-disablements");
+      expect(listed.status).toBe(200);
+      const body = await listed.json();
+      expect(body.versions).toContainEqual({ ...identity, reason: null });
+      expect(JSON.stringify(body)).not.toContain("Produce an outline.");
+      expect(
+        (
+          await changeDisablement(
+            "PUT",
+            "admin",
+            "Review in progress",
+            identity,
+          )
+        ).status,
+      ).toBe(204);
+      expect(
+        (await changeDisablement("DELETE", "admin", "", identity)).status,
+      ).toBe(204);
     } finally {
       release.resolve();
       await running;
@@ -1269,7 +1312,7 @@ test("a loaded market run pauses before the remote endpoint is dialled", async (
   }
 });
 
-async function serveMcp(tool: string, pauseAt: "initialize" | "tools/call") {
+async function serveMcp(tool: string, pauseAt?: "initialize" | "tools/call") {
   let initialized = 0;
   let dispatched = 0;
   const mock = new MCPMock();
@@ -1323,8 +1366,81 @@ async function serveMcp(tool: string, pauseAt: "initialize" | "tools/call") {
   };
 }
 
-for (const phase of ["before approval", "initialize", "tools/call"] as const) {
-  const afterDispatch = phase === "tools/call";
+// The runner has already yielded control to the approval queue at this point.
+async function waitingRunHistory(
+  target: "responsibility" | "routine",
+  id: string,
+  approvalId: string,
+  threadId: string,
+) {
+  const common = {
+    id,
+    ownerUserId: member,
+    agentId: bot,
+    channelId: threadId,
+    instruction: "Summarize the notes.",
+  };
+  const waiting = { kind: "approval" as const, approvalId };
+  if (target === "routine") {
+    await database.insert(routines).values({
+      ...common,
+      cron: "0 9 * * *",
+      nextRunAt: new Date(),
+    });
+    await database.insert(routineRuns).values({
+      id,
+      routineId: id,
+      status: "waiting",
+      waiting,
+    });
+    return createRoutineRoutes(createRoutineStore(database), requireUser);
+  }
+  await database.insert(responsibilities).values({
+    ...common,
+    threadId,
+    title: "Market notes",
+    successCriteria: "Notes summarized.",
+  });
+  await database.insert(responsibilityEvents).values({
+    id,
+    ownerUserId: member,
+    source: "manual",
+    externalId: id,
+    type: "requested",
+    payload: {},
+  });
+  await database.insert(responsibilityRuns).values({
+    id,
+    responsibilityId: id,
+    eventId: id,
+    status: "waiting",
+    waiting,
+  });
+  return createResponsibilityRoutes(
+    createResponsibilityStore(database, { resolveTarget: async () => null }),
+    {
+      ingest: async () => {
+        throw new Error("Unexpected event.");
+      },
+    },
+    requireUser,
+  );
+}
+
+for (const phase of [
+  "before approval",
+  "initialize",
+  "tools/call",
+  "after completion",
+  "routine",
+  "responsibility",
+] as const) {
+  const automation =
+    phase === "routine" || phase === "responsibility" ? phase : null;
+  const stoppedBeforeApproval =
+    phase === "before approval" || automation !== null;
+  const completedBeforeStop = phase === "after completion";
+  const afterDispatch = phase === "tools/call" || completedBeforeStop;
   test(`approved MCP execution handles disablement at ${phase}`, async () => {
     expect([200, 201]).toContain((await install(bot)).status);
     const model = new LLMock();
@@ -1352,7 +1468,7 @@ for (const phase of ["before approval", "initialize", "tools/call"] as const) {
       });
     const relay = await serveMcp(
       "reset_workspace",
-      phase === "tools/call" ? phase : "initialize",
+      phase === "initialize" || phase === "tools/call" ? phase : undefined,
     );
     try {
       const available = await buildAgents(
@@ -1382,8 +1498,13 @@ for (const phase of ["before approval", "initialize", "tools/call"] as const) {
         {
           loadSkills: (botId) => grantedSkills({ store, botId }),
           choose: async () => null,
-          registerMarketRun: (scope, version) =>
-            store.registerMarketRun({ ...scope, actorId: member }, version),
+          registerMarketRun: (scope, version, snapshot) =>
+            store.registerMarketRun(
+              { ...scope, actorId: member },
+              version,
+              undefined,
+              snapshot,
+            ),
         },
       );
       const agent: AbstractAgent = available[bot].clone();
@@ -1399,11 +1520,61 @@ for (const phase of ["before approval", "initialize", "tools/call"] as const) {
       expect(request?.status).toBe("pending");
       if (!request) throw new Error("The Bot did not open an approval");
 
-      if (phase === "before approval") {
+      if (stoppedBeforeApproval) {
         expect((await changeDisablement("PUT")).status).toBe(204);
         expect((await changeDisablement("DELETE")).status).toBe(204);
       }
-      await guardedApprovals.decide(member, request.id, "allow_once");
+      const approvalRoutes = createApprovalRoutes(
+        guardedApprovals,
+        requireUser,
+      );
+      expect(
+        (
+          await approvalRoutes.request(`/${request.id}/decision`, {
+            method: "POST",
+            headers: { "x-user": member, "content-type": "application/json" },
+            body: JSON.stringify({ decision: "allow_once" }),
+          })
+        ).status,
+      ).toBe(200);
+      if (automation) {
+        const history = await waitingRunHistory(
+          automation,
+          request.id,
+          request.id,
+          threadId,
+        );
+        const never = async () => {
+          throw new Error("Paused work must not resume.");
+        };
+        await createApprovalResumeTick({
+          approvalQueue: createWorkQueue(database),
+          approvalOwner: `market-${automation}-${suite}`,
+          approvalService: guardedApprovals,
+          executeApprovedAction: never,
+          database,
+          responsibilityStore: { resumeWaiting: never },
+          groupConversations: {
+            continueWaiting: async (_id, run, reason) =>
+              reason ? { replyText: reason } : run(),
+          },
+          approvalContinuationRunner: never,
+          channelStore: { recordActivity: never },
+          actorFor: never,
+          notify: never,
+        })();
+        const response = await history.request(`/${request.id}/runs`, {
+          headers: { "x-user": member },
+        });
+        expect(response.status).toBe(200);
+        expect((await response.json()).runs).toContainEqual(
+          expect.objectContaining({
+            status: "paused",
+            error: expect.stringContaining("Review in progress"),
+          }),
+        );
+        return;
+      }
       const dispatch = spyOn(mcpStore, "callTool");
       const continued: unknown[] = [];
       try {
@@ -1425,7 +1596,9 @@ for (const phase of ["before approval", "initialize", "tools/call"] as const) {
         expect(relay.dispatched()).toBe(afterDispatch ? 1 : 0);
         expect(continued).toEqual([
           expect.objectContaining({
-            pauseReason: expect.stringContaining("Review in progress"),
+            ...(completedBeforeStop
+              ? { result: { content: "done" } }
+              : { pauseReason: expect.stringContaining("Review in progress") }),
           }),
         ]);
         expect(await approvals.get(member, request.id)).toMatchObject({
@@ -1434,17 +1607,40 @@ for (const phase of ["before approval", "initialize", "tools/call"] as const) {
             ? { content: "done" }
             : { error: expect.stringContaining("Review in progress") },
         });
-        const inbox = await guardedApprovals.inbox(member);
-        expect(
-          inbox.requests.find((row) => row.id === request.id),
-        ).toMatchObject({
-          result: {
-            ...(afterDispatch ? { content: "done" } : {}),
-            pauseReason: expect.stringContaining("Review in progress"),
-          },
+        if (completedBeforeStop) {
+          expect((await changeDisablement("PUT")).status).toBe(204);
+          expect((await changeDisablement("DELETE")).status).toBe(204);
+        }
+        const response = await approvalRoutes.request("/", {
+          headers: { "x-user": member },
         });
+        expect(response.status).toBe(200);
+        const { requests } = z
+          .object({
+            requests: z.array(
+              z.object({ id: z.string(), result: z.unknown() }),
+            ),
+          })
+          .parse(await response.json());
+        const entry = requests.find((row) => row.id === request.id);
+        if (completedBeforeStop) expect(entry?.result).toEqual({});
+        else
+          expect(entry).toMatchObject({
+            result: {
+              ...(afterDispatch ? { content: "done" } : {}),
+              pauseReason: expect.stringContaining("Review in progress"),
+            },
+          });
       } finally {
         dispatch.mockRestore();
+        await database
+          .delete(workItems)
+          .where(
+            and(
+              eq(workItems.kind, "approval.resume"),
+              eq(workItems.key, request.id),
+            ),
+          );
       }
     } finally {
       if (previous === undefined) delete process.env.OPENAI_BASE_URL;

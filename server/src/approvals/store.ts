@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, notExists, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, notExists, sql } from "drizzle-orm";
 import {
   createAuditStore,
   recordAuditEvent,
@@ -337,13 +337,21 @@ export function createApprovalStore(database: Database): ApprovalStore {
       if (!rows.length) await get(owner, id);
       return rows.length > 0;
     },
-    async finish(owner, id) {
+    async finish(owner, id, pauseReason) {
       const rows = await database
         .update(approvalRequests)
-        .set({ status: "completed", completedAt: sql`now()` })
-        .where(owned(owner, id))
+        .set({
+          status: "completed",
+          completedAt: sql`now()`,
+          ...(pauseReason
+            ? {
+                result: sql`${approvalRequests.result} || jsonb_build_object('pauseReason', ${pauseReason}::text)`,
+              }
+            : {}),
+        })
+        .where(and(owned(owner, id), ne(approvalRequests.status, "completed")))
         .returning({ id: approvalRequests.id });
-      if (!rows.length) throw new ApprovalNotFoundError();
+      if (!rows.length) await get(owner, id);
     },
     async rules(owner) {
       return database
