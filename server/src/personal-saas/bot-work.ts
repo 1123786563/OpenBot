@@ -34,7 +34,8 @@ export const queuedBotWorkInput = botWorkInput.extend({
 });
 
 // Give local timers and abort propagation time before the grant expires.
-const localAbortLeadMs = 250;
+// Request cancellation early enough for Intelligence stop and lease release.
+const localAbortLeadMs = 3_000;
 
 const workspaceFileTools = [
   "computer_list_files",

@@ -3704,7 +3704,7 @@ for (const reason of [
   }, 30_000);
 }
 
-test("a running Bot aborts before its local grant deadline while its database check is blocked", async () => {
+test("a running Bot leaves time to finish stopping before its local grant deadline", async () => {
   const account = {
     sub: crypto.randomUUID(),
     email: "worker-offline@example.com",
@@ -3732,7 +3732,7 @@ test("a running Bot aborts before its local grant deadline while its database ch
         "abort",
         () => {
           aborted = true;
-          resolve();
+          setTimeout(resolve, 2_200);
         },
         { once: true },
       );
@@ -3742,7 +3742,7 @@ test("a running Bot aborts before its local grant deadline while its database ch
     return { replyText: "" };
   });
   const queue = createWorkQueue(database, now);
-  clockTime = cutoff - 2_500;
+  clockTime = cutoff - 4_500;
   const locked = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
   let blocking: Promise<unknown> | undefined;
@@ -3779,12 +3779,14 @@ test("a running Bot aborts before its local grant deadline while its database ch
       await release.promise;
     });
     await locked.promise;
-    clockTime = cutoff - 500;
-    jest.advanceTimersByTime(2_000);
+    clockTime = cutoff - 3_100;
+    jest.advanceTimersByTime(1_400);
     expect(aborted).toBe(false);
-    clockTime = cutoff - 100;
-    jest.advanceTimersByTime(400);
+    clockTime = cutoff - 3_000;
+    jest.advanceTimersByTime(100);
     expect(aborted).toBe(true);
+    clockTime = cutoff - 800;
+    jest.advanceTimersByTime(2_200);
     release.resolve();
     await blocking;
     expect(await sweep).toBe(true);
@@ -3792,13 +3794,17 @@ test("a running Bot aborts before its local grant deadline while its database ch
       await queue.personalStatus(PERSONAL_BOT_WORK, stored.accountId, key),
     ).toMatchObject({
       state: "stopped",
-      interruption: { cutoffAt: cutoff, reason: "account_status_unconfirmed" },
+      interruption: {
+        cutoffAt: cutoff,
+        endedAt: cutoff - 800,
+        reason: "account_status_unconfirmed",
+      },
     });
   } finally {
     release.resolve();
     await blocking;
     clockTime = cutoff;
-    jest.advanceTimersByTime(100);
+    jest.advanceTimersByTime(5_000);
     jest.useRealTimers();
     await sweep;
     clockTime = undefined;
@@ -3843,7 +3849,7 @@ test("a delayed text callback cannot checkpoint output after the local grant dea
   );
   const queue = createWorkQueue(database, now);
   const key = crypto.randomUUID();
-  clockTime = cutoff - 2_500;
+  clockTime = cutoff - 4_500;
   try {
     expect(
       await queue.offer({
