@@ -179,11 +179,13 @@ test.each([
   [
     "reused gateway request UUID with different casing",
     (report) => {
-      const requestId = "abcdef12-3456-4789-8abc-def123456789";
+      const requestId =
+        "abcdef12-3456-4789-8abc-def123456789" as `${string}-${string}-${string}-${string}-${string}`;
       report.stream.gateway.requestId = requestId;
       report.stream.meter.requestId = requestId;
       report.stream.upstream.gatewayRequestId = requestId;
-      const duplicate = requestId.toUpperCase();
+      const duplicate =
+        requestId.toUpperCase() as `${string}-${string}-${string}-${string}-${string}`;
       report.outputLimit.gateway.requestId = duplicate;
       report.outputLimit.meter.requestId = duplicate;
       report.outputLimit.upstream.gatewayRequestId = duplicate;
