@@ -1484,6 +1484,7 @@ export function createPersonalSaasApp(
       automation,
       executionEnabled: Boolean(runPersonalBot),
       getSession: automationSession,
+      stillAuthorized,
       withAuthorizedSession: store.withAuthorizedSession,
     }),
   );

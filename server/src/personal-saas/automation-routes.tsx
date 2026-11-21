@@ -44,6 +44,7 @@ export function workspaceAutomationRoutes({
   automation,
   executionEnabled,
   getSession,
+  stillAuthorized,
   withAuthorizedSession,
 }: {
   automation: ReturnType<typeof personalAutomation>;
@@ -51,6 +52,7 @@ export function workspaceAutomationRoutes({
   getSession(
     context: Context,
   ): Promise<{ token: string; grant: AccountGrant } | null>;
+  stillAuthorized(token: string, grant: AccountGrant): Promise<boolean>;
   withAuthorizedSession: ReturnType<
     typeof personalSaasStore
   >["withAuthorizedSession"];
@@ -212,6 +214,8 @@ export function workspaceAutomationRoutes({
       );
     }
     if (context.req.query("format") === "summary") {
+      if (!(await stillAuthorized(session.token, session.grant)))
+        return context.json({ error: "authorization_changed" }, 403);
       return context.json({
         runs: result.result.map((run) => ({
           id: run.id,
