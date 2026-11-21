@@ -3106,12 +3106,10 @@ export function mountCopilotRuntime(
     actor: AgentActor;
     botId: string;
     initiator?: AuditInitiator;
-    textOnly?: boolean;
   }): Promise<AbstractAgent | null> => {
     try {
       return await resolver.resolveAgentForActor(input.actor, input.botId, {
         initiator: input.initiator,
-        ...(input.textOnly ? { holdsTools: () => false } : {}),
       });
     } catch (error) {
       if (error instanceof CoworkerUnavailableError) return null;
@@ -3337,7 +3335,7 @@ export function mountCopilotRuntime(
       singleUser: config.singleUser,
       identifyActor,
       agentFor: (actor, botId, initiator) =>
-        agentFor({ actor, botId, initiator, textOnly: !initiator }),
+        agentFor({ actor, botId, initiator }),
     });
     runBackground = directChat.runBackground;
     backgroundApproval = directChat.backgroundApproval;

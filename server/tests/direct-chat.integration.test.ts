@@ -28,6 +28,10 @@ import {
 } from "../../app/src/lib/voice/agent-bridge";
 import { VoiceSession } from "../../app/src/lib/voice/session";
 import type { VoiceEvent } from "../../app/src/lib/voice/types";
+import {
+  type ActorAgentResolver,
+  createActorAgentResolver,
+} from "../src/agents/agent-resolver";
 import { createHandoffDesk, HANDOFF_KIND } from "../src/agents/handoff";
 import { createHandoffRunner } from "../src/agents/handoff-runner";
 import { handoffTool } from "../src/agents/handoff-tool";
@@ -186,6 +190,7 @@ function web(
     reflect,
     makeAgent,
     buildAgent,
+    resolver,
   }: {
     deployment?: typeof config;
     opik?: typeof config.opik;
@@ -196,6 +201,7 @@ function web(
     reflect?: DirectChatReflect;
     makeAgent?: () => Promise<AbstractAgent>;
     buildAgent?: () => AbstractAgent;
+    resolver?: ActorAgentResolver;
   } = {},
 ) {
   const store = createAgentProfileStore(db, endpoint);
@@ -230,7 +236,7 @@ function web(
   });
   const copilot = mountCopilotRuntime(
     { ...deployment, ...(opik ? { opik } : {}) },
-    {
+    resolver ?? {
       resolveAgentsForActor: async () => ({
         [botId]: await agentFor(actor, botId),
       }),
@@ -1298,6 +1304,179 @@ function voiceTurn(
   })().finally(session.end);
   return { id: dispatched.promise, result, end: session.end };
 }
+
+test("a granted cloud Chat tool waits for approval and resumes the original Run once", async () => {
+  const actor = await person();
+  const bot = await profiles.create(actor, {
+    name: "Notes",
+    title: "Bot",
+    roleDescription: "Posts approved notes.",
+    visibility: "private",
+  });
+  const store = createApprovalStore(database);
+  await store.setEnabled(actor.id, true);
+  const service = createApprovalService(store);
+  let writes = 0;
+  const act = async () => {
+    const permit = await service.gate({
+      actorId: actor.id,
+      botId: bot.id,
+      toolRef: "notes/post",
+      scope: "fixture",
+      effect: "write",
+      args: {},
+    });
+    if (permit && typeof permit.replay === "string") return permit.replay;
+    writes++;
+    await permit?.complete("posted");
+    return "posted";
+  };
+  const llm = new LLMock({ host: "127.0.0.1", port: 0 });
+  llm.on(
+    {
+      predicate: ({ messages }) => messages.some(({ role }) => role === "tool"),
+    },
+    () => ({ content: "Your note was posted." }),
+  );
+  llm.on({ predicate: () => true }, ({ tools }) =>
+    JSON.stringify(tools).includes("post_note")
+      ? { toolCalls: [{ name: "post_note", arguments: "{}" }] }
+      : { content: "I do not have the notes tool." },
+  );
+  const originalBase = process.env.OPENAI_BASE_URL;
+  process.env.OPENAI_BASE_URL = `${await llm.start()}/v1`;
+  try {
+    const resolver = createActorAgentResolver({
+      loadAgents: async () => [
+        {
+          id: bot.id,
+          name: bot.name,
+          type: "built_in",
+          systemPrompt: "Post a note.",
+        },
+      ],
+      model: { provider: "openai", defaultModel: "gpt-5.5" },
+      resolveModelApiKey: async () => "fixture-key",
+      loadToolsForActor: (actorId) => async (botId) =>
+        actorId === actor.id && botId === bot.id
+          ? [
+              {
+                name: "post_note",
+                ref: "notes/post",
+                description: "Post a note.",
+                parameters: z.object({}),
+                execute: act,
+              },
+            ]
+          : [],
+    });
+    const app = web(database, actor, bot.id, async () => {}, { resolver });
+    const restarted = web(database, actor, bot.id, async () => {}, {
+      resolver,
+    });
+    const { channel } = await (
+      await app.request("/api/channels", post({ agentIds: [bot.id] }))
+    ).json();
+    const thread = `/api/copilotkit/threads/${channel.threadId}`;
+    const path = `/api/copilotkit/agent/${bot.id}`;
+    const runId = crypto.randomUUID();
+    const run = await app.request(
+      `${path}/run`,
+      post({
+        threadId: channel.threadId,
+        runId,
+        messages: [{ id: "message", role: "user", content: "Post the note." }],
+      }),
+    );
+    const history = async () =>
+      (await restarted.request(`${thread}/messages?agentId=${bot.id}`)).json();
+    try {
+      let snapshot = await history();
+      const until = Date.now() + 8_000;
+      while (
+        snapshot.runs[0]?.status === "running" &&
+        !snapshot.runs[0].waitingForApproval &&
+        Date.now() < until
+      ) {
+        await Bun.sleep(100);
+        snapshot = await history();
+      }
+      expect(snapshot.runs).toMatchObject([
+        { id: runId, status: "running", waitingForApproval: true },
+      ]);
+      expect(writes).toBe(0);
+    } finally {
+      await run.body?.cancel();
+    }
+    const [request] = await store.list(actor.id);
+    if (!request) throw new Error("Missing notes approval.");
+    expect(
+      (
+        await restarted.request(
+          `/api/approvals/${request.id}/decision`,
+          post({ decision: "allow_once" }),
+        )
+      ).status,
+    ).toBe(200);
+    const tick = createApprovalResumeTick({
+      approvalQueue: createWorkQueue(database),
+      approvalOwner: runId,
+      approvalService: service,
+      executeApprovedAction: act,
+      database,
+      responsibilityStore: createResponsibilityStore(database, {
+        resolveTarget: async () => null,
+      }),
+      groupConversations: {
+        pauseWaiting: async () => {
+          throw new Error("Unexpected group approval.");
+        },
+        continueWaiting: async () => {
+          throw new Error("Unexpected group continuation.");
+        },
+      },
+      approvalContinuationRunner: async () => {
+        throw new Error("Unexpected legacy continuation.");
+      },
+      backgroundApproval: restarted.backgroundApproval,
+      channelStore: restarted.channelStore,
+      actorFor: async () => actor,
+      notify: async () => {},
+    });
+    const until = Date.now() + 20_000;
+    do {
+      await tick();
+      if ((await store.get(actor.id, request.id)).status === "completed") break;
+      await Bun.sleep(200);
+    } while (Date.now() < until);
+    expect((await store.get(actor.id, request.id)).status).toBe("completed");
+    expect(writes).toBe(1);
+    const resume = await restarted.request(
+      `${path}/resume`,
+      {
+        ...post({ threadId: channel.threadId, runId, cursor: 0 }),
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    expect(events(await resume.text())).toContainEqual({
+      type: EventType.RUN_FINISHED,
+      threadId: channel.threadId,
+      runId,
+    });
+    expect(await history()).toMatchObject({
+      messages: [
+        { id: "message" },
+        { role: "assistant", content: "Your note was posted." },
+      ],
+      runs: [{ id: runId, status: "completed" }],
+    });
+    expect(writes).toBe(1);
+  } finally {
+    if (originalBase === undefined) delete process.env.OPENAI_BASE_URL;
+    else process.env.OPENAI_BASE_URL = originalBase;
+    await llm.stop();
+  }
+}, 60_000);
 
 test("Web direct chat persists messages and one run per send, with only its Personal Workspace able to read and send", async () => {
   const alice = await person();

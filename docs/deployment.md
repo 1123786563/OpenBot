@@ -4,9 +4,13 @@ OpenBot ships as one container. It carries the app, the API that serves it, and 
 drive, and it can carry its own PostgreSQL as well. It does what it does on a laptop.
 
 ```sh
-# Every release publishes this image, so a deployment needs no clone and no build.
-# `latest` is the most recent; a version tag such as `:v1.0.1` pins one.
-image=ghcr.io/copilotkit/openbot:latest
+# Set CLOUD_RELEASE_VERSION to the published cloud release tag, including the v prefix.
+image=$(
+  gh release download "${CLOUD_RELEASE_VERSION:?Set the published cloud release version}" \
+    --repo 1123786563/OpenBot --pattern container-images.json --output - |
+    jq -er --arg version "$CLOUD_RELEASE_VERSION" \
+      'select(.version == $version) | .images.openbot.reference'
+) || exit 1
 
 # A database you already run.
 docker run -p 3001:3001 --env-file .env "$image"

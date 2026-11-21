@@ -409,11 +409,17 @@ export function createApprovalStore(
           eq(directChatRuns.id, request.action.runId),
         );
         const [run] = await tx
-          .select({ userMessageId: directChatRuns.userMessageId })
+          .select({
+            userMessageId: directChatRuns.userMessageId,
+            waitingApprovalId: directChatRuns.waitingApprovalId,
+          })
           .from(directChatRuns)
           .where(predicate)
           .for("update");
-        if (run && isBackgroundMessage(run.userMessageId)) {
+        if (
+          run &&
+          (run.waitingApprovalId || isBackgroundMessage(run.userMessageId))
+        ) {
           const [dispatched] = await tx
             .update(directChatRuns)
             .set({ externalOutcome: "dispatching" })

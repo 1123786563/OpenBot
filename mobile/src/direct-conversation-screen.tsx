@@ -36,7 +36,7 @@ export function DirectConversationScreen({
   const pending = useRef<PendingTurn | undefined>(undefined);
   const action = useRef<AbortController | undefined>(undefined);
   const active = history?.runs.find(({ status }) => status === "running");
-  const unknown = history?.runs.some(
+  const unknown = history?.runs.find(
     ({ externalOutcome }) => externalOutcome === "unknown",
   );
 
@@ -202,17 +202,19 @@ export function DirectConversationScreen({
                 <Text>
                   {run.externalOutcome === "unknown"
                     ? "Action outcome unknown"
-                    : run.stopReason === "stopped"
-                      ? "Stopped"
-                      : run.stopReason === "access_revoked"
-                        ? "Access revoked"
-                        : run.pendingApprovals?.length
-                          ? "Waiting for approval"
-                          : run.status === "running"
-                            ? "Running"
-                            : run.status === "completed"
-                              ? "Completed"
-                              : "Failed"}
+                    : run.stopReason === "context_revoked"
+                      ? "Paused because Memory or Learned skill access changed"
+                      : run.stopReason === "stopped"
+                        ? "Stopped"
+                        : run.stopReason === "access_revoked"
+                          ? "Access revoked"
+                          : run.pendingApprovals?.length
+                            ? "Waiting for approval"
+                            : run.status === "running"
+                              ? "Running"
+                              : run.status === "completed"
+                                ? "Completed"
+                                : "Failed"}
                 </Text>
               ) : null}
             </View>
@@ -248,6 +250,15 @@ export function DirectConversationScreen({
           disabled={!usable || busy}
           onPress={() => {
             void perform((signal) => client.stop(active.id, signal));
+          }}
+        />
+      ) : null}
+      {unknown && conversation.active ? (
+        <Button
+          title="Check outcome"
+          disabled={!usable || busy}
+          onPress={() => {
+            void perform((signal) => client.reconcile(unknown.id, signal));
           }}
         />
       ) : null}

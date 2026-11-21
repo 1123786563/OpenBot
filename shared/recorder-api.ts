@@ -60,19 +60,15 @@ export type RecorderConnectionsResponse = {
   connections: ListedRecorderConnection[];
   extensionIds: string[];
 };
-export type RecordingEnded =
-  | "succeeded"
-  | "stopped"
-  | "sending"
-  | "unknown"
-  | "missing";
-export type RecordingRow = {
-  id: string;
-  title: string | null;
-  recordedAt: string;
-  ended: RecordingEnded;
-  reason: string | null;
-};
+const recordingRowSchema = z.object({
+  id: z.string(),
+  title: z.string().nullable(),
+  recordedAt: z.iso.datetime({ offset: true }),
+  ended: z.enum(["succeeded", "stopped", "sending", "unknown", "missing"]),
+  reason: z.string().nullable(),
+});
+export type RecordingRow = z.infer<typeof recordingRowSchema>;
+export type RecordingEnded = RecordingRow["ended"];
 export type RecordingsPage = {
   canManage?: boolean;
   recordings: RecordingRow[];
@@ -101,10 +97,11 @@ export const recordingBatchSchema = z
   })
   .strict();
 export type RecordingEvent = z.infer<typeof recordingEventSchema>;
-export type RecordingDetail = RecordingRow & {
-  events: RecordingEvent[];
-  nextSeq: number | null;
-};
+export const recordingDetailSchema = recordingRowSchema.extend({
+  events: z.array(recordingEventSchema),
+  nextSeq: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable(),
+});
+export type RecordingDetail = z.infer<typeof recordingDetailSchema>;
 export const openBotCaptureGrantSchema = z.object({
   kind: z.literal("openbot"),
   token: z.string().min(1).max(128),

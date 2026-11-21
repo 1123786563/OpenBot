@@ -1,3 +1,4 @@
+import { HStack, VStack } from "@astryxdesign/core/Stack";
 import {
   type DirectChatDecision,
   directChatLearning,
@@ -270,7 +271,7 @@ export function DirectChatLearning({
         Learning
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[85dvh] overflow-y-auto">
+        <DialogContent className="overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Learn from this conversation</DialogTitle>
             <DialogDescription>
@@ -278,14 +279,14 @@ export function DirectChatLearning({
               for review.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 text-sm" role="status">
+          <VStack gap={2} className="text-sm" role="status">
             {!data.enabled && <p>Learning is disabled.</p>}
             {data.enabled && !data.available && (
               <p>The Learning model is unavailable.</p>
             )}
             {working && data.latest && <p>{analysisText(data.latest)}</p>}
             {last && <p>Last result · {analysisText(last)}</p>}
-          </div>
+          </VStack>
           {data.schedule && (
             <form
               key={`${data.schedule.enabled}-${data.schedule.intervalHours}`}
@@ -465,7 +466,7 @@ export function DirectChatLearning({
                   </Button>
                 )}
               {proposal.state === "pending_review" && (
-                <div className="flex flex-wrap gap-2">
+                <HStack wrap="wrap" gap={2}>
                   <Button
                     size="sm"
                     variant="outline"
@@ -491,7 +492,7 @@ export function DirectChatLearning({
                   >
                     Approve for this conversation
                   </Button>
-                </div>
+                </HStack>
               )}
             </article>
           ))}

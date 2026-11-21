@@ -17,7 +17,9 @@ const snapshotSchema = z.object({
       externalOutcome: z
         .enum(["dispatching", "unknown", "executed", "not_dispatched"])
         .optional(),
-      stopReason: z.enum(["stopped", "access_revoked"]).optional(),
+      stopReason: z
+        .enum(["stopped", "access_revoked", "context_revoked"])
+        .optional(),
     }),
   ),
 });
@@ -137,6 +139,13 @@ export function directConversation(
     async stop(runId: string, signal?: AbortSignal) {
       await post(
         `${thread}/runs/${encodeURIComponent(runId)}/stop${query}`,
+        undefined,
+        signal,
+      );
+    },
+    async reconcile(runId: string, signal?: AbortSignal) {
+      await post(
+        `${thread}/runs/${encodeURIComponent(runId)}/reconcile${query}`,
         undefined,
         signal,
       );

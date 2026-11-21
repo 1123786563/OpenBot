@@ -1,3 +1,4 @@
+import { VStack } from "@astryxdesign/core/Stack";
 import { learningEvidencePermission } from "@openbot/shared/direct-chat-learning";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -78,7 +79,7 @@ function GroupLearningPermission({ channelId }: { channelId: string }) {
   });
   if (!permission.data) return null;
   return (
-    <div className="text-xs">
+    <VStack className="text-xs">
       <label className="flex items-center gap-1">
         <input
           type="checkbox"
@@ -93,6 +94,6 @@ function GroupLearningPermission({ channelId }: { channelId: string }) {
           {save.error.message}
         </p>
       )}
-    </div>
+    </VStack>
   );
 }

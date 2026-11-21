@@ -389,3 +389,40 @@ test("a managed recording can be inspected and disappears on confirmed deletion 
     );
   }
 });
+
+test("malformed recording details show an error before rendering events or pagination", async () => {
+  const item = row({});
+  global.fetch = Object.assign(
+    async (path: Parameters<typeof fetch>[0]) =>
+      String(path).includes("/recordings/r1?")
+        ? Response.json({
+            ...item,
+            events: [
+              {
+                type: "CUSTOM",
+                name: "Invalid event",
+                timestamp: 1,
+                value: { seq: "invalid" },
+              },
+            ],
+            nextSeq: "invalid",
+          })
+        : Response.json({
+            recordings: [item],
+            nextCursor: null,
+            canManage: true,
+          }),
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = render(
+    <QueryClientProvider client={queryClient}>
+      <YourRecordings />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(await view.findByRole("button", { name: "View recording" }));
+  expect(
+    (await view.findByRole("alert", {}, { timeout: 5_000 })).textContent,
+  ).toBe("Invalid recording details.");
+  expect(view.queryByText(/^Invalid event/)).toBeNull();
+  expect(view.queryByRole("button", { name: "Show more events" })).toBeNull();
+});

@@ -141,4 +141,75 @@ test("only the current Run's approvals appear and access loss rejects Run contro
     status: 404,
     accessLost: true,
   });
+  await assert.rejects(client.reconcile(turn.runId), {
+    status: 404,
+    accessLost: true,
+  });
+});
+
+test("a context-revoked Run leaves the Conversation history readable", async () => {
+  const revoked = {
+    id: "older-run",
+    userMessageId: "older-message",
+    status: "failed",
+    stopReason: "context_revoked",
+  };
+  const running = {
+    id: turn.runId,
+    userMessageId: turn.messageId,
+    status: "running",
+  };
+  const client = directConversation(
+    async () =>
+      Response.json({
+        messages: [
+          { id: "older-message", role: "user", content: "Earlier request" },
+        ],
+        runs: [revoked, running],
+      }),
+    { threadId, agentId },
+  );
+
+  const snapshot = await client.history();
+  assert.equal(snapshot.messages[0]?.content, "Earlier request");
+  assert.deepEqual(snapshot.runs, [revoked, running]);
+});
+
+test("checking an unknown outcome refreshes the original Run without submitting again", async () => {
+  const requests: string[] = [];
+  let verified = false;
+  const client = directConversation(
+    async (path, request) => {
+      requests.push(path);
+      if (request?.method === "POST") {
+        assert.equal(
+          path,
+          "/api/copilotkit/threads/thread/runs/run/reconcile?agentId=bot",
+        );
+        verified = true;
+        return Response.json({ externalOutcome: "executed" });
+      }
+      return Response.json({
+        messages: verified
+          ? [{ id: "answer", role: "assistant", content: "Verified result" }]
+          : [],
+        runs: [
+          {
+            id: turn.runId,
+            userMessageId: turn.messageId,
+            status: "failed",
+            externalOutcome: verified ? "executed" : "unknown",
+          },
+        ],
+      });
+    },
+    { threadId, agentId },
+  );
+  assert.equal((await client.history()).runs[0]?.externalOutcome, "unknown");
+  await client.reconcile(turn.runId);
+  const snapshot = await client.history();
+  assert.equal(snapshot.runs[0]?.id, turn.runId);
+  assert.equal(snapshot.runs[0]?.externalOutcome, "executed");
+  assert.equal(snapshot.messages[0]?.content, "Verified result");
+  assert.equal(requests.length, 3);
 });

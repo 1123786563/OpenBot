@@ -127,7 +127,6 @@ export type DirectChatReflect = (input: {
 }) => Promise<string>;
 
 type BackgroundTurn = {
-  source: "routine" | "handoff";
   id: string;
   threadId: string;
   conversationBotId: string;
@@ -135,11 +134,17 @@ type BackgroundTurn = {
   agentId: string;
   prompt: string;
   shown?: string;
-  literalAnswer?: { botId: string; text: string };
   authorize: () => Promise<AgentActor | null>;
   initiator: AuditInitiator;
-  handoffFromBotId?: string;
-};
+} & (
+  | { source: "routine"; literalAnswer?: never; handoffFromBotId?: never }
+  | { source: "handoff"; literalAnswer?: never; handoffFromBotId: string }
+  | {
+      source: "handoff";
+      literalAnswer?: { botId: string; text: string };
+      handoffFromBotId?: never;
+    }
+);
 
 export class BackgroundConversationBusy extends Error {
   constructor(message: string) {
@@ -645,6 +650,14 @@ export function createDirectChatRoutes(deps: {
     });
     if (!result) return context.json(absent, 404);
     const { runs, active, pendingApprovals } = result;
+    // A reconnect can carry on a Run after its approval finished on another replica.
+    if (active?.waitingApprovalId)
+      startWorker(
+        context.req.raw,
+        { threadId, runId: active.id },
+        agentId,
+        active,
+      );
     return context.json({
       messages: messagesFor(runs),
       runs: runs.map((run) => ({
@@ -857,6 +870,8 @@ export function createDirectChatRoutes(deps: {
           });
           return;
         }
+        if (result.run.waitingApprovalId)
+          startWorker(request, key, agentId, result.run);
         if (result.kind === "snapshot") {
           if (cursor === 0) emit({ type: EventType.RUN_STARTED, ...key });
           emit({
@@ -1069,7 +1084,21 @@ export function createDirectChatRoutes(deps: {
     if (workers.has(workerId)) return;
     const controller = new AbortController();
     workers.set(workerId, controller);
-    void execute(() => actorFor(request), key, agentId, controller.signal)
+    const authorize = () => actorFor(request);
+    void (async () => {
+      const actor = await authorize();
+      if (!actor) return;
+      const checkpoint = await readApprovalCheckpoint(key, run, actor.id);
+      if (checkpoint.kind !== "ready") return;
+      await execute(
+        authorize,
+        key,
+        agentId,
+        controller.signal,
+        undefined,
+        checkpoint.continuation,
+      );
+    })()
       .catch(() => {})
       .finally(() => workers.delete(workerId));
   }
@@ -1122,7 +1151,8 @@ export function createDirectChatRoutes(deps: {
       .select()
       .from(directChatRuns)
       .where(matchingRun(key));
-    if (!run || !isBackgroundMessage(run.userMessageId)) return null;
+    if (!run) return null;
+    const background = isBackgroundMessage(run.userMessageId);
     const check = async () => {
       if (run.status !== "running") return "The Bot run has ended.";
       if (run.waitingApprovalId !== approvalId) {
@@ -1138,7 +1168,9 @@ export function createDirectChatRoutes(deps: {
       const allowed =
         actor?.id === action.actorId &&
         (await backgroundAccountIsActive(actor.id)) &&
-        (await runThreadFor(database, actor, key.threadId, scopeBot)) &&
+        (background
+          ? await runThreadFor(database, actor, key.threadId, scopeBot)
+          : await threadFor(database, actor, key.threadId, scopeBot)) &&
         profile &&
         !profile.deletedAt &&
         !profile.hidden &&
@@ -1180,6 +1212,49 @@ export function createDirectChatRoutes(deps: {
         ),
       );
     return request;
+  }
+
+  async function readApprovalCheckpoint(
+    key: RunKey,
+    run: typeof directChatRuns.$inferSelect,
+    actorId: string,
+  ): Promise<
+    | {
+        kind: "ready";
+        continuation?: Parameters<TurnRunner>[0]["continuation"];
+      }
+    | { kind: "waiting" }
+    | { kind: "unknown" }
+  > {
+    if (!run.waitingApprovalId) return { kind: "ready" };
+    const request = await approvalCheckpoint(
+      key,
+      run.waitingApprovalId,
+      actorId,
+    );
+    if (request?.status !== "completed" || !request.result)
+      return { kind: "waiting" };
+    const snapshot = parseApprovalContinuation(request.action.continuation);
+    if (!snapshot || request.result.error === OUTCOME_UNKNOWN) {
+      await appendDirectChatEvent(
+        database,
+        key,
+        {
+          type: EventType.RUN_ERROR,
+          message: "The Run has an unverified external outcome.",
+        },
+        { traceRuns, externalOutcome: "unknown" },
+      );
+      return { kind: "unknown" };
+    }
+    return {
+      kind: "ready",
+      continuation: {
+        snapshot,
+        result: request.result,
+        messageId: `approval:${request.id}`,
+      },
+    };
   }
 
   async function runBackground(
@@ -1409,38 +1484,12 @@ export function createDirectChatRoutes(deps: {
         );
       }
       if (!run.dispatchedAt) {
-        let continuation: Parameters<TurnRunner>[0]["continuation"];
-        if (run.waitingApprovalId) {
-          const request = await approvalCheckpoint(
-            key,
-            run.waitingApprovalId,
-            actor.id,
+        const checkpoint = await readApprovalCheckpoint(key, run, actor.id);
+        if (checkpoint.kind === "waiting")
+          throw new BackgroundConversationBusy(
+            "The Bot run is waiting for an approval.",
           );
-          if (request?.status !== "completed" || !request.result)
-            throw new BackgroundConversationBusy(
-              "The Bot run is waiting for an approval.",
-            );
-          const snapshot = parseApprovalContinuation(
-            request.action.continuation,
-          );
-          if (!snapshot || request.result.error === OUTCOME_UNKNOWN) {
-            await appendDirectChatEvent(
-              database,
-              key,
-              {
-                type: EventType.RUN_ERROR,
-                message: "The Run has an unverified external outcome.",
-              },
-              { traceRuns, externalOutcome: "unknown" },
-            );
-            continue;
-          }
-          continuation = {
-            snapshot,
-            result: request.result,
-            messageId: `approval:${request.id}`,
-          };
-        }
+        if (checkpoint.kind === "unknown") continue;
         const controller = new AbortController();
         const workerId = workerKey(key);
         if (!workers.has(workerId)) {
@@ -1452,7 +1501,7 @@ export function createDirectChatRoutes(deps: {
               input.agentId,
               controller.signal,
               input,
-              continuation,
+              checkpoint.continuation,
             );
           } finally {
             workers.delete(workerId);
@@ -1561,6 +1610,7 @@ export function createDirectChatRoutes(deps: {
       .set({
         dispatchedAt: new Date(),
         waitingApprovalId: null,
+        ...(!background && continuation && { externalOutcome: null }),
         ...((trial || (background && !background.literalAnswer)) &&
           !reflectQuery && { externalOutcome: "dispatching" as const }),
       })
@@ -1773,7 +1823,6 @@ export function createDirectChatRoutes(deps: {
         return agent.runAgent(input, {
           onEvent: ({ event }) => {
             if (
-              background &&
               event.type === EventType.CUSTOM &&
               event.name === "openbot.headless.waiting"
             ) {
@@ -1829,7 +1878,7 @@ export function createDirectChatRoutes(deps: {
       await writes;
       if (!(await shouldContinue())) return;
       if (runContext.revoked) throw new Error(CONTEXT_REVOKED_MESSAGE);
-      if (background && waitingApprovalId && !writeFailed && !failure) {
+      if (waitingApprovalId && !writeFailed && !failure) {
         const approval = await approvalCheckpoint(
           key,
           waitingApprovalId,

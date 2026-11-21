@@ -131,13 +131,16 @@ export function createOpenBotHandoffDelivery(options: {
           agentId: work.toBotId,
           prompt: message,
           shown: shown ?? (work.answerIn ? "" : work.task),
-          ...(work.answerIn &&
-            work.answer !== undefined && {
-              literalAnswer: { botId: work.fromBotId, text: work.answer },
-            }),
+          ...(work.answerIn
+            ? {
+                literalAnswer:
+                  work.answer === undefined
+                    ? undefined
+                    : { botId: work.fromBotId, text: work.answer },
+              }
+            : { handoffFromBotId: work.fromBotId }),
           authorize,
           initiator: handoffInitiator(work.fromBotId, work.initiator),
-          ...(!work.answerIn && { handoffFromBotId: work.fromBotId }),
         })
         .catch((error: unknown) => {
           if (error instanceof BackgroundConversationBusy) {

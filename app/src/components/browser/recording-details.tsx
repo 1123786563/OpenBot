@@ -3,6 +3,7 @@ import {
   type RecordingRow,
   type RecordingsPage,
   recorderPaths,
+  recordingDetailSchema,
 } from "@openbot/shared/recorder-api";
 import {
   type InfiniteData,
@@ -42,7 +43,9 @@ export function RecordingDetails({ row }: { row: RecordingRow }) {
         signal,
         fallback: "Couldn't load this recording.",
       });
-      return response.json();
+      const detail = recordingDetailSchema.safeParse(await response.json());
+      if (!detail.success) throw new Error("Invalid recording details.");
+      return detail.data;
     },
   });
   const remove = useMutation({

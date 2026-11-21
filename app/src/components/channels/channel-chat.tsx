@@ -1,4 +1,5 @@
 import type { Message } from "@ag-ui/core";
+import { HStack } from "@astryxdesign/core/Stack";
 import {
   type Attachment,
   CopilotChatConfigurationProvider,
@@ -1804,7 +1805,13 @@ export function ChannelChat({
                   latestRun?.externalOutcome === "not_dispatched" ||
                   (latestRun?.status === "failed" &&
                     latestRun.externalOutcome === "executed")) && (
-                  <div className="flex flex-wrap items-center gap-2 pb-2 text-sm text-muted-foreground">
+                  <HStack
+                    wrap="wrap"
+                    align="center"
+                    gap={2}
+                    paddingBlockEnd={2}
+                    className="text-sm text-muted-foreground"
+                  >
                     <p role="status">
                       {unresolvedRun
                         ? "The previous run’s external outcome is unknown. Check the outcome before sending again."
@@ -1836,7 +1843,7 @@ export function ChannelChat({
                         {runControl.isPending ? "Checking…" : "Check outcome"}
                       </Button>
                     )}
-                  </div>
+                  </HStack>
                 )}
                 {runControl.error && (
                   <p className="pb-2 text-sm text-destructive" role="alert">
