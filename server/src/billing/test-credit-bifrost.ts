@@ -43,7 +43,11 @@ export function createBifrostCreditExecutor({
   meteringRevision: string;
   gatewayToken?: string;
   // Use the verified model's chat template and include all provider-side framing.
-  countInputTokens(route: Route, messages: Messages): Promise<number>;
+  countInputTokens(
+    route: Route,
+    messages: Messages,
+    signal?: AbortSignal,
+  ): Promise<number>;
 }) {
   const url = new URL(endpoint);
   if (
@@ -65,27 +69,33 @@ export function createBifrostCreditExecutor({
     messages,
     operationId,
     recheckRoute,
+    signal,
   }: {
     route: Route;
     messages: Messages;
     operationId?: string;
     recheckRoute?: () => Promise<boolean>;
+    signal?: AbortSignal;
   }) => {
     if (
+      signal?.aborted ||
       route.gatewayRevision !== gatewayRevision ||
       route.meteringRevision !== meteringRevision
     ) {
       throw new UnsentBifrostRequest("route_unavailable");
     }
     const counted = tokens.safeParse(
-      await countInputTokens(route, messages).catch(() => undefined),
+      await countInputTokens(route, messages, signal).catch(() => undefined),
     );
     if (!counted.success) throw new UnsentBifrostRequest("route_unavailable");
     if (counted.data > route.maxInputTokens) {
       throw new UnsentBifrostRequest("execution_limit");
     }
 
-    if (recheckRoute && !(await recheckRoute().catch(() => false))) {
+    if (
+      (recheckRoute && !(await recheckRoute().catch(() => false))) ||
+      signal?.aborted
+    ) {
       throw new UnsentBifrostRequest("route_unavailable");
     }
 
@@ -94,10 +104,11 @@ export function createBifrostCreditExecutor({
     const headers = new Headers({ "content-type": "application/json" });
     if (gatewayToken) headers.set("authorization", `Bearer ${gatewayToken}`);
     if (operationId) headers.set("x-openbot-operation-id", operationId);
+    const timeout = AbortSignal.timeout(85_000);
     const response = await fetch(url, {
       method: "POST",
       redirect: "error",
-      signal: AbortSignal.timeout(85_000),
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       headers,
       body: JSON.stringify({
         model: `${route.provider}/${route.model}`,

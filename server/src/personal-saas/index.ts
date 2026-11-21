@@ -12,6 +12,7 @@ import {
   closureRestoreJournal,
 } from "./closure-cleanup-contract";
 import { workspaceQuotaConfig } from "./quotas";
+import { loadPersonalTestCreditExecutor } from "./test-credit-config";
 import { reapplyWorkspaceClosures } from "./workspace-cleanup";
 
 const httpsUrl = z.url({ protocol: /^https$/ }).refine((value) => {
@@ -96,6 +97,16 @@ if (
   grantConfig.some((value) => value === undefined)
 )
   throw new Error("Configure all Test Credit grant settings together");
+const executeTestCredit = loadPersonalTestCreditExecutor(process.env);
+const executionEnabled =
+  process.env.OPENBOT_PERSONAL_SAAS_BOT_EXECUTION === "on";
+if (
+  executeTestCredit &&
+  (!executionEnabled || grantConfig.some((value) => value === undefined))
+)
+  throw new Error(
+    "Managed Test Credit execution requires Bot execution and grant settings",
+  );
 const operatorId = env.OPENBOT_SUSPENSION_OPERATOR_ID;
 const operatorToken = env.OPENBOT_SUSPENSION_OPERATOR_TOKEN;
 const suspensionSupport = env.OPENBOT_SUSPENSION_SUPPORT_EMAIL;
@@ -128,7 +139,7 @@ const restoredClosures = restoreJournal
 if (restoreJournal) await reapplyWorkspaceClosures(database, restoredClosures);
 configureBotLifecycle({ database });
 const botRuntime =
-  process.env.OPENBOT_PERSONAL_SAAS_BOT_EXECUTION === "on"
+  executionEnabled && !executeTestCredit
     ? await import("eventsource").then(async () =>
         (await import("./bot-runtime")).createPersonalBotRuntime(database),
       )
@@ -177,6 +188,7 @@ const app = createPersonalSaasApp(
       ? {
           testCredits: {
             ledger: testCreditLedger,
+            execute: executeTestCredit,
             grant: {
               budgetId: "personal-saas-trial",
               budget: env.OPENBOT_TEST_CREDIT_GRANT_BUDGET_MICROCREDITS,
@@ -286,6 +298,19 @@ repeatAfterEach(async () => {
     );
   }
 }, 1_000);
+
+if (executeTestCredit)
+  repeatAfterEach(async () => {
+    try {
+      await testCreditLedger.sweepCutoffs();
+    } catch {
+      console.warn(
+        JSON.stringify({
+          type: "personal-saas-test-credit-cutoff-sweep-failure",
+        }),
+      );
+    }
+  }, 1_000);
 
 if (botRuntime)
   repeatAfterEach(async () => {

@@ -156,6 +156,31 @@ An authorized client can create a run with `POST /api/workspace/bot-runs` using 
 
 After restoring workspace access, Web, mobile, and Desktop Cloud show stopped work with its reason, original input and available output. Cancel or requeue each item independently. A claimed item may have reached an external service, so retry requires acknowledging that the external actions were checked. Requeue and retry produce new queue and run IDs and preserve the stopped record. Keep this capability restricted until cutoff timing on the deployed Intelligence and model services and the recovery flow on installed clients have been verified.
 
+### Managed Test Credit text runs
+
+Enable `OPENBOT_TEST_CREDIT_CONVERSATIONS=enabled` on the Personal SaaS server with
+`OPENBOT_PERSONAL_SAAS_BOT_EXECUTION=on` and the three one-time grant settings
+above. Configure `TEST_CREDIT_BIFROST_URL` with the HTTPS chat completions
+endpoint and `TEST_CREDIT_BIFROST_TOKEN` with its bearer credential.
+Set `TEST_CREDIT_INPUT_METER_URL` and `TEST_CREDIT_INPUT_METER_TOKEN` for the trusted
+HTTPS input meter. `TEST_CREDIT_GATEWAY_REVISION`,
+`TEST_CREDIT_GATEWAY_IMAGE_DIGEST`, and `TEST_CREDIT_METERING_REVISION` must match
+the verified default route published in the shared billing catalog.
+
+This mode serves single-instruction text requests through the existing Bot-run API.
+It uses the Personal SaaS server's durable work queue and the Test Credit tables in
+its PostgreSQL database. The workspace API returns the published quote. The Bot-run
+status endpoint returns the owner's receipt when the ledger has an operation.
+Supply a UUID `Idempotency-Key` on managed submissions to reuse the same run when
+retrying a request. A new request with insufficient available credit returns HTTP
+402. A concurrent submission may be accepted into the queue and stop at
+reservation if another run has already reserved the available credit. Existing
+history and workspace resource management remain available.
+
+With managed Test Credit execution enabled, the deployment's headless Bot runner
+is disabled. Managed Computer runs, unattended model execution and manual
+execution retries of stopped billed work require a separate billing integration.
+
 ## Routine and inbound automation
 
 The workspace’s **Routines and inbound bindings** page lists existing items and their history. The same owner-scoped API accepts a session cookie or native bearer session.

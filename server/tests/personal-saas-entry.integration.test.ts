@@ -5,6 +5,13 @@ import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { and, eq, sql } from "drizzle-orm";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { Observable } from "rxjs";
+import {
+  configure,
+  emptyCatalog,
+  pilotCatalogKey,
+  publish,
+  verify,
+} from "../src/admin/bifrost-catalog";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createWakeUpStore } from "../src/agents/wake-up";
 import { createApprovalStore } from "../src/approvals/store";
@@ -21,6 +28,7 @@ import {
   channels,
   computerSnapshot,
   deliveryBindings,
+  enterpriseSettings,
   personalMemories,
   routines,
   users,
@@ -39,10 +47,12 @@ import { createPersonalBotRuntime } from "../src/personal-saas/bot-runtime";
 import { PERSONAL_BOT_WORK } from "../src/personal-saas/bot-work";
 import { workspaceIntegrationGrants } from "../src/personal-saas/integration-grants";
 import { personalSaasStore } from "../src/personal-saas/store";
+import { loadPersonalTestCreditExecutor } from "../src/personal-saas/test-credit-config";
 import { workspaceBots } from "../src/personal-saas/workspace-bots";
 import type { WorkspaceComputerConfig } from "../src/personal-saas/workspace-computer";
 import { workspaceResourceOwner } from "../src/personal-saas/workspace-principal";
 import { createWorkQueue } from "../src/work/queue";
+import { fixtureTraceReport } from "./support/bifrost-evidence";
 import { testDatabaseUrl } from "./support/database";
 import { assertWorkspaceIsolation } from "./support/workspace-isolation";
 
@@ -687,6 +697,296 @@ test("workspace entry preserves a pending grant across Web and native retries an
     }
   } finally {
     app = prior;
+  }
+}, 20_000);
+
+test("managed Bot runs spend the shared grant and the owner can still read history", async () => {
+  const owner = {
+    sub: crypto.randomUUID(),
+    email: "managed-credit@example.com",
+    active: true,
+    verified: true,
+  };
+  const identity = { issuer, subject: owner.sub };
+  const ledger = createTestCreditLedger(database);
+  const grant = {
+    budgetId: crypto.randomUUID(),
+    batchId: crypto.randomUUID(),
+    amount: 3n,
+    budget: 3n,
+  };
+  const harnessImage = `agent-langgraph-agui@sha256:${"b".repeat(64)}`;
+  const catalog = configure(emptyCatalog, {
+    harnessImage,
+    routes: {
+      pilot: {
+        provider: "fixture-a",
+        model: "model-a",
+        gatewayRevision: "a",
+        meteringRevision: "a",
+        maxInputTokens: 1,
+        maxOutputTokens: 2,
+        tools: false,
+        price: { inputPerMillion: 1_000_000, outputPerMillion: 1_000_000 },
+      },
+    },
+  });
+  const route = catalog.routes.pilot;
+  if (!route) throw new Error("Missing fixture route");
+  const published = publish(
+    verify(
+      catalog,
+      "pilot",
+      fixtureTraceReport(harnessImage, route),
+      "fixture",
+    ),
+    ["pilot"],
+    "pilot",
+    "fixture",
+  ).catalog;
+  const requests: { operationId: string | null; input: unknown }[] = [];
+  const meterStarted = Promise.withResolvers<void>();
+  const releaseMeter = Promise.withResolvers<void>();
+  const gateway = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const input = await request.json();
+      if (new URL(request.url).pathname === "/meter") {
+        expect(request.headers.get("authorization")).toBe(
+          "Bearer fixture-meter",
+        );
+        if (input.messages[0]?.content === "Stop while metering") {
+          meterStarted.resolve();
+          await releaseMeter.promise;
+        }
+        return Response.json({ ...input, inputTokens: 1 });
+      }
+      expect(request.headers.get("authorization")).toBe(
+        "Bearer fixture-gateway",
+      );
+      requests.push({
+        operationId: request.headers.get("x-openbot-operation-id"),
+        input,
+      });
+      return Response.json({
+        choices: [{ message: { content: "Managed response" } }],
+        usage: { prompt_tokens: 1, completion_tokens: 2 },
+      });
+    },
+  });
+  const execute = loadPersonalTestCreditExecutor(
+    {
+      OPENBOT_TEST_CREDIT_CONVERSATIONS: "enabled",
+      TEST_CREDIT_BIFROST_URL: new URL("/completion", gateway.url).href,
+      TEST_CREDIT_BIFROST_TOKEN: "fixture-gateway",
+      TEST_CREDIT_GATEWAY_REVISION: "a",
+      TEST_CREDIT_GATEWAY_IMAGE_DIGEST: `sha256:${"d".repeat(64)}`,
+      TEST_CREDIT_INPUT_METER_URL: new URL("/meter", gateway.url).href,
+      TEST_CREDIT_INPUT_METER_TOKEN: "fixture-meter",
+      TEST_CREDIT_METERING_REVISION: "a",
+    },
+    { allowLoopbackHttp: true },
+  );
+  if (!execute) throw new Error("Managed fixture disabled");
+  const prior = app;
+  const [original] = await database
+    .select()
+    .from(enterpriseSettings)
+    .where(eq(enterpriseSettings.key, pilotCatalogKey));
+  const saveCatalog = (value: typeof enterpriseSettings.$inferInsert.value) =>
+    database
+      .insert(enterpriseSettings)
+      .values({ key: pilotCatalogKey, value })
+      .onConflictDoUpdate({ target: enterpriseSettings.key, set: { value } });
+  try {
+    await saveCatalog(published);
+    app = newApp(
+      database,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      {
+        ledger,
+        grant,
+        execute,
+      },
+    );
+    const session = cookie(
+      await authenticate(owner),
+      "__Host-openbot-personal=",
+    );
+    await enter(session);
+    const initial = await workspace(session);
+    expect(initial).toMatchObject({
+      testCredits: {
+        balance: { availableMicrocredits: "3" },
+        quote: { creditType: "test", maxChargeMicrocredits: "3" },
+      },
+    });
+    const priorConversation = {
+      id: crypto.randomUUID(),
+      title: "Existing history",
+      preview: "Keep this transcript accessible",
+    };
+    await database.insert(channels).values({
+      id: priorConversation.id,
+      title: priorConversation.title,
+      name: "Personal Assistant",
+      description: "",
+      lastMessage: priorConversation.preview,
+    });
+    await database.insert(channelAgents).values({
+      channelId: priorConversation.id,
+      agentId: initial.personalAssistant.id,
+    });
+    const native = await nativeSessionHeaders("ios", {
+      ...owner,
+      email: "managed-credit-updated@example.com",
+    });
+    const submit = (
+      headers: Record<string, string>,
+      instruction = "Spend the shared grant",
+      requestId = crypto.randomUUID(),
+    ) =>
+      send("/api/workspace/bot-runs", {
+        method: "POST",
+        headers: {
+          ...headers,
+          "content-type": "application/json",
+          "Idempotency-Key": requestId,
+        },
+        body: JSON.stringify({
+          workspaceId: initial.id,
+          botId: initial.personalAssistant.id,
+          instruction,
+        }),
+      });
+    const stopped = await submit(native, "Stop while metering");
+    expect(stopped.status).toBe(202);
+    const { runId: stoppedId } = await stopped.json();
+    const requestId = crypto.randomUUID();
+    const contenderId = crypto.randomUUID();
+    const [first, contender] = await Promise.all([
+      submit({ cookie: session, origin }, undefined, requestId),
+      submit(native, undefined, contenderId),
+    ]);
+    expect(first.status).toBe(202);
+    expect(contender.status).toBe(202);
+    const { runId } = await first.json();
+    const { runId: contenderRunId } = await contender.json();
+    const stopping = app.sweepBotWork();
+    try {
+      await meterStarted.promise;
+      expect(await ledger.balance(identity)).toMatchObject({
+        reservedMicrocredits: "3",
+        availableMicrocredits: "0",
+      });
+      expect((await submit(native)).status).toBe(402);
+      expect(
+        (
+          await send(`/api/workspace/bot-runs/${stoppedId}/stop`, {
+            method: "POST",
+            headers: native,
+          })
+        ).status,
+      ).toBe(202);
+    } finally {
+      releaseMeter.resolve();
+      await stopping;
+    }
+    const stoppedStatus = await send(`/api/workspace/bot-runs/${stoppedId}`, {
+      headers: native,
+    });
+    expect(await stoppedStatus.json()).toMatchObject({
+      state: "stopped",
+      testCredit: { state: "released", dispatchedAt: null },
+    });
+    expect(requests).toEqual([]);
+
+    expect(await Promise.all([app.sweepBotWork(), app.sweepBotWork()])).toEqual(
+      [true, true],
+    );
+    expect(await app.sweepBotWork()).toBe(false);
+    expect(requests).toEqual([
+      {
+        operationId: expect.stringMatching(
+          new RegExp(`^(${runId}|${contenderRunId})$`),
+        ),
+        input: {
+          model: "fixture-a/model-a",
+          messages: [{ role: "user", content: "Spend the shared grant" }],
+          max_tokens: 2,
+          stream: false,
+        },
+      },
+    ]);
+    const winner = requests[0]?.operationId;
+    if (!winner) throw new Error("Missing fixture dispatch");
+    const loser = winner === runId ? contenderRunId : runId;
+    const loserStatus = await send(`/api/workspace/bot-runs/${loser}`, {
+      headers: native,
+    });
+    expect(await loserStatus.json()).toMatchObject({ state: "stopped" });
+    const replay = await submit(
+      native,
+      undefined,
+      winner === runId ? requestId : contenderId,
+    );
+    expect(replay.status).toBe(202);
+    expect(await replay.json()).toEqual({ runId: winner });
+    const status = await send(`/api/workspace/bot-runs/${winner}`, {
+      headers: native,
+    });
+    expect(await status.json()).toMatchObject({
+      state: "completed",
+      output: "Managed response",
+      testCredit: {
+        state: "settled",
+        chargedMicrocredits: "3",
+        releasedMicrocredits: "0",
+      },
+    });
+    expect(await ledger.balance(identity)).toMatchObject({
+      chargedMicrocredits: "3",
+      availableMicrocredits: "0",
+    });
+    const exhausted = await submit(native);
+    expect(exhausted.status).toBe(402);
+    expect(await exhausted.json()).toMatchObject({
+      error: "insufficient_credits",
+    });
+    expect(requests).toHaveLength(1);
+    const history = await send("/api/workspace/conversations", {
+      headers: native,
+    });
+    expect(history.status).toBe(200);
+    expect(await history.json()).toEqual({
+      conversations: [priorConversation],
+    });
+    const outsider = await nativeSessionHeaders("ios", {
+      ...owner,
+      sub: crypto.randomUUID(),
+    });
+    expect(
+      (await send(`/api/workspace/bot-runs/${winner}`, { headers: outsider }))
+        .status,
+    ).toBe(404);
+    const persisted = await send("/api/workspace", { headers: native });
+    expect(await persisted.json()).toMatchObject({
+      testCredits: { usedUp: true, balance: { availableMicrocredits: "0" } },
+    });
+  } finally {
+    app = prior;
+    gateway.stop(true);
+    if (original) await saveCatalog(original.value);
+    else
+      await database
+        .delete(enterpriseSettings)
+        .where(eq(enterpriseSettings.key, pilotCatalogKey));
   }
 }, 20_000);
 

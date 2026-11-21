@@ -14,6 +14,10 @@ import type { Database } from "../db/client";
 import { createWorkQueue } from "../work/queue";
 import { readExecutionAccess } from "./account-access";
 import { PERSONAL_BOT_WORK, type workspaceQuotas } from "./quotas";
+import {
+  botRunCreditQuote,
+  type PersonalTestCreditExecution,
+} from "./test-credit";
 import { assistantTarget, workspaceBots } from "./workspace-bots";
 import {
   type workspaceComputer,
@@ -25,6 +29,10 @@ export const botWorkInput = assistantTarget.extend({
   instruction: z.string().trim().min(1).max(20_000),
   requiresComputer: z.boolean().optional(),
 });
+export const queuedBotWorkInput = botWorkInput.extend({
+  testCredit: botRunCreditQuote.optional(),
+});
+
 const workspaceFileTools = [
   "computer_list_files",
   "computer_read_file",
@@ -69,9 +77,12 @@ export function personalBotWork(
         },
       );
     },
-    async sweep(runTurn?: TurnRunner) {
+    async sweep(
+      runTurn?: TurnRunner,
+      executeManaged?: PersonalTestCreditExecution,
+    ) {
       await queue.reconcilePersonalWork(PERSONAL_BOT_WORK);
-      if (!runTurn) return false;
+      if (!runTurn && !executeManaged) return false;
       const owner = randomUUID();
       const [item] = await queue.claim({
         kind: PERSONAL_BOT_WORK,
@@ -151,7 +162,7 @@ export function personalBotWork(
       enforceDeadline();
       poll = setTimeout(recheck, 1_000);
       try {
-        const work = botWorkInput.parse(item.payload);
+        const work = queuedBotWorkInput.parse(item.payload);
         const bot = await workspaceBots(database).get({
           ...work,
           accountId: grant.accountId,
@@ -176,6 +187,30 @@ export function personalBotWork(
             controller.abort();
           controller.signal.throwIfAborted();
         }
+
+        if (work.testCredit || executeManaged) {
+          if (!work.testCredit || !executeManaged || work.requiresComputer)
+            throw new Error("Managed execution unavailable for this request");
+          const text = await executeManaged({
+            accountId: grant.accountId,
+            operationId: item.key,
+            instruction: work.instruction,
+            quote: work.testCredit,
+            checkExecution,
+            signal: controller.signal,
+          }).finally(() => {
+            endedAt = now();
+          });
+          if (text === undefined)
+            throw new Error("Managed execution unavailable");
+          await checkExecution();
+          saveOutput(text);
+          await checkpoint;
+          if (!controller.signal.aborted && (await queue.finish(held)))
+            return true;
+          throw new Error("Managed execution stopped");
+        }
+        if (!runTurn) throw new Error("Bot execution unavailable");
 
         async function connectComputer() {
           await checkExecution();
