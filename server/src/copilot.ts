@@ -100,10 +100,7 @@ import {
   resolveAttachmentParts,
   type StoredAttachment,
 } from "./channels/attachment-parts";
-import {
-  createDirectChatRoutes,
-  type DirectChatReflect,
-} from "./channels/direct-chat";
+import { createDirectChatRoutes } from "./channels/direct-chat";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { DeploymentConfig } from "./config";
 import type { Database } from "./db/client";
@@ -3031,12 +3028,17 @@ export function mountCopilotRuntime(
   identifyActor: IdentifyActor,
   options: {
     productTelemetry?: ProductTelemetry;
-    directChat?: {
-      database: Database;
-      profiles: AgentProfileStore;
-      reflect?: DirectChatReflect;
-      learningClock?: () => Date;
-    };
+    directChat?: Pick<
+      Parameters<typeof createDirectChatRoutes>[0],
+      | "database"
+      | "profiles"
+      | "reflect"
+      | "learningClock"
+      | "groupThread"
+      | "publishGroupReply"
+      | "backgroundActor"
+      | "mayAddress"
+    >;
     /**
      * Where the cards a Bot asks with in the conversation are saved while they wait on the person,
      * so the Bot is under Needs you for them. See approvals/decision-waits.ts.
@@ -3306,6 +3308,9 @@ export function mountCopilotRuntime(
   let runBackground:
     | ReturnType<typeof createDirectChatRoutes>["runBackground"]
     | undefined;
+  let backgroundApproval:
+    | ReturnType<typeof createDirectChatRoutes>["backgroundApproval"]
+    | undefined;
   let sweepLearning: (() => Promise<void>) | undefined;
   if (!intelligence) {
     if (!options.directChat)
@@ -3321,9 +3326,10 @@ export function mountCopilotRuntime(
       singleUser: config.singleUser,
       identifyActor,
       agentFor: (actor, botId, initiator) =>
-        agentFor({ actor, botId, initiator, textOnly: true }),
+        agentFor({ actor, botId, initiator, textOnly: !initiator }),
     });
     runBackground = directChat.runBackground;
+    backgroundApproval = directChat.backgroundApproval;
     handler.route(basePath, directChat.routes);
     if (trial) sweepLearning = directChat.sweepLearning;
     handler.get(`${basePath}/info`, (context) =>
@@ -3334,6 +3340,7 @@ export function mountCopilotRuntime(
   return {
     handler,
     runBackground,
+    backgroundApproval,
     sweepLearning,
     learning,
     /**

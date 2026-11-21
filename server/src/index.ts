@@ -1310,6 +1310,7 @@ if (composio) {
  * silent outage for this one.
  */
 const routineStore = createRoutineStore(database);
+const groupStore = createGroupStore(database, () => threadIdentity.mint());
 useRoutineTools(routineStore);
 // Routines is on from the start in every edition, for every Bot. See personal-defaults.ts.
 await ensureAlwaysOnApp(pluginStore, personalDefaultsDeps(database));
@@ -2364,6 +2365,10 @@ const copilotRuntime = mountCopilotRuntime(
       database,
       profiles: agentProfileStore,
       reflect: directChatReflect,
+      groupThread: groupStore.thread,
+      backgroundActor: actorFor,
+      mayAddress: mayAddressBot,
+      publishGroupReply: (input) => groupConversations.announceHandoff(input),
     },
     productTelemetry,
     decisionWaits: createDecisionWaits(database),
@@ -2551,7 +2556,7 @@ const approvalContinuationRunner = createTurnRunner({
  * apply unchanged; Bots answering each other reuse the handoff desk's grant and caps.
  */
 const groupConversations = createGroupConversations({
-  store: createGroupStore(database, () => threadIdentity.mint()),
+  store: groupStore,
   queue: createWorkQueue(database),
   owner: workOwner("group"),
   roster: async (ownerUserId, channelId) => {
@@ -2627,6 +2632,7 @@ const approvalSweep = repeatAfterEach(
     approvalOwner,
     approvalService,
     executeApprovedAction,
+    backgroundApproval: copilotRuntime.backgroundApproval,
     database,
     responsibilityStore,
     groupConversations,

@@ -244,6 +244,7 @@ function ChannelBody({
       <Navigate
         params={{ channelId: channel.id }}
         replace
+        search={{ runId }}
         to="/group/$channelId"
       />
     );

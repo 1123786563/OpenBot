@@ -90,7 +90,11 @@ export type HandoffDelivery = {
     /** The signed statement of the run it is starting, carrying its depth. */
     assertion: string;
     key: string;
-  }) => Promise<{ answer: string | null; conversationRunId?: string }>;
+  }) => Promise<{
+    answer: string | null;
+    conversationRunId?: string;
+    relayRequired?: boolean;
+  }>;
 };
 
 export type HandoffRunReport = {
@@ -455,13 +459,16 @@ export function createHandoffRunner(options: {
 
           try {
             const shown = summarise(work);
-            const { answer, conversationRunId } = await delivery.deliver({
-              key: item.key,
-              work,
-              message: attribute(work),
-              ...(shown ? { shown } : {}),
-              assertion: sign(work, { key: item.key, owner }),
-            });
+            const { answer, conversationRunId, relayRequired } =
+              await delivery.deliver({
+                key: item.key,
+                work,
+                message: attribute(work),
+                ...(shown ? { shown } : {}),
+                assertion: sign(work, { key: item.key, owner }),
+              });
+            if (!work.answerIn && answer && relayRequired)
+              await relay(work, item.key, answer);
             const kept = await queue.finish({
               kind: HANDOFF_KIND,
               key: item.key,

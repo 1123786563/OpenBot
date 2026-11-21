@@ -27,8 +27,9 @@ import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { BOT_PAUSED_REASON, isBotPaused } from "../agents/lifecycle";
 import type { AgentActor } from "../agents/profile-types";
-import type { mountCopilotRuntime } from "../copilot";
+import { BackgroundConversationBusy } from "../channels/direct-chat";
 import type { ChannelStore } from "../channels/routes";
+import type { mountCopilotRuntime } from "../copilot";
 import type { RoutineStore } from "./store";
 
 export type RoutineRunner = { run(routineRunId: string): Promise<void> };
@@ -58,7 +59,9 @@ export function createRoutineTurn(
       prompt: frameFiring(instruction),
       authorize: () => actorFor(ownerUserId).catch(() => null),
       initiator: { kind: "routine", id: routineId },
-    });
+    }).then(({ replyText, shared }) => ({
+      replyText: shared ? "" : replyText,
+    }));
   };
 }
 
@@ -202,6 +205,7 @@ export function createRoutineRunner(options: {
           instruction,
         }));
       } catch (error) {
+        if (error instanceof BackgroundConversationBusy) return;
         if (error instanceof HeadlessToolSuspension) {
           await routineStore.finishRun(
             routineRunId,
@@ -255,7 +259,7 @@ export function createRoutineRunner(options: {
        * order can lose the run row — this one is the browser's order: what was said lands in the
        * channel, and then the firing is closed.
        */
-      await say(replyText);
+      if (replyText) await say(replyText);
       await routineStore.finishRun(routineRunId, "succeeded");
     }
   }

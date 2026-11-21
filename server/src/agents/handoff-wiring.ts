@@ -137,6 +137,7 @@ export function createOpenBotHandoffDelivery(options: {
             }),
           authorize,
           initiator: handoffInitiator(work.fromBotId, work.initiator),
+          ...(!work.answerIn && { handoffFromBotId: work.fromBotId }),
         })
         .catch((error: unknown) => {
           if (error instanceof BackgroundConversationBusy) {
@@ -145,7 +146,11 @@ export function createOpenBotHandoffDelivery(options: {
           throw error;
         });
       await options.channelStore.signalWork(threadId).catch(() => {});
-      return { answer: result.replyText, conversationRunId: runId };
+      return {
+        answer: result.replyText,
+        conversationRunId: runId,
+        relayRequired: result.shared,
+      };
     },
   };
 }

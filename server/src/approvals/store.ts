@@ -4,6 +4,7 @@ import {
   recordAuditEvent,
   withAuditTransaction,
 } from "../audit";
+import { isBackgroundMessage } from "../channels/direct-chat-replay";
 import type { Database } from "../db/client";
 import {
   approvalConversationGrants,
@@ -81,7 +82,11 @@ export function createApprovalStore(
     botId: string,
   ) => Promise<boolean>,
 ): ApprovalStore {
-  async function runAcceptsApproval(tx: Transaction, action: ApprovalAction) {
+  async function runAcceptsApproval(
+    tx: Transaction,
+    action: ApprovalAction,
+    lock: "share" | "update" = "share",
+  ) {
     const [run] = await tx
       .select({ status: directChatRuns.status })
       .from(directChatRuns)
@@ -91,13 +96,14 @@ export function createApprovalStore(
           eq(directChatRuns.id, action.runId),
         ),
       )
-      .for("share");
+      .for(lock);
     return !run || run.status === "running";
   }
 
   async function canControlConversation(
     tx: Transaction,
     action: ApprovalAction,
+    lock: "share" | "update" = "share",
   ) {
     const [group] = await tx
       .select({ channelId: groupBotThreads.channelId })
@@ -129,7 +135,7 @@ export function createApprovalStore(
       );
     return (
       Boolean(member) &&
-      (await runAcceptsApproval(tx, action)) &&
+      (await runAcceptsApproval(tx, action, lock)) &&
       (!canUseBot || (await canUseBot(tx, action.actorId, action.botId)))
     );
   }
@@ -370,7 +376,7 @@ export function createApprovalStore(
           throw new ApprovalRefusedError("The approved action has changed.");
         if (
           request.status !== "approved" ||
-          !(await canControlConversation(tx, request.action))
+          !(await canControlConversation(tx, request.action, "update"))
         )
           return false;
         if (request.decision === "allow_always") {
@@ -395,6 +401,31 @@ export function createApprovalStore(
             )
             .limit(1);
           if (!grant) return false;
+        }
+        // Serialize the approved dispatch with stop. The action result remains unverified until
+        // the approval worker persists it, including if this worker loses its lease.
+        const predicate = and(
+          eq(directChatRuns.threadId, request.action.threadId),
+          eq(directChatRuns.id, request.action.runId),
+        );
+        const [run] = await tx
+          .select({ userMessageId: directChatRuns.userMessageId })
+          .from(directChatRuns)
+          .where(predicate)
+          .for("update");
+        if (run && isBackgroundMessage(run.userMessageId)) {
+          const [dispatched] = await tx
+            .update(directChatRuns)
+            .set({ externalOutcome: "dispatching" })
+            .where(
+              and(
+                predicate,
+                eq(directChatRuns.status, "running"),
+                eq(directChatRuns.waitingApprovalId, id),
+              ),
+            )
+            .returning({ id: directChatRuns.id });
+          if (!dispatched) return false;
         }
         const rows = await tx
           .update(approvalRequests)

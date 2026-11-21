@@ -6,6 +6,11 @@ import {
   HttpAgent,
   type RunAgentInput,
 } from "@ag-ui/client";
+import { answerMessageId } from "@openbot/shared/handoff-markers";
+import {
+  HeadlessToolSuspension,
+  HeadlessToolsMiddleware,
+} from "@openbot/toolkit/headless-tools";
 import { and, eq, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
@@ -19,14 +24,13 @@ import type { VoiceEvent } from "../../app/src/lib/voice/types";
 import { createHandoffDesk, HANDOFF_KIND } from "../src/agents/handoff";
 import { createHandoffRunner } from "../src/agents/handoff-runner";
 import { handoffTool } from "../src/agents/handoff-tool";
-import { withApprovalContext } from "../src/approvals/types";
-import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { createOpenBotHandoffDelivery } from "../src/agents/handoff-wiring";
-import { answerMessageId } from "@openbot/shared/handoff-markers";
 import { createAgentProfileStore } from "../src/agents/profile-store";
+import { createApprovalResumeTick } from "../src/approvals/resume-sweep";
 import { createApprovalRoutes } from "../src/approvals/routes";
 import { createApprovalService } from "../src/approvals/service";
 import { createApprovalStore } from "../src/approvals/store";
+import { withApprovalContext } from "../src/approvals/types";
 import { createAuditStore } from "../src/audit";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import {
@@ -35,7 +39,11 @@ import {
 } from "../src/channels/attachments";
 import type { DirectChatReflect } from "../src/channels/direct-chat";
 import { expireDirectChatEvents } from "../src/channels/direct-chat-replay";
-import { createGroupStore } from "../src/channels/group";
+import {
+  createGroupConversations,
+  createGroupRoutes,
+  createGroupStore,
+} from "../src/channels/group";
 import {
   createChannelRoutes,
   createChannelStore,
@@ -67,6 +75,7 @@ import { createMemoryStore } from "../src/memory/store";
 import { createRecorderConnectionStore } from "../src/recorder/connections";
 import { createOpenBotRecordings } from "../src/recorder/openbot-recordings";
 import { createRecorderRoutes } from "../src/recorder/routes";
+import { createResponsibilityStore } from "../src/responsibilities/store";
 import { createRoutineRoutes } from "../src/routines/routes";
 import { createRoutineRunner, createRoutineTurn } from "../src/routines/runner";
 import { createRoutineStore } from "../src/routines/store";
@@ -159,6 +168,7 @@ function web(
     prepare,
     authorized,
     reflect,
+    buildAgent,
   }: {
     deployment?: typeof config;
     opik?: typeof config.opik;
@@ -167,6 +177,7 @@ function web(
     prepare?: () => Promise<void>;
     authorized?: () => boolean;
     reflect?: DirectChatReflect;
+    buildAgent?: () => AbstractAgent;
   } = {},
 ) {
   const store = createAgentProfileStore(db, endpoint);
@@ -178,8 +189,25 @@ function web(
   const agentFor = async (_actor: unknown, id: string) => {
     if (id !== botId) throw new Error("Unexpected Bot.");
     await prepare?.();
-    return new AnsweringAgent(answer, partial);
+    return buildAgent?.() ?? new AnsweringAgent(answer, partial);
   };
+  const groupStore = createGroupStore(db, () => crypto.randomUUID());
+  const groupConversations = createGroupConversations({
+    store: groupStore,
+    queue: createWorkQueue(db),
+    owner: "fixture-group",
+    roster: async (id, channelId) => {
+      const channel = await channelStore.get({ id, role: "user" }, channelId);
+      if (!channel || channel.agentIds.length < 2) return null;
+      return channel.agentIds.map((id) => ({ id, name: id }));
+    },
+    runTurn: async () => {
+      throw new Error("Unexpected legacy group turn.");
+    },
+    caps: { maxDepth: 2, maxPerRun: 3 },
+    mayAddress: async () => true,
+    auditStore: createAuditStore(db),
+  });
   const copilot = mountCopilotRuntime(
     { ...deployment, ...(opik ? { opik } : {}) },
     {
@@ -191,7 +219,15 @@ function web(
     async () => ({ id: actor.id, name: actor.id }),
     async () => (authorized?.() === false ? { id: "", role: "user" } : actor),
     {
-      directChat: { database: db, profiles: store, reflect, learningClock },
+      directChat: {
+        database: db,
+        profiles: store,
+        reflect,
+        learningClock,
+        groupThread: groupStore.thread,
+        publishGroupReply: groupConversations.announceHandoff,
+        backgroundActor: async () => actor,
+      },
     },
   );
   const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
@@ -238,11 +274,13 @@ function web(
     "/api/routines",
     createRoutineRoutes(routineStore, requireUser, { runner: routineRunner }),
   );
+  app.route("/api/groups", createGroupRoutes(groupConversations, requireUser));
   app.route("/", copilot.handler);
   return Object.assign(app, {
     sweepLearning: copilot.sweepLearning,
     routineRunner,
     runBackground: copilot.runBackground,
+    backgroundApproval: copilot.backgroundApproval,
     channelStore,
   });
 }
@@ -313,6 +351,216 @@ test("Run now has the same Conversation Run after redelivery to a restarted work
     content: "Offline answer.",
   });
 }, 60_000);
+
+test("Run now completes in a shared Conversation", async () => {
+  const actor = await person();
+  const bot = await profiles.create(actor, {
+    name: "Shared Routine Bot",
+    title: "Bot",
+    roleDescription: "Reports on demand.",
+    visibility: "private",
+  });
+  const peer = await profiles.create(actor, {
+    name: "Peer Bot",
+    title: "Bot",
+    roleDescription: "Shares the conversation.",
+    visibility: "private",
+  });
+  let dispatches = 0;
+  const app = web(database, actor, bot.id, async () => {
+    dispatches++;
+  });
+  const created = await app.request(
+    "/api/channels",
+    post({ agentIds: [bot.id, peer.id] }),
+  );
+  expect(created.status).toBe(201);
+  const { channel } = await created.json();
+  const groups = createGroupStore(database, () => crypto.randomUUID());
+  await groups.seedOrder(actor.id, channel.id, [bot.id, peer.id]);
+  const threadId = await groups.thread(actor.id, channel.id, bot.id);
+  const routine = await createRoutineStore(database).create({
+    ownerUserId: actor.id,
+    agentId: bot.id,
+    channelId: channel.id,
+    instruction: "Send the shared report.",
+    cron: "0 9 * * *",
+  });
+  const fired = await app.request(`/api/routines/${routine.id}/run`, post({}));
+  expect(fired.status).toBe(202);
+  const { runId } = await fired.json();
+  await app.routineRunner.run(runId);
+  const history = await app.request(`/api/routines/${routine.id}/runs`);
+  expect(await history.json()).toMatchObject({
+    runs: [{ id: runId, status: "succeeded", conversationRunId: runId }],
+  });
+  const transcript = await app.request(
+    `/api/copilotkit/threads/${threadId}/messages?agentId=${bot.id}`,
+  );
+  expect(await transcript.json()).toMatchObject({
+    runs: [{ id: runId, status: "completed" }],
+  });
+  const group = await app.request(`/api/groups/${channel.id}`);
+  expect(await group.json()).toMatchObject({
+    messages: [{ id: runId, text: "Offline answer.", status: "completed" }],
+  });
+  expect(dispatches).toBe(1);
+}, 60_000);
+
+for (const outcome of ["allow", "stop", "revoke"] as const) {
+  test(`a background approval can ${outcome} the original Routine Run`, async () => {
+    const actor = await person();
+    const bot = await profiles.create(actor, {
+      name: "Approval Routine",
+      title: "Bot",
+      roleDescription: "Asks before acting.",
+      visibility: "private",
+    });
+    const approvals = createApprovalStore(database);
+    await approvals.setEnabled(actor.id, true);
+    const service = createApprovalService(approvals);
+    let executions = 0;
+    let resumes = 0;
+    const action = async () => {
+      const approval = await service.gate({
+        actorId: actor.id,
+        botId: bot.id,
+        toolRef: "fixture:write",
+        scope: "fixture",
+        effect: "write",
+        args: {},
+      });
+      if (approval?.replay !== undefined) return approval.replay;
+      executions++;
+      await approval?.complete("done");
+      return "done";
+    };
+    class ToolAgent extends AnsweringAgent {
+      override run(input: RunAgentInput) {
+        if (
+          input.messages.some(
+            (message) =>
+              message.role === "tool" && message.content.includes("done"),
+          )
+        ) {
+          resumes++;
+          return super.run(input);
+        }
+        return new Observable<BaseEvent>((observer) => {
+          const { threadId, runId } = input;
+          const toolCallId = "fixture-call";
+          observer.next({ type: EventType.RUN_STARTED, threadId, runId });
+          observer.next({
+            type: EventType.TOOL_CALL_START,
+            toolCallId,
+            toolCallName: "fixture_write",
+          });
+          observer.next({
+            type: EventType.TOOL_CALL_ARGS,
+            toolCallId,
+            delta: "{}",
+          });
+          observer.next({ type: EventType.TOOL_CALL_END, toolCallId });
+          observer.next({ type: EventType.RUN_FINISHED, threadId, runId });
+          observer.complete();
+        });
+      }
+    }
+    const buildAgent = () => {
+      const agent = new ToolAgent(async () => {});
+      agent.use(
+        new HeadlessToolsMiddleware([
+          {
+            definition: {
+              name: "fixture_write",
+              description: "write",
+              parameters: {},
+            },
+            execute: action,
+          },
+        ]),
+      );
+      return agent;
+    };
+    const app = web(database, actor, bot.id, async () => {}, { buildAgent });
+    const restarted = web(database, actor, bot.id, async () => {}, {
+      buildAgent,
+    });
+    const { channel } = await (
+      await app.request("/api/channels", post({ agentIds: [bot.id] }))
+    ).json();
+    const routine = await createRoutineStore(database).create({
+      ownerUserId: actor.id,
+      channelId: channel.id,
+      agentId: bot.id,
+      instruction: "Run the approved operation.",
+      cron: "0 9 * * *",
+    });
+    const fired = await app.request(
+      `/api/routines/${routine.id}/run`,
+      post({}),
+    );
+    const { runId } = await fired.json();
+    await app.routineRunner.run(runId);
+    const thread = `/api/copilotkit/threads/${channel.threadId}`;
+    const history = async () =>
+      (await app.request(`${thread}/messages?agentId=${bot.id}`)).json();
+    expect(await history()).toMatchObject({
+      runs: [{ id: runId, status: "running", waitingForApproval: true }],
+    });
+    const [approval] = await approvals.list(actor.id);
+    if (!approval) throw new Error("Missing approval.");
+    const decision = await app.request(
+      `/api/approvals/${approval.id}/decision`,
+      post({ decision: "allow_once" }),
+    );
+    expect(decision.status).toBe(200);
+    if (outcome === "stop") {
+      const stopped = await app.request(
+        `${thread}/runs/${runId}/stop?agentId=${bot.id}`,
+        post({}),
+      );
+      expect(await stopped.json()).toEqual({ stopped: true });
+    }
+    if (outcome === "revoke") {
+      await database
+        .insert(revokedAccess)
+        .values({ email: actor.email, revokedBy: actor.id });
+    }
+    const tick = createApprovalResumeTick({
+      approvalQueue: createWorkQueue(database),
+      approvalOwner: `worker-${runId}`,
+      approvalService: service,
+      executeApprovedAction: action,
+      database,
+      responsibilityStore: createResponsibilityStore(database, {
+        resolveTarget: async () => null,
+      }),
+      groupConversations: {
+        continueWaiting: async () => {
+          throw new Error("Wrong continuation path.");
+        },
+      },
+      approvalContinuationRunner: async () => {
+        throw new Error("Intelligence cannot resume this Run.");
+      },
+      backgroundApproval: restarted.backgroundApproval,
+      channelStore: restarted.channelStore,
+      actorFor: async () => actor,
+      notify: async () => {},
+    });
+    await tick();
+    await tick();
+    await restarted.routineRunner.run(runId);
+    await restarted.routineRunner.run(runId);
+    const completed = outcome === "allow";
+    expect(await history()).toMatchObject({
+      runs: [{ id: runId, status: completed ? "completed" : "failed" }],
+    });
+    expect(executions).toBe(completed ? 1 : 0);
+    expect(resumes).toBe(completed ? 1 : 0);
+  }, 60_000);
+}
 
 test("Routine recovery checks an unknown model outcome without dispatching again", async () => {
   const actor = await person();
@@ -415,170 +663,192 @@ test("Routine recovery checks an unknown model outcome without dispatching again
   }
 }, 60_000);
 
-test("a redelivered handoff appears once under the answering Bot in its original conversation", async () => {
-  const actor = await person();
-  const asker = await profiles.create(actor, {
-    name: "Asker",
-    title: "Bot",
-    roleDescription: "Coordinates work.",
-    visibility: "private",
-  });
-  const target = await profiles.create(actor, {
-    name: "Answerer",
-    title: "Bot",
-    roleDescription: "Answers handoffs.",
-    visibility: "private",
-  });
-  let dispatches = 0;
-  const answer = async () => {
-    dispatches++;
-  };
-  const app = web(database, actor, target.id, answer);
-  const created = await app.request(
-    "/api/channels",
-    post({ agentIds: [asker.id] }),
-  );
-  expect(created.status).toBe(201);
-  const { channel } = await created.json();
-  const queue = createWorkQueue(database);
-  const auditStore = createAuditStore(database);
-  const actorFor = async () => actor;
-  const mayAddress = async (from: string, to: string) =>
-    from === asker.id && to === target.id;
-  const desk = createHandoffDesk({
-    queue,
-    profiles,
-    actorFor,
-    mayAddress,
-    auditStore,
-    caps: { maxDepth: 2, maxPerRun: 3 },
-  });
-  const approvalStore = createApprovalStore(database);
-  const approvalService = createApprovalService(approvalStore);
-  await approvalStore.setEnabled(actor.id, true);
-  const askingRunId = crypto.randomUUID();
-  const tool = handoffTool({
-    desk,
-    from: {
-      actorId: actor.id,
-      botId: asker.id,
-      threadId: channel.threadId,
-      runId: askingRunId,
-    },
-    hasSomebodyToAsk: true,
-    maxDepth: 2,
-    maxPerRun: 3,
-    approvalGate: approvalService.gate,
-  });
-  if (!tool) throw new Error("Handoff tool unavailable.");
-  const args = { bot: target.id, task: "Find the status." };
-  const send = () => tool.execute(args);
-  const waiting = await withApprovalContext(
-    {
-      runId: askingRunId,
-      threadId: channel.threadId,
-      toolCallId: crypto.randomUUID(),
-      toolName: "message_bot",
-      args,
-      messages: [
-        {
-          id: crypto.randomUUID(),
-          role: "user",
-          content: "Ask Answerer for the status.",
-        },
-      ],
-      state: {},
-      context: [],
-      forwardedProps: {},
-    },
-    send,
-  ).catch((error: unknown) => error);
-  expect(waiting).toBeInstanceOf(HeadlessToolSuspension);
-  const [approval] = await approvalStore.list(actor.id);
-  if (!approval) throw new Error("Handoff approval was not requested.");
-  const approved = await app.request(
-    `/api/approvals/${approval.id}/decision`,
-    post({ decision: "allow_once" }),
-  );
-  expect(approved.status).toBe(200);
-  const continued: string[] = [];
-  const resume = () =>
-    approvalService.resume(actor.id, approval.id, {
-      validate: (action) => approvalService.validateReentry(action, send),
-      execute: send,
-      continue: async ({ result }) => {
-        continued.push(result.content);
-      },
+for (const shared of [false, true]) {
+  test(`a redelivered handoff appears once in its ${shared ? "shared" : "direct"} Conversation`, async () => {
+    const actor = await person();
+    const asker = await profiles.create(actor, {
+      name: "Asker",
+      title: "Bot",
+      roleDescription: "Coordinates work.",
+      visibility: "private",
     });
-  await resume();
-  await resume();
-  expect(continued).toHaveLength(1);
-  expect(continued[0]).toContain("Handed to Answerer.");
-  const [offered] = await database
-    .select()
-    .from(workItems)
-    .where(
-      and(
-        eq(workItems.kind, HANDOFF_KIND),
-        sql`${workItems.payload}->>'actorId' = ${actor.id}`,
-      ),
+    const target = await profiles.create(actor, {
+      name: "Answerer",
+      title: "Bot",
+      roleDescription: "Answers handoffs.",
+      visibility: "private",
+    });
+    let dispatches = 0;
+    const answer = async () => {
+      dispatches++;
+    };
+    const app = web(database, actor, target.id, answer);
+    const created = await app.request(
+      "/api/channels",
+      post({ agentIds: shared ? [asker.id, target.id] : [asker.id] }),
     );
-  if (!offered || !app.runBackground)
-    throw new Error("Handoff was not offered.");
-  const delivery = (mounted: typeof app) => {
-    if (!mounted.runBackground) throw new Error("Missing OpenBot runtime.");
-    return createOpenBotHandoffDelivery({
-      runBackground: mounted.runBackground,
-      channelStore: mounted.channelStore,
+    expect(created.status).toBe(201);
+    const { channel } = await created.json();
+    const threadId = shared
+      ? await createGroupStore(database, () => crypto.randomUUID()).thread(
+          actor.id,
+          channel.id,
+          asker.id,
+        )
+      : channel.threadId;
+    const queue = createWorkQueue(database);
+    const auditStore = createAuditStore(database);
+    const actorFor = async () => actor;
+    const mayAddress = async (from: string, to: string) =>
+      from === asker.id && to === target.id;
+    const desk = createHandoffDesk({
+      queue,
+      profiles,
       actorFor,
       mayAddress,
+      auditStore,
+      caps: { maxDepth: 2, maxPerRun: 3 },
     });
-  };
-  const runner = createHandoffRunner({
-    queue,
-    auditStore,
-    owner: "first",
-    sign: () => "",
-    delivery: delivery(app),
-  });
-  expect((await runner.sweep()).delivered).toEqual([target.id]);
-
-  // Restore the delivery the queue would reclaim if the first worker died before acknowledging it.
-  await database
-    .delete(workItems)
-    .where(
-      and(eq(workItems.kind, HANDOFF_KIND), eq(workItems.key, offered.key)),
+    const approvalStore = createApprovalStore(database);
+    const approvalService = createApprovalService(approvalStore);
+    await approvalStore.setEnabled(actor.id, true);
+    const askingRunId = crypto.randomUUID();
+    const tool = handoffTool({
+      desk,
+      from: {
+        actorId: actor.id,
+        botId: asker.id,
+        threadId,
+        runId: askingRunId,
+      },
+      hasSomebodyToAsk: true,
+      maxDepth: 2,
+      maxPerRun: 3,
+      approvalGate: approvalService.gate,
+    });
+    if (!tool) throw new Error("Handoff tool unavailable.");
+    const args = { bot: target.id, task: "Find the status." };
+    const send = () => tool.execute(args);
+    const waiting = await withApprovalContext(
+      {
+        runId: askingRunId,
+        threadId,
+        toolCallId: crypto.randomUUID(),
+        toolName: "message_bot",
+        args,
+        messages: [
+          {
+            id: crypto.randomUUID(),
+            role: "user",
+            content: "Ask Answerer for the status.",
+          },
+        ],
+        state: {},
+        context: [],
+        forwardedProps: {},
+      },
+      send,
+    ).catch((error: unknown) => error);
+    expect(waiting).toBeInstanceOf(HeadlessToolSuspension);
+    const [approval] = await approvalStore.list(actor.id);
+    if (!approval) throw new Error("Handoff approval was not requested.");
+    const approved = await app.request(
+      `/api/approvals/${approval.id}/decision`,
+      post({ decision: "allow_once" }),
     );
-  await queue.offer({
-    kind: HANDOFF_KIND,
-    key: offered.key,
-    payload: offered.payload,
-  });
-  const restarted = web(database, actor, target.id, answer);
-  const recovered = createHandoffRunner({
-    queue,
-    auditStore,
-    owner: "restarted",
-    sign: () => "",
-    delivery: delivery(restarted),
-  });
-  expect((await recovered.sweep()).delivered).toEqual([target.id]);
-  expect(dispatches).toBe(1);
-  const history = await restarted.request(
-    `/api/copilotkit/threads/${channel.threadId}/messages?agentId=${asker.id}`,
-  );
-  const body = await history.json();
-  expect(body.runs).toHaveLength(1);
-  expect(body.runs[0]).toMatchObject({
-    status: "completed",
-    externalOutcome: "executed",
-  });
-  expect(body.messages).toContainEqual({
-    id: answerMessageId(target.id, body.runs[0].id),
-    role: "assistant",
-    content: "Offline answer.",
-  });
-}, 60_000);
+    expect(approved.status).toBe(200);
+    const continued: string[] = [];
+    const resume = () =>
+      approvalService.resume(actor.id, approval.id, {
+        validate: (action) => approvalService.validateReentry(action, send),
+        execute: send,
+        continue: async ({ result }) => {
+          continued.push(result.content);
+        },
+      });
+    await resume();
+    await resume();
+    expect(continued).toHaveLength(1);
+    expect(continued[0]).toContain("Handed to Answerer.");
+    const [offered] = await database
+      .select()
+      .from(workItems)
+      .where(
+        and(
+          eq(workItems.kind, HANDOFF_KIND),
+          sql`${workItems.payload}->>'actorId' = ${actor.id}`,
+        ),
+      );
+    if (!offered || !app.runBackground)
+      throw new Error("Handoff was not offered.");
+    const delivery = (mounted: typeof app) => {
+      if (!mounted.runBackground) throw new Error("Missing OpenBot runtime.");
+      return createOpenBotHandoffDelivery({
+        runBackground: mounted.runBackground,
+        channelStore: mounted.channelStore,
+        actorFor,
+        mayAddress,
+      });
+    };
+    const runner = createHandoffRunner({
+      queue,
+      auditStore,
+      owner: "first",
+      sign: () => "",
+      delivery: delivery(app),
+    });
+    expect((await runner.sweep()).delivered).toEqual([target.id]);
+
+    // Restore the delivery the queue would reclaim if the first worker died before acknowledging it.
+    await database
+      .delete(workItems)
+      .where(
+        and(eq(workItems.kind, HANDOFF_KIND), eq(workItems.key, offered.key)),
+      );
+    await queue.offer({
+      kind: HANDOFF_KIND,
+      key: offered.key,
+      payload: offered.payload,
+    });
+    const restarted = web(database, actor, target.id, answer);
+    const recovered = createHandoffRunner({
+      queue,
+      auditStore,
+      owner: "restarted",
+      sign: () => "",
+      delivery: delivery(restarted),
+    });
+    expect((await recovered.sweep()).delivered).toContain(target.id);
+    if (shared) {
+      await recovered.sweep();
+      const group = await restarted.request(`/api/groups/${channel.id}`);
+      const transcript = await group.json();
+      expect(transcript.messages).toMatchObject([
+        {
+          agentId: asker.id,
+          answeredBy: target.id,
+          text: "Offline answer.",
+          status: "completed",
+        },
+      ]);
+    }
+    expect(dispatches).toBe(1);
+    const history = await restarted.request(
+      `/api/copilotkit/threads/${threadId}/messages?agentId=${asker.id}`,
+    );
+    const body = await history.json();
+    expect(body.runs).toHaveLength(shared ? 2 : 1);
+    expect(body.runs[0]).toMatchObject({
+      status: "completed",
+      externalOutcome: "executed",
+    });
+    expect(body.messages).toContainEqual({
+      id: answerMessageId(target.id, body.runs[0].id),
+      role: "assistant",
+      content: "Offline answer.",
+    });
+  }, 60_000);
+}
 
 function events(sse: string) {
   return sse

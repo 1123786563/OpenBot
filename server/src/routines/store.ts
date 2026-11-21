@@ -35,26 +35,28 @@ import {
   isNull,
   lte,
   ne,
+  or,
   sql,
 } from "drizzle-orm";
+import { backgroundMessageId } from "../channels/direct-chat-replay";
 import {
   conversationCalled,
   conversationName,
   ROSTER_ORDER,
 } from "../channels/routes";
-import { backgroundMessageId } from "../channels/direct-chat-replay";
 import { oneLine } from "../channels/text";
 import type { Database } from "../db/client";
 import {
   channelAgents,
   channelMemberships,
   channels,
+  directChatRuns,
+  groupBotThreads,
   intelligenceChannelMappings,
   responsibilities,
   routineRuns,
   routineSweeps,
   routines,
-  directChatRuns,
 } from "../db/schema";
 import { describeCron, nextOccurrence, ScheduleRefusedError } from "./schedule";
 
@@ -1054,14 +1056,29 @@ export function createRoutineStore(database: Database): RoutineStore {
       const linked = await database
         .select({ id: directChatRuns.id })
         .from(directChatRuns)
-        .innerJoin(
+        .leftJoin(
           intelligenceChannelMappings,
-          eq(intelligenceChannelMappings.threadId, directChatRuns.threadId),
+          eq(
+            intelligenceChannelMappings.threadId,
+            directChatRuns.directThreadId,
+          ),
+        )
+        .leftJoin(
+          groupBotThreads,
+          eq(groupBotThreads.threadId, directChatRuns.groupThreadId),
         )
         .where(
           and(
-            eq(intelligenceChannelMappings.channelId, routine.channelId),
-            eq(intelligenceChannelMappings.userId, ownerUserId),
+            or(
+              and(
+                eq(intelligenceChannelMappings.channelId, routine.channelId),
+                eq(intelligenceChannelMappings.userId, ownerUserId),
+              ),
+              and(
+                eq(groupBotThreads.channelId, routine.channelId),
+                eq(groupBotThreads.ownerUserId, ownerUserId),
+              ),
+            ),
             inArray(
               directChatRuns.userMessageId,
               runs.map(({ id }) => backgroundMessageId("routine", id)),
