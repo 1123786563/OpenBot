@@ -179,7 +179,17 @@ if (restoredClosures.length) {
 const server = Bun.serve({
   hostname: "127.0.0.1",
   port: env.PORT,
-  fetch: app.fetch,
+  fetch(request, server) {
+    const pathname = new URL(request.url).pathname;
+    if (
+      request.method === "GET" &&
+      /^\/api\/workspaces\/[^/]+\/exports\/[^/]+\/download$/.test(pathname)
+    ) {
+      // Export builds the archive and rechecks authorization before sending headers.
+      server.timeout(request, 45);
+    }
+    return app.fetch(request);
+  },
 });
 console.info(
   JSON.stringify({
