@@ -473,7 +473,7 @@ export function createChannelStore(
       agentIds,
       threadId,
       active: true,
-      direct: agentIds.length === 1,
+      ...(agentIds.length === 1 ? { direct: true } : {}),
       lastMessageAt: null,
     };
   };
