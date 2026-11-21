@@ -635,22 +635,43 @@
     {
       "idx": 90,
       "version": "7",
-      "when": 1795180013497,
-      "tag": "0090_test_credit",
+      "when": 1795183869296,
+      "tag": "0090_skill_market_installations",
       "breakpoints": true
     },
     {
       "idx": 91,
       "version": "7",
-      "when": 1795183311831,
-      "tag": "0091_test_credit_reconciliation",
+      "when": 1795185049024,
+      "tag": "0091_skill_market_version_disablements",
       "breakpoints": true
     },
     {
       "idx": 92,
       "version": "7",
-      "when": 1795184107166,
-      "tag": "0092_test_credit_cutoff_index",
+      "when": 1795189760196,
+      "tag": "0092_skill_market_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1795189760197,
+      "tag": "0093_test_credit",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1795189760198,
+      "tag": "0094_test_credit_reconciliation",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1795189760199,
+      "tag": "0095_test_credit_cutoff_index",
       "breakpoints": true
     }
   ]

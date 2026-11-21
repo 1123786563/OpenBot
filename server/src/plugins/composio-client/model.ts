@@ -1,5 +1,5 @@
+import type { MarketDispatch } from "../../skill-market/disablements";
 import type { BrokerApp, FieldScheme } from "../broker";
-import type { DeploymentClient } from "../deployment-clients";
 import type { ComposioResult } from "../composio";
 import type {
   AccountRow,
@@ -9,6 +9,7 @@ import type {
   VendorTool,
   VendorToolkitDetail,
 } from "../composio-vendor";
+import type { DeploymentClient } from "../deployment-clients";
 
 /**
  * The Composio client's shapes and constants: the vendor seam it is built over, and the names and
@@ -156,6 +157,7 @@ export type ComposioVendor = {
          */
         connectedAccountId?: string;
       },
+      marketDispatch?: MarketDispatch,
     ): Promise<ComposioResult>;
   };
   toolkits: {

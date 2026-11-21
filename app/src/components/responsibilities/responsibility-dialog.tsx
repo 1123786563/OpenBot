@@ -399,6 +399,7 @@ const RUN_LABEL: Record<string, string> = {
   succeeded: "Succeeded",
   failed: "Failed",
   skipped: "Skipped",
+  paused: "Paused",
 };
 function runStatusClass(status: string) {
   return status === "failed"

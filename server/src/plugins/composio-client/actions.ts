@@ -211,21 +211,25 @@ export function actionsFor(context: ClientContext): ComposioActions {
       return askVendor(
         { outcome: `${call.slug} was not run`, app: call.toolkit },
         () =>
-          vendor.tools.execute(call.slug, {
-            arguments: args,
-            userId: call.userId,
-            version: call.version,
-            /*
-             * SPREAD RATHER THAN PASSED AS `undefined`, which is the same care every other optional
-             * on this wire gets here — see the cursor on the listings above. What the vendor is
-             * handed for "any account of theirs" is a body with no such key, not a key holding
-             * nothing, so a client that distinguishes the two cannot read an absent pin as a
-             * request for an account called undefined.
-             */
-            ...(call.connectedAccountId === undefined
-              ? {}
-              : { connectedAccountId: call.connectedAccountId }),
-          }),
+          vendor.tools.execute(
+            call.marketDispatch ? resolved.slug : call.slug,
+            {
+              arguments: args,
+              userId: call.userId,
+              version: call.version,
+              /*
+               * SPREAD RATHER THAN PASSED AS `undefined`, which is the same care every other optional
+               * on this wire gets here — see the cursor on the listings above. What the vendor is
+               * handed for "any account of theirs" is a body with no such key, not a key holding
+               * nothing, so a client that distinguishes the two cannot read an absent pin as a
+               * request for an account called undefined.
+               */
+              ...(call.connectedAccountId === undefined
+                ? {}
+                : { connectedAccountId: call.connectedAccountId }),
+            },
+            call.marketDispatch,
+          ),
       );
     },
   };

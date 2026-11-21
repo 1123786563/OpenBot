@@ -13,6 +13,7 @@ import type {
   ActionKindPolicy,
   ApprovalAction,
   ApprovalDecision,
+  ApprovalRecord,
   HostCommandPolicy,
   RuleBehaviour,
 } from "../../approvals/types";
@@ -102,7 +103,7 @@ export const approvalRequests = pgTable(
       .notNull()
       .default("pending"),
     decision: text("decision").$type<ApprovalDecision>(),
-    result: jsonb("result").$type<{ content: string; error?: string }>(),
+    result: jsonb("result").$type<NonNullable<ApprovalRecord["result"]>>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

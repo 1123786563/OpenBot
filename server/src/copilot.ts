@@ -1,5 +1,12 @@
 import type { Message, RunAgentInput } from "@ag-ui/client";
-import { type AbstractAgent, HttpAgent } from "@ag-ui/client";
+import {
+  AbstractAgent,
+  type BaseEvent,
+  EventType,
+  HttpAgent,
+} from "@ag-ui/client";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import type {
   BuiltInAgentConfiguration,
   CopilotRuntimeHooks,
@@ -30,6 +37,7 @@ import { MODEL_TOOL_LIMIT } from "@openbot/shared/model-tool-limit";
 import { runTimeZone } from "@openbot/shared/person-time-zone";
 import { checklistNotice } from "@openbot/shared/run-notices";
 import { SUBAGENT_TOOL } from "@openbot/shared/subagent";
+import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
 import {
   BuiltInAgentWithSaneHistory,
   CloningRemoteAgent,
@@ -53,7 +61,19 @@ import {
 } from "@openbot/toolkit/run-stop";
 import { historyOrEmpty } from "@openbot/toolkit/thread-history";
 import { Hono } from "hono";
-import { defer, from, switchMap } from "rxjs";
+import {
+  catchError,
+  concatMap,
+  defer,
+  EMPTY,
+  from,
+  map,
+  Observable,
+  of,
+  switchMap,
+  tap,
+  throwError,
+} from "rxjs";
 import { z } from "zod";
 import {
   type ActorAgentResolver,
@@ -81,6 +101,7 @@ import {
 } from "./agents/tool-limit";
 import {
   fitToolLimit,
+  guardMarketModel,
   isSearchingModel,
   planToolSearch,
   SEARCH_RESULTS_LIMIT,
@@ -132,7 +153,11 @@ import {
 } from "./memory/tools";
 import { providerName } from "./model-billing";
 import { modelSourceFor, type RunChoice } from "./model-catalogue";
-import { pickedSkillGuidance } from "./plugins/picked-skill";
+import {
+  admitPickedSkill,
+  type PickedSkillAdmission,
+  PickedSkillRefusal,
+} from "./plugins/picked-skill";
 import { refFromToolName } from "./plugins/plugin-store/model";
 import { appCallsOfRun, withAppCallsOf } from "./plugins/run-calls";
 import type { SelectableSkill, Selection } from "./plugins/selection";
@@ -147,6 +172,15 @@ import {
   holdsWebSearch,
 } from "./plugins/tools";
 import { corsOrigin } from "./request-trust";
+import {
+  type MarketDispatch,
+  type MarketRunControl,
+  MarketRunPaused,
+  type MarketRunScope,
+  type MarketVersionIdentity,
+  startMarketRequest,
+  withMarketDispatch,
+} from "./skill-market/disablements";
 import type { ProductTelemetry } from "./telemetry/product";
 import { productRuntimeHook } from "./telemetry/product-boundaries";
 import { inlineToolImages } from "./tool-images";
@@ -725,7 +759,11 @@ export function builtInAgentConfiguration(
    * nobody knows yet (a Bot built before its first request), and the computer guidance goes in
    * whenever the deployment has a computer, as it always did.
    */
-  run: { mode?: RunMode; usesComputer?: boolean } = {},
+  run: {
+    mode?: RunMode;
+    usesComputer?: boolean;
+    marketRun?: MarketRunControl;
+  } = {},
 ): BuiltInAgentConfiguration {
   const unattended = isUnattended(run.mode);
   if (!apiKey && !planModel) {
@@ -750,16 +788,19 @@ export function builtInAgentConfiguration(
    * wrapper cannot hold is sent as it was, with every tool, and the pre-flight count says so.
    */
   const unwrapped =
-    waiting.size > 0
+    waiting.size > 0 || run.marketRun?.check
       ? (planModel ??
-        resolveModel(
-          `${model.provider}/${model.defaultModel}`,
-          apiKey ?? undefined,
-        ))
+        (run.marketRun
+          ? marketProviderModel(model, apiKey, run.marketRun.dispatch)
+          : resolveModel(
+              `${model.provider}/${model.defaultModel}`,
+              apiKey ?? undefined,
+            )))
       : undefined;
-  const wrapped = isSearchingModel(unwrapped)
-    ? withToolSearch(unwrapped, waiting)
-    : undefined;
+  const wrapped =
+    waiting.size > 0 && isSearchingModel(unwrapped)
+      ? withToolSearch(unwrapped, waiting)
+      : undefined;
   const searching = wrapped !== undefined;
   const shown = searching ? waiting : new Set<string>();
   const allTools = [
@@ -775,8 +816,15 @@ export function builtInAgentConfiguration(
     })) ?? []),
   ];
 
+  const guardedModel = run.marketRun?.check
+    ? guardMarketModel(wrapped ?? unwrapped, run.marketRun?.check)
+    : undefined;
   return {
-    model: wrapped ?? planModel ?? `${model.provider}/${model.defaultModel}`,
+    model:
+      guardedModel ??
+      wrapped ??
+      planModel ??
+      `${model.provider}/${model.defaultModel}`,
     /*
      * Tagged sections in a fixed order: who it is, its role, the person's own instructions, the
      * working rules every Bot gets, what this Bot holds, its computer, its learned skills, then
@@ -887,15 +935,19 @@ export function builtInAgentConfiguration(
                 args,
                 execution?.toolCallId,
                 tools.find((granted) => granted.name === tool.name)?.initiator,
-                () =>
-                  tool.execute(args, {
-                    ...(execution?.toolCallId
-                      ? { toolCallId: execution.toolCallId }
-                      : {}),
-                    ...(execution?.abortSignal
-                      ? { signal: execution.abortSignal }
-                      : {}),
-                  }),
+                async () => {
+                  await run.marketRun?.check?.();
+                  return withMarketDispatch(run.marketRun?.dispatch, () =>
+                    tool.execute(args, {
+                      ...(execution?.toolCallId
+                        ? { toolCallId: execution.toolCallId }
+                        : {}),
+                      ...(execution?.abortSignal
+                        ? { signal: execution.abortSignal }
+                        : {}),
+                    }),
+                  );
+                },
               ),
           })),
           // Each search is a step of its own, so a run that searches gets two more.
@@ -905,6 +957,38 @@ export function builtInAgentConfiguration(
         }
       : {}),
   };
+}
+
+function marketProviderModel(
+  model: RuntimeModel,
+  apiKey: string | null,
+  dispatch: MarketDispatch,
+) {
+  const guardedFetch: typeof globalThis.fetch = Object.assign(
+    (...args: Parameters<typeof fetch>) => dispatch(() => fetch(...args)),
+    { preconnect: fetch.preconnect },
+  );
+  if (model.provider === "anthropic") {
+    return createAnthropic({
+      apiKey: apiKey || process.env.ANTHROPIC_API_KEY,
+      baseURL: process.env.ANTHROPIC_BASE_URL,
+      fetch: guardedFetch,
+    })(model.defaultModel);
+  }
+
+  // Keep CopilotKit's API routing, including its proxy and environment overrides.
+  const resolved = resolveModel(
+    `openai/${model.defaultModel}`,
+    apiKey ?? undefined,
+  );
+  const provider = createOpenAI({
+    apiKey: apiKey || process.env.OPENAI_API_KEY,
+    baseURL: process.env.OPENAI_BASE_URL,
+    fetch: guardedFetch,
+  });
+  return typeof resolved !== "string" && resolved.provider === "openai.chat"
+    ? provider.chat(model.defaultModel)
+    : provider(model.defaultModel);
 }
 
 /** One of the computer's own tools, which the surface offers by these names (`computer/schema.ts`). */
@@ -1004,6 +1088,7 @@ export async function buildAgents(
   ),
   /** The apps each Bot holds, as they stand for the person asking. Absent says nothing about apps. */
   loadApps?: LoadAppsForBot,
+  marketSkill?: MarketSkillSnapshot | null,
 ): Promise<Record<string, AbstractAgent>> {
   let vendors: readonly string[] = [];
   try {
@@ -1065,6 +1150,7 @@ export async function buildAgents(
           pickedModel,
           botNames,
           loadApps,
+          marketSkill,
         );
         if (loadPersonalMemory)
           built.use(new PersonalMemoryMiddleware(agent.id, loadPersonalMemory));
@@ -1345,6 +1431,7 @@ async function buildAgent(
   botNames: ReadonlyMap<string, string> = new Map(),
   /** The apps this Bot holds, as they stand for the person asking. See {@link buildAgents}. */
   loadApps?: LoadAppsForBot,
+  marketSkill?: MarketSkillSnapshot | null,
 ): Promise<AbstractAgent> {
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
@@ -1398,11 +1485,30 @@ async function buildAgent(
   }
   /*
    * The skill this run's message picked, among the ones this Bot holds, as the Bot is told it. Read
-   * from the same grants narrowing reads, fresh per request. See `picked-skill.ts`.
+   * from the same grants narrowing reads, again at admission so a reused agent sees new disablements.
+   * See `picked-skill.ts`.
    */
-  const pickedSkillFor = (input: RunAgentInput) =>
-    pickedSkillGuidance(input, skills);
-  const holdsInstructions = skills.some((skill) => skill.instructions);
+  const registerMarketRun = selection?.registerMarketRun;
+  const marketRunFor = async (
+    input: RunAgentInput,
+    picked: PickedSkillAdmission | undefined,
+  ) =>
+    picked?.kind === "admitted" && picked.marketSnapshot && registerMarketRun
+      ? registerMarketRun(
+          { botId: agent.id, runId: input.runId, threadId: input.threadId },
+          picked.marketSnapshot.market,
+          picked.marketSnapshot,
+        )
+      : undefined;
+  const pickedSkillFor =
+    selection || marketSkill !== undefined
+      ? (input: RunAgentInput) =>
+          admitPickedSkill(
+            input,
+            () => selection?.loadSkills(agent.id) ?? Promise.resolve([]),
+            marketSkill,
+          )
+      : undefined;
   const narrowing =
     selection &&
     skills.some((skill) => skill.tools.length > 0) &&
@@ -1439,6 +1545,7 @@ async function buildAgent(
      * `fitToolLimit`. Absent: a built-in Bot, whose app tools wait behind a search instead.
      */
     limit?: number,
+    marketRun?: MarketRunControl,
   ): Promise<{ offered: GrantedTool[]; pinned: ReadonlySet<string> }> => {
     const text = latestUserText(input.messages);
     if (!narrowing)
@@ -1453,7 +1560,12 @@ async function buildAgent(
       tools: granted,
       skills,
       text,
-      choose: narrowing.choose,
+      choose: async (prompt, signal) => {
+        await marketRun?.check();
+        return withMarketDispatch(marketRun?.dispatch, () =>
+          narrowing.choose(prompt, signal),
+        );
+      },
       signal,
       ...(narrowing.floor === undefined ? {} : { floor: narrowing.floor }),
     });
@@ -1501,8 +1613,8 @@ async function buildAgent(
       signRun,
       connectedVendors,
       // Every remote run, narrowed or not: its tools all reach its model in one request.
-      async (input, limit) =>
-        (await selectionFor(input, undefined, limit)).offered,
+      async (input, limit, marketRun) =>
+        (await selectionFor(input, undefined, limit, marketRun)).offered,
       loadAttachment,
       markAttachmentsSent,
       acquireLearnedSkills,
@@ -1547,8 +1659,9 @@ async function buildAgent(
             )
         : undefined,
       refusingProvider(model),
-      holdsInstructions ? pickedSkillFor : undefined,
+      pickedSkillFor,
       apps,
+      marketRunFor,
     );
   }
 
@@ -1621,6 +1734,7 @@ async function buildAgent(
     timeZone?: string,
     /** What the Bot is told for the skill this run's message picked. See `picked-skill.ts`. */
     pickedSkill?: string,
+    marketRun?: MarketRunControl,
   ) => {
     /*
      * What waits behind a search, decided where the run's tools are final. The count includes what
@@ -1650,6 +1764,7 @@ async function buildAgent(
             new Set(input.tools.map((tool) => tool.name)),
             signal,
             planChoice(runModel),
+            marketRun?.dispatch,
           )
         : undefined,
       learnedSkills,
@@ -1660,6 +1775,7 @@ async function buildAgent(
       apps,
       {
         mode,
+        marketRun,
         /*
          * Whether this run was offered the computer, known once the request is: the browser offers
          * the computer tools only to a Bot the person may drive, and a background turn only to one
@@ -1684,11 +1800,21 @@ async function buildAgent(
        * `provider-refusal.ts`.
        */
       observe: (stream) =>
-        sayingProviderRefusals(
-          observeModelConnection(stream),
-          agent,
-          refusingProvider(runModel),
-          { untilError: true },
+        recordMarketComputerCalls(
+          sayingProviderRefusals(
+            observeModelConnection(stream),
+            agent,
+            refusingProvider(runModel),
+            { untilError: true },
+          ).pipe(
+            // RUN_ERROR is already in the stream. Let the client drain prior tool results.
+            catchError((error) =>
+              error instanceof MarketRunPaused
+                ? EMPTY
+                : throwError(() => error),
+            ),
+          ),
+          marketRun,
         ),
       ...(admit ? { admitTools: admit } : {}),
       ...(held.size > 0 ? { waiting: held } : {}),
@@ -1722,7 +1848,7 @@ async function buildAgent(
     !model.plan &&
     !acquireLearnedSkills &&
     !holdsTools &&
-    !holdsInstructions &&
+    !pickedSkillFor &&
     !granted.some((tool) => tool.searchable)
   )
     return whole;
@@ -1757,7 +1883,12 @@ async function buildAgent(
           runModel,
           timeZone,
         );
-      const pickedSkill = pickedSkillFor(input);
+      const picked = await pickedSkillFor?.(input);
+      if (picked?.kind === "refused")
+        return new PickedSkillRefusal(picked.reason);
+      const pickedSkill =
+        picked?.kind === "admitted" ? picked.guidance : undefined;
+      const marketRun = await marketRunFor(input, picked);
       const learnedSkills = await acquireLearnedSkills?.(agent.id, signal);
       signal.throwIfAborted();
       if (
@@ -1771,7 +1902,7 @@ async function buildAgent(
         );
       }
       const { offered, pinned } = narrowing
-        ? await selectionFor(input, signal)
+        ? await selectionFor(input, signal, undefined, marketRun)
         : { offered: granted, pinned: new Set<string>() };
       signal.throwIfAborted();
       /*
@@ -1816,6 +1947,7 @@ async function buildAgent(
             runModel,
             timeZone,
             pickedSkill,
+            marketRun,
           );
     },
   );
@@ -1837,18 +1969,41 @@ export type HandoffForRun = (
   input: RunAgentInput,
 ) => Promise<readonly GrantedTool[]>;
 
-/**
- * How a deployment narrows a Bot's tools to the ones a run is about. Absent means it does not.
- *
- * Three collaborators rather than one, because they fail differently and are configured in
- * different places: the skills come from the plugin store, the choosing is a model call on the
- * deployment's own key, and the record goes to the audit trail. A deployment missing any of them
- * should lose the narrowing and keep the Bot, which is why `record` is optional and the other two
- * are allowed to throw.
- */
+/** Bind browser-governed computer tool requests before the call reaches the browser. */
+function recordMarketComputerCalls(
+  stream: Observable<BaseEvent>,
+  marketRun?: MarketRunControl,
+) {
+  return marketRun
+    ? stream.pipe(
+        concatMap((event) => {
+          if (
+            event.type === EventType.TOOL_CALL_START &&
+            !("subagentRunId" in event && event.subagentRunId) &&
+            "toolCallName" in event &&
+            typeof event.toolCallName === "string" &&
+            event.toolCallName.startsWith("computer_") &&
+            "toolCallId" in event &&
+            typeof event.toolCallId === "string"
+          )
+            return from(
+              marketRun.recordComputerToolCall(event.toolCallId),
+            ).pipe(map(() => event));
+          return of(event);
+        }),
+      )
+    : stream;
+}
+
+/** How a deployment reads held Skills and narrows the tools it offers on a run. */
 export type ToolSelection = {
   /** What this Bot's granted skills declare. Failure is diagnosed and treated as "no skills". */
   loadSkills: (botId: string) => Promise<SelectableSkill[]>;
+  registerMarketRun?: (
+    scope: Omit<MarketRunScope, "actorId">,
+    version: MarketVersionIdentity,
+    snapshot: MarketSkillSnapshot,
+  ) => Promise<MarketRunControl>;
   /** Pass one. Ordinary failures skip narrowing; cancellation stops the run. */
   choose: (prompt: string, signal?: AbortSignal) => Promise<string | null>;
   /** Writes the discovery row. Never allowed to fail a run. */
@@ -1897,12 +2052,14 @@ async function remoteTransport(
 ): Promise<AbstractAgent> {
   // The watch wraps whichever fetch is underneath, so a deployment gets both the stall timeout and
   // the redirect check rather than having to choose.
+  const request: AgentFetch =
+    agentFetch ?? ((url, init) => startMarketRequest(() => fetch(url, init)));
   const dial = stallGuard
     ? stallGuard.watch(
         { id: agent.id, name: agent.name, ...(initiator ? { initiator } : {}) },
-        agentFetch,
+        request,
       )
-    : agentFetch;
+    : request;
 
   if (agent.type === "remote_ag_ui") {
     return sayingWhenUnreachable(
@@ -2177,7 +2334,11 @@ function remoteAgentWithStandingRole(
    *
    * Absent means no narrowing, which is the behaviour every deployment had before this existed.
    */
-  narrow?: (input: RunAgentInput, limit: number) => Promise<GrantedTool[]>,
+  narrow?: (
+    input: RunAgentInput,
+    limit: number,
+    marketRun?: MarketRunControl,
+  ) => Promise<GrantedTool[]>,
   /*
    * No `agentFetch` and no `initiator` here any more, and they were not dropped: the transport this
    * function used to build itself is now built by `remoteTransport` and handed in as `next`, and
@@ -2229,9 +2390,13 @@ function remoteAgentWithStandingRole(
    * row the browser sent is read there as conversation data. Absent when the Bot holds no skill.
    * See `picked-skill.ts`.
    */
-  pickedSkillFor?: (input: RunAgentInput) => string | undefined,
+  pickedSkillFor?: (input: RunAgentInput) => Promise<PickedSkillAdmission>,
   /** The apps this Bot holds, as they stand for the person asking. See `grantedToolGuidance`. */
   apps?: readonly BotApp[],
+  marketRunFor?: (
+    input: RunAgentInput,
+    picked: PickedSkillAdmission | undefined,
+  ) => Promise<MarketRunControl | undefined>,
 ) {
   const holds = (input: RunAgentInput) => !holdsTools || holdsTools(input);
   /*
@@ -2275,7 +2440,10 @@ function remoteAgentWithStandingRole(
     tools: GrantedTool[],
     input: RunAgentInput,
     next: AbstractAgent,
+    pickedSkill?: string,
+    marketRun?: MarketRunControl,
   ) => {
+    const checkMarketRun = marketRun?.check;
     const holdingsMessage = holdingsMessageFor(tools, holds(input));
     /*
      * Not signed for a run the runtime makes for itself: the statement is what the Bot hands back to
@@ -2429,7 +2597,6 @@ function remoteAgentWithStandingRole(
          * And after the date, because it changes with the message, the skill the person picked for
          * this one. Not for a run the runtime makes for itself, which holds nothing of the Bot's.
          */
-        const pickedSkill = held ? pickedSkillFor?.(input) : undefined;
         const standingMessage = {
           ...agent.standingMessage,
           content: [
@@ -2503,7 +2670,23 @@ function remoteAgentWithStandingRole(
             ? { ...forwardedProps, openbotModel: chosenModel }
             : forwardedProps,
         };
-        if (answeredHere.length === 0) return next.run(prepared);
+        const endpoint = checkMarketRun
+          ? new (class extends AbstractAgent {
+              run(input: RunAgentInput) {
+                return defer(checkMarketRun).pipe(
+                  switchMap(
+                    () =>
+                      new Observable<BaseEvent>((subscriber) =>
+                        withMarketDispatch(marketRun?.dispatch, () =>
+                          next.run(input).subscribe(subscriber),
+                        ),
+                      ),
+                  ),
+                );
+              }
+            })()
+          : next;
+        if (answeredHere.length === 0) return endpoint.run(prepared);
         return new HeadlessToolsMiddleware(
           answeredHere.map((tool) => ({
             definition: {
@@ -2515,10 +2698,15 @@ function remoteAgentWithStandingRole(
               >,
             },
             ...(tool.concurrent ? { concurrent: true } : {}),
-            execute: (args, context) => tool.execute(args, context),
+            execute: async (args, context) => {
+              await checkMarketRun?.();
+              return withMarketDispatch(marketRun?.dispatch, () =>
+                tool.execute(args, context),
+              );
+            },
           })),
           initiator,
-        ).run(prepared, next);
+        ).run(prepared, endpoint);
       }),
     );
   };
@@ -2548,33 +2736,51 @@ function remoteAgentWithStandingRole(
         return defer(() => from(answerOwnRuns())).pipe(
           switchMap((own) => own.run(input)),
         );
-      const stream = defer(() =>
-        from(
-          holds(input)
-            ? (coordination?.(agent.id, input) ?? Promise.resolve([])).then(
-                async (coordinationTools) => {
-                  /*
-                   * What the browser offers and the coordination tools are always sent, so the
-                   * Bot's own grants get what is left of what one request may carry. See
-                   * `fitToolLimit`.
-                   */
-                  const limit =
-                    MODEL_TOOL_LIMIT -
-                    (input.tools?.length ?? 0) -
-                    coordinationTools.length -
-                    toolsAddedAfter(input);
-                  const offered = narrow
-                    ? await narrow(input, limit)
-                    : fitToolLimit(tools, {
-                        limit,
-                        text: latestUserText(input.messages),
-                      });
-                  return [...offered, ...coordinationTools];
-                },
-              )
-            : // A run the runtime makes for itself is offered none of them. See `isAskedRun`.
-              Promise.resolve([]),
-        ).pipe(switchMap((offered) => runWith(offered, input, next))),
+      let started = false;
+      const stream = defer(async () => {
+        if (!holds(input)) return runWith([], input, next);
+        const picked = await pickedSkillFor?.(input);
+        if (picked?.kind === "refused")
+          return new PickedSkillRefusal(picked.reason).run(input);
+        const marketRun = await marketRunFor?.(input, picked);
+        const coordinationTools = (await coordination?.(agent.id, input)) ?? [];
+        // The browser and coordination tools get their places before the Bot's grants.
+        const limit =
+          MODEL_TOOL_LIMIT -
+          (input.tools?.length ?? 0) -
+          coordinationTools.length -
+          toolsAddedAfter(input);
+        const offered = narrow
+          ? await narrow(input, limit, marketRun)
+          : fitToolLimit(tools, {
+              limit,
+              text: latestUserText(input.messages),
+            });
+        return recordMarketComputerCalls(
+          runWith(
+            [...offered, ...coordinationTools],
+            input,
+            next,
+            picked?.kind === "admitted" ? picked.guidance : undefined,
+            marketRun,
+          ),
+          marketRun,
+        );
+      }).pipe(
+        switchMap((events) => events),
+        tap((event) => {
+          if (event.type === EventType.RUN_STARTED) started = true;
+        }),
+        catchError((error) => {
+          if (!(error instanceof MarketRunPaused))
+            return throwError(() => error);
+          if (!started) return new PickedSkillRefusal(error.message).run(input);
+          return of({
+            type: EventType.RUN_ERROR,
+            message: error.message,
+            code: "MARKET_SKILL_PAUSED",
+          } as BaseEvent);
+        }),
       );
       const owned =
         !!process.env.MANAGED_AGENT_TOKEN &&
@@ -2726,6 +2932,7 @@ export async function resolveRuntimeAgents(
   pickedModel?: PickedModel,
   /** Appended last for the positional reason `loadInstructions` gives. See {@link buildAgents}. */
   loadApps?: LoadAppsForBot,
+  marketSkill?: MarketSkillSnapshot | null,
 ): Promise<Record<string, AbstractAgent>> {
   const all = await loadAgents();
   if (all.length === 0) {
@@ -2772,6 +2979,7 @@ export async function resolveRuntimeAgents(
     // of theirs.
     new Map(all.map((agent) => [agent.id, agent.name])),
     loadApps,
+    marketSkill,
   );
 }
 

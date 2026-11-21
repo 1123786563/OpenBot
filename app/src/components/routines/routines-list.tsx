@@ -90,9 +90,9 @@ function lastRunLabel(lastRun: RoutineRecord["lastRun"]): {
       dot: "bg-destructive",
     };
   }
-  if (lastRun.status === "skipped") {
+  if (lastRun.status === "skipped" || lastRun.status === "paused") {
     return {
-      text: `Skipped ${when}`,
+      text: `${lastRun.status === "paused" ? "Paused" : "Skipped"} ${when}`,
       className: "text-amber-600 dark:text-amber-500",
       dot: "bg-amber-500",
     };
@@ -154,6 +154,11 @@ const RUN_STATUS: Record<
   },
   skipped: {
     text: "Skipped",
+    dot: "bg-amber-500",
+    className: "text-amber-600 dark:text-amber-500",
+  },
+  paused: {
+    text: "Paused",
     dot: "bg-amber-500",
     className: "text-amber-600 dark:text-amber-500",
   },

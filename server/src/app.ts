@@ -28,12 +28,11 @@ import {
 import type { BotAccessCheck } from "./agents/profile-policy";
 import type { AgentProfileStore } from "./agents/profile-store";
 import { createAgentRoutes } from "./agents/routes";
-import { createApprovalRoutes } from "./approvals/routes";
 import { createReviewerGuidanceRoutes } from "./approvals/reviewer-guidance";
+import { createApprovalRoutes } from "./approvals/routes";
 import { createApprovalRuleDraftRoutes } from "./approvals/rule-translate";
 import type { RuleVocabulary } from "./approvals/rule-vocabulary";
 import type { ApprovalService } from "./approvals/service";
-import { type AuditVocabulary, createAuditAskRoutes } from "./audit-ask";
 import {
   type AuditEvent,
   type AuditEventType,
@@ -47,6 +46,7 @@ import {
   readAuditExportRows,
   recordAuditEvent,
 } from "./audit";
+import { type AuditVocabulary, createAuditAskRoutes } from "./audit-ask";
 import { createDevRequireUser } from "./auth/dev-actor";
 import {
   type AppVariables,
@@ -112,13 +112,13 @@ import type { IdentityStore } from "./identity/store";
 import { createIntelligenceClient } from "./intelligence-client";
 import { createCapturePassOrigin } from "./intelligence-gateway-proxy";
 import {
-  createLearningRoutes,
-  type LearningAdminDependencies,
-} from "./learning/routes";
-import {
   type LearningModelEndpoint,
   mountLearningModelEndpoint,
 } from "./learning/model-endpoint";
+import {
+  createLearningRoutes,
+  type LearningAdminDependencies,
+} from "./learning/routes";
 import {
   createPersonalLearningRoutes,
   type PersonalLearningRouteDeps,
@@ -178,6 +178,7 @@ import { createRoutingRoutes } from "./routing/routes";
 import { createCoworkerRoutingService } from "./routing/service";
 import type { SelfHostBanner } from "./self-host-banner";
 import { createSetupRoutes, type SetupSources } from "./setup/checklist";
+import { createSkillMarketRoutes } from "./skill-market/routes";
 import { createTaskRoutes } from "./tasks/routes";
 import type { TaskRunner } from "./tasks/runner";
 import type { TaskStore } from "./tasks/store";
@@ -571,6 +572,10 @@ export function createApp(
   profileStore?: ProfileStore,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
+  const skillMarket =
+    config.edition === "team" && !config.singleUser
+      ? config.skillMarket
+      : undefined;
   // First, in every auth mode: a page from another website changes nothing here and opens no socket.
   // See request-trust.ts for what passes and why.
   app.use("/api/*", createOriginGuard(config));
@@ -626,6 +631,7 @@ export function createApp(
       localEvaluation: config.singleUser,
       // Which product this is: the app shows the personal edition's screens instead of Admin.
       edition: config.edition,
+      skillMarket: Boolean(skillMarket),
       transcription: Boolean(config.transcription),
       voice: Boolean(config.voice),
       /*
@@ -777,6 +783,12 @@ export function createApp(
   // Enterprise controls: capability switches and the model allowlist in front of the routes they
   // govern, the admin screen's API, and the SCIM verbs the GET/POST auth handler above does not take.
   app.use("/api/*", createEnterpriseGate(requireUser));
+  if (skillMarket) {
+    app.route(
+      "/api/skill-market",
+      createSkillMarketRoutes(requireUser, skillMarket, undefined, pluginStore),
+    );
+  }
   if (coworker?.productTelemetry)
     app.route(
       "/api/telemetry",
@@ -2210,14 +2222,32 @@ export function createApp(
       }
 
       try {
-        const deploymentResult = await deploymentToolCaller?.({
-          name: parsedCall.value.ref,
-          args: parsedCall.value.args,
-          botId: verdict.botId,
-          actorId: verdict.actorId,
-          initiator: verdict.initiator,
-          run: verdict.run,
-        });
+        const { run } = verdict;
+        const pauseReason = run.threadId
+          ? await pluginStore?.marketRunPauseReason?.({
+              ...run,
+              threadId: run.threadId,
+            })
+          : null;
+        if (
+          pauseReason &&
+          (!pluginStore || !parsedCall.value.ref.includes("/"))
+        )
+          return context.json({
+            text: `${REFUSAL_MARKER} ${pauseReason}`,
+            isError: true,
+          });
+        // The plugin store records its own refusal for a signed MCP call.
+        const deploymentResult = pauseReason
+          ? null
+          : await deploymentToolCaller?.({
+              name: parsedCall.value.ref,
+              args: parsedCall.value.args,
+              botId: verdict.botId,
+              actorId: verdict.actorId,
+              initiator: verdict.initiator,
+              run: verdict.run,
+            });
         if (deploymentResult) return context.json(deploymentResult);
 
         if (!pluginStore) {
@@ -2235,7 +2265,7 @@ export function createApp(
           actorId: verdict.actorId,
           ...(verdict.initiator ? { initiator: verdict.initiator } : {}),
           // The conversation this run is in, signed with the rest: where a routine asked for "here" posts.
-          ...(verdict.run.threadId ? { threadId: verdict.run.threadId } : {}),
+          ...(run.threadId ? { threadId: run.threadId, runId: run.runId } : {}),
         });
         // Worded by the helper the in-process door uses, so a framework Bot's model reads a vendor's
         // error as the vendor's and not as a result. Neither Bot words it on its way through.
