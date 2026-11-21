@@ -54,6 +54,7 @@ import { parametersFor } from "@openbot/toolkit/granted-tool";
 import { HeadlessToolsMiddleware } from "@openbot/toolkit/headless-tools";
 import { sanitizeSeededHistory } from "@openbot/toolkit/history-sanitize";
 import { executeNativeApprovalTool } from "@openbot/toolkit/native-approval";
+import { withinRunContext } from "@openbot/toolkit/run-context";
 import {
   observeDetachedRun,
   type PlatformRun,
@@ -87,7 +88,6 @@ import {
   type PlanModelConfig,
   planModelForEnvironment,
 } from "./agents/plan-model";
-import type { AgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
 import {
   type RefusingProvider,
@@ -124,7 +124,6 @@ import {
 import { createDirectChatRoutes } from "./channels/direct-chat";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { DeploymentConfig } from "./config";
-import type { Database } from "./db/client";
 import { observeModelConnection } from "./desktop-connection-failure";
 import { desktopTelemetryProperties } from "./desktop-telemetry";
 import { currentEdition } from "./edition";
@@ -1153,7 +1152,13 @@ export async function buildAgents(
           marketSkill,
         );
         if (loadPersonalMemory)
-          built.use(new PersonalMemoryMiddleware(agent.id, loadPersonalMemory));
+          built.use(
+            (input, next) =>
+              new Observable((subscriber) =>
+                withinRunContext(() => next.run(input).subscribe(subscriber)),
+              ),
+            new PersonalMemoryMiddleware(agent.id, loadPersonalMemory),
+          );
         return [agent.id, built];
       }),
     ),
@@ -3236,7 +3241,18 @@ export function mountCopilotRuntime(
   identifyActor: IdentifyActor,
   options: {
     productTelemetry?: ProductTelemetry;
-    directChat?: { database: Database; profiles: AgentProfileStore };
+    directChat?: Pick<
+      Parameters<typeof createDirectChatRoutes>[0],
+      | "database"
+      | "profiles"
+      | "reflect"
+      | "memoryVersionsCurrent"
+      | "learningClock"
+      | "groupThread"
+      | "publishGroupReply"
+      | "backgroundActor"
+      | "mayAddress"
+    >;
     /**
      * Where the cards a Bot asks with in the conversation are saved while they wait on the person,
      * so the Bot is under Needs you for them. See approvals/decision-waits.ts.
@@ -3296,12 +3312,12 @@ export function mountCopilotRuntime(
     actor: AgentActor;
     botId: string;
     initiator?: AuditInitiator;
-    textOnly?: boolean;
+    marketSkill?: MarketSkillSnapshot | null;
   }): Promise<AbstractAgent | null> => {
     try {
       return await resolver.resolveAgentForActor(input.actor, input.botId, {
         initiator: input.initiator,
-        ...(input.textOnly ? { holdsTools: () => false } : {}),
+        marketSkill: input.marketSkill,
       });
     } catch (error) {
       if (error instanceof CoworkerUnavailableError) return null;
@@ -3503,22 +3519,37 @@ export function mountCopilotRuntime(
   });
 
   const handler = intelligence ? sdkHandler : new Hono();
+  let runBackground:
+    | ReturnType<typeof createDirectChatRoutes>["runBackground"]
+    | undefined;
+  let backgroundApproval:
+    | ReturnType<typeof createDirectChatRoutes>["backgroundApproval"]
+    | undefined;
+  let sweepLearning: (() => Promise<void>) | undefined;
+  let learnedSkillVersionsCurrent:
+    | ReturnType<typeof createDirectChatRoutes>["learnedSkillVersionsCurrent"]
+    | undefined;
   if (!intelligence) {
     if (!options.directChat)
       throw new Error("OpenBot chat requires its database and Bot profiles.");
     const trial = config.managedModelTrial;
-    handler.route(
-      basePath,
-      createDirectChatRoutes({
-        ...options.directChat,
-        trial: trial && {
-          route: trial.route,
-          model: createManagedModel(trial),
-        },
-        identifyActor,
-        agentFor: (actor, botId) => agentFor({ actor, botId, textOnly: true }),
-      }),
-    );
+    const directChat = createDirectChatRoutes({
+      ...options.directChat,
+      trial: trial && {
+        route: trial.route,
+        model: createManagedModel(trial),
+      },
+      traceRuns: Boolean(config.opik),
+      singleUser: config.singleUser,
+      identifyActor,
+      agentFor: (actor, botId, initiator, marketSkill) =>
+        agentFor({ actor, botId, initiator, marketSkill }),
+    });
+    runBackground = directChat.runBackground;
+    backgroundApproval = directChat.backgroundApproval;
+    handler.route(basePath, directChat.routes);
+    learnedSkillVersionsCurrent = directChat.learnedSkillVersionsCurrent;
+    if (trial) sweepLearning = directChat.sweepLearning;
     handler.get(`${basePath}/info`, (context) =>
       sdkHandler.fetch(context.req.raw),
     );
@@ -3526,6 +3557,10 @@ export function mountCopilotRuntime(
 
   return {
     handler,
+    runBackground,
+    backgroundApproval,
+    sweepLearning,
+    learnedSkillVersionsCurrent,
     learning,
     /**
      * How to reach the platform's runner, exactly as the runtime reaches it.

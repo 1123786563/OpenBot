@@ -1,6 +1,5 @@
 import type { Message } from "@ag-ui/core";
-import { Button } from "@astryxdesign/core/Button";
-import { Stack } from "@astryxdesign/core/Stack";
+import { HStack } from "@astryxdesign/core/Stack";
 import {
   type Attachment,
   CopilotChatConfigurationProvider,
@@ -27,31 +26,26 @@ import { ModelPicker } from "@/components/channels/composer/model-picker";
 import { ConversationIntro } from "@/components/channels/conversation-intro";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { ProgressRow } from "@/components/channels/progress-row";
-import { transcriptMessages } from "@/components/channels/transcript-messages";
+import {
+  seedMessage,
+  takeFirstMessage,
+  transcriptMessages,
+} from "@/components/channels/transcript-messages";
 import { VoiceCallWidget } from "@/components/channels/voice-call-widget";
-import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { HandoffResumeNotice } from "@/components/computer/handoff-resume-notice";
 import { StarterSuggestions } from "@/components/starter-tour/starter-suggestions";
+import { Button } from "@/components/ui/button";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
   answerPersonQuestionMutationOptions,
   approvalInboxOptions,
   carryingOnAfterApproval,
 } from "@/lib/approvals";
-import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { attachmentUrl } from "@/lib/channels/attachments";
 import {
   recordChannelActivityMutationOptions,
   setChannelBusy,
 } from "@/lib/channels/mutations";
-import {
-  claimFirstSend,
-  findFirstMessage,
-  finishPendingStart,
-  readPendingStart,
-  restorePendingAttachments,
-  savePendingStart,
-} from "@/lib/channels/pending-start";
 import {
   type AgentChannel,
   type ChannelSummary,
@@ -70,7 +64,6 @@ import {
 } from "@/lib/copilot/approval-context";
 import { offerItsOwnTools } from "@/lib/copilot/bot-offer";
 import { isBrokenStream, STREAM_BROKE } from "@/lib/copilot/broken-stream";
-import { ConversationReadError } from "./conversation-status";
 import { ConversationProvider } from "@/lib/copilot/conversation";
 import { afterMs, joinWithin } from "@/lib/copilot/join-thread";
 import {
@@ -81,7 +74,9 @@ import {
 import { releaseServerOwnedInterrupts } from "@/lib/copilot/server-owned-interrupts";
 import { followLastRun, stoppedReason } from "@/lib/copilot/stopped-turn";
 import {
+  controlThreadRun,
   readThreadMessages,
+  type StoredRun,
   withCurrentA2uiVersions,
 } from "@/lib/copilot/thread-messages";
 import { modelCatalogueQueryOptions } from "@/lib/models/queries";
@@ -499,9 +494,11 @@ function authoredComponents(): ReadonlySet<string> {
 export function ChannelChat({
   channel,
   runtimeAgentId,
+  focusRunId,
 }: {
   channel: AgentChannel;
   runtimeAgentId: string;
+  focusRunId?: string;
 }) {
   // The core attaches the frontend tool registry; direct agent runs do not.
   const { copilotkit } = useCopilotKit();
@@ -536,37 +533,18 @@ export function ChannelChat({
     return observeApprovalAgent(agent);
   }, [agent, runtimeAgentId, queries]);
 
-  const { data: user } = useQuery(currentUserQueryOptions());
-  const [first, setFirst] = useState(() =>
-    user ? findFirstMessage(user.id, channel.id) : null,
-  );
-  const firstOwner = useRef(user?.id);
-  firstOwner.current = user?.id;
-  const [firstAttempt, setFirstAttempt] = useState(0);
-  const [firstError, setFirstError] = useState<{
-    message: string;
-    action: "retry" | "check";
-  } | null>(null);
-  const [copyStatus, setCopyStatus] = useState("");
-  const {
-    requestConfirmation: requestDraftDiscard,
-    confirmation: draftDiscard,
-  } = useActionConfirmation();
-  const seed: Message | null = first
-    ? {
-        id: first.id,
-        role: "user",
-        content: toMessageContent(
-          first.start.draft.text,
-          restorePendingAttachments(first.start.draft),
-        ),
-      }
-    : null;
+  /**
+   * First-message seed from the compose screen. It is taken once per mount and retained until the
+   * agent has its own messages because joining a fresh thread can temporarily empty the agent.
+   */
+  const [first] = useState(() => {
+    const pending = takeFirstMessage(channel.id);
+    return pending ? { seed: seedMessage(pending.text, newId()) } : null;
+  });
+  const seed = first?.seed ?? null;
 
-  useEffect(() => {
-    if (user)
-      setFirst((known) => known ?? findFirstMessage(user.id, channel.id));
-  }, [user, channel.id]);
+  /** Cleared by the send-on-mount effect without restarting it. */
+  const seedRef = useRef(first);
 
   /** Promise gate for ordering the first message after the thread join when possible. */
   const openJoinGate = useRef<() => void>(() => {});
@@ -634,7 +612,48 @@ export function ChannelChat({
     "ready" | "unavailable"
   >("ready");
   const [historyReadFailed, setHistoryReadFailed] = useState(false);
-  const [retryingHistory, setRetryingHistory] = useState(false);
+  const [storedRuns, setStoredRuns] = useState<StoredRun[]>();
+  const focusedRun = storedRuns?.find((run) => run.id === focusRunId);
+  const [accessEnded, setAccessEnded] = useState(false);
+  const durableChat = storedRuns !== undefined;
+  const activeRun = storedRuns?.find((run) => run.status === "running");
+  const unresolvedRun = storedRuns?.find(
+    (run) => run.externalOutcome === "unknown",
+  );
+  const latestRun = storedRuns?.at(-1);
+  const runControl = useMutation({
+    mutationFn: async ({
+      runId,
+      action,
+    }: {
+      runId?: string;
+      action: "stop" | "reconcile";
+    }) => {
+      let id = runId;
+      if (!id) {
+        const thread = await readThreadMessages(
+          channel.threadId,
+          runtimeAgentId,
+        );
+        if (!thread.runs) throw new Error("Could not check the run status.");
+        id = thread.runs.find((run) => run.status === "running")?.id;
+      }
+      if (id) {
+        await controlThreadRun({
+          threadId: channel.threadId,
+          agentId: runtimeAgentId,
+          runId: id,
+          action,
+        });
+      }
+    },
+    onSuccess: (_, { action }) => {
+      if (action === "stop")
+        void queries.invalidateQueries(approvalInboxOptions());
+      else setRunError(null);
+    },
+    onSettled: () => pullHistoryRef.current?.(),
+  });
   /**
    * Why the last run ended without an answer, drawn under the transcript.
    *
@@ -725,6 +744,7 @@ export function ChannelChat({
          * is unreadable is exactly the case where silence would read as "this conversation is empty".
          */
         if (isCurrent) {
+          if (stored.availability === "ready") setStoredRuns(stored.runs);
           setUnreadable(stored.unreadable);
           setHistoryAvailability(stored.availability);
           // A gateway snapshot may be partial; neither it nor a later send proves this read succeeded.
@@ -826,6 +846,13 @@ export function ChannelChat({
           );
           if (!isCurrent()) return;
           if (stored.availability === "unavailable") {
+            if (durableChat && stored.accessDenied) {
+              setAccessEnded(true);
+              setStoredRuns([]);
+              agentRef.current.setMessages([]);
+              void queryClient.invalidateQueries(approvalInboxOptions());
+              return;
+            }
             // Only an exhausted refresh with no successful read is a failure to announce. Keep the
             // last known ready notice when the store already answered this refresh cycle.
             if (delayMs === 1500 && !sawReady) {
@@ -835,11 +862,15 @@ export function ChannelChat({
             continue;
           }
           sawReady = true;
+          setAccessEnded(false);
+          setStoredRuns(stored.runs);
           // A ready read owns the notice even when every readable id is already on screen.
           setUnreadable(stored.unreadable);
           setHistoryAvailability("ready");
           setHistoryReadFailed(false);
           const current = agentRef.current;
+          // A live direct-chat stream owns its transcript until it ends.
+          if (stored.runs && current.isRunning) return;
           const messages = mergeStoredMessages(
             withCurrentA2uiVersions(current.messages),
             stored.messages,
@@ -884,6 +915,7 @@ export function ChannelChat({
   }, [
     channel.id,
     channel.threadId,
+    durableChat,
     joinGatePromise,
     joinedPromise,
     runtimeAgentId,
@@ -931,29 +963,6 @@ export function ChannelChat({
     historyReadFailed,
     unreadable,
   });
-  const retryHistory = async () => {
-    if (retryingHistory) return;
-    setRetryingHistory(true);
-    const version = ++historyReadVersion.current;
-    try {
-      const stored = await readThreadMessages(channel.threadId, runtimeAgentId);
-      if (version !== historyReadVersion.current) return;
-      setUnreadable(stored.unreadable);
-      setHistoryAvailability(stored.availability);
-      setHistoryReadFailed(stored.availability === "unavailable");
-      const messages = mergeStoredMessages(
-        withCurrentA2uiVersions(agent.messages),
-        stored.messages,
-      );
-      if (messages !== agent.messages) agent.setMessages(messages);
-    } finally {
-      setRetryingHistory(false);
-    }
-  };
-  const retryArchive = () => {
-    if (historyReadFailed) void retryHistory();
-    if (voiceArchive.error) void voiceArchive.refetch();
-  };
 
   const awaitingReply = useRef(false);
   /**
@@ -1028,6 +1037,12 @@ export function ChannelChat({
     };
   }, []);
   const [runsInFlight, setRunsInFlight] = useState(0);
+
+  useEffect(() => {
+    if (!durableChat) return;
+    const timer = setInterval(() => pullHistoryRef.current?.(), 3_000);
+    return () => clearInterval(timer);
+  }, [durableChat]);
 
   /*
    * THE THIRD FACT: THE SERVER HAS THE TURN. When the person answers an approval, the run that asked
@@ -1130,8 +1145,7 @@ export function ChannelChat({
   const deliver = async (
     trimmed: string,
     attachments: Attachment[],
-    sent?: Message,
-    beforeFirstSend?: () => Promise<void>,
+    options: { sent?: Message; voiceSignal?: AbortSignal },
   ) => {
     // Wait briefly for the runtime agent instance before adding the message.
     if (!isReadyRef.current) {
@@ -1188,6 +1202,7 @@ export function ChannelChat({
         if (answered !== target.messages) target.setMessages(answered);
       }
     }
+    options.voiceSignal?.throwIfAborted();
     const existingMessageIds = new Set(
       target.messages.map((message) => message.id),
     );
@@ -1222,9 +1237,8 @@ export function ChannelChat({
         ),
       );
 
-    if (beforeFirstSend) await beforeFirstSend();
     target.addMessage(
-      sent ?? {
+      options.sent ?? {
         content: toMessageContent(trimmed, attachments),
         id: newId(),
         role: "user",
@@ -1273,6 +1287,14 @@ export function ChannelChat({
         awaitingReply.current = false;
         const whole = await readBackFromThread(target, existingMessageIds);
         if (whole) reportReadBack(target);
+        if (options.voiceSignal) {
+          // Read the original outcome without sending another request from the call.
+          if (!whole || unansweredToolCalls(target.messages).size > 0) {
+            turnFailure.current = STREAM_BROKE;
+            setRunError(STREAM_BROKE);
+          }
+          break;
+        }
         const unrun = unansweredToolCalls(target.messages).size > 0;
         if (whole && !unrun) break;
         if (whole && !carriedOn) {
@@ -1343,8 +1365,7 @@ export function ChannelChat({
     text: string,
     attachments: Attachment[] = [],
     /** The message to send for `text`, when it is more than the words: an answer to a question. */
-    sent?: Message,
-    beforeFirstSend?: () => Promise<void>,
+    options: { sent?: Message; voiceSignal?: AbortSignal } = {},
   ) => {
     const trimmed = text.trim();
     // A pasted screenshot with no caption is still a message to send: `canSendDraft` already
@@ -1352,8 +1373,13 @@ export function ChannelChat({
     // enabled and inert.
     if (!trimmed && attachments.length === 0) return "";
 
+    if (unresolvedRun) {
+      throw new Error(
+        "Check the previous run’s outcome before sending another message.",
+      );
+    }
     // Voice and typed requests share this turn boundary, including gaps between frontend tools.
-    if (turnsRef.current > 0 || agentRef.current.isRunning) {
+    if (activeRun || turnsRef.current > 0 || agentRef.current.isRunning) {
       throw new Error(
         "This Bot is still working on something. Wait for it, or stop it first.",
       );
@@ -1365,7 +1391,7 @@ export function ChannelChat({
       void setChannelBusy({ channelId: channel.id, busy: true });
     }
     try {
-      const reply = await deliver(trimmed, attachments, sent, beforeFirstSend);
+      const reply = await deliver(trimmed, attachments, options);
       /*
        * The person left while this turn was running (holding control of the Bot's browser, say) and the turn went on
        * without this screen. The run-finished subscription that tells the roster what the Bot said went with it, so the
@@ -1391,6 +1417,7 @@ export function ChannelChat({
       }
       // And the conversation open now, if the person came back, reads what this turn stored.
       if (!onScreen.current) turnFinishedAway(channel.id);
+      else if (storedRuns !== undefined) pullHistoryRef.current?.();
     }
   };
 
@@ -1511,7 +1538,7 @@ export function ChannelChat({
       inConversation: idle,
     });
     if (continueHere) {
-      await say(text, [], sent);
+      await say(text, [], { sent });
       return;
     }
     setAnsweredId(sent.id);
@@ -1548,7 +1575,22 @@ export function ChannelChat({
       const started = stopEpoch.current;
       const answer = await askChannelAgent(request, signal, {
         busy: () => turnsRef.current > 0 || agentRef.current.isRunning,
-        send: (text) => sayRef.current(text),
+        send: (text, id) =>
+          sayRef.current(text, [], {
+            sent: { id, role: "user", content: text },
+            voiceSignal: signal,
+          }),
+        read: async () => {
+          const thread = await readThreadMessages(
+            channel.threadId,
+            runtimeAgentId,
+          );
+          if (thread.availability !== "ready" && storedRuns !== undefined)
+            throw new Error(
+              "The run’s result could not be confirmed. Check the conversation.",
+            );
+          return thread;
+        },
       });
       if (started !== stopEpoch.current)
         throw new Error("The user stopped this task before it completed.");
@@ -1558,7 +1600,12 @@ export function ChannelChat({
   const stopTask = () => {
     awaitingReply.current = false;
     stopEpoch.current++;
-    copilotkit.stopAgent({ agent });
+    if (storedRuns !== undefined) {
+      if (!runControl.isPending)
+        runControl.mutate({ action: "stop", runId: activeRun?.id });
+    } else {
+      copilotkit.stopAgent({ agent });
+    }
   };
 
   /**
@@ -1575,154 +1622,31 @@ export function ChannelChat({
     void sayRef.current(text).catch(() => undefined);
   }, []);
 
+  /**
+   * Send the create-channel seed once. No waiting of its own: `say` owns that for every turn, and a
+   * second copy of the ordering here was the one that could disagree with it.
+   */
   useEffect(() => {
-    const owner = user?.id;
-    if (!first || !owner) return;
-    if (!channel.active || !isReady) {
-      const timer = setTimeout(
-        () => {
-          setFirstError({
-            action: "check",
-            message: channel.active
-              ? "The Bot hasn’t connected. Your message is saved here."
-              : "This Bot is unavailable. Your message is saved here.",
-          });
-        },
-        channel.active ? SEND_WITHOUT_RUNTIME_AFTER_MS : 0,
-      );
-      return () => clearTimeout(timer);
-    }
-    setFirstError(null);
-    const { id } = first;
-    let current = true;
+    const pending = seedRef.current;
+    if (!pending) return;
+    seedRef.current = null;
 
-    const attempt = async () => {
-      await joinedPromise;
-      if (!current || firstOwner.current !== owner) return;
-      const stored = readPendingStart(owner, id);
-      if (!stored || stored.state === "finished") {
-        setFirst(null);
-        return;
-      }
-      const verify = async () => {
-        const history = await readThreadMessages(
-          channel.threadId,
-          runtimeAgentId,
-        );
-        if (
-          history.availability === "ready" &&
-          history.messages.some(
-            (message) => message.id === id && message.role === "user",
-          )
-        ) {
-          const target = agentRef.current;
-          const merged = mergeStoredMessages(target.messages, history.messages);
-          if (merged !== target.messages) target.setMessages(merged);
-          finishPendingStart(owner, id, channel.id, false);
-          if (current) setFirst(null);
-          return;
-        }
-        if (current) {
-          setFirstError({
-            action: "check",
-            message:
-              history.availability === "ready"
-                ? "Your message is saved here. It hasn’t appeared in the Thread yet. Check again to see whether it arrived."
-                : "Your message is saved here, but the Thread couldn’t be checked. Check again when you’re back online.",
-          });
-        }
-      };
-
-      if (stored.progress.phase === "submitted") {
-        await verify();
-        return;
-      }
-      if (
-        stored.progress.phase !== "ready" ||
-        stored.progress.channelId !== channel.id
+    // Swallowed for the reason `askFromComponent` above records: `say` throws on a failed turn, and
+    // the seed has no box to go back into — it was typed on a screen that has already navigated
+    // away. The transcript keeps the seeded message and the notice under it says what happened.
+    // A `/` skill is still at the start of its words, where the server finds it.
+    void sayRef
+      .current(
+        typeof pending.seed.content === "string" ? pending.seed.content : "",
       )
-        return;
+      .catch(() => undefined);
 
-      let submitted = false;
-      try {
-        const attachments = restorePendingAttachments(stored.draft);
-        await sayRef.current(
-          stored.draft.text,
-          attachments,
-          {
-            id,
-            role: "user",
-            content: toMessageContent(stored.draft.text, attachments),
-          },
-          async () => {
-            if (!current || firstOwner.current !== owner)
-              throw new Error("The conversation was closed.");
-            const latest = readPendingStart(owner, id);
-            if (
-              latest?.state !== "pending" ||
-              latest.progress.phase !== "ready"
-            ) {
-              submitted = true;
-              throw new Error("The message is already being checked.");
-            }
-            const claimed = await claimFirstSend(owner, id);
-            submitted = true;
-            const beforeSend = readPendingStart(owner, id);
-            if (
-              beforeSend?.state === "pending" &&
-              beforeSend.progress.phase === "ready"
-            ) {
-              savePendingStart(owner, id, {
-                ...beforeSend,
-                progress: { phase: "submitted", channelId: channel.id },
-              });
-            }
-            if (
-              !claimed ||
-              beforeSend?.state !== "pending" ||
-              !current ||
-              firstOwner.current !== owner
-            ) {
-              throw new Error("The message is already being checked.");
-            }
-          },
-        );
-        finishPendingStart(owner, id, channel.id, false);
-        if (current) setFirst(null);
-      } catch {
-        if (submitted) {
-          await verify();
-        } else if (current) {
-          setFirstError({
-            action: "retry",
-            message: "Your message is saved here. Try again to send it.",
-          });
-        }
-      }
-    };
+    // Keep `seed` in state; transcriptMessages gives it up once the agent holds a user turn.
+  }, []);
 
-    void attempt().catch(() => {
-      if (current)
-        setFirstError({
-          action: "check",
-          message:
-            "Your message is saved here. Check again to see whether it arrived.",
-        });
-    });
-    return () => {
-      current = false;
-    };
-  }, [
-    channel.active,
-    channel.id,
-    channel.threadId,
-    first,
-    firstAttempt,
-    isReady,
-    joinedPromise,
-    runtimeAgentId,
-    user?.id,
-  ]);
+  if (accessEnded) {
+    return <p role="alert">Conversation access ended.</p>;
+  }
 
   return (
     // Activity renderers resolve their agent through this SDK context. It must match useAgent's
@@ -1747,7 +1671,8 @@ export function ChannelChat({
           />
           <ConversationView
             // Remounted per conversation, so opening one puts the caret in its composer once.
-            autoFocus
+            autoFocus={!focusRunId}
+            focusMessageId={focusedRun?.userMessageId}
             threadId={channel.threadId}
             // The clock beside `+`: a routine for the Bot this conversation talks to, posting here.
             routine={
@@ -1773,8 +1698,8 @@ export function ChannelChat({
                   channelId={channel.id}
                   disabled={
                     !channel.active ||
-                    Boolean(first) ||
                     historyLoading ||
+                    Boolean(activeRun || unresolvedRun) ||
                     agent.isRunning ||
                     turnsInFlight > 0 ||
                     carryingOn ||
@@ -1813,7 +1738,7 @@ export function ChannelChat({
                 value={runModel.value}
               />
             }
-            disabled={!channel.active || Boolean(first)}
+            disabled={!channel.active || Boolean(unresolvedRun)}
             messages={withVoiceChats(
               transcriptMessages(agent.messages, seed).map(shownAnswer),
               voiceArchive.entries,
@@ -1834,81 +1759,7 @@ export function ChannelChat({
                * it — and they are independent, so neither is an `else` for the other.
                */
               <>
-                {first && firstError ? (
-                  <Stack gap={2}>
-                    <ConversationReadError
-                      title="Couldn't confirm the first message."
-                      description={firstError.message}
-                      retryLabel={
-                        firstError.action === "check"
-                          ? "Check again"
-                          : "Try again"
-                      }
-                      retry={() => {
-                        setFirstError(null);
-                        setFirstAttempt((attempt) => attempt + 1);
-                      }}
-                      retrying={false}
-                    />
-
-                    <Stack direction="horizontal" gap={2} wrap="wrap">
-                      {first.start.draft.text && navigator.clipboard ? (
-                        <Button
-                          size="sm"
-                          label="Copy draft"
-                          onClick={() =>
-                            void navigator.clipboard
-                              .writeText(first.start.draft.text)
-                              .then(
-                                () => setCopyStatus("Draft copied."),
-                                () =>
-                                  setCopyStatus(
-                                    "Couldn't copy the draft. You can select it in the conversation.",
-                                  ),
-                              )
-                          }
-                        />
-                      ) : null}
-                      <Button
-                        size="sm"
-                        label="Discard browser copy"
-                        onClick={(event) => {
-                          const owner = user?.id;
-                          if (!owner) return;
-                          requestDraftDiscard({
-                            title: "Discard the copy saved in this browser?",
-                            description:
-                              "The message may have reached the Thread. This removes the saved copy from this browser and leaves any delivered message in the Thread.",
-                            confirmLabel: "Discard browser copy",
-                            pendingLabel: "Discarding copy…",
-                            failureMessage:
-                              "Couldn't remove the saved copy. Try again.",
-                            successMessage: "Browser copy discarded.",
-                            trigger: event.currentTarget,
-                            run: async () => {
-                              finishPendingStart(
-                                owner,
-                                first.id,
-                                channel.id,
-                                false,
-                              );
-                              setFirst(null);
-                            },
-                          });
-                        }}
-                      />
-                    </Stack>
-                    {copyStatus ? <p role="status">{copyStatus}</p> : null}
-                  </Stack>
-                ) : first ? (
-                  <p role="status">
-                    {turnsInFlight > 0
-                      ? "Sending first message…"
-                      : "Preparing first message…"}
-                  </p>
-                ) : null}
                 {/* What the person allowed for this conversation, each with Turn off. */}
-                {draftDiscard}
                 {channel.active ? (
                   <ConversationAllowances threadId={channel.threadId} />
                 ) : null}
@@ -1927,24 +1778,10 @@ export function ChannelChat({
                     }
                   }}
                 />
-                {(voiceArchive.error ||
-                  (historyReadFailed && historyNotice)) && (
-                  <ConversationReadError
-                    title={
-                      voiceArchive.error && historyReadFailed
-                        ? "Couldn't load earlier messages or voice chats."
-                        : voiceArchive.error
-                          ? "Couldn't load voice chats."
-                          : (historyNotice ?? "Couldn't load earlier messages.")
-                    }
-                    description={
-                      voiceArchive.error
-                        ? "You can keep using this conversation."
-                        : undefined
-                    }
-                    retry={retryArchive}
-                    retrying={retryingHistory || voiceArchive.fetching}
-                  />
+                {voiceArchive.error && (
+                  <p className="pb-2 text-sm text-destructive" role="alert">
+                    Couldn’t load voice chats. Reload the page.
+                  </p>
                 )}
                 {voiceContextNotice && (
                   <p
@@ -1954,7 +1791,7 @@ export function ChannelChat({
                     {voiceContextNotice}
                   </p>
                 )}
-                {historyNotice && !historyReadFailed ? (
+                {historyNotice ? (
                   <p
                     className="pb-2 text-sm text-muted-foreground"
                     role="status"
@@ -1962,6 +1799,57 @@ export function ChannelChat({
                     {historyNotice}
                   </p>
                 ) : null}
+                {(unresolvedRun ||
+                  activeRun?.waitingForApproval ||
+                  latestRun?.stopReason ||
+                  latestRun?.externalOutcome === "not_dispatched" ||
+                  (latestRun?.status === "failed" &&
+                    latestRun.externalOutcome === "executed")) && (
+                  <HStack
+                    wrap="wrap"
+                    align="center"
+                    gap={2}
+                    paddingBlockEnd={2}
+                    className="text-sm text-muted-foreground"
+                  >
+                    <p role="status">
+                      {unresolvedRun
+                        ? "The previous run’s external outcome is unknown. Check the outcome before sending again."
+                        : activeRun?.waitingForApproval
+                          ? "The run is waiting for approval."
+                          : latestRun?.stopReason === "context_revoked"
+                            ? "The run paused because Memory or Learned skill access changed."
+                            : latestRun?.externalOutcome === "not_dispatched"
+                              ? "The action was not dispatched. Send your request again to retry."
+                              : latestRun?.externalOutcome === "executed"
+                                ? "The outcome was verified and added to the conversation."
+                                : latestRun?.stopReason === "stopped"
+                                  ? "The run was stopped."
+                                  : "The run ended when access was revoked."}
+                    </p>
+                    {unresolvedRun && channel.active && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={runControl.isPending}
+                        onClick={() =>
+                          runControl.mutate({
+                            action: "reconcile",
+                            runId: unresolvedRun.id,
+                          })
+                        }
+                      >
+                        {runControl.isPending ? "Checking…" : "Check outcome"}
+                      </Button>
+                    )}
+                  </HStack>
+                )}
+                {runControl.error && (
+                  <p className="pb-2 text-sm text-destructive" role="alert">
+                    {runControl.error.message}
+                  </p>
+                )}
                 {answer.error ? (
                   <p className="pb-2 text-sm text-destructive" role="alert">
                     {answer.error.message}
@@ -1997,36 +1885,19 @@ export function ChannelChat({
               }
               await say(draft.text, draft.attachments);
             }}
-            /**
-             * Stop through the core so the abort signal reaches frontend tools; `say` repairs any
-             * unanswered tool call before the next turn.
-             */
             onStop={stopTask}
-            /*
-             * The turn, not the run. A browser action ends one run and starts another, and telling the
-             * conversation it is idle in between is what would drain a parked correction into the
-             * middle of an answer: a second turn racing the first on one thread, with a fabricated
-             * result stitched over a tool call that is still executing.
-             */
-            pending={agent.isRunning || turnsInFlight > 0 || carryingOn}
-            /*
-             * A channel outlives its turns, so it is the screen where waiting is worth offering. A
-             * correction typed mid-answer is held here, in this tab, and runs as one follow-up turn the
-             * moment this one is over — including when it is over because somebody pressed the button
-             * above.
-             */
-            queueWhileBusy
+            pending={
+              Boolean(activeRun) ||
+              agent.isRunning ||
+              turnsInFlight > 0 ||
+              carryingOn
+            }
+            queueWhileBusy={storedRuns === undefined}
             restoring={historyLoading}
-            /*
-             * The run, not the turn. Stop reaches a run through the core's abort controller, and that
-             * controller does not exist until `say` has finished waiting for the runtime agent — so
-             * this is the one place the narrower fact is the honest one to draw a button from.
-             */
-            /*
-             * Not while the server carries the conversation on after an approval: this tab has no
-             * run of its own for Stop to reach then, and a Stop that does nothing is worse than none.
-             */
-            stoppable={agent.isRunning || runsInFlight > 0}
+            stoppable={
+              !runControl.isPending &&
+              (Boolean(activeRun) || agent.isRunning || runsInFlight > 0)
+            }
             /*
              * At the END OF THE TRANSCRIPT rather than above the composer, which is where this used to
              * be. A turn that ends without an answer leaves a gap exactly where the reply was going to

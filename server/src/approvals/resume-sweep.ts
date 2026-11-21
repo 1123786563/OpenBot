@@ -1,14 +1,27 @@
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
+import {
+  CONTEXT_REVOKED,
+  CONTEXT_REVOKED_MESSAGE,
+  RunContextRevokedError,
+  createRunContext,
+  trackRunContext,
+  verifyRunContext,
+  withRunContext,
+} from "@openbot/toolkit/run-context";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, exists, inArray, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { headlessTurnRefusal } from "../admin/controls";
 import type { AgentActor } from "../agents/profile-types";
 import { PERSON_INITIATOR } from "../audit";
+import { matchingRun, stopDirectChatRun } from "../channels/direct-chat-replay";
+import type { createDirectChatRoutes } from "../channels/direct-chat";
 import type { GroupConversations } from "../channels/group";
 import type { ChannelStore } from "../channels/routes";
 import type { Database } from "../db/client";
 import {
+  approvalRequests,
+  directChatRuns,
   intelligenceChannelMappings,
   responsibilityRuns,
   routineRuns,
@@ -21,6 +34,7 @@ import {
 } from "../skill-market/disablements";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import type { ApprovalResumeDependencies, ApprovalService } from "./service";
+import type { ApprovalAction } from "./types";
 
 /**
  * One pass of the approval resume loop: claim a decided approval, carry it out, and pick the waiting
@@ -34,10 +48,18 @@ export function createApprovalResumeTick(deps: {
   approvalOwner: string;
   approvalService: ApprovalService;
   executeApprovedAction: ApprovalResumeDependencies["execute"];
+  contextCurrent?: (action: ApprovalAction) => Promise<boolean>;
+  traceRuns?: boolean;
   database: Database;
   responsibilityStore: Pick<ResponsibilityStore, "resumeWaiting">;
-  groupConversations: Pick<GroupConversations, "continueWaiting">;
+  groupConversations: Pick<
+    GroupConversations,
+    "continueWaiting" | "pauseWaiting"
+  >;
   approvalContinuationRunner: TurnRunner;
+  backgroundApproval?: ReturnType<
+    typeof createDirectChatRoutes
+  >["backgroundApproval"];
   channelStore: Pick<ChannelStore, "recordActivity">;
   actorFor: (ownerUserId: string) => Promise<AgentActor>;
   notify: (
@@ -71,6 +93,17 @@ export function createApprovalResumeTick(deps: {
     channelStore,
     actorFor,
   } = deps;
+  const contextCurrent = (action: ApprovalAction) =>
+    action.continuation?.sourceVersions?.length
+      ? (deps.contextCurrent?.(action) ?? Promise.resolve(false))
+      : Promise.resolve(true);
+  const withSavedContext = <T>(action: ApprovalAction, run: () => Promise<T>) =>
+    withRunContext(createRunContext(), async () => {
+      const versions = action.continuation?.sourceVersions;
+      if (versions?.length)
+        trackRunContext(() => contextCurrent(action), versions);
+      return run();
+    });
   return async () => {
     try {
       const [item] = await approvalQueue.claim({
@@ -89,20 +122,92 @@ export function createApprovalResumeTick(deps: {
             approvalId: z.string().min(1),
           })
           .parse(item.payload);
+        const request = await approvalService.store.get(
+          input.ownerUserId,
+          input.approvalId,
+        );
+        const background = await deps.backgroundApproval?.(
+          request.action,
+          request.id,
+        );
+        const pause = async (beforeExecution = false) => {
+          const { threadId, runId } = request.action;
+          if (threadId)
+            await database.transaction(async (tx) => {
+              const key = { threadId, runId };
+              if (background) {
+                // A consumed approval with a saved success resolves dispatch even on redelivery.
+                // An execution error can leave the effect uncertain.
+                const savedSuccess = tx
+                  .select({ id: approvalRequests.id })
+                  .from(approvalRequests)
+                  .where(
+                    and(
+                      eq(approvalRequests.id, request.id),
+                      eq(approvalRequests.ownerUserId, input.ownerUserId),
+                      eq(approvalRequests.runId, runId),
+                      sql`${approvalRequests.action}->>'threadId' = ${threadId}`,
+                      isNotNull(approvalRequests.consumedAt),
+                      sql`${approvalRequests.result}->>'content' is not null`,
+                      sql`${approvalRequests.result}->>'error' is null`,
+                    ),
+                  );
+                // Only the worker that consumed this checkpoint can prove it skipped execution.
+                await tx
+                  .update(directChatRuns)
+                  .set({ externalOutcome: beforeExecution ? null : "executed" })
+                  .where(
+                    and(
+                      matchingRun(key),
+                      eq(directChatRuns.waitingApprovalId, request.id),
+                      inArray(directChatRuns.externalOutcome, [
+                        "dispatching",
+                        "unknown",
+                      ]),
+                      beforeExecution ? undefined : exists(savedSuccess),
+                    ),
+                  );
+              }
+              await stopDirectChatRun(
+                tx,
+                key,
+                CONTEXT_REVOKED,
+                Boolean(deps.traceRuns),
+                background ? request.id : undefined,
+              );
+            });
+          if (!background)
+            await groupConversations.pauseWaiting(
+              input.ownerUserId,
+              request.id,
+            );
+        };
         const resumeDependencies: ApprovalResumeDependencies = {
           // Asked before the action runs: with Use Bots off, or the Bot's model off the allowlist,
           // nothing is carried out and the refusal is final rather than retried.
           refusal: (action) =>
-            headlessTurnRefusal({
-              ownerUserId: action.actorId,
-              agentId: action.botId,
-              threadId: action.threadId,
-            }),
+            background
+              ? background.check()
+              : headlessTurnRefusal({
+                  ownerUserId: action.actorId,
+                  agentId: action.botId,
+                  threadId: action.threadId,
+                }),
           validate: (action) =>
             approvalService.validateReentry(action, () =>
               executeApprovedAction(action),
             ),
-          execute: executeApprovedAction,
+          beforeConsume: (action) => withSavedContext(action, verifyRunContext),
+          execute: (action) =>
+            withSavedContext(action, async () => {
+              try {
+                await verifyRunContext();
+              } catch (error) {
+                if (error instanceof RunContextRevokedError) await pause(true);
+                throw error;
+              }
+              return executeApprovedAction(action);
+            }),
           continue: async ({
             continuation: snapshot,
             result,
@@ -110,10 +215,15 @@ export function createApprovalResumeTick(deps: {
             approvalId,
             pauseReason,
           }) => {
-            const request = await approvalService.store.get(
-              input.ownerUserId,
-              approvalId,
-            );
+            if (
+              result.error === CONTEXT_REVOKED_MESSAGE ||
+              !(await contextCurrent(request.action))
+            ) {
+              await pause();
+              return;
+            }
+            // The original Routine or handoff worker picks up the saved result and resumes its Run.
+            if (background) return;
             pauseReason ??=
               (await marketRunPauseReason(database, request.action)) ??
               undefined;
@@ -168,18 +278,25 @@ export function createApprovalResumeTick(deps: {
               outcome = await groupConversations.continueWaiting(
                 approvalId,
                 () =>
-                  approvalContinuationRunner({
-                    ownerUserId: input.ownerUserId,
-                    routineId: "approval",
-                    agentId: request.action.botId,
-                    threadId: snapshot.threadId,
-                    instruction: "",
-                    initiator: snapshot.initiator ?? PERSON_INITIATOR,
-                    continuation: { snapshot, result, messageId },
+                  withSavedContext(request.action, async () => {
+                    await verifyRunContext();
+                    return approvalContinuationRunner({
+                      ownerUserId: input.ownerUserId,
+                      routineId: "approval",
+                      agentId: request.action.botId,
+                      threadId: snapshot.threadId,
+                      instruction: "",
+                      initiator: snapshot.initiator ?? PERSON_INITIATOR,
+                      continuation: { snapshot, result, messageId },
+                    });
                   }),
                 pauseReason,
               );
             } catch (error) {
+              if (error instanceof RunContextRevokedError) {
+                await pause();
+                return;
+              }
               if (error instanceof HeadlessToolSuspension) {
                 waitingOn = {
                   message: error.message,

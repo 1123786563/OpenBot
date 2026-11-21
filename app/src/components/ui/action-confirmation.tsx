@@ -20,7 +20,7 @@ type Confirmation = {
   confirmLabel: string;
   pendingLabel: string;
   failureMessage: string;
-  run: () => Promise<void | string>;
+  run: () => Promise<string> | Promise<void>;
   trigger?: HTMLElement | undefined;
   fallbackFocus?: (() => HTMLElement | null) | undefined;
   variant?: "default" | "destructive";

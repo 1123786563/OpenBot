@@ -28,6 +28,7 @@ import { type AgentChannel, channelQueryOptions } from "@/lib/channels/queries";
 import { queryClient } from "@/query-client";
 import { Route as ChannelNewRoute } from "@/routes/_authed/_app/channel/new";
 import { Route as HomeRoute } from "@/routes/_authed/_app/index";
+import { Route as StartRoute } from "@/routes/_authed/_app/start.$startId";
 import { settleReactWork } from "./settle-react-work";
 
 /** Real home/new routes hand the selected starter prompt to real ChannelChat and its HTTP run. */
@@ -298,6 +299,16 @@ const testChannelNewRoute = ChannelNewRoute.update({
   path: "/channel/new",
   getParentRoute: () => appRoute,
 } as TestFileRouteWiring);
+type TestStartRouteWiring = Parameters<typeof StartRoute.update>[0] & {
+  id: string;
+  path: string;
+  getParentRoute: () => typeof appRoute;
+};
+const testStartRoute = StartRoute.update({
+  id: "/start/$startId",
+  path: "/start/$startId",
+  getParentRoute: () => appRoute,
+} as TestStartRouteWiring);
 
 /** The channel screen, as far as sending goes: the channel record and `ChannelChat` on it. */
 function ChannelScreen() {
@@ -316,6 +327,7 @@ const routeTree = rootRoute.addChildren([
   authedRoute.addChildren([
     appRoute.addChildren([
       testChannelNewRoute,
+      testStartRoute,
       channelRoute,
       createRoute({
         path: "/",
@@ -349,7 +361,7 @@ for (const path of ["/", `/channel/new?agent=${BOT}`]) {
       await view.findByRole("button", { name: STARTER_SUGGESTIONS[0].title }),
     );
     await waitFor(() => expect(runs).toHaveLength(1), { timeout: 5000 });
-    expect(creates).toEqual([{ agentIds: [BOT] }]);
+    expect(creates).toEqual([expect.objectContaining({ agentIds: [BOT] })]);
     expect(chosen[0]?.agentId).toBe(BOT);
     expect(
       runs[0]?.messages.find((message) => message.role === "user")?.content,
@@ -414,9 +426,7 @@ test("new conversation model save failure discards the claim and lets the starte
   await waitFor(() => expect(deletes).toBe(1));
   expect(runs).toHaveLength(0);
   await view.findByText("Model save failed. Try again.");
-  const retry = await view.findByRole("button", {
-    name: STARTER_SUGGESTIONS[0].title,
-  });
+  const retry = await view.findByRole("button", { name: "Try again" });
   failModel = false;
   fireEvent.click(retry);
   await waitFor(() => expect(runs).toHaveLength(1), { timeout: 5000 });

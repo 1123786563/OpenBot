@@ -13,6 +13,7 @@ import {
   signInWithEmailDomain,
 } from "@/lib/auth/client";
 import {
+  appReturnPath,
   openFuseResumePath,
   resumeUrlFor,
   verifierPathFor,
@@ -47,9 +48,10 @@ export const Route = createFileRoute("/sign")({
    */
   validateSearch: (
     search: Record<string, unknown>,
-  ): { flow_id?: string; openfuse_request?: string } => ({
+  ): { flow_id?: string; openfuse_request?: string; returnTo?: string } => ({
     ...searchTextEntry("flow_id", search.flow_id),
     ...searchTextEntry("openfuse_request", search.openfuse_request),
+    returnTo: appReturnPath(search.returnTo),
   }),
   beforeLoad: async ({ context, search }) => {
     const user = await context.queryClient.ensureQueryData(
@@ -74,7 +76,9 @@ export const Route = createFileRoute("/sign")({
         verifierPathFor(search.flow_id);
       throw verifier
         ? redirect({ href: verifier, reloadDocument: true })
-        : redirect({ to: "/" });
+        : search.returnTo
+          ? redirect({ href: search.returnTo, replace: true })
+          : redirect({ to: "/" });
     }
     // Loaded here so the screen paints with its buttons rather than painting empty and then
     // growing them, which reads as "no providers" for exactly as long as the request takes.
@@ -84,8 +88,11 @@ export const Route = createFileRoute("/sign")({
 });
 
 function SignScreen() {
-  const { flow_id: flowId, openfuse_request: openFuseRequest } =
-    Route.useSearch();
+  const {
+    flow_id: flowId,
+    openfuse_request: openFuseRequest,
+    returnTo,
+  } = Route.useSearch();
   // Which provider is being opened, rather than whether one is: with three buttons, a single
   // boolean would put "Opening…" on all of them.
   const [opening, setOpening] = useState<AuthProviderId | "sso" | null>(null);
@@ -109,7 +116,11 @@ function SignScreen() {
       await signInWithEmailDomain(
         email,
         undefined,
-        resumeUrlFor(window.location.origin, flowId, openFuseRequest),
+        resumeUrlFor(
+          window.location.origin,
+          flowId,
+          openFuseRequest ?? returnTo,
+        ),
       );
     } catch (caughtError) {
       setError(
@@ -129,7 +140,11 @@ function SignScreen() {
       await signInWith(
         provider,
         undefined,
-        resumeUrlFor(window.location.origin, flowId, openFuseRequest),
+        resumeUrlFor(
+          window.location.origin,
+          flowId,
+          openFuseRequest ?? returnTo,
+        ),
       );
     } catch (caughtError) {
       setError(

@@ -184,6 +184,40 @@ afterAll(async () => {
  * writer but the database hears it.
  */
 describe("channel activity delivery", () => {
+  test("invalid notification payloads never reach recipient resolution or delivery", async () => {
+    const hub = createChannelEventHub();
+    const resolved: string[] = [];
+    const received: string[] = [];
+    const arrived = Promise.withResolvers<void>();
+    hub.register("user-1", (payload) => {
+      received.push(payload);
+      if (payload.includes("Valid activity")) arrived.resolve();
+    });
+    const listener = await startChannelActivityListener(
+      databaseUrl,
+      hub,
+      async (activity) => {
+        resolved.push(activity.channelId);
+        return activity.memberIds;
+      },
+    );
+    try {
+      const malformed = JSON.stringify({
+        ...event({ channelId: "invalid" }),
+        work: [{ kind: "routine" }],
+      });
+      await database.$client`select pg_notify(${CHANNEL_ACTIVITY_TOPIC}, ${malformed})`;
+      await announce(
+        event({ channelId: "valid", lastMessage: "Valid activity" }),
+      );
+      await within5s(arrived.promise);
+      expect(resolved).toEqual(["valid"]);
+      expect(received).toHaveLength(1);
+    } finally {
+      await listener.stop();
+    }
+  });
+
   test("announces a recorded message to a listener on its own connection", async () => {
     const id = `${testPrefix}-user-${randomUUID()}`;
     await database.insert(users).values({

@@ -116,6 +116,7 @@ const TELEMETRY_PATHS = [
   /\/v1\/(?:traces|metrics|logs)\/?$/,
   // CopilotKit's own capture asking its runtime for a capture pass (the REST route; the single route is known by its body)
   /\/trajectory\/[^/]+\/connect\/?$/,
+  /^\/api\/recorder\/capture\/[^/]+\/(?:grant|events)\/?$/,
   // Sentry's ingest, Elastic's RUM intake, Vercel and Cloudflare insights
   /\/api\/\d+\/(?:envelope|store|security|minidump)\/?$/,
   /\/intake\/v2\/rum\//,

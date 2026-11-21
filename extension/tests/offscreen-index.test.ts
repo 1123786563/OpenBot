@@ -106,7 +106,7 @@ type OpenBot = {
   /** Answers for the next passes, in order; then `refuse`, then a grant. */
   passScript: (() => Response)[];
   refuse: ((trajectoryId: string) => Response | null) | null;
-  /** Every request to OpenBot's recorder routes: the document must send none (it asks only for passes). */
+  /** Every request to OpenBot's Recorder routes, including the local grant probe. */
   recorderRequests: string[];
 };
 
@@ -468,9 +468,10 @@ describe("offscreen controller", () => {
       () => h.names(session.trajectoryId).length === 4,
       "the first events",
     );
-    expect(h.log[0]).toBe(
+    expect(h.log.slice(0, 2)).toEqual([
+      `fetch /api/recorder/capture/${session.trajectoryId}/grant`,
       `fetch /api/copilotkit/trajectory/${session.trajectoryId}/connect`,
-    );
+    ]);
     expect(h.names(session.trajectoryId)).toEqual([
       "recording.started",
       "outcome",
@@ -1554,8 +1555,12 @@ describe("offscreen controller", () => {
         token: "obr_later",
       },
     ]);
-    // A rollover, a Start over and a stop: OpenBot heard nothing but the capture passes.
-    expect(h.openbot.recorderRequests).toEqual([]);
+    expect(h.openbot.recorderRequests).toEqual(
+      h.openbot.passes.map(
+        ({ trajectoryId }) =>
+          `POST /api/recorder/capture/${trajectoryId}/grant`,
+      ),
+    );
     expect(h.openbot.passes.length).toBeGreaterThan(3);
   });
 });

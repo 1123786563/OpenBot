@@ -220,9 +220,9 @@ describe.skipIf(!helm)("routines on a Helm install", () => {
     const docs = render(
       ...values("eks"),
       "--set",
-      "externalSecrets.data[6].secretKey=worker-shared-secret",
+      "externalSecrets.data[4].secretKey=worker-shared-secret",
       "--set",
-      "externalSecrets.data[6].remoteRef.key=openbot/worker-shared-secret",
+      "externalSecrets.data[4].remoteRef.key=openbot/worker-shared-secret",
     );
     const ref = workerRef(sweep(docs));
     expect(workerRef(server(docs))).toEqual(ref);

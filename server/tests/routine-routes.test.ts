@@ -45,6 +45,7 @@ function fakeStore(
 ): RoutineStore & { calls: StoreCall[] } {
   const calls: StoreCall[] = [];
   const base: RoutineStore = {
+    openRunsForRecovery: async () => [],
     async create() {
       throw new Error("not used by these tests");
     },

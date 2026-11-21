@@ -6,6 +6,8 @@ import {
   marketSkillSnapshotSchema,
   withApprovalContext,
 } from "@openbot/toolkit/continuation";
+import { runContextVersion } from "@openbot/toolkit/run-context";
+import { z } from "zod";
 import type { AuditEventInput, AuditInitiator } from "../audit";
 import { cutAtCodeUnits } from "../channels/text";
 
@@ -537,7 +539,11 @@ export function parseApprovalContinuation(
       "The interrupted tool identity is unavailable.",
     );
   const parsed = RunAgentInputSchema.safeParse({ ...input, tools: [] });
-  if (!parsed.success)
+  const versions = z
+    .array(runContextVersion)
+    .optional()
+    .safeParse(input.sourceVersions);
+  if (!parsed.success || !versions.success)
     throw new ApprovalRefusedError("The interrupted conversation is invalid.");
   const marketSkill = marketSkillSnapshotSchema
     .optional()
@@ -555,6 +561,7 @@ export function parseApprovalContinuation(
     context: parsed.data.context,
     forwardedProps: parsed.data.forwardedProps,
     ...(input.initiator ? { initiator: input.initiator } : {}),
+    ...(versions.data ? { sourceVersions: versions.data } : {}),
     ...(marketSkill.data ? { marketSkill: marketSkill.data } : {}),
   };
 }

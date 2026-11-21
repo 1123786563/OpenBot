@@ -106,6 +106,9 @@ import {
   loadAttachmentForTurn,
   markAttachmentsSent,
 } from "./channels/attachments";
+import { purgeDeletedConversations } from "./channels/deletion-cleanup";
+import type { DirectChatReflect } from "./channels/direct-chat";
+import { expireDirectChatEvents } from "./channels/direct-chat-replay";
 import {
   createChannelEventHub,
   startChannelActivityListener,
@@ -116,7 +119,11 @@ import {
   groupSourceForRun,
 } from "./channels/group";
 import { createModelChoices } from "./channels/model-choice";
-import { type ChannelStore, createChannelStore } from "./channels/routes";
+import {
+  type ChannelStore,
+  createChannelStore,
+  currentChannelEventMembers,
+} from "./channels/routes";
 import { createStallGuard } from "./channels/stall-guard";
 import {
   forgetSettledSummaries,
@@ -232,14 +239,21 @@ import {
   createLearningSharingStore,
   createOpenSkillIndex,
 } from "./learning/sharing";
+import { createManagedModel } from "./managed-model";
 import { createMemoryDefaults } from "./memory/defaults";
+import { createHindsight } from "./memory/hindsight";
 import { createMemoryIngestion } from "./memory/ingestion";
-import { createIntelligenceMemory } from "./memory/intelligence";
+import {
+  createReflectModelGateway,
+  REFLECT_MODEL_CALLBACK_PATH,
+} from "./memory/reflect-model";
 import { createMemoryRuntime } from "./memory/runtime";
 import { createMemoryStore } from "./memory/store";
 import { offeredMemoryTools } from "./memory/tools";
 import { reportModelAvailability } from "./model-availability-check";
 import { createModelCatalogue } from "./model-catalogue";
+import { createOpikDelivery } from "./opik/delivery";
+import { sweepEvaluationCleanup } from "./opik/evaluation-cleanup";
 import { createSignInNotifier, createSignInResumer } from "./passwords/resume";
 import { createSignInService } from "./passwords/service";
 import { createPasswordStore } from "./passwords/store";
@@ -327,7 +341,7 @@ import { useTriggerTools } from "./responsibilities/trigger-tools";
 import { createTriggerStore } from "./responsibilities/triggers";
 import type { Responsibility } from "./responsibilities/types";
 import { createServerResponsibilityEngine } from "./responsibilities/wiring";
-import { createRoutineRunner } from "./routines/runner";
+import { createRoutineRunner, createRoutineTurn } from "./routines/runner";
 import { createRoutineStore } from "./routines/store";
 import { createIntentRouter } from "./routing/classify";
 import {
@@ -539,6 +553,7 @@ const componentStore = createComponentStore(database);
 const channelActivityListener = await startChannelActivityListener(
   config.databaseUrl,
   channelEvents,
+  (event) => currentChannelEventMembers(database, event),
 );
 const roleRepository = createRoleRepository(database);
 const loadAgentsForActor = createRuntimeAgentLoader(
@@ -744,12 +759,15 @@ let deliveryNotifications: (
  * sitting in front of them in chat. This asks the same repository the request path asks, so a routine
  * sees exactly the coworkers its owner sees.
  */
-const actorFor = async (ownerUserId: string): Promise<AgentActor> => {
+const actorFor = async (
+  ownerUserId: string,
+  rolesFrom = roleRepository,
+): Promise<AgentActor> => {
   // One person, and they are an administrator. The id stays the routine owner's rather than being
   // rewritten to DEV_ACTOR's: in this mode they are the same person, and if they ever were not,
   // silently borrowing the dev actor's identity would be worse than finding nothing.
   if (config.singleUser) return { id: ownerUserId, role: DEV_ACTOR.role };
-  const roles = await roleRepository.rolesForUser(ownerUserId);
+  const roles = await rolesFrom.rolesForUser(ownerUserId);
   if (!roles.includes("admin") && !roles.includes("user")) {
     throw new Error("A routine requires an authorized owner.");
   }
@@ -812,7 +830,17 @@ const authoriseQuestion = async (question: PersonQuestion) => {
   )
     throw new ApprovalRefusedError("That Bot is no longer available to you.");
 };
-const storedApprovals = createApprovalStore(database);
+const storedApprovals = createApprovalStore(
+  database,
+  async (tx, owner, botId) =>
+    Boolean(
+      await agentProfileStore.getWithin(
+        tx,
+        await actorFor(owner, createRoleRepository(tx)),
+        botId,
+      ),
+    ),
+);
 // Before anything reads the model environment: blank base URLs removed, Anthropic given its `/v1`.
 normalizeModelBaseUrls();
 const runtimeModel = runtimeModelForEnvironment(tenantPackage.model);
@@ -967,7 +995,10 @@ const retentionSweeps = startRetentionSweeps(
   config.databaseUrl,
   config.auditRetentionDays,
   pageFrameStore,
-  { proactive: proactiveStore },
+  {
+    proactive: proactiveStore,
+    pruneDirectChatEvents: () => expireDirectChatEvents(database),
+  },
 );
 /**
  * Whose computer a Bot runs on: the person it acts for, unless the Bot is isolated and its owner
@@ -1287,6 +1318,7 @@ if (composio) {
  * silent outage for this one.
  */
 const routineStore = createRoutineStore(database);
+const groupStore = createGroupStore(database, () => threadIdentity.mint());
 useRoutineTools(routineStore);
 // Routines is on from the start in every edition, for every Bot. See personal-defaults.ts.
 await ensureAlwaysOnApp(pluginStore, personalDefaultsDeps(database));
@@ -1439,19 +1471,16 @@ useGoalTools({
  * that, because the Bot being addressed will very likely run on a different pod from the Bot that
  * addressed it, and a hop held in memory is lost the moment either is rescheduled.
  */
+const mayAddressBot = async (fromBotId: string, toBotId: string) =>
+  (
+    await pluginStore.botsReachableFrom(fromBotId).catch((): string[] => [])
+  ).includes(toBotId);
 const handoffDesk = createHandoffDesk({
   queue: createWorkQueue(database),
   profiles: agentProfileStore,
   // Read per hop and never held, so revoking a grant applies to the next hop rather than after a
   // restart.
-  mayAddress: async (fromBotId, toBotId) =>
-    (
-      await pluginStore
-        .botsReachableFrom(fromBotId)
-        // A grant that cannot be read is not a grant. Failing closed here costs a hop; failing open
-        // would let a Bot address one nobody gave it because the database blinked.
-        .catch(() => [] as string[])
-    ).includes(toBotId),
+  mayAddress: mayAddressBot,
   // The same grants, listed, so a name that matches no Bot is answered with the ones it may ask.
   addressable: (fromBotId) => pluginStore.botsReachableFrom(fromBotId),
   /*
@@ -1651,14 +1680,7 @@ const hostAccessBroker = createHostAccessBroker(Date.now, {
 // grant, the policy and the audit row are exactly where they were. Host-folder tools are also
 // server-dispatched: the selected Bot and the signed-in owner are bound here, then the desktop worker
 // receives only opaque grant ids and relative paths.
-// Memory lives in CopilotKit Intelligence when this deployment is entitled to it, and in OpenBot's own
-// tables when it is not; see memory/store.ts. Its own client, like the thread reader's: the
-// constructor opens nothing.
-const personalMemoryStore = createMemoryStore(database, {
-  intelligence: createIntelligenceMemory({
-    client: createIntelligenceClient(config.runtime.intelligence),
-  }),
-});
+const personalMemoryStore = createMemoryStore(database);
 const recorderExtension = createRecorderExtension({
   config,
   database,
@@ -1730,13 +1752,62 @@ const autoApproveTimer =
     ? setInterval(sweepAutoApprovals, 15 * 60_000)
     : undefined;
 autoApproveTimer?.unref();
+const reflectGateway =
+  config.hindsightReflectToken && config.managedModelTrial
+    ? createReflectModelGateway({
+        model: createManagedModel(config.managedModelTrial),
+        route: config.managedModelTrial.route,
+        token: config.hindsightReflectToken,
+      })
+    : undefined;
 const memoryIngestion = createMemoryIngestion({
+  hindsight: config.hindsight && {
+    client: createHindsight({
+      database,
+      ...config.hindsight,
+      ...(reflectGateway ? { reflectTimeoutMs: 180_000 } : {}),
+    }),
+    exposeNativeReflect: config.hindsight.reflect && !reflectGateway,
+    canUseMemory: async (owner) => {
+      if (config.singleUser) return true;
+      const person = await peopleStore.find(owner);
+      return !!person && !person.revoked;
+    },
+  },
   store: personalMemoryStore,
   plugins: pluginStore,
   canUseBot: async (owner, bot) =>
     (await pluginStore.agentOwner(bot)) === owner ||
     (await agentProfileStore.get(await actorFor(owner), bot)) !== null,
 });
+const directChatReflect: DirectChatReflect | undefined =
+  config.hindsight?.reflect && editionHasMemory(config.edition)
+    ? async ({ query, canContinue, ...scope }) => {
+        const result = await memoryIngestion.reflect(
+          scope.personId,
+          scope.botId,
+          query,
+          reflectGateway &&
+            ((request, authorized) =>
+              reflectGateway.reflect({
+                query,
+                scope,
+                request,
+                canDispatch: async () =>
+                  (await canContinue()) && (await authorized()),
+              })),
+        );
+        if (result.kind === "reflection") {
+          const sources = result.sources.map(
+            ({ id, version }) => `- \`${id}\` (\`${version}\`)`,
+          );
+          return `${result.text}\n\nMemory sources\n\n${sources.join("\n")}`;
+        }
+        return result.memories.length
+          ? `Local memory search\n\n${result.memories.map(({ content }) => content).join("\n\n")}`
+          : "No matching personal memories.";
+      }
+    : undefined;
 /** Team Bots: published Bots, their audiences, and teammates' consent to their own accounts. */
 const teamBots = createTeamBots({
   database,
@@ -2181,33 +2252,40 @@ const routineAgentRunner = new IntelligenceAgentRunner({
 const routineRunner = createRoutineRunner({
   routineStore,
   channelStore,
-  runTurn: createTurnRunner({
-    prepareRunInput: prepareProductRunInput,
-    onKnownStop: productTelemetry.stopKnown,
-    admission: serverTurnAdmission,
-    intelligence: routineIntelligence,
-    runner: routineAgentRunner,
-    components: componentCatalog,
-    buildAgentFor,
-    toolsForTurn: async ({ ownerUserId, agentId, initiator }) => {
-      if (!computerGateway) return [];
-      const actor = await actorFor(ownerUserId);
-      const profile = await agentProfileStore.get(actor, agentId);
-      if (!profile) throw new Error("That Bot is not available to this owner.");
-      // A Team Bot's teammate uses the Bot, not its owner's signed-in computer.
-      if (!canUseComputer(profile, actor)) return [];
-      return createHeadlessComputerTools({
-        gateway: computerGateway,
-        seat: await computerGateway.seatFor(agentId, actor.id),
-        actor: { id: actor.id, userId: actor.id, initiator },
-        auditStore: bootAuditStore,
-        ...(signInService ? { signIn: signInService } : {}),
-      });
-    },
-    learningContainerForThread: (input) =>
-      copilotRuntime.learning?.containerForThread(input) ??
-      Promise.resolve(undefined),
-  }),
+  runTurn: !config.runtime.intelligence
+    ? (input) => {
+        if (!copilotRuntime.runBackground)
+          throw new Error("OpenBot background Runs unavailable.");
+        return createRoutineTurn(copilotRuntime.runBackground, actorFor)(input);
+      }
+    : createTurnRunner({
+        prepareRunInput: prepareProductRunInput,
+        onKnownStop: productTelemetry.stopKnown,
+        admission: serverTurnAdmission,
+        intelligence: routineIntelligence,
+        runner: routineAgentRunner,
+        components: componentCatalog,
+        buildAgentFor,
+        toolsForTurn: async ({ ownerUserId, agentId, initiator }) => {
+          if (!computerGateway) return [];
+          const actor = await actorFor(ownerUserId);
+          const profile = await agentProfileStore.get(actor, agentId);
+          if (!profile)
+            throw new Error("That Bot is not available to this owner.");
+          // A Team Bot's teammate uses the Bot, not its owner's signed-in computer.
+          if (!canUseComputer(profile, actor)) return [];
+          return createHeadlessComputerTools({
+            gateway: computerGateway,
+            seat: await computerGateway.seatFor(agentId, actor.id),
+            actor: { id: actor.id, userId: actor.id, initiator },
+            auditStore: bootAuditStore,
+            ...(signInService ? { signIn: signInService } : {}),
+          });
+        },
+        learningContainerForThread: (input) =>
+          copilotRuntime.learning?.containerForThread(input) ??
+          Promise.resolve(undefined),
+      }),
 });
 
 /**
@@ -2330,7 +2408,16 @@ const copilotRuntime = mountCopilotRuntime(
   identifyUser,
   identifyActor,
   {
-    directChat: { database, profiles: agentProfileStore },
+    directChat: {
+      database,
+      profiles: agentProfileStore,
+      reflect: directChatReflect,
+      memoryVersionsCurrent: memoryIngestion.memoryVersionsCurrent,
+      groupThread: groupStore.thread,
+      backgroundActor: actorFor,
+      mayAddress: mayAddressBot,
+      publishGroupReply: (input) => groupConversations.announceHandoff(input),
+    },
     productTelemetry,
     decisionWaits: createDecisionWaits(database),
     onRunBusy: (input) => {
@@ -2351,6 +2438,22 @@ const copilotRuntime = mountCopilotRuntime(
     trajectoryCapture: recorderExtension.trajectoryCapture,
   },
 );
+
+if (copilotRuntime.runBackground) {
+  repeatAfterEach(async () => {
+    try {
+      const runs = await routineStore.openRunsForRecovery();
+      await Promise.all(runs.map(({ id }) => routineRunner.run(id)));
+    } catch (error) {
+      console.warn(
+        JSON.stringify({
+          type: "routine-run-recovery-failed",
+          reason: String(error),
+        }),
+      );
+    }
+  }, 5_000);
+}
 
 /** Reads one named skill from a container; throws when the runtime or the read is unavailable, null when absent. */
 const skillIn = async (containerId: string, name: string) => {
@@ -2507,7 +2610,7 @@ const approvalContinuationRunner = createTurnRunner({
  * apply unchanged; Bots answering each other reuse the handoff desk's grant and caps.
  */
 const groupConversations = createGroupConversations({
-  store: createGroupStore(database, () => threadIdentity.mint()),
+  store: groupStore,
   queue: createWorkQueue(database),
   owner: workOwner("group"),
   roster: async (ownerUserId, channelId) => {
@@ -2569,7 +2672,12 @@ const groupConversations = createGroupConversations({
       busy,
     ),
   createChannel: async (ownerUserId, agentIds, requestId) =>
-    channelStore.create(await actorFor(ownerUserId), agentIds, undefined, requestId),
+    channelStore.create(
+      await actorFor(ownerUserId),
+      agentIds,
+      undefined,
+      requestId,
+    ),
   // The owner says whether a Bot's words may reach the other people in a group.
   privateShare: createPrivateShareCheck({ approvals: approvalService.store }),
   // A Team Bot's consent card raised in a group turn is drawn in the shared transcript.
@@ -2583,6 +2691,31 @@ const approvalSweep = repeatAfterEach(
     approvalOwner,
     approvalService,
     executeApprovedAction,
+    traceRuns: Boolean(config.opik),
+    contextCurrent: async ({ actorId, botId, threadId, continuation }) => {
+      const versions = continuation?.sourceVersions;
+      if (!versions?.length) return true;
+      const memories = versions.filter(({ kind }) => kind === "memory");
+      const skills = versions.filter(({ kind }) => kind === "learned_skill");
+      if (
+        (await memoryIngestion.memoryVersionsCurrent(
+          actorId,
+          botId,
+          memories,
+        )) &&
+        (!skills.length ||
+          (threadId &&
+            (await copilotRuntime.learnedSkillVersionsCurrent?.(
+              await actorFor(actorId),
+              threadId,
+              botId,
+              skills,
+            ))))
+      )
+        return true;
+      return false;
+    },
+    backgroundApproval: copilotRuntime.backgroundApproval,
     database,
     responsibilityStore,
     groupConversations,
@@ -2912,6 +3045,7 @@ if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
     database,
     bootAuditStore,
     actorFor,
+    mayAddress: mayAddressBot,
     copilotRuntime,
     threadIdentity,
     groupConversations,
@@ -3428,6 +3562,11 @@ const app = createApp(
   identityGithubCallback,
   profileStore,
 );
+if (reflectGateway) {
+  app.post(REFLECT_MODEL_CALLBACK_PATH, (context) =>
+    reflectGateway.complete(context.req.raw),
+  );
+}
 
 try {
   startHttpServer({
@@ -3442,6 +3581,56 @@ try {
   writeRuntimeLog("api_listen_failed", { port });
   process.exit(1);
 }
+
+const conversationCleanup = repeatAfterEach(async () => {
+  try {
+    while ((await purgeDeletedConversations(database)) > 0) {}
+  } catch {
+    console.error(JSON.stringify({ type: "conversation_cleanup_failed" }));
+  }
+}, 60_000);
+
+const realEvaluation = config.opikEvaluation?.real;
+const evaluationCleanup =
+  realEvaluation &&
+  repeatAfterEach(async () => {
+    try {
+      await sweepEvaluationCleanup(database, realEvaluation);
+    } catch {
+      console.error(JSON.stringify({ type: "opik_evaluation_cleanup_failed" }));
+    }
+  }, 60_000);
+
+const opikDelivery =
+  config.opik && createOpikDelivery(database, config.opik).start();
+
+function startScheduledLearning(sweep: () => Promise<void>) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+  async function tick() {
+    try {
+      await sweep();
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          type: "scheduled-learning-sweep-failed",
+          error: String(error),
+        }),
+      );
+    } finally {
+      if (!stopped) timer = setTimeout(tick, 30_000);
+    }
+  }
+  void tick();
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+  };
+}
+
+const stopScheduledLearning =
+  copilotRuntime.sweepLearning &&
+  startScheduledLearning(copilotRuntime.sweepLearning);
 
 if (config.singleUser) {
   // Loud, every boot. A server that is not checking who is asking should never be a quiet default.
@@ -3462,11 +3651,15 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     personResponseSweep.stop();
     groupSweep.stop();
     recorderExpirySweep.stop();
+    conversationCleanup.stop();
+    evaluationCleanup?.stop();
+    stopScheduledLearning?.();
     if (firstAutoApproveSweep) clearTimeout(firstAutoApproveSweep);
     if (autoApproveTimer) clearInterval(autoApproveTimer);
     for (const sweep of deliverySweeps) sweep.stop();
     void Promise.allSettled([
       productTelemetry.flush(),
+      opikDelivery?.stop(),
       channelActivityListener.stop(),
       policyListener.stop(),
       // Started only where handing work between Bots is switched on, so it is often not there.

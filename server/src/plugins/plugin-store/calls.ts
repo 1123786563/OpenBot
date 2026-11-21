@@ -1,5 +1,6 @@
 import { DECLINED_BY_PERSON } from "@openbot/shared/approval-outcomes";
 import { connectAppRefusal } from "@openbot/shared/connect-prompt";
+import { verifyRunContext } from "@openbot/toolkit/run-context";
 import { and, eq } from "drizzle-orm";
 import { safetyRequirement } from "../../approvals/policy";
 import {
@@ -752,8 +753,9 @@ export function callMethods(context: StoreContext) {
          * the whole call, so the grant, the policy and the approval above are settled once, and the
          * trail gets one row for what finally happened. See `../transient`.
          */
-        const callVendor = () =>
-          vendor(
+        const callVendor = async () => {
+          await verifyRunContext();
+          return vendor(
             {
               url: effectiveUrl(row, entry),
               ...(marketDispatch ? { marketDispatch } : {}),
@@ -782,6 +784,7 @@ export function callMethods(context: StoreContext) {
             advertised[0]?.vendorName ?? toolName,
             vendorArgs,
           );
+        };
         const result =
           effect === "read"
             ? await withReadRetries(

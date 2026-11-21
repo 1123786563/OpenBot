@@ -269,9 +269,11 @@ describe("channel activity", () => {
       text: "Categorized three expenses.",
     });
 
+    const { direct: _direct, ...rosterChannel } = channel;
+
     expect((await store.list(owner)).channels).toEqual([
       {
-        ...channel,
+        ...rosterChannel,
         // Nothing has named this conversation: the sweep that does runs outside this store.
         summary: null,
         // Only a person's message opens a conversation, and this one was the Bot's.

@@ -3,113 +3,35 @@
 Runs OpenBot on any Kubernetes cluster: EKS, GKE, AKS, or your own. One chart, five targets, and the
 only difference between them is values.
 
-OpenBot needs CopilotKit Intelligence, and by default this chart installs it too: self-hosted, on its
-own bundled PostgreSQL and Redis, wired to OpenBot, with OpenBot's project key created inside it
-without anybody signing in. [The vanilla install](#vanilla-install) below is that whole product in
-three steps. Pointing OpenBot at managed Intelligence, or at one you already run, is
-[the alternative](#with-managed-intelligence-or-one-you-already-run).
+OpenBot uses PostgreSQL for its cloud deployment. The chart can install PostgreSQL or connect to
+a database you manage. Use a fresh namespace, release name and PostgreSQL database when replacing
+an installation that used CopilotKit Intelligence. Keep that installation and its data in place.
+Standalone local Desktop uses its separately scheduled release path.
 
 ## Vanilla install
 
-One person, from their own computer, on any cluster with a default StorageClass and amd64 nodes (the
-OpenBot image is amd64 only, and so is the embeddings image Intelligence runs). From a checkout of
-this repository:
-
-**1. Write your license and model key into a file you keep and never commit.**
-
-```sh
-cat > openbot-secrets.yaml <<EOF
-secrets:
-  licenseToken: "<your CopilotKit license>"
-  modelApiKey: "<your OpenAI API key>"
-EOF
-```
-
-With an Anthropic key instead, write `anthropicApiKey: "<your Anthropic API key>"` in place of
-`modelApiKey` and add `config.model.provider: anthropic`. Learning follows the key by itself (see
-below). Behind a model router, set `config.model.openaiBaseUrl` or `config.model.anthropicBaseUrl` to
-it as well, and `config.model.name` to the model the Bots should answer on, as the router names it
-(`BOT_MODEL`): while the router lists that model it is the deployment's default, and people can still
-pick another under the message box. Left empty, the default is the middle of the provider's current
-line (see [the model list](../../docs/configuration.md#the-model-list)).
-
-Nothing else is yours to make. On the first install the chart generates the key the credential vault
-is encrypted with and the computer token into the Secret `openbot-secrets`, and the database password
-into `openbot-postgresql`. Each is read back on every upgrade and kept on uninstall, beside the
-database it belongs to.
-
-To choose them yourself, add `secrets.keyEncryptionKey` (`openssl rand -base64 32`),
-`secrets.computerToken` (`openssl rand -hex 32`) and `postgresql.auth.password` to the file. A value
-given always wins, so give the same one on every upgrade. Anybody restoring a backup of this database
-elsewhere needs the key too:
-`kubectl -n openbot get secret openbot-secrets -o jsonpath='{.data.key-encryption-key}' | base64 -d`.
-
-**2. Install.**
+Start with an amd64 cluster and a default StorageClass. Save a model key under
+`secrets.modelApiKey` in an untracked `openbot-secrets.yaml`. For Anthropic, set
+`secrets.anthropicApiKey` and `config.model.provider: anthropic`.
 
 ```sh
 helm dependency build charts/openbot
 helm install openbot charts/openbot \
   --namespace openbot --create-namespace \
-  --values charts/openbot/ci/vanilla-values.yaml \
-  --values openbot-secrets.yaml \
-  --timeout 15m
-```
-
-**3. Open it.**
-
-```sh
+  -f charts/openbot/ci/vanilla-values.yaml -f openbot-secrets.yaml --timeout 15m
 kubectl -n openbot port-forward svc/openbot-server 3001:3001
 ```
 
-Then open <http://127.0.0.1:3001>. You are its one administrator: `config.singleUser` admits whoever
-reaches the server with no sign-in, which is why it is only ever reached through a port-forward on
-your own computer, and why the chart refuses it with a public URL or an open LoadBalancer.
+Open <http://127.0.0.1:3001>. Keep this single-user evaluation on loopback. Configure an identity
+provider and TLS before sharing the deployment. A packaged chart includes its PostgreSQL
+dependency. Pass the values explicitly when installing from the archive.
 
-`ci/vanilla-values.yaml` is single-user mode, OpenBot's bundled database, and a placeholder for the
-license and the model key your file replaces. CI renders exactly this install on every change.
+For a source candidate before release, use `image.repository` and `image.digest` from the
+candidate build. Published charts use the image associated with the same release.
 
-**What happens, so a first install that takes a few minutes is not a surprise.** The chart installs
-Intelligence, generates every credential it needs as Secrets that are kept across upgrades and
-uninstalls, including OpenBot's runtime key in `openbot-intel-api-key`, and gives it the license from
-your file (OpenBot gets the same one). Intelligence's bootstrap Job then creates OpenBot's organization
-and project, stores that key for it, and creates the `openbot` Learning container. Nobody signs in to
-anything. `--timeout 15m` gives a fresh cluster room to pull every image; `--wait` works on a first
-install too.
-
-OpenBot's own database comes up beside it. The `openbot-migrations-1` Job waits for the bundled
-PostgreSQL and migrates it, and the server and the scheduled Jobs wait in their `wait-for-database`
-init container until that database accepts their connection and holds every migration their image
-carries, so the server's first boot is against a database that is ready rather than a stream of
-connection errors. `kubectl -n openbot logs deploy/openbot-server -c wait-for-database` says what it
-is waiting for.
-
-`kubectl -n openbot get pods,jobs` shows it coming up, and the log of the
-`openbot-intelligence-bootstrap-1` Job (its suffix is the release revision) says what Intelligence
-set up. The browser reaches Intelligence's gateway through OpenBot's own address, so the one
-port-forward is all it needs.
-
-**Routines run.** A Bot asked to do something on a schedule stores a routine, and the
-`openbot-routines` CronJob fires whatever is due every five minutes. It proves itself to the server
-with a secret the chart generates into `openbot-worker-secret` and keeps across upgrades, so there is
-nothing to add to your file for it. See [The routines sweep](#the-routines-sweep).
-
-**Automatic Learning spends your model key.** Learning is on in OpenBot and in the bundled
-Intelligence, whose Learning agent reads finished conversations and proposes skills with
-`openai/gpt-5.5` on the key in `secrets.modelApiKey`, or with `anthropic/claude-sonnet-5-5` on
-`secrets.anthropicApiKey` when that is the only key. See [Automatic Learning](#automatic-learning).
-
-The secrets can also live in a Secret of your own instead of a file: set `secrets.existingSecret` to
-it, with the keys `license-token`, `model-api-key` (or `anthropic-api-key`, or both),
-`key-encryption-key` and `computer-token`; put the
-database password under `postgres-password` and set `postgresql.auth.existingSecret` to the same
-Secret; and set `intelligence.appApi.licenseSecret.existingSecret` to it too, so Intelligence reads the
-same license. Intelligence's Learning agent reads `model-api-key` and `anthropic-api-key` from that
-Secret as well: the chart copies them at install and on every upgrade, so a new key there reaches
-Learning on its next run after `helm upgrade`, and picks Learning's model from which of them is there
-(adding or removing one wants a restart, see [Automatic Learning](#automatic-learning)).
-`worker-shared-secret` is optional in it: put one there only if something outside this
-chart fires routines too, and otherwise the chart generates one. `values.yaml` under `intelligence`
-explains every value the bundle sets.
+The chart generates the encryption key, computer token and database password on first install
+with bundled PostgreSQL. To supply your own Secret, set `secrets.existingSecret` and store the
+corresponding keys there. For the database password set `postgresql.auth.existingSecret`.
 
 ## What a cluster needs first
 
@@ -128,40 +50,7 @@ architecture you have and push it somewhere the cluster can reach. Check before 
 docker manifest inspect ghcr.io/copilotkit/openbot:v1.0.1 | grep architecture
 ```
 
-**On kind, on an Apple Silicon Mac**, the node is arm64 and the vanilla install has two amd64-only
-images: OpenBot's and `ghcr.io/huggingface/text-embeddings-inference:cpu-*`; everything else it
-renders is multi-arch. `kind load docker-image` prints `loading...` for them and the node then
-silently drops the amd64 image, so the pod still cannot pull it. Import each one into the node's
-containerd by platform instead, and Docker Desktop's Rosetta emulation runs it, slowly on the first
-start, which the server's startup probe tolerates:
-
-```sh
-docker pull --platform linux/amd64 "$IMAGE"
-docker save --platform linux/amd64 "$IMAGE" \
-  | docker exec -i kind-control-plane ctr -n k8s.io images import --all-platforms --platform linux/amd64 -
-```
-
-**Intelligence credentials, unless the chart installs Intelligence.** With the bundled Intelligence
-(the default) there are none to fetch: the chart makes OpenBot's key itself and needs only the
-license. With `intelligence.enabled: false`, OpenBot requires an Intelligence you name and the chart
-refuses to install without `secrets.intelligenceApiKey`. It comes from the CLI, on any machine with a
-browser:
-
-```sh
-npx --yes copilotkit@latest login           # browser sign-in
-npx --yes copilotkit@latest project select  # prints the cpk-... runtime key
-```
-
-That key is the only Intelligence credential a managed install needs; the free plan is enough.
-`secrets.licenseToken` is optional and exists for a self-hosted Intelligence that issues its own
-license. `npx --yes copilotkit@latest license --print` prints one without writing it to a local
-`.env`, which is what you want for something you are about to paste into a Secret. With
-`externalSecrets`, name `license-token` in its `data` and the server receives it the same way.
-
-**A self-hosted Intelligence needs that license too, on its own deployment.** Its chart takes it as
-`appApi.licenseSecret` or `externalSecrets.secrets.license`. Without it Intelligence answers every
-entitlement read with `RUNTIME_ENTITLEMENTS_SELF_HOSTED_MISCONFIGURED` and refuses memory, while
-conversations carry on; OpenBot logs `intelligence-entitlement-not-ready` at boot when it does.
+On kind on an Apple Silicon Mac, use an amd64-capable container runtime for the published image.
 
 **A default StorageClass**, or a named one. Both a Bot's computer and the bundled database ask for
 a volume, and a fresh cluster often has no class marked default. See
@@ -209,7 +98,6 @@ managedNodeGroups:
   - name: workers
     # amd64: the published image has no arm64 variant. See the image note above.
     instanceType: t3.large
-    # Three, not two: the vanilla install requests more CPU than two t3.large have. See below.
     desiredCapacity: 3
     minSize: 3
     maxSize: 4
@@ -221,21 +109,8 @@ managedNodeGroups:
     disablePodIMDS: true
 ```
 
-**Why three nodes.** The scheduler places a pod by what it requests, not by what it uses, and the
-vanilla install requests about 3.25 vCPU for as long as it runs: summing `resources.requests.cpu`
-over the Deployments and StatefulSets in
-`helm template openbot charts/openbot -f charts/openbot/ci/vanilla-values.yaml`, times their
-replicas, gives 2200m for the Deployments (OpenBot's two servers and Intelligence's API, gateway,
-embeddings and Learning) and 1050m for the StatefulSets (both databases, Redis, object storage and
-the shared computer, which alone asks for 500m). The install Jobs add about 400m while they run. A
-t3.large leaves about 1.93 vCPU allocatable, and EKS's own pods (the VPC CNI, kube-proxy, CoreDNS,
-metrics-server and the EBS CSI driver) take several hundred millicores of that, so two nodes come
-out a few hundred millicores short. Nothing errors: both nodes fill to 90% or more of their
-allocatable CPU in requests, and the last pod to be scheduled, usually `openbot-computer-0`, stays
-`Pending` with `0/2 nodes are available: 2 Insufficient cpu` in `kubectl -n openbot describe pod`.
-`maxSize` does not rescue it, because this recipe installs no cluster autoscaler, so nothing ever
-adds the third node by itself. A smaller cluster that shows that event needs another node,
-`eksctl scale nodegroup --cluster openbot --name workers --nodes 3`, or a larger instance type.
+Check CPU and memory requests from the rendered manifests against each node's allocatable
+capacity. If a pod stays Pending, inspect the scheduler events with `kubectl describe pod`.
 
 **Why the two IMDS lines.** A node's instance metadata service, at 169.254.169.254, hands out that
 node's IAM role to anything that asks from the node. A Bot's computer is a pod on that node running
@@ -294,43 +169,36 @@ from the cluster's own security group. `aws eks describe-cluster` names both. Ke
 [The vanilla install](#vanilla-install) above is the shortest thing that works. Everything below adds
 to it: sign-in for a team, your own database, a cloud's features.
 
-### With managed Intelligence, or one you already run
+### With operator-managed Hindsight and Opik
 
-`intelligence.enabled: false` installs OpenBot alone and points it at an Intelligence that already
-runs: managed Intelligence, or a self-hosted one installed from its own chart. Name it in
-`config.intelligence` and give its key as `secrets.intelligenceApiKey` (see
-[What a cluster needs first](#what-a-cluster-needs-first)):
+Deploy Hindsight and Opik separately. Use API endpoints reachable from the OpenBot API pod.
+Keep credentials in Kubernetes Secrets in the OpenBot namespace. Add variables under
+`server.extraEnv` so the API container alone receives them.
 
-```sh
-helm dependency build charts/openbot
-helm upgrade --install openbot charts/openbot \
-  --namespace openbot --create-namespace \
-  --set intelligence.enabled=false \
-  --set-string config.intelligence.apiUrl=https://api.intelligence.copilotkit.ai \
-  --set-string config.intelligence.gatewayWsUrl=wss://realtime.intelligence.copilotkit.ai \
-  --set-string secrets.intelligenceApiKey="<cpk-... runtime key>" \
-  --set config.singleUser=true \
-  --set postgresql.enabled=true \
-  --set-string postgresql.auth.password="<a password you keep>" \
-  --set-string secrets.keyEncryptionKey="<a key you keep: openssl rand -base64 32>" \
-  --set-string secrets.computerToken="$(openssl rand -hex 32)"
+```yaml
+server:
+  extraEnv:
+    - name: OPENBOT_HINDSIGHT_API_URL
+      value: http://hindsight.memory.svc.cluster.local:8888
+    - name: OPENBOT_HINDSIGHT_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: hindsight-api
+          key: token
+    - name: OPENBOT_OPIK_API_URL
+      value: http://opik.telemetry.svc.cluster.local:5173/api/
+    - name: OPENBOT_OPIK_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: opik-api
+          key: token
 ```
 
-For a team rather than one person, configure an identity provider instead of `config.singleUser`:
-`config.auth` in `values.yaml`, with its client secret under `secrets`, `secrets.betterAuthSecret`,
-`config.publicUrl` and `config.initialAdminEmails`.
-
-**Upgrading a release from before the bundled Intelligence.** Its values have no `intelligence` key,
-and Helm installs a dependency whose switch is missing, so the chart refuses the upgrade by name rather
-than install a second, empty Intelligence beside yours. Add `--set intelligence.enabled=false` to keep
-the Intelligence you have. The same applies with `--reuse-values`, which keeps the old values and
-drops the new chart's defaults.
-
-`secrets.keyEncryptionKey` encrypts the credential vault. With the bundled database the chart
-generates it; with a database of your own it is required, because that database outlives the
-namespace and a generated key would not: generate it once, keep it, and do not put it in a file
-anybody commits. The chart marks the Secret it creates `helm.sh/resource-policy: keep`, so an
-uninstall does not take the key that every stored credential was encrypted with.
+Use the actual API path and port for your installation. With NetworkPolicy enabled, grant
+server egress to each private service and port using `networkPolicy.extraEgress`. Add any
+provider-side ingress rules needed to admit the OpenBot API pods. Configure tracing and
+evaluation projects, operator access and supported Reflect modes using the server variables
+in the [configuration guide](../../docs/configuration.md#personal-memory-recall-and-reflect).
 
 ### Pin the image by digest
 
@@ -546,10 +414,7 @@ installing on somebody's bare-metal cluster.
 The chart fails the install, naming the value to change, when: there is no database or two of them;
 nobody could sign in or nobody would be an administrator; an identity provider is configured without
 `secrets.betterAuthSecret` or `config.publicUrl`; `singleUser` is combined with a public URL or a
-public LoadBalancer; with `intelligence.enabled: false`, the Intelligence URLs or
-`secrets.intelligenceApiKey` are missing; with the bundled Intelligence, an Intelligence address or key
-of your own is named beside it, the license is missing, or the release predates it (no
-`intelligence.enabled` at all);
+public LoadBalancer. The chart also checks that
 `secrets.keyEncryptionKey` is not a base64 32-byte value, or is the public example key; with a
 database of your own, there is no `secrets.keyEncryptionKey` or no `secrets.computerToken`;
 `computers.mode` is `external` with no `computers.url`, or `sandbox` on a cluster with no Sandbox
@@ -561,10 +426,7 @@ one API replica; `networkPolicy.enabled` is set with an external database and no
 `computers.egressProxy` is turned on with policies and no `networkPolicy.computerExtraEgress`, or with
 no `secrets.egressProxyUrl` where this chart writes the Secret; a tag annotation gives CopilotKit's
 AWS tag key a different value (see [AWS usage attribution](#aws-usage-attribution));
-`config.model.provider` is anything but `openai` or `anthropic`; `config.learning.model` is not
-`provider/model` or the Learning agent's `env` would never read it, or
-`intelligence.learning.agent.model` names a model beside the one the chart sets (see
-[Automatic Learning](#automatic-learning)). Not on this list, because the chart
+and `config.model.provider` is anything except `openai` or `anthropic`. The chart
 generates them wherever nobody else holds one: the routines worker's secret (see
 [The routines sweep](#the-routines-sweep)), and, with the bundled database, the key encryption key,
 the computer token and the database password.
@@ -589,78 +451,6 @@ Left empty, this deployment has the Bots its tenant package declares as built-in
 somebody creates in the app without an endpoint runs here on its role description. A package entry
 pointing at an endpoint that resolves to nothing is dropped rather than registered as a coworker
 nobody can talk to.
-
-## Automatic Learning
-
-**With the bundled Intelligence** (the default) there is nothing to set up. Learning is on in
-Intelligence too (`intelligence.learning`), Intelligence creates the project's `openbot` container at
-install, the server assigns it as the default, and it creates each person's own Learning space with
-its runtime key. Intelligence's Learning agent spends the same key your Bots do, on a model that
-follows the keys you give:
-
-| Keys | Learning's model | Key it spends |
-| --- | --- | --- |
-| `secrets.modelApiKey` | `openai/gpt-5.5` | the OpenAI key |
-| `secrets.anthropicApiKey` alone | `anthropic/claude-sonnet-5-5` | the Anthropic key |
-| both | `openai/gpt-5.5` | the OpenAI key |
-
-`config.learning.model` names another, as `provider/model` (`anthropic/claude-opus-4-8`, say). The
-chart writes the model and each key, under its own name, into `openbot-intel-learning`, and the agent
-reads them from there as `LEARNING_AGENT_MODEL`, `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`
-(`intelligence.learning.agent`), so the Anthropic key never reaches it under the OpenAI name. Leave
-`intelligence.learning.agent.model` empty: it would set the model a second time, and the chart refuses
-it. With the keys in a store, the chart cannot see which is there and picks `openai/gpt-5.5`; set
-`config.learning.model` for a store with an Anthropic key alone.
-
-The agent re-reads its keys before every run, so a new key reaches it on its next run after
-`helm upgrade`. It reads its model only when it starts, so after changing `config.learning.model`, or
-adding or removing a key (which can change the model), restart it once `helm upgrade` is done:
-
-```sh
-kubectl -n openbot rollout restart deployment/openbot-intelligence-learning-agent
-```
-
-It runs by itself after
-15 finished conversations and after every 15 more, and keeps what it learns in an object store the
-release runs (`intelligence.localObjectStorage`). Trajectories, the sessions the Recorder captures, are
-on as well, which any valid license allows.
-
-Intelligence's own dashboard is not installed, so Admin → Automatic learning is where its work is
-reviewed: the skills it proposes, each one's SKILL.md and the conversations it was learned from,
-Approve (which publishes it to the container's Bots) and Reject, and Learn now to run it at any time.
-Every approval and rejection is recorded in OpenBot's audit log with the admin who made it. With an
-Intelligence that has a dashboard (managed Intelligence), the page links to it as well.
-
-**With an Intelligence of your own** (`intelligence.enabled: false`), Learning needs a container in its
-project before it collects or delivers anything. With nothing saved in Admin and no
-`config.learning.containerId`, the server assigns the project's `openbot` container as the default by
-itself once it exists. A current Intelligence lets the runtime key create it, and the server does. On
-one that does not, give the chart a credential that can and a setup Job creates it on install and
-every upgrade:
-
-- Managed Intelligence: a CopilotKit CLI login. Sign in into an empty folder and store the file it
-  writes, then set `config.learning.setup.cliLoginSecret.name: openbot-copilotkit-cli`:
-
-  ```sh
-  COPILOTKIT_CONFIG_DIR="$(mktemp -d)"; export COPILOTKIT_CONFIG_DIR
-  npx --yes copilotkit@latest login
-  kubectl create secret generic openbot-copilotkit-cli \
-    --from-file=config.json="$COPILOTKIT_CONFIG_DIR/auth/config.json"
-  ```
-
-  It is a person's 30-day session; only the Job reads it, never the server.
-- A CopilotKit local evaluation install: a service token Secret in
-  `config.learning.setup.serviceTokenSecret` with the project's numeric ID in
-  `config.learning.setup.projectId`. The server gets it too, so Admin can create the container again.
-
-Without either, create it once with `bun scripts/setup-learning.ts` from a computer that can sign in
-to Intelligence, or in Intelligence itself; the server log and Admin → Automatic Learning say exactly
-that. `config.learning.autoAssign: false` turns the automatic assignment off.
-`config.learning.containerId` sets the initial default container
-(`CPK_INTELLIGENCE_LEARNING_CONTAINER_ID`) and `config.learning.revision` the skills revision
-(`CPK_INTELLIGENCE_SKILLS_REVISION`). Both are only starting values: settings saved in Admin →
-Automatic Learning take precedence, including switching it off. See
-[docs/automatic-learning.md](../../docs/automatic-learning.md).
 
 ## Memory and background research
 
@@ -923,7 +713,7 @@ policy still decides what a Bot may reach. Turning it on with `networkPolicy.ena
 
 The load balancers this chart has AWS create carry a tag that credits CopilotKit, through AWS Partner
 Revenue Measurement, for the AWS usage OpenBot drives. It is on for every install and has no
-setting. It is the same tag the bundled Intelligence puts on its own Ingress:
+setting. The annotation uses this tag:
 
 ```text
 aws-apn-id-058264219587 = pc:avjdxr516uh0mgsqob730tzgy
@@ -978,25 +768,6 @@ upgrade run that way keeps running as root and says nothing. Pass the value, or 
 `fsGroupChangePolicy: OnRootMismatch` is deliberate. Unset means `Always`, which walks every file on
 every mount, and a real Chromium profile is tens of thousands of small ones; in `sandbox` mode that
 pass would run again on every resume from idle.
-
-### Moving the bundled Intelligence restarts its database
-
-Each Intelligence release moves the image of Intelligence's own PostgreSQL, so an upgrade that moves
-the bundled Intelligence replaces that database's pod. The Job that installs Learning's queue
-(`<release>-intelligence-learning-queue-migration-<revision>`) starts beside that restart and waits
-for the database inside its own deadline, `intelligence.learning.queue.migration.activeDeadlineSeconds`,
-which this chart sets to 15 minutes. **`--reuse-values` will not pick this up:** it drops this
-chart's defaults, so a release upgraded with it keeps Intelligence's own 5 minutes. Pass the value
-(`--set intelligence.learning.queue.migration.activeDeadlineSeconds=900`), or drop the flag.
-
-If the Job runs out of time first, the upgrade stops with `UPGRADE FAILED`, the Job's status is
-`DeadlineExceeded` and its log ends `waiting for PostgreSQL to accept connections`. Nothing is wrong
-with the database or the migration. Run `helm upgrade` again once that pod is Ready: the next
-revision's Job finds the database up and completes.
-
-**After a failed revision, give your values again rather than `--reuse-values`.** Helm reuses the
-values of the last revision that succeeded, not those of the failed one, so a value you changed in
-the failed upgrade is silently undone. Pass the same `-f` files and `--set` flags you upgraded with.
 
 ### How a rollout is sequenced
 

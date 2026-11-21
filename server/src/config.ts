@@ -21,6 +21,9 @@ import {
 } from "./dictation/config";
 import { type Edition, parseEdition } from "./edition";
 import { proxiedClientSocketUrl } from "./intelligence-gateway-proxy";
+import type { HindsightConfig } from "./memory/hindsight";
+import type { OpikConfig } from "./opik/client";
+import type { OpikEvaluationConfig } from "./opik/evaluation";
 import type { BrokerProvider } from "./plugins/access";
 import {
   loadSkillMarketConfig,
@@ -373,6 +376,10 @@ export type DeploymentConfig = {
   tenantPackageDirectory: string;
   runtime: RuntimeCapabilities;
   managedModelTrial?: { url: URL; token: string; route: string };
+  hindsight?: HindsightConfig;
+  hindsightReflectToken?: string;
+  opik?: OpikConfig;
+  opikEvaluation?: OpikEvaluationConfig;
   /**
    * How long a Bot's stream may say nothing before this deployment ends the turn, in milliseconds.
    *
@@ -843,6 +850,78 @@ function optionalHttpUrl(
   }
 
   return parsed;
+}
+
+function opikConfig(
+  environment: Environment,
+  prefix = "OPENBOT_OPIK",
+  defaultProject = "openbot-runs",
+): OpikConfig | undefined {
+  const name = `${prefix}_API_URL`;
+  const apiUrl = optionalHttpUrl(environment, name);
+  if (!apiUrl) return undefined;
+  if (apiUrl.username || apiUrl.password || apiUrl.search || apiUrl.hash)
+    throw new Error(
+      `${name} must not contain credentials, a query, or a fragment`,
+    );
+  const workspace = optional(environment, `${prefix}_WORKSPACE`);
+  const apiKey = optional(environment, `${prefix}_API_KEY`);
+  return {
+    apiUrl,
+    project: optional(environment, `${prefix}_PROJECT`) ?? defaultProject,
+    ...(workspace ? { workspace } : {}),
+    ...(apiKey ? { apiKey } : {}),
+  };
+}
+
+function opikEvaluationConfig(
+  environment: Environment,
+  tracing?: OpikConfig,
+): OpikEvaluationConfig | undefined {
+  const synthetic = opikConfig(
+    environment,
+    "OPENBOT_OPIK_EVAL",
+    "openbot-synthetic-evaluations",
+  );
+  const real = opikConfig(
+    environment,
+    "OPENBOT_OPIK_REAL_EVAL",
+    "openbot-authorized-evaluations",
+  );
+  if (!synthetic) {
+    if (real)
+      throw new Error(
+        "Real Opik evaluation requires OPENBOT_OPIK_EVAL_API_URL.",
+      );
+    return undefined;
+  }
+  const operators = new Set(
+    (optional(environment, "OPENBOT_OPIK_EVAL_OPERATORS") ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean),
+  );
+  if (!operators.size)
+    throw new Error(
+      "OPENBOT_OPIK_EVAL_OPERATORS must list at least one operator ID.",
+    );
+  const budget =
+    optional(environment, "OPENBOT_OPIK_EVAL_DAILY_CASE_LIMIT") ?? "";
+  const dailyCaseLimit = Number(budget);
+  if (!/^[1-9][0-9]*$/.test(budget) || !Number.isSafeInteger(dailyCaseLimit))
+    throw new Error(
+      "OPENBOT_OPIK_EVAL_DAILY_CASE_LIMIT must be a positive integer.",
+    );
+  if (
+    real &&
+    [synthetic, tracing].some(
+      (config) => config?.apiUrl.origin === real.apiUrl.origin,
+    )
+  )
+    throw new Error(
+      "The real evaluation Opik endpoint must have a dedicated origin.",
+    );
+  return { synthetic, operators, dailyCaseLimit, ...(real ? { real } : {}) };
 }
 
 /**
@@ -1616,14 +1695,6 @@ function serverPort(environment: Environment): number {
   return port ?? serverPort ?? DEFAULT_PORT;
 }
 
-function openObserveUrl(environment: Environment): string | undefined {
-  const value = optional(environment, "OPENBOT_OPENOBSERVE_URL");
-  if (!value || /[?#\\\s]/.test(value)) return undefined;
-  const authority = /^https?:\/\/([^/]+)/i.exec(value)?.[1];
-  if (!authority || authority.includes("@")) return undefined;
-  return URL.parse(value)?.href;
-}
-
 function managedModelTrial(
   environment: Environment,
   runtime: RuntimeCapabilities,
@@ -1654,6 +1725,14 @@ function managedModelTrial(
     );
   }
   return { url: origin, token, route };
+}
+
+function openObserveUrl(environment: Environment): string | undefined {
+  const value = optional(environment, "OPENBOT_OPENOBSERVE_URL");
+  if (!value || /[?#\\\s]/.test(value)) return undefined;
+  const authority = /^https?:\/\/([^/]+)/i.exec(value)?.[1];
+  if (!authority || authority.includes("@")) return undefined;
+  return URL.parse(value)?.href;
 }
 
 export function loadConfig(
@@ -1696,6 +1775,47 @@ export function loadConfig(
   const edition = parseEdition(optional(environment, "OPENBOT_EDITION"));
   const runtime = runtimeCapabilities(environment);
 
+  const hindsightUrl = optional(environment, "OPENBOT_HINDSIGHT_API_URL");
+  const hindsightApiKey = optional(environment, "OPENBOT_HINDSIGHT_API_KEY");
+  const hindsightReflect = optional(environment, "OPENBOT_HINDSIGHT_REFLECT");
+  const hindsightReflectToken = optional(
+    environment,
+    "OPENBOT_HINDSIGHT_REFLECT_TOKEN",
+  );
+  const modelTrial = managedModelTrial(environment, runtime);
+  if (
+    hindsightReflect &&
+    (!hindsightUrl ||
+      (hindsightReflect !== "local" && hindsightReflect !== "managed") ||
+      (hindsightReflect === "managed" &&
+        (!modelTrial || !hindsightReflectToken)))
+  )
+    throw new Error(
+      "OPENBOT_HINDSIGHT_REFLECT requires a Hindsight API origin and local or managed mode. Managed mode requires Test Credit configuration and OPENBOT_HINDSIGHT_REFLECT_TOKEN.",
+    );
+  let hindsight: HindsightConfig | undefined;
+  if (hindsightUrl) {
+    const url = new URL(hindsightUrl);
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      url.pathname !== "/"
+    )
+      throw new Error(
+        "OPENBOT_HINDSIGHT_API_URL must be an HTTP(S) service origin.",
+      );
+    hindsight = {
+      url,
+      ...(hindsightApiKey ? { apiKey: hindsightApiKey } : {}),
+      ...(hindsightReflect ? { reflect: true } : {}),
+    };
+  }
+  const opik = opikConfig(environment);
+  const opikEvaluation = opikEvaluationConfig(environment, opik);
+
   // Built first and checked after, so every refusal the team edition gives keeps its order.
   const loaded = {
     port: serverPort(environment),
@@ -1722,7 +1842,11 @@ export function loadConfig(
     tenantPackageDirectory:
       optional(environment, "TENANT_PACKAGE_DIR") ?? "../examples/fintech",
     runtime,
-    managedModelTrial: managedModelTrial(environment, runtime),
+    managedModelTrial: modelTrial,
+    ...(hindsightReflect === "managed" ? { hindsightReflectToken } : {}),
+    ...(hindsight ? { hindsight } : {}),
+    ...(opik ? { opik } : {}),
+    ...(opikEvaluation ? { opikEvaluation } : {}),
     recorder: { extraExtensionIds: recorderExtraExtensionIds(environment) },
     learning: learningDefault(environment),
     learningAutoAssign: learningAutoAssignEnabled(environment),

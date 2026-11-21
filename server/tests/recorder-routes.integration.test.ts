@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 import {
   type ExchangeResponse,
   LEARNING_SPACE_STATES,
@@ -10,6 +13,7 @@ import {
 } from "@openbot/shared/recorder-api";
 import { RECORDER_EXTENSION_ID } from "@openbot/shared/recorder-extension";
 import { eq, inArray } from "drizzle-orm";
+import { chromium } from "playwright-core";
 import { createApp } from "../src/app";
 import type { AuditEventInput } from "../src/audit";
 import { loadConfig } from "../src/config";
@@ -17,6 +21,8 @@ import { createDatabase } from "../src/db/client";
 import { users } from "../src/db/schema/core";
 import {
   recorderConnections,
+  recorderRecordingEvents,
+  recorderRecordings,
   recorderTrajectoryBindings,
 } from "../src/db/schema/recorder";
 import { createRecorderExtension } from "../src/recorder/wiring";
@@ -27,6 +33,7 @@ const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const prefix = `recorder-routes-${randomUUID()}`;
 const owner = `${prefix}-owner`;
 const busy = `${prefix}-busy`;
+const otherUser = `${prefix}-other`;
 const ORIGIN = `chrome-extension://${RECORDER_EXTENSION_ID}`;
 const INSTALL = "c".repeat(32);
 const OTHER_EXTENSION = `chrome-extension://${"a".repeat(32)}`;
@@ -120,7 +127,9 @@ function build(
           ? owner
           : cookie.includes("test-session=busy")
             ? busy
-            : null;
+            : cookie.includes("test-session=other")
+              ? otherUser
+              : null;
         return id
           ? { user: { id, email: `${id}@example.test`, name: "The Owner" } }
           : null;
@@ -131,7 +140,7 @@ function build(
   args[12] = auditStore;
   args[34] = { recorder };
   const app = createApp(...args);
-  return { app, audits, config, kicked };
+  return { app, audits, config, kicked, recorder };
 }
 
 const call = (
@@ -154,12 +163,14 @@ const COOKIE = { cookie: "test-session=owner" };
 async function connect(
   harness: Harness,
   installId = INSTALL,
+  cookie = COOKIE,
 ): Promise<ExchangeResponse> {
   const minted = await call(harness, "/api/recorder/connect-codes", {
     method: "POST",
-    headers: COOKIE,
+    headers: cookie,
     json: { via: "web" },
   });
+  expect(minted.status).toBe(201);
   const { code } = (await minted.json()) as { code: string };
   const exchanged = await call(harness, "/api/recorder/connections", {
     method: "POST",
@@ -175,10 +186,17 @@ beforeAll(async () => {
   await database.insert(users).values([
     { id: owner, email: `${owner}@example.test`, name: "The Owner" },
     { id: busy, email: `${busy}@example.test`, name: "The Owner" },
+    {
+      id: otherUser,
+      email: `${otherUser}@example.test`,
+      name: "The Other User",
+    },
   ]);
 });
 afterAll(async () => {
-  await database.delete(users).where(inArray(users.id, [owner, busy]));
+  await database
+    .delete(users)
+    .where(inArray(users.id, [owner, busy, otherUser]));
   await database.$client.close();
   await transcriber.stop(true);
 });
@@ -710,3 +728,391 @@ describe("recordings", () => {
     expect(far.status).toBe(400);
   });
 });
+
+const noIntelligence = {
+  INTELLIGENCE_API_URL: undefined,
+  INTELLIGENCE_GATEWAY_WS_URL: undefined,
+  INTELLIGENCE_API_KEY: undefined,
+  COPILOTKIT_LICENSE_TOKEN: undefined,
+};
+
+test("a connected Recorder submits an OpenBot recording once without Intelligence", async () => {
+  const h = build(noIntelligence);
+  const { token } = await connect(h);
+  const recordingId = randomUUID();
+  const trajectoryId = randomUUID();
+  const path = `/api/recorder/capture/${trajectoryId}`;
+  const headers = { ...bearer(token), origin: ORIGIN };
+  const grant = await call(h, `${path}/grant`, {
+    method: "POST",
+    headers,
+    json: { recordingId },
+  });
+  expect(grant.status).toBe(200);
+  const { token: captureToken } = await grant.json();
+  const submit = () =>
+    call(h, `${path}/events`, {
+      method: "POST",
+      headers,
+      json: {
+        captureToken,
+        dropped: 0,
+        events: [
+          {
+            type: "CUSTOM",
+            name: "outcome",
+            timestamp: Date.now(),
+            value: { seq: 1, workflow: "Build a report", phase: "succeeded" },
+          },
+        ],
+      },
+    });
+  const submissions = await Promise.all([submit(), submit()]);
+  expect(submissions.map((response) => response.status)).toEqual([200, 200]);
+  const list = await call(h, "/api/recorder/recordings", { headers: COOKIE });
+  const { recordings }: RecordingsPage = await list.json();
+  expect(recordings.filter((row) => row.id === recordingId)).toEqual([
+    expect.objectContaining({ title: "Build a report", ended: "succeeded" }),
+  ]);
+});
+
+test("only the recording owner can read it, and deleting it revokes evidence and replay", async () => {
+  const h = build(noIntelligence);
+  const otherCookie = { cookie: "test-session=other" };
+  const { token } = await connect(h, randomUUID().replaceAll("-", ""));
+  const other = await connect(h, "d".repeat(32), otherCookie);
+  const recordingId = randomUUID();
+  const trajectoryId = randomUUID();
+  const path = `/api/recorder/capture/${trajectoryId}`;
+  const detailPath = `/api/recorder/recordings/${recordingId}`;
+  const ownerHeaders = { ...bearer(token), origin: ORIGIN };
+  const otherHeaders = { ...bearer(other.token), origin: ORIGIN };
+  const grant = (headers: Record<string, string>, id = recordingId) =>
+    call(h, `${path}/grant`, {
+      method: "POST",
+      headers,
+      json: { recordingId: id },
+    });
+  const { token: captureToken } = await (await grant(ownerHeaders)).json();
+  const batch = {
+    captureToken,
+    dropped: 0,
+    events: [
+      {
+        type: "CUSTOM",
+        name: "outcome",
+        timestamp: Date.now(),
+        value: {
+          seq: 1,
+          phase: "succeeded",
+          workflow: "Visible only to the owner",
+        },
+      },
+    ],
+  };
+  const upload = (
+    headers: Record<string, string>,
+    capability = captureToken,
+    trajectoryPath = path,
+  ) =>
+    call(h, `${trajectoryPath}/events`, {
+      method: "POST",
+      headers,
+      json: { ...batch, captureToken: capability },
+    });
+  expect((await upload(ownerHeaders, "")).status).toBe(403);
+  expect((await upload(otherHeaders)).status).toBe(403);
+  expect(
+    (
+      await upload(
+        ownerHeaders,
+        captureToken,
+        `/api/recorder/capture/${randomUUID()}`,
+      )
+    ).status,
+  ).toBe(403);
+  expect((await grant(otherHeaders)).status).toBe(404);
+  expect((await grant(otherHeaders, randomUUID())).status).toBe(404);
+  expect((await upload(ownerHeaders)).status).toBe(200);
+  expect((await upload(ownerHeaders)).status).toBe(200);
+  const detail = await call(h, detailPath, { headers: COOKIE });
+  expect(detail.status).toBe(200);
+  expect((await detail.json()).events).toEqual(batch.events);
+  expect((await call(h, detailPath, { headers: otherCookie })).status).toBe(
+    404,
+  );
+  expect((await call(h, detailPath, { headers: otherHeaders })).status).toBe(
+    401,
+  );
+  expect(
+    (await call(h, detailPath, { method: "DELETE", headers: otherCookie }))
+      .status,
+  ).toBe(404);
+  expect(
+    (await h.recorder.recordingTitles(owner, [recordingId])).get(recordingId),
+  ).toBe("Visible only to the owner");
+  expect(
+    (await call(h, detailPath, { method: "DELETE", headers: COOKIE })).status,
+  ).toBe(204);
+  expect((await call(h, detailPath, { headers: COOKIE })).status).toBe(404);
+  expect(
+    (await h.recorder.recordingTitles(owner, [recordingId])).has(recordingId),
+  ).toBe(false);
+  expect((await upload(ownerHeaders)).status).toBe(404);
+  expect((await grant(ownerHeaders)).status).toBe(404);
+  const [marker] = await database
+    .select()
+    .from(recorderRecordings)
+    .where(eq(recorderRecordings.id, recordingId));
+  expect(marker).toMatchObject({
+    deletedAt: expect.any(Date),
+    cleanupCompletedAt: expect.any(Date),
+    title: null,
+    reason: null,
+  });
+  expect(
+    await database
+      .select()
+      .from(recorderRecordingEvents)
+      .where(eq(recorderRecordingEvents.recordingId, recordingId)),
+  ).toEqual([]);
+}, 30_000);
+
+test("a signed capture grant expires at its deadline and a new grant can submit", async () => {
+  const h = build(noIntelligence);
+  const { token } = await connect(h, randomUUID().replaceAll("-", ""));
+  const headers = { ...bearer(token), origin: ORIGIN };
+  const recordingId = randomUUID();
+  const path = `/api/recorder/capture/${randomUUID()}`;
+  const grant = () =>
+    call(h, `${path}/grant`, {
+      method: "POST",
+      headers,
+      json: { recordingId },
+    });
+  const now = Date.now;
+  let time = now();
+  Date.now = () => time;
+  try {
+    const { token: captureToken } = await (await grant()).json();
+    const submit = (capability: string) =>
+      call(h, `${path}/events`, {
+        method: "POST",
+        headers,
+        json: {
+          captureToken: capability,
+          dropped: 0,
+          events: [
+            {
+              type: "CUSTOM",
+              name: "outcome",
+              timestamp: now(),
+              value: { seq: 1, phase: "succeeded", workflow: "Renewed grant" },
+            },
+          ],
+        },
+      });
+    time += 5 * 60_000;
+    const expired = await submit(captureToken);
+    expect(expired.status).toBe(403);
+    expect(await expired.json()).toEqual({ reason: "capture_grant_expired" });
+    expect(
+      (
+        await call(h, `/api/recorder/recordings/${recordingId}`, {
+          headers: COOKIE,
+        })
+      ).status,
+    ).toBe(404);
+    const renewed = await (await grant()).json();
+    expect((await submit(renewed.token)).status).toBe(200);
+  } finally {
+    Date.now = now;
+  }
+}, 30_000);
+
+async function waitForRecorder(
+  description: string,
+  condition: () => Promise<boolean>,
+) {
+  const deadline = performance.now() + 10_000;
+  do {
+    if (await condition()) return;
+    await Bun.sleep(100);
+  } while (performance.now() < deadline);
+  throw new Error(`Timed out waiting for ${description}`);
+}
+
+// Playwright evaluates this browser-provided API inside the Chromium page.
+declare const chrome: {
+  runtime: {
+    sendMessage(
+      extensionId: string,
+      message: Record<string, unknown>,
+    ): Promise<unknown>;
+  };
+};
+
+const recorderDist = process.env.OPENBOT_TEST_RECORDER_DIST;
+test.skipIf(!recorderDist)(
+  "Chromium Recorder masks a password, submits without Intelligence, and cannot replay after deletion",
+  async () => {
+    if (!recorderDist)
+      throw new Error("Set OPENBOT_TEST_RECORDER_DIST to the built extension");
+    const dist = resolve(recorderDist);
+    const profile = await mkdtemp(
+      resolve(tmpdir(), "openbot-recorder-chromium-"),
+    );
+    const h = build(noIntelligence);
+    const submissions: Request[] = [];
+    const responses: string[] = [];
+    const site = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        const { pathname } = new URL(request.url);
+        if (pathname.startsWith("/api/")) {
+          if (pathname.endsWith("/events") && request.method === "POST")
+            submissions.push(request.clone());
+          const response = await h.app.fetch(request);
+          responses.push(`${request.method} ${pathname} ${response.status}`);
+          return response;
+        }
+        return new Response(
+          `<title>Recorder test</title><form onsubmit="event.preventDefault()">
+      <label>Password <input type="password" name="password" autocomplete="current-password"></label>
+      <label>Note <input name="note"></label><button>Save task</button>
+    </form>`,
+          { headers: { "Content-Type": "text/html" } },
+        );
+      },
+    });
+    const origin = site.url.origin;
+    try {
+      const browser = await chromium.launchPersistentContext(profile, {
+        channel: "chromium",
+        executablePath: process.env.OPENBOT_TEST_CHROMIUM,
+        args: [
+          `--disable-extensions-except=${dist}`,
+          `--load-extension=${dist}`,
+        ],
+      });
+      try {
+        const page = await browser.newPage();
+        await page.goto(origin);
+        const minted = await call(h, "/api/recorder/connect-codes", {
+          method: "POST",
+          headers: COOKIE,
+          json: { via: "web" },
+        });
+        expect(minted.status).toBe(201);
+        const { code } = await minted.json();
+        const message = (payload: Record<string, unknown>) =>
+          page.evaluate(
+            ({ id, payload }) => chrome.runtime.sendMessage(id, payload),
+            { id: RECORDER_EXTENSION_ID, payload },
+          );
+        const connectPage = browser.waitForEvent("page", {
+          timeout: 10_000,
+          predicate: async (tab) => {
+            if (tab.url().includes("setup.html")) return false;
+            await tab
+              .waitForURL("**/connect.html*", { timeout: 5_000 })
+              .catch(() => undefined);
+            return tab.url().includes("connect.html");
+          },
+        });
+        expect(await message({ type: "openbot.connect", code })).toMatchObject({
+          ok: true,
+        });
+        const approval = await connectPage;
+        await approval
+          .getByRole("button", { name: "Connect", exact: true })
+          .click();
+        await approval.getByText(/^Connected as /).waitFor({ timeout: 10_000 });
+        expect(await message({ type: "openbot.state" })).toMatchObject({
+          connected: true,
+        });
+
+        await page.bringToFront();
+        const title = "Save the fixture task";
+        expect(
+          await message({ type: "openbot.record", title, narrate: false }),
+        ).toEqual(expect.objectContaining({ ok: true }));
+        const password = "FixtureOnly-Recorder-72398!";
+        await page.getByLabel("Password").pressSequentially(password);
+        await page.getByLabel("Note").fill("ordinary fixture note");
+        await page.getByRole("button", { name: "Save task" }).click();
+        await waitForRecorder("captured actions", async () => {
+          const state = await message({ type: "openbot.state" });
+          return (
+            typeof state === "object" &&
+            state !== null &&
+            "actions" in state &&
+            typeof state.actions === "number" &&
+            state.actions > 0
+          );
+        });
+        expect(await message({ type: "openbot.stop" })).toMatchObject({
+          ok: true,
+        });
+
+        const list = async () =>
+          (
+            await call(h, "/api/recorder/recordings", { headers: COOKIE })
+          ).json() as Promise<RecordingsPage>;
+        await browser.addCookies([
+          { name: "test-session", value: "owner", url: origin },
+        ]);
+        await waitForRecorder("the uploaded recording to finish", () =>
+          page.evaluate(async (name) => {
+            const data: RecordingsPage = await (
+              await fetch("/api/recorder/recordings")
+            ).json();
+            return data.recordings.some(
+              (row) => row.title === name && row.ended === "succeeded",
+            );
+          }, title),
+        );
+        const row = (await list()).recordings.find(
+          (item) => item.title === title,
+        );
+        if (!row) throw new Error("Recorder did not publish a recording");
+        const path = `/api/recorder/recordings/${row.id}`;
+        const detail = await (await call(h, path, { headers: COOKIE })).text();
+        expect(detail).toContain("ordinary fixture note");
+        expect(detail).toContain("[redacted]");
+        expect(detail).not.toContain(password);
+        const submitted = await Promise.all(
+          submissions.map((request) => request.clone().text()),
+        );
+        expect(submitted.join("\n")).not.toContain(password);
+        const replay = submissions.find((_, i) =>
+          submitted[i]?.includes(title),
+        );
+        if (!replay) throw new Error("Recorder submitted no outcome");
+        expect((await h.app.fetch(replay.clone())).status).toBe(200);
+        expect(
+          (await list()).recordings.filter(({ id }) => id === row.id),
+        ).toHaveLength(1);
+        expect(await (await call(h, path, { headers: COOKIE })).text()).toBe(
+          detail,
+        );
+        expect(
+          (await call(h, path, { headers: COOKIE, method: "DELETE" })).status,
+        ).toBe(204);
+        expect((await call(h, path, { headers: COOKIE })).status).toBe(404);
+        expect((await h.app.fetch(replay.clone())).status).toBe(404);
+      } catch (error) {
+        throw new Error(`Chromium Recorder requests: ${responses.join(", ")}`, {
+          cause: error,
+        });
+      } finally {
+        await browser.close();
+      }
+    } finally {
+      await site.stop(true);
+      await rm(profile, { recursive: true, force: true });
+    }
+  },
+  60_000,
+);

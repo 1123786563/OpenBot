@@ -196,3 +196,24 @@ export function deleteChannelMutationOptions(
       queryClient.invalidateQueries({ queryKey: channelKeys.list() }),
   });
 }
+
+export function setChannelArchivedMutationOptions(queryClient: QueryClient) {
+  return mutationOptions({
+    mutationFn: async ({
+      channelId,
+      archived,
+    }: {
+      channelId: string;
+      archived: boolean;
+    }) => {
+      await client(`/api/channels/${encodeURIComponent(channelId)}/archive`, {
+        method: archived ? "PUT" : "DELETE",
+        fallback: archived
+          ? "Couldn't archive this conversation."
+          : "Couldn't restore this conversation.",
+      });
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: channelKeys.all }),
+  });
+}

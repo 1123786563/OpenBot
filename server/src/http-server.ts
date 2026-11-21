@@ -17,6 +17,7 @@ import {
   isIntelligenceClientSocketPath,
   openGatewaySocket,
 } from "./intelligence-gateway-proxy";
+import { REFLECT_MODEL_CALLBACK_PATH } from "./memory/reflect-model";
 import {
   CROSS_SITE_REFUSAL,
   crossSiteRequest,
@@ -270,6 +271,12 @@ export function startHttpServer(deps: {
       if (url.pathname === "/api/audio/transcriptions") {
         server.timeout(request, DICTATION_HTTP_IDLE_SECONDS);
       }
+      if (
+        config.hindsightReflectToken &&
+        request.method === "POST" &&
+        url.pathname === REFLECT_MODEL_CALLBACK_PATH
+      )
+        server.timeout(request, 110);
       if (url.pathname === "/api/voice/calls") server.timeout(request, 30);
       if (url.pathname === "/api/voice/sessions") server.timeout(request, 30);
       // The person's browser's routes wait on its computer for longer than Bun's 10 s: a cold open, a slow page. Kept

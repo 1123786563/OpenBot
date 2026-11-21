@@ -635,22 +635,113 @@
     {
       "idx": 90,
       "version": "7",
+      "when": 1795161859942,
+      "tag": "0090_direct_chat_replay",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1795172513486,
+      "tag": "0091_conversation_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1795173315650,
+      "tag": "0092_openbot_recordings",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1795174366772,
+      "tag": "0093_opik_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1795178687140,
+      "tag": "0094_opik_evaluations",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1795180537112,
+      "tag": "0095_direct_chat_learning",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1795181168585,
+      "tag": "0096_direct_chat_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1795181350092,
+      "tag": "0097_hindsight_memory",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1795181647838,
+      "tag": "0098_direct_chat_learning_publication",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1795183415159,
+      "tag": "0099_scheduled_direct_chat_learning",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
       "when": 1795183869296,
       "tag": "0090_skill_market_installations",
       "breakpoints": true
     },
     {
-      "idx": 91,
+      "idx": 101,
+      "version": "7",
+      "when": 1795183878647,
+      "tag": "0100_learning_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
       "version": "7",
       "when": 1795185049024,
       "tag": "0091_skill_market_version_disablements",
       "breakpoints": true
     },
     {
-      "idx": 92,
+      "idx": 103,
+      "version": "7",
+      "when": 1795185919612,
+      "tag": "0101_intelligence_deletion_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
       "version": "7",
       "when": 1795189760196,
       "tag": "0092_skill_market_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1795228622495,
+      "tag": "0102_background_conversation_runs",
       "breakpoints": true
     }
   ]

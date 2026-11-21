@@ -1,13 +1,14 @@
-import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { type Ref, useEffect, useLayoutEffect, useRef } from "react";
 import { Streamdown } from "streamdown";
 import {
   QuestionNotice,
   type WaitingQuestion,
 } from "@/components/approvals/question-notice";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
+import { Button } from "@/components/ui/button";
 import {
   MessageContent,
   MessageHeader,
@@ -20,7 +21,9 @@ import {
   approvalInboxOptions,
 } from "@/lib/approvals";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { client } from "@/lib/client";
 import {
+  type GroupBackgroundRun,
   type GroupMessage,
   groupKeys,
   groupQueryOptions,
@@ -34,10 +37,6 @@ import {
 import { newId } from "@/lib/new-id";
 import { ChannelAvatar } from "./avatar";
 import { Composer, toAgentOptions } from "./composer";
-import {
-  ConversationLoading,
-  ConversationReadError,
-} from "./conversation-status";
 import { TeamBotConsentCard } from "./team-bot-consent";
 
 /**
@@ -53,24 +52,38 @@ import { TeamBotConsentCard } from "./team-bot-consent";
  * unless they address another Bot. The server puts the answer in the transcript and runs the Bot
  * that asked on it (`approvals/questions.ts`).
  */
-export function GroupChat({ channelId }: { channelId: string }) {
+export function GroupChat({
+  channelId,
+  runId,
+}: {
+  channelId: string;
+  runId?: string;
+}) {
   const queryClient = useQueryClient();
   const group = useQuery(groupQueryOptions(channelId));
   const me = useQuery(currentUserQueryOptions()).data;
   const send = useMutation(
     sendGroupMessageMutationOptions(queryClient, channelId),
   );
-  const pendingMessage = useRef<{
-    id: string;
-    text: string;
-    agentId: string | null;
-  } | null>(null);
   const bots = group.data?.bots ?? [];
   const names = new Map(bots.map((bot) => [bot.id, bot.name]));
   const messages = group.data?.messages ?? [];
-  const working = messages.some(
-    (message) => message.status === "running" || message.status === "queued",
-  );
+  const background = group.data?.backgroundRuns ?? [];
+  const stopRun = useMutation({
+    mutationFn: async (run: GroupBackgroundRun) => {
+      await client(
+        `/api/copilotkit/threads/${encodeURIComponent(run.threadId)}/runs/${encodeURIComponent(run.id)}/stop?agentId=${encodeURIComponent(run.agentId)}`,
+        { method: "POST", fallback: "The Bot run could not be stopped." },
+      );
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: groupKeys.detail(channelId) }),
+  });
+  const working =
+    background.some(({ status }) => status === "running") ||
+    messages.some(
+      (message) => message.status === "running" || message.status === "queued",
+    );
 
   const inbox = useQuery(approvalInboxOptions());
   const question = groupQuestion(inbox.data, channelId);
@@ -131,31 +144,24 @@ export function GroupChat({ channelId }: { channelId: string }) {
     }
   }, [lastKey, newestIsMine]);
 
-  if (group.isPending)
-    return <ConversationLoading label="Opening group conversation…" />;
-  if (!group.data) {
+  const focus = useRef<HTMLDivElement>(null);
+  const linkedRun =
+    background.find(({ id }) => id === runId) ??
+    messages.find(({ id }) => id === runId);
+  useLayoutEffect(() => {
+    if (linkedRun) focus.current?.scrollIntoView({ block: "nearest" });
+  }, [linkedRun]);
+
+  if (group.isPending) return null;
+  if (group.isError)
     return (
-      <Stack padding={5}>
-        <ConversationReadError
-          title="Couldn't open this group conversation."
-          description="Try again to load messages and participants."
-          retry={() => void group.refetch()}
-          retrying={group.isFetching}
-        />
-      </Stack>
+      <p className="p-8 text-sm text-destructive" role="alert">
+        {group.error.message}
+      </p>
     );
-  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {group.isError && (
-        <ConversationReadError
-          title="Couldn't update group messages."
-          description="You can still read the messages already loaded."
-          retry={() => void group.refetch()}
-          retrying={group.isFetching}
-        />
-      )}
       <div
         className="min-h-0 flex-1 overflow-y-auto"
         onScroll={(event) => {
@@ -167,7 +173,7 @@ export function GroupChat({ channelId }: { channelId: string }) {
           className="mx-auto flex w-full max-w-3xl flex-col gap-5 py-6"
           data-transcript-column
         >
-          {messages.length === 0 ? (
+          {messages.length === 0 && background.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Say something to {bots.map((bot) => bot.name).join(" and ")}.
               Every Bot answers in turn; start with @Name to ask just one.
@@ -176,6 +182,7 @@ export function GroupChat({ channelId }: { channelId: string }) {
           {messages.map((message) => (
             <GroupLine
               key={message.id}
+              rowRef={message.id === runId ? focus : undefined}
               message={message}
               name={
                 message.agentId
@@ -192,20 +199,58 @@ export function GroupChat({ channelId }: { channelId: string }) {
               mine={message.ownerUserId === me?.id}
             />
           ))}
+          {background.map((run) => (
+            <MessageRow
+              align="start"
+              key={run.id}
+              ref={run.id === runId ? focus : undefined}
+              className="items-center"
+            >
+              <MessageContent>
+                <strong>{names.get(run.agentId)}</strong>
+                {run.partialReply && (
+                  <p className="whitespace-pre-wrap">{run.partialReply}</p>
+                )}
+                <p>
+                  {run.reason ??
+                    (run.waitingForApproval
+                      ? "Waiting for your approval."
+                      : run.status === "running"
+                        ? "Running"
+                        : run.status === "completed"
+                          ? "Run completed"
+                          : run.externalOutcome !== "unknown"
+                            ? "Run ended"
+                            : null)}
+                  {run.externalOutcome === "unknown" &&
+                    " The external outcome needs verification."}
+                </p>
+              </MessageContent>
+              {run.waitingForApproval && (
+                <Button
+                  disabled={stopRun.isPending}
+                  onClick={() => stopRun.mutate(run)}
+                  size="sm"
+                  variant="ghost"
+                >
+                  Stop run
+                </Button>
+              )}
+            </MessageRow>
+          ))}
+          {stopRun.error && <p role="alert">{stopRun.error.message}</p>}
         </div>
       </div>
       {/* The same column and the same compact composer as a conversation with one Bot. */}
       <div className="mx-auto w-full max-w-2xl shrink-0 pb-4">
         {send.error ? (
           <p className="pb-2 text-sm text-destructive" role="alert">
-            Couldn't confirm your message was sent. Your draft is still here.
-            Send it again to retry.
+            {send.error.message}
           </p>
         ) : null}
         {answer.error ? (
           <p className="pb-2 text-sm text-destructive" role="alert">
-            Couldn't confirm your answer. Check whether the question is still
-            waiting before replying again.
+            {answer.error.message}
           </p>
         ) : null}
         {/* The same drawer a conversation with one Bot draws its question in. */}
@@ -238,15 +283,11 @@ export function GroupChat({ channelId }: { channelId: string }) {
               await answerTo(draft.text, question);
               return;
             }
-            const previous = pendingMessage.current;
-            const message =
-              previous?.text === draft.text &&
-              previous.agentId === draft.agentId
-                ? previous
-                : { id: newId(), text: draft.text, agentId: draft.agentId };
-            pendingMessage.current = message;
-            await send.mutateAsync(message);
-            pendingMessage.current = null;
+            await send.mutateAsync({
+              id: newId(),
+              text: draft.text,
+              agentId: draft.agentId,
+            });
           }}
         />
       </div>
@@ -271,15 +312,17 @@ function GroupLine({
   name,
   answeredBy,
   mine,
+  rowRef,
 }: {
   message: GroupMessage;
   name: string;
   answeredBy?: string;
   mine: boolean;
+  rowRef?: Ref<HTMLDivElement>;
 }) {
   if (message.agentId === null)
     return (
-      <MessageRow align={mine ? "end" : "start"}>
+      <MessageRow align={mine ? "end" : "start"} ref={rowRef}>
         <MessageContent>
           {mine ? null : (
             <MessageHeader className="text-xs font-medium text-muted-foreground">
@@ -295,7 +338,7 @@ function GroupLine({
       </MessageRow>
     );
   return (
-    <MessageRow align="start" data-speaker={message.agentId}>
+    <MessageRow align="start" data-speaker={message.agentId} ref={rowRef}>
       <div className="shrink-0 pt-0.5">
         <ChannelAvatar participantIds={[message.agentId]} size={24} />
       </div>
@@ -337,9 +380,18 @@ function GroupLine({
               {message.consent.serverId} account.
             </p>
           )
+        ) : message.status === "paused" ? (
+          <section aria-label="Paused Bot run" role="status">
+            <Text as="p" type="supporting">
+              {message.reason ?? message.text}
+            </Text>
+          </section>
         ) : message.status === "failed" ? (
           <p className="text-sm text-destructive" role="alert">
-            {message.text || "This Bot couldn't answer."}
+            {message.text}
+            {message.text && message.reason && <br />}
+            {message.reason ??
+              (message.text ? null : "This Bot couldn't answer.")}
           </p>
         ) : (
           <Bubble

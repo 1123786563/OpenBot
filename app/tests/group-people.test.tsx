@@ -55,13 +55,13 @@ function serving(initial: Record<string, unknown>[]) {
   }) as unknown as typeof fetch;
 }
 
-function draw() {
+function draw(onLeave = () => {}) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={client}>
-      <GroupPeopleButton channelId="group-1" />
+      <GroupPeopleButton channelId="group-1" onLeave={onLeave} />
     </QueryClientProvider>,
   );
 }
@@ -115,4 +115,18 @@ test("adding someone by email lists them without reopening the dialog", async ()
     ),
   );
   expect(await view.findByText("Sam")).toBeTruthy();
+});
+
+test("the group manager can leave and return to the roster", async () => {
+  serving([ME, ALEX]);
+  let left = false;
+  const view = draw(() => {
+    left = true;
+  });
+  fireEvent.click(await view.findByRole("button", { name: "2 people" }));
+  fireEvent.click(
+    await view.findByRole("button", { name: "Leave this group" }),
+  );
+  await waitFor(() => expect(left).toBe(true));
+  expect(requests).toContain("DELETE /api/groups/group-1/members/me ");
 });
