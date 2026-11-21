@@ -54,6 +54,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@astryxdesign/cli": "0.7.16",
     "@happy-dom/global-registrator": "^20.11.2",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/router-plugin": "^1.168.30",
