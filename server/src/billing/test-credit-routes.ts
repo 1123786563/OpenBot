@@ -2,8 +2,8 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { ReleasedBifrostRoute } from "../admin/bifrost-catalog";
-import { UnsentBifrostRequest } from "./test-credit-bifrost";
 import type { TestCreditLedger, VerifiedBillingIdentity } from "./test-credit";
+import { UnsentBifrostRequest } from "./test-credit-bifrost";
 
 const operationId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const operation = z.strictObject({ operationId });
@@ -51,8 +51,80 @@ type Dependencies = {
     route: ReleasedBifrostRoute;
     messages: z.infer<typeof messages>;
     recheckRoute(): Promise<boolean>;
+    signal?: AbortSignal;
   }): Promise<unknown>;
 };
+
+export type TestCreditExecutor = Dependencies["execute"];
+
+export async function dispatchTestCredit({
+  ledger,
+  execute,
+  identity,
+  input,
+  maySend,
+  signal,
+}: {
+  ledger: TestCreditLedger;
+  execute: TestCreditExecutor;
+  identity: VerifiedBillingIdentity;
+  input: z.infer<typeof dispatch>;
+  maySend?: () => Promise<boolean>;
+  signal?: AbortSignal;
+}) {
+  const admission = await ledger.beginDispatch(identity, input);
+  if (admission.state === "denied") return admission;
+  if (admission.state === "existing") {
+    return {
+      state: "existing",
+      operation: admission.operation,
+    } as const;
+  }
+  try {
+    const completed = result.parse(
+      await execute({
+        accountId: admission.accountId,
+        operationId: input.operationId,
+        route: admission.route,
+        async recheckRoute() {
+          return (
+            (await ledger.routeStillEligible(admission.route)) &&
+            (!maySend || (await maySend()))
+          );
+        },
+        messages: input.messages,
+        signal,
+      }),
+    );
+    const recorded = await ledger.recordEvidence(
+      admission.accountId,
+      input.operationId,
+      {
+        evidenceId: "inline-completion",
+        outcome: completed.outcome ?? "completed",
+        inputTokens: BigInt(completed.usage.inputTokens),
+        outputTokens: BigInt(completed.usage.outputTokens),
+      },
+    );
+    const receipt =
+      recorded &&
+      (await ledger.settleRecorded(admission.accountId, input.operationId));
+    if (receipt && "text" in completed)
+      return {
+        state: "completed",
+        text: completed.text,
+        operation: receipt,
+      } as const;
+    if (receipt) return { state: receipt.state, operation: receipt };
+  } catch (error) {
+    if (error instanceof UnsentBifrostRequest) {
+      await ledger.releaseUnsent(admission.accountId, input.operationId);
+      return { state: "denied", reason: error.reason } as const;
+    }
+    // The permit was consumed durably. A retry must never resend this operation.
+  }
+  return { state: "reconciling" } as const;
+}
 
 export function createTestCreditRoutes({
   ledger,
@@ -138,59 +210,14 @@ export function createTestCreditRoutes({
     );
     if (!input.success)
       return context.json({ error: "Invalid dispatch." }, 400);
-    const admission = await ledger.beginDispatch(
-      context.var.identity,
-      input.data,
+    return context.json(
+      await dispatchTestCredit({
+        ledger,
+        execute,
+        identity: context.var.identity,
+        input: input.data,
+      }),
     );
-    if (admission.state === "denied") return context.json(admission);
-    if (admission.state === "existing") {
-      return context.json({
-        state: "existing",
-        operation: admission.operation,
-      });
-    }
-    try {
-      const completed = result.parse(
-        await execute({
-          accountId: admission.accountId,
-          operationId: input.data.operationId,
-          route: admission.route,
-          recheckRoute: () => ledger.routeStillEligible(admission.route),
-          messages: input.data.messages,
-        }),
-      );
-      const recorded = await ledger.recordEvidence(
-        admission.accountId,
-        input.data.operationId,
-        {
-          evidenceId: "inline-completion",
-          outcome: completed.outcome ?? "completed",
-          inputTokens: BigInt(completed.usage.inputTokens),
-          outputTokens: BigInt(completed.usage.outputTokens),
-        },
-      );
-      const receipt =
-        recorded &&
-        (await ledger.settleRecorded(
-          admission.accountId,
-          input.data.operationId,
-        ));
-      if (receipt && "text" in completed)
-        return context.json({
-          state: "completed",
-          text: completed.text,
-          operation: receipt,
-        });
-      if (receipt)
-        return context.json({ state: receipt.state, operation: receipt });
-    } catch (error) {
-      if (error instanceof UnsentBifrostRequest) {
-        await ledger.releaseUnsent(admission.accountId, input.data.operationId);
-        return context.json({ state: "denied", reason: error.reason });
-      }
-      // The permit was consumed durably. A retry must never resend this operation.
-    }
-    return context.json({ state: "reconciling" });
   });
 
   api.post("/v1/reconcile", async (context) => {

@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { Button } from "@astryxdesign/core/Button";
 import { Heading } from "@astryxdesign/core/Heading";
 import { VStack } from "@astryxdesign/core/Layout";
@@ -16,6 +16,7 @@ import type {
   OneTimeTestCreditGrantConfig,
   TestCreditLedger,
 } from "../billing/test-credit";
+import type { TestCreditExecutor } from "../billing/test-credit-routes";
 import type { Database } from "../db/client";
 import { createWorkQueue, unattendedWorkLabels } from "../work/queue";
 import { backgroundBotKinds } from "../work/unattended-kinds";
@@ -40,6 +41,7 @@ import {
   botWorkInput,
   PERSONAL_BOT_WORK,
   personalBotWork,
+  queuedBotWorkInput,
   recoveryInput,
 } from "./bot-work";
 import { browserAttempt, type CasdoorConfig, casdoor } from "./casdoor";
@@ -63,6 +65,7 @@ import {
 import { personalSaasStore, sessionSeconds } from "./store";
 import { supportAccess } from "./support-access";
 import { supportRoutes } from "./support-routes";
+import { botRunCreditQuote, personalTestCreditExecution } from "./test-credit";
 import { page, pageStyleAttributePolicy, registerPageStyles } from "./web-page";
 import {
   workspaceAttachmentDrafts,
@@ -122,7 +125,8 @@ export type PersonalSaasConfig = {
   encryptionKey: string;
   casdoor: CasdoorConfig;
   testCredits?: {
-    ledger: Pick<TestCreditLedger, "ensureOneTimeGrant" | "balance">;
+    ledger: TestCreditLedger;
+    execute?: TestCreditExecutor;
     grant: OneTimeTestCreditGrantConfig;
   };
 };
@@ -188,6 +192,18 @@ export function createPersonalSaasApp(
     new URL(callbackPath, config.origin).href,
   );
   const now = config.now ?? Date.now;
+  const managedCredits = config.testCredits?.execute
+    ? { ledger: config.testCredits.ledger, execute: config.testCredits.execute }
+    : undefined;
+  if (managedCredits && (config.botRuntime || config.runPersonalBot))
+    throw new Error("Configure one Personal SaaS Bot runtime");
+  const executeManaged =
+    managedCredits &&
+    personalTestCreditExecution(
+      database,
+      managedCredits.ledger,
+      managedCredits.execute,
+    );
   const runPersonalBot =
     config.botRuntime?.runTurn ??
     (config.runPersonalBot &&
@@ -205,8 +221,12 @@ export function createPersonalSaasApp(
         config.testCredits.grant,
       );
       const balance = await config.testCredits.ledger.balance(identity);
+      const quote =
+        managedCredits &&
+        (await managedCredits.ledger.quote().catch(() => undefined));
       return {
         ...grant,
+        ...(quote ? { quote } : {}),
         balance: balance ?? {
           creditType: "test" as const,
           grantedMicrocredits: "0",
@@ -1578,41 +1598,107 @@ export function createPersonalSaasApp(
     const session = await authorize(token);
     if (session.kind !== "authorized" || !token)
       return context.json({ error: "authorization_required" }, 403);
-    if (!runPersonalBot)
+    if (!runPersonalBot && !executeManaged)
       return context.json({ error: "bot_execution_unavailable" }, 503);
     const input = botWorkInput.safeParse(
       await context.req.json().catch(() => null),
     );
     if (!input.success) return context.json({ error: "invalid_request" }, 400);
     const accountId = session.grant.accountId;
+    const retryKey = managedCredits
+      ? context.req.header("Idempotency-Key")
+      : undefined;
+    const requestId = z.uuid().optional().safeParse(retryKey);
+    if (!requestId.success)
+      return context.json({ error: "invalid_idempotency_key" }, 400);
+    const key = requestId.data
+      ? createHash("sha256")
+          .update(
+            JSON.stringify([
+              PERSONAL_BOT_WORK,
+              accountId,
+              requestId.data.toLowerCase(),
+            ]),
+          )
+          .digest("hex")
+      : crypto.randomUUID();
+    const admission = managedCredits
+      ? await (async () => {
+          if (input.data.requiresComputer)
+            return {
+              error: "managed_computer_unavailable",
+              status: 422,
+            } as const;
+          const identity = {
+            issuer: config.casdoor.issuer,
+            subject: session.subject,
+          };
+          const { ledger } = managedCredits;
+          return await Promise.all([ledger.quote(), ledger.balance(identity)])
+            .then(([quote, balance]) => {
+              if (!quote)
+                return {
+                  error: "test_credit_route_unavailable",
+                  status: 503,
+                } as const;
+              if (
+                BigInt(balance?.availableMicrocredits ?? "0") <
+                BigInt(quote.maxChargeMicrocredits)
+              )
+                return { error: "insufficient_credits", status: 402 } as const;
+              return { quote: botRunCreditQuote.parse(quote) };
+            })
+            .catch(
+              () =>
+                ({
+                  error: "test_credit_route_unavailable",
+                  status: 503,
+                }) as const,
+            );
+        })()
+      : undefined;
     const outcome = await store.withAuthorizedSession(
       session.grant,
       token,
       async (tx) => {
+        const queue = createWorkQueue(tx, now);
+        if (
+          requestId.data &&
+          (await queue.personalStatus(PERSONAL_BOT_WORK, accountId, key))
+        )
+          return { runId: key };
         if (!(await workspaceBots(tx).get({ ...input.data, accountId })))
-          return null;
+          return { error: "bot_unavailable", status: 404 } as const;
+        if (admission && "error" in admission) return admission;
         await quotas.admitBot(tx, accountId);
-        const key = crypto.randomUUID();
-        const offered = await createWorkQueue(tx, now).offer({
+        const offered = await queue.offer({
           kind: PERSONAL_BOT_WORK,
           key,
           accountId,
-          payload: input.data,
+          payload: {
+            ...input.data,
+            ...(admission ? { testCredit: admission.quote } : {}),
+          },
         });
-        return offered === "queued" ? key : null;
+        return offered === "queued"
+          ? { runId: key }
+          : ({ error: "bot_unavailable", status: 404 } as const);
       },
     );
     if (!outcome.authorized)
       return context.json({ error: "authorization_changed" }, 403);
-    return outcome.result
-      ? context.json({ runId: outcome.result }, 202)
-      : context.json({ error: "bot_unavailable" }, 404);
+    const result = outcome.result;
+    return "runId" in result
+      ? context.json({ runId: result.runId }, 202)
+      : context.json({ error: result.error }, result.status);
   });
 
   app.post("/api/workspace/bot-runs/:key/stop", async (context) => {
     const session = await automationSession(context);
     if (!session) return context.json({ error: "authorization_required" }, 403);
-    const key = z.uuid().safeParse(context.req.param("key"));
+    const key = z
+      .union([z.uuid(), z.string().regex(/^[a-f0-9]{64}$/)])
+      .safeParse(context.req.param("key"));
     if (!key.success) return context.notFound();
     const result = await store.withAuthorizedSession(
       session.grant,
@@ -1645,10 +1731,21 @@ export function createPersonalSaasApp(
       accountId,
       key.data,
     );
+    const testCredit =
+      result &&
+      (await config.testCredits?.ledger
+        .receipt(
+          {
+            issuer: config.casdoor.issuer,
+            subject: session.subject,
+          },
+          key.data,
+        )
+        .catch(() => undefined));
     if (!(await stillAuthorized(token, session.grant)))
       return context.json({ error: "authorization_changed" }, 403);
     return result
-      ? context.json(result)
+      ? context.json({ ...result, ...(testCredit ? { testCredit } : {}) })
       : context.json({ error: "work_not_found" }, 404);
   });
 
@@ -1694,10 +1791,11 @@ export function createPersonalSaasApp(
           ...(kind === PERSONAL_BOT_WORK
             ? {
                 mayRetry: async (transaction, payload) => {
-                  const request = botWorkInput.safeParse(payload);
+                  const request = queuedBotWorkInput.safeParse(payload);
                   const mayRetry = Boolean(
                     runPersonalBot &&
                       request.success &&
+                      !request.data.testCredit &&
                       (await workspaceBots(transaction).get({
                         ...request.data,
                         accountId,
@@ -1775,7 +1873,7 @@ export function createPersonalSaasApp(
       await closure.sweep();
       await sweepCleanup();
     },
-    sweepBotWork: () => botWork.sweep(runPersonalBot),
+    sweepBotWork: () => botWork.sweep(runPersonalBot, executeManaged),
     sweepBotDecisions: () => config.botRuntime?.sweepDecisions(quotas),
     offerAutomationSchedules: automation.offerSchedules,
     sweepAutomationRoutines: automation.sweepRoutines,
