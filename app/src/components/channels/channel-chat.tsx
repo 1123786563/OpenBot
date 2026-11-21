@@ -1576,6 +1576,8 @@ export function ChannelChat({
   }, []);
 
   useEffect(() => {
+    // This state is intentionally a retry trigger. The effect must restart when the user taps Check again.
+    void firstAttempt;
     const owner = user?.id;
     if (!first || !owner) return;
     if (!channel.active || !isReady) {

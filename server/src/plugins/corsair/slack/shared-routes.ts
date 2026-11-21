@@ -780,8 +780,8 @@ export function createSharedSlackPilot({
           botId: input.botId,
           tool: tool.ref,
           target: pinned,
-          receiptId: origin?.outcome.receiptId,
-          triggerId: origin?.outcome.triggerId,
+          receiptId: _origin?.outcome.receiptId,
+          triggerId: _origin?.outcome.triggerId,
           ...details,
         },
         pinned.origin,
@@ -809,7 +809,7 @@ export function createSharedSlackPilot({
           sql`${responsibilityRuns.waiting}->>'approvalId' = ${approvalId}`,
         )
       : undefined;
-    let origin: Awaited<
+    let _origin: Awaited<
       ReturnType<typeof githubQueuedRunAuthorization>
     >["origin"];
     async function checkSource() {
@@ -833,7 +833,7 @@ export function createSharedSlackPilot({
         runId: goal.runId,
         personId: actor.id,
       });
-      origin = source.origin;
+      _origin = source.origin;
       if (source.kind === "denied") {
         throw new RevocationRefusal(GITHUB_EVENT_ACCESS_ENDED, 403);
       }

@@ -196,7 +196,7 @@ test("an active GitHub cutover leaves a direct MCP session and tool call availab
     brokerProvider: "composio",
     auditStore: createAuditStore(database),
     credentials: createCredentialStore(database),
-    encryptionKey: "A".repeat(43) + "=",
+    encryptionKey: `${"A".repeat(43)}=`,
     policy: () => ({ mode: "enforce", allow: ["true"], deny: [] }),
   });
   try {
@@ -265,7 +265,7 @@ test.each(["applied", "not_applied"] as const)(
       brokerProvider: "composio",
       auditStore: createAuditStore(database),
       credentials: createCredentialStore(database),
-      encryptionKey: "A".repeat(43) + "=",
+      encryptionKey: `${"A".repeat(43)}=`,
       policy: () => ({ mode: "enforce", allow: ["true"], deny: [] }),
       callVendor: async (connection, tool, args) => {
         expect(connection.actorId).toBe(actorId);
