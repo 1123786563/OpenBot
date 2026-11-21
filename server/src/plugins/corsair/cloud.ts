@@ -9,16 +9,109 @@ const entityType = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const entityMethod = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const instanceKey = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);
 const json = z.unknown();
+const operationMetadata = z
+  .object({
+    name: z.string().max(200).optional(),
+    operation: z.string().max(200).optional(),
+    path: z.string().max(200).optional(),
+    op: z.string().max(200).optional(),
+    description: z.string().max(4_000).optional(),
+    riskLevel: z.string().max(40).optional(),
+    effect: z.string().max(40).optional(),
+    destructive: z.boolean().optional(),
+    inputSchema: z.unknown().optional(),
+    outputSchema: z.unknown().optional(),
+    schema: z.unknown().optional(),
+  })
+  .passthrough();
 const operationsResponse = z.object({
-  plugins: z.record(z.string(), z.array(operation)),
+  plugins: z.record(
+    z.string(),
+    z.array(z.union([operation, operationMetadata])),
+  ),
 });
+
+function safeSchema(
+  value: unknown,
+  depth = 0,
+): Record<string, unknown> | undefined {
+  if (
+    depth > 16 ||
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  )
+    return undefined;
+  const input = value as Record<string, unknown>;
+  const output: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(input)) {
+    if (key.length > 100) continue;
+    if (
+      key === "properties" &&
+      child &&
+      typeof child === "object" &&
+      !Array.isArray(child)
+    ) {
+      const properties: Record<string, unknown> = {};
+      for (const [name, property] of Object.entries(
+        child as Record<string, unknown>,
+      )) {
+        const parsed = safeSchema(property, depth + 1);
+        if (parsed) properties[name] = parsed;
+      }
+      output.properties = properties;
+      continue;
+    }
+    if (
+      ["items", "additionalProperties", "not", "if", "then", "else"].includes(
+        key,
+      )
+    ) {
+      const parsed = safeSchema(child, depth + 1);
+      if (parsed) output[key] = parsed;
+      else if (typeof child === "boolean") output[key] = child;
+      continue;
+    }
+    if (
+      ["type", "title", "description", "$schema", "$ref", "format"].includes(
+        key,
+      )
+    ) {
+      if (typeof child === "string" && child.length <= 4_000)
+        output[key] = child;
+      continue;
+    }
+    if (["required", "enum"].includes(key) && Array.isArray(child)) {
+      output[key] = child
+        .slice(0, 200)
+        .filter(
+          (item) =>
+            typeof item === "string" ||
+            typeof item === "number" ||
+            typeof item === "boolean",
+        );
+    }
+  }
+  return Object.keys(output).length > 0 ? output : undefined;
+}
 
 export type CorsairOperation = {
   plugin: string;
   operation: string;
   /** Corsair defaults unannotated operations to writes. Keep that fail-closed default. */
-  riskLevel: "write";
-  approvalRequired: true;
+  riskLevel: "read" | "write" | "destructive";
+  approvalRequired: boolean;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+};
+
+export type CorsairIntegration = {
+  id: string;
+  authType: string | null;
+  configured: boolean;
+  missingFields: string[];
+  oauth: Record<string, unknown> | null;
 };
 
 export type CorsairCloudConfig = {
@@ -116,27 +209,96 @@ export function createCorsairCloudClient(config: CorsairCloudConfig) {
 
   return {
     baseUrl,
-    listPlugins: () => request("/plugins", { method: "GET" }, json),
+    listPlugins: async (): Promise<CorsairIntegration[]> => {
+      const payload = await request("/plugins", { method: "GET" }, json);
+      if (!Array.isArray(payload)) return [];
+      return payload.flatMap((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry))
+          return [];
+        const row = entry as Record<string, unknown>;
+        if (typeof row.id !== "string" || !pluginSlug.safeParse(row.id).success)
+          return [];
+        return [
+          {
+            id: row.id,
+            authType: typeof row.authType === "string" ? row.authType : null,
+            configured: row.configured === true,
+            missingFields: Array.isArray(row.missingFields)
+              ? row.missingFields.filter(
+                  (field): field is string => typeof field === "string",
+                )
+              : [],
+            oauth:
+              row.oauth &&
+              typeof row.oauth === "object" &&
+              !Array.isArray(row.oauth)
+                ? (row.oauth as Record<string, unknown>)
+                : null,
+          },
+        ];
+      });
+    },
     listOperations: async (): Promise<CorsairOperation[]> => {
       const result = await request(
         "/call",
         { method: "GET" },
         operationsResponse,
       );
-      return Object.entries(result.plugins)
-        .flatMap(([plugin, operations]) =>
-          operations.map((name) => ({
-            plugin,
-            operation: name,
-            riskLevel: "write" as const,
-            approvalRequired: true as const,
-          })),
-        )
-        .sort((left, right) =>
-          `${left.plugin}.${left.operation}`.localeCompare(
-            `${right.plugin}.${right.operation}`,
-          ),
+      const entries = Object.entries(result.plugins)
+        .filter(([plugin]) => pluginSlug.safeParse(plugin).success)
+        .flatMap(([plugin, entries]) =>
+          entries.flatMap((entry) => {
+            const metadata = typeof entry === "string" ? undefined : entry;
+            const name =
+              typeof entry === "string"
+                ? entry
+                : (entry.name ?? entry.operation ?? entry.path ?? entry.op);
+            if (!name || !operation.safeParse(name).success) return [];
+            const riskLevel: CorsairOperation["riskLevel"] =
+              metadata?.riskLevel === "read" && metadata.destructive !== true
+                ? "read"
+                : metadata?.riskLevel === "destructive" ||
+                    metadata?.destructive === true
+                  ? "destructive"
+                  : metadata?.effect === "read"
+                    ? "read"
+                    : "write";
+            const schema = metadata?.inputSchema ?? metadata?.schema;
+            return [
+              {
+                plugin,
+                operation: name,
+                riskLevel,
+                approvalRequired: riskLevel !== "read",
+                ...(metadata?.description
+                  ? { description: metadata.description }
+                  : {}),
+                ...(safeSchema(schema)
+                  ? { inputSchema: safeSchema(schema) }
+                  : {}),
+                ...(safeSchema(metadata?.outputSchema)
+                  ? { outputSchema: safeSchema(metadata?.outputSchema) }
+                  : {}),
+              },
+            ];
+          }),
         );
+      const unique = new Map<string, CorsairOperation>();
+      for (const entry of entries) {
+        const key = `${entry.plugin}.${entry.operation}`;
+        const previous = unique.get(key);
+        if (
+          !previous ||
+          (previous.description === undefined &&
+            entry.description !== undefined)
+        )
+          unique.set(key, entry);
+      }
+      return [...unique.values()].sort((left, right) =>
+        `${left.plugin}.${left.operation}`.localeCompare(
+          `${right.plugin}.${right.operation}`,
+        ),
+      );
     },
     getPlugin: (plugin: string) =>
       request(

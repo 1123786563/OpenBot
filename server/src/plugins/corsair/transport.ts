@@ -38,14 +38,23 @@ export async function listTools(connection: {
   return operations.map((entry) => ({
     name: `${entry.plugin}.${entry.operation}`,
     vendorName: entry.operation,
-    description: `Call the Corsair ${entry.plugin} integration operation ${entry.operation}. The operation is treated as a write and requires OpenBot approval.`,
+    description:
+      entry.description ??
+      `Call the Corsair ${entry.plugin} integration operation ${entry.operation}.`,
     inputSchema: {
       type: "object",
-      properties: { args: { type: "object", additionalProperties: true } },
+      properties: {
+        args: entry.inputSchema ?? {
+          type: "object",
+          additionalProperties: true,
+        },
+      },
+      required: ["args"],
     },
-    effect: "write",
-    destructive: false,
-    unclassified: false,
+    effect: entry.riskLevel === "read" ? "read" : "write",
+    destructive: entry.riskLevel === "destructive",
+    unclassified:
+      entry.riskLevel === "write" && entry.description === undefined,
   }));
 }
 

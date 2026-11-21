@@ -150,4 +150,96 @@ describe("Corsair Cloud client", () => {
       useCorsairCloudClient(null);
     }
   });
+
+  test("accepts rich operation metadata while keeping unknown entries fail-closed", async () => {
+    const client = createCorsairCloudClient({
+      apiKey: "ck_cloud_demo.slug",
+      fetch: async () =>
+        Response.json({
+          plugins: {
+            notion: [
+              {
+                name: "pages.search",
+                description: "Search pages",
+                riskLevel: "read",
+                inputSchema: {
+                  type: "object",
+                  properties: { query: { type: "string" } },
+                  required: ["query"],
+                },
+              },
+              { name: "pages.delete", riskLevel: "destructive" },
+              { name: "pages.update", riskLevel: "future-value" },
+              { name: "pages.bad name" },
+            ],
+          },
+        }),
+    });
+
+    await expect(client.listOperations()).resolves.toEqual([
+      {
+        plugin: "notion",
+        operation: "pages.delete",
+        riskLevel: "destructive",
+        approvalRequired: true,
+      },
+      {
+        plugin: "notion",
+        operation: "pages.search",
+        riskLevel: "read",
+        approvalRequired: false,
+        description: "Search pages",
+        inputSchema: {
+          type: "object",
+          properties: { query: { type: "string" } },
+          required: ["query"],
+        },
+      },
+      {
+        plugin: "notion",
+        operation: "pages.update",
+        riskLevel: "write",
+        approvalRequired: true,
+      },
+    ]);
+  });
+
+  test("normalizes the complete Corsair application list without requiring OAuth clients", async () => {
+    const client = createCorsairCloudClient({
+      apiKey: "ck_cloud_demo.slug",
+      fetch: async () =>
+        Response.json([
+          {
+            id: "github",
+            authType: "oauth_2",
+            configured: false,
+            missingFields: ["client_id", "client_secret"],
+          },
+          {
+            id: "slack",
+            authType: "api_key",
+            configured: true,
+            missingFields: [],
+          },
+          { id: "invalid id", authType: "oauth_2", configured: true },
+        ]),
+    });
+
+    await expect(client.listPlugins()).resolves.toEqual([
+      {
+        id: "github",
+        authType: "oauth_2",
+        configured: false,
+        missingFields: ["client_id", "client_secret"],
+        oauth: null,
+      },
+      {
+        id: "slack",
+        authType: "api_key",
+        configured: true,
+        missingFields: [],
+        oauth: null,
+      },
+    ]);
+  });
 });
