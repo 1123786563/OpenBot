@@ -10959,6 +10959,8 @@ fn main() {
             personal_cloud::personal_cloud_action,
             personal_cloud::personal_cloud_recover,
             personal_cloud::personal_cloud_workspace,
+            personal_cloud::personal_cloud_start_bot_run,
+            personal_cloud::personal_cloud_bot_run,
             personal_cloud::personal_cloud_show_local,
             back_end_wait_ended,
             start_early_downloads,

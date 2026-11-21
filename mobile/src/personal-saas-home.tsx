@@ -5,20 +5,22 @@ import {
   openPersonalWorkspace,
   openWorkspaceClosure,
   openWorkspaceExport,
-  readAutomationHistory,
-  runWorkspaceAction,
   PersonalSaasActionError,
+  readAutomationHistory,
   recoverPersonalWork,
+  runWorkspaceAction,
   signInPersonalSaas,
   signOutPersonalSaas,
   WorkspaceAdmissionsPaused,
 } from "./personal-saas";
 
+import { PersonalSaasBotRun } from "./personal-saas-bot-run";
+
 import type {
   AutomationResource,
   ClosedWorkspace,
-  WorkspaceAction,
   PausedWorkspace,
+  WorkspaceAction,
 } from "./personal-saas-contract";
 
 type AutomationItem = {
@@ -51,6 +53,7 @@ export function PersonalSaasHome() {
   const working = useRef(false);
   const active = useRef(AppState.currentState === "active");
   const generation = useRef(0);
+  const lastRun = useRef<{ workspaceId: string; id: string } | null>(null);
   const access = useRef<(() => number) | null>(null);
 
   const withdraw = useCallback(
@@ -235,6 +238,10 @@ export function PersonalSaasHome() {
   const workspace =
     screen.kind === "ready" && access.current && access.current() > 0
       ? screen.workspace
+      : null;
+  const runId =
+    workspace && lastRun.current?.workspaceId === workspace.id
+      ? lastRun.current.id
       : null;
   const stoppedWork = workspace
     ? [
@@ -429,6 +436,25 @@ export function PersonalSaasHome() {
                   </>
                 )}
               </View>
+            )}
+            {(screen.workspace.testCredits?.quote || runId) && (
+              <PersonalSaasBotRun
+                key={screen.workspace.id}
+                workspaceId={screen.workspace.id}
+                botId={screen.workspace.personalAssistant.id}
+                initialRunId={runId}
+                onAccept={(id) => {
+                  lastRun.current = {
+                    workspaceId: screen.workspace.id,
+                    id,
+                  };
+                }}
+                canStart={
+                  Boolean(screen.workspace.testCredits?.quote) &&
+                  screen.workspace.testCredits?.state === "issued" &&
+                  !screen.workspace.testCredits.usedUp
+                }
+              />
             )}
             {screen.workspace.quotas && (
               <View>
@@ -645,6 +671,7 @@ export function PersonalSaasHome() {
               withdraw("loading");
               try {
                 await signOutPersonalSaas();
+                lastRun.current = null;
                 setScreen({ kind: "signed-out" });
               } catch (error) {
                 withdraw("workspace-error");

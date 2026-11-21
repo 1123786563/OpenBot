@@ -962,6 +962,139 @@ pub async fn personal_cloud_workspace<R: Runtime>(
     .map_err(str::to_owned)
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BotRunInput {
+    workspace_id: String,
+    bot_id: String,
+    instruction: String,
+    request_id: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BotRunAccepted {
+    run_id: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum BotRunState {
+    Queued,
+    Running,
+    Waiting,
+    Stopped,
+    Completed,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum BotRunReceiptState {
+    Reserved,
+    Pending,
+    Settled,
+    Released,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BotRunReceipt {
+    model: String,
+    state: BotRunReceiptState,
+    held_microcredits: String,
+    charged_microcredits: Option<String>,
+    released_microcredits: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BotRunStatus {
+    state: BotRunState,
+    output: Option<String>,
+    test_credit: Option<BotRunReceipt>,
+}
+
+#[tauri::command]
+pub async fn personal_cloud_start_bot_run<R: Runtime>(
+    window: WebviewWindow<R>,
+    input: BotRunInput,
+) -> Result<BotRunAccepted, String> {
+    require_cloud_window(&window)?;
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let cloud = app.state::<Cloud>();
+        let origin = cloud.origin.as_ref().ok_or(NETWORK_ERROR)?;
+        let token = credential(origin)?
+            .get_password()
+            .map_err(|_| STORE_ERROR)?;
+        let reply = Api::new(origin)?
+            .http
+            .post(endpoint(origin, "/api/workspace/bot-runs"))
+            .bearer_auth(token)
+            .header("Idempotency-Key", input.request_id.as_str())
+            .json(&serde_json::json!({
+                "workspaceId": input.workspace_id,
+                "botId": input.bot_id,
+                "instruction": input.instruction,
+                "execution": "test-credit",
+            }))
+            .send()
+            .map_err(|_| NETWORK_ERROR)?;
+        match reply.status() {
+            StatusCode::ACCEPTED => reply.json().map_err(|_| NETWORK_ERROR),
+            StatusCode::PAYMENT_REQUIRED => Err("There are not enough Test Credits for this run."),
+            StatusCode::TOO_MANY_REQUESTS => Err("Your workspace has reached its Bot run limit."),
+            _ => Err(NETWORK_ERROR),
+        }
+    })
+    .await
+    .map_err(|_| NETWORK_ERROR)?
+    .map_err(str::to_owned)
+}
+
+#[tauri::command]
+pub async fn personal_cloud_bot_run<R: Runtime>(
+    window: WebviewWindow<R>,
+    run_id: String,
+    stop: bool,
+) -> Result<Option<BotRunStatus>, String> {
+    require_cloud_window(&window)?;
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let cloud = app.state::<Cloud>();
+        let origin = cloud.origin.as_ref().ok_or(NETWORK_ERROR)?;
+        let token = credential(origin)?
+            .get_password()
+            .map_err(|_| STORE_ERROR)?;
+        let api = Api::new(origin)?;
+        let mut url = endpoint(origin, "/api/workspace/bot-runs");
+        {
+            let mut segments = url.path_segments_mut().map_err(|_| NETWORK_ERROR)?;
+            segments.push(&run_id);
+            if stop {
+                segments.push("stop");
+            }
+        }
+        let request = if stop {
+            api.http.post(url)
+        } else {
+            api.http.get(url)
+        };
+        let reply = request
+            .bearer_auth(token)
+            .send()
+            .map_err(|_| NETWORK_ERROR)?;
+        match (stop, reply.status()) {
+            (true, StatusCode::ACCEPTED) => Ok(None),
+            (false, StatusCode::OK) => reply.json().map(Some).map_err(|_| NETWORK_ERROR),
+            _ => Err(NETWORK_ERROR),
+        }
+    })
+    .await
+    .map_err(|_| NETWORK_ERROR)?
+    .map_err(str::to_owned)
+}
+
 #[tauri::command]
 pub fn personal_cloud_show_local<R: Runtime>(window: WebviewWindow<R>) -> Result<(), String> {
     require_cloud_window(&window)?;

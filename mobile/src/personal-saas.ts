@@ -5,15 +5,16 @@ import * as SecureStore from "expo-secure-store";
 import { openAuthSessionAsync } from "expo-web-browser";
 import { Linking, Platform } from "react-native";
 import { serverUrl } from "./auth";
+import { personalBotRuns } from "./personal-saas-bot-runs";
 import {
-  automationHistory,
   type AutomationResource,
-  type WorkspaceAction,
+  automationHistory,
   nativeExchange,
   parsePersonalSaasCallback,
   personalConversationHistory,
   personalSaasCallbackUrl,
   personalWorkspace,
+  type WorkspaceAction,
   workspaceAccessMs,
 } from "./personal-saas-contract";
 
@@ -221,15 +222,24 @@ export async function recoverPersonalWork(
     );
 }
 
-async function workspaceRequest(path: string, method: "GET" | "POST") {
+async function workspaceRequest(
+  path: string,
+  init: {
+    method: "GET" | "POST";
+    headers?: Record<string, string>;
+    body?: string;
+  },
+) {
   const token = await SecureStore.getItemAsync(sessionKey, keyOptions);
   if (!token)
     throw new PersonalSaasActionError("Sign in to manage your workspace.");
   return request(path, {
-    method,
-    headers: { authorization: `Bearer ${token}` },
+    ...init,
+    headers: { ...init.headers, authorization: `Bearer ${token}` },
   });
 }
+
+export const mobileBotRuns = personalBotRuns(workspaceRequest);
 
 function automationResourcePath(resource: AutomationResource, id: string) {
   return `/api/workspace/automation/${resource}/${encodeURIComponent(id)}`;
@@ -240,7 +250,7 @@ export async function runWorkspaceAction(action: WorkspaceAction) {
     action.kind === "computer"
       ? `/api/workspace/computer/${action.action}`
       : `${automationResourcePath(action.resource, action.id)}/resume`;
-  const reply = await workspaceRequest(path, "POST");
+  const reply = await workspaceRequest(path, { method: "POST" });
   if (reply.status === 429)
     throw new PersonalSaasActionError(
       "Your workspace has reached its resource limit.",
@@ -257,7 +267,7 @@ export async function readAutomationHistory(
 ) {
   const reply = await workspaceRequest(
     `${automationResourcePath(resource, id)}/runs?format=summary`,
-    "GET",
+    { method: "GET" },
   );
   if (!reply.ok)
     throw new PersonalSaasActionError(

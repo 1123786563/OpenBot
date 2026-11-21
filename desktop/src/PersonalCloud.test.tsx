@@ -355,3 +355,82 @@ test("the authorized workspace opens export in the system browser", async () => 
   await act(async () => window.dispatchEvent(new Event("offline")));
   expect(screen.queryByRole("button", button)).toBeNull();
 });
+
+test("an authorized owner can submit a managed text run and read its settled charge", async () => {
+  let requestIdBeforeFailure: string | undefined;
+  const screen = within(
+    render(
+      <PersonalCloud
+        request={async () => ({
+          kind: "workspace",
+          accessMs: 60_000,
+          id: "workspace-1",
+          personalAssistant: { id: "bot-1", name: "My Assistant" },
+          testCredits: {
+            state: "issued",
+            amountMicrocredits: "1000",
+            balance: { availableMicrocredits: "1000" },
+            usedUp: false,
+            quote: {
+              model: "Pilot model",
+              price: { inputPerMillion: 1000, outputPerMillion: 2000 },
+              maxChargeMicrocredits: "250",
+              usageDisclosure:
+                "Interrupted requests may still use Test Credits.",
+            },
+          },
+          conversations: [],
+        })}
+        botRuns={{
+          start: async ({ workspaceId, botId, instruction, requestId }) => {
+            expect({ workspaceId, botId, instruction }).toEqual({
+              workspaceId: "workspace-1",
+              botId: "bot-1",
+              instruction: "Hello",
+            });
+            expect(requestId).toMatch(/^[a-f\d-]{36}$/i);
+            if (!requestIdBeforeFailure) {
+              requestIdBeforeFailure = requestId;
+              throw "The response was lost.";
+            }
+            expect(requestId).toBe(requestIdBeforeFailure);
+            return { runId: "run-1" };
+          },
+          status: async (runId) => {
+            expect(runId).toBe("run-1");
+            return {
+              state: "completed",
+              output: "Managed answer",
+              testCredit: {
+                model: "Pilot model",
+                state: "settled",
+                heldMicrocredits: "0",
+                chargedMicrocredits: "3",
+                releasedMicrocredits: "247",
+              },
+            };
+          },
+          stop: async () => {},
+        }}
+      />,
+    ).container,
+  );
+  const user = userEvent.setup({ document });
+  await user.type(await screen.findByLabelText("Instruction"), "Hello");
+  await user.click(
+    screen.getByRole("button", { name: "Run with Test Credits" }),
+  );
+  await screen.findByText("The response was lost.");
+  await user.click(screen.getByRole("button", { name: "Retry submission" }));
+  await screen.findByText("Managed answer");
+  expect(screen.getByText(/Charged 3 microcredits/)).toBeTruthy();
+
+  await act(async () => {
+    window.dispatchEvent(new Event("blur"));
+  });
+  expect(screen.queryByText("Managed answer")).toBeNull();
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+  });
+  await screen.findByText("Managed answer");
+});

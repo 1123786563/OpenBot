@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { cloudBotRuns, PersonalCloudBotRun } from "./PersonalCloudBotRun";
 
 export const CLOUD_FRAGMENT = "personal-cloud";
 
@@ -135,11 +136,13 @@ export function PersonalCloud({
   showLocal = openLocal,
   recover = recoverWork,
   workspaceAction = workspaceRequest,
+  botRuns = cloudBotRuns,
 }: {
   request?: (action: CloudAction) => Promise<CloudView>;
   showLocal?: () => Promise<void>;
   recover?: typeof recoverWork;
   workspaceAction?: typeof workspaceRequest;
+  botRuns?: typeof cloudBotRuns;
 }) {
   const [view, setView] = useState<CloudView | null>(null);
   const [history, setHistory] = useState<{
@@ -151,6 +154,7 @@ export function PersonalCloud({
   const [failure, setFailure] = useState<string | null>(null);
 
   const generation = useRef(0);
+  const lastRun = useRef<{ workspaceId: string; id: string } | null>(null);
   const foreground = useRef(!document.hidden);
   const access = useRef<(() => number) | null>(null);
   const [checkVersion, recheck] = useState(0);
@@ -296,7 +300,10 @@ export function PersonalCloud({
 
   async function run(action: CloudAction, error: string) {
     generation.current++;
-    if (action === "signOut") withdraw(null);
+    if (action === "signOut") {
+      lastRun.current = null;
+      withdraw(null);
+    }
     const current = generation.current;
     setBusy(true);
     setFailure(null);
@@ -373,6 +380,10 @@ export function PersonalCloud({
   }
 
   const workspace = view?.kind === "workspace" ? view : null;
+  const runId =
+    view?.kind === "workspace" && lastRun.current?.workspaceId === view.id
+      ? lastRun.current.id
+      : null;
   const stoppedWork = [
     ...(workspace?.recovery ?? []).map(({ instruction, ...item }) => ({
       ...item,
@@ -818,6 +829,23 @@ export function PersonalCloud({
                     </>
                   )}
                 </section>
+              )}
+              {(view.testCredits?.quote || runId) && (
+                <PersonalCloudBotRun
+                  key={view.id}
+                  workspaceId={view.id}
+                  botId={view.personalAssistant.id}
+                  initialRunId={runId}
+                  onAccept={(id) => {
+                    lastRun.current = { workspaceId: view.id, id };
+                  }}
+                  canStart={
+                    Boolean(view.testCredits?.quote) &&
+                    view.testCredits?.state === "issued" &&
+                    !view.testCredits.usedUp
+                  }
+                  runs={botRuns}
+                />
               )}
               <section aria-labelledby="recent-conversations">
                 <h3 id="recent-conversations">Recent conversations</h3>
