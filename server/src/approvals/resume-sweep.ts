@@ -14,6 +14,10 @@ import {
   routineRuns,
 } from "../db/schema";
 import type { DeliveryScope } from "../delivery/types";
+import {
+  decisionInvalidated,
+  runWithDecisionAccess,
+} from "../personal-saas/decision-access";
 import type { ResponsibilityStore } from "../responsibilities/types";
 import {
   isMarketVersionPause,
@@ -33,7 +37,9 @@ export function createApprovalResumeTick(deps: {
   approvalQueue: WorkQueue;
   approvalOwner: string;
   approvalService: ApprovalService;
-  executeApprovedAction: ApprovalResumeDependencies["execute"];
+  executeApprovedAction: ReturnType<
+    typeof import("./execute").createApprovedActionExecutor
+  >;
   database: Database;
   responsibilityStore: Pick<ResponsibilityStore, "resumeWaiting">;
   groupConversations: Pick<GroupConversations, "continueWaiting">;
@@ -102,7 +108,24 @@ export function createApprovalResumeTick(deps: {
             approvalService.validateReentry(action, () =>
               executeApprovedAction(action),
             ),
-          execute: executeApprovedAction,
+          execute: async (action) => {
+            const request = await approvalService.store.get(
+              input.ownerUserId,
+              input.approvalId,
+            );
+            if (request.action.executionInvalidated)
+              throw new Error(decisionInvalidated);
+            return runWithDecisionAccess(
+              database,
+              input.ownerUserId,
+              {
+                runId: action.runId,
+                createdAt: request.createdAt,
+                epoch: request.action.executionEpoch,
+              },
+              (execution) => executeApprovedAction(action, execution),
+            );
+          },
           continue: async ({
             continuation: snapshot,
             result,
@@ -114,6 +137,12 @@ export function createApprovalResumeTick(deps: {
               input.ownerUserId,
               approvalId,
             );
+            if (request.action.executionInvalidated) return;
+            const origin = {
+              runId: request.action.runId,
+              createdAt: request.createdAt,
+              epoch: request.action.executionEpoch,
+            };
             pauseReason ??=
               (await marketRunPauseReason(database, request.action)) ??
               undefined;
@@ -128,6 +157,10 @@ export function createApprovalResumeTick(deps: {
               )
               .limit(1);
             if (waitingRun) {
+              await approvalService.store.checkDecisionAccess?.(
+                input.ownerUserId,
+                origin,
+              );
               if (pauseReason) {
                 await database
                   .update(responsibilityRuns)
@@ -168,15 +201,25 @@ export function createApprovalResumeTick(deps: {
               outcome = await groupConversations.continueWaiting(
                 approvalId,
                 () =>
-                  approvalContinuationRunner({
-                    ownerUserId: input.ownerUserId,
-                    routineId: "approval",
-                    agentId: request.action.botId,
-                    threadId: snapshot.threadId,
-                    instruction: "",
-                    initiator: snapshot.initiator ?? PERSON_INITIATOR,
-                    continuation: { snapshot, result, messageId },
-                  }),
+                  runWithDecisionAccess(
+                    database,
+                    input.ownerUserId,
+                    origin,
+                    async (execution) => {
+                      const resumed = await approvalContinuationRunner({
+                        ownerUserId: input.ownerUserId,
+                        routineId: "approval",
+                        agentId: request.action.botId,
+                        threadId: snapshot.threadId,
+                        instruction: "",
+                        initiator: snapshot.initiator ?? PERSON_INITIATOR,
+                        continuation: { snapshot, result, messageId },
+                        ...execution,
+                      });
+                      await execution.beforeDispatch?.();
+                      return resumed;
+                    },
+                  ),
                 pauseReason,
               );
             } catch (error) {

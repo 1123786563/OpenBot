@@ -1,5 +1,6 @@
 {
   "extends": "../tsconfig.base.json",
+  "compilerOptions": { "jsx": "react-jsx" },
   // `scripts` too: the migration runner and the culler entrypoint ship in the image, so they are
   // product code that happens to live outside `src`.
   //

@@ -25,7 +25,8 @@ import type { AgentChannel } from "../channels/routes";
 import type { Database } from "../db/client";
 import { workItems } from "../db/schema/work";
 import { REFUSAL_MARKER } from "../plugins/tools";
-import type { WorkQueue } from "../work/queue";
+import { runAuthorizedWork } from "../work/execution";
+import { createWorkQueue, type WorkQueue } from "../work/queue";
 import { BotPausedError } from "./lifecycle";
 import type { AgentActor } from "./profile-types";
 
@@ -110,7 +111,7 @@ function toRecord(row: typeof workItems.$inferSelect): WakeUpRecord {
 export type WakeUpStore = ReturnType<typeof createWakeUpStore>;
 
 export function createWakeUpStore(
-  database: Database,
+  database: Database | Parameters<Parameters<Database["transaction"]>[0]>[0],
   options: { auditStore?: AuditStore; now?: () => Date } = {},
 ) {
   const now = options.now ?? (() => new Date());
@@ -180,6 +181,17 @@ export function createWakeUpStore(
         scheduledAt: now().toISOString(),
       };
       await database.transaction(async (transaction) => {
+        // Offer first so Personal SaaS scheduling and recovery both lock the account before the cap.
+        const offered = await createWorkQueue(transaction, () =>
+          now().getTime(),
+        ).offer({
+          kind: WAKE_UP_KIND,
+          key: id,
+          runAt: input.dueAt,
+          payload,
+        });
+        if (offered === "refused")
+          throw new WakeUpRefusedError("Bot work authorization ended.");
         await transaction.execute(
           sql`select pg_advisory_xact_lock(hashtext(${`${WAKE_UP_KIND}:${input.ownerUserId}:${input.agentId}`}))`,
         );
@@ -190,20 +202,14 @@ export function createWakeUpStore(
           })
           .from(workItems)
           .where(owned(input.ownerUserId, input.agentId));
-        if ((counts?.pending ?? 0) >= WAKE_UP_MAX_PENDING)
+        if ((counts?.pending ?? 0) > WAKE_UP_MAX_PENDING)
           throw new WakeUpRefusedError(
             `This Bot already has ${WAKE_UP_MAX_PENDING} follow-ups waiting. Cancel one first.`,
           );
-        if ((counts?.today ?? 0) >= WAKE_UP_MAX_PER_DAY)
+        if ((counts?.today ?? 0) > WAKE_UP_MAX_PER_DAY)
           throw new WakeUpRefusedError(
             `This Bot has scheduled ${WAKE_UP_MAX_PER_DAY} follow-ups today, which is the most it may.`,
           );
-        await transaction.insert(workItems).values({
-          kind: WAKE_UP_KIND,
-          key: id,
-          runAt: input.dueAt,
-          payload,
-        });
       });
       await audit(
         "bot.follow_up_scheduled",
@@ -389,6 +395,9 @@ export function wakeUpInstruction(payload: WakeUpPayload): string {
 }
 
 export type WakeUpTurn = (input: {
+  signal?: AbortSignal;
+  beforeDispatch?: () => Promise<void>;
+  onText?: (text: string) => void;
   telemetry?: Parameters<
     import("@openbot/toolkit/run-turn").TurnRunner
   >[0]["telemetry"];
@@ -408,13 +417,19 @@ export type WakeUpTurn = (input: {
  * surprise this feature must not produce.
  */
 export function createWakeUpRunner(options: {
-  queue: Pick<WorkQueue, "claim" | "finish" | "purge">;
+  queue: Pick<WorkQueue, "claim" | "finish" | "purge" | "executionExpiry">;
   store: WakeUpStore;
   owner: string;
   actorFor: (ownerUserId: string) => Promise<AgentActor>;
   channels: {
-    get(actor: AgentActor, channelId: string): Promise<AgentChannel | null>;
-    direct(actor: AgentActor, agentId: string): Promise<AgentChannel>;
+    get(
+      actor: AgentActor,
+      channelId: string,
+    ): Promise<Pick<AgentChannel, "id" | "threadId"> | null>;
+    direct(
+      actor: AgentActor,
+      agentId: string,
+    ): Promise<Pick<AgentChannel, "id" | "threadId">>;
     recordActivity(
       actor: AgentActor,
       channelId: string,
@@ -468,52 +483,72 @@ export function createWakeUpRunner(options: {
             continue;
           }
           const actor = await actorFor(payload.ownerUserId);
-          const channel =
-            (payload.channelId
-              ? await channels.get(actor, payload.channelId)
-              : null) ?? (await channels.direct(actor, payload.agentId));
           const initiator: AuditInitiator = {
             kind: "routine",
             id: `follow-up:${item.key}`,
           };
+          let channel: Pick<AgentChannel, "id" | "threadId"> | undefined;
           try {
-            const { replyText } = await runTurn({
-              ownerUserId: payload.ownerUserId,
-              routineId: `follow-up:${item.key}`,
-              telemetry: {
-                trigger: "followup",
-                rootTaskId: `follow-up:${item.key}`,
-                attempt: item.attempts,
+            await runAuthorizedWork(
+              queue,
+              item,
+              owner,
+              async (guard) => {
+                channel =
+                  (payload.channelId
+                    ? await channels.get(actor, payload.channelId)
+                    : null) ?? (await channels.direct(actor, payload.agentId));
+                const { replyText } = await runTurn({
+                  ...guard,
+                  ownerUserId: payload.ownerUserId,
+                  routineId: `follow-up:${item.key}`,
+                  telemetry: {
+                    trigger: "followup",
+                    rootTaskId: `follow-up:${item.key}`,
+                    attempt: item.attempts,
+                  },
+                  agentId: payload.agentId,
+                  threadId: channel.threadId,
+                  instruction: wakeUpInstruction(payload),
+                  initiator,
+                });
+                await guard?.beforeDispatch();
+                await channels.recordActivity(
+                  actor,
+                  channel.id,
+                  { text: replyText, agentId: payload.agentId, at: new Date() },
+                  { id: `follow-up:${item.key}` },
+                );
+                await guard?.beforeDispatch();
+                await notify?.(
+                  {
+                    ownerUserId: payload.ownerUserId,
+                    channelId: channel.id,
+                    agentId: payload.agentId,
+                    threadId: channel.threadId,
+                  },
+                  {
+                    id: `follow-up:${item.key}`,
+                    text: replyText,
+                    kind: "reply",
+                  },
+                ).catch((error: unknown) =>
+                  console.warn("Could not notify about a follow-up.", error),
+                );
               },
-              agentId: payload.agentId,
-              threadId: channel.threadId,
-              instruction: wakeUpInstruction(payload),
-              initiator,
-            });
-            await channels.recordActivity(
-              actor,
-              channel.id,
-              { text: replyText, agentId: payload.agentId, at: new Date() },
-              { id: `follow-up:${item.key}` },
+              {
+                safeFailure: (error) =>
+                  error instanceof BotPausedError ||
+                  error instanceof HeadlessToolSuspension,
+              },
             );
             await done("succeeded");
             report.ran.push(item.key);
-            await notify?.(
-              {
-                ownerUserId: payload.ownerUserId,
-                channelId: channel.id,
-                agentId: payload.agentId,
-                threadId: channel.threadId,
-              },
-              { id: `follow-up:${item.key}`, text: replyText, kind: "reply" },
-            ).catch((error: unknown) =>
-              console.warn("Could not notify about a follow-up.", error),
-            );
           } catch (error) {
             if (error instanceof BotPausedError) {
               await done("skipped", error.message);
               report.skipped.push(item.key);
-            } else if (error instanceof HeadlessToolSuspension) {
+            } else if (error instanceof HeadlessToolSuspension && channel) {
               await channels
                 .recordActivity(
                   actor,

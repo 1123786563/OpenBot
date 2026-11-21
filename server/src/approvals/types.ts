@@ -167,6 +167,9 @@ export type ApprovalAction = ApprovalCandidate & {
    * declined or still-pending action is recognised as the same thing.
    */
   equivalence?: string;
+  /** Personal Workspace authorization epoch when this request opened. */
+  executionEpoch?: number;
+  executionInvalidated?: true;
   /** How many times the person had spoken in the conversation when this was asked. */
   userTurns?: number;
 };
@@ -384,6 +387,10 @@ export type ApprovalGate = (
   candidate: ApprovalCandidate,
 ) => Promise<ApprovalPermit | undefined>;
 export type ApprovalStore = {
+  checkDecisionAccess?(
+    ownerUserId: string,
+    origin: { runId: string; createdAt?: Date; epoch?: number },
+  ): Promise<void>;
   enabled(ownerUserId: string): Promise<boolean>;
   setEnabled(ownerUserId: string, enabled: boolean): Promise<void>;
   open(action: ApprovalAction): Promise<ApprovalRecord>;

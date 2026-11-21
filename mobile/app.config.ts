@@ -12,6 +12,7 @@ const config: ExpoConfig = {
     "expo-router",
     "expo-secure-store",
     ["expo-notifications", { defaultChannel: "openbot" }],
+    "./plugins/with-ios-release-compatibility.cjs",
   ],
   extra: { ...(projectId ? { eas: { projectId } } : {}) },
 };

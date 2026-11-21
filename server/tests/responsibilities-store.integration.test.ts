@@ -7,6 +7,8 @@ import {
   responsibilityEvents,
   responsibilityRuns,
 } from "../src/db/schema/responsibilities";
+import { personalSaasAccounts } from "../src/db/schema/personal-saas";
+import { createWorkQueue } from "../src/work/queue";
 import { workItems } from "../src/db/schema/work";
 import { createResponsibilityStore } from "../src/responsibilities/store";
 import {
@@ -17,7 +19,7 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const prefix = `responsibilities-${randomUUID()}`;
-const ownerId = `${prefix}-owner`;
+const ownerId = randomUUID();
 const strangerId = `${prefix}-stranger`;
 const botId = `${prefix}-bot`;
 const channelId = `${prefix}-channel`;
@@ -204,4 +206,63 @@ test("waiting response resumes the same run once with stored pending tool contex
   expect((await store.get(ownerId, value.id)).lastResult).toBe(
     "Graph rendered.",
   );
+});
+
+test("a Responsibility run from an expired authorization stays stopped after a fresh event", async () => {
+  await database.delete(workItems).where(inArray(workItems.key, keys));
+  const at = Date.now();
+  const status = {
+    source: "active" as const,
+    observedAt: at,
+    confirmedAt: at,
+    epoch: 0,
+    disablements: [],
+  };
+  await database.insert(personalSaasAccounts).values({
+    id: ownerId,
+    issuer: "test",
+    subject: ownerId,
+    email: "goal@example.test",
+    status,
+  });
+  try {
+    const created = await goal();
+    const requested = await event(created.id);
+    await database
+      .update(personalSaasAccounts)
+      .set({
+        status: {
+          ...status,
+          epoch: 1,
+          executionCutoffs: [
+            { epoch: 1, cutoffAt: at, reason: "account_status_unconfirmed" },
+          ],
+        },
+      })
+      .where(eq(personalSaasAccounts.id, ownerId));
+    const queue = createWorkQueue(database);
+    const claim = {
+      kind: "responsibility.run",
+      owner: ownerId,
+      leaseMs: 30_000,
+      limit: 100,
+    };
+    expect((await queue.claim(claim)).map(({ key }) => key)).not.toContain(
+      requested.runIds[0],
+    );
+    expect(await queue.interrupted(claim.kind, ownerId)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: requested.runIds[0] }),
+      ]),
+    );
+    const fresh = await event(created.id);
+    expect((await queue.claim(claim)).map(({ key }) => key)).toContain(
+      fresh.runIds[0],
+    );
+  } finally {
+    await database.delete(workItems).where(eq(workItems.accountId, ownerId));
+    await database
+      .delete(personalSaasAccounts)
+      .where(eq(personalSaasAccounts.id, ownerId));
+  }
 });

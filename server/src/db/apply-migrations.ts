@@ -6,15 +6,20 @@
  * is one journal out of step is to run it against such a database, which is what
  * `tests/migration-reach.integration.test.ts` does through this function.
  *
- * See `./migration-reach` for what is being checked and why the answer is a refusal rather than a
- * repair.
+ * See `./migration-reach` for the check that refuses unrecognized histories. This runner can
+ * reconcile the known pre-merge Personal SaaS trial journal.
  */
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { Sql, TransactionSql } from "postgres";
 import {
   type AppliedMigration,
+  type FolderMigration,
   type MigrationsJournal,
+  migratorHighWaterMark,
   migrationsOutOfReach,
   outOfReachRefusal,
   readMigrationFolder,
@@ -89,6 +94,83 @@ export class MigrationsOutOfReachError extends Error {
  */
 const MIGRATION_LOCK = "openbot:apply-migrations";
 
+const DIRECT_CHAT_TAG = "0089_direct_chat_runs";
+const FIRST_TRIAL_TAG = "0093_personal_saas_entry";
+
+// Original Personal SaaS journal stamps, in order through workspace reprovision.
+const TRIAL_STAMPS = [
+  1795158327499, 1795160662134, 1795162001225, 1795173234015, 1795174523931,
+  1795174795281, 1795176012983, 1795177502282, 1795178829465, 1795181383402,
+  1795184138210, 1795184939036, 1795231535117,
+];
+
+/** Move a verified trial prefix onto the merged journal and apply the independent main migrations. */
+async function reconcileTrialJournal(
+  tx: TransactionSql,
+  journal: MigrationsJournal,
+  migrationsFolder: string,
+  folder: readonly FolderMigration[],
+  applied: readonly AppliedMigration[],
+): Promise<boolean> {
+  const mark = migratorHighWaterMark(applied);
+  const trialLength = TRIAL_STAMPS.findIndex((when) => when === mark) + 1;
+  if (trialLength === 0) return false;
+
+  const directChatIndex = folder.findIndex(
+    ({ tag }) => tag === DIRECT_CHAT_TAG,
+  );
+  const trialIndex = folder.findIndex(({ tag }) => tag === FIRST_TRIAL_TAG);
+  if (directChatIndex < 0 || trialIndex !== directChatIndex + 4) return false;
+
+  const directChat = folder[directChatIndex];
+  if (!directChat) return false;
+  const appliedByStamp = new Map(
+    applied.map(({ createdAt, hash }) => [createdAt, hash]),
+  );
+  const hasDirectChat = appliedByStamp.get(directChat.when) === directChat.hash;
+  const shared = folder.slice(0, directChatIndex + Number(hasDirectChat));
+  const trial = folder.slice(trialIndex, trialIndex + trialLength);
+  if (
+    trial.length !== trialLength ||
+    appliedByStamp.size !== applied.length ||
+    applied.length !== shared.length + trial.length ||
+    shared.some(({ when, hash }) => appliedByStamp.get(when) !== hash) ||
+    trial.some(({ hash }, index) => {
+      const stamp = TRIAL_STAMPS[index];
+      return stamp === undefined || appliedByStamp.get(stamp) !== hash;
+    })
+  ) {
+    return false;
+  }
+
+  const { migrationsSchema, migrationsTable } = journal;
+  const table = tx`${tx(migrationsSchema)}.${tx(migrationsTable)}`;
+  const missingMain = folder.slice(
+    directChatIndex + Number(hasDirectChat),
+    trialIndex,
+  );
+  for (const { tag, hash, when } of missingMain) {
+    const sql = await readFile(join(migrationsFolder, `${tag}.sql`), "utf8");
+    if (createHash("sha256").update(sql).digest("hex") !== hash) {
+      throw new Error(
+        `Migration ${tag} changed while reconciling the trial journal.`,
+      );
+    }
+    for (const statement of sql.split("--> statement-breakpoint")) {
+      await tx.unsafe(statement);
+    }
+    await tx`insert into ${table} (hash, created_at) values (${hash}, ${when})`;
+  }
+  for (const [index, { hash, when }] of trial.entries()) {
+    const original = TRIAL_STAMPS[index];
+    if (original !== undefined && original !== when) {
+      await tx`update ${table} set created_at = ${when}
+        where hash = ${hash} and created_at = ${original}`;
+    }
+  }
+  return true;
+}
+
 /**
  * Check, then migrate, with nothing able to commit in between.
  *
@@ -121,8 +203,21 @@ export async function applyMigrations(
   await client.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK}, 0))`;
 
-    const applied = await appliedMigrations(tx, journal);
-    const outOfReach = migrationsOutOfReach(folder, applied);
+    let applied = await appliedMigrations(tx, journal);
+    let outOfReach = migrationsOutOfReach(folder, applied);
+    if (
+      outOfReach.length > 0 &&
+      (await reconcileTrialJournal(
+        tx,
+        journal,
+        migrationsFolder,
+        folder,
+        applied,
+      ))
+    ) {
+      applied = await appliedMigrations(tx, journal);
+      outOfReach = migrationsOutOfReach(folder, applied);
+    }
     if (outOfReach.length > 0) {
       throw new MigrationsOutOfReachError(
         outOfReachRefusal(outOfReach, folder, applied, journal),

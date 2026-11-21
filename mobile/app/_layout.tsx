@@ -3,6 +3,7 @@ import { router, Stack } from "expo-router";
 import { useEffect, useRef } from "react";
 import { authClient } from "../src/auth";
 import { notificationDestination } from "../src/links";
+import { personalSaasMode } from "../src/personal-saas-contract";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -12,7 +13,7 @@ Notifications.setNotificationHandler({
     shouldSetBadge: false,
   }),
 });
-export default function Layout() {
+function OrganizationNotifications() {
   const { data: session } = authClient.useSession();
   const pending = useRef<unknown>(null);
   const handled = useRef<string | null>(null);
@@ -34,19 +35,34 @@ export default function Layout() {
       Notifications.addNotificationResponseReceivedListener(open);
     return () => subscription.remove();
   }, [session]);
+  return null;
+}
+
+export default function Layout() {
   return (
-    <Stack screenOptions={{ headerBackTitle: "Back" }}>
-      <Stack.Screen name="index" options={{ title: "OpenBot" }} />
-      <Stack.Screen name="conversation" options={{ title: "Conversation" }} />
-      <Stack.Screen name="approvals" options={{ title: "Approval inbox" }} />
-      <Stack.Screen name="needs-you" options={{ title: "Needs you" }} />
-      <Stack.Screen name="bots" options={{ title: "Bots" }} />
-      <Stack.Screen name="bot" options={{ title: "Bot" }} />
-      <Stack.Screen name="computer" options={{ title: "Computer" }} />
-      <Stack.Screen name="routine" options={{ title: "Routine" }} />
-      <Stack.Screen name="memory" options={{ title: "Memory" }} />
-      <Stack.Screen name="rules" options={{ title: "Custom rules" }} />
-      <Stack.Screen name="plugins" options={{ title: "Plugins" }} />
-    </Stack>
+    <>
+      {!personalSaasMode && <OrganizationNotifications />}
+      <Stack screenOptions={{ headerBackTitle: "Back" }}>
+        <Stack.Screen name="index" options={{ title: "OpenBot" }} />
+        <Stack.Protected guard={!personalSaasMode}>
+          <Stack.Screen
+            name="conversation"
+            options={{ title: "Conversation" }}
+          />
+          <Stack.Screen
+            name="approvals"
+            options={{ title: "Approval inbox" }}
+          />
+          <Stack.Screen name="needs-you" options={{ title: "Needs you" }} />
+          <Stack.Screen name="bots" options={{ title: "Bots" }} />
+          <Stack.Screen name="bot" options={{ title: "Bot" }} />
+          <Stack.Screen name="computer" options={{ title: "Computer" }} />
+          <Stack.Screen name="routine" options={{ title: "Routine" }} />
+          <Stack.Screen name="memory" options={{ title: "Memory" }} />
+          <Stack.Screen name="rules" options={{ title: "Custom rules" }} />
+          <Stack.Screen name="plugins" options={{ title: "Plugins" }} />
+        </Stack.Protected>
+      </Stack>
+    </>
   );
 }

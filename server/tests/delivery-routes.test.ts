@@ -4,11 +4,11 @@ import { createOpenTagTransport } from "../src/delivery/opentag";
 import type { ConverseResult } from "../src/delivery/router";
 import { createDeliveryWebhookRoutes } from "../src/delivery/routes";
 import { createTwilioTransport } from "../src/delivery/twilio";
-import type { DeliveryBinding } from "../src/delivery/types";
+import type { DeliveryStore } from "../src/delivery/store";
 
 const SECRET = "x".repeat(48);
 const APPROVAL = "0f8fad5b-d9cb-469f-a165-70867728950e";
-const bound: DeliveryBinding = {
+const bound: NonNullable<Awaited<ReturnType<DeliveryStore["findBinding"]>>> = {
   id: "b1",
   ownerUserId: "owner",
   channelId: "ch",
@@ -19,6 +19,9 @@ const bound: DeliveryBinding = {
   identity: "U1",
   address: "U1",
   enabled: true,
+  mentionId: null,
+  optedOutAt: null,
+  createdAt: new Date(0),
 };
 type IdentityAdapter = {
   redeem(
@@ -105,7 +108,12 @@ function fixture(
       },
       bind: async (input) => {
         calls.push({ bind: input });
-        return { ...bound, ...input };
+        return {
+          ...bound,
+          ...input,
+          mentionId: input.mentionId ?? null,
+          optedOutAt: input.optedOutAt ?? null,
+        };
       },
       updateSmsStatus: async (...input) => {
         calls.push(input);

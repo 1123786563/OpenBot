@@ -159,6 +159,8 @@ export function createServerResponsibilityEngine(deps: {
           threadId: context.threadId,
           initiator,
           signal: context.signal,
+          beforeDispatch: context.beforeDispatch,
+          onText: context.onText,
           ...(snapshot && toolResult
             ? {
                 continuation: {
