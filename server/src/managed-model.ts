@@ -116,7 +116,7 @@ export function createManagedModel({
       input: ModelOperation & {
         route: string;
         messages: readonly ModelMessage[];
-        beforeDispatch?: () => Promise<boolean>;
+        beforeDispatch?: () => Promise<boolean | readonly ModelMessage[]>;
       },
     ): Promise<ManagedModelResult> {
       const id = operationId(input);
@@ -150,15 +150,17 @@ export function createManagedModel({
       }
 
       try {
-        if (input.beforeDispatch && !(await input.beforeDispatch()))
-          return { state: "not_authorized" };
+        const prepared = await input.beforeDispatch?.();
+        if (prepared === false) return { state: "not_authorized" };
+        const messages =
+          prepared === undefined || prepared === true ? input.messages : prepared;
         const result = dispatch.parse(
           await post(
             "dispatch",
             {
               operationId: id,
               permit: admission.permit,
-              messages: input.messages,
+              messages,
             },
             90_000,
           ),

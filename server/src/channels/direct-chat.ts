@@ -1,3 +1,10 @@
+import {
+  CONTEXT_REVOKED,
+  createRunContext,
+  trackRunContext,
+  verifyRunContext,
+  withRunContext,
+} from "@openbot/toolkit/run-context";
 import type { AbstractAgent, BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { EventType } from "@ag-ui/client";
 import {
@@ -48,6 +55,7 @@ import {
   type RunKey,
   readDirectChatReplay,
   stopDirectChatRun,
+  stoppedRunEvent,
 } from "./direct-chat-replay";
 
 const id = z.string().min(1).max(256);
@@ -728,14 +736,7 @@ export function createDirectChatRoutes(deps: {
           );
           if (result.run.status !== "running") {
             const event = result.run.stopReason
-              ? ({
-                  type: EventType.RUN_ERROR,
-                  code: result.run.stopReason,
-                  message:
-                    result.run.stopReason === "stopped"
-                      ? "The Bot run was stopped."
-                      : "The Bot run lost access.",
-                } satisfies BaseEvent)
+              ? stoppedRunEvent(result.run.stopReason)
               : terminal(
                   key,
                   result.run.externalOutcome === "executed"
@@ -873,7 +874,9 @@ export function createDirectChatRoutes(deps: {
         ? async (event) => {
             if (
               "code" in event &&
-              (event.code === "stopped" || event.code === "access_revoked")
+              (event.code === "stopped" ||
+                event.code === "access_revoked" ||
+                event.code === CONTEXT_REVOKED)
             )
               return event;
             const state = await trial.model
@@ -1003,6 +1006,7 @@ export function createDirectChatRoutes(deps: {
       if (!finished) watcher = setTimeout(() => void watchAuthorization(), 250);
     }
     watcher = setTimeout(() => void watchAuthorization(), 250);
+    const runContext = createRunContext();
     let writes = Promise.resolve();
     let writeFailed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1047,28 +1051,25 @@ export function createDirectChatRoutes(deps: {
         )
           return;
         if (!(await shouldContinue())) return;
+        const conversation = messages.flatMap(({ role, content }) =>
+          (role === "user" || role === "assistant") &&
+          typeof content === "string"
+            ? [{ role, content }]
+            : [],
+        );
         const result = await trial.model.complete({
           ...operation,
           route: trial.route,
+          messages: conversation,
           beforeDispatch: async () => {
             if (!(await shouldContinue())) return false;
-            if (!guidance) return true;
             const current = await currentGuidance();
-            return (
-              current !== null && learningInstructions(current) === guidance
-            );
+            if (!current) return false;
+            const instructions = learningInstructions(current);
+            return instructions
+              ? [{ role: "system", content: instructions }, ...conversation]
+              : conversation;
           },
-          messages: [
-            ...(guidance
-              ? [{ role: "system" as const, content: guidance }]
-              : []),
-            ...messages.flatMap(({ role, content }) =>
-              (role === "user" || role === "assistant") &&
-              typeof content === "string"
-                ? [{ role, content }]
-                : [],
-            ),
-          ],
         });
         if (!(await shouldContinue())) return;
         if (result.state === "completed") {
@@ -1105,6 +1106,18 @@ export function createDirectChatRoutes(deps: {
       if (!agent) throw new Error("Bot unavailable.");
       agent.threadId = threadId;
       agent.agentId = agentId;
+      if (guidance) {
+        withRunContext(runContext, () => trackRunContext(async () => {
+          const current = await currentGuidance();
+          return current !== null && skills.every((skill) =>
+            current.some((active) =>
+              active.id === skill.id &&
+              active.title === skill.title &&
+              active.instructions === skill.instructions
+            ),
+          );
+        }));
+      }
       const runMessages: RunAgentInput["messages"] = guidance
         ? [
             { id: crypto.randomUUID(), role: "system", content: guidance },
@@ -1122,7 +1135,9 @@ export function createDirectChatRoutes(deps: {
         forwardedProps: {},
       };
       let failure = false;
-      const completion = agent.runAgent(input, {
+      const completion = withRunContext(runContext, async () => {
+        await verifyRunContext();
+        return agent.runAgent(input, {
         onEvent: ({ event }) => {
           if (event.type === EventType.RUN_ERROR) failure = true;
           else if (event.type !== EventType.RUN_FINISHED) {
@@ -1140,6 +1155,7 @@ export function createDirectChatRoutes(deps: {
               });
           }
         },
+      });
       });
       await Promise.race([
         completion,
@@ -1168,7 +1184,7 @@ export function createDirectChatRoutes(deps: {
         );
       await writes;
       if (!(await shouldContinue())) return;
-      if (writeFailed || failure || !reply || typeof reply.content !== "string")
+      if (runContext.revoked || writeFailed || failure || !reply || typeof reply.content !== "string")
         throw new Error("Bot returned no text.");
       await appendDirectChatEvent(database, key, terminal(key, "completed"), {
         traceRuns,
@@ -1177,6 +1193,12 @@ export function createDirectChatRoutes(deps: {
     } catch {
       await writes;
       if (!(await shouldContinue())) return;
+      if (runContext.revoked) {
+        await database.transaction((tx) =>
+          stopDirectChatRun(tx, key, CONTEXT_REVOKED, traceRuns),
+        );
+        return;
+      }
       await appendDirectChatEvent(database, key, terminal(key, "failed"), {
         traceRuns,
         ...(trial && !reflectQuery && { externalOutcome: "unknown" }),

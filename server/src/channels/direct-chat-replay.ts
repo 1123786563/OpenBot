@@ -1,3 +1,4 @@
+import { CONTEXT_REVOKED_MESSAGE } from "@openbot/toolkit/run-context";
 import { type BaseEvent, EventType, type Message } from "@ag-ui/client";
 import { and, asc, eq, gt, gte, lt, sql } from "drizzle-orm";
 import type { ProfileReadExecutor } from "../agents/profile-store";
@@ -116,6 +117,18 @@ function partialUpdate(event: BaseEvent): Partial<Run> {
   return {};
 }
 
+export function stoppedRunEvent(reason: NonNullable<Run["stopReason"]>) {
+  return {
+    type: EventType.RUN_ERROR,
+    code: reason,
+    message: {
+      stopped: "The Bot run was stopped.",
+      access_revoked: "The Bot run lost access.",
+      context_revoked: CONTEXT_REVOKED_MESSAGE,
+    }[reason],
+  } satisfies BaseEvent;
+}
+
 export async function stopDirectChatRun(
   tx: RunTransaction,
   key: RunKey,
@@ -136,14 +149,7 @@ export async function stopDirectChatRun(
   await tx.insert(directChatRunEvents).values({
     ...key,
     cursor: run.cursor,
-    event: {
-      type: EventType.RUN_ERROR,
-      code: reason,
-      message:
-        reason === "stopped"
-          ? "The Bot run was stopped."
-          : "The Bot run lost access.",
-    } satisfies BaseEvent,
+    event: stoppedRunEvent(reason),
   });
   if (traceRuns) await queueRunTraces(tx, [run], "failed");
   return true;

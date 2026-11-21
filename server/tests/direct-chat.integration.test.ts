@@ -6,6 +6,8 @@ import {
   HttpAgent,
   type RunAgentInput,
 } from "@ag-ui/client";
+import { LLMock } from "@copilotkit/aimock";
+import { z } from "zod";
 import { and, eq, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
@@ -35,7 +37,8 @@ import {
 } from "../src/channels/routes";
 import { createThreadIdentity } from "../src/channels/thread-identity";
 import { loadConfig } from "../src/config";
-import { mountCopilotRuntime } from "../src/copilot";
+import { buildAgents, mountCopilotRuntime } from "../src/copilot";
+import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
 import {
   agents,
@@ -54,6 +57,9 @@ import {
 } from "../src/db/schema";
 import { createLearningRoutes } from "../src/learning/routes";
 import { createLearningSettingsStore } from "../src/learning/settings";
+import { createMemoryIngestion } from "../src/memory/ingestion";
+import { createMemoryRoutes } from "../src/memory/routes";
+import { createPluginStore } from "../src/plugins/store";
 import { createMemoryStore } from "../src/memory/store";
 import { createRecorderConnectionStore } from "../src/recorder/connections";
 import { createOpenBotRecordings } from "../src/recorder/openbot-recordings";
@@ -146,6 +152,7 @@ function web(
     prepare,
     authorized,
     reflect,
+    makeAgent,
   }: {
     deployment?: typeof config;
     opik?: typeof config.opik;
@@ -154,6 +161,7 @@ function web(
     prepare?: () => Promise<void>;
     authorized?: () => boolean;
     reflect?: DirectChatReflect;
+    makeAgent?: () => Promise<AbstractAgent>;
   } = {},
 ) {
   const store = createAgentProfileStore(db, endpoint);
@@ -165,7 +173,7 @@ function web(
   const agentFor = async (_actor: unknown, id: string) => {
     if (id !== botId) throw new Error("Unexpected Bot.");
     await prepare?.();
-    return new AnsweringAgent(answer, partial);
+    return makeAgent ? makeAgent() : new AnsweringAgent(answer, partial);
   };
   const copilot = mountCopilotRuntime(
     { ...deployment, ...(opik ? { opik } : {}) },
@@ -1880,6 +1888,112 @@ test("a revoked account loses its live Run and a restored account must start a n
   }
 });
 
+
+test("Memory withdrawn after model dispatch pauses the original Run before its next action and survives reconnect", async () => {
+  const actor = await person();
+  const bot = await profiles.create(actor, {
+    name: "Memory boundary Bot",
+    title: "Bot",
+    roleDescription: "Use the product Memory.",
+    visibility: "public",
+  });
+  const store = createMemoryStore(database);
+  const plugins = createPluginStore({
+    brokerProvider: "composio",
+    database,
+    auditStore: createAuditStore(database),
+    credentials: createCredentialStore(database),
+    encryptionKey: Buffer.alloc(32, 7).toString("base64"),
+    policy: () => ({ mode: "enforce", deny: [], allow: ["true"] }),
+  });
+  const ingestion = createMemoryIngestion({store, plugins, canUseBot: async (person, id) => person === actor.id && id === bot.id});
+  const memory = createMemoryRoutes(store, ingestion, async (c, next) => {
+    c.set("actor", actor);
+    await next();
+  });
+  const created = await memory.request("/", post({content: "Private Memory fixture."}));
+  expect(created.status).toBe(201);
+  const {memory: fact} = await created.json();
+  const provider = new LLMock();
+  const base = process.env.OPENAI_BASE_URL;
+  const loaded = Promise.withResolvers<string>();
+  const respond = Promise.withResolvers<void>();
+  let modelCalls = 0;
+  let actions = 0;
+  provider.on({predicate: () => true}, async (request) => {
+    modelCalls += 1;
+    if (modelCalls > 1) return {content: "Unexpected continuation."};
+    loaded.resolve(JSON.stringify(request.messages));
+    await respond.promise;
+    return {
+      content: "Output already in flight.",
+      toolCalls: [{id: "fixture-action", name: "mcp__fixture__write", arguments: "{}"}],
+    };
+  });
+  process.env.OPENAI_BASE_URL = await provider.start();
+  let channelId: string | undefined;
+  try {
+    const makeAgent = async () => {
+      const agents = await buildAgents(
+        [{id: bot.id, name: bot.name, type: "built_in", systemPrompt: "Answer the question."}],
+        {provider: "openai", defaultModel: "gpt-5.5"},
+        "fixture-key",
+        undefined,
+        async () => [{
+          ref: "fixture/write",
+          name: "mcp__fixture__write",
+          description: "Record that the external action was called.",
+          parameters: z.object({}),
+          execute: async () => { actions += 1; return "Action dispatched."; },
+        }],
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined,
+        () => ingestion.contextFor(actor.id, bot.id),
+      );
+      const agent = agents[bot.id];
+      if (!agent) throw new Error("Test Bot unavailable.");
+      return agent;
+    };
+    const client = web(database, actor, bot.id, async () => {}, {makeAgent});
+    const opened = await client.request("/api/channels", post({agentIds: [bot.id]}));
+    const {channel} = await opened.json();
+    channelId = channel.id;
+    const runId = "memory-revoked";
+    const route = `/api/copilotkit/agent/${bot.id}`;
+    const original = await client.request(`${route}/run`, post({
+      threadId: channel.threadId, runId,
+      messages: [{id: "ask-memory", role: "user", content: "Use the fixture."}],
+    }));
+    expect(await loaded.promise).toContain("Private Memory fixture.");
+    expect((await memory.request(`/${fact.id}`, {method: "DELETE"})).status).toBe(204);
+    respond.resolve();
+    const originalEvents = await original.text();
+    expect(originalEvents).toContain("context_revoked");
+    const output = (stream: string) =>
+      events(stream)
+        .filter(({ type }) => type === EventType.TEXT_MESSAGE_CONTENT)
+        .map(({ delta }) => delta)
+        .join("");
+    expect(output(originalEvents)).toBe("Output already in flight.");
+    const reconnected = await web(database, actor, bot.id, async () => {}, {makeAgent})
+      .request(`${route}/resume`, post({threadId: channel.threadId, runId, cursor: 0}));
+    const replay = await reconnected.text();
+    expect(replay).toContain(runId);
+    expect(replay).toContain("context_revoked");
+    expect(output(replay)).toBe("Output already in flight.");
+    expect(actions).toBe(0);
+    expect(modelCalls).toBe(1);
+  } finally {
+    respond.resolve();
+    if (base === undefined) delete process.env.OPENAI_BASE_URL;
+    else process.env.OPENAI_BASE_URL = base;
+    await provider.stop();
+    if (channelId) await database.delete(channels).where(eq(channels.id, channelId));
+    await database.delete(agents).where(eq(agents.id, bot.id));
+    await database.delete(users).where(eq(users.id, actor.id));
+  }
+}, 20_000);
+
 test.each([
   { feature: "scheduled analysis", scheduled: true },
   { feature: "review and publication", scheduled: false },
@@ -2474,8 +2588,18 @@ async function exerciseLearning(scheduled: boolean) {
         auto.latest.id,
       );
 
-      await managedDelivery("pause-during-admission", "not_authorized");
-      expect(managedPrompts).toHaveLength(1);
+      const afterPause = await managedDelivery("pause-during-admission");
+      expect(afterPause).not.toContain("List the steps in order.");
+      expect(afterPause).not.toContain(auto.latest.id);
+      expect(managedPrompts).toHaveLength(2);
+      const replay = await aliceLearning.request(
+        `/api/copilotkit/agent/${bot.id}/resume`,
+        post({ threadId: channel.threadId, runId: "pause-during-admission", cursor: 0 }),
+      );
+      const replayed = await replay.text();
+      expect(replayed).toContain("Managed answer.");
+      expect(replayed).toContain("pause-during-admission");
+      expect(managedPrompts).toHaveLength(2);
       await send("paused-skill", "Can you still answer?");
       expect(
         runInputs.at(-1)?.messages.some(({ role }) => role === "system"),

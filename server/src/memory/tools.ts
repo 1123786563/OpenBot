@@ -1,3 +1,4 @@
+import { trackRunContext, verifyRunContext } from "@openbot/toolkit/run-context";
 import {
   type AbstractAgent,
   type BaseEvent,
@@ -37,8 +38,9 @@ export class PersonalMemoryMiddleware extends Middleware {
   }
   run(input: RunAgentInput, next: AbstractAgent): Observable<BaseEvent> {
     return defer(() => from(this.load(this.botId))).pipe(
-      switchMap((content) =>
-        this.runNext(
+      switchMap((content) => {
+        if (content) trackRunContext(async () => (await this.load(this.botId)) === content);
+        return this.runNext(
           {
             ...input,
             messages: [
@@ -65,8 +67,8 @@ export class PersonalMemoryMiddleware extends Middleware {
             ],
           },
           next,
-        ),
-      ),
+        );
+      }),
     );
   }
 }
@@ -106,6 +108,7 @@ export function memoryTools(options: MemoryToolOptions): GrantedTool[] {
         const parsed = parameters.safeParse(args);
         if (!parsed.success) return "Refused. Invalid memory arguments.";
         try {
+          await verifyRunContext();
           return JSON.stringify(await execute(parsed.data));
         } catch (error) {
           if (

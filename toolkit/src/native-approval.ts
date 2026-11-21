@@ -1,3 +1,4 @@
+import { verifyRunContext } from "./run-context";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   AbstractAgent,
@@ -76,7 +77,11 @@ export async function executeNativeApprovalTool<T>(
   execute: () => Promise<T>,
 ): Promise<T> {
   const run = nativeRuns.getStore();
-  if (!run || !toolCallId) return execute();
+  const dispatch = async () => {
+    await verifyRunContext();
+    return execute();
+  };
+  if (!run || !toolCallId) return dispatch();
   if (run.waiting) throw run.waiting;
   await run.waitForCall(toolCallId);
   if (run.waiting) throw run.waiting;
@@ -102,7 +107,7 @@ export async function executeNativeApprovalTool<T>(
     initiator,
   };
   const pending = Promise.resolve().then(() =>
-    withApprovalContext(continuation, execute),
+    withApprovalContext(continuation, dispatch),
   );
   run.pending.add(pending);
   try {

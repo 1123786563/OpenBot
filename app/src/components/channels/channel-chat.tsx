@@ -1812,7 +1812,9 @@ export function ChannelChat({
                               ? "The outcome was verified and added to the conversation."
                               : latestRun?.stopReason === "stopped"
                                 ? "The run was stopped."
-                                : "The run ended when access was revoked."}
+                                : latestRun?.stopReason === "context_revoked"
+                                  ? "The run paused because Memory or Learned skill access changed."
+                                  : "The run ended when access was revoked."}
                     </p>
                     {unresolvedRun && channel.active && (
                       <Button
