@@ -105,7 +105,13 @@ function fixture(
       },
       bind: async (input) => {
         calls.push({ bind: input });
-        return { ...bound, ...input };
+        return {
+          ...bound,
+          ...input,
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+          mentionId: input.mentionId ?? null,
+          optedOutAt: input.optedOutAt ?? null,
+        };
       },
       updateSmsStatus: async (...input) => {
         calls.push(input);
