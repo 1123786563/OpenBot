@@ -856,10 +856,15 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
       ...owner,
       email: "managed-credit-updated@example.com",
     });
+    const publishedQuote = await ledger.quote();
+    if (!publishedQuote)
+      throw new Error("Managed test requires a published quote");
+    const { route, priceVersion } = publishedQuote;
     const submit = (
       headers: Record<string, string>,
       instruction = "Spend the shared grant",
       requestId = crypto.randomUUID(),
+      quote = { route, priceVersion },
     ) =>
       send("/api/workspace/bot-runs", {
         method: "POST",
@@ -872,9 +877,17 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
           workspaceId: initial.id,
           botId: initial.personalAssistant.id,
           instruction,
-          ...(headers.authorization ? { execution: "test-credit" } : {}),
+          ...(headers.authorization ? { execution: "test-credit", quote } : {}),
         }),
       });
+    const staleQuote = await submit(native, undefined, undefined, {
+      route,
+      priceVersion: crypto.randomUUID(),
+    });
+    expect(staleQuote.status).toBe(409);
+    expect(await staleQuote.json()).toEqual({
+      error: "test_credit_quote_changed",
+    });
     const stopped = await submit(native, "Stop while metering");
     expect(stopped.status).toBe(202);
     const { runId: stoppedId } = await stopped.json();

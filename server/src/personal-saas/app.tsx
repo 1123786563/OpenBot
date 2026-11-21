@@ -111,6 +111,7 @@ const botRunSubmissionError = {
 };
 const botRunSubmissionInput = botWorkInput.extend({
   execution: z.literal("test-credit").optional(),
+  quote: botRunCreditQuote.optional(),
 });
 type BotRunSubmission =
   | { runId: string }
@@ -1711,8 +1712,8 @@ export function createPersonalSaasApp(
       await context.req.json().catch(() => null),
     );
     if (!input.success) return context.json({ error: "invalid_request" }, 400);
-    const { execution, ...work } = input.data;
-    if (execution === "test-credit" && !managedCredits)
+    const { execution, quote, ...work } = input.data;
+    if ((execution === "test-credit" || quote) && !managedCredits)
       return context.json({ error: "bot_execution_unavailable" }, 503);
     const retryKey = managedCredits
       ? context.req.header("Idempotency-Key")
@@ -1725,6 +1726,7 @@ export function createPersonalSaasApp(
       session,
       input: work,
       requestId: requestId.data,
+      disclosedQuote: quote,
     });
     return "runId" in result
       ? context.json({ runId: result.runId }, 202)
