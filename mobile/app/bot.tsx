@@ -193,6 +193,25 @@ export default function BotScreen() {
         </View>
       </View>
       <Button
+        title="Start conversation"
+        disabled={Boolean(action.busy) || !bot.data}
+        onPress={() => {
+          void action.run("conversation", async () => {
+            const { channel } = await api<{ channel: Conversation }>(
+              "/api/channels",
+              {
+                method: "POST",
+                body: { agentIds: [botId] },
+              },
+            );
+            router.push({
+              pathname: "/conversation",
+              params: { channelId: channel.id },
+            });
+          });
+        }}
+      />
+      <Button
         title="Open computer"
         onPress={() =>
           router.push({ pathname: "/computer", params: { botId } })

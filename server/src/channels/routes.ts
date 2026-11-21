@@ -59,6 +59,7 @@ export type AgentChannel = {
   agentIds: string[];
   threadId: string;
   active: boolean;
+  direct?: boolean;
   archived?: boolean;
   /**
    * When something was last said here, or null for a conversation nobody has used.
@@ -615,6 +616,19 @@ export function createChannelStore(
     },
 
     async get(actor, channelId) {
+      const otherMembers = database
+        .select({ id: channelMemberships.userId })
+        .from(channelMemberships)
+        .where(
+          and(
+            eq(channelMemberships.channelId, channelId),
+            ne(channelMemberships.userId, actor.id),
+          ),
+        );
+      const groupThreads = database
+        .select({ id: groupBotThreads.channelId })
+        .from(groupBotThreads)
+        .where(eq(groupBotThreads.channelId, channelId));
       const rows = await database
         .select({
           id: channels.id,
@@ -624,6 +638,7 @@ export function createChannelStore(
           lastMessageAt: channels.lastMessageAt,
           deletedAt: agentProfiles.deletedAt,
           archivedAt: channelMemberships.archivedAt,
+          privateThread: sql<boolean>`not exists (${otherMembers}) and not exists (${groupThreads})`,
         })
         .from(channels)
         .innerJoin(
@@ -657,6 +672,7 @@ export function createChannelStore(
         agentIds: rows.map((row) => row.agentId),
         threadId: first.threadId,
         active: rows.every((row) => row.deletedAt === null),
+        direct: rows.length === 1 && first.privateThread,
         ...(first.archivedAt ? { archived: true } : {}),
         lastMessageAt: first.lastMessageAt,
       };
@@ -1766,6 +1782,7 @@ function channelDto(channel: AgentChannel): ChannelWire {
     agentIds: channel.agentIds,
     threadId: channel.threadId,
     active: channel.active,
+    ...(channel.direct !== undefined && { direct: channel.direct }),
     ...(channel.archived ? { archived: true } : {}),
     // ISO-8601 so the browser gets a string it can compare, like the roster's copy.
     lastMessageAt: channel.lastMessageAt?.toISOString() ?? null,
