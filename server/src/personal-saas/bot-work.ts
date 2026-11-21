@@ -2,18 +2,40 @@ import { randomUUID } from "node:crypto";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { z } from "zod";
+import { createAuditStore } from "../audit";
+import { personSeat } from "../computer/computer-key";
+import {
+  ComputerUnavailableError,
+  createComputerGateway,
+} from "../computer/gateway";
+import { createHeadlessComputerTools } from "../computer/headless-tools";
+import type { ActionPolicy } from "../computer/policy";
 import type { Database } from "../db/client";
 import { createWorkQueue } from "../work/queue";
 import { readExecutionAccess } from "./account-access";
 import { PERSONAL_BOT_WORK, type workspaceQuotas } from "./quotas";
 import { assistantTarget, workspaceBots } from "./workspace-bots";
-import type { workspaceComputer } from "./workspace-computer";
+import {
+  type workspaceComputer,
+  workspaceComputerRestartMessage,
+} from "./workspace-computer";
 
 export { PERSONAL_BOT_WORK } from "./quotas";
 export const botWorkInput = assistantTarget.extend({
   instruction: z.string().trim().min(1).max(20_000),
   requiresComputer: z.boolean().optional(),
 });
+const workspaceFileTools = [
+  "computer_list_files",
+  "computer_read_file",
+  "computer_write_file",
+];
+const workspaceFilePolicy: ActionPolicy = {
+  mode: "enforce",
+  deny: [],
+  allow: workspaceFileTools.map((name) => `tool.name == "${name}"`),
+};
+
 export const recoveryInput = z.strictObject({
   action: z.enum(["cancel", "retry"]),
   acknowledged: z.boolean().default(false),
@@ -27,6 +49,7 @@ export function personalBotWork(
 ) {
   const queue = createWorkQueue(database, now);
   const leaseMs = 65_000;
+  const auditStore = createAuditStore(database);
   return {
     async history(accountId: string) {
       await queue.reconcilePersonalWork(PERSONAL_BOT_WORK, accountId);
@@ -140,6 +163,60 @@ export function personalBotWork(
         );
         if (access?.kind !== "active" || now() >= expiresAt) controller.abort();
         controller.signal.throwIfAborted();
+        async function checkExecution() {
+          controller.signal.throwIfAborted();
+          const access = await database.transaction((tx) =>
+            readExecutionAccess(tx, grant.accountId, now, grant.epoch),
+          );
+          if (
+            access?.kind !== "active" ||
+            now() >= expiresAt ||
+            !(await queue.renew({ ...held, leaseMs }))
+          )
+            controller.abort();
+          controller.signal.throwIfAborted();
+        }
+
+        async function connectComputer() {
+          await checkExecution();
+          const computer = await accessComputer?.(work.workspaceId, {
+            ...grant,
+            expiresAt,
+          }).catch(() => undefined);
+          if (now() >= expiresAt) enforceDeadline();
+          controller.signal.throwIfAborted();
+          if (computer?.kind !== "running")
+            throw new ComputerUnavailableError(workspaceComputerRestartMessage);
+          return { url: computer.address, token: computer.token };
+        }
+
+        const initiator = { kind: "routine", id: item.key } as const;
+        const additionalTools = work.requiresComputer
+          ? createHeadlessComputerTools({
+              gateway: createComputerGateway({
+                provider: {
+                  name: "workspace-computer",
+                  isolation: "per-person",
+                  locate: async () => (await connectComputer()).url,
+                  status: async ({ botId }) => ({
+                    botId,
+                    state: "unreachable",
+                  }),
+                  stop: async () => ({ wasRunning: false }),
+                  reset: async () => ({ cleared: false }),
+                  list: async () => [],
+                },
+                connect: connectComputer,
+                signal: controller.signal,
+                auditStore,
+                policy: () => workspaceFilePolicy,
+              }),
+              seat: personSeat(work.workspaceId, bot.id),
+              actor: { id: grant.accountId, initiator },
+            }).filter(({ definition }) =>
+              workspaceFileTools.includes(definition.name),
+            )
+          : undefined;
         const result = await runTurn({
           ownerUserId: grant.accountId,
           routineId: item.key,
@@ -154,28 +231,19 @@ export function personalBotWork(
             content: work.instruction,
           },
           signal: controller.signal,
+          initiator,
+          additionalTools,
           beforeDispatch: async () => {
-            controller.signal.throwIfAborted();
             if (work.requiresComputer) {
-              const computer = await accessComputer?.(work.workspaceId, {
-                ...grant,
-                expiresAt,
-              }).catch(() => undefined);
-              if (computer?.kind !== "running") {
-                computerBlocked = true;
-                throw new Error("Workspace Computer is unavailable");
+              try {
+                await connectComputer();
+              } catch (error) {
+                computerBlocked = error instanceof ComputerUnavailableError;
+                throw error;
               }
+            } else {
+              await checkExecution();
             }
-            const access = await database.transaction((tx) =>
-              readExecutionAccess(tx, grant.accountId, now, grant.epoch),
-            );
-            if (
-              access?.kind !== "active" ||
-              now() >= expiresAt ||
-              !(await queue.renew({ ...held, leaseMs }))
-            )
-              controller.abort();
-            controller.signal.throwIfAborted();
           },
           onText: saveOutput,
         }).finally(() => {
@@ -198,6 +266,7 @@ export function personalBotWork(
         // A claimed request may have reached an external service. Keep it for manual review.
       } finally {
         done = true;
+        controller.abort();
         clearTimeout(deadline);
         clearTimeout(poll);
       }

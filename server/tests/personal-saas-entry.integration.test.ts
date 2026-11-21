@@ -3278,13 +3278,54 @@ test("the Bot worker rejects Computer work authorized before a restart and dispa
   const target = await workspace(session);
   const dispatched: string[] = [];
   const taskTimes: number[] = [];
+  const receivedTokens: (string | null)[] = [];
+  using cloud = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      expect(new URL(request.url).pathname).toBe("/files/list");
+      expect(request.headers.get("x-openbot-bot-id")).toBe(
+        target.personalAssistant.id,
+      );
+      receivedTokens.push(request.headers.get("x-openbot-computer-token"));
+      return Response.json({ files: ["saved.txt"] });
+    },
+  });
   let startedWith = Number.POSITIVE_INFINITY;
+  let running = true;
+  let token = "first-token";
   const runApp = newApp(
     database,
-    async ({ beforeDispatch, runId }) => {
+    async ({ beforeDispatch, runId, instruction, additionalTools, signal }) => {
       await beforeDispatch?.();
-      if (!runId) throw new Error("Expected a persistent run ID");
+      if (!runId || !signal)
+        throw new Error("Expected a persistent run ID and signal");
       dispatched.push(runId);
+      if (instruction === "Reply without using the Computer") {
+        expect(additionalTools).toBeUndefined();
+        return { replyText: "Completed" };
+      }
+      expect(additionalTools?.map(({ definition }) => definition.name)).toEqual(
+        ["computer_list_files", "computer_read_file", "computer_write_file"],
+      );
+      const tool = additionalTools?.find(
+        ({ definition }) => definition.name === "computer_list_files",
+      );
+      expect(tool).toBeDefined();
+      if (!tool) throw new Error("Computer tool missing");
+      token = "current-token";
+      expect(
+        await tool.execute({}, { toolCallId: "files", signal }),
+      ).toMatchObject({
+        ok: true,
+        files: ["saved.txt"],
+      });
+      running = false;
+      await expect(
+        tool.execute({}, { toolCallId: "after-stop", signal }),
+      ).rejects.toThrow(
+        "Start your Computer in your workspace before retrying this task.",
+      );
       return { replyText: "Completed" };
     },
     {
@@ -3297,13 +3338,9 @@ test("the Bot worker rejects Computer work authorized before a restart and dispa
         const authorizedAt = Number(url.searchParams.get("authorizedAt"));
         taskTimes.push(authorizedAt);
         return Response.json(
-          authorizedAt >= startedWith
-            ? {
-                status: "running",
-                address: "http://computer:4100",
-                token: "fixture-computer",
-              }
-            : { status: "running" },
+          running && authorizedAt >= startedWith
+            ? { status: "running", address: cloud.url.origin, token }
+            : { status: "restart_required" },
         );
       },
     },
@@ -3348,7 +3385,29 @@ test("the Bot worker rejects Computer work authorized before a restart and dispa
   expect(key).not.toBe(runId);
   expect(await runApp.sweepBotWork()).toBe(true);
   expect(dispatched).toEqual([key]);
+  const [, retryAuthorizedAt] = taskTimes;
+  expect(taskTimes.slice(1)).toEqual([
+    retryAuthorizedAt,
+    retryAuthorizedAt,
+    retryAuthorizedAt,
+  ]);
   expect(taskTimes[1]).toBeGreaterThanOrEqual(startedWith);
+  expect(receivedTokens).toEqual(["current-token"]);
+  const completed = await request(`/api/workspace/bot-runs/${key}`);
+  expect(await completed.json()).toMatchObject({ state: "completed" });
+
+  const withoutComputer = await request("/api/workspace/bot-runs", {
+    workspaceId: target.id,
+    botId: target.personalAssistant.id,
+    instruction: "Reply without using the Computer",
+  });
+  expect(withoutComputer.status).toBe(202);
+  const { runId: ordinaryRunId } = await withoutComputer.json();
+  expect(await runApp.sweepBotWork()).toBe(true);
+  expect(dispatched).toEqual([key, ordinaryRunId]);
+  expect(taskTimes).toHaveLength(4);
+  const ordinary = await request(`/api/workspace/bot-runs/${ordinaryRunId}`);
+  expect(await ordinary.json()).toMatchObject({ state: "completed" });
 });
 
 const automationCutoffs = [

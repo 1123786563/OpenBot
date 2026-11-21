@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import type { Message } from "@ag-ui/client";
+import type { Message, RunAgentInput } from "@ag-ui/client";
 import { AbstractAgent, EventType } from "@ag-ui/client";
 import {
   DECLINED_BY_PERSON,
   NOT_RUN_WHILE_WAITING,
 } from "@openbot/shared/approval-outcomes";
 import {
+  type HeadlessTool,
   HeadlessToolSuspension,
   OPENBOT_WAITING_METADATA,
 } from "@openbot/toolkit/headless-tools";
@@ -151,7 +152,7 @@ function harness(options: {
     cleaned: [] as { threadId: string; runId: string }[],
     runs: [] as {
       threadId: string;
-      input: { runId: string; messages: { id: string }[] };
+      input: Pick<RunAgentInput, "runId" | "messages" | "tools">;
       persistedInputMessages?: { id: string; content?: unknown }[];
     }[],
     stops: [] as { threadId: string; runId?: string }[],
@@ -206,7 +207,7 @@ function harness(options: {
     run: (request: {
       threadId: string;
       agent: unknown;
-      input: { runId: string; threadId: string; messages: { id: string }[] };
+      input: Pick<RunAgentInput, "runId" | "threadId" | "messages" | "tools">;
       persistedInputMessages?: { id: string; content?: unknown }[];
     }) => {
       order.push("run");
@@ -267,7 +268,10 @@ function harness(options: {
       : { lockTtlSeconds: options.lockTtlSeconds }),
   });
 
-  const run = (beforeDispatch?: () => Promise<void>) =>
+  const run = (
+    beforeDispatch?: () => Promise<void>,
+    additionalTools?: readonly HeadlessTool[],
+  ) =>
     runTurn({
       ownerUserId: OWNER,
       routineId: ROUTINE_ID,
@@ -275,6 +279,7 @@ function harness(options: {
       threadId: THREAD_ID,
       instruction: INSTRUCTION,
       beforeDispatch,
+      additionalTools,
       ...(options.continuation ? { continuation: options.continuation } : {}),
     });
 
@@ -301,6 +306,23 @@ describe("a routine's headless turn", () => {
     expect(order.indexOf("acquire")).toBeLessThan(order.indexOf("run"));
     expect(calls.threads).toEqual([
       { threadId: THREAD_ID, userId: OWNER, agentId: AGENT_ID },
+    ]);
+  });
+
+  test("offers host-authorized tools only to the turn that supplies them", async () => {
+    const { run, calls } = harness({});
+    const definition = {
+      name: "computer_list_files",
+      description: "List workspace files",
+      parameters: { type: "object", properties: {} },
+    };
+
+    await run(undefined, [{ definition, execute: async () => [] }]);
+    await run();
+
+    expect(calls.runs.map(({ input }) => input.tools)).toEqual([
+      [definition],
+      [],
     ]);
   });
 

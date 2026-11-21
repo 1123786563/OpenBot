@@ -24,6 +24,8 @@ const storage = z.object({
 const running = z.object({
   computers: z.array(z.object({ id: z.uuid(), epoch: z.number().int() })),
 });
+export const workspaceComputerRestartMessage =
+  "Start your Computer in your workspace before retrying this task.";
 export const workspaceComputerLeaseMs = 15_000;
 type Workspace = { id: string; ownerId: string };
 
@@ -171,8 +173,7 @@ export function workspaceComputer(
       if (computer.status !== "running" || !computer.address || !computer.token)
         return {
           kind: "restart_required",
-          message:
-            "Start your Computer in your workspace before retrying this task.",
+          message: workspaceComputerRestartMessage,
         } as const;
       return {
         kind: "running",

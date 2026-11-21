@@ -149,6 +149,9 @@ export type ActionActor = {
 export type ComputerGatewayOptions = {
   approvalGate?: ApprovalGate;
   provider: ComputerProvider;
+  /** Revalidate a caller-scoped connection immediately before a Computer request. */
+  connect?: (seat: ComputerSeat) => Promise<{ url: string; token: string }>;
+  signal?: AbortSignal;
   auditStore: AuditStore;
   /** Absent denies everything. See evaluateActionPolicy. */
   policy: () => ActionPolicy | undefined;
@@ -387,6 +390,8 @@ export function createComputerGateway(
       ? { allowPrivateHosts: options.allowPrivateHosts }
       : {}),
     ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+    signal: options.signal,
+    ...(options.connect ? { redirect: "error" } : {}),
   });
   /**
    * Where the snapshot a ref is resolved against lives.
@@ -418,16 +423,22 @@ export function createComputerGateway(
       : { botId: seat.botId };
   }
 
-  /** The token of the computer this seat is on. See computer-token.ts. */
   function tokenFor(seat: ComputerSeat): string | undefined {
     return computerTokenOf(provider, seat.key, options.token);
   }
 
-  /** The located computer at `url`, with the token it takes. */
-  function at(
+  async function at(
     seat: ComputerSeat,
-    url: string,
-  ): { url: string; token?: string } {
+    locatedUrl?: string,
+  ): Promise<{ url: string; token?: string }> {
+    if (options.connect) {
+      const connection = await options.connect(seat);
+      const url = checkedAddress(connection.url);
+      if (locatedUrl !== undefined && locatedUrl !== url)
+        throw new ComputerUnavailableError("The computer connection changed.");
+      return { url, token: connection.token };
+    }
+    const url = locatedUrl ?? (await locate(seat));
     const token = tokenFor(seat);
     return token ? { url, token } : { url };
   }
@@ -455,7 +466,10 @@ export function createComputerGateway(
    * Bot may browse and the wrong one here, where loopback is the normal case.
    */
   async function locate(seat: ComputerSeat): Promise<string> {
-    const address = await provider.locate(seat);
+    return checkedAddress(await provider.locate(seat));
+  }
+
+  function checkedAddress(address: string): string {
     const verdict = checkComputerAddress(address);
     if (!verdict.allowed) {
       throw new ComputerUnavailableError(verdict.reason);
@@ -469,7 +483,7 @@ export function createComputerGateway(
     signal?: AbortSignal,
   ): Promise<T> {
     return transport.call<T>(
-      at(seat, await locate(seat)),
+      await at(seat),
       addressOf(seat),
       path,
       undefined,
@@ -493,7 +507,7 @@ export function createComputerGateway(
     address?: string,
   ): Promise<T> {
     return transport.post<T>(
-      at(seat, address ?? (await locate(seat))),
+      await at(seat, address),
       addressOf(seat),
       path,
       payload,
@@ -577,7 +591,7 @@ export function createComputerGateway(
      */
     const run = await sessionOf(seat);
     const result = await transport.call<SnapshotResult>(
-      at(seat, base),
+      await at(seat, base),
       addressOf(seat),
       "/snapshot",
       { method: "POST" },
@@ -1417,12 +1431,7 @@ export function createComputerGateway(
         actor,
         { targetUrl: url },
         async () =>
-          transport.navigate(
-            at(seat, await locate(seat)),
-            addressOf(seat),
-            url,
-            toolCallId,
-          ),
+          transport.navigate(await at(seat), addressOf(seat), url, toolCallId),
       ).then((result) => withUntrustedNotice(result, "web page", PAGE_FIELDS));
     },
 
@@ -1465,7 +1474,7 @@ export function createComputerGateway(
           // since left is refused as stale rather than opened.
           async (address) =>
             transport.navigate(
-              at(seat, address ?? (await locate(seat))),
+              await at(seat, address),
               addressOf(seat),
               follow.url,
               undefined,
@@ -1597,7 +1606,7 @@ export function createComputerGateway(
         { filePath: input.path, ...(signal ? { signal } : {}) },
         async () => {
           const download = await transport.download(
-            at(seat, await locate(seat)),
+            await at(seat),
             addressOf(seat),
             `/files/download?path=${encodeURIComponent(input.path)}`,
             signal,
