@@ -81,4 +81,30 @@ describe("Corsair Cloud client", () => {
       args: [{ repository: "openbot" }],
     });
   });
+
+  test("manages instance-scoped webhook endpoints through the v1 project API", async () => {
+    const requests: Request[] = [];
+    const client = createCorsairCloudClient({
+      apiKey: "ck_cloud_demo.slug",
+      instanceKey: "users",
+      fetch: async (input, init) => {
+        requests.push(new Request(input, init));
+        return Response.json({ object: "webhook" });
+      },
+    });
+
+    await client.createWebhook("github", "provider-secret");
+
+    expect(requests[0]?.url).toBe(
+      "https://api.corsair.cloud/v1/projects/demo/webhooks",
+    );
+    expect(requests[0]?.headers.get("authorization")).toBe(
+      "Bearer ck_cloud_demo.slug",
+    );
+    expect(await requests[0]?.json()).toEqual({
+      instance: "users",
+      integration: "github",
+      signing_secret: "provider-secret",
+    });
+  });
 });
