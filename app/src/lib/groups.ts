@@ -31,10 +31,25 @@ export type GroupPerson = {
   creator: boolean;
 };
 export type GroupBot = { id: string; name: string };
+export type GroupBackgroundRun = {
+  id: string;
+  agentId: string;
+  threadId: string;
+  status: "running" | "completed" | "failed";
+  waitingForApproval: boolean;
+  externalOutcome:
+    | "dispatching"
+    | "unknown"
+    | "executed"
+    | "not_dispatched"
+    | null;
+};
+
 export type GroupConversation = {
   bots: GroupBot[];
   people: GroupPerson[];
   messages: GroupMessage[];
+  backgroundRuns?: GroupBackgroundRun[];
 };
 
 export const groupKeys = {
@@ -59,7 +74,11 @@ export function groupQueryOptions(channelId: string) {
       query.state.data?.messages.some(
         (message) =>
           message.status === "running" || message.status === "queued",
-      ) || awaitingFirstReply(query.state.data)
+      ) ||
+      query.state.data?.backgroundRuns?.some(
+        ({ status }) => status === "running",
+      ) ||
+      awaitingFirstReply(query.state.data)
         ? 1_500
         : false,
   });

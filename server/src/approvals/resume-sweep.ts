@@ -13,6 +13,7 @@ import { z } from "zod";
 import { headlessTurnRefusal } from "../admin/controls";
 import type { AgentActor } from "../agents/profile-types";
 import { PERSON_INITIATOR } from "../audit";
+import type { createDirectChatRoutes } from "../channels/direct-chat";
 import type { GroupConversations } from "../channels/group";
 import type { ChannelStore } from "../channels/routes";
 import type { Database } from "../db/client";
@@ -44,6 +45,9 @@ export function createApprovalResumeTick(deps: {
   responsibilityStore: ResponsibilityStore;
   groupConversations: Pick<GroupConversations, "continueWaiting">;
   approvalContinuationRunner: TurnRunner;
+  backgroundApproval?: ReturnType<
+    typeof createDirectChatRoutes
+  >["backgroundApproval"];
   channelStore: ChannelStore;
   actorFor: (ownerUserId: string) => Promise<AgentActor>;
   notify: (
@@ -108,15 +112,25 @@ export function createApprovalResumeTick(deps: {
             approvalId: z.string().min(1),
           })
           .parse(item.payload);
+        const request = await approvalService.store.get(
+          input.ownerUserId,
+          input.approvalId,
+        );
+        const background = await deps.backgroundApproval?.(
+          request.action,
+          request.id,
+        );
         const resumeDependencies: ApprovalResumeDependencies = {
           // Asked before the action runs: with Use Bots off, or the Bot's model off the allowlist,
           // nothing is carried out and the refusal is final rather than retried.
           refusal: (action) =>
-            headlessTurnRefusal({
-              ownerUserId: action.actorId,
-              agentId: action.botId,
-              threadId: action.threadId,
-            }),
+            background
+              ? background.check()
+              : headlessTurnRefusal({
+                  ownerUserId: action.actorId,
+                  agentId: action.botId,
+                  threadId: action.threadId,
+                }),
           validate: (action) =>
             approvalService.validateReentry(action, () =>
               executeApprovedAction(action),
@@ -129,10 +143,8 @@ export function createApprovalResumeTick(deps: {
             messageId,
             approvalId,
           }) => {
-            const request = await approvalService.store.get(
-              input.ownerUserId,
-              approvalId,
-            );
+            // The original Routine or handoff worker picks up the saved result and resumes its Run.
+            if (background) return;
             if (result.error === CONTEXT_REVOKED_MESSAGE) return;
             if (!(await contextCurrent(request.action))) return;
             const [waitingRun] = await database

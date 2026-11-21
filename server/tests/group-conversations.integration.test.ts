@@ -1088,7 +1088,7 @@ describe("group conversations in PostgreSQL", () => {
     const third = await person();
     const ada = await bot(owner, "Ada", "public");
     const grace = await bot(owner, "Grace");
-    const { conversations } = service({
+    const { conversations, calls } = service({
       replies: { [ada]: () => "a", [grace]: () => "g" },
     });
     const channel = await conversations.create(owner.id, {
@@ -1133,6 +1133,8 @@ describe("group conversations in PostgreSQL", () => {
         })
       ).status,
     ).toBe(204);
+    await drain(conversations);
+    expect(calls).toHaveLength(0);
     expect((await ownerRoutes.request(`/${channel.id}`)).status).toBe(404);
     expect(
       (

@@ -1178,12 +1178,9 @@ describe("consuming a claimed firing", () => {
       );
       expect(report.fired).toEqual([routine.id]);
 
-      // The retry's run succeeded; the refused attempt's row is still open, waiting for the reaper.
       const runs = await runsFor(routine.id);
-      expect(runs.find((run) => run.id === refused?.id)?.status).toBeNull();
-      expect(runs.find((run) => run.id !== refused?.id)?.status).toBe(
-        "succeeded",
-      );
+      expect(runs).toHaveLength(1);
+      expect(runs[0]).toMatchObject({ id: refused?.id, status: "succeeded" });
 
       // What a reload reads: nothing is running in this conversation any more.
       const work = await channelStore.workIn(owner, [channel]);
@@ -1198,7 +1195,7 @@ describe("consuming a claimed firing", () => {
       }
       expect(ended()?.work).toEqual([]);
       // While the retry ran, one firing was running, not two.
-      const retried = runs.find((run) => run.id !== refused?.id)?.id as string;
+      const retried = runs[0]?.id;
       expect(
         heard.find((event) => event.busy === true)?.work?.map((w) => w.key),
       ).toEqual([retried]);

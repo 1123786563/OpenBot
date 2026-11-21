@@ -23,6 +23,7 @@ import { useOpenComputerOnRequest } from "@/lib/computers/panel-view";
 
 const chatSearchSchema = z.object({
   settings: z.boolean().optional(),
+  runId: z.string().optional(),
   /** Opens the Bot's screen in the shared detail pane. */
   watch: z.boolean().optional(),
 });
@@ -45,7 +46,7 @@ export const Route = createFileRoute("/_authed/_app/channel/$channelId")({
 
 function RouteComponent() {
   const { channelId } = Route.useParams();
-  const { settings, watch } = Route.useSearch();
+  const { settings, watch, runId } = Route.useSearch();
   const channel = useQuery(channelQueryOptions(channelId));
   const navigate = Route.useNavigate();
   const isSettingsOpen = settings === true;
@@ -201,6 +202,7 @@ function RouteComponent() {
         <ChannelBody
           channel={channel.data}
           isPending={channel.isPending}
+          runId={runId}
           hasError={Boolean(channel.error)}
         />
       </DetailPanel>
@@ -216,10 +218,12 @@ function ChannelBody({
   channel,
   isPending,
   hasError,
+  runId,
 }: {
   channel: AgentChannel | undefined;
   isPending: boolean;
   hasError: boolean;
+  runId?: string;
 }) {
   // Nothing while the channel loads: a placeholder inside a local round-trip is a flicker.
   if (isPending) return null;
@@ -240,6 +244,7 @@ function ChannelBody({
       <Navigate
         params={{ channelId: channel.id }}
         replace
+        search={{ runId }}
         to="/group/$channelId"
       />
     );
@@ -251,6 +256,7 @@ function ChannelBody({
       channel={channel}
       key={channel.id}
       runtimeAgentId={runtimeAgentId}
+      focusRunId={runId}
     />
   );
 }

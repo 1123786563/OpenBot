@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { type Ref, useEffect, useLayoutEffect, useRef } from "react";
 import { Streamdown } from "streamdown";
 import {
   QuestionNotice,
   type WaitingQuestion,
 } from "@/components/approvals/question-notice";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
+import { Button } from "@/components/ui/button";
 import {
   MessageContent,
   MessageHeader,
@@ -19,7 +20,9 @@ import {
   approvalInboxOptions,
 } from "@/lib/approvals";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { client } from "@/lib/client";
 import {
+  type GroupBackgroundRun,
   type GroupMessage,
   groupKeys,
   groupQueryOptions,
@@ -48,7 +51,13 @@ import { TeamBotConsentCard } from "./team-bot-consent";
  * unless they address another Bot. The server puts the answer in the transcript and runs the Bot
  * that asked on it (`approvals/questions.ts`).
  */
-export function GroupChat({ channelId }: { channelId: string }) {
+export function GroupChat({
+  channelId,
+  runId,
+}: {
+  channelId: string;
+  runId?: string;
+}) {
   const queryClient = useQueryClient();
   const group = useQuery(groupQueryOptions(channelId));
   const me = useQuery(currentUserQueryOptions()).data;
@@ -58,9 +67,22 @@ export function GroupChat({ channelId }: { channelId: string }) {
   const bots = group.data?.bots ?? [];
   const names = new Map(bots.map((bot) => [bot.id, bot.name]));
   const messages = group.data?.messages ?? [];
-  const working = messages.some(
-    (message) => message.status === "running" || message.status === "queued",
-  );
+  const background = group.data?.backgroundRuns ?? [];
+  const stopRun = useMutation({
+    mutationFn: async (run: GroupBackgroundRun) => {
+      await client(
+        `/api/copilotkit/threads/${encodeURIComponent(run.threadId)}/runs/${encodeURIComponent(run.id)}/stop?agentId=${encodeURIComponent(run.agentId)}`,
+        { method: "POST", fallback: "The Bot run could not be stopped." },
+      );
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: groupKeys.detail(channelId) }),
+  });
+  const working =
+    background.some(({ status }) => status === "running") ||
+    messages.some(
+      (message) => message.status === "running" || message.status === "queued",
+    );
 
   const inbox = useQuery(approvalInboxOptions());
   const question = groupQuestion(inbox.data, channelId);
@@ -121,6 +143,14 @@ export function GroupChat({ channelId }: { channelId: string }) {
     }
   }, [lastKey, newestIsMine]);
 
+  const focus = useRef<HTMLDivElement>(null);
+  const linkedRun =
+    background.find(({ id }) => id === runId) ??
+    messages.find(({ id }) => id === runId);
+  useLayoutEffect(() => {
+    if (linkedRun) focus.current?.scrollIntoView({ block: "nearest" });
+  }, [linkedRun?.id]);
+
   if (group.isPending) return null;
   if (group.isError)
     return (
@@ -142,7 +172,7 @@ export function GroupChat({ channelId }: { channelId: string }) {
           className="mx-auto flex w-full max-w-3xl flex-col gap-5 py-6"
           data-transcript-column
         >
-          {messages.length === 0 ? (
+          {messages.length === 0 && background.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Say something to {bots.map((bot) => bot.name).join(" and ")}.
               Every Bot answers in turn; start with @Name to ask just one.
@@ -151,6 +181,7 @@ export function GroupChat({ channelId }: { channelId: string }) {
           {messages.map((message) => (
             <GroupLine
               key={message.id}
+              rowRef={message.id === runId ? focus : undefined}
               message={message}
               name={
                 message.agentId
@@ -167,6 +198,36 @@ export function GroupChat({ channelId }: { channelId: string }) {
               mine={message.ownerUserId === me?.id}
             />
           ))}
+          {background.map((run) => (
+            <MessageRow
+              align="start"
+              key={run.id}
+              ref={run.id === runId ? focus : undefined}
+              className="items-center"
+            >
+              <strong>{names.get(run.agentId)}</strong>{" "}
+              {run.externalOutcome === "unknown"
+                ? "The external outcome needs verification."
+                : run.waitingForApproval
+                  ? "Waiting for your approval."
+                  : run.status === "running"
+                    ? "Running"
+                    : run.status === "completed"
+                      ? "Run completed"
+                      : "Run ended"}
+              {run.waitingForApproval && (
+                <Button
+                  disabled={stopRun.isPending}
+                  onClick={() => stopRun.mutate(run)}
+                  size="sm"
+                  variant="ghost"
+                >
+                  Stop run
+                </Button>
+              )}
+            </MessageRow>
+          ))}
+          {stopRun.error && <p role="alert">{stopRun.error.message}</p>}
         </div>
       </div>
       {/* The same column and the same compact composer as a conversation with one Bot. */}
@@ -240,15 +301,17 @@ function GroupLine({
   name,
   answeredBy,
   mine,
+  rowRef,
 }: {
   message: GroupMessage;
   name: string;
   answeredBy?: string;
   mine: boolean;
+  rowRef?: Ref<HTMLDivElement>;
 }) {
   if (message.agentId === null)
     return (
-      <MessageRow align={mine ? "end" : "start"}>
+      <MessageRow align={mine ? "end" : "start"} ref={rowRef}>
         <MessageContent>
           {mine ? null : (
             <MessageHeader className="text-xs font-medium text-muted-foreground">
@@ -264,7 +327,7 @@ function GroupLine({
       </MessageRow>
     );
   return (
-    <MessageRow align="start" data-speaker={message.agentId}>
+    <MessageRow align="start" data-speaker={message.agentId} ref={rowRef}>
       <div className="shrink-0 pt-0.5">
         <ChannelAvatar participantIds={[message.agentId]} size={24} />
       </div>
