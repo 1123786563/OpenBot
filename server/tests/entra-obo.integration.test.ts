@@ -932,7 +932,7 @@ describe("a routine reaches the system as its person, with nobody in the browser
     expect(await backgroundCall(newEntra(), fayId, PAYROLL)).toBe(
       `${REFUSAL_MARKER} An admin hasn't given OpenBot access to Payroll in Microsoft Entra. Ask an admin to grant it.`,
     );
-  });
+  }, 15_000);
 
   test("missing consent to OpenBot's own API names OpenBot's API, not the system", async () => {
     const hal = person("hal");

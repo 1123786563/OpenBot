@@ -13,6 +13,7 @@ import { createTestCreditRoutes } from "../src/billing/test-credit-routes";
 import { createDatabase } from "../src/db/client";
 import {
   enterpriseSettings,
+  lagoUsageEvents,
   testCreditAccounts,
   testCreditBatches,
   testCreditBudgets,
@@ -886,6 +887,9 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
           .select({ id: testCreditAccounts.id })
           .from(testCreditAccounts)
           .where(eq(testCreditAccounts.issuer, issuer));
+        await tx
+          .delete(lagoUsageEvents)
+          .where(inArray(lagoUsageEvents.accountId, accountIds));
         await tx
           .delete(testCreditEvidence)
           .where(inArray(testCreditEvidence.accountId, accountIds));
