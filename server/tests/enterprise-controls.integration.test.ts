@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { AbstractAgent } from "@ag-ui/client";
 import { createTurnRunner } from "@openbot/toolkit/run-turn";
-import { and, eq, inArray, like } from "drizzle-orm";
+import { and, eq, like } from "drizzle-orm";
 import { Hono } from "hono";
 import { EMPTY } from "rxjs";
 import {
@@ -881,15 +881,21 @@ describe("action recording", () => {
         payload: { bot, action: "computer_run_command", command },
       });
     await write("echo off");
-    await put(asAdmin, "/api/admin/enterprise/settings/actionRecording", {
-      value: true,
-    });
+    const enabled = await put(
+      asAdmin,
+      "/api/admin/enterprise/settings/actionRecording",
+      { value: true },
+    );
+    expect(enabled.status).toBe(200);
     await write("curl -H 'Authorization: Bearer s3cr3t' https://x.test");
-    await Bun.sleep(100);
-    const rows = await database
-      .select()
-      .from(actionRecords)
-      .where(inArray(actionRecords.botId, [bot]));
+    const readRecords = () =>
+      database.select().from(actionRecords).where(eq(actionRecords.botId, bot));
+    const deadline = Date.now() + 5_000;
+    let rows = await readRecords();
+    while (!rows.length && Date.now() < deadline) {
+      await Bun.sleep(50);
+      rows = await readRecords();
+    }
     expect(rows.map((row) => row.command)).toEqual([
       "curl -H 'Authorization: Bearer [REDACTED]' https://x.test",
     ]);
