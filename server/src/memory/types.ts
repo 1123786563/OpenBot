@@ -78,6 +78,7 @@ export type MemoryInput = z.infer<typeof memoryInputSchema>;
 export type MemorySourceInput = z.infer<typeof memorySourceInputSchema>;
 export type MemoryRecord = MemoryInput & {
   id: string;
+  version?: string;
   ownerUserId: string;
   sourceId: string | null;
   externalId: string | null;

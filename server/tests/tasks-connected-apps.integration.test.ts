@@ -44,6 +44,9 @@ import {
   users,
   workItems,
 } from "../src/db/schema";
+import { createMemoryIngestion } from "../src/memory/ingestion";
+import { createMemoryRoutes } from "../src/memory/routes";
+import { createMemoryStore } from "../src/memory/store";
 import { createPluginStore } from "../src/plugins/store";
 import {
   grantedTools,
@@ -507,11 +510,20 @@ const plugins = createPluginStore({
   }),
 });
 
+const memoryStore = createMemoryStore(database);
+const memoryIngestion = createMemoryIngestion({
+  store: memoryStore,
+  plugins,
+  canUseBot: async (ownerId, botId) =>
+    (await plugins.agentOwner(botId)) === ownerId,
+});
 const roster = new Map<string, RegisteredAgent>();
 const resolver = createActorAgentResolver({
   loadAgents: async () => [...roster.values()],
   model: { provider: "openai", defaultModel: "gpt-5.5" },
   resolveModelApiKey: async () => "test-key",
+  loadPersonalMemoryForActor: (ownerId) => (botId) =>
+    memoryIngestion.contextFor(ownerId, botId),
   loadToolsForActor: (actorId, initiator) => (botId) =>
     grantedTools({
       store: plugins,
@@ -582,6 +594,13 @@ const resumeApproval = createApprovalResumeTick({
   approvalQueue: queue,
   approvalOwner: `tasks-apps-${suite}-approval`,
   approvalService,
+  contextCurrent: ({ actorId, botId, continuation }) =>
+    memoryIngestion.memoryVersionsCurrent(
+      actorId,
+      botId,
+      continuation?.sourceVersions?.filter(({ kind }) => kind === "memory") ??
+        [],
+    ),
   executeApprovedAction: createApprovedActionExecutor({
     sourceFor: async () => ({}),
     gate: approvalService.gate,
@@ -890,6 +909,83 @@ describe("a task works with the apps the person connected", () => {
     expect(callsOf(COMMENT)).toHaveLength(1);
     expect(await pendingFor(owner.id)).toEqual([]);
   });
+
+  test.each(["current", "withdrawn"])(
+    "an approval worker handles %s Memory before dispatch",
+    async (state) => {
+      const { owner, own, item } = await seed();
+      const memory = await memoryStore.create(owner.id, {
+        content: "Fixture delivery is Friday.",
+      });
+      const memoryRoutes = createMemoryRoutes(
+        memoryStore,
+        memoryIngestion,
+        async (context, next) => {
+          context.set("actor", { ...owner, email: `${owner.id}@example.test` });
+          await next();
+        },
+      );
+      let calls = 0;
+      script = (request) => {
+        calls += 1;
+        expect(JSON.stringify(request.messages)).toContain(
+          "Fixture delivery is Friday.",
+        );
+        if (calls > 1) return { content: "Done." };
+        return {
+          toolCalls: [
+            {
+              name: modelName(NOTION, COMMENT),
+              arguments: JSON.stringify({
+                page_id: "r-1",
+                text: "Fixture delivery is Friday.",
+              }),
+            },
+          ],
+        };
+      };
+      await expect(
+        runTurn({
+          ownerUserId: owner.id,
+          routineId: `tasks-apps-${suite}-revoked-context`,
+          agentId: item.agentId,
+          threadId: own.threadId,
+          instruction: "Tell Sam the delivery date.",
+          userMessage: {
+            id: randomUUID(),
+            role: "user",
+            content: "Tell Sam the delivery date.",
+          },
+          initiator: PERSON_INITIATOR,
+        }),
+      ).rejects.toThrow("This action is waiting for your approval.");
+      const [waiting] = await pendingFor(owner.id);
+      if (!waiting) throw new Error("Expected an approval request.");
+      expect(waiting.action.continuation?.sourceVersions).toEqual([
+        { kind: "memory", id: memory.id, version: memory.version },
+      ]);
+      if (state === "withdrawn") {
+        expect(
+          (await memoryRoutes.request(`/${memory.id}`, { method: "DELETE" }))
+            .status,
+        ).toBe(204);
+      }
+      await allowOnce(owner.id, waiting.id);
+      expect(callsOf(COMMENT)).toHaveLength(state === "withdrawn" ? 0 : 1);
+      if (state === "current") {
+        expect(calls).toBe(2);
+        return;
+      }
+      expect(await approvalStore.get(owner.id, waiting.id)).toMatchObject({
+        status: "completed",
+        result: {
+          error:
+            "The run paused because Memory or Learned skill access changed.",
+        },
+      });
+      expect(calls).toBe(1);
+    },
+  );
 
   test("it asks before a tool of their own app that no reviewed list names, though the app's own server says it only reads", async () => {
     const { owner, item } = await seed();

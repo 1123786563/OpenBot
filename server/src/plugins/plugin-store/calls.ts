@@ -1,5 +1,6 @@
 import { DECLINED_BY_PERSON } from "@openbot/shared/approval-outcomes";
 import { connectAppRefusal } from "@openbot/shared/connect-prompt";
+import { verifyRunContext } from "@openbot/toolkit/run-context";
 import { and, eq } from "drizzle-orm";
 import { safetyRequirement } from "../../approvals/policy";
 import {
@@ -19,19 +20,19 @@ import {
   vendorNameOf,
 } from "../../db/schema";
 import { isProactiveInitiator } from "../../proactive/initiator";
+import { accountArgumentFor } from "../account-argument";
 import {
   classifyTool,
   labelledRead,
   reviewedRead,
   tokenHeaderFor,
 } from "../catalogue";
-import { accountArgumentFor } from "../account-argument";
 import { VERSION_ARG } from "../composio";
 import { inspectToolArguments } from "../content-governance";
 import { shareTargetOf } from "../share-target";
 import { type AccountMode, filedUnderPerson } from "../shared-accounts";
-import { transportFor } from "../transport";
 import { withReadRetries } from "../transient";
+import { transportFor } from "../transport";
 import { withVendorDeadline } from "../vendor-deadline";
 import { accountBook, type PinnedAccount } from "./accounts";
 import { appCallPolicyContext } from "./call-policy";
@@ -715,8 +716,9 @@ export function callMethods(context: StoreContext) {
          * the whole call, so the grant, the policy and the approval above are settled once, and the
          * trail gets one row for what finally happened. See `../transient`.
          */
-        const callVendor = () =>
-          vendor(
+        const callVendor = async () => {
+          await verifyRunContext();
+          return vendor(
             {
               url: effectiveUrl(row, entry),
               token,
@@ -744,6 +746,7 @@ export function callMethods(context: StoreContext) {
             advertised[0]?.vendorName ?? toolName,
             vendorArgs,
           );
+        };
         const result =
           effect === "read"
             ? await withReadRetries(callVendor)

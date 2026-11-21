@@ -46,6 +46,7 @@ import { parametersFor } from "@openbot/toolkit/granted-tool";
 import { HeadlessToolsMiddleware } from "@openbot/toolkit/headless-tools";
 import { sanitizeSeededHistory } from "@openbot/toolkit/history-sanitize";
 import { executeNativeApprovalTool } from "@openbot/toolkit/native-approval";
+import { withinRunContext } from "@openbot/toolkit/run-context";
 import {
   observeDetachedRun,
   type PlatformRun,
@@ -53,7 +54,7 @@ import {
 } from "@openbot/toolkit/run-stop";
 import { historyOrEmpty } from "@openbot/toolkit/thread-history";
 import { Hono } from "hono";
-import { defer, from, switchMap } from "rxjs";
+import { defer, from, Observable, switchMap } from "rxjs";
 import { z } from "zod";
 import {
   type ActorAgentResolver,
@@ -1070,7 +1071,13 @@ export async function buildAgents(
           loadApps,
         );
         if (loadPersonalMemory)
-          built.use(new PersonalMemoryMiddleware(agent.id, loadPersonalMemory));
+          built.use(
+            (input, next) =>
+              new Observable((subscriber) =>
+                withinRunContext(() => next.run(input).subscribe(subscriber)),
+              ),
+            new PersonalMemoryMiddleware(agent.id, loadPersonalMemory),
+          );
         return [agent.id, built];
       }),
     ),
@@ -3304,6 +3311,9 @@ export function mountCopilotRuntime(
 
   const handler = intelligence ? sdkHandler : new Hono();
   let sweepLearning: (() => Promise<void>) | undefined;
+  let learnedSkillVersionsCurrent:
+    | ReturnType<typeof createDirectChatRoutes>["learnedSkillVersionsCurrent"]
+    | undefined;
   if (!intelligence) {
     if (!options.directChat)
       throw new Error("OpenBot chat requires its database and Bot profiles.");
@@ -3320,6 +3330,7 @@ export function mountCopilotRuntime(
       agentFor: (actor, botId) => agentFor({ actor, botId, textOnly: true }),
     });
     handler.route(basePath, directChat.routes);
+    learnedSkillVersionsCurrent = directChat.learnedSkillVersionsCurrent;
     if (trial) sweepLearning = directChat.sweepLearning;
     handler.get(`${basePath}/info`, (context) =>
       sdkHandler.fetch(context.req.raw),
@@ -3329,6 +3340,7 @@ export function mountCopilotRuntime(
   return {
     handler,
     sweepLearning,
+    learnedSkillVersionsCurrent,
     learning,
     /**
      * How to reach the platform's runner, exactly as the runtime reaches it.

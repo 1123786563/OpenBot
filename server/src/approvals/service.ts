@@ -248,6 +248,7 @@ export function createApprovalService(
         );
       const snapshot = parseApprovalContinuation(input);
       snapshot.initiator = PERSON_INITIATOR;
+      delete snapshot.sourceVersions;
       // Frontend snapshots come from the browser, which cannot supply server telemetry.
       snapshot.forwardedProps = productRunForwardedProps(
         snapshot.forwardedProps,
@@ -735,7 +736,7 @@ export function createApprovalService(
                     digest: approved.actionDigest,
                     owner: ownerUserId,
                   },
-                  () => dependencies.execute(approved),
+                  () => dependencies.execute({ ...approved, continuation }),
                 ),
               );
               const content =

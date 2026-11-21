@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Message, RunAgentInput } from "@ag-ui/client";
 import type { AuditInitiator } from "./initiator";
+import { type RunContextVersion, runContextVersions } from "./run-context";
 
 /**
  * Everything needed to pick a turn up again at the tool call it stopped on, once a person has
@@ -17,6 +18,7 @@ export type ApprovalContinuation = {
   context: RunAgentInput["context"];
   forwardedProps: unknown;
   initiator?: AuditInitiator;
+  sourceVersions?: RunContextVersion[];
 };
 
 const actionContext = new AsyncLocalStorage<ApprovalContinuation>();
@@ -25,6 +27,12 @@ const actionContext = new AsyncLocalStorage<ApprovalContinuation>();
 export const withApprovalContext = <T>(
   context: ApprovalContinuation,
   run: () => Promise<T>,
-): Promise<T> => actionContext.run(context, run);
+): Promise<T> => {
+  const sourceVersions = context.sourceVersions ?? runContextVersions();
+  return actionContext.run(
+    sourceVersions ? { ...context, sourceVersions } : context,
+    run,
+  );
+};
 
 export const currentApprovalContext = () => actionContext.getStore();

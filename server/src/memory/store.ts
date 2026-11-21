@@ -294,8 +294,9 @@ export function createMemoryStore(
     formed: { botId: string; heldSourceRefs: ReadonlySet<string> } | undefined,
     narrow: {
       term?: string;
+      ids?: string[];
       intelligenceIds?: string[];
-      hindsight?: { ids?: string[] };
+      hindsight?: boolean;
     },
   ) {
     const held = [...(formed?.heldSourceRefs ?? [])];
@@ -342,9 +343,7 @@ export function createMemoryStore(
               )`,
               )
             : undefined,
-          narrow.hindsight?.ids
-            ? inArray(personalMemories.id, narrow.hindsight.ids)
-            : undefined,
+          narrow.ids ? inArray(personalMemories.id, narrow.ids) : undefined,
           narrow.intelligenceIds
             ? narrow.intelligenceIds.length > 0
               ? inArray(
@@ -356,7 +355,7 @@ export function createMemoryStore(
         ),
       )
       .orderBy(desc(personalMemories.updatedAt))
-      .limit(narrow.hindsight ? 500 : 40);
+      .limit(narrow.hindsight ? 500 : (narrow.ids?.length ?? 40));
   }
 
   function retrieveLocal(
@@ -372,6 +371,15 @@ export function createMemoryStore(
 
   return {
     retrieveLocal,
+    async currentBotMemories(
+      ownerUserId: string,
+      eligibleSourceIds: string[],
+      formed: { botId: string; heldSourceRefs: ReadonlySet<string> },
+      ids: string[],
+    ) {
+      if (!ids.length) return [];
+      return eligibleRows(ownerUserId, eligibleSourceIds, formed, { ids });
+    },
     async recallCandidates(
       ownerUserId: string,
       eligibleSourceIds: string[],
@@ -380,7 +388,8 @@ export function createMemoryStore(
     ) {
       if (ids?.length === 0) return [];
       return eligibleRows(ownerUserId, eligibleSourceIds, formed, {
-        hindsight: { ids },
+        ids,
+        hindsight: true,
       });
     },
     async list(ownerUserId: string): Promise<MemoryRecord[]> {

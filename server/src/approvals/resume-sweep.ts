@@ -1,4 +1,12 @@
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
+import {
+  CONTEXT_REVOKED_MESSAGE,
+  RunContextRevokedError,
+  createRunContext,
+  trackRunContext,
+  verifyRunContext,
+  withRunContext,
+} from "@openbot/toolkit/run-context";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -17,6 +25,7 @@ import type { DeliveryScope } from "../delivery/types";
 import type { ResponsibilityStore } from "../responsibilities/types";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import type { ApprovalResumeDependencies, ApprovalService } from "./service";
+import type { ApprovalAction } from "./types";
 
 /**
  * One pass of the approval resume loop: claim a decided approval, carry it out, and pick the waiting
@@ -30,6 +39,7 @@ export function createApprovalResumeTick(deps: {
   approvalOwner: string;
   approvalService: ApprovalService;
   executeApprovedAction: ApprovalResumeDependencies["execute"];
+  contextCurrent?: (action: ApprovalAction) => Promise<boolean>;
   database: Database;
   responsibilityStore: ResponsibilityStore;
   groupConversations: Pick<GroupConversations, "continueWaiting">;
@@ -67,6 +77,19 @@ export function createApprovalResumeTick(deps: {
     channelStore,
     actorFor,
   } = deps;
+  const contextCurrent = (action: ApprovalAction) =>
+    action.continuation?.sourceVersions?.length
+      ? (deps.contextCurrent?.(action) ?? Promise.resolve(false))
+      : Promise.resolve(true);
+  const withSavedContext = <T>(action: ApprovalAction, run: () => Promise<T>) =>
+    withRunContext(createRunContext(), async () => {
+      const versions = action.continuation?.sourceVersions;
+      if (versions?.length) {
+        trackRunContext(() => contextCurrent(action), versions);
+        await verifyRunContext();
+      }
+      return run();
+    });
   return async () => {
     try {
       const [item] = await approvalQueue.claim({
@@ -98,13 +121,20 @@ export function createApprovalResumeTick(deps: {
             approvalService.validateReentry(action, () =>
               executeApprovedAction(action),
             ),
-          execute: executeApprovedAction,
+          execute: (action) =>
+            withSavedContext(action, () => executeApprovedAction(action)),
           continue: async ({
             continuation: snapshot,
             result,
             messageId,
             approvalId,
           }) => {
+            const request = await approvalService.store.get(
+              input.ownerUserId,
+              approvalId,
+            );
+            if (result.error === CONTEXT_REVOKED_MESSAGE) return;
+            if (!(await contextCurrent(request.action))) return;
             const [waitingRun] = await database
               .select({ id: responsibilityRuns.id })
               .from(responsibilityRuns)
@@ -123,10 +153,6 @@ export function createApprovalResumeTick(deps: {
               );
               return;
             }
-            const request = await approvalService.store.get(
-              input.ownerUserId,
-              approvalId,
-            );
             /*
              * ASKING AGAIN IS WHERE THE TURN STOPS, NOT A FAILURE. A carried-on turn that reaches
              * another action needing the person opens its own request and stops on it, nothing
@@ -143,17 +169,20 @@ export function createApprovalResumeTick(deps: {
               outcome = await groupConversations.continueWaiting(
                 approvalId,
                 () =>
-                  approvalContinuationRunner({
-                    ownerUserId: input.ownerUserId,
-                    routineId: "approval",
-                    agentId: request.action.botId,
-                    threadId: snapshot.threadId,
-                    instruction: "",
-                    initiator: snapshot.initiator ?? PERSON_INITIATOR,
-                    continuation: { snapshot, result, messageId },
-                  }),
+                  withSavedContext(request.action, () =>
+                    approvalContinuationRunner({
+                      ownerUserId: input.ownerUserId,
+                      routineId: "approval",
+                      agentId: request.action.botId,
+                      threadId: snapshot.threadId,
+                      instruction: "",
+                      initiator: snapshot.initiator ?? PERSON_INITIATOR,
+                      continuation: { snapshot, result, messageId },
+                    }),
+                  ),
               );
             } catch (error) {
+              if (error instanceof RunContextRevokedError) return;
               if (!(error instanceof HeadlessToolSuspension)) throw error;
               waitingOn = {
                 message: error.message,

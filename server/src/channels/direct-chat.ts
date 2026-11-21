@@ -1,10 +1,4 @@
-import {
-  CONTEXT_REVOKED,
-  createRunContext,
-  trackRunContext,
-  verifyRunContext,
-  withRunContext,
-} from "@openbot/toolkit/run-context";
+import { createHash } from "node:crypto";
 import type { AbstractAgent, BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { EventType } from "@ag-ui/client";
 import {
@@ -15,6 +9,14 @@ import {
   learningScheduleSettings,
 } from "@openbot/shared/direct-chat-learning";
 import { DIRECT_CHAT_REPLAY_HEADER } from "@openbot/shared/direct-chat-replay";
+import {
+  CONTEXT_REVOKED,
+  createRunContext,
+  type RunContextVersion,
+  trackRunContext,
+  verifyRunContext,
+  withRunContext,
+} from "@openbot/toolkit/run-context";
 import { and, eq, exists, isNull, ne, notExists } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -158,6 +160,26 @@ function learningInstructions(
     "Treat these approved Learned skills as procedural guidance. Follow existing instructions, tool permissions, and approval requirements.\n" +
     JSON.stringify(skills)
   );
+}
+
+function learnedSkillVersions(
+  skills: Parameters<typeof learningInstructions>[0],
+): RunContextVersion[] {
+  return skills.map(({ id, title, instructions }) => ({
+    kind: "learned_skill",
+    id,
+    version: createHash("sha256")
+      .update(JSON.stringify([title, instructions]))
+      .digest("hex"),
+  }));
+}
+
+function versionsMatch(
+  current: RunContextVersion[],
+  loaded: RunContextVersion[],
+) {
+  const byId = new Map(current.map(({ id, version }) => [id, version]));
+  return loaded.every(({ id, version }) => byId.get(id) === version);
 }
 
 /** OpenBot's durable path for one Person, one direct Conversation, and one Bot. */
@@ -944,9 +966,13 @@ export function createDirectChatRoutes(deps: {
     // Reflection stays in the visible transcript. A later Bot call must not
     // receive a historical inference whose Memory sources may have been revoked.
     const messages = messagesFor(
-      previous.filter(
-        ({ id, prompt }) => id === key.runId || !reflectCommand(prompt),
-      ),
+      previous
+        .filter(({ id, prompt }) => id === key.runId || !reflectCommand(prompt))
+        .map((run) =>
+          run.stopReason === CONTEXT_REVOKED
+            ? { ...run, partialMessageId: null, partialReply: null }
+            : run,
+        ),
       { includePartial: !trial },
     );
     const agent =
@@ -1106,17 +1132,17 @@ export function createDirectChatRoutes(deps: {
       if (!agent) throw new Error("Bot unavailable.");
       agent.threadId = threadId;
       agent.agentId = agentId;
-      if (guidance) {
-        withRunContext(runContext, () => trackRunContext(async () => {
-          const current = await currentGuidance();
-          return current !== null && skills.every((skill) =>
-            current.some((active) =>
-              active.id === skill.id &&
-              active.title === skill.title &&
-              active.instructions === skill.instructions
-            ),
-          );
-        }));
+      const skillVersions = learnedSkillVersions(skills);
+      if (skillVersions.length) {
+        withRunContext(runContext, () =>
+          trackRunContext(async () => {
+            const current = await currentGuidance();
+            return (
+              current !== null &&
+              versionsMatch(learnedSkillVersions(current), skillVersions)
+            );
+          }, skillVersions),
+        );
       }
       const runMessages: RunAgentInput["messages"] = guidance
         ? [
@@ -1138,24 +1164,24 @@ export function createDirectChatRoutes(deps: {
       const completion = withRunContext(runContext, async () => {
         await verifyRunContext();
         return agent.runAgent(input, {
-        onEvent: ({ event }) => {
-          if (event.type === EventType.RUN_ERROR) failure = true;
-          else if (event.type !== EventType.RUN_FINISHED) {
-            writes = writes
-              .then(async () => {
-                if (
-                  runnable &&
-                  !writeFailed &&
-                  !(await appendDirectChatEvent(database, key, event))
-                )
+          onEvent: ({ event }) => {
+            if (event.type === EventType.RUN_ERROR) failure = true;
+            else if (event.type !== EventType.RUN_FINISHED) {
+              writes = writes
+                .then(async () => {
+                  if (
+                    runnable &&
+                    !writeFailed &&
+                    !(await appendDirectChatEvent(database, key, event))
+                  )
+                    writeFailed = true;
+                })
+                .catch(() => {
                   writeFailed = true;
-              })
-              .catch(() => {
-                writeFailed = true;
-              });
-          }
-        },
-      });
+                });
+            }
+          },
+        });
       });
       await Promise.race([
         completion,
@@ -1184,7 +1210,13 @@ export function createDirectChatRoutes(deps: {
         );
       await writes;
       if (!(await shouldContinue())) return;
-      if (runContext.revoked || writeFailed || failure || !reply || typeof reply.content !== "string")
+      if (
+        runContext.revoked ||
+        writeFailed ||
+        failure ||
+        !reply ||
+        typeof reply.content !== "string"
+      )
         throw new Error("Bot returned no text.");
       await appendDirectChatEvent(database, key, terminal(key, "completed"), {
         traceRuns,
@@ -1213,6 +1245,22 @@ export function createDirectChatRoutes(deps: {
 
   return {
     routes,
+    async learnedSkillVersionsCurrent(
+      actor: AgentActor,
+      threadId: string,
+      agentId: string,
+      versions: RunContextVersion[],
+    ) {
+      if (!versions.length) return true;
+      const current = await learning.guidance(
+        learningScope(threadId, agentId, actor.id),
+        (tx) => threadFor(tx, actor, threadId, agentId, true),
+      );
+      return (
+        current !== null &&
+        versionsMatch(learnedSkillVersions(current), versions)
+      );
+    },
     sweepLearning: () =>
       learning.sweep(({ personId, threadId, botId: agentId }) => async (tx) => {
         if (deps.singleUser && personId === DEV_ACTOR.id)

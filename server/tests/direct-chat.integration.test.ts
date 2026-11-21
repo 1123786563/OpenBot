@@ -7,6 +7,10 @@ import {
   type RunAgentInput,
 } from "@ag-ui/client";
 import { LLMock } from "@copilotkit/aimock";
+import {
+  type RunContextVersion,
+  runContextVersions,
+} from "@openbot/toolkit/run-context";
 import { z } from "zod";
 import { and, eq, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
@@ -216,7 +220,10 @@ function web(
     ),
   );
   app.route("/", copilot.handler);
-  return Object.assign(app, { sweepLearning: copilot.sweepLearning });
+  return Object.assign(app, {
+    sweepLearning: copilot.sweepLearning,
+    learnedSkillVersionsCurrent: copilot.learnedSkillVersionsCurrent,
+  });
 }
 
 function events(sse: string) {
@@ -1888,7 +1895,6 @@ test("a revoked account loses its live Run and a restored account must start a n
   }
 });
 
-
 test("Memory withdrawn after model dispatch pauses the original Run before its next action and survives reconnect", async () => {
   const actor = await person();
   const bot = await profiles.create(actor, {
@@ -2087,8 +2093,11 @@ async function exerciseLearning(scheduled: boolean) {
   let now = new Date();
   const learningClock = () => now;
   const runInputs: RunAgentInput[] = [];
+  let loadedSkillVersions: RunContextVersion[] | undefined;
   const capture = async (input: RunAgentInput) => {
     runInputs.push(input);
+    if (input.runId === "published-skill")
+      loadedSkillVersions = runContextVersions();
   };
   const aliceChat = web(database, alice, bot.id, capture, {
     reflect: async () => "Synthetic reflection.",
@@ -2588,13 +2597,29 @@ async function exerciseLearning(scheduled: boolean) {
         auto.latest.id,
       );
 
+      expect(loadedSkillVersions).toEqual([
+        { kind: "learned_skill", id: proposal.id, version: expect.any(String) },
+      ]);
+      const current = aliceChat.learnedSkillVersionsCurrent;
+      if (!current || !loadedSkillVersions)
+        throw new Error("Expected the published skill version.");
+      expect(
+        await current(alice, channel.threadId, bot.id, loadedSkillVersions),
+      ).toBe(true);
       const afterPause = await managedDelivery("pause-during-admission");
+      expect(
+        await current(alice, channel.threadId, bot.id, loadedSkillVersions),
+      ).toBe(false);
       expect(afterPause).not.toContain("List the steps in order.");
       expect(afterPause).not.toContain(auto.latest.id);
       expect(managedPrompts).toHaveLength(2);
       const replay = await aliceLearning.request(
         `/api/copilotkit/agent/${bot.id}/resume`,
-        post({ threadId: channel.threadId, runId: "pause-during-admission", cursor: 0 }),
+        post({
+          threadId: channel.threadId,
+          runId: "pause-during-admission",
+          cursor: 0,
+        }),
       );
       const replayed = await replay.text();
       expect(replayed).toContain("Managed answer.");

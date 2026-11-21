@@ -1,4 +1,3 @@
-import { trackRunContext, verifyRunContext } from "@openbot/toolkit/run-context";
 import {
   type AbstractAgent,
   type BaseEvent,
@@ -6,6 +5,7 @@ import {
   type RunAgentInput,
 } from "@ag-ui/client";
 import type { GrantedTool } from "@openbot/toolkit/granted-tool";
+import { verifyRunContext } from "@openbot/toolkit/run-context";
 import { defer, from, type Observable, switchMap } from "rxjs";
 import { z } from "zod";
 import { type Edition, editionHasMemory } from "../edition";
@@ -38,9 +38,8 @@ export class PersonalMemoryMiddleware extends Middleware {
   }
   run(input: RunAgentInput, next: AbstractAgent): Observable<BaseEvent> {
     return defer(() => from(this.load(this.botId))).pipe(
-      switchMap((content) => {
-        if (content) trackRunContext(async () => (await this.load(this.botId)) === content);
-        return this.runNext(
+      switchMap((content) =>
+        this.runNext(
           {
             ...input,
             messages: [
@@ -67,8 +66,8 @@ export class PersonalMemoryMiddleware extends Middleware {
             ],
           },
           next,
-        );
-      }),
+        ),
+      ),
     );
   }
 }

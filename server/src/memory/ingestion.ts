@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
 import { readConnectPrompt } from "@openbot/shared/connect-prompt";
+import {
+  type RunContextVersion,
+  trackRunContext,
+  verifyRunContext,
+} from "@openbot/toolkit/run-context";
 import { accessFor } from "../plugins/access";
 import type { Decides } from "../plugins/broker";
 import { catalogueEntry } from "../plugins/catalogue";
@@ -11,6 +16,7 @@ import type { MemoryStore } from "./store";
 import {
   type ImportedMemory,
   MemoryNotFoundError,
+  type MemoryRecord,
   MemoryRefusedError,
   type MemorySource,
   parseMemorySourceInput,
@@ -442,7 +448,41 @@ export function createMemoryIngestion(options: {
     ].slice(0, 40);
   }
 
+  async function memoryVersionsCurrent(
+    ownerUserId: string,
+    botId: string,
+    memories: readonly Pick<RunContextVersion, "id" | "version">[],
+  ) {
+    if (!memories.length) return true;
+    const scope = await recallScope(ownerUserId, botId);
+    if (!scope) return false;
+    const current = await store.currentBotMemories(
+      ownerUserId,
+      scope.eligible,
+      scope.formed,
+      [...new Set(memories.map(({ id }) => id))],
+    );
+    const versions = new Map(current.map(({ id, version }) => [id, version]));
+    return memories.every(({ id, version }) => versions.get(id) === version);
+  }
+
+  function rememberVersions(
+    ownerUserId: string,
+    botId: string,
+    memories: readonly Pick<MemoryRecord, "id" | "version">[],
+  ) {
+    const versions = memories.flatMap(({ id, version }): RunContextVersion[] =>
+      version ? [{ kind: "memory", id, version }] : [],
+    );
+    if (versions.length)
+      trackRunContext(
+        () => memoryVersionsCurrent(ownerUserId, botId, versions),
+        versions,
+      );
+  }
+
   return {
+    memoryVersionsCurrent,
     reflectEnabled:
       hindsight?.exposeNativeReflect ??
       hindsight?.client.reflectEnabled ??
@@ -481,26 +521,30 @@ export function createMemoryIngestion(options: {
             ({ id, version }) => versions.get(id) === version,
           );
         };
-        const request = (text: string) =>
-          client.reflect(ownerUserId, text, candidates);
+        const request = async (text: string) => {
+          await verifyRunContext();
+          return (await authorized())
+            ? client.reflect(ownerUserId, text, candidates)
+            : null;
+        };
         const reflection = run
           ? await run(request, authorized)
           : await request(query);
         if ((await authorized()) && reflection) {
+          rememberVersions(ownerUserId, botId, reflection.sources);
           return { kind: "reflection" as const, ...reflection };
         }
       }
-      return {
-        kind: "local" as const,
-        memories: scope
-          ? await store.retrieveLocal(
-              ownerUserId,
-              scope.eligible,
-              query,
-              scope.formed,
-            )
-          : [],
-      };
+      const memories = scope
+        ? await store.retrieveLocal(
+            ownerUserId,
+            scope.eligible,
+            query,
+            scope.formed,
+          )
+        : [];
+      rememberVersions(ownerUserId, botId, memories);
+      return { kind: "local" as const, memories };
     },
     authorize,
     async createSource(ownerUserId: string, input: unknown) {
@@ -557,9 +601,15 @@ export function createMemoryIngestion(options: {
         }
       }
     },
-    recall,
+    async recall(ownerUserId: string, botId: string, search?: string) {
+      const memories = await recall(ownerUserId, botId, search);
+      rememberVersions(ownerUserId, botId, memories);
+      return memories;
+    },
     async contextFor(ownerUserId: string, botId: string) {
-      return quoteMemoryContext(await recall(ownerUserId, botId));
+      const memories = await recall(ownerUserId, botId);
+      rememberVersions(ownerUserId, botId, memories);
+      return quoteMemoryContext(memories);
     },
     /**
      * The memory source OpenBot would switch on by itself for each app this person connected that the
