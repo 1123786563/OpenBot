@@ -119,7 +119,7 @@ export type CorsairCloudConfig = {
   baseUrl?: string;
   managementBaseUrl?: string;
   instanceKey?: string;
-  fetch?: typeof fetch;
+  fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 };
 
 function projectSlug(apiKey: string) {
