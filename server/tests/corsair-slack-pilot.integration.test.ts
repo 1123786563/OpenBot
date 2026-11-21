@@ -194,6 +194,12 @@ function call(
 }
 
 beforeAll(async () => {
+  await db.insert(agents).values({
+    id: bot,
+    name: "Slack Bot",
+    type: "built_in",
+    configuration: {},
+  });
   await db.insert(users).values(
     [person, outsider].map((id) => ({
       id,
@@ -256,12 +262,6 @@ test("Slack Connect lists two same-name users and isolates OAuth state and expli
 });
 
 test("Slack writes require a Bot Grant and immutable one-time Approval and use the pinned user after refresh", async () => {
-  await db.insert(agents).values({
-    id: bot,
-    name: "Slack Bot",
-    type: "built_in",
-    configuration: {},
-  });
   const a = routes(randomUUID());
   for (const code of ["first", "second"])
     expect((await call(a, await start(a, code))).status).toBe(200);
