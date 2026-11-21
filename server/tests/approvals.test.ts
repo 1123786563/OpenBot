@@ -416,6 +416,33 @@ test("personal approval forwards the exact side effect once and continues its or
   });
 });
 
+test("thread inbox does not report completed approvals as paused based on their position", async () => {
+  const store = storeFixture();
+  const service = serviceModule.createApprovalService(store);
+  const completed = [];
+  for (const toolCallId of ["first-call", "second-call"]) {
+    const request = await store.open(
+      approvalAction({
+        ...candidate,
+        continuation: { ...context, toolCallId },
+      }),
+    );
+    await store.saveResult("owner", request.id, { content: "clicked" });
+    await store.finish("owner", request.id);
+    completed.push({ id: request.id, status: "completed", result: {} });
+  }
+
+  const routes = createApprovalRoutes(service, async (ctx, next) => {
+    ctx.set("actor", { id: "owner", email: "owner@example.com", role: "user" });
+    await next();
+  });
+  const response = await routes.request(`/?threadId=${context.threadId}`);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({
+    requests: completed.map((request) => expect.objectContaining(request)),
+  });
+});
+
 test("current authority and a changed resolved target defeat an earlier approval", async () => {
   const store = storeFixture();
   const service = serviceModule.createApprovalService(store);
