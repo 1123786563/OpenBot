@@ -128,7 +128,13 @@ function GithubTools() {
           <ItemContent>
             <ItemTitle>GitHub tools</ItemTitle>
             <ItemDescription>
-              {connected ? "Connected" : "Not connected"}
+              {/* Nothing is claimed while the read is out: an unanswered query falls back to an
+                  empty list, which read as "Not connected" to somebody with a connection. */}
+              {connections.isPending
+                ? "Checking…"
+                : connected
+                  ? "Connected"
+                  : "Not connected"}
             </ItemDescription>
           </ItemContent>
           <ItemActions>
