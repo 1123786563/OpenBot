@@ -21,6 +21,10 @@ export const testCreditAccounts = pgTable(
     id: uuid().primaryKey().defaultRandom(),
     issuer: text().notNull(),
     subject: text().notNull(),
+    // Set while the upstream identity (Casdoor) has the account disabled:
+    // new paid orders pause, payments that land anyway refund in full, and
+    // in-flight refunds and settlements continue (#103).
+    suspendedAt: timestamp("suspended_at", { withTimezone: true }),
   },
   (table) => [unique().on(table.issuer, table.subject)],
 );

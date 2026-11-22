@@ -8,6 +8,7 @@ import {
   paidEntitlements,
   paidOrders,
   paidProducts,
+  paidRefunds,
   testCreditAccounts,
 } from "../src/db/schema";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -46,10 +47,13 @@ test("orders lock the product version and price they were placed under", async (
     productCode: "plan-monthly",
     channel: "wechat",
   });
-  expect(order).toMatchObject({ productVersion: 1, priceCents: 2_900 });
+  expect(order.priceCents).toBe(2_900);
+  // The version is whatever the shared product row currently publishes; the
+  // placed order locks that value.
+  const lockedVersion = order.productVersion;
 
-  // A price change republishes the product as version 2; the placed order
-  // keeps what it locked.
+  // A price change republishes the product one version later; the placed
+  // order keeps what it locked.
   await ledger().upsertProduct({
     code: "plan-monthly",
     kind: "subscription",
@@ -61,8 +65,11 @@ test("orders lock the product version and price they were placed under", async (
     productCode: "plan-monthly",
     channel: "alipay",
   });
-  expect(later).toMatchObject({ productVersion: 2, priceCents: 3_900 });
-  expect(order.productVersion).toBe(1);
+  expect(later).toMatchObject({
+    productVersion: lockedVersion + 1,
+    priceCents: 3_900,
+  });
+  expect(order.productVersion).toBe(lockedVersion);
   expect(order.priceCents).toBe(2_900);
 });
 
@@ -317,6 +324,9 @@ afterAll(async () => {
     );
   const ids = accounts.map(({ id }) => id);
   if (ids.length > 0) {
+    await database
+      .delete(paidRefunds)
+      .where(inArray(paidRefunds.accountId, ids));
     await database
       .delete(paidCreditAllocations)
       .where(inArray(paidCreditAllocations.accountId, ids));

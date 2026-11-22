@@ -144,9 +144,7 @@ export const paidEntitlements = pgTable(
   ],
 );
 
-export const paidAllocationStates = ["held", "settled", "released"] as const;
-
-// A reservation's hold split across paid credit sources, in the order
+export const paidAllocationStates = ["held", "settled", "released"] as const; // A reservation's hold split across paid credit sources, in the order
 // consumption must follow: current-period subscription credits first, then
 // Credit Packs by arrival. Releases void the hold; settlement consumes the
 // sources in the same order.
@@ -184,5 +182,38 @@ export const paidCreditAllocations = pgTable(
       sql`${table.amountMicrocredits} > 0`,
     ),
     index("paid_credit_allocations_holds").on(table.entitlementId, table.state),
+  ],
+);
+
+export const paidRefundStates = ["requested", "confirmed", "failed"] as const;
+
+// One original-route refund per order (#102/#103): the money always goes
+// back through the channel that took it, in the order's own currency
+// amount, whatever the reason. The row is the refund-progress contract
+// shared by user requests, lost future-period claims and suspended-account
+// payments; replays converge on this single record.
+export const paidRefunds = pgTable(
+  "paid_refunds",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => paidOrders.id),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => testCreditAccounts.id),
+    // The channel that took the payment refunds it (原路退款).
+    channel: text({ enum: ["wechat", "alipay"] }).notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    reason: text().notNull(),
+    state: text({ enum: paidRefundStates }).notNull().default("requested"),
+    requestedAt: timestamp("requested_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("paid_refunds_order").on(table.orderId),
+    check("paid_refunds_amounts", sql`${table.amountCents} > 0`),
   ],
 );

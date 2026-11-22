@@ -14,6 +14,7 @@ import {
   enterpriseSettings,
   lagoUsageEvents,
   paidCreditAllocations,
+  paidRefunds,
   paidEntitlements,
   paidOrders,
   paidProducts,
@@ -176,6 +177,9 @@ afterAll(async () => {
     await tx
       .delete(paidEntitlements)
       .where(inArray(paidEntitlements.accountId, accounts));
+    await tx
+      .delete(paidRefunds)
+      .where(inArray(paidRefunds.accountId, accounts));
     await tx.delete(paidOrders).where(inArray(paidOrders.accountId, accounts));
     await tx
       .delete(lagoUsageEvents)

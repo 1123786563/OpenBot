@@ -5,6 +5,8 @@ import {
   paidEntitlements,
   paidOrders,
   paidProducts,
+  paidRefunds,
+  testCreditAccounts,
   testCreditEvidence,
   testCreditOperations,
 } from "../db/schema";
@@ -32,7 +34,8 @@ export class PaidLedgerError extends Error {
       | "product_unavailable"
       | "order_unknown"
       | "verification_mismatch"
-      | "not_verified",
+      | "not_verified"
+      | "account_suspended",
     message: string,
   ) {
     super(message);
@@ -102,6 +105,17 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
           "product_unavailable",
           "The product is not available for purchase.",
         );
+      // 停用期间收费入口维持暂停 (#103): a suspended account cannot start a
+      // new purchase.
+      const [account] = await tx
+        .select({ suspendedAt: testCreditAccounts.suspendedAt })
+        .from(testCreditAccounts)
+        .where(eq(testCreditAccounts.id, input.accountId));
+      if (account?.suspendedAt)
+        throw new PaidLedgerError(
+          "account_suspended",
+          "The account is suspended; purchases are paused.",
+        );
       const [order] = await tx
         .insert(paidOrders)
         .values({
@@ -147,14 +161,20 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
         .where(eq(paidOrders.id, input.orderId))
         .for("update");
       if (!order) throw new PaidLedgerError("order_unknown", "Unknown order.");
-      if (order.state === "verified") {
+      if (order.state === "verified" || order.state === "refund_pending") {
         // Idempotent callback replay: the same channel reference returns the
-        // original result and never grants again.
+        // original result and never grants again — including an order already
+        // headed for refund (suspension or a lost future-period claim).
         if (
           order.channel === input.channel &&
           order.channelOrderRef === input.channelOrderRef
         )
-          return { order, replayed: true as const, claimed: true as const };
+          return {
+            order,
+            replayed: true as const,
+            claimed: order.state === "verified",
+            refunded: order.state === "refund_pending" || undefined,
+          };
         throw new PaidLedgerError(
           "verification_mismatch",
           "The order was already verified through another channel reference.",
@@ -177,6 +197,37 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
           replayed: false as const,
           claimed: false as const,
           mismatch: true as const,
+        };
+      }
+
+      // A payment that lands while the account is suspended never grants:
+      // it refunds in full through the channel that took it (#103).
+      const [account] = await tx
+        .select({ suspendedAt: testCreditAccounts.suspendedAt })
+        .from(testCreditAccounts)
+        .where(eq(testCreditAccounts.id, order.accountId));
+      if (account?.suspendedAt) {
+        const [owed] = await tx
+          .update(paidOrders)
+          .set({
+            state: "refund_pending",
+            channelOrderRef: input.channelOrderRef,
+            verifiedAt: input.paidAt,
+          })
+          .where(eq(paidOrders.id, order.id))
+          .returning();
+        const refund = await recordRefundWithin(
+          tx,
+          owed,
+          "account_suspended",
+          now(),
+        );
+        return {
+          order: owed,
+          replayed: false as const,
+          claimed: false as const,
+          refunded: true as const,
+          refund,
         };
       }
 
@@ -265,10 +316,18 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
             .set({ state: "refund_pending", verifiedAt: input.paidAt })
             .where(eq(paidOrders.id, order.id))
             .returning();
+          const refund = await recordRefundWithin(
+            tx,
+            owed,
+            "duplicate_future_period",
+            now(),
+          );
           return {
             order: owed,
             replayed: false as const,
             claimed: false as const,
+            refunded: true as const,
+            refund,
           };
         }
         throw error;
@@ -355,6 +414,176 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
         .returning();
       return row;
     });
+  }
+
+  // ── Refund execution contract (#102/#103) ───────────────────────────────
+  // Every refund, whatever its reason, converges on one per-order record
+  // that carries the original channel and amount (原路退款), so replayed,
+  // concurrent or out-of-order callbacks all see a single progress state.
+
+  async function recordRefundWithin(
+    tx: Transaction,
+    order: typeof paidOrders.$inferSelect,
+    reason: string,
+    at: Date,
+  ) {
+    const [row] = await tx
+      .insert(paidRefunds)
+      .values({
+        orderId: order.id,
+        accountId: order.accountId,
+        channel: order.channel,
+        amountCents: order.priceCents,
+        reason,
+        requestedAt: at,
+      })
+      // A failed refund can be requested again; a confirmed one is final.
+      .onConflictDoUpdate({
+        target: paidRefunds.orderId,
+        set: { state: "requested", reason, requestedAt: at },
+        setWhere: sql`${paidRefunds.state} <> 'confirmed'`,
+      })
+      .returning();
+    return row;
+  }
+
+  /**
+   * Opens (or reopens) the original-route refund for one order and freezes
+   * what it granted. Idempotent; replays return the single refund record.
+   */
+  async function requestRefund(orderId: string, reason = "user_request") {
+    return database.transaction(async (tx) => {
+      const [order] = await tx
+        .select()
+        .from(paidOrders)
+        .where(eq(paidOrders.id, orderId))
+        .for("update");
+      if (!order) throw new PaidLedgerError("order_unknown", "Unknown order.");
+      if (order.state === "refunded") {
+        // The money is already back; a replayed request returns the
+        // completed record instead of refusing.
+        const [done] = await tx
+          .select()
+          .from(paidRefunds)
+          .where(eq(paidRefunds.orderId, orderId));
+        if (done?.state === "confirmed") return done;
+      }
+      if (order.state !== "verified" && order.state !== "refund_pending")
+        throw new PaidLedgerError(
+          "not_verified",
+          "Only a verified order, or one already owed a refund, can request one.",
+        );
+      const refund = await recordRefundWithin(tx, order, reason, now());
+      // Consumption stops while the refund is in flight.
+      await tx
+        .update(paidEntitlements)
+        .set({ state: "frozen" })
+        .where(
+          and(
+            eq(paidEntitlements.orderId, orderId),
+            inArray(paidEntitlements.state, ["granted", "future"]),
+          ),
+        );
+      if (order.state !== "refund_pending")
+        await tx
+          .update(paidOrders)
+          .set({ state: "refund_pending" })
+          .where(eq(paidOrders.id, orderId));
+      return refund;
+    });
+  }
+
+  /**
+   * Settles the refund: confirmed revokes the grant and books the money back
+   * through the original channel; failed unfreezes and leaves the refund
+   * retryable. Replaying either converges on the recorded outcome.
+   */
+  async function confirmRefund(orderId: string, succeeded: boolean) {
+    return database.transaction(async (tx) => {
+      const [refund] = await tx
+        .select()
+        .from(paidRefunds)
+        .where(eq(paidRefunds.orderId, orderId))
+        .for("update");
+      if (!refund)
+        throw new PaidLedgerError(
+          "not_verified",
+          "No refund has been requested for this order.",
+        );
+      if (refund.state === "confirmed") return refund;
+      if (succeeded) {
+        await tx
+          .update(paidEntitlements)
+          .set({ state: "revoked" })
+          .where(eq(paidEntitlements.orderId, orderId));
+        await tx
+          .update(paidOrders)
+          .set({ state: "refunded" })
+          .where(eq(paidOrders.id, orderId));
+        const [row] = await tx
+          .update(paidRefunds)
+          .set({ state: "confirmed", confirmedAt: now() })
+          .where(eq(paidRefunds.id, refund.id))
+          .returning();
+        return row;
+      }
+      // A failed refund restores the grant. shortcut: a frozen future claim
+      // comes back as granted (still not spendable before its period), so a
+      // concurrent re-claim of that future slot is not re-checked here.
+      await tx
+        .update(paidEntitlements)
+        .set({ state: "granted" })
+        .where(
+          and(
+            eq(paidEntitlements.orderId, orderId),
+            eq(paidEntitlements.state, "frozen"),
+          ),
+        );
+      const [restored] = await tx
+        .select({ id: paidEntitlements.id })
+        .from(paidEntitlements)
+        .where(eq(paidEntitlements.orderId, orderId))
+        .limit(1);
+      await tx
+        .update(paidOrders)
+        .set({ state: restored ? "verified" : "refund_pending" })
+        .where(
+          and(
+            eq(paidOrders.id, orderId),
+            eq(paidOrders.state, "refund_pending"),
+          ),
+        );
+      const [row] = await tx
+        .update(paidRefunds)
+        .set({ state: "failed", confirmedAt: now() })
+        .where(eq(paidRefunds.id, refund.id))
+        .returning();
+      return row;
+    });
+  }
+
+  /** Refunds of one account, newest first — 逐单可查 (#103). */
+  async function refunds(accountId: string) {
+    return database
+      .select()
+      .from(paidRefunds)
+      .where(eq(paidRefunds.accountId, accountId))
+      .orderBy(desc(paidRefunds.requestedAt));
+  }
+
+  /**
+   * Reflects the upstream identity state (Casdoor 停用): while suspended, new
+   * purchases pause and payments that land anyway refund in full; in-flight
+   * refunds and dispatched settlements continue.
+   */
+  async function suspendAccount(accountId: string, suspended: boolean) {
+    const [row] = await database
+      .update(testCreditAccounts)
+      .set({ suspendedAt: suspended ? now() : null })
+      .where(eq(testCreditAccounts.id, accountId))
+      .returning({ id: testCreditAccounts.id });
+    if (!row) throw new PaidLedgerError("order_unknown", "Unknown account.");
+    return suspended;
   }
 
   // ── Consumption ordering (#101 AC3) ─────────────────────────────────────
@@ -542,6 +771,10 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
     entitlements,
     freezeEntitlements,
     revokeEntitlements,
+    requestRefund,
+    confirmRefund,
+    refunds,
+    suspendAccount,
     activeSubscription,
     paidSources,
     bill,
