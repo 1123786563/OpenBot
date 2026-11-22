@@ -458,6 +458,24 @@ test("a step over its budget continues on a new budget the person confirms", asy
     reservedMicrocredits: "0",
   });
 
+  // A budget with no room for the step cannot continue it. The step waits
+  // again, with nothing confirmed, so the person can pick another.
+  const tiny = await budgetOf(identity, {
+    budgetId: "limit-tiny",
+    creditType: "test",
+    limitMicrocredits: 5n,
+  });
+  expect(
+    await ledger.confirmResumePoint(identity, "limit-op-2", tiny.budgetId),
+  ).toMatchObject({ state: "confirmed" });
+  expect(await ledger.reserve(identity, step("limit-op-2"))).toEqual({
+    state: "denied",
+    reason: "execution_limit",
+  });
+  expect(await ledger.resumePoints(identity)).toMatchObject([
+    { operationId: "limit-op-2", reason: "execution_limit", budgetId: null },
+  ]);
+
   // A step that ran out of budget room continues on a budget of either type.
   const roomier = await budgetOf(identity, {
     budgetId: "limit-roomier",

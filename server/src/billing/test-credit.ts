@@ -823,6 +823,12 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
               set: {
                 reason,
                 applicationId: input.applicationId ?? null,
+                // A confirmed budget with no room for the step cannot
+                // continue it: the step waits again for the person to pick
+                // another.
+                ...(reason === "execution_limit" && paused?.budgetId
+                  ? { budgetId: null, confirmedAt: null }
+                  : {}),
               },
             });
           return denied(reason);
