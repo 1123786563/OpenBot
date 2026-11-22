@@ -189,6 +189,8 @@ export function createApprovalResumeTick(deps: {
               );
               return;
             }
+            // A Shared Goal's Approval carries no conversation on: its Run above was the turn.
+            if (request.action.dispatch === "corsair-shared-goal") return;
             /*
              * ASKING AGAIN IS WHERE THE TURN STOPS, NOT A FAILURE. A carried-on turn that reaches
              * another action needing the person opens its own request and stops on it, nothing
@@ -331,6 +333,18 @@ export function createApprovalResumeTick(deps: {
         await finish();
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
+        // A Goal's source access that may come back is waited for, never abandoned.
+        if (error instanceof GithubEventAccessRetry) {
+          await approvalQueue.release({
+            kind: item.kind,
+            key: item.key,
+            owner: approvalOwner,
+            delayMs: 10_000,
+            reason,
+            uncounted: true,
+          });
+          return;
+        }
         // The queue will not hand this item out again, so the conversation hears now or never.
         if (abandon && item.attempts >= DEFAULT_MAX_ATTEMPTS) {
           try {
@@ -358,9 +372,7 @@ export function createApprovalResumeTick(deps: {
           owner: approvalOwner,
           delayMs: 10_000,
           reason,
-          uncounted: error instanceof GithubEventAccessRetry,
         });
-        if (error instanceof GithubEventAccessRetry) return;
         throw error;
       }
     } catch (error) {

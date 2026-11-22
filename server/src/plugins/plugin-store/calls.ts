@@ -671,6 +671,22 @@ export function callMethods(context: StoreContext) {
           "legacy"
       ) {
         const source = input.initiator ?? continuation?.initiator;
+        const goal =
+          source?.kind === "responsibility" &&
+          source.goalRunId &&
+          continuation?.initiator?.kind === "responsibility" &&
+          continuation.initiator.goalRunId === source.goalRunId &&
+          continuation.initiator.id === source.id &&
+          (input.threadId === undefined ||
+            continuation.threadId === input.threadId) &&
+          gatedMode === "shared" &&
+          corsairScope.app === "slack"
+            ? {
+                id: source.id,
+                runId: source.goalRunId,
+                threadId: continuation.threadId,
+              }
+            : undefined;
         if (
           !options.corsairBotWrites ||
           !options.approvalGate ||
@@ -680,7 +696,7 @@ export function callMethods(context: StoreContext) {
           advertised[0].destructive ||
           advertised[0].unclassified ||
           opensAs !== input.actorId ||
-          (source && source.kind !== "person") ||
+          (source && source.kind !== "person" && !goal) ||
           (transport !== "arcade" && transport !== "composio")
         ) {
           throw new PluginRefusedError(
@@ -715,6 +731,7 @@ export function callMethods(context: StoreContext) {
             botId: input.botId,
             actorId: input.actorId,
             kind: gatedMode,
+            goal,
             provider: transport,
             vendorUserId,
             pinned: pinned ?? undefined,
@@ -747,6 +764,7 @@ export function callMethods(context: StoreContext) {
           },
           account: write.action.account,
           requireOneTime: true,
+          ...(goal ? { dispatch: "corsair-shared-goal" } : {}),
           continuation,
           declined: write.action.declined,
         });
@@ -788,7 +806,7 @@ export function callMethods(context: StoreContext) {
             },
           });
         const result = await write
-          .send(approval.approvalId)
+          .send(approval.approvalId, approval.approvalDigest)
           .catch(async (error: unknown) => {
             await trail("mcp.call_failed", {
               failure: (error instanceof Error
@@ -986,7 +1004,11 @@ export function callMethods(context: StoreContext) {
               );
           }
           return effect === "read"
-            ? withReadRetries(callVendor)
+            ? withReadRetries(
+                callVendor,
+                undefined,
+                (error) => error instanceof MarketRunPaused,
+              )
             : invoke(callVendor);
         };
         const result = !corsairScope

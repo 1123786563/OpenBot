@@ -653,7 +653,7 @@ export function createGithubPilotRoutes({
       workspaceId,
       registration,
       connectionId: connection.id,
-      credentialRevision: connection.revision,
+      connectionRevision: connection.revision,
       githubUserId: connection.githubUserId,
       installationId: repository.installationId,
       repositoryId: repository.repositoryId,
