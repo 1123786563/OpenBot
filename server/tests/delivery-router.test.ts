@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { BackgroundConversationBusy } from "../src/channels/direct-chat";
-import { createDeliveryRouter } from "../src/delivery/router";
+import { createDeliveryRouter, type RouterStore } from "../src/delivery/router";
 import {
   type DeliveryBinding,
   type DeliveryInbox,
@@ -28,15 +28,17 @@ function fixture(
   turnHook?: (router: ReturnType<typeof createDeliveryRouter>) => Promise<void>,
 ) {
   const ownedBinding = { ...binding, ...override };
-  const inbox: DeliveryInbox = {
+  const inbox: DeliveryInbox & { realm: string; createdAt: Date } = {
     ...scope,
     id: "in",
     bindingId: "binding",
     source: "slack",
+    realm: "T",
     externalId: "event",
     text: "Hi",
     state: "queued",
     error: null,
+    createdAt: new Date(),
   };
   const outbound: DeliveryOutbox = {
     ...scope,
@@ -106,7 +108,7 @@ function fixture(
       return [{ id: "binding", ownerUserId: "owner", channelId: "channel" }];
     },
     botIdentity: async (agentId: string) => ({ agentId, name: "Research Bot" }),
-  };
+  } as unknown as RouterStore;
   const queue = {
     claim: async ({ kind }: { kind: string }) => [
       {
@@ -226,7 +228,7 @@ test("revoked source ownership and lost lease cannot execute turns or sends", as
 test("uncertain recovered outbound is never silently resent", async () => {
   const f = fixture();
   f.outbound.state = "running";
-  f.store.startOutbox = async () => null;
+  f.store.startOutbox = async () => null as never;
   await f.router.sweep("delivery.outbound");
   expect(f.calls).toHaveLength(0);
   expect(f.statuses).toContainEqual({
@@ -469,6 +471,7 @@ test("the person's update routing decides which transports carry each kind", asy
       projectId: "p",
       platform: "ios" as const,
       enabled: true,
+      createdAt: new Date(),
     },
   ];
   f.store.devices = async () => devices;

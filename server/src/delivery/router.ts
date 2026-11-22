@@ -65,7 +65,7 @@ export const DELIVERY_WORK_KINDS: DeliveryWorkKind[] = [
   "delivery.outbound",
   "delivery.push-receipt",
 ];
-type RouterStore = Pick<
+export type RouterStore = Pick<
   DeliveryStore,
   | "findBinding"
   | "binding"
