@@ -661,7 +661,13 @@ test("an application spends from a person's account only under the authorization
 
   // Pausing the application's path refuses its new reservations, and only
   // its (#112 实测暂停一个路径). A reservation already made does not run;
-  // one already dispatched settles.
+  // one already dispatched settles, and so do a payment and a refund that
+  // were already on their way.
+  const inFlight = await paid.createOrder({
+    accountId: stranger.accountId,
+    productCode: "pack-paths",
+    channel: "alipay",
+  });
   expect(await timed.pauseApplication(app, "pilot-lead")).toMatchObject({
     pausedBy: "pilot-lead",
   });
@@ -680,6 +686,19 @@ test("an application spends from a person's account only under the authorization
   });
   // Another path keeps working.
   await reservedAs(timed, stranger.identity, step("stranger-op-2"));
+  expect(
+    (
+      await paid.verifyOrder({
+        orderId: inFlight.id,
+        channel: "alipay",
+        channelOrderRef: `ali-paths-paused-${run}`,
+        amountCents: 9_900,
+        paidAt: start,
+      })
+    ).claimed,
+  ).toBe(true);
+  await paid.requestRefund(inFlight.id, "user_request", "ops");
+  expect((await paid.confirmRefund(inFlight.id, true)).state).toBe("confirmed");
   expect(
     (
       await timed.settle(accountId, "app-op-1", {
