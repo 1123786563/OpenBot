@@ -138,7 +138,7 @@ async function publishCatalog(
   routes: Record<string, RouteSpec>,
   defaultRoute: string,
 ) {
-  const harnessImage = "agent-langgraph-agui@sha256:" + "b".repeat(64);
+  const harnessImage = `agent-langgraph-agui@sha256:${"b".repeat(64)}`;
   const drafted = configure(emptyCatalog, { harnessImage, routes });
   let catalog = drafted;
   for (const id of Object.keys(routes)) {

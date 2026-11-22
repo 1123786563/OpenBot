@@ -146,7 +146,9 @@ afterAll(async () => {
   if (originalCatalog) {
     await database
       .update(enterpriseSettings)
-      .set({ value: originalCatalog.value })
+      .set({
+        value: originalCatalog.value as Record<string, unknown>,
+      })
       .where(eq(enterpriseSettings.key, pilotCatalogKey));
   } else {
     await database

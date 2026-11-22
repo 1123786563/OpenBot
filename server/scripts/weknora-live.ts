@@ -107,7 +107,7 @@ const billing = createWeKnoraIngestionBilling({
 // Seed the pilot catalog with the live embedding route, verified by the
 // fixture report. Reservations below charge against this publication only.
 const drafted = configure(emptyCatalog, {
-  harnessImage: "agent-langgraph-agui@sha256:" + "b".repeat(64),
+  harnessImage: `agent-langgraph-agui@sha256:${"b".repeat(64)}`,
   routes: {
     [routeId]: {
       provider: "openai",
