@@ -331,6 +331,17 @@ config:
 #             computer of its own the same way.
 #   external  Neither. `url` points at a computer somebody else runs, which is shared like the
 #             first, so it runs no person's browser and records in no Bot's browser either.
+# The Bot computer's own image. Compose builds `agent-computer/Dockerfile` as a separate image and
+# the supervisor starts computers from it by name; the main server image ships only the computer's
+# egress module. An empty `repository` falls back to the main image for trees that still bundle the
+# sources at /app/agent-computer.
+computer:
+  image:
+    repository: ""
+    # Empty means `latest` of `repository`.
+    tag: ""
+    pullPolicy: ""
+
 computers:
   mode: shared
   # Only for `mode: external`. The other modes derive the address from what they created.
