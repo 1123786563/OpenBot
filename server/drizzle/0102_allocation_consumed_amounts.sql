@@ -1,0 +1,1 @@
+ALTER TABLE "paid_credit_allocations" ADD COLUMN "consumed_microcredits" bigint;

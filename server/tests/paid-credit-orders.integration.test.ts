@@ -404,6 +404,25 @@ test("allocations spend the current period first, then packs by arrival", async 
   expect(
     after.map(({ remainingMicrocredits }) => remainingMicrocredits),
   ).toEqual(["30", "50"]);
+
+  // Settling books the charge against the original period: the bill line
+  // carries the entitlement's period and arrival time (#101).
+  await ledger().settleAllocation({
+    accountId: account,
+    operationId: "order-1-op-1",
+    chargeMicrocredits: 90n,
+  });
+  const [line] = await ledger().bill(account);
+  expect(line).toMatchObject({
+    operationId: "order-1-op-1",
+    source: "subscription",
+    amountMicrocredits: "90",
+  });
+  // The period opens at the payment instant and closes at the anchor's
+  // Beijing midnight a calendar month later (Mar 15 00:00 +08).
+  expect(line?.periodStart).toEqual(paidAt);
+  expect(line?.periodEnd).toEqual(new Date("2026-03-14T16:00:00.000Z"));
+  expect(line?.arrivedAt).toBeTruthy();
 });
 
 test("expired sources cannot fund new allocations", async () => {

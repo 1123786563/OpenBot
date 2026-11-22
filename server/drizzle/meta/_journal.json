@@ -715,6 +715,13 @@
       "when": 1795348424055,
       "tag": "0101_operation_paid_shares",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1795350048022,
+      "tag": "0102_allocation_consumed_amounts",
+      "breakpoints": true
     }
   ]
 }

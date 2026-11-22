@@ -5,6 +5,8 @@ import {
   paidEntitlements,
   paidOrders,
   paidProducts,
+  testCreditEvidence,
+  testCreditOperations,
 } from "../db/schema";
 import {
   advancePurchasePeriod,
@@ -463,6 +465,76 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
     });
   }
 
+  /**
+   * The account's bill (#101): every booked charge as one line per source
+   * that funded it, carrying that source's original Billing Period and
+   * arrival time. Test Credit charges appear as their own source.
+   */
+  async function bill(accountId: string) {
+    const paidLines = await database
+      .select({
+        operationId: paidCreditAllocations.operationId,
+        source: paidEntitlements.kind,
+        entitlementId: paidEntitlements.id,
+        periodStart: paidEntitlements.periodStart,
+        periodEnd: paidEntitlements.periodEnd,
+        arrivedAt: paidEntitlements.arrivedAt,
+        amountMicrocredits: paidCreditAllocations.consumedMicrocredits,
+        at: paidCreditAllocations.resolvedAt,
+      })
+      .from(paidCreditAllocations)
+      .innerJoin(
+        paidEntitlements,
+        eq(paidCreditAllocations.entitlementId, paidEntitlements.id),
+      )
+      .where(
+        and(
+          eq(paidCreditAllocations.accountId, accountId),
+          eq(paidCreditAllocations.state, "settled"),
+        ),
+      )
+      .orderBy(paidCreditAllocations.resolvedAt);
+    const testLines = await database
+      .select({
+        operationId: testCreditOperations.id,
+        amountMicrocredits: sql<string>`(${testCreditOperations.charged} - coalesce(${testCreditOperations.paidChargeMicrocredits}, 0))::text`,
+        at: testCreditEvidence.recordedAt,
+      })
+      .from(testCreditOperations)
+      .leftJoin(
+        testCreditEvidence,
+        and(
+          eq(testCreditEvidence.accountId, testCreditOperations.accountId),
+          eq(testCreditEvidence.operationId, testCreditOperations.id),
+          eq(
+            testCreditEvidence.evidenceId,
+            testCreditOperations.eligibleEvidenceId,
+          ),
+        ),
+      )
+      .where(
+        and(
+          eq(testCreditOperations.accountId, accountId),
+          sql`${testCreditOperations.charged} - coalesce(${testCreditOperations.paidChargeMicrocredits}, 0) > 0`,
+        ),
+      )
+      .orderBy(testCreditEvidence.recordedAt);
+    return [
+      ...testLines.map((line) => ({
+        ...line,
+        source: "test" as const,
+        entitlementId: null,
+        periodStart: null,
+        periodEnd: null,
+        arrivedAt: null,
+      })),
+      ...paidLines.map((line) => ({
+        ...line,
+        amountMicrocredits: (line.amountMicrocredits ?? 0n).toString(),
+      })),
+    ].sort((a, b) => (a.at?.getTime() ?? 0) - (b.at?.getTime() ?? 0));
+  }
+
   return {
     upsertProduct,
     createOrder,
@@ -472,6 +544,7 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
     revokeEntitlements,
     activeSubscription,
     paidSources,
+    bill,
     allocate,
     settleAllocation,
     releaseAllocation,
@@ -644,7 +717,11 @@ export async function consumePaidAllocations(
     }
     await tx
       .update(paidCreditAllocations)
-      .set({ state: "settled", resolvedAt: at })
+      .set({
+        state: "settled",
+        resolvedAt: at,
+        consumedMicrocredits: draw,
+      })
       .where(eq(paidCreditAllocations.id, row.id));
   }
   // Any unspent hold releases with the settlement.

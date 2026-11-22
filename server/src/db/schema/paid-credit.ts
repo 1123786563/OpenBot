@@ -163,6 +163,10 @@ export const paidCreditAllocations = pgTable(
     amountMicrocredits: bigint("amount_microcredits", {
       mode: "bigint",
     }).notNull(),
+    // What a settlement actually drew from this source; null while the hold
+    // is intact and for released, never-consumed holds. The bill view reads
+    // this so partially drawn rows book their true amount per source.
+    consumedMicrocredits: bigint("consumed_microcredits", { mode: "bigint" }),
     state: text({ enum: paidAllocationStates }).notNull().default("held"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

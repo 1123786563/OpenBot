@@ -259,6 +259,26 @@ test("one reservation spans Test Credit and paid sources", async () => {
     (await paidLedger.paidSources(await accountIdOf(0)))[0]
       ?.remainingMicrocredits,
   ).toBe("99");
+
+  // The bill shows the charge split by the source that funded it, with the
+  // source's original period and arrival time (#101 账单视图).
+  const lines = await paidLedger.bill(await accountIdOf(0));
+  expect(lines).toHaveLength(2);
+  expect(lines.find(({ source }) => source === "test")).toMatchObject({
+    operationId: "mixed-span",
+    amountMicrocredits: "6",
+    entitlementId: null,
+    periodStart: null,
+  });
+  const paidLine = lines.find(({ source }) => source === "credit_pack");
+  expect(paidLine).toMatchObject({
+    operationId: "mixed-span",
+    amountMicrocredits: "1",
+    periodStart: null,
+    periodEnd: null,
+  });
+  expect(paidLine?.entitlementId).toBeTruthy();
+  expect(paidLine?.arrivedAt).toBeTruthy();
 });
 
 test("a released unsent reservation returns both sides", async () => {
