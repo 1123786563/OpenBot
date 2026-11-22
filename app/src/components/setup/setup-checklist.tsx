@@ -19,6 +19,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { appConfig } from "@/lib/generated/application-config";
 import { recheckSetupMutationOptions } from "@/lib/setup/mutations";
 import {
@@ -39,6 +40,9 @@ const ICONS: Record<SetupRowId, typeof IconBrain> = {
 };
 
 const PRODUCT = appConfig.brand.productName;
+
+/** Placeholder rows while the first check is on its way: enough to hold the list's shape. */
+const LOADING_ROWS = ["a", "b", "c", "d"];
 
 /**
  * What this deployment has, and what still needs setting up: one row each, with a pill saying
@@ -101,8 +105,24 @@ export function SetupChecklist({
           Couldn't check again. Try again.
         </p>
       ) : null}
-      {/* Nothing while the first answer is on its way: OpenBot has no loading placeholder. */}
-      {checklist.isPending ? null : checklist.error ? (
+      {/* Placeholder rows while the first answer is on its way, so the list is not blank. */}
+      {checklist.isPending ? (
+        <div aria-busy="true" aria-label="Checking your setup" role="status">
+          <PageRows className="mt-0">
+            {LOADING_ROWS.map((key, index) => (
+              <div key={key}>
+                <Item size="sm">
+                  <ItemContent className="gap-1.5">
+                    <Skeleton className="h-3.5 w-48" />
+                    <Skeleton className="h-3 w-32" />
+                  </ItemContent>
+                </Item>
+                {index !== LOADING_ROWS.length - 1 && <Separator />}
+              </div>
+            ))}
+          </PageRows>
+        </div>
+      ) : checklist.error ? (
         <>
           <p className="text-sm text-destructive" role="alert">
             Couldn't check your setup. Check again.

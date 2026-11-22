@@ -9,6 +9,7 @@ import {
   PageSection,
 } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Item,
   ItemActions,
@@ -17,6 +18,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { grantRoster } from "@/lib/agents/grant-roster";
 import { grantSummary } from "@/lib/agents/grant-summary";
 import { agentListQueryOptions } from "@/lib/agents/queries";
@@ -37,6 +39,9 @@ import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
  * skill's own name lost the fight for attention. Writing one is its own page too
  * (`new-skill-page.tsx`).
  */
+/** Placeholder rows while the list loads: enough to fill the view, not to suggest a count. */
+const LOADING_ROWS = ["a", "b", "c", "d", "e", "f"];
+
 export function SkillsPage() {
   const paths = useManagePaths();
   const plugins = useQuery(pluginsPageQueryOptions());
@@ -47,6 +52,14 @@ export function SkillsPage() {
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
 
   const skills = plugins.data?.skills ?? [];
+  /** Narrows the list by title. Shown only once the list is long enough to need it. */
+  const [search, setSearch] = React.useState("");
+  const needle = search.trim().toLowerCase();
+  const listed = needle
+    ? skills.filter((skill) =>
+        `${skill.title} ${skill.summary ?? ""}`.toLowerCase().includes(needle),
+      )
+    : skills;
   const newSkill = (size: "lg" | "sm") => (
     <Button
       render={(props) => <Link {...props} {...paths.newSkill()} />}
@@ -71,7 +84,23 @@ export function SkillsPage() {
       {/* One section, so no title: the page title already names it. */}
       <PageSection>
         {/* A read that failed says so; `isPending` goes false on it too, and it is not "none". */}
-        {plugins.isPending ? null : !plugins.data ? (
+        {plugins.isPending ? (
+          <div aria-busy="true" aria-label="Loading skills" className="mt-4" role="status">
+            <PageRows>
+              {LOADING_ROWS.map((key, index) => (
+                <React.Fragment key={key}>
+                  <Item size="sm">
+                    <ItemContent className="gap-1.5">
+                      <Skeleton className="h-3.5 w-40" />
+                      <Skeleton className="h-3 w-64" />
+                    </ItemContent>
+                  </Item>
+                  {index !== LOADING_ROWS.length - 1 && <Separator />}
+                </React.Fragment>
+              ))}
+            </PageRows>
+          </div>
+        ) : !plugins.data ? (
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <p className="text-destructive text-sm" role="alert">
               Couldn't load skills.
@@ -95,9 +124,23 @@ export function SkillsPage() {
               ? "Write one. Your Bots offer it as soon as you save."
               : "Write one, then choose which Bots offer it."}
           </PageEmpty>
+        ) : listed.length === 0 ? (
+          <p className="mt-4 text-sm text-muted-foreground" role="status">
+            Nothing matches “{search.trim()}”.
+          </p>
         ) : (
-          <PageRows>
-            {skills.map((skill, index) => {
+          <>
+            {skills.length > 8 ? (
+              <Input
+                aria-label="Search skills"
+                className="mb-4"
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search by skill name"
+                value={search}
+              />
+            ) : null}
+            <PageRows>
+              {listed.map((skill, index) => {
               /*
                * Counted over the same Bots the skill's page draws a switch for, so the number here
                * and the switches there always agree. See `grantRoster` for why hidden holders count.
@@ -134,11 +177,12 @@ export function SkillsPage() {
                       <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
                     </ItemActions>
                   </Item>
-                  {index !== skills.length - 1 && <Separator />}
+                  {index !== listed.length - 1 && <Separator />}
                 </React.Fragment>
               );
             })}
-          </PageRows>
+            </PageRows>
+          </>
         )}
       </PageSection>
     </CapabilityPage>
