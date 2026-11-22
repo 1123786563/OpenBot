@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  corsairIntegrationIconUrl,
   corsairIntegrationsQueryOptions,
   type CorsairIntegration,
 } from "@/lib/connections/corsair";
@@ -13,9 +14,11 @@ const entry = (overrides: Partial<CorsairIntegration>): CorsairIntegration => ({
   authTypes: ["api_key", "oauth_2"],
   defaultAuthType: "api_key",
   counts: { api: 14, webhooks: 3, db: 4 },
+  icon: "svg",
   credentialConfigured: false,
   oauthClientConfigured: false,
   validationSkipped: true,
+  connected: false,
   ...overrides,
 });
 
@@ -72,6 +75,7 @@ test("the integrations read unwraps the envelope and hides on a missing catalog"
     });
     const loaded = await options.queryFn(context);
     expect(loaded?.[0]?.displayName).toBe("Notion");
+    expect(loaded?.[0]?.connected).toBe(false);
 
     respond(500);
     expect(options.queryFn(context)).rejects.toThrow(
@@ -80,4 +84,14 @@ test("the integrations read unwraps the envelope and hides on a missing catalog"
   } finally {
     globalThis.fetch = original;
   }
+});
+
+test("an app's icon URL follows the format the catalog names", () => {
+  expect(corsairIntegrationIconUrl({ id: "notion", icon: "svg" })).toBe(
+    "/corsair-icons/notion.svg",
+  );
+  expect(corsairIntegrationIconUrl({ id: "linear", icon: "png" })).toBe(
+    "/corsair-icons/linear.png",
+  );
+  expect(corsairIntegrationIconUrl({ id: "anything", icon: null })).toBeNull();
 });

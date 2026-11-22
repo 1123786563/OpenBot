@@ -1772,10 +1772,15 @@ export function createApp(
   if (sharedSlackRoutes)
     app.route("/api/corsair/slack/shared", sharedSlackRoutes);
   if (slackRoutes) app.route("/api/corsair/slack", slackRoutes);
-  app.route(
-    "/api/corsair/integrations",
-    createCorsairIntegrationsRoutes({ requireUser }),
-  );
+  if (coworker?.corsairReadiness)
+    app.route(
+      "/api/corsair/integrations",
+      createCorsairIntegrationsRoutes({
+        requireUser,
+        database: coworker.corsairReadiness.database,
+        workspaceId: coworker.corsairReadiness.workspaceId,
+      }),
+    );
 
   const readiness = coworker?.corsairReadiness;
   if (readiness?.includeDeploymentLegacy && pluginStore) {

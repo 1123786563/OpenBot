@@ -9,7 +9,7 @@ import {
   IconPlug,
   IconSearch,
 } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import * as React from "react";
 import {
@@ -46,7 +46,9 @@ import { Separator } from "@/components/ui/separator";
 import { useConnectApp } from "@/lib/connections/connect-app";
 import {
   type CorsairIntegration,
+  connectCorsairIntegrationMutationOptions,
   corsairAccountsQueryOptions,
+  corsairIntegrationIconUrl,
   corsairIntegrationsQueryOptions,
 } from "@/lib/connections/corsair";
 import {
@@ -62,6 +64,7 @@ import {
 } from "@/lib/identity/queries";
 import { keyedLookup } from "@/lib/lookup";
 import { useManagePaths } from "@/lib/manage-paths";
+import { queryClient } from "@/query-client";
 import {
   brokeredAccountsListedOn,
   serversListedFor,
@@ -667,6 +670,9 @@ export function directoryApps(
 
 function AppDirectorySection() {
   const apps = useQuery(corsairIntegrationsQueryOptions());
+  const connect = useMutation(
+    connectCorsairIntegrationMutationOptions(queryClient),
+  );
   const [search, setSearch] = React.useState("");
   const [showAll, setShowAll] = React.useState(false);
   const query = search.trim().toLocaleLowerCase();
@@ -724,13 +730,39 @@ function AppDirectorySection() {
                 {index > 0 ? <Separator /> : null}
                 <Item size="sm">
                   <ItemMedia variant="icon">
-                    <IconApps />
+                    <PluginLogo
+                      logo={corsairIntegrationIconUrl(app)}
+                      name={app.displayName}
+                    />
                   </ItemMedia>
                   <ItemContent>
                     <ItemTitle>{app.displayName}</ItemTitle>
                     <ItemDescription>{app.description}</ItemDescription>
                   </ItemContent>
                   <ItemActions className="shrink-0">
+                    {app.connected ? (
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <IconCheck
+                          aria-hidden="true"
+                          className="size-3.5 text-emerald-600 dark:text-emerald-400"
+                        />
+                        Connected
+                      </span>
+                    ) : (
+                      <Button
+                        disabled={
+                          connect.isPending && connect.variables === app.id
+                        }
+                        onClick={() => connect.mutate(app.id)}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        {connect.isPending && connect.variables === app.id
+                          ? "Connecting…"
+                          : "Connect"}
+                      </Button>
+                    )}
                     <span className="text-xs text-muted-foreground">
                       {app.counts.api === 1
                         ? "1 tool"
@@ -741,6 +773,11 @@ function AppDirectorySection() {
               </React.Fragment>
             ))}
           </PageRows>
+          {connect.error ? (
+            <p className="mt-4 text-destructive text-sm" role="alert">
+              Couldn't connect that app. Try again.
+            </p>
+          ) : null}
           {query === "" && matching.length > DIRECTORY_PREVIEW ? (
             <Button
               className="mt-3"

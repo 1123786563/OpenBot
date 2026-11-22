@@ -10,6 +10,7 @@ export const corsairIntegration = z.object({
   npmPackageName: z.string().regex(/^@corsair-dev\//),
   authTypes: z.array(authType),
   defaultAuthType: z.enum(["api_key", "oauth_2", "bot_token"]).nullable(),
+  icon: z.enum(["svg", "png"]).nullable(),
   counts: z.object({
     api: z.number().int().nonnegative(),
     webhooks: z.number().int().nonnegative(),

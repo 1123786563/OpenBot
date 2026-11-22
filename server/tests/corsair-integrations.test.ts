@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables } from "../src/auth/guards";
+import type { Database } from "../src/db/client";
 import {
   corsairCatalog,
   corsairIntegrations,
@@ -20,10 +21,62 @@ const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
   await next();
 };
 
-function app(environment: Record<string, string | undefined> = {}) {
+type Recorded = {
+  workspaceId: string;
+  integrationId: string;
+  personId: string;
+  connectedAt: Date;
+};
+
+/**
+ * The two drizzle chains the routes use, over one workspace's rows.
+ *
+ * The fake cannot evaluate drizzle's SQL predicates, so every read returns the whole snapshot:
+ * fine for these tests because each uses a single workspace and at most one row.
+ */
+function fakeDatabase(rows: Recorded[] = []) {
+  const snapshot = () => rows.map((row) => ({ integrationId: row.integrationId }));
+  const insert = (_table: unknown) => ({
+    values(value: Recorded) {
+      return {
+        onConflictDoNothing: async () => {
+          if (
+            !rows.some(
+              (row) =>
+                row.workspaceId === value.workspaceId &&
+                row.integrationId === value.integrationId,
+            )
+          )
+            rows.push(value);
+        },
+      };
+    },
+  });
+  return {
+    insert,
+    rows,
+    select: () => ({
+      from: (_table: unknown) => ({
+        where: async () => snapshot().map((row) => ({ ...row })),
+      }),
+    }),
+  } as unknown as Database;
+}
+
+const WORKSPACE = "openbot-corsair-live-pilot";
+
+function app(
+  environment: Record<string, string | undefined> = {},
+  database: Database = fakeDatabase(),
+) {
   return new Hono<{ Variables: AppVariables }>().route(
     "/",
-    createCorsairIntegrationsRoutes({ requireUser, environment }),
+    createCorsairIntegrationsRoutes({
+      requireUser,
+      database,
+      workspaceId: WORKSPACE,
+      environment,
+    }),
   );
 }
 
@@ -80,18 +133,51 @@ test("integration detail and unknown ids", async () => {
   expect((await app().request("/definitely-not-real")).status).toBe(404);
 });
 
-test("connect skips client credential validation", async () => {
-  const withoutHeader = await app().request("/linear/connect", {
+test("connect skips client credential validation and records the row once", async () => {
+  const database = fakeDatabase();
+  const routes = app({}, database);
+  const withoutHeader = await routes.request("/linear/connect", {
     method: "POST",
   });
   expect(withoutHeader.status).toBe(403);
-  const connected = await app().request("/linear/connect", {
+  const connected = await routes.request("/linear/connect", {
     method: "POST",
     headers: { "X-OpenBot-Pilot": "integrations" },
   });
   expect(connected.status).toBe(201);
   const body = await connected.json();
   expect(body.status).toBe("connected");
+  expect(body.connected).toBe(true);
   expect(body.validationSkipped).toBe(true);
   expect(body.credentialConfigured).toBe(false);
+  await routes.request("/linear/connect", {
+    method: "POST",
+    headers: { "X-OpenBot-Pilot": "integrations" },
+  });
+  expect(database.rows).toHaveLength(1);
+  expect(database.rows[0]).toMatchObject({
+    workspaceId: WORKSPACE,
+    integrationId: "linear",
+    personId: "corsair-pilot-admin",
+  });
+});
+
+test("the list carries each app's connection state", async () => {
+  const routes = app(
+    {},
+    fakeDatabase([
+      {
+        workspaceId: WORKSPACE,
+        integrationId: "linear",
+        personId: "corsair-pilot-admin",
+        connectedAt: new Date("2026-11-22T08:00:00Z"),
+      },
+    ]),
+  );
+  const body = await (
+    await routes.request("/?search=linear")
+  ).json();
+  expect(body.integrations[0].connected).toBe(true);
+  const other = await (await routes.request("/?search=notion")).json();
+  expect(other.integrations[0].connected).toBe(false);
 });

@@ -1,4 +1,8 @@
-import { queryOptions } from "@tanstack/react-query";
+import {
+  mutationOptions,
+  queryOptions,
+  type QueryClient,
+} from "@tanstack/react-query";
 import { z } from "zod";
 import { client, tryClient } from "@/lib/client";
 
@@ -65,12 +69,19 @@ const corsairIntegration = z.object({
   authTypes: z.array(z.string()),
   defaultAuthType: z.string().nullable(),
   counts: z.object({ api: z.number(), webhooks: z.number(), db: z.number() }),
+  icon: z.string().nullable(),
   credentialConfigured: z.boolean(),
   oauthClientConfigured: z.boolean(),
   validationSkipped: z.boolean(),
+  connected: z.boolean(),
 });
 
 export type CorsairIntegration = z.infer<typeof corsairIntegration>;
+
+/** Where the app's own mark lives, vendored with the catalog. Null means it never had one. */
+export function corsairIntegrationIconUrl(app: Pick<CorsairIntegration, "id" | "icon">) {
+  return app.icon ? `/corsair-icons/${app.id}.${app.icon}` : null;
+}
 
 export function corsairIntegrationsQueryOptions() {
   return queryOptions({
@@ -163,5 +174,21 @@ export function corsairWrite(
     method,
     body,
     headers: { "X-OpenBot-Pilot": provider },
+  });
+}
+
+const INTEGRATIONS_FALLBACK = "Couldn't connect that app.";
+
+/** Records an app-level connection from the directory. No credentials change hands yet. */
+export function connectCorsairIntegrationMutationOptions(queryClient: QueryClient) {
+  return mutationOptions({
+    mutationFn: (integrationId: string): Promise<void> =>
+      client(`/api/corsair/integrations/${integrationId}/connect`, {
+        method: "POST",
+        headers: { "X-OpenBot-Pilot": "integrations" },
+        fallback: INTEGRATIONS_FALLBACK,
+      }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: corsairKeys.integrations }),
   });
 }
