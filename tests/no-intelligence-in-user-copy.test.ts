@@ -84,7 +84,6 @@ const NOT_SHOWN: { file: string; text: string; why: string }[] = [
     text: "Intelligence did not confirm this deployment's entitlement",
     why: "the boot log's advice",
   },
-
 ];
 
 /** Calls whose arguments are written to a log, never shown. */
