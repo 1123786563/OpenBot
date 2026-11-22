@@ -1,13 +1,15 @@
 --- a/zhipu-core/providers/openai/chat.go
 +++ b/zhipu-core/providers/openai/chat.go
-@@ -33,12 +33,28 @@
+@@ -33,12 +33,30 @@
  
  	if bifrostReq.Params != nil {
  		openaiReq.ChatParameters = *bifrostReq.Params
 -		if openaiReq.ChatParameters.MaxCompletionTokens != nil && *openaiReq.ChatParameters.MaxCompletionTokens < MinMaxCompletionTokens {
-+		isZhipuGLM := bifrostReq.Model == "glm-5.3-flash"
++		isZhipuGLM := strings.HasPrefix(bifrostReq.Model, "glm-")
 +		if isZhipuGLM {
 +			// Zhipu's native chat API enforces max_tokens, including reasoning usage.
++			// The gate is the GLM family, not one model: every glm-* chat model on the
++			// zhipu provider ignores max_completion_tokens and must receive max_tokens.
 +			openaiReq.MaxTokens = openaiReq.ChatParameters.MaxCompletionTokens
 +			openaiReq.ChatParameters.MaxCompletionTokens = nil
 +		} else if openaiReq.ChatParameters.MaxCompletionTokens != nil && *openaiReq.ChatParameters.MaxCompletionTokens < MinMaxCompletionTokens {
@@ -74,7 +76,7 @@
 +	maxTokens := 8
 +	request := &schemas.BifrostChatRequest{
 +		Provider: schemas.OpenAI,
-+		Model:    "glm-5.3-flash",
++		Model:    "glm-5.3",
 +		Input:    []schemas.ChatMessage{{Role: schemas.ChatMessageRoleUser}},
 +		Params: &schemas.ChatParameters{
 +			MaxCompletionTokens: &maxTokens,

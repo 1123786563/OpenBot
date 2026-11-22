@@ -38,6 +38,6 @@ GOPROXY=https://proxy.golang.org,https://mirrors.aliyun.com/goproxy,https://gopr
   --tag openbot-bifrost:zhipu-cap-fixed --load .
 ```
 
-The adapter patch maps `max_completion_tokens` to Zhipu's native `max_tokens` field for `glm-5.3-flash` and removes conflicting passthrough keys. The build patch reapplies the `/zhipu-core` module replacement after `COPY transports/`, which otherwise overwrites `go.mod` before the final build.
+The adapter patch maps `max_completion_tokens` to Zhipu's native `max_tokens` field for every `glm-*` chat model and removes conflicting passthrough keys. The build patch reapplies the `/zhipu-core` module replacement after `COPY transports/`, which otherwise overwrites `go.mod` before the final build.
 
 The verified Zhipu cap result is recorded in [`docs/billing-zhipu-output-cap.md`](../../docs/billing-zhipu-output-cap.md).
