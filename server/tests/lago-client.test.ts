@@ -13,7 +13,9 @@ const event: LagoUsageProjection = {
   occurredAt: new Date("2026-01-02T03:04:05Z"),
 };
 
-function client(handler: (url: string, init?: RequestInit) => Response | Promise<Response>) {
+function client(
+  handler: (url: string, init?: RequestInit) => Response | Promise<Response>,
+) {
   return createLagoHttpUsageClient({
     baseUrl: "https://lago.example",
     apiKey: "secret",
@@ -53,7 +55,9 @@ describe("Lago HTTP usage client", () => {
       output_tokens: "31",
       microcredits: "50",
     });
-    expect((headers as Record<string, string>).Authorization).toBe("Bearer secret");
+    expect((headers as Record<string, string>).Authorization).toBe(
+      "Bearer secret",
+    );
   });
 
   test("refuses events Lago did not acknowledge", async () => {

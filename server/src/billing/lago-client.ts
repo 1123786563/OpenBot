@@ -52,9 +52,7 @@ export function createLagoHttpUsageClient(options: {
         }),
       });
       if (!response.ok) {
-        throw new Error(
-          `Lago usage event rejected with ${response.status}.`,
-        );
+        throw new Error(`Lago usage event rejected with ${response.status}.`);
       }
       const body: {
         event?: { transaction_id?: string; lago_id?: string };
