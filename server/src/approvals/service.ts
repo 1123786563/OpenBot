@@ -525,7 +525,7 @@ export function createApprovalService(
     },
     async threadInbox(ownerUserId: string, threadId: string) {
       const requests = await store.list(ownerUserId, threadId);
-      return { requests: requests.map(publicApproval) };
+      return { requests: requests.map((request) => publicApproval(request)) };
     },
     async inbox(ownerUserId: string) {
       const requests = await store.list(ownerUserId);
