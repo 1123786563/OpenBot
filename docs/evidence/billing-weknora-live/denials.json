@@ -1,0 +1,33 @@
+{
+  "scenario": "WeKnora ingestion billing denials against the live endpoint (127.0.0.1:25171)",
+  "authorizationId": "efbe041b-8654-4436-9b76-0f6ff7e2241e",
+  "resource": "weknora:tenant:1:kb:kb-1",
+  "probes": [
+    {
+      "probe": "resource outside the authorization (kb-other)",
+      "http": 403,
+      "code": "not_authorized"
+    },
+    {
+      "probe": "subject with no enrolled Test Credit account",
+      "http": 403,
+      "code": "not_authorized"
+    },
+    {
+      "probe": "authorization re-registered with a past expiresAt",
+      "http": 410,
+      "code": "authorization_expired"
+    },
+    {
+      "probe": "authorization revoked after the successful upload",
+      "http": 410,
+      "code": "authorization_revoked"
+    },
+    {
+      "probe": "wrong service token",
+      "http": 401,
+      "code": null
+    }
+  ],
+  "note": "Every denied probe left no operation row; the only operation in the ledger is the settled worker upload."
+}
