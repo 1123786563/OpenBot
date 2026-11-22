@@ -400,6 +400,37 @@ function describeParked(
   return named.length > 0 ? named.join(", ") : "attachment";
 }
 
+function queuedGroupPosition(
+  index: number,
+  count: number,
+): MessageGroupPosition {
+  if (count <= 1) return "single";
+  if (index === 0) return "start";
+  if (index === count - 1) return "end";
+  return "middle";
+}
+
+function messageGroupSize(
+  items: readonly TranscriptItem[],
+  index: number,
+): number {
+  let size = 0;
+  for (let cursor = index; cursor < items.length; cursor += 1) {
+    const item = items[cursor];
+    if (
+      item === undefined ||
+      !(
+        (item.kind === "text" && item.role === "user") ||
+        item.kind === "attachments"
+      )
+    ) {
+      break;
+    }
+    size += 1;
+  }
+  return size;
+}
+
 /**
  * Something the person said while the Bot was working, waiting its turn.
  *
@@ -417,10 +448,16 @@ function Queued({
   attachments,
   text,
   onRemove,
+  compact = false,
+  groupPosition = "single",
+  groupSize = 1,
 }: {
   attachments: readonly Attachment[];
   text: string;
   onRemove?: (() => void) | undefined;
+  compact?: boolean;
+  groupPosition?: MessageGroupPosition;
+  groupSize?: number;
 }) {
   /*
    * THE FILES COME WITH IT, and until they did they were on NO SURFACE IN THE APP AT ALL. Parking
@@ -432,8 +469,19 @@ function Queued({
   const files = parkedTiles(attachments);
 
   return (
-    <MessageRow align="end">
+    <MessageRow
+      align="end"
+      className={cn("queued-message", compact && "-mt-3")}
+      data-message-group="person"
+      data-message-group-position={groupPosition}
+      data-queued-state="waiting"
+    >
       <MessageContent>
+        {groupPosition === "start" && groupSize > 1 ? (
+          <MessageHeader className="self-end pr-0 text-right text-[0.6875rem]">
+            Next in line · {groupSize} messages
+          </MessageHeader>
+        ) : null}
         {files.length > 0 ? (
           <AttachmentTiles attachments={files} className="opacity-60" />
         ) : null}
@@ -455,7 +503,10 @@ function Queued({
            * `status` rather than `alert`, matching the thinking line: a person who has just chosen
            * to queue something is not being interrupted by the news that it is queued.
            */}
-          <span role="status">Queued</span>
+          <span className="inline-flex items-center gap-1" role="status">
+            <IconClock aria-hidden className="size-3" />
+            Queued
+          </span>
           {onRemove ? (
             <button
               /*
@@ -790,6 +841,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
   text,
   threadId,
   messageId,
+  groupSize = 1,
 }: {
   commandLabels?: string;
   role: "user" | "assistant";
@@ -799,6 +851,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
   streaming?: boolean;
   settled?: boolean;
   text: string;
+  groupSize?: number;
 }) {
   const isUser = role === "user";
   const live = useArrivedLive();
@@ -854,6 +907,11 @@ const TranscriptMessage = memo(function TranscriptMessage({
       <MessageContent>
         <Arriving>
           {answerer ? <AnswererName botId={answerer} /> : null}
+          {isUser && groupSize > 1 ? (
+            <MessageHeader className="self-end px-0 text-right text-[0.6875rem]">
+              Sent together · {groupSize} messages
+            </MessageHeader>
+          ) : null}
           {/*
             A Bot's message takes the whole column, not the width of its words: block content
             inside it — a fenced code block, a table — should span the transcript rather than
@@ -1927,6 +1985,46 @@ function assertNever(_item: never): null {
   return null;
 }
 
+/** Keep a burst of person-authored messages visually together without changing the scroll model. */
+function isContinuedMessage(
+  items: readonly TranscriptItem[],
+  index: number,
+): boolean {
+  if (index === 0) return false;
+  const current = items[index];
+  const previous = items[index - 1];
+  if (current === undefined || previous === undefined) return false;
+
+  const isPersonItem = (item: TranscriptItem) =>
+    (item.kind === "text" && item.role === "user") ||
+    item.kind === "attachments";
+
+  return isPersonItem(current) && isPersonItem(previous);
+}
+
+type MessageGroupPosition = "single" | "start" | "middle" | "end";
+
+function messageGroupPosition(
+  items: readonly TranscriptItem[],
+  index: number,
+): MessageGroupPosition | null {
+  const current = items[index];
+  if (current === undefined) return null;
+  const isPersonItem = (item: TranscriptItem) =>
+    (item.kind === "text" && item.role === "user") ||
+    item.kind === "attachments";
+  if (!isPersonItem(current)) return null;
+
+  const previous = items[index - 1];
+  const next = items[index + 1];
+  const hasPrevious = previous !== undefined && isPersonItem(previous);
+  const hasNext = next !== undefined && isPersonItem(next);
+  if (!hasPrevious && !hasNext) return "single";
+  if (!hasPrevious) return "start";
+  if (!hasNext) return "end";
+  return "middle";
+}
+
 const SEND_SCROLL_MS = 700;
 
 /**
@@ -2417,12 +2515,29 @@ export function ChatTranscript({
    * One row, wherever it is drawn. `index` is the row's place in `items`, not in the slice being
    * drawn, so "the last row" and "latest" mean the same with or without older pages above.
    */
-  const renderRow = (item: TranscriptItem, index: number) =>
-    item.kind === "tools" || item.kind === "tool" ? (
+  const renderRow = (item: TranscriptItem, index: number) => {
+    const motionProps = openingProps(item.id);
+    const groupPosition = messageGroupPosition(items, index);
+    const groupSize =
+      groupPosition === "start" ? messageGroupSize(items, index) : 1;
+    const rowClassName = cn(
+      motionProps.className,
+      isContinuedMessage(items, index) && "-mt-3",
+    );
+    const groupProps = groupPosition
+      ? {
+          "data-message-group": "person",
+          "data-message-group-position": groupPosition,
+        }
+      : {};
+
+    return item.kind === "tools" || item.kind === "tool" ? (
       <MessageScrollerItem
         key={item.id}
         messageId={item.id}
-        {...openingProps(item.id)}
+        {...motionProps}
+        {...groupProps}
+        className={rowClassName}
       >
         <ToolRow
           active={busy && index === items.length - 1}
@@ -2437,7 +2552,9 @@ export function ChatTranscript({
       <MessageScrollerItem
         key={item.id}
         messageId={item.id}
-        {...openingProps(item.id)}
+        {...motionProps}
+        {...groupProps}
+        className={rowClassName}
       >
         <TranscriptActivity message={item.message} />
       </MessageScrollerItem>
@@ -2446,7 +2563,9 @@ export function ChatTranscript({
         key={item.id}
         messageId={item.id}
         scrollAnchor={anchorRows.has(item.id)}
-        {...openingProps(item.id)}
+        {...motionProps}
+        {...groupProps}
+        className={rowClassName}
       >
         <TranscriptMessage
           threadId={threadId}
@@ -2454,6 +2573,7 @@ export function ChatTranscript({
           settled={!busy || index < turnStart}
           commandLabels={commandLabels}
           role={item.role}
+          groupSize={groupSize}
           streaming={
             busy && item.role === "assistant" && index === items.length - 1
           }
@@ -2465,7 +2585,9 @@ export function ChatTranscript({
         key={item.id}
         messageId={item.id}
         scrollAnchor={anchorRows.has(item.id)}
-        {...openingProps(item.id)}
+        {...motionProps}
+        {...groupProps}
+        className={rowClassName}
       >
         <TranscriptAttachments attachments={item.attachments} />
       </MessageScrollerItem>
@@ -2475,6 +2597,7 @@ export function ChatTranscript({
       // this call instead of silently falling into this branch and rendering nothing.
       assertNever(item)
     );
+  };
 
   return (
     <ArrivalsLive>
@@ -2589,9 +2712,15 @@ export function ChatTranscript({
                       <Thinking />
                     ) : null}
                     {working}
-                    {queued.map((message) => (
+                    {queued.map((message, index) => (
                       <Queued
                         attachments={message.attachments}
+                        compact={index > 0}
+                        groupPosition={queuedGroupPosition(
+                          index,
+                          queued.length,
+                        )}
+                        groupSize={queued.length}
                         key={message.id}
                         onRemove={
                           onRemoveQueued
