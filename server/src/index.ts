@@ -179,6 +179,7 @@ import {
   recorderConnections,
   users,
 } from "./db/schema";
+import { createDeliveryTurn } from "./delivery/background-turn";
 import { createDeliveryRouter, DELIVERY_WORK_KINDS } from "./delivery/router";
 import { configuredDeliveryProviders } from "./delivery/routes";
 import { createDeliveryScopes } from "./delivery/scope";
@@ -2739,6 +2740,10 @@ const approvalSweep = repeatAfterEach(
 const deliveryProviders = configuredDeliveryProviders(
   config.publicUrl ?? config.auth?.baseUrl ?? `http://localhost:${config.port}`,
 );
+// Only reachable if the runtime was mounted without the background engine OpenBot mode requires.
+const unreachableBackgroundRuns = () => {
+  throw new Error("OpenBot background Runs unavailable.");
+};
 // Slack channel membership for triggers is answered by OpenTag, which holds the workspace token.
 useSlackChannelMembership((input) =>
   deliveryProviders.slack
@@ -2767,22 +2772,30 @@ const deliveryRouter = createDeliveryRouter({
     );
     await channelStore.signalBusy(input.threadId, true);
     try {
-      const result = await approvalContinuationRunner({
-        ownerUserId: input.ownerUserId,
-        routineId: `delivery:${input.runId}`,
-        runId: input.runId,
-        agentId: input.agentId,
-        threadId: input.threadId,
-        instruction: input.text,
-        userMessage: {
-          id: `delivery:${input.runId}`,
-          role: "user",
-          content: input.text,
-        },
-        initiator: PERSON_INITIATOR,
-        telemetry: deliveryLineage(input.source, input.runId),
-        signal: input.signal,
-      });
+      // Without CopilotKit Intelligence the toolkit runner below cannot even open its thread
+      // (issue #133); the OpenBot background engine runs the turn instead, as routines' firings
+      // already do. See delivery/background-turn.ts.
+      const result = await (!config.runtime.intelligence
+        ? createDeliveryTurn(
+            copilotRuntime.runBackground ?? unreachableBackgroundRuns,
+            actorFor,
+          )(input)
+        : approvalContinuationRunner({
+            ownerUserId: input.ownerUserId,
+            routineId: `delivery:${input.runId}`,
+            runId: input.runId,
+            agentId: input.agentId,
+            threadId: input.threadId,
+            instruction: input.text,
+            userMessage: {
+              id: `delivery:${input.runId}`,
+              role: "user",
+              content: input.text,
+            },
+            initiator: PERSON_INITIATOR,
+            telemetry: deliveryLineage(input.source, input.runId),
+            signal: input.signal,
+          }));
       if (result.replyText)
         await channelStore.recordActivity(
           actor,

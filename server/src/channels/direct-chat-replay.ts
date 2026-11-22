@@ -1,5 +1,5 @@
-import { CONTEXT_REVOKED_MESSAGE } from "@openbot/toolkit/run-context";
 import { type BaseEvent, EventType, type Message } from "@ag-ui/client";
+import { CONTEXT_REVOKED_MESSAGE } from "@openbot/toolkit/run-context";
 import { and, asc, eq, gt, gte, lt, sql } from "drizzle-orm";
 import type { ProfileReadExecutor } from "../agents/profile-store";
 import type { Database } from "../db/client";
@@ -16,7 +16,7 @@ export const directChatRunTimeoutMs = 5 * 60_000;
 
 const backgroundMessagePrefix = "openbot-background:";
 export const backgroundMessageId = (
-  source: "routine" | "handoff",
+  source: "routine" | "delivery" | "handoff",
   runId: string,
 ) => `${backgroundMessagePrefix}${source}:${runId}`;
 export const isBackgroundMessage = (id: string) =>

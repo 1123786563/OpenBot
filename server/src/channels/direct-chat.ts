@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import type { AbstractAgent, BaseEvent, RunAgentInput } from "@ag-ui/client";
-import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
 import { EventType } from "@ag-ui/client";
 import { OUTCOME_UNKNOWN } from "@openbot/shared/approval-outcomes";
 import {
@@ -12,6 +11,7 @@ import {
 } from "@openbot/shared/direct-chat-learning";
 import { DIRECT_CHAT_REPLAY_HEADER } from "@openbot/shared/direct-chat-replay";
 import { answerMessageId } from "@openbot/shared/handoff-markers";
+import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
 import {
   CONTEXT_REVOKED,
   CONTEXT_REVOKED_MESSAGE,
@@ -59,7 +59,6 @@ import {
   routines,
   users,
 } from "../db/schema";
-import { marketRunPauseReason } from "../skill-market/disablements";
 import {
   createDirectChatLearning,
   LearningEvidenceUnavailable,
@@ -67,6 +66,7 @@ import {
 import { setSharedLearningPermission } from "../learning/evidence";
 import type { ManagedModel, ManagedModelResult } from "../managed-model";
 import { runFeedback, saveRunFeedback } from "../opik/feedback";
+import { marketRunPauseReason } from "../skill-market/disablements";
 import { reflectCommand } from "./direct-chat-command";
 
 import {
@@ -128,7 +128,7 @@ export type DirectChatReflect = (input: {
   canContinue: () => Promise<boolean>;
 }) => Promise<string>;
 
-type BackgroundTurn = {
+export type BackgroundTurn = {
   id: string;
   threadId: string;
   conversationBotId: string;
@@ -140,6 +140,9 @@ type BackgroundTurn = {
   initiator: AuditInitiator;
 } & (
   | { source: "routine"; literalAnswer?: never; handoffFromBotId?: never }
+  // A forwarded message (delivery) is not remapped to a group thread and its reply is not
+  // published to one, the two things `source === "routine"` switches on below.
+  | { source: "delivery"; literalAnswer?: never; handoffFromBotId?: never }
   | { source: "handoff"; literalAnswer?: never; handoffFromBotId: string }
   | {
       source: "handoff";
