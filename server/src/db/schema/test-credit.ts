@@ -25,9 +25,99 @@ export const testCreditAccounts = pgTable(
     // new paid orders pause, payments that land anyway refund in full, and
     // in-flight refunds and settlements continue (#103).
     suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+    // When the account last finished reconciling after a restore (#108). Until
+    // an account has done so, a restore in progress keeps its new charges and
+    // grants paused.
+    reconciledAt: timestamp("reconciled_at", { withTimezone: true }),
   },
   (table) => [unique().on(table.issuer, table.subject)],
 );
+
+/**
+ * An application whose steps spend from a person's Billing Account (#111):
+ * platform-operated (WeKnora) or independently operated. Nothing reserves
+ * under an application before it is approved, and a paused application's
+ * path takes no new reservations while its existing ones keep settling
+ * (#112 按应用路径暂停).
+ */
+export const billingApplications = pgTable(
+  "billing_applications",
+  {
+    id: text().primaryKey(),
+    name: text().notNull(),
+    operator: text({ enum: ["platform", "independent"] }).notNull(),
+    // The resource scope the application may be authorized for, as a prefix.
+    resourcePrefix: text("resource_prefix").notNull(),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    approvedBy: text("approved_by"),
+    pausedAt: timestamp("paused_at", { withTimezone: true }),
+    pausedBy: text("paused_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      "billing_application_approval",
+      sql`(${table.approvedAt} is null) = (${table.approvedBy} is null)`,
+    ),
+    check(
+      "billing_application_pause",
+      sql`(${table.pausedAt} is null) = (${table.pausedBy} is null)`,
+    ),
+  ],
+);
+
+/**
+ * A person's explicit Spending Authorization for an application (#111): which
+ * resources, until when, and the most it may spend. A background
+ * authorization is bound to one task; revocation stops new reservations.
+ */
+export const billingSpendingAuthorizations = pgTable(
+  "billing_spending_authorizations",
+  {
+    id: text().primaryKey(),
+    applicationId: text("application_id")
+      .notNull()
+      .references(() => billingApplications.id),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => testCreditAccounts.id, { onDelete: "cascade" }),
+    kind: text({ enum: ["online", "background"] }).notNull(),
+    taskId: text("task_id"),
+    resourcePrefix: text("resource_prefix").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    limitMicrocredits: bigint("limit_microcredits", {
+      mode: "bigint",
+    }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique().on(table.accountId, table.id),
+    check("billing_authorization_amount", sql`${table.limitMicrocredits} > 0`),
+    check(
+      "billing_authorization_task",
+      sql`(${table.kind} = 'background') = (${table.taskId} is not null)`,
+    ),
+  ],
+);
+
+/**
+ * The ledger's restore mode (#108). From a restore from backup until each
+ * account has been reconciled and resumed on its own, new charges and
+ * entitlement grants stay paused for the accounts still held.
+ */
+export const billingRestore = pgTable("billing_restore", {
+  id: text().primaryKey(),
+  restoringSince: timestamp("restoring_since", { withTimezone: true }),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
 
 export const testCreditBatches = pgTable(
   "test_credit_batches",
@@ -140,6 +230,9 @@ export const testCreditOperations = pgTable(
     stepId: text("step_id"),
     // The app the step ran for (#107 按应用筛选). Null for a caller that named none.
     applicationId: text("application_id"),
+    // The Spending Authorization the reservation was made under and counts
+    // against (#111). Null for a first-party step.
+    authorizationId: text("authorization_id"),
     resultText: text("result_text"),
   },
   (table) => [
@@ -161,6 +254,16 @@ export const testCreditOperations = pgTable(
       name: "test_credit_rerun_original_fk",
       columns: [table.accountId, table.rerunOfOperationId],
       foreignColumns: [table.accountId, table.id],
+    }),
+    // Scoped by account: a reservation can only count against one of its own
+    // account's authorizations.
+    foreignKey({
+      name: "test_credit_authorization_fk",
+      columns: [table.accountId, table.authorizationId],
+      foreignColumns: [
+        billingSpendingAuthorizations.accountId,
+        billingSpendingAuthorizations.id,
+      ],
     }),
     check(
       "test_credit_cutoff_hold_amount",

@@ -1,4 +1,4 @@
-import { Hono, type MiddlewareHandler } from "hono";
+import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { ReleasedBifrostRoute } from "../admin/bifrost-catalog";
@@ -18,6 +18,11 @@ const reserve = operation.extend({
   creditType: z.enum(["test", "paid"]).optional(),
   // The app the step runs for, kept on the operation and its bill lines.
   applicationId: operationId.optional(),
+  // An application's step runs under the person's Spending Authorization for
+  // it, within the resource it names, and for a background one its task (#111).
+  authorizationId: operationId.optional(),
+  resourceId: z.string().min(1).max(512).optional(),
+  taskId: operationId.optional(),
 });
 const messages = z
   .array(
@@ -27,7 +32,9 @@ const messages = z
     }),
   )
   .min(1);
-const dispatch = operation.extend({ permit: z.uuid(), messages });
+// An application dispatches and reconciles through the authorization it reserved under.
+const under = operation.extend({ authorizationId: operationId.optional() });
+const dispatch = under.extend({ permit: z.uuid(), messages });
 const usage = z.object({
   inputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
@@ -43,6 +50,13 @@ const result = z.union([
     usage,
   }),
 ]);
+
+type Variables = {
+  identity: VerifiedBillingIdentity;
+  // The application an execution call is authenticated as (#111). Absent for
+  // a first-party caller.
+  application?: string;
+};
 
 type Dependencies = {
   ledger: TestCreditLedger;
@@ -63,6 +77,12 @@ type Dependencies = {
   }): Promise<unknown>;
   // The paid ledger's read views (#107): absent, `/paid/*` answers 503.
   paid?: { ledger: PaidCreditLedger };
+  // Whether the caller holds an application's own credential (#111). Absent,
+  // a call that names an application answers 503.
+  authenticateApplication?(
+    request: Request,
+    applicationId: string,
+  ): Promise<boolean>;
 };
 
 export function createTestCreditRoutes({
@@ -70,8 +90,9 @@ export function createTestCreditRoutes({
   authenticate,
   execute,
   paid,
+  authenticateApplication,
 }: Dependencies) {
-  const api = new Hono<{ Variables: { identity: VerifiedBillingIdentity } }>();
+  const api = new Hono<{ Variables: Variables }>();
   api.use("*", async (context, next) => {
     context.header("Cache-Control", "no-store");
     await next();
@@ -80,9 +101,7 @@ export function createTestCreditRoutes({
   const authorize =
     (
       intent: "account" | "execution",
-    ): MiddlewareHandler<{
-      Variables: { identity: VerifiedBillingIdentity };
-    }> =>
+    ): MiddlewareHandler<{ Variables: Variables }> =>
     async (context, next) => {
       const identity = await authenticate(context.req.raw, intent);
       if (!identity)
@@ -90,7 +109,24 @@ export function createTestCreditRoutes({
       context.set("identity", identity);
       await next();
     };
-  api.use("/v1/*", authorize("execution"));
+  const execution = authorize("execution");
+  // A call that names an application (#111) is admitted by that application's
+  // own credential and acts only through authorizations granted to it. Any
+  // other execution call is a first-party runner's.
+  api.use("/v1/*", async (context, next) => {
+    const named = context.req.header("x-openbot-application");
+    if (named === undefined) return execution(context, next);
+    if (!authenticateApplication)
+      return context.json({ error: "Application access unavailable." }, 503);
+    const id = operationId.safeParse(named);
+    if (
+      !id.success ||
+      !(await authenticateApplication(context.req.raw, id.data))
+    )
+      return context.json({ error: "Verified application required." }, 401);
+    context.set("application", id.data);
+    await next();
+  });
   api.use("/quote", authorize("account"));
   api.use("/balance", authorize("account"));
   api.use("/claim", authorize("account"));
@@ -100,6 +136,9 @@ export function createTestCreditRoutes({
   api.use("/budgets/*", authorize("account"));
   api.use("/resume-points", authorize("account"));
   api.use("/resume-points/*", authorize("account"));
+  api.use("/applications", authorize("account"));
+  api.use("/authorizations", authorize("account"));
+  api.use("/authorizations/*", authorize("account"));
   api.onError((_error, context) =>
     context.json({ error: "Test Credit service unavailable." }, 503),
   );
@@ -256,14 +295,176 @@ export function createTestCreditRoutes({
       : context.json({ error: "That budget cannot continue this step." }, 409);
   });
 
+  // The applications that can be given a Spending Authorization (#111).
+  api.get("/applications", async (context) =>
+    context.json(await ledger.applications()),
+  );
+
+  api.get("/authorizations", async (context) => {
+    const held = await ledger.authorizations(context.var.identity);
+    return held
+      ? context.json(held)
+      : context.json({ error: "Billing Account unavailable." }, 404);
+  });
+
+  // The person's explicit grant to an application (#111).
+  api.post("/authorizations", async (context) => {
+    const input = z
+      .strictObject({
+        authorizationId: operationId,
+        applicationId: operationId,
+        kind: z.enum(["online", "background"]),
+        taskId: operationId.optional(),
+        resourcePrefix: z.string().min(1).max(512).optional(),
+        expiresAt: z.iso.datetime(),
+        limitMicrocredits: z.string().regex(/^[1-9]\d*$/),
+      })
+      .safeParse(await context.req.json().catch(() => undefined));
+    if (!input.success)
+      return context.json({ error: "Invalid Spending Authorization." }, 400);
+    const granted = await ledger.authorize(context.var.identity, {
+      ...input.data,
+      expiresAt: new Date(input.data.expiresAt),
+      limitMicrocredits: BigInt(input.data.limitMicrocredits),
+    });
+    if (!granted)
+      return context.json({ error: "Billing Account unavailable." }, 404);
+    return granted.state === "denied"
+      ? context.json(
+          { error: "That application can't be authorized for this." },
+          409,
+        )
+      : context.json(granted.authorization);
+  });
+
+  api.post("/authorizations/:id/revoke", async (context) => {
+    const id = operationId.safeParse(context.req.param("id"));
+    if (!id.success)
+      return context.json({ error: "Invalid Spending Authorization." }, 400);
+    const revoked = await ledger.revokeAuthorization(
+      context.var.identity,
+      id.data,
+    );
+    return revoked
+      ? context.json(revoked)
+      : context.json({ error: "Spending Authorization unavailable." }, 404);
+  });
+
+  // Raising a limit or extending an authorization is the person's own doing.
+  api.post("/authorizations/:id/amend", async (context) => {
+    const id = operationId.safeParse(context.req.param("id"));
+    const body = z
+      .strictObject({
+        limitMicrocredits: z
+          .string()
+          .regex(/^[1-9]\d*$/)
+          .optional(),
+        expiresAt: z.iso.datetime().optional(),
+      })
+      .safeParse(await context.req.json().catch(() => undefined));
+    if (!id.success || !body.success)
+      return context.json({ error: "Invalid Spending Authorization." }, 400);
+    const amended = await ledger.amendAuthorization(
+      context.var.identity,
+      id.data,
+      {
+        ...(body.data.limitMicrocredits === undefined
+          ? {}
+          : { limitMicrocredits: BigInt(body.data.limitMicrocredits) }),
+        ...(body.data.expiresAt === undefined
+          ? {}
+          : { expiresAt: new Date(body.data.expiresAt) }),
+      },
+    );
+    if (!amended)
+      return context.json(
+        { error: "Spending Authorization unavailable." },
+        404,
+      );
+    return amended.state === "amended"
+      ? context.json(amended.authorization)
+      : context.json(
+          { error: "A Spending Authorization can only be raised or extended." },
+          409,
+        );
+  });
+
+  // An application acts for the person who granted it the authorization it
+  // names, and only as that application (#111).
+  const actingAs = async (
+    context: Context<{ Variables: Variables }>,
+    authorizationId: string | undefined,
+  ) => {
+    const application = context.var.application;
+    if (application === undefined)
+      return { state: "identity" as const, identity: context.var.identity };
+    if (!authorizationId)
+      return { state: "refused" as const, status: 400 as const };
+    const identity = await ledger.authorizationIdentity(
+      application,
+      authorizationId,
+    );
+    return identity
+      ? { state: "identity" as const, identity }
+      : { state: "refused" as const, status: 401 as const };
+  };
+  const refused = (
+    context: Context<{ Variables: Variables }>,
+    status: 400 | 401,
+  ) =>
+    status === 400
+      ? context.json({ error: "Invalid request." }, 400)
+      : context.json({ error: "Verified identity required." }, 401);
+
   api.post("/v1/reserve", async (context) => {
     const input = reserve.safeParse(
       await context.req.json().catch(() => undefined),
     );
     if (!input.success)
       return context.json({ error: "Invalid reservation." }, 400);
-    return context.json(await ledger.reserve(context.var.identity, input.data));
+    const acting = await actingAs(context, input.data.authorizationId);
+    if (acting.state === "refused") return refused(context, acting.status);
+    return context.json(
+      await ledger.reserve(
+        acting.identity,
+        context.var.application === undefined
+          ? input.data
+          : { ...input.data, applicationId: context.var.application },
+      ),
+    );
   });
+
+  // What an application may read: only through its own authorizations (#111).
+  api.get("/v1/spending-authorizations/:id", async (context) => {
+    const id = operationId.safeParse(context.req.param("id"));
+    const summary =
+      id.success && context.var.application !== undefined
+        ? await ledger.authorizationSummary(context.var.application, id.data)
+        : undefined;
+    return summary
+      ? context.json(summary)
+      : context.json({ error: "Spending Authorization unavailable." }, 404);
+  });
+
+  api.get(
+    "/v1/spending-authorizations/:id/operations/:operationId",
+    async (context) => {
+      const id = operationId.safeParse(context.req.param("id"));
+      const operation = operationId.safeParse(context.req.param("operationId"));
+      const receipt =
+        id.success &&
+        operation.success &&
+        context.var.application !== undefined &&
+        (await ledger.authorizedOperation(
+          context.var.application,
+          id.data,
+          operation.data,
+        ));
+      return receipt
+        ? context.json(receipt)
+        : context.json({ error: "Operation unavailable." }, 404);
+    },
+  );
 
   api.post("/v1/dispatch", async (context) => {
     const input = dispatch.safeParse(
@@ -271,10 +472,9 @@ export function createTestCreditRoutes({
     );
     if (!input.success)
       return context.json({ error: "Invalid dispatch." }, 400);
-    const admission = await ledger.beginDispatch(
-      context.var.identity,
-      input.data,
-    );
+    const acting = await actingAs(context, input.data.authorizationId);
+    if (acting.state === "refused") return refused(context, acting.status);
+    const admission = await ledger.beginDispatch(acting.identity, input.data);
     if (admission.state === "denied") return context.json(admission);
     if (admission.state === "existing") {
       return context.json({
@@ -334,13 +534,15 @@ export function createTestCreditRoutes({
   });
 
   api.post("/v1/reconcile", async (context) => {
-    const input = operation.safeParse(
+    const input = under.safeParse(
       await context.req.json().catch(() => undefined),
     );
     if (!input.success)
       return context.json({ error: "Invalid reconciliation." }, 400);
+    const acting = await actingAs(context, input.data.authorizationId);
+    if (acting.state === "refused") return refused(context, acting.status);
     const receipt = await ledger.reconcile(
-      context.var.identity,
+      acting.identity,
       input.data.operationId,
     );
     return context.json({

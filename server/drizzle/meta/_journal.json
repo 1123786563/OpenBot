@@ -757,6 +757,13 @@
       "when": 1795359543713,
       "tag": "0107_resume_points_and_app",
       "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1795362608388,
+      "tag": "0108_app_paths_restore_and_channel_evidence",
+      "breakpoints": true
     }
   ]
 }

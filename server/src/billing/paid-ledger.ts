@@ -1,6 +1,8 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
+  billingApplications,
+  billingRestore,
   paidCorrections,
   paidCreditAllocations,
   paidEntitlements,
@@ -27,7 +29,8 @@ import {
  *
  * The channel itself stays an injected seam: verification consumes only what
  * a trusted callback or active query asserts (channel, its order reference,
- * and the paid amount).
+ * and the paid amount), and, once the deployment names them, its merchant and
+ * currency.
  */
 
 export class PaidLedgerError extends Error {
@@ -38,7 +41,10 @@ export class PaidLedgerError extends Error {
       | "verification_mismatch"
       | "not_verified"
       | "account_suspended"
-      | "pilot_closed",
+      | "pilot_closed"
+      | "no_paid_path"
+      | "ledger_restoring"
+      | "not_restoring",
     message: string,
   ) {
     super(message);
@@ -46,8 +52,32 @@ export class PaidLedgerError extends Error {
   }
 }
 
-export function createPaidCreditLedger(database: Database, clock?: () => Date) {
+export function createPaidCreditLedger(
+  database: Database,
+  clock?: () => Date,
+  // What the deployment pays through. Named, a channel result must match it.
+  channels?: {
+    currency: string;
+    merchants?: Partial<Record<"wechat" | "alipay", string>>;
+  },
+) {
   const now = () => clock?.() ?? new Date();
+
+  // Whether a channel result paid the right merchant in the right currency
+  // (#99 服务端核对商户、订单、币种和金额). Without a named expectation there
+  // is nothing to compare; the deployment's settings supply it.
+  function paysTheRightMerchant(input: {
+    channel: "wechat" | "alipay";
+    merchantId?: string;
+    currency?: string;
+  }) {
+    if (!channels) return true;
+    const merchant = channels.merchants?.[input.channel];
+    return (
+      (input.currency === undefined || input.currency === channels.currency) &&
+      (merchant === undefined || input.merchantId === merchant)
+    );
+  }
   type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
   async function upsertProduct(input: {
@@ -119,6 +149,13 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
           "account_suspended",
           "The account is suspended; purchases are paused.",
         );
+      // A restore from backup pauses new orders too, until the account has
+      // been reconciled and resumed (#108).
+      if (await restoreHolds(tx, input.accountId))
+        throw new PaidLedgerError(
+          "ledger_restoring",
+          "The ledger is being restored; new orders are paused.",
+        );
       const [closure] = await tx
         .select({ salesStoppedAt: paidPilotClosure.salesStoppedAt })
         .from(paidPilotClosure)
@@ -127,6 +164,18 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
         throw new PaidLedgerError(
           "pilot_closed",
           "Pilot sales are stopped; no new orders.",
+        );
+      // Paid credits are only worth buying while some application path can
+      // spend them. One paused path leaves the others open (#99 账户没有可用
+      // 付费路径时，新下单被阻止).
+      const paths = await tx
+        .select({ pausedAt: billingApplications.pausedAt })
+        .from(billingApplications)
+        .where(isNotNull(billingApplications.approvedAt));
+      if (paths.length > 0 && paths.every(({ pausedAt }) => pausedAt !== null))
+        throw new PaidLedgerError(
+          "no_paid_path",
+          "Every paid path is paused; no new orders.",
         );
       const [order] = await tx
         .insert(paidOrders)
@@ -165,6 +214,9 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
     channelOrderRef: string;
     amountCents: number;
     paidAt: Date;
+    // What the channel says it paid to: its merchant and currency.
+    merchantId?: string;
+    currency?: string;
   }) {
     const result = await database.transaction(async (tx) => {
       const [order] = await tx
@@ -173,7 +225,11 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
         .where(eq(paidOrders.id, input.orderId))
         .for("update");
       if (!order) throw new PaidLedgerError("order_unknown", "Unknown order.");
-      if (order.state === "verified" || order.state === "refund_pending") {
+      if (
+        order.state === "verified" ||
+        order.state === "refund_pending" ||
+        order.state === "refunded"
+      ) {
         // Idempotent callback replay: the same channel reference returns the
         // original result and never grants again — including an order already
         // headed for refund (suspension or a lost future-period claim).
@@ -185,32 +241,37 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
             order,
             replayed: true as const,
             claimed: order.state === "verified",
-            refunded: order.state === "refund_pending" || undefined,
+            refunded: order.state !== "verified" || undefined,
           };
         throw new PaidLedgerError(
           "verification_mismatch",
           "The order was already verified through another channel reference.",
         );
       }
+      // An order the channel closed stays verifiable: a payment it confirms
+      // later is money that arrived (#109 通知可以迟到). Any result other
+      // than the placed order's own channel and amount, merchant or currency
+      // is refused and changes nothing. The order stays as it was, so a
+      // forged or misrouted callback cannot spoil the payment it imitates.
       if (
-        order.state !== "pending" ||
+        (order.state !== "pending" && order.state !== "failed") ||
         order.channel !== input.channel ||
-        order.priceCents !== input.amountCents
-      ) {
-        // Throwing inside the transaction would roll the marking back, so the
-        // mismatch is committed first and surfaces after.
-        const [failed] = await tx
-          .update(paidOrders)
-          .set({ state: "failed" })
-          .where(eq(paidOrders.id, order.id))
-          .returning();
+        order.priceCents !== input.amountCents ||
+        !paysTheRightMerchant(input)
+      )
         return {
-          order: failed,
+          order,
           replayed: false as const,
           claimed: false as const,
           mismatch: true as const,
         };
-      }
+      // Until the account is reconciled after a restore, nothing is granted
+      // (#108 恢复阶段暂停…发放); the channel retries.
+      if (await restoreHolds(tx, order.accountId))
+        throw new PaidLedgerError(
+          "ledger_restoring",
+          "The ledger is being restored; verification is paused.",
+        );
 
       // A payment that lands while the account is suspended never grants:
       // it refunds in full through the channel that took it (#103).
@@ -386,6 +447,54 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
         "The channel result does not match the placed order.",
       );
     return result;
+  }
+
+  /**
+   * The orders still awaiting a channel result (#99 结果未知时订单可查询).
+   * At the pilot cutoff they are what the operator queries and, where the
+   * channel allows, closes (#109 截点查单、关闭可关订单).
+   */
+  async function pendingOrders(accountId?: string) {
+    return database
+      .select()
+      .from(paidOrders)
+      .where(
+        accountId
+          ? and(
+              eq(paidOrders.state, "pending"),
+              eq(paidOrders.accountId, accountId),
+            )
+          : eq(paidOrders.state, "pending"),
+      )
+      .orderBy(paidOrders.createdAt);
+  }
+
+  /**
+   * Closes an order the channel confirmed nobody paid. Nothing is granted
+   * and nothing is owed; a payment the channel confirms anyway still
+   * verifies.
+   */
+  async function closeOrder(orderId: string, by: string) {
+    return (
+      await database
+        .update(paidOrders)
+        .set({ state: "failed", closedAt: now(), closedBy: by })
+        .where(and(eq(paidOrders.id, orderId), eq(paidOrders.state, "pending")))
+        .returning()
+    )[0];
+  }
+
+  /** The application paths paid credits can be spent on, and which are paused. */
+  async function paidPaths() {
+    return database
+      .select({
+        id: billingApplications.id,
+        name: billingApplications.name,
+        pausedAt: billingApplications.pausedAt,
+      })
+      .from(billingApplications)
+      .where(isNotNull(billingApplications.approvedAt))
+      .orderBy(billingApplications.name);
   }
 
   function effective(entitlement: EntitlementRow, at: Date) {
@@ -818,6 +927,100 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
     return suspended;
   }
 
+  // ── Restore from backup (#108) ───────────────────────────────────────
+
+  /**
+   * Restore mode: from a restore from backup until each account has been
+   * reconciled and resumed on its own, new charges and entitlement grants
+   * stay paused for the accounts still held. Calling it again while a restore
+   * is under way keeps the earlier start, so accounts already reconciled
+   * stay resumed.
+   */
+  async function beginRestore(by: string) {
+    const [row] = await database
+      .insert(billingRestore)
+      .values({ id: "ledger", restoringSince: now(), updatedBy: by })
+      .onConflictDoUpdate({
+        target: billingRestore.id,
+        set: {
+          restoringSince: sql`coalesce(${billingRestore.restoringSince}, excluded.restoring_since)`,
+          updatedBy: by,
+          updatedAt: now(),
+        },
+      })
+      .returning({ since: billingRestore.restoringSince });
+    return row?.since ?? null;
+  }
+
+  /**
+   * Puts back an order the backup predates, by the ID the channel knows it
+   * by (#108 按原 ID…重建), so its payment can then be verified as any
+   * other. Only while a restore is under way, and only once.
+   */
+  async function restoreOrder(input: {
+    id: string;
+    accountId: string;
+    productCode: string;
+    // What the channel's record says the order was placed for.
+    priceCents: number;
+    channel: "wechat" | "alipay";
+  }) {
+    return database.transaction(async (tx) => {
+      const restoring = await restoreInProgress(tx);
+      if (!restoring)
+        throw new PaidLedgerError(
+          "not_restoring",
+          "The ledger is not being restored.",
+        );
+      const [product] = await tx
+        .select({ version: paidProducts.version })
+        .from(paidProducts)
+        .where(eq(paidProducts.code, input.productCode));
+      if (!product)
+        throw new PaidLedgerError("product_unavailable", "Unknown product.");
+      return (
+        await tx
+          .insert(paidOrders)
+          .values({
+            id: input.id,
+            accountId: input.accountId,
+            productCode: input.productCode,
+            productVersion: product.version,
+            priceCents: input.priceCents,
+            channel: input.channel,
+          })
+          .onConflictDoNothing()
+          .returning()
+      )[0];
+    });
+  }
+
+  /**
+   * An account whose records were reconciled against the channel and the
+   * trusted usage evidence resumes on its own. One with an unresolved
+   * difference is simply not resumed, and stays paused.
+   */
+  async function resumeAccount(accountId: string) {
+    const [restore] = await database
+      .select({ since: billingRestore.restoringSince })
+      .from(billingRestore)
+      .where(eq(billingRestore.id, "ledger"));
+    if (!restore?.since) return undefined;
+    const [account] = await database
+      .update(testCreditAccounts)
+      .set({ reconciledAt: now() })
+      .where(eq(testCreditAccounts.id, accountId))
+      .returning({ reconciledAt: testCreditAccounts.reconciledAt });
+    return account?.reconciledAt;
+  }
+
+  async function endRestore() {
+    await database
+      .update(billingRestore)
+      .set({ restoringSince: null, updatedBy: null, updatedAt: now() })
+      .where(eq(billingRestore.id, "ledger"));
+  }
+
   // ── Pilot wind-down (#107 trial end, #109 shutdown) ──────────────────
 
   /**
@@ -1168,6 +1371,13 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
     suspendAccount,
     setPilotClosure,
     closePilotOrders,
+    pendingOrders,
+    closeOrder,
+    paidPaths,
+    beginRestore,
+    restoreOrder,
+    resumeAccount,
+    endRestore,
     activeSubscription,
     paidSources,
     paidBalance,
@@ -1385,6 +1595,28 @@ export async function releasePaidAllocations(
     )
     .returning({ id: paidCreditAllocations.id });
   return rows.length;
+}
+
+/**
+ * Whether a restore from backup still holds an account (#108): new charges
+ * and grants stay paused for it until it has been reconciled and resumed.
+ */
+async function restoreInProgress(tx: PaidTx) {
+  const [restore] = await tx
+    .select({ since: billingRestore.restoringSince })
+    .from(billingRestore)
+    .where(eq(billingRestore.id, "ledger"));
+  return restore?.since;
+}
+
+export async function restoreHolds(tx: PaidTx, accountId: string) {
+  const since = await restoreInProgress(tx);
+  if (!since) return false;
+  const [account] = await tx
+    .select({ reconciledAt: testCreditAccounts.reconciledAt })
+    .from(testCreditAccounts)
+    .where(eq(testCreditAccounts.id, accountId));
+  return !(account?.reconciledAt && account.reconciledAt >= since);
 }
 
 /**

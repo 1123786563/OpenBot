@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { firstBillingPeriod } from "../src/billing/billing-period";
 import { createPaidCreditLedger } from "../src/billing/paid-ledger";
 import { createDatabase } from "../src/db/client";
@@ -16,7 +16,9 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
 /**
  * #99–#101: orders lock the purchased product version, channel verification
  * grants exactly once, an advance purchase claims the one allowed future
- * period atomically, and the refund seams freeze and revoke.
+ * period atomically, and the refund seams freeze and revoke. #109: a result
+ * that is not the order's own changes nothing, and a late payment still
+ * verifies an order closed at the cutoff.
  */
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
@@ -129,7 +131,7 @@ test("verification grants the first Beijing period exactly once", async () => {
   ).rejects.toMatchObject({ code: "verification_mismatch" });
 });
 
-test("a mismatched amount fails the order instead of granting", async () => {
+test("a result that is not the order's own changes nothing and grants nothing", async () => {
   account = await freshAccount("mismatch");
   await ledger().upsertProduct({
     code: "plan-monthly",
@@ -142,21 +144,123 @@ test("a mismatched amount fails the order instead of granting", async () => {
     productCode: "plan-monthly",
     channel: "alipay",
   });
-  await expect(
-    ledger().verifyOrder({
-      orderId: order.id,
-      channel: "alipay",
+  const placed = () =>
+    database.select().from(paidOrders).where(eq(paidOrders.id, order.id));
+  // Another amount, or another channel, is refused (#99 服务端核对…金额).
+  for (const result of [
+    {
+      channel: "alipay" as const,
       channelOrderRef: `ali-1-${run}`,
       amountCents: 1_900,
-      paidAt,
-    }),
-  ).rejects.toMatchObject({ code: "verification_mismatch" });
-  const [row] = await database
-    .select()
-    .from(paidOrders)
-    .where(inArray(paidOrders.id, [order.id]));
-  expect(row.state).toBe("failed");
+    },
+    {
+      channel: "wechat" as const,
+      channelOrderRef: `wx-1-${run}`,
+      amountCents: 2_900,
+    },
+  ])
+    await expect(
+      ledger().verifyOrder({ orderId: order.id, paidAt, ...result }),
+    ).rejects.toMatchObject({ code: "verification_mismatch" });
+  // A forged or misrouted callback cannot spoil the payment it imitates
+  // (#109): the order waits exactly as it was placed.
+  expect(await placed()).toMatchObject([
+    { state: "pending", channelOrderRef: null, verifiedAt: null },
+  ]);
   expect(await ledger().entitlements(account)).toHaveLength(0);
+  const verified = await ledger().verifyOrder({
+    orderId: order.id,
+    channel: "alipay",
+    channelOrderRef: `ali-1-${run}`,
+    amountCents: 2_900,
+    paidAt,
+  });
+  expect(verified.order.state).toBe("verified");
+});
+
+test("a channel result pays the deployment's merchant in its currency", async () => {
+  account = await freshAccount("merchant");
+  const channels = {
+    currency: "CNY",
+    merchants: { alipay: "merchant-a", wechat: "merchant-w" },
+  };
+  const deployment = (named?: typeof channels) =>
+    createPaidCreditLedger(database, () => paidAt, named);
+  await deployment().upsertProduct({
+    code: "plan-monthly",
+    kind: "subscription",
+    priceCents: 2_900,
+    creditsMicrocredits: 5_000_000n,
+  });
+  const order = await deployment().createOrder({
+    accountId: account,
+    productCode: "plan-monthly",
+    channel: "alipay",
+  });
+  const result = (extra: { merchantId?: string; currency?: string }) =>
+    deployment(channels).verifyOrder({
+      orderId: order.id,
+      channel: "alipay",
+      channelOrderRef: `ali-merchant-${run}`,
+      amountCents: 2_900,
+      paidAt,
+      ...extra,
+    });
+  const placed = () =>
+    database.select().from(paidOrders).where(eq(paidOrders.id, order.id));
+  // Once the deployment names its merchants, another merchant's money,
+  // money that names no merchant, and another currency are each refused
+  // (#99 服务端核对商户、订单、币种和金额).
+  for (const refused of [
+    { merchantId: "merchant-someone-else" },
+    { merchantId: "merchant-w" },
+    { currency: "CNY" },
+    { merchantId: "merchant-a", currency: "USD" },
+  ])
+    await expect(result(refused)).rejects.toMatchObject({
+      code: "verification_mismatch",
+    });
+  expect(await placed()).toMatchObject([{ state: "pending" }]);
+  expect(
+    (await result({ merchantId: "merchant-a", currency: "CNY" })).claimed,
+  ).toBe(true);
+});
+
+test("an order closed at the cutoff still verifies a payment that arrives late", async () => {
+  account = await freshAccount("late");
+  await ledger().upsertProduct({
+    code: "plan-monthly",
+    kind: "subscription",
+    priceCents: 2_900,
+    creditsMicrocredits: 5_000_000n,
+  });
+  const order = await ledger().createOrder({
+    accountId: account,
+    productCode: "plan-monthly",
+    channel: "wechat",
+  });
+  expect(await ledger().pendingOrders(account)).toMatchObject([
+    { id: order.id, state: "pending" },
+  ]);
+  // The channel says nobody paid, so the order is closed, once (#109
+  // 截点查单、关闭可关订单).
+  expect(await ledger().closeOrder(order.id, "pilot-lead")).toMatchObject({
+    id: order.id,
+    state: "failed",
+    closedBy: "pilot-lead",
+  });
+  expect(await ledger().closeOrder(order.id, "pilot-lead")).toBeUndefined();
+  expect(await ledger().pendingOrders(account)).toEqual([]);
+  // The notification was only late (#109 通知可以迟到).
+  const verified = await ledger().verifyOrder({
+    orderId: order.id,
+    channel: "wechat",
+    channelOrderRef: `wx-late-${run}`,
+    amountCents: 2_900,
+    paidAt,
+  });
+  expect(verified.claimed).toBe(true);
+  expect((await ledger().entitlements(account))[0].effective).toBe("active");
 });
 
 test("an advance purchase claims the next period, and only one future claim wins", async () => {
@@ -312,6 +416,8 @@ afterAll(async () => {
           "lock",
           "first",
           "mismatch",
+          "merchant",
+          "late",
           "advance",
           "pack",
           "refund",

@@ -71,6 +71,10 @@ export const paidOrders = pgTable(
     channelOrderRef: text("channel_order_ref"),
     state: text({ enum: paidOrderStates }).notNull().default("pending"),
     verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    // Set when the channel closed an order nobody had paid (#109 截点关闭可关订单).
+    // A trusted payment that turns up anyway still verifies.
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    closedBy: text("closed_by"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -83,6 +87,10 @@ export const paidOrders = pgTable(
     check(
       "paid_orders_amounts",
       sql`${table.productVersion} > 0 AND ${table.priceCents} > 0`,
+    ),
+    check(
+      "paid_orders_closed",
+      sql`(${table.closedAt} is null) = (${table.closedBy} is null)`,
     ),
   ],
 );

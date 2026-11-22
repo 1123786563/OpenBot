@@ -1,10 +1,20 @@
-import { afterAll, expect, test } from "bun:test";
-import { inArray } from "drizzle-orm";
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { eq, inArray } from "drizzle-orm";
+import {
+  configure,
+  emptyCatalog,
+  pilotCatalogKey,
+  publish,
+  verify,
+} from "../src/admin/bifrost-catalog";
 import { createPaidCreditLedger } from "../src/billing/paid-ledger";
 import { createTestCreditRoutes } from "../src/billing/test-credit-routes";
 import { createTestCreditLedger } from "../src/billing/test-credit";
 import { createDatabase } from "../src/db/client";
 import {
+  billingApplications,
+  billingSpendingAuthorizations,
+  enterpriseSettings,
   paidCreditAllocations,
   paidEntitlements,
   paidOrders,
@@ -13,14 +23,19 @@ import {
   testCreditBatches,
   testCreditBudgets,
   testCreditEnrollments,
+  testCreditEvidence,
+  testCreditOperations,
   testCreditResumePoints,
 } from "../src/db/schema";
+import { fixtureTraceReport } from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /**
  * The billing API a person's browser reads (#107): both Credit types side by
  * side, budgets that fix the type when a task starts, the confirmation a
- * paused step continues on, and no execution without a controlled executor.
+ * paused step continues on, no execution without a controlled executor, and
+ * an application that reserves and reads only through a person's
+ * authorization (#111).
  */
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
@@ -39,8 +54,64 @@ const api = createTestCreditRoutes({
       : undefined,
 });
 const signedIn = { headers: { "x-test-subject": identity.subject } };
+// No paid ledger, and no seam for an application's own credential.
+const bare = createTestCreditRoutes({
+  ledger: createTestCreditLedger(database),
+  authenticate: async () => identity,
+});
+// An application's credential, stubbed the same way as the session one.
+const applications = createTestCreditRoutes({
+  ledger: createTestCreditLedger(database),
+  authenticate: async () => undefined,
+  authenticateApplication: async (request, applicationId) =>
+    request.headers.get("x-test-application") === applicationId,
+});
 
+const routeId = "billing-routes";
+const harnessImage = `agent-langgraph-agui@sha256:${"a".repeat(64)}`;
+const drafted = configure(emptyCatalog, {
+  harnessImage,
+  routes: {
+    [routeId]: {
+      provider: "fixture-routes",
+      model: "model-routes",
+      gatewayRevision: "routes-r1",
+      meteringRevision: "routes-m1",
+      maxInputTokens: 10,
+      maxOutputTokens: 2,
+      tools: false,
+      price: { inputPerMillion: 1_000_000, outputPerMillion: 0 },
+    },
+  },
+});
+const proposed = drafted.routes[routeId];
+if (!proposed) throw new Error("fixture route missing");
+const { catalog } = publish(
+  verify(drafted, routeId, fixtureTraceReport(harnessImage, proposed), "test"),
+  [routeId],
+  routeId,
+  "test",
+);
+const applicationIds: string[] = [];
 const batchIds: string[] = [];
+let originalCatalog: { value: unknown } | undefined;
+let priceVersion = "";
+
+beforeAll(async () => {
+  [originalCatalog] = await database
+    .select()
+    .from(enterpriseSettings)
+    .where(eq(enterpriseSettings.key, pilotCatalogKey));
+  await database
+    .insert(enterpriseSettings)
+    .values({ key: pilotCatalogKey, value: catalog })
+    .onConflictDoUpdate({
+      target: enterpriseSettings.key,
+      set: { value: catalog },
+    });
+  priceVersion =
+    (await createTestCreditLedger(database).quote())?.priceVersion ?? "";
+});
 
 test("a person without a Billing Account is told so on every read", async () => {
   for (const path of [
@@ -66,6 +137,8 @@ test("every read requires a verified identity", async () => {
     "/paid/balance",
     "/budgets",
     "/resume-points",
+    "/applications",
+    "/authorizations",
   ]) {
     const response = await api.request(path);
     expect(response.status).toBe(401);
@@ -87,6 +160,15 @@ test("every read requires a verified identity", async () => {
     }),
   });
   expect(response.status).toBe(401);
+  // An application's credential is not a person's session.
+  expect(
+    (
+      await api.request("/authorizations", {
+        method: "POST",
+        headers: { "x-openbot-application": "routes-app" },
+      })
+    ).status,
+  ).toBe(401);
 });
 
 test("the bill shows both Credit types and the budget fixes its type", async () => {
@@ -271,15 +353,207 @@ test("a paused step waits for a budget the person confirms", async () => {
 });
 
 test("a deployment without the paid ledger answers 503 on the paid views", async () => {
-  const bare = createTestCreditRoutes({
-    ledger: createTestCreditLedger(database),
-    authenticate: async () => identity,
-  });
   expect((await bare.request("/paid/sources")).status).toBe(503);
   expect((await bare.request("/paid/bill")).status).toBe(503);
   expect((await bare.request("/paid/balance")).status).toBe(503);
   // Its Test Credit views still answer.
   expect((await bare.request("/budgets")).status).toBe(200);
+});
+
+test("an application reserves and reads only through a person's authorization", async () => {
+  const ledger = createTestCreditLedger(database);
+  const app = `routes-app-${crypto.randomUUID().slice(0, 8)}`;
+  applicationIds.push(app);
+  await ledger.registerApplication({
+    id: app,
+    name: "Routes fixture app",
+    operator: "independent",
+    resourcePrefix: "kb-",
+  });
+  if (!(await ledger.accountOf(identity)))
+    throw new Error("no Billing Account for the test identity");
+
+  // Nothing is granted to an application that is not approved (#111
+  // 未审批应用不能启用).
+  const grant = (body: unknown) =>
+    api.request("/authorizations", {
+      ...signedIn,
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  const authorization = {
+    authorizationId: "routes-online",
+    applicationId: app,
+    kind: "online",
+    expiresAt: "2030-01-01T00:00:00.000Z",
+    limitMicrocredits: "25",
+  };
+  const unapproved = await grant(authorization);
+  expect(unapproved.status).toBe(409);
+  expect(await unapproved.json()).toMatchObject({
+    error: "That application can't be authorized for this.",
+  });
+  expect((await grant({ ...authorization, kind: "other" })).status).toBe(400);
+  await ledger.approveApplication(app, "pilot-lead");
+  const granted = await grant(authorization);
+  expect(granted.status).toBe(200);
+  expect(await granted.json()).toMatchObject({
+    authorizationId: "routes-online",
+    applicationId: app,
+    resourcePrefix: "kb-",
+    limitMicrocredits: "25",
+    state: "active",
+  });
+  // Asking again answers with the same grant.
+  expect(await (await grant(authorization)).json()).toMatchObject({
+    authorizationId: "routes-online",
+  });
+  expect(
+    await (await api.request("/authorizations", signedIn)).json(),
+  ).toMatchObject([{ authorizationId: "routes-online", applicationId: app }]);
+  expect(await (await api.request("/applications", signedIn)).json()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: app, approvedBy: "pilot-lead" }),
+    ]),
+  );
+  // The limit only rises (#86 增加上限需用户确认).
+  const amend = (body: unknown) =>
+    api.request("/authorizations/routes-online/amend", {
+      ...signedIn,
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  const lowered = await amend({ limitMicrocredits: "20" });
+  expect(lowered.status).toBe(409);
+  expect(await lowered.json()).toMatchObject({
+    error: "A Spending Authorization can only be raised or extended.",
+  });
+  expect(await (await amend({ limitMicrocredits: "45" })).json()).toMatchObject(
+    { limitMicrocredits: "45" },
+  );
+
+  // An application's call is admitted by its own credential, and acts for
+  // the person who granted it the authorization it names.
+  const as = (applicationId: string) => ({
+    headers: {
+      "x-openbot-application": applicationId,
+      "x-test-application": applicationId,
+    },
+  });
+  const scoped = "/v1/spending-authorizations/routes-online";
+  expect((await bare.request(scoped, as(app))).status).toBe(503);
+  expect(
+    (
+      await applications.request(scoped, {
+        headers: { "x-openbot-application": app },
+      })
+    ).status,
+  ).toBe(401);
+  expect((await applications.request(scoped, as("routes-other"))).status).toBe(
+    404,
+  );
+  const call = (path: string, applicationId: string, body?: unknown) =>
+    applications.request(path, {
+      method: body === undefined ? "GET" : "POST",
+      headers: as(applicationId).headers,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  const step = {
+    operationId: "routes-app-op-1",
+    route: routeId,
+    priceVersion,
+    authorizationId: "routes-online",
+    resourceId: "kb-doc-1",
+  };
+  // Without an authorization there is nobody to act for.
+  expect(
+    (await call("/v1/reserve", app, { ...step, authorizationId: undefined }))
+      .status,
+  ).toBe(400);
+  expect(
+    (
+      await call("/v1/reserve", app, {
+        ...step,
+        authorizationId: "routes-none",
+      })
+    ).status,
+  ).toBe(401);
+  // As another application, or outside the granted scope.
+  expect((await call("/v1/reserve", "routes-other", step)).status).toBe(401);
+  expect(
+    await (
+      await call("/v1/reserve", app, { ...step, resourceId: "mail-inbox" })
+    ).json(),
+  ).toEqual({ state: "denied", reason: "not_authorized" });
+  const reserved = await (await call("/v1/reserve", app, step)).json();
+  expect(reserved).toMatchObject({ state: "reserved" });
+
+  // It reads the account, and its own operation, only through that
+  // authorization (#111 应用只能查询自身授权范围内的账户摘要和操作状态).
+  expect(await (await call(scoped, app)).json()).toMatchObject({
+    authorizationId: "routes-online",
+    spentMicrocredits: "10",
+  });
+  expect(
+    await (await call(`${scoped}/operations/routes-app-op-1`, app)).json(),
+  ).toMatchObject({ operationId: "routes-app-op-1", state: "reserved" });
+  expect((await call(`${scoped}/operations/routes-op-1`, app)).status).toBe(
+    404,
+  );
+  expect(
+    (await call(`${scoped}/operations/routes-app-op-1`, "routes-other")).status,
+  ).toBe(404);
+
+  // The person revokes it: nothing new reserves, and the reservation already
+  // made does not run (验证撤销).
+  expect(
+    await (
+      await api.request("/authorizations/routes-online/revoke", {
+        ...signedIn,
+        method: "POST",
+      })
+    ).json(),
+  ).toMatchObject({ state: "revoked" });
+  expect(
+    (
+      await api.request("/authorizations/routes-none/revoke", {
+        ...signedIn,
+        method: "POST",
+      })
+    ).status,
+  ).toBe(404);
+  expect(
+    await (
+      await call("/v1/reserve", app, {
+        ...step,
+        operationId: "routes-app-op-2",
+      })
+    ).json(),
+  ).toEqual({ state: "denied", reason: "not_authorized" });
+  expect(
+    await (
+      await call("/v1/dispatch", app, {
+        operationId: "routes-app-op-1",
+        authorizationId: "routes-online",
+        permit: reserved.permit,
+        messages: [{ role: "user", content: "Hello." }],
+      })
+    ).json(),
+  ).toEqual({ state: "denied", reason: "not_authorized" });
+  // A first-party runner's call is unchanged: it needs no application.
+  expect(
+    (
+      await api.request("/v1/reserve", {
+        ...signedIn,
+        method: "POST",
+        body: JSON.stringify({
+          operationId: "routes-first-party",
+          route: routeId,
+          priceVersion,
+        }),
+      })
+    ).status,
+  ).toBe(200);
 });
 
 afterAll(async () => {
@@ -289,6 +563,19 @@ afterAll(async () => {
     .where(inArray(testCreditAccounts.issuer, [identity.issuer]));
   const ids = accounts.map(({ id }) => id);
   if (ids.length > 0) {
+    await database
+      .delete(testCreditEvidence)
+      .where(inArray(testCreditEvidence.accountId, ids));
+    await database
+      .delete(testCreditOperations)
+      .where(inArray(testCreditOperations.accountId, ids));
+    await database
+      .delete(testCreditResumePoints)
+      .where(inArray(testCreditResumePoints.accountId, ids));
+    // An operation references its authorization, so it goes first.
+    await database
+      .delete(billingSpendingAuthorizations)
+      .where(inArray(billingSpendingAuthorizations.accountId, ids));
     await database
       .delete(paidCreditAllocations)
       .where(inArray(paidCreditAllocations.accountId, ids));
@@ -313,5 +600,18 @@ afterAll(async () => {
   await database
     .delete(paidProducts)
     .where(inArray(paidProducts.code, ["pack-routes"]));
+  await database
+    .delete(billingApplications)
+    .where(inArray(billingApplications.id, applicationIds));
+  if (originalCatalog) {
+    await database
+      .update(enterpriseSettings)
+      .set({ value: originalCatalog.value as Record<string, unknown> })
+      .where(eq(enterpriseSettings.key, pilotCatalogKey));
+  } else {
+    await database
+      .delete(enterpriseSettings)
+      .where(eq(enterpriseSettings.key, pilotCatalogKey));
+  }
   await database.$client.close();
 });

@@ -1,4 +1,4 @@
-import { and, eq, isNull, lte, notExists, sql } from "drizzle-orm";
+import { and, eq, isNull, lte, notExists, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import {
   catalogSchema,
@@ -12,8 +12,11 @@ import {
   consumePaidAllocations,
   pilotReservesStoppedAt,
   releasePaidAllocations,
+  restoreHolds,
 } from "./paid-ledger";
 import {
+  billingApplications as applications,
+  billingSpendingAuthorizations as authorizations,
   testCreditAccounts as accounts,
   testCreditBatches as batches,
   testCreditBudgets as budgets,
@@ -109,7 +112,8 @@ const denied = (
     | "route_unavailable"
     | "insufficient_credits"
     | "execution_limit"
-    | "pilot_closed",
+    | "pilot_closed"
+    | "unavailable",
 ) => ({ state: "denied", reason }) as const;
 
 async function activeRoutes(database: Database | Transaction, lock = false) {
@@ -428,24 +432,154 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
     return row;
   }
 
-  async function budgetUsage(
-    accountId: string,
-    budgetId: string,
-    tx: Transaction,
-  ) {
+  // What an execution limit has used: a settled step's charge, any other
+  // step's hold.
+  async function chargedOrHeld(tx: Transaction, where: SQL | undefined) {
     const [row] = await tx
       .select({
         used: sql<string>`coalesce(sum(case when ${operations.state} = 'settled' then ${operations.charged} else coalesce(${operations.cutoffHold}, ${operations.reserved}) end), 0)::text`,
       })
       .from(operations)
-      .where(
-        and(
-          eq(operations.accountId, accountId),
-          eq(operations.budgetId, budgetId),
-          sql`${operations.state} <> 'released'`,
-        ),
-      );
+      .where(and(where, sql`${operations.state} <> 'released'`));
     return BigInt(row?.used ?? "0");
+  }
+
+  async function budgetUsage(
+    accountId: string,
+    budgetId: string,
+    tx: Transaction,
+  ) {
+    return chargedOrHeld(
+      tx,
+      and(
+        eq(operations.accountId, accountId),
+        eq(operations.budgetId, budgetId),
+      ),
+    );
+  }
+
+  // What an authorization has used, on the same rule as a budget's usage.
+  function authorizationUsage(tx: Transaction, accountId: string, id: string) {
+    return chargedOrHeld(
+      tx,
+      and(
+        eq(operations.accountId, accountId),
+        eq(operations.authorizationId, id),
+      ),
+    );
+  }
+
+  async function authorization(accountId: string, id: string, tx: Transaction) {
+    const [row] = await tx
+      .select()
+      .from(authorizations)
+      .where(
+        and(eq(authorizations.accountId, accountId), eq(authorizations.id, id)),
+      );
+    return row;
+  }
+
+  async function application(id: string, tx: Transaction) {
+    return (
+      await tx.select().from(applications).where(eq(applications.id, id))
+    )[0];
+  }
+
+  async function authorizationRecord(
+    tx: Transaction,
+    row: typeof authorizations.$inferSelect,
+    spent: bigint,
+  ) {
+    const at = await currentTime(tx);
+    return {
+      authorizationId: row.id,
+      applicationId: row.applicationId,
+      kind: row.kind,
+      taskId: row.taskId,
+      resourcePrefix: row.resourcePrefix,
+      expiresAt: row.expiresAt,
+      limitMicrocredits: row.limitMicrocredits.toString(),
+      spentMicrocredits: spent.toString(),
+      revokedAt: row.revokedAt,
+      state:
+        row.revokedAt !== null
+          ? ("revoked" as const)
+          : row.expiresAt <= at
+            ? ("expired" as const)
+            : ("active" as const),
+    };
+  }
+
+  // A suspended account (the identity provider disabled it) makes no new
+  // reservation and dispatches none (#103 停用期间保持消费暂停).
+  async function suspended(tx: Transaction, accountId: string) {
+    const [row] = await tx
+      .select({ at: accounts.suspendedAt })
+      .from(accounts)
+      .where(eq(accounts.id, accountId));
+    return Boolean(row?.at);
+  }
+
+  // Approval lets an application take reservations (#111 未审批应用不能启用);
+  // a pause and its lift are recorded with who did it (#112).
+  async function markApplication(
+    id: string,
+    change: "approve" | "pause" | "resume",
+    by: string,
+  ) {
+    return database.transaction(async (tx) => {
+      const at = await currentTime(tx);
+      return (
+        await tx
+          .update(applications)
+          .set(
+            change === "approve"
+              ? { approvedAt: at, approvedBy: by }
+              : change === "pause"
+                ? { pausedAt: at, pausedBy: by }
+                : { pausedAt: null, pausedBy: null },
+          )
+          .where(eq(applications.id, id))
+          .returning()
+      )[0];
+    });
+  }
+
+  /**
+   * Whether a step may run under a Spending Authorization (#111): the
+   * person's authorization is in force for this task, and the application
+   * is approved with its path not paused (#112 路径暂停). A background
+   * authorization runs its one task only. Returns the refusal reason, or
+   * the authorization it runs under.
+   */
+  async function underAuthorization(
+    tx: Transaction,
+    accountId: string,
+    input: {
+      authorizationId: string;
+      applicationId?: string;
+      taskId?: string;
+    },
+    at: Date,
+  ) {
+    const held = await authorization(accountId, input.authorizationId, tx);
+    const path = held ? await application(held.applicationId, tx) : undefined;
+    if (
+      !held ||
+      !path ||
+      held.revokedAt !== null ||
+      at >= held.expiresAt ||
+      !path.approvedAt ||
+      (input.applicationId !== undefined &&
+        input.applicationId !== held.applicationId) ||
+      (held.kind === "background"
+        ? input.taskId !== held.taskId
+        : input.taskId !== undefined)
+    )
+      return { refusal: "not_authorized" as const, held: undefined };
+    if (path.pausedAt)
+      return { refusal: "route_unavailable" as const, held: undefined };
+    return { refusal: undefined, held };
   }
 
   return {
@@ -754,6 +888,12 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         creditType?: "test" | "paid";
         // The app the step runs for, kept on the operation for the bill.
         applicationId?: string;
+        // An application's step runs under the person's Spending
+        // Authorization for it, within the resource it names (#111). A
+        // background authorization names its one task.
+        authorizationId?: string;
+        resourceId?: string;
+        taskId?: string;
       },
     ) {
       return database.transaction(async (tx) => {
@@ -814,7 +954,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             .values({
               accountId,
               operationId: input.operationId,
-              applicationId: input.applicationId ?? null,
+              applicationId:
+                input.applicationId ?? under?.held?.applicationId ?? null,
               reason,
               createdAt: now,
             })
@@ -822,7 +963,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
               target: [resumePoints.accountId, resumePoints.operationId],
               set: {
                 reason,
-                applicationId: input.applicationId ?? null,
+                applicationId:
+                  input.applicationId ?? under?.held?.applicationId ?? null,
                 // A confirmed budget with no room for the step cannot
                 // continue it: the step waits again for the person to pick
                 // another.
@@ -870,6 +1012,30 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         // Pilot wind-down (#107 trial end, #109): no new reservations of
         // either Credit type. Dispatched work above keeps its replay.
         if (await pilotReservesStoppedAt(tx)) return denied("pilot_closed");
+        if (await suspended(tx, accountId)) return denied("not_authorized");
+        // While a restore from backup holds the account, no step is charged
+        // (#108 恢复阶段暂停新增收费步骤).
+        if (await restoreHolds(tx, accountId)) return denied("unavailable");
+        const under = request.authorizationId
+          ? await underAuthorization(
+              tx,
+              accountId,
+              {
+                authorizationId: request.authorizationId,
+                applicationId: request.applicationId,
+                taskId: request.taskId,
+              },
+              now,
+            )
+          : undefined;
+        if (under?.refusal) return denied(under.refusal);
+        // Within the resource scope the person granted, which every step of
+        // an application names (#111 资源范围).
+        if (
+          under?.held &&
+          !request.resourceId?.startsWith(under.held.resourcePrefix)
+        )
+          return denied("not_authorized");
         const executionBudget = input.budgetId
           ? await budget(accountId, input.budgetId, tx)
           : undefined;
@@ -941,6 +1107,13 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           if (used + reserved > executionBudget.limitMicrocredits)
             return pause("execution_limit");
         }
+        // The application's own ceiling is the person's to raise (#111 限额),
+        // not a budget to set, so this one is not a resume point.
+        if (under?.held) {
+          const used = await authorizationUsage(tx, accountId, under.held.id);
+          if (used + reserved > under.held.limitMicrocredits)
+            return denied("execution_limit");
+        }
         // The pilot-wide provider-cost ceiling is acquired in the same
         // transaction as the user reservation: both hold or neither does.
         const costLimit = (
@@ -971,7 +1144,9 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             state: "reserved",
             budgetId: input.budgetId,
             stepId: input.stepId,
-            applicationId: input.applicationId,
+            applicationId:
+              input.applicationId ?? under?.held.applicationId ?? null,
+            authorizationId: under?.held.id ?? null,
           })
           .returning();
         if (costLimit) {
@@ -993,6 +1168,313 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           permit: row.permit,
           operation: operationReceipt(row),
         } as const;
+      });
+    },
+
+    /** Registers an application and the resource scope it may be authorized for (#111). A second registration must repeat it. */
+    async registerApplication(input: {
+      id: string;
+      name: string;
+      operator: "platform" | "independent";
+      resourcePrefix: string;
+    }) {
+      return database.transaction(async (tx) => {
+        const existing = await application(input.id, tx);
+        if (existing) {
+          if (
+            existing.operator !== input.operator ||
+            existing.resourcePrefix !== input.resourcePrefix
+          )
+            throw new Error("Application registration differs");
+          return existing;
+        }
+        const [row] = await tx
+          .insert(applications)
+          .values({
+            id: input.id,
+            name: input.name,
+            operator: input.operator,
+            resourcePrefix: input.resourcePrefix,
+          })
+          .returning();
+        if (!row) throw new Error("Application could not be registered");
+        return row;
+      });
+    },
+
+    approveApplication: (id: string, by: string) =>
+      markApplication(id, "approve", by),
+
+    /** Pausing an application's path stops its new reservations; the ones already made keep settling (#112). */
+    pauseApplication: (id: string, by: string) =>
+      markApplication(id, "pause", by),
+
+    resumeApplication: (id: string) => markApplication(id, "resume", ""),
+
+    /** Every application with its approval and pause state. */
+    async applications() {
+      return database
+        .select()
+        .from(applications)
+        .orderBy(applications.createdAt, applications.id);
+    },
+
+    /**
+     * The person's explicit grant to an application (#111): which resources,
+     * until when, and the most it may spend. Nothing is granted for an
+     * application that is not approved, or for a resource outside the scope
+     * it registered.
+     */
+    async authorize(
+      identity: VerifiedBillingIdentity,
+      input: {
+        authorizationId: string;
+        applicationId: string;
+        // A background authorization is bound to one task.
+        kind: "online" | "background";
+        taskId?: string;
+        resourcePrefix?: string;
+        expiresAt: Date;
+        limitMicrocredits: bigint;
+      },
+    ) {
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return undefined;
+        const existing = await authorization(
+          accountId,
+          input.authorizationId,
+          tx,
+        );
+        // A second ask with the same ID answers with the first grant, or
+        // nothing when it was for another application.
+        if (existing) {
+          if (existing.applicationId !== input.applicationId)
+            return { state: "denied" as const };
+          return {
+            state: "existing" as const,
+            authorization: await authorizationRecord(
+              tx,
+              existing,
+              await authorizationUsage(tx, accountId, existing.id),
+            ),
+          };
+        }
+        const path = await application(input.applicationId, tx);
+        const prefix = input.resourcePrefix ?? path?.resourcePrefix;
+        const at = await currentTime(tx);
+        if (
+          !path?.approvedAt ||
+          !prefix?.startsWith(path.resourcePrefix) ||
+          (input.kind === "background") !== (input.taskId !== undefined) ||
+          input.limitMicrocredits <= 0n ||
+          input.expiresAt <= at
+        )
+          return { state: "denied" as const };
+        const [granted] = await tx
+          .insert(authorizations)
+          .values({
+            id: input.authorizationId,
+            applicationId: input.applicationId,
+            accountId,
+            kind: input.kind,
+            taskId: input.taskId ?? null,
+            resourcePrefix: prefix,
+            expiresAt: input.expiresAt,
+            limitMicrocredits: input.limitMicrocredits,
+          })
+          .returning();
+        if (!granted) throw new Error("Authorization could not be recorded");
+        return {
+          state: "authorized" as const,
+          authorization: await authorizationRecord(tx, granted, 0n),
+        };
+      });
+    },
+
+    /** Withdraws the grant. Reservations already made under it do not run. */
+    async revokeAuthorization(
+      identity: VerifiedBillingIdentity,
+      authorizationId: string,
+    ) {
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return undefined;
+        const [row] = await tx
+          .update(authorizations)
+          .set({ revokedAt: await currentTime(tx) })
+          .where(
+            and(
+              eq(authorizations.accountId, accountId),
+              eq(authorizations.id, authorizationId),
+            ),
+          )
+          .returning();
+        return (
+          row &&
+          (await authorizationRecord(
+            tx,
+            row,
+            await authorizationUsage(tx, accountId, row.id),
+          ))
+        );
+      });
+    },
+
+    /**
+     * Raising what an authorization may spend, or how long it lasts, is the
+     * person's own decision (#86 增加上限需用户确认). A change that would lower
+     * either changes nothing.
+     */
+    async amendAuthorization(
+      identity: VerifiedBillingIdentity,
+      authorizationId: string,
+      input: { limitMicrocredits?: bigint; expiresAt?: Date },
+    ) {
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return undefined;
+        const row = await authorization(accountId, authorizationId, tx);
+        if (!row) return undefined;
+        const limitMicrocredits =
+          input.limitMicrocredits ?? row.limitMicrocredits;
+        const expiresAt = input.expiresAt ?? row.expiresAt;
+        if (
+          limitMicrocredits < row.limitMicrocredits ||
+          expiresAt < row.expiresAt
+        )
+          return { state: "not_widened" as const };
+        const [updated] = await tx
+          .update(authorizations)
+          .set({ limitMicrocredits, expiresAt })
+          .where(
+            and(
+              eq(authorizations.accountId, accountId),
+              eq(authorizations.id, authorizationId),
+            ),
+          )
+          .returning();
+        if (!updated) return undefined;
+        return {
+          state: "amended" as const,
+          authorization: await authorizationRecord(
+            tx,
+            updated,
+            await authorizationUsage(tx, accountId, updated.id),
+          ),
+        };
+      });
+    },
+
+    /** The person's Spending Authorizations, each with what it has used. */
+    async authorizations(identity: VerifiedBillingIdentity) {
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return undefined;
+        const rows = await tx
+          .select()
+          .from(authorizations)
+          .where(eq(authorizations.accountId, accountId))
+          .orderBy(authorizations.createdAt, authorizations.id);
+        return Promise.all(
+          rows.map(
+            async (row) =>
+              await authorizationRecord(
+                tx,
+                row,
+                await authorizationUsage(tx, accountId, row.id),
+              ),
+          ),
+        );
+      });
+    },
+
+    /**
+     * The account an application acts for through one of its authorizations.
+     * An application that was never granted this one acts for nobody.
+     */
+    async authorizationIdentity(
+      applicationId: string,
+      authorizationId: string,
+    ) {
+      return database.transaction(async (tx) => {
+        const [row] = await tx
+          .select({ issuer: accounts.issuer, subject: accounts.subject })
+          .from(authorizations)
+          .innerJoin(accounts, eq(accounts.id, authorizations.accountId))
+          .where(
+            and(
+              eq(authorizations.id, authorizationId),
+              eq(authorizations.applicationId, applicationId),
+            ),
+          );
+        return row;
+      });
+    },
+
+    /**
+     * What an application may read of a person's account: only through the
+     * authorizations granted to it (#111 应用只能查询自身授权范围内的账户摘要).
+     */
+    async authorizationSummary(applicationId: string, authorizationId: string) {
+      return database.transaction(async (tx) => {
+        const [held] = await tx
+          .select()
+          .from(authorizations)
+          .where(
+            and(
+              eq(authorizations.id, authorizationId),
+              eq(authorizations.applicationId, applicationId),
+            ),
+          );
+        if (!held) return undefined;
+        const balance = await totals(tx, held.accountId);
+        const spent = await chargedOrHeld(
+          tx,
+          and(
+            eq(operations.accountId, held.accountId),
+            eq(operations.authorizationId, held.id),
+          ),
+        );
+        return {
+          ...(await authorizationRecord(tx, held, spent)),
+          availableMicrocredits: balance.available.toString(),
+          reservedMicrocredits: balance.held.toString(),
+          chargedMicrocredits: balance.spent.toString(),
+        };
+      });
+    },
+
+    /** The receipt of one step, if it ran under this application's authorization. */
+    async authorizedOperation(
+      applicationId: string,
+      authorizationId: string,
+      operationId: string,
+    ) {
+      return database.transaction(async (tx) => {
+        const [row] = await tx
+          .select()
+          .from(operations)
+          .innerJoin(
+            authorizations,
+            and(
+              eq(authorizations.accountId, operations.accountId),
+              eq(authorizations.id, operations.authorizationId),
+            ),
+          )
+          .where(
+            and(
+              eq(operations.id, operationId),
+              eq(authorizations.id, authorizationId),
+              eq(authorizations.applicationId, applicationId),
+            ),
+          )
+          .limit(1);
+        const step = row?.test_credit_operations;
+        const record = step && (await operation(step.accountId, step.id, tx));
+        return (
+          record && operationReceipt(record, await eligibleEvidence(tx, record))
+        );
       });
     },
 
@@ -1118,6 +1600,29 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             operation: operationReceipt(row, await eligibleEvidence(tx, row)),
           } as const;
         const filter = operationFilter(row.accountId, row.id);
+        // Suspension and a restore reach reservations made before them: none
+        // may run, while what already dispatched settles (#103, #108).
+        if (
+          (await suspended(tx, accountId)) ||
+          (await restoreHolds(tx, accountId))
+        ) {
+          await releaseReservation(tx, row);
+          return denied("not_authorized");
+        }
+        if (row.authorizationId) {
+          // Revoked, expired or paused since the reservation: it does not
+          // run (#111 在派发前复查, #112).
+          const under = await underAuthorization(
+            tx,
+            row.accountId,
+            { authorizationId: row.authorizationId },
+            await currentTime(tx),
+          );
+          if (under.refusal) {
+            await releaseReservation(tx, row);
+            return denied(under.refusal);
+          }
+        }
         if (row.budgetId) {
           // The budget's Credit type was matched to the entry at reservation
           // (#107), so either type dispatches under the budget it fixed.
