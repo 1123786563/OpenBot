@@ -69,12 +69,24 @@ async function accountIdOf(identity: { issuer: string; subject: string }) {
 }
 const weknoraLedger: WeKnoraLedger = {
   quote: () => ledger.quote(),
-  reserve: (identity, input) =>
-    ledger.reserve(identity, {
+  reserve: async (identity, input) => {
+    const result = await ledger.reserve(identity, {
       operationId: input.operationId,
       route: input.route,
       priceVersion: input.priceVersion,
-    }),
+    });
+    // The WeKnora reservation contract has no budget dimension, so refusals
+    // outside its reason set surface as the path being unavailable.
+    if (result.state === "denied") {
+      const reason =
+        result.reason === "insufficient_credits" ||
+        result.reason === "route_unavailable"
+          ? result.reason
+          : "not_authorized";
+      return { state: "denied" as const, reason };
+    }
+    return result;
+  },
   settle: async (identity, operationId, usage) => {
     const accountId =
       dispatchAccounts.get(operationId) ?? (await accountIdOf(identity));

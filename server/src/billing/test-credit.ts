@@ -15,11 +15,71 @@ import {
   enterpriseSettings,
   testCreditEvidence as evidence,
   lagoUsageEvents,
+  pilotProviderCostHolds,
+  pilotProviderCostLimitEvents,
+  pilotProviderCostLimits,
   testCreditOperations as operations,
 } from "../db/schema";
 
 export type VerifiedBillingIdentity = { issuer: string; subject: string };
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+/**
+ * Pilot provider-cost ceiling bookkeeping (#106). A reservation on a capped
+ * path holds a share at the route's maximum charge; the share stays held while
+ * the provider result is unknown — even after the user reservation is released
+ * — and is replaced by the verified cost or booked at the bound when the
+ * reconciliation window closes without evidence.
+ */
+async function providerCostOutstanding(tx: Transaction, path: string) {
+  const [row] = await tx
+    .select({
+      outstanding: sql<string>`coalesce(sum(case when ${pilotProviderCostHolds.state} = 'held' then ${pilotProviderCostHolds.boundMicrocredits} else coalesce(${pilotProviderCostHolds.costMicrocredits}, 0) end), 0)`,
+    })
+    .from(pilotProviderCostHolds)
+    .where(eq(pilotProviderCostHolds.path, path));
+  return BigInt(row?.outstanding ?? 0);
+}
+
+async function resolveProviderCostHold(
+  tx: Transaction,
+  routeId: string,
+  accountId: string,
+  operationId: string,
+  outcome:
+    | { state: "verified"; costMicrocredits: bigint }
+    | { state: "booked" }
+    | { state: "released" },
+) {
+  // Terminal states are final: replays and late evidence never re-open a
+  // share that was already resolved, so restarts and retries cannot
+  // double-count or resurrect released cost.
+  const settled =
+    outcome.state === "booked"
+      ? {
+          state: "booked" as const,
+          costMicrocredits: sql`${pilotProviderCostHolds.boundMicrocredits}`,
+        }
+      : outcome.state === "verified"
+        ? {
+            state: "verified" as const,
+            costMicrocredits: outcome.costMicrocredits,
+          }
+        : { state: "released" as const, costMicrocredits: 0n };
+  await tx
+    .update(pilotProviderCostHolds)
+    .set({ ...settled, resolvedAt: new Date() })
+    .where(
+      and(
+        eq(pilotProviderCostHolds.path, routeId),
+        eq(pilotProviderCostHolds.accountId, accountId),
+        eq(pilotProviderCostHolds.operationId, operationId),
+        outcome.state === "verified"
+          ? sql`${pilotProviderCostHolds.state} in ('held', 'booked')`
+          : eq(pilotProviderCostHolds.state, "held"),
+      ),
+    );
+}
 type Operation = typeof operations.$inferSelect;
 type Usage = { inputTokens: bigint; outputTokens: bigint };
 
@@ -253,6 +313,18 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             : "pending",
       })
       .where(operationFilter(row.accountId, row.id));
+    // The user reservation may release here, but an unknown provider result
+    // keeps its cost share: verified cost replaces the bound, and a window
+    // that closed without evidence books the share at the upper bound.
+    await resolveProviderCostHold(
+      tx,
+      row.route.id,
+      row.accountId,
+      row.id,
+      verified
+        ? { state: "verified", costMicrocredits: cutoffHold }
+        : { state: "booked" },
+    );
   }
 
   async function applyCutoff(tx: Transaction, accountId: string, now: Date) {
@@ -662,6 +734,22 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           if (used + reserved > executionBudget.limitMicrocredits)
             return denied("execution_limit");
         }
+        // The pilot-wide provider-cost ceiling is acquired in the same
+        // transaction as the user reservation: both hold or neither does.
+        const costLimit = (
+          await tx
+            .select()
+            .from(pilotProviderCostLimits)
+            .where(eq(pilotProviderCostLimits.path, route.id))
+        )[0];
+        if (costLimit) {
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtext(${route.id}))`,
+          );
+          const outstanding = await providerCostOutstanding(tx, route.id);
+          if (outstanding + reserved > costLimit.limitMicrocredits)
+            return denied("route_unavailable");
+        }
         const [row] = await tx
           .insert(operations)
           .values({
@@ -677,6 +765,18 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             stepId: input.stepId,
           })
           .returning();
+        if (costLimit) {
+          await tx
+            .insert(pilotProviderCostHolds)
+            .values({
+              path: route.id,
+              accountId,
+              operationId: input.operationId,
+              boundMicrocredits: reserved,
+              state: "held",
+            })
+            .onConflictDoNothing();
+        }
         if (!row)
           throw new Error("Test Credit reservation could not be created");
         return {
@@ -756,6 +856,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
     async releaseUnsent(accountId: string, id: string) {
       await database.transaction(async (tx) => {
         if (!(await lockAccount(tx, accountId))) return;
+        const row = await operation(accountId, id, tx);
         await tx
           .update(operations)
           .set({ state: "released", dispatchedAt: null })
@@ -766,6 +867,10 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
               isNull(operations.eligibleEvidenceId),
             ),
           );
+        if (row)
+          await resolveProviderCostHold(tx, row.route.id, accountId, id, {
+            state: "released",
+          });
       });
     },
 
@@ -789,6 +894,76 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       });
     },
     settleRecorded,
+
+    /** Sets (or replaces) a pilot-wide provider-cost ceiling for one path. */
+    async setProviderCostLimit(input: {
+      path: string;
+      limitMicrocredits: bigint;
+      by: string;
+    }) {
+      if (input.limitMicrocredits < 0n)
+        throw new RangeError("Invalid provider cost limit");
+      return database.transaction(async (tx) => {
+        const [existing] = await tx
+          .select()
+          .from(pilotProviderCostLimits)
+          .where(eq(pilotProviderCostLimits.path, input.path));
+        const updatedAt = await currentTime(tx);
+        await tx
+          .insert(pilotProviderCostLimits)
+          .values({
+            path: input.path,
+            limitMicrocredits: input.limitMicrocredits,
+            updatedBy: input.by,
+            updatedAt,
+          })
+          .onConflictDoUpdate({
+            target: pilotProviderCostLimits.path,
+            set: {
+              limitMicrocredits: input.limitMicrocredits,
+              updatedBy: input.by,
+              updatedAt,
+            },
+          });
+        await tx.insert(pilotProviderCostLimitEvents).values({
+          path: input.path,
+          fromLimitMicrocredits: existing?.limitMicrocredits ?? null,
+          toLimitMicrocredits: input.limitMicrocredits,
+          by: input.by,
+          at: updatedAt,
+        });
+        return { previous: existing?.limitMicrocredits ?? null };
+      });
+    },
+
+    /** Ceiling and share composition for one path; null limit means uncapped. */
+    async providerCost(path: string) {
+      const [limit] = await database
+        .select()
+        .from(pilotProviderCostLimits)
+        .where(eq(pilotProviderCostLimits.path, path));
+      const rows = await database
+        .select()
+        .from(pilotProviderCostHolds)
+        .where(eq(pilotProviderCostHolds.path, path));
+      const outstanding = rows.reduce(
+        (sum, row) =>
+          sum +
+          (row.state === "held"
+            ? row.boundMicrocredits
+            : (row.costMicrocredits ?? 0n)),
+        0n,
+      );
+      return {
+        limitMicrocredits: limit?.limitMicrocredits ?? null,
+        updatedBy: limit?.updatedBy ?? null,
+        holds: rows.length,
+        outstandingMicrocredits: outstanding.toString(),
+        remainingMicrocredits: limit
+          ? (limit.limitMicrocredits - outstanding).toString()
+          : null,
+      };
+    },
 
     async reconcile(identity: VerifiedBillingIdentity, id: string) {
       return database.transaction(async (tx) => {
@@ -879,6 +1054,12 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         }
       }
       const eligible = await eligibleEvidence(tx, row);
+      // Verified usage replaces the provider-cost share even when it arrives
+      // after a cutoff already booked the bound.
+      await resolveProviderCostHold(tx, row.route.id, accountId, id, {
+        state: "verified",
+        costMicrocredits: cost,
+      });
       return {
         operation: operationReceipt(row, eligible),
         platformMicrocredits: await platformCost(tx, row, eligible),
@@ -933,6 +1114,10 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       )
       .where(operationFilter(accountId, id))
       .returning();
+    await resolveProviderCostHold(tx, row.route.id, accountId, id, {
+      state: "verified",
+      costMicrocredits: settled?.state === "settled" ? charged : 0n,
+    });
     if (settled && verified && settled.state === "settled") {
       await tx
         .insert(lagoUsageEvents)

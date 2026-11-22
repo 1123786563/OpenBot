@@ -180,17 +180,17 @@ async function chatOp(
   const pick = await ledger.resolveQuote({
     conversation: { id: routeId, revision },
   });
-  if (!("quote" in pick))
-    throw new Error(`resolveQuote refused: ${pick.reason}`);
+  const quote = "quote" in pick ? pick.quote : undefined;
+  if (!quote) throw new Error("resolveQuote refused the saved pick");
   const reserved = await ledger.reserve(identity, {
     operationId,
-    route: pick.quote.route,
-    priceVersion: pick.quote.priceVersion,
+    route: quote.route,
+    priceVersion: quote.priceVersion,
   });
   assert(reserved.state === "reserved", `reserve: ${reserved.state}`);
   const dispatch = await ledger.beginDispatch(identity, {
     operationId,
-    permit: reserved.permit ?? "",
+    permit: reserved.state === "reserved" ? (reserved.permit ?? "") : "",
   });
   assert(dispatch.state === "dispatch", `dispatch: ${dispatch.state}`);
   const result = await chatExecutor({
@@ -199,7 +199,7 @@ async function chatOp(
     operationId,
     recheckRoute: () => ledger.routeStillEligible(dispatch.route),
   });
-  if ("text" in result)
+  if ("text" in result && result.text)
     await ledger.recordResult(dispatch.accountId, operationId, result.text);
   const settled = await ledger.settle(dispatch.accountId, operationId, {
     inputTokens: BigInt(result.usage.inputTokens),
@@ -224,12 +224,24 @@ async function accountIdOf(identity: { issuer: string; subject: string }) {
 }
 const weknoraLedger: WeKnoraLedger = {
   quote: () => ledger.quote(),
-  reserve: (identity, input) =>
-    ledger.reserve(identity, {
+  reserve: async (identity, input) => {
+    const result = await ledger.reserve(identity, {
       operationId: input.operationId,
       route: input.route,
       priceVersion: input.priceVersion,
-    }),
+    });
+    // The WeKnora reservation contract has no budget dimension, so refusals
+    // outside its reason set surface as the path being unavailable.
+    if (result.state === "denied") {
+      const reason =
+        result.reason === "insufficient_credits" ||
+        result.reason === "route_unavailable"
+          ? result.reason
+          : "not_authorized";
+      return { state: "denied" as const, reason };
+    }
+    return result;
+  },
   settle: async (identity, operationId, usage) => {
     const accountId =
       dispatchAccounts.get(operationId) ?? (await accountIdOf(identity));
@@ -335,7 +347,9 @@ Bun.serve({
         });
         if (reserved.state === "denied")
           throw new WeKnoraBillingError("route_unavailable", "denied");
-        if (reserved.state === "existing" && !reserved.permit) {
+        const permit =
+          reserved.state === "reserved" ? reserved.permit : undefined;
+        if (reserved.state === "existing" && !permit) {
           // Worker recovery must replay a settled operation, not a released one.
           const receipt = await ledger.receipt(
             { issuer, subject: body.subject },
@@ -353,10 +367,10 @@ Bun.serve({
             );
           }
         }
-        if (reserved.permit) {
+        if (permit) {
           const dispatch = await ledger.beginDispatch(
             { issuer, subject: body.subject },
-            { operationId: body.operationId, permit: reserved.permit },
+            { operationId: body.operationId, permit },
           );
           if (dispatch.state === "dispatch")
             dispatchAccounts.set(body.operationId, dispatch.accountId);
@@ -542,15 +556,15 @@ await scenario("model-switch-product-entry", async () => {
   const botPick = await ledger.resolveQuote({
     bot: { id: "route-b", revision: revisions["route-b"] },
   });
-  assert(
-    "quote" in botPick && botPick.quote.route === "route-b",
-    "bot pick route-b failed",
-  );
+  const botQuote = "quote" in botPick ? botPick.quote : undefined;
+  assert(botQuote?.route === "route-b", "bot pick route-b failed");
   const conversationPick = await ledger.resolveQuote({
     conversation: { id: "route-a", revision: revisions["route-a"] },
   });
+  const conversationQuote =
+    "quote" in conversationPick ? conversationPick.quote : undefined;
   assert(
-    "quote" in conversationPick && conversationPick.quote.route === "route-a",
+    conversationQuote?.route === "route-a",
     "conversation pick route-a failed",
   );
   const stale = await ledger.resolveQuote({
@@ -627,14 +641,12 @@ await scenario("cross-app-balance-race", async () => {
     ),
   );
   const reserved = attempts.filter((r) => r.state === "reserved");
-  const denied = attempts.filter((r) => r.state === "denied");
+  const denied = attempts.filter(
+    (r) => r.state === "denied" && r.reason === "insufficient_credits",
+  );
   const balance = await ledger.balance(identityC);
   assert(reserved.length === 2, `reserved ${reserved.length}`);
-  assert(
-    denied.length === 2 &&
-      denied.every((r) => r.reason === "insufficient_credits"),
-    "denials must be insufficient_credits",
-  );
+  assert(denied.length === 2, "denials must be insufficient_credits");
   assert(balance?.availableMicrocredits === "0", "leftover availability");
   return { reserved: reserved.length, denied: denied.length, balance };
 });
@@ -676,10 +688,12 @@ await scenario("stale-reservation-cannot-dispatch", async () => {
     priceVersion: quote.priceVersion,
   });
   assert(reserved.state === "reserved", "reserve failed");
+  const stalePermit =
+    reserved.state === "reserved" ? (reserved.permit ?? "") : "";
   clockOffsetMs = 5 * 60_000 + 2_000;
   const dispatch = await ledger.beginDispatch(identityA, {
     operationId: "matrix-stale",
-    permit: reserved.permit ?? "",
+    permit: stalePermit,
   });
   clockOffsetMs = 0;
   assert(dispatch.state === "denied", `dispatch: ${JSON.stringify(dispatch)}`);
@@ -703,7 +717,7 @@ await scenario("gateway-timeout-releases-hold", async () => {
   });
   const dispatch = await ledger.beginDispatch(identityA, {
     operationId: "matrix-timeout",
-    permit: reserved.permit ?? "",
+    permit: reserved.state === "reserved" ? (reserved.permit ?? "") : "",
   });
   assert(dispatch.state === "dispatch", "not dispatched");
   let failed = false;
@@ -736,7 +750,7 @@ await scenario("meter-refusal-blocks-dispatch", async () => {
   });
   const dispatch = await ledger.beginDispatch(identityA, {
     operationId: "matrix-unmetered",
-    permit: reserved.permit ?? "",
+    permit: reserved.state === "reserved" ? (reserved.permit ?? "") : "",
   });
   assert(dispatch.state === "dispatch", "not dispatched");
   tokenizerAvailable = false;
@@ -768,7 +782,7 @@ await scenario("cutoff-releases-abandoned-hold", async () => {
   });
   const dispatch = await ledger.beginDispatch(identityB, {
     operationId: "matrix-abandoned",
-    permit: reserved.permit ?? "",
+    permit: reserved.state === "reserved" ? (reserved.permit ?? "") : "",
   });
   assert(dispatch.state === "dispatch", "not dispatched");
   const before = await ledger.balance(identityB);
@@ -783,9 +797,9 @@ await scenario("cutoff-releases-abandoned-hold", async () => {
       BigInt(after.availableMicrocredits) -
         BigInt(before.availableMicrocredits) ===
         8256n,
-    `hold not returned: ${before.availableMicrocredits} -> ${after.availableMicrocredits}`,
+    `hold not returned: ${before?.availableMicrocredits} -> ${after?.availableMicrocredits}`,
   );
-  return { swept: applied, restored: after.availableMicrocredits };
+  return { swept: applied, restored: after?.availableMicrocredits };
 });
 
 await scenario("wrong-permit-cannot-dispatch", async () => {

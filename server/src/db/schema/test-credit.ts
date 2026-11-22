@@ -239,3 +239,81 @@ export const lagoUsageEvents = pgTable(
     ),
   ],
 );
+
+// A pilot-wide provider-cost ceiling per route path (#106). Reservations on a
+// capped path must atomically acquire a share of the ceiling at the route's
+// maximum charge; the share stays held while the provider result is unknown.
+export const pilotProviderCostLimits = pgTable(
+  "pilot_provider_cost_limits",
+  {
+    path: text().primaryKey(),
+    limitMicrocredits: bigint("limit_microcredits", {
+      mode: "bigint",
+    }).notNull(),
+    updatedBy: text().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      "pilot_provider_cost_limits_nonnegative",
+      sql`${table.limitMicrocredits} >= 0`,
+    ),
+  ],
+);
+
+// Every ceiling change is append-only so the operator and both values stay
+// auditable without replaying the current row.
+export const pilotProviderCostLimitEvents = pgTable(
+  "pilot_provider_cost_limit_events",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    path: text().notNull(),
+    fromLimitMicrocredits: bigint("from_limit_microcredits", {
+      mode: "bigint",
+    }),
+    toLimitMicrocredits: bigint("to_limit_microcredits", {
+      mode: "bigint",
+    }).notNull(),
+    by: text().notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+);
+
+export const providerCostHoldStates = [
+  "held",
+  "verified",
+  "booked",
+  "released",
+] as const;
+
+export const pilotProviderCostHolds = pgTable(
+  "pilot_provider_cost_holds",
+  {
+    path: text().notNull(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => testCreditAccounts.id),
+    operationId: text("operation_id").notNull(),
+    boundMicrocredits: bigint("bound_microcredits", {
+      mode: "bigint",
+    }).notNull(),
+    // Actual cost once verified; the bound stays booked while unknown.
+    costMicrocredits: bigint("cost_microcredits", { mode: "bigint" }),
+    state: text({ enum: providerCostHoldStates }).notNull().default("held"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.path, table.accountId, table.operationId],
+    }),
+    check(
+      "pilot_provider_cost_holds_amounts",
+      sql`${table.boundMicrocredits} >= 0 AND (${table.costMicrocredits} IS NULL OR ${table.costMicrocredits} >= 0)`,
+    ),
+  ],
+);
