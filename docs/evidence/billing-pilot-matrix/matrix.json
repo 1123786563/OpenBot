@@ -1,0 +1,343 @@
+{
+  "startedAt": "2026-11-22T10:13:00.514Z",
+  "accounts": {
+    "A": {
+      "subject": "599e71f0-103b-4095-a71a-c8e785192a41"
+    },
+    "B": {
+      "subject": "6d74dbd4-52ed-4e53-8bc0-6d13d4e7592b"
+    },
+    "C": {
+      "subject": "baa4166f-fbe4-4d8e-b7ca-97ec694fcd1b"
+    }
+  },
+  "authorizationId": "10a99a0b-9eaf-48bc-b1f1-7e11a1a3a73e",
+  "gateway": {
+    "image": "openbot-bifrost89:zhipu-cap-fixed6",
+    "revision": "matrix-fixed6-3skfs9",
+    "chatEndpoint": "http://127.0.0.1:32790",
+    "embeddingEndpoint": "http://127.0.0.1:25170",
+    "tokenizer": "zhipu /api/paas/v4/tokenizer"
+  },
+  "lago": {
+    "url": "http://127.0.0.1:32832",
+    "version": "v1.57.0"
+  },
+  "results": [
+    {
+      "scenario": "provision-accounts",
+      "outcome": "pass",
+      "detail": {
+        "grantedA": "200000",
+        "grantedB": "50000"
+      }
+    },
+    {
+      "scenario": "publish-two-models",
+      "outcome": "pass",
+      "detail": {
+        "options": [
+          {
+            "id": "route-a",
+            "revision": "084c4033-4037-4763-944a-9401fdd1bd03",
+            "provider": "zhipu",
+            "model": "glm-5.3-flash"
+          },
+          {
+            "id": "route-b",
+            "revision": "f3ab2e7a-0084-4cba-a397-82ed4b3361a0",
+            "provider": "zhipu-compat",
+            "model": "glm-5.3"
+          }
+        ]
+      }
+    },
+    {
+      "scenario": "model-switch-product-entry",
+      "outcome": "pass",
+      "detail": {
+        "bot": "bot",
+        "conversation": "conversation",
+        "staleRefused": true
+      }
+    },
+    {
+      "scenario": "chat-both-routes-account-A",
+      "outcome": "pass",
+      "detail": {
+        "routeA": "partial",
+        "usageA": {
+          "inputTokens": 19,
+          "outputTokens": 8
+        },
+        "routeB": "route two ok",
+        "usageB": {
+          "inputTokens": 19,
+          "outputTokens": 5
+        }
+      }
+    },
+    {
+      "scenario": "isolation-account-B",
+      "outcome": "pass",
+      "detail": {
+        "text": null,
+        "chargedB": "102",
+        "chargedA": "180"
+      }
+    },
+    {
+      "scenario": "cross-app-balance-race",
+      "outcome": "pass",
+      "detail": {
+        "reserved": 2,
+        "denied": 2,
+        "balance": {
+          "creditType": "test",
+          "grantedMicrocredits": "16512",
+          "reservedMicrocredits": "16512",
+          "chargedMicrocredits": "0",
+          "availableMicrocredits": "0"
+        }
+      }
+    },
+    {
+      "scenario": "auxiliary-boundary-fail-closed",
+      "outcome": "pass",
+      "detail": {
+        "refusedNoContext": true,
+        "refusedUnbounded": true
+      }
+    },
+    {
+      "scenario": "stale-reservation-cannot-dispatch",
+      "outcome": "pass",
+      "detail": {
+        "dispatchState": "denied",
+        "reason": "route_unavailable"
+      }
+    },
+    {
+      "scenario": "gateway-timeout-releases-hold",
+      "outcome": "pass",
+      "detail": {
+        "released": true,
+        "restored": "199820"
+      }
+    },
+    {
+      "scenario": "meter-refusal-blocks-dispatch",
+      "outcome": "pass",
+      "detail": {
+        "refusedNoProviderRequest": true
+      }
+    },
+    {
+      "scenario": "cutoff-releases-abandoned-hold",
+      "outcome": "pass",
+      "detail": {
+        "swept": 1,
+        "restored": "49898"
+      }
+    },
+    {
+      "scenario": "wrong-permit-cannot-dispatch",
+      "outcome": "pass",
+      "detail": {
+        "state": "denied",
+        "reason": "not_authorized"
+      }
+    },
+    {
+      "scenario": "external-direct-gateway-boundary",
+      "outcome": "pass",
+      "detail": {
+        "directHttpStatus": 200,
+        "note": "gateway reached without OpenBot context is a deployment-boundary concern; no permit can be minted outside the ledger (wrong-permit scenario)"
+      }
+    },
+    {
+      "scenario": "publish-embedding-route",
+      "outcome": "pass",
+      "detail": {
+        "route": "local-bge",
+        "maxCharge": "256"
+      }
+    },
+    {
+      "scenario": "weknora-worker-ingestion",
+      "outcome": "pass",
+      "detail": {
+        "operations": [
+          {
+            "operationId": "e137c2e2-8682-50bd-bf77-9514ded4e8d1",
+            "state": "settled",
+            "charged": "7"
+          }
+        ]
+      }
+    },
+    {
+      "scenario": "signout-then-authorized-embedding",
+      "outcome": "pass",
+      "detail": {
+        "status": 200,
+        "dimensions": 384
+      }
+    },
+    {
+      "scenario": "recovery-without-reservation-refused",
+      "outcome": "pass",
+      "detail": {
+        "status": 409,
+        "body": {
+          "code": "not_authorized",
+          "recovery": true
+        }
+      }
+    },
+    {
+      "scenario": "revocation-and-isolation-denials",
+      "outcome": "pass",
+      "detail": {
+        "stranger": 403,
+        "wrongResource": 403,
+        "revoked": 410
+      }
+    },
+    {
+      "scenario": "lago-reconciliation",
+      "outcome": "pass",
+      "detail": {
+        "flushed": {
+          "sent": 6,
+          "paused": 0
+        },
+        "balances": {
+          "A": {
+            "creditType": "test",
+            "grantedMicrocredits": "200000",
+            "reservedMicrocredits": "256",
+            "chargedMicrocredits": "193",
+            "availableMicrocredits": "199551"
+          },
+          "B": {
+            "creditType": "test",
+            "grantedMicrocredits": "50000",
+            "reservedMicrocredits": "0",
+            "chargedMicrocredits": "102",
+            "availableMicrocredits": "49898"
+          }
+        }
+      }
+    }
+  ],
+  "receipts": {
+    "A": {
+      "accountId": "9d11ab3d-3d8c-496c-83be-2a89b7ffcd33",
+      "balance": {
+        "creditType": "test",
+        "grantedMicrocredits": "200000",
+        "reservedMicrocredits": "256",
+        "chargedMicrocredits": "193",
+        "availableMicrocredits": "199551"
+      },
+      "operations": [
+        {
+          "operationId": "matrix-stale",
+          "state": "released",
+          "charged": null
+        },
+        {
+          "operationId": "matrix-timeout",
+          "state": "released",
+          "charged": null
+        },
+        {
+          "operationId": "matrix-unmetered",
+          "state": "released",
+          "charged": null
+        },
+        {
+          "operationId": "matrix-released-recovery",
+          "state": "released",
+          "charged": null
+        },
+        {
+          "operationId": "matrix-recovery-sibling",
+          "state": "reserved",
+          "charged": null
+        },
+        {
+          "operationId": "matrix-chat-a1",
+          "state": "settled",
+          "charged": "102"
+        },
+        {
+          "operationId": "matrix-chat-a2",
+          "state": "settled",
+          "charged": "78"
+        },
+        {
+          "operationId": "matrix-signout-embed",
+          "state": "settled",
+          "charged": "4"
+        },
+        {
+          "operationId": "e137c2e2-8682-50bd-bf77-9514ded4e8d1",
+          "state": "settled",
+          "charged": "7"
+        },
+        {
+          "operationId": "matrix-before-revoke",
+          "state": "settled",
+          "charged": "2"
+        }
+      ]
+    },
+    "B": {
+      "accountId": "95d7ef7a-bf33-4f82-962c-64b2606c144f",
+      "balance": {
+        "creditType": "test",
+        "grantedMicrocredits": "50000",
+        "reservedMicrocredits": "0",
+        "chargedMicrocredits": "102",
+        "availableMicrocredits": "49898"
+      },
+      "operations": [
+        {
+          "operationId": "matrix-abandoned",
+          "state": "released",
+          "charged": null
+        },
+        {
+          "operationId": "matrix-chat-b1",
+          "state": "settled",
+          "charged": "102"
+        }
+      ]
+    },
+    "C": {
+      "accountId": "47b19f23-865f-4d51-a395-6b2fedb63ed9",
+      "balance": {
+        "creditType": "test",
+        "grantedMicrocredits": "16512",
+        "reservedMicrocredits": "16512",
+        "chargedMicrocredits": "0",
+        "availableMicrocredits": "0"
+      },
+      "operations": [
+        {
+          "operationId": "matrix-race-1",
+          "state": "reserved",
+          "charged": null
+        },
+        {
+          "operationId": "matrix-race-2",
+          "state": "reserved",
+          "charged": null
+        }
+      ]
+    }
+  }
+}

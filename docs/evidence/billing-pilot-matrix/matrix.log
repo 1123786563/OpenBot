@@ -1,0 +1,34 @@
+{"t":"2026-11-22T10:13:00.573Z","scenario":"provision-accounts","outcome":"pass","detail":{"grantedA":"200000","grantedB":"50000"}}
+{"t":"2026-11-22T10:13:00.583Z","scenario":"publish-two-models","outcome":"pass","detail":{"options":[{"id":"route-a","revision":"084c4033-4037-4763-944a-9401fdd1bd03","provider":"zhipu","model":"glm-5.3-flash"},{"id":"route-b","revision":"f3ab2e7a-0084-4cba-a397-82ed4b3361a0","provider":"zhipu-compat","model":"glm-5.3"}]}}
+{"t":"2026-11-22T10:13:00.585Z","scenario":"model-switch-product-entry","outcome":"pass","detail":{"bot":"bot","conversation":"conversation","staleRefused":true}}
+{"t":"2026-11-22T10:13:03.848Z","scenario":"chat-both-routes-account-A","outcome":"pass","detail":{"routeA":"partial","usageA":{"inputTokens":19,"outputTokens":8},"routeB":"route two ok","usageB":{"inputTokens":19,"outputTokens":5}}}
+{"t":"2026-11-22T10:13:04.913Z","scenario":"isolation-account-B","outcome":"pass","detail":{"text":null,"chargedB":"102","chargedA":"180"}}
+{"t":"2026-11-22T10:13:04.938Z","scenario":"cross-app-balance-race","outcome":"pass","detail":{"reserved":2,"denied":2,"balance":{"creditType":"test","grantedMicrocredits":"16512","reservedMicrocredits":"16512","chargedMicrocredits":"0","availableMicrocredits":"0"}}}
+{"t":"2026-11-22T10:13:04.938Z","scenario":"auxiliary-boundary-fail-closed","outcome":"pass","detail":{"refusedNoContext":true,"refusedUnbounded":true}}
+{"t":"2026-11-22T10:13:04.947Z","scenario":"stale-reservation-cannot-dispatch","outcome":"pass","detail":{"dispatchState":"denied","reason":"route_unavailable"}}
+{"t":"2026-11-22T10:13:05.105Z","scenario":"gateway-timeout-releases-hold","outcome":"pass","detail":{"released":true,"restored":"199820"}}
+{"t":"2026-11-22T10:13:05.121Z","scenario":"meter-refusal-blocks-dispatch","outcome":"pass","detail":{"refusedNoProviderRequest":true}}
+{"t":"2026-11-22T10:13:05.146Z","scenario":"cutoff-releases-abandoned-hold","outcome":"pass","detail":{"swept":1,"restored":"49898"}}
+{"t":"2026-11-22T10:13:05.149Z","scenario":"wrong-permit-cannot-dispatch","outcome":"pass","detail":{"state":"denied","reason":"not_authorized"}}
+{"t":"2026-11-22T10:13:06.038Z","scenario":"external-direct-gateway-boundary","outcome":"pass","detail":{"directHttpStatus":200,"note":"gateway reached without OpenBot context is a deployment-boundary concern; no permit can be minted outside the ledger (wrong-permit scenario)"}}
+{"t":"2026-11-22T10:13:06.047Z","scenario":"publish-embedding-route","outcome":"pass","detail":{"route":"local-bge","maxCharge":"256"}}
+{"t":"2026-11-22T10:13:06.050Z","event":"WORKER-READY"}
+{"t":"2026-11-22T10:13:23.367Z","event":"reserved","operationId":"e137c2e2-8682-50bd-bf77-9514ded4e8d1","resourceId":"weknora:tenant:1:kb:kb-1","state":"reserved"}
+{"t":"2026-11-22T10:13:23.430Z","event":"metered","operationId":"e137c2e2-8682-50bd-bf77-9514ded4e8d1","inputTokenUpperBound":14,"gatewayInputTokens":"14"}
+{"t":"2026-11-22T10:13:23.442Z","event":"settled","operationId":"e137c2e2-8682-50bd-bf77-9514ded4e8d1"}
+{"t":"2026-11-22T10:13:24.078Z","scenario":"weknora-worker-ingestion","outcome":"pass","detail":{"operations":[{"operationId":"e137c2e2-8682-50bd-bf77-9514ded4e8d1","state":"settled","charged":"7"}]}}
+{"t":"2026-11-22T10:13:24.092Z","event":"reserved","operationId":"matrix-signout-embed","resourceId":"weknora:tenant:1:kb:kb-1","state":"reserved"}
+{"t":"2026-11-22T10:13:24.123Z","event":"metered","operationId":"matrix-signout-embed","inputTokenUpperBound":8,"gatewayInputTokens":"8"}
+{"t":"2026-11-22T10:13:24.134Z","event":"settled","operationId":"matrix-signout-embed"}
+{"t":"2026-11-22T10:13:24.134Z","scenario":"signout-then-authorized-embedding","outcome":"pass","detail":{"status":200,"dimensions":384}}
+{"t":"2026-11-22T10:13:24.149Z","event":"recovery-refused","operationId":"matrix-released-recovery","receiptState":"released"}
+{"t":"2026-11-22T10:13:24.150Z","scenario":"recovery-without-reservation-refused","outcome":"pass","detail":{"status":409,"body":{"code":"not_authorized","recovery":true}}}
+{"t":"2026-11-22T10:13:24.150Z","event":"embedding-denied","operationId":"matrix-stranger","code":"not_authorized"}
+{"t":"2026-11-22T10:13:24.151Z","event":"embedding-denied","operationId":"matrix-wrong-resource","code":"not_authorized"}
+{"t":"2026-11-22T10:13:24.158Z","event":"reserved","operationId":"matrix-before-revoke","resourceId":"weknora:tenant:1:kb:kb-1","state":"reserved"}
+{"t":"2026-11-22T10:13:24.178Z","event":"metered","operationId":"matrix-before-revoke","inputTokenUpperBound":4,"gatewayInputTokens":"4"}
+{"t":"2026-11-22T10:13:24.187Z","event":"settled","operationId":"matrix-before-revoke"}
+{"t":"2026-11-22T10:13:24.188Z","event":"embedding-denied","operationId":"matrix-after-revoke","code":"authorization_revoked"}
+{"t":"2026-11-22T10:13:24.188Z","scenario":"revocation-and-isolation-denials","outcome":"pass","detail":{"stranger":403,"wrongResource":403,"revoked":410}}
+{"t":"2026-11-22T10:13:24.574Z","scenario":"lago-reconciliation","outcome":"pass","detail":{"flushed":{"sent":6,"paused":0},"balances":{"A":{"creditType":"test","grantedMicrocredits":"200000","reservedMicrocredits":"256","chargedMicrocredits":"193","availableMicrocredits":"199551"},"B":{"creditType":"test","grantedMicrocredits":"50000","reservedMicrocredits":"0","chargedMicrocredits":"102","availableMicrocredits":"49898"}}}}
+{"t":"2026-11-22T10:13:24.584Z","event":"MATRIX-DONE","passed":19,"failed":0}
