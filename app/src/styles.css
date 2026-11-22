@@ -175,6 +175,69 @@
   max-width: none;
 }
 
+/* Consecutive sends read as one burst, while each message keeps its own bubble and undo action. */
+[data-transcript-column]
+  [data-queued-state="waiting"]
+  [data-slot="bubble-content"] {
+  border-style: dashed;
+  border-color: color-mix(in oklch, var(--foreground) 18%, transparent);
+  background: color-mix(in oklch, var(--muted) 72%, var(--background));
+}
+
+[data-transcript-column]
+  [data-queued-state="waiting"]
+  [data-slot="message-footer"] {
+  gap: var(--spacing-1-5);
+  font-weight: 400;
+}
+
+/*
+ * Shared corners and tint make a burst read as one authored group at a glance. The tint has to be
+ * told apart from a plain single bubble at reading distance: at 7% primary over muted it vanished
+ * against the page, and the burst looked exactly like the messages around it.
+ */
+[data-transcript-column]
+  [data-message-group="person"]
+  [data-slot="bubble-content"] {
+  border-color: color-mix(in oklch, var(--primary) 30%, transparent);
+  background: color-mix(in oklch, var(--primary) 14%, var(--muted));
+}
+
+[data-transcript-column] .message-group-label {
+  gap: var(--spacing-1);
+  padding: var(--spacing-1) var(--spacing-2);
+  border: var(--spacing-px, 0.0625rem) solid
+    color-mix(in oklch, var(--primary) 30%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--primary) 10%, var(--background));
+  color: color-mix(in oklch, var(--primary) 72%, var(--foreground));
+  line-height: 1;
+}
+
+[data-transcript-column] [data-queued-state="waiting"] .message-group-label {
+  border-style: dashed;
+  background: color-mix(in oklch, var(--muted) 68%, var(--background));
+  color: var(--muted-foreground);
+}
+
+[data-transcript-column]
+  [data-message-group-position="start"]
+  [data-slot="bubble-content"] {
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+[data-transcript-column]
+  [data-message-group-position="middle"]
+  [data-slot="bubble-content"] {
+  border-radius: var(--radius-sm);
+}
+
+[data-transcript-column]
+  [data-message-group-position="end"]
+  [data-slot="bubble-content"] {
+  border-top-right-radius: var(--radius-sm);
+}
+
 /*
  * An interface a Bot draws inside a Card has one frame, not two. CopilotKit draws a frame of its own
  * around every interface in a chat (a border and 12px of padding), and the catalog's Card draws a
@@ -385,45 +448,4 @@
     opacity: 0;
     transform: translateY(3px);
   }
-}
-/* Consecutive sends read as one burst, while each message keeps its own bubble and undo action. */
-[data-transcript-column]
-  [data-queued-state="waiting"]
-  [data-slot="bubble-content"] {
-  border-style: dashed;
-  border-color: color-mix(in oklch, var(--foreground) 18%, transparent);
-  background: color-mix(in oklch, var(--muted) 72%, var(--background));
-}
-
-[data-transcript-column]
-  [data-queued-state="waiting"]
-  [data-slot="message-footer"] {
-  gap: var(--spacing-1-5);
-  font-weight: 400;
-}
-
-/* Shared corners and tint make a burst read as one authored group at a glance. */
-[data-transcript-column]
-  [data-message-group="person"]
-  [data-slot="bubble-content"] {
-  border-color: color-mix(in oklch, var(--primary) 20%, transparent);
-  background: color-mix(in oklch, var(--primary) 7%, var(--muted));
-}
-
-[data-transcript-column]
-  [data-message-group-position="start"]
-  [data-slot="bubble-content"] {
-  border-bottom-right-radius: var(--radius-sm);
-}
-
-[data-transcript-column]
-  [data-message-group-position="middle"]
-  [data-slot="bubble-content"] {
-  border-radius: var(--radius-sm);
-}
-
-[data-transcript-column]
-  [data-message-group-position="end"]
-  [data-slot="bubble-content"] {
-  border-top-right-radius: var(--radius-sm);
 }

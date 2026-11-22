@@ -31,6 +31,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { agentListQueryOptions } from "@/lib/agents/queries";
@@ -49,6 +50,9 @@ import { queryClient } from "@/query-client";
  * The page's one primary verb, so it is a button for `PageShell`'s `action` that opens a dialog,
  * rather than a form standing above the list somebody came to read.
  */
+/** Placeholder rows while the list loads: enough to fill the view, not to suggest a count. */
+const LOADING_ROWS = ["a", "b", "c", "d", "e", "f"];
+
 export function RememberFact() {
   const [open, setOpen] = useState(false);
   const [content, setContent] = useState("");
@@ -154,7 +158,23 @@ export function MemoryList({
       title="Your memories"
     >
       {confirmation}
-      {memories.isPending ? null : memories.error ? (
+      {memories.isPending ? (
+        <div aria-busy="true" aria-label="Loading memories" role="status">
+          <PageRows>
+            {LOADING_ROWS.map((key, index) => (
+              <Fragment key={key}>
+                {index > 0 ? <Separator /> : null}
+                <Item size="sm">
+                  <ItemContent className="gap-1.5">
+                    <Skeleton className="h-3.5 w-64" />
+                    <Skeleton className="h-3 w-32" />
+                  </ItemContent>
+                </Item>
+              </Fragment>
+            ))}
+          </PageRows>
+        </div>
+      ) : memories.error ? (
         <p role="alert" className="mt-4 text-destructive text-sm">
           {memories.error.message}
         </p>

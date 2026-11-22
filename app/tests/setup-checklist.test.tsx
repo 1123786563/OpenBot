@@ -260,7 +260,7 @@ test("a member's gaps are one neutral line: no amber or red pill, no Required, n
   );
 });
 
-test("while the answer is on its way, the checklist draws nothing", async () => {
+test("while the answer is on its way, the checklist draws placeholder rows", async () => {
   let release: () => void = () => {};
   const held = new Promise<void>((resolve) => {
     release = resolve;
@@ -274,7 +274,10 @@ test("while the answer is on its way, the checklist draws nothing", async () => 
   );
   const view = draw();
 
-  expect(view.queryByRole("status")).toBeNull();
+  // Placeholder rows, asserting nothing: not the summary, and not the real list either.
+  expect(view.getByRole("status").getAttribute("aria-label")).toBe(
+    "Checking your setup",
+  );
   expect(view.queryByRole("list", { name: "Setup" })).toBeNull();
   release();
   await view.findByRole("list", { name: "Setup" });

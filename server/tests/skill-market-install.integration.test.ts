@@ -156,34 +156,48 @@ afterEach(() => {
 });
 
 afterAll(async () => {
-  const approvalIds = (
-    await Promise.all([approvals.list(owner), approvals.list(member)])
-  )
-    .flat()
-    .map(({ id }) => id);
-  if (approvalIds.length)
+  try {
+    const approvalIds = (
+      await Promise.all([approvals.list(owner), approvals.list(member)])
+    )
+      .flat()
+      .map(({ id }) => id);
+    if (approvalIds.length)
+      await database
+        .delete(workItems)
+        .where(
+          and(
+            eq(workItems.kind, "approval.resume"),
+            inArray(workItems.key, approvalIds),
+          ),
+        );
     await database
-      .delete(workItems)
+      .delete(agents)
+      .where(inArray(agents.id, [bot, anotherBot, emptyBot, spareBot]));
+    await database
+      .delete(skillMarketSources)
+      .where(inArray(skillMarketSources.slug, [slug, collision, racingSource]));
+    await database
+      .delete(skills)
       .where(
-        and(
-          eq(workItems.kind, "approval.resume"),
-          inArray(workItems.key, approvalIds),
-        ),
+        inArray(skills.slug, [slug, collision, racingCommand, ...alternatives]),
       );
-  await database
-    .delete(agents)
-    .where(inArray(agents.id, [bot, anotherBot, emptyBot, spareBot]));
-  await database
-    .delete(skillMarketSources)
-    .where(inArray(skillMarketSources.slug, [slug, collision, racingSource]));
-  await database
-    .delete(skills)
-    .where(
-      inArray(skills.slug, [slug, collision, racingCommand, ...alternatives]),
-    );
-  await database.delete(mcpServers).where(eq(mcpServers.id, app));
-  await database.delete(users).where(inArray(users.id, [owner, member]));
-  await database.$client.close();
+    await database
+      .delete(agents)
+      .where(inArray(agents.id, [bot, anotherBot, emptyBot, spareBot]));
+    await database
+      .delete(skillMarketSources)
+      .where(inArray(skillMarketSources.slug, [slug, collision, racingSource]));
+    await database
+      .delete(skills)
+      .where(
+        inArray(skills.slug, [slug, collision, racingCommand, ...alternatives]),
+      );
+    await database.delete(mcpServers).where(eq(mcpServers.id, app));
+    await database.delete(users).where(inArray(users.id, [owner, member]));
+  } finally {
+    await database.$client.close();
+  }
 });
 
 const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (

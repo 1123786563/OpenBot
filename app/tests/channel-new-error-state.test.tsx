@@ -191,16 +191,13 @@ const testChannelNewRoute = ChannelNewRoute.update({
   path: "/channel/new",
   getParentRoute: () => appRoute,
 } as TestFileRouteWiring);
-type TestStartRouteWiring = Parameters<typeof StartRoute.update>[0] & {
-  id: string;
-  path: string;
-  getParentRoute: () => typeof appRoute;
-};
-const testStartRoute = StartRoute.update({
+const startRouteOptions = {
   id: "/start/$startId",
   path: "/start/$startId",
   getParentRoute: () => appRoute,
-} as TestStartRouteWiring);
+  component: StartRoute.options.component,
+};
+const testStartRoute = StartRoute.update(startRouteOptions);
 const channelRoute = createRoute({
   path: "/channel/$channelId",
   getParentRoute: () => appRoute,
@@ -208,7 +205,7 @@ const channelRoute = createRoute({
 });
 const routeTree = rootRoute.addChildren([
   authedRoute.addChildren([
-    appRoute.addChildren([testChannelNewRoute, testStartRoute, channelRoute]),
+    appRoute.addChildren([testStartRoute, testChannelNewRoute, channelRoute]),
   ]),
 ]);
 
@@ -688,6 +685,15 @@ test("+ with only one Bot still opens the menu with it, and the Bot picked there
           : input.url,
       "http://localhost",
     );
+    if (url.pathname === "/api/me")
+      return NativeResponse.json({
+        user: {
+          id: "person",
+          name: "Sam",
+          email: "sam@example.com",
+          role: "user",
+        },
+      });
     if (url.pathname === "/api/channels" && init?.method === "POST") {
       created.push(JSON.parse(String(init.body)));
       return NativeResponse.json(
@@ -704,14 +710,6 @@ test("+ with only one Bot still opens the menu with it, and the Bot picked there
         { status: 201 },
       );
     }
-    if (url.pathname === "/api/me")
-      return NativeResponse.json({
-        user: {
-          id: "person-1",
-          email: "person@example.test",
-          name: "Person",
-        },
-      });
     if (url.pathname === "/api/route" && init?.method === "POST")
       return NativeResponse.json({
         agentId: GENERAL_ASSISTANT.id,
@@ -744,7 +742,7 @@ test("+ with only one Bot still opens the menu with it, and the Bot picked there
     await waitFor(
       () =>
         expect(created).toEqual([
-          expect.objectContaining({ agentIds: [GENERAL_ASSISTANT.id] }),
+          { agentIds: [GENERAL_ASSISTANT.id], requestId: expect.any(String) },
         ]),
       { timeout: 10_000 },
     );

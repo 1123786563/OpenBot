@@ -9,7 +9,7 @@ import {
   IconShieldLock,
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { HarnessMark } from "@/components/agents/harness-mark";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import { PageEmpty, PageRows } from "@/components/layout/page-shell";
@@ -33,6 +33,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { modelUsageQueryOptions } from "@/lib/enterprise/queries";
 import { markFor } from "@/lib/marks";
@@ -44,6 +45,9 @@ import {
 } from "@/lib/models/queries";
 import { DeploymentButton } from "../deployment-button";
 import { ControlsSection } from "./controls-section";
+
+/** Placeholder rows while usage loads: enough to fill the view, not to suggest a count. */
+const LOADING_ROWS = ["a", "b", "c", "d"];
 
 /** Who serves the models, by the name an admin knows it by. */
 const SOURCE_NAMES: Record<ModelSource, string> = {
@@ -82,12 +86,42 @@ export function ProviderSection() {
       title="Connected"
     >
       {() => {
-        if (available.isPending) return null;
+        if (available.isPending)
+          return (
+            <div
+              aria-busy="true"
+              aria-label="Loading the provider"
+              role="status"
+            >
+              <PageRows>
+                <Item size="sm">
+                  <ItemMedia variant="icon">
+                    <Skeleton className="size-full" />
+                  </ItemMedia>
+                  <ItemContent className="gap-1.5">
+                    <Skeleton className="h-3.5 w-32" />
+                    <Skeleton className="h-3 w-56" />
+                  </ItemContent>
+                </Item>
+              </PageRows>
+            </div>
+          );
         if (available.error)
           return (
-            <p className="mt-4 text-destructive text-sm" role="alert">
-              Couldn't load the provider. Reload the page.
-            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <p className="text-destructive text-sm" role="alert">
+                Couldn't load the provider.
+              </p>
+              <Button
+                disabled={available.isFetching}
+                onClick={() => void available.refetch()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {available.isFetching ? "Retrying…" : "Retry"}
+              </Button>
+            </div>
           );
         const { source } = available.data;
         const name = SOURCE_NAMES[source] ?? source;
@@ -140,7 +174,26 @@ export function ModelChoiceSection() {
     >
       {({ data }) => {
         const listing = available.data;
-        if (!listing) return null;
+        if (!listing)
+          return available.isError ? null : (
+            <div
+              aria-busy="true"
+              aria-label="Loading models"
+              role="status"
+            >
+              <PageRows>
+                <Item size="sm">
+                  <ItemMedia variant="icon">
+                    <Skeleton className="size-full" />
+                  </ItemMedia>
+                  <ItemContent className="gap-1.5">
+                    <Skeleton className="h-3.5 w-40" />
+                    <Skeleton className="h-3 w-56" />
+                  </ItemContent>
+                </Item>
+              </PageRows>
+            </div>
+          );
         const allowed = data.settings.modelAllowlist.models.filter((name) =>
           listing.models.some(
             (model) => `${listing.provider}/${model.id}` === name,
@@ -287,6 +340,15 @@ export function AllowedModelsDialog({
     ...availableModelsQueryOptions(),
     enabled: open,
   });
+  /*
+   * Recent runs per model, so a model somebody is about to un-allow says what that would disturb:
+   * the roster carries no per-Bot model, but the runs it served are a fact, and said on the row
+   * they land beside the choice rather than after it.
+   */
+  const usage = useQuery({ ...modelUsageQueryOptions(30), enabled: open });
+  const runsByModel = new Map(
+    (usage.data?.summary ?? []).map((row) => [row.model, row.runs]),
+  );
   const [selected, setSelected] = useState<string[]>([...initial]);
   const [search, setSearch] = useState("");
   const [other, setOther] = useState("");
@@ -380,6 +442,10 @@ export function AllowedModelsDialog({
                       {model.model?.efforts?.length
                         ? ` · Thinking: ${model.model.efforts.map(effortLabel).join(", ")}`
                         : ""}
+                      {runsByModel.has(model.name) &&
+                      !selected.includes(model.name)
+                        ? ` · ${runsByModel.get(model.name)} runs in the last 30 days`
+                        : ""}
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
@@ -468,10 +534,44 @@ export function ModelUsageSection({ team }: { team: boolean }) {
       title="Usage"
     >
       {() =>
-        usage.isPending ? null : usage.error ? (
-          <p className="mt-4 text-destructive text-sm" role="alert">
-            Couldn't load model usage. Reload the page.
-          </p>
+        usage.isPending ? (
+          <div
+            aria-busy="true"
+            aria-label="Loading model usage"
+            role="status"
+          >
+            <PageRows>
+              {LOADING_ROWS.map((key, index) => (
+                <Fragment key={key}>
+                  {index > 0 ? <Separator /> : null}
+                  <Item size="sm">
+                    <ItemMedia variant="icon">
+                      <Skeleton className="size-full" />
+                    </ItemMedia>
+                    <ItemContent className="gap-1.5">
+                      <Skeleton className="h-3.5 w-32" />
+                      <Skeleton className="h-3 w-48" />
+                    </ItemContent>
+                  </Item>
+                </Fragment>
+              ))}
+            </PageRows>
+          </div>
+        ) : usage.error ? (
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <p className="text-destructive text-sm" role="alert">
+              Couldn't load model usage.
+            </p>
+            <Button
+              disabled={usage.isFetching}
+              onClick={() => void usage.refetch()}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {usage.isFetching ? "Retrying…" : "Retry"}
+            </Button>
+          </div>
         ) : usage.data.summary.length === 0 ? (
           <PageEmpty icon={IconChartBar} title="No recent runs">
             Runs will appear here once a Bot answers.

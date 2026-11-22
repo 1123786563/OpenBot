@@ -143,6 +143,15 @@ beforeAll(() => {
     }
     if (url.pathname === "/api/groups/group-1" && method === "POST")
       return new NativeResponse(null, { status: 202 });
+    if (url.pathname === "/api/me")
+      return NativeResponse.json({
+        user: {
+          id: "person",
+          name: "Sam",
+          email: "sam@example.com",
+          role: "user",
+        },
+      });
     if (url.pathname === "/api/channels" && method === "POST")
       return NativeResponse.json(
         {
@@ -194,16 +203,6 @@ const testChannelNewRoute = ChannelNewRoute.update({
   path: "/channel/new",
   getParentRoute: () => appRoute,
 } as TestFileRouteWiring);
-type TestStartRouteWiring = Parameters<typeof StartRoute.update>[0] & {
-  id: string;
-  path: string;
-  getParentRoute: () => typeof appRoute;
-};
-const testStartRoute = StartRoute.update({
-  id: "/start/$startId",
-  path: "/start/$startId",
-  getParentRoute: () => appRoute,
-} as TestStartRouteWiring);
 /** Where a started conversation opens. Only that it was opened matters here. */
 const groupRoute = createRoute({
   path: "/group/$channelId",
@@ -215,11 +214,18 @@ const channelRoute = createRoute({
   getParentRoute: () => appRoute,
   component: () => <p>The conversation</p>,
 });
+const startRouteOptions = {
+  id: "/start/$startId",
+  path: "/start/$startId",
+  getParentRoute: () => appRoute,
+  component: StartRoute.options.component,
+};
+const testStartRoute = StartRoute.update(startRouteOptions);
 const routeTree = rootRoute.addChildren([
   authedRoute.addChildren([
     appRoute.addChildren([
-      testChannelNewRoute,
       testStartRoute,
+      testChannelNewRoute,
       groupRoute,
       channelRoute,
     ]),
@@ -314,7 +320,10 @@ test("@ in a new conversation with two Bots in To: offers both, and the first me
   expect(sent[0]).toMatchObject({
     method: "POST",
     path: "/api/groups",
-    body: { agentIds: [ASSISTANT.id, CLAUDE.id] },
+    body: {
+      agentIds: [ASSISTANT.id, CLAUDE.id],
+      requestId: expect.any(String),
+    },
   });
   expect(sent[1]?.path).toBe("/api/groups/group-1");
   expect(sent[1]?.body).toMatchObject({
@@ -385,7 +394,7 @@ test("a new conversation with its one Bot picked offers that Bot to @, and sends
     expect(sent).toContainEqual({
       method: "POST",
       path: "/api/channels",
-      body: expect.objectContaining({ agentIds: [CLAUDE.id] }),
+      body: { agentIds: [CLAUDE.id], requestId: expect.any(String) },
     }),
   );
   expect(sent.some((write) => write.path.startsWith("/api/groups"))).toBe(
@@ -441,7 +450,10 @@ test("creating a Bot in To: keeps the draft and starts the conversation only on 
     {
       method: "POST",
       path: "/api/groups",
-      body: expect.objectContaining({ agentIds: [ASSISTANT.id, CREATED.id] }),
+      body: {
+        agentIds: [ASSISTANT.id, CREATED.id],
+        requestId: expect.any(String),
+      },
     },
     {
       method: "POST",

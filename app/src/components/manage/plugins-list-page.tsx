@@ -9,7 +9,10 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
-import { ConnectionPage } from "@/components/connections/connection-surface";
+import {
+  ConnectionAction,
+  ConnectionPage,
+} from "@/components/connections/connection-surface";
 import {
   PageEmpty,
   PageRows,
@@ -29,6 +32,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useManagePaths } from "@/lib/manage-paths";
 import {
   moreAppsRow,
@@ -105,9 +109,10 @@ function summaryFor(
    * never reached as a person.
    */
   auth: CatalogueItem["auth"] | undefined,
-  youConnected: boolean,
+  /** Undefined while the connections read is out: "Not connected" is a claim, and none is made. */
+  youConnected: boolean | undefined,
 ): string {
-  if (auth === "user-oauth" && !youConnected) return "Not connected";
+  if (auth === "user-oauth" && youConnected === false) return "Not connected";
   if (server.tools.length === 0) return "No tools yet";
 
   const bots = new Set(server.tools.flatMap((tool) => tool.grantedTo)).size;
@@ -120,6 +125,9 @@ function summaryFor(
  * `children` are sections only the team edition's Admin adds below the page's own (the admin's
  * controls for these). The personal edition's Settings renders this page with none.
  */
+/** Placeholder rows while the list loads: enough to fill the view, not to suggest a count. */
+const LOADING_ROWS = ["a", "b", "c", "d", "e", "f"];
+
 export function PluginsListPage({
   children,
 }: {
@@ -164,11 +172,41 @@ export function PluginsListPage({
       description="Connect services for your company, then choose which Bots can use each service’s tools."
       title="Plugins"
     >
-      {/* Pending, error, empty, rows — pending first, so no sentence asserts anything mid-fetch. */}
-      {plugins.isPending ? null : plugins.error ? (
-        <p className="mt-12 text-destructive text-sm" role="alert">
-          Couldn't load plugins. Reload the page.
-        </p>
+      {/* Pending, error, empty, rows — pending draws placeholder rows, so no sentence asserts
+          anything mid-fetch and the page is not blank behind its heading. */}
+      {plugins.isPending ? (
+        <div aria-busy="true" aria-label="Loading apps" role="status">
+          <PageRows>
+            {LOADING_ROWS.map((key, index) => (
+              <React.Fragment key={key}>
+                {index > 0 ? <Separator /> : null}
+                <Item size="sm">
+                  <RowMark>
+                    <Skeleton className="size-4" />
+                  </RowMark>
+                  <ItemContent className="gap-1.5">
+                    <Skeleton className="h-3.5 w-32" />
+                    <Skeleton className="h-3 w-48" />
+                  </ItemContent>
+                </Item>
+              </React.Fragment>
+            ))}
+          </PageRows>
+        </div>
+      ) : plugins.error ? (
+        <div className="mt-12 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't load plugins.
+          </p>
+          <ConnectionAction
+            disabled={plugins.isFetching}
+            onClick={() => void plugins.refetch()}
+            type="button"
+            variant="outline"
+          >
+            {plugins.isFetching ? "Retrying…" : "Retry"}
+          </ConnectionAction>
+        </div>
       ) : (
         <>
           {/*
@@ -233,7 +271,9 @@ export function PluginsListPage({
                             {summaryFor(
                               server,
                               authByKey.get(server.id),
-                              connected.has(server.id),
+                              connections.isPending
+                                ? undefined
+                                : connected.has(server.id),
                             )}
                           </span>
                           <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
