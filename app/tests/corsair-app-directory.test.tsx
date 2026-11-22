@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import {
+  type CorsairIntegration,
   corsairIntegrationIconUrl,
   corsairIntegrationsQueryOptions,
-  type CorsairIntegration,
 } from "@/lib/connections/corsair";
 import { directoryApps } from "@/routes/_authed/_app/connections.index";
 
@@ -58,31 +58,34 @@ test("the directory matches by id as well as by display name", () => {
 
 test("the integrations read unwraps the envelope and hides on a missing catalog", async () => {
   const original = globalThis.fetch;
-  const respond = (status: number, body?: unknown) =>
-    (globalThis.fetch = (async () =>
+  const respond = (status: number, body?: unknown) => {
+    const reply = async () =>
       body === undefined
         ? new Response(null, { status })
-        : Response.json(body, { status })) as typeof fetch);
+        : Response.json(body, { status });
+    globalThis.fetch = reply as unknown as typeof fetch;
+  };
   const options = corsairIntegrationsQueryOptions();
-  const context = { signal: new AbortController().signal };
+  const run = () =>
+    options.queryFn?.({
+      signal: new AbortController().signal,
+    } as Parameters<NonNullable<typeof options.queryFn>>[0]);
 
   try {
     respond(404);
-    expect(await options.queryFn(context)).toBeNull();
+    expect(await run()).toBeNull();
 
     respond(200, {
       catalogVersion: 2,
       total: 1,
       integrations: [entry({})],
     });
-    const loaded = await options.queryFn(context);
+    const loaded = await run();
     expect(loaded?.[0]?.displayName).toBe("Notion");
     expect(loaded?.[0]?.connected).toBe(false);
 
     respond(500);
-    expect(options.queryFn(context)).rejects.toThrow(
-      "Couldn't load the app directory.",
-    );
+    expect(run()).rejects.toThrow("Couldn't load the app directory.");
   } finally {
     globalThis.fetch = original;
   }

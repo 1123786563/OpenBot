@@ -1,7 +1,7 @@
 import {
   mutationOptions,
-  queryOptions,
   type QueryClient,
+  queryOptions,
 } from "@tanstack/react-query";
 import { z } from "zod";
 import { client, tryClient } from "@/lib/client";
@@ -184,12 +184,13 @@ export function connectCorsairIntegrationMutationOptions(
   queryClient: QueryClient,
 ) {
   return mutationOptions({
-    mutationFn: (integrationId: string): Promise<void> =>
-      client(`/api/corsair/integrations/${integrationId}/connect`, {
+    mutationFn: async (integrationId: string): Promise<void> => {
+      await client(`/api/corsair/integrations/${integrationId}/connect`, {
         method: "POST",
         headers: { "X-OpenBot-Pilot": "integrations" },
         fallback: INTEGRATIONS_FALLBACK,
-      }),
+      });
+    },
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: corsairKeys.integrations }),
   });

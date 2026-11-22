@@ -135,7 +135,8 @@ test("integration detail and unknown ids", async () => {
 });
 
 test("connect skips client credential validation and records the row once", async () => {
-  const database = fakeDatabase();
+  const rows: Recorded[] = [];
+  const database = fakeDatabase(rows);
   const routes = app({}, database);
   const withoutHeader = await routes.request("/linear/connect", {
     method: "POST",
@@ -155,8 +156,8 @@ test("connect skips client credential validation and records the row once", asyn
     method: "POST",
     headers: { "X-OpenBot-Pilot": "integrations" },
   });
-  expect(database.rows).toHaveLength(1);
-  expect(database.rows[0]).toMatchObject({
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
     workspaceId: WORKSPACE,
     integrationId: "linear",
     personId: "corsair-pilot-admin",
