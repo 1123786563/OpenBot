@@ -50,12 +50,12 @@ export function openFuseResumePath(handle: string | undefined): string | null {
 export function resumeUrlFor(
   origin: string,
   flowId: string | undefined,
-  openFuseRequest?: string,
+  request?: string,
 ): string {
   const path =
-    openFuseResumePath(openFuseRequest) ??
+    openFuseResumePath(request) ??
     verifierPathFor(flowId) ??
-    appReturnPath(openFuseRequest);
+    appReturnPath(request);
   return path ? `${origin}${path}` : origin;
 }
 

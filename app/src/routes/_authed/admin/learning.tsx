@@ -40,6 +40,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
   reviewLearningProposalMutationOptions,
@@ -59,6 +60,9 @@ import {
   saveLearningSettings,
 } from "@/lib/learning/queries";
 import { queryClient as appQueryClient } from "@/query-client";
+
+/** Placeholder rows while a section loads: enough to fill the view, not to suggest a count. */
+const LOADING_ROWS = ["a", "b", "c", "d"];
 
 export const Route = createFileRoute("/_authed/admin/learning")({
   component: () => (
@@ -594,7 +598,23 @@ function ProposedSkills({ agentId }: { agentId?: string }) {
           {learnNow.error.message}
         </p>
       )}
-      {proposals.isPending ? null : proposals.error ? (
+      {proposals.isPending ? (
+        <div aria-busy="true" aria-label="Loading proposed skills" role="status">
+          <PageRows>
+            {LOADING_ROWS.map((key, index) => (
+              <Fragment key={key}>
+                {index > 0 ? <Separator /> : null}
+                <Item size="sm">
+                  <ItemContent className="gap-1.5">
+                    <Skeleton className="h-3.5 w-40" />
+                    <Skeleton className="h-3 w-64" />
+                  </ItemContent>
+                </Item>
+              </Fragment>
+            ))}
+          </PageRows>
+        </div>
+      ) : proposals.error ? (
         <p role="alert" className="mt-4 text-destructive text-sm">
           {proposals.error.message}
         </p>
@@ -730,7 +750,23 @@ function AnalysisRuns({ agentId }: { agentId?: string }) {
       title="Analysis runs"
       description="Each run looks at finished conversations and proposes skills."
     >
-      {runs.isPending ? null : runs.error ? (
+      {runs.isPending ? (
+        <div aria-busy="true" aria-label="Loading analysis runs" role="status">
+          <PageRows>
+            {LOADING_ROWS.map((key, index) => (
+              <Fragment key={key}>
+                {index > 0 ? <Separator /> : null}
+                <Item size="sm">
+                  <ItemContent className="gap-1.5">
+                    <Skeleton className="h-3.5 w-40" />
+                    <Skeleton className="h-3 w-56" />
+                  </ItemContent>
+                </Item>
+              </Fragment>
+            ))}
+          </PageRows>
+        </div>
+      ) : runs.error ? (
         <p role="alert" className="mt-4 text-destructive text-sm">
           {runs.error.message}
         </p>
@@ -785,7 +821,23 @@ function PublishedSkills({ agentId }: { agentId?: string }) {
       title="Published skills"
       description="Bots on this container use these skills. Open one to read it."
     >
-      {skills.isPending ? null : skills.error ? (
+      {skills.isPending ? (
+        <div aria-busy="true" aria-label="Loading published skills" role="status">
+          <PageRows>
+            {LOADING_ROWS.map((key, index) => (
+              <Fragment key={key}>
+                {index > 0 ? <Separator /> : null}
+                <Item size="sm">
+                  <ItemContent className="gap-1.5">
+                    <Skeleton className="h-3.5 w-40" />
+                    <Skeleton className="h-3 w-56" />
+                  </ItemContent>
+                </Item>
+              </Fragment>
+            ))}
+          </PageRows>
+        </div>
+      ) : skills.error ? (
         <p role="alert" className="mt-4 text-destructive text-sm">
           {skills.error.message}
         </p>

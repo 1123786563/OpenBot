@@ -43,6 +43,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useConnectApp } from "@/lib/connections/connect-app";
 import {
   type CorsairIntegration,
@@ -64,7 +65,6 @@ import {
 } from "@/lib/identity/queries";
 import { keyedLookup } from "@/lib/lookup";
 import { useManagePaths } from "@/lib/manage-paths";
-import { queryClient } from "@/query-client";
 import {
   brokeredAccountsListedOn,
   serversListedFor,
@@ -78,6 +78,7 @@ import {
   pluginsProvider,
 } from "@/lib/plugins/queries";
 import { searchTextEntry } from "@/lib/search-text";
+import { queryClient } from "@/query-client";
 
 /**
  * The services a Bot reads as you.
@@ -250,6 +251,9 @@ const MARKS: ReadonlyMap<
  * see `app/src/lib/lookup.ts`. A missing key draws the app's initial, in `ConnectionMark`. */
 const markFor = (key: string) => keyedLookup(MARKS, key);
 
+/** Placeholder tiles while the apps read is open: enough to hold the grid's shape, claiming nothing. */
+const LOADING_ROWS = ["a", "b", "c", "d"];
+
 function RouteComponent() {
   const { connected: outcome, authorized, linked } = Route.useSearch();
   /*
@@ -417,11 +421,12 @@ function RouteComponent() {
    * links read costs the GitHub and Slack rows and says so, not the whole page.
    */
   const retrying = plugins.isFetching || connections.isFetching;
-  const loading =
-    plugins.isPending ||
-    connections.isPending ||
-    links.isPending ||
-    providers.isPending;
+  /*
+   * ONLY THE TWO APP READS BLANK THE LIST. The GitHub and Slack rows arrive with `links` and
+   * `providers` and join the grid when they do; holding the page on the slowest of four requests
+   * left the key area blank for reads whose failure already costs only their own rows, below.
+   */
+  const loading = plugins.isPending || connections.isPending;
 
   return (
     <ConnectionPage
@@ -480,7 +485,31 @@ function RouteComponent() {
          * asserting "Connect" over accounts somebody already has, so either failure is one sentence:
          * nothing is listed rather than a list that may be wrong.
          */}
-        {loading ? null : plugins.error || connections.error ? (
+        {loading ? (
+          /*
+           * The grid's own shape as tiles, so the page is not a title over blank space for the
+           * length of the read: the search and the grid arrive with the data, and placeholder tiles
+           * assert nothing on the way.
+           */
+          <div
+            aria-busy="true"
+            aria-label="Loading"
+            className="mt-4 grid grid-cols-1 gap-3 @min-[36rem]:grid-cols-2"
+            role="status"
+          >
+            {LOADING_ROWS.map((key) => (
+              <Item key={key} size="sm" variant="outline">
+                <RowMark className="size-9">
+                  <Skeleton className="size-5" />
+                </RowMark>
+                <ItemContent className="min-w-0 gap-1">
+                  <Skeleton className="h-3.5 w-28" />
+                  <Skeleton className="h-3 w-44" />
+                </ItemContent>
+              </Item>
+            ))}
+          </div>
+        ) : plugins.error || connections.error ? (
           <div className="flex flex-wrap items-center gap-3">
             <p className="text-destructive text-sm" role="alert">
               Couldn't load your connections.
@@ -562,7 +591,7 @@ function RouteComponent() {
                       <ItemTitle className="block w-auto truncate">
                         {browse.title}
                       </ItemTitle>
-                      <ItemDescription className="line-clamp-1 text-xs">
+                      <ItemDescription className="line-clamp-2 text-xs">
                         {browse.description}
                       </ItemDescription>
                     </ItemContent>
@@ -585,10 +614,22 @@ function RouteComponent() {
           </>
         )}
         {links.error || providers.error ? (
-          <p className="mt-4 text-destructive text-sm" role="alert">
-            Couldn't load GitHub and Slack, so they aren't listed. Reload the
-            page.
-          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <p className="text-destructive text-sm" role="alert">
+              Couldn't load GitHub and Slack, so they aren't listed.
+            </p>
+            <ConnectionAction
+              disabled={links.isFetching || providers.isFetching}
+              onClick={() => {
+                if (links.isError) void links.refetch();
+                if (providers.isError) void providers.refetch();
+              }}
+              type="button"
+              variant="outline"
+            >
+              {links.isFetching || providers.isFetching ? "Retrying…" : "Retry"}
+            </ConnectionAction>
+          </div>
         ) : null}
       </PageSection>
       {/*
@@ -662,9 +703,7 @@ export function directoryApps(
   return {
     matching,
     shown:
-      showAll || query !== ""
-        ? matching
-        : matching.slice(0, DIRECTORY_PREVIEW),
+      showAll || query !== "" ? matching : matching.slice(0, DIRECTORY_PREVIEW),
   };
 }
 
@@ -719,9 +758,7 @@ function AppDirectorySection() {
             <p className="shrink-0 text-xs text-muted-foreground">
               {query === ""
                 ? `${shown.length} of ${apps.data.length} shown`
-                : `${shown.length} ${
-                    shown.length === 1 ? "match" : "matches"
-                  }`}
+                : `${shown.length} ${shown.length === 1 ? "match" : "matches"}`}
             </p>
           </div>
           <PageRows>
@@ -829,7 +866,7 @@ function ConnectionItem({
         <ItemTitle className="block w-auto truncate">{row.title}</ItemTitle>
         {row.summary ? (
           <ItemDescription
-            className="line-clamp-1 break-all text-xs"
+            className="line-clamp-2 break-words text-xs"
             title={row.summary}
           >
             {row.summary}
@@ -880,7 +917,19 @@ function ConnectionStateLabel({
     );
   }
   if (state === "team") {
-    return <span className="text-xs text-muted-foreground">Team account</span>;
+    /*
+     * The same shape as "Connected" above — mark, then word — so every tile in the grid answers
+     * "what state is this in?" the same way; a bare phrase read as a subtitle, not a state.
+     */
+    return (
+      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+        <IconCheck
+          aria-hidden="true"
+          className="size-3.5 text-emerald-600 dark:text-emerald-400"
+        />
+        Connected · team account
+      </span>
+    );
   }
   const pill = (
     <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium">

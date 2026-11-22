@@ -134,6 +134,10 @@ beforeEach(() => {
         return Response.json({ ok: true });
       }
       if (path === "/api/plugins") return Response.json(page());
+      /* The identity reads succeed, so the one failure this file stages is the one it names. */
+      if (path === "/api/identity/links") return Response.json({ links: [] });
+      if (path === "/api/identity/providers")
+        return Response.json({ providers: { slack: false, github: false } });
       if (path === "/api/plugins/connections" && connectionsUnavailable)
         return new Response(null, { status: 503 });
       if (path === "/api/plugins/connections")
