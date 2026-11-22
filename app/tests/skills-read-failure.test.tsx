@@ -180,9 +180,8 @@ test("a person's skills page says the skills failed to load, not that they have 
   const view = renderSkills(client);
   await waitForFailedRead(client);
 
-  expect(
-    await view.findByText("Couldn't load your skills. Reload the page."),
-  ).toBeTruthy();
+  expect(await view.findByText("Couldn't load your skills.")).toBeTruthy();
+  expect(await view.findByRole("button", { name: "Retry" })).toBeTruthy();
   expect(
     view.queryByText("No skills yet. Write one with New skill."),
   ).toBeNull();

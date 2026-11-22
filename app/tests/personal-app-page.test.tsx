@@ -481,6 +481,8 @@ describe("turning an app off from its own page", () => {
     await user.click(
       await view.findByRole("switch", { name: "Turn Exa on or off" }),
     );
+    // Turning an app off removes it, so the page asks first.
+    await user.click(await view.findByRole("button", { name: "Turn off" }));
     expect(await view.findByText("The Connections list")).toBeTruthy();
     expect(router.state.location.pathname).toBe("/connections");
     expect(writes.filter((write) => write.startsWith("DELETE"))).toEqual([
@@ -495,6 +497,7 @@ describe("turning an app off from its own page", () => {
     await user.click(
       await view.findByRole("switch", { name: "Turn Notion on or off" }),
     );
+    await user.click(await view.findByRole("button", { name: "Turn off" }));
     expect(
       await view.findByRole("button", { name: "Connect Notion" }),
     ).toBeTruthy();
