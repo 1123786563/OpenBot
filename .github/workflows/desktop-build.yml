@@ -52,7 +52,9 @@ jobs:
   # the thing that breaks when a dependency is not portable.
   app:
     name: app (${{ matrix.platform }})
-    runs-on: ${{ matrix.platform == 'macos' && 'macos-latest' || matrix.platform == 'windows' && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'windows-latest' || 'openbot-windows-16core') || 'ubuntu-latest' }}
+    # The dedicated openbot-windows-16core runner is no longer registered, so every Windows build
+    # runs on hosted runners; the 16-core speed it bought is gone with it.
+    runs-on: ${{ matrix.platform == 'macos' && 'macos-latest' || matrix.platform == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
