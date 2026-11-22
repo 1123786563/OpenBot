@@ -1,145 +1,3 @@
--- The Corsair pilot migrations originally occupied 0090–0094. The main branch later used
--- 0090–0092 for Skill Market migrations, so fresh databases can reach this migration without the
--- legacy pilot tables. Create empty compatibility tables when that older history is absent. On a
--- database that already has the pilot tables these statements are no-ops and the data-copy below
--- preserves the existing rows.
-CREATE TABLE IF NOT EXISTS "github_pilot_connections" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"workspace_id" text NOT NULL,
-	"person_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"github_user_id" text NOT NULL,
-	"login" text NOT NULL,
-	"credential" text NOT NULL,
-	"revision" uuid DEFAULT gen_random_uuid() NOT NULL,
-	"expires_at" timestamp with time zone NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "github_pilot_grants" (
-	"workspace_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"bot_id" text NOT NULL,
-	"tool_ref" text NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "github_pilot_repositories" (
-	"workspace_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"repository_id" text NOT NULL,
-	"installation_id" text NOT NULL,
-	"node_id" text NOT NULL,
-	"name" text NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "github_pilot_states" (
-	"state_hash" text PRIMARY KEY NOT NULL,
-	"workspace_id" text NOT NULL,
-	"person_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"verifier" text NOT NULL,
-	"expires_at" timestamp with time zone NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "github_pilot_defaults" (
-	"workspace_id" text NOT NULL,
-	"person_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"github_user_id" text NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "github_pilot_event_outcomes" (
-	"receipt_id" uuid NOT NULL,
-	"trigger_id" uuid NOT NULL,
-	"outcome" text NOT NULL,
-	"next_attempt_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"run_id" text
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "github_pilot_event_receipts" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"workspace_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"delivery_id" text NOT NULL,
-	"body_hash" text NOT NULL,
-	"event_type" text NOT NULL,
-	"installation_id" text,
-	"repository_id" text,
-	"pilot_dispatch" boolean NOT NULL,
-	"occurred_at" timestamp with time zone,
-	"payload" jsonb NOT NULL,
-	"received_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"disposition" text,
-	"fanout_at" timestamp with time zone
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "github_pilot_event_triggers" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"workspace_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"goal_id" text NOT NULL,
-	"connection_id" uuid NOT NULL,
-	"connection_revision" uuid NOT NULL,
-	"installation_id" text NOT NULL,
-	"repository_id" text NOT NULL,
-	"repository_node_id" text NOT NULL,
-	"event_types" text[] NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"disabled_at" timestamp with time zone
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "slack_pilot_connections" (
-	"workspace_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"person_id" text NOT NULL,
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"subject_scope" text NOT NULL,
-	"user_id" text NOT NULL,
-	"label" text NOT NULL,
-	"credential" text NOT NULL,
-	"expires_at" timestamp with time zone NOT NULL,
-	"revision" uuid NOT NULL,
-	"verification_required_at" timestamp with time zone
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "slack_pilot_defaults" (
-	"workspace_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"person_id" text NOT NULL,
-	"connection_id" uuid NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "slack_pilot_grants" (
-	"workspace_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"bot_id" text NOT NULL,
-	"tool_ref" text NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "slack_pilot_states" (
-	"workspace_id" text NOT NULL,
-	"registration" text NOT NULL,
-	"person_id" text NOT NULL,
-	"state_hash" text PRIMARY KEY NOT NULL,
-	"expires_at" timestamp with time zone NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "slack_shared_bot_access" (
-	"installation_id" uuid NOT NULL,
-	"bot_id" text NOT NULL,
-	"granted" boolean DEFAULT false NOT NULL,
-	"approval" jsonb
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "slack_shared_installations" (
-	"workspace_id" text PRIMARY KEY NOT NULL,
-	"id" uuid DEFAULT gen_random_uuid() NOT NULL,
-	"app_id" text NOT NULL,
-	"team_id" text NOT NULL,
-	"bot_id" text NOT NULL,
-	"bot_user_id" text NOT NULL,
-	"channel_ids" text[] NOT NULL
-);
---> statement-breakpoint
 
 CREATE TABLE "corsair_account_defaults" (
 	"openbot_kind" text NOT NULL,
@@ -406,18 +264,12 @@ WITH CASCADED CHECK OPTION;
 --> statement-breakpoint
 ALTER VIEW corsair_github_oauth_states ALTER COLUMN provider SET DEFAULT 'github';
 --> statement-breakpoint
-INSERT INTO corsair_github_oauth_states (state_hash, workspace_id, registration, person_id, verifier, expires_at)
-SELECT state_hash, workspace_id, registration, person_id, verifier, expires_at FROM github_pilot_states;
---> statement-breakpoint
 CREATE VIEW corsair_slack_oauth_states AS
 SELECT state_hash, workspace_id, registration, person_id, expires_at, provider
 FROM corsair_oauth_states WHERE provider = 'slack'
 WITH CASCADED CHECK OPTION;
 --> statement-breakpoint
 ALTER VIEW corsair_slack_oauth_states ALTER COLUMN provider SET DEFAULT 'slack';
---> statement-breakpoint
-INSERT INTO corsair_slack_oauth_states (state_hash, workspace_id, registration, person_id, expires_at)
-SELECT state_hash, workspace_id, registration, person_id, expires_at FROM slack_pilot_states;
 --> statement-breakpoint
 CREATE VIEW corsair_github_connections AS
 SELECT id, workspace_id, registration, person_id, external_user_id AS github_user_id, label AS login, credential, revision, expires_at, openbot_kind, subject_scope
@@ -428,9 +280,6 @@ ALTER VIEW corsair_github_connections ALTER COLUMN openbot_kind SET DEFAULT 'git
 --> statement-breakpoint
 ALTER VIEW corsair_github_connections ALTER COLUMN subject_scope SET DEFAULT '';
 --> statement-breakpoint
-INSERT INTO corsair_github_connections (id, workspace_id, registration, person_id, github_user_id, login, credential, revision, expires_at)
-SELECT id, workspace_id, registration, person_id, github_user_id, login, credential, revision, expires_at FROM github_pilot_connections;
---> statement-breakpoint
 CREATE VIEW corsair_slack_connections AS
 SELECT id, workspace_id, registration, person_id, subject_scope, external_user_id AS user_id, label, credential, revision, expires_at, verification_required_at, openbot_kind
 FROM corsair_accounts WHERE openbot_kind = 'slack-personal'
@@ -438,18 +287,12 @@ WITH CASCADED CHECK OPTION;
 --> statement-breakpoint
 ALTER VIEW corsair_slack_connections ALTER COLUMN openbot_kind SET DEFAULT 'slack-personal';
 --> statement-breakpoint
-INSERT INTO corsair_slack_connections (id, workspace_id, registration, person_id, subject_scope, user_id, label, credential, revision, expires_at, verification_required_at)
-SELECT id, workspace_id, registration, person_id, subject_scope, user_id, label, credential, revision, expires_at, verification_required_at FROM slack_pilot_connections;
---> statement-breakpoint
 CREATE VIEW corsair_slack_installations AS
 SELECT id, shared_workspace_id AS workspace_id, app_id, team_id, bot_id, bot_user_id, channel_ids, openbot_kind
 FROM corsair_accounts WHERE openbot_kind = 'slack-shared'
 WITH CASCADED CHECK OPTION;
 --> statement-breakpoint
 ALTER VIEW corsair_slack_installations ALTER COLUMN openbot_kind SET DEFAULT 'slack-shared';
---> statement-breakpoint
-INSERT INTO corsair_slack_installations (id, workspace_id, app_id, team_id, bot_id, bot_user_id, channel_ids)
-SELECT id, workspace_id, app_id, team_id, bot_id, bot_user_id, channel_ids FROM slack_shared_installations;
 --> statement-breakpoint
 CREATE VIEW corsair_github_defaults AS
 SELECT workspace_id, registration, person_id, github_user_id, openbot_kind, github_subject_scope
@@ -460,18 +303,12 @@ ALTER VIEW corsair_github_defaults ALTER COLUMN openbot_kind SET DEFAULT 'github
 --> statement-breakpoint
 ALTER VIEW corsair_github_defaults ALTER COLUMN github_subject_scope SET DEFAULT '';
 --> statement-breakpoint
-INSERT INTO corsair_github_defaults (workspace_id, registration, person_id, github_user_id)
-SELECT workspace_id, registration, person_id, github_user_id FROM github_pilot_defaults;
---> statement-breakpoint
 CREATE VIEW corsair_slack_defaults AS
 SELECT workspace_id, registration, person_id, connection_id, openbot_kind
 FROM corsair_account_defaults WHERE openbot_kind = 'slack-personal'
 WITH CASCADED CHECK OPTION;
 --> statement-breakpoint
 ALTER VIEW corsair_slack_defaults ALTER COLUMN openbot_kind SET DEFAULT 'slack-personal';
---> statement-breakpoint
-INSERT INTO corsair_slack_defaults (workspace_id, registration, person_id, connection_id)
-SELECT workspace_id, registration, person_id, connection_id FROM slack_pilot_defaults;
 --> statement-breakpoint
 CREATE VIEW corsair_github_repositories AS
 SELECT workspace_id, registration, entity_id AS repository_id, installation_id, node_id, name, entity_type
@@ -480,9 +317,6 @@ WITH CASCADED CHECK OPTION;
 --> statement-breakpoint
 ALTER VIEW corsair_github_repositories ALTER COLUMN entity_type SET DEFAULT 'openbot.github.repository';
 --> statement-breakpoint
-INSERT INTO corsair_github_repositories (workspace_id, registration, repository_id, installation_id, node_id, name)
-SELECT workspace_id, registration, repository_id, installation_id, node_id, name FROM github_pilot_repositories;
---> statement-breakpoint
 CREATE VIEW corsair_github_event_triggers AS
 SELECT id, workspace_id, registration, goal_id, connection_id, connection_revision, installation_id, repository_id, repository_node_id, event_types, created_at, disabled_at, entity_type
 FROM corsair_entities WHERE entity_type = 'openbot.github.trigger'
@@ -490,55 +324,7 @@ WITH CASCADED CHECK OPTION;
 --> statement-breakpoint
 ALTER VIEW corsair_github_event_triggers ALTER COLUMN entity_type SET DEFAULT 'openbot.github.trigger';
 --> statement-breakpoint
-INSERT INTO corsair_github_event_triggers (id, workspace_id, registration, goal_id, connection_id, connection_revision, installation_id, repository_id, repository_node_id, event_types, created_at, disabled_at)
-SELECT id, workspace_id, registration, goal_id, connection_id, connection_revision, installation_id, repository_id, repository_node_id, event_types, created_at, disabled_at FROM github_pilot_event_triggers;
---> statement-breakpoint
 CREATE VIEW corsair_github_event_receipts AS
 SELECT id, workspace_id, registration, delivery_id, body_hash, event_type, installation_id, repository_id, pilot_dispatch, occurred_at, payload, created_at AS received_at, disposition, fanout_at
 FROM corsair_events WHERE delivery_id IS NOT NULL
 WITH CASCADED CHECK OPTION;
---> statement-breakpoint
-INSERT INTO corsair_github_event_receipts (id, workspace_id, registration, delivery_id, body_hash, event_type, installation_id, repository_id, pilot_dispatch, occurred_at, payload, received_at, disposition, fanout_at)
-SELECT id, workspace_id, registration, delivery_id, body_hash, event_type, installation_id, repository_id, pilot_dispatch, occurred_at, payload, received_at, disposition, fanout_at FROM github_pilot_event_receipts;
---> statement-breakpoint
-INSERT INTO corsair_event_dispatches (receipt_id, trigger_id, outcome, next_attempt_at, run_id)
-SELECT receipt_id::text, trigger_id::text, outcome, next_attempt_at, run_id FROM github_pilot_event_outcomes;
---> statement-breakpoint
-INSERT INTO corsair_shared_access (installation_id, bot_id, granted, approval)
-SELECT installation_id::text, bot_id, granted, approval FROM slack_shared_bot_access;
---> statement-breakpoint
-INSERT INTO plugin_grants (kind, ref, agent_id, granted_as)
-SELECT 'corsair.github', jsonb_build_array(workspace_id, registration, tool_ref)::text, bot_id, 'admin'
-FROM github_pilot_grants;
---> statement-breakpoint
-INSERT INTO plugin_grants (kind, ref, agent_id, granted_as)
-SELECT 'corsair.slack', jsonb_build_array(workspace_id, registration, tool_ref)::text, bot_id, 'admin'
-FROM slack_pilot_grants;
---> statement-breakpoint
-DROP TABLE github_pilot_event_outcomes;
---> statement-breakpoint
-DROP TABLE github_pilot_event_triggers;
---> statement-breakpoint
-DROP TABLE github_pilot_event_receipts;
---> statement-breakpoint
-DROP TABLE github_pilot_defaults;
---> statement-breakpoint
-DROP TABLE github_pilot_connections;
---> statement-breakpoint
-DROP TABLE github_pilot_repositories;
---> statement-breakpoint
-DROP TABLE github_pilot_states;
---> statement-breakpoint
-DROP TABLE github_pilot_grants;
---> statement-breakpoint
-DROP TABLE slack_pilot_defaults;
---> statement-breakpoint
-DROP TABLE slack_pilot_connections;
---> statement-breakpoint
-DROP TABLE slack_pilot_states;
---> statement-breakpoint
-DROP TABLE slack_pilot_grants;
---> statement-breakpoint
-DROP TABLE slack_shared_bot_access;
---> statement-breakpoint
-DROP TABLE slack_shared_installations;

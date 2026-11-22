@@ -1,12 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  boolean,
-  pgTable,
-  primaryKey,
-  text,
-  timestamp,
-  uuid,
-} from "drizzle-orm/pg-core";
+import { boolean, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { jsonb } from "./json";
 
 // These are automatically writable PostgreSQL views from migration 0094.
@@ -93,20 +86,3 @@ export const githubPilotEventTriggers = pgTable(
 );
 
 export { corsairEventDispatches as githubPilotEventOutcomes } from "./corsair-storage";
-
-/*
- * An app-level connection from the integration catalog. One row per workspace per catalog app,
- * recorded when a person presses Connect; the app's own credentials are a later, separate step.
- */
-export const corsairIntegrationConnections = pgTable(
-  "corsair_integration_connections",
-  {
-    workspaceId: text("workspace_id").notNull(),
-    integrationId: text("integration_id").notNull(),
-    personId: text("person_id").notNull(),
-    connectedAt: time("connected_at").defaultNow().notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.workspaceId, table.integrationId] }),
-  ],
-);

@@ -15,3 +15,15 @@ SELECT id, shared_workspace_id AS workspace_id, app_id, team_id, bot_id, bot_use
 FROM corsair_accounts WHERE openbot_kind = 'slack-shared'
   AND NOT (config ? 'openbotRevocation')
 WITH CASCADED CHECK OPTION;
+--> statement-breakpoint
+DROP TABLE IF EXISTS "slack_pilot_defaults";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "slack_pilot_connections";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "slack_pilot_states";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "slack_pilot_grants";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "slack_shared_bot_access";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "slack_shared_installations";

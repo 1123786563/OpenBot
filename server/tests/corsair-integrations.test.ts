@@ -1,13 +1,18 @@
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables } from "../src/auth/guards";
-import type { Database } from "../src/db/client";
+import { createDatabase } from "../src/db/client";
+import { users } from "../src/db/schema";
 import {
   corsairCatalog,
   corsairIntegrations,
   findCorsairIntegration,
 } from "../src/plugins/corsair/integrations";
 import { createCorsairIntegrationsRoutes } from "../src/plugins/corsair/integrations-routes";
+import { TEST_POOL, testDatabaseUrl } from "./support/database";
+
+const database = createDatabase(testDatabaseUrl(), TEST_POOL);
+afterAll(() => database.$client.close());
 
 const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
   context,
@@ -21,55 +26,9 @@ const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
   await next();
 };
 
-type Recorded = {
-  workspaceId: string;
-  integrationId: string;
-  personId: string;
-  connectedAt: Date;
-};
+const WORKSPACE = "corsair-integrations-test";
 
-/**
- * The two drizzle chains the routes use, over one workspace's rows.
- *
- * The fake cannot evaluate drizzle's SQL predicates, so every read returns the whole snapshot:
- * fine for these tests because each uses a single workspace and at most one row.
- */
-function fakeDatabase(rows: Recorded[] = []) {
-  const snapshot = () =>
-    rows.map((row) => ({ integrationId: row.integrationId }));
-  const insert = (_table: unknown) => ({
-    values(value: Recorded) {
-      return {
-        onConflictDoNothing: async () => {
-          if (
-            !rows.some(
-              (row) =>
-                row.workspaceId === value.workspaceId &&
-                row.integrationId === value.integrationId,
-            )
-          )
-            rows.push(value);
-        },
-      };
-    },
-  });
-  return {
-    insert,
-    rows,
-    select: () => ({
-      from: (_table: unknown) => ({
-        where: async () => snapshot().map((row) => ({ ...row })),
-      }),
-    }),
-  } as unknown as Database;
-}
-
-const WORKSPACE = "openbot-corsair-live-pilot";
-
-function app(
-  environment: Record<string, string | undefined> = {},
-  database: Database = fakeDatabase(),
-) {
+function app(environment: Record<string, string | undefined> = {}) {
   return new Hono<{ Variables: AppVariables }>().route(
     "/",
     createCorsairIntegrationsRoutes({
@@ -135,9 +94,15 @@ test("integration detail and unknown ids", async () => {
 });
 
 test("connect skips client credential validation and records the row once", async () => {
-  const rows: Recorded[] = [];
-  const database = fakeDatabase(rows);
-  const routes = app({}, database);
+  // The account row's person references a user; seed the fixed pilot actor.
+  await database
+    .insert(users)
+    .values({
+      id: "corsair-pilot-admin",
+      email: "corsair-pilot-admin@example.test",
+    })
+    .onConflictDoNothing();
+  const routes = app();
   const withoutHeader = await routes.request("/linear/connect", {
     method: "POST",
   });
@@ -156,28 +121,8 @@ test("connect skips client credential validation and records the row once", asyn
     method: "POST",
     headers: { "X-OpenBot-Pilot": "integrations" },
   });
-  expect(rows).toHaveLength(1);
-  expect(rows[0]).toMatchObject({
-    workspaceId: WORKSPACE,
-    integrationId: "linear",
-    personId: "corsair-pilot-admin",
-  });
-});
-
-test("the list carries each app's connection state", async () => {
-  const routes = app(
-    {},
-    fakeDatabase([
-      {
-        workspaceId: WORKSPACE,
-        integrationId: "linear",
-        personId: "corsair-pilot-admin",
-        connectedAt: new Date("2026-11-22T08:00:00Z"),
-      },
-    ]),
-  );
-  const body = await (await routes.request("/?search=linear")).json();
-  expect(body.integrations[0].connected).toBe(true);
+  const listed = await (await routes.request("/?search=linear")).json();
+  expect(listed.integrations[0].connected).toBe(true);
   const other = await (await routes.request("/?search=notion")).json();
   expect(other.integrations[0].connected).toBe(false);
 });

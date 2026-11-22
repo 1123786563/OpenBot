@@ -3,7 +3,10 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import type { AppVariables } from "../../auth/guards";
 import type { Database } from "../../db/client";
-import { corsairIntegrationConnections } from "../../db/schema/corsair";
+import {
+  corsairAccounts,
+  corsairIntegrations,
+} from "../../db/schema/corsair-storage";
 import {
   corsairCatalog,
   corsairIntegrationStatus,
@@ -40,12 +43,19 @@ export function createCorsairIntegrationsRoutes({
     await next();
   });
 
+  // App-level connections ride the upstream account table as kind "registration": one row per
+  // workspace per catalog app, its `registration` column holding the catalog id.
   async function connectedIds() {
     const rows = await database
-      .select({ integrationId: corsairIntegrationConnections.integrationId })
-      .from(corsairIntegrationConnections)
-      .where(eq(corsairIntegrationConnections.workspaceId, workspaceId));
-    return new Set(rows.map((row) => row.integrationId));
+      .select({ appId: corsairAccounts.registration })
+      .from(corsairAccounts)
+      .where(
+        and(
+          eq(corsairAccounts.kind, "registration"),
+          eq(corsairAccounts.workspaceId, workspaceId),
+        ),
+      );
+    return new Set(rows.map((row) => row.appId));
   }
 
   routes.get("/", async (context) => {
@@ -75,19 +85,10 @@ export function createCorsairIntegrationsRoutes({
       : undefined;
     if (!integration)
       return context.json({ error: "Unknown Corsair integration." }, 404);
-    const [row] = await database
-      .select({ connectedAt: corsairIntegrationConnections.connectedAt })
-      .from(corsairIntegrationConnections)
-      .where(
-        and(
-          eq(corsairIntegrationConnections.workspaceId, workspaceId),
-          eq(corsairIntegrationConnections.integrationId, integration.id),
-        ),
-      );
+    const connected = await connectedIds();
     return context.json({
       ...corsairIntegrationStatus(integration, environment),
-      connected: row !== undefined,
-      ...(row ? { connectedAt: row.connectedAt } : {}),
+      connected: connected.has(integration.id),
     });
   });
 
@@ -100,15 +101,40 @@ export function createCorsairIntegrationsRoutes({
       return context.json({ error: "Unknown Corsair integration." }, 404);
     // App-first integration: the row is recorded without any client credential check. An app's
     // own tokens arrive later, with the per-provider pilots (github, slack).
-    await database
-      .insert(corsairIntegrationConnections)
-      .values({
+    const name = `catalog-app:${integration.id}`;
+    let [app] = await database
+      .select({ id: corsairIntegrations.id })
+      .from(corsairIntegrations)
+      .where(eq(corsairIntegrations.name, name));
+    if (!app) {
+      await database
+        .insert(corsairIntegrations)
+        .values({ name, config: { catalogApp: true } });
+      [app] = await database
+        .select({ id: corsairIntegrations.id })
+        .from(corsairIntegrations)
+        .where(eq(corsairIntegrations.name, name));
+    }
+    const [existing] = await database
+      .select({ id: corsairAccounts.id })
+      .from(corsairAccounts)
+      .where(
+        and(
+          eq(corsairAccounts.kind, "registration"),
+          eq(corsairAccounts.workspaceId, workspaceId),
+          eq(corsairAccounts.registration, integration.id),
+        ),
+      );
+    if (!existing)
+      await database.insert(corsairAccounts).values({
+        tenantId: workspaceId,
+        integrationId: app.id,
         workspaceId,
-        integrationId: integration.id,
+        registration: integration.id,
         personId: context.var.actor.id,
-        connectedAt: clock(),
-      })
-      .onConflictDoNothing();
+        kind: "registration",
+        config: { connectedBy: context.var.actor.id, connectedAt: clock() },
+      });
     return context.json(
       {
         ...corsairIntegrationStatus(integration, environment),
