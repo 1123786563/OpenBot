@@ -507,53 +507,6 @@ const key = (o: Pick<Offence, "file" | "shape" | "context" | "expression">) =>
  */
 const ALLOW: Allowed[] = [
   {
-    file: "server/tests/config.test.ts",
-    shape: "b",
-    context: [
-      '"deployment configuration"',
-      '"starts without COPILOTKIT_LICENSE_TOKEN, because managed Intelligence no longer issues one"',
-    ],
-    expression:
-      "expect(config.runtime.intelligence?.licenseToken).toBeUndefined()",
-    finding:
-      "The configuration test asserts an optional managed token is absent.",
-  },
-  {
-    file: "server/tests/config.test.ts",
-    shape: "b",
-    context: [
-      '"deployment configuration"',
-      "\"keeps the browser's gateway address apart from the server's, when one is given\"",
-    ],
-    expression:
-      "expect(without.runtime.intelligence?.browserGatewayWsUrl).toBeUndefined()",
-    finding:
-      "The configuration test asserts the optional browser gateway is absent.",
-  },
-  {
-    file: "server/tests/config.test.ts",
-    shape: "b",
-    context: [
-      '"deployment configuration"',
-      '"tells the browser OpenBot\'s own address for the gateway when the server carries its socket"',
-    ],
-    expression:
-      "expect(off.runtime.intelligence?.gatewayProxy).toBeUndefined()",
-    finding: "The configuration test asserts the disabled proxy is absent.",
-  },
-  {
-    file: "server/tests/config.test.ts",
-    shape: "b",
-    context: [
-      '"deployment configuration"',
-      '"tells the browser OpenBot\'s own address for the gateway when the server carries its socket"',
-    ],
-    expression:
-      "expect(off.runtime.intelligence?.browserGatewayWsUrl).toBeUndefined()",
-    finding:
-      "The configuration test asserts the disabled browser gateway is absent.",
-  },
-  {
     file: "server/tests/direct-chat.integration.test.ts",
     shape: "b",
     context: ['"approval worker withdrawal persisted state on %s"'],
@@ -561,37 +514,6 @@ const ALLOW: Allowed[] = [
       "expect(await(awaitapp.backgroundApproval?.(action,request.id))?.check(),).toBeFalsy()",
     finding:
       "The approval test checks that a withdrawn request no longer passes its predicate.",
-  },
-  {
-    file: "server/tests/product-telemetry-boundaries.test.ts",
-    shape: "b",
-    context: [
-      '"a run retains verified audit lineage with product telemetry disabled"',
-    ],
-    expression:
-      "expect(enriched.forwardedProps?.openbotTelemetry).toBeUndefined()",
-    finding:
-      "The opt-out boundary test checks that telemetry claims are removed.",
-  },
-  {
-    file: "server/tests/product-telemetry-boundaries.test.ts",
-    shape: "b",
-    context: [
-      '"a run retains verified audit lineage with product telemetry disabled"',
-    ],
-    expression:
-      "expect(enriched.forwardedProps?.__copilotkitAnalyticsContext).toBeUndefined()",
-    finding:
-      "The opt-out boundary test checks that legacy analytics claims are removed.",
-  },
-  {
-    file: "server/tests/product-telemetry.test.ts",
-    shape: "b",
-    context: ['"opt-out prevents preparation, audit collection, and sending"'],
-    expression:
-      'expect((awaitf.telemetry.prepare({actorUserId:"private",threadId:"thread",runId:"run",trigger:"human",surface:"web",}))?.context,).toBeUndefined()',
-    finding:
-      "The opt-out test checks that preparation produces no telemetry payload.",
   },
   {
     file: "app/tests/auth-client.test.ts",

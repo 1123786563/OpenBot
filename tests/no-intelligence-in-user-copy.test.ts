@@ -25,16 +25,6 @@ const WORD = /\bIntelligence\b/;
  */
 const NOT_SHOWN: { file: string; text: string; why: string }[] = [
   {
-    file: "server/src/intelligence-client.ts",
-    text: "Intelligence is not configured.",
-    why: "an internal unavailable-client error, translated at the request boundary",
-  },
-  {
-    file: "server/src/recorder/wiring.ts",
-    text: "Recording summaries require Intelligence.",
-    why: "an internal recorder dependency error, never used as user copy",
-  },
-  {
     file: "server/src/telemetry/runtime-log.ts",
     text: "Waiting for Intelligence to finish starting.",
     why: "a runtime diagnostic written to the structured deployment log",
@@ -94,26 +84,7 @@ const NOT_SHOWN: { file: string; text: string; why: string }[] = [
     text: "Intelligence did not confirm this deployment's entitlement",
     why: "the boot log's advice",
   },
-  {
-    file: "server/src/telemetry/runtime-log.ts",
-    text: "Waiting for Intelligence to finish starting.",
-    why: "the boot log’s advice",
-  },
-  {
-    file: "server/src/telemetry/runtime-log.ts",
-    text: "Could not read Intelligence entitlements.",
-    why: "the boot log’s advice",
-  },
-  {
-    file: "server/src/telemetry/runtime-log.ts",
-    text: "Intelligence did not confirm entitlement.",
-    why: "the boot log’s advice",
-  },
-  {
-    file: "server/src/telemetry/runtime-log.ts",
-    text: "Intelligence's licence has expired.",
-    why: "the boot log’s advice",
-  },
+
 ];
 
 /** Calls whose arguments are written to a log, never shown. */
