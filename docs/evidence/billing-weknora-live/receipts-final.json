@@ -1,1 +1,20 @@
-{"accountId":"8c9b5b6f-7440-4c6d-8187-14d19a13d589","operations":[{"operationId":"d82c4abd-b3c6-587a-b136-5482333562b6","state":"settled","inputTokens":"14","outputTokens":"0","chargedMicrocredits":"7","reservedMicrocredits":"256"}],"balance":{"creditType":"test","grantedMicrocredits":"8192","reservedMicrocredits":"0","chargedMicrocredits":"7","availableMicrocredits":"8185"}}
+{
+  "accountId": "8c9b5b6f-7440-4c6d-8187-14d19a13d589",
+  "operations": [
+    {
+      "operationId": "d82c4abd-b3c6-587a-b136-5482333562b6",
+      "state": "settled",
+      "inputTokens": "14",
+      "outputTokens": "0",
+      "chargedMicrocredits": "7",
+      "reservedMicrocredits": "256"
+    }
+  ],
+  "balance": {
+    "creditType": "test",
+    "grantedMicrocredits": "8192",
+    "reservedMicrocredits": "0",
+    "chargedMicrocredits": "7",
+    "availableMicrocredits": "8185"
+  }
+}

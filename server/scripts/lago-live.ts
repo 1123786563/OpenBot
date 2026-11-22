@@ -12,7 +12,10 @@ import { eq } from "drizzle-orm";
 import { createLagoHttpUsageClient } from "../../server/src/billing/lago-client";
 import { createLagoUsageExporter } from "../../server/src/billing/lago-usage";
 import { createDatabase } from "../../server/src/db/client";
-import { lagoUsageEvents, testCreditAccounts } from "../../server/src/db/schema";
+import {
+  lagoUsageEvents,
+  testCreditAccounts,
+} from "../../server/src/db/schema";
 
 const mode = process.argv[2] ?? "flush";
 const accountId = process.argv[3] ?? crypto.randomUUID();
@@ -34,14 +37,20 @@ async function lago(path: string, init?: RequestInit) {
       ...(init?.headers ?? {}),
     },
   });
-  return { status: response.status, body: await response.json().catch(() => null) };
+  return {
+    status: response.status,
+    body: await response.json().catch(() => null),
+  };
 }
 
 if (mode === "seed") {
   const created = await lago("/customers", {
     method: "POST",
     body: JSON.stringify({
-      customer: { external_id: accountId, name: `OpenBot ${accountId.slice(0, 8)}` },
+      customer: {
+        external_id: accountId,
+        name: `OpenBot ${accountId.slice(0, 8)}`,
+      },
     }),
   });
   await lago("/subscriptions", {
@@ -84,7 +93,10 @@ if (mode === "seed") {
   );
 } else if (mode === "flush") {
   const result = await exporter.flush();
-  const rows = await database.select().from(lagoUsageEvents).where(eq(lagoUsageEvents.accountId, accountId));
+  const rows = await database
+    .select()
+    .from(lagoUsageEvents)
+    .where(eq(lagoUsageEvents.accountId, accountId));
   console.log(
     JSON.stringify({
       mode,
@@ -95,7 +107,9 @@ if (mode === "seed") {
   );
 } else if (mode === "usage") {
   const usage = await lago(`/customers/${accountId}/current_usage`);
-  const subscriptions = await lago(`/subscriptions?external_customer_id=${accountId}`);
+  const subscriptions = await lago(
+    `/subscriptions?external_customer_id=${accountId}`,
+  );
   console.log(
     JSON.stringify({
       mode,
