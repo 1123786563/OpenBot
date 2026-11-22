@@ -5,6 +5,7 @@ import {
   paidCreditAllocations,
   paidEntitlements,
   paidOrders,
+  paidPilotClosure,
   paidProducts,
   paidRefunds,
   testCreditAccounts,
@@ -36,7 +37,8 @@ export class PaidLedgerError extends Error {
       | "order_unknown"
       | "verification_mismatch"
       | "not_verified"
-      | "account_suspended",
+      | "account_suspended"
+      | "pilot_closed",
     message: string,
   ) {
     super(message);
@@ -107,7 +109,7 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
           "The product is not available for purchase.",
         );
       // 停用期间收费入口维持暂停 (#103): a suspended account cannot start a
-      // new purchase.
+      // new purchase. Pilot wind-down stops sales for everyone (#109).
       const [account] = await tx
         .select({ suspendedAt: testCreditAccounts.suspendedAt })
         .from(testCreditAccounts)
@@ -116,6 +118,15 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
         throw new PaidLedgerError(
           "account_suspended",
           "The account is suspended; purchases are paused.",
+        );
+      const [closure] = await tx
+        .select({ salesStoppedAt: paidPilotClosure.salesStoppedAt })
+        .from(paidPilotClosure)
+        .where(eq(paidPilotClosure.id, "pilot"));
+      if (closure?.salesStoppedAt)
+        throw new PaidLedgerError(
+          "pilot_closed",
+          "Pilot sales are stopped; no new orders.",
         );
       const [order] = await tx
         .insert(paidOrders)
@@ -229,6 +240,41 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
           claimed: false as const,
           refunded: true as const,
           refund,
+        };
+      }
+
+      // A payment confirmed at or after the pilot's reserve cutoff never
+      // grants: it refunds in full through its own channel (#109 截止时及
+      // 之后原路全退且不授予权益; notifications may arrive late).
+      const [closure] = await tx
+        .select({ reservesStoppedAt: paidPilotClosure.reservesStoppedAt })
+        .from(paidPilotClosure)
+        .where(eq(paidPilotClosure.id, "pilot"));
+      if (
+        closure?.reservesStoppedAt &&
+        input.paidAt >= closure.reservesStoppedAt
+      ) {
+        const [owed] = await tx
+          .update(paidOrders)
+          .set({
+            state: "refund_pending",
+            channelOrderRef: input.channelOrderRef,
+            verifiedAt: input.paidAt,
+          })
+          .where(eq(paidOrders.id, order.id))
+          .returning();
+        const cutoffRefund = await recordRefundWithin(
+          tx,
+          owed,
+          "pilot_closure",
+          now(),
+        );
+        return {
+          order: owed,
+          replayed: false as const,
+          claimed: false as const,
+          refunded: true as const,
+          refund: cutoffRefund,
         };
       }
 
@@ -772,6 +818,86 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
     return suspended;
   }
 
+  // ── Pilot wind-down (#107 trial end, #109 shutdown) ──────────────────
+
+  /**
+   * The wind-down switch. Stopping sales refuses new orders; stopping
+   * reserves refuses new reservations (both Credit types) — dispatched work
+   * keeps settling under its original reservation and in-flight refunds
+   * continue.
+   */
+  async function setPilotClosure(input: {
+    stopSales: boolean;
+    stopReserves: boolean;
+  }) {
+    const at = now();
+    const [row] = await database
+      .insert(paidPilotClosure)
+      .values({
+        id: "pilot",
+        salesStoppedAt: input.stopSales ? at : null,
+        reservesStoppedAt: input.stopReserves ? at : null,
+        updatedAt: at,
+      })
+      .onConflictDoUpdate({
+        target: paidPilotClosure.id,
+        set: {
+          salesStoppedAt: input.stopSales ? at : null,
+          reservesStoppedAt: input.stopReserves ? at : null,
+          updatedAt: at,
+        },
+      })
+      .returning();
+    return row;
+  }
+
+  /**
+   * Wind-down disposition (#109): verified orders whose sources no longer
+   * fund a live reservation refund now — in full when nothing was consumed,
+   * with the used part booked to manual reconciliation otherwise (#104).
+   * Orders still funding held reservations wait for their settlement or
+   * release, and a rerun after that picks them up.
+   */
+  async function closePilotOrders(accountId?: string) {
+    const held = await database
+      .select({ entitlementId: paidCreditAllocations.entitlementId })
+      .from(paidCreditAllocations)
+      .where(eq(paidCreditAllocations.state, "held"));
+    const heldIds = new Set(
+      held.flatMap(({ entitlementId }) =>
+        entitlementId === null ? [] : [entitlementId],
+      ),
+    );
+    const orders = await database
+      .select({ id: paidOrders.id })
+      .from(paidOrders)
+      .where(
+        accountId
+          ? and(
+              eq(paidOrders.state, "verified"),
+              eq(paidOrders.accountId, accountId),
+            )
+          : eq(paidOrders.state, "verified"),
+      );
+    let refunded = 0;
+    let waiting = 0;
+    for (const order of orders) {
+      const grants = await database
+        .select({ id: paidEntitlements.id })
+        .from(paidEntitlements)
+        .where(eq(paidEntitlements.orderId, order.id));
+      if (grants.length === 0) continue;
+      if (grants.some(({ id }) => heldIds.has(id))) {
+        waiting += 1;
+        continue;
+      }
+      await requestRefund(order.id, "pilot_closure", "operator");
+      await confirmRefund(order.id, true);
+      refunded += 1;
+    }
+    return { refunded, waiting };
+  }
+
   // ── Consumption ordering (#101 AC3) ─────────────────────────────────────
   // Reservations spend the current Billing Period's subscription credits
   // first, then Credit Packs by arrival order. Expired or revoked sources
@@ -987,6 +1113,8 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
     correctOvercharge,
     applyCompensation,
     suspendAccount,
+    setPilotClosure,
+    closePilotOrders,
     activeSubscription,
     paidSources,
     bill,
@@ -1203,4 +1331,17 @@ export async function releasePaidAllocations(
     )
     .returning({ id: paidCreditAllocations.id });
   return rows.length;
+}
+
+/**
+ * The pilot's reserve cutoff, when wind-down has begun (#107/#109). New
+ * reservations of either Credit type stop at this instant; dispatched work
+ * keeps settling under its original reservation.
+ */
+export async function pilotReservesStoppedAt(tx: PaidTx) {
+  const [row] = await tx
+    .select({ stoppedAt: paidPilotClosure.reservesStoppedAt })
+    .from(paidPilotClosure)
+    .where(eq(paidPilotClosure.id, "pilot"));
+  return row?.stoppedAt ?? null;
 }

@@ -10,6 +10,7 @@ import type { Database } from "../db/client";
 import {
   allocatePaidSources,
   consumePaidAllocations,
+  pilotReservesStoppedAt,
   releasePaidAllocations,
 } from "./paid-ledger";
 import {
@@ -106,7 +107,8 @@ const denied = (
     | "not_authorized"
     | "route_unavailable"
     | "insufficient_credits"
-    | "execution_limit",
+    | "execution_limit"
+    | "pilot_closed",
 ) => ({ state: "denied", reason }) as const;
 
 async function activeRoutes(database: Database | Transaction, lock = false) {
@@ -519,7 +521,9 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       identity: VerifiedBillingIdentity,
       input: {
         budgetId: string;
-        creditType: "test";
+        // Fixed when the task starts (#107): a trial task runs under test,
+        // a paid continuation under paid.
+        creditType: "test" | "paid";
         limitMicrocredits: bigint;
         confirmed?: boolean;
       },
@@ -694,6 +698,9 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         rerunOfOperationId?: string;
         budgetId?: string;
         stepId?: string;
+        // Which entry the caller chose (#107): "test" spends Test Credit
+        // only, "paid" paid sources only; the default spans both (#101).
+        creditType?: "test" | "paid";
       },
     ) {
       return database.transaction(async (tx) => {
@@ -754,10 +761,18 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             ?.dispatchedAt
         )
           return denied("not_authorized");
+        // Pilot wind-down (#107 trial end, #109): no new reservations of
+        // either Credit type. Dispatched work above keeps its replay.
+        if (await pilotReservesStoppedAt(tx)) return denied("pilot_closed");
         const executionBudget = input.budgetId
           ? await budget(accountId, input.budgetId, tx)
           : undefined;
-        if (input.budgetId && executionBudget?.creditType !== "test")
+        // A task fixes its Credit type when it starts: the budget must
+        // match the entry the caller chose (#107).
+        if (
+          input.budgetId &&
+          executionBudget?.creditType !== (input.creditType ?? "test")
+        )
           return denied("not_authorized");
         if (
           executionBudget &&
@@ -771,30 +786,51 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           return denied("route_unavailable");
         const balance = await totals(tx, accountId);
         const reserved = BigInt(route.maxChargeMicrocredits);
-        // One reservation may span Test Credit and paid sources: when the
-        // trial balance cannot cover the whole bound, the paid ledger holds
-        // the shortfall in this same transaction (#101).
+        // The two entries choose their Credit type (#107 试用与付费入口分
+        // 开选择): "test" spends Test Credit only, "paid" funds the whole
+        // bound from paid sources only, and the default spans both — the
+        // trial balance first and the paid ledger holding any shortfall in
+        // this same transaction (#101).
         let paidHold = 0n;
-        const shortfall = reserved - balance.available;
-        if (shortfall > 0n) {
+        if (input.creditType === "paid") {
           const paid = await allocatePaidSources(
             tx,
             {
               accountId,
               operationId: input.operationId,
-              amountMicrocredits: shortfall,
+              amountMicrocredits: reserved,
             },
             now,
           );
-          // "existing" cannot happen: the operation row is checked above and
-          // allocations roll back with the reservation that created them.
-          if (paid.state !== "allocated")
-            return denied(
-              balance.granted === 0n
-                ? "not_authorized"
-                : "insufficient_credits",
-            );
+          if (paid.state !== "allocated") return denied("insufficient_credits");
           paidHold = paid.amount;
+        } else if (input.creditType === "test") {
+          if (balance.granted === 0n) return denied("not_authorized");
+          if (balance.available < reserved)
+            return denied("insufficient_credits");
+        } else {
+          const shortfall = reserved - balance.available;
+          if (shortfall > 0n) {
+            const paid = await allocatePaidSources(
+              tx,
+              {
+                accountId,
+                operationId: input.operationId,
+                amountMicrocredits: shortfall,
+              },
+              now,
+            );
+            // "existing" cannot happen: the operation row is checked above
+            // and allocations roll back with the reservation that created
+            // them.
+            if (paid.state !== "allocated")
+              return denied(
+                balance.granted === 0n
+                  ? "not_authorized"
+                  : "insufficient_credits",
+              );
+            paidHold = paid.amount;
+          }
         }
         if (executionBudget) {
           const used = await budgetUsage(accountId, executionBudget.id, tx);

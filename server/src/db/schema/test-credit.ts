@@ -65,7 +65,9 @@ export const testCreditBudgets = pgTable(
   {
     accountId: uuid("account_id").notNull(),
     id: text().notNull(),
-    creditType: text("credit_type", { enum: ["test"] }).notNull(),
+    // A background task fixes its Credit type when it starts (#107):
+    // trial (test) or paid — never both.
+    creditType: text("credit_type", { enum: ["test", "paid"] }).notNull(),
     limitMicrocredits: bigint("limit_microcredits", {
       mode: "bigint",
     }).notNull(),
@@ -89,7 +91,7 @@ export const testCreditBudgets = pgTable(
     }),
     check(
       "test_credit_budget_credit_type",
-      sql`${sql.identifier(table.creditType.name)} = 'test'`,
+      sql`${sql.identifier(table.creditType.name)} IN ('test', 'paid')`,
     ),
     check(
       "test_credit_budget_state",

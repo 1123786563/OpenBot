@@ -266,3 +266,16 @@ export const paidCorrections = pgTable(
     check("paid_corrections_amounts", sql`${table.amountMicrocredits} > 0`),
   ],
 );
+
+// The pilot's wind-down switch (#107 trial end, #109 shutdown): one row.
+// While sales are stopped no new orders; while reserves are stopped no new
+// reservations — dispatched work keeps settling, and payments confirmed at
+// or after the cutoff refund in full without granting.
+export const paidPilotClosure = pgTable("paid_pilot_closure", {
+  id: text().primaryKey(),
+  salesStoppedAt: timestamp("sales_stopped_at", { withTimezone: true }),
+  reservesStoppedAt: timestamp("reserves_stopped_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

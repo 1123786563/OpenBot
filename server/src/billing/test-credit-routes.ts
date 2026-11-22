@@ -95,7 +95,7 @@ export function createTestCreditRoutes({
     const input = z
       .strictObject({
         budgetId: operationId,
-        creditType: z.literal("test"),
+        creditType: z.enum(["test", "paid"]),
         limitMicrocredits: z.string().regex(/^[1-9]\d*$/),
         confirmed: z.boolean().optional(),
       })
