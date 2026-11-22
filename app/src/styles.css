@@ -387,19 +387,25 @@
   }
 }
 /* Consecutive sends read as one burst, while each message keeps its own bubble and undo action. */
-[data-transcript-column] [data-queued-state="waiting"] [data-slot="bubble-content"] {
+[data-transcript-column]
+  [data-queued-state="waiting"]
+  [data-slot="bubble-content"] {
   border-style: dashed;
   border-color: color-mix(in oklch, var(--foreground) 18%, transparent);
   background: color-mix(in oklch, var(--muted) 72%, var(--background));
 }
 
-[data-transcript-column] [data-queued-state="waiting"] [data-slot="message-footer"] {
+[data-transcript-column]
+  [data-queued-state="waiting"]
+  [data-slot="message-footer"] {
   gap: var(--spacing-1-5);
   font-weight: 400;
 }
 
 /* Shared corners and tint make a burst read as one authored group at a glance. */
-[data-transcript-column] [data-message-group="person"] [data-slot="bubble-content"] {
+[data-transcript-column]
+  [data-message-group="person"]
+  [data-slot="bubble-content"] {
   border-color: color-mix(in oklch, var(--primary) 20%, transparent);
   background: color-mix(in oklch, var(--primary) 7%, var(--muted));
 }
