@@ -1,4 +1,5 @@
 import {
+  IconApps,
   IconCoins,
   IconGauge,
   IconPlayerPause,
@@ -52,21 +53,27 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import {
+  applicationsQueryOptions,
+  authorizationsQueryOptions,
   billLinesQueryOptions,
   billingBalanceQueryOptions,
   billingQuoteQueryOptions,
   budgetsQueryOptions,
   type BillLine,
+  type BillingApplication,
   creditsText,
   paidBalanceQueryOptions,
   paidSourcesQueryOptions,
   type ResumePoint,
   resumePointsQueryOptions,
+  type SpendingAuthorization,
 } from "@/lib/billing/queries";
 import {
+  authorizeApplicationMutationOptions,
   confirmResumePointMutationOptions,
   createBudgetMutationOptions,
   microcreditsFromCredits,
+  revokeAuthorizationMutationOptions,
 } from "@/lib/billing/mutations";
 import { queryClient } from "@/query-client";
 
@@ -75,7 +82,8 @@ import { queryClient } from "@/query-client";
  * balance, the paid balance and the sources behind it, the rate a request costs, the budget a task
  * runs under and the type it fixed when it started, and every charge by the source and the app. A
  * task that stopped for want of credits or budget room waits at the top until the person sets the
- * budget it continues on.
+ * budget it continues on. An app spends from the account only under the authorization the person
+ * grants it (#111).
  */
 
 export const Route = createFileRoute("/_authed/_app/billing")({
@@ -97,6 +105,20 @@ const APPLICATIONS: Record<string, string> = {
 };
 const NO_APP = "none";
 const USAGE_TYPES = { all: "All types", ...CREDIT_TYPES } as const;
+const AUTHORIZATION_STATES: Record<SpendingAuthorization["state"], string> = {
+  active: "Active",
+  expired: "Expired",
+  revoked: "Revoked",
+};
+const CALL_KINDS = { online: "Online", background: "Background task" } as const;
+const DURATIONS = {
+  "1": "In 1 day",
+  "7": "In 7 days",
+  "30": "In 30 days",
+} as const;
+/** An approved app whose path is open: the only kind a person can give a grant. */
+const isOpen = ({ approvedAt, pausedAt }: BillingApplication) =>
+  approvedAt !== null && pausedAt === null;
 
 /** The app a step ran for, in words. A step whose caller named none says so. */
 function appLabel(applicationId: string | null) {
@@ -321,6 +343,91 @@ function BudgetsSection() {
           ))}
         </PageRows>
       )}
+    </PageSection>
+  );
+}
+
+/**
+ * The apps allowed to spend from this account, each under a grant the person made (#111). A grant
+ * is withdrawn here. Raising one is the person's own decision too, so nothing here lowers it.
+ */
+function AppAccessSection({
+  applications,
+  onAuthorize,
+}: {
+  applications: BillingApplication[];
+  onAuthorize: (trigger: HTMLButtonElement) => void;
+}) {
+  const authorizations = useQuery(authorizationsQueryOptions());
+  const revoke = useMutation(revokeAuthorizationMutationOptions(queryClient));
+  const open = applications.filter(isOpen);
+  const nameOf = (id: string) =>
+    applications.find(({ id: appId }) => appId === id)?.name ?? appLabel(id);
+  return (
+    <PageSection
+      action={
+        open.length === 0 ? null : (
+          <Button
+            onClick={(event) => onAuthorize(event.currentTarget)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Authorize an app
+          </Button>
+        )
+      }
+      description="An app spends your credits only while you allow it to, and never past the limit you set."
+      title="App access"
+    >
+      {authorizations.isPending ? null : authorizations.error ? (
+        <p className="text-destructive text-sm" role="alert">
+          {authorizations.error.message}
+        </p>
+      ) : authorizations.data.length === 0 ? (
+        <PageEmpty icon={IconApps} title="No apps authorized">
+          Authorize an app to let it spend your credits.
+        </PageEmpty>
+      ) : (
+        <PageRows>
+          {authorizations.data.map((held, index) => (
+            <Fragment key={held.authorizationId}>
+              {index > 0 ? <Separator /> : null}
+              <Item size="sm">
+                <ItemMedia variant="icon">
+                  <IconApps />
+                </ItemMedia>
+                <ItemContent>
+                  <ItemTitle>{nameOf(held.applicationId)}</ItemTitle>
+                  <ItemDescription className="line-clamp-none">
+                    {`${held.kind === "background" ? `For task ${held.taskId}. ` : ""}Limit ${creditsText(held.limitMicrocredits)} credits. Used ${creditsText(held.spentMicrocredits)}. Until ${onDate(held.expiresAt)}.`}
+                  </ItemDescription>
+                </ItemContent>
+                <ItemActions>
+                  {held.state === "active" ? (
+                    <Button
+                      disabled={revoke.isPending}
+                      onClick={() => revoke.mutate(held.authorizationId)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      {revoke.isPending ? "Revoking…" : "Revoke"}
+                    </Button>
+                  ) : (
+                    AUTHORIZATION_STATES[held.state]
+                  )}
+                </ItemActions>
+              </Item>
+            </Fragment>
+          ))}
+        </PageRows>
+      )}
+      {revoke.error ? (
+        <p className="mt-3 text-destructive text-sm" role="alert">
+          {revoke.error.message}
+        </p>
+      ) : null}
     </PageSection>
   );
 }
@@ -605,12 +712,223 @@ function SetBudgetDialog({
   );
 }
 
+/**
+ * The person's explicit grant to an app (#111): which app, on which resources, for what kind of
+ * call, up to how much, and until when.
+ */
+function AuthorizeAppDialog({
+  applications,
+  onClose,
+  returnFocus,
+}: {
+  applications: BillingApplication[];
+  onClose: () => void;
+  returnFocus: React.RefObject<HTMLButtonElement | null>;
+}) {
+  const formId = useId();
+  const [applicationId, setApplicationId] = useState(applications[0]?.id ?? "");
+  const [resources, setResources] = useState(
+    applications[0]?.resourcePrefix ?? "",
+  );
+  const [kind, setKind] = useState<"online" | "background">("online");
+  const [taskId, setTaskId] = useState("");
+  const [limitCredits, setLimitCredits] = useState("");
+  const [days, setDays] = useState("7");
+  const limit = microcreditsFromCredits(limitCredits);
+  const authorize = useMutation(
+    authorizeApplicationMutationOptions(queryClient),
+  );
+  // A background grant is bound to one task, so it has to name it.
+  const ready = Boolean(limit && resources && (kind === "online" || taskId));
+  return (
+    <Dialog onOpenChange={(next) => !next && onClose()} open>
+      <DialogContent {...astryxScope} finalFocus={returnFocus}>
+        <DialogHeader>
+          <DialogTitle>Authorize an app</DialogTitle>
+          <DialogDescription>
+            The app can spend your credits until this ends or it reaches the
+            limit. You can revoke it at any time.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody className="mt-4 overflow-y-auto">
+          {/* The footer's button reaches this form by id, so DialogBody stays a direct child of
+              DialogContent and keeps scrolling. */}
+          <form
+            id={formId}
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!ready) return;
+              authorize.mutate(
+                {
+                  applicationId,
+                  kind,
+                  ...(kind === "background" ? { taskId } : {}),
+                  resourcePrefix: resources,
+                  limitCredits,
+                  days: Number(days),
+                },
+                { onSuccess: onClose },
+              );
+            }}
+          >
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor={`${formId}-app`}>App</FieldLabel>
+                <Select
+                  items={applications.map(({ id, name }) => ({
+                    label: name,
+                    value: id,
+                  }))}
+                  onValueChange={(next) => {
+                    if (!next) return;
+                    setApplicationId(next);
+                    // Each app starts with the resources it registered.
+                    setResources(
+                      applications.find(({ id }) => id === next)
+                        ?.resourcePrefix ?? "",
+                    );
+                  }}
+                  value={applicationId}
+                >
+                  <SelectTrigger className="w-full" id={`${formId}-app`}>
+                    <SelectValue>
+                      {
+                        applications.find(({ id }) => id === applicationId)
+                          ?.name
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {applications.map(({ id, name }) => (
+                      <SelectItem key={id} value={id}>
+                        {name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor={`${formId}-resources`}>
+                  Resources
+                </FieldLabel>
+                <Input
+                  id={`${formId}-resources`}
+                  onChange={(event) => setResources(event.target.value)}
+                  required
+                  value={resources}
+                />
+                <FieldDescription>
+                  The app can spend only on resources whose names start with
+                  this.
+                </FieldDescription>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor={`${formId}-kind`}>Kind</FieldLabel>
+                <Select
+                  items={CALL_KINDS}
+                  onValueChange={(next) =>
+                    setKind(next === "background" ? "background" : "online")
+                  }
+                  value={kind}
+                >
+                  <SelectTrigger className="w-full" id={`${formId}-kind`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="online">Online</SelectItem>
+                    <SelectItem value="background">Background task</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FieldDescription>
+                  A background grant is for one task.
+                </FieldDescription>
+              </Field>
+              {kind === "background" ? (
+                <Field>
+                  <FieldLabel htmlFor={`${formId}-task`}>Task</FieldLabel>
+                  <Input
+                    id={`${formId}-task`}
+                    onChange={(event) => setTaskId(event.target.value)}
+                    required
+                    value={taskId}
+                  />
+                </Field>
+              ) : null}
+              <Field>
+                <FieldLabel htmlFor={`${formId}-limit`}>Limit</FieldLabel>
+                <Input
+                  id={`${formId}-limit`}
+                  inputMode="decimal"
+                  onChange={(event) => setLimitCredits(event.target.value)}
+                  placeholder="5"
+                  required
+                  value={limitCredits}
+                />
+                {limitCredits && !limit ? (
+                  <FieldDescription>
+                    Enter a positive amount of credits, with up to six decimals.
+                  </FieldDescription>
+                ) : (
+                  <FieldDescription>
+                    The most it can spend, in credits.
+                  </FieldDescription>
+                )}
+              </Field>
+              <Field>
+                <FieldLabel htmlFor={`${formId}-ends`}>Ends</FieldLabel>
+                <Select
+                  items={DURATIONS}
+                  onValueChange={(next) => next && setDays(next)}
+                  value={days}
+                >
+                  <SelectTrigger className="w-full" id={`${formId}-ends`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(DURATIONS).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </FieldGroup>
+          </form>
+          {authorize.error ? (
+            <p className="mt-4 text-destructive text-sm" role="alert">
+              {authorize.error.message}
+            </p>
+          ) : null}
+        </DialogBody>
+        <DialogFooter className="mt-4">
+          <Button onClick={onClose} type="button" variant="outline">
+            Cancel
+          </Button>
+          <Button
+            disabled={!ready || authorize.isPending}
+            form={formId}
+            type="submit"
+          >
+            {authorize.isPending ? "Authorizing…" : "Authorize"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function CreditsPage() {
   const trigger = useRef<HTMLButtonElement | null>(null);
   const [dialog, setDialog] = useState<{
     resume?: ResumePoint;
     returnFocus: React.RefObject<HTMLButtonElement | null>;
   } | null>(null);
+  const [authorizing, setAuthorizing] = useState<{
+    returnFocus: React.RefObject<HTMLButtonElement | null>;
+  } | null>(null);
+  const applications = useQuery(applicationsQueryOptions());
+  const open = (applications.data ?? []).filter(isOpen);
   return (
     <AstryxSurface className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageShell
@@ -636,12 +954,25 @@ function CreditsPage() {
         <PaidCreditsSection />
         <RateSection />
         <BudgetsSection />
+        <AppAccessSection
+          applications={applications.data ?? []}
+          onAuthorize={(button) =>
+            setAuthorizing({ returnFocus: { current: button } })
+          }
+        />
         <UsageSection />
         {dialog ? (
           <SetBudgetDialog
             onClose={() => setDialog(null)}
             resume={dialog.resume}
             returnFocus={dialog.returnFocus}
+          />
+        ) : null}
+        {authorizing ? (
+          <AuthorizeAppDialog
+            applications={open}
+            onClose={() => setAuthorizing(null)}
+            returnFocus={authorizing.returnFocus}
           />
         ) : null}
       </PageShell>

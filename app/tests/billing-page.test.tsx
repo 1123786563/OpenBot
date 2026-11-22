@@ -52,7 +52,11 @@ beforeEach(() => {
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const path = String(input).split("?")[0];
       if (init?.method === "POST") {
-        posts.push({ path, body: JSON.parse(String(init.body)) });
+        // A revoke sends no body.
+        posts.push({
+          path,
+          body: init.body ? JSON.parse(String(init.body)) : undefined,
+        });
         return new Response(
           JSON.stringify(
             path === CONFIRM
@@ -330,13 +334,99 @@ test("a budget is set under the Credit type the person picks", async () => {
   });
 });
 
+test("an app spends only under the grant the person makes, and the grant can be revoked", async () => {
+  const user = userEvent.setup({ document });
+  const queryClient = answered();
+  const registered = (id: string, name: string, open: boolean) => ({
+    id,
+    name,
+    operator: "independent" as const,
+    resourcePrefix: `${id}-`,
+    approvedAt: open ? "2026-02-01T00:00:00.000Z" : null,
+    pausedAt: null,
+    createdAt: "2026-02-01T00:00:00.000Z",
+  });
+  queryClient.setQueryData(billingKeys.applications, [
+    registered("mail", "Mail agent", true),
+    registered("draft", "Draft app", false),
+  ]);
+  const grant = (extra: Record<string, unknown>) => ({
+    authorizationId: "auth-1",
+    applicationId: "mail",
+    kind: "online",
+    taskId: null,
+    resourcePrefix: "mail-",
+    expiresAt: "2026-03-01T00:00:00.000Z",
+    limitMicrocredits: "25000000",
+    spentMicrocredits: "3000000",
+    revokedAt: null,
+    state: "active",
+    ...extra,
+  });
+  queryClient.setQueryData(billingKeys.authorizations, [
+    grant({}),
+    grant({
+      authorizationId: "auth-2",
+      kind: "background",
+      taskId: "nightly",
+      spentMicrocredits: "25000000",
+      state: "expired",
+    }),
+  ]);
+  const view = renderCredits(queryClient);
+  // Each grant says its limit, its use and when it ends. One that is over has nothing to revoke.
+  const row = await view.findByText(
+    "Limit 25 credits. Used 3. Until Mar 1, 2026.",
+  );
+  expect(row).toBeTruthy();
+  expect(
+    view.getByText(
+      "For task nightly. Limit 25 credits. Used 25. Until Mar 1, 2026.",
+    ),
+  ).toBeTruthy();
+  expect(view.getByText("Expired")).toBeTruthy();
+  const revoke = view.getAllByRole("button", { name: "Revoke" });
+  expect(revoke).toHaveLength(1);
+  await user.click(revoke[0]);
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]?.path).toBe("/api/billing/authorizations/auth-1/revoke");
+
+  // A new grant starts from the app's own resources, and nothing sends while the limit is missing.
+  await user.click(view.getByRole("button", { name: "Authorize an app" }));
+  const dialog = await view.findByRole("dialog");
+  expect(within(dialog).getByText("Mail agent")).toBeTruthy();
+  expect(within(dialog).queryByText("Draft app")).toBeNull();
+  const submit = within(dialog).getByRole("button", { name: "Authorize" });
+  expect(submit.hasAttribute("disabled")).toBe(true);
+  await user.type(within(dialog).getByLabelText("Limit"), "5");
+  await waitFor(() => expect(submit.hasAttribute("disabled")).toBe(false));
+  await user.click(submit);
+  await waitFor(() => expect(posts).toHaveLength(2));
+  const sent = posts[1];
+  if (!sent) throw new Error("the grant was not sent");
+  expect(sent.path).toBe("/api/billing/authorizations");
+  expect(sent.body).toMatchObject({
+    applicationId: "mail",
+    kind: "online",
+    resourcePrefix: "mail-",
+    limitMicrocredits: "5000000",
+    authorizationId: expect.stringMatching(/^authorization-/),
+  });
+  // Seven days from now, by default.
+  const { expiresAt } = sent.body as { expiresAt: string };
+  expect(
+    Math.abs(Date.parse(expiresAt) - Date.now() - 7 * 86_400_000),
+  ).toBeLessThan(60_000);
+  await waitFor(() => expect(view.queryByRole("dialog")).toBeNull());
+});
+
 test("a person without a Billing Account is told so, not shown a failure", async () => {
   const queryClient = client();
   const view = renderCredits(queryClient);
   // No seeded answers: every read fails, as a server without the person's account answers.
   expect(await view.findByText("No credits yet")).toBeTruthy();
   // The other sections say what they could not load, each in its own place.
-  expect(view.getAllByText("Could not load your credits").length).toBe(3);
+  expect(view.getAllByText("Could not load your credits").length).toBe(4);
 });
 
 test("credits read as people write them, and typed limits become microcredits", () => {

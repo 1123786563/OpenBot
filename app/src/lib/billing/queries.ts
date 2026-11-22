@@ -73,8 +73,37 @@ export type BudgetRecord = {
   confirmed: boolean;
 };
 
+/** An app whose steps can spend from a person's account, once it is approved. */
+export type BillingApplication = {
+  id: string;
+  name: string;
+  operator: "platform" | "independent";
+  /** The resources it may be authorized for, as a prefix of their names. */
+  resourcePrefix: string;
+  approvedAt: string | null;
+  pausedAt: string | null;
+  createdAt: string;
+};
+
+/** A person's explicit grant to an app (#111): what it may spend, on which resources, and until when. */
+export type SpendingAuthorization = {
+  authorizationId: string;
+  applicationId: string;
+  /** A background grant is for one task. */
+  kind: "online" | "background";
+  taskId: string | null;
+  resourcePrefix: string;
+  expiresAt: string;
+  limitMicrocredits: string;
+  spentMicrocredits: string;
+  revokedAt: string | null;
+  state: "active" | "expired" | "revoked";
+};
+
 export const billingKeys = {
   all: ["billing"] as const,
+  applications: ["billing", "applications"] as const,
+  authorizations: ["billing", "authorizations"] as const,
   balance: ["billing", "balance"] as const,
   quote: ["billing", "quote"] as const,
   paidSources: ["billing", "paid-sources"] as const,
@@ -122,6 +151,22 @@ export function resumePointsQueryOptions() {
   return queryOptions({
     queryKey: billingKeys.resumePoints,
     queryFn: (): Promise<ResumePoint[]> => read("/api/billing/resume-points"),
+  });
+}
+
+export function applicationsQueryOptions() {
+  return queryOptions({
+    queryKey: billingKeys.applications,
+    queryFn: (): Promise<BillingApplication[]> =>
+      read("/api/billing/applications"),
+  });
+}
+
+export function authorizationsQueryOptions() {
+  return queryOptions({
+    queryKey: billingKeys.authorizations,
+    queryFn: (): Promise<SpendingAuthorization[]> =>
+      read("/api/billing/authorizations"),
   });
 }
 

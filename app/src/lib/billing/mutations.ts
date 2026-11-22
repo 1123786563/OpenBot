@@ -1,6 +1,10 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
 import { client } from "@/lib/client";
-import { billingKeys, type BudgetRecord } from "./queries";
+import {
+  billingKeys,
+  type BudgetRecord,
+  type SpendingAuthorization,
+} from "./queries";
 
 /**
  * A new budget. The Credit type is fixed here, when the task starts: a trial task runs on Test
@@ -38,6 +42,64 @@ export function createBudgetMutationOptions(queryClient: QueryClient) {
             limitMicrocredits: microcreditsFromCredits(input.limitCredits),
           },
           fallback: FALLBACK,
+        })
+      ).json(),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: billingKeys.all }),
+  });
+}
+
+/**
+ * A person's grant to an app (#111). The limit is in credits, as typed, and the grant ends a
+ * number of days from now.
+ */
+export type AuthorizationInput = {
+  applicationId: string;
+  kind: "online" | "background";
+  taskId?: string;
+  /** A prefix of the names of the resources it may spend on. */
+  resourcePrefix: string;
+  limitCredits: string;
+  days: number;
+};
+
+export function authorizeApplicationMutationOptions(queryClient: QueryClient) {
+  return mutationOptions({
+    mutationFn: async (
+      input: AuthorizationInput,
+    ): Promise<SpendingAuthorization> =>
+      (
+        await client("/api/billing/authorizations", {
+          method: "POST",
+          body: {
+            authorizationId: `authorization-${crypto.randomUUID()}`,
+            applicationId: input.applicationId,
+            kind: input.kind,
+            ...(input.taskId ? { taskId: input.taskId } : {}),
+            resourcePrefix: input.resourcePrefix,
+            expiresAt: new Date(
+              Date.now() + input.days * 86_400_000,
+            ).toISOString(),
+            limitMicrocredits: microcreditsFromCredits(input.limitCredits),
+          },
+          fallback: "Could not authorize the app",
+        })
+      ).json(),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: billingKeys.all }),
+  });
+}
+
+/** The person withdraws an app's grant. What it already reserved does not run. */
+export function revokeAuthorizationMutationOptions(queryClient: QueryClient) {
+  return mutationOptions({
+    mutationFn: async (
+      authorizationId: string,
+    ): Promise<SpendingAuthorization> =>
+      (
+        await client(`/api/billing/authorizations/${authorizationId}/revoke`, {
+          method: "POST",
+          fallback: "Could not revoke the app's access",
         })
       ).json(),
     onSuccess: () =>
