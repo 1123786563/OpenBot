@@ -32,6 +32,8 @@ export type PaidSource = {
 /** One charge booked against one source. */
 export type BillLine = {
   operationId: string;
+  /** The app the step ran for, where the caller named one. */
+  applicationId: string | null;
   source: "test" | "subscription" | "credit_pack" | "correction";
   entitlementId: string | null;
   periodStart: string | null;
@@ -40,6 +42,25 @@ export type BillLine = {
   amountMicrocredits: string;
   at: string | null;
   reason: string | null;
+};
+
+/** The paid side of a person's balance: what can be spent, what running steps hold, and what finished steps charged. */
+export type PaidBalance = {
+  availableMicrocredits: string;
+  reservedMicrocredits: string;
+  chargedMicrocredits: string;
+};
+
+/** A step that stopped for want of credits or budget room, waiting on the person. */
+export type ResumePoint = {
+  operationId: string;
+  applicationId: string | null;
+  reason: "insufficient_credits" | "execution_limit";
+  createdAt: string;
+  /** The budget the person confirmed for this step, once they have. */
+  budgetId: string | null;
+  confirmedAt: string | null;
+  creditType: "test" | "paid" | null;
 };
 
 /** An execution budget: the Credit type a task runs on and the most it may spend. */
@@ -57,8 +78,10 @@ export const billingKeys = {
   balance: ["billing", "balance"] as const,
   quote: ["billing", "quote"] as const,
   paidSources: ["billing", "paid-sources"] as const,
+  paidBalance: ["billing", "paid-balance"] as const,
   bill: ["billing", "bill"] as const,
   budgets: ["billing", "budgets"] as const,
+  resumePoints: ["billing", "resume-points"] as const,
 };
 
 const FALLBACK = "Could not load your credits";
@@ -85,6 +108,20 @@ export function paidSourcesQueryOptions() {
   return queryOptions({
     queryKey: billingKeys.paidSources,
     queryFn: (): Promise<PaidSource[]> => read("/api/billing/paid/sources"),
+  });
+}
+
+export function paidBalanceQueryOptions() {
+  return queryOptions({
+    queryKey: billingKeys.paidBalance,
+    queryFn: (): Promise<PaidBalance> => read("/api/billing/paid/balance"),
+  });
+}
+
+export function resumePointsQueryOptions() {
+  return queryOptions({
+    queryKey: billingKeys.resumePoints,
+    queryFn: (): Promise<ResumePoint[]> => read("/api/billing/resume-points"),
   });
 }
 

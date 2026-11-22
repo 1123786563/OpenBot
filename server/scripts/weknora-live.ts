@@ -74,6 +74,7 @@ const weknoraLedger: WeKnoraLedger = {
       operationId: input.operationId,
       route: input.route,
       priceVersion: input.priceVersion,
+      applicationId: input.application,
     });
     // The WeKnora reservation contract has no budget dimension, so refusals
     // outside its reason set surface as the path being unavailable.

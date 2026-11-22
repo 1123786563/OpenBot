@@ -14,7 +14,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentType } from "react";
 import { microcreditsFromCredits } from "@/lib/billing/mutations";
@@ -23,13 +23,16 @@ import {
   type BillLine,
   type BudgetRecord,
   type PaidSource,
+  type ResumePoint,
   creditsText,
 } from "@/lib/billing/queries";
 import { Route as CreditsRoute } from "@/routes/_authed/_app/billing";
 
 /**
  * A person's credits (#107): the Test Credit balance and the paid side are in view together, each
- * charge says which source paid for it, and a budget is set under the Credit type the person picks.
+ * charge says which source paid for it and which app it ran for, usage filters by app and Credit
+ * type, a budget is set under the Credit type the person picks, and a paused task continues on the
+ * budget the person confirms for it.
  *
  * THE HARNESS IS THIS REPOSITORY'S: `GlobalRegistrator` in `beforeAll`/`afterAll`, `cleanup` in
  * `afterEach`, and a `QueryClient` with `retry: false` and no staleness, so seeded answers stay put.
@@ -41,6 +44,7 @@ afterAll(() => GlobalRegistrator.unregister());
 
 const originalFetch = global.fetch;
 const posts: { path: string; body: unknown }[] = [];
+const CONFIRM = "/api/billing/resume-points/op-1/confirm";
 
 beforeEach(() => {
   posts.length = 0;
@@ -49,9 +53,14 @@ beforeEach(() => {
       const path = String(input).split("?")[0];
       if (init?.method === "POST") {
         posts.push({ path, body: JSON.parse(String(init.body)) });
-        return new Response(JSON.stringify(createdBudget), {
-          headers: { "content-type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify(
+            path === CONFIRM
+              ? { state: "confirmed", creditType: "paid" }
+              : createdBudget,
+          ),
+          { headers: { "content-type": "application/json" } },
+        );
       }
       return new Response(null, { status: 500 });
     },
@@ -103,6 +112,7 @@ const pack: PaidSource = {
 const lines: BillLine[] = [
   {
     operationId: "op-1",
+    applicationId: "weknora",
     source: "test",
     entitlementId: null,
     periodStart: null,
@@ -114,6 +124,7 @@ const lines: BillLine[] = [
   },
   {
     operationId: "op-2",
+    applicationId: "weknora",
     source: "credit_pack",
     entitlementId: "ent-1",
     periodStart: null,
@@ -125,6 +136,7 @@ const lines: BillLine[] = [
   },
   {
     operationId: "op-3",
+    applicationId: null,
     source: "correction",
     entitlementId: null,
     periodStart: null,
@@ -155,17 +167,27 @@ function answered() {
     price: { inputPerMillion: 1_000_000, outputPerMillion: 0 },
     maxChargeMicrocredits: 10,
   });
+  // 99 of the pack spendable, 2 held by a running request, 4 charged.
   queryClient.setQueryData(billingKeys.paidSources, [pack]);
+  queryClient.setQueryData(billingKeys.paidBalance, {
+    availableMicrocredits: "99000000",
+    reservedMicrocredits: "2000000",
+    chargedMicrocredits: "4000000",
+  });
   queryClient.setQueryData(billingKeys.budgets, [createdBudget]);
   queryClient.setQueryData(billingKeys.bill, lines);
+  queryClient.setQueryData(billingKeys.resumePoints, []);
   return queryClient;
 }
 
 test("the Test Credit balance and the paid side are in view together", async () => {
   const view = renderCredits(answered());
-  expect(await view.findByText("Available")).toBeTruthy();
-  // Test Credit rows name their value; the paid pack says what it still holds.
-  expect(view.getByText("Charged")).toBeTruthy();
+  // Each side shows the same three figures, counted on that side alone.
+  expect(await view.findAllByText("Available")).toHaveLength(2);
+  expect(view.getAllByText("Reserved")).toHaveLength(2);
+  expect(view.getAllByText("Charged")).toHaveLength(2);
+  expect(view.getAllByText("4")).toHaveLength(1);
+  // The paid pack says what it still holds.
   // Charged is 6, and the same charge appears again under Usage.
   expect(view.getAllByText("6").length).toBeGreaterThan(1);
   expect(view.getAllByText("Credit pack").length).toBeGreaterThan(1);
@@ -192,6 +214,96 @@ test("each charge is listed by the source that paid for it", async () => {
   // The charge values, in credits a person reads.
   expect(view.getByText("1")).toBeTruthy();
   expect(view.getByText("10")).toBeTruthy();
+});
+
+test("usage filters by app and by Credit type", async () => {
+  const user = userEvent.setup({ document });
+  const view = renderCredits(answered());
+  await view.findByText("Usage");
+  // Each charge says which app its step ran for, or that none was named.
+  expect(view.getByText("WeKnora, op-1 on Feb 15, 2026")).toBeTruthy();
+  expect(view.getByText("WeKnora, op-2 on Feb 15, 2026")).toBeTruthy();
+  expect(view.getByText("metered double count")).toBeTruthy();
+
+  // Only what ran for WeKnora.
+  await user.click(view.getByRole("combobox", { name: "App" }));
+  await user.click(await view.findByRole("option", { name: "WeKnora" }));
+  expect(view.getByText("WeKnora, op-1 on Feb 15, 2026")).toBeTruthy();
+  expect(view.getByText("WeKnora, op-2 on Feb 15, 2026")).toBeTruthy();
+  expect(view.queryByText("metered double count")).toBeNull();
+
+  // And among that, only what paid credits paid for.
+  await user.click(view.getByRole("combobox", { name: "Credit type" }));
+  await user.click(await view.findByRole("option", { name: "Paid credits" }));
+  expect(view.queryByText("WeKnora, op-1 on Feb 15, 2026")).toBeNull();
+  expect(view.getByText("WeKnora, op-2 on Feb 15, 2026")).toBeTruthy();
+
+  // A correction is a paid charge, under whichever app its step ran.
+  await user.click(view.getByRole("combobox", { name: "App" }));
+  await user.click(await view.findByRole("option", { name: "No app named" }));
+  expect(view.queryByText("WeKnora, op-2 on Feb 15, 2026")).toBeNull();
+  expect(view.getByText("metered double count")).toBeTruthy();
+
+  // Nothing is behind a Test Credit filter here.
+  await user.click(view.getByRole("combobox", { name: "Credit type" }));
+  await user.click(await view.findByRole("option", { name: "Test credits" }));
+  expect(view.getByText("No matches")).toBeTruthy();
+});
+
+test("a paused task continues on the budget the person sets for it", async () => {
+  const user = userEvent.setup({ document });
+  const queryClient = answered();
+  const paused: ResumePoint = {
+    operationId: "op-1",
+    applicationId: "weknora",
+    reason: "insufficient_credits",
+    createdAt: "2026-02-16T05:00:00.000Z",
+    budgetId: null,
+    confirmedAt: null,
+    creditType: null,
+  };
+  queryClient.setQueryData(billingKeys.resumePoints, [
+    paused,
+    {
+      ...paused,
+      operationId: "op-9",
+      applicationId: null,
+      reason: "execution_limit",
+      budgetId: "budget-1",
+      confirmedAt: "2026-02-16T06:00:00.000Z",
+      creditType: "paid",
+    },
+  ]);
+  const view = renderCredits(queryClient);
+  // Each paused task says what it is and why it stopped. One that already has
+  // a budget says which, and has nothing left to click.
+  expect(await view.findByText("Paused tasks")).toBeTruthy();
+  expect(view.getByText("WeKnora")).toBeTruthy();
+  expect(view.getByText("Its Test credits ran out.")).toBeTruthy();
+  expect(view.getByText("A task")).toBeTruthy();
+  expect(view.getByText("Continues on a Paid budget.")).toBeTruthy();
+  const buttons = view.getAllByRole("button", {
+    name: "Set a budget to continue",
+  });
+  expect(buttons).toHaveLength(1);
+
+  await user.click(buttons[0]);
+  const dialog = await view.findByRole("dialog");
+  // A task out of Test credits continues on paid credits: that is the entry offered.
+  const entry = within(dialog).getByRole("combobox", { name: "Credit type" });
+  expect(entry.textContent?.trim()).toMatch(/^Paid credits/);
+  await user.type(within(dialog).getByLabelText("Limit"), "3");
+  const submit = within(dialog).getByRole("button", { name: "Set budget" });
+  await waitFor(() => expect(submit.hasAttribute("disabled")).toBe(false));
+  await user.click(submit);
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts[0]).toMatchObject({
+    path: "/api/billing/budgets",
+    body: { creditType: "paid", limitMicrocredits: "3000000" },
+  });
+  // The budget alone continues nothing: the step is confirmed on it.
+  expect(posts[1]).toEqual({ path: CONFIRM, body: { budgetId: "budget-1" } });
+  await waitFor(() => expect(view.queryByRole("dialog")).toBeNull());
 });
 
 test("a budget is set under the Credit type the person picks", async () => {

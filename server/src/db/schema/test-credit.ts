@@ -138,6 +138,8 @@ export const testCreditOperations = pgTable(
     dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
     budgetId: text("budget_id"),
     stepId: text("step_id"),
+    // The app the step ran for (#107 按应用筛选). Null for a caller that named none.
+    applicationId: text("application_id"),
     resultText: text("result_text"),
   },
   (table) => [
@@ -186,6 +188,42 @@ export const testCreditOperations = pgTable(
       AND ${table.charged} IS NOT NULL AND ${table.inputTokens} IS NOT NULL AND ${table.outputTokens} IS NOT NULL
       AND ${table.inputTokens} >= 0 AND ${table.outputTokens} >= 0)
   `,
+    ),
+  ],
+);
+
+// A step that stopped for want of credits or budget room (#107 安全续做点).
+// Nothing is held or dispatched for it, so the same operation resumes there
+// once the person confirms a budget. The row outlives the reservation, so a
+// replay of the runner's own request resolves to the same budget.
+export const testCreditResumePoints = pgTable(
+  "test_credit_resume_points",
+  {
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => testCreditAccounts.id, { onDelete: "cascade" }),
+    operationId: text("operation_id").notNull(),
+    applicationId: text("application_id"),
+    reason: text({
+      enum: ["insufficient_credits", "execution_limit"],
+    }).notNull(),
+    // The budget the person confirmed for this step, once they have.
+    budgetId: text("budget_id"),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.accountId, table.operationId] }),
+    foreignKey({
+      name: "test_credit_resume_point_budget_fk",
+      columns: [table.accountId, table.budgetId],
+      foreignColumns: [testCreditBudgets.accountId, testCreditBudgets.id],
+    }).onDelete("cascade"),
+    check(
+      "test_credit_resume_point_confirmation",
+      sql`(${table.budgetId} is null) = (${table.confirmedAt} is null)`,
     ),
   ],
 );

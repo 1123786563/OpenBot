@@ -16,6 +16,8 @@ const reserve = operation.extend({
   stepId: operationId.optional(),
   // Which entry the caller chose (#107); absent spans both Credit types.
   creditType: z.enum(["test", "paid"]).optional(),
+  // The app the step runs for, kept on the operation and its bill lines.
+  applicationId: operationId.optional(),
 });
 const messages = z
   .array(
@@ -96,6 +98,8 @@ export function createTestCreditRoutes({
   api.use("/paid/*", authorize("account"));
   api.use("/budgets", authorize("account"));
   api.use("/budgets/*", authorize("account"));
+  api.use("/resume-points", authorize("account"));
+  api.use("/resume-points/*", authorize("account"));
   api.onError((_error, context) =>
     context.json({ error: "Test Credit service unavailable." }, 503),
   );
@@ -214,6 +218,42 @@ export function createTestCreditRoutes({
     return accountId
       ? context.json(await paid.ledger.bill(accountId))
       : context.json({ error: "Billing Account unavailable." }, 404);
+  });
+
+  api.get("/paid/balance", async (context) => {
+    if (!paid) return context.json({ error: "Paid credits unavailable." }, 503);
+    const accountId = await ledger.accountOf(context.var.identity);
+    return accountId
+      ? context.json(await paid.ledger.paidBalance(accountId))
+      : context.json({ error: "Billing Account unavailable." }, 404);
+  });
+
+  // The steps paused for want of credits or a budget (#107 安全续做点). A
+  // runner retries the same operation; it reserves on the confirmed budget.
+  api.get("/resume-points", async (context) => {
+    const points = await ledger.resumePoints(context.var.identity);
+    return points
+      ? context.json(points)
+      : context.json({ error: "Billing Account unavailable." }, 404);
+  });
+
+  api.post("/resume-points/:operationId/confirm", async (context) => {
+    const id = operationId.safeParse(context.req.param("operationId"));
+    const body = z
+      .strictObject({ budgetId: operationId })
+      .safeParse(await context.req.json().catch(() => undefined));
+    if (!id.success || !body.success)
+      return context.json({ error: "Invalid resume confirmation." }, 400);
+    const confirmed = await ledger.confirmResumePoint(
+      context.var.identity,
+      id.data,
+      body.data.budgetId,
+    );
+    if (!confirmed)
+      return context.json({ error: "Resume point unavailable." }, 404);
+    return confirmed.state === "confirmed"
+      ? context.json(confirmed)
+      : context.json({ error: "That budget cannot continue this step." }, 409);
   });
 
   api.post("/v1/reserve", async (context) => {

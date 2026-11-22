@@ -969,6 +969,41 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
     });
   }
 
+  /**
+   * The paid side of a person's balance (#107), beside the Test Credit one:
+   * what can be spent now, what running steps hold, and what finished steps
+   * charged.
+   */
+  async function paidBalance(accountId: string) {
+    return database.transaction(async (tx) => {
+      const sources = await spendableSources(tx, accountId, now());
+      const [held] = await tx
+        .select({
+          amount: sql<string>`coalesce(sum(${paidCreditAllocations.amountMicrocredits}), 0)::text`,
+        })
+        .from(paidCreditAllocations)
+        .where(
+          and(
+            eq(paidCreditAllocations.accountId, accountId),
+            eq(paidCreditAllocations.state, "held"),
+          ),
+        );
+      const [consumed] = await tx
+        .select({
+          amount: sql<string>`coalesce(sum(${paidEntitlements.consumedMicrocredits}), 0)::text`,
+        })
+        .from(paidEntitlements)
+        .where(eq(paidEntitlements.accountId, accountId));
+      return {
+        availableMicrocredits: sources
+          .reduce((sum, { remaining }) => sum + remaining, 0n)
+          .toString(),
+        reservedMicrocredits: held?.amount ?? "0",
+        chargedMicrocredits: consumed?.amount ?? "0",
+      };
+    });
+  }
+
   async function allocate(input: {
     accountId: string;
     operationId: string;
@@ -1012,9 +1047,17 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
    * arrival time. Test Credit charges appear as their own source.
    */
   async function bill(accountId: string) {
+    // Every line names the app its step ran for (#107 按应用筛选), where
+    // the caller named one.
+    const application = () =>
+      and(
+        eq(testCreditOperations.accountId, paidCreditAllocations.accountId),
+        eq(testCreditOperations.id, paidCreditAllocations.operationId),
+      );
     const paidLines = await database
       .select({
         operationId: paidCreditAllocations.operationId,
+        applicationId: testCreditOperations.applicationId,
         source: paidEntitlements.kind,
         entitlementId: paidEntitlements.id,
         periodStart: paidEntitlements.periodStart,
@@ -1028,6 +1071,7 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
         paidEntitlements,
         eq(paidCreditAllocations.entitlementId, paidEntitlements.id),
       )
+      .leftJoin(testCreditOperations, application())
       .where(
         and(
           eq(paidCreditAllocations.accountId, accountId),
@@ -1038,6 +1082,7 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
     const testLines = await database
       .select({
         operationId: testCreditOperations.id,
+        applicationId: testCreditOperations.applicationId,
         amountMicrocredits: sql<string>`(${testCreditOperations.charged} - coalesce(${testCreditOperations.paidChargeMicrocredits}, 0))::text`,
         at: testCreditEvidence.recordedAt,
       })
@@ -1065,11 +1110,19 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
     const correctionLines = await database
       .select({
         operationId: paidCorrections.operationId,
+        applicationId: testCreditOperations.applicationId,
         amountMicrocredits: paidCorrections.amountMicrocredits,
         reason: paidCorrections.reason,
         at: paidCorrections.createdAt,
       })
       .from(paidCorrections)
+      .leftJoin(
+        testCreditOperations,
+        and(
+          eq(testCreditOperations.accountId, paidCorrections.accountId),
+          eq(testCreditOperations.id, paidCorrections.operationId),
+        ),
+      )
       .where(eq(paidCorrections.accountId, accountId))
       .orderBy(paidCorrections.createdAt);
     return [
@@ -1117,6 +1170,7 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
     closePilotOrders,
     activeSubscription,
     paidSources,
+    paidBalance,
     bill,
     allocate,
     settleAllocation,

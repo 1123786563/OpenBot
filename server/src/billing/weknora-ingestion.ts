@@ -234,11 +234,17 @@ export function createWeKnoraIngestionBilling(options: {
         resourceId: input.resourceId,
       });
       if (result.state === "denied") {
+        // Out of credits is a pause, not a refusal: the ledger keeps the step
+        // as a resume point, and this same request reserves again once the
+        // person has set a budget (#107 安全续做点).
+        const outOfCredits = result.reason === "insufficient_credits";
         throw new WeKnoraBillingError(
-          result.reason === "insufficient_credits"
+          outOfCredits
             ? "insufficient_credits"
             : (result.reason ?? "not_authorized"),
-          "The shared Test Credit reservation was refused.",
+          outOfCredits
+            ? "Your Test credits ran out. Set a budget in OpenBot, then try again."
+            : "The shared Test Credit reservation was refused.",
         );
       }
       if (result.state === "reserved") {

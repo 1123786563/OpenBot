@@ -1,4 +1,4 @@
-import { and, eq, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, isNull, lte, notExists, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   catalogSchema,
@@ -25,6 +25,7 @@ import {
   pilotProviderCostLimitEvents,
   pilotProviderCostLimits,
   testCreditOperations as operations,
+  testCreditResumePoints as resumePoints,
 } from "../db/schema";
 
 export type VerifiedBillingIdentity = { issuer: string; subject: string };
@@ -403,6 +404,22 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
     return row;
   }
 
+  // Ends a reservation that will not run. Its paid hold goes back with it,
+  // or the credits would stay held for a step that never started.
+  async function releaseReservation(tx: Transaction, row: Operation) {
+    await tx
+      .update(operations)
+      .set({ state: "released", paidHoldMicrocredits: 0n })
+      .where(operationFilter(row.accountId, row.id));
+    if (row.paidHoldMicrocredits > 0n)
+      await releasePaidAllocations(
+        tx,
+        row.accountId,
+        row.id,
+        await currentTime(tx),
+      );
+  }
+
   async function budget(accountId: string, id: string, tx: Transaction) {
     const [row] = await tx
       .select()
@@ -725,7 +742,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
 
     async reserve(
       identity: VerifiedBillingIdentity,
-      input: {
+      request: {
         operationId: string;
         route: string;
         priceVersion: string;
@@ -735,6 +752,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         // Which entry the caller chose (#107): "test" spends Test Credit
         // only, "paid" paid sources only; the default spans both (#101).
         creditType?: "test" | "paid";
+        // The app the step runs for, kept on the operation for the bill.
+        applicationId?: string;
       },
     ) {
       return database.transaction(async (tx) => {
@@ -761,6 +780,53 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           if (row.paidHold > 0n)
             await releasePaidAllocations(tx, accountId, row.id, now);
         }
+        // A step that stopped for want of credits or budget room resumes on
+        // the budget the person confirmed for it (#107 安全续做点): that one
+        // confirmation is the entry for this step, whatever the runner asks.
+        const [paused] = await tx
+          .select()
+          .from(resumePoints)
+          .where(
+            and(
+              eq(resumePoints.accountId, accountId),
+              eq(resumePoints.operationId, request.operationId),
+            ),
+          )
+          .for("update");
+        const continued = paused?.budgetId
+          ? await budget(accountId, paused.budgetId, tx)
+          : undefined;
+        const input = continued
+          ? {
+              ...request,
+              creditType: continued.creditType,
+              budgetId: continued.id,
+            }
+          : request;
+        // Nothing is held or dispatched for a step refused for want of
+        // credits or budget room, so it waits here until the person sets a
+        // budget (#107 安全续做点).
+        const pause = async (
+          reason: "insufficient_credits" | "execution_limit",
+        ) => {
+          await tx
+            .insert(resumePoints)
+            .values({
+              accountId,
+              operationId: input.operationId,
+              applicationId: input.applicationId ?? null,
+              reason,
+              createdAt: now,
+            })
+            .onConflictDoUpdate({
+              target: [resumePoints.accountId, resumePoints.operationId],
+              set: {
+                reason,
+                applicationId: input.applicationId ?? null,
+              },
+            });
+          return denied(reason);
+        };
         const existing = await operation(accountId, input.operationId, tx);
         if (existing) {
           const sameQuote =
@@ -813,7 +879,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           (executionBudget.state !== "active" ||
             executionBudget.confirmedAt === null)
         )
-          return denied("execution_limit");
+          return pause("execution_limit");
         const active = await activeRoutes(tx, true);
         const route = active?.options.find(({ id }) => id === input.route);
         if (!route || active?.priceVersion !== input.priceVersion)
@@ -836,12 +902,12 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             },
             now,
           );
-          if (paid.state !== "allocated") return denied("insufficient_credits");
+          if (paid.state !== "allocated") return pause("insufficient_credits");
           paidHold = paid.amount;
         } else if (input.creditType === "test") {
           if (balance.granted === 0n) return denied("not_authorized");
           if (balance.available < reserved)
-            return denied("insufficient_credits");
+            return pause("insufficient_credits");
         } else {
           const shortfall = reserved - balance.available;
           if (shortfall > 0n) {
@@ -858,18 +924,16 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             // and allocations roll back with the reservation that created
             // them.
             if (paid.state !== "allocated")
-              return denied(
-                balance.granted === 0n
-                  ? "not_authorized"
-                  : "insufficient_credits",
-              );
+              return balance.granted === 0n
+                ? denied("not_authorized")
+                : pause("insufficient_credits");
             paidHold = paid.amount;
           }
         }
         if (executionBudget) {
           const used = await budgetUsage(accountId, executionBudget.id, tx);
           if (used + reserved > executionBudget.limitMicrocredits)
-            return denied("execution_limit");
+            return pause("execution_limit");
         }
         // The pilot-wide provider-cost ceiling is acquired in the same
         // transaction as the user reservation: both hold or neither does.
@@ -901,6 +965,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             state: "reserved",
             budgetId: input.budgetId,
             stepId: input.stepId,
+            applicationId: input.applicationId,
           })
           .returning();
         if (costLimit) {
@@ -922,6 +987,107 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           permit: row.permit,
           operation: operationReceipt(row),
         } as const;
+      });
+    },
+
+    /**
+     * The steps still waiting on the person to set a budget, oldest first. A
+     * resumed step keeps its row, so the runner's replay of the same request
+     * resolves to the same budget, and leaves this list.
+     */
+    async resumePoints(identity: VerifiedBillingIdentity) {
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return undefined;
+        const rows = await tx
+          .select({
+            operationId: resumePoints.operationId,
+            applicationId: resumePoints.applicationId,
+            reason: resumePoints.reason,
+            createdAt: resumePoints.createdAt,
+            budgetId: resumePoints.budgetId,
+            confirmedAt: resumePoints.confirmedAt,
+            creditType: budgets.creditType,
+          })
+          .from(resumePoints)
+          .leftJoin(
+            budgets,
+            and(
+              eq(budgets.accountId, resumePoints.accountId),
+              eq(budgets.id, resumePoints.budgetId),
+            ),
+          )
+          .where(
+            and(
+              eq(resumePoints.accountId, accountId),
+              notExists(
+                tx
+                  .select({ id: operations.id })
+                  .from(operations)
+                  .where(
+                    and(
+                      eq(operations.accountId, resumePoints.accountId),
+                      eq(operations.id, resumePoints.operationId),
+                    ),
+                  ),
+              ),
+            ),
+          )
+          .orderBy(resumePoints.createdAt);
+        return rows;
+      });
+    },
+
+    /**
+     * The person's explicit confirmation (#107): the budget a paused step
+     * continues on, from their own confirmed, active budgets. A step that ran
+     * out of credits continues on paid credits only.
+     */
+    async confirmResumePoint(
+      identity: VerifiedBillingIdentity,
+      operationId: string,
+      budgetId: string,
+    ) {
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return undefined;
+        const [point] = await tx
+          .select()
+          .from(resumePoints)
+          .where(
+            and(
+              eq(resumePoints.accountId, accountId),
+              eq(resumePoints.operationId, operationId),
+            ),
+          )
+          .for("update");
+        if (!point || (await operation(accountId, operationId, tx)))
+          return undefined;
+        const target = await budget(accountId, budgetId, tx);
+        if (
+          target?.state !== "active" ||
+          target.confirmedAt === null ||
+          (point.reason === "insufficient_credits" &&
+            target.creditType !== "paid")
+        )
+          return { state: "denied" as const };
+        const confirmedAt = await currentTime(tx);
+        await tx
+          .update(resumePoints)
+          .set({ budgetId, confirmedAt })
+          .where(
+            and(
+              eq(resumePoints.accountId, accountId),
+              eq(resumePoints.operationId, operationId),
+            ),
+          );
+        return {
+          state: "confirmed" as const,
+          operationId,
+          budgetId,
+          creditType: target.creditType,
+          confirmedAt,
+        };
       });
     },
 
@@ -947,20 +1113,18 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           } as const;
         const filter = operationFilter(row.accountId, row.id);
         if (row.budgetId) {
+          // The budget's Credit type was matched to the entry at reservation
+          // (#107), so either type dispatches under the budget it fixed.
           const executionBudget = await budget(row.accountId, row.budgetId, tx);
           const invalid =
-            executionBudget?.creditType !== "test" ||
             executionBudget?.state !== "active" ||
-            executionBudget?.confirmedAt === null;
+            executionBudget.confirmedAt === null;
           const overLimit = executionBudget
             ? (await budgetUsage(row.accountId, row.budgetId, tx)) >
               executionBudget.limitMicrocredits
             : false;
           if (invalid || overLimit) {
-            await tx
-              .update(operations)
-              .set({ state: "released" })
-              .where(filter);
+            await releaseReservation(tx, row);
             return denied(
               invalid && !executionBudget
                 ? "not_authorized"
@@ -976,7 +1140,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           dispatchedAt.getTime() - row.createdAt.getTime() >=
             reservationMilliseconds
         ) {
-          await tx.update(operations).set({ state: "released" }).where(filter);
+          await releaseReservation(tx, row);
           return denied("route_unavailable");
         }
         await tx

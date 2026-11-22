@@ -13,13 +13,14 @@ import {
   testCreditBatches,
   testCreditBudgets,
   testCreditEnrollments,
+  testCreditResumePoints,
 } from "../src/db/schema";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /**
  * The billing API a person's browser reads (#107): both Credit types side by
- * side, budgets that fix the type when a task starts, and no execution
- * without a controlled executor.
+ * side, budgets that fix the type when a task starts, the confirmation a
+ * paused step continues on, and no execution without a controlled executor.
  */
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
@@ -42,7 +43,13 @@ const signedIn = { headers: { "x-test-subject": identity.subject } };
 const batchIds: string[] = [];
 
 test("a person without a Billing Account is told so on every read", async () => {
-  for (const path of ["/balance", "/paid/sources", "/paid/bill"]) {
+  for (const path of [
+    "/balance",
+    "/paid/sources",
+    "/paid/bill",
+    "/paid/balance",
+    "/resume-points",
+  ]) {
     const response = await api.request(path, signedIn);
     expect(response.status).toBe(404);
     expect(await response.json()).toMatchObject({
@@ -52,10 +59,25 @@ test("a person without a Billing Account is told so on every read", async () => 
 });
 
 test("every read requires a verified identity", async () => {
-  for (const path of ["/balance", "/paid/sources", "/paid/bill", "/budgets"]) {
+  for (const path of [
+    "/balance",
+    "/paid/sources",
+    "/paid/bill",
+    "/paid/balance",
+    "/budgets",
+    "/resume-points",
+  ]) {
     const response = await api.request(path);
     expect(response.status).toBe(401);
   }
+  expect(
+    (
+      await api.request("/resume-points/routes-op-1/confirm", {
+        method: "POST",
+        body: JSON.stringify({ budgetId: "routes-paid" }),
+      })
+    ).status,
+  ).toBe(401);
   const response = await api.request("/budgets", {
     method: "POST",
     body: JSON.stringify({
@@ -153,6 +175,99 @@ test("the bill shows both Credit types and the budget fixes its type", async () 
     }),
   });
   expect(refused.status).toBe(400);
+
+  // The paid balance beside the Test Credit one: 46 of the pack still
+  // spendable, none held, 4 charged.
+  const paidBalance = await api.request("/paid/balance", signedIn);
+  expect(await paidBalance.json()).toEqual({
+    availableMicrocredits: "46",
+    reservedMicrocredits: "0",
+    chargedMicrocredits: "4",
+  });
+  // Every bill line carries the app its step ran for, where it named one.
+  expect(await (await api.request("/paid/bill", signedIn)).json()).toEqual([
+    expect.objectContaining({
+      operationId: "routes-op-1",
+      applicationId: null,
+    }),
+  ]);
+});
+
+test("a paused step waits for a budget the person confirms", async () => {
+  // The session seam answers one identity: the account the test above opened.
+  const accountId =
+    (await createTestCreditLedger(database).accountOf(identity)) ?? "";
+  if (!accountId) throw new Error("no Billing Account for the test identity");
+  // A step the ledger paused for want of credits, as its reserve leaves it.
+  await database.insert(testCreditResumePoints).values({
+    accountId,
+    operationId: "routes-paused",
+    applicationId: "weknora",
+    reason: "insufficient_credits",
+  });
+  const headers = signedIn;
+
+  const waiting = await api.request("/resume-points", headers);
+  expect(await waiting.json()).toMatchObject([
+    {
+      operationId: "routes-paused",
+      applicationId: "weknora",
+      reason: "insufficient_credits",
+      budgetId: null,
+    },
+  ]);
+  const confirm = (operationId: string, body: unknown) =>
+    api.request(`/resume-points/${operationId}/confirm`, {
+      ...headers,
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  expect((await confirm("routes-paused", {})).status).toBe(400);
+  expect(
+    (await confirm("no-such-step", { budgetId: "routes-paid" })).status,
+  ).toBe(404);
+  // A step out of credits continues on paid credits, not a Test budget.
+  const created = await api.request("/budgets", {
+    ...headers,
+    method: "POST",
+    body: JSON.stringify({
+      budgetId: "routes-continue",
+      creditType: "test",
+      limitMicrocredits: "25",
+    }),
+  });
+  expect(created.status).toBe(200);
+  const refused = await confirm("routes-paused", {
+    budgetId: "routes-continue",
+  });
+  expect(refused.status).toBe(409);
+  expect(await refused.json()).toMatchObject({
+    error: "That budget cannot continue this step.",
+  });
+  await api.request("/budgets", {
+    ...headers,
+    method: "POST",
+    body: JSON.stringify({
+      budgetId: "routes-paid-continue",
+      creditType: "paid",
+      limitMicrocredits: "25",
+    }),
+  });
+  const confirmed = await confirm("routes-paused", {
+    budgetId: "routes-paid-continue",
+  });
+  expect(confirmed.status).toBe(200);
+  expect(await confirmed.json()).toMatchObject({
+    state: "confirmed",
+    operationId: "routes-paused",
+    budgetId: "routes-paid-continue",
+    creditType: "paid",
+  });
+  expect(
+    await (await api.request("/resume-points", headers)).json(),
+  ).toMatchObject([
+    { operationId: "routes-paused", budgetId: "routes-paid-continue" },
+  ]);
 });
 
 test("a deployment without the paid ledger answers 503 on the paid views", async () => {
@@ -162,6 +277,7 @@ test("a deployment without the paid ledger answers 503 on the paid views", async
   });
   expect((await bare.request("/paid/sources")).status).toBe(503);
   expect((await bare.request("/paid/bill")).status).toBe(503);
+  expect((await bare.request("/paid/balance")).status).toBe(503);
   // Its Test Credit views still answer.
   expect((await bare.request("/budgets")).status).toBe(200);
 });

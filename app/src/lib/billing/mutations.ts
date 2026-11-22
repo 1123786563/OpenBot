@@ -44,3 +44,25 @@ export function createBudgetMutationOptions(queryClient: QueryClient) {
       queryClient.invalidateQueries({ queryKey: billingKeys.all }),
   });
 }
+
+/** A paused step continues on the budget the person confirmed for it. */
+export function confirmResumePointMutationOptions(queryClient: QueryClient) {
+  return mutationOptions({
+    mutationFn: async (input: {
+      operationId: string;
+      budgetId: string;
+    }): Promise<{ state: "confirmed"; creditType: "test" | "paid" }> =>
+      (
+        await client(
+          `/api/billing/resume-points/${input.operationId}/confirm`,
+          {
+            method: "POST",
+            body: { budgetId: input.budgetId },
+            fallback: "Could not continue the step",
+          },
+        )
+      ).json(),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: billingKeys.all }),
+  });
+}
