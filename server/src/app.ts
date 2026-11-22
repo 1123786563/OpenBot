@@ -151,6 +151,7 @@ import {
   type CorsairCloudClient,
 } from "./plugins/corsair/cloud";
 import { createGithubPilotRoutes } from "./plugins/corsair/routes";
+import { createCorsairIntegrationsRoutes } from "./plugins/corsair/integrations-routes";
 import { createSlackPilotRoutes } from "./plugins/corsair/slack/routes";
 import { createSharedSlackPilot } from "./plugins/corsair/slack/shared-routes";
 import { createAppGrantDraftRoutes } from "./plugins/grant-translate";
@@ -1771,6 +1772,10 @@ export function createApp(
   if (sharedSlackRoutes)
     app.route("/api/corsair/slack/shared", sharedSlackRoutes);
   if (slackRoutes) app.route("/api/corsair/slack", slackRoutes);
+  app.route(
+    "/api/corsair/integrations",
+    createCorsairIntegrationsRoutes({ requireUser }),
+  );
 
   const readiness = coworker?.corsairReadiness;
   if (readiness?.includeDeploymentLegacy && pluginStore) {
