@@ -109,6 +109,14 @@ export const testCreditOperations = pgTable(
     priceVersion: uuid("price_version").notNull(),
     route: jsonb().$type<ReleasedBifrostRoute>().notNull(),
     reserved: bigint({ mode: "bigint" }).notNull(),
+    // The paid-source share of this reservation's hold and charge; the rest
+    // belongs to Test Credit enrollments. Both stay 0 for trial-only holds.
+    paidHoldMicrocredits: bigint("paid_hold_microcredits", { mode: "bigint" })
+      .notNull()
+      .default(sql`0`),
+    paidChargeMicrocredits: bigint("paid_charge_microcredits", {
+      mode: "bigint",
+    }),
     charged: bigint({ mode: "bigint" }),
     state: text({
       enum: ["reserved", "pending", "settled", "released"],

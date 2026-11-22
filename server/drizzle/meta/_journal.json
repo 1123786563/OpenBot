@@ -708,6 +708,13 @@
       "when": 1795347574512,
       "tag": "0100_paid_credit_allocations",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1795348424055,
+      "tag": "0101_operation_paid_shares",
+      "breakpoints": true
     }
   ]
 }

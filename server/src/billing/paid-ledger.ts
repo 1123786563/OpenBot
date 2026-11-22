@@ -38,8 +38,6 @@ export class PaidLedgerError extends Error {
   }
 }
 
-type EntitlementRow = typeof paidEntitlements.$inferSelect;
-
 export function createPaidCreditLedger(database: Database, clock?: () => Date) {
   const now = () => clock?.() ?? new Date();
   type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -433,61 +431,7 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
     operationId: string;
     amountMicrocredits: bigint;
   }) {
-    return database.transaction(async (tx) => {
-      const [existing] = await tx
-        .select()
-        .from(paidCreditAllocations)
-        .where(
-          and(
-            eq(paidCreditAllocations.accountId, input.accountId),
-            eq(paidCreditAllocations.operationId, input.operationId),
-          ),
-        )
-        .limit(1);
-      if (existing) return { state: "existing" as const };
-
-      // Lock the account's entitlement rows so concurrent allocations
-      // serialize on the same sources.
-      await tx
-        .select({ id: paidEntitlements.id })
-        .from(paidEntitlements)
-        .where(eq(paidEntitlements.accountId, input.accountId))
-        .for("update");
-
-      const at = now();
-      const sources = (await spendableSources(tx, input.accountId, at)).sort(
-        (a, b) =>
-          a.entitlement.kind === b.entitlement.kind
-            ? a.entitlement.arrivedAt.getTime() -
-              b.entitlement.arrivedAt.getTime()
-            : a.entitlement.kind === "subscription"
-              ? -1
-              : 1,
-      );
-      const total = sources.reduce((sum, { remaining }) => sum + remaining, 0n);
-      if (total < input.amountMicrocredits)
-        return {
-          state: "denied" as const,
-          reason: "insufficient_credits" as const,
-        };
-
-      let left = input.amountMicrocredits;
-      let position = 0;
-      for (const { entitlement, remaining } of sources) {
-        if (left <= 0n) break;
-        const draw = remaining < left ? remaining : left;
-        left -= draw;
-        await tx.insert(paidCreditAllocations).values({
-          accountId: input.accountId,
-          operationId: input.operationId,
-          entitlementId: entitlement.id,
-          position: position++,
-          amountMicrocredits: draw,
-          state: "held",
-        });
-      }
-      return { state: "allocated" as const, amount: input.amountMicrocredits };
-    });
+    return database.transaction((tx) => allocatePaidSources(tx, input, now()));
   }
 
   /** Settlement consumes the allocated sources in order, up to the charge. */
@@ -496,54 +440,9 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
     operationId: string;
     chargeMicrocredits: bigint;
   }) {
-    return database.transaction(async (tx) => {
-      const rows = await tx
-        .select()
-        .from(paidCreditAllocations)
-        .where(
-          and(
-            eq(paidCreditAllocations.accountId, input.accountId),
-            eq(paidCreditAllocations.operationId, input.operationId),
-            eq(paidCreditAllocations.state, "held"),
-          ),
-        )
-        .orderBy(paidCreditAllocations.position)
-        .for("update");
-      if (rows.length === 0) return { state: "absent" as const };
-      let left = input.chargeMicrocredits;
-      const at = now();
-      for (const row of rows) {
-        if (left <= 0n) break;
-        const draw =
-          row.amountMicrocredits < left ? row.amountMicrocredits : left;
-        left -= draw;
-        if (row.entitlementId) {
-          await tx
-            .update(paidEntitlements)
-            .set({
-              consumedMicrocredits: sql`${paidEntitlements.consumedMicrocredits} + ${draw}`,
-            })
-            .where(eq(paidEntitlements.id, row.entitlementId));
-        }
-        await tx
-          .update(paidCreditAllocations)
-          .set({ state: "settled", resolvedAt: at })
-          .where(eq(paidCreditAllocations.id, row.id));
-      }
-      // Any unspent hold releases with the settlement.
-      for (const row of rows) {
-        await tx
-          .update(paidCreditAllocations)
-          .set({ state: "released", resolvedAt: at })
-          .where(
-            and(
-              eq(paidCreditAllocations.id, row.id),
-              eq(paidCreditAllocations.state, "held"),
-            ),
-          );
-      }
-      return { state: "settled" as const, charge: input.chargeMicrocredits };
-    });
+    return database.transaction((tx) =>
+      consumePaidAllocations(tx, input, now()),
+    );
   }
 
   /** A released reservation returns its holds without consuming anything. */
@@ -580,3 +479,206 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
 }
 
 export type PaidCreditLedger = ReturnType<typeof createPaidCreditLedger>;
+
+type PaidTx = Parameters<Parameters<Database["transaction"]>[0]>[0];
+type EntitlementRow = typeof paidEntitlements.$inferSelect;
+
+function effectiveEntitlement(entitlement: EntitlementRow, at: Date) {
+  if (entitlement.state === "revoked") return "revoked" as const;
+  if (entitlement.state === "frozen") return "frozen" as const;
+  if (entitlement.kind !== "subscription") return "active" as const;
+  const start = entitlement.periodStart ?? entitlement.arrivedAt;
+  const end = entitlement.periodEnd ?? entitlement.arrivedAt;
+  if (at < start) return "future" as const;
+  if (at >= end) return "expired" as const;
+  return "active" as const;
+}
+
+async function spendableSourcesWithin(tx: PaidTx, accountId: string, at: Date) {
+  const rows = await tx
+    .select()
+    .from(paidEntitlements)
+    .where(
+      and(
+        eq(paidEntitlements.accountId, accountId),
+        inArray(paidEntitlements.state, ["granted", "future"]),
+      ),
+    )
+    .orderBy(paidEntitlements.arrivedAt);
+  const holds = await tx
+    .select({
+      entitlementId: paidCreditAllocations.entitlementId,
+      held: sql<string>`sum(${paidCreditAllocations.amountMicrocredits})`,
+    })
+    .from(paidCreditAllocations)
+    .where(eq(paidCreditAllocations.state, "held"))
+    .groupBy(paidCreditAllocations.entitlementId);
+  const heldBy = new Map(
+    holds.flatMap(({ entitlementId, held }) =>
+      entitlementId === null ? [] : [[entitlementId, BigInt(held)] as const],
+    ),
+  );
+  return rows
+    .map((row) => ({
+      entitlement: row,
+      spendableAt: effectiveEntitlement(row, at) === "active",
+      remaining:
+        row.creditsMicrocredits -
+        row.consumedMicrocredits -
+        (heldBy.get(row.id) ?? 0n),
+    }))
+    .filter(({ spendableAt, remaining }) => spendableAt && remaining > 0n);
+}
+
+/**
+ * Holds `amountMicrocredits` of paid sources for one operation, inside the
+ * caller's transaction — the seam the Test Credit reservation path uses when
+ * trial credits alone cannot cover a hold (#101). Sources lock and allocate
+ * atomically with the reservation.
+ */
+export async function allocatePaidSources(
+  tx: PaidTx,
+  input: {
+    accountId: string;
+    operationId: string;
+    amountMicrocredits: bigint;
+  },
+  at: Date,
+): Promise<
+  | { state: "existing" }
+  | { state: "denied"; reason: "insufficient_credits" }
+  | { state: "allocated"; amount: bigint }
+> {
+  const [existing] = await tx
+    .select({ id: paidCreditAllocations.id })
+    .from(paidCreditAllocations)
+    .where(
+      and(
+        eq(paidCreditAllocations.accountId, input.accountId),
+        eq(paidCreditAllocations.operationId, input.operationId),
+      ),
+    )
+    .limit(1);
+  if (existing) return { state: "existing" };
+
+  // Lock the account's entitlement rows so concurrent allocations serialize
+  // on the same sources.
+  await tx
+    .select({ id: paidEntitlements.id })
+    .from(paidEntitlements)
+    .where(eq(paidEntitlements.accountId, input.accountId))
+    .for("update");
+
+  const sources = (await spendableSourcesWithin(tx, input.accountId, at)).sort(
+    (a, b) =>
+      a.entitlement.kind === b.entitlement.kind
+        ? a.entitlement.arrivedAt.getTime() - b.entitlement.arrivedAt.getTime()
+        : a.entitlement.kind === "subscription"
+          ? -1
+          : 1,
+  );
+  const total = sources.reduce((sum, { remaining }) => sum + remaining, 0n);
+  if (total < input.amountMicrocredits)
+    return { state: "denied", reason: "insufficient_credits" };
+
+  let left = input.amountMicrocredits;
+  let position = 0;
+  for (const { entitlement, remaining } of sources) {
+    if (left <= 0n) break;
+    const draw = remaining < left ? remaining : left;
+    left -= draw;
+    await tx.insert(paidCreditAllocations).values({
+      accountId: input.accountId,
+      operationId: input.operationId,
+      entitlementId: entitlement.id,
+      position: position++,
+      amountMicrocredits: draw,
+      state: "held",
+    });
+  }
+  return { state: "allocated", amount: input.amountMicrocredits };
+}
+
+/**
+ * Consumes up to `chargeMicrocredits` from an operation's paid allocations,
+ * inside the caller's transaction, and releases any unspent hold.
+ */
+export async function consumePaidAllocations(
+  tx: PaidTx,
+  input: {
+    accountId: string;
+    operationId: string;
+    chargeMicrocredits: bigint;
+  },
+  at: Date,
+): Promise<
+  { state: "absent" } | { state: "settled"; charge: bigint; consumed: bigint }
+> {
+  const rows = await tx
+    .select()
+    .from(paidCreditAllocations)
+    .where(
+      and(
+        eq(paidCreditAllocations.accountId, input.accountId),
+        eq(paidCreditAllocations.operationId, input.operationId),
+        eq(paidCreditAllocations.state, "held"),
+      ),
+    )
+    .orderBy(paidCreditAllocations.position)
+    .for("update");
+  if (rows.length === 0) return { state: "absent" };
+  let left = input.chargeMicrocredits;
+  let consumed = 0n;
+  for (const row of rows) {
+    if (left <= 0n) break;
+    const draw = row.amountMicrocredits < left ? row.amountMicrocredits : left;
+    left -= draw;
+    consumed += draw;
+    if (row.entitlementId) {
+      await tx
+        .update(paidEntitlements)
+        .set({
+          consumedMicrocredits: sql`${paidEntitlements.consumedMicrocredits} + ${draw}`,
+        })
+        .where(eq(paidEntitlements.id, row.entitlementId));
+    }
+    await tx
+      .update(paidCreditAllocations)
+      .set({ state: "settled", resolvedAt: at })
+      .where(eq(paidCreditAllocations.id, row.id));
+  }
+  // Any unspent hold releases with the settlement.
+  for (const row of rows) {
+    await tx
+      .update(paidCreditAllocations)
+      .set({ state: "released", resolvedAt: at })
+      .where(
+        and(
+          eq(paidCreditAllocations.id, row.id),
+          eq(paidCreditAllocations.state, "held"),
+        ),
+      );
+  }
+  return { state: "settled", charge: input.chargeMicrocredits, consumed };
+}
+
+/** Releases every held allocation of one operation without consuming. */
+export async function releasePaidAllocations(
+  tx: PaidTx,
+  accountId: string,
+  operationId: string,
+  at: Date,
+) {
+  const rows = await tx
+    .update(paidCreditAllocations)
+    .set({ state: "released", resolvedAt: at })
+    .where(
+      and(
+        eq(paidCreditAllocations.accountId, accountId),
+        eq(paidCreditAllocations.operationId, operationId),
+        eq(paidCreditAllocations.state, "held"),
+      ),
+    )
+    .returning({ id: paidCreditAllocations.id });
+  return rows.length;
+}

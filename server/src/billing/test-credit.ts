@@ -8,6 +8,11 @@ import {
 } from "../admin/bifrost-catalog";
 import type { Database } from "../db/client";
 import {
+  allocatePaidSources,
+  consumePaidAllocations,
+  releasePaidAllocations,
+} from "./paid-ledger";
+import {
   testCreditAccounts as accounts,
   testCreditBatches as batches,
   testCreditBudgets as budgets,
@@ -177,12 +182,12 @@ async function totals(database: Database | Transaction, accountId: string) {
       where ${enrollments.accountId} = ${accountId} and ${enrollments.claimedAt} is not null
     )`,
       held: sql<string>`(
-      select coalesce(sum(coalesce(${operations.cutoffHold}, ${operations.reserved})), 0)::text from ${operations}
+      select coalesce(sum(coalesce(${operations.cutoffHold}, ${operations.reserved}) - ${operations.paidHoldMicrocredits}), 0)::text from ${operations}
       where ${operations.accountId} = ${accountId} and ${operations.state} in ('reserved', 'pending')
     )`,
       spent: sql<string>`(
-      select coalesce(sum(${operations.charged}), 0)::text from ${operations}
-      where ${operations.accountId} = ${accountId}
+      select coalesce(sum(${operations.charged} - coalesce(${operations.paidChargeMicrocredits}, 0)), 0)::text from ${operations}
+      where ${operations.accountId} = ${accountId} and ${operations.charged} is not null
     )`,
     })
     .from(accounts)
@@ -300,17 +305,48 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
     );
   }
 
-  async function applyOperationCutoff(tx: Transaction, row: Operation) {
+  async function applyOperationCutoff(
+    tx: Transaction,
+    row: Operation,
+    now: Date,
+  ) {
     const verified = await eligibleEvidence(tx, row);
     const cutoffHold = verified ? eligibleCharge(row, verified) : 0n;
+    const released = cutoffHold === 0n && verified?.outcome !== "completed";
+    // The paid share follows the user reservation. With verified evidence
+    // the charge is final, so the paid tail is consumed now in source order
+    // and the hold shrinks to its Test Credit share; without evidence (or
+    // with nothing held) every paid allocation returns.
+    let hold = cutoffHold;
+    let paidCharge = 0n;
+    if (row.paidHoldMicrocredits > 0n) {
+      if (verified && cutoffHold > 0n) {
+        const testShare =
+          cutoffHold > row.reserved - row.paidHoldMicrocredits
+            ? row.reserved - row.paidHoldMicrocredits
+            : cutoffHold;
+        const consumed = await consumePaidAllocations(
+          tx,
+          {
+            accountId: row.accountId,
+            operationId: row.id,
+            chargeMicrocredits: cutoffHold - testShare,
+          },
+          now,
+        );
+        hold = testShare;
+        paidCharge = consumed.state === "settled" ? consumed.consumed : 0n;
+      } else {
+        await releasePaidAllocations(tx, row.accountId, row.id, now);
+      }
+    }
     await tx
       .update(operations)
       .set({
-        cutoffHold,
-        state:
-          cutoffHold === 0n && verified?.outcome !== "completed"
-            ? "released"
-            : "pending",
+        cutoffHold: hold,
+        paidHoldMicrocredits: 0n,
+        paidChargeMicrocredits: paidCharge,
+        state: released ? "released" : "pending",
       })
       .where(operationFilter(row.accountId, row.id));
     // The user reservation may release here, but an unknown provider result
@@ -332,7 +368,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       .select()
       .from(operations)
       .where(and(eq(operations.accountId, accountId), dueForCutoff(now)));
-    for (const row of due) await applyOperationCutoff(tx, row);
+    for (const row of due) await applyOperationCutoff(tx, row, now);
   }
 
   async function lockAccount(
@@ -422,7 +458,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
               ),
             );
           if (!row) return 0;
-          await applyOperationCutoff(tx, row);
+          await applyOperationCutoff(tx, row, await currentTime(tx));
           return 1;
         });
       }
@@ -666,16 +702,24 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         const now = await currentTime(tx);
         await applyCutoff(tx, accountId, now);
         const expired = new Date(now.getTime() - reservationMilliseconds);
-        await tx
+        const stale = await tx
           .update(operations)
-          .set({ state: "released" })
+          .set({ state: "released", paidHoldMicrocredits: 0n })
           .where(
             and(
               eq(operations.accountId, accountId),
               eq(operations.state, "reserved"),
               lte(operations.createdAt, expired),
             ),
-          );
+          )
+          .returning({
+            id: operations.id,
+            paidHold: operations.paidHoldMicrocredits,
+          });
+        for (const row of stale) {
+          if (row.paidHold > 0n)
+            await releasePaidAllocations(tx, accountId, row.id, now);
+        }
         const existing = await operation(accountId, input.operationId, tx);
         if (existing) {
           const sameQuote =
@@ -727,8 +771,31 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           return denied("route_unavailable");
         const balance = await totals(tx, accountId);
         const reserved = BigInt(route.maxChargeMicrocredits);
-        if (balance.granted === 0n) return denied("not_authorized");
-        if (balance.available < reserved) return denied("insufficient_credits");
+        // One reservation may span Test Credit and paid sources: when the
+        // trial balance cannot cover the whole bound, the paid ledger holds
+        // the shortfall in this same transaction (#101).
+        let paidHold = 0n;
+        const shortfall = reserved - balance.available;
+        if (shortfall > 0n) {
+          const paid = await allocatePaidSources(
+            tx,
+            {
+              accountId,
+              operationId: input.operationId,
+              amountMicrocredits: shortfall,
+            },
+            now,
+          );
+          // "existing" cannot happen: the operation row is checked above and
+          // allocations roll back with the reservation that created them.
+          if (paid.state !== "allocated")
+            return denied(
+              balance.granted === 0n
+                ? "not_authorized"
+                : "insufficient_credits",
+            );
+          paidHold = paid.amount;
+        }
         if (executionBudget) {
           const used = await budgetUsage(accountId, executionBudget.id, tx);
           if (used + reserved > executionBudget.limitMicrocredits)
@@ -758,6 +825,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             priceVersion: input.priceVersion,
             route,
             reserved,
+            paidHoldMicrocredits: paidHold,
             createdAt: now,
             rerunOfOperationId: input.rerunOfOperationId,
             state: "reserved",
@@ -857,7 +925,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       await database.transaction(async (tx) => {
         if (!(await lockAccount(tx, accountId))) return;
         const row = await operation(accountId, id, tx);
-        await tx
+        const unsent = await tx
           .update(operations)
           .set({ state: "released", dispatchedAt: null })
           .where(
@@ -866,7 +934,20 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
               eq(operations.state, "pending"),
               isNull(operations.eligibleEvidenceId),
             ),
+          )
+          .returning({ id: operations.id });
+        if (unsent.length > 0 && row && row.paidHoldMicrocredits > 0n) {
+          await tx
+            .update(operations)
+            .set({ paidHoldMicrocredits: 0n })
+            .where(operationFilter(accountId, id));
+          await releasePaidAllocations(
+            tx,
+            accountId,
+            id,
+            await currentTime(tx),
           );
+        }
         if (row)
           await resolveProviderCostHold(tx, row.route.id, accountId, id, {
             state: "released",
@@ -1093,21 +1174,47 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
   }
 
   async function settlePending(tx: Transaction, accountId: string, id: string) {
-    await applyCutoff(tx, accountId, await currentTime(tx));
+    const now = await currentTime(tx);
+    await applyCutoff(tx, accountId, now);
     const row = await operation(accountId, id, tx);
     if (!row) return undefined;
     const verified = await eligibleEvidence(tx, row);
     if (row.state !== "pending" || !verified)
       return operationReceipt(row, verified);
     const charged = eligibleCharge(row, verified);
+    // The Test Credit share of the charge is its head; the paid tail consumes
+    // the operation's paid allocations in source order and returns the rest.
+    // A cutoff may already have consumed the paid share (then nothing is left
+    // held and the recorded paid charge stands).
+    let paidCharge = row.paidChargeMicrocredits ?? 0n;
+    if (row.paidHoldMicrocredits > 0n && charged > 0n) {
+      const testShare =
+        charged > row.reserved - row.paidHoldMicrocredits
+          ? row.reserved - row.paidHoldMicrocredits
+          : charged;
+      const consumed = await consumePaidAllocations(
+        tx,
+        {
+          accountId,
+          operationId: id,
+          chargeMicrocredits: charged - testShare,
+        },
+        now,
+      );
+      if (consumed.state === "settled") paidCharge += consumed.consumed;
+    } else if (row.paidHoldMicrocredits > 0n) {
+      await releasePaidAllocations(tx, accountId, id, now);
+    }
     const [settled] = await tx
       .update(operations)
       .set(
         charged === 0n && verified.outcome !== "completed"
-          ? { state: "released" }
+          ? { state: "released", paidHoldMicrocredits: 0n }
           : {
               state: "settled",
               charged,
+              paidChargeMicrocredits: paidCharge,
+              paidHoldMicrocredits: 0n,
               inputTokens: verified.inputTokens,
               outputTokens: verified.outputTokens,
             },
