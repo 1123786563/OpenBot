@@ -113,7 +113,7 @@ spec:
       {{- end }}
       containers:
         - name: computer
-          {{- if .Values.computer.image.repository }}
+          {{- if and .Values.computer .Values.computer.image .Values.computer.image.repository }}
           # The computer's own image, as Compose builds it (`agent-computer/Dockerfile`): /app with
           # `bun src/index.ts`. The main image ships only the computer's egress module, so it cannot
           # serve this pod's command.
