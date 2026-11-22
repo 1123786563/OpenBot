@@ -69,7 +69,6 @@ const paidAt = new Date("2026-02-15T04:30:00.000Z"); // Beijing Feb 15 12:30
 const paidLedger = createPaidCreditLedger(database, () => paidAt);
 const run = crypto.randomUUID().slice(0, 8);
 const batchIds: string[] = [];
-const accounts: string[] = [];
 
 let originalCatalog: { value: unknown } | undefined;
 let priceVersion = "";
@@ -92,7 +91,6 @@ async function enrolled(tag: string, testGrant: bigint) {
         eq(testCreditAccounts.subject, identity.subject),
       ),
     );
-  accounts.push(row.id);
   return { identity, accountId: row.id };
 }
 
