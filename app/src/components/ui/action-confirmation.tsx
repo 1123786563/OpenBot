@@ -20,7 +20,8 @@ type Confirmation = {
   confirmLabel: string;
   pendingLabel: string;
   failureMessage: string;
-  run: () => Promise<string> | Promise<void>;
+  // biome-ignore lint/suspicious/noConfusingVoidType: callers may return a failure message or nothing.
+  run: () => Promise<void | string>;
   trigger?: HTMLElement | undefined;
   fallbackFocus?: (() => HTMLElement | null) | undefined;
   variant?: "default" | "destructive";

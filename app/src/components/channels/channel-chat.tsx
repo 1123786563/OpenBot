@@ -1626,6 +1626,7 @@ export function ChannelChat({
    * Send the create-channel seed once. No waiting of its own: `say` owns that for every turn, and a
    * second copy of the ordering here was the one that could disagree with it.
    */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Check Again re-runs the resume by bumping `firstAttempt`.
   useEffect(() => {
     const pending = seedRef.current;
     if (!pending) return;

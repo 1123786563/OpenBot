@@ -47,6 +47,18 @@ export function openFuseResumePath(handle: string | undefined): string | null {
   return `/api/auth/openfuse/continue?${query}`;
 }
 
+export function resumeUrlFor(
+  origin: string,
+  flowId: string | undefined,
+  request?: string,
+): string {
+  const path =
+    openFuseResumePath(request) ??
+    verifierPathFor(flowId) ??
+    appReturnPath(request);
+  return path ? `${origin}${path}` : origin;
+}
+
 /** Only a root-relative Web page can be resumed after sign-in or onboarding. */
 export function appReturnPath(value: unknown): string | undefined {
   if (typeof value !== "string" || !value.startsWith("/")) return;
@@ -68,16 +80,4 @@ export function appReturnPath(value: unknown): string | undefined {
   if (path === "/sign" || path === "/onboarding" || /^\/api(?:\/|$)/.test(path))
     return;
   return `${url.pathname}${url.search}${url.hash}`;
-}
-
-export function resumeUrlFor(
-  origin: string,
-  flowId: string | undefined,
-  openFuseRequestOrReturnTo?: string,
-): string {
-  const path =
-    openFuseResumePath(openFuseRequestOrReturnTo) ??
-    verifierPathFor(flowId) ??
-    appReturnPath(openFuseRequestOrReturnTo);
-  return path == null ? origin : `${origin}${path}`;
 }
