@@ -43,7 +43,7 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
   const [error, setError] = useState<string | null>(null);
 
   const hasStart = start?.state === "pending";
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Retry increments attempt to restart the saved conversation.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Try Again re-runs the resume by bumping `attempt`.
   useEffect(() => {
     if (!hasStart) return;
     let current = true;
