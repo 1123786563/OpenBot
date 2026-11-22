@@ -35,7 +35,8 @@ type Recorded = {
  * fine for these tests because each uses a single workspace and at most one row.
  */
 function fakeDatabase(rows: Recorded[] = []) {
-  const snapshot = () => rows.map((row) => ({ integrationId: row.integrationId }));
+  const snapshot = () =>
+    rows.map((row) => ({ integrationId: row.integrationId }));
   const insert = (_table: unknown) => ({
     values(value: Recorded) {
       return {
@@ -174,9 +175,7 @@ test("the list carries each app's connection state", async () => {
       },
     ]),
   );
-  const body = await (
-    await routes.request("/?search=linear")
-  ).json();
+  const body = await (await routes.request("/?search=linear")).json();
   expect(body.integrations[0].connected).toBe(true);
   const other = await (await routes.request("/?search=notion")).json();
   expect(other.integrations[0].connected).toBe(false);

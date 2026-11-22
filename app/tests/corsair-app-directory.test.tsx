@@ -49,7 +49,9 @@ test("the directory previews without a query and shows every match with one", ()
 });
 
 test("the directory matches by id as well as by display name", () => {
-  const apps = [entry({ id: "googlecalendar", displayName: "Google Calendar" })];
+  const apps = [
+    entry({ id: "googlecalendar", displayName: "Google Calendar" }),
+  ];
   expect(directoryApps(apps, "google calendar", false).shown).toHaveLength(1);
   expect(directoryApps(apps, "googlecalendar", false).shown).toHaveLength(1);
 });

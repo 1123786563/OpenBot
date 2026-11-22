@@ -79,16 +79,16 @@ const corsairIntegration = z.object({
 export type CorsairIntegration = z.infer<typeof corsairIntegration>;
 
 /** Where the app's own mark lives, vendored with the catalog. Null means it never had one. */
-export function corsairIntegrationIconUrl(app: Pick<CorsairIntegration, "id" | "icon">) {
+export function corsairIntegrationIconUrl(
+  app: Pick<CorsairIntegration, "id" | "icon">,
+) {
   return app.icon ? `/corsair-icons/${app.id}.${app.icon}` : null;
 }
 
 export function corsairIntegrationsQueryOptions() {
   return queryOptions({
     queryKey: corsairKeys.integrations,
-    queryFn: async ({
-      signal,
-    }): Promise<CorsairIntegration[] | null> => {
+    queryFn: async ({ signal }): Promise<CorsairIntegration[] | null> => {
       // A 404 is a server from before the catalog existed, not a failure to read it.
       const response = await tryClient("/api/corsair/integrations", { signal });
       if (response.status === 404) return null;
@@ -180,7 +180,9 @@ export function corsairWrite(
 const INTEGRATIONS_FALLBACK = "Couldn't connect that app.";
 
 /** Records an app-level connection from the directory. No credentials change hands yet. */
-export function connectCorsairIntegrationMutationOptions(queryClient: QueryClient) {
+export function connectCorsairIntegrationMutationOptions(
+  queryClient: QueryClient,
+) {
   return mutationOptions({
     mutationFn: (integrationId: string): Promise<void> =>
       client(`/api/corsair/integrations/${integrationId}/connect`, {

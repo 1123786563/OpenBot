@@ -106,5 +106,7 @@ export const corsairIntegrationConnections = pgTable(
     personId: text("person_id").notNull(),
     connectedAt: time("connected_at").defaultNow().notNull(),
   },
-  (table) => [primaryKey({ columns: [table.workspaceId, table.integrationId] })],
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.integrationId] }),
+  ],
 );
