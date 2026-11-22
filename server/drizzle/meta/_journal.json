@@ -701,6 +701,13 @@
       "when": 1795346151553,
       "tag": "0099_paid_credit_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1795347574512,
+      "tag": "0100_paid_credit_allocations",
+      "breakpoints": true
     }
   ]
 }

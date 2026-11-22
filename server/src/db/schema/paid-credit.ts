@@ -118,6 +118,13 @@ export const paidEntitlements = pgTable(
     creditsMicrocredits: bigint("credits_microcredits", {
       mode: "bigint",
     }).notNull(),
+    // Charged amounts consume the entitlement; holds are tracked by the
+    // allocation rows so released reservations never reduce this.
+    consumedMicrocredits: bigint("consumed_microcredits", {
+      mode: "bigint",
+    })
+      .notNull()
+      .default(sql`0`),
     state: text({ enum: paidEntitlementStates }).notNull().default("granted"),
     arrivedAt: timestamp("arrived_at", { withTimezone: true })
       .notNull()
@@ -131,8 +138,47 @@ export const paidEntitlements = pgTable(
       .where(sql`kind = 'subscription' AND state = 'future'`),
     check(
       "paid_entitlements_amounts",
-      sql`${table.creditsMicrocredits} > 0 AND (${table.kind} <> 'subscription' OR (${table.periodStart} IS NOT NULL AND ${table.periodEnd} IS NOT NULL AND ${table.periodEnd} > ${table.periodStart} AND ${table.anchorDay} BETWEEN 1 AND 31))`,
+      sql`${table.creditsMicrocredits} > 0 AND ${table.consumedMicrocredits} >= 0 AND ${table.consumedMicrocredits} <= ${table.creditsMicrocredits} AND (${table.kind} <> 'subscription' OR (${table.periodStart} IS NOT NULL AND ${table.periodEnd} IS NOT NULL AND ${table.periodEnd} > ${table.periodStart} AND ${table.anchorDay} BETWEEN 1 AND 31))`,
     ),
     index("paid_entitlements_account").on(table.accountId, table.arrivedAt),
+  ],
+);
+
+export const paidAllocationStates = ["held", "settled", "released"] as const;
+
+// A reservation's hold split across paid credit sources, in the order
+// consumption must follow: current-period subscription credits first, then
+// Credit Packs by arrival. Releases void the hold; settlement consumes the
+// sources in the same order.
+export const paidCreditAllocations = pgTable(
+  "paid_credit_allocations",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => testCreditAccounts.id),
+    operationId: text("operation_id").notNull(),
+    entitlementId: uuid("entitlement_id").references(() => paidEntitlements.id),
+    position: integer().notNull(),
+    amountMicrocredits: bigint("amount_microcredits", {
+      mode: "bigint",
+    }).notNull(),
+    state: text({ enum: paidAllocationStates }).notNull().default("held"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("paid_credit_allocations_operation").on(
+      table.accountId,
+      table.operationId,
+      table.position,
+    ),
+    check(
+      "paid_credit_allocations_amount",
+      sql`${table.amountMicrocredits} > 0`,
+    ),
+    index("paid_credit_allocations_holds").on(table.entitlementId, table.state),
   ],
 );

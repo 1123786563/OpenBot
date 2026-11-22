@@ -4,6 +4,7 @@ import { firstBillingPeriod } from "../src/billing/billing-period";
 import { createPaidCreditLedger } from "../src/billing/paid-ledger";
 import { createDatabase } from "../src/db/client";
 import {
+  paidCreditAllocations,
   paidEntitlements,
   paidOrders,
   paidProducts,
@@ -20,6 +21,8 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const ledger = () => createPaidCreditLedger(database, () => paidAt);
 const paidAt = new Date("2026-02-15T04:30:00.000Z"); // Beijing Feb 15 12:30
+// Channel references stay unique across reruns of this file against the same database.
+const run = crypto.randomUUID().slice(0, 8);
 let account: string;
 
 async function freshAccount(tag: string) {
@@ -79,7 +82,7 @@ test("verification grants the first Beijing period exactly once", async () => {
   const verified = await ledger().verifyOrder({
     orderId: order.id,
     channel: "wechat",
-    channelOrderRef: "wx-20260215-001",
+    channelOrderRef: `wx-20260215-001-${run}`,
     amountCents: 2_900,
     paidAt,
   });
@@ -100,7 +103,7 @@ test("verification grants the first Beijing period exactly once", async () => {
   const replay = await ledger().verifyOrder({
     orderId: order.id,
     channel: "wechat",
-    channelOrderRef: "wx-20260215-001",
+    channelOrderRef: `wx-20260215-001-${run}`,
     amountCents: 2_900,
     paidAt,
   });
@@ -112,7 +115,7 @@ test("verification grants the first Beijing period exactly once", async () => {
     ledger().verifyOrder({
       orderId: order.id,
       channel: "wechat",
-      channelOrderRef: "wx-other",
+      channelOrderRef: `wx-other-${run}`,
       amountCents: 2_900,
       paidAt,
     }),
@@ -136,7 +139,7 @@ test("a mismatched amount fails the order instead of granting", async () => {
     ledger().verifyOrder({
       orderId: order.id,
       channel: "alipay",
-      channelOrderRef: "ali-1",
+      channelOrderRef: `ali-1-${run}`,
       amountCents: 1_900,
       paidAt,
     }),
@@ -165,7 +168,7 @@ test("an advance purchase claims the next period, and only one future claim wins
   const verifiedFirst = await ledger().verifyOrder({
     orderId: first.id,
     channel: "wechat",
-    channelOrderRef: "wx-adv-1",
+    channelOrderRef: `wx-adv-1-${run}`,
     amountCents: 2_900,
     paidAt,
   });
@@ -186,14 +189,14 @@ test("an advance purchase claims the next period, and only one future claim wins
     ledger().verifyOrder({
       orderId: second.id,
       channel: "wechat",
-      channelOrderRef: "wx-adv-2",
+      channelOrderRef: `wx-adv-2-${run}`,
       amountCents: 2_900,
       paidAt,
     }),
     ledger().verifyOrder({
       orderId: third.id,
       channel: "alipay",
-      channelOrderRef: "ali-adv-3",
+      channelOrderRef: `ali-adv-3-${run}`,
       amountCents: 2_900,
       paidAt,
     }),
@@ -238,7 +241,7 @@ test("credit packs arrive without a period and in arrival order", async () => {
   const verified = await ledger().verifyOrder({
     orderId: order.id,
     channel: "wechat",
-    channelOrderRef: "wx-pack-1",
+    channelOrderRef: `wx-pack-1-${run}`,
     amountCents: 9_900,
     paidAt,
   });
@@ -267,7 +270,7 @@ test("the refund seams freeze, then revoke, a verified order", async () => {
   await ledger().verifyOrder({
     orderId: order.id,
     channel: "wechat",
-    channelOrderRef: "wx-refund-1",
+    channelOrderRef: `wx-refund-1-${run}`,
     amountCents: 9_900,
     paidAt,
   });
@@ -298,13 +301,25 @@ afterAll(async () => {
     .where(
       inArray(
         testCreditAccounts.issuer,
-        ["lock", "first", "mismatch", "advance", "pack", "refund"].map(
-          (tag) => `paid-ledger-${tag}`,
-        ),
+        [
+          "lock",
+          "first",
+          "mismatch",
+          "advance",
+          "pack",
+          "refund",
+          "order-1",
+          "order-2",
+          "order-3",
+          "order-4",
+        ].map((tag) => `paid-ledger-${tag}`),
       ),
     );
   const ids = accounts.map(({ id }) => id);
   if (ids.length > 0) {
+    await database
+      .delete(paidCreditAllocations)
+      .where(inArray(paidCreditAllocations.accountId, ids));
     await database
       .delete(paidEntitlements)
       .where(inArray(paidEntitlements.accountId, ids));
@@ -315,4 +330,200 @@ afterAll(async () => {
   }
   await database.delete(paidProducts);
   await database.$client.close();
+});
+
+// ── Consumption ordering (#101 AC3) ─────────────────────────────────────────
+
+test("allocations spend the current period first, then packs by arrival", async () => {
+  account = await freshAccount("order-1");
+  await ledger().upsertProduct({
+    code: "plan-monthly",
+    kind: "subscription",
+    priceCents: 2_900,
+    creditsMicrocredits: 100n,
+  });
+  await ledger().upsertProduct({
+    code: "pack-long",
+    kind: "credit_pack",
+    priceCents: 9_900,
+    creditsMicrocredits: 50n,
+  });
+  const planOrder = await ledger().createOrder({
+    accountId: account,
+    productCode: "plan-monthly",
+    channel: "wechat",
+  });
+  await ledger().verifyOrder({
+    orderId: planOrder.id,
+    channel: "wechat",
+    channelOrderRef: `wx-order-1-plan-${run}`,
+    amountCents: 2_900,
+    paidAt,
+  });
+  const packA = await ledger().createOrder({
+    accountId: account,
+    productCode: "pack-long",
+    channel: "wechat",
+  });
+  await ledger().verifyOrder({
+    orderId: packA.id,
+    channel: "wechat",
+    channelOrderRef: `wx-order-1-packa-${run}`,
+    amountCents: 9_900,
+    paidAt: new Date(paidAt.getTime() + 60_000),
+  });
+  const packB = await ledger().createOrder({
+    accountId: account,
+    productCode: "pack-long",
+    channel: "alipay",
+  });
+  await ledger().verifyOrder({
+    orderId: packB.id,
+    channel: "alipay",
+    channelOrderRef: `ali-order-1-packb-${run}`,
+    amountCents: 9_900,
+    paidAt: new Date(paidAt.getTime() + 120_000),
+  });
+
+  const sources = await ledger().paidSources(account);
+  expect(sources.map(({ kind }) => kind)).toEqual([
+    "subscription",
+    "credit_pack",
+    "credit_pack",
+  ]);
+
+  const allocated = await ledger().allocate({
+    accountId: account,
+    operationId: "order-1-op-1",
+    amountMicrocredits: 120n,
+  });
+  expect(allocated.state).toBe("allocated");
+  const after = await ledger().paidSources(account);
+  // 100 subscription + 20 of pack A drawn; the fully-drawn source stops
+  // being offered.
+  expect(
+    after.map(({ remainingMicrocredits }) => remainingMicrocredits),
+  ).toEqual(["30", "50"]);
+});
+
+test("expired sources cannot fund new allocations", async () => {
+  account = await freshAccount("order-2");
+  await ledger().upsertProduct({
+    code: "plan-monthly",
+    kind: "subscription",
+    priceCents: 2_900,
+    creditsMicrocredits: 100n,
+  });
+  const planOrder = await ledger().createOrder({
+    accountId: account,
+    productCode: "plan-monthly",
+    channel: "wechat",
+  });
+  await ledger().verifyOrder({
+    orderId: planOrder.id,
+    channel: "wechat",
+    channelOrderRef: `wx-order-2-plan-${run}`,
+    amountCents: 2_900,
+    paidAt,
+  });
+  const staleClock = new Date(paidAt.getTime() + 90 * 24 * 60 * 60_000);
+  const stale = createPaidCreditLedger(database, () => staleClock);
+  expect(await stale.paidSources(account)).toHaveLength(0);
+  const denied = await stale.allocate({
+    accountId: account,
+    operationId: "order-2-op-1",
+    amountMicrocredits: 1n,
+  });
+  expect(denied).toMatchObject({
+    state: "denied",
+    reason: "insufficient_credits",
+  });
+});
+
+test("settlement consumes the allocated sources and releases return holds", async () => {
+  account = await freshAccount("order-3");
+  await ledger().upsertProduct({
+    code: "pack-long",
+    kind: "credit_pack",
+    priceCents: 9_900,
+    creditsMicrocredits: 50n,
+  });
+  const pack = await ledger().createOrder({
+    accountId: account,
+    productCode: "pack-long",
+    channel: "wechat",
+  });
+  const verified = await ledger().verifyOrder({
+    orderId: pack.id,
+    channel: "wechat",
+    channelOrderRef: `wx-order-3-pack-${run}`,
+    amountCents: 9_900,
+    paidAt,
+  });
+
+  await ledger().allocate({
+    accountId: account,
+    operationId: "order-3-charge",
+    amountMicrocredits: 40n,
+  });
+  const settled = await ledger().settleAllocation({
+    accountId: account,
+    operationId: "order-3-charge",
+    chargeMicrocredits: 30n,
+  });
+  expect(settled.state).toBe("settled");
+  const [entitlement] = await ledger().entitlements(account);
+  expect(entitlement.consumedMicrocredits).toBe(30n);
+  expect((await ledger().paidSources(account))[0].remainingMicrocredits).toBe(
+    "20",
+  );
+
+  // A held-but-unsettled operation releases without consuming.
+  await ledger().allocate({
+    accountId: account,
+    operationId: "order-3-hold",
+    amountMicrocredits: 15n,
+  });
+  const released = await ledger().releaseAllocation(account, "order-3-hold");
+  expect(released.released).toBe(1);
+  expect((await ledger().paidSources(account))[0].remainingMicrocredits).toBe(
+    "20",
+  );
+
+  void verified;
+});
+
+test("concurrent allocations cannot overspend one source", async () => {
+  account = await freshAccount("order-4");
+  await ledger().upsertProduct({
+    code: "pack-long",
+    kind: "credit_pack",
+    priceCents: 9_900,
+    creditsMicrocredits: 10n,
+  });
+  const pack = await ledger().createOrder({
+    accountId: account,
+    productCode: "pack-long",
+    channel: "wechat",
+  });
+  await ledger().verifyOrder({
+    orderId: pack.id,
+    channel: "wechat",
+    channelOrderRef: `wx-order-4-pack-${run}`,
+    amountCents: 9_900,
+    paidAt,
+  });
+  const attempts = await Promise.all(
+    [1, 2, 3].map((n) =>
+      ledger().allocate({
+        accountId: account,
+        operationId: `order-4-op-${n}`,
+        amountMicrocredits: 8n,
+      }),
+    ),
+  );
+  const allocated = attempts.filter((a) => a.state === "allocated");
+  const denied = attempts.filter((a) => a.state === "denied");
+  expect(allocated).toHaveLength(1);
+  expect(denied).toHaveLength(2);
 });
