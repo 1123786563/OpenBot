@@ -6,6 +6,7 @@ type LagoUsageEvent = typeof lagoUsageEvents.$inferSelect;
 export type LagoUsageProjection = Pick<
   LagoUsageEvent,
   | "eventId"
+  | "accountId"
   | "operationId"
   | "resource"
   | "inputTokens"
@@ -77,6 +78,7 @@ export function createLagoUsageExporter(
 function project(row: LagoUsageEvent): LagoUsageProjection {
   return {
     eventId: row.eventId,
+    accountId: row.accountId,
     operationId: row.operationId,
     resource: row.resource,
     inputTokens: row.inputTokens,

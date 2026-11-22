@@ -57,6 +57,7 @@ test("Lago exporter replays a pending raw event idempotently and pauses on misma
     expect(sent).toHaveLength(1);
     expect(sent[0]).toEqual({
       eventId,
+      accountId,
       operationId: "op-97",
       resource: "glm-4.6",
       inputTokens: 3n,
