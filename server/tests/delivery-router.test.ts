@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { BackgroundConversationBusy } from "../src/channels/direct-chat";
 import { createDeliveryRouter } from "../src/delivery/router";
 import {
   type DeliveryBinding,
@@ -353,6 +354,54 @@ test("a suspended governed turn reports its pending approval", async () => {
     }),
   ).toMatchObject({ kind: "waiting", extras: { approvals: ["a9"] } });
   expect(f.statuses.at(-1)).toMatchObject({ state: "accepted" });
+});
+test("the turn's own refusal reaches the inbox; other failures keep the generic copy", async () => {
+  const f = fixture();
+  const make = (runTurn: () => Promise<never>) =>
+    createDeliveryRouter({
+      store: f.store,
+      queue: f.queue,
+      owner: "w",
+      authoriseScope: async () => true,
+      scopeFor: async () => null,
+      runTurn,
+      providers: {},
+    });
+  const converse = (router: ReturnType<typeof createDeliveryRouter>) =>
+    router.converse({
+      transport: "slack",
+      realm: "T",
+      identity: "U",
+      externalId: "m9",
+      text: "go",
+      signal: new AbortController().signal,
+    });
+  const refusal = new Error(
+    "The previous Run has an unverified external outcome.",
+  );
+  refusal.name = "CapabilityRefusedError";
+  expect(await converse(make(() => Promise.reject(refusal)))).toMatchObject({
+    kind: "failed",
+    message: "The previous Run has an unverified external outcome.",
+  });
+  expect(
+    await converse(
+      make(() => Promise.reject(new BackgroundConversationBusy("busy now"))),
+    ),
+  ).toMatchObject({ kind: "failed", message: "busy now" });
+  expect(
+    await converse(make(() => Promise.reject(new Error("ECONNRESET")))),
+  ).toMatchObject({
+    kind: "failed",
+    message: "The agent turn failed. Inspect the conversation before retrying.",
+  });
+  await expect(
+    make(() => Promise.reject(refusal)).sweep("delivery.inbound"),
+  ).rejects.toThrow("unverified external outcome");
+  expect(f.statuses.at(-1)).toMatchObject({
+    state: "failed",
+    error: "The previous Run has an unverified external outcome.",
+  });
 });
 test("chat sends carry the Bot's identity; SMS after STOP is recorded opted out, not sent", async () => {
   const f = fixture();
