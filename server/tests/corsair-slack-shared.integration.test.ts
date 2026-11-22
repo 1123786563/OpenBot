@@ -5,7 +5,7 @@ import { createApprovedActionExecutor } from "../src/approvals/execute";
 import { encryptSecret, createCredentialStore } from "../src/credentials";
 import { createCorsairCutover } from "../src/plugins/corsair/cutover";
 import { createPluginStore } from "../src/plugins/store";
-import { beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { createAgentProfileStore } from "../src/agents/profile-store";
@@ -40,10 +40,18 @@ import {
   createSharedUseStore,
 } from "../src/plugins/shared-use-store";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
+import { forgetWorkItemsOf } from "./support/work-items";
 
 import { testEnvironment } from "./support/environment";
 
 const db = createDatabase(testDatabaseUrl(), TEST_POOL);
+afterAll(async () => {
+  try {
+    await forgetWorkItemsOf(db, admin.id, member.id);
+  } finally {
+    await db.$client.close();
+  }
+});
 const admin = {
   id: randomUUID(),
   email: "admin@example.test",

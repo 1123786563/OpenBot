@@ -7,7 +7,7 @@ import { loadConfig } from "../src/config";
 import { createCredentialStore } from "../src/credentials";
 import { createPluginStore } from "../src/plugins/store";
 import { testEnvironment } from "./support/environment";
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { createApprovalStore } from "../src/approvals/store";
@@ -27,11 +27,22 @@ import {
 import { createGithubPilotProvider } from "../src/plugins/corsair/github";
 import { createGithubPilotRoutes } from "../src/plugins/corsair/routes";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
+import { forgetWorkItemsOf } from "./support/work-items";
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
+/** Everyone this file creates, so the Approvals they leave are forgotten with them. */
+const people: string[] = [];
+afterAll(async () => {
+  try {
+    await forgetWorkItemsOf(database, ...people);
+  } finally {
+    await database.$client.close();
+  }
+});
 
 test("only the initiating workspace and Person can finish a single-use GitHub authorization", async () => {
   const person = randomUUID();
+  people.push(person);
   await database.insert(users).values({
     id: person,
     name: "Pilot Person",
@@ -223,6 +234,7 @@ test("only the initiating workspace and Person can finish a single-use GitHub au
 
 test("a reviewed GitHub write needs a live Bot Grant, selected repository, matching personal Approval, and verified user access", async () => {
   const person = randomUUID();
+  people.push(person);
   const bot = randomUUID();
   const workspaceId = randomUUID();
   const registration = "pilot/9";

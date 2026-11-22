@@ -18,8 +18,6 @@ import {
   githubPilotConnections,
   githubPilotEventReceipts,
   githubPilotRepositories,
-  responsibilities,
-  responsibilityRuns,
   users,
   workItems,
 } from "../src/db/schema";
@@ -41,6 +39,7 @@ import {
 import { createResponsibilityStore } from "../src/responsibilities/store";
 import { createWorkQueue } from "../src/work/queue";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
+import { forgetWorkItemsOf } from "./support/work-items";
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const secret = "fixture-webhook-secret";
@@ -280,22 +279,7 @@ async function eventFixture() {
       });
     },
     async cleanup() {
-      const ownRuns = database
-        .select({ id: responsibilityRuns.id })
-        .from(responsibilityRuns)
-        .innerJoin(
-          responsibilities,
-          eq(responsibilityRuns.responsibilityId, responsibilities.id),
-        )
-        .where(eq(responsibilities.ownerUserId, owner));
-      await database
-        .delete(workItems)
-        .where(
-          and(
-            eq(workItems.kind, RESPONSIBILITY_RUN_KIND),
-            inArray(workItems.key, ownRuns),
-          ),
-        );
+      await forgetWorkItemsOf(database, owner);
       await database
         .delete(githubPilotEventReceipts)
         .where(eq(githubPilotEventReceipts.workspaceId, scope.workspaceId));

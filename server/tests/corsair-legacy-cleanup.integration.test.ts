@@ -94,6 +94,21 @@ test("cleanup reconciles remote-only grants and requires both proofs before reti
   expect(await (await routes.request(path)).json()).toMatchObject({
     entries: [{ ref: "remote-only", status: "pending" }],
   });
+  /*
+   * RETIREMENT READS THE WHOLE DEPLOYMENT (`includeDeploymentLegacy`): one legacy Composio row
+   * anywhere keeps it at 409. Files that ran earlier in this database leave theirs behind, so what
+   * is not this test's goes before the answer below is read; the Slack dependency stands in for it.
+   */
+  await database.execute(
+    sql`delete from brokered_connections where provider = 'composio'`,
+  );
+  await database.execute(
+    sql`delete from brokered_accounts where provider = 'composio'`,
+  );
+  await database.execute(sql`delete from composio_connections`);
+  await database.execute(
+    sql`delete from mcp_servers where starts_with(lower(url), 'composio://')`,
+  );
   const retire = {
     kind: "prepare_retirement",
     dependencyEvidenceRef: "dependency-review",

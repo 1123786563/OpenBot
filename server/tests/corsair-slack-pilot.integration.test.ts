@@ -10,7 +10,7 @@ import { createPluginStore } from "../src/plugins/store";
 import { testEnvironment } from "./support/environment";
 import { createCorsairCutover } from "../src/plugins/corsair/cutover";
 import { createCorsairReadinessRoutes } from "../src/plugins/corsair/readiness";
-import { beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createApprovalStore } from "../src/approvals/store";
 import { type AuditStore, createAuditStore } from "../src/audit";
@@ -28,8 +28,16 @@ import type { SlackLegacyDefault } from "../src/plugins/corsair/slack/accounts";
 import { createSlackPilotProvider } from "../src/plugins/corsair/slack/provider";
 import { createSlackPilotRoutes } from "../src/plugins/corsair/slack/routes";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
+import { forgetWorkItemsOf } from "./support/work-items";
 
 const db = createDatabase(testDatabaseUrl(), TEST_POOL);
+afterAll(async () => {
+  try {
+    await forgetWorkItemsOf(db, person, outsider);
+  } finally {
+    await db.$client.close();
+  }
+});
 const person = randomUUID();
 const outsider = randomUUID();
 const bot = randomUUID();

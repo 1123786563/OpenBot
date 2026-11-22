@@ -2,17 +2,33 @@ import { afterAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
-import { responsibilityTriggers } from "../src/db/schema";
+import {
+  agents,
+  responsibilities,
+  responsibilityTriggers,
+  users,
+} from "../src/db/schema";
 import { createCorsairEventOperations } from "../src/plugins/corsair/event-operations";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
+import { forgetWorkItemsOf } from "./support/work-items";
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const legacyTrigger = randomUUID();
+let fixture: { person: string; agent: string; goal: string } | undefined;
 afterAll(async () => {
   try {
     await database
       .delete(responsibilityTriggers)
       .where(eq(responsibilityTriggers.id, legacyTrigger));
+    if (fixture) {
+      // Five of the goal's Runs stay queued; their items would be the next file's sweep to run.
+      await forgetWorkItemsOf(database, fixture.person);
+      await database
+        .delete(responsibilities)
+        .where(eq(responsibilities.id, fixture.goal));
+      await database.delete(agents).where(eq(agents.id, fixture.agent));
+      await database.delete(users).where(eq(users.id, fixture.person));
+    }
   } finally {
     await database.$client.close();
   }
@@ -110,6 +126,7 @@ test("blocks handoff without matching receipts and per-Trigger evidence, then pi
   const person = randomUUID();
   const agent = randomUUID();
   const goal = randomUUID();
+  fixture = { person, agent, goal };
   await database
     .insert(users)
     .values({ id: person, email: `${person}@example.test` });

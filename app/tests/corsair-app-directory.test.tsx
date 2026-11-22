@@ -85,7 +85,7 @@ test("the integrations read unwraps the envelope and hides on a missing catalog"
     expect(loaded?.[0]?.connected).toBe(false);
 
     respond(500);
-    expect(run()).rejects.toThrow("Couldn't load the app directory.");
+    await expect(run()).rejects.toThrow("Couldn't load the app directory.");
   } finally {
     globalThis.fetch = original;
   }
