@@ -240,7 +240,7 @@ test("opt-out prevents preparation, audit collection, and sending", async () => 
     trigger: "human",
     surface: "web",
   });
-  expect(prepared).not.toHaveProperty("context");
+  expect(prepared ?? {}).not.toHaveProperty("context");
 });
 test("existing audit IDs produce stable allowlisted events without customer content", async () => {
   const f = await adapter();

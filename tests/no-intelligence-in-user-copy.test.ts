@@ -67,32 +67,22 @@ const NOT_SHOWN: { file: string; text: string; why: string }[] = [
   {
     file: "server/src/telemetry/runtime-log.ts",
     text: "Waiting for Intelligence to finish starting.",
-    why: "a structured operator log diagnostic, never returned to a person-facing route",
+    why: "the boot log’s advice",
   },
   {
     file: "server/src/telemetry/runtime-log.ts",
     text: "Could not read Intelligence entitlements.",
-    why: "a structured operator log diagnostic, never returned to a person-facing route",
+    why: "the boot log’s advice",
   },
   {
     file: "server/src/telemetry/runtime-log.ts",
     text: "Intelligence did not confirm entitlement.",
-    why: "a structured operator log diagnostic, never returned to a person-facing route",
+    why: "the boot log’s advice",
   },
   {
     file: "server/src/telemetry/runtime-log.ts",
     text: "Intelligence's licence has expired.",
-    why: "a structured operator log diagnostic, never returned to a person-facing route",
-  },
-  {
-    file: "server/src/intelligence-client.ts",
-    text: "Intelligence is not configured.",
-    why: "a typed 503 refusal from an unavailable optional integration",
-  },
-  {
-    file: "server/src/recorder/wiring.ts",
-    text: "Recording summaries require Intelligence.",
-    why: "a typed failure from an unavailable optional integration",
+    why: "the boot log’s advice",
   },
 ];
 

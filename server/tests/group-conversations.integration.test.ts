@@ -65,13 +65,12 @@ afterAll(async () => {
   await database.$client.close();
 });
 
-async function person(): Promise<AgentActor> {
+async function person(): Promise<AgentActor & { email: string }> {
   const id = `${prefix}-user-${randomUUID()}`;
-  await database
-    .insert(users)
-    .values({ id, email: `${id}@example.test`, name: "Group Test" });
+  const email = `${id}@example.test`;
+  await database.insert(users).values({ id, email, name: "Group Test" });
   createdUsers.push(id);
-  return { id, role: "user" };
+  return { id, email, role: "user" };
 }
 async function bot(owner: AgentActor, name: string) {
   const profile = await profileStore.create(owner, {

@@ -25,6 +25,7 @@ import {
   IconChevronDown,
   IconClock,
   IconFile,
+  IconListDetails,
   IconX,
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
@@ -409,25 +410,14 @@ function queuedGroupPosition(
   return "middle";
 }
 
-function messageGroupSize(
-  items: readonly TranscriptItem[],
-  index: number,
-): number {
-  let size = 0;
-  for (let cursor = index; cursor < items.length; cursor += 1) {
-    const item = items[cursor];
-    if (
-      item === undefined ||
-      !(
-        (item.kind === "text" && item.role === "user") ||
-        item.kind === "attachments"
-      )
-    ) {
-      break;
-    }
-    size += 1;
-  }
-  return size;
+/** The chip above a burst: what kind of burst it is, and how many messages it holds. */
+function BurstCount({ count, title }: { count: number; title: string }) {
+  return (
+    <MessageHeader className="message-group-label self-end px-0 text-right text-[0.6875rem]">
+      <IconListDetails aria-hidden className="size-3" />
+      {title} · {count} messages
+    </MessageHeader>
+  );
 }
 
 /**
@@ -470,16 +460,15 @@ function Queued({
   return (
     <MessageRow
       align="end"
-      className={cn("queued-message", compact && "-mt-3")}
-      data-message-group="person"
+      className={cn("queued-message", compact && "-mt-5")}
+      /* The burst tint only when this really is several messages; see `personBursts`. */
+      {...(groupSize > 1 ? { "data-message-group": "person" } : {})}
       data-message-group-position={groupPosition}
       data-queued-state="waiting"
     >
       <MessageContent>
         {groupPosition === "start" && groupSize > 1 ? (
-          <MessageHeader className="self-end pr-0 text-right text-[0.6875rem]">
-            Next in line · {groupSize} messages
-          </MessageHeader>
+          <BurstCount count={groupSize} title="Next in line" />
         ) : null}
         {files.length > 0 ? (
           <AttachmentTiles attachments={files} className="opacity-60" />
@@ -907,9 +896,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
         <Arriving>
           {answerer ? <AnswererName botId={answerer} /> : null}
           {isUser && groupSize > 1 ? (
-            <MessageHeader className="self-end px-0 text-right text-[0.6875rem]">
-              Sent together · {groupSize} messages
-            </MessageHeader>
+            <BurstCount count={groupSize} title="Sent together" />
           ) : null}
           {/*
             A Bot's message takes the whole column, not the width of its words: block content
@@ -1014,6 +1001,8 @@ const ATTACHMENT_URL_PREFIX = attachmentUrl("");
  */
 type AttachmentRowProps = {
   attachments: readonly SentAttachment[];
+  /** How many messages this row's burst holds, when it is the first row of one. See `personBursts`. */
+  groupSize?: number;
 };
 
 /**
@@ -1039,7 +1028,10 @@ export function sameAttachmentRow(
   previous: AttachmentRowProps,
   next: AttachmentRowProps,
 ): boolean {
-  if (previous.attachments.length !== next.attachments.length) {
+  if (
+    previous.attachments.length !== next.attachments.length ||
+    previous.groupSize !== next.groupSize
+  ) {
     return false;
   }
 
@@ -1058,11 +1050,15 @@ export function sameAttachmentRow(
 
 export const TranscriptAttachments = memo(function TranscriptAttachments({
   attachments,
+  groupSize = 1,
 }: AttachmentRowProps) {
   return (
     <MessageRow align="end">
       <MessageContent>
         <Arriving>
+          {groupSize > 1 ? (
+            <BurstCount count={groupSize} title="Sent together" />
+          ) : null}
           <AttachmentTiles attachments={attachments} />
         </Arriving>
       </MessageContent>
@@ -1984,44 +1980,69 @@ function assertNever(_item: never): null {
   return null;
 }
 
-/** Keep a burst of person-authored messages visually together without changing the scroll model. */
-function isContinuedMessage(
-  items: readonly TranscriptItem[],
-  index: number,
-): boolean {
-  if (index === 0) return false;
-  const current = items[index];
-  const previous = items[index - 1];
-  if (current === undefined || previous === undefined) return false;
-
-  const isPersonItem = (item: TranscriptItem) =>
-    (item.kind === "text" && item.role === "user") ||
-    item.kind === "attachments";
-
-  return isPersonItem(current) && isPersonItem(previous);
-}
-
 type MessageGroupPosition = "single" | "start" | "middle" | "end";
 
-function messageGroupPosition(
-  items: readonly TranscriptItem[],
-  index: number,
-): MessageGroupPosition | null {
-  const current = items[index];
-  if (current === undefined) return null;
-  const isPersonItem = (item: TranscriptItem) =>
-    (item.kind === "text" && item.role === "user") ||
-    item.kind === "attachments";
-  if (!isPersonItem(current)) return null;
+/** One person-authored row's place in its burst, and how many MESSAGES the burst holds. */
+type PersonBurst = { position: MessageGroupPosition; size: number };
 
-  const previous = items[index - 1];
-  const next = items[index + 1];
-  const hasPrevious = previous !== undefined && isPersonItem(previous);
-  const hasNext = next !== undefined && isPersonItem(next);
-  if (!hasPrevious && !hasNext) return "single";
-  if (!hasPrevious) return "start";
-  if (!hasNext) return "end";
-  return "middle";
+function isPersonRow(item: TranscriptItem): boolean {
+  return (
+    (item.kind === "text" && isPersonSentMessage(item.role, item.text)) ||
+    item.kind === "attachments"
+  );
+}
+
+/**
+ * Which rows belong to a burst of consecutive sends, and how many messages that burst is.
+ *
+ * A ROW is not a MESSAGE: one send with a file and a caption is two rows (the tiles, then the
+ * words) of one message, so the count a reader is shown counts DISTINCT TURNS — `turnOf` strips
+ * the `:attachments` suffix — and a photo with a caption is not "2 messages sent together".
+ *
+ * A routine firing wears `role: "user"` without anybody having typed anything, so `isPersonRow`
+ * asks `isPersonSentMessage` rather than the role alone; a firing between two sends ENDS a burst
+ * rather than joining it, exactly as a Bot's answer does.
+ *
+ * `position` is by row, so the tiles and the caption of one message stack their corners like a
+ * burst does; `size` is by message, so the tint and the label are drawn only when there really
+ * were several sends. Exported for its test.
+ */
+export function personBursts(
+  items: readonly TranscriptItem[],
+): Map<string, PersonBurst> {
+  const bursts = new Map<string, PersonBurst>();
+  let ids: string[] = [];
+  let turns = new Set<string>();
+
+  const flush = () => {
+    const size = turns.size;
+    ids.forEach((id, offset) => {
+      bursts.set(id, {
+        position:
+          ids.length === 1
+            ? "single"
+            : offset === 0
+              ? "start"
+              : offset === ids.length - 1
+                ? "end"
+                : "middle",
+        size,
+      });
+    });
+    ids = [];
+    turns = new Set<string>();
+  };
+
+  for (const item of items) {
+    if (!isPersonRow(item)) {
+      flush();
+      continue;
+    }
+    ids.push(item.id);
+    turns.add(turnOf(item));
+  }
+  flush();
+  return bursts;
 }
 
 const SEND_SCROLL_MS = 700;
@@ -2265,6 +2286,9 @@ export function ChatTranscript({
   /* One rule for both kinds of row — see `anchorRowIds`, which is where it is written down. */
   const anchorRows = anchorRowIds(items);
 
+  /* Which person rows belong to which burst of sends; see `personBursts`. */
+  const bursts = personBursts(items);
+
   /*
    * Decided once, from the rows present when the scroller mounts, and forgotten while restoring so
    * a conversation opened again staggers again. Rows that arrive later are not in it: they have
@@ -2475,9 +2499,12 @@ export function ChatTranscript({
            * composer that cleared with nothing appearing reads as a message that vanished, and the
            * person types it again.
            */}
-          {queued.map((message) => (
+          {queued.map((message, index) => (
             <Queued
               attachments={message.attachments}
+              compact={index > 0}
+              groupPosition={queuedGroupPosition(index, queued.length)}
+              groupSize={queued.length}
               key={message.id}
               onRemove={
                 onRemoveQueued ? () => onRemoveQueued(message.id) : undefined
@@ -2496,17 +2523,29 @@ export function ChatTranscript({
    */
   const renderRow = (item: TranscriptItem, index: number) => {
     const motionProps = openingProps(item.id);
-    const groupPosition = messageGroupPosition(items, index);
-    const groupSize =
-      groupPosition === "start" ? messageGroupSize(items, index) : 1;
+    const burst = bursts.get(item.id);
+    const groupSize = burst?.position === "start" ? burst.size : 1;
     const rowClassName = cn(
       motionProps.className,
-      isContinuedMessage(items, index) && "-mt-3",
+      /*
+       * Rows of one burst sit 4px apart rather than at the column's 24px rhythm: at the rhythm a
+       * burst reads as messages that happen to line up, and the whole point of the grouping is
+       * that they read as one act of sending. Photo-above-caption rows of a single message get it
+       * too, for the same reason — they are one thing that was sent.
+       */
+      burst !== undefined &&
+        (burst.position === "middle" || burst.position === "end") &&
+        "-mt-5",
     );
-    const groupProps = groupPosition
+    /*
+     * The tint (`data-message-group`) is drawn only for a burst of SEVERAL messages; the stacked
+     * corners (`data-message-group-position`) whenever person rows touch, so a captioned photo
+     * keeps its plain single-message bubble while still sitting tight under its picture.
+     */
+    const groupProps = burst
       ? {
-          "data-message-group": "person",
-          "data-message-group-position": groupPosition,
+          ...(burst.size > 1 ? { "data-message-group": "person" } : {}),
+          "data-message-group-position": burst.position,
         }
       : {};
 
@@ -2568,7 +2607,10 @@ export function ChatTranscript({
         {...groupProps}
         className={rowClassName}
       >
-        <TranscriptAttachments attachments={item.attachments} />
+        <TranscriptAttachments
+          attachments={item.attachments}
+          groupSize={groupSize}
+        />
       </MessageScrollerItem>
     ) : (
       // Every member of the union is handled above. `assertNever` types `item` as
