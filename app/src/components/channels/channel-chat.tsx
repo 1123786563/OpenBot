@@ -1575,6 +1575,7 @@ export function ChannelChat({
     void sayRef.current(text).catch(() => undefined);
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Check Again re-runs the resume by bumping `firstAttempt`.
   useEffect(() => {
     const owner = user?.id;
     if (!first || !owner) return;
