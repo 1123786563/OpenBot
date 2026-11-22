@@ -44,7 +44,11 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { useConnectApp } from "@/lib/connections/connect-app";
-import { corsairAccountsQueryOptions } from "@/lib/connections/corsair";
+import {
+  type CorsairIntegration,
+  corsairAccountsQueryOptions,
+  corsairIntegrationsQueryOptions,
+} from "@/lib/connections/corsair";
 import {
   type ConnectionRow,
   connectionRows,
@@ -623,7 +627,134 @@ function RouteComponent() {
           </PageRows>
         </PageSection>
       ) : null}
+      <AppDirectorySection />
     </ConnectionPage>
+  );
+}
+
+/**
+ * The Corsair catalog: every app Bots could use, searched by name.
+ *
+ * Read-only rows. A catalog entry says what an app offers; connecting an account is what the tiles
+ * above are for, once an app's credentials are set up.
+ */
+/** How many catalog apps the directory lists before "Show all". */
+const DIRECTORY_PREVIEW = 24;
+
+/**
+ * The directory's whole behaviour in one function, so it can be asserted without drawing: match by
+ * name or id, and show every match the moment there is a query while an empty one previews.
+ */
+export function directoryApps(
+  apps: CorsairIntegration[],
+  query: string,
+  showAll: boolean,
+) {
+  const matching = apps.filter(
+    (app) =>
+      query === "" ||
+      app.displayName.toLocaleLowerCase().includes(query) ||
+      app.id.includes(query),
+  );
+  return {
+    matching,
+    shown:
+      showAll || query !== ""
+        ? matching
+        : matching.slice(0, DIRECTORY_PREVIEW),
+  };
+}
+
+function AppDirectorySection() {
+  const apps = useQuery(corsairIntegrationsQueryOptions());
+  const [search, setSearch] = React.useState("");
+  const [showAll, setShowAll] = React.useState(false);
+  const query = search.trim().toLocaleLowerCase();
+  // A pending read draws nothing rather than a heading with nothing under it.
+  if (apps.isPending) return null;
+  if (apps.error)
+    return (
+      <PageSection
+        description="Search every app Bots can use through Corsair."
+        title="App directory"
+      >
+        <p className="mt-4 text-destructive text-sm" role="alert">
+          Couldn't load the app directory. Reload the page.
+        </p>
+      </PageSection>
+    );
+  // A 404 is a server from before the catalog existed; the directory is not a part of it.
+  if (!apps.data) return null;
+  const { matching, shown } = directoryApps(apps.data, query, showAll);
+
+  return (
+    <PageSection
+      description="Search every app Bots can use through Corsair."
+      title="App directory"
+    >
+      {shown.length === 0 ? (
+        <p className="mt-4 text-sm text-muted-foreground" role="status">
+          Nothing matches “{search.trim()}”.
+        </p>
+      ) : (
+        <>
+          <div className="mt-4 flex items-center gap-3">
+            <InputGroup className="h-9 flex-1 border-transparent bg-muted/60 shadow-none dark:bg-muted/60">
+              <InputGroupAddon>
+                <IconSearch aria-hidden="true" className="size-4" />
+              </InputGroupAddon>
+              <InputGroupInput
+                aria-label="Search the app directory"
+                placeholder="Search the app directory"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </InputGroup>
+            <p className="shrink-0 text-xs text-muted-foreground">
+              {query === ""
+                ? `${shown.length} of ${apps.data.length} shown`
+                : `${shown.length} ${
+                    shown.length === 1 ? "match" : "matches"
+                  }`}
+            </p>
+          </div>
+          <PageRows>
+            {shown.map((app, index) => (
+              <React.Fragment key={app.id}>
+                {index > 0 ? <Separator /> : null}
+                <Item size="sm">
+                  <ItemMedia variant="icon">
+                    <IconApps />
+                  </ItemMedia>
+                  <ItemContent>
+                    <ItemTitle>{app.displayName}</ItemTitle>
+                    <ItemDescription>{app.description}</ItemDescription>
+                  </ItemContent>
+                  <ItemActions className="shrink-0">
+                    <span className="text-xs text-muted-foreground">
+                      {app.counts.api === 1
+                        ? "1 tool"
+                        : `${app.counts.api} tools`}
+                    </span>
+                  </ItemActions>
+                </Item>
+              </React.Fragment>
+            ))}
+          </PageRows>
+          {query === "" && matching.length > DIRECTORY_PREVIEW ? (
+            <Button
+              className="mt-3"
+              onClick={() => setShowAll(true)}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              Show all {matching.length} apps
+            </Button>
+          ) : null}
+        </>
+      )}
+    </PageSection>
   );
 }
 

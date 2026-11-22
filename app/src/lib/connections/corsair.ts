@@ -50,7 +50,44 @@ export const corsairKeys = {
     ["corsair", provider, "accounts"] as const,
   revocations: (provider: CorsairProvider) =>
     ["corsair", provider, "revocations"] as const,
+  integrations: ["corsair", "integrations"] as const,
 };
+
+/*
+ * One entry per app the Corsair catalog offers. The server skips credential checks by design, so
+ * every field a person reads here is a fact about the catalog, never about an account they hold.
+ */
+const corsairIntegration = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  description: z.string(),
+  npmPackageName: z.string(),
+  authTypes: z.array(z.string()),
+  defaultAuthType: z.string().nullable(),
+  counts: z.object({ api: z.number(), webhooks: z.number(), db: z.number() }),
+  credentialConfigured: z.boolean(),
+  oauthClientConfigured: z.boolean(),
+  validationSkipped: z.boolean(),
+});
+
+export type CorsairIntegration = z.infer<typeof corsairIntegration>;
+
+export function corsairIntegrationsQueryOptions() {
+  return queryOptions({
+    queryKey: corsairKeys.integrations,
+    queryFn: async ({
+      signal,
+    }): Promise<CorsairIntegration[] | null> => {
+      // A 404 is a server from before the catalog existed, not a failure to read it.
+      const response = await tryClient("/api/corsair/integrations", { signal });
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error("Couldn't load the app directory.");
+      const data: unknown = await response.json();
+      return z.object({ integrations: z.array(corsairIntegration) }).parse(data)
+        .integrations;
+    },
+  });
+}
 
 export function corsairAccountsQueryOptions(provider: CorsairProvider) {
   return queryOptions({
