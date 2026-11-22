@@ -195,6 +195,7 @@ test.each(["user", "admin"] as const)(
       { label: "Goals", to: "/responsibilities?view=goals" },
       { label: "Tasks", to: "/tasks" },
       { label: "Ideas", to: "/ideas" },
+      { label: "Credits", to: "/billing" },
       { label: "Activity", to: "/s/activity" },
     ]);
     // Scheduled work has its own place beside Bots, where somebody looking for it looks first.

@@ -95,6 +95,7 @@ import { createIdentityProviderStore } from "./auth/identity-provider-store";
 import { createOrganizationAuth } from "./auth/organization";
 import { organizationUserStore } from "./auth/organization-store";
 import { createTestCreditLedger } from "./billing/test-credit";
+import { createPaidCreditLedger } from "./billing/paid-ledger";
 import { openbotAddress } from "./browser/address";
 import { botBrowserNetwork } from "./browser/bot-browser";
 import { personBrowserEgressPolicy } from "./browser/egress";
@@ -3479,6 +3480,11 @@ const app = createApp(
   identityStore,
   identityGithubCallback,
   profileStore,
+  // A person's bill: Test Credit balance, the paid side, and budgets (#107).
+  {
+    testLedger: testCreditLedger,
+    paidLedger: createPaidCreditLedger(database),
+  },
 );
 
 try {

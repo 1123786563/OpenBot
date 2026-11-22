@@ -2,6 +2,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { ReleasedBifrostRoute } from "../admin/bifrost-catalog";
+import type { PaidCreditLedger } from "./paid-ledger";
 import type { TestCreditLedger, VerifiedBillingIdentity } from "./test-credit";
 import { UnsentBifrostRequest } from "./test-credit-bifrost";
 
@@ -13,6 +14,8 @@ const reserve = operation.extend({
   rerunOfOperationId: operationId.optional(),
   budgetId: operationId.optional(),
   stepId: operationId.optional(),
+  // Which entry the caller chose (#107); absent spans both Credit types.
+  creditType: z.enum(["test", "paid"]).optional(),
 });
 const messages = z
   .array(
@@ -47,19 +50,24 @@ type Dependencies = {
     intent: "account" | "execution",
   ): Promise<VerifiedBillingIdentity | undefined>;
   // The controlled executor must enforce the frozen route's caps before sending and must never retry.
-  execute(input: {
+  // Absent, the execution endpoints answer 503: a deployment that only shows balances and budgets
+  // mounts the views without one.
+  execute?(input: {
     operationId: string;
     accountId: string;
     route: ReleasedBifrostRoute;
     messages: z.infer<typeof messages>;
     recheckRoute(): Promise<boolean>;
   }): Promise<unknown>;
+  // The paid ledger's read views (#107): absent, `/paid/*` answers 503.
+  paid?: { ledger: PaidCreditLedger };
 };
 
 export function createTestCreditRoutes({
   ledger,
   authenticate,
   execute,
+  paid,
 }: Dependencies) {
   const api = new Hono<{ Variables: { identity: VerifiedBillingIdentity } }>();
   api.use("*", async (context, next) => {
@@ -85,10 +93,15 @@ export function createTestCreditRoutes({
   api.use("/balance", authorize("account"));
   api.use("/claim", authorize("account"));
   api.use("/operations/*", authorize("account"));
+  api.use("/paid/*", authorize("account"));
   api.use("/budgets", authorize("account"));
   api.use("/budgets/*", authorize("account"));
   api.onError((_error, context) =>
     context.json({ error: "Test Credit service unavailable." }, 503),
+  );
+
+  api.get("/budgets", async (context) =>
+    context.json(await ledger.budgets(context.var.identity)),
   );
 
   api.post("/budgets", async (context) => {
@@ -184,6 +197,25 @@ export function createTestCreditRoutes({
       : context.json({ error: "Operation unavailable." }, 404);
   });
 
+  // The paid side of the bill (#107): per-source balances and the lines
+  // booked against each source. Both stay separate from the Test Credit
+  // balance above.
+  api.get("/paid/sources", async (context) => {
+    if (!paid) return context.json({ error: "Paid credits unavailable." }, 503);
+    const accountId = await ledger.accountOf(context.var.identity);
+    return accountId
+      ? context.json(await paid.ledger.paidSources(accountId))
+      : context.json({ error: "Billing Account unavailable." }, 404);
+  });
+
+  api.get("/paid/bill", async (context) => {
+    if (!paid) return context.json({ error: "Paid credits unavailable." }, 503);
+    const accountId = await ledger.accountOf(context.var.identity);
+    return accountId
+      ? context.json(await paid.ledger.bill(accountId))
+      : context.json({ error: "Billing Account unavailable." }, 404);
+  });
+
   api.post("/v1/reserve", async (context) => {
     const input = reserve.safeParse(
       await context.req.json().catch(() => undefined),
@@ -210,6 +242,7 @@ export function createTestCreditRoutes({
         operation: admission.operation,
       });
     }
+    if (!execute) return context.json({ error: "Execution unavailable." }, 503);
     try {
       const completed = result.parse(
         await execute({

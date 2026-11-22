@@ -33,6 +33,12 @@ import { createApprovalRoutes } from "./approvals/routes";
 import { createApprovalRuleDraftRoutes } from "./approvals/rule-translate";
 import type { RuleVocabulary } from "./approvals/rule-vocabulary";
 import type { ApprovalService } from "./approvals/service";
+import type { PaidCreditLedger } from "./billing/paid-ledger";
+import { createTestCreditRoutes } from "./billing/test-credit-routes";
+import type {
+  TestCreditLedger,
+  VerifiedBillingIdentity,
+} from "./billing/test-credit";
 import {
   type AuditEvent,
   type AuditEventType,
@@ -570,6 +576,16 @@ export function createApp(
   /** The GitHub sign-in callback, built by the caller; mounted behind requireUser ahead of /api/identity. */
   identityGithubCallback?: Hono<{ Variables: AppVariables }>,
   profileStore?: ProfileStore,
+  /**
+   * The shared billing ledgers (#86): a person's Test Credit balance, the paid side of their bill
+   * (#107), and their execution budgets. Absent, `/api/billing` is not mounted.
+   */
+  billing?: {
+    testLedger: TestCreditLedger;
+    paidLedger: PaidCreditLedger;
+    /** How a signed-in person maps to a Billing Account; absent uses the actor's id as subject. */
+    identityOf?: (actor: { id: string }) => VerifiedBillingIdentity;
+  },
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   const skillMarket =
@@ -884,6 +900,29 @@ export function createApp(
     }),
   );
   app.route("/api/me/profile", createProfileRoutes(requireUser, profileStore));
+  if (billing) {
+    app.route(
+      "/api/billing",
+      createTestCreditRoutes({
+        ledger: billing.testLedger,
+        paid: { ledger: billing.paidLedger },
+        authenticate: async (request) => {
+          // One person and no provider: that person is the account.
+          if (config.singleUser)
+            return { issuer: "openbot", subject: "single-user" };
+          const session = await auth?.api.getSession({
+            headers: request.headers,
+          });
+          return session
+            ? (billing.identityOf?.(session.user) ?? {
+                issuer: "openbot",
+                subject: session.user.id,
+              })
+            : undefined;
+        },
+      }),
+    );
+  }
   app.post("/api/me/onboarding", requireUser, async (context) => {
     if (!onboardingStore) {
       return context.json({ error: "Onboarding is not available." }, 503);

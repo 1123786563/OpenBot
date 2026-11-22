@@ -606,6 +606,31 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       });
     },
 
+    /** A person's execution budgets with their Credit type and usage. */
+    async budgets(identity: VerifiedBillingIdentity) {
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return [];
+        const rows = await tx
+          .select()
+          .from(budgets)
+          .where(eq(budgets.accountId, accountId))
+          .orderBy(budgets.createdAt);
+        return Promise.all(
+          rows.map(async (row) => ({
+            budgetId: row.id,
+            creditType: row.creditType,
+            limitMicrocredits: row.limitMicrocredits.toString(),
+            usedMicrocredits: (
+              await budgetUsage(accountId, row.id, tx)
+            ).toString(),
+            state: row.state,
+            confirmed: row.confirmedAt !== null,
+          })),
+        );
+      });
+    },
+
     async budget(identity: VerifiedBillingIdentity, budgetId: string) {
       return database.transaction(async (tx) => {
         const accountId = await account(identity, tx);
@@ -661,6 +686,15 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       );
       if (route && active?.priceVersion)
         return quoteFor(route, active.priceVersion);
+    },
+
+    /** The Billing Account a verified identity maps to, if one was opened. */
+    async accountOf(identity: VerifiedBillingIdentity) {
+      const [row] = await database
+        .select({ id: accounts.id })
+        .from(accounts)
+        .where(identityFilter(identity));
+      return row?.id;
     },
 
     async balance(identity: VerifiedBillingIdentity) {

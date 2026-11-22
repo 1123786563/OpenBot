@@ -2,6 +2,7 @@ import {
   IconActivity,
   IconBulb,
   IconChecklist,
+  IconCoins,
   IconLogout,
   IconSearch,
   IconTarget,
@@ -282,6 +283,12 @@ export function AppSidebar({
             icon: IconChecklist,
           },
           { label: "Ideas", to: "/ideas", params: undefined, icon: IconBulb },
+          {
+            label: "Credits",
+            to: "/billing",
+            params: undefined,
+            icon: IconCoins,
+          },
           {
             label: "Activity",
             to: "/s/$screen",
