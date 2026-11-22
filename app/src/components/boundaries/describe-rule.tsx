@@ -1,3 +1,4 @@
+import { HStack } from "@astryxdesign/core/HStack";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
@@ -74,7 +75,7 @@ export function DescribeField({
         rows={2}
         value={text}
       />
-      <div>
+      <HStack>
         <Button
           disabled={!described || writing}
           onClick={() => void ask()}
@@ -84,7 +85,7 @@ export function DescribeField({
         >
           {writing ? "Writing…" : action}
         </Button>
-      </div>
+      </HStack>
       {problem ? (
         <p className="text-destructive text-sm" role="alert">
           {problem}
