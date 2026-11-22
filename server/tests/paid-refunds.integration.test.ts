@@ -247,6 +247,116 @@ test("suspension pauses purchases and refunds landed payments in full", async ()
   expect(after.state).toBe("pending");
 });
 
+test("a dispute blocks its source, settles dispatched work, and reconciles the used part", async () => {
+  const account = await freshAccount("dispute");
+  await ledger().upsertProduct({
+    code: "pack-refund-pilot",
+    kind: "credit_pack",
+    priceCents: 9_900,
+    creditsMicrocredits: 100n,
+  });
+  await ledger().upsertProduct({
+    code: "pack-b",
+    kind: "credit_pack",
+    priceCents: 4_900,
+    creditsMicrocredits: 50n,
+  });
+  const disputed = await ledger().createOrder({
+    accountId: account,
+    productCode: "pack-refund-pilot",
+    channel: "alipay",
+  });
+  await ledger().verifyOrder({
+    orderId: disputed.id,
+    channel: "alipay",
+    channelOrderRef: `ali-disp-a-${run}`,
+    amountCents: 9_900,
+    paidAt,
+  });
+  const other = await ledger().createOrder({
+    accountId: account,
+    productCode: "pack-b",
+    channel: "wechat",
+  });
+  await ledger().verifyOrder({
+    orderId: other.id,
+    channel: "wechat",
+    channelOrderRef: `wx-disp-b-${run}`,
+    amountCents: 4_900,
+    paidAt: new Date(paidAt.getTime() + 60_000),
+  });
+
+  // 30 consumed from the disputed pack, another 40 still held by an
+  // operation that already dispatched.
+  await ledger().allocate({
+    accountId: account,
+    operationId: "disp-op-1",
+    amountMicrocredits: 30n,
+  });
+  await ledger().settleAllocation({
+    accountId: account,
+    operationId: "disp-op-1",
+    chargeMicrocredits: 30n,
+  });
+  await ledger().allocate({
+    accountId: account,
+    operationId: "disp-op-2",
+    amountMicrocredits: 40n,
+  });
+
+  // The dispute freezes the source; its staff handler is on the record.
+  const dispute = await ledger().requestRefund(
+    disputed.id,
+    "dispute",
+    "staff-a",
+  );
+  expect(dispute).toMatchObject({ state: "requested", openedBy: "staff-a" });
+  const sources = await ledger().entitlements(account);
+  expect(
+    sources.find(({ orderId }) => orderId === disputed.id)?.effective,
+  ).toBe("frozen");
+
+  // New reservations skip the frozen source; the other pack still funds.
+  const allocated = await ledger().allocate({
+    accountId: account,
+    operationId: "disp-op-3",
+    amountMicrocredits: 10n,
+  });
+  expect(allocated.state).toBe("allocated");
+  const offered = await ledger().paidSources(account);
+  expect(offered).toHaveLength(1);
+  expect(offered[0]?.remainingMicrocredits).toBe("40");
+
+  // Dispatched work settles per its original reservation despite the freeze.
+  const settled = await ledger().settleAllocation({
+    accountId: account,
+    operationId: "disp-op-2",
+    chargeMicrocredits: 25n,
+  });
+  expect(settled.state).toBe("settled");
+
+  // Confirmation revokes only the remaining credits and books the used
+  // part's RMB share to manual reconciliation (9 900 × 55 / 100).
+  const confirmed = await ledger().confirmRefund(disputed.id, true);
+  expect(confirmed).toMatchObject({
+    state: "confirmed",
+    usedMicrocredits: 55n,
+    manualReviewCents: 5_445,
+  });
+  const after = await ledger().entitlements(account);
+  const revokedRow = after.find(({ orderId }) => orderId === disputed.id);
+  expect(revokedRow?.effective).toBe("revoked");
+  // Consumed records survive; a replayed notice collects nothing twice.
+  expect(revokedRow?.consumedMicrocredits).toBe(55n);
+  const replay = await ledger().confirmRefund(disputed.id, true);
+  expect(replay.id).toBe(confirmed.id);
+  expect(
+    (await ledger().entitlements(account)).find(
+      ({ orderId }) => orderId === disputed.id,
+    )?.consumedMicrocredits,
+  ).toBe(55n);
+});
+
 afterAll(async () => {
   const accounts = await database
     .select({ id: testCreditAccounts.id })
@@ -254,7 +364,7 @@ afterAll(async () => {
     .where(
       inArray(
         testCreditAccounts.issuer,
-        ["full", "retry", "order", "lost", "susp"].map(
+        ["full", "retry", "order", "lost", "susp", "dispute"].map(
           (tag) => `paid-refund-${tag}`,
         ),
       ),
@@ -278,7 +388,11 @@ afterAll(async () => {
   await database
     .delete(paidProducts)
     .where(
-      inArray(paidProducts.code, ["pack-refund-pilot", "plan-refund-monthly"]),
+      inArray(paidProducts.code, [
+        "pack-refund-pilot",
+        "plan-refund-monthly",
+        "pack-b",
+      ]),
     );
   await database.$client.close();
 });

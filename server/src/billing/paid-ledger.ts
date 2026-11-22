@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
+  paidCorrections,
   paidCreditAllocations,
   paidEntitlements,
   paidOrders,
@@ -426,6 +427,7 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
     order: typeof paidOrders.$inferSelect,
     reason: string,
     at: Date,
+    by = "channel",
   ) {
     const [row] = await tx
       .insert(paidRefunds)
@@ -435,12 +437,13 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
         channel: order.channel,
         amountCents: order.priceCents,
         reason,
+        openedBy: by,
         requestedAt: at,
       })
       // A failed refund can be requested again; a confirmed one is final.
       .onConflictDoUpdate({
         target: paidRefunds.orderId,
-        set: { state: "requested", reason, requestedAt: at },
+        set: { state: "requested", reason, openedBy: by, requestedAt: at },
         setWhere: sql`${paidRefunds.state} <> 'confirmed'`,
       })
       .returning();
@@ -451,7 +454,11 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
    * Opens (or reopens) the original-route refund for one order and freezes
    * what it granted. Idempotent; replays return the single refund record.
    */
-  async function requestRefund(orderId: string, reason = "user_request") {
+  async function requestRefund(
+    orderId: string,
+    reason = "user_request",
+    by = "channel",
+  ) {
     return database.transaction(async (tx) => {
       const [order] = await tx
         .select()
@@ -473,7 +480,7 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
           "not_verified",
           "Only a verified order, or one already owed a refund, can request one.",
         );
-      const refund = await recordRefundWithin(tx, order, reason, now());
+      const refund = await recordRefundWithin(tx, order, reason, now(), by);
       // Consumption stops while the refund is in flight.
       await tx
         .update(paidEntitlements)
@@ -520,9 +527,32 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
           .update(paidOrders)
           .set({ state: "refunded" })
           .where(eq(paidOrders.id, orderId));
+        // Only the remaining credits return through the channel. What the
+        // order already funded cannot be pulled back from settled usage, so
+        // its RMB share enters manual reconciliation (#104 人工对账).
+        const granted = await tx
+          .select({
+            consumed: paidEntitlements.consumedMicrocredits,
+            credits: paidEntitlements.creditsMicrocredits,
+          })
+          .from(paidEntitlements)
+          .where(eq(paidEntitlements.orderId, orderId));
+        const used = granted.reduce((sum, row) => sum + row.consumed, 0n);
+        const credits = granted.reduce((sum, row) => sum + row.credits, 0n);
+        const manualReviewCents =
+          used > 0n && credits > 0n
+            ? Number(
+                (BigInt(refund.amountCents) * used + credits / 2n) / credits,
+              )
+            : null;
         const [row] = await tx
           .update(paidRefunds)
-          .set({ state: "confirmed", confirmedAt: now() })
+          .set({
+            state: "confirmed",
+            confirmedAt: now(),
+            usedMicrocredits: used > 0n ? used : null,
+            manualReviewCents,
+          })
           .where(eq(paidRefunds.id, refund.id))
           .returning();
         return row;
@@ -569,6 +599,162 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
       .from(paidRefunds)
       .where(eq(paidRefunds.accountId, accountId))
       .orderBy(desc(paidRefunds.requestedAt));
+  }
+
+  // ── Verified corrections (#105) ─────────────────────────────────────
+  // Original records are never rewritten: a proved overcharge returns
+  // credits to the source that paid them while that source is still valid,
+  // and anything that cannot return (or platform-fault compensation) lands
+  // as non-expiring Correction Credits with its own audit row.
+
+  async function grantCorrectionCredits(
+    tx: Transaction,
+    accountId: string,
+    amountMicrocredits: bigint,
+    at: Date,
+  ) {
+    const [row] = await tx
+      .insert(paidEntitlements)
+      .values({
+        accountId,
+        orderId: null,
+        kind: "credit_pack",
+        creditsMicrocredits: amountMicrocredits,
+        state: "granted",
+        arrivedAt: at,
+      })
+      .returning();
+    return row;
+  }
+
+  /**
+   * Corrects one case-verified overcharge of a settled operation. Credits go
+   * back to the sources that paid while those are still valid; the rest (all
+   * of it, when the source expired) becomes Correction Credits. Works at any
+   * time — the reconciliation cutoff does not gate verified corrections.
+   */
+  async function correctOvercharge(input: {
+    accountId: string;
+    operationId: string;
+    amountMicrocredits: bigint;
+    reason: string;
+    evidence: string;
+    by: string;
+  }) {
+    return database.transaction(async (tx) => {
+      const funded = await tx
+        .select({
+          entitlementId: paidCreditAllocations.entitlementId,
+          consumed: paidCreditAllocations.consumedMicrocredits,
+        })
+        .from(paidCreditAllocations)
+        .where(
+          and(
+            eq(paidCreditAllocations.accountId, input.accountId),
+            eq(paidCreditAllocations.operationId, input.operationId),
+            eq(paidCreditAllocations.state, "settled"),
+          ),
+        );
+      const settled = funded.filter(
+        (row): row is { entitlementId: string; consumed: bigint } =>
+          row.entitlementId !== null && (row.consumed ?? 0n) > 0n,
+      );
+      if (settled.length === 0)
+        throw new PaidLedgerError(
+          "order_unknown",
+          "No settled paid consumption to correct for this operation.",
+        );
+      const at = now();
+      const sources = await tx
+        .select()
+        .from(paidEntitlements)
+        .where(
+          inArray(
+            paidEntitlements.id,
+            settled.map(({ entitlementId }) => entitlementId),
+          ),
+        );
+      // Refund-to-source only while every paying source is still valid.
+      const canReturn = settled.every(({ entitlementId }) =>
+        sources.some(
+          (source) =>
+            source.id === entitlementId &&
+            source.state === "granted" &&
+            effectiveEntitlement(source, at) === "active",
+        ),
+      );
+      let left = input.amountMicrocredits;
+      let refundedSource: string | null = null;
+      if (canReturn) {
+        for (const { entitlementId, consumed } of settled) {
+          if (left <= 0n) break;
+          const giveBack = consumed < left ? consumed : left;
+          left -= giveBack;
+          refundedSource ??= entitlementId;
+          await tx
+            .update(paidEntitlements)
+            .set({
+              consumedMicrocredits: sql`${paidEntitlements.consumedMicrocredits} - ${giveBack}`,
+            })
+            .where(eq(paidEntitlements.id, entitlementId));
+        }
+      }
+      if (left > 0n)
+        await grantCorrectionCredits(tx, input.accountId, left, at);
+      const [row] = await tx
+        .insert(paidCorrections)
+        .values({
+          accountId: input.accountId,
+          operationId: input.operationId,
+          entitlementId: canReturn ? refundedSource : null,
+          kind: "overcharge_refund",
+          amountMicrocredits: input.amountMicrocredits,
+          reason: input.reason,
+          evidence: input.evidence,
+          by: input.by,
+          createdAt: at,
+        })
+        .returning();
+      return row;
+    });
+  }
+
+  /**
+   * Books individually verified platform-fault compensation as its own
+   * non-expiring credit; periods, anchors and every existing record stay
+   * exactly as they were.
+   */
+  async function applyCompensation(input: {
+    accountId: string;
+    amountMicrocredits: bigint;
+    reason: string;
+    evidence: string;
+    by: string;
+  }) {
+    return database.transaction(async (tx) => {
+      const at = now();
+      const credit = await grantCorrectionCredits(
+        tx,
+        input.accountId,
+        input.amountMicrocredits,
+        at,
+      );
+      const [row] = await tx
+        .insert(paidCorrections)
+        .values({
+          accountId: input.accountId,
+          operationId: null,
+          entitlementId: credit.id,
+          kind: "fault_compensation",
+          amountMicrocredits: input.amountMicrocredits,
+          reason: input.reason,
+          evidence: input.evidence,
+          by: input.by,
+          createdAt: at,
+        })
+        .returning();
+      return row;
+    });
   }
 
   /**
@@ -748,18 +934,42 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
         ),
       )
       .orderBy(testCreditEvidence.recordedAt);
+    // Corrections keep the original charge lines and appear beside them,
+    // linked to the operation they correct (#105 账单保留原扣费并链接更正).
+    const correctionLines = await database
+      .select({
+        operationId: paidCorrections.operationId,
+        amountMicrocredits: paidCorrections.amountMicrocredits,
+        reason: paidCorrections.reason,
+        at: paidCorrections.createdAt,
+      })
+      .from(paidCorrections)
+      .where(eq(paidCorrections.accountId, accountId))
+      .orderBy(paidCorrections.createdAt);
     return [
       ...testLines.map((line) => ({
         ...line,
+        amountMicrocredits: line.amountMicrocredits,
         source: "test" as const,
         entitlementId: null,
         periodStart: null,
         periodEnd: null,
         arrivedAt: null,
+        reason: null as string | null,
       })),
       ...paidLines.map((line) => ({
         ...line,
         amountMicrocredits: (line.amountMicrocredits ?? 0n).toString(),
+        reason: null as string | null,
+      })),
+      ...correctionLines.map((line) => ({
+        ...line,
+        amountMicrocredits: line.amountMicrocredits.toString(),
+        source: "correction" as const,
+        entitlementId: null,
+        periodStart: null,
+        periodEnd: null,
+        arrivedAt: null,
       })),
     ].sort((a, b) => (a.at?.getTime() ?? 0) - (b.at?.getTime() ?? 0));
   }
@@ -774,6 +984,8 @@ export function createPaidCreditLedger(database: Database, clock?: () => Date) {
     requestRefund,
     confirmRefund,
     refunds,
+    correctOvercharge,
+    applyCompensation,
     suspendAccount,
     activeSubscription,
     paidSources,

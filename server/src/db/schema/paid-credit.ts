@@ -106,9 +106,9 @@ export const paidEntitlements = pgTable(
     accountId: uuid("account_id")
       .notNull()
       .references(() => testCreditAccounts.id),
-    orderId: uuid("order_id")
-      .notNull()
-      .references(() => paidOrders.id),
+    // Orders grant entitlements; Correction Credits (#105) arrive without
+    // one, so the link is nullable.
+    orderId: uuid("order_id").references(() => paidOrders.id),
     kind: text({ enum: paidEntitlementKinds }).notNull(),
     // Subscription: the Beijing billing period this order bought. Credit
     // packs are long-lived, so their window is unbounded.
@@ -144,7 +144,9 @@ export const paidEntitlements = pgTable(
   ],
 );
 
-export const paidAllocationStates = ["held", "settled", "released"] as const; // A reservation's hold split across paid credit sources, in the order
+export const paidAllocationStates = ["held", "settled", "released"] as const;
+
+// A reservation's hold split across paid credit sources, in the order
 // consumption must follow: current-period subscription credits first, then
 // Credit Packs by arrival. Releases void the hold; settlement consumes the
 // sources in the same order.
@@ -206,14 +208,61 @@ export const paidRefunds = pgTable(
     channel: text({ enum: ["wechat", "alipay"] }).notNull(),
     amountCents: integer("amount_cents").notNull(),
     reason: text().notNull(),
+    // Staff handling the case (#104 disputes); refund requests from the
+    // channel side record the notifying operator.
+    openedBy: text("opened_by").notNull().default("channel"),
     state: text({ enum: paidRefundStates }).notNull().default("requested"),
     requestedAt: timestamp("requested_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    // When a confirmed dispute revokes an order with consumption, the used
+    // part's RMB value cannot go back through the channel automatically —
+    // it enters manual reconciliation (人工对账) instead.
+    usedMicrocredits: bigint("used_microcredits", { mode: "bigint" }),
+    manualReviewCents: integer("manual_review_cents"),
   },
   (table) => [
     uniqueIndex("paid_refunds_order").on(table.orderId),
     check("paid_refunds_amounts", sql`${table.amountCents} > 0`),
+  ],
+);
+
+export const paidCorrectionKinds = [
+  "overcharge_refund",
+  "fault_compensation",
+] as const;
+
+// Individually verified corrections (#105): a proved overcharge returns
+// credits to the source that paid them (or becomes non-expiring Correction
+// Credits when that source is gone), and platform-fault compensation lands
+// as its own credit. Original records are never rewritten; the correction
+// row is the audit link between the original operation, the reason, the
+// evidence and the operator.
+export const paidCorrections = pgTable(
+  "paid_corrections",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => testCreditAccounts.id),
+    // The overcharged operation; null for fault compensation.
+    operationId: text("operation_id"),
+    // The source the correction returned credits to, when it did.
+    entitlementId: uuid("entitlement_id").references(() => paidEntitlements.id),
+    kind: text({ enum: paidCorrectionKinds }).notNull(),
+    amountMicrocredits: bigint("amount_microcredits", {
+      mode: "bigint",
+    }).notNull(),
+    reason: text().notNull(),
+    evidence: text().notNull(),
+    by: text().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("paid_corrections_account").on(table.accountId, table.createdAt),
+    check("paid_corrections_amounts", sql`${table.amountMicrocredits} > 0`),
   ],
 );
