@@ -491,10 +491,9 @@ jobs:
 
   python-harness:
     name: python harness regressions
-    # CPU-bound: runs on a 16-core larger runner (org runner group openbot-larger, billed per
-    # minute) for main, releases and pull requests from this repository. Pull requests from forks
-    # stay on the free standard runner.
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'openbot-ubuntu-16core' }}
+    # shortcut: upstream runs this CPU-bound job on a paid 16-core runner; this fork has no
+    # openbot-ubuntu-16core runner registered, so jobs queued forever. Stay on the standard runner.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -665,14 +664,15 @@ jobs:
   # them typecheck, lint and test perfectly.
   image:
     name: image
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'openbot-ubuntu-16core' }}
+    # shortcut: upstream ran this on a paid 16-core runner; this fork has no such runner
+    # registered, so the job queued forever. Stay on the standard runner.
+    runs-on: ubuntu-latest
     # The only slow job: it builds the container and boots it, ~14 minutes. The four checks above are
     # seconds and stay on every push, because they catch most things cheaply. This one is the cost, so
     # on a pull request it runs only when an admin adds the `full-ci` label — the point at which the PR
     # is actually a merge candidate. On main and through the release workflow_call it always runs, so
     # nothing reaches a release without it. `verify` treats a skipped job as passing, so an unlabelled
-    # PR is green on the cheap checks alone. It runs on the 16-core larger runner everywhere except
-    # pull requests from forks, which stay on the free standard runner.
+    # PR is green on the cheap checks alone.
     if: >-
       github.event_name != 'pull_request' ||
       contains(github.event.pull_request.labels.*.name, 'full-ci')
