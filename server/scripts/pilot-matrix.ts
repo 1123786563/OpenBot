@@ -91,12 +91,15 @@ const lagoKey =
   ).trim();
 const zhipuKey =
   process.env.ZHIPU_API_KEY ??
-  (await Bun.file(
-    "/Users/wuyj/.local/share/openbot/bifrost-89/provider.env",
-  ).text())
+  (
+    await Bun.file(
+      "/Users/wuyj/.local/share/openbot/bifrost-89/provider.env",
+    ).text()
+  )
     .split("\n")
     .find((line) => line.startsWith("ZHIPU_API_KEY="))
-    ?.slice("ZHIPU_API_KEY=".length) ?? "";
+    ?.slice("ZHIPU_API_KEY=".length) ??
+  "";
 
 const ledger = createTestCreditLedger(database, now);
 let tokenizerAvailable = true;
@@ -148,8 +151,12 @@ async function publishCatalog(
       "matrix-fixture",
     );
   }
-  const release = publish(catalog, Object.keys(routes), defaultRoute, "matrix")
-    .release;
+  const release = publish(
+    catalog,
+    Object.keys(routes),
+    defaultRoute,
+    "matrix",
+  ).release;
   const value = { ...catalog, publication: release };
   await database
     .insert(enterpriseSettings)
@@ -173,7 +180,8 @@ async function chatOp(
   const pick = await ledger.resolveQuote({
     conversation: { id: routeId, revision },
   });
-  if (!("quote" in pick)) throw new Error(`resolveQuote refused: ${pick.reason}`);
+  if (!("quote" in pick))
+    throw new Error(`resolveQuote refused: ${pick.reason}`);
   const reserved = await ledger.reserve(identity, {
     operationId,
     route: pick.quote.route,
@@ -283,7 +291,10 @@ async function embedViaEndpoint(body: {
       signal: AbortSignal.timeout(60_000),
     },
   );
-  return { status: response.status, body: await response.json().catch(() => null) };
+  return {
+    status: response.status,
+    body: await response.json().catch(() => null),
+  };
 }
 
 Bun.serve({
@@ -356,36 +367,29 @@ Bun.serve({
           resourceId: body.resourceId,
           state: reserved.state,
         });
-        const tokenizer = await fetch(
-          "http://127.0.0.1:25169/tokenize",
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              inputs: body.input,
-              add_special_tokens: true,
-            }),
-          },
-        );
+        const tokenizer = await fetch("http://127.0.0.1:25169/tokenize", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            inputs: body.input,
+            add_special_tokens: true,
+          }),
+        });
         if (!tokenizer.ok) throw new Error("tokenizer unavailable");
         const exact = (await tokenizer.json()) as unknown[][];
         const inputTokenUpperBound = exact.reduce(
           (sum, tokens) => sum + tokens.length,
           0,
         );
-        const response = await fetch(
-          "http://127.0.0.1:25170/v1/embeddings",
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              model: "openai/BAAI/bge-small-en-v1.5",
-              input: body.input,
-            }),
-          },
-        );
-        if (!response.ok)
-          throw new Error(`gateway ${response.status}`);
+        const response = await fetch("http://127.0.0.1:25170/v1/embeddings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "openai/BAAI/bge-small-en-v1.5",
+            input: body.input,
+          }),
+        });
+        if (!response.ok) throw new Error(`gateway ${response.status}`);
         const payload = (await response.json()) as {
           data: { embedding: number[] }[];
           usage?: { prompt_tokens?: number };
@@ -452,9 +456,7 @@ Bun.serve({
                 await database
                   .select()
                   .from(testCreditOperations)
-                  .where(
-                    eq(testCreditOperations.accountId, accountId),
-                  )
+                  .where(eq(testCreditOperations.accountId, accountId))
               ).map((row) => ({
                 operationId: row.id,
                 state: row.state,
@@ -776,7 +778,8 @@ await scenario("cutoff-releases-abandoned-hold", async () => {
   const after = await ledger.balance(identityB);
   assert(applied >= 1, "nothing swept");
   assert(
-    before && after &&
+    before &&
+      after &&
       BigInt(after.availableMicrocredits) -
         BigInt(before.availableMicrocredits) ===
         8256n,
@@ -798,19 +801,16 @@ await scenario("external-direct-gateway-boundary", async () => {
   // What an external app sees hitting the pinned gateway directly, with no
   // OpenBot billing context. The gateway is loopback-bound in this deployment;
   // provider credentials never leave it. The dispatch gate is OpenBot-side.
-  const response = await fetch(
-    "http://127.0.0.1:32790/v1/chat/completions",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        model: "zhipu/glm-5.3-flash",
-        messages: [{ role: "user", content: "say ok" }],
-        max_tokens: 8,
-        stream: false,
-      }),
-    },
-  );
+  const response = await fetch("http://127.0.0.1:32790/v1/chat/completions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      model: "zhipu/glm-5.3-flash",
+      messages: [{ role: "user", content: "say ok" }],
+      max_tokens: 8,
+      stream: false,
+    }),
+  });
   return {
     directHttpStatus: response.status,
     note: "gateway reached without OpenBot context is a deployment-boundary concern; no permit can be minted outside the ledger (wrong-permit scenario)",
@@ -839,14 +839,17 @@ await scenario("publish-embedding-route", async () => {
 });
 
 await scenario("weknora-worker-ingestion", async () => {
-  await Bun.write(`${runDir}/worker.env`, [
-    "OPENBOT_WEKNORA_EMBEDDINGS_URL=http://127.0.0.1:25172/api/weknora/embeddings",
-    `OPENBOT_WEKNORA_SERVICE_TOKEN=${serviceToken}`,
-    `OPENBOT_WEKNORA_OIDC_ISSUER=${issuer}`,
-    `OPENBOT_WEKNORA_LIVE_SUBJECT=${identityA.subject}`,
-    `OPENBOT_WEKNORA_LIVE_AUTHORIZATION_ID=${authorizationId}`,
-    "",
-  ].join("\n"));
+  await Bun.write(
+    `${runDir}/worker.env`,
+    [
+      "OPENBOT_WEKNORA_EMBEDDINGS_URL=http://127.0.0.1:25172/api/weknora/embeddings",
+      `OPENBOT_WEKNORA_SERVICE_TOKEN=${serviceToken}`,
+      `OPENBOT_WEKNORA_OIDC_ISSUER=${issuer}`,
+      `OPENBOT_WEKNORA_LIVE_SUBJECT=${identityA.subject}`,
+      `OPENBOT_WEKNORA_LIVE_AUTHORIZATION_ID=${authorizationId}`,
+      "",
+    ].join("\n"),
+  );
   log({ event: "WORKER-READY" });
   const marker = `${runDir}/worker-done`;
   const workerStartedAt = new Date();
@@ -895,7 +898,10 @@ await scenario("signout-then-authorized-embedding", async () => {
       result.body.vectors[0]?.length === 384,
     "no 384-dim vector",
   );
-  return { status: result.status, dimensions: result.body?.vectors?.[0]?.length };
+  return {
+    status: result.status,
+    dimensions: result.body?.vectors?.[0]?.length,
+  };
 });
 
 await scenario("recovery-without-reservation-refused", async () => {
@@ -1040,5 +1046,9 @@ await Bun.write(
     2,
   ),
 );
-log({ event: "MATRIX-DONE", passed: results.filter((r) => r.outcome === "pass").length, failed: results.filter((r) => r.outcome === "fail").length });
+log({
+  event: "MATRIX-DONE",
+  passed: results.filter((r) => r.outcome === "pass").length,
+  failed: results.filter((r) => r.outcome === "fail").length,
+});
 await database.$client.close();
