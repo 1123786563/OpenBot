@@ -5,6 +5,7 @@ import {
   useEffect,
   useState,
 } from "react";
+import { getStoredValue, setStoredValue } from "@/lib/browser-storage";
 import {
   applyDarkTheme,
   parseStoredDarkTheme,
@@ -20,12 +21,12 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [dark, setDark] = useState(() =>
-    parseStoredDarkTheme(window.localStorage.getItem(THEME_STORAGE_KEY)),
+    parseStoredDarkTheme(getStoredValue(THEME_STORAGE_KEY)),
   );
 
   useEffect(() => {
     applyDarkTheme(dark, {
-      setStoredValue: (key, value) => window.localStorage.setItem(key, value),
+      setStoredValue,
       toggleRootClass: (name, force) =>
         document.documentElement.classList.toggle(name, force),
       setRootColorScheme: (scheme) => {

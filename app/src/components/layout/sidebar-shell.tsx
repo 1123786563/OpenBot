@@ -10,6 +10,7 @@ import {
   SidebarProvider,
   SidebarResizeProvider,
 } from "@/components/ui/sidebar";
+import { getStoredValue, setStoredValue } from "@/lib/browser-storage";
 import {
   applySidebarOpen,
   parseStoredSidebarOpen,
@@ -56,22 +57,18 @@ export function SidebarShell({
 }) {
   // Read before the first paint, so a shell somebody left collapsed never flashes open.
   const [open, setOpen] = useState(() =>
-    parseStoredSidebarOpen(window.localStorage.getItem(SIDEBAR_STORAGE_KEY)),
+    parseStoredSidebarOpen(getStoredValue(SIDEBAR_STORAGE_KEY)),
   );
   const widthKey = `${SIDEBAR_WIDTH_STORAGE_PREFIX}${name}`;
   const [width, setWidth] = useState(() =>
-    parseStoredSidebarWidth(
-      window.localStorage.getItem(widthKey),
-      defaultWidth,
-    ),
+    parseStoredSidebarWidth(getStoredValue(widthKey), defaultWidth),
   );
   // While the edge is dragged, the sidebar follows the pointer instead of easing after it.
   const [resizing, setResizing] = useState(false);
   const resize = useMemo(
     () => ({
       setWidth: (pixels: number) => setWidth(`${pixels}px`),
-      commitWidth: (pixels: number) =>
-        window.localStorage.setItem(widthKey, String(pixels)),
+      commitWidth: (pixels: number) => setStoredValue(widthKey, String(pixels)),
       setResizing,
     }),
     [widthKey],
@@ -79,7 +76,7 @@ export function SidebarShell({
 
   useEffect(() => {
     applySidebarOpen(open, {
-      setStoredValue: (key, value) => window.localStorage.setItem(key, value),
+      setStoredValue,
     });
   }, [open]);
 
