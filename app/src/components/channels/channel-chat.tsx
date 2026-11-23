@@ -1,5 +1,6 @@
 import type { Message } from "@ag-ui/core";
-import { HStack } from "@astryxdesign/core/Stack";
+import { Button as RecoveryButton } from "@astryxdesign/core/Button";
+import { HStack, Stack } from "@astryxdesign/core/Stack";
 import {
   type Attachment,
   CopilotChatConfigurationProvider,
@@ -26,14 +27,11 @@ import { ModelPicker } from "@/components/channels/composer/model-picker";
 import { ConversationIntro } from "@/components/channels/conversation-intro";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { ProgressRow } from "@/components/channels/progress-row";
-import {
-  seedMessage,
-  takeFirstMessage,
-  transcriptMessages,
-} from "@/components/channels/transcript-messages";
+import { transcriptMessages } from "@/components/channels/transcript-messages";
 import { VoiceCallWidget } from "@/components/channels/voice-call-widget";
 import { HandoffResumeNotice } from "@/components/computer/handoff-resume-notice";
 import { StarterSuggestions } from "@/components/starter-tour/starter-suggestions";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
@@ -41,17 +39,27 @@ import {
   approvalInboxOptions,
   carryingOnAfterApproval,
 } from "@/lib/approvals";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { attachmentUrl } from "@/lib/channels/attachments";
 import {
   recordChannelActivityMutationOptions,
   setChannelBusy,
 } from "@/lib/channels/mutations";
 import {
+  findFirstMessage,
+  restorePendingAttachments,
+} from "@/lib/channels/pending-start";
+import {
   type AgentChannel,
   type ChannelSummary,
   channelKeys,
 } from "@/lib/channels/queries";
 import { runReply } from "@/lib/channels/run-reply";
+import {
+  discardDirectFirstMessage,
+  type FirstMessageRecovery,
+  resumeDirectFirstMessage,
+} from "@/lib/channels/start";
 import {
   onTurnFinishedAway,
   turnFinishedAway,
@@ -99,6 +107,7 @@ import {
 import { useVoiceCall } from "@/lib/voice/use-voice-call";
 import { queryClient } from "@/query-client";
 import { newId } from "../../lib/new-id";
+import { ConversationReadError } from "./conversation-status";
 
 /**
  * How long a stalled thread join is worth waiting for before it is ended.
@@ -533,18 +542,38 @@ export function ChannelChat({
     return observeApprovalAgent(agent);
   }, [agent, runtimeAgentId, queries]);
 
-  /**
-   * First-message seed from the compose screen. It is taken once per mount and retained until the
-   * agent has its own messages because joining a fresh thread can temporarily empty the agent.
-   */
-  const [first] = useState(() => {
-    const pending = takeFirstMessage(channel.id);
-    return pending ? { seed: seedMessage(pending.text, newId()) } : null;
-  });
-  const seed = first?.seed ?? null;
+  const { data: user } = useQuery(currentUserQueryOptions());
+  const [first, setFirst] = useState(() =>
+    user ? findFirstMessage(user.id, channel.id) : null,
+  );
+  const firstOwner = useRef(user?.id);
+  firstOwner.current = user?.id;
+  const [firstAttempt, setFirstAttempt] = useState(0);
+  const [checkingFirstMessage, setCheckingFirstMessage] = useState(false);
+  const resendFirstMessage = useRef(false);
+  const [firstError, setFirstError] = useState<FirstMessageRecovery | null>(
+    null,
+  );
+  const [copyStatus, setCopyStatus] = useState("");
+  const {
+    requestConfirmation: requestDraftDiscard,
+    confirmation: draftDiscard,
+  } = useActionConfirmation();
+  const seed: Message | null = first
+    ? {
+        id: first.id,
+        role: "user",
+        content: toMessageContent(
+          first.start.draft.text,
+          restorePendingAttachments(first.start.draft),
+        ),
+      }
+    : null;
 
-  /** Cleared by the send-on-mount effect without restarting it. */
-  const seedRef = useRef(first);
+  useEffect(() => {
+    if (user)
+      setFirst((known) => known ?? findFirstMessage(user.id, channel.id));
+  }, [user, channel.id]);
 
   /** Promise gate for ordering the first message after the thread join when possible. */
   const openJoinGate = useRef<() => void>(() => {});
@@ -611,6 +640,7 @@ export function ChannelChat({
   const [historyAvailability, setHistoryAvailability] = useState<
     "ready" | "unavailable"
   >("ready");
+  const [retryingHistory, setRetryingHistory] = useState(false);
   const [historyReadFailed, setHistoryReadFailed] = useState(false);
   const [storedRuns, setStoredRuns] = useState<StoredRun[]>();
   const focusedRun = storedRuns?.find((run) => run.id === focusRunId);
@@ -964,6 +994,43 @@ export function ChannelChat({
     unreadable,
   });
 
+  const retryHistory = async () => {
+    if (retryingHistory) return;
+    setRetryingHistory(true);
+    const version = ++historyReadVersion.current;
+    try {
+      const stored = await readThreadMessages(channel.threadId, runtimeAgentId);
+      if (version !== historyReadVersion.current) return;
+      if (
+        stored.availability === "unavailable" &&
+        durableChat &&
+        stored.accessDenied
+      ) {
+        setAccessEnded(true);
+        setStoredRuns([]);
+        agent.setMessages([]);
+        void queryClient.invalidateQueries(approvalInboxOptions());
+        return;
+      }
+      if (stored.availability === "ready") setStoredRuns(stored.runs);
+      if (stored.runs && agent.isRunning) return;
+      setUnreadable(stored.unreadable);
+      setHistoryAvailability(stored.availability);
+      setHistoryReadFailed(stored.availability === "unavailable");
+      const messages = mergeStoredMessages(
+        withCurrentA2uiVersions(agent.messages),
+        stored.messages,
+      );
+      if (messages !== agent.messages) agent.setMessages(messages);
+    } finally {
+      setRetryingHistory(false);
+    }
+  };
+  const retryArchive = () => {
+    if (historyReadFailed) void retryHistory();
+    if (voiceArchive.error) void voiceArchive.refetch();
+  };
+
   const awaitingReply = useRef(false);
   /**
    * WHY THIS TURN ENDED WITHOUT AN ANSWER, KEPT WHERE `deliver` CAN STILL SEE IT — because the one
@@ -1145,7 +1212,11 @@ export function ChannelChat({
   const deliver = async (
     trimmed: string,
     attachments: Attachment[],
-    options: { sent?: Message; voiceSignal?: AbortSignal },
+    options: {
+      sent?: Message;
+      voiceSignal?: AbortSignal;
+      beforeFirstSend?: () => Promise<void>;
+    },
   ) => {
     // Wait briefly for the runtime agent instance before adding the message.
     if (!isReadyRef.current) {
@@ -1207,6 +1278,8 @@ export function ChannelChat({
       target.messages.map((message) => message.id),
     );
 
+    const { sent, beforeFirstSend } = options;
+    if (beforeFirstSend) await beforeFirstSend();
     setRunError(null);
     turnFailure.current = null;
     reportedReply.current = null;
@@ -1237,13 +1310,20 @@ export function ChannelChat({
         ),
       );
 
-    target.addMessage(
-      options.sent ?? {
-        content: toMessageContent(trimmed, attachments),
-        id: newId(),
-        role: "user",
-      },
-    );
+    if (beforeFirstSend && sent && existingMessageIds.has(sent.id)) {
+      target.setMessages([
+        ...target.messages.filter((message) => message.id !== sent.id),
+        sent,
+      ]);
+    } else {
+      target.addMessage(
+        sent ?? {
+          content: toMessageContent(trimmed, attachments),
+          id: newId(),
+          role: "user",
+        },
+      );
+    }
     report(trimmed || describeAttachments(attachments), null);
 
     // Providers reject later turns if prior tool calls have no result; repair before sending.
@@ -1365,7 +1445,11 @@ export function ChannelChat({
     text: string,
     attachments: Attachment[] = [],
     /** The message to send for `text`, when it is more than the words: an answer to a question. */
-    options: { sent?: Message; voiceSignal?: AbortSignal } = {},
+    options: {
+      sent?: Message;
+      voiceSignal?: AbortSignal;
+      beforeFirstSend?: () => Promise<void>;
+    } = {},
   ) => {
     const trimmed = text.trim();
     // A pasted screenshot with no caption is still a message to send: `canSendDraft` already
@@ -1622,31 +1706,107 @@ export function ChannelChat({
     void sayRef.current(text).catch(() => undefined);
   }, []);
 
-  /**
-   * Send the create-channel seed once. No waiting of its own: `say` owns that for every turn, and a
-   * second copy of the ordering here was the one that could disagree with it.
-   */
   useEffect(() => {
-    const pending = seedRef.current;
-    if (!pending) return;
-    seedRef.current = null;
+    // This state is intentionally a retry trigger. The effect must restart when the user taps Check again.
+    void firstAttempt;
+    const owner = user?.id;
+    if (!first || !owner || accessEnded) return;
+    if (!channel.active || !isReady) {
+      const timer = setTimeout(
+        () => {
+          setCheckingFirstMessage(false);
+          setFirstError({
+            action: "check",
+            message: channel.active
+              ? "The Bot hasn’t connected. Your message is saved here."
+              : "This Bot is unavailable. Your message is saved here.",
+          });
+        },
+        channel.active ? SEND_WITHOUT_RUNTIME_AFTER_MS : 0,
+      );
+      return () => clearTimeout(timer);
+    }
+    const { id } = first;
+    let current = true;
 
-    // Swallowed for the reason `askFromComponent` above records: `say` throws on a failed turn, and
-    // the seed has no box to go back into — it was typed on a screen that has already navigated
-    // away. The transcript keeps the seeded message and the notice under it says what happened.
-    // A `/` skill is still at the start of its words, where the server finds it.
-    void sayRef
-      .current(
-        typeof pending.seed.content === "string" ? pending.seed.content : "",
-      )
-      .catch(() => undefined);
+    const attempt = async () => {
+      await joinedPromise;
+      const isCurrent = () => current && firstOwner.current === owner;
+      if (!isCurrent()) return;
+      const resend = resendFirstMessage.current;
+      resendFirstMessage.current = false;
+      const result = await resumeDirectFirstMessage({
+        queryClient: queries,
+        owner,
+        id,
+        channelId: channel.id,
+        resend,
+        isCurrent,
+        readHistory: async () => {
+          const version = ++historyReadVersion.current;
+          const history = await readThreadMessages(
+            channel.threadId,
+            runtimeAgentId,
+          );
+          if (isCurrent() && version === historyReadVersion.current) {
+            if (history.availability === "ready") setStoredRuns(history.runs);
+            setUnreadable(history.unreadable);
+            setHistoryAvailability(history.availability);
+            setHistoryReadFailed(history.availability === "unavailable");
+          }
+          return history;
+        },
+        onDelivered: (history) => {
+          const target = agentRef.current;
+          const merged = mergeStoredMessages(target.messages, history.messages);
+          if (merged !== target.messages) target.setMessages(merged);
+        },
+        send: async (text, attachments, beforeSend) => {
+          await sayRef.current(text, attachments, {
+            sent: {
+              id,
+              role: "user",
+              content: toMessageContent(text, attachments),
+            },
+            beforeFirstSend: beforeSend,
+          });
+        },
+      });
+      if (!isCurrent()) return;
+      if (result === "finished") setFirst(null);
+      else if (result !== "inactive") setFirstError(result);
+    };
 
-    // Keep `seed` in state; transcriptMessages gives it up once the agent holds a user turn.
-  }, []);
+    void attempt()
+      .catch(() => {
+        if (current)
+          setFirstError({
+            action: "check",
+            message:
+              "Your message is saved here. Delivery is still unconfirmed.",
+          });
+      })
+      .finally(() => {
+        if (current) setCheckingFirstMessage(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [
+    accessEnded,
+    channel.active,
+    channel.id,
+    channel.threadId,
+    first,
+    firstAttempt,
+    isReady,
+    joinedPromise,
+    queries,
+    runtimeAgentId,
+    user?.id,
+  ]);
 
-  if (accessEnded) {
-    return <p role="alert">Conversation access ended.</p>;
-  }
+  if (accessEnded) return <p role="alert">Conversation access ended.</p>;
 
   return (
     // Activity renderers resolve their agent through this SDK context. It must match useAgent's
@@ -1738,7 +1898,10 @@ export function ChannelChat({
                 value={runModel.value}
               />
             }
-            disabled={!channel.active || Boolean(unresolvedRun)}
+            disabled={
+              !channel.active || Boolean(first) || Boolean(unresolvedRun)
+            }
+            pendingMessageId={first?.id}
             messages={withVoiceChats(
               transcriptMessages(agent.messages, seed).map(shownAnswer),
               voiceArchive.entries,
@@ -1759,6 +1922,86 @@ export function ChannelChat({
                * it — and they are independent, so neither is an `else` for the other.
                */
               <>
+                {first && firstError ? (
+                  <Stack gap={2}>
+                    <ConversationReadError
+                      title="Couldn't confirm the first message."
+                      description={firstError.message}
+                      retryLabel={
+                        firstError.action === "check"
+                          ? "Check again"
+                          : firstError.action === "resend"
+                            ? "Resend message"
+                            : "Try again"
+                      }
+                      retry={() => {
+                        if (checkingFirstMessage) return;
+                        resendFirstMessage.current =
+                          firstError.action === "resend";
+                        setCheckingFirstMessage(true);
+                        setFirstAttempt((attempt) => attempt + 1);
+                      }}
+                      retrying={checkingFirstMessage}
+                      retryBelow
+                    />
+
+                    <Stack direction="horizontal" gap={2} wrap="wrap">
+                      {first.start.draft.text && navigator.clipboard ? (
+                        <RecoveryButton
+                          size="sm"
+                          label="Copy draft"
+                          onClick={() =>
+                            void navigator.clipboard
+                              .writeText(first.start.draft.text)
+                              .then(
+                                () => setCopyStatus("Draft copied."),
+                                () =>
+                                  setCopyStatus(
+                                    "Couldn't copy the draft. You can select it in the conversation.",
+                                  ),
+                              )
+                          }
+                        />
+                      ) : null}
+                      <RecoveryButton
+                        size="sm"
+                        label="Discard browser copy"
+                        isDisabled={checkingFirstMessage}
+                        onClick={(event) => {
+                          const owner = user?.id;
+                          if (!owner) return;
+                          requestDraftDiscard({
+                            title: "Discard the copy saved in this browser?",
+                            description:
+                              "The message may have reached the Thread. This removes the saved copy from this browser and leaves any delivered message in the Thread.",
+                            confirmLabel: "Discard browser copy",
+                            pendingLabel: "Discarding copy…",
+                            failureMessage:
+                              "Couldn't remove the saved copy. Try again.",
+                            successMessage: "Browser copy discarded.",
+                            trigger: event.currentTarget,
+                            run: async () => {
+                              discardDirectFirstMessage(
+                                owner,
+                                first.id,
+                                channel.id,
+                              );
+                              setFirst(null);
+                            },
+                          });
+                        }}
+                      />
+                    </Stack>
+                    {copyStatus ? <p role="status">{copyStatus}</p> : null}
+                  </Stack>
+                ) : first ? (
+                  <p role="status">
+                    {turnsInFlight > 0
+                      ? "Sending first message…"
+                      : "Preparing first message…"}
+                  </p>
+                ) : null}
+                {draftDiscard}
                 {/* What the person allowed for this conversation, each with Turn off. */}
                 {channel.active ? (
                   <ConversationAllowances threadId={channel.threadId} />
@@ -1778,11 +2021,27 @@ export function ChannelChat({
                     }
                   }}
                 />
-                {voiceArchive.error && (
-                  <p className="pb-2 text-sm text-destructive" role="alert">
-                    Couldn’t load voice chats. Reload the page.
-                  </p>
-                )}
+                {!first &&
+                  (voiceArchive.error ||
+                    (historyReadFailed && historyNotice)) && (
+                    <ConversationReadError
+                      title={
+                        voiceArchive.error && historyReadFailed
+                          ? "Couldn't load earlier messages or voice chats."
+                          : voiceArchive.error
+                            ? "Couldn't load voice chats."
+                            : (historyNotice ??
+                              "Couldn't load earlier messages.")
+                      }
+                      description={
+                        voiceArchive.error
+                          ? "You can keep using this conversation."
+                          : undefined
+                      }
+                      retry={retryArchive}
+                      retrying={retryingHistory || voiceArchive.fetching}
+                    />
+                  )}
                 {voiceContextNotice && (
                   <p
                     className="pb-2 text-sm text-muted-foreground"
@@ -1791,7 +2050,7 @@ export function ChannelChat({
                     {voiceContextNotice}
                   </p>
                 )}
-                {historyNotice ? (
+                {!first && historyNotice && !historyReadFailed ? (
                   <p
                     className="pb-2 text-sm text-muted-foreground"
                     role="status"

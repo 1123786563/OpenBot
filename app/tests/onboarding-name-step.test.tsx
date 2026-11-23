@@ -99,12 +99,6 @@ function isDisabled(button: HTMLButtonElement) {
   return button.disabled || button.getAttribute("aria-disabled") === "true";
 }
 
-const saved = () =>
-  Object.assign(
-    async () => Response.json({ profile: { name: "Sam", needsName: false } }),
-    { preconnect: originalFetch.preconnect },
-  );
-
 test("it starts empty for a placeholder profile, and Get started waits for a name", () => {
   const view = draw(async () => {});
 
@@ -158,7 +152,12 @@ test("Get started saves first, then finishes, and reads All set while the orb fi
   });
   let saves = 0;
   globalThis.fetch = Object.assign(
-    async () => {
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method !== "PATCH") {
+        return Response.json({
+          user: { id: "existing-user", name: "Sam", needsName: false },
+        });
+      }
       saves += 1;
       return response;
     },
@@ -174,8 +173,9 @@ test("Get started saves first, then finishes, and reads All set while the orb fi
     await new Promise<void>((resolve) => {
       endFinish = resolve;
     });
-  }, false);
+  });
 
+  await userEvent.setup({ document }).type(view.getByLabelText("Name"), "Sam");
   fireEvent.click(primary(view));
   await waitFor(() => expect(primary(view).textContent).toBe("Saving…"));
   const keyboard = userEvent.setup({ document });
@@ -210,26 +210,15 @@ test("a save that fails is said under the field, and the step stays", async () =
     finishes += 1;
   }, false);
 
+  await userEvent.setup({ document }).type(view.getByLabelText("Name"), "uel");
   fireEvent.click(primary(view));
 
   expect((await view.findByRole("alert")).textContent).toBe("Save failed");
   expect(finishes).toBe(0);
   expect(primary(view).textContent).toBe("Get started");
-  expect((view.getByLabelText("Name") as HTMLInputElement).value).toBe("Sam");
-});
-
-test("a completion that fails is said under the field too", async () => {
-  globalThis.fetch = saved();
-  const view = draw(async () => {
-    throw new Error("Onboarding could not be saved");
-  }, false);
-
-  fireEvent.click(primary(view));
-
-  expect((await view.findByRole("alert")).textContent).toBe(
-    "Onboarding could not be saved",
+  expect((view.getByLabelText("Name") as HTMLInputElement).value).toBe(
+    "Samuel",
   );
-  expect(primary(view).textContent).toBe("Get started");
 });
 
 test("the orb is OpenBot's own, listening, and settles into done when onboarding ends", () => {

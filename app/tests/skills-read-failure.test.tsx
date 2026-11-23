@@ -250,9 +250,8 @@ test("opening a skill to edit says it failed to load, not that it no longer exis
   const view = renderAlone(client, () => <EditSkill slug="triage" />);
   await waitForFailedRead(client);
 
-  expect(
-    await view.findByText("Couldn't load this skill. Reload the page."),
-  ).toBeTruthy();
+  expect(await view.findByText("Couldn't load this skill.")).toBeTruthy();
+  expect(await view.findByRole("button", { name: "Retry" })).toBeTruthy();
   expect(
     view.queryByText("This skill was deleted, or it isn't yours to edit."),
   ).toBeNull();

@@ -5,6 +5,7 @@ export function RoutineAction({
   children,
   disabled,
   icon,
+  style,
   variant = "default",
   ...props
 }: Omit<ComponentProps<"button">, "children"> & {
@@ -19,6 +20,11 @@ export function RoutineAction({
       isDisabled={disabled}
       label={children}
       size="sm"
+      style={{
+        minBlockSize: "var(--spacing-11, 2.75rem)",
+        minInlineSize: "var(--spacing-11, 2.75rem)",
+        ...style,
+      }}
       variant={
         variant === "default"
           ? "primary"

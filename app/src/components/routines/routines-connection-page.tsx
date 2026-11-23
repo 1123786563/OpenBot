@@ -6,6 +6,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { Button } from "@/components/ui/button";
 import {
   Item,
   ItemActions,
@@ -66,6 +67,27 @@ export function RoutinesConnectionPage() {
             </ItemActions>
           </Item>
         </PageRows>
+        {/*
+         * The row above keeps its honest fallback sentence, and the failure itself is said out
+         * loud beside it with the same in-place Retry every sibling Connections page offers: a
+         * silently different grey sentence read as "no routines exist".
+         */}
+        {routines.error ? (
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <p className="text-destructive text-sm" role="alert">
+              Couldn't load your routines.
+            </p>
+            <Button
+              disabled={routines.isFetching}
+              onClick={() => void routines.refetch()}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {routines.isFetching ? "Retrying…" : "Retry"}
+            </Button>
+          </div>
+        ) : null}
       </PageSection>
     </PageShell>
   );

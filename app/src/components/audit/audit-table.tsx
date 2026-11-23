@@ -81,6 +81,7 @@ const INITIAL_SORT: SortingState = [{ id: "when", desc: true }];
 
 const OUTCOME_LABEL: Record<AuditOutcome, string> = {
   allowed: "Allowed",
+  "no-verdict": "No allow or block decision",
   refused: "Blocked",
   "did-not-happen": "Did not happen",
 };
@@ -96,14 +97,12 @@ const FACETS = [
 ] as const;
 
 function renderEventLog(table: React.ReactNode, hasRows: boolean) {
+  if (!hasRows) return null;
   return (
     <section
       {...astryxScope}
       aria-label="Audit events"
-      className={cn(
-        "min-w-0 overflow-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
-        hasRows && "min-h-0 flex-1",
-      )}
+      className="@container/audit min-h-0 min-w-0 flex-1 overflow-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
       // biome-ignore lint/a11y/noNoninteractiveTabindex: the overflowing table needs a keyboard scroll target.
       tabIndex={0}
     >
@@ -192,18 +191,38 @@ export function AuditTable({
         }),
       })}
       {renderEventLog(
-        <Table containerClassName={"overflow-visible"}>
-          <TableHeader>
+        <Table
+          className="@max-3xl/audit:block"
+          containerClassName="overflow-visible"
+          role="table"
+        >
+          <TableHeader className="@max-3xl/audit:block" role="rowgroup">
             {table.getHeaderGroups().map((group) => (
-              <TableRow className="hover:bg-transparent" key={group.id}>
+              <TableRow
+                className="@max-3xl/audit:block hover:bg-transparent"
+                key={group.id}
+                role="row"
+              >
                 {group.headers
                   .filter((header) => !UNDRAWN.has(header.column.id))
                   .map((header) => (
                     <TableHead
+                      aria-sort={
+                        header.column.id === "when"
+                          ? header.column.getIsSorted() === "asc"
+                            ? "ascending"
+                            : "descending"
+                          : undefined
+                      }
                       className={cn(
+                        header.column.id === "when"
+                          ? "@max-3xl/audit:flex @max-3xl/audit:h-auto @max-3xl/audit:items-center @max-3xl/audit:px-4"
+                          : "@max-3xl/audit:sr-only",
                         header.column.id === "mark" && "w-8 pr-0 pl-4",
                       )}
                       key={header.id}
+                      role="columnheader"
+                      scope="col"
                     >
                       {header.isPlaceholder ? null : (
                         <table.FlexRender header={header} />
@@ -213,14 +232,18 @@ export function AuditTable({
               </TableRow>
             ))}
           </TableHeader>
-          <TableBody>
+          <TableBody className="@max-3xl/audit:block" role="rowgroup">
             {rows.map((row) => {
               const outcome = outcomeOf(row.original);
               return (
                 <TableRow
-                  className={OUTCOME_ROW[outcome]}
+                  className={cn(
+                    OUTCOME_ROW[outcome],
+                    "@max-3xl/audit:grid @max-3xl/audit:grid-cols-[auto_minmax(0,1fr)] @max-3xl/audit:items-start @max-3xl/audit:gap-x-2 @max-3xl/audit:gap-y-1.5 @max-3xl/audit:px-4 @max-3xl/audit:py-3",
+                  )}
                   data-outcome={outcome}
                   key={row.id}
+                  role="row"
                 >
                   {row
                     .getAllCells()
@@ -238,10 +261,17 @@ export function AuditTable({
                           // media sites" on a line or two. Without it the column got what What, whose
                           // longest rows never wrap, left over: about 150px at 1280, and the rule's
                           // name ran to three lines.
-                          cell.column.id === "decision" && "min-w-64",
+                          cell.column.id === "decision" &&
+                            "min-w-64 @max-3xl/audit:before:block @max-3xl/audit:before:font-medium @max-3xl/audit:before:text-sm @max-3xl/audit:before:text-muted-foreground @max-3xl/audit:before:content-['Decision'_/_'']",
+                          "@max-3xl/audit:min-w-0 @max-3xl/audit:p-0 @max-3xl/audit:[overflow-wrap:anywhere]",
+                          cell.column.id !== "mark" &&
+                            cell.column.id !== "when" &&
+                            "@max-3xl/audit:col-span-full",
+                          cell.column.id === "mark" && "@max-3xl/audit:w-auto",
                         )}
                         data-column={cell.column.id}
                         key={cell.id}
+                        role="cell"
                       >
                         <table.FlexRender cell={cell} />
                       </TableCell>
@@ -250,10 +280,14 @@ export function AuditTable({
               );
             })}
             {footer && rows.length > 0 ? (
-              <TableRow className="hover:bg-transparent">
+              <TableRow
+                className="@max-3xl/audit:block hover:bg-transparent"
+                role="row"
+              >
                 <TableCell
-                  className="p-0"
+                  className="p-0 @max-3xl/audit:block"
                   colSpan={columns.length - UNDRAWN.size}
+                  role="cell"
                 >
                   {footer}
                 </TableCell>
@@ -315,7 +349,11 @@ function Facet({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button className="border-dashed" size="sm" variant="outline" />
+          <Button
+            className="border-dashed max-sm:min-h-11"
+            size="sm"
+            variant="outline"
+          />
         }
       >
         <IconCirclePlus />
@@ -410,7 +448,7 @@ function auditColumns(
         const sorted = column.getIsSorted();
         return (
           <button
-            className="-mx-1 inline-flex items-center gap-1 rounded px-1 hover:text-foreground"
+            className="-mx-1 inline-flex items-center gap-1 rounded px-1 hover:text-foreground @max-3xl/audit:min-h-11"
             onClick={column.getToggleSortingHandler()}
             type="button"
           >

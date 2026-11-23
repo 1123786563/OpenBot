@@ -20,6 +20,7 @@ import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuBadge,
@@ -43,6 +44,7 @@ type SettingsSidebarItem = {
    * everywhere else, so an entry stays lit on the pages beneath it.
    */
   exact?: boolean;
+  group: "Preferences" | "Access and devices" | "Workspace tools";
   /** Shown only inside OpenBot Desktop, which is what the page reads from. */
   desktopOnly?: boolean;
   icon: React.ComponentType<{ className?: string }>;
@@ -54,6 +56,7 @@ type SettingsSidebarItem = {
 export const SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
   {
     title: "General",
+    group: "Preferences",
     icon: IconSettings,
     /* `/settings` prefixes every other route here, and would otherwise light up on all of them. */
     exact: true,
@@ -62,30 +65,35 @@ export const SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
   {
     /* Where updates go for every Bot at once; how much each Bot sends is on that Bot's page. */
     title: "Notifications",
+    group: "Preferences",
     icon: IconBell,
     linkOptions: { to: "/settings/notifications" },
   },
   {
     /* Whether Bots ask first, and rules for every Bot. Team settings are an administrator's. */
     title: "Approvals",
+    group: "Access and devices",
     icon: IconChecks,
     linkOptions: { to: "/settings/approvals" },
   },
   {
     /* The browsers signed in to the Recorder extension as you; each can be disconnected here. */
     title: "Browsers",
+    group: "Access and devices",
     icon: IconBrowser,
     linkOptions: { to: "/settings/browsers" },
   },
   {
     /* Who else's Bots use the Skills learned from your recordings: none, all, or the ones you open. */
     title: "Learning",
+    group: "Preferences",
     icon: IconSchool,
     linkOptions: { to: "/settings/learning" },
   },
   {
     /* What the deployment has and still needs: onboarding's checklist, to come back to. */
     title: "Setup",
+    group: "Workspace tools",
     icon: IconListCheck,
     linkOptions: { to: "/settings/setup" },
     setup: true,
@@ -93,12 +101,14 @@ export const SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
   {
     /* Logins saved from a Bot's private sign-in form. */
     title: "Passwords",
+    group: "Access and devices",
     icon: IconKey,
     linkOptions: { to: "/settings/passwords" },
   },
   {
     /* What OpenBot runs here and the memory it takes, with Restart and Stop. */
     title: "This computer",
+    group: "Access and devices",
     icon: IconDeviceDesktop,
     desktopOnly: true,
     linkOptions: { to: "/settings/this-computer" },
@@ -106,6 +116,7 @@ export const SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
   {
     /* The same mark Admin gives UI Components. It is the same subject seen from the other side. */
     title: "Components gallery",
+    group: "Workspace tools",
     icon: IconLayoutGrid,
     linkOptions: { to: "/settings/components-gallery" },
   },
@@ -120,21 +131,25 @@ export const SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
 const PERSONAL_SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
   {
     title: "Keys",
+    group: "Access and devices",
     icon: IconLock,
     linkOptions: { to: "/settings/credentials" },
   },
   {
     title: "Skills",
+    group: "Workspace tools",
     icon: IconBook,
     linkOptions: { to: "/settings/skills" },
   },
   {
     title: "Computer",
+    group: "Workspace tools",
     icon: IconDeviceDesktop,
     linkOptions: { to: "/settings/computer" },
   },
   {
     title: managePaths("personal").auditLabel,
+    group: "Workspace tools",
     icon: IconHistory,
     linkOptions: { to: "/settings/activity" },
   },
@@ -177,7 +192,16 @@ export function SettingsSidebar({
           (row) => row.status === "needs_setup" && row.fix !== null,
         ).length
       : 0;
-  const items = settingsSidebarItems(capabilities?.edition ?? "team");
+  const items = settingsSidebarItems(capabilities?.edition ?? "team").filter(
+    (option) =>
+      (!option.setup || canSetUp) &&
+      (!option.desktopOnly || desktopShell() !== null),
+  );
+  const groups = [
+    "Preferences",
+    "Access and devices",
+    "Workspace tools",
+  ] as const;
   return (
     <Sidebar variant="inset" {...props}>
       {/* Matched to the app sidebar's header, as Admin's is. See admin-sidebar.tsx. */}
@@ -188,7 +212,7 @@ export function SettingsSidebar({
               render={(props) => (
                 <Link {...appLinkOptions} {...props}>
                   <IconArrowLeft className="mr-2 h-4 w-4" />
-                  Back to app
+                  Workspace
                 </Link>
               )}
             />
@@ -196,47 +220,44 @@ export function SettingsSidebar({
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        {/*
-         * Group outside menu, as Admin has it. The other way round nests a list item inside a div
-         * inside the `ul`, which is not markup a list is allowed to be made of.
-         */}
-        <SidebarGroup>
-          <SidebarMenu className="gap-px">
-            {items
-              .filter(
-                (option) =>
-                  (!option.setup || canSetUp) &&
-                  (!option.desktopOnly || desktopShell() !== null),
-              )
-              .map((option) => (
-                <SidebarMenuItem key={option.title}>
-                  <SidebarMenuButton
-                    render={(props) => (
-                      <Link
-                        {...option.linkOptions}
-                        activeOptions={{ exact: option.exact ?? false }}
-                        activeProps={{ className: "bg-foreground/5" }}
-                        {...props}
-                      >
-                        <option.icon className="mr-2 h-4 w-4" />
-                        {option.title}
-                        {option.setup && toFix > 0 ? (
-                          <span className="sr-only">
-                            , {toFix} {toFix === 1 ? "needs" : "need"} setup
-                          </span>
-                        ) : null}
-                      </Link>
-                    )}
-                  />
-                  {option.setup && toFix > 0 ? (
-                    <SidebarMenuBadge aria-hidden="true">
-                      {toFix}
-                    </SidebarMenuBadge>
-                  ) : null}
-                </SidebarMenuItem>
-              ))}
-          </SidebarMenu>
-        </SidebarGroup>
+        <nav aria-label="Settings">
+          {groups.map((group) => (
+            <SidebarGroup key={group}>
+              <SidebarGroupLabel>{group}</SidebarGroupLabel>
+              <SidebarMenu className="gap-px">
+                {items
+                  .filter((option) => option.group === group)
+                  .map((option) => (
+                    <SidebarMenuItem key={option.title}>
+                      <SidebarMenuButton
+                        render={(props) => (
+                          <Link
+                            {...option.linkOptions}
+                            activeOptions={{ exact: option.exact ?? false }}
+                            activeProps={{ "data-active": true }}
+                            {...props}
+                          >
+                            <option.icon className="mr-2 h-4 w-4" />
+                            {option.title}
+                            {option.setup && toFix > 0 ? (
+                              <span className="sr-only">
+                                , {toFix} {toFix === 1 ? "needs" : "need"} setup
+                              </span>
+                            ) : null}
+                          </Link>
+                        )}
+                      />
+                      {option.setup && toFix > 0 ? (
+                        <SidebarMenuBadge aria-hidden="true">
+                          {toFix}
+                        </SidebarMenuBadge>
+                      ) : null}
+                    </SidebarMenuItem>
+                  ))}
+              </SidebarMenu>
+            </SidebarGroup>
+          ))}
+        </nav>
       </SidebarContent>
       <SidebarRail />
     </Sidebar>

@@ -1,7 +1,7 @@
 import { VStack } from "@astryxdesign/core/Stack";
 import { learningEvidencePermission } from "@openbot/shared/direct-chat-learning";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
 import { z } from "zod";
 import { BotPausedBanner } from "@/components/bot-profile/pause-banner";
 import { ChannelAvatar } from "@/components/channels/avatar";
@@ -23,6 +23,9 @@ function RouteComponent() {
   const { channelId } = Route.useParams();
   const { runId } = Route.useSearch();
   const navigate = Route.useNavigate();
+  const historyEntry = useLocation({
+    select: (location) => location.state.__TSR_key,
+  });
   const channel = useQuery(channelQueryOptions(channelId));
   useMarkOpenChannelRead(channelId);
   return (
@@ -36,9 +39,9 @@ function RouteComponent() {
           participantIds={channel.data?.agentIds ?? []}
           size={22}
         />
-        <span className="min-w-0 truncate text-sm tracking-tight">
-          {channel.data?.name ?? "Group"}
-        </span>
+        <h1 className="min-w-0 truncate text-sm tracking-tight">
+          {channel.data?.name ?? "Group conversation"}
+        </h1>
         <GroupLearningPermission channelId={channelId} />
         <GroupPeopleButton
           channelId={channelId}
@@ -49,7 +52,12 @@ function RouteComponent() {
         <BotPausedBanner agentId={agentId} key={agentId} />
       ))}
       {/* Remounted per channel so one group's transcript never flashes in another. */}
-      <GroupChat channelId={channelId} key={channelId} runId={runId} />
+      <GroupChat
+        channelId={channelId}
+        historyEntry={historyEntry}
+        runId={runId}
+        key={channelId}
+      />
     </ConversationSurface>
   );
 }

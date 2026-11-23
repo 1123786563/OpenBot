@@ -2,11 +2,16 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { type AppVariables, requireAdmin } from "../auth/guards";
 import {
+  bifrostPackageIdentity,
+  createBifrostMarket,
+  IncompleteBifrostPackage,
+} from "./bifrost";
+import {
   CatalogEntryUnavailable,
   createSkillMarket,
   type RegistryFetch,
 } from "./catalog";
-import type { SkillMarketConfig } from "./config";
+import type { BifrostMarketConfig, SkillMarketConfig } from "./config";
 import {
   disableMarketVersion,
   marketVersionDisabledMessage,
@@ -17,48 +22,103 @@ import { type marketSkillMethods, slashCommand } from "./installations";
 const installBody = z.strictObject({ agentId: z.string().trim().min(1) });
 const expectedVersion = z.strictObject({
   expectedVersionId: z.number().int().positive(),
+  expectedRegistry: z.string().max(2048).optional(),
 });
 const switchBody = installBody.extend(expectedVersion.shape);
 const forbidden = "You cannot manage skills on this Bot.";
 const stale =
   "The installed version has changed. Review the current installation and try again.";
 const unavailable = "Skill installation is unavailable.";
+const writesPaused = {
+  error: "Skill market writes are paused for maintenance.",
+};
 const commandBody = z.strictObject({
   command: z.string().trim().min(1).max(40).regex(slashCommand),
+});
+const legacyWritesUnavailable =
+  "Select a Bifrost version to install or switch this market skill.";
+const reviewUnavailable =
+  "This exact Bifrost package has no active OpenBot review.";
+const packageChanged =
+  "This Bifrost package no longer matches the reviewed content. Publish a new version to qualify it.";
+const reviewBody = bifrostPackageIdentity.pick({
+  skillId: true,
+  versionId: true,
+  fingerprint: true,
 });
 const commandUnavailable =
   "This market skill needs an unused slash command assigned by an administrator.";
 
 export function createSkillMarketRoutes(
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
-  config: SkillMarketConfig,
+  config: SkillMarketConfig | BifrostMarketConfig,
   fetchRegistry?: RegistryFetch,
   installations?: ReturnType<typeof marketSkillMethods>,
 ) {
-  const market = createSkillMarket(config, fetchRegistry);
+  const bifrost = "kind" in config ? createBifrostMarket(config) : undefined;
+  const legacy = "kind" in config ? config.legacy : config;
+  const market = legacy && createSkillMarket(legacy, fetchRegistry);
+  const catalogFor = (namespace: string) => {
+    const catalog = namespace === bifrost?.namespace ? bifrost : market;
+    if (!catalog) throw new CatalogEntryUnavailable();
+    return catalog;
+  };
+  async function bifrostPreview(
+    catalog: ReturnType<typeof createBifrostMarket>,
+    namespace: string,
+    slug: string,
+    version: string,
+  ) {
+    const preview = await catalog.preview(namespace, slug, version);
+    const saved = await installations?.bifrostReview(preview.packageIdentity);
+    const reviewStatus = !saved
+      ? "unreviewed"
+      : saved.withdrawnAt
+        ? "withdrawn"
+        : saved.fingerprint !== preview.fingerprint
+          ? "mismatched"
+          : "approved";
+    const reasons = [...preview.reasons];
+    if (reviewStatus === "unreviewed") reasons.push(reviewUnavailable);
+    if (reviewStatus === "withdrawn")
+      reasons.push("This exact version was withdrawn from new installations.");
+    if (reviewStatus === "mismatched") reasons.push(packageChanged);
+    return {
+      ...preview,
+      reviewStatus,
+      reviewedFingerprint: saved?.fingerprint,
+      reviewable: preview.reasons.length === 0,
+      registrySkillId: saved?.skillId,
+      versionId: saved?.id,
+      installable: reasons.length === 0,
+      reasons,
+    };
+  }
+
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", requireUser, async (context, next) => {
     context.header("Cache-Control", "private, no-store");
     await next();
   });
 
-  routes.onError((error, context) =>
-    error instanceof CatalogEntryUnavailable
-      ? context.json(
-          { error: "Skill or version not found in the catalog." },
-          404,
-        )
-      : context.json(
-          { error: "Couldn't read the skill catalog from SkillHub." },
-          502,
-        ),
-  );
+  routes.onError((error, context) => {
+    if (error instanceof CatalogEntryUnavailable)
+      return context.json(
+        { error: "Skill or version not found in the catalog." },
+        404,
+      );
+    if (error instanceof IncompleteBifrostPackage)
+      return context.json({ error: error.message }, 502);
+    return context.json({ error: "Couldn't read the skill catalog." }, 502);
+  });
 
   routes.get("/", async (context) => {
     const q = context.req.query("q")?.trim() ?? "";
     const page = readPage(context.req.query("page"));
     if (q.length > 200 || page === null) return context.body(null, 400);
-    return context.json(await market.search(q, page));
+    const catalog = bifrost ?? market;
+    if (!catalog) throw new CatalogEntryUnavailable();
+    return context.json(await catalog.search(q, page));
   });
 
   routes.get("/install-targets", async (context) => {
@@ -76,8 +136,12 @@ export function createSkillMarketRoutes(
         .length
     )
       return context.json({ error: forbidden }, 403);
+    const installed = await installations.listMarketInstallations(agentId);
     return context.json({
-      installations: await installations.listMarketInstallations(agentId),
+      installations: installed.map(({ catalogSlug, ...snapshot }) => ({
+        ...snapshot,
+        ...(bifrost && catalogSlug ? { catalogSlug } : {}),
+      })),
     });
   });
 
@@ -93,7 +157,7 @@ export function createSkillMarketRoutes(
       context.var.actor,
       agentId,
       command,
-      body.data.expectedVersionId,
+      body.data,
     );
     switch (result) {
       case "forbidden":
@@ -147,17 +211,83 @@ export function createSkillMarketRoutes(
     return context.body(null, 204);
   });
 
+  routes.on(
+    ["PUT", "DELETE"],
+    "/:namespace/:slug/versions/:version/review",
+    async (context) => {
+      const refused = requireAdmin(context);
+      if (refused) return refused;
+      if (config.writesFrozen) return context.json(writesPaused, 503);
+      if (!installations) return context.json({ error: unavailable }, 503);
+      const { namespace, slug, version } = context.req.param();
+      if (namespace !== bifrost?.namespace) throw new CatalogEntryUnavailable();
+      const body = reviewBody.safeParse(
+        await context.req.json().catch(() => null),
+      );
+      const identity = bifrostPackageIdentity.safeParse({
+        ...body.data,
+        namespace,
+        slug,
+        version,
+      });
+      if (!identity.success)
+        return context.json(
+          { error: "Choose an exact Bifrost package and fingerprint." },
+          400,
+        );
+      const actorId = context.var.actor.id;
+      if (context.req.method === "DELETE") {
+        return (await installations.withdrawBifrostPackage(
+          identity.data,
+          actorId,
+        ))
+          ? context.body(null, 204)
+          : context.json({ error: reviewUnavailable }, 409);
+      }
+      const preview = await bifrost.preview(namespace, slug, version);
+      if (
+        identity.data.skillId !== preview.packageIdentity.skillId ||
+        identity.data.versionId !== preview.packageIdentity.versionId ||
+        identity.data.fingerprint !== preview.fingerprint
+      )
+        return context.json(
+          {
+            error:
+              "The package changed since you previewed it. Open the version preview again before approving.",
+          },
+          409,
+        );
+      if (preview.reasons.length)
+        return context.json({ error: preview.reasons.join(" ") }, 422);
+      return (await installations.approveBifrostPackage(
+        preview.packageIdentity,
+        actorId,
+      ))
+        ? context.body(null, 204)
+        : context.json(
+            {
+              error:
+                "This version has a prior review for different content or was withdrawn.",
+            },
+            409,
+          );
+    },
+  );
+
   routes.post(
     "/:namespace/:slug/versions/:version/:operation{install|switch}",
     async (context) => {
+      if (config.writesFrozen) return context.json(writesPaused, 503);
       if (!installations) return context.json({ error: unavailable }, 503);
       const { namespace, slug, version, operation } = context.req.param();
       const input = await context.req.json().catch(() => null);
       const body =
         operation === "switch"
-          ? switchBody.safeParse(input)
+          ? switchBody
+              .transform(({ agentId, ...previous }) => ({ agentId, previous }))
+              .safeParse(input)
           : installBody
-              .transform((data) => ({ ...data, expectedVersionId: undefined }))
+              .transform(({ agentId }) => ({ agentId, previous: undefined }))
               .safeParse(input);
       if (!body.success)
         return context.json(
@@ -169,18 +299,51 @@ export function createSkillMarketRoutes(
           },
           400,
         );
-      const { agentId, expectedVersionId } = body.data;
+      const { agentId, previous } = body.data;
       const { actor } = context.var;
       if (!(await installations.marketInstallTargets(actor, agentId)).length) {
         return context.json({ error: forbidden }, 403);
       }
 
-      const qualified = await market.qualifyInstallation(
-        namespace,
-        slug,
-        version,
-        installations.marketVersionDisableReason,
-      );
+      if (bifrost && namespace !== bifrost.namespace) {
+        if (namespace !== legacy?.namespace)
+          throw new CatalogEntryUnavailable();
+        return context.json({ error: legacyWritesUnavailable }, 422);
+      }
+
+      const qualify = async () => {
+        if (namespace === bifrost?.namespace) {
+          const preview = await bifrostPreview(
+            bifrost,
+            namespace,
+            slug,
+            version,
+          );
+          if (
+            !preview.installable ||
+            preview.registrySkillId === undefined ||
+            preview.versionId === undefined
+          )
+            return { kind: "ineligible", reasons: preview.reasons } as const;
+          return {
+            kind: "qualified",
+            packageIdentity: preview.packageIdentity,
+            preview: {
+              ...preview,
+              registrySkillId: preview.registrySkillId,
+              versionId: preview.versionId,
+            },
+          } as const;
+        }
+        if (!market) throw new CatalogEntryUnavailable();
+        return market.qualifyInstallation(
+          namespace,
+          slug,
+          version,
+          installations.marketVersionDisableReason,
+        );
+      };
+      const qualified = await qualify();
       if (qualified.kind === "ineligible") {
         return context.json({ error: qualified.reasons.join(" ") }, 422);
       }
@@ -188,13 +351,15 @@ export function createSkillMarketRoutes(
         actor,
         agentId,
         qualified,
-        expectedVersionId,
+        previous,
       );
       switch (result.kind) {
         case "forbidden":
           return context.json({ error: forbidden }, 403);
         case "stale-installation":
           return context.json({ error: stale }, 409);
+        case "review-unavailable":
+          return context.json({ error: reviewUnavailable }, 422);
         case "version-disabled":
           return context.json(
             { error: marketVersionDisabledMessage(version, result.reason) },
@@ -221,6 +386,7 @@ export function createSkillMarketRoutes(
   routes.post("/:namespace/:slug/command", async (context) => {
     const denied = requireAdmin(context);
     if (denied) return denied;
+    if (config.writesFrozen) return context.json(writesPaused, 503);
     if (!installations)
       return context.json(
         { error: "Skill command assignment is unavailable." },
@@ -240,7 +406,7 @@ export function createSkillMarketRoutes(
       );
 
     const { namespace, slug } = context.req.param();
-    const source = await market.commandSource(namespace, slug);
+    const source = await catalogFor(namespace).commandSource(namespace, slug);
     const result = await installations.assignMarketCommand(
       source,
       body.data.command,
@@ -265,25 +431,53 @@ export function createSkillMarketRoutes(
     const { namespace, slug } = context.req.param();
     const page = readPage(context.req.query("page"));
     if (page === null) return context.body(null, 400);
-    return context.json(await market.detail(namespace, slug, page));
+    return context.json(
+      await catalogFor(namespace).detail(namespace, slug, page),
+    );
   });
 
   routes.get("/:namespace/:slug/versions/:version", async (context) => {
     const { namespace, slug, version } = context.req.param();
-    const preview = await market.preview(namespace, slug, version);
-    if (!installations) return context.json(preview);
-    const reason = await installations.marketVersionDisableReason(preview);
+    const preview =
+      namespace === bifrost?.namespace
+        ? await bifrostPreview(bifrost, namespace, slug, version)
+        : market
+          ? await market.preview(namespace, slug, version)
+          : null;
+    if (!preview) throw new CatalogEntryUnavailable();
+    const visiblePreview =
+      preview.installable && bifrost && namespace !== bifrost.namespace
+        ? { ...preview, installable: false, reasons: [legacyWritesUnavailable] }
+        : preview;
+    if (
+      !installations ||
+      !("registrySkillId" in preview) ||
+      preview.registrySkillId === undefined ||
+      preview.versionId === undefined
+    )
+      return context.json(visiblePreview);
+    const reason = await installations.marketVersionDisableReason({
+      source: preview.source,
+      registrySkillId: preview.registrySkillId,
+      versionId: preview.versionId,
+    });
     if (reason !== null)
       return context.json({
         ...preview,
         installable: false,
         reasons: [
-          ...preview.reasons,
+          ...visiblePreview.reasons,
           marketVersionDisabledMessage(version, reason),
         ],
         disableReason: reason,
       });
-    if (!preview.installable) return context.json(preview);
+    if (!visiblePreview.installable) return context.json(visiblePreview);
+    if (config.writesFrozen)
+      return context.json({
+        ...preview,
+        installable: false,
+        reasons: [writesPaused.error],
+      });
     const command = await installations.marketCommand(preview);
     return context.json(
       command
@@ -301,7 +495,11 @@ export function createSkillMarketRoutes(
     "/:namespace/:slug/versions/:version/download",
     async (context) => {
       const { namespace, slug, version } = context.req.param();
-      const response = await market.download(namespace, slug, version);
+      const response = await catalogFor(namespace).download(
+        namespace,
+        slug,
+        version,
+      );
       const filename = encodeURIComponent(`${slug}-${version}.zip`);
       return new Response(response.body, {
         headers: {

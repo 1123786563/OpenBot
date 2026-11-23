@@ -1090,12 +1090,14 @@ describe("a task works with the apps the person connected", () => {
           actor,
           botId,
           version(2, replacement),
-          1,
+          { expectedVersionId: 1 },
         );
         expect(switched.kind).toBe("switched");
       } else {
         expect(
-          await plugins.uninstallMarketSkill(actor, botId, marketSlug, 1),
+          await plugins.uninstallMarketSkill(actor, botId, marketSlug, {
+            expectedVersionId: 1,
+          }),
         ).toBe("uninstalled");
       }
 

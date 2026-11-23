@@ -53,9 +53,14 @@ const prefix = `group-${randomUUID()}`;
 const createdUsers: string[] = [];
 const createdAgents: string[] = [];
 const createdChannels: string[] = [];
+const startMessageIds: string[] = [];
 
 afterEach(async () => {
   await database.delete(workItems).where(like(workItems.key, `${prefix}%`));
+  if (startMessageIds.length)
+    await database
+      .delete(workItems)
+      .where(inArray(workItems.key, startMessageIds.splice(0)));
   for (const id of createdChannels.splice(0)) {
     await database
       .delete(intelligenceChannelMappings)
@@ -76,12 +81,12 @@ afterAll(async () => {
   await database.$client.close();
 });
 
-async function person(): Promise<AgentActor & { email: string }> {
+async function person() {
   const id = `${prefix}-user-${randomUUID()}`;
   const email = `${id}@example.test`;
   await database.insert(users).values({ id, email, name: "Group Test" });
   createdUsers.push(id);
-  return { id, email, role: "user" };
+  return { id, email, role: "user" } satisfies AgentActor & { email: string };
 }
 async function bot(
   owner: AgentActor,
@@ -144,12 +149,15 @@ function service(options: {
         audit.push(event);
       },
     },
-    createChannel: async (ownerUserId, agentIds) => {
+    createChannel: async (ownerUserId, agentIds, requestId) => {
       const channel = await channelStore.create(
         { id: ownerUserId, role: "user" },
         agentIds,
+        undefined,
+        requestId,
       );
-      createdChannels.push(channel.id);
+      if (!createdChannels.includes(channel.id))
+        createdChannels.push(channel.id);
       return channel;
     },
     progressEveryMs: 0,
@@ -188,6 +196,51 @@ async function readUntil(
 }
 
 describe("group conversations in PostgreSQL", () => {
+  test("retrying group creation and its first message preserves one transcript and one turn per Bot", async () => {
+    const owner = await person();
+    const ada = await bot(owner, "Ada");
+    const grace = await bot(owner, "Grace");
+    const first = service({
+      replies: { [ada]: () => "First reply.", [grace]: () => "Second reply." },
+    });
+    const second = service({ replies: {} });
+    const requestId = randomUUID();
+    startMessageIds.push(requestId);
+    const start = { requestId, agentIds: [grace, ada] };
+    const original = await first.conversations.create(owner.id, start);
+    const beforeRetry = await channelStore.get(owner, original.id);
+    expect(beforeRetry?.threadId).toBeTruthy();
+    const [recovered, parallelRetry] = await Promise.all([
+      first.conversations.create(owner.id, start),
+      second.conversations.create(owner.id, start),
+    ]);
+    expect(recovered.id).toBe(original.id);
+    expect(parallelRetry.id).toBe(original.id);
+    const afterRetry = await channelStore.get(owner, recovered.id);
+    expect(afterRetry?.threadId).toBe(beforeRetry?.threadId);
+
+    const message = { id: requestId, text: "What should we do first?" };
+    await Promise.all([
+      first.conversations.send(owner.id, original.id, message),
+      second.conversations.send(owner.id, recovered.id, message),
+    ]);
+    await drain(first.conversations);
+    await second.conversations.send(owner.id, recovered.id, message);
+    await drain(second.conversations);
+
+    const { messages } = await second.conversations.list(
+      owner.id,
+      recovered.id,
+    );
+    expect(
+      messages
+        .filter((entry) => entry.agentId === null)
+        .map(({ id, text }) => ({ id, text })),
+    ).toEqual([message]);
+    expect(first.calls.map((call) => call.agentId)).toEqual([grace, ada]);
+    expect(second.calls).toHaveLength(0);
+  });
+
   test("two Bots answer one person, see each other, and answer each other within the depth cap", async () => {
     const owner = await person();
     const named = new Map([

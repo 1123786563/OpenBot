@@ -1,3 +1,5 @@
+import { Collapsible } from "@astryxdesign/core/Collapsible";
+import { Text } from "@astryxdesign/core/Text";
 import type {
   WhatIfLayer,
   WhatIfLayerId,
@@ -38,8 +40,8 @@ import { cn } from "@/lib/utils";
  * What each of OpenBot's controls says about one action, in the order it asks them.
  *
  * One row per control, stacked, so it reads down a narrow column: the control, what it says and why,
- * and its verdict as a pill. The control that settles the action is tinted; the ones a real action
- * would never reach are faded and say so. Each row links to the Admin page its setting lives on.
+ * and its verdict. The control that settles the action is highlighted. The rows it bypasses keep
+ * their hypothetical explanations available on request.
  */
 
 /** The same icons the Admin sidebar gives the pages these controls are set on. */
@@ -79,20 +81,20 @@ const PAGE_WORDS: Record<NonNullable<WhatIfLayer["page"]>, string> = {
 const VERDICTS: Record<WhatIfVerdict, { label: string; tone: string }> = {
   allows: {
     label: "Allows",
-    tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    tone: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
   },
-  refuses: { label: "Refuses", tone: "bg-destructive/10 text-destructive" },
+  refuses: { label: "Blocks", tone: "bg-destructive/10 text-destructive" },
   asks: {
     label: "Asks first",
-    tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    tone: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
   },
   hands_off: {
     label: "Hands off",
-    tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    tone: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
   },
   trial: {
     label: "Would refuse",
-    tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    tone: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
   },
 };
 
@@ -105,7 +107,7 @@ const DECIDES_ROW: Record<WhatIfVerdict, string> = {
   trial: "",
 };
 
-export const OUTCOMES: Record<
+const OUTCOMES: Record<
   WhatIfOutcome,
   {
     label: string;
@@ -116,29 +118,29 @@ export const OUTCOMES: Record<
   allowed: {
     label: "Allowed",
     icon: IconCircleCheck,
-    tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    tone: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
   },
   refused: {
-    label: "Refused",
+    label: "Blocked",
     icon: IconBan,
     tone: "bg-destructive/10 text-destructive",
   },
   asks: {
     label: "Asks first",
     icon: IconMessageQuestion,
-    tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    tone: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
   },
   hands_off: {
     label: "Person does it",
     icon: IconHandStop,
-    tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    tone: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
   },
 };
 
 const LINK =
   "rounded-sm font-medium text-primary underline-offset-2 outline-none hover:underline focus-visible:underline focus-visible:ring-3 focus-visible:ring-ring";
 
-export function VerdictPill({ verdict }: { verdict: WhatIfVerdict }) {
+function VerdictPill({ verdict }: { verdict: WhatIfVerdict }) {
   const { label, tone } = VERDICTS[verdict];
   return (
     <span
@@ -155,13 +157,11 @@ export function VerdictPill({ verdict }: { verdict: WhatIfVerdict }) {
 
 function LayerRow({ layer }: { layer: WhatIfLayer }) {
   const Icon = ICONS[layer.id];
-  const hasFooter = layer.basis || layer.rule || layer.caveat || layer.page;
+  const hasFooter =
+    layer.unreached || layer.basis || layer.rule || layer.caveat || layer.page;
   return (
     <Item
-      className={cn(
-        layer.decides && DECIDES_ROW[layer.verdict],
-        layer.unreached && "opacity-60",
-      )}
+      className={layer.decides ? DECIDES_ROW[layer.verdict] : undefined}
       data-decides={layer.decides ? "true" : undefined}
       data-layer={layer.id}
       data-unreached={layer.unreached ? "true" : undefined}
@@ -178,21 +178,36 @@ function LayerRow({ layer }: { layer: WhatIfLayer }) {
             <span className="ms-2 whitespace-nowrap font-medium text-foreground text-xs">
               Decides
             </span>
-          ) : layer.unreached ? (
-            <span className="ms-2 whitespace-nowrap font-normal text-muted-foreground text-xs">
-              Not reached
-            </span>
           ) : null}
         </ItemTitle>
-        <ItemDescription className="line-clamp-none [overflow-wrap:anywhere]">
-          {layer.summary}
-        </ItemDescription>
+        {layer.unreached ? null : (
+          <ItemDescription className="line-clamp-none text-sm [overflow-wrap:anywhere]">
+            {layer.summary}
+          </ItemDescription>
+        )}
       </ItemContent>
       <ItemActions className="shrink-0 self-start">
-        <VerdictPill verdict={layer.verdict} />
+        {layer.unreached ? (
+          <Text color="secondary" size="sm">
+            Not reached
+          </Text>
+        ) : (
+          <VerdictPill verdict={layer.verdict} />
+        )}
       </ItemActions>
       {hasFooter ? (
-        <ItemFooter className="flex-col items-start gap-1 pl-11 text-muted-foreground text-xs">
+        <ItemFooter className="flex-col items-start gap-1 pl-11 text-muted-foreground text-sm">
+          {layer.unreached ? (
+            <Collapsible
+              chevronPosition="start"
+              defaultIsOpen={false}
+              trigger={`If ${layer.title} were reached`}
+            >
+              <Text as="p" size="sm">
+                {layer.summary}
+              </Text>
+            </Collapsible>
+          ) : null}
           {layer.basis ? (
             <span className="[overflow-wrap:anywhere]">
               <span className="font-medium text-foreground/80">
@@ -202,12 +217,15 @@ function LayerRow({ layer }: { layer: WhatIfLayer }) {
             </span>
           ) : null}
           {layer.rule && layer.rule !== layer.basis ? (
-            <code
-              className="line-clamp-2 font-mono [overflow-wrap:anywhere]"
-              title={layer.rule}
+            <Collapsible
+              chevronPosition="start"
+              defaultIsOpen={false}
+              trigger={`${layer.title} rule expression`}
             >
-              {layer.rule}
-            </code>
+              <code className="font-mono [overflow-wrap:anywhere]">
+                {layer.rule}
+              </code>
+            </Collapsible>
           ) : null}
           {layer.caveat ? (
             <span className="flex gap-1">
@@ -252,7 +270,7 @@ export function WhatIfResultView({
           </ItemMedia>
           <ItemContent className="min-w-0">
             <ItemTitle className="line-clamp-none">{outcome.label}</ItemTitle>
-            <ItemDescription className="line-clamp-none">
+            <ItemDescription className="line-clamp-none text-sm">
               {decider
                 ? `${decider.title} decide${decider.title.endsWith("s") ? "" : "s"}. ${decider.summary}`
                 : result.headline.replace(/^[^.]*\.\s*/, "")}
@@ -268,7 +286,7 @@ export function WhatIfResultView({
           </div>
         ))}
       </PageRows>
-      <div className="mt-3 flex flex-col gap-1.5 text-muted-foreground text-xs">
+      <div className="mt-3 flex flex-col gap-1.5 text-muted-foreground text-sm">
         {result.notApplicable.length > 0 ? (
           <p>
             Doesn't apply to this kind of action:{" "}

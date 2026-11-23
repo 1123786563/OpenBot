@@ -27,6 +27,8 @@ export type SignInRequest = {
   method: "typed" | "saved" | "takeover" | null;
   /** The last thing that happened, e.g. why a submitted login did not work. */
   outcome: string | null;
+  /** The conversation that initiated an unattended request, when the server has one. */
+  threadId?: string | null;
   /** The open chat's tool call that asked, so its card can find this request. */
   toolCallId: string | null;
   controlRequestId: string | null;

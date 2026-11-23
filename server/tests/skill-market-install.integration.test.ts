@@ -10,14 +10,18 @@ import { LLMock } from "@copilotkit/aimock";
 import { MCPMock } from "@copilotkit/aimock/mcp";
 import type { HeadlessTool } from "@openbot/toolkit/headless-tools";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { unzipSync, zipSync } from "fflate";
 import type { MiddlewareHandler } from "hono";
+import postgres from "postgres";
 import { Observable, of } from "rxjs";
 import { z } from "zod";
 import {
   frontendApprovalSnapshot,
   observeApprovalAgent,
 } from "../../app/src/lib/copilot/approval-context";
+import { applySkillMarketReceipt } from "../scripts/skill-migration/receipt";
+import { migrationTarget } from "../scripts/skill-migration/target";
 import { createActorAgentResolver } from "../src/agents/agent-resolver";
 import { mintRunAssertion } from "../src/agents/callback-token";
 import { createAgentProfileStore } from "../src/agents/profile-store";
@@ -45,6 +49,8 @@ import {
   agentProfiles,
   agents,
   auditEvents,
+  bifrostMarketReviews,
+  bifrostMarketSkills,
   mcpServers,
   mcpTools,
   responsibilities,
@@ -52,6 +58,8 @@ import {
   responsibilityRuns,
   routineRuns,
   routines,
+  skillMarketEquivalences,
+  skillMarketMigrationReceipts,
   skillMarketSources,
   skills,
   users,
@@ -65,6 +73,10 @@ import { createResponsibilityRoutes } from "../src/responsibilities/routes";
 import { createResponsibilityStore } from "../src/responsibilities/store";
 import { createRoutineRoutes } from "../src/routines/routes";
 import { createRoutineStore } from "../src/routines/store";
+import { createBifrostMarket } from "../src/skill-market/bifrost";
+import { loadSkillMarketConfig } from "../src/skill-market/config";
+import { encodeImportedSkillDocument } from "../src/skill-market/imported-document";
+import { packageManifest } from "../src/skill-market/package-manifest";
 import { createSkillMarketRoutes } from "../src/skill-market/routes";
 import { createWorkQueue } from "../src/work/queue";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -93,6 +105,7 @@ const store = createPluginStore({
 });
 const suite = randomUUID().slice(0, 8);
 const slug = `notes-${suite}`;
+const bifrostSlug = `bifrost-notes-${suite}`;
 const collision = `collision-${suite}`;
 const alternatives = [`market-notes-${suite}`, `market-memo-${suite}`] as const;
 const racingSource = `race-source-${suite}`;
@@ -106,7 +119,19 @@ const bot = `shared-${suite}`;
 const anotherBot = `another-${suite}`;
 const emptyBot = `empty-${suite}`;
 const spareBot = `spare-${suite}`;
-const fingerprint = `sha256:${"a".repeat(64)}`;
+const legacyFirstBytes = Buffer.from(
+  `---\nname: ${slug}\ndescription: Exact notes\nmetadata:\n  openbot-compatibility: {scripts: false, supportingFiles: false, dedicatedRuntime: false}\n---\nSummarize in three bullets.`,
+);
+const legacyManifest = packageManifest(
+  new Map([["SKILL.md", legacyFirstBytes]]),
+);
+const { fingerprint } = legacyManifest;
+const legacySecondBytes = Buffer.from(
+  `---\nname: ${slug}\ndescription: Exact notes\n---\nProduce an outline.`,
+);
+const secondManifest = packageManifest(
+  new Map([["SKILL.md", legacySecondBytes]]),
+);
 let secondVersionCompatible = false;
 let state: "published" | "newer" | "offline" | "withdrawn" = "published";
 
@@ -176,11 +201,24 @@ afterAll(async () => {
       .where(inArray(agents.id, [bot, anotherBot, emptyBot, spareBot]));
     await database
       .delete(skillMarketSources)
-      .where(inArray(skillMarketSources.slug, [slug, collision, racingSource]));
+      .where(
+        inArray(skillMarketSources.slug, [
+          slug,
+          collision,
+          racingSource,
+          bifrostSlug,
+        ]),
+      );
     await database
       .delete(skills)
       .where(
-        inArray(skills.slug, [slug, collision, racingCommand, ...alternatives]),
+        inArray(skills.slug, [
+          slug,
+          collision,
+          racingCommand,
+          bifrostSlug,
+          ...alternatives,
+        ]),
       );
     await database
       .delete(agents)
@@ -217,100 +255,123 @@ const plugins = createPluginRoutes(
   async (actor, id) => (await profiles.get(actor, id)) !== null,
 );
 
-const routes = createSkillMarketRoutes(
-  requireUser,
-  {
-    baseUrl: "http://skillhub:8080",
-    namespace: "catalog",
-    token: "read",
-    confirmations: {
-      "3": {
-        slug,
-        version: "1.0.0",
-        versionId: 3,
-        fingerprint,
-        reviewTaskId: 1,
-        reviewerId: "reviewer",
-      },
-      "4": {
-        slug,
-        version: "2.0.0",
-        versionId: 4,
-        fingerprint,
-        reviewTaskId: 3,
-        reviewerId: "reviewer",
-      },
-      "6": {
-        slug: collision,
-        version: "1.0.0",
-        versionId: 6,
-        fingerprint,
-        reviewTaskId: 2,
-        reviewerId: "reviewer",
-      },
+const legacyConfig = {
+  baseUrl: "http://skillhub:8080",
+  namespace: "catalog",
+  token: "read",
+  confirmations: {
+    "3": {
+      slug,
+      version: "1.0.0",
+      versionId: 3,
+      fingerprint,
+      reviewTaskId: 1,
+      reviewerId: "reviewer",
+    },
+    "4": {
+      slug,
+      version: "2.0.0",
+      versionId: 4,
+      fingerprint: secondManifest.fingerprint,
+      reviewTaskId: 3,
+      reviewerId: "reviewer",
+    },
+    "6": {
+      slug: collision,
+      version: "1.0.0",
+      versionId: 6,
+      fingerprint,
+      reviewTaskId: 2,
+      reviewerId: "reviewer",
     },
   },
-  async (url: URL) => {
-    if (state === "offline") return new Response(null, { status: 503 });
-    const { pathname } = url;
-    const entry = pathname.split("/")[5];
-    const skillId = entry === collision ? 5 : 2;
-    const v1 = {
-      id: entry === collision ? 6 : 3,
-      version: "1.0.0",
-      status: "PUBLISHED",
+};
+const fetchLegacy = async (url: URL) => {
+  if (state === "offline") return new Response(null, { status: 503 });
+  const { pathname } = url;
+  const entry = pathname.split("/")[5];
+  const skillId = entry === collision ? 5 : 2;
+  const v1 = {
+    id: entry === collision ? 6 : 3,
+    version: "1.0.0",
+    status: "PUBLISHED",
+  };
+  const v2 = { id: 4, version: "2.0.0", status: "PUBLISHED" };
+  const version = pathname.endsWith("3.0.0")
+    ? { id: 7, version: "3.0.0", status: "PENDING_REVIEW" }
+    : pathname.endsWith("2.0.0") || url.searchParams.get("version") === "2.0.0"
+      ? v2
+      : v1;
+  let data: unknown = {
+    id: skillId,
+    namespace: "catalog",
+    slug: entry,
+    displayName: "Notes",
+    status: "ACTIVE",
+    visibility: "NAMESPACE_ONLY",
+    publishedVersion: state === "published" ? v1 : v2,
+  };
+  if (pathname === "/api/web/skills") {
+    data = {
+      items: [
+        {
+          id: 2,
+          namespace: "catalog",
+          slug,
+          displayName: "Notes",
+          status: "ACTIVE",
+          visibility: "NAMESPACE_ONLY",
+          publishedVersion: v1,
+        },
+      ],
+      total: 1,
+      page: 0,
+      size: 20,
     };
-    const v2 = { id: 4, version: "2.0.0", status: "PUBLISHED" };
-    const version = pathname.endsWith("3.0.0")
-      ? { id: 7, version: "3.0.0", status: "PENDING_REVIEW" }
-      : pathname.endsWith("2.0.0") ||
-          url.searchParams.get("version") === "2.0.0"
-        ? v2
-        : v1;
-    let data: unknown = {
-      id: skillId,
+  } else if (pathname.endsWith("/resolve")) {
+    data = {
+      skillId,
       namespace: "catalog",
       slug: entry,
-      displayName: "Notes",
-      status: "ACTIVE",
-      visibility: "NAMESPACE_ONLY",
-      publishedVersion: state === "published" ? v1 : v2,
+      version: version.version,
+      versionId: version.id,
+      fingerprint: version === v2 ? secondManifest.fingerprint : fingerprint,
     };
-    if (pathname.endsWith("/resolve")) {
-      data = {
-        skillId,
-        namespace: "catalog",
-        slug: entry,
-        version: version.version,
-        versionId: version.id,
-        fingerprint,
-      };
-    } else if (pathname.endsWith("/files")) {
-      data = [{ filePath: "SKILL.md" }];
-    } else if (pathname.includes("/versions/")) {
-      data = {
-        ...version,
-        status:
-          version === v1 && state === "withdrawn" ? "ARCHIVED" : version.status,
-        parsedMetadataJson: JSON.stringify({
-          body:
-            version === v1
-              ? "Summarize in three bullets."
-              : "Produce an outline.",
-          frontmatter: {
-            metadata: {
-              "openbot-compatibility": {
-                scripts: version === v2 && !secondVersionCompatible,
-                supportingFiles: false,
-                dedicatedRuntime: false,
-              },
+  } else if (pathname.endsWith("/download")) {
+    const bytes = version === v2 ? legacySecondBytes : legacyFirstBytes;
+    return new Response(Buffer.from(zipSync({ "SKILL.md": bytes })), {
+      headers: { "content-type": "application/zip" },
+    });
+  } else if (pathname.endsWith("/files")) {
+    data = [{ filePath: "SKILL.md" }];
+  } else if (pathname.includes("/versions/")) {
+    data = {
+      ...version,
+      status:
+        version === v1 && state === "withdrawn" ? "ARCHIVED" : version.status,
+      parsedMetadataJson: JSON.stringify({
+        body:
+          version === v1
+            ? "Summarize in three bullets."
+            : "Produce an outline.",
+        frontmatter: {
+          metadata: {
+            "openbot-compatibility": {
+              scripts: version === v2 && !secondVersionCompatible,
+              supportingFiles: false,
+              dedicatedRuntime: false,
             },
           },
-        }),
-      };
-    }
-    return Response.json({ code: 0, data });
-  },
+        },
+      }),
+    };
+  }
+  return Response.json({ code: 0, data });
+};
+const routes = createSkillMarketRoutes(
+  requireUser,
+  legacyConfig,
+  fetchLegacy,
   store,
 );
 
@@ -425,6 +486,1129 @@ test("a Bot invokes the installed version after a new release, outage and withdr
   expect(await slash(emptyBot)).toBeUndefined();
   expect(await slash(bot)).toContain("Summarize in three bullets.");
 });
+
+async function cutoverApprovalFixture() {
+  const model = new LLMock();
+  const previous = process.env.OPENAI_BASE_URL;
+  process.env.OPENAI_BASE_URL = await model.start();
+  model.onMessage(/.*/, {
+    toolCalls: [
+      { name: "reset_workspace", arguments: '{"workspace":"notes"}' },
+    ],
+  });
+  const relay = await serveMcp("reset_workspace");
+  const service = createApprovalService(approvals, undefined, undefined, {
+    marketPause: store.marketRunPauseReason,
+  });
+  const decision = createApprovalRoutes(service, requireUser);
+  const pendingIds: string[] = [];
+  const execute = (botId: string) =>
+    mcpStore.callTool({
+      botId,
+      actorId: member,
+      ref: protectedTool,
+      args: { workspace: "notes" },
+    });
+  return {
+    dispatched: relay.dispatched,
+    async open(botId: string, version: string) {
+      const available = await buildAgents(
+        [
+          {
+            id: botId,
+            name: botId,
+            type: "built_in",
+            systemPrompt: "Notes assistant",
+          },
+        ],
+        { provider: "openai", defaultModel: "gpt-5.5" },
+        "fixture",
+        undefined,
+        async () => [
+          {
+            name: "reset_workspace",
+            ref: protectedTool,
+            description: "Reset a workspace",
+            parameters: z.object({ workspace: z.string() }),
+            execute: async () => (await execute(botId)).text,
+          },
+        ],
+        undefined,
+        undefined,
+        undefined,
+        {
+          loadSkills: (id) => grantedSkills({ store, botId: id }),
+          choose: async () => null,
+          registerMarketRun: (scope, identity, snapshot) =>
+            store.registerMarketRun(
+              { ...scope, actorId: member },
+              identity,
+              undefined,
+              snapshot,
+            ),
+        },
+      );
+      const agent = available[botId].clone();
+      agent.threadId = `cutover-${suite}-${version}`;
+      agent.setMessages([
+        { id: "question", role: "user", content: `/${slug} notes` },
+      ]);
+      await agent.runAgent();
+      const pending = (await approvals.list(member)).find(
+        (row) => row.action.threadId === agent.threadId,
+      );
+      expect(pending?.status).toBe("pending");
+      if (!pending) throw new Error("The Bot did not open an approval");
+      pendingIds.push(pending.id);
+      return pending;
+    },
+    async approve(id: string) {
+      expect(
+        (
+          await decision.request(`/${id}/decision`, {
+            method: "POST",
+            headers: { "x-user": member, "content-type": "application/json" },
+            body: JSON.stringify({ decision: "allow_once" }),
+          })
+        ).status,
+      ).toBe(200);
+    },
+    async resume(id: string, botId: string) {
+      const outcomes: unknown[] = [];
+      await service.resume(member, id, {
+        validate: (action) =>
+          service.validateReentry(action, () => execute(botId)),
+        execute: async () => (await execute(botId)).text,
+        continue: async (outcome) => {
+          outcomes.push(outcome);
+        },
+      });
+      return outcomes;
+    },
+    async close() {
+      if (previous === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = previous;
+      if (pendingIds.length)
+        await database
+          .delete(workItems)
+          .where(
+            and(
+              eq(workItems.kind, "approval.resume"),
+              inArray(workItems.key, pendingIds),
+            ),
+          );
+      await Promise.all([relay.stop(), model.stop()]);
+    },
+  };
+}
+
+async function createBifrostReaderFixture(reader: postgres.Sql) {
+  await reader`create table openbot_skill_market.version_rows (
+    id uuid primary key, skill_id uuid, name text, version text,
+    skill_md_body text, frontmatter_snapshot jsonb, created_at timestamptz default now()
+  )`;
+  await reader`create view openbot_skill_market.versions as
+    select *, encode(sha256(convert_to(
+      jsonb_build_array(skill_id, name, version, skill_md_body, frontmatter_snapshot)::text, 'UTF8'
+    )), 'hex') as document_sha256
+    from openbot_skill_market.version_rows
+  `;
+  await reader`create table openbot_skill_market.files (
+    skill_version_id uuid, path text, source_type text, file_size_bytes integer, data bytea
+  )`;
+  await reader`create table openbot_skill_market.package_seals (
+    version_id uuid primary key, document_sha256 text, files jsonb
+  )`;
+}
+
+async function sealFixtureVersion(
+  reader: postgres.Sql,
+  versionId: string,
+  files: ReadonlyMap<string, Uint8Array> = new Map(),
+) {
+  await reader`insert into openbot_skill_market.package_seals
+    select id, document_sha256, ${reader.json(packageManifest(files).files)}
+    from openbot_skill_market.versions where id = ${versionId}
+  `;
+}
+
+test("cutover preserves legacy commands and approvals, and recovers post-reopen writes", async () => {
+  const realReader = process.env.OPENBOT_REHEARSAL_BIFROST_READER;
+  const readerUrl = realReader ?? testDatabaseUrl();
+  const reader = postgres(readerUrl, { max: 1 });
+  const exactReader = createBifrostMarket({
+    kind: "bifrost",
+    namespace: "bifrost",
+    databaseUrl: readerUrl,
+  });
+  const marketConfig = (
+    databaseUrl: string | undefined,
+    frozen: boolean,
+    legacy = true,
+  ) => {
+    const config = loadSkillMarketConfig({
+      SKILL_MARKET_WRITES_FROZEN: String(frozen),
+      BIFROST_SKILL_MARKET_DATABASE_URL: databaseUrl,
+      ...(legacy
+        ? {
+            SKILLHUB_URL: legacyConfig.baseUrl,
+            SKILLHUB_CATALOG_NAMESPACE: legacyConfig.namespace,
+            SKILLHUB_READ_TOKEN: legacyConfig.token,
+            SKILLHUB_COMPATIBILITY_CONFIRMATIONS: JSON.stringify(
+              Object.values(legacyConfig.confirmations),
+            ),
+          }
+        : {}),
+    });
+    if (!config) throw new Error("Expected a configured market");
+    return createSkillMarketRoutes(requireUser, config, fetchLegacy, store);
+  };
+  let market = marketConfig(readerUrl, true);
+  const request = (path: string, method: string, body?: unknown) =>
+    market.request(path, {
+      method,
+      headers: { "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  const target = `/bifrost/${slug}/versions`;
+  const search = `/?q=${slug}`;
+  const scope = {
+    snapshotId: suite,
+    source: { source: legacyConfig.baseUrl, namespace: legacyConfig.namespace },
+    target: { registryId: suite, namespace: "bifrost" as const },
+  };
+  const packages = await (async () => {
+    if (!realReader)
+      return {
+        skillId: randomUUID(),
+        firstId: randomUUID(),
+        secondId: randomUUID(),
+      };
+    const origin = "http://gateway:8080";
+    const login = await fetch(`${origin}/api/session/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        username: "fixture-admin",
+        password: "fixture-admin-password",
+      }),
+    });
+    expect(login.status).toBe(200);
+    const cookie = login.headers
+      .getSetCookie()
+      .map((item) => item.split(";")[0])
+      .join("; ");
+    await login.body?.cancel();
+    expect(cookie).not.toBe("");
+    const importer = migrationTarget({
+      sql: reader,
+      market: exactReader,
+      origin,
+      cookie,
+      registryId: suite,
+    });
+    const first = await importer.ensurePackage(
+      { slug, version: "1.0.0" },
+      new Map([["SKILL.md", legacyFirstBytes]]),
+    );
+    const second = await importer.ensurePackage(
+      { slug, version: "2.0.0" },
+      new Map([["SKILL.md", legacySecondBytes]]),
+    );
+    const promote = await fetch(
+      `${origin}/api/skills/${first.skillId}/shift-version`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie, origin },
+        body: JSON.stringify({ version: "2.0.0" }),
+      },
+    );
+    expect(promote.ok).toBe(true);
+    await promote.body?.cancel();
+    return {
+      skillId: first.skillId,
+      firstId: first.versionId,
+      secondId: second.versionId,
+    };
+  })();
+  const { skillId, firstId, secondId } = packages;
+  const original = {
+    ...scope.source,
+    slug,
+    registrySkillId: 2,
+    versionId: 3,
+    version: "1.0.0",
+    fingerprint,
+  };
+  const originalSecond = {
+    ...original,
+    versionId: 4,
+    version: "2.0.0",
+    fingerprint: secondManifest.fingerprint,
+  };
+  const archived = {
+    status: "withdrawn",
+    source: { ...original, versionId: 8, version: "0.9.0" },
+    target: null,
+    package: legacyManifest,
+    provenance: {
+      status: "YANKED",
+      ownerId: owner,
+      createdBy: owner,
+      publishedAt: new Date(0).toISOString(),
+      yankedAt: new Date(1).toISOString(),
+      yankReason: "Superseded",
+      reviews: [],
+      confirmation: null,
+    },
+  };
+  const receipt = {
+    ...scope,
+    schemaVersion: 1,
+    mode: "verify",
+    ready: true,
+    entries: [
+      {
+        status: "verified",
+        source: original,
+        target: {
+          ...scope.target,
+          slug,
+          version: "1.0.0",
+          skillId,
+          versionId: firstId,
+          fingerprint,
+        },
+        package: legacyManifest,
+        provenance: {
+          status: "PUBLISHED",
+          ownerId: owner,
+          createdBy: owner,
+          publishedAt: new Date(0).toISOString(),
+          yankedAt: null,
+          yankReason: null,
+          reviews: [
+            {
+              reviewTaskId: "1",
+              status: "APPROVED",
+              submittedBy: owner,
+              reviewerId: "reviewer",
+              reviewedAt: new Date(0).toISOString(),
+              comment: null,
+              decisionMethod: null,
+            },
+          ],
+          confirmation: legacyConfig.confirmations["3"],
+        },
+      },
+      {
+        status: "verified",
+        source: originalSecond,
+        target: {
+          ...scope.target,
+          slug,
+          version: "2.0.0",
+          skillId,
+          versionId: secondId,
+          fingerprint: originalSecond.fingerprint,
+        },
+        package: secondManifest,
+        provenance: {
+          status: "PUBLISHED",
+          ownerId: owner,
+          createdBy: owner,
+          publishedAt: new Date(0).toISOString(),
+          yankedAt: null,
+          yankReason: null,
+          reviews: [],
+          confirmation: null,
+        },
+      },
+      archived,
+    ],
+  };
+  const approvalsAtCutover = await cutoverApprovalFixture();
+  try {
+    if (!realReader) {
+      const first = encodeImportedSkillDocument(legacyFirstBytes, slug);
+      const second = encodeImportedSkillDocument(legacySecondBytes, slug);
+      await reader`create schema openbot_skill_market`;
+      await reader`create table openbot_skill_market.catalog (
+      name text, description text, latest_version text, skill_id uuid
+    )`;
+      await createBifrostReaderFixture(reader);
+      await reader`insert into openbot_skill_market.catalog values
+      (${slug}, 'Notes', '2.0.0', ${skillId})`;
+      await reader`insert into openbot_skill_market.versions
+      (id, skill_id, name, version, skill_md_body, frontmatter_snapshot)
+      values (${firstId}, ${skillId}, ${slug}, '1.0.0', ${first.body}, ${reader.json(first.snapshot)}),
+             (${secondId}, ${skillId}, ${slug}, '2.0.0',  ${second.body}, ${reader.json(second.snapshot)})`;
+      await sealFixtureVersion(reader, firstId);
+      await sealFixtureVersion(reader, secondId);
+    }
+
+    expect([200, 201]).toContain((await install(bot)).status);
+    const [oldRead] = await database.execute(sql`select source.registry,
+        installation.registry as snapshot_registry, installation.version
+      from skill_market_installations installation
+      join skill_market_sources source using (command)
+      where installation.agent_id = ${bot} and installation.command = ${slug}`);
+    expect(oldRead).toEqual({
+      registry: original.source,
+      snapshot_registry: original.source,
+      version: "1.0.0",
+    });
+    // Old binaries still write the pre-0098 column list during a rolling deploy.
+    await database.execute(sql`insert into skill_market_installations
+      (agent_id, command, version, version_id, registry_skill_id, fingerprint,
+       title, summary, instructions, installed_by)
+      select ${spareBot}, command, version, version_id, registry_skill_id, fingerprint,
+             title, summary, instructions, installed_by
+      from skill_market_installations where agent_id = ${bot} and command = ${slug}
+    `);
+    const [legacyRow] =
+      await database.execute(sql`select registry, namespace, slug
+      from skill_market_installations where agent_id = ${spareBot} and command = ${slug}`);
+    expect(legacyRow).toEqual({ registry: null, namespace: null, slug: null });
+    expect(await slash(spareBot)).toContain("Summarize in three bullets.");
+    const originalSnapshot = (await store.listForAgent(spareBot)).skills.find(
+      (skill) => skill.slug === slug,
+    );
+    expect(originalSnapshot?.marketVersion?.identity).toEqual(original);
+    expect([200, 201]).toContain((await install(bot)).status);
+    secondVersionCompatible = true;
+    expect((await install(emptyBot, "2.0.0")).status).toBe(201);
+    await store.grant("mcp", protectedTool, emptyBot, "admin@example.test");
+    const enabledApproval = await approvalsAtCutover.open(bot, "1.0.0");
+    const blockedApproval = await approvalsAtCutover.open(emptyBot, "2.0.0");
+    // Inject a reader outage while the primary is frozen, then restart using only SkillHub.
+    market = marketConfig(
+      "postgres://reader:fixture@127.0.0.1:1/unavailable",
+      true,
+    );
+    expect((await request(search, "GET")).status).toBe(502);
+    market = marketConfig(undefined, true);
+    expect(await (await request(search, "GET")).json()).toMatchObject({
+      items: [{ namespace: "catalog", slug }],
+    });
+    expect(
+      (
+        await request(`/catalog/${slug}/versions/1.0.0/install`, "POST", {
+          agentId: anotherBot,
+        })
+      ).status,
+    ).toBe(503);
+    const fallbackDownload = await request(
+      `/catalog/${slug}/versions/1.0.0/download`,
+      "GET",
+    );
+    expect(fallbackDownload.status).toBe(200);
+    expect(
+      Buffer.from(
+        unzipSync(new Uint8Array(await fallbackDownload.arrayBuffer()))[
+          "SKILL.md"
+        ],
+      ),
+    ).toEqual(legacyFirstBytes);
+    market = marketConfig(readerUrl, true);
+    expect(await (await request(search, "GET")).json()).toMatchObject({
+      items: [{ namespace: "bifrost", slug }],
+    });
+    const download = await request(`${target}/1.0.0/download`, "GET");
+    expect(download.status).toBe(200);
+    expect(
+      Buffer.from(
+        unzipSync(new Uint8Array(await download.arrayBuffer()))["SKILL.md"],
+      ),
+    ).toEqual(legacyFirstBytes);
+    expect(
+      (
+        await request(`${target}/1.0.0/install`, "POST", {
+          agentId: anotherBot,
+        })
+      ).status,
+    ).toBe(503);
+    state = "offline";
+    expect(
+      (
+        await request("/version-disablements", "PUT", {
+          ...originalSecond,
+          reason: "Legacy emergency stop",
+        })
+      ).status,
+    ).toBe(204);
+
+    const entry = receipt.entries[0];
+    await expect(
+      applySkillMarketReceipt(database, exactReader, scope, {
+        ...receipt,
+        entries: [
+          { ...entry, target: { ...entry.target, versionId: secondId } },
+        ],
+      }),
+    ).rejects.toThrow("no longer matches");
+    await expect(
+      applySkillMarketReceipt(database, exactReader, scope, {
+        ...receipt,
+        entries: [
+          {
+            ...entry,
+            package: {
+              ...legacyManifest,
+              files: [{ ...legacyManifest.files[0], size: 1 }],
+            },
+          },
+        ],
+      }),
+    ).rejects.toThrow("no longer matches");
+    expect(
+      await applySkillMarketReceipt(database, exactReader, scope, receipt),
+    ).toBe("applied");
+    expect(
+      await applySkillMarketReceipt(database, exactReader, scope, receipt),
+    ).toBe("already-applied");
+    const [transferred] = await database
+      .select()
+      .from(bifrostMarketReviews)
+      .where(eq(bifrostMarketReviews.versionUuid, firstId));
+    expect(transferred).toMatchObject({
+      fingerprint,
+      reviewedBy: "reviewer",
+      reviewedAt: new Date(0),
+      withdrawnAt: null,
+    });
+    const [savedReceipt] = await database
+      .select()
+      .from(skillMarketMigrationReceipts)
+      .where(eq(skillMarketMigrationReceipts.registryId, suite));
+    expect(savedReceipt.evidence).toMatchObject({
+      entries: [receipt.entries[0], receipt.entries[1], archived],
+    });
+
+    expect(
+      (await store.listForAgent(spareBot)).skills.find(
+        (skill) => skill.slug === slug,
+      ),
+    ).toEqual(originalSnapshot);
+    expect(await slash(spareBot)).toContain("Summarize in three bullets.");
+    expect(
+      await (await request(`/bots/${spareBot}/installations`, "GET")).json(),
+    ).toMatchObject({
+      installations: [
+        {
+          command: slug,
+          registry: original.source,
+          namespace: original.namespace,
+          catalogSlug: slug,
+          versionId: 3,
+        },
+      ],
+    });
+
+    expect(
+      (await approvals.get(member, enabledApproval.id))?.action.continuation
+        ?.marketSkill,
+    ).toMatchObject({
+      market: original,
+      instructions: "Summarize in three bullets.",
+    });
+    expect(
+      (await approvals.get(member, blockedApproval.id))?.action.continuation
+        ?.marketSkill,
+    ).toMatchObject({
+      market: originalSecond,
+      instructions: "Produce an outline.",
+    });
+    await approvalsAtCutover.approve(enabledApproval.id);
+    expect(await approvalsAtCutover.resume(enabledApproval.id, bot)).toEqual([
+      expect.objectContaining({ result: { content: "done" } }),
+    ]);
+    expect(approvalsAtCutover.dispatched()).toBe(1);
+    // The pre-existing emergency stop still governs the awaiting approval while frozen.
+    expect(await slash(emptyBot)).toBeUndefined();
+    await approvalsAtCutover.approve(blockedApproval.id);
+    expect(
+      await approvalsAtCutover.resume(blockedApproval.id, emptyBot),
+    ).toEqual([
+      expect.objectContaining({
+        pauseReason: expect.stringContaining("Legacy emergency stop"),
+      }),
+    ]);
+    expect(approvalsAtCutover.dispatched()).toBe(1);
+    const frozenPreview = await (
+      await request(`${target}/1.0.0`, "GET")
+    ).json();
+    expect(
+      (
+        await request(
+          `${target}/1.0.0/review`,
+          "PUT",
+          frozenPreview.packageIdentity,
+        )
+      ).status,
+    ).toBe(503);
+    market = marketConfig(readerUrl, false);
+
+    expect(
+      (
+        await request(`/bifrost/${slug}/command`, "POST", {
+          command: `other-${slug}`,
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await request(`${target}/1.0.0/review`, "PUT", {
+          ...frozenPreview.packageIdentity,
+          versionId: randomUUID(),
+        })
+      ).status,
+    ).toBe(409);
+
+    state = "published";
+    for (const [operation, body] of [
+      ["install", { agentId: anotherBot }],
+      ["switch", { agentId: spareBot, expectedVersionId: 3 }],
+    ] as const) {
+      expect(
+        (
+          await request(
+            `/catalog/${slug}/versions/1.0.0/${operation}`,
+            "POST",
+            body,
+          )
+        ).status,
+      ).toBe(422);
+    }
+    state = "offline";
+
+    const firstPreview = await (await request(`${target}/1.0.0`, "GET")).json();
+    expect(firstPreview).toMatchObject({
+      installable: true,
+      reviewStatus: "approved",
+    });
+    const reviewed = await (await request(`${target}/1.0.0`, "GET")).json();
+    const equivalent = {
+      source: "bifrost",
+      namespace: "bifrost",
+      slug,
+      version: "1.0.0",
+      registrySkillId: reviewed.registrySkillId,
+      versionId: reviewed.versionId,
+    };
+    expect(
+      (
+        await request("/version-disablements", "PUT", {
+          ...equivalent,
+          reason: "Emergency stop",
+        })
+      ).status,
+    ).toBe(204);
+    expect(
+      (await store.listForAgent(spareBot)).skills.find(
+        (skill) => skill.slug === slug,
+      )?.marketVersion?.disableReason,
+    ).toBe("Emergency stop");
+    expect(
+      (await request(`${target}/1.0.0/install`, "POST", { agentId: emptyBot }))
+        .status,
+    ).toBe(422);
+    expect(
+      (await request("/version-disablements", "DELETE", original)).status,
+    ).toBe(204);
+    expect(await slash(spareBot)).toContain("Summarize in three bullets.");
+
+    const preview = await request(`${target}/2.0.0`, "GET");
+    const { packageIdentity } = await preview.json();
+    expect(
+      (await request(`${target}/2.0.0/review`, "PUT", packageIdentity)).status,
+    ).toBe(204);
+    const successor = await (await request(`${target}/2.0.0`, "GET")).json();
+    expect(successor.disableReason).toBe("Legacy emergency stop");
+    const equivalentSecond = {
+      ...equivalent,
+      version: "2.0.0",
+      registrySkillId: successor.registrySkillId,
+      versionId: successor.versionId,
+    };
+    expect(await slash(emptyBot)).toBeUndefined();
+    expect(
+      (await request("/version-disablements", "DELETE", equivalentSecond))
+        .status,
+    ).toBe(204);
+    expect(await slash(emptyBot)).toContain("Produce an outline.");
+    expect(
+      (
+        await request(`${target}/2.0.0/switch`, "POST", {
+          agentId: spareBot,
+          expectedVersionId: 3,
+          expectedRegistry: original.source,
+        })
+      ).status,
+    ).toBe(200);
+    expect(await slash(spareBot)).toContain("Produce an outline.");
+    expect(
+      (await store.listForAgent(spareBot)).skills.find(
+        (skill) => skill.slug === slug,
+      )?.marketVersion?.identity,
+    ).toMatchObject(equivalentSecond);
+    expect(
+      (
+        await request(`/bots/${spareBot}/installations/${slug}`, "DELETE", {
+          expectedVersionId: equivalentSecond.versionId,
+          expectedRegistry: original.source,
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await changeDisablement(
+          "PUT",
+          "admin",
+          "Second emergency stop",
+          originalSecond,
+        )
+      ).status,
+    ).toBe(204);
+    expect(await slash(spareBot)).toBeUndefined();
+    expect(
+      (
+        await request(`${target}/1.0.0/install`, "POST", {
+          agentId: anotherBot,
+        })
+      ).status,
+    ).toBe(201);
+    const freshPath = `/bots/${anotherBot}/installations`;
+    const fresh = await (await request(freshPath, "GET")).json();
+    expect(fresh.installations).toMatchObject([
+      { registry: "bifrost", command: slug, versionId: equivalent.versionId },
+    ]);
+    const installationPath = `/bots/${spareBot}/installations`;
+    const installed = await (await request(installationPath, "GET")).json();
+    const installSnapshot = { ...installed.installations[0] };
+    delete installSnapshot.catalogSlug;
+    const reviewedAfterReopen = await (
+      await request(`${target}/2.0.0`, "GET")
+    ).json();
+    expect(reviewedAfterReopen.reviewStatus).toBe("approved");
+
+    // Recover the catalog without rewinding OpenBot's database or registry contents.
+    state = "published";
+    market = marketConfig(undefined, true);
+    expect(await (await request(search, "GET")).json()).toMatchObject({
+      items: [{ namespace: "catalog", slug }],
+    });
+    expect(await slash(anotherBot)).toContain("Summarize in three bullets.");
+    expect(await (await request(installationPath, "GET")).json()).toEqual({
+      installations: [installSnapshot],
+    });
+    expect(await slash(spareBot)).toBeUndefined();
+    market = marketConfig(readerUrl, true);
+    expect(await (await request(installationPath, "GET")).json()).toEqual(
+      installed,
+    );
+    expect(
+      await (await request(`${target}/2.0.0`, "GET")).json(),
+    ).toMatchObject({
+      packageIdentity: reviewedAfterReopen.packageIdentity,
+      reviewedFingerprint: reviewedAfterReopen.reviewedFingerprint,
+      reviewStatus: "approved",
+      disableReason: "Second emergency stop",
+    });
+
+    expect(await (await request(freshPath, "GET")).json()).toEqual(fresh);
+    expect(
+      (
+        await request(`${freshPath}/${slug}`, "DELETE", {
+          expectedVersionId: equivalent.versionId,
+          expectedRegistry: "bifrost",
+        })
+      ).status,
+    ).toBe(204);
+
+    // Simulate stopping SkillHub, remove its configuration, and use only Bifrost.
+    state = "offline";
+    expect((await routes.request(search)).status).toBe(502);
+    market = marketConfig(readerUrl, false, false);
+    expect((await request(`/catalog/${slug}`, "GET")).status).toBe(404);
+    expect(await (await request(search, "GET")).json()).toMatchObject({
+      items: [{ namespace: "bifrost", slug }],
+    });
+    expect(
+      (
+        await request(`${target}/1.0.0/install`, "POST", {
+          agentId: anotherBot,
+        })
+      ).status,
+    ).toBe(201);
+    expect(await slash(anotherBot)).toContain("Summarize in three bullets.");
+    expect(await slash(bot)).toContain("Summarize in three bullets.");
+
+    expect(
+      (await request("/version-disablements", "DELETE", equivalentSecond))
+        .status,
+    ).toBe(204);
+    expect(await slash(spareBot)).toContain("Produce an outline.");
+    expect(
+      (
+        await request(
+          `${target}/1.0.0/review`,
+          "DELETE",
+          firstPreview.packageIdentity,
+        )
+      ).status,
+    ).toBe(204);
+    expect(
+      await applySkillMarketReceipt(database, exactReader, scope, receipt),
+    ).toBe("already-applied");
+    expect(
+      await (await request(`${target}/1.0.0`, "GET")).json(),
+    ).toMatchObject({
+      reviewStatus: "withdrawn",
+      installable: false,
+    });
+    state = "published";
+    market = marketConfig(readerUrl, false);
+    expect(
+      (
+        await request(`/catalog/${slug}/versions/1.0.0/install`, "POST", {
+          agentId: anotherBot,
+        })
+      ).status,
+    ).toBe(422);
+    expect(await slash(anotherBot)).toContain("Summarize in three bullets.");
+  } finally {
+    await approvalsAtCutover.close();
+    await store.uninstallMarketSkill(
+      { id: "admin", role: "admin", email: "admin@example.test" },
+      emptyBot,
+      slug,
+      { expectedVersionId: 4 },
+    );
+    await store.revoke("mcp", protectedTool, emptyBot, "admin@example.test");
+    await request("/version-disablements", "DELETE", originalSecond);
+    for (const id of [spareBot, anotherBot]) {
+      for (const item of await store.listMarketInstallations(id)) {
+        await store.uninstallMarketSkill(
+          { id: "admin", role: "admin", email: "admin@example.test" },
+          id,
+          item.command,
+          { expectedVersionId: item.versionId },
+        );
+      }
+    }
+    await request("/version-disablements", "DELETE", original);
+    await database
+      .delete(skillMarketEquivalences)
+      .where(eq(skillMarketEquivalences.registryId, suite));
+    await database
+      .delete(skillMarketMigrationReceipts)
+      .where(eq(skillMarketMigrationReceipts.registryId, suite));
+    await database
+      .delete(bifrostMarketReviews)
+      .where(inArray(bifrostMarketReviews.versionUuid, [firstId, secondId]));
+    await database
+      .delete(bifrostMarketSkills)
+      .where(eq(bifrostMarketSkills.skillUuid, skillId));
+    await exactReader.close();
+    if (!realReader)
+      await reader`drop schema if exists openbot_skill_market cascade`;
+    await reader.end();
+  }
+});
+
+test("Bifrost review qualifies only the exact package the administrator previewed", async () => {
+  const reader = postgres(testDatabaseUrl(), { max: 1 });
+  const marketPath = `/bifrost/${bifrostSlug}/versions/1.0.0`;
+  const market = createSkillMarketRoutes(
+    requireUser,
+    {
+      kind: "bifrost",
+      namespace: "bifrost",
+      databaseUrl: testDatabaseUrl(),
+    },
+    undefined,
+    store,
+  );
+  const request = (
+    path: string,
+    method: string,
+    body?: unknown,
+    user = "admin",
+  ) =>
+    market.request(path, {
+      method,
+      headers: { "content-type": "application/json", "x-user": user },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  const install = (versionPath: string, agentId: string, user = "admin") =>
+    request(`${versionPath}/install`, "POST", { agentId }, user);
+  const skillId = randomUUID();
+  await reader`create schema openbot_skill_market`;
+  try {
+    await reader`create table openbot_skill_market.catalog (
+      name text, description text, latest_version text
+    )`;
+    await createBifrostReaderFixture(reader);
+    await reader`insert into openbot_skill_market.catalog values
+      (${bifrostSlug}, 'Notes', '1.0.0')`;
+    const versionId = randomUUID();
+    const secondId = randomUUID();
+    const bundledId = randomUUID();
+    const manifest = reader.json({ description: "Exact notes" });
+    const importedBytes = Buffer.from(
+      `---\r\nname: ${bifrostSlug}\r\ndescription: Exact notes\r\nmetadata:\r\n  openbot-compatibility: {scripts: false, supportingFiles: false, dedicatedRuntime: false}\r\n---\r\nSecond instructions.\r\n`,
+    );
+    const imported = encodeImportedSkillDocument(importedBytes, bifrostSlug);
+    await reader`insert into openbot_skill_market.versions
+      (id, skill_id, name, version, skill_md_body, frontmatter_snapshot)
+      values (${versionId}, ${skillId}, ${bifrostSlug}, '1.0.0', 'Reviewed instructions.', ${manifest}),
+             (${secondId}, ${skillId}, ${bifrostSlug}, '2.0.0', ${imported.body}, ${reader.json(imported.snapshot)}),
+             (${bundledId}, ${skillId}, ${bifrostSlug}, '3.0.0', 'Read the bundled reference.', ${manifest})`;
+    await reader`insert into openbot_skill_market.files values
+      (${bundledId}, 'references/notes.md', 'text', 5, ${Buffer.from("notes")})`;
+
+    expect((await request(marketPath, "GET")).status).toBe(502);
+    await sealFixtureVersion(reader, versionId);
+    await sealFixtureVersion(reader, secondId);
+    await sealFixtureVersion(
+      reader,
+      bundledId,
+      new Map([["references/notes.md", Buffer.from("notes")]]),
+    );
+    const preview = await request(marketPath, "GET");
+    expect(preview.status).toBe(200);
+    const { packageIdentity, installable } = await preview.json();
+    expect(installable).toBe(false);
+    expect(packageIdentity).toMatchObject({
+      skillId,
+      versionId,
+    });
+    expect(packageIdentity.fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect((await install(marketPath, bot)).status).toBe(422);
+    expect(
+      (await request(`${marketPath}/review`, "PUT", packageIdentity, member))
+        .status,
+    ).toBe(403);
+    expect(
+      (
+        await request(`${marketPath}/review`, "PUT", {
+          ...packageIdentity,
+          fingerprint: `sha256:${"0".repeat(64)}`,
+        })
+      ).status,
+    ).toBe(409);
+    const approval = await request(
+      `${marketPath}/review`,
+      "PUT",
+      packageIdentity,
+    );
+    expect(approval.status).toBe(204);
+
+    await reader`update openbot_skill_market.catalog set latest_version = '2.0.0'`;
+    expect((await install(marketPath, bot, member)).status).toBe(403);
+    expect((await install(marketPath, bot)).status).toBe(201);
+    expect(await slash(bot, bifrostSlug)).toContain("Reviewed instructions.");
+    expect(
+      (await install(marketPath.replace("1.0.0", "2.0.0"), anotherBot, owner))
+        .status,
+    ).toBe(422);
+
+    const secondPath = marketPath.replace("1.0.0", "2.0.0");
+    const bundlePath = marketPath.replace("1.0.0", "3.0.0");
+    const bundle = await (await request(bundlePath, "GET")).json();
+    expect(bundle.installable).toBe(false);
+    expect(bundle.reasons.join(" ")).toContain("supporting files");
+    expect(
+      (await request(`${bundlePath}/review`, "PUT", bundle.packageIdentity))
+        .status,
+    ).toBe(422);
+    const download = await request(`${bundlePath}/download`, "GET");
+    expect(download.status).toBe(200);
+    const entries = unzipSync(new Uint8Array(await download.arrayBuffer()));
+    expect(Buffer.from(entries["references/notes.md"]).toString()).toBe(
+      "notes",
+    );
+    await reader`update openbot_skill_market.files set data = ${Buffer.from("other")} where skill_version_id = ${bundledId}`;
+    expect((await request(`${bundlePath}/download`, "GET")).status).toBe(502);
+    await reader`delete from openbot_skill_market.files where skill_version_id = ${bundledId}`;
+    expect((await request(bundlePath, "GET")).status).toBe(502);
+    await reader`insert into openbot_skill_market.files values
+      (${bundledId}, 'references/notes.md', 'text', 5, ${Buffer.from("notes")})`;
+    await reader`update openbot_skill_market.files set data = null where skill_version_id = ${bundledId}`;
+    expect((await request(bundlePath, "GET")).status).toBe(502);
+    expect((await install(bundlePath, bot)).status).toBe(502);
+
+    const second = await (await request(secondPath, "GET")).json();
+    const originalManifest = packageManifest(
+      new Map([["SKILL.md", importedBytes]]),
+    );
+    expect(second.packageIdentity.fingerprint).toBe(
+      originalManifest.fingerprint,
+    );
+    const importedDownload = await request(`${secondPath}/download`, "GET");
+    const importedEntries = unzipSync(
+      new Uint8Array(await importedDownload.arrayBuffer()),
+    );
+    expect(Buffer.from(importedEntries["SKILL.md"])).toEqual(importedBytes);
+    expect(
+      (await request(`${secondPath}/review`, "PUT", second.packageIdentity))
+        .status,
+    ).toBe(204);
+    expect((await install(secondPath, anotherBot, owner)).status).toBe(201);
+    expect(await slash(anotherBot, bifrostSlug)).toContain(
+      "Second instructions.",
+    );
+    const firstReviewed = await (await request(marketPath, "GET")).json();
+    const secondReviewed = await (await request(secondPath, "GET")).json();
+    expect(
+      (
+        await request(`${secondPath}/switch`, "POST", {
+          agentId: bot,
+          expectedVersionId: firstReviewed.versionId,
+        })
+      ).status,
+    ).toBe(200);
+    expect(await slash(bot, bifrostSlug)).toContain("Second instructions.");
+    expect(
+      (
+        await request(`${marketPath}/switch`, "POST", {
+          agentId: bot,
+          expectedVersionId: secondReviewed.versionId,
+        })
+      ).status,
+    ).toBe(200);
+    expect(await slash(anotherBot, bifrostSlug)).toContain(
+      "Second instructions.",
+    );
+
+    await reader`update openbot_skill_market.versions
+      set skill_md_body = 'Changed instructions.' where id = ${versionId}`;
+    expect((await install(marketPath, anotherBot, owner)).status).toBe(502);
+    expect(await slash(bot, bifrostSlug)).toContain("Reviewed instructions.");
+
+    await reader`update openbot_skill_market.versions
+      set skill_md_body = 'Reviewed instructions.' where id = ${versionId}`;
+    expect(
+      (await request(`${marketPath}/review`, "DELETE", packageIdentity, member))
+        .status,
+    ).toBe(403);
+    expect(
+      (await request(`${marketPath}/review`, "DELETE", packageIdentity)).status,
+    ).toBe(204);
+    const withdrawn = await (await request(marketPath, "GET")).json();
+    expect(withdrawn.reviewStatus).toBe("withdrawn");
+    expect((await install(marketPath, emptyBot, owner)).status).toBe(422);
+    expect(
+      (await request(`${marketPath}/review`, "PUT", packageIdentity)).status,
+    ).toBe(409);
+    expect(await slash(bot, bifrostSlug)).toContain("Reviewed instructions.");
+
+    // Remove the reader's catalog relation to simulate an outage without affecting OpenBot's DB.
+    await reader`alter view openbot_skill_market.versions rename to versions_offline`;
+    expect((await install(secondPath, emptyBot, owner)).status).toBe(502);
+    expect(await slash(bot, bifrostSlug)).toContain("Reviewed instructions.");
+    expect(await slash(anotherBot, bifrostSlug)).toContain(
+      "Second instructions.",
+    );
+    expect(
+      (await store.listForAgent(bot)).skills.find(
+        (skill) => skill.slug === bifrostSlug,
+      )?.tools,
+    ).toEqual([]);
+    await expect(
+      store.callTool({
+        botId: bot,
+        actorId: member,
+        ref: ungrantedTool,
+        args: {},
+      }),
+    ).rejects.toBeInstanceOf(PluginRefusedError);
+    const toolCallId = randomUUID();
+    await expect(
+      withApprovalContext(
+        {
+          runId: randomUUID(),
+          threadId: randomUUID(),
+          toolCallId,
+          toolName: "reset_workspace",
+          args: {},
+          messages: [
+            { id: "message", role: "user", content: `/${bifrostSlug}` },
+          ],
+          state: {},
+          context: [],
+          forwardedProps: {},
+        },
+        () =>
+          store.callTool({
+            botId: bot,
+            actorId: member,
+            ref: protectedTool,
+            args: {},
+          }),
+      ),
+    ).rejects.toBeInstanceOf(HeadlessToolSuspension);
+
+    const { versions } = await (
+      await request("/version-disablements", "GET")
+    ).json();
+    const emergency = versions.find(
+      (version: { slug: string; version: string }) =>
+        version.slug === bifrostSlug && version.version === "1.0.0",
+    );
+    expect(emergency).toBeDefined();
+    try {
+      expect(
+        (
+          await request("/version-disablements", "PUT", {
+            ...emergency,
+            reason: "Unsafe instructions",
+          })
+        ).status,
+      ).toBe(204);
+      expect(await slash(bot, bifrostSlug)).toBeUndefined();
+      expect(await slash(anotherBot, bifrostSlug)).toContain(
+        "Second instructions.",
+      );
+      const uninstallPath = `/bots/${anotherBot}/installations/${bifrostSlug}`;
+      const uninstall = { expectedVersionId: secondReviewed.versionId };
+      expect(
+        (await request(uninstallPath, "DELETE", uninstall, member)).status,
+      ).toBe(403);
+      expect(
+        (await request(uninstallPath, "DELETE", uninstall, owner)).status,
+      ).toBe(204);
+      expect(await slash(anotherBot, bifrostSlug)).toBeUndefined();
+      expect(
+        (
+          await request(
+            `${secondPath}/review`,
+            "DELETE",
+            second.packageIdentity,
+          )
+        ).status,
+      ).toBe(204);
+    } finally {
+      await request("/version-disablements", "DELETE", emergency);
+    }
+    expect(await slash(bot, bifrostSlug)).toContain("Reviewed instructions.");
+  } finally {
+    await reader`drop schema openbot_skill_market cascade`;
+    const skill = await database.query.bifrostMarketSkills.findFirst({
+      where: eq(bifrostMarketSkills.skillUuid, skillId),
+    });
+    if (skill) {
+      await database
+        .delete(bifrostMarketReviews)
+        .where(eq(bifrostMarketReviews.skillId, skill.id));
+      await database
+        .delete(bifrostMarketSkills)
+        .where(eq(bifrostMarketSkills.id, skill.id));
+    }
+    await reader.end();
+  }
+}, 120_000);
 
 async function targets(user: string) {
   const response = await routes.request("/install-targets", {

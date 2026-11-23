@@ -8,6 +8,6 @@ export const Route = createFileRoute("/_authed/desktop-return")({
     searchTextEntry("app", search.app),
   component: function DesktopReturnRoute() {
     const { app } = Route.useSearch();
-    return <DesktopReturn app={app} />;
+    return <DesktopReturn app={app} key={app} />;
   },
 });

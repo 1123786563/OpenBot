@@ -67,6 +67,7 @@ const template = RULE_TEMPLATES[1]!;
 
 let stored: ActionPolicy;
 const saved: ActionPolicy[] = [];
+const expectedPolicies: (ActionPolicy | undefined)[] = [];
 /** Every candidate the screens asked the server to replay. */
 const replayed: ActionPolicy[] = [];
 const NOTHING_REPLAYED = Response.json({
@@ -83,14 +84,22 @@ let replay: (candidate: ActionPolicy) => Response = () =>
 function serving(policy: ActionPolicy) {
   stored = policy;
   saved.length = 0;
+  expectedPolicies.length = 0;
   replayed.length = 0;
   replay = () => NOTHING_REPLAYED.clone();
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input);
     if (path.endsWith("/api/computers/policy") && init?.method === "PUT") {
-      const { expected: _expected, ...updated } = JSON.parse(
+      const { expected, ...updated } = JSON.parse(
         String(init.body),
       ) as ActionPolicy & { expected?: ActionPolicy };
+      expectedPolicies.push(expected);
+      if (expected && JSON.stringify(expected) !== JSON.stringify(stored)) {
+        return Response.json(
+          { error: "The policy has changed." },
+          { status: 409 },
+        );
+      }
       stored = updated;
       saved.push(stored);
       return Response.json({ policy: stored });
@@ -181,6 +190,9 @@ test("adding from a template saves the rule with its name and returns to the lis
   const { view, router } = open("/admin/boundaries/new");
 
   fireEvent.click(await view.findByText(template.name));
+  const add = view.getByRole("button", { name: "Add rule" });
+  expect(add.hasAttribute("disabled")).toBe(true);
+  await waitFor(() => expect(add.hasAttribute("disabled")).toBe(false));
   fireEvent.click(view.getByRole("button", { name: "Add rule" }));
 
   await waitFor(() => expect(saved).toHaveLength(1));
@@ -198,6 +210,62 @@ test("adding from a template saves the rule with its name and returns to the lis
   await waitFor(() =>
     expect(router.state.location.pathname).toBe("/admin/boundaries"),
   );
+});
+
+test("new rule keeps its draft through a starter switch and a failed preview", async () => {
+  serving({ mode: "enforce", deny: [], allow: ["true"] });
+  replay = () =>
+    Response.json({ error: "Preview unavailable" }, { status: 503 });
+  const { view } = open("/admin/boundaries/new");
+  fireEvent.click(await view.findByText("Write your own"));
+  const user = userEvent.setup({ document });
+  await user.type(view.getByLabelText("Name"), "Test rule");
+  await user.type(view.getByLabelText("Rule"), custom);
+  await view.findByText("Couldn’t check this rule.");
+  expect(
+    view.getByRole("button", { name: "Add rule" }).hasAttribute("disabled"),
+  ).toBe(true);
+
+  fireEvent.click(view.getByText(template.name));
+  fireEvent.click(view.getByText("Write your own"));
+  const name = view.getByLabelText("Name");
+  const rule = view.getByLabelText("Rule");
+  expect(name instanceof HTMLInputElement && name.value).toBe("Test rule");
+  expect(rule instanceof HTMLTextAreaElement && rule.value).toBe(custom);
+
+  const retry = await view.findByRole("button", { name: "Retry" });
+  replay = () => NOTHING_REPLAYED.clone();
+  fireEvent.click(retry);
+  const add = view.getByRole("button", { name: "Add rule" });
+  await waitFor(() => expect(add.hasAttribute("disabled")).toBe(false));
+  fireEvent.submit(add.closest("form")!);
+  expect(saved).toHaveLength(0);
+  fireEvent.click(add);
+  await waitFor(() => expect(saved[0]?.deny).toEqual([custom]));
+});
+
+test("new rule reloads a changed policy without overwriting the other rule", async () => {
+  const initial: ActionPolicy = { mode: "enforce", deny: [], allow: ["true"] };
+  serving(initial);
+  const { view } = open("/admin/boundaries/new");
+  fireEvent.click(await view.findByText(template.name));
+  const add = view.getByRole("button", { name: "Add rule" });
+  await waitFor(() => expect(add.hasAttribute("disabled")).toBe(false));
+
+  stored = { ...initial, deny: [custom] };
+  fireEvent.click(add);
+  await view.findByText(
+    "Reload the current boundaries before adding your rule.",
+  );
+  expect(add.hasAttribute("disabled")).toBe(true);
+  expect(saved).toHaveLength(0);
+  fireEvent.click(view.getByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(add.hasAttribute("disabled")).toBe(false));
+  const name = view.getByLabelText("Name");
+  expect(name instanceof HTMLInputElement && name.value).toBe(template.name);
+  fireEvent.click(add);
+  await waitFor(() => expect(saved[0]?.deny).toEqual([custom, template.rule]));
+  expect(expectedPolicies).toEqual([initial, { ...initial, deny: [custom] }]);
 });
 
 test("removing a rule is confirmed, and takes its name with it", async () => {
@@ -337,15 +405,18 @@ test("a rule that doesn't compile says why under it, and isn't replayed as one t
   const { view } = open("/admin/boundaries/new");
 
   fireEvent.click(await view.findByText("Write your own"));
-  await userEvent
-    .setup({ document })
-    .type(view.getByLabelText("Rule"), 'elemnt.name == "Submit"');
+  const user = userEvent.setup({ document });
+  await user.type(view.getByLabelText("Name"), "Submit");
+  await user.type(view.getByLabelText("Rule"), 'elemnt.name == "Submit"');
 
   expect((await view.findByRole("alert")).textContent).toBe(why);
   expect(view.queryByText(/recorded actions/)).toBeNull();
+  expect(
+    view.getByRole("button", { name: "Add rule" }).hasAttribute("disabled"),
+  ).toBe(true);
 });
 
-test("a rule's page lists the app calls it stopped", async () => {
+test("a rule's page lists the recorded refusals that would be allowed without it", async () => {
   serving({
     mode: "enforce",
     deny: [salesforceWrites],
@@ -375,11 +446,13 @@ test("a rule's page lists the app calls it stopped", async () => {
   const { view } = open("/admin/boundaries/0");
 
   expect(
-    await view.findByText("It stopped 1 of the last 4 recorded actions."),
+    await view.findByText(
+      "1 of the last 4 recorded decisions would change from refused to allowed.",
+    ),
   ).toBeTruthy();
   expect(view.getByText("Delete record")).toBeTruthy();
   expect(view.getByText("salesforce/delete_record")).toBeTruthy();
-  expect(view.getByText("Stopped")).toBeTruthy();
+  expect(view.getByText("Would allow")).toBeTruthy();
   // Replayed without the rule: what it stopped is what would have gone through.
   expect(replayed).toEqual([
     { mode: "enforce", deny: [], allow: ["true"], labels: {} },

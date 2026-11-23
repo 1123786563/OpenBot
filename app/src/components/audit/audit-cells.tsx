@@ -562,7 +562,9 @@ export function decisionText(event: AuditEvent, storedNames = true): string {
       ? "Blocked"
       : outcome === "did-not-happen"
         ? "Did not happen"
-        : "Allowed")
+        : outcome === "no-verdict"
+          ? "No decision recorded"
+          : "Allowed")
   );
 }
 
@@ -612,7 +614,8 @@ function notConnectedLine(prompt: ConnectPrompt, storedNames: boolean): string {
 function approvalText(event: AuditEvent): string | undefined {
   const payload = event.payload ?? {};
   if (event.eventType === "approval.person_decided")
-    return typeof payload.decision === "string"
+    return typeof payload.decision === "string" &&
+      Object.hasOwn(PERSON_DECISIONS, payload.decision)
       ? PERSON_DECISIONS[payload.decision]
       : undefined;
   if (event.eventType === "approval.evaluated") {
@@ -623,7 +626,8 @@ function approvalText(event: AuditEvent): string | undefined {
     if (outcome?.source === "conversation" && outcome.behaviour === "allow")
       return "Allowed for this conversation";
     const behaviour = outcome?.behaviour;
-    return typeof behaviour === "string"
+    return typeof behaviour === "string" &&
+      Object.hasOwn(GATE_DECISIONS, behaviour)
       ? GATE_DECISIONS[behaviour]
       : undefined;
   }
@@ -661,7 +665,7 @@ const PERSON_DECISIONS: Record<string, string> = {
 
 const GATE_DECISIONS: Record<string, string> = {
   allow: "Allowed without asking",
-  ask: "Asked a person first",
+  ask: "Approval requested",
   hand_off: "Handed to a person",
   deny: "Blocked",
 };
@@ -997,7 +1001,7 @@ export function StartedByCell({
     <span
       className={
         unattended
-          ? "font-medium text-amber-600 dark:text-amber-500"
+          ? "font-medium text-amber-800 dark:text-amber-400"
           : "text-muted-foreground"
       }
     >
@@ -1033,7 +1037,7 @@ export function DecisionCell({
           outcome === "refused"
             ? "font-medium text-destructive"
             : outcome === "did-not-happen"
-              ? "font-medium text-amber-600 dark:text-amber-500"
+              ? "font-medium text-amber-800 dark:text-amber-400"
               : "text-muted-foreground"
         }
       >
@@ -1105,7 +1109,7 @@ function RuleExpression({ expression }: { expression: string }) {
         <button
           aria-controls={id}
           aria-expanded={open}
-          className="mt-0.5 rounded-sm text-muted-foreground text-xs underline underline-offset-2 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="mt-0.5 rounded-sm text-muted-foreground text-xs @max-3xl/audit:min-h-11 underline underline-offset-2 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
           onClick={() => setOpen((was) => !was)}
           type="button"
         >
@@ -1121,6 +1125,7 @@ export const OUTCOME_MARK: Record<AuditOutcome, string> = {
   refused: "bg-destructive",
   "did-not-happen": "bg-amber-500",
   allowed: "bg-muted-foreground/20",
+  "no-verdict": "bg-muted-foreground/20",
 };
 
 /** The faint tint on rows worth stopping at. Allowed rows stay plain. */
@@ -1128,6 +1133,7 @@ export const OUTCOME_ROW: Record<AuditOutcome, string> = {
   refused: "bg-destructive/5 hover:bg-destructive/10",
   "did-not-happen": "bg-amber-500/5 hover:bg-amber-500/10",
   allowed: "",
+  "no-verdict": "",
 };
 
 /**
@@ -1203,7 +1209,9 @@ const DECISIONS: Record<string, string> = {
   "mcp.callback_refused": "Couldn't confirm which Bot it was",
 
   // A request closed without an answer: asking was turned off, or a rule now allows it.
-  "approval.withdrawn": "Withdrawn",
+  "approval.withdrawn": "Approval request withdrawn",
+  "approval.rule_changed": "Approval rules changed",
+  "approval.settings_changed": "Approval settings changed",
   // A draft for the admin to read, as a boundary's is. Nothing was decided and nothing changed.
   "approval.rules_translated": "Drafted, not saved",
   "plugin.grants_translated": "Drafted, not saved",

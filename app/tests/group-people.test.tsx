@@ -51,7 +51,14 @@ function serving(initial: Record<string, unknown>[]) {
         user: { id: "me", role: "user", email: "me@example.test" },
       });
     }
-    return Response.json({ bots: [], people, messages: [] });
+    return Response.json({
+      bots: [
+        { id: "expense", name: "Expense Review" },
+        { id: "policy", name: "Policy Assistant" },
+      ],
+      people,
+      messages: [],
+    });
   }) as unknown as typeof fetch;
 }
 
@@ -82,18 +89,30 @@ const ALEX = {
 test("the top bar says how many people are in the group", async () => {
   serving([ME, ALEX]);
   const view = draw();
-  expect(await view.findByRole("button", { name: "2 people" })).toBeTruthy();
+  expect(
+    await view.findByRole("button", { name: "2 Bots · 2 people" }),
+  ).toBeTruthy();
 });
 
 test("the creator sees everyone and can take another person out", async () => {
   serving([ME, ALEX]);
   const view = draw();
-  fireEvent.click(await view.findByRole("button", { name: "2 people" }));
+  fireEvent.click(
+    await view.findByRole("button", { name: "2 Bots · 2 people" }),
+  );
   expect(await view.findByText("Alex")).toBeTruthy();
   expect(view.getByText("You")).toBeTruthy();
   fireEvent.click(
     view.getByRole("button", { name: "Remove alex@example.test" }),
   );
+  const cancel = await view.findByRole("button", { name: "Cancel" });
+  expect(requests).toHaveLength(0);
+  fireEvent.click(cancel);
+  expect(requests).toHaveLength(0);
+  fireEvent.click(
+    view.getByRole("button", { name: "Remove alex@example.test" }),
+  );
+  fireEvent.click(await view.findByRole("button", { name: "Remove person" }));
   await waitFor(() =>
     expect(requests).toContain("DELETE /api/groups/group-1/members/u2 "),
   );
@@ -102,13 +121,15 @@ test("the creator sees everyone and can take another person out", async () => {
 test("adding someone by email lists them without reopening the dialog", async () => {
   serving([ME]);
   const view = draw();
-  fireEvent.click(await view.findByRole("button", { name: "1 person" }));
+  fireEvent.click(
+    await view.findByRole("button", { name: "2 Bots · 1 person" }),
+  );
   const user = userEvent.setup({ document });
   await user.type(
-    await view.findByRole("textbox", { name: "Their email" }),
+    await view.findByRole("textbox", { name: "Add someone by email" }),
     "sam@example.test",
   );
-  fireEvent.click(view.getByRole("button", { name: "Add" }));
+  fireEvent.click(view.getByRole("button", { name: "Add to group" }));
   await waitFor(() =>
     expect(requests).toContain(
       'POST /api/groups/group-1/members {"email":"sam@example.test"}',
@@ -123,10 +144,14 @@ test("the group manager can leave and return to the roster", async () => {
   const view = draw(() => {
     left = true;
   });
-  fireEvent.click(await view.findByRole("button", { name: "2 people" }));
+  fireEvent.click(
+    await view.findByRole("button", { name: "2 Bots · 2 people" }),
+  );
   fireEvent.click(
     await view.findByRole("button", { name: "Leave this group" }),
   );
+  expect(requests).toHaveLength(0);
+  fireEvent.click(await view.findByRole("button", { name: "Leave group" }));
   await waitFor(() => expect(left).toBe(true));
   expect(requests).toContain("DELETE /api/groups/group-1/members/me ");
 });

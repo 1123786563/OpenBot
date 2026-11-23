@@ -99,6 +99,13 @@ const plural = (count: number, one: string, many: string) =>
 
 const percent = (share: number) => `${Math.round(share * 100)}%`;
 
+/** "2" rather than "2.0", so a whole-number average reads as one. */
+const itemCount = (average: number) => {
+  const rounded = Math.round(average * 10) / 10;
+  const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  return `${text} ${rounded === 1 ? "item" : "items"}`;
+};
+
 /** Check-ins that reached the model, whatever they found. */
 const ran = (bot: BotCheckInMetrics) =>
   bot.runs.quiet + bot.runs.raised + bot.runs.failed;
@@ -368,11 +375,11 @@ function Activity({
                 <IconBellRinging />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>Pings sent</ItemTitle>
+                <ItemTitle>Check-ins sent</ItemTitle>
                 <ItemDescription>
                   {metrics.data.pings.itemsPerPing === null
                     ? "Each one folds a person's waiting items from every Bot into one message."
-                    : `${metrics.data.pings.itemsPerPing.toFixed(1)} items in each, on average`}
+                    : `Each one carries an average of ${itemCount(metrics.data.pings.itemsPerPing)}.`}
                 </ItemDescription>
               </ItemContent>
               <ItemActions>
@@ -481,7 +488,7 @@ function BotDialog({
               }
             />
             <Stat label="Items raised" value={number(bot.items.raised)} />
-            <Stat label="Sent in a ping" value={number(bot.pinged)} />
+            <Stat label="Check-ins sent" value={number(bot.pinged)} />
           </div>
           <Breakdown
             rows={[

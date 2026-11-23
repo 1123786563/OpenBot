@@ -152,15 +152,13 @@ test("a new goal needs no Bot picked, and offers only this Bot's conversations",
   );
 });
 
-test("the section, its buttons, its empty state and its dialog all call it a goal", async () => {
+test("the empty section has one New goal action that opens the goal dialog", async () => {
   serving([]);
   const view = draw();
   expect(await view.findByText("No goals yet")).toBeTruthy();
   expect(view.getByText("Goals")).toBeTruthy();
-  const buttons = view.getAllByRole("button", { name: "New goal" });
-  expect(buttons).toHaveLength(2);
   const user = userEvent.setup({ document });
-  await user.click(buttons[0] as HTMLElement);
+  await user.click(view.getByRole("button", { name: "New goal" }));
   const dialog = await view.findByRole("dialog");
   expect(dialog.textContent).toContain("New goal");
   expect(view.getByRole("button", { name: "Create goal" })).toBeTruthy();

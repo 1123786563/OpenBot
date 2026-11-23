@@ -1,5 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import {
+  BotDetailsState,
+  botDetailsUnavailable,
+} from "@/components/bot-profile/bot-details-state";
 import { BotDetailSurface } from "@/components/bot-profile/detail-surface";
 import { ManageSection } from "@/components/bot-profile/manage";
 import { BotProfile } from "@/components/bot-profile/profile";
@@ -15,37 +19,36 @@ function BotProfilePage() {
   const { agentId } = Route.useParams();
   const navigate = useNavigate();
   const agent = useQuery(agentQueryOptions(agentId));
+  const unavailable = botDetailsUnavailable(agent.error);
   const toRoster = () => void navigate({ to: "/bots" });
   return (
     <BotDetailSurface>
       <PageShell
         backButton={{ label: "Bots", linkProps: { to: "/bots" } }}
         // No description: the Bot's own role, under its orb just below, says what this page is about.
-        title={agent.data?.name ?? "Bot"}
+        title={unavailable ? "Bot unavailable" : (agent.data?.name ?? "Bot")}
       >
-        {agent.isPending ? null : agent.error ? (
-          <p className="mt-6 text-destructive text-sm" role="alert">
-            Couldn't open this Bot. It may not be shared with you.
-          </p>
-        ) : (
-          <BotProfile
-            agent={agent.data}
-            manage={
-              <ManageSection
-                agent={agent.data}
-                onDeleted={toRoster}
-                onDuplicated={(copyId) =>
-                  void navigate({
-                    params: { agentId: copyId },
-                    to: "/bots/$agentId",
-                  })
-                }
-                onHidden={toRoster}
-              />
-            }
-            settings={<BotSettingsRows agent={agent.data} />}
-          />
-        )}
+        <BotDetailsState query={agent}>
+          {(details) => (
+            <BotProfile
+              agent={details}
+              manage={
+                <ManageSection
+                  agent={details}
+                  onDeleted={toRoster}
+                  onDuplicated={(copyId) =>
+                    void navigate({
+                      params: { agentId: copyId },
+                      to: "/bots/$agentId",
+                    })
+                  }
+                  onHidden={toRoster}
+                />
+              }
+              settings={<BotSettingsRows agent={details} />}
+            />
+          )}
+        </BotDetailsState>
       </PageShell>
     </BotDetailSurface>
   );

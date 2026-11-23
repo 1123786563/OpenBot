@@ -1,7 +1,7 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { SuggestionsInbox } from "@/components/suggestions/proactive-panel";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { settleReactWork } from "./settle-react-work";
@@ -29,11 +29,14 @@ function openBotSuggestions(suggestions: Response) {
   );
 }
 
-test("a Bot's Ideas show a failed suggestion request", async () => {
+test("a Bot's Ideas can recover a failed suggestion request in place", async () => {
   const view = openBotSuggestions(
     Response.json({ error: "Check-ins could not load" }, { status: 503 }),
   );
   expect((await view.findByRole("alert")).textContent).toBe(
-    "Check-ins could not load",
+    "Couldn’t load suggested next steps",
   );
+  fetchMock?.mockResolvedValue(Response.json({ suggestions: [] }));
+  fireEvent.click(view.getByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(view.queryByRole("alert")).toBeNull());
 });

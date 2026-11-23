@@ -1,10 +1,11 @@
+import { Text } from "@astryxdesign/core/Text";
 import {
   IconChecklist,
   IconEyeCheck,
   IconHandStop,
   IconTerminal2,
 } from "@tabler/icons-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment } from "react";
 import {
@@ -12,11 +13,11 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import {
   Item,
   ItemActions,
   ItemContent,
-  ItemDescription,
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
@@ -33,7 +34,6 @@ import {
 } from "@/lib/approvals";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
-import { queryClient } from "@/query-client";
 import {
   ALWAYS_ASKS,
   ASK_FIRST_DESCRIPTION,
@@ -48,6 +48,7 @@ import { HOST_LABELS, LabelSelect, RuleForm, RuleRow } from "./rules";
  * administrators change them in Admin → Approvals. Rules for a single Bot are on that Bot's page.
  */
 export function ApprovalSettings() {
+  const queryClient = useQueryClient();
   const inbox = useQuery(approvalInboxOptions());
   const me = useQuery(currentUserQueryOptions()).data;
   // The personal edition has no Admin to point at, and no team for team settings to govern.
@@ -63,35 +64,51 @@ export function ApprovalSettings() {
     updateApprovalRuleMutationOptions(queryClient),
   );
   const revoke = useMutation(revokeApprovalRuleMutationOptions(queryClient));
-  const error =
-    inbox.error ?? preferences.error ?? changeRule.error ?? revoke.error;
-  if (inbox.isPending && !error) return null;
-  const enforced = inbox.data?.team?.enforceAutoReview ?? false;
-  const rulesOff = inbox.data?.team?.customRulesEnabled === false;
-  const everyBot = (inbox.data?.rules ?? []).filter(
-    (rule) => rule.botId === "*",
-  );
+  const data = inbox.data;
+  if (!data) {
+    return inbox.isError ? (
+      <ReadError
+        message="Couldn't load your approval settings."
+        retry={inbox.refetch}
+        retrying={inbox.isFetching}
+      />
+    ) : (
+      <ReadStatus kind="loading" message="Loading your approval settings…" />
+    );
+  }
+  const enforced = data.team?.enforceAutoReview ?? false;
+  const rulesOff = data.team?.customRulesEnabled === false;
+  const everyBot = data.rules.filter((rule) => rule.botId === "*");
   /*
    * Rules that name no Bot this person can open — a Bot since deleted, or a name typed where an id
    * belonged. They are still enforced, so they are listed here where they can be removed.
    */
   const reachable = [...(agents.data ?? []), ...(hiddenAgents.data ?? [])];
-  const otherBots = (inbox.data?.rules ?? []).filter(
-    (rule) =>
-      rule.botId !== "*" &&
-      (agents.data === undefined ||
-        !reachable.some((agent) => ruleCoversBot(rule.botId, agent.id))),
-  );
-  const teamRules = inbox.data?.teamRules ?? [];
-  const canAdd = Boolean(inbox.data?.preferences) && !rulesOff;
+  const botRules = data.rules.filter((rule) => rule.botId !== "*");
+  const botListsReady = agents.isSuccess && hiddenAgents.isSuccess;
+  const otherBots = botListsReady
+    ? botRules.filter(
+        (rule) =>
+          !reachable.some((agent) => ruleCoversBot(rule.botId, agent.id)),
+      )
+    : [];
+  const teamRules = data.teamRules ?? [];
+  const canAdd = Boolean(data.preferences) && !rulesOff;
+  const preferencesDisabled = !inbox.isSuccess || preferences.isPending;
+  const rulesDisabled =
+    !inbox.isSuccess || revoke.isPending || changeRule.isPending;
+  const ruleError = changeRule.error ?? revoke.error;
   const saved = teamRules.length + everyBot.length;
 
   return (
     <>
-      {error ? (
-        <p className="mt-6 text-destructive text-sm" role="alert">
-          {error.message}
-        </p>
+      {inbox.isError ? (
+        <ReadError
+          message="Couldn't refresh your approval settings."
+          description="These are your last loaded settings. Reload them before you make any changes."
+          retry={inbox.refetch}
+          retrying={inbox.isFetching}
+        />
       ) : null}
       {me?.role === "admin" && !personal ? (
         <p className="mt-6 text-muted-foreground text-sm">
@@ -119,6 +136,20 @@ export function ApprovalSettings() {
         }
         title="Before a Bot acts"
       >
+        {preferences.error ? (
+          <ReadError
+            message="Couldn't save your approval preference."
+            description={preferences.error.message}
+            retryLabel={
+              inbox.isSuccess ? "Try saving again" : "Reload settings"
+            }
+            retry={() => {
+              if (!inbox.isSuccess) return inbox.refetch();
+              if (preferences.variables)
+                preferences.mutate(preferences.variables);
+            }}
+          />
+        ) : null}
         <PageRows>
           <Item size="sm">
             <ItemMedia variant="icon">
@@ -126,20 +157,20 @@ export function ApprovalSettings() {
             </ItemMedia>
             <ItemContent>
               <ItemTitle>{ASK_FIRST_TITLE}</ItemTitle>
-              <ItemDescription className="line-clamp-none">
+              <Text as="p" color="secondary" size="sm">
                 {ASK_FIRST_DESCRIPTION}
-              </ItemDescription>
+              </Text>
             </ItemContent>
             <ItemActions>
               <Switch
                 aria-label={ASK_FIRST_TITLE}
-                checked={inbox.data?.enabled ?? false}
-                disabled={inbox.isLoading || preferences.isPending}
+                checked={data.enabled}
+                disabled={preferencesDisabled}
                 onCheckedChange={(enabled) => preferences.mutate({ enabled })}
               />
             </ItemActions>
           </Item>
-          {inbox.data?.preferences ? (
+          {data.preferences ? (
             <>
               <Separator />
               <Item size="sm">
@@ -148,15 +179,17 @@ export function ApprovalSettings() {
                 </ItemMedia>
                 <ItemContent>
                   <ItemTitle id="auto-review-title">Auto-review</ItemTitle>
-                  <ItemDescription
-                    className="line-clamp-none"
+                  <Text
+                    as="p"
+                    color="secondary"
                     id="auto-review-description"
+                    size="sm"
                   >
                     {enforced ? "An admin requires this. " : ""}
                     Before a Bot does something that could affect your accounts
                     or share information, OpenBot checks it against your request
                     and your rules. If it can't tell, it asks you.
-                  </ItemDescription>
+                  </Text>
                 </ItemContent>
                 <ItemActions>
                   <Switch
@@ -164,8 +197,8 @@ export function ApprovalSettings() {
                     // stays short however long the description grows.
                     aria-describedby="auto-review-description"
                     aria-labelledby="auto-review-title"
-                    checked={enforced || inbox.data.preferences.autoReview}
-                    disabled={enforced || preferences.isPending}
+                    checked={enforced || data.preferences.autoReview}
+                    disabled={enforced || preferencesDisabled}
                     onCheckedChange={(autoReview) =>
                       preferences.mutate({ autoReview })
                     }
@@ -173,31 +206,30 @@ export function ApprovalSettings() {
                 </ItemActions>
               </Item>
               <Separator />
-              <Item size="sm">
-                <ItemMedia variant="icon">
-                  <IconTerminal2 />
-                </ItemMedia>
-                <ItemContent>
-                  <ItemTitle>Commands on your computer</ItemTitle>
-                  <ItemDescription className="line-clamp-none">
-                    {inbox.data.hostCommands &&
-                    inbox.data.hostCommands !==
-                      inbox.data.preferences.hostCommands
-                      ? `An admin limits this to "${HOST_LABELS[inbox.data.hostCommands]}". `
+              <Item className="flex-wrap items-start" size="sm">
+                <ItemContent className="min-w-0 basis-56">
+                  <ItemTitle className="line-clamp-none">
+                    <IconTerminal2 aria-hidden className="size-4 shrink-0" />
+                    Commands on your computer
+                  </ItemTitle>
+                  <Text as="p" color="secondary" size="sm">
+                    {data.hostCommands &&
+                    data.hostCommands !== data.preferences.hostCommands
+                      ? `An admin limits this to "${HOST_LABELS[data.hostCommands]}". `
                       : ""}
                     The OpenBot desktop app still shows you each command before
                     it runs.
-                  </ItemDescription>
+                  </Text>
                 </ItemContent>
                 <ItemActions>
                   <LabelSelect
-                    disabled={preferences.isPending}
+                    disabled={preferencesDisabled}
                     label="Commands on your computer"
                     labels={HOST_LABELS}
                     onChange={(hostCommands) =>
                       preferences.mutate({ hostCommands })
                     }
-                    value={inbox.data.preferences.hostCommands}
+                    value={data.preferences.hostCommands}
                   />
                 </ItemActions>
               </Item>
@@ -222,6 +254,11 @@ export function ApprovalSettings() {
         }
         title="Rules for every Bot"
       >
+        {ruleError ? (
+          <p className="text-destructive text-sm" role="alert">
+            {ruleError.message} Review the rule and try the change again.
+          </p>
+        ) : null}
         {saved === 0 ? (
           <PageEmpty icon={IconChecklist} title="No rules yet" />
         ) : null}
@@ -244,7 +281,7 @@ export function ApprovalSettings() {
               <Fragment key={rule.id}>
                 {teamRules.length + index > 0 ? <Separator /> : null}
                 <RuleRow
-                  disabled={revoke.isPending || changeRule.isPending}
+                  disabled={rulesDisabled}
                   locked={rulesOff}
                   onChange={(behaviour) =>
                     changeRule.mutate({ id: rule.id, behaviour })
@@ -257,13 +294,19 @@ export function ApprovalSettings() {
             {canAdd ? (
               <>
                 {saved > 0 ? <Separator /> : null}
-                <RuleForm botField={false} label="Add a rule" save={addRule} />
+                <RuleForm
+                  botField={false}
+                  canSave={inbox.isSuccess}
+                  label="Add a rule"
+                  refreshSettings={inbox.refetch}
+                  save={addRule}
+                />
               </>
             ) : null}
           </PageRows>
         ) : null}
       </PageSection>
-      {agents.data !== undefined && otherBots.length > 0 ? (
+      {otherBots.length > 0 ? (
         <PageSection
           description="These don't match a Bot you can open. They still apply to any Bot they match. Remove the ones you don't want."
           title="Rules for other Bots"
@@ -273,7 +316,7 @@ export function ApprovalSettings() {
               <Fragment key={rule.id}>
                 {index > 0 ? <Separator /> : null}
                 <RuleRow
-                  disabled={revoke.isPending || changeRule.isPending}
+                  disabled={rulesDisabled}
                   locked={rulesOff}
                   onChange={(behaviour) =>
                     changeRule.mutate({ id: rule.id, behaviour })
@@ -284,6 +327,24 @@ export function ApprovalSettings() {
               </Fragment>
             ))}
           </PageRows>
+        </PageSection>
+      ) : null}
+      {botRules.length > 0 && !botListsReady ? (
+        <PageSection title="Rules for other Bots">
+          {agents.isError || hiddenAgents.isError ? (
+            <ReadError
+              message="Couldn't check which Bots these rules apply to."
+              retry={() =>
+                Promise.all([agents.refetch(), hiddenAgents.refetch()])
+              }
+              retrying={agents.isFetching || hiddenAgents.isFetching}
+            />
+          ) : (
+            <ReadStatus
+              kind="loading"
+              message="Checking which Bots have rules…"
+            />
+          )}
         </PageSection>
       ) : null}
     </>

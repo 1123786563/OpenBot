@@ -16,14 +16,20 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import * as React from "react";
+import { DeviceAction } from "@/components/astryx-pilot/device-action";
 import { DevicePage } from "@/components/astryx-pilot/device-page";
 import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { RowMark } from "@/components/layout/row-mark";
 import { describe } from "@/components/layout/update-banner";
+import {
+  ActionIncomplete,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import {
   Item,
@@ -106,13 +112,23 @@ function ComputerSections() {
     ...intelligenceReadinessQueryOptions(),
     enabled: Boolean(data?.intelligenceStack),
   });
+  const retryStatus = () => Promise.all([listed.refetch(), measured.refetch()]);
 
-  if (!data && (listed.isPending || measured.isPending)) return null;
+  if (!data && (listed.isPending || measured.isPending))
+    return (
+      <ReadStatus
+        kind="loading"
+        message="Checking what OpenBot runs on this computer…"
+      />
+    );
   if (!data)
     return (
-      <p className="text-destructive text-sm" role="alert">
-        Could not read what OpenBot runs on this computer.
-      </p>
+      <ReadError
+        message="Couldn't read what OpenBot runs on this computer."
+        retry={retryStatus}
+        retryBelow
+        retrying={listed.isFetching || measured.isFetching}
+      />
     );
   const isMeasured = measured.data !== undefined;
   return (
@@ -140,6 +156,7 @@ function OpenBotSection({
 }) {
   const restart = useMutation(restartOpenBotMutationOptions(queryClient));
   const stop = useMutation(stopOpenBotMutationOptions());
+  const { requestConfirmation, confirmation } = useActionConfirmation();
   const memory = totalMemory([...status.processes, ...status.containers]);
   const busy = restart.isPending || stop.isPending;
   return (
@@ -180,23 +197,47 @@ function OpenBotSection({
           {status.openbotRunning && (
             <ItemActions>
               {status.openbotHeld && (
-                <Button
+                <DeviceAction
+                  aria-label="Restart OpenBot"
+                  className="local-service-action"
                   disabled={busy}
-                  onClick={() => restart.mutate()}
-                  size="sm"
+                  onClick={(event) =>
+                    requestConfirmation({
+                      title: "Restart OpenBot?",
+                      description:
+                        "OpenBot will briefly be unavailable on this computer. Any work in progress may be interrupted.",
+                      confirmLabel: "Restart OpenBot",
+                      pendingLabel: "Restarting OpenBot…",
+                      failureMessage: "Couldn't restart OpenBot. Try again.",
+                      trigger: event.currentTarget,
+                      run: () => restart.mutateAsync(),
+                    })
+                  }
                   variant="outline"
                 >
                   Restart
-                </Button>
+                </DeviceAction>
               )}
-              <Button
+              <DeviceAction
+                aria-label="Stop OpenBot"
+                className="local-service-action"
                 disabled={busy}
-                onClick={() => stop.mutate()}
-                size="sm"
+                onClick={(event) =>
+                  requestConfirmation({
+                    title: "Stop OpenBot?",
+                    description:
+                      "OpenBot will stop on this computer, and any work in progress may be interrupted. Start OpenBot again from the desktop app.",
+                    confirmLabel: "Stop OpenBot",
+                    pendingLabel: "Stopping OpenBot…",
+                    failureMessage: "Couldn't stop OpenBot. Try again.",
+                    trigger: event.currentTarget,
+                    run: () => stop.mutateAsync(),
+                  })
+                }
                 variant="outline"
               >
                 Stop
-              </Button>
+              </DeviceAction>
             </ItemActions>
           )}
         </Item>
@@ -213,6 +254,7 @@ function OpenBotSection({
           separatorFirst
         />
       </PageRows>
+      {confirmation}
     </PageSection>
   );
 }
@@ -228,6 +270,8 @@ function IntelligenceSection({
   status: DesktopStatus;
 }) {
   const intelligence = useMutation(intelligenceMutationOptions(queryClient));
+  const { requestConfirmation, confirmation } = useActionConfirmation();
+  const startButton = React.useRef<HTMLButtonElement>(null);
   const running =
     status.intelligenceContainers.length > 0 && readiness !== "stopped";
   const memory = totalMemory(status.intelligenceContainers);
@@ -264,35 +308,74 @@ function IntelligenceSection({
           <ItemActions>
             {running ? (
               <>
-                <Button
+                <DeviceAction
+                  aria-label="Restart OpenBot services"
+                  className="local-service-action"
                   disabled={intelligence.isPending}
-                  onClick={async () => {
-                    await intelligence.mutateAsync("stop");
-                    intelligence.mutate("start");
+                  onClick={(event) => {
+                    let servicesStopped = false;
+                    requestConfirmation({
+                      title: "Restart OpenBot’s services?",
+                      description:
+                        "Bots may be unable to answer while the services restart. Conversations and skills are kept.",
+                      confirmLabel: "Restart services",
+                      pendingLabel: "Restarting services…",
+                      failureMessage:
+                        "Couldn't stop the services to restart them. Try again.",
+                      trigger: event.currentTarget,
+                      fallbackFocus: () => startButton.current,
+                      run: async () => {
+                        if (!servicesStopped) {
+                          await intelligence.mutateAsync("stop");
+                          servicesStopped = true;
+                        }
+                        try {
+                          await intelligence.mutateAsync("start");
+                        } catch {
+                          throw new ActionIncomplete(
+                            "The services stopped, but couldn't start again. Try again to start them.",
+                          );
+                        }
+                      },
+                    });
                   }}
-                  size="sm"
                   variant="outline"
                 >
                   Restart
-                </Button>
-                <Button
+                </DeviceAction>
+                <DeviceAction
+                  aria-label="Stop OpenBot services"
+                  className="local-service-action"
                   disabled={intelligence.isPending}
-                  onClick={() => intelligence.mutate("stop")}
-                  size="sm"
+                  onClick={(event) =>
+                    requestConfirmation({
+                      title: "Stop OpenBot’s services?",
+                      description:
+                        "Bots may be unable to answer until you start these services again. Conversations and skills are kept.",
+                      confirmLabel: "Stop services",
+                      pendingLabel: "Stopping services…",
+                      failureMessage: "Couldn't stop the services. Try again.",
+                      trigger: event.currentTarget,
+                      fallbackFocus: () => startButton.current,
+                      run: () => intelligence.mutateAsync("stop"),
+                    })
+                  }
                   variant="outline"
                 >
                   Stop
-                </Button>
+                </DeviceAction>
               </>
             ) : (
-              <Button
+              <DeviceAction
+                ref={startButton}
+                aria-label="Start OpenBot services"
+                className="local-service-action"
                 disabled={intelligence.isPending}
                 onClick={() => intelligence.mutate("start")}
-                size="sm"
                 variant="outline"
               >
                 Start
-              </Button>
+              </DeviceAction>
             )}
           </ItemActions>
         </Item>
@@ -303,6 +386,7 @@ function IntelligenceSection({
           separatorFirst
         />
       </PageRows>
+      {confirmation}
     </PageSection>
   );
 }

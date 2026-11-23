@@ -26,7 +26,7 @@ export function SkippedToolsNotice({
     );
     return (
       <p
-        className="mt-4 text-amber-600 text-sm dark:text-amber-500"
+        className="mt-4 text-amber-700 text-sm dark:text-amber-400"
         role="status"
       >
         {names.length === 1
@@ -38,7 +38,7 @@ export function SkippedToolsNotice({
   }
   return (
     <p
-      className="mt-4 text-amber-600 text-sm dark:text-amber-500"
+      className="mt-4 text-amber-700 text-sm dark:text-amber-400"
       role="status"
     >
       {names.length === 1

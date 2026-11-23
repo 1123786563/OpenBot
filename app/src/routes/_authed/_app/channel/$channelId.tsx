@@ -146,7 +146,7 @@ function RouteComponent() {
                   size={22}
                 />
               </motion.div>
-              <motion.span
+              <motion.h1
                 animate={
                   prefersReducedMotion
                     ? { opacity: 1 }
@@ -164,8 +164,8 @@ function RouteComponent() {
                   ease: EASE_OUT,
                 }}
               >
-                {channel.data?.name ?? "Channel"}
-              </motion.span>
+                {channel.data?.name ?? "Conversation"}
+              </motion.h1>
             </div>
             <div className="flex flex-row gap-1.5">
               {agentId &&
@@ -200,10 +200,11 @@ function RouteComponent() {
           <BotPausedBanner agentId={agentId} />
         ) : null}
         <ChannelBody
-          channel={channel.data}
+          channel={channel.error ? undefined : channel.data}
           isPending={channel.isPending}
           runId={runId}
-          hasError={Boolean(channel.error)}
+          retry={() => void channel.refetch()}
+          retrying={channel.isFetching}
         />
       </DetailPanel>
     </ConversationSurface>
@@ -217,21 +218,27 @@ function RouteComponent() {
 function ChannelBody({
   channel,
   isPending,
-  hasError,
+  retry,
+  retrying,
   runId,
 }: {
   channel: AgentChannel | undefined;
   isPending: boolean;
-  hasError: boolean;
+  retry: () => void;
+  retrying: boolean;
   runId?: string;
 }) {
-  // Nothing while the channel loads: a placeholder inside a local round-trip is a flicker.
-  if (isPending) return null;
-  if (hasError || !channel) {
+  if (isPending) return <ConversationLoading label="Opening conversation…" />;
+  if (!channel) {
     return (
-      <p className="p-8 text-sm text-destructive" role="alert">
-        Couldn't load this conversation. Reload the page.
-      </p>
+      <Stack padding={5}>
+        <ConversationReadError
+          title="Couldn't open this conversation."
+          retry={retry}
+          retrying={retrying}
+          retryBelow
+        />
+      </Stack>
     );
   }
 
@@ -260,3 +267,9 @@ function ChannelBody({
     />
   );
 }
+
+import { Stack } from "@astryxdesign/core/Stack";
+import {
+  ConversationLoading,
+  ConversationReadError,
+} from "@/components/channels/conversation-status";

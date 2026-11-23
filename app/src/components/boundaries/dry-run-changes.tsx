@@ -59,10 +59,12 @@ export function DryRunChanges({
   changes,
   total,
   verdict,
+  verdictClassName,
 }: {
   changes: DryRunChange[];
   total: number;
   verdict: string;
+  verdictClassName?: string;
 }) {
   if (changes.length === 0) return null;
   return (
@@ -75,6 +77,7 @@ export function DryRunChanges({
             ? { icon: <IconPlug />, label: "App call" }
             : { icon: <IconDeviceDesktop />, label: "Computer action" },
         verdict,
+        ...(verdictClassName ? { verdictClassName } : {}),
       }))}
       total={total}
     />

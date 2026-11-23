@@ -3,6 +3,7 @@ import { IconRadar } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { PageRows, PageSection } from "@/components/layout/page-shell";
+import { Button } from "@/components/ui/button";
 import {
   Item,
   ItemActions,
@@ -11,6 +12,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   deploymentCapabilitiesQueryOptions,
   offersMemory,
@@ -55,10 +57,40 @@ export function CheckInsSection() {
       description="Your Bots check the apps they can read and tell you when something needs you, at most once an hour. They never act without asking."
       title="Check-ins"
     >
-      {preferences.isPending ? null : preferences.error ? (
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          Couldn't load your check-ins. Reload the page.
-        </p>
+      {preferences.isPending ? (
+        <div aria-busy="true" aria-label="Loading check-ins" role="status">
+          <PageRows>
+            <Item size="sm">
+              <ItemMedia variant="icon">
+                <Skeleton className="size-full" />
+              </ItemMedia>
+              <ItemContent className="gap-1.5">
+                <Skeleton className="h-3.5 w-32" />
+                <Skeleton className="h-3 w-56" />
+              </ItemContent>
+            </Item>
+          </PageRows>
+        </div>
+      ) : preferences.error ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't load your check-ins.
+          </p>
+          <Button
+            disabled={preferences.isFetching || allowed.isFetching}
+            onClick={() => {
+              void preferences.refetch();
+              void allowed.refetch();
+            }}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {preferences.isFetching || allowed.isFetching
+              ? "Retrying…"
+              : "Retry"}
+          </Button>
+        </div>
       ) : (
         <PageRows>
           <Item size="sm">

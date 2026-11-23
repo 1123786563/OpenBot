@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { PageSection } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { setEnterpriseSettingMutationOptions } from "@/lib/enterprise/mutations";
 import {
   type EnterpriseOverview,
@@ -16,6 +17,11 @@ export type Controls = {
     key: K,
     value: EnterpriseSettings[K],
   ) => void;
+  /** The same write, awaited: a dialog that must outlive its own Save presses this. */
+  setSettingAsync: <K extends keyof EnterpriseSettings>(
+    key: K,
+    value: EnterpriseSettings[K],
+  ) => Promise<void>;
   saving: boolean;
 };
 
@@ -32,50 +38,62 @@ export function ControlsSection({
   title,
   description,
   children,
+  readErrorMessage = "Couldn't load these settings.",
+  showWriteError = true,
 }: {
   /** Absent on a page whose only section this is: the page title already names it. */
   title?: string;
   description?: ReactNode | ((data: EnterpriseOverview) => ReactNode);
   children: (controls: Controls) => ReactNode;
+  /** Pass false when another section on the page shows the shared read status. */
+  readErrorMessage?: string | false;
+  /** A confirmation dialog can display its own save failure. */
+  showWriteError?: boolean;
 }) {
   const overview = useQuery(enterpriseOverviewQueryOptions());
   const setSetting = useMutation(
     setEnterpriseSettingMutationOptions(queryClient),
   );
-  if (overview.isPending) return null;
-  /*
-   * These sections sit on pages with work of their own (Plugins, Audit, Computers), so one that
-   * cannot read its settings says so in place. An answer without settings is treated the same,
-   * rather than taking the page it sits on down with it.
-   */
-  if (overview.error || !overview.data?.settings)
-    return (
-      <PageSection title={title}>
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          Couldn't load these settings. Reload the page.
-        </p>
-      </PageSection>
-    );
+  const data =
+    overview.isSuccess && overview.data.settings ? overview.data : undefined;
   const failure = setSetting.error;
   return (
     <PageSection
       description={
         typeof description === "function"
-          ? description(overview.data)
+          ? data && description(data)
           : description
       }
       title={title}
     >
-      {failure ? (
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          {failure.message}
-        </p>
+      {data ? (
+        <>
+          {showWriteError && failure ? (
+            <p className="mt-4 text-destructive text-sm" role="alert">
+              {failure.message}
+            </p>
+          ) : null}
+          {children({
+            data,
+            setSetting: (key, value) => setSetting.mutate({ key, value }),
+            setSettingAsync: async (key, value) => {
+              await setSetting.mutateAsync({ key, value });
+            },
+            saving: setSetting.isPending,
+          })}
+        </>
+      ) : readErrorMessage !== false ? (
+        overview.isPending && overview.errorUpdateCount === 0 ? (
+          <ReadStatus kind="loading" message="Loading settings…" />
+        ) : (
+          <ReadError
+            message={readErrorMessage}
+            retry={overview.refetch}
+            retryBelow
+            retrying={overview.isFetching}
+          />
+        )
       ) : null}
-      {children({
-        data: overview.data,
-        setSetting: (key, value) => setSetting.mutate({ key, value }),
-        saving: setSetting.isPending,
-      })}
     </PageSection>
   );
 }
