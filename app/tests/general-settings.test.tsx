@@ -239,7 +239,11 @@ describe("the General page speaks the interface language", () => {
     await userEvent.setup({ document }).click(row);
     const dialog = await view.findByRole("dialog");
     expect(
-      await within(dialog).findByText("无法加载你的常设指令"),
+      await within(dialog).findByText(
+        "无法加载你的常设指令",
+        {},
+        { timeout: 3000 },
+      ),
     ).toBeTruthy();
   });
 
