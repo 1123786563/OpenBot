@@ -14,6 +14,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { useTranslation } from "@/i18n";
 import {
   approveAppAccessRequestMutationOptions,
   dismissAppAccessRequestMutationOptions,
@@ -111,6 +112,8 @@ export function askedFor(request: AppAccessRequest): string {
 }
 
 function AccessRequestRow({ request }: { request: AppAccessRequest }) {
+  // Subscribes this row to the interface language, so choosing another one redraws its time in place.
+  useTranslation();
   // One pair per row, so a refusal is drawn under the request it is about and nowhere else.
   const approve = useMutation(
     approveAppAccessRequestMutationOptions(queryClient),
