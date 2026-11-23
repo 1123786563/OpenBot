@@ -115,6 +115,7 @@ test.each([
   { startingPoint: "fresh", mainThrough: 0, trialLength: 0 },
   { startingPoint: "pre-Corsair main", mainThrough: 93, trialLength: 0 },
   { startingPoint: "Corsair main", mainThrough: 93, trialLength: 0 },
+  { startingPoint: "Bifrost main", mainThrough: 93, trialLength: 0 },
   { startingPoint: "current Personal SaaS", mainThrough: 93, trialLength: 0 },
   { startingPoint: "early trial", mainThrough: 89, trialLength: 1 },
   {
@@ -130,12 +131,24 @@ test.each([
     const folder = fileURLToPath(new URL("../drizzle", import.meta.url));
     const migrations = await readMigrationFolder(folder);
     const corsair = migrations.filter(({ tag }) => /_corsair_/.test(tag));
+    const bifrost = migrations.filter(({ tag }) =>
+      /_(bifrost_market_reviews|skill_market_equivalences)$/.test(tag),
+    );
+    // Pin the historical parent before Bifrost and the sandbox migrations joined it.
     const saas = migrations
-      .slice(93)
-      .filter((entry) => !corsair.includes(entry));
+      .slice(
+        93,
+        migrations.findIndex(
+          ({ tag }) => tag === "0117_bifrost_market_reviews",
+        ),
+      )
+      .filter((entry) => !corsair.includes(entry) && !bifrost.includes(entry));
     const historical = [
       ...migrations.slice(0, mainThrough),
-      ...(startingPoint === "Corsair main" ? corsair : []),
+      ...(startingPoint === "Corsair main" || startingPoint === "Bifrost main"
+        ? corsair
+        : []),
+      ...(startingPoint === "Bifrost main" ? bifrost : []),
       ...(startingPoint === "current Personal SaaS" ? saas : []),
       ...saas.slice(0, trialLength).map((entry, index) => {
         const when = originalTrialStamps[index];
@@ -195,6 +208,14 @@ test.each([
         true,
       );
       expect(await exists(client, "skill_market_runs")).toBe(true);
+      expect(await exists(client, "bifrost_market_reviews")).toBe(true);
+      expect(await exists(client, "skill_market_equivalences")).toBe(true);
+      expect(await exists(client, "personal_workspace_agent_sandboxes")).toBe(
+        true,
+      );
+      expect(await exists(client, "personal_workspace_agentic_spaces")).toBe(
+        true,
+      );
       expect([
         ...(await client`select hash, created_at::text
         from drizzle.__drizzle_migrations order by created_at::bigint`),

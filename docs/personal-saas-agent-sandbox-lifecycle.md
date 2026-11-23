@@ -16,7 +16,7 @@ Hangzhou returned approximately 60 seconds of provider TTL for a 10-second creat
    shasum -a 256 /tmp/openbot-flash-runtime.tar.gz
    ```
 
-3. On each Personal SaaS server replica make the artifact readable at the configured absolute path. Apply the normal server migrations, including `0118_agent_sandbox_flash` if not already applied. Use the same database, encryption key, Team key, template and artifact on each replica. Use the template identifier returned in the Flash create response. The #143 Hangzhou trial returned `code-interpreter-v1`. Choose the identifier for your AgenticFS-capable template. Set a positive `OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES` within `OPENBOT_PERSONAL_QUOTA_STORAGE_BYTES`. Leave the Docker supervisor and former authority settings unset. Drain existing Flash generations before deploying this worker protocol or changing region, template, Team key or provider.
+3. On each Personal SaaS server replica make the artifact readable at the configured absolute path. Apply the normal server migrations, including `0120_agent_sandbox_flash` if not already applied. Use the same database, encryption key, Team key, template and artifact on each replica. Use the template identifier returned in the Flash create response. The #143 Hangzhou trial returned `code-interpreter-v1`. Choose the identifier for your AgenticFS-capable template. Set a positive `OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES` within `OPENBOT_PERSONAL_QUOTA_STORAGE_BYTES`. Leave the Docker supervisor and former authority settings unset. Drain existing Flash generations before deploying this worker protocol or changing region, template, Team key or provider.
 
    ```sh
    export OPENBOT_PERSONAL_SAAS_MODE=private-trial
@@ -27,6 +27,8 @@ Hangzhou returned approximately 60 seconds of provider TTL for a 10-second creat
    (cd server && bun --no-env-file scripts/migrate.ts)
    (cd server && bun --no-env-file src/personal-saas/index.ts)
    ```
+
+The Bifrost integration moved the sandbox migrations from 0117–0119 to 0119–0121 and restamped them. A disposable trial database that applied the old sandbox journal must be dropped and re-migrated before reuse; the guarded migrator refuses that history rather than skipping Bifrost migrations. Preserve any needed data first. Do not reset a database containing retained user data; reconcile its history separately before deployment.
 
 On each start request, OpenBot reserves one slot, creates a fresh private instance with public traffic and internet access disabled, uploads the archive in parts of at most 24 MiB through root envd, reassembles it, checks its SHA-256 and installs it in `/opt/openbot`. The Flash HTTP gateway accepts up to 32 MiB per upload request. The instance needs no registry or package download. [Flash large file uploads](https://help.aliyun.com/zh/agent-sandbox/upload-large-files-to-fc-agent-sandbox) The setup reservation has a 30-second deadline. OpenBot rechecks account authorization after setup before issuing the initial work lease. Downloads, list, read and write use the same workspace implementation as the Docker computer. Flash exposes these file routes and health. OpenBot's gateway sends both the Flash traffic token and the worker token. Each issued lease applies to one generation and Flash keeps the original five-minute provider TTL. Run each scenario with a fresh instance.
 

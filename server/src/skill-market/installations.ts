@@ -5,16 +5,40 @@ import {
   agentProfiles,
   agents,
   SKILL_MARKET_RESERVATION,
+  skillMarketEquivalences,
   skillMarketInstallations,
   skillMarketSources,
   skills,
 } from "../db/schema";
 import { registeredBotProfiles } from "../plugins/plugin-store/skills";
-import type { MarketPreview, QualifiedMarketVersion } from "./catalog";
+import type { BifrostPackageIdentity } from "./bifrost";
+import type { MarketPreview } from "./catalog";
+import { bifrostNamespace } from "./config";
 import {
   marketVersionMethods,
   qualifyMarketVersionForWrite,
 } from "./disablements";
+import { commandSource, lockMarketEquivalences } from "./equivalences";
+import { installedMarketSource } from "./installed-source";
+import { bifrostReviewMethods, lockActiveBifrostReview } from "./reviews";
+
+type InstallablePreview = Pick<
+  MarketPreview,
+  | "source"
+  | "namespace"
+  | "slug"
+  | "title"
+  | "summary"
+  | "version"
+  | "versionId"
+  | "registrySkillId"
+  | "fingerprint"
+  | "instructions"
+>;
+type InstallQualification = {
+  kind: "qualified";
+  preview: InstallablePreview;
+} & ({ packageIdentity: BifrostPackageIdentity } | { packageIdentity?: never });
 
 type Actor = AppVariables["actor"];
 type Source = Pick<MarketPreview, "source" | "namespace" | "slug">;
@@ -37,15 +61,23 @@ function matchesSource(source: Source) {
   );
 }
 
+type ExpectedInstallation = {
+  expectedVersionId: number;
+  expectedRegistry?: string;
+};
+
 function matchesInstallation(
   agentId: string,
   command: string,
-  expectedVersionId: number,
+  { expectedVersionId, expectedRegistry }: ExpectedInstallation,
 ) {
   return and(
     eq(skillMarketInstallations.agentId, agentId),
     eq(skillMarketInstallations.command, command),
     eq(skillMarketInstallations.versionId, expectedVersionId),
+    expectedRegistry === undefined
+      ? undefined
+      : eq(installedMarketSource.source, expectedRegistry),
   );
 }
 
@@ -105,6 +137,7 @@ async function reserveCommand(
 export function marketSkillMethods(database: Database) {
   return {
     ...marketVersionMethods(database),
+    ...bifrostReviewMethods(database),
 
     async marketInstallTargets(actor: Actor, agentId?: string) {
       return registeredBotProfiles(database)
@@ -117,7 +150,14 @@ export function marketSkillMethods(database: Database) {
         .orderBy(asc(agentProfiles.title), asc(agents.id));
     },
 
-    async marketCommand(source: Source) {
+    async marketCommand(
+      preview: Source & { packageIdentity?: BifrostPackageIdentity },
+    ) {
+      const source = await commandSource(
+        database,
+        preview,
+        preview.packageIdentity?.skillId,
+      );
       const [assigned] = await database
         .select({ command: skillMarketSources.command })
         .from(skillMarketSources)
@@ -133,21 +173,38 @@ export function marketSkillMethods(database: Database) {
     },
 
     async listMarketInstallations(agentId: string) {
+      const alias = database
+        .select({ slug: skillMarketEquivalences.targetSlug })
+        .from(skillMarketEquivalences)
+        .where(
+          and(
+            eq(skillMarketEquivalences.source, installedMarketSource.source),
+            eq(
+              skillMarketEquivalences.namespace,
+              installedMarketSource.namespace,
+            ),
+            eq(skillMarketEquivalences.slug, installedMarketSource.slug),
+            eq(
+              skillMarketEquivalences.registrySkillId,
+              skillMarketInstallations.registrySkillId,
+            ),
+          ),
+        )
+        .limit(1)
+        .as("market_catalog_alias");
       return database
         .select({
           command: skillMarketInstallations.command,
-          namespace: skillMarketSources.namespace,
-          slug: skillMarketSources.slug,
-          registry: skillMarketSources.registry,
+          namespace: installedMarketSource.namespace,
+          slug: installedMarketSource.slug,
+          registry: installedMarketSource.source,
+          catalogSlug: alias.slug,
           title: skillMarketInstallations.title,
           version: skillMarketInstallations.version,
           versionId: skillMarketInstallations.versionId,
         })
         .from(skillMarketInstallations)
-        .innerJoin(
-          skillMarketSources,
-          eq(skillMarketInstallations.command, skillMarketSources.command),
-        )
+        .leftJoinLateral(alias, sql`true`)
         .where(eq(skillMarketInstallations.agentId, agentId))
         .orderBy(asc(skillMarketInstallations.command));
     },
@@ -156,7 +213,7 @@ export function marketSkillMethods(database: Database) {
       actor: Actor,
       agentId: string,
       command: string,
-      expectedVersionId: number,
+      previous: ExpectedInstallation,
     ) {
       return database.transaction(async (transaction) => {
         const [target] = await registeredBotProfiles(transaction)
@@ -166,26 +223,36 @@ export function marketSkillMethods(database: Database) {
 
         const [removed] = await transaction
           .delete(skillMarketInstallations)
-          .where(matchesInstallation(agentId, command, expectedVersionId))
+          .where(matchesInstallation(agentId, command, previous))
           .returning({ command: skillMarketInstallations.command });
         return removed ? "uninstalled" : "stale-installation";
       });
     },
 
     async assignMarketCommand(
-      source: Source & { title: string },
+      source: Source & { title: string; skillId?: string },
       command: string,
     ) {
-      return database.transaction((transaction) =>
-        reserveCommand(transaction, source, command),
-      );
+      return database.transaction(async (transaction) => {
+        await lockMarketEquivalences(transaction, "read");
+        const canonical = await commandSource(
+          transaction,
+          source,
+          source.skillId,
+        );
+        return reserveCommand(
+          transaction,
+          { ...canonical, title: source.title },
+          command,
+        );
+      });
     },
 
     async installMarketSkill(
       actor: Actor,
       agentId: string,
-      { preview }: QualifiedMarketVersion,
-      expectedVersionId?: number,
+      { preview, packageIdentity }: InstallQualification,
+      previous?: ExpectedInstallation,
     ) {
       return database.transaction(async (transaction) => {
         const [target] = await registeredBotProfiles(transaction)
@@ -197,10 +264,32 @@ export function marketSkillMethods(database: Database) {
         if (reason !== null)
           return { kind: "version-disabled", reason } as const;
 
-        const reservation =
-          expectedVersionId === undefined
-            ? await reserveCommand(transaction, preview, preview.slug)
-            : undefined;
+        if (preview.source === bifrostNamespace) {
+          const review =
+            packageIdentity &&
+            (await lockActiveBifrostReview(transaction, packageIdentity));
+          if (
+            review?.id !== preview.versionId ||
+            review.skillId !== preview.registrySkillId ||
+            review.slug !== preview.slug ||
+            review.version !== preview.version ||
+            review.fingerprint !== preview.fingerprint
+          )
+            return { kind: "review-unavailable" } as const;
+        }
+
+        const canonical = await commandSource(
+          transaction,
+          preview,
+          packageIdentity?.skillId,
+        );
+        const reservation = !previous
+          ? await reserveCommand(
+              transaction,
+              { ...canonical, title: preview.title },
+              canonical.slug,
+            )
+          : undefined;
         if (reservation?.kind === "command-unavailable") return reservation;
         const command =
           reservation?.command ??
@@ -208,7 +297,7 @@ export function marketSkillMethods(database: Database) {
             await transaction
               .select({ command: skillMarketSources.command })
               .from(skillMarketSources)
-              .where(matchesSource(preview))
+              .where(matchesSource(canonical))
           )[0]?.command;
         if (!command) return { kind: "stale-installation" } as const;
 
@@ -222,6 +311,9 @@ export function marketSkillMethods(database: Database) {
           instructions,
         } = preview;
         const snapshot = {
+          registry: preview.source,
+          namespace: preview.namespace,
+          slug: preview.slug,
           version,
           versionId,
           registrySkillId,
@@ -232,11 +324,11 @@ export function marketSkillMethods(database: Database) {
           installedBy: actor.id,
         };
         // Both writes use the same qualified payload and transaction boundary.
-        if (expectedVersionId !== undefined) {
+        if (previous !== undefined) {
           const [updated] = await transaction
             .update(skillMarketInstallations)
             .set(snapshot)
-            .where(matchesInstallation(agentId, command, expectedVersionId))
+            .where(matchesInstallation(agentId, command, previous))
             .returning({ command: skillMarketInstallations.command });
           return updated
             ? ({ kind: "switched", command, version } as const)
@@ -251,7 +343,13 @@ export function marketSkillMethods(database: Database) {
         if (inserted) return { kind: "installed", command, version } as const;
 
         const [current] = await transaction
-          .select()
+          .select({
+            ...installedMarketSource,
+            version: skillMarketInstallations.version,
+            versionId: skillMarketInstallations.versionId,
+            registrySkillId: skillMarketInstallations.registrySkillId,
+            fingerprint: skillMarketInstallations.fingerprint,
+          })
           .from(skillMarketInstallations)
           .where(
             and(
@@ -259,7 +357,8 @@ export function marketSkillMethods(database: Database) {
               eq(skillMarketInstallations.command, command),
             ),
           );
-        return current?.version === version &&
+        return current?.source === preview.source &&
+          current.version === version &&
           current.versionId === versionId &&
           current.registrySkillId === registrySkillId &&
           current.fingerprint === fingerprint

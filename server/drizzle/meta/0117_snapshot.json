@@ -1,5 +1,5 @@
 {
-  "id": "c81daa07-63b8-414e-afd6-a3c26ebbe05b",
+  "id": "40d97885-9c67-42a7-8881-9ea454e18965",
   "prevId": "a25c757e-2908-4cbf-8e57-73616bea9788",
   "version": "7",
   "dialect": "postgresql",
@@ -11662,81 +11662,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.personal_workspace_agent_sandboxes": {
-      "name": "personal_workspace_agent_sandboxes",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "generation": {
-          "name": "generation",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "epoch": {
-          "name": "epoch",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "issued_at": {
-          "name": "issued_at",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "phase": {
-          "name": "phase",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cutoff": {
-          "name": "cutoff",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "personal_workspace_agent_sandboxes_workspace_id_personal_workspaces_id_fk": {
-          "name": "personal_workspace_agent_sandboxes_workspace_id_personal_workspaces_id_fk",
-          "tableFrom": "personal_workspace_agent_sandboxes",
-          "tableTo": "personal_workspaces",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.personal_workspace_closures": {
       "name": "personal_workspace_closures",
       "schema": "",
@@ -13905,24 +13830,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "embedding_input_digest": {
-          "name": "embedding_input_digest",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "embedding_result": {
-          "name": "embedding_result",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "embedding_result_expires_at": {
-          "name": "embedding_result_expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "price_version": {
           "name": "price_version",
           "type": "uuid",
@@ -13995,25 +13902,27 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "embedding_input_digest": {
+          "name": "embedding_input_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "embedding_result": {
+          "name": "embedding_result",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "embedding_result_expires_at": {
+          "name": "embedding_result_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
-        "test_credit_embedding_result_expiry_idx": {
-          "name": "test_credit_embedding_result_expiry_idx",
-          "columns": [
-            {
-              "expression": "embedding_result_expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"test_credit_operations\".\"embedding_result_expires_at\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "test_credit_operations_external_authorization_idx": {
           "name": "test_credit_operations_external_authorization_idx",
           "columns": [
@@ -14060,6 +13969,22 @@
           ],
           "isUnique": false,
           "where": "\"test_credit_operations\".\"state\" = 'pending' AND \"test_credit_operations\".\"cutoff_hold\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "test_credit_embedding_result_expiry_idx": {
+          "name": "test_credit_embedding_result_expiry_idx",
+          "columns": [
+            {
+              "expression": "embedding_result_expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"test_credit_operations\".\"embedding_result_expires_at\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -14197,20 +14122,19 @@
         "corsair_account_defaults_person_id_users_id_fk": {
           "name": "corsair_account_defaults_person_id_users_id_fk",
           "tableFrom": "corsair_account_defaults",
-          "tableTo": "users",
           "columnsFrom": [
             "person_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "corsair_defaults_github_subject_fk": {
           "name": "corsair_defaults_github_subject_fk",
           "tableFrom": "corsair_account_defaults",
-          "tableTo": "corsair_accounts",
           "columnsFrom": [
             "openbot_kind",
             "workspace_id",
@@ -14219,6 +14143,7 @@
             "github_subject_scope",
             "github_user_id"
           ],
+          "tableTo": "corsair_accounts",
           "columnsTo": [
             "openbot_kind",
             "workspace_id",
@@ -14227,13 +14152,12 @@
             "subject_scope",
             "external_user_id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "corsair_defaults_account_owner_fk": {
           "name": "corsair_defaults_account_owner_fk",
           "tableFrom": "corsair_account_defaults",
-          "tableTo": "corsair_accounts",
           "columnsFrom": [
             "openbot_kind",
             "workspace_id",
@@ -14241,6 +14165,7 @@
             "person_id",
             "connection_id"
           ],
+          "tableTo": "corsair_accounts",
           "columnsTo": [
             "openbot_kind",
             "workspace_id",
@@ -14248,8 +14173,8 @@
             "person_id",
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
@@ -14445,44 +14370,43 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "corsair_accounts_integration_id_corsair_integrations_id_fk": {
           "name": "corsair_accounts_integration_id_corsair_integrations_id_fk",
           "tableFrom": "corsair_accounts",
-          "tableTo": "corsair_integrations",
           "columnsFrom": [
             "integration_id"
           ],
+          "tableTo": "corsair_integrations",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "corsair_accounts_person_id_users_id_fk": {
           "name": "corsair_accounts_person_id_users_id_fk",
           "tableFrom": "corsair_accounts",
-          "tableTo": "users",
           "columnsFrom": [
             "person_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "corsair_account_personal_subject": {
           "name": "corsair_account_personal_subject",
-          "nullsNotDistinct": false,
           "columns": [
             "openbot_kind",
             "workspace_id",
@@ -14490,33 +14414,34 @@
             "person_id",
             "subject_scope",
             "external_user_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         },
         "corsair_account_owner": {
           "name": "corsair_account_owner",
-          "nullsNotDistinct": false,
           "columns": [
             "openbot_kind",
             "workspace_id",
             "registration",
             "person_id",
             "id"
-          ]
+          ],
+          "nullsNotDistinct": false
         },
         "corsair_account_shared_workspace": {
           "name": "corsair_account_shared_workspace",
-          "nullsNotDistinct": false,
           "columns": [
             "shared_workspace_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         },
         "corsair_account_id_kind": {
           "name": "corsair_account_id_kind",
-          "nullsNotDistinct": false,
           "columns": [
             "id",
             "openbot_kind"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -14687,9 +14612,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "corsair_entities_goal_idx": {
           "name": "corsair_entities_goal_idx",
@@ -14702,59 +14627,59 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "corsair_entities_account_id_corsair_accounts_id_fk": {
           "name": "corsair_entities_account_id_corsair_accounts_id_fk",
           "tableFrom": "corsair_entities",
-          "tableTo": "corsair_accounts",
           "columnsFrom": [
             "account_id"
           ],
+          "tableTo": "corsair_accounts",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "corsair_entities_goal_id_responsibilities_id_fk": {
           "name": "corsair_entities_goal_id_responsibilities_id_fk",
           "tableFrom": "corsair_entities",
-          "tableTo": "responsibilities",
           "columnsFrom": [
             "goal_id"
           ],
+          "tableTo": "responsibilities",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "corsair_entities_account_type_entity": {
           "name": "corsair_entities_account_type_entity",
-          "nullsNotDistinct": false,
           "columns": [
             "account_id",
             "entity_type",
             "entity_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         },
         "corsair_entities_repository_scope": {
           "name": "corsair_entities_repository_scope",
-          "nullsNotDistinct": false,
           "columns": [
             "workspace_id",
             "registration",
             "entity_id",
             "entity_type"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -14809,38 +14734,38 @@
             }
           ],
           "isUnique": false,
-          "where": "\"corsair_event_dispatches\".\"outcome\" in ('pending', 'retry')",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"corsair_event_dispatches\".\"outcome\" in ('pending', 'retry')",
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "corsair_event_dispatches_receipt_id_corsair_events_id_fk": {
           "name": "corsair_event_dispatches_receipt_id_corsair_events_id_fk",
           "tableFrom": "corsair_event_dispatches",
-          "tableTo": "corsair_events",
           "columnsFrom": [
             "receipt_id"
           ],
+          "tableTo": "corsair_events",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "corsair_event_dispatches_run_id_responsibility_runs_id_fk": {
           "name": "corsair_event_dispatches_run_id_responsibility_runs_id_fk",
           "tableFrom": "corsair_event_dispatches",
-          "tableTo": "responsibility_runs",
           "columnsFrom": [
             "run_id"
           ],
+          "tableTo": "responsibility_runs",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {
@@ -14855,10 +14780,10 @@
       "uniqueConstraints": {
         "corsair_event_dispatches_run_id_unique": {
           "name": "corsair_event_dispatches_run_id_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "run_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -15000,9 +14925,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "corsair_events_pending_idx": {
           "name": "corsair_events_pending_idx",
@@ -15027,46 +14952,46 @@
             }
           ],
           "isUnique": false,
-          "where": "\"corsair_events\".\"delivery_id\" is not null and \"corsair_events\".\"fanout_at\" is null",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"corsair_events\".\"delivery_id\" is not null and \"corsair_events\".\"fanout_at\" is null",
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "corsair_events_account_id_corsair_accounts_id_fk": {
           "name": "corsair_events_account_id_corsair_accounts_id_fk",
           "tableFrom": "corsair_events",
-          "tableTo": "corsair_accounts",
           "columnsFrom": [
             "account_id"
           ],
+          "tableTo": "corsair_accounts",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "corsair_events_delivery": {
           "name": "corsair_events_delivery",
-          "nullsNotDistinct": false,
           "columns": [
             "workspace_id",
             "registration",
             "delivery_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         },
         "corsair_events_body": {
           "name": "corsair_events_body",
-          "nullsNotDistinct": false,
           "columns": [
             "workspace_id",
             "registration",
             "body_hash"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -15187,15 +15112,15 @@
         "corsair_oauth_states_person_id_users_id_fk": {
           "name": "corsair_oauth_states_person_id_users_id_fk",
           "tableFrom": "corsair_oauth_states",
-          "tableTo": "users",
           "columnsFrom": [
             "person_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
@@ -15305,9 +15230,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -15364,30 +15289,30 @@
         "corsair_shared_access_bot_id_agents_id_fk": {
           "name": "corsair_shared_access_bot_id_agents_id_fk",
           "tableFrom": "corsair_shared_access",
-          "tableTo": "agents",
           "columnsFrom": [
             "bot_id"
           ],
+          "tableTo": "agents",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "corsair_shared_access_account_fk": {
           "name": "corsair_shared_access_account_fk",
           "tableFrom": "corsair_shared_access",
-          "tableTo": "corsair_accounts",
           "columnsFrom": [
             "installation_id",
             "openbot_kind"
           ],
+          "tableTo": "corsair_accounts",
           "columnsTo": [
             "id",
             "openbot_kind"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
@@ -15407,6 +15332,157 @@
           "value": "\"corsair_shared_access\".\"openbot_kind\" = 'slack-shared'"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.bifrost_market_reviews": {
+      "name": "bifrost_market_reviews",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "bifrost_market_reviews_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "2147483647",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "skill_id": {
+          "name": "skill_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version_uuid": {
+          "name": "version_uuid",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reviewed_by": {
+          "name": "reviewed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "withdrawn_at": {
+          "name": "withdrawn_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "withdrawn_by": {
+          "name": "withdrawn_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "bifrost_market_reviews_skill_id_bifrost_market_skills_id_fk": {
+          "name": "bifrost_market_reviews_skill_id_bifrost_market_skills_id_fk",
+          "tableFrom": "bifrost_market_reviews",
+          "tableTo": "bifrost_market_skills",
+          "columnsFrom": [
+            "skill_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "bifrost_market_reviews_version_uuid_unique": {
+          "name": "bifrost_market_reviews_version_uuid_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "version_uuid"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.bifrost_market_skills": {
+      "name": "bifrost_market_skills",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "bifrost_market_skills_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "2147483647",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "skill_uuid": {
+          "name": "skill_uuid",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "bifrost_market_skills_skill_uuid_unique": {
+          "name": "bifrost_market_skills_skill_uuid_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "skill_uuid"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

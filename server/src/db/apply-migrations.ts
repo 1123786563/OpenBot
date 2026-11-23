@@ -235,6 +235,11 @@ const CORSAIR_TAGS = new Set([
   "0108_corsair_revocation",
 ]);
 
+const BIFROST_MARKET_TAGS = new Set([
+  "0117_bifrost_market_reviews",
+  "0118_skill_market_equivalences",
+]);
+
 /** Fill gaps only for an exact applied prefix of one of the two parent journals. */
 async function reconcileParentJournal(
   tx: TransactionSql,
@@ -256,7 +261,11 @@ async function reconcileParentJournal(
   )
     return;
 
-  const mainFolder = [...folder.slice(0, trialIndex), ...corsair];
+  const mainFolder = [
+    ...folder.slice(0, trialIndex),
+    ...corsair,
+    ...folder.filter(({ tag }) => BIFROST_MARKET_TAGS.has(tag)),
+  ];
   const appliedByStamp = new Map(
     applied.map(({ createdAt, hash }) => [createdAt, hash]),
   );
