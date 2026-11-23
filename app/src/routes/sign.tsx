@@ -268,8 +268,10 @@ function SignScreen() {
           )}
           {options?.ssoRequired && options.sso ? (
             <p className="mb-3 text-center text-sm text-muted-foreground">
-              Your organization requires you to sign in with your company
-              account.
+              {t(
+                "sign.required.notice",
+                "Your organization requires you to sign in with your company account.",
+              )}
             </p>
           ) : null}
           {providers.length > 0 && !options?.ssoRequired ? (
@@ -277,8 +279,14 @@ function SignScreen() {
           ) : options && !options.sso ? (
             <Text as="p" justify="center" type="supporting">
               {options.ssoRequired
-                ? "Company sign-in is required but unavailable. Contact your OpenBot administrator for access."
-                : "Sign-in isn’t set up yet. Contact your OpenBot administrator for access."}
+                ? t(
+                    "sign.required.unavailable",
+                    "Company sign-in is required but unavailable. Contact your OpenBot administrator for access.",
+                  )
+                : t(
+                    "sign.unconfigured",
+                    "Sign-in isn’t set up yet. Contact your OpenBot administrator for access.",
+                  )}
             </Text>
           ) : null}
           {/*
@@ -337,7 +345,7 @@ function SignScreen() {
           {options?.ssoRequired && providers.length > 0 ? (
             <details className="mt-4 text-sm">
               <summary className="sign-in-admin-summary cursor-pointer text-center text-muted-foreground">
-                Admin sign-in
+                {t("sign.admin.signIn", "Admin sign-in")}
               </summary>
               <div className="mt-3">{providerButtons}</div>
             </details>

@@ -250,6 +250,73 @@ test("the company form speaks the interface language, required marker included",
   expect(view.getByRole("button", { name: "Opening…" })).toBeTruthy();
 });
 
+test("a deployment that requires the company account says so, in the interface language", async () => {
+  const { view } = renderSignScreen({
+    providers: ["google"],
+    sso: true,
+    ssoRequired: true,
+  });
+  await view.findByRole("heading", { name: "Sign in to OpenBot" });
+  expect(
+    view.getByText(
+      "Your organization requires you to sign in with your company account.",
+    ),
+  ).toBeTruthy();
+
+  await pinLocale("zh-CN");
+  expect(view.getByText("你的组织要求你使用公司账号登录。")).toBeTruthy();
+  // The administrators' break-glass keeps its summary in the interface language.
+  // (happy-dom gives <summary> no role, so it is read as an element, not by role.)
+  expect(view.container.querySelector("details > summary")?.textContent).toBe(
+    "管理员登录",
+  );
+
+  await pinLocale("en");
+  expect(view.container.querySelector("details > summary")?.textContent).toBe(
+    "Admin sign-in",
+  );
+});
+
+test("a deployment with no way in says so, in the interface language", async () => {
+  const { view } = renderSignScreen({
+    providers: [],
+    sso: false,
+    ssoRequired: false,
+  });
+  await view.findByRole("heading", { name: "Sign in to OpenBot" });
+  expect(
+    view.getByText(
+      "Sign-in isn’t set up yet. Contact your OpenBot administrator for access.",
+    ),
+  ).toBeTruthy();
+
+  await pinLocale("zh-CN");
+  expect(
+    view.getByText("登录尚未配置。请联系你的 OpenBot 管理员获取访问权限。"),
+  ).toBeTruthy();
+});
+
+test("a required but unavailable company sign-in says so, in the interface language", async () => {
+  const { view } = renderSignScreen({
+    providers: [],
+    sso: false,
+    ssoRequired: true,
+  });
+  await view.findByRole("heading", { name: "Sign in to OpenBot" });
+  expect(
+    view.getByText(
+      "Company sign-in is required but unavailable. Contact your OpenBot administrator for access.",
+    ),
+  ).toBeTruthy();
+
+  await pinLocale("zh-CN");
+  expect(
+    view.getByText(
+      "需要公司登录，但当前不可用。请联系你的 OpenBot 管理员获取访问权限。",
+    ),
+  ).toBeTruthy();
+});
+
 /** Where a press on this screen has to send the browser back to, with `?flow_id=h1` carried in. */
 const RESUME_URL = "/api/plugins/arcade/verify?flow_id=h1";
 

@@ -74,12 +74,16 @@
   "settings.language.browser": "Follow the browser",
   "settings.language.description": "Choose the language OpenBot uses for its own text.",
   "settings.language.title": "Language",
+  "sign.admin.signIn": "Admin sign-in",
   "sign.heading": "Sign in to {product}",
   "sign.provider.continue": "Continue with {provider}",
+  "sign.required.notice": "Your organization requires you to sign in with your company account.",
+  "sign.required.unavailable": "Company sign-in is required but unavailable. Contact your OpenBot administrator for access.",
   "sign.sso.continue": "Continue with your company account",
   "sign.sso.description": "Use the email address issued by your organization.",
   "sign.sso.label": "Company email",
   "sign.sso.opening": "Opening…",
   "sign.sso.or": "or",
-  "sign.title": "Sign in"
+  "sign.title": "Sign in",
+  "sign.unconfigured": "Sign-in isn’t set up yet. Contact your OpenBot administrator for access."
 }

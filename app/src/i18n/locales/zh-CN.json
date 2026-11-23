@@ -74,12 +74,16 @@
   "settings.language.browser": "跟随浏览器",
   "settings.language.description": "选择 OpenBot 界面文字使用的语言。",
   "settings.language.title": "语言",
+  "sign.admin.signIn": "管理员登录",
   "sign.heading": "登录 {product}",
   "sign.provider.continue": "使用 {provider} 继续",
+  "sign.required.notice": "你的组织要求你使用公司账号登录。",
+  "sign.required.unavailable": "需要公司登录，但当前不可用。请联系你的 OpenBot 管理员获取访问权限。",
   "sign.sso.continue": "使用公司账号继续",
   "sign.sso.description": "请使用你的组织发放的邮箱地址。",
   "sign.sso.label": "公司邮箱",
   "sign.sso.opening": "正在打开…",
   "sign.sso.or": "或",
-  "sign.title": "登录"
+  "sign.title": "登录",
+  "sign.unconfigured": "登录尚未配置。请联系你的 OpenBot 管理员获取访问权限。"
 }
