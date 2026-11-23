@@ -43,6 +43,7 @@ export { Trans, useTranslation } from "react-i18next";
 export { I18nProvider } from "./provider";
 export {
   LOCALES,
+  isPreference,
   readLocalePreference,
   resolveLocale,
   writeLocalePreference,

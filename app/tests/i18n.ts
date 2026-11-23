@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act } from "@testing-library/react";
 import { setLocalePreference, type LocalePreference } from "@/i18n";
 
 /**

@@ -49,7 +49,7 @@ export function readLocalePreference(): LocalePreference | null {
 }
 
 /** Whether `value` is a language choice, as opposed to nothing or something this browser never wrote. */
-function isPreference(value: string | null): value is LocalePreference {
+export function isPreference(value: string | null): value is LocalePreference {
   return value === "browser" || LOCALES.some((locale) => locale === value);
 }
 

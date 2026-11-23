@@ -9,6 +9,7 @@ import {
   PageShell,
 } from "@/components/layout/page-shell";
 import { AiModelSection } from "@/components/settings/ai-connection";
+import { LanguageRow } from "@/components/settings/language-row";
 import { MessageListPreference } from "@/components/settings/message-list-preference";
 import { NameRow } from "@/components/settings/profile";
 import { StandingInstructionsRow } from "@/components/settings/standing-instructions";
@@ -82,6 +83,8 @@ function RouteComponent() {
                 />
               </ItemActions>
             </Item>
+            <Separator />
+            <LanguageRow />
           </PageRows>
           <MessageListPreference />
         </PageSection>
