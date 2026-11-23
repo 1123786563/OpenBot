@@ -7,10 +7,15 @@ import { UnsentBifrostRequest } from "./test-credit-bifrost";
 import type { createBifrostEmbeddingExecutor } from "./test-credit-embedding-bifrost";
 import { WEKNORA_APPLICATION_ID as applicationId } from "./weknora-ingestion";
 
+import { weknoraResourceId, weknoraWorkResource } from "./weknora-scope";
+
+import {
+  type createWeKnoraWorkExecutor,
+  workInput,
+  workResult,
+} from "./weknora-work";
+
 const id = z.uuid();
-export const weknoraResourceId = z
-  .string()
-  .regex(/^weknora:tenant:[0-9]+:kb:[a-zA-Z0-9_-]{1,128}$/);
 const scope = z.strictObject({
   subject: z.string().min(1).max(256),
   authorizationId: id,
@@ -54,8 +59,14 @@ function replayVectors(receipt: Receipt) {
 export type WeKnoraRuntime = {
   issuer: string;
   serviceToken: string;
-  routeId: string;
-  execute: ReturnType<typeof createBifrostEmbeddingExecutor>;
+  routeId?: string;
+  execute?: ReturnType<typeof createBifrostEmbeddingExecutor>;
+  work?: Partial<
+    Record<
+      z.infer<typeof workInput>["kind"],
+      { routeId: string; execute: ReturnType<typeof createWeKnoraWorkExecutor> }
+    >
+  >;
 };
 
 export function createWeKnoraRoutes({
@@ -63,6 +74,7 @@ export function createWeKnoraRoutes({
   serviceToken,
   routeId,
   execute,
+  work,
   ledger,
 }: WeKnoraRuntime & { ledger: TestCreditLedger }) {
   const api = new Hono();
@@ -102,6 +114,8 @@ export function createWeKnoraRoutes({
   });
 
   api.post("/embeddings", async (context) => {
+    if (!routeId || !execute)
+      return context.json({ code: "route_unavailable" }, 503);
     const parsed = payload.safeParse(
       await context.req.json().catch(() => undefined),
     );
@@ -163,7 +177,7 @@ export function createWeKnoraRoutes({
     if (previous) return previous;
     if (grant.state !== "active") return invalidAuthorization(grant.state);
 
-    const selected = await ledger.embeddingQuote(routeId);
+    const selected = await ledger.weknoraQuote(routeId, "embedding");
     if (!selected) return context.json({ code: "route_unavailable" }, 503);
     const { route, quote } = selected;
     if (
@@ -276,6 +290,194 @@ export function createWeKnoraRoutes({
       )
         return context.json({ code: "execution_limit" }, 413);
       return context.json({ code: "route_unavailable" }, 503);
+    }
+  });
+  api.post("/work", async (context) => {
+    const parsed = scope
+      .extend({
+        operationId: id,
+        input: workInput,
+      })
+      .safeParse(await context.req.json().catch(() => undefined));
+    if (!parsed.success)
+      return context.json({ code: "invalid_work_request" }, 400);
+    const { subject, authorizationId, taskId, operationId, input } =
+      parsed.data;
+    const { kind } = input;
+    const path = work?.[kind];
+    if (!path) return context.json({ code: "route_unavailable" }, 503);
+    const resourceId = weknoraWorkResource(parsed.data.resourceId, kind);
+    const identity = await ledger.authorizationIdentity(
+      applicationId,
+      authorizationId,
+    );
+    const grant = await ledger.authorizationSummary(
+      applicationId,
+      authorizationId,
+    );
+    if (
+      !identity ||
+      identity.issuer !== issuer ||
+      identity.subject !== subject ||
+      !grant ||
+      grant.resourcePrefix !== resourceId ||
+      grant.kind !== (kind === "maintenance" ? "background" : "online") ||
+      grant.taskId !== (taskId ?? null)
+    )
+      return context.json({ code: "not_authorized" }, 403);
+    if (grant.state !== "active")
+      return context.json({ code: `authorization_${grant.state}` }, 410);
+
+    const stepId = digest(
+      JSON.stringify([kind, resourceId, taskId, input]),
+    ).toString("hex");
+    const replay = async () => {
+      const receipt = await ledger.authorizedOperation(
+        applicationId,
+        authorizationId,
+        operationId,
+      );
+      if (!receipt || receipt.state === "reserved") return undefined;
+      if (receipt.stepId !== stepId)
+        return context.json({ code: "operation_conflict" }, 409);
+      let saved: unknown;
+      if (receipt.resultText) {
+        if (kind === "rerank") {
+          try {
+            saved = JSON.parse(receipt.resultText);
+          } catch {
+            return context.json({ code: "operation_unavailable" }, 409);
+          }
+        } else {
+          saved = { text: receipt.resultText };
+        }
+      }
+      const result = workResult.safeParse(saved);
+      if (
+        receipt.state === "settled" &&
+        receipt.outcome === "completed" &&
+        result?.success
+      )
+        return context.json({
+          result: result.data,
+          receipt: publicReceipt(receipt),
+        });
+      return context.json(
+        {
+          code:
+            receipt.state === "pending"
+              ? "reconciling"
+              : "operation_unavailable",
+        },
+        409,
+      );
+    };
+    const previous = await replay();
+    if (previous) return previous;
+    const selected = await ledger.weknoraQuote(
+      path.routeId,
+      kind === "rerank" ? "rerank" : undefined,
+    );
+    if (!selected) return context.json({ code: "route_unavailable" }, 503);
+    const binding = { authorizationId, operationId };
+    const reservation = await ledger.reserve(
+      identity,
+      {
+        ...binding,
+        applicationId,
+        resourceId,
+        taskId,
+        stepId,
+        route: selected.route.id,
+        priceVersion: selected.quote.priceVersion,
+        creditType: "test",
+        resumable: false,
+      },
+      { weknoraWork: kind },
+    );
+    const deny = (reason: string) =>
+      context.json(
+        { code: reason },
+        reason === "not_authorized"
+          ? 403
+          : reason === "insufficient_credits"
+            ? 402
+            : reason === "execution_limit"
+              ? 429
+              : 503,
+      );
+    if (reservation.state === "denied") return deny(reservation.reason);
+    if (!reservation.permit)
+      return (
+        (await replay()) ?? context.json({ code: "operation_conflict" }, 409)
+      );
+    const held = { ...binding, permit: reservation.permit };
+    let admission:
+      | Awaited<ReturnType<TestCreditLedger["beginDispatch"]>>
+      | undefined;
+    let bound = false;
+    try {
+      const completed = await path.execute({
+        route: selected.route,
+        input,
+        operationId,
+        async bind(request) {
+          admission = await ledger.beginDispatch(identity, held, {
+            rerank: kind === "rerank",
+          });
+          if (admission.state !== "dispatch") return false;
+          bound = await ledger.bindGatewayRequest(
+            admission.accountId,
+            operationId,
+            request,
+            {
+              recheckAuthorization: true,
+            },
+          );
+          return bound;
+        },
+      });
+      if (admission?.state !== "dispatch" || !bound)
+        throw new Error("Missing dispatch.");
+      const { accountId } = admission;
+      const recorded = await ledger.recordEvidence(accountId, operationId, {
+        evidenceId: "weknora-inline",
+        outcome: completed.result ? "completed" : "partial",
+        inputTokens: completed.inputTokens,
+        outputTokens: completed.outputTokens,
+        resultText:
+          completed.result &&
+          ("text" in completed.result
+            ? completed.result.text
+            : JSON.stringify(completed.result)),
+      });
+      const receipt =
+        recorded && (await ledger.settleRecorded(accountId, operationId));
+      if (receipt?.state !== "settled")
+        return context.json({ code: "reconciling" }, 409);
+      return completed.result
+        ? context.json({
+            result: completed.result,
+            receipt: publicReceipt(receipt),
+          })
+        : context.json(
+            { code: "incomplete_work", receipt: publicReceipt(receipt) },
+            502,
+          );
+    } catch (error) {
+      if (bound) return context.json({ code: "reconciling" }, 409);
+      if (admission?.state === "existing")
+        return (await replay()) ?? context.json({ code: "reconciling" }, 409);
+      if (admission?.state === "denied") return deny(admission.reason);
+      if (admission?.state === "dispatch")
+        await ledger.releaseUnsent(admission.accountId, operationId);
+      else if (reservation.state === "reserved")
+        await ledger.discardReservation(identity, held);
+      return deny(
+        error instanceof UnsentBifrostRequest
+          ? error.reason
+          : "route_unavailable",
+      );
     }
   });
   return api;

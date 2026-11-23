@@ -207,7 +207,7 @@ export function signedSupplier(
   const supplier = record.routes.find(({ id }) => id === route.id);
   return (
     supplier !== undefined &&
-    route.purpose !== "embedding" &&
+    route.purpose === undefined &&
     supplier.provider === route.provider &&
     supplier.revision === route.revision &&
     limit !== undefined &&

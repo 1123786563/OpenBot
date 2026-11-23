@@ -1,12 +1,20 @@
 import { z } from "zod";
 import { requireBillingCasdoorProvider } from "./direct-chat-test-credit-config";
 import { createBifrostEmbeddingExecutor } from "./test-credit-embedding-bifrost";
+import type { WeKnoraRuntime } from "./weknora-routes";
+import { createWeKnoraWorkExecutor } from "./weknora-work";
 
 const secret = z.string().trim().min(1);
+const routeId = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/);
 const settings = z.object({
-  OPENBOT_WEKNORA_ROUTE: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
+  OPENBOT_WEKNORA_ROUTE: routeId.optional(),
+  OPENBOT_WEKNORA_CHAT_ROUTE: routeId.optional(),
+  OPENBOT_WEKNORA_RERANK_ROUTE: routeId.optional(),
+  OPENBOT_WEKNORA_MAINTENANCE_ROUTE: routeId.optional(),
+  TEST_CREDIT_BIFROST_URL: z.url().optional(),
+  TEST_CREDIT_RERANK_BIFROST_URL: z.url().optional(),
   OPENBOT_WEKNORA_SERVICE_TOKEN: secret.min(32),
-  TEST_CREDIT_EMBEDDINGS_BIFROST_URL: z.url(),
+  TEST_CREDIT_EMBEDDINGS_BIFROST_URL: z.url().optional(),
   TEST_CREDIT_BIFROST_TOKEN: secret,
   TEST_CREDIT_GATEWAY_REVISION: secret,
   TEST_CREDIT_METERING_REVISION: secret,
@@ -28,19 +36,56 @@ export function loadWeKnoraBilling(
     );
   const value = config.data;
   const casdoor = requireBillingCasdoorProvider(environment);
+  const shared = {
+    gatewayToken: value.TEST_CREDIT_BIFROST_TOKEN,
+    meterToken: value.TEST_CREDIT_INPUT_METER_TOKEN,
+    gatewayRevision: value.TEST_CREDIT_GATEWAY_REVISION,
+    meteringRevision: value.TEST_CREDIT_METERING_REVISION,
+  };
+  const work: NonNullable<WeKnoraRuntime["work"]> = {};
+  for (const [kind, routeId, gateway] of [
+    ["chat", value.OPENBOT_WEKNORA_CHAT_ROUTE, value.TEST_CREDIT_BIFROST_URL],
+    [
+      "rerank",
+      value.OPENBOT_WEKNORA_RERANK_ROUTE,
+      value.TEST_CREDIT_RERANK_BIFROST_URL,
+    ],
+    [
+      "maintenance",
+      value.OPENBOT_WEKNORA_MAINTENANCE_ROUTE,
+      value.TEST_CREDIT_BIFROST_URL,
+    ],
+  ] as const) {
+    if (!routeId) continue;
+    if (!gateway) throw new Error(`Missing WeKnora ${kind} gateway endpoint.`);
+    work[kind] = {
+      routeId,
+      execute: createWeKnoraWorkExecutor({
+        ...shared,
+        kind,
+        gateway,
+        meter: value.TEST_CREDIT_INPUT_METER_URL,
+        imageDigest: value.TEST_CREDIT_GATEWAY_IMAGE_DIGEST,
+      }),
+    };
+  }
+  const embedding = value.TEST_CREDIT_EMBEDDINGS_BIFROST_URL;
+  if (value.OPENBOT_WEKNORA_ROUTE && !embedding)
+    throw new Error("Missing WeKnora embeddings gateway endpoint.");
   return {
     casdoor,
     issuer: casdoor.issuer,
     routeId: value.OPENBOT_WEKNORA_ROUTE,
     serviceToken: value.OPENBOT_WEKNORA_SERVICE_TOKEN,
-    execute: createBifrostEmbeddingExecutor({
-      endpoint: new URL(value.TEST_CREDIT_EMBEDDINGS_BIFROST_URL),
-      meterEndpoint: new URL(value.TEST_CREDIT_INPUT_METER_URL),
-      gatewayToken: value.TEST_CREDIT_BIFROST_TOKEN,
-      meterToken: value.TEST_CREDIT_INPUT_METER_TOKEN,
-      gatewayRevision: value.TEST_CREDIT_GATEWAY_REVISION,
-      meteringRevision: value.TEST_CREDIT_METERING_REVISION,
-      gatewayImageDigest: value.TEST_CREDIT_GATEWAY_IMAGE_DIGEST,
-    }),
+    work,
+    execute:
+      value.OPENBOT_WEKNORA_ROUTE && embedding
+        ? createBifrostEmbeddingExecutor({
+            ...shared,
+            endpoint: new URL(embedding),
+            meterEndpoint: new URL(value.TEST_CREDIT_INPUT_METER_URL),
+            gatewayImageDigest: value.TEST_CREDIT_GATEWAY_IMAGE_DIGEST,
+          })
+        : undefined,
   };
 }

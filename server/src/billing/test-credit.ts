@@ -47,6 +47,7 @@ import {
   signedApplication,
 } from "./pilot-signoffs";
 import { WEKNORA_APPLICATION_ID } from "./weknora-ingestion";
+import type { WeKnoraWork } from "./weknora-scope";
 
 export type VerifiedBillingIdentity = { issuer: string; subject: string };
 export type ChildBudgetBinding = {
@@ -1153,7 +1154,7 @@ export function createTestCreditLedger(
       const active = await activeRoutes(database);
       return (
         active?.options
-          .filter(({ purpose }) => purpose !== "embedding")
+          .filter(({ purpose }) => purpose === undefined)
           .map(modelOption) ?? []
       );
     },
@@ -1171,7 +1172,7 @@ export function createTestCreditLedger(
       const saved = preferences.conversation ?? preferences.bot;
       const route = active?.options.find(
         ({ id, revision, purpose }) =>
-          purpose !== "embedding" &&
+          purpose === undefined &&
           (saved
             ? id === saved.id && revision === saved.revision
             : id === active.defaultRoute),
@@ -1189,10 +1190,13 @@ export function createTestCreditLedger(
       return { source, options, reason } as const;
     },
 
-    async embeddingQuote(routeId: string) {
+    async weknoraQuote(
+      routeId: string,
+      purpose: "embedding" | "rerank" | undefined,
+    ) {
       const active = await activeRoutes(database);
       const route = active?.options.find(
-        ({ id, purpose }) => id === routeId && purpose === "embedding",
+        (route) => route.id === routeId && route.purpose === purpose,
       );
       if (route && active?.priceVersion)
         return { route, quote: quoteFor(route, active.priceVersion) };
@@ -1286,18 +1290,26 @@ export function createTestCreditLedger(
         coordinationToolNames?: string[];
         parentRunId?: string;
       },
-      { embedding = false } = {},
+      {
+        embedding = false,
+        weknoraWork,
+      }: { embedding?: boolean; weknoraWork?: WeKnoraWork } = {},
     ) {
       const reservation = database.transaction(async (tx) => {
         const accountId = await account(identity, tx);
         if (!accountId) return denied("not_authorized");
         if (
-          embedding &&
+          (embedding || weknoraWork) &&
           (request.applicationId !== WEKNORA_APPLICATION_ID ||
             !request.authorizationId ||
             request.creditType !== "test")
         )
           return denied("not_authorized");
+        const purpose = embedding
+          ? "embedding"
+          : weknoraWork === "rerank"
+            ? "rerank"
+            : undefined;
         const now = await currentTime(tx);
         await applyCutoff(tx, accountId, now);
         const expired = new Date(now.getTime() - reservationMilliseconds);
@@ -1408,7 +1420,7 @@ export function createTestCreditLedger(
             existing.authorizationId !== (input.authorizationId ?? null) ||
             (!request.child &&
               existing.parentRunId !== (input.parentRunId ?? null)) ||
-            (existing.route.purpose === "embedding") !== embedding ||
+            existing.route.purpose !== purpose ||
             (embedding && existing.stepId !== input.stepId) ||
             (input.applicationId !== undefined &&
               existing.applicationId !== input.applicationId)
@@ -1474,7 +1486,15 @@ export function createTestCreditLedger(
           ? await application(applicationId, tx, true)
           : undefined;
         if (pilotPath?.pausedAt) return denied("route_unavailable");
-        if (!embedding && under?.held.applicationId === WEKNORA_APPLICATION_ID)
+        if (
+          under?.held.applicationId === WEKNORA_APPLICATION_ID &&
+          !embedding &&
+          (!weknoraWork ||
+            request.resourceId !== under.held.resourcePrefix ||
+            !request.resourceId?.endsWith(`:${weknoraWork}`) ||
+            under.held.kind !==
+              (weknoraWork === "maintenance" ? "background" : "online"))
+        )
           return denied("not_authorized");
         // Within the resource scope the person granted, which every step of
         // an application names (#111 资源范围).
@@ -1532,7 +1552,7 @@ export function createTestCreditLedger(
         const route = active?.options.find(({ id }) => id === input.route);
         if (
           !route ||
-          (route.purpose === "embedding") !== embedding ||
+          route.purpose !== purpose ||
           active?.priceVersion !== input.priceVersion
         )
           return denied("route_unavailable");
@@ -2216,7 +2236,7 @@ export function createTestCreditLedger(
     async beginDispatch(
       identity: VerifiedBillingIdentity,
       input: { operationId: string; permit: string; authorizationId?: string },
-      { executorAvailable = true, embedding = false } = {},
+      { executorAvailable = true, embedding = false, rerank = false } = {},
     ) {
       return database.transaction(async (tx) => {
         const accountId = await account(identity, tx);
@@ -2226,7 +2246,8 @@ export function createTestCreditLedger(
         if (
           !row ||
           row.permit !== input.permit ||
-          (row.route.purpose === "embedding") !== embedding ||
+          row.route.purpose !==
+            (embedding ? "embedding" : rerank ? "rerank" : undefined) ||
           row.authorizationId !== (input.authorizationId ?? null)
         )
           return denied("not_authorized");
@@ -2361,16 +2382,40 @@ export function createTestCreditLedger(
       accountId: string,
       id: string,
       { requestId, digest }: { requestId: string; digest: string },
-      { recheckAdmission = false } = {},
+      { recheckAdmission = false, recheckAuthorization = false } = {},
     ) {
       return database.transaction(async (tx) => {
         if (!(await lockAccount(tx, accountId))) return false;
         const now = await currentTime(tx);
         await applyCutoff(tx, accountId, now);
-        if (pilot || recheckAdmission) {
+        if (pilot || recheckAdmission || recheckAuthorization) {
           const operationRow = await operation(accountId, id, tx);
           if (!operationRow || !(await pilotAllowsDispatch(tx, operationRow)))
             return false;
+          if (recheckAuthorization) {
+            const grantId = operationRow.authorizationId;
+            const grant =
+              grantId && (await authorization(accountId, grantId, tx));
+            if (
+              !grant ||
+              (
+                await underAuthorization(
+                  tx,
+                  accountId,
+                  {
+                    authorizationId: grant.id,
+                    taskId: grant.taskId ?? undefined,
+                  },
+                  now,
+                )
+              ).refusal ||
+              (await suspended(tx, accountId)) ||
+              (await restoreHolds(tx, accountId)) ||
+              (await pilotReservesStoppedAt(tx, accountId)) ||
+              !routeEligible(await activeRoutes(tx, true), operationRow.route)
+            )
+              return false;
+          }
           if (
             recheckAdmission &&
             (!operationRow.budgetId ||

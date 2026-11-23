@@ -14,7 +14,7 @@ import type { PaidCreditLedger } from "./paid-ledger";
 import type { TestCreditLedger, VerifiedBillingIdentity } from "./test-credit";
 import { UnsentBifrostRequest } from "./test-credit-bifrost";
 import { WEKNORA_APPLICATION_ID } from "./weknora-ingestion";
-import { weknoraResourceId } from "./weknora-routes";
+import { validWeKnoraGrant } from "./weknora-scope";
 
 const operationId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const operation = z.strictObject({ operationId });
@@ -297,7 +297,8 @@ export function createTestCreditRoutes({
 
   api.get("/weknora/preview", async (context) => {
     const quote =
-      weknoraRouteId && (await ledger.embeddingQuote(weknoraRouteId));
+      weknoraRouteId &&
+      (await ledger.weknoraQuote(weknoraRouteId, "embedding"));
     if (!quote) return context.json({ code: "route_unavailable" }, 503);
     const grants = await ledger.authorizations(context.var.identity);
     if (!grants)
@@ -448,9 +449,8 @@ export function createTestCreditRoutes({
     if (
       !input.success ||
       (input.data.applicationId === WEKNORA_APPLICATION_ID &&
-        (input.data.kind !== "background" ||
-          !z.uuid().safeParse(input.data.authorizationId).success ||
-          !weknoraResourceId.safeParse(input.data.resourcePrefix).success))
+        (!z.uuid().safeParse(input.data.authorizationId).success ||
+          !validWeKnoraGrant(input.data)))
     )
       return context.json({ error: "Invalid Spending Authorization." }, 400);
     const granted = await ledger.authorize(context.var.identity, {

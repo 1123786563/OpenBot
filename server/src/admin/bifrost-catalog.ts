@@ -10,7 +10,7 @@ const price = z.strictObject({
   outputPerMillion: z.number().int().nonnegative().max(1_000_000_000_000),
 });
 const route = z.strictObject({
-  purpose: z.literal("embedding").optional(),
+  purpose: z.enum(["embedding", "rerank"]).optional(),
   provider: id,
   model: reference,
   gatewayRevision: reference,
@@ -30,12 +30,13 @@ export const configuration = z
   .strictObject({ harnessImage: harness, routes })
   .refine(({ routes }) => {
     const entries = Object.values(routes);
-    const chat = entries.filter(({ purpose }) => purpose !== "embedding");
+    const chat = entries.filter(({ purpose }) => purpose === undefined);
     return (
       chat.length <= 2 &&
-      entries.length - chat.length <= 1 &&
+      entries.filter(({ purpose }) => purpose === "embedding").length <= 1 &&
+      entries.filter(({ purpose }) => purpose === "rerank").length <= 1 &&
       entries.every((entry) =>
-        entry.purpose === "embedding"
+        entry.purpose !== undefined
           ? entry.maxOutputTokens === 0 &&
             entry.price.outputPerMillion === 0 &&
             !entry.tools
@@ -44,7 +45,7 @@ export const configuration = z
       new Set(chat.map(({ provider }) => provider)).size === chat.length &&
       new Set(chat.map(({ model }) => model)).size === chat.length
     );
-  }, "The pilot supports two chat models on distinct providers and one embedding route.");
+  }, "The pilot supports two chat models on distinct providers one embedding route, and one rerank route.");
 
 const evidenceIdentity = z.strictObject({
   revision: z.uuid(),
@@ -202,6 +203,15 @@ export const embeddingEvidence = evidenceIdentity.extend({
   inputLimit: traceEvidenceV2.shape.inputLimit,
 });
 
+export const rerankEvidence = embeddingEvidence.extend({
+  kind: z.literal("rerank"),
+  completed: embeddingEvidence.shape.completed.extend({
+    gateway: embeddingEvidence.shape.completed.shape.gateway
+      .omit({ vectors: true })
+      .extend({ scores: z.number().int().positive() }),
+  }),
+});
+
 const configuredRoute = route.extend({
   revision: z.uuid(),
   verification: z
@@ -209,6 +219,7 @@ const configuredRoute = route.extend({
       report: z.union([
         qualificationReport,
         embeddingEvidence,
+        rerankEvidence,
         traceEvidenceV2,
         legacyEvidence,
       ]),
@@ -228,7 +239,7 @@ export const releaseSchema = z.strictObject({
   at: z.iso.datetime(),
   harnessImage: harness,
   defaultRoute: id.nullable(),
-  routes: z.array(releasedRoute).min(1).max(3),
+  routes: z.array(releasedRoute).min(1).max(4),
 });
 export const catalogSchema = z.strictObject({
   harnessImage: harness.nullable(),
@@ -317,7 +328,7 @@ function matchesTrace(
     meter.meteringRevision === entry.meteringRevision;
 
   return (
-    entry.purpose !== "embedding" &&
+    entry.purpose === undefined &&
     report.revision === entry.revision &&
     report.harnessImage === harnessImage &&
     report.provider === entry.provider &&
@@ -360,15 +371,15 @@ function matchesTrace(
   );
 }
 
-function matchesEmbedding(
-  report: z.infer<typeof embeddingEvidence>,
+function matchesInputOnly(
+  report: z.infer<typeof embeddingEvidence> | z.infer<typeof rerankEvidence>,
   entry: ConfiguredRoute,
   harnessImage: Catalog["harnessImage"],
 ) {
   const { completed, inputLimit } = report;
   const { gateway, meter, upstream } = completed;
   return (
-    entry.purpose === "embedding" &&
+    entry.purpose === ("kind" in report ? "rerank" : "embedding") &&
     entry.maxOutputTokens === 0 &&
     entry.price.outputPerMillion === 0 &&
     !entry.tools &&
@@ -401,7 +412,11 @@ function matchesEmbedding(
   );
 }
 
-const currentEvidence = z.union([qualificationReport, embeddingEvidence]);
+const currentEvidence = z.union([
+  qualificationReport,
+  embeddingEvidence,
+  rerankEvidence,
+]);
 
 function matchesEvidence(
   report: z.infer<typeof currentEvidence>,
@@ -409,7 +424,7 @@ function matchesEvidence(
   harnessImage: Catalog["harnessImage"],
 ) {
   return "completed" in report
-    ? matchesEmbedding(report, entry, harnessImage)
+    ? matchesInputOnly(report, entry, harnessImage)
     : matchesTrace(report, entry, harnessImage);
 }
 
@@ -445,7 +460,7 @@ export function verify(
 
 export const publication = z
   .strictObject({
-    routes: z.array(id).min(1).max(3),
+    routes: z.array(id).min(1).max(4),
     defaultRoute: id.nullable(),
   })
   .refine(
@@ -494,7 +509,7 @@ export function publish(
       verification: entry.verification,
     };
   });
-  const chat = routes.filter(({ purpose }) => purpose !== "embedding");
+  const chat = routes.filter(({ purpose }) => purpose === undefined);
   if (
     chat.length > 0
       ? !chat.some(({ id }) => id === defaultRoute)
@@ -529,7 +544,7 @@ export function view(current: Catalog) {
     priceVersion: current.publication?.id ?? null,
     options,
     defaultRoute: options.some(
-      ({ id, purpose }) => id === defaultRoute && purpose !== "embedding",
+      ({ id, purpose }) => id === defaultRoute && purpose === undefined,
     )
       ? defaultRoute
       : null,

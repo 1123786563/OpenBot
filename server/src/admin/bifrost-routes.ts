@@ -21,6 +21,7 @@ import {
   publish,
   qualificationReport,
   releaseSchema,
+  rerankEvidence,
   verify,
   view,
 } from "./bifrost-catalog";
@@ -129,7 +130,11 @@ export function createBifrostAdminRoutes(
         : undefined;
     const chat = qualificationReport.safeParse(evidence);
     const embedding = embeddingEvidence.safeParse(evidence);
-    if (!chat.success && !embedding.success)
+    if (
+      !chat.success &&
+      !embedding.success &&
+      !rerankEvidence.safeParse(evidence).success
+    )
       throw new CatalogConflict("Missing valid live-provider evidence.");
     if (chat.success) {
       const terminalFile = Bun.file(
