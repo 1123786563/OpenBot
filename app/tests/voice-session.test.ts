@@ -263,7 +263,7 @@ test("voice bridge returns only the new agent answer and respects shared thread 
   const requests: string[] = [];
   const channel = {
     busy: () => busy,
-    read: async () => ({ messages }),
+    read: async () => ({ messages, availability: "ready" as const }),
     send: async (request: string) => {
       requests.push(request);
       messages.push({ id: "new", role: "assistant", content: "New answer" });
@@ -292,6 +292,7 @@ test("voice reports the durable result for its own request, even when the stream
         return "Partial answer";
       },
       read: async () => ({
+        availability: "ready",
         runs: [
           {
             id: "previous",
@@ -318,6 +319,16 @@ test("voice reports the durable result for its own request, even when the stream
     },
   );
   expect(reply).toBe("Confirmed answer");
+});
+
+test("voice does not relay streamed text when Conversation history is unavailable", async () => {
+  await expect(
+    askChannelAgent("Check the schedule", new AbortController().signal, {
+      busy: () => false,
+      send: async () => "Unconfirmed answer",
+      read: async () => ({ messages: [], availability: "unavailable" }),
+    }),
+  ).rejects.toThrow("The run’s result could not be confirmed");
 });
 
 // An emoji is two UTF-16 units; each text below is one unit over its limit, so a plain slice
