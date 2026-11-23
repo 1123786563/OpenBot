@@ -720,7 +720,7 @@ test("WeKnora worker requests retain uploader attribution after sign-out and sha
   const grant = {
     authorizationId,
     applicationId: "weknora",
-    kind: "background",
+    kind: "background" as const,
     taskId: authorizationId,
     resourcePrefix: resourceId,
     expiresAt,

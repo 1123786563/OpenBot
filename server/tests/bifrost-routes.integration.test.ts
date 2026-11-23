@@ -131,7 +131,7 @@ test("admin verification imports trusted evidence and publishes durable Price Ve
 
     const embed = {
       ...a,
-      purpose: "embedding",
+      purpose: "embedding" as const,
       maxOutputTokens: 0,
       price: { inputPerMillion: 500_000, outputPerMillion: 0 },
     };

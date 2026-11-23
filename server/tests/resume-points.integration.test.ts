@@ -750,7 +750,8 @@ test("a real Routine and Task keep their execution IDs and continue only after b
       kind,
       (agent) =>
         createTurnRunner({
-          admission: async () => undefined,
+          admission: async ({ signal }) =>
+            signal ?? new AbortController().signal,
           buildAgentFor: async () => agent,
           intelligence: {
             getOrCreateThread: async ({ threadId }) => ({
@@ -758,7 +759,11 @@ test("a real Routine and Task keep their execution IDs and continue only after b
               created: false,
             }),
             getThreadMessages: async ({ threadId }) => ({
-              messages: history.get(threadId) ?? [],
+              messages: (history.get(threadId) ?? []).map((message) => ({
+                id: message.id,
+                role: message.role,
+                content: message.content,
+              })),
             }),
             ɵacquireThreadLock: async () => undefined,
             ɵrenewThreadLock: async () => undefined,
@@ -773,7 +778,12 @@ test("a real Routine and Task keep their execution IDs and continue only after b
               history.set(threadId, messages);
               return agent.run(input).pipe(
                 tap((event) => {
-                  if (event.type !== EventType.TEXT_MESSAGE_CONTENT) return;
+                  if (
+                    event.type !== EventType.TEXT_MESSAGE_CONTENT ||
+                    typeof event.messageId !== "string" ||
+                    typeof event.delta !== "string"
+                  )
+                    return;
                   const reply = {
                     id: event.messageId,
                     role: "assistant" as const,

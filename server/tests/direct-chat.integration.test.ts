@@ -664,7 +664,7 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
   let onMeter: (() => Promise<void>) | undefined;
   let onDispatch: (() => Promise<void>) | undefined;
   const sentModels: string[] = [];
-  const saveCatalog = async (value: typeof catalog) => {
+  const saveCatalog = async (value: ReturnType<typeof configure>) => {
     await database
       .update(enterpriseSettings)
       .set({ value })
