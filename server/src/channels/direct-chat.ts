@@ -733,10 +733,37 @@ export function createDirectChatRoutes(deps: {
         .select()
         .from(directChatRuns)
         .where(matchingRun(key));
+      if (current?.externalOutcome === "unknown" && current.waitingApprovalId) {
+        // Only the consumed Approval can verify its action, even after the Run stops.
+        const approval = await approvalCheckpoint(
+          key,
+          current.waitingApprovalId,
+          actor.id,
+          tx,
+        );
+        if (approval?.consumedAt && approval.result && !approval.result.error) {
+          const [verified] = await tx
+            .update(directChatRuns)
+            .set({ externalOutcome: "executed" })
+            .where(
+              and(
+                matchingRun(key),
+                eq(directChatRuns.externalOutcome, "unknown"),
+                eq(directChatRuns.waitingApprovalId, approval.id),
+              ),
+            )
+            .returning();
+          return verified ?? current;
+        }
+      }
       return current;
     });
     if (!run) return context.json(absent, 404);
-    if (run.externalOutcome !== "unknown" || !deps.trial)
+    if (
+      run.externalOutcome !== "unknown" ||
+      run.waitingApprovalId ||
+      !deps.trial
+    )
       return context.json({ externalOutcome: run.externalOutcome });
     const evidence = await deps.trial.model
       .reconcileOutcome(operationFor(key, agentId, actor.id))
@@ -764,6 +791,7 @@ export function createDirectChatRoutes(deps: {
             and(
               matchingRun(key),
               eq(directChatRuns.externalOutcome, "unknown"),
+              isNull(directChatRuns.waitingApprovalId),
             ),
           );
       }
@@ -1206,8 +1234,9 @@ export function createDirectChatRoutes(deps: {
     key: RunKey,
     approvalId: string,
     actorId: string,
+    executor: ProfileReadExecutor = database,
   ) {
-    const [request] = await database
+    const [request] = await executor
       .select()
       .from(approvalRequests)
       .where(
@@ -1463,6 +1492,7 @@ export function createDirectChatRoutes(deps: {
       if (run.status !== "running") {
         if (
           run.externalOutcome === "unknown" &&
+          !run.waitingApprovalId &&
           deps.trial &&
           !input.literalAnswer
         ) {
@@ -1495,6 +1525,7 @@ export function createDirectChatRoutes(deps: {
                   and(
                     matchingRun(key),
                     eq(directChatRuns.externalOutcome, "unknown"),
+                    isNull(directChatRuns.waitingApprovalId),
                   ),
                 );
             });
