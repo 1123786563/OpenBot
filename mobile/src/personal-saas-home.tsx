@@ -52,7 +52,10 @@ export function PersonalSaasHome() {
   const [authError, setAuthError] = useState("");
   const working = useRef(false);
   const active = useRef(AppState.currentState === "active");
+  const online = useRef(true);
+  const recheckPending = useRef(false);
   const generation = useRef(0);
+  const latestLoad = useRef(0);
   const lastRun = useRef<{ workspaceId: string; id: string } | null>(null);
   const access = useRef<(() => number) | null>(null);
 
@@ -68,17 +71,22 @@ export function PersonalSaasHome() {
 
   const load = useCallback(
     async (refresh = false) => {
-      if (!active.current) return;
-      if (!refresh) withdraw("loading");
+      if (!active.current || !online.current) return;
+      if (!refresh) {
+        recheckPending.current = false;
+        withdraw("loading");
+      }
       const current = generation.current;
+      const check = ++latestLoad.current;
+      const isCurrent = () =>
+        current === generation.current && check === latestLoad.current;
       const started = performance.now();
       const wallStarted = Date.now();
       try {
         const workspace = await openPersonalWorkspace(() => {
-          if (!refresh && current === generation.current)
-            setScreen({ kind: "preparing" });
+          if (!refresh && isCurrent()) setScreen({ kind: "preparing" });
         });
-        if (current !== generation.current) return;
+        if (!isCurrent()) return;
         if (!workspace) {
           access.current = null;
           setHistory(null);
@@ -95,7 +103,7 @@ export function PersonalSaasHome() {
         access.current = remaining;
         setScreen({ kind: "ready", workspace });
       } catch (error) {
-        if (current === generation.current)
+        if (isCurrent())
           withdraw(
             error instanceof WorkspaceAdmissionsPaused
               ? "admissions-paused"
@@ -107,6 +115,12 @@ export function PersonalSaasHome() {
   );
 
   useEffect(() => {
+    function recheck() {
+      if (!active.current || !online.current) return;
+      if (working.current) recheckPending.current = true;
+      else void load();
+    }
+
     function setActive(next: boolean) {
       if (next === active.current) return;
       active.current = next;
@@ -117,8 +131,8 @@ export function PersonalSaasHome() {
         setScreen((previous) =>
           previous.kind === "ready" ? { kind: "loading" } : previous,
         );
-      } else if (!working.current) {
-        void load();
+      } else {
+        recheck();
       }
     }
 
@@ -129,14 +143,11 @@ export function PersonalSaasHome() {
     const focus = AppState.addEventListener("focus", () => {
       setActive(AppState.currentState === "active");
     });
-    let wasOffline = false;
     const network = addNetworkStateListener((state) => {
       const offline =
         state.isConnected === false || state.isInternetReachable === false;
-      const reconnected = wasOffline && !offline && state.isConnected;
-      wasOffline = offline;
-      if (!active.current) return;
       if (offline) {
+        online.current = false;
         generation.current++;
         access.current = null;
         setHistory(null);
@@ -147,13 +158,15 @@ export function PersonalSaasHome() {
             ? { kind: "workspace-error" }
             : previous,
         );
-      } else if (reconnected && !working.current) {
-        void load();
+      } else if (!online.current && state.isConnected === true) {
+        online.current = true;
+        recheck();
       }
     });
     void load();
     return () => {
       generation.current++;
+      recheckPending.current = false;
       appState.remove();
       blur.remove();
       focus.remove();
@@ -194,6 +207,7 @@ export function PersonalSaasHome() {
     } finally {
       working.current = false;
       setBusy(false);
+      if (recheckPending.current) void load();
     }
   }
 
