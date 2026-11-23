@@ -328,7 +328,10 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
       operationId: crypto.randomUUID(),
       input: ["first"],
     };
-    const request = (input = body, token = serviceToken) => ({
+    const request = (
+      input: Omit<typeof body, "subject"> & { subject: string } = body,
+      token: string = serviceToken,
+    ) => ({
       method: "POST",
       headers: {
         authorization: `Bearer ${token}`,
@@ -355,7 +358,7 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
     expect(
       (await app.request("/", request({ ...body, subject: "other" }))).status,
     ).toBe(403);
-    const inFlight = app.request("/", request());
+    const inFlight = Promise.resolve(app.request("/", request()));
     try {
       await Promise.race([
         started.promise,

@@ -159,29 +159,30 @@ pub enum View {
     Unavailable,
     SignedOut,
     Waiting,
-    SignInFailed {
-        message: &'static str,
-    },
+    SignInFailed { message: &'static str },
     Preparing,
     AdmissionsPaused,
     Paused(PausedWorkspace),
     Closed(ClosedWorkspace),
-    Workspace {
-        id: String,
-        #[serde(rename = "personalAssistant")]
-        personal_assistant: Assistant,
-        conversations: Vec<Conversation>,
-        #[serde(rename = "accessMs")]
-        access_ms: u64,
-        quotas: Option<WorkspaceQuotas>,
-        #[serde(rename = "testCredits")]
-        test_credits: Option<TestCredits>,
-        recovery: Vec<StoppedWork>,
-        #[serde(rename = "recoveryCanRetry")]
-        recovery_can_retry: bool,
-        #[serde(flatten)]
-        workspace_recovery: WorkspaceRecovery,
-    },
+    Workspace(Box<WorkspaceView>),
+}
+
+#[derive(Serialize)]
+pub struct WorkspaceView {
+    id: String,
+    #[serde(rename = "personalAssistant")]
+    personal_assistant: Assistant,
+    conversations: Vec<Conversation>,
+    #[serde(rename = "accessMs")]
+    access_ms: u64,
+    quotas: Option<WorkspaceQuotas>,
+    #[serde(rename = "testCredits")]
+    test_credits: Option<TestCredits>,
+    recovery: Vec<StoppedWork>,
+    #[serde(rename = "recoveryCanRetry")]
+    recovery_can_retry: bool,
+    #[serde(flatten)]
+    workspace_recovery: WorkspaceRecovery,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -747,7 +748,7 @@ impl<'a> Api<'a> {
                         let access_ms = workspace_access.min(access_ms(&history)?);
                         let ConversationHistory { conversations } =
                             history.json().map_err(|_| NETWORK_ERROR)?;
-                        Ok(View::Workspace {
+                        Ok(View::Workspace(Box::new(WorkspaceView {
                             id,
                             personal_assistant,
                             conversations,
@@ -757,7 +758,7 @@ impl<'a> Api<'a> {
                             recovery,
                             recovery_can_retry,
                             workspace_recovery,
-                        })
+                        })))
                     }
                     StatusCode::UNAUTHORIZED => {
                         clear_credential(store)?;
