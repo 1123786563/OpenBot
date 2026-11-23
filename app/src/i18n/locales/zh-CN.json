@@ -1,4 +1,5 @@
 {
+  "relativeTime.now": "刚刚",
   "settings.language.browser": "跟随浏览器",
   "settings.language.description": "选择 OpenBot 界面文字使用的语言。",
   "settings.language.title": "语言"
