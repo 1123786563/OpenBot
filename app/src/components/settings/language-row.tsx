@@ -30,7 +30,8 @@ export function LanguageRow() {
       </ItemMedia>
       <ItemContent>
         <ItemTitle>{t("settings.language.title", "Language")}</ItemTitle>
-        <Text as="p" type="supporting">
+        {/* Text never truncates; the slot is what aligns the row's icon with its title. */}
+        <Text as="p" data-slot="item-description" type="supporting">
           {t(
             "settings.language.description",
             "Choose the language OpenBot uses for its own text.",
