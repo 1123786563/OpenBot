@@ -335,6 +335,24 @@ export const testCreditOperations = pgTable(
 // Nothing is held or dispatched for it, so the same operation resumes there
 // once the person confirms a budget. The row outlives the reservation, so a
 // replay of the runner's own request resolves to the same budget.
+export const backgroundToolResults = pgTable(
+  "background_tool_results",
+  {
+    accountId: uuid("account_id").notNull(),
+    operationId: text("operation_id").notNull(),
+    callId: text("call_id").notNull(),
+    toolRef: text("tool_ref").notNull(),
+    result: text(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.accountId, table.operationId, table.callId] }),
+    foreignKey({
+      columns: [table.accountId, table.operationId],
+      foreignColumns: [testCreditOperations.accountId, testCreditOperations.id],
+    }).onDelete("cascade"),
+  ],
+);
+
 export const testCreditResumePoints = pgTable(
   "test_credit_resume_points",
   {

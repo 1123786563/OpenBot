@@ -4,6 +4,7 @@ import type { ReleasedBifrostRoute } from "../admin/bifrost-catalog";
 
 import {
   type CoordinationToolSpec,
+  type CreditToolMessage,
   readProviderCoordinationCalls,
 } from "./coordination-model-call";
 
@@ -32,10 +33,10 @@ export function bifrostRouteProof(route: ReleasedBifrostRoute) {
     .digest("hex");
 }
 
-type Messages = readonly {
-  role: "system" | "user" | "assistant";
-  content: string;
-}[];
+type Messages = readonly (
+  | { role: "system" | "user" | "assistant"; content: string }
+  | CreditToolMessage
+)[];
 
 const tokens = z.number().int().nonnegative();
 const completion = z.object({

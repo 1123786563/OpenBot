@@ -103,11 +103,16 @@ const zhipuKey =
 
 const ledger = createTestCreditLedger(database, now);
 let tokenizerAvailable = true;
-const countInputTokens = async (
-  route: { model: string },
-  messages: readonly { role: string; content: string }[],
-) => {
-  if (!tokenizerAvailable) throw new Error("tokenizer unavailable");
+const countInputTokens: Parameters<
+  typeof createBifrostCreditExecutor
+>[0]["countInputTokens"] = async (route, messages) => {
+  if (
+    !tokenizerAvailable ||
+    messages.some(
+      (message) => message.role === "tool" || "tool_calls" in message,
+    )
+  )
+    throw new Error("The text-only pilot tokenizer cannot meter this request.");
   const response = await fetch(
     "https://open.bigmodel.cn/api/paas/v4/tokenizer",
     {

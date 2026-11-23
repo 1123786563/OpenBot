@@ -246,7 +246,10 @@ export function createApprovalStore(database: Database): ApprovalStore {
           .returning();
         if (!updated) throw new ApprovalNotFoundError();
         const workItemKey =
-          request.action.dispatch === "explicit" ? undefined : id;
+          request.action.dispatch === "explicit" ||
+          request.action.dispatch === "budgeted"
+            ? undefined
+            : id;
         const continuation = request.action.continuation;
         const approvalRun = {
           runId: request.runId,
@@ -796,7 +799,11 @@ function createPolicyStore(database: Database): ApprovalPolicyStore {
             )
             .returning({ id: approvalRequests.id });
           if (!rows.length) return false;
-          if (options.resume === false) return true;
+          if (
+            options.resume === false ||
+            request.action.dispatch === "budgeted"
+          )
+            return true;
           // The waiting conversation resumes with the reason as its result; nothing is executed.
           await tx
             .insert(workItems)

@@ -1,10 +1,12 @@
 import { z } from "zod";
 
+export const coordinationToolName = z.string().min(1).max(64);
+
 export const coordinationCalls = z
   .array(
     z.strictObject({
       id: z.string().min(1).max(256),
-      name: z.string().min(1).max(64),
+      name: coordinationToolName,
       arguments: z.string().max(16_384),
     }),
   )
@@ -36,3 +38,7 @@ export type CoordinationToolSpec = {
   description: string;
   parameters: Record<string, unknown>;
 };
+
+export type CreditToolMessage =
+  | { role: "assistant"; tool_calls: z.infer<typeof providerCoordinationCalls> }
+  | { role: "tool"; tool_call_id: string; content: string };

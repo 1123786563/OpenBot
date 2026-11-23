@@ -17,6 +17,7 @@ export type BillingQuote = {
   creditType: "test";
   priceVersion: string;
   route: string;
+  tools?: boolean;
   provider: string;
   model: string;
   price: { inputPerMillion: number; outputPerMillion: number };

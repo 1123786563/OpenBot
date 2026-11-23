@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { EventType, type Message } from "@ag-ui/client";
+import { MCPMock } from "@copilotkit/aimock/mcp";
 import { createTurnRunner } from "@openbot/toolkit/run-turn";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { tap } from "rxjs";
@@ -11,6 +12,9 @@ import {
   verify,
 } from "../src/admin/bifrost-catalog";
 import { createAgentProfileStore } from "../src/agents/profile-store";
+import { createApprovalService } from "../src/approvals/service";
+import { createApprovalStore } from "../src/approvals/store";
+import { createAuditStore } from "../src/audit";
 import {
   backgroundModelOperationId,
   createBackgroundModel,
@@ -18,18 +22,21 @@ import {
 import { budgetedTurn } from "../src/billing/background-model-turn";
 import { createPaidCreditLedger } from "../src/billing/paid-ledger";
 import { createTestCreditLedger } from "../src/billing/test-credit";
+import { createBifrostCreditExecutor } from "../src/billing/test-credit-bifrost";
 import {
   createTestCreditRoutes,
   createTrialAdminRoutes,
 } from "../src/billing/test-credit-routes";
 import { createChannelStore } from "../src/channels/routes";
 import { createThreadIdentity } from "../src/channels/thread-identity";
+import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
 import {
   agents,
   channels,
   enterpriseSettings,
   lagoUsageEvents,
+  mcpServers,
   paidCreditAllocations,
   paidEntitlements,
   paidOrders,
@@ -45,6 +52,8 @@ import {
   users,
   workItems,
 } from "../src/db/schema";
+import { createPluginStore } from "../src/plugins/store";
+import { grantedTools } from "../src/plugins/tools";
 import { createRoutineRunner } from "../src/routines/runner";
 import { createRoutineStore } from "../src/routines/store";
 import { createTaskRunner } from "../src/tasks/runner";
@@ -194,6 +203,7 @@ afterAll(async () => {
             "background",
             "runner",
             "late-auth",
+            "tool-worker",
           ].map((tag) => `resume-point-${tag}`),
         ),
       );
@@ -721,6 +731,58 @@ test("a background execution keeps completed steps, waits for evidence, and appl
   ]);
 });
 
+function fixtureTurnRunner(): Parameters<typeof budgetedTurn>[2] {
+  const history = new Map<string, Message[]>();
+  return (agent) =>
+    createTurnRunner({
+      admission: async ({ signal }) => signal ?? new AbortController().signal,
+      buildAgentFor: async () => agent,
+      intelligence: {
+        getOrCreateThread: async ({ threadId }) => ({
+          thread: { id: threadId },
+          created: false,
+        }),
+        getThreadMessages: async ({ threadId }) => ({
+          messages: (history.get(threadId) ?? []).map((message) => ({
+            id: message.id,
+            role: message.role,
+            content: message.content,
+          })),
+        }),
+        ɵacquireThreadLock: async () => undefined,
+        ɵrenewThreadLock: async () => undefined,
+        ɵcleanupThreadLock: async () => {},
+      },
+      runner: {
+        run: ({ agent, input, persistedInputMessages, threadId }) => {
+          const messages = [
+            ...(history.get(threadId) ?? []),
+            ...(persistedInputMessages ?? []),
+          ];
+          history.set(threadId, messages);
+          return agent.run(input).pipe(
+            tap((event) => {
+              if (
+                event.type !== EventType.TEXT_MESSAGE_CONTENT ||
+                typeof event.messageId !== "string" ||
+                typeof event.delta !== "string"
+              )
+                return;
+              const reply = {
+                id: event.messageId,
+                role: "assistant" as const,
+                content: event.delta,
+              };
+              agent.messages = [...agent.messages, reply];
+              messages.push(reply);
+            }),
+          );
+        },
+        stop: async () => true,
+      },
+    });
+}
+
 test("a real Routine and Task keep their execution IDs and continue only after billing confirmation", async () => {
   const { identity, accountId } = await enrolled("runner", 100n);
   await boughtPack(accountId, 100n, `ali-runner-${run}`);
@@ -760,60 +822,12 @@ test("a real Routine and Task keep their execution IDs and continue only after b
       };
     },
   });
-  const history = new Map<string, Message[]>();
+  const makeRunner = fixtureTurnRunner();
   const turnFor = (kind: "routine" | "task") =>
     budgetedTurn(
       model,
       kind,
-      (agent) =>
-        createTurnRunner({
-          admission: async ({ signal }) =>
-            signal ?? new AbortController().signal,
-          buildAgentFor: async () => agent,
-          intelligence: {
-            getOrCreateThread: async ({ threadId }) => ({
-              thread: { id: threadId },
-              created: false,
-            }),
-            getThreadMessages: async ({ threadId }) => ({
-              messages: (history.get(threadId) ?? []).map((message) => ({
-                id: message.id,
-                role: message.role,
-                content: message.content,
-              })),
-            }),
-            ɵacquireThreadLock: async () => undefined,
-            ɵrenewThreadLock: async () => undefined,
-            ɵcleanupThreadLock: async () => {},
-          },
-          runner: {
-            run: ({ agent, input, persistedInputMessages, threadId }) => {
-              const messages = [
-                ...(history.get(threadId) ?? []),
-                ...(persistedInputMessages ?? []),
-              ];
-              history.set(threadId, messages);
-              return agent.run(input).pipe(
-                tap((event) => {
-                  if (
-                    event.type !== EventType.TEXT_MESSAGE_CONTENT ||
-                    typeof event.messageId !== "string" ||
-                    typeof event.delta !== "string"
-                  )
-                    return;
-                  const reply = {
-                    id: event.messageId,
-                    role: "assistant" as const,
-                    content: event.delta,
-                  };
-                  agent.messages = [...agent.messages, reply];
-                  messages.push(reply);
-                }),
-              );
-            },
-            stop: async () => true,
-          },
-        }),
+      makeRunner,
       async () => {},
       async () => {
         throw new Error("Budgeted work reached the legacy runner");
@@ -1170,3 +1184,364 @@ test("a revoked owner cannot send a reserved step after the input meter finishes
   });
   expect(sent).toBe(false);
 });
+
+test("persisted Routine and Task actions require approval and survive a capped model follow-up", async () => {
+  const { identity } = await enrolled("tool-worker", 100n);
+  const toolRoute = configure(emptyCatalog, {
+    harnessImage,
+    routes: { [routeId]: { ...routeSpec, tools: true } },
+  });
+  const draft = toolRoute.routes[routeId];
+  if (!draft) throw new Error("Fixture tool route missing");
+  const published = publish(
+    verify(toolRoute, routeId, fixtureTraceReport(harnessImage, draft), "test"),
+    [routeId],
+    routeId,
+    "test",
+  );
+  const requests: {
+    id: string | null;
+    messages: unknown;
+    tools?: { function: { name: string } }[];
+  }[] = [];
+  const gateway = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const body = await request.json();
+      requests.push({
+        ...body,
+        id: request.headers.get("x-openbot-operation-id"),
+      });
+      const name = body.tools?.[0]?.function.name;
+      return Response.json({
+        choices: [
+          name
+            ? {
+                finish_reason: "tool_calls",
+                message: {
+                  tool_calls: [
+                    {
+                      id: "fixture-call",
+                      type: "function",
+                      function: { name, arguments: "{}" },
+                    },
+                  ],
+                },
+              }
+            : {
+                finish_reason: "stop",
+                message: { content: "Summary of action." },
+              },
+        ],
+        usage: { prompt_tokens: name ? 2 : 3, completion_tokens: 0 },
+      });
+    },
+  });
+  const mock = new MCPMock();
+  let actions = 0;
+  mock
+    .addTool({
+      name: "update_notes",
+      description: "Update fixture notes",
+      inputSchema: { type: "object", properties: {} },
+    })
+    .onToolCall("update_notes", () => {
+      actions++;
+      return "Fixture notes updated.";
+    });
+  const url = await mock.start();
+  const auditStore = createAuditStore(database);
+  const approvalStore = createApprovalStore(database);
+  let autoReviews = 0;
+  const approvals = createApprovalService(approvalStore, undefined, undefined, {
+    review: async () => {
+      autoReviews++;
+      throw new Error("Budgeted tools must use human approval");
+    },
+  });
+  const plugins = createPluginStore({
+    database,
+    auditStore,
+    credentials: createCredentialStore(database),
+    brokerProvider: "composio",
+    encryptionKey: `${"A".repeat(43)}=`,
+    policy: () => ({ mode: "enforce", allow: ["true"], deny: [] }),
+    approvalGate: approvals.gate,
+  });
+  const owner = { id: crypto.randomUUID(), role: "user" as const };
+  const serverId = crypto.randomUUID();
+  const profiles = createAgentProfileStore(
+    database,
+    new URL("https://fixture.example.test/ag-ui"),
+  );
+  const channelStore = createChannelStore(
+    database,
+    profiles,
+    createThreadIdentity("tool-billing-fixture"),
+  );
+  const routineStore = createRoutineStore(database);
+  const taskStore = createTaskStore(database);
+  await database
+    .update(enterpriseSettings)
+    .set({ value: published.catalog })
+    .where(eq(enterpriseSettings.key, pilotCatalogKey));
+  await database.insert(users).values({
+    id: owner.id,
+    email: `${owner.id}@example.test`,
+    name: "Tool fixture owner",
+  });
+  const bot = await profiles.create(owner, {
+    name: "Tool fixture Bot",
+    title: "Fixture",
+    roleDescription: "Update fixture notes.",
+    visibility: "private",
+  });
+  const channel = await channelStore.create(owner, [bot.id]);
+  let taskRun: { id: string; channelId: string } | undefined;
+  try {
+    await approvalStore.policy?.setPreferences(owner.id, {
+      enabled: true,
+      autoReview: true,
+    });
+    await database.insert(mcpServers).values({
+      id: serverId,
+      title: "Fixture notes",
+      vendor: "Fixture",
+      url,
+      provenance: "custom",
+    });
+    await plugins.refreshTools(serverId);
+    await plugins.grant("mcp", `${serverId}/update_notes`, bot.id, owner.id);
+    const quote = await ledger.quote();
+    if (!quote) throw new Error("Fixture quote missing");
+    for (const kind of ["routine", "task"])
+      for (const [cap, limitMicrocredits] of [
+        ["cap", 10n],
+        ["raised", 20n],
+      ] as const)
+        await budgetOf(identity, {
+          budgetId: `${kind}-${cap}`,
+          limitMicrocredits,
+          creditType: "test",
+          modelQuote: { route: quote.route, priceVersion: quote.priceVersion },
+        });
+    const execute = createBifrostCreditExecutor({
+      endpoint: gateway.url,
+      gatewayRevision: routeSpec.gatewayRevision,
+      meteringRevision: routeSpec.meteringRevision,
+      countInputTokens: async () => 4,
+    });
+    const makeModel = () =>
+      createBackgroundModel({
+        ledger,
+        identityOf: async (id) => (id === owner.id ? identity : undefined),
+        execute,
+      });
+    const makeRunner = fixtureTurnRunner();
+    const turnFor = (kind: "routine" | "task") =>
+      budgetedTurn(
+        makeModel(),
+        kind,
+        makeRunner,
+        async () => {},
+        async () => {
+          throw new Error("Budgeted work reached the legacy runner");
+        },
+        undefined,
+        ({ ownerUserId, agentId }) =>
+          grantedTools({
+            store: plugins,
+            botId: agentId,
+            actorId: ownerUserId,
+          }),
+      );
+    const routine = await routineStore.create({
+      ownerUserId: owner.id,
+      agentId: bot.id,
+      channelId: channel.id,
+      cron: "0 9 * * *",
+      instruction: "Update my notes.",
+      budgetId: "routine-cap",
+    });
+    const { runId } = await routineStore.insertRun(
+      routine.id,
+      crypto.randomUUID(),
+    );
+    const routineWorker = () =>
+      createRoutineRunner({
+        routineStore,
+        channelStore,
+        runTurn: turnFor("routine"),
+      });
+    const tasks = () =>
+      createTaskRunner({
+        database,
+        store: taskStore,
+        channels: channelStore,
+        actorFor: async () => owner,
+        queue: createWorkQueue(database),
+        owner: "billing-tool-worker",
+        canStartBudget: makeModel().canStart,
+        scopeFor: async (ownerUserId, channelId, agentId) => {
+          const found = await channelStore.get(owner, channelId);
+          return found
+            ? { ownerUserId, agentId, channelId, threadId: found.threadId }
+            : null;
+        },
+        runTask: createTaskTurn({
+          channels: channelStore,
+          actorFor: async () => owner,
+          runTurn: turnFor("task"),
+        }),
+      });
+    const settingId = crypto.randomUUID();
+    const item = {
+      id: crypto.randomUUID(),
+      agentId: bot.id,
+      title: "Update my notes.",
+      detail: "I have notes to update.",
+      sourceApp: "Fixture",
+      sourceLink: null,
+    };
+    await database.insert(proactiveSettings).values({
+      id: settingId,
+      ownerUserId: owner.id,
+      agentId: bot.id,
+      channelId: channel.id,
+      threadId: crypto.randomUUID(),
+    });
+    await database.insert(proactiveSuggestions).values({
+      ...item,
+      ownerUserId: owner.id,
+      settingId,
+      runId: "billing-fixture-tools",
+      sourceRef: "fixture/notes",
+    });
+    for (const kind of ["routine", "task"] as const) {
+      const before = actions;
+      const requestCount = requests.length;
+      if (kind === "routine") await routineWorker().run(runId);
+      else {
+        const worker = tasks();
+        taskRun = await worker.startFromItem({
+          ownerUserId: owner.id,
+          item,
+          budgetId: "task-cap",
+        });
+        await worker.idle();
+      }
+      const task = taskRun;
+      const resume = async () => {
+        if (kind === "routine")
+          return routineWorker().run(runId, {
+            ownerUserId: owner.id,
+            routineId: routine.id,
+          });
+        if (!task) throw new Error("Missing Task fixture");
+        const worker = tasks();
+        await worker.continueBudgeted(owner.id, task.id);
+        await worker.idle();
+      };
+      expect(actions).toBe(before);
+      expect(requests).toHaveLength(requestCount + 1);
+      const approval = (await approvalStore.list(owner.id)).find(
+        ({ status }) => status === "pending",
+      );
+      if (!approval) throw new Error("Fixture approval was not opened");
+      expect(approval.action.dispatch).toBe("budgeted");
+      await approvals.decide(owner.id, approval.id, "allow_once");
+      expect(
+        await database
+          .select()
+          .from(workItems)
+          .where(eq(workItems.key, approval.id)),
+      ).toEqual([]);
+      await tasks().sweep();
+      await routineWorker().run(runId);
+      expect(actions).toBe(before);
+      if (kind === "routine") {
+        const ref = `${serverId}/update_notes`;
+        await plugins.revoke("mcp", ref, bot.id, owner.id);
+        await resume();
+        expect(actions).toBe(before);
+        expect(requests).toHaveLength(requestCount + 1);
+        await plugins.grant("mcp", ref, bot.id, owner.id);
+      }
+      await resume();
+      expect(actions).toBe(before + 1);
+      expect(requests).toHaveLength(requestCount + 1);
+      const [point] = (await ledger.resumePoints(identity)) ?? [];
+      if (!point) throw new Error("No follow-up resume point");
+      expect(point.reason).toBe("execution_limit");
+      expect(point.operationId).not.toBe(requests[requestCount]?.id);
+      expect(
+        await ledger.confirmResumePoint(
+          identity,
+          point.operationId,
+          `${kind}-raised`,
+        ),
+      ).toMatchObject({ state: "confirmed" });
+      expect(requests).toHaveLength(requestCount + 1);
+      await resume();
+      expect(actions).toBe(before + 1);
+      expect(requests).toHaveLength(requestCount + 2);
+      expect(requests.at(-1)).toMatchObject({
+        id: point.operationId,
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: "assistant",
+            tool_calls: [expect.objectContaining({ id: "fixture-call" })],
+          }),
+          {
+            role: "tool",
+            tool_call_id: "fixture-call",
+            content: expect.stringContaining("Fixture notes updated."),
+          },
+        ]),
+      });
+      const first = requests[requestCount]?.id;
+      if (!first) throw new Error("No first operation");
+      expect(await ledger.receipt(identity, first)).toMatchObject({
+        state: "settled",
+        budgetId: `${kind}-cap`,
+        creditType: "test",
+      });
+      expect(await ledger.receipt(identity, point.operationId)).toMatchObject({
+        state: "settled",
+        budgetId: `${kind}-raised`,
+        creditType: "test",
+      });
+      if (task)
+        expect(await taskStore.get(owner.id, task.id)).toMatchObject({
+          status: "ready_for_review",
+          next: "Summary of action.",
+        });
+      else
+        expect(await routineStore.listRuns(owner.id, routine.id)).toMatchObject(
+          [{ status: "succeeded" }],
+        );
+    }
+    expect(await ledger.balance(identity)).toMatchObject({
+      chargedMicrocredits: "10",
+    });
+    expect(autoReviews).toBe(0);
+  } finally {
+    gateway.stop(true);
+    await mock.stop();
+    await database.delete(mcpServers).where(eq(mcpServers.id, serverId));
+    if (taskRun) {
+      await database
+        .delete(workItems)
+        .where(sql`${workItems.payload}->>'taskId' = ${taskRun.id}`);
+      await database.delete(channels).where(eq(channels.id, taskRun.channelId));
+    }
+    await database.delete(users).where(eq(users.id, owner.id));
+    await database.delete(channels).where(eq(channels.id, channel.id));
+    await database.delete(agents).where(eq(agents.id, bot.id));
+    await database
+      .update(enterpriseSettings)
+      .set({ value: catalog })
+      .where(eq(enterpriseSettings.key, pilotCatalogKey));
+  }
+}, 120_000);

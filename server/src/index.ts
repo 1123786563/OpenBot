@@ -2532,6 +2532,14 @@ const meteredTurn = (
           subagents.toolForRun(parent),
         ];
       })(),
+    ({ ownerUserId, agentId, initiator }) =>
+      grantedTools({
+        store: pluginStore,
+        botId: agentId,
+        actorId: ownerUserId,
+        initiator,
+        credentialActorFor: teamBots.credentialActorFor(ownerUserId, agentId),
+      }),
   );
 
 const routineRunner = createRoutineRunner({

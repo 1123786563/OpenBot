@@ -18,6 +18,7 @@ import {
   testCreditAccounts as accounts,
   billingApplications as applications,
   billingSpendingAuthorizations as authorizations,
+  backgroundToolResults,
   testCreditBatches as batches,
   testCreditBudgets as budgets,
   testCreditEnrollments as enrollments,
@@ -771,6 +772,70 @@ export function createTestCreditLedger(
   }
 
   return {
+    async claimBackgroundTool(
+      identity: VerifiedBillingIdentity,
+      input: {
+        operationId: string;
+        call: CoordinationModelCall;
+        toolRef: string;
+      },
+    ) {
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId || (await suspended(tx, accountId)))
+          return { state: "denied" as const };
+        const row = await operation(accountId, input.operationId, tx);
+        if (
+          row?.state !== "settled" ||
+          !row.resultCalls?.some(
+            (call) =>
+              call.id === input.call.id &&
+              call.name === input.call.name &&
+              call.arguments === input.call.arguments,
+          )
+        )
+          return { state: "denied" as const };
+
+        const key = {
+          accountId,
+          operationId: input.operationId,
+          callId: input.call.id,
+        };
+        const match = and(
+          eq(backgroundToolResults.accountId, key.accountId),
+          eq(backgroundToolResults.operationId, key.operationId),
+          eq(backgroundToolResults.callId, key.callId),
+        );
+        const [claim] = await tx
+          .insert(backgroundToolResults)
+          .values({ ...key, toolRef: input.toolRef })
+          .onConflictDoNothing()
+          .returning({ callId: backgroundToolResults.callId });
+        if (claim)
+          return {
+            state: "claimed" as const,
+            finish: async (result: string) => {
+              await database
+                .update(backgroundToolResults)
+                .set({ result })
+                .where(match);
+            },
+            releaseUnsent: async () => {
+              await database.delete(backgroundToolResults).where(match);
+            },
+          };
+        const [existing] = await tx
+          .select()
+          .from(backgroundToolResults)
+          .where(match);
+        if (existing?.toolRef !== input.toolRef)
+          return { state: "denied" as const };
+        return existing.result === null
+          ? { state: "pending" as const }
+          : { state: "completed" as const, result: existing.result };
+      });
+    },
+
     async releaseClosedReservations(accountId: string) {
       await database.transaction(async (tx) => {
         if (!(await lockAccount(tx, accountId))) return;

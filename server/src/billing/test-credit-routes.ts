@@ -5,6 +5,7 @@ import type { ReleasedBifrostRoute } from "../admin/bifrost-catalog";
 import { type AppVariables, requireAdmin } from "../auth/guards";
 import {
   type CoordinationToolSpec,
+  type CreditToolMessage,
   coordinationCalls,
 } from "./coordination-model-call";
 import { createCreditPackCheckout } from "./credit-pack-checkout";
@@ -660,7 +661,7 @@ export type TestCreditExecutor = (input: {
   operationId: string;
   accountId: string;
   route: ReleasedBifrostRoute;
-  messages: z.infer<typeof messages>;
+  messages: readonly (z.infer<typeof messages>[number] | CreditToolMessage)[];
   coordinationTools?: readonly CoordinationToolSpec[];
   recheckRoute(): Promise<boolean>;
   bindGatewayRequest(request: {
@@ -680,7 +681,9 @@ export async function dispatchTestCredit({
   ledger: TestCreditLedger;
   execute?: TestCreditExecutor;
   identity: VerifiedBillingIdentity;
-  input: z.infer<typeof dispatch>;
+  input: Omit<z.infer<typeof dispatch>, "messages"> & {
+    messages: Parameters<TestCreditExecutor>[0]["messages"];
+  };
   authorizeDispatch?: () => Promise<boolean>;
   coordinationTools?: readonly CoordinationToolSpec[];
 }) {

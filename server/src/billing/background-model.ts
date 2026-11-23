@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
-import type { CoordinationToolSpec } from "./coordination-model-call";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
+import type {
+  CoordinationModelCall,
+  CoordinationToolSpec,
+} from "./coordination-model-call";
 import type { TestCreditLedger, VerifiedBillingIdentity } from "./test-credit";
 import {
   dispatchTestCredit,
@@ -44,13 +48,20 @@ export class BackgroundModelWaiting extends Error {
     readonly awaitingGatewayEvidence = false,
   ) {
     super(
-      reason === "reconciling"
-        ? "This step is waiting for billing reconciliation."
-        : reason === "trial_ended"
-          ? "The Test Credit trial has ended. Confirm a Paid Credit budget to continue."
-          : reason === "execution_limit" || reason === "insufficient_credits"
-            ? "This step is paused. Review its Credits and confirm to continue."
-            : "This step cannot run under its current billing authorization or confirmed price.",
+      reason === "tool_approval"
+        ? "This action needs your approval. After answering it, choose Continue on this run."
+        : reason === "tool_unavailable"
+          ? "This run cannot continue with the selected tools. Check the Bot’s app access."
+          : reason === "tool_pending"
+            ? "The connected action has no confirmed result. It will not be sent again."
+            : reason === "reconciling"
+              ? "This step is waiting for billing reconciliation."
+              : reason === "trial_ended"
+                ? "The Test Credit trial has ended. Confirm a Paid Credit budget to continue."
+                : reason === "execution_limit" ||
+                    reason === "insufficient_credits"
+                  ? "This step is paused. Review its Credits and confirm to continue."
+                  : "This step cannot run under its current billing authorization or confirmed price.",
     );
     this.name = "BackgroundModelWaiting";
   }
@@ -126,7 +137,10 @@ export function createBackgroundModel({
         identity,
         backgroundModelOperationId(scope, step),
       );
-      if (previous?.state !== "settled" || !previous.resultText)
+      if (
+        previous?.state !== "settled" ||
+        !(previous.resultText || previous.resultCalls)
+      )
         return stop("reconciling");
       budgetId = previous.budgetId ?? budgetId;
     }
@@ -224,6 +238,56 @@ export function createBackgroundModel({
 
     async offersCoordination() {
       return Boolean((await ledger.quote())?.tools);
+    },
+
+    async completeTool(
+      scope: BackgroundModelScope,
+      input: {
+        operationId: string;
+        call: CoordinationModelCall;
+        toolRef: string;
+        authorize: () => Promise<void>;
+        execute: () => Promise<string>;
+      },
+    ) {
+      await input.authorize();
+      const identity = await identityOf(scope.personId);
+      if (!identity)
+        throw new BackgroundModelWaiting(input.operationId, "not_authorized");
+      const claim = await ledger.claimBackgroundTool(identity, input);
+      if (claim.state === "completed") return claim.result;
+      if (claim.state !== "claimed")
+        throw new BackgroundModelWaiting(
+          input.operationId,
+          claim.state === "pending" ? "tool_pending" : "not_authorized",
+        );
+      try {
+        await input.authorize();
+        const current = await identityOf(scope.personId);
+        if (
+          current?.issuer !== identity.issuer ||
+          current.subject !== identity.subject
+        )
+          throw new BackgroundModelWaiting(input.operationId, "not_authorized");
+      } catch (error) {
+        await claim.releaseUnsent();
+        throw error;
+      }
+      try {
+        const result = await input.execute();
+        await claim.finish(result);
+        return result;
+      } catch (error) {
+        if (
+          !(error instanceof HeadlessToolSuspension) ||
+          error.waiting.kind !== "approval"
+        )
+          throw new BackgroundModelWaiting(input.operationId, "tool_pending");
+        // The approval gate suspends before the connector dispatches. Every other
+        // interruption leaves the claim in place until a result is known.
+        await claim.releaseUnsent();
+        throw new BackgroundModelWaiting(input.operationId, "tool_approval");
+      }
     },
 
     completeTurn,

@@ -102,10 +102,13 @@ export function ExecutionBudgetDialog({
         {checking ? <p role="status">Checking this step…</p> : null}
         {chooseBudget ? (
           <>
-            <p>
-              Credits currently cover text replies. This run has no connected
-              apps or Bot tools.
-            </p>
+            {currentQuote ? (
+              <p>
+                {currentQuote.tools
+                  ? "The spending cap covers model requests that select a tool or summarize its result. Connected-app actions still follow the Bot’s grants and Approval rules."
+                  : "The spending cap covers text replies on this model."}
+              </p>
+            ) : null}
             {quote.isPending ? (
               <p role="status">Loading the verified quote…</p>
             ) : null}

@@ -223,7 +223,9 @@ export function createApprovalService(
       customRulesEnabled: team.customRulesEnabled,
       autoReview: preferences.autoReview || team.enforceAutoReview,
       askBeforeChanges: preferences.enabled,
-      ...(options.review ? { model: options.review } : {}),
+      ...(options.review && candidate.dispatch !== "budgeted"
+        ? { model: options.review }
+        : {}),
       ...(guidance ? { guidance } : {}),
     });
     // An unremarkable read is not a verdict anybody asked for; everything else is on the trail.
@@ -442,6 +444,8 @@ export function createApprovalService(
           };
         }
       }
+      if (candidate.dispatch === "budgeted" && outcome?.behaviour === "deny")
+        throw new ApprovalRefusedError(outcome.reason);
       if (outcome) {
         if (outcome.behaviour === "allow") return;
       } else if (
@@ -475,6 +479,9 @@ export function createApprovalService(
       if (
         request.status === "approved" &&
         candidate.dispatch !== "corsair-shared-goal" &&
+        !(
+          candidate.dispatch === "budgeted" && outcome?.behaviour === "hand_off"
+        ) &&
         (!candidate.requireOneTime || request.decision === "allow_once") &&
         (await store.consume(action.actorId, request.id, action.actionDigest))
       )
@@ -690,7 +697,12 @@ export function createApprovalService(
       dependencies: ApprovalResumeDependencies,
     ): Promise<void> {
       const request = await store.get(ownerUserId, id);
-      if (request.status === "completed") return;
+      // Budgeted approvals continue through the owning Routine or Task.
+      if (
+        request.action.dispatch === "budgeted" ||
+        request.status === "completed"
+      )
+        return;
       if (request.status === "pending")
         throw new ApprovalRefusedError(
           "This action is still waiting for your decision.",
