@@ -416,7 +416,7 @@ test("a rule that doesn't compile says why under it, and isn't replayed as one t
   ).toBe(true);
 });
 
-test("a rule's page lists the app calls it stopped", async () => {
+test("a rule's replay lists app calls that would pass without it", async () => {
   serving({
     mode: "enforce",
     deny: [salesforceWrites],
@@ -446,11 +446,13 @@ test("a rule's page lists the app calls it stopped", async () => {
   const { view } = open("/admin/boundaries/0");
 
   expect(
-    await view.findByText("It stopped 1 of the last 4 recorded actions."),
+    await view.findByText(
+      "1 of the last 4 recorded decisions would change from refused to allowed.",
+    ),
   ).toBeTruthy();
   expect(view.getByText("Delete record")).toBeTruthy();
   expect(view.getByText("salesforce/delete_record")).toBeTruthy();
-  expect(view.getByText("Stopped")).toBeTruthy();
+  expect(view.getByText("Would allow")).toBeTruthy();
   // Replayed without the rule: what it stopped is what would have gone through.
   expect(replayed).toEqual([
     { mode: "enforce", deny: [], allow: ["true"], labels: {} },
