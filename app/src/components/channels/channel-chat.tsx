@@ -1664,17 +1664,7 @@ export function ChannelChat({
             sent: { id, role: "user", content: text },
             voiceSignal: signal,
           }),
-        read: async () => {
-          const thread = await readThreadMessages(
-            channel.threadId,
-            runtimeAgentId,
-          );
-          if (thread.availability !== "ready" && storedRuns !== undefined)
-            throw new Error(
-              "The run’s result could not be confirmed. Check the conversation.",
-            );
-          return thread;
-        },
+        read: () => readThreadMessages(channel.threadId, runtimeAgentId),
       });
       if (started !== stopEpoch.current)
         throw new Error("The user stopped this task before it completed.");
